@@ -6,7 +6,10 @@ import {
   FileText, History, RotateCcw, Sparkles,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
-import { kickoffApi } from '@/services/kickoffApi'
+// Resolves per call to the meeting engine of the module in the URL — the
+// shared engine under /app/tpv, Purchase's under /app/purchase. Aliased to
+// the old name so the call sites below read unchanged.
+import { meetingEngineApi as kickoffApi, meetingBase } from '@/services/meetingEngineApi'
 import { meetingApi } from '@/services/meetingApi'
 import { tpvApi } from '@/services/tpvApi'
 import { KO_MODES, actStatusCfg, issueStatusCfg } from '../kickoffConstants'
@@ -522,11 +525,14 @@ export default function KickoffMeetingCreate() {
   useEffect(() => {
     if (!form.subject_id) { setVendorStatus(null); return }
     let live = true
-    kickoffApi.vendorStatus(form.subject_id)
+    // While editing, exclude THIS meeting from the vendor's history — it is
+    // already saved, so counting it made a vendor's first meeting look like a
+    // repeat and offered to carry items forward from the meeting on screen.
+    kickoffApi.vendorStatus(form.subject_id, editId || undefined)
       .then(d => { if (live) setVendorStatus(d) })
       .catch(() => { if (live) setVendorStatus(null) })
     return () => { live = false }
-  }, [form.subject_id])
+  }, [form.subject_id, editId])
 
   // §18 AI — suggest an agenda from the meeting type + vendor status + open items.
   const [aiBusy, setAiBusy] = useState(false)
@@ -768,7 +774,7 @@ export default function KickoffMeetingCreate() {
         }
       }
 
-      navigate(newId ? `/app/tpv/kickoff/${newId}` : '/app/tpv/kickoff')
+      navigate(newId ? `${meetingBase()}/kickoff/${newId}` : `${meetingBase()}/kickoff`)
     } catch (e) {
       setErr(e?.response?.data?.message || 'Could not save the meeting.')
       setSaving(false)
@@ -784,14 +790,14 @@ export default function KickoffMeetingCreate() {
       {/* ── Page Header ──────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 22, flexWrap: 'wrap', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-          <button onClick={() => navigate('/app/tpv/kickoff')}
+          <button onClick={() => navigate(`${meetingBase()}/kickoff`)}
             style={{ width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)', marginTop: 3, flexShrink: 0 }}>
             <ArrowLeft size={16} />
           </button>
           <div>
             {/* Breadcrumb */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>
-              <span style={{ cursor: 'pointer', color: '#a78bfa' }} onClick={() => navigate('/app/tpv/kickoff')}>Kickoff Meetings</span>
+              <span style={{ cursor: 'pointer', color: '#a78bfa' }} onClick={() => navigate(`${meetingBase()}/kickoff`)}>Kickoff Meetings</span>
               <ChevronRight size={12} />
               <span>{isEdit ? 'Edit' : 'Create New'}{loading ? ' · loading…' : ''}</span>
             </div>
@@ -840,7 +846,7 @@ export default function KickoffMeetingCreate() {
             <div style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8 }}>
               {/* Distribution is gated by approval now — the full submit → approve →
                   distribute workflow lives on the meeting detail page. */}
-              <button onClick={() => navigate(`/app/tpv/kickoff/${editId}`)}
+              <button onClick={() => navigate(`${meetingBase()}/kickoff/${editId}`)}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9,
                   fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: 'none', color: '#fff',
                   background: 'linear-gradient(145deg,#f59e0b,#d97706)' }}>
@@ -867,8 +873,34 @@ export default function KickoffMeetingCreate() {
 
       <ErrBanner msg={err} />
 
-      {/* ── Two-column layout ────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, alignItems: 'start' }}>
+      {/* ── Two-column layout ──────────────────────────────────────────
+          The summary is a READ-ONLY recap; the left column is where all the
+          work happens — agenda rows, action items, decisions, issues, each of
+          which is a multi-column grid of its own. `auto-fit` with `1fr` split
+          the page 50/50, so the recap was as wide as the form and the agenda
+          builder was squeezed into half the screen.
+
+          Now the summary is a fixed narrow rail and the form takes everything
+          else. `minmax(0, 1fr)` on the left is load-bearing: a grid track's
+          default `min-width: auto` refuses to shrink below its content, so the
+          wide inner grids would otherwise push the whole layout sideways
+          instead of the columns reflowing.
+
+          Below ~1100px it collapses to a single column, where the summary
+          stops being sticky and simply follows the form. */}
+      <style>{`
+        .ko-form-grid {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 300px;
+          gap: 16px;
+          align-items: start;
+        }
+        @media (max-width: 1100px) {
+          .ko-form-grid { grid-template-columns: minmax(0, 1fr); }
+          .ko-form-grid > .ko-summary { position: static !important; }
+        }
+      `}</style>
+      <div className="ko-form-grid">
 
         {/* ── LEFT COLUMN ────────────────────────────────────────────── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -1641,11 +1673,11 @@ export default function KickoffMeetingCreate() {
         </div>{/* end left column */}
 
         {/* ── RIGHT COLUMN — summary card ─────────────────────────────── */}
-        <div style={{ position: 'sticky', top: 16 }}>
-          <div className="pr-glass" style={{ padding: 20 }}>
+        <div className="ko-summary" style={{ position: 'sticky', top: 16 }}>
+          <div className="pr-glass" style={{ padding: 16 }}>
             <SectionTitle icon={CalendarDays}>Meeting Summary</SectionTitle>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {/* Every selected vendor, primary first — the summary must agree
                   with the chips above, not show only the first one. */}
               <SummaryRow label={vendorIds.length > 1 ? `Vendors (${vendorIds.length})` : 'Vendor'}>
@@ -1729,7 +1761,7 @@ export default function KickoffMeetingCreate() {
                   Saved as a draft — nobody is notified until you <strong style={{ color: 'var(--text-h)' }}>Publish</strong> it from the meeting page.
                 </div>
               )}
-              <button onClick={() => navigate('/app/tpv/kickoff')} disabled={saving}
+              <button onClick={() => navigate(`${meetingBase()}/kickoff`)} disabled={saving}
                 style={{
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                   padding: '10px 20px', borderRadius: 11, cursor: 'pointer', fontSize: 13, fontWeight: 600,
@@ -1810,9 +1842,15 @@ function PrevStat({ n, label, tone }) {
 // ── tiny summary row ──────────────────────────────────────────────────────────
 function SummaryRow({ label, children }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, borderBottom: '1px solid var(--border)', paddingBottom: 9 }}>
-      <span style={{ color: 'var(--text-muted)', fontSize: 12, flexShrink: 0 }}>{label}</span>
-      <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-h)', textAlign: 'right' }}>{children}</span>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, borderBottom: '1px solid var(--border)', paddingBottom: 7 }}>
+      <span style={{ color: 'var(--text-muted)', fontSize: 11.5, flexShrink: 0 }}>{label}</span>
+      {/* minWidth 0 + overflowWrap: a flex item will not shrink below its
+          content by default, so a long company name would push past the edge
+          of the narrow rail rather than wrapping inside it. */}
+      <span style={{
+        fontSize: 12, fontWeight: 600, color: 'var(--text-h)', textAlign: 'right',
+        minWidth: 0, overflowWrap: 'anywhere',
+      }}>{children}</span>
     </div>
   )
 }

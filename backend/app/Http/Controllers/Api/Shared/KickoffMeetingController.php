@@ -55,9 +55,17 @@ class KickoffMeetingController extends Controller
      */
     public function vendorStatus(Request $request, VendorLiveStatusService $status)
     {
-        $data = $request->validate(['vendor_id' => 'required|integer']);
+        $data = $request->validate([
+            'vendor_id' => 'required|integer',
+            // The meeting being edited, so it is not counted as its own history.
+            'exclude_meeting_id' => 'nullable|integer',
+        ]);
 
-        return response()->json($status->snapshot($request->user()->tenant_id, (int) $data['vendor_id']));
+        return response()->json($status->snapshot(
+            $request->user()->tenant_id,
+            (int) $data['vendor_id'],
+            isset($data['exclude_meeting_id']) ? (int) $data['exclude_meeting_id'] : null,
+        ));
     }
 
     /**

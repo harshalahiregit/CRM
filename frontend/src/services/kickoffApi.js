@@ -45,7 +45,11 @@ export const kickoffApi = {
   distribution: (id) => api.get(`/kickoff/meetings/${id}/distribution`).then(r => r.data),
 
   // A vendor's live governance status (Meeting.docx §4) — { vendor, sections }.
-  vendorStatus: (vendorId) => api.get('/kickoff/vendor-status', { params: { vendor_id: vendorId } }).then(r => r.data),
+  // excludeMeetingId = the meeting being edited, so it is not counted as its
+  // own history and a vendor's FIRST meeting does not offer carry-forward.
+  vendorStatus: (vendorId, excludeMeetingId) => api.get('/kickoff/vendor-status', {
+    params: { vendor_id: vendorId, exclude_meeting_id: excludeMeetingId || undefined },
+  }).then(r => r.data),
   // AI layer (Meeting.docx §18) — suggest an agenda before, summarise minutes after.
   aiSuggestAgenda: (data) => api.post('/kickoff/ai/suggest-agenda', data).then(r => r.data),
   aiSummary: (meetingId) => api.post(`/kickoff/meetings/${meetingId}/ai-summary`).then(r => r.data),

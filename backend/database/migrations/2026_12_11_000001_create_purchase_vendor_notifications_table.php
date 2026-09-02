@@ -29,7 +29,10 @@ return new class extends Migration
 
             // The bell's query: this vendor's rows, unread first, newest first.
             $table->index(['purchase_vendor_id', 'read_at']);
-            $table->index(['tenant_id', 'purchase_vendor_id', 'created_at']);
+            // Named explicitly: the generated name is 75 characters, past
+            // MySQL's 64-character limit, so `migrate` aborts on production
+            // while every SQLite test passes.
+            $table->index(['tenant_id', 'purchase_vendor_id', 'created_at'], 'pvn_tenant_vendor_created_idx');
         });
     }
 

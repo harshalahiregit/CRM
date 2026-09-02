@@ -1,5 +1,9 @@
 <?php
 
+use App\Http\Controllers\Api\Purchase\PurchaseGateController;
+use App\Http\Controllers\Api\Purchase\PurchasePermitController;
+use App\Http\Controllers\Api\Purchase\PurchaseRegisterController;
+use App\Http\Controllers\Api\Purchase\PurchaseWorkPackageController;
 use App\Http\Controllers\Api\Purchase\PurchaseRequestController;
 use App\Http\Controllers\Api\Purchase\PurchaseOrderController;
 use App\Http\Controllers\Api\Purchase\GoodsReceiptController;
@@ -14,6 +18,9 @@ use App\Http\Controllers\Api\Purchase\PurchaseOnboardingController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorDocumentController;
 use App\Http\Controllers\Api\Purchase\PurchaseContactController;
 use App\Http\Controllers\Api\Purchase\PurchaseKickoffController;
+// Mounted unchanged: meeting types carry nothing module-specific, so Purchase
+// shares the shared engine's controller rather than a duplicate table.
+use App\Http\Controllers\Api\Shared\MeetingTypeSettingsController;
 use App\Http\Controllers\Api\Purchase\PurchaseMomActionController;
 use App\Http\Controllers\Api\Purchase\PurchaseMomIssueController;
 use App\Http\Controllers\Api\Purchase\PurchaseMomDecisionController;
@@ -251,6 +258,12 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::post('/onboarding',                       [PurchaseOnboardingController::class, 'store']);
     Route::get('/onboarding/{onboarding}',           [PurchaseOnboardingController::class, 'show']);
     Route::get('/onboarding/{onboarding}/progress',  [PurchaseOnboardingController::class, 'progress']);
+    // §10 checklist — what was VERIFIED, as distinct from the approval chain's
+    // record of who signed. And the work-start letter, whose path column existed
+    // with nothing ever writing to it.
+    Route::get('/onboarding/{onboarding}/checklist',  [PurchaseOnboardingController::class, 'checklist']);
+    Route::post('/onboarding/{onboarding}/checklist', [PurchaseOnboardingController::class, 'saveChecklist']);
+    Route::get('/onboarding/{onboarding}/work-start-letter', [PurchaseOnboardingController::class, 'workStartLetter']);
     Route::post('/onboarding/{onboarding}/profile',  [PurchaseOnboardingController::class, 'saveProfile']);
     Route::patch('/onboarding/{onboarding}/step',    [PurchaseOnboardingController::class, 'setStep']);
     Route::post('/onboarding/{onboarding}/submit',   [PurchaseOnboardingController::class, 'submit']);
@@ -266,15 +279,128 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     // Tenant-scoped, not vendor-scoped: an admin legitimately sees every vendor's
     // workers. Badge ACTIVATION is not here — it sits in the role:admin group
     // below, so staff can review but not decide who may enter the site.
+    // /stats is declared BEFORE the {worker} wildcard — a static segment would
+    // otherwise be swallowed as a worker id and 404 on model binding.
+    Route::get('/workforce/workers/stats',            [PurchaseWorkforceAdminController::class, 'stats']);
     Route::get('/workforce/workers',                  [PurchaseWorkforceAdminController::class, 'index']);
     Route::get('/workforce/workers/{worker}',         [PurchaseWorkforceAdminController::class, 'show']);
     Route::get('/workforce/workers/{worker}/ppe',     [PurchaseWorkforceAdminController::class, 'ppe']);
     Route::get('/workforce/workers/{worker}/gate',    [PurchaseWorkforceAdminController::class, 'gate']);
+    Route::get('/workforce/workers/{worker}/badge',   [PurchaseWorkforceAdminController::class, 'badge']);
+
+    // Admin-side worker registration — the TPV wizard's flow, on Purchase tables.
+    // Staff may add and correct workers and record their evidence; ACTIVATION
+    // stays admin-only in the role:admin group below.
+    Route::post('/workforce/workers',                     [PurchaseWorkforceAdminController::class, 'store']);
+    Route::put('/workforce/workers/{worker}',             [PurchaseWorkforceAdminController::class, 'update']);
+    Route::delete('/workforce/workers/{worker}',          [PurchaseWorkforceAdminController::class, 'destroy']);
+    Route::post('/workforce/workers/{worker}/medical',    [PurchaseWorkforceAdminController::class, 'saveMedical']);
+    // Step 3 clears only when BOTH a training and an induction exist, so without
+    // a training endpoint an admin-registered worker could never be badged.
+    Route::post('/workforce/workers/{worker}/training',   [PurchaseWorkforceAdminController::class, 'saveTraining']);
+    Route::post('/workforce/workers/{worker}/induction',  [PurchaseWorkforceAdminController::class, 'saveInduction']);
     // Vendor detail Medical / Training tabs. Vendor-scoped (?vendor_id=) and
     // strict about it — declared before the {worker} wildcard above would ever
     // be consulted, since these are static segments.
     Route::get('/workforce/medicals',                 [PurchaseWorkforceAdminController::class, 'medicals']);
     Route::get('/workforce/trainings',                [PurchaseWorkforceAdminController::class, 'trainings']);
+
+    // ── Cross-vendor registers ─────────────────────────────────────────────
+    // Purchase had prequalification / risk / due diligence one vendor at a time,
+    // which answers "how did this vendor score?" but never "who has not been
+    // assessed yet?" — the question a register exists for.
+    Route::get('/registers/prequalification', [PurchaseRegisterController::class, 'prequalification']);
+    Route::get('/registers/risk',             [PurchaseRegisterController::class, 'risk']);
+    Route::get('/registers/due-diligence',    [PurchaseRegisterController::class, 'dueDiligence']);
+
+    // ── Site-wide HSSE registers, shared with TPV ──────────────────────────
+    //
+    // These deliberately point at the SAME controllers TPV uses, because they
+    // read the same tables: safety_observations, toolbox_talks, emergency_drills,
+    // site_visitors, site_vehicles, compliance_evidence. None carries a tpv_
+    // prefix — they are site-wide registers scoped by TENANT, not by which
+    // module you came from. A fire drill is a fire drill whether Purchase or TPV
+    // recorded it, and giving Purchase its own copy would split one site's
+    // safety record into two halves that each look complete.
+    //
+    // Aliased under /purchase only so the URL matches the module the user is
+    // standing in; the gate (role:admin,staff) is identical either way, so this
+    // grants no access that was not already there.
+    $safety   = \App\Http\Controllers\Api\Tpv\SafetyEngagementController::class;
+    $register = \App\Http\Controllers\Api\Tpv\SiteRegisterController::class;
+    $evidence = \App\Http\Controllers\Api\Tpv\EvidenceLockerController::class;
+    $gov      = \App\Http\Controllers\Api\Tpv\GovernanceController::class;
+
+    Route::get('/observations',                      [$safety, 'observations']);
+    Route::post('/observations',                     [$safety, 'storeObservation']);
+    Route::post('/observations/{observation}/close', [$safety, 'closeObservation']);
+    Route::get('/toolbox-talks',                     [$safety, 'talks']);
+    Route::post('/toolbox-talks',                    [$safety, 'storeTalk']);
+
+    Route::get('/drills',                            [$register, 'drills']);
+    Route::post('/drills',                           [$register, 'storeDrill']);
+    Route::get('/visitors',                          [$register, 'visitors']);
+    Route::post('/visitors',                         [$register, 'storeVisitor']);
+    Route::post('/visitors/{visitor}/checkout',      [$register, 'checkoutVisitor']);
+    Route::get('/site-vehicles',                     [$register, 'vehicles']);
+    Route::post('/site-vehicles',                    [$register, 'storeVehicle']);
+    Route::post('/site-vehicles/{vehicle}/checkout', [$register, 'checkoutVehicle']);
+
+    Route::get('/evidence',                          [$evidence, 'index']);
+    Route::post('/evidence',                         [$evidence, 'store']);
+    Route::patch('/evidence/{evidence}',             [$evidence, 'update']);
+    Route::delete('/evidence/{evidence}',            [$evidence, 'destroy']);
+
+    // Purchase's OWN dashboard — counts purchase_* registers. TPV's version is
+    // still reachable below as /governance/shared-dashboard, clearly named, for
+    // the site-wide picture.
+    Route::get('/governance/dashboard',              [PurchaseWorkforceAdminController::class, 'governance']);
+    Route::get('/governance/shared-dashboard',       [$gov, 'dashboard']);
+    Route::get('/governance/report',                 [$gov, 'report']);
+    Route::get('/governance/authority-matrix',       [$gov, 'authorityMatrix']);
+
+    // ── Work packages, activities and work authorisation ───────────────────
+    // The accountability spine: what a vendor is on site to deliver, the
+    // activities inside it, and whether a given worker may do a given activity.
+    // Authorisation is derived per request and writes nothing.
+    Route::get('/work-packages',                          [PurchaseWorkPackageController::class, 'index']);
+    Route::post('/work-packages',                         [PurchaseWorkPackageController::class, 'store']);
+    Route::get('/work-packages/{workPackage}',            [PurchaseWorkPackageController::class, 'show']);
+    Route::put('/work-packages/{workPackage}',            [PurchaseWorkPackageController::class, 'update']);
+    Route::delete('/work-packages/{workPackage}',         [PurchaseWorkPackageController::class, 'destroy']);
+    Route::post('/work-packages/{workPackage}/activities', [PurchaseWorkPackageController::class, 'addActivity']);
+    Route::put('/activities/{activity}',                  [PurchaseWorkPackageController::class, 'updateActivity']);
+    Route::delete('/activities/{activity}',               [PurchaseWorkPackageController::class, 'deleteActivity']);
+    Route::get('/work-authorization',                     [PurchaseWorkPackageController::class, 'roster']);
+    Route::get('/work-authorization/workers/{worker}',    [PurchaseWorkPackageController::class, 'authorize']);
+    Route::post('/workforce/workers/{worker}/work-package', [PurchaseWorkPackageController::class, 'assignWorker']);
+
+    // ── Permit To Work ─────────────────────────────────────────────────────
+    // Reads and raising a request are open to staff; the DECISIONS live in the
+    // role:admin group below. Whoever raises a permit must not also clear it.
+    Route::get('/permits/stats',                 [PurchasePermitController::class, 'stats']);
+    Route::get('/permits',                       [PurchasePermitController::class, 'index']);
+    Route::post('/permits',                      [PurchasePermitController::class, 'store']);
+    Route::get('/permits/{permit}',              [PurchasePermitController::class, 'show']);
+    Route::post('/permits/{permit}/jsa',         [PurchasePermitController::class, 'addJsaStep']);
+
+    // ── Site gate (mirror of TPV's gate) ───────────────────────────────────
+    // Purchase could decide whether a worker may enter but recorded nothing when
+    // it did, so there was no gate log and no attendance. Static segments are
+    // declared before the {worker} routes so they are not read as worker ids.
+    Route::get('/gate/stats',                            [PurchaseGateController::class, 'stats']);
+    Route::get('/gate/log',                              [PurchaseGateController::class, 'log']);
+    Route::get('/gate/on-site',                          [PurchaseGateController::class, 'onSite']);
+    Route::get('/gate/events',                           [PurchaseGateController::class, 'events']);
+    Route::post('/gate/events',                          [PurchaseGateController::class, 'storeEvent']);
+    Route::post('/gate/workers/{worker}/scan',           [PurchaseGateController::class, 'scan']);
+    Route::get('/gate/workers/{worker}/attendance',      [PurchaseGateController::class, 'workerAttendance']);
+
+    // PPE from the admin side. The catalogue and issuing were reachable only
+    // through the vendor portal, so staff could see kit on a worker but could
+    // neither browse what exists nor record handing any over at the gate.
+    Route::get('/workforce/ppe/catalogue',                [PurchaseWorkforceAdminController::class, 'ppeCatalogue']);
+    Route::post('/workforce/workers/{worker}/ppe/issue',  [PurchaseWorkforceAdminController::class, 'issuePpe']);
 
     // ── Workforce Competency & Skill Matrix (mirror of TPV §15) ────────────
     // "No Competency, No Work" — the gate reads the tenant Settings requirement
@@ -381,6 +507,40 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/meeting-types',                    [PurchaseKickoffController::class, 'meetingTypes']);
     Route::get('/kickoff/stats',                   [PurchaseKickoffController::class, 'stats']);
     Route::get('/kickoff/dashboard',               [PurchaseKickoffController::class, 'dashboard']);
+
+    // Cross-meeting registers and the participant pickers.
+    //
+    // These MUST stay above /kickoff/{kickoff} — that route carries no numeric
+    // constraint, so a two-segment path declared after it would be captured as
+    // a meeting id and 404 on model binding. `stats` and `dashboard` above
+    // already follow the same rule.
+    Route::get('/kickoff/registers/options',       [PurchaseKickoffController::class, 'registerOptions']);
+    Route::get('/kickoff/registers/decisions',     [PurchaseKickoffController::class, 'decisionRegister']);
+    Route::get('/kickoff/registers/issues',        [PurchaseKickoffController::class, 'issueRegister']);
+    Route::get('/kickoff/registers/actions',       [PurchaseKickoffController::class, 'actionRegister']);
+    Route::get('/kickoff/staff',                   [PurchaseKickoffController::class, 'staff']);
+    Route::get('/kickoff/vendors',                 [PurchaseKickoffController::class, 'vendors']);
+    Route::get('/kickoff/vendor-status',           [PurchaseKickoffController::class, 'vendorStatus']);
+    Route::get('/kickoff/history',                 [PurchaseKickoffController::class, 'history']);
+    // Read-only PREVIEW of carryable items, for the meeting form. The writing
+    // half lives at POST /kickoff/{kickoff}/carry-forward and is unrelated.
+    Route::get('/kickoff/carry-forward',           [PurchaseKickoffController::class, 'carryForwardPreview']);
+    // Subjects the SHARED engine supports and Purchase does not. They answer
+    // with an empty list rather than 404 — the shared meeting form requests
+    // both on mount, and a 404 would read as an error on a working screen.
+    Route::get('/kickoff/projects',                [PurchaseKickoffController::class, 'projects']);
+    Route::get('/kickoff/customers',               [PurchaseKickoffController::class, 'customers']);
+    Route::post('/kickoff/ai/suggest-agenda',      [PurchaseKickoffController::class, 'aiSuggestAgenda']);
+
+    // Meeting types are tenant-scoped and carry nothing module-specific
+    // (tenant_id, key, label, templates, is_active, sort_order), so the SHARED
+    // controller is mounted here unchanged rather than copied onto a duplicate
+    // table that would then drift.
+    Route::get('/meeting-type-settings',                  [MeetingTypeSettingsController::class, 'index']);
+    Route::post('/meeting-type-settings',                 [MeetingTypeSettingsController::class, 'store']);
+    Route::put('/meeting-type-settings/{meetingType}',    [MeetingTypeSettingsController::class, 'update'])->whereNumber('meetingType');
+    Route::delete('/meeting-type-settings/{meetingType}', [MeetingTypeSettingsController::class, 'destroy'])->whereNumber('meetingType');
+
     Route::get('/kickoff',                         [PurchaseKickoffController::class, 'index']);
     Route::post('/kickoff',                        [PurchaseKickoffController::class, 'store']);
     Route::get('/kickoff/{kickoff}',               [PurchaseKickoffController::class, 'show']);
@@ -410,11 +570,15 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::post('/kickoff/{kickoff}/mom/decide',   [PurchaseKickoffController::class, 'momDecide']);
     Route::post('/kickoff/{kickoff}/mom/revise',   [PurchaseKickoffController::class, 'momRevise']);
     Route::post('/kickoff/{kickoff}/publish',      [PurchaseKickoffController::class, 'publish']);
+    Route::post('/kickoff/{kickoff}/ai-summary',   [PurchaseKickoffController::class, 'aiSummary']);
     // MOM action engine (Meeting → Action → Owner → Due → Evidence → Verification → Closure).
     Route::get('/kickoff/{kickoff}/actions',                        [PurchaseMomActionController::class, 'index']);
     Route::post('/kickoff/{kickoff}/actions',                       [PurchaseMomActionController::class, 'store']);
     Route::put('/kickoff/{kickoff}/actions/{action}',              [PurchaseMomActionController::class, 'update'])->whereNumber('action');
     Route::post('/kickoff/{kickoff}/actions/{action}/progress',   [PurchaseMomActionController::class, 'progress'])->whereNumber('action');
+    // Turn a MOM action into a real Task so it lands in someone's list instead
+    // of living only in the minutes.
+    Route::post('/kickoff/{kickoff}/actions/{action}/push-task',  [PurchaseKickoffController::class, 'pushActionTask'])->whereNumber('action');
     Route::get('/kickoff/{kickoff}/actions/{action}/evidence',    [PurchaseMomActionController::class, 'evidence'])->whereNumber('action');
     Route::delete('/kickoff/{kickoff}/actions/{action}',          [PurchaseMomActionController::class, 'destroy'])->whereNumber('action');
     // MOM issue register (track to resolution; convert to NCR / CAPA).
@@ -494,6 +658,13 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('purchase')->group(fun
 
     // Workforce step 5 — activating a worker admits a person to the site, so it
     // is an admin decision, not a staff one and never the vendor's.
+    // Permit decisions. Clearing dangerous work to proceed is an admin act, and
+    // separating it from raising the request is the point of the permit.
+    Route::post('/permits/{permit}/approve',  [PurchasePermitController::class, 'approve']);
+    Route::post('/permits/{permit}/reject',   [PurchasePermitController::class, 'reject']);
+    Route::post('/permits/{permit}/activate', [PurchasePermitController::class, 'activate']);
+    Route::post('/permits/{permit}/close',    [PurchasePermitController::class, 'close']);
+
     Route::post('/workforce/workers/{worker}/activate',   [PurchaseWorkforceAdminController::class, 'activate']);
     // Worker lifecycle — suspend/reinstate/terminate withhold or restore site access.
     Route::post('/workforce/workers/{worker}/suspend',    [PurchaseWorkforceAdminController::class, 'suspend']);

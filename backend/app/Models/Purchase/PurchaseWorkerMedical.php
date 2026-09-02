@@ -21,12 +21,28 @@ class PurchaseWorkerMedical extends Model
         // Depth (TPV §16 parity) — restriction detail + sign-off + certificate.
         'restrictions', 'approved_by', 'approved_at', 'examiner_name',
         'certificate_path', 'document_path',
+        // Examination depth, mirroring tpv_worker_medicals: who/what/where, the
+        // vitals the fitness bands are computed from, the scored screening, and
+        // the proof that ties the record to a place and a device.
+        'recorded_by', 'exam_type', 'clinic_name', 'valid_until',
+        'height_cm', 'weight_kg', 'bp_systolic', 'bp_diastolic', 'vision',
+        'screening_responses', 'screening_score', 'screening_band',
+        'signature_path', 'capture_photo_path', 'system_ip', 'geo_location',
     ];
 
     protected $casts = [
-        'exam_date'   => 'date',
-        'expiry_date' => 'date',
-        'approved_at' => 'datetime',
+        'exam_date'           => 'date',
+        'expiry_date'         => 'date',
+        'valid_until'         => 'date',
+        'approved_at'         => 'datetime',
+        // The raw screening answers are kept so a band can be re-derived if the
+        // scoring ever changes, without rewriting the band already recorded.
+        'screening_responses' => 'array',
+        'screening_score'     => 'integer',
+        'height_cm'           => 'float',
+        'weight_kg'           => 'float',
+        'bp_systolic'         => 'integer',
+        'bp_diastolic'        => 'integer',
     ];
 
     protected $appends = ['fitness_label', 'is_passing', 'is_expired'];

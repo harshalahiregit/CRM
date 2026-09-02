@@ -17,7 +17,7 @@ class ComplianceEvidence extends Model
     public const CATEGORIES = ['Insurance', 'License', 'Certificate', 'Audit', 'Training', 'Policy', 'Other'];
 
     protected $fillable = [
-        'tenant_id', 'vendor_id', 'uploaded_by', 'category', 'title',
+        'tenant_id', 'vendor_id', 'purchase_vendor_id', 'uploaded_by', 'category', 'title',
         'description', 'file_url', 'valid_from', 'valid_until',
     ];
 
@@ -49,5 +49,11 @@ class ComplianceEvidence extends Model
         }
 
         return 'Valid';
+    }
+
+    /** The PURCHASE vendor, when the evidence was filed from that module. */
+    public function purchaseVendor()
+    {
+        return $this->belongsTo(\App\Models\Purchase\PurchaseVendor::class, 'purchase_vendor_id');
     }
 }

@@ -1,17 +1,17 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Building2, Plus, Search, RefreshCw, CheckCircle2, Eye, CalendarDays } from 'lucide-react'
+import { Building2, Plus, RefreshCw, CheckCircle2, Eye, CalendarDays, Pencil } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
 import PurchaseVendorForm, { validatePurchaseVendor } from '@/modules/purchase/components/PurchaseVendorForm'
 import PurchaseRegistrationBadge from '@/modules/purchase/components/PurchaseRegistrationBadge'
 import TemporaryVendorValidityBadge from '@/modules/purchase/components/TemporaryVendorValidityBadge'
 import { PV_DEFAULTS } from '@/modules/purchase/components/purchaseVendorFormConstants'
+import TableToolbar from '@/components/ui/TableToolbar'
 
 /**
  * Purchase Vendors — the admin master list for the Purchase-owned vendor entity
  * (/api/purchase/vendors). Independent of the shared Vendor and of TPV.
  */
-const inputStyle = { width: '100%', padding: '9px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }
 const STATUS_COLORS = { Active: '#10b981', Pending_Approval: '#f59e0b', Draft: '#6b7280', On_Hold: '#f59e0b', Rejected: '#ef4444', Blacklisted: '#991b1b', Inactive: '#6b7280' }
 
 export default function PurchaseVendors() {
@@ -23,6 +23,7 @@ export default function PurchaseVendors() {
   const [modal, setModal] = useState(null)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+  const [editLoadingId, setEditLoadingId] = useState(null)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -34,20 +35,70 @@ export default function PurchaseVendors() {
 
   useEffect(() => { load() }, [load])
 
+  // One modal for both create and edit — an existing id is what tells them
+  // apart. The form component already has an `edit` mode; the page simply never
+  // opened it, so a vendor could be created and then never corrected.
+  const isEdit = Boolean(modal?.id)
+
   const save = async () => {
     const invalid = validatePurchaseVendor(modal)
     if (invalid) { setErr(invalid); return }
     setSaving(true); setErr('')
     try {
-      await purchaseApi.vendors.create(modal)
+      if (isEdit) await purchaseApi.vendors.update(modal.id, modal)
+      else await purchaseApi.vendors.create(modal)
       setModal(null); load()
     } catch (e) {
       const errors = e?.response?.data?.errors
-      setErr(errors ? Object.values(errors).flat()[0] : (e?.response?.data?.message || 'Could not create vendor.'))
+      setErr(errors ? Object.values(errors).flat()[0]
+        : (e?.response?.data?.message || `Could not ${isEdit ? 'update' : 'create'} vendor.`))
     } finally { setSaving(false) }
   }
 
   const activate = async (id) => { try { await purchaseApi.vendors.approve(id); load() } catch { /* noop */ } }
+
+  /**
+   * Open the edit form on the FULL record, not the list row.
+   *
+   * The list is a summary — it omits notes, bank details, return policy,
+   * payment terms and the address block. Seeding the form from a row would
+   * show those fields blank for a vendor that has them, which reads as "this
+   * vendor has no address" and invites someone to retype one.
+   *
+   * Falls back to the row if the fetch fails, so a flaky request degrades to a
+   * partial form rather than no form at all.
+   */
+  const openEdit = async (v) => {
+    setErr('')
+    setEditLoadingId(v.id)
+    try {
+      const full = await purchaseApi.vendors.get(v.id)
+      setModal({ ...PV_DEFAULTS, ...v, ...(full?.data ?? full ?? {}) })
+    } catch {
+      setModal({ ...PV_DEFAULTS, ...v })
+    } finally {
+      setEditLoadingId(null)
+    }
+  }
+
+  /**
+   * Column definitions drive the header AND every export, so the table on
+   * screen and the file that comes out can never describe different columns.
+   * `export` overrides the cell for the ones rendered as a badge — a CSV of
+   * React elements is useless.
+   */
+  const columns = useMemo(() => [
+    { key: 'purchase_vendor_code', label: 'Code' },
+    { key: 'company_name',         label: 'Company' },
+    { key: 'email',                label: 'Email' },
+    { key: 'registration_type',    label: 'Type',     export: v => v.registration_type_label || v.registration_type || '' },
+    { key: 'validity',             label: 'Remaining Validity', export: v => v.validity_countdown?.label || '' },
+    { key: 'status',               label: 'Status',   export: v => v.status_label || v.status || '' },
+    // Not on screen — the table has no room — but the single most useful
+    // column in a spreadsheet, so the export carries it.
+    { key: 'category',             label: 'Category', export: v => v.category || '' },
+    { key: 'phone',                label: 'Phone',    export: v => v.phone || '' },
+  ], [])
 
   return (
     <div style={{ padding: 20 }}>
@@ -74,10 +125,18 @@ export default function PurchaseVendors() {
         ))}
       </div>
 
-      <div style={{ position: 'relative', marginBottom: 12, maxWidth: 340 }}>
-        <Search size={15} style={{ position: 'absolute', left: 10, top: 11, color: 'var(--text-muted)' }} />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search vendors…" style={{ ...inputStyle, paddingLeft: 32 }} />
-      </div>
+      {/* Search + CSV / Excel / Copy / Print, from the same component TPV uses.
+          Exports carry the rows currently loaded, which is the whole filtered
+          set — the list is not server-paginated. */}
+      <TableToolbar
+        search={q}
+        setSearch={setQ}
+        placeholder="Search vendors…"
+        columns={columns}
+        rows={rows}
+        filename="purchase-vendors"
+        title="Purchase Vendors"
+      />
 
       <div className="card-3d" style={{ overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -99,6 +158,9 @@ export default function PurchaseVendors() {
                   <td style={td}><span style={{ fontSize: 11, fontWeight: 700, color: STATUS_COLORS[v.status] || '#6b7280' }}>{v.status_label || v.status}</span></td>
                   <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                     {v.status !== 'Active' && <button onClick={() => activate(v.id)} style={{ ...miniBtn, color: '#10b981' }}><CheckCircle2 size={13} /> Activate</button>}
+                    <button onClick={() => openEdit(v)} disabled={editLoadingId === v.id} style={miniBtn}>
+                      <Pencil size={13} /> {editLoadingId === v.id ? 'Opening…' : 'Edit'}
+                    </button>
                     <button onClick={() => navigate(`/app/purchase/vendors/${v.id}`)} style={miniBtn}><Eye size={13} /> View</button>
                   </td>
                 </tr>
@@ -111,17 +173,25 @@ export default function PurchaseVendors() {
         <div style={overlay}>
           <div className="card-3d" style={{ padding: 0, width: 720, maxWidth: '95vw', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
             <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)' }}>
-              <h2 style={{ fontSize: 17, fontWeight: 800, color: 'var(--text-h)', margin: 0 }}>New Purchase Vendor</h2>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Vendor Code is auto-generated on save.</div>
+              <h2 style={{ fontSize: 17, fontWeight: 800, color: 'var(--text-h)', margin: 0 }}>
+                {isEdit ? `Edit · ${modal.company_name}` : 'New Purchase Vendor'}
+              </h2>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                {isEdit
+                  ? `Vendor Code ${modal.purchase_vendor_code || '—'} · assigned on creation and never changes.`
+                  : 'Vendor Code is auto-generated on save.'}
+              </div>
             </div>
             <div style={{ padding: 20, overflowY: 'auto' }}>
-              <PurchaseVendorForm value={modal} onChange={setModal} mode="create" />
+              <PurchaseVendorForm value={modal} onChange={setModal} mode={isEdit ? 'edit' : 'create'} />
             </div>
             <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
               <span style={{ color: '#ef4444', fontSize: 12 }}>{err}</span>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={() => setModal(null)} style={btn}>Cancel</button>
-                <button onClick={save} disabled={saving || !modal.company_name} style={{ ...btn, background: '#7C3AED', color: '#fff', border: 'none' }}>{saving ? 'Saving…' : 'Create Vendor'}</button>
+                <button onClick={save} disabled={saving || !modal.company_name} style={{ ...btn, background: '#7C3AED', color: '#fff', border: 'none' }}>
+                  {saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Create Vendor')}
+                </button>
               </div>
             </div>
           </div>

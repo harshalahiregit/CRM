@@ -238,7 +238,11 @@ const PurchaseComplianceRegister = lazy(() => import('@/modules/purchase/pages/P
 const PurchaseNcr = lazy(() => import('@/modules/purchase/pages/PurchaseNcr'))
 const PurchaseCapaRegister = lazy(() => import('@/modules/purchase/pages/PurchaseCapaRegister'))
 const PurchaseIncidents = lazy(() => import('@/modules/purchase/pages/PurchaseIncidents'))
-const PurchaseApprovals = lazy(() => import('@/modules/purchase/pages/PurchaseApprovals'))
+// Replaces the former PurchaseApprovals page, whose modals closed on backdrop
+// click -- the one interaction rule this codebase is explicit about. Same
+// endpoint (/purchase/approval-requests); adds the server-side vendor filter the
+// controller already accepted and nothing used.
+const PurchaseApprovalRegister = lazy(() => import('@/modules/purchase/pages/PurchaseApprovalRegister'))
 const PurchaseAnalytics = lazy(() => import('@/modules/purchase/pages/PurchaseAnalytics'))
 const PurchaseDocumentVault = lazy(() => import('@/modules/purchase/pages/PurchaseDocumentVault'))
 const PurchaseCommunications = lazy(() => import('@/modules/purchase/pages/PurchaseCommunications'))
@@ -256,14 +260,28 @@ const PurchaseSettings = lazy(() => import('@/modules/purchase/pages/PurchaseSet
 // Purchase Vendor admin — Purchase-owned pages (no TPV components).
 const PurchaseVendors = lazy(() => import('@/modules/purchase/pages/PurchaseVendors'))
 const PurchaseVendorDetailLayout = lazy(() => import('@/modules/purchase/pages/vendor-detail/PurchaseVendorDetailLayout'))
-const PurchaseVendorOnboardings = lazy(() => import('@/modules/purchase/pages/PurchaseVendorOnboardings'))
 const PurchaseVendorOnboardingWizard = lazy(() => import('@/modules/purchase/pages/PurchaseVendorOnboardingWizard'))
 const PurchaseWorkforce = lazy(() => import('@/modules/purchase/pages/PurchaseWorkforce'))
+// Purchase workforce registration — the mirror of TPV's Workers list + 5-step
+// worker wizard, on Purchase's own tables (see docs/audit/PURCHASE-TPV-PARITY.md).
+const PurchaseWorkers = lazy(() => import('@/modules/purchase/pages/PurchaseWorkers'))
+const PurchaseWorkerWizard = lazy(() => import('@/modules/purchase/pages/PurchaseWorkerWizard'))
+const PurchaseMedicalFitness = lazy(() => import('@/modules/purchase/pages/PurchaseMedicalFitness'))
+const PurchasePpeMatrix = lazy(() => import('@/modules/purchase/pages/PurchasePpeMatrix'))
+const PurchaseGateLog = lazy(() => import('@/modules/purchase/pages/PurchaseGateLog'))
+const PurchaseWorkforceAttendance = lazy(() => import('@/modules/purchase/pages/PurchaseWorkforceAttendance'))
+const PurchasePermits = lazy(() => import('@/modules/purchase/pages/PurchasePermits'))
+const PurchaseWorkPackages = lazy(() => import('@/modules/purchase/pages/PurchaseWorkPackages'))
+const PurchaseWorkAuthorization = lazy(() => import('@/modules/purchase/pages/PurchaseWorkAuthorization'))
+const PurchaseSafetyEngagement = lazy(() => import('@/modules/purchase/pages/PurchaseSafetyEngagement'))
+const PurchaseSiteRegisters = lazy(() => import('@/modules/purchase/pages/PurchaseSiteRegisters'))
+const PurchaseEvidenceLocker = lazy(() => import('@/modules/purchase/pages/PurchaseEvidenceLocker'))
+const PurchaseGovernanceDashboard = lazy(() => import('@/modules/purchase/pages/PurchaseGovernanceDashboard'))
+const PurchaseAuthorityMatrix = lazy(() => import('@/modules/purchase/pages/PurchaseAuthorityMatrix'))
+const PurchasePrequalification = lazy(() => import('@/modules/purchase/pages/PurchasePrequalification'))
+const PurchaseRiskDueDiligence = lazy(() => import('@/modules/purchase/pages/PurchaseRiskDueDiligence'))
 const PurchaseCompetency = lazy(() => import('@/modules/purchase/pages/PurchaseCompetency'))
-// Purchase Kickoff — Purchase-owned pages on /api/purchase/kickoff (no TPV/shared reuse).
-const PurchaseKickoffMeetings = lazy(() => import('@/modules/purchase/pages/PurchaseKickoffMeetings'))
-const PurchaseKickoffCreate = lazy(() => import('@/modules/purchase/pages/PurchaseKickoffCreate'))
-const PurchaseKickoffDetail = lazy(() => import('@/modules/purchase/pages/PurchaseKickoffDetail'))
+// Purchase meetings now render the SHARED kickoff screens; see the routes below.
 
 // Purchase Vendor Portal (lazy) — independent PurchaseVendor auth.
 const PurchasePortalShell = lazy(() => import('@/pages/purchase-portal/PurchasePortalShell'))
@@ -648,7 +666,7 @@ export default function AppRoutes() {
           <Route path="capa" element={<S><PurchaseCapaRegister /></S>} />
           <Route path="incidents" element={<S><PurchaseIncidents /></S>} />
           {/* Central approval register (§12) — /api/purchase/approval-requests */}
-          <Route path="approval-requests" element={<S><PurchaseApprovals /></S>} />
+          <Route path="approval-requests" element={<S><PurchaseApprovalRegister /></S>} />
           <Route path="inspections" element={<S><PurchaseInspections /></S>} />
           <Route path="violations" element={<S><PurchaseViolations /></S>} />
           <Route path="vpi" element={<S><PurchasePerformanceIndex /></S>} />
@@ -661,17 +679,76 @@ export default function AppRoutes() {
           <Route path="vendors" element={<S><PurchaseVendors /></S>} />
           {/* Vendor Detail workspace — persistent left sidebar + deep-linkable nested tabs */}
           <Route path="vendors/:id/*" element={<S><PurchaseVendorDetailLayout /></S>} />
-          <Route path="onboarding" element={<S><PurchaseVendorOnboardings /></S>} />
+          {/* The SAME onboarding queue TPV uses. It reads its data source, route
+              base and FK name from useVendorModule(), which resolves to Purchase
+              on this path — so the two modules stay identical by construction
+              instead of by two copies drifting apart. The Purchase-only copy it
+              replaces was a bare 5-column table: no KPIs, no search, no status
+              filter, no step progress and no blocking reason. */}
+          <Route path="onboarding" element={<S><TpvOnboardings /></S>} />
           <Route path="onboarding/:id" element={<S><PurchaseVendorOnboardingWizard /></S>} />
           {/* Admin/staff review of vendor-supplied workers. Activation inside is
               admin-only — the button is hidden for staff and the endpoint refuses them. */}
           <Route path="workforce" element={<S><PurchaseWorkforce /></S>} />
+          {/* Worker register + 5-step wizard, mirroring TPV's /app/tpv/workers.
+              Kept on their own paths rather than replacing /workforce above, so the
+              existing review screen and its links keep working. */}
+          <Route path="workers" element={<S><PurchaseWorkers /></S>} />
+          <Route path="workers/:id" element={<S><PurchaseWorkerWizard /></S>} />
+          {/* Cross-workforce medical fitness register. Vendor-scoped: the
+              endpoint 422s without a vendor, so the page asks for one first. */}
+          <Route path="medical" element={<S><PurchaseMedicalFitness /></S>} />
+          {/* PPE matrix. Purchase has no requirements table, so unlike TPV's
+              prescriptive matrix this one is OBSERVED — designation against the
+              kit workers in that role actually hold. */}
+          <Route path="ppe/matrix" element={<S><PurchasePpeMatrix /></S>} />
+          {/* Site gate. A refused scan is not a crossing, so it appears in the
+              log but never on the roster or in attendance. */}
+          <Route path="gate-log" element={<S><PurchaseGateLog /></S>} />
+          <Route path="attendance" element={<S><PurchaseWorkforceAttendance /></S>} />
+          {/* Permit To Work. Raising is open to staff; approving, rejecting,
+              activating and closing are admin-only server-side. */}
+          <Route path="permits" element={<S><PurchasePermits /></S>} />
+          {/* The accountability spine: what a vendor is on site to deliver, and
+              whether a given worker may do a given activity. Authorisation is
+              derived per request and writes nothing. */}
+          <Route path="work-packages" element={<S><PurchaseWorkPackages /></S>} />
+          <Route path="work-authorization" element={<S><PurchaseWorkAuthorization /></S>} />
+          {/* Site-wide HSSE registers, SHARED with TPV — the same rows, by
+              design. One site has one safety record; two copies would each look
+              complete while being half the truth. */}
+          <Route path="safety" element={<S><PurchaseSafetyEngagement /></S>} />
+          <Route path="site-registers" element={<S><PurchaseSiteRegisters /></S>} />
+          <Route path="evidence" element={<S><PurchaseEvidenceLocker /></S>} />
+          {/* Counts Purchase's OWN registers, not TPV's — see the page header. */}
+          <Route path="governance" element={<S><PurchaseGovernanceDashboard /></S>} />
+          {/* The tenant's sign-off org chart. Unlike the dashboard this alias IS
+              legitimate: it holds no register rows, so "Safety owns permit
+              approval" is equally true of both modules. */}
+          <Route path="authority-matrix" element={<S><PurchaseAuthorityMatrix /></S>} />
+          {/* Cross-vendor registers. These answer "who has NOT been assessed",
+              which the per-vendor workspace tabs structurally cannot. */}
+          <Route path="prequalification" element={<S><PurchasePrequalification /></S>} />
+          <Route path="risk" element={<S><PurchaseRiskDueDiligence /></S>} />
           {/* Workforce Competency & Skill Matrix — "No Competency, No Work" (mirror of TPV §15). */}
           <Route path="competency" element={<S><PurchaseCompetency /></S>} />
-          {/* Kickoff Meetings — Purchase-owned pages on /api/purchase/kickoff (no TPV reuse) */}
-          <Route path="kickoff" element={<S><PurchaseKickoffMeetings /></S>} />
-          <Route path="kickoff/new" element={<S><PurchaseKickoffCreate /></S>} />
-          <Route path="kickoff/:id" element={<S><PurchaseKickoffDetail /></S>} />
+          {/* Meetings — the SAME three screens TPV uses, on Purchase's tables.
+              meetingEngineApi resolves the engine from the path, so these post
+              to /api/purchase/kickoff here and /api/kickoff under /app/tpv.
+              The Purchase-owned copies they replace were 2,073 lines against
+              the shared engine's 4,715: no calendar, no meeting-type manager,
+              no live vendor snapshot, no AI agenda or summary, no carry-forward
+              picker, and no cross-meeting registers. */}
+          <Route path="kickoff" element={<S><KickoffMeetings /></S>} />
+          <Route path="kickoff/new" element={<S><KickoffMeetingCreate /></S>} />
+          <Route path="kickoff/:id/edit" element={<S><KickoffMeetingCreate /></S>} />
+          <Route path="kickoff/:id" element={<S><KickoffMeetingDetail /></S>} />
+          {/* The SAME register screen TPV uses. useMeetingModule() resolves the
+              Purchase engine on this path, so decisions, issues and the open
+              action backlog now read ACROSS meetings here too — previously they
+              were only visible inside the one meeting that produced them. */}
+          <Route path="meetings/registers" element={<S><MeetingRegisters /></S>} />
+          <Route path="meetings/registers/:register" element={<S><MeetingRegisters /></S>} />
           {/* Sidebar tabs pending dedicated pages — placeholders keep nav intact */}
           {/* Vendor Items — Purchase Vendor ↔ Inventory Item mapping */}
           <Route path="vendor-items" element={<S><PurchaseVendorItems /></S>} />

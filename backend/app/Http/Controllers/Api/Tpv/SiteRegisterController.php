@@ -95,7 +95,13 @@ class SiteRegisterController extends Controller
             'vehicle_number' => 'required|string|max:40',
             'vehicle_type'   => 'nullable|string|max:60',
             'driver_name'    => 'nullable|string|max:160',
-            'vendor_id'      => 'nullable|integer',
+            'vendor_id'      => 'nullable|integer|exists:vendors,id',
+            // Purchase vendors live in their own table with unrelated ids, so
+            // they need their own column: posting one into vendor_id would not
+            // fail, it would attach the record to whichever shared vendor held
+            // that number. A safety record filed against the wrong company is
+            // worse than one filed against nobody.
+            'purchase_vendor_id' => 'nullable|integer|exists:purchase_vendors,id',
             'purpose'        => 'nullable|string|max:200',
             'fitness_valid'  => 'sometimes|boolean',
         ]);

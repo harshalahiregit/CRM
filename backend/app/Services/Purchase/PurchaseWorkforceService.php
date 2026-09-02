@@ -106,6 +106,25 @@ class PurchaseWorkforceService
             'approved_at'      => ! empty($data['approved_by']) ? now() : null,
             'certificate_path' => $data['certificate_path'] ?? null,
             'document_path'    => $data['document_path'] ?? null,
+            // Examination depth (TPV parity). valid_until mirrors expiry_date —
+            // expiry_date stays the column the fitness gate reads, so the two can
+            // never disagree about when a medical lapses.
+            'recorded_by'         => $data['recorded_by'] ?? null,
+            'exam_type'           => $data['exam_type'] ?? null,
+            'clinic_name'         => $data['clinic_name'] ?? null,
+            'valid_until'         => $data['valid_until'] ?? ($data['expiry_date'] ?? null),
+            'height_cm'           => $data['height_cm'] ?? null,
+            'weight_kg'           => $data['weight_kg'] ?? null,
+            'bp_systolic'         => $data['bp_systolic'] ?? null,
+            'bp_diastolic'        => $data['bp_diastolic'] ?? null,
+            'vision'              => $data['vision'] ?? null,
+            'screening_responses' => $data['screening_responses'] ?? null,
+            'screening_score'     => $data['screening_score'] ?? null,
+            'screening_band'      => $data['screening_band'] ?? null,
+            'signature_path'      => $data['signature_path'] ?? null,
+            'capture_photo_path'  => $data['capture_photo_path'] ?? null,
+            'system_ip'           => $data['system_ip'] ?? null,
+            'geo_location'        => $data['geo_location'] ?? null,
         ]));
 
         // Step 2 clears on a PASSING result (Fit OR Fit-with-restrictions).
@@ -151,6 +170,20 @@ class PurchaseWorkforceService
             'status'         => $data['status'] ?? 'Pending',
             'conducted_by'   => $data['conducted_by'] ?? null,
             'remarks'        => $data['remarks'] ?? null,
+            // Session depth (TPV parity). training_date falls back to the
+            // induction date: a session recorded on the day it ran is the common
+            // case, and leaving it null would lose when it was actually delivered.
+            'recorded_by'      => $data['recorded_by'] ?? null,
+            'trainer_name'     => $data['trainer_name'] ?? null,
+            'training_date'    => $data['training_date'] ?? ($data['induction_date'] ?? null),
+            'valid_until'      => $data['valid_until'] ?? null,
+            'duration_minutes' => $data['duration_minutes'] ?? null,
+            'topics'           => $data['topics'] ?? null,
+            'score'            => $data['score'] ?? null,
+            'passed'           => $data['passed'] ?? null,
+            'photo_path'       => $data['photo_path'] ?? null,
+            'signature_path'   => $data['signature_path'] ?? null,
+            'thumbprint_path'  => $data['thumbprint_path'] ?? null,
         ]));
 
         $this->advanceTo($worker, 3, $this->stepThreeCleared($worker->fresh()));
@@ -469,6 +502,14 @@ class PurchaseWorkforceService
         return collect($data)->only([
             'full_name', 'gender', 'dob', 'phone', 'email', 'designation',
             'id_proof_type', 'id_proof_number', 'address', 'city', 'state', 'pincode', 'status', 'notes',
+            'photo_path',
+            // TPV-parity identity + employment depth. This whitelist is what
+            // actually reaches the model, so a column added to $fillable but not
+            // listed here is accepted by the request and then silently dropped.
+            'blood_group', 'skill_category', 'trade', 'age_reason',
+            'emergency_contact', 'emergency_phone', 'bocw_number',
+            'experience_years', 'joining_date', 'exit_date',
+            'project', 'site', 'department',
         ])->filter(fn ($v) => $v !== null)->all();
     }
 
