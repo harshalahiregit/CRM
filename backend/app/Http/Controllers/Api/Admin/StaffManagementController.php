@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Shared\Note;
+use App\Services\Shared\NoteService;
 use App\Models\User;
 use App\Services\Auth\SessionService;
 use App\Services\Hr\EmployeeIdentityService;
@@ -385,6 +387,150 @@ class StaffManagementController extends Controller
      * Portal identities (client, vendor, third_party_vendor, company) stay out:
      * they are not people who work here.
      */
+    /* ── Account: how this login is actually being used ──────────────── */
+
+    /**
+     * Sign-in facts and live sessions.
+     *
+     * All of it already existed — last_login_at, last_login_ip and user_sessions
+     * are written on every login — and none of it was reachable from the staff
+     * screen, so "is this account still being used" could only be answered from
+     * the database.
+     */
+    public function account(Request $request, int $id): JsonResponse
+    {
+        $staff = $this->manageable($request->user()->tenant_id)->findOrFail($id);
+
+        return response()->json([
+            'status' => 'success',
+            'data'   => [
+                'last_login_at' => $staff->last_login_at,
+                'last_login_ip' => $staff->last_login_ip,
+                'created_at'    => $staff->created_at,
+                'status'        => $staff->status,
+                // Only live ones. A revoked session is history, and mixing the
+                // two invites somebody to revoke something already gone.
+                'sessions'      => app(SessionService::class)->listFor($staff, null),
+            ],
+        ]);
+    }
+
+    /**
+     * End one session, or all of them.
+     *
+     * Separate from toggle-status on purpose: locking somebody out of the
+     * company and signing a lost phone out are different decisions, and having
+     * only the first means the second gets done with the first.
+     */
+    public function revokeSessions(Request $request, int $id): JsonResponse
+    {
+        $actor = $request->user();
+        $staff = $this->manageable($actor->tenant_id)->findOrFail($id);
+
+        $count = app(SessionService::class)->forceLogout($staff, $actor);
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => $count === 1 ? 'One session ended.' : "{$count} sessions ended.",
+            'data'    => ['revoked' => $count],
+        ]);
+    }
+
+    /* ── Activity: what this person has done ─────────────────────────── */
+
+    /**
+     * The audit trail, both directions.
+     *
+     * What they did (actor_id) AND what was done to them (auditable), because
+     * "who changed this person's permissions" is exactly as interesting as
+     * "what did this person change", and looking in two places for one answer
+     * is how the question stops being asked.
+     */
+    public function activity(Request $request, int $id): JsonResponse
+    {
+        $tenantId = $request->user()->tenant_id;
+        $staff    = $this->manageable($tenantId)->findOrFail($id);
+
+        $rows = DB::table('audit_logs')
+            ->where('tenant_id', $tenantId)
+            ->where(function ($q) use ($staff) {
+                $q->where('actor_id', $staff->id)
+                    ->orWhere(function ($q2) use ($staff) {
+                        $q2->where('auditable_type', User::class)->where('auditable_id', $staff->id);
+                    });
+            })
+            ->orderByDesc('id')
+            ->limit(100)
+            ->get(['id', 'action', 'auditable_type', 'auditable_id', 'actor_id', 'actor_name', 'comment', 'created_at']);
+
+        // Said from the reader's point of view rather than the row's: the same
+        // entry means something different depending on which side you are on.
+        $rows->each(function ($r) use ($staff) {
+            $r->direction = (int) $r->actor_id === (int) $staff->id ? 'by_them' : 'to_them';
+            $r->subject   = class_basename((string) $r->auditable_type);
+        });
+
+        return response()->json(['status' => 'success', 'data' => $rows]);
+    }
+
+    /* ── Notes: what colleagues need to know ─────────────────────────── */
+
+    public function notes(Request $request, int $id): JsonResponse
+    {
+        $tenantId = $request->user()->tenant_id;
+        $this->manageable($tenantId)->findOrFail($id);
+
+        // Through NoteService, not Note::create — it sanitises content on the way
+        // in, and a second path into the same table is a second place for that to
+        // be forgotten.
+        return response()->json([
+            'status' => 'success',
+            'data'   => app(NoteService::class)->listForSubject(User::class, $id, $tenantId),
+        ]);
+    }
+
+    public function addNote(Request $request, int $id): JsonResponse
+    {
+        $actor    = $request->user();
+        $tenantId = $actor->tenant_id;
+        $this->manageable($tenantId)->findOrFail($id);
+
+        // `title` is required because notes.title is NOT NULL and `content` is
+        // not — the shared table treats the title as the note's identity. Widening
+        // that column for this one screen would change a contract five other
+        // modules already keep.
+        $data = $request->validate([
+            'title'   => 'required|string|max:120',
+            'content' => 'nullable|string|max:5000',
+        ]);
+
+        // The subject comes from the route, never the body, so a note cannot be
+        // retargeted at another record by editing a payload.
+        $note = app(NoteService::class)->createForSubject(User::class, $id, $data, $tenantId, $actor->id);
+
+        return response()->json(['status' => 'success', 'message' => 'Note added.', 'data' => $note], 201);
+    }
+
+    public function deleteNote(Request $request, int $id, int $noteId): JsonResponse
+    {
+        $tenantId = $request->user()->tenant_id;
+        $this->manageable($tenantId)->findOrFail($id);
+
+        // Scoped through the SUBJECT as well as the tenant, so a note id taken
+        // from another person's record does not resolve.
+        //
+        // No author check: this whole route group is behind role:admin, so every
+        // caller here is already an admin. A guard nobody can trip is a guard
+        // that only looks like protection.
+        $note = Note::where('tenant_id', $tenantId)
+            ->forSubject(User::class, $id)
+            ->findOrFail($noteId);
+
+        app(NoteService::class)->delete($note, $tenantId);
+
+        return response()->json(['status' => 'success', 'message' => 'Note removed.']);
+    }
+
     private function manageable(int $tenantId)
     {
         return User::where('tenant_id', $tenantId)->whereIn('role', ['staff', 'admin']);

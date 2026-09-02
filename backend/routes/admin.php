@@ -29,4 +29,16 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(functi
     Route::put('/staff/{id}',               [StaffManagementController::class, 'update'])->middleware('permission:staff_mgmt,edit');
     Route::patch('/staff/{id}/toggle-status', [StaffManagementController::class, 'toggleStatus'])->middleware('permission:staff_mgmt,edit');
     Route::delete('/staff/{id}',            [StaffManagementController::class, 'destroy'])->middleware('permission:staff_mgmt,delete');
+
+    // The three tabs beside Profile and Permissions. All of this data already
+    // existed — last_login_at, user_sessions, audit_logs, the shared notes table
+    // — and none of it was reachable from the staff screen.
+    Route::get('/staff/{id}/account',    [StaffManagementController::class, 'account'])->middleware('permission:staff_mgmt,view_global');
+    Route::get('/staff/{id}/activity',   [StaffManagementController::class, 'activity'])->middleware('permission:staff_mgmt,view_global');
+    Route::get('/staff/{id}/notes',      [StaffManagementController::class, 'notes'])->middleware('permission:staff_mgmt,view_global');
+    // Ending a session is not deactivating an account: signing a lost phone out
+    // and locking somebody out of the company are different decisions.
+    Route::post('/staff/{id}/sessions/revoke', [StaffManagementController::class, 'revokeSessions'])->middleware('permission:staff_mgmt,edit');
+    Route::post('/staff/{id}/notes',     [StaffManagementController::class, 'addNote'])->middleware('permission:staff_mgmt,edit');
+    Route::delete('/staff/{id}/notes/{noteId}', [StaffManagementController::class, 'deleteNote'])->middleware('permission:staff_mgmt,edit');
 });

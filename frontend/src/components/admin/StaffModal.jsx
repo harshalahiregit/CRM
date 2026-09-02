@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { X, Eye, EyeOff, RefreshCw, User, Shield, ChevronRight, ChevronDown, Check } from 'lucide-react'
+import { X, Eye, EyeOff, RefreshCw, User, Shield, ChevronRight, ChevronDown, Check, Monitor, Activity, StickyNote } from 'lucide-react'
+import { AccountTab, ActivityTab, NotesTab } from './StaffRecordTabs'
 import api from '@/lib/api'
 import { useAuth } from '@/context/AuthContext'
 
@@ -374,6 +375,14 @@ export default function StaffModal({ staff, designations, departments, onClose, 
           {[
             { id:'profile', label:'Profile', icon:User },
             { id:'permissions', label:`Permissions${totalGranted?` (${totalGranted})`:''}`, icon:Shield },
+            // Only for a record that exists. A new staff member has no sign-in
+            // history, no audit trail and nothing to note, so offering the tabs
+            // would offer three empty screens.
+            ...(staff?.id ? [
+              { id:'account',  label:'Account',  icon:Monitor },
+              { id:'activity', label:'Activity', icon:Activity },
+              { id:'notes',    label:'Notes',    icon:StickyNote },
+            ] : []),
           ].map(({id,label,icon:Icon})=>(
             <button key={id} onClick={()=>setActiveTab(id)}
               className="flex items-center gap-2 px-6 py-3.5 text-sm font-bold transition-all"
@@ -603,6 +612,12 @@ export default function StaffModal({ staff, designations, departments, onClose, 
             </>)}
 
             {/* ═══════════════ PERMISSIONS TAB ═══════════════ */}
+            {/* These three read and write on their own — they are not part of the
+                profile form, so nothing here is saved by the Save button. */}
+            {activeTab==='account'  && <AccountTab  staffId={staff?.id} open />}
+            {activeTab==='activity' && <ActivityTab staffId={staff?.id} open />}
+            {activeTab==='notes'    && <NotesTab    staffId={staff?.id} open />}
+
             {activeTab==='permissions' && (<>
 
               {/* Role template + search + actions row */}
@@ -790,7 +805,7 @@ export default function StaffModal({ staff, designations, departments, onClose, 
             <button type="button" onClick={onClose}
               className="flex-1 py-3 rounded-xl text-sm font-bold"
               style={{ background:'var(--bg-input)', border:'1px solid var(--border)', color:'var(--text-muted)' }}>
-              Cancel
+              {['profile','permissions'].includes(activeTab) ? 'Cancel' : 'Close'}
             </button>
             {activeTab==='profile' && (
               <button type="button" onClick={()=>setActiveTab('permissions')}
@@ -799,6 +814,10 @@ export default function StaffModal({ staff, designations, departments, onClose, 
                 Next: Permissions <ChevronRight size={15}/>
               </button>
             )}
+            {/* Account, Activity and Notes write on their own. Showing Save there
+                would imply it saves that tab, which it does not — it submits the
+                profile form. */}
+            {['profile','permissions'].includes(activeTab) && (
             <button type="submit" disabled={loading}
               className="flex-1 py-3 rounded-xl text-sm font-bold text-white"
               style={{
@@ -807,6 +826,7 @@ export default function StaffModal({ staff, designations, departments, onClose, 
               }}>
               {loading?'Saving…':staff?'Update Staff':'Create Staff Member'}
             </button>
+            )}
           </div>
         </form>
       </div>
