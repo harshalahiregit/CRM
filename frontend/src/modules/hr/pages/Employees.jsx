@@ -281,6 +281,25 @@ export default function Employees() {
                   <div className="px-2.5 py-2 rounded-xl" style={{ background:'var(--bg-input)' }}><p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Department</p><p className="text-xs font-bold mt-0.5" style={{ color:deptColor(emp.department) }}>{emp.department||'—'}</p></div>
                   <div className="px-2.5 py-2 rounded-xl" style={{ background:'var(--bg-input)' }}><p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Joined</p><p className="text-xs font-bold mt-0.5" style={{ color:'var(--text-h)' }}>{fmtDate(emp.joining_date)}</p></div>
                   <div className="px-2.5 py-2 rounded-xl col-span-2" style={{ background:'var(--bg-input)' }}><p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Reporting Manager</p><p className="text-xs font-semibold mt-0.5" style={{ color:'var(--text-h)' }}>{emp.reporting_manager_name||'—'}</p></div>
+                  {/* Same control as the list view. Whichever view somebody works in,
+                      "can this person clock in on their phone" has to be answerable and
+                      changeable there — a toggle that exists in only one of two views is
+                      the same as missing for anybody using the other. */}
+                  <div className="px-2.5 py-2 rounded-xl col-span-2 flex items-center gap-2" style={{ background:'var(--bg-input)' }}>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Attendance app</p>
+                      <p className="text-xs font-bold mt-0.5" style={{ color: emp.app_login_enabled ? '#34d399' : 'var(--text-muted)' }}>
+                        {emp.app_login_enabled ? 'Can sign in' : 'No access'}
+                      </p>
+                    </div>
+                    <button type="button" onClick={()=>toggleAppAccess(emp)} disabled={appBusy===emp.id}
+                      title={emp.app_login_enabled ? 'Revoke attendance-app access' : 'Grant attendance-app access'}
+                      className="w-11 h-6 rounded-full relative transition-all shrink-0"
+                      style={{ background: emp.app_login_enabled ? '#10b981' : 'var(--border)', opacity: appBusy===emp.id ? 0.6 : 1 }}>
+                      <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all"
+                        style={{ left: emp.app_login_enabled ? '22px' : '2px' }}/>
+                    </button>
+                  </div>
                 </div>
                 <div className="flex gap-2 mt-auto">
                   <button onClick={()=>openProfile(emp.id)} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}><Eye size={12}/> View Profile</button>

@@ -54,9 +54,24 @@ export default function MyAttendanceCard({ compact = false }) {
   const time = (v) => (v ? String(v).slice(11, 16) || String(v).slice(0, 5) : '—')
 
   if (state.loading) {
+    // A skeleton the same shape and height as the loaded card, so the button
+    // does not pop in and shove the page around. The request itself is fast —
+    // measured at well under 100ms — but on a cold dev server the page's own
+    // modules compile first, and a one-line box collapsing into a three-line
+    // card reads as "slow" far more than the wait actually is.
     return (
       <div className="card-3d" style={{ padding: '18px 20px' }}>
-        <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Loading your attendance…</div>
+        <div className="flex items-center gap-2 mb-2">
+          <Clock size={15} style={{ color: 'var(--text-muted)' }} />
+          <span className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>Attendance</span>
+        </div>
+        <div className="flex gap-2" aria-hidden="true">
+          {[96, 96].map((w, i) => (
+            <div key={i} className="rounded-xl animate-pulse"
+              style={{ width: w, height: 34, background: 'var(--bg-input)' }} />
+          ))}
+        </div>
+        <span className="sr-only">Loading your attendance…</span>
       </div>
     )
   }

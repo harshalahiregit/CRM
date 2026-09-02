@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Users, Briefcase, CheckSquare, FolderOpen, Receipt, Truck, LifeBuoy,
   BarChart2, Settings, ChevronLeft, ChevronRight, LogOut, User, Zap,
   Package, UserCheck, CalendarDays, FileText, Rocket, Building2, ClipboardList,
-  ChevronDown, Shield, UserCog, IndianRupee, Banknote, FileSignature, CreditCard, FileX, ShoppingBag,
+  ChevronDown, Shield, UserCog, IndianRupee, Banknote, CalendarCheck, FileSignature, CreditCard, FileX, ShoppingBag,
   UserPlus, Link2, RefreshCw, LayoutTemplate, Globe, TrendingUp, Landmark, BookText, Scale,
   ArrowLeftRight, BookOpen, Boxes, PackagePlus, PackageMinus, Warehouse, History, Network, FileQuestion,
   BarChart3, Activity, Layers3, ScanLine, ClipboardCheck, ShoppingCart, Hourglass, Wrench,
@@ -100,6 +100,11 @@ const HR_RECORDS_ITEMS = [
   // 'Attendance Reports', not 'Reports' — SangoeTrack already has a Reports
   // entry, and this one is specifically the payroll-facing view.
   { label: 'Attendance Reports', path: '/app/hr/attendance-reports', icon: BarChart3 },
+  // The CRM's OWN attendance register — every employee, every day, editable.
+  // It has existed at /app/hr/attendance all along with no way to reach it from
+  // the nav: the only 'Attendance' entry points at SangoeTrack's copy below, so
+  // the native one was unreachable and looked missing.
+  { label: 'Attendance Register', path: '/app/hr/attendance', icon: CalendarCheck },
 ]
 
 // Flat list of every HR leaf — used only for the collapsed icon rail.
