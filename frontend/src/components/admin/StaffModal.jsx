@@ -52,90 +52,10 @@ const ACTION_LABELS = {
   approve:'Approve', view_reports:'View Reports',
 }
 
-// ── Role Templates (pre-fill permissions when role selected) ─────────────────
-const ROLE_TEMPLATES = {
-  employee: {
-    contacts:['view_own'], deals:['view_own'], tasks:['view_own','create','edit'],
-    projects:['view_own'], expenses:['view_own','create'], tickets:['view_own','create'],
-    appointments:['view'],
-  },
-  hr_recruiter: {
-    contacts:['view_own','view_global','create','edit'],
-    tasks:['view_own','view_global','create','edit'],
-    hr_recruitment:['view_own','view_global','create','edit','delete'],
-    hr_checklists:['view_own','view_global','create','edit'],
-    reports:['view_global'], appointments:['view','create','edit'],
-    surveys:['view_global','create'], goals:['view_global'],
-  },
-  hr_executive: {
-    contacts:['view_own','view_global','create','edit'],
-    tasks:['view_own','view_global','create','edit'],
-    hr_recruitment:['view_own','view_global','create','edit','delete'],
-    hr_checklists:['view_own','view_global','create','edit','delete'],
-    hr_settings:['view_global','create','edit'],
-    reports:['view_global'], staff_mgmt:['view_global'],
-    appointments:['view','create','edit'], surveys:['view_global','create'],
-    goals:['view_global','create'],
-  },
-  hiring_manager: {
-    contacts:['view_own'], tasks:['view_own','view_global','create','edit'],
-    hr_recruitment:['view_own','view_global','create','edit'],
-    hr_checklists:['view_own','view_global'],
-    reports:['view_global'], appointments:['view','create','edit','approve'],
-  },
-  team_lead: {
-    contacts:['view_own','view_global','create','edit'],
-    deals:['view_own','view_global','create','edit'],
-    tasks:['view_own','view_global','create','edit'],
-    projects:['view_own','view_global','create','edit'],
-    reports:['view_global'], appointments:['view','create','edit'],
-    tickets:['view_own','view_global','create','edit'],
-    goals:['view_global','create'],
-  },
-  senior_executive: {
-    contacts:['view_own','view_global','create','edit'],
-    deals:['view_own','view_global','create','edit'],
-    tasks:['view_own','view_global','create','edit'],
-    projects:['view_own','view_global','create','edit'],
-    invoices:['view_own','view_global','create','edit'],
-    estimates:['view_own','view_global','create','edit'],
-    expenses:['view_own','view_global','create','edit'],
-    credit_notes:['view_own','view_global'],
-    customers:['view_own','view_global','create','edit'],
-    reports:['view_global'], appointments:['view','create','edit'],
-    tickets:['view_own','view_global','create','edit'],
-  },
-  department_head: {
-    contacts:['view_own','view_global','create','edit','delete'],
-    deals:['view_own','view_global','create','edit','delete'],
-    tasks:['view_own','view_global','create','edit','delete'],
-    projects:['view_own','view_global','create','edit','delete'],
-    invoices:['view_own','view_global','create','edit'],
-    estimates:['view_own','view_global','create','edit'],
-    expenses:['view_own','view_global','create','edit'],
-    credit_notes:['view_own','view_global','create'],
-    customers:['view_own','view_global','create','edit'],
-    vendors:['view_own','view_global','create','edit'],
-    reports:['view_global'], email_templates:['view_global'],
-    appointments:['view','create','edit','delete','approve','view_reports'],
-    tickets:['view_own','view_global','create','edit','delete'],
-    goals:['view_global','create','edit'], surveys:['view_global','create'],
-    staff_mgmt:['view_global'],
-  },
-  project_manager: {
-    contacts:['view_own','view_global','create','edit'],
-    deals:['view_own','view_global'],
-    tasks:['view_own','view_global','create','edit','delete'],
-    projects:['view_own','view_global','create','edit','delete'],
-    invoices:['view_own','view_global','create'],
-    estimates:['view_own','view_global','create','edit'],
-    expenses:['view_own','view_global','create','edit'],
-    reports:['view_global'], appointments:['view','create','edit','approve'],
-    tickets:['view_own','view_global','create','edit'],
-    goals:['view_global','create','edit'],
-    surveys:['view_global'],
-  },
-}
+// Role permission templates used to live here, keyed by internal_role, while
+// the role dropdown was generated separately on the server from a DIFFERENT
+// list. They are staff_roles records now — see StaffRoleTemplate.php for the
+// seeded set — so adding or changing a role is data rather than a deploy.
 
 // ── Password generator ──────────────────────────────────────────────────────
 const generatePassword = () => {
@@ -145,7 +65,7 @@ const generatePassword = () => {
 
 const EMPTY_FORM = {
   first_name:'', last_name:'', email:'', phone:'', password:'',
-  internal_role:'', department:'', designation:'', status:'active',
+  internal_role:'', staff_role_id:'', department:'', designation:'', status:'active',
   is_moderator:false, use_firstname_as_username:false,
   profile_group:'Standard Staff', priority:1,
   specialty:'', bio:'', nb_type:'',
@@ -159,7 +79,10 @@ const EMPTY_FORM = {
   send_welcome_email:true,
 }
 
-export default function StaffModal({ staff, designations, departments, onClose, onSuccess }) {
+// `designations` is gone from the signature: roles are fetched here from
+// /admin/roles now, so the parent no longer has to pass a list that came from a
+// different source than the permissions did.
+export default function StaffModal({ staff, departments, onClose, onSuccess }) {
   const [activeTab,     setActiveTab]     = useState('profile')
   const { user: actor } = useAuth()
 
@@ -177,7 +100,14 @@ export default function StaffModal({ staff, designations, departments, onClose, 
   const [errors,        setErrors]        = useState({})
   const [loading,       setLoading]       = useState(false)
   const [showPassword,  setShowPassword]  = useState(false)
-  const [roleTemplate,  setRoleTemplate]  = useState('')
+  /**
+   * Roles come from the server now.
+   *
+   * They used to be a ROLE_TEMPLATES map in this file while the role DROPDOWN
+   * was generated separately by the backend — so the two disagreed, and adding a
+   * role meant editing this file and deploying. One list, fetched once.
+   */
+  const [roles,         setRoles]         = useState([])
   const [permSearch,    setPermSearch]    = useState('')
   const [expandedGroup, setExpandedGroup] = useState(null)
 
@@ -189,6 +119,16 @@ export default function StaffModal({ staff, designations, departments, onClose, 
     { label:'HR Module',    keys:['hr_recruitment','hr_checklists','hr_settings'] },
     { label:'System',       keys:['reports','email_templates','affiliates','staff_mgmt'] },
   ]
+
+  useEffect(() => {
+    let cancelled = false
+    api.get('/admin/roles')
+      // A failed fetch leaves the selector empty rather than breaking the form:
+      // somebody can still create a staff member without picking a role.
+      .then(r => { if (!cancelled) setRoles(r?.data?.data?.roles || []) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     if (staff) {
@@ -217,6 +157,7 @@ export default function StaffModal({ staff, designations, departments, onClose, 
         member_departments:       meta.member_departments || [],
         permissions:              meta.permissions || {},
         administrator:            staff?.role === 'admin',
+        staff_role_id:            staff.staff_role_id || '',
         send_welcome_email:       meta.send_welcome_email !== false,
       })
     }
@@ -249,13 +190,25 @@ export default function StaffModal({ staff, designations, departments, onClose, 
     setFormData(prev => ({...prev, permissions:{...prev.permissions, [module]:all}}))
   }
 
-  const applyRoleTemplate = (role) => {
-    setRoleTemplate(role)
-    if (role && ROLE_TEMPLATES[role]) {
-      setFormData(prev => ({...prev, permissions: ROLE_TEMPLATES[role]}))
-    } else if (!role) {
-      setFormData(prev => ({...prev, permissions:{}}))
-    }
+  /**
+   * Choosing a role assigns it and pre-fills the grid from ITS definition.
+   *
+   * The permissions come from the role record, so what is shown here is what
+   * the server will actually enforce. The grid stays editable afterwards —
+   * anything changed becomes a personal override for that module, which is how
+   * "the Accounts role plus one extra thing" gets expressed.
+   */
+  const applyRole = (roleId) => {
+    const role = roles.find(r => String(r.id) === String(roleId))
+
+    setFormData(prev => ({
+      ...prev,
+      staff_role_id: roleId ? Number(roleId) : '',
+      // The slug is what the server writes to internal_role anyway; keeping the
+      // form in step means the profile field never shows something stale.
+      internal_role: role?.slug || prev.internal_role,
+      permissions:   role ? (role.permissions || {}) : {},
+    }))
   }
 
   const selectAllPermissions = () => {
@@ -266,7 +219,6 @@ export default function StaffModal({ staff, designations, departments, onClose, 
 
   const clearAllPermissions = () => {
     setFormData(prev => ({...prev, permissions:{}}))
-    setRoleTemplate('')
   }
 
   const toggleDept = (dept) => {
@@ -287,6 +239,7 @@ export default function StaffModal({ staff, designations, departments, onClose, 
     const payload  = {
       name: fullName, email: formData.email, phone: formData.phone,
       password: formData.password, internal_role: formData.internal_role,
+      staff_role_id: formData.staff_role_id || null,
       department: formData.department, designation: formData.designation,
       status: formData.status,
       administrator: formData.administrator,
@@ -543,11 +496,17 @@ export default function StaffModal({ staff, designations, departments, onClose, 
               {/* Designation + Department */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label style={lbl}>Designation / Role *</label>
-                  <select value={formData.internal_role} onChange={e=>set('internal_role',e.target.value)} required style={inp('internal_role')}>
+                  <label style={lbl}>Role *</label>
+                  {/* One selector, not two. This used to set internal_role while a separate
+                      "Role Template" dropdown on the Permissions tab set the permissions —
+                      from a different list, so the two disagreed. */}
+                  <select value={formData.staff_role_id || ''} onChange={e=>applyRole(e.target.value)} required style={inp('internal_role')}>
                     <option value="">Select Role</option>
-                    {designations.map(d=><option key={d.value} value={d.value}>{d.label}</option>)}
+                    {roles.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
                   </select>
+                  <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+                    Sets the permissions below. You can still change any of them for this person.
+                  </p>
                   {errors.internal_role&&<p className="text-[10px] mt-1" style={{ color:'#ef4444' }}>{errors.internal_role[0]}</p>}
                 </div>
                 <div>
@@ -624,18 +583,28 @@ export default function StaffModal({ staff, designations, departments, onClose, 
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label style={lbl}>Role Template</label>
-                    <select value={roleTemplate} onChange={e=>applyRoleTemplate(e.target.value)} style={inp('role_template')}>
-                      <option value="">— Select to auto-fill —</option>
-                      <option value="employee">Employee</option>
-                      <option value="hr_recruiter">HR Recruiter</option>
-                      <option value="hr_executive">HR Executive</option>
-                      <option value="hiring_manager">Hiring Manager</option>
-                      <option value="team_lead">Team Lead</option>
-                      <option value="senior_executive">Senior Executive</option>
-                      <option value="department_head">Department Head</option>
-                      <option value="project_manager">Project Manager</option>
-                    </select>
+                    <label style={lbl}>Role</label>
+                    {/* Not a second selector. The role is chosen on the Profile tab; this says
+                        which one is in force and offers a way back to its defaults after the
+                        grid below has been edited. */}
+                    {(() => {
+                      const assigned = roles.find(r => String(r.id) === String(formData.staff_role_id))
+                      return (
+                        <div className="flex items-center gap-2 rounded-xl"
+                          style={{ padding:'9px 11px', background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+                          <span className="text-xs font-bold" style={{ color: assigned ? 'var(--text-h)' : 'var(--text-muted)' }}>
+                            {assigned ? assigned.name : 'No role selected'}
+                          </span>
+                          {assigned && (
+                            <button type="button" onClick={()=>applyRole(assigned.id)}
+                              className="ml-auto text-[11px] font-semibold"
+                              style={{ color:'#7C3AED' }}>
+                              Reset to defaults
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </div>
                   <div>
                     <label style={lbl}>Search Modules</label>

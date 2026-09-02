@@ -36,9 +36,17 @@ class StaffPermissionService
     private const BYPASS_ROLES = ['admin'];
 
     /** The grid as stored, sanitised. Never trusts what is in the column. */
+    /**
+     * What this user may do, role included.
+     *
+     * Resolved through StaffRoleService so there is ONE answer to this question.
+     * A user with no role — which is everybody who existed before roles became
+     * records — resolves to their own grid exactly as before, so nothing about
+     * an existing account changes.
+     */
     public function grantsFor(User $user): array
     {
-        return StaffPermission::sanitise($user->meta['permissions'] ?? []);
+        return app(StaffRoleService::class)->effectiveGrants($user);
     }
 
     public function bypasses(User $user): bool

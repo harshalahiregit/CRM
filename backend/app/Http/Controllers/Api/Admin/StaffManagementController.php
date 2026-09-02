@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Shared\Note;
 use App\Services\Shared\NoteService;
+use App\Models\StaffRole;
 use App\Models\User;
 use App\Services\Auth\SessionService;
+use App\Services\Auth\StaffRoleService;
 use App\Services\Hr\EmployeeIdentityService;
 use Illuminate\Support\Facades\DB;
 use App\Support\Hr\StaffPermission;
@@ -171,6 +173,10 @@ class StaffManagementController extends Controller
             'phone'         => 'nullable|string|max:20',
             'password'      => ['required', Password::min(8)],
             'internal_role' => 'required|string|max:50',
+            // Optional so the old internal_role-only payload still works. When a
+            // role IS sent it wins, and its slug is written to internal_role so
+            // the two can never disagree.
+            'staff_role_id' => 'nullable|integer|exists:staff_roles,id',
             'department'    => 'nullable|string|max:100',
             'designation'   => 'nullable|string|max:100',
             'status'        => 'required|in:active,inactive,suspended',
@@ -213,6 +219,17 @@ class StaffManagementController extends Controller
             'meta'          => $this->sanitiseMeta($request->meta ?? []),
         ]);
 
+            // Inside the transaction: a login created without the role it was
+            // meant to have is the same half-record the transaction exists to
+            // prevent.
+            if ($request->filled('staff_role_id')) {
+                $role = StaffRole::where('tenant_id', $tenantId)->find($request->staff_role_id);
+                if ($role) {
+                    app(StaffRoleService::class)->assign($staff, $role);
+                    $staff->refresh();
+                }
+            }
+
             $employee = app(EmployeeIdentityService::class)->provisionEmployeeFor($staff, [
                 'department'  => $request->department,
                 'designation' => $request->designation,
@@ -251,6 +268,7 @@ class StaffManagementController extends Controller
             'phone'         => 'nullable|string|max:20',
             'password'      => ['nullable', Password::min(8)],
             'internal_role' => 'sometimes|required|string|max:50',
+            'staff_role_id' => 'nullable|integer|exists:staff_roles,id',
             'department'    => 'nullable|string|max:100',
             'designation'   => 'nullable|string|max:100',
             'status'        => 'sometimes|required|in:active,inactive,suspended',
@@ -277,6 +295,23 @@ class StaffManagementController extends Controller
             'department', 'designation', 'status',
             'mail_from_name', 'mail_from_email',
         ]);
+
+        // The permission role. Assigned through the service so internal_role is
+        // written from its slug in the same breath — a user whose role says
+        // Accounts but whose internal_role says otherwise would be able to
+        // approve advances or not depending on which check happened to run.
+        if ($request->has('staff_role_id')) {
+            $role = $request->filled('staff_role_id')
+                ? StaffRole::where('tenant_id', $staff->tenant_id)->find($request->staff_role_id)
+                : null;
+
+            app(StaffRoleService::class)->assign($staff, $role);
+            $staff->refresh();
+
+            // Already written by the service; letting it through again would
+            // overwrite the slug with whatever the form happened to hold.
+            unset($updateData['internal_role']);
+        }
 
         // Promotion and demotion. Only an admin may change this at all, and the
         // field is read from the request only after that check — never merged in
@@ -623,64 +658,30 @@ class StaffManagementController extends Controller
     /**
      * Get available designations/internal roles
      */
+    /**
+     * The role list for the staff form.
+     *
+     * Backed by staff_roles now. It used to return a hardcoded array of seven
+     * labels while the PERMISSION templates lived in a JavaScript map with eight
+     * different keys — so 'junior_executive' pre-filled nothing and two templates
+     * could not be reached at all. One list, from one place, is the fix.
+     *
+     * The shape is unchanged (value + label) so existing callers keep working;
+     * `id` is added for anything that wants to assign the role properly.
+     */
     public function designations(Request $request): JsonResponse
     {
-        try {
-            \Log::info('Designations endpoint called');
-            
-            $tenantId = $request->user()->tenant_id;
+        $roles = app(StaffRoleService::class)->forTenant((int) $request->user()->tenant_id);
 
-            // Get unique internal roles from existing staff
-            $existingRoles = $this->manageable($tenantId)
-                ->whereNotNull('internal_role')
-                ->distinct()
-                ->pluck('internal_role')
-                ->toArray();
-
-            // Predefined roles
-            $predefinedRoles = [
-                'hr_executive' => 'HR Executive',
-                'hiring_manager' => 'Hiring Manager',
-                'team_lead' => 'Team Lead',
-                'project_manager' => 'Project Manager',
-                'department_head' => 'Department Head',
-                'senior_executive' => 'Senior Executive',
-                'junior_executive' => 'Junior Executive',
-            ];
-
-            // Merge existing roles with predefined ones
-            $allRoles = [];
-            foreach ($predefinedRoles as $key => $label) {
-                $allRoles[] = ['value' => $key, 'label' => $label];
-            }
-
-            // Add any custom roles that exist in the database
-            foreach ($existingRoles as $role) {
-                if (!isset($predefinedRoles[$role])) {
-                    $allRoles[] = [
-                        'value' => $role,
-                        'label' => ucwords(str_replace('_', ' ', $role)),
-                    ];
-                }
-            }
-
-            \Log::info('Designations fetched', ['count' => count($allRoles)]);
-
-            return response()->json([
-                'status' => 'success',
-                'data' => $allRoles,
-            ]);
-        } catch (\Exception $e) {
-            \Log::error('Designations endpoint error', [
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            
-            return response()->json([
-                'status' => 'error',
-                'message' => $e->getMessage(),
-            ], 500);
-        }
+        return response()->json([
+            'status' => 'success',
+            'data'   => $roles->map(fn ($r) => [
+                'id'        => $r->id,
+                'value'     => $r->slug,
+                'label'     => $r->name,
+                'is_system' => $r->is_system,
+            ])->values(),
+        ]);
     }
 
     /**

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\Admin\StaffManagementController;
+use App\Http\Controllers\Api\Admin\StaffRoleController;
 use Illuminate\Support\Facades\Route;
 
 // ── Admin Only Routes (Sanctum + role:admin) ────────────────────────────
@@ -20,6 +21,14 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(functi
     // the point: it proves the wiring end to end without altering anyone's
     // access. Modules with real staff traffic move across afterwards, one at a
     // time, each on its own review.
+    // ── Roles ───────────────────────────────────────────────────────────────
+    // Roles as records, the old CRM's way. The list seeds a tenant's standard
+    // roles on first read, so nothing has to migrate a workspace into having them.
+    Route::get('/roles',            [StaffRoleController::class, 'index'])->middleware('permission:staff_mgmt,view_global');
+    Route::post('/roles',           [StaffRoleController::class, 'store'])->middleware('permission:staff_mgmt,create');
+    Route::put('/roles/{id}',       [StaffRoleController::class, 'update'])->middleware('permission:staff_mgmt,edit');
+    Route::delete('/roles/{id}',    [StaffRoleController::class, 'destroy'])->middleware('permission:staff_mgmt,delete');
+
     Route::get('/staff/stats',              [StaffManagementController::class, 'stats'])->middleware('permission:staff_mgmt,view_global');
     Route::get('/staff',                    [StaffManagementController::class, 'index'])->middleware('permission:staff_mgmt,view_global');
     Route::get('/staff/designations',       [StaffManagementController::class, 'designations'])->middleware('permission:staff_mgmt,view_global');

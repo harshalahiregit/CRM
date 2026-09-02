@@ -15,7 +15,7 @@ class User extends Authenticatable
     protected $fillable = [
         'tenant_id', 'external_company_id', 'name', 'email', 'password',
         'mail_from_name', 'mail_from_email',
-        'role', 'internal_role', 'department', 'status',
+        'role', 'internal_role', 'staff_role_id', 'department', 'status',
         'vendor_type', 'tpv_type', 'access_expires_at',
         'phone', 'company', 'designation', 'avatar', 'meta', 'emails_enabled',
         'last_login_at', 'last_login_ip',
@@ -49,6 +49,17 @@ class User extends Authenticatable
     /* ── Role helpers ───────────────────────── */
     public function isAdmin():            bool { return $this->role === 'admin'; }
     public function isStaff():            bool { return $this->role === 'staff'; }
+    /**
+     * The assigned permission role, if any.
+     *
+     * Nullable on purpose and staying that way: everybody who existed before
+     * roles were records has none, and keeps working on their own grid.
+     */
+    public function staffRole()
+    {
+        return $this->belongsTo(StaffRole::class, 'staff_role_id');
+    }
+
     public function isHRExecutive():      bool { return $this->role === 'staff' && $this->internal_role === 'hr_executive'; }
     public function isHiringManager():    bool { return $this->role === 'staff' && $this->internal_role === 'hiring_manager'; }
     // No isVendor(): a Purchase Vendor is a PurchaseVendor, never a User. The helper

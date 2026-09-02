@@ -454,7 +454,6 @@ export default function StaffManagementPage() {
       {showStaffModal && (
         <StaffModal
           staff={selectedStaff}
-          designations={designations}
           departments={departments}
           onClose={() => { setShowStaffModal(false); setSelectedStaff(null) }}
           onSuccess={() => {
