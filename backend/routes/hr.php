@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\Hr\OnboardingController;
 use App\Http\Controllers\Api\Hr\EmployeeAssetController;
 use App\Http\Controllers\Api\Hr\EmployeeController;
 use App\Http\Controllers\Api\Hr\AttendanceController;
+use App\Http\Controllers\Api\Hr\MyAttendanceController;
 use App\Http\Controllers\Api\Hr\SangoeTrackSyncController;
 use App\Http\Controllers\Api\Hr\ExitInterviewController;
 use App\Http\Controllers\Api\Hr\OrganizationController;
@@ -450,6 +451,17 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/attendance/export',         [AttendanceController::class, 'export']);
     Route::get('/attendance',                [AttendanceController::class, 'index']);
     Route::post('/attendance',               [AttendanceController::class, 'storeManual']);
+    // ── Self service ────────────────────────────────────────────────────
+    // Clocking YOURSELF in, from the CRM dashboard or the HR module. No
+    // employee_id is accepted: the employee is resolved from the token, so these
+    // can only ever touch the caller's own record. Being a linked employee is the
+    // authorisation — nobody needs a grant to be themselves.
+    Route::get('/me/attendance/today',       [MyAttendanceController::class, 'today']);
+    Route::post('/me/attendance/check-in',   [MyAttendanceController::class, 'checkIn']);
+    Route::post('/me/attendance/check-out',  [MyAttendanceController::class, 'checkOut']);
+    Route::post('/me/attendance/break-start',[MyAttendanceController::class, 'breakStart']);
+    Route::post('/me/attendance/break-end',  [MyAttendanceController::class, 'breakEnd']);
+
     Route::post('/attendance/check-in',      [AttendanceController::class, 'checkIn']);
     Route::post('/attendance/check-out',     [AttendanceController::class, 'checkOut']);
     Route::post('/attendance/break-start',   [AttendanceController::class, 'breakStart']);
