@@ -238,7 +238,11 @@ const PurchaseComplianceRegister = lazy(() => import('@/modules/purchase/pages/P
 const PurchaseNcr = lazy(() => import('@/modules/purchase/pages/PurchaseNcr'))
 const PurchaseCapaRegister = lazy(() => import('@/modules/purchase/pages/PurchaseCapaRegister'))
 const PurchaseIncidents = lazy(() => import('@/modules/purchase/pages/PurchaseIncidents'))
-const PurchaseApprovals = lazy(() => import('@/modules/purchase/pages/PurchaseApprovals'))
+// Replaces the former PurchaseApprovals page, whose modals closed on backdrop
+// click -- the one interaction rule this codebase is explicit about. Same
+// endpoint (/purchase/approval-requests); adds the server-side vendor filter the
+// controller already accepted and nothing used.
+const PurchaseApprovalRegister = lazy(() => import('@/modules/purchase/pages/PurchaseApprovalRegister'))
 const PurchaseAnalytics = lazy(() => import('@/modules/purchase/pages/PurchaseAnalytics'))
 const PurchaseDocumentVault = lazy(() => import('@/modules/purchase/pages/PurchaseDocumentVault'))
 const PurchaseCommunications = lazy(() => import('@/modules/purchase/pages/PurchaseCommunications'))
@@ -274,6 +278,9 @@ const PurchaseSafetyEngagement = lazy(() => import('@/modules/purchase/pages/Pur
 const PurchaseSiteRegisters = lazy(() => import('@/modules/purchase/pages/PurchaseSiteRegisters'))
 const PurchaseEvidenceLocker = lazy(() => import('@/modules/purchase/pages/PurchaseEvidenceLocker'))
 const PurchaseGovernanceDashboard = lazy(() => import('@/modules/purchase/pages/PurchaseGovernanceDashboard'))
+const PurchaseAuthorityMatrix = lazy(() => import('@/modules/purchase/pages/PurchaseAuthorityMatrix'))
+const PurchasePrequalification = lazy(() => import('@/modules/purchase/pages/PurchasePrequalification'))
+const PurchaseRiskDueDiligence = lazy(() => import('@/modules/purchase/pages/PurchaseRiskDueDiligence'))
 const PurchaseCompetency = lazy(() => import('@/modules/purchase/pages/PurchaseCompetency'))
 // Purchase Kickoff — Purchase-owned pages on /api/purchase/kickoff (no TPV/shared reuse).
 const PurchaseKickoffMeetings = lazy(() => import('@/modules/purchase/pages/PurchaseKickoffMeetings'))
@@ -663,7 +670,7 @@ export default function AppRoutes() {
           <Route path="capa" element={<S><PurchaseCapaRegister /></S>} />
           <Route path="incidents" element={<S><PurchaseIncidents /></S>} />
           {/* Central approval register (§12) — /api/purchase/approval-requests */}
-          <Route path="approval-requests" element={<S><PurchaseApprovals /></S>} />
+          <Route path="approval-requests" element={<S><PurchaseApprovalRegister /></S>} />
           <Route path="inspections" element={<S><PurchaseInspections /></S>} />
           <Route path="violations" element={<S><PurchaseViolations /></S>} />
           <Route path="vpi" element={<S><PurchasePerformanceIndex /></S>} />
@@ -713,6 +720,14 @@ export default function AppRoutes() {
           <Route path="evidence" element={<S><PurchaseEvidenceLocker /></S>} />
           {/* Counts Purchase's OWN registers, not TPV's — see the page header. */}
           <Route path="governance" element={<S><PurchaseGovernanceDashboard /></S>} />
+          {/* The tenant's sign-off org chart. Unlike the dashboard this alias IS
+              legitimate: it holds no register rows, so "Safety owns permit
+              approval" is equally true of both modules. */}
+          <Route path="authority-matrix" element={<S><PurchaseAuthorityMatrix /></S>} />
+          {/* Cross-vendor registers. These answer "who has NOT been assessed",
+              which the per-vendor workspace tabs structurally cannot. */}
+          <Route path="prequalification" element={<S><PurchasePrequalification /></S>} />
+          <Route path="risk" element={<S><PurchaseRiskDueDiligence /></S>} />
           {/* Workforce Competency & Skill Matrix — "No Competency, No Work" (mirror of TPV §15). */}
           <Route path="competency" element={<S><PurchaseCompetency /></S>} />
           {/* Kickoff Meetings — Purchase-owned pages on /api/purchase/kickoff (no TPV reuse) */}

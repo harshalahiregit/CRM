@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\Purchase\PurchaseGateController;
 use App\Http\Controllers\Api\Purchase\PurchasePermitController;
+use App\Http\Controllers\Api\Purchase\PurchaseRegisterController;
 use App\Http\Controllers\Api\Purchase\PurchaseWorkPackageController;
 use App\Http\Controllers\Api\Purchase\PurchaseRequestController;
 use App\Http\Controllers\Api\Purchase\PurchaseOrderController;
@@ -294,6 +295,14 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     // be consulted, since these are static segments.
     Route::get('/workforce/medicals',                 [PurchaseWorkforceAdminController::class, 'medicals']);
     Route::get('/workforce/trainings',                [PurchaseWorkforceAdminController::class, 'trainings']);
+
+    // ── Cross-vendor registers ─────────────────────────────────────────────
+    // Purchase had prequalification / risk / due diligence one vendor at a time,
+    // which answers "how did this vendor score?" but never "who has not been
+    // assessed yet?" — the question a register exists for.
+    Route::get('/registers/prequalification', [PurchaseRegisterController::class, 'prequalification']);
+    Route::get('/registers/risk',             [PurchaseRegisterController::class, 'risk']);
+    Route::get('/registers/due-diligence',    [PurchaseRegisterController::class, 'dueDiligence']);
 
     // ── Site-wide HSSE registers, shared with TPV ──────────────────────────
     //

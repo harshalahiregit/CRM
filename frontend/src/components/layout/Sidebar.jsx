@@ -223,9 +223,21 @@ const PURCHASE_SUB_ITEMS = [
   { label: 'Dashboard',        path: '/app/purchase/dashboard',     icon: LayoutDashboard },
   { label: 'Items',            path: '/app/purchase/catalog',       icon: Package },
   { label: 'Vendors',          path: '/app/purchase/vendors',       icon: Truck },
+  // Vendor lifecycle. Every one of these was fully built and routed with NO nav
+  // entry, so the pages existed and nobody could reach them — which is why the
+  // module read as half-finished when most of it was already there.
+  { label: 'Onboarding',       path: '/app/purchase/onboarding',    icon: Rocket },
+  { label: 'Prequalification', path: '/app/purchase/prequalification', icon: ClipboardCheck },
+  { label: 'Risk & Diligence', path: '/app/purchase/risk',          icon: Scale },
+  { label: 'Renewals',         path: '/app/purchase/renewals',      icon: RefreshCw },
+  { label: 'Offboarding',      path: '/app/purchase/offboarding',   icon: LogOut },
+  { label: 'Vendor Performance', path: '/app/purchase/vpi',         icon: Award },
+  { label: 'Communications',   path: '/app/purchase/communications', icon: MessageSquare },
+  { label: 'Document Vault',   path: '/app/purchase/document-vault', icon: FolderOpen },
   // Workforce mirrors TPV's worker register — the list plus the 5-step wizard.
   // Competency was built server-side and had no nav entry, so it was unreachable.
   { label: 'Workforce',        path: '/app/purchase/workers',       icon: UserCheck },
+  { label: 'Workforce Review', path: '/app/purchase/workforce',     icon: Users },
   { label: 'Medical Fitness',  path: '/app/purchase/medical',       icon: ShieldCheck },
   { label: 'PPE Matrix',       path: '/app/purchase/ppe/matrix',    icon: Shield },
   { label: 'Work Packages',    path: '/app/purchase/work-packages', icon: Layers3 },
@@ -238,15 +250,26 @@ const PURCHASE_SUB_ITEMS = [
   { label: 'Gate Log',         path: '/app/purchase/gate-log',      icon: ScanLine },
   { label: 'Attendance',       path: '/app/purchase/attendance',    icon: Clock },
   { label: 'Competency',       path: '/app/purchase/competency',    icon: GraduationCap },
+  // HSSE case management — also built, also unreachable until now.
+  { label: 'Incidents',        path: '/app/purchase/incidents',     icon: Activity },
+  { label: 'NCR',              path: '/app/purchase/ncr',           icon: FileX },
+  { label: 'CAPA',             path: '/app/purchase/capa',          icon: Wrench },
+  { label: 'Inspections',      path: '/app/purchase/inspections',   icon: ClipboardCheck },
+  { label: 'Violations',       path: '/app/purchase/violations',    icon: Scale },
+  { label: 'Compliance',       path: '/app/purchase/compliance-register', icon: BookText },
+  { label: 'Approvals',        path: '/app/purchase/approval-requests', icon: BookOpen },
+  { label: 'Authority Matrix', path: '/app/purchase/authority-matrix', icon: Network },
   { label: 'Meetings',         path: '/app/purchase/kickoff',       icon: CalendarDays },
   { label: 'Vendor-Items',     path: '/app/purchase/vendor-items',  icon: Boxes },
   { label: 'Purchase request', path: '/app/purchase/requests',      icon: ClipboardList },
   { label: 'Quotations',       path: '/app/purchase/quotations',    icon: FileSignature },
   { label: 'Purchase order',   path: '/app/purchase/orders',        icon: ShoppingBag },
+  { label: 'Goods Received',   path: '/app/purchase/goods-received', icon: PackagePlus },
   { label: 'Order Returns',    path: '/app/purchase/order-returns', icon: Undo2 },
   { label: 'Contracts',        path: '/app/purchase/contracts',     icon: FileText },
   { label: 'Debit Notes',      path: '/app/purchase/debit-notes',   icon: FileX },
   { label: 'Invoices',         path: '/app/purchase/invoices',      icon: Receipt },
+  { label: 'Analytics',        path: '/app/purchase/analytics',     icon: BarChart3 },
   { label: 'Reports',          path: '/app/purchase/reports',       icon: BarChart2 },
   { label: 'Setting',          path: '/app/purchase/settings',      icon: Settings },
 ]
