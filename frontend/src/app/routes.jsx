@@ -267,6 +267,7 @@ const PurchaseMedicalFitness = lazy(() => import('@/modules/purchase/pages/Purch
 const PurchasePpeMatrix = lazy(() => import('@/modules/purchase/pages/PurchasePpeMatrix'))
 const PurchaseGateLog = lazy(() => import('@/modules/purchase/pages/PurchaseGateLog'))
 const PurchaseWorkforceAttendance = lazy(() => import('@/modules/purchase/pages/PurchaseWorkforceAttendance'))
+const PurchasePermits = lazy(() => import('@/modules/purchase/pages/PurchasePermits'))
 const PurchaseCompetency = lazy(() => import('@/modules/purchase/pages/PurchaseCompetency'))
 // Purchase Kickoff — Purchase-owned pages on /api/purchase/kickoff (no TPV/shared reuse).
 const PurchaseKickoffMeetings = lazy(() => import('@/modules/purchase/pages/PurchaseKickoffMeetings'))
@@ -690,6 +691,9 @@ export default function AppRoutes() {
               log but never on the roster or in attendance. */}
           <Route path="gate-log" element={<S><PurchaseGateLog /></S>} />
           <Route path="attendance" element={<S><PurchaseWorkforceAttendance /></S>} />
+          {/* Permit To Work. Raising is open to staff; approving, rejecting,
+              activating and closing are admin-only server-side. */}
+          <Route path="permits" element={<S><PurchasePermits /></S>} />
           {/* Workforce Competency & Skill Matrix — "No Competency, No Work" (mirror of TPV §15). */}
           <Route path="competency" element={<S><PurchaseCompetency /></S>} />
           {/* Kickoff Meetings — Purchase-owned pages on /api/purchase/kickoff (no TPV reuse) */}

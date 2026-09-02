@@ -228,6 +228,7 @@ const PURCHASE_SUB_ITEMS = [
   { label: 'Workforce',        path: '/app/purchase/workers',       icon: UserCheck },
   { label: 'Medical Fitness',  path: '/app/purchase/medical',       icon: ShieldCheck },
   { label: 'PPE Matrix',       path: '/app/purchase/ppe/matrix',    icon: Shield },
+  { label: 'Permit To Work',   path: '/app/purchase/permits',       icon: FileSignature },
   { label: 'Gate Log',         path: '/app/purchase/gate-log',      icon: ScanLine },
   { label: 'Attendance',       path: '/app/purchase/attendance',    icon: Clock },
   { label: 'Competency',       path: '/app/purchase/competency',    icon: GraduationCap },

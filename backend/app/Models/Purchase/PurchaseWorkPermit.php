@@ -42,6 +42,15 @@ class PurchaseWorkPermit extends Model
     }
 
     /**
+     * Serialised with the permit. Without this the accessor exists but never
+     * reaches the client, and every lapsed permit reads as valid forever on
+     * screen while the API refuses to activate it — the UI and the rule
+     * disagreeing is worse than either being wrong. TPV's WorkPermit appends it
+     * the same way.
+     */
+    protected $appends = ['is_expired'];
+
+    /**
      * Past its validity window. Read as an attribute rather than stored, so a
      * permit cannot sit in the table claiming to be valid after its own end
      * date simply because no scheduled job has run yet.
