@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\Purchase\PurchaseGateController;
 use App\Http\Controllers\Api\Purchase\PurchasePermitController;
+use App\Http\Controllers\Api\Purchase\PurchaseWorkPackageController;
 use App\Http\Controllers\Api\Purchase\PurchaseRequestController;
 use App\Http\Controllers\Api\Purchase\PurchaseOrderController;
 use App\Http\Controllers\Api\Purchase\GoodsReceiptController;
@@ -293,6 +294,22 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     // be consulted, since these are static segments.
     Route::get('/workforce/medicals',                 [PurchaseWorkforceAdminController::class, 'medicals']);
     Route::get('/workforce/trainings',                [PurchaseWorkforceAdminController::class, 'trainings']);
+
+    // ── Work packages, activities and work authorisation ───────────────────
+    // The accountability spine: what a vendor is on site to deliver, the
+    // activities inside it, and whether a given worker may do a given activity.
+    // Authorisation is derived per request and writes nothing.
+    Route::get('/work-packages',                          [PurchaseWorkPackageController::class, 'index']);
+    Route::post('/work-packages',                         [PurchaseWorkPackageController::class, 'store']);
+    Route::get('/work-packages/{workPackage}',            [PurchaseWorkPackageController::class, 'show']);
+    Route::put('/work-packages/{workPackage}',            [PurchaseWorkPackageController::class, 'update']);
+    Route::delete('/work-packages/{workPackage}',         [PurchaseWorkPackageController::class, 'destroy']);
+    Route::post('/work-packages/{workPackage}/activities', [PurchaseWorkPackageController::class, 'addActivity']);
+    Route::put('/activities/{activity}',                  [PurchaseWorkPackageController::class, 'updateActivity']);
+    Route::delete('/activities/{activity}',               [PurchaseWorkPackageController::class, 'deleteActivity']);
+    Route::get('/work-authorization',                     [PurchaseWorkPackageController::class, 'roster']);
+    Route::get('/work-authorization/workers/{worker}',    [PurchaseWorkPackageController::class, 'authorize']);
+    Route::post('/workforce/workers/{worker}/work-package', [PurchaseWorkPackageController::class, 'assignWorker']);
 
     // ── Permit To Work ─────────────────────────────────────────────────────
     // Reads and raising a request are open to staff; the DECISIONS live in the
