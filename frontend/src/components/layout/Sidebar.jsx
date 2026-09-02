@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Users, Briefcase, CheckSquare, FolderOpen, Receipt, Truck, LifeBuoy,
   BarChart2, Settings, ChevronLeft, ChevronRight, LogOut, User, Zap,
   Package, UserCheck, CalendarDays, FileText, Rocket, Building2, ClipboardList,
-  ChevronDown, Shield, UserCog, IndianRupee, FileSignature, CreditCard, FileX, ShoppingBag,
+  ChevronDown, Shield, UserCog, IndianRupee, Banknote, FileSignature, CreditCard, FileX, ShoppingBag,
   UserPlus, Link2, RefreshCw, LayoutTemplate, Globe, TrendingUp, Landmark, BookText, Scale,
   ArrowLeftRight, BookOpen, Boxes, PackagePlus, PackageMinus, Warehouse, History, Network, FileQuestion,
   BarChart3, Activity, Layers3, ScanLine, ClipboardCheck, ShoppingCart, Hourglass, Wrench,
@@ -92,6 +92,11 @@ const HR_RECORDS_ITEMS = [
   // Directory' and 'Salaries' are named as they are.
   { label: 'Expense Claims', path: '/app/hr/expense-claims', icon: Receipt },
   { label: 'My Expenses', path: '/app/hr/my-expenses', icon: IndianRupee },
+  // Native advances. SangoeTrack's 'Advances' is still listed below until
+  // track.sangoe.in is retired, so these carry distinct labels for the same
+  // reason Expense Claims does.
+  { label: 'Advance Requests', path: '/app/hr/advances', icon: Banknote },
+  { label: 'My Advances', path: '/app/hr/my-advances', icon: Banknote },
 ]
 
 // Flat list of every HR leaf — used only for the collapsed icon rail.

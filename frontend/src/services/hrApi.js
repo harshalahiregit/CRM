@@ -1149,6 +1149,50 @@ export const hrApi = {
     file:    (id, attachmentId) =>
       api.get(`/hr/reimbursements/${id}/attachments/${attachmentId}`, { responseType: 'blob' }).then(r => r.data),
   },
+
+  /**
+   * Advances — money out before it is spent, settled against bills afterwards.
+   *
+   * Not loans: hrApi.loans is payroll recovery in installments, a different
+   * thing with a different table. The ladder here is manager → accounts →
+   * director, and the server decides whose turn it is; nothing in this file
+   * names a tier, because a client that could name its tier could name the last.
+   */
+  advances: {
+    me: {
+      list:        ()   => api.get('/hr/me/advances').then(r => r.data?.data ?? []),
+      outstanding: ()   => api.get('/hr/me/advances/outstanding').then(r => r.data?.data),
+      get:         (id) => api.get(`/hr/me/advances/${id}`).then(r => r.data?.data),
+      create: (data, files = []) => api.post('/hr/me/advances', toForm(data, files)).then(r => r.data),
+      reply:  (id, body, files = []) =>
+        api.post(`/hr/me/advances/${id}/reply`, toForm({ body }, files)).then(r => r.data),
+      accept: (id) => api.post(`/hr/me/advances/${id}/accept`).then(r => r.data),
+      cancel: (id) => api.post(`/hr/me/advances/${id}/cancel`).then(r => r.data),
+      // The bills go up with the figure, in one request, so a settlement cannot
+      // exist without the paperwork that justifies it.
+      settle: (id, data, files = []) =>
+        api.post(`/hr/me/advances/${id}/settlement`, toForm(data, files)).then(r => r.data),
+      file:   (id, attachmentId) =>
+        api.get(`/hr/me/advances/${id}/attachments/${attachmentId}`, { responseType: 'blob' }).then(r => r.data),
+    },
+
+    list:     (params = {}) => api.get('/hr/advances', { params }).then(r => r.data?.data ?? []),
+    get:      (id)          => api.get(`/hr/advances/${id}`).then(r => r.data?.data),
+    approve:  (id, amount, reason) => api.post(`/hr/advances/${id}/approve`, { amount, reason }).then(r => r.data),
+    decline:  (id, reason)  => api.post(`/hr/advances/${id}/decline`, { reason }).then(r => r.data),
+    hold:     (id, reason, proposed_amount) =>
+      api.post(`/hr/advances/${id}/hold`, { reason, proposed_amount }).then(r => r.data),
+    note:     (id, body)    => api.post(`/hr/advances/${id}/note`, { body }).then(r => r.data),
+    disburse: (id, mode, reference, amount) =>
+      api.post(`/hr/advances/${id}/disburse`, { mode, reference, amount }).then(r => r.data),
+
+    settlements:      ()              => api.get('/hr/advances/settlements').then(r => r.data?.data ?? []),
+    acceptSettlement: (id, remarks)   => api.post(`/hr/advances/settlements/${id}/accept`, { remarks }).then(r => r.data),
+    rejectSettlement: (id, remarks)   => api.post(`/hr/advances/settlements/${id}/reject`, { remarks }).then(r => r.data),
+
+    file: (id, attachmentId) =>
+      api.get(`/hr/advances/${id}/attachments/${attachmentId}`, { responseType: 'blob' }).then(r => r.data),
+  },
 }
 
 export default hrApi
