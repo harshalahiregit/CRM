@@ -98,6 +98,7 @@ export default function Employees() {
 
   const [showModal, setShowModal] = useState(false)
   const [editingId, setEditingId] = useState(null)
+  const [appBusy, setAppBusy] = useState(null)
   const [form, setForm]           = useState(EMPTY_FORM)
   const [saving, setSaving]       = useState(false)
   const [toast, setToast]         = useState(null)
@@ -170,6 +171,32 @@ export default function Employees() {
       setShowModal(false); setForm(EMPTY_FORM); setEditingId(null)
     } catch (e) { showToast(e.response?.data?.message||'Failed','error') }
     finally { setSaving(false) }
+  }
+
+  /**
+   * Grant or revoke attendance-app access from the list.
+   *
+   * This was only settable inside the employee form, so answering "who can use
+   * the app" meant opening every record one at a time — which is a question HR
+   * asks far more often than they edit an employee.
+   *
+   * PATCHes the one field rather than the whole form: sending the full record
+   * back from a list row would resave stale values for everything else on it.
+   */
+  const toggleAppAccess = async (emp) => {
+    const next = !emp.app_login_enabled
+    setAppBusy(emp.id)
+    try {
+      await hrApi.employees.update(emp.id, { app_login_enabled: next })
+      setEmployees(prev => prev.map(e => e.id === emp.id ? { ...e, app_login_enabled: next } : e))
+      showToast(next
+        ? `${emp.name} can now sign in to the attendance app`
+        : `${emp.name} can no longer sign in to the attendance app`)
+    } catch (e) {
+      showToast(e.response?.data?.message || 'Could not change app access', 'error')
+    } finally {
+      setAppBusy(null)
+    }
   }
 
   const resetFilters = () => { setDeptF('All'); setDesigF('All'); setStatusF('All'); setJoinedFrom(''); setSearch('') }
@@ -267,7 +294,7 @@ export default function Employees() {
         /* ── LIST VIEW ── */
         <div className="card-3d overflow-x-auto" style={{ padding:'6px' }}>
           <table className="w-full text-sm" style={{ minWidth:820 }}>
-            <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Employee ID','Employee','Department','Designation','Status','Reporting Manager','Joining Date','Actions'].map(h=><th key={h} className="text-left px-3 py-3 label-caps whitespace-nowrap">{h}</th>)}</tr></thead>
+            <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Employee ID','Employee','Department','Designation','Status','App Access','Reporting Manager','Joining Date','Actions'].map(h=><th key={h} className="text-left px-3 py-3 label-caps whitespace-nowrap">{h}</th>)}</tr></thead>
             <tbody>
               {employees.map(emp=>{
                 const ss = STATUS_S(emp.status)
@@ -281,6 +308,22 @@ export default function Employees() {
                     <td className="px-3 py-2.5">
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:ss.bg, color:ss.c }}>{emp.status}</span>
                       <OnboardingBadge status={emp.onboarding_status} progress={emp.onboarding_progress}/>
+                    </td>
+                    {/* Who can clock in on their phone, answerable from the list rather
+                        than by opening every record one at a time. Clicking it toggles
+                        access directly — stopPropagation because the row opens a profile. */}
+                    <td className="px-3 py-2.5" onClick={e=>e.stopPropagation()}>
+                      <button type="button" onClick={()=>toggleAppAccess(emp)}
+                        disabled={appBusy===emp.id}
+                        title={emp.app_login_enabled ? 'Can sign in to the attendance app — click to revoke' : 'No app access — click to grant'}
+                        className="text-[10px] font-bold px-2 py-0.5 rounded-lg"
+                        style={{
+                          background: emp.app_login_enabled ? 'rgba(52,211,153,0.14)' : 'var(--bg-input)',
+                          color:      emp.app_login_enabled ? '#34d399' : 'var(--text-muted)',
+                          border:     `1px solid ${emp.app_login_enabled ? 'rgba(52,211,153,0.35)' : 'var(--border)'}`,
+                        }}>
+                        {appBusy===emp.id ? '…' : emp.app_login_enabled ? 'Allowed' : 'Off'}
+                      </button>
                     </td>
                     <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{emp.reporting_manager_name||'—'}</td>
                     <td className="px-3 py-2.5 whitespace-nowrap" style={{ color:'var(--text-muted)' }}>{fmtDate(emp.joining_date)}</td>
