@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\Hr\EmployeeController;
 use App\Http\Controllers\Api\Hr\AttendanceController;
 use App\Http\Controllers\Api\Hr\MyAttendanceController;
 use App\Http\Controllers\Api\Hr\AdvanceController;
+use App\Http\Controllers\Api\Hr\AttendanceReportController;
 use App\Http\Controllers\Api\Hr\MyAdvanceController;
 use App\Http\Controllers\Api\Hr\MyReimbursementController;
 use App\Http\Controllers\Api\Hr\ReimbursementController;
@@ -508,6 +509,13 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
 // check is how a list-everything endpoint ends up open, which is exactly what
 // happened in the first draft of ReimbursementController.
 Route::middleware(['auth:sanctum', 'hr.manage'])->prefix('hr')->group(function () {
+    // ── Attendance reports ──────────────────────────────────────────────
+    // Read-only, so looking at them cannot affect a payroll run. 'departments'
+    // is declared before the {employeeId} route so it is not read as an id.
+    Route::get('/reports/attendance',             [AttendanceReportController::class, 'monthly']);
+    Route::get('/reports/attendance/departments', [AttendanceReportController::class, 'byDepartment']);
+    Route::get('/reports/attendance/{employeeId}', [AttendanceReportController::class, 'forEmployee']);
+
     Route::get('/reimbursements',                  [ReimbursementController::class, 'index']);
     Route::get('/reimbursements/{id}',             [ReimbursementController::class, 'show']);
     Route::post('/reimbursements/{id}/approve',    [ReimbursementController::class, 'approve']);

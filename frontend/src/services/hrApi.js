@@ -1193,6 +1193,16 @@ export const hrApi = {
     file: (id, attachmentId) =>
       api.get(`/hr/advances/${id}/attachments/${attachmentId}`, { responseType: 'blob' }).then(r => r.data),
   },
+
+  /**
+   * Attendance for payroll. Read-only — nothing here changes a figure, so
+   * looking at a report cannot affect a run.
+   */
+  attendanceReports: {
+    monthly:     (params = {}) => api.get('/hr/reports/attendance', { params }).then(r => r.data?.data),
+    departments: (params = {}) => api.get('/hr/reports/attendance/departments', { params }).then(r => r.data?.data),
+    employee:    (id, params = {}) => api.get(`/hr/reports/attendance/${id}`, { params }).then(r => r.data?.data),
+  },
 }
 
 export default hrApi

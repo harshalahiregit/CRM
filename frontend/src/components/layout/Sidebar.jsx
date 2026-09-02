@@ -97,6 +97,9 @@ const HR_RECORDS_ITEMS = [
   // reason Expense Claims does.
   { label: 'Advance Requests', path: '/app/hr/advances', icon: Banknote },
   { label: 'My Advances', path: '/app/hr/my-advances', icon: Banknote },
+  // 'Attendance Reports', not 'Reports' — SangoeTrack already has a Reports
+  // entry, and this one is specifically the payroll-facing view.
+  { label: 'Attendance Reports', path: '/app/hr/attendance-reports', icon: BarChart3 },
 ]
 
 // Flat list of every HR leaf — used only for the collapsed icon rail.
