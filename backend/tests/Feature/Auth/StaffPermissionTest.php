@@ -145,4 +145,18 @@ class StaffPermissionTest extends TestCase
         $this->assertSame([], array_values($missing),
             'These modules can be ticked on screen but the backend does not recognise them: ' . implode(', ', $missing));
     }
+
+    /**
+     * The gate is live on staff_mgmt. An admin bypasses it, so this is a no-op
+     * today — which is exactly why it was chosen as the first adopter. If this
+     * ever fails, the bypass has broken and every admin has lost Staff Management.
+     */
+    public function test_the_gated_staff_routes_still_admit_an_admin(): void
+    {
+        $admin = $this->staff([], 'admin');
+        \Laravel\Sanctum\Sanctum::actingAs($admin);
+
+        $this->getJson('/api/admin/staff')->assertOk();
+        $this->getJson('/api/admin/staff/stats')->assertOk();
+    }
 }

@@ -14,13 +14,19 @@ use Illuminate\Support\Facades\Route;
 Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(function () {
 
     // Staff Management
-    Route::get('/staff/stats',              [StaffManagementController::class, 'stats']);
-    Route::get('/staff',                    [StaffManagementController::class, 'index']);
-    Route::get('/staff/designations',       [StaffManagementController::class, 'designations']);
-    Route::get('/staff/departments',        [StaffManagementController::class, 'departments']);
-    Route::get('/staff/{id}',               [StaffManagementController::class, 'show']);
-    Route::post('/staff',                   [StaffManagementController::class, 'store']);
-    Route::put('/staff/{id}',               [StaffManagementController::class, 'update']);
-    Route::patch('/staff/{id}/toggle-status', [StaffManagementController::class, 'toggleStatus']);
-    Route::delete('/staff/{id}',            [StaffManagementController::class, 'destroy']);
+    //
+    // FIRST ADOPTER of the permission grid. These routes are already role:admin,
+    // and an admin bypasses the grid, so today this changes nothing — which is
+    // the point: it proves the wiring end to end without altering anyone's
+    // access. Modules with real staff traffic move across afterwards, one at a
+    // time, each on its own review.
+    Route::get('/staff/stats',              [StaffManagementController::class, 'stats'])->middleware('permission:staff_mgmt,view_global');
+    Route::get('/staff',                    [StaffManagementController::class, 'index'])->middleware('permission:staff_mgmt,view_global');
+    Route::get('/staff/designations',       [StaffManagementController::class, 'designations'])->middleware('permission:staff_mgmt,view_global');
+    Route::get('/staff/departments',        [StaffManagementController::class, 'departments'])->middleware('permission:staff_mgmt,view_global');
+    Route::get('/staff/{id}',               [StaffManagementController::class, 'show'])->middleware('permission:staff_mgmt,view_global');
+    Route::post('/staff',                   [StaffManagementController::class, 'store'])->middleware('permission:staff_mgmt,create');
+    Route::put('/staff/{id}',               [StaffManagementController::class, 'update'])->middleware('permission:staff_mgmt,edit');
+    Route::patch('/staff/{id}/toggle-status', [StaffManagementController::class, 'toggleStatus'])->middleware('permission:staff_mgmt,edit');
+    Route::delete('/staff/{id}',            [StaffManagementController::class, 'destroy'])->middleware('permission:staff_mgmt,delete');
 });

@@ -35,6 +35,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'client.portal' => \App\Http\Middleware\EnsureClientPortalAccess::class,
             'company.portal' => \App\Http\Middleware\EnsureCompanyPortalAccess::class,
             'temp.access' => \App\Http\Middleware\EnsureTemporaryAccessNotExpired::class,
+            // Staff permission grid — 'permission:module,capability'.
+            'permission' => \App\Http\Middleware\EnsureStaffPermission::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
