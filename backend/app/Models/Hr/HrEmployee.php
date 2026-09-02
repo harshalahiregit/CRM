@@ -11,6 +11,41 @@ class HrEmployee extends Model
 
     protected $table = 'hr_employees';
 
+    /** Employee codes read SNE-YYYY-NNN. */
+    public const CODE_PREFIX = 'SNE-';
+
+    /**
+     * The next free employee code for a tenant.
+     *
+     * There were two generators and both could hand back a code that was already
+     * taken. EmployeeService used `count() + 1`, which reuses a code the moment
+     * anyone is deleted — five employees, delete the third, and the next create
+     * asks for -005 while -005 already exists. The SangoeTrack importer looped
+     * `where tenant_id = ? and employee_code = ?` against what was then a GLOBAL
+     * unique index, so it could exit that loop believing a code was free while
+     * another tenant held it.
+     *
+     * This takes the highest sequence actually issued rather than counting rows,
+     * which is immune to deletions, and it is the single source both callers use.
+     * Same shape as Estimate::nextLocalReference, so the two read alike.
+     *
+     * The caller is expected to retry on a unique violation: two simultaneous
+     * creates can still read the same MAX, and the index — not this method — is
+     * what guarantees uniqueness. See EmployeeService::create.
+     */
+    public static function nextEmployeeCode(int $tenantId): string
+    {
+        $prefix = self::CODE_PREFIX . date('Y') . '-';
+
+        $highest = static::query()
+            ->where('tenant_id', $tenantId)
+            ->where('employee_code', 'like', $prefix . '%')
+            ->selectRaw('MAX(CAST(SUBSTR(employee_code, ?) AS INTEGER)) AS seq', [strlen($prefix) + 1])
+            ->value('seq');
+
+        return $prefix . str_pad((string) (((int) $highest) + 1), 3, '0', STR_PAD_LEFT);
+    }
+
     protected $fillable = [
         'tenant_id','user_id','candidate_id','onboarding_id','employee_code',
         'name','email','phone','dob','gender','address','department','designation',

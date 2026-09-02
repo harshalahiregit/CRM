@@ -193,6 +193,11 @@ class ImportSangoeTrackEmployees extends Command
             : 'ST-'.($row['id'] ?? substr(md5((string) ($row['email'] ?? '')), 0, 8));
 
         // Collisions are possible if a manual employee already claimed the code.
+        //
+        // This loop is now correct because the unique index it is guarding is
+        // (tenant_id, employee_code). While that index was GLOBAL, a tenant-scoped
+        // existence check could exit here believing a code was free when another
+        // tenant already held it — and the insert then threw.
         $suffix = 0;
         $final  = $candidate;
         while (HrEmployee::where('tenant_id', $tenantId)->where('employee_code', $final)->exists()) {
