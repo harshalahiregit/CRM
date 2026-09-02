@@ -37,6 +37,8 @@ class StoreEmployeeRequest extends FormRequest
             // person in org. chart while entering in system".
             'worker_type'            => 'nullable|in:employee,consultant,freelancer',
             'include_in_org_chart'   => 'nullable|boolean',
+            // Granted by HR, never assumed. Defaults to off at the column.
+            'app_login_enabled'      => 'nullable|boolean',
 
             // #36 — probation must be set when adding an employee. A policy is
             // required unless the hire is explicitly exempted, and an exemption

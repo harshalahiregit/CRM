@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\Auth\SessionService;
+use App\Support\Hr\StaffPermission;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
@@ -201,7 +202,7 @@ class StaffManagementController extends Controller
             'department'    => $request->department,
             'designation'   => $request->designation,
             'status'        => $request->status,
-            'meta'          => $request->meta ?? [],
+            'meta'          => $this->sanitiseMeta($request->meta ?? []),
         ]);
 
         return response()->json([
@@ -257,7 +258,7 @@ class StaffManagementController extends Controller
 
         // Merge meta (preserve existing keys not in new payload)
         if ($request->has('meta')) {
-            $updateData['meta'] = array_merge($staff->meta ?? [], $request->meta);
+            $updateData['meta'] = $this->sanitiseMeta(array_merge($staff->meta ?? [], $request->meta));
         }
 
         // Only update password if provided
@@ -277,6 +278,23 @@ class StaffManagementController extends Controller
     /**
      * Toggle staff status (active/inactive)
      */
+    /**
+     * `meta` is validated only as `nullable|array`, so anything at all can be
+     * posted into it — including permission keys naming modules that do not
+     * exist. A forged or stale module cannot grant access (StaffPermissionService
+     * refuses unknown modules), but leaving it in the column makes the grid render
+     * rows nobody can turn off, and makes the stored data a poor record of who can
+     * do what. Filtered on the way in so the column stays truthful.
+     */
+    private function sanitiseMeta(array $meta): array
+    {
+        if (array_key_exists('permissions', $meta)) {
+            $meta['permissions'] = StaffPermission::sanitise($meta['permissions']);
+        }
+
+        return $meta;
+    }
+
     public function toggleStatus(Request $request, $id): JsonResponse
     {
         $tenantId = $request->user()->tenant_id;

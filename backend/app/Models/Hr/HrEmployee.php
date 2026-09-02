@@ -63,6 +63,9 @@ class HrEmployee extends Model
         // MUST be listed here: create() silently drops any key not whitelisted,
         // so an omission would leave every new hire on the default.
         'worker_type','include_in_org_chart',
+        // Whether this person may sign in to the attendance app. Granted by HR,
+        // never assumed — see the migration for why it defaults to off.
+        'app_login_enabled',
         // Record origin: 'sangoetrack' when created by the importer, 'manual' or
         // null otherwise. Drives the "via SangoeTrack" badge on the employee list.
         'source',
@@ -81,6 +84,7 @@ class HrEmployee extends Model
     protected $casts = [
         'skills'               => 'array',
         'include_in_org_chart' => 'boolean',
+        'app_login_enabled'    => 'boolean',
         'joining_date'         => 'date',
         'dob'                  => 'date',
         'probation_end_date'   => 'date',

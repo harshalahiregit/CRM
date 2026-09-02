@@ -69,6 +69,9 @@ class EmployeeController extends Controller
             // org-chart settings silently never save.
             'worker_type'            => 'nullable|in:employee,consultant,freelancer',
             'include_in_org_chart'   => 'nullable|boolean',
+            // HR grants app access on the employee record; Staff Management owns
+            // what somebody can do inside the CRM. Two different questions.
+            'app_login_enabled'      => 'nullable|boolean',
         ]);
 
         $updated = $this->employeeService->update($employee, $data, $request->user());
