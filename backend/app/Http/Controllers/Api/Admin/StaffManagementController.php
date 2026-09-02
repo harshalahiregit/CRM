@@ -27,19 +27,13 @@ class StaffManagementController extends Controller
 
             $tenantId = $request->user()->tenant_id;
 
-            $totalStaff = User::where('tenant_id', $tenantId)
-                ->where('role', 'staff')
-                ->count();
+            // Counts cover the same population the list shows, admins included —
+            // a headcount that silently omits them contradicts the screen beside it.
+            $totalStaff = $this->manageable($tenantId)->count();
 
-            $activeStaff = User::where('tenant_id', $tenantId)
-                ->where('role', 'staff')
-                ->where('status', 'active')
-                ->count();
+            $activeStaff = $this->manageable($tenantId)->where('status', 'active')->count();
 
-            $inactiveStaff = User::where('tenant_id', $tenantId)
-                ->where('role', 'staff')
-                ->whereIn('status', ['inactive', 'suspended'])
-                ->count();
+            $inactiveStaff = $this->manageable($tenantId)->whereIn('status', ['inactive', 'suspended'])->count();
 
             \Log::info('Stats calculated successfully', [
                 'total' => $totalStaff,
@@ -81,8 +75,7 @@ class StaffManagementController extends Controller
 
             $tenantId = $request->user()->tenant_id;
 
-            $query = User::where('tenant_id', $tenantId)
-                ->where('role', 'staff');
+            $query = $this->manageable($tenantId);
 
             // Search filter
             if ($request->has('search') && $request->search) {
@@ -154,8 +147,7 @@ class StaffManagementController extends Controller
     {
         $tenantId = $request->user()->tenant_id;
 
-        $staff = User::where('tenant_id', $tenantId)
-            ->where('role', 'staff')
+        $staff = $this->manageable($tenantId)
             ->findOrFail($id);
 
         return response()->json([
@@ -197,11 +189,15 @@ class StaffManagementController extends Controller
             'email'         => $request->email,
             'phone'         => $request->phone,
             'password'      => Hash::make($request->password),
-            'role'          => 'staff',
             'internal_role' => $request->internal_role,
             'department'    => $request->department,
             'designation'   => $request->designation,
             'status'        => $request->status,
+            // The role is NEVER taken from the request body. It defaults to staff
+            // and is raised to admin only when the person doing it is already an
+            // admin — the old CRM's shape exactly (Staff_model.php:414-421, which
+            // sets admin = 0 first and only then consults is_admin()).
+            'role'          => $this->resolvedRole($request),
             'meta'          => $this->sanitiseMeta($request->meta ?? []),
         ]);
 
@@ -219,8 +215,7 @@ class StaffManagementController extends Controller
     {
         $tenantId = $request->user()->tenant_id;
 
-        $staff = User::where('tenant_id', $tenantId)
-            ->where('role', 'staff')
+        $staff = $this->manageable($tenantId)
             ->findOrFail($id);
 
         $validator = Validator::make($request->all(), [
@@ -256,6 +251,29 @@ class StaffManagementController extends Controller
             'mail_from_name', 'mail_from_email',
         ]);
 
+        // Promotion and demotion. Only an admin may change this at all, and the
+        // field is read from the request only after that check — never merged in
+        // with the rest, so it cannot ride along in a payload from someone else.
+        if ($request->has('administrator') && $request->user()->role === 'admin') {
+            $wantsAdmin = $request->boolean('administrator');
+
+            if ($error = $this->roleChangeError($request, $staff, $wantsAdmin)) {
+                return response()->json(['status' => 'error', 'message' => $error], 422);
+            }
+
+            if ($wantsAdmin !== ($staff->role === 'admin')) {
+                $updateData['role'] = $wantsAdmin ? 'admin' : 'staff';
+
+                app(\App\Services\AuditLogService::class)->record(
+                    $staff,
+                    $wantsAdmin ? 'Promoted to Administrator' : 'Administrator Access Removed',
+                    $request->user(),
+                    null,
+                    ['from' => $staff->role, 'to' => $updateData['role']]
+                );
+            }
+        }
+
         // Merge meta (preserve existing keys not in new payload)
         if ($request->has('meta')) {
             $updateData['meta'] = $this->sanitiseMeta(array_merge($staff->meta ?? [], $request->meta));
@@ -279,6 +297,88 @@ class StaffManagementController extends Controller
      * Toggle staff status (active/inactive)
      */
     /**
+     * The role a newly created account gets.
+     *
+     * `administrator` is a boolean on the form, not a role string, and it is only
+     * honoured for an actor who is already an admin. A non-admin sending it gets
+     * staff — silently, exactly as the old CRM does, because a rejected request
+     * would tell an attacker the field exists.
+     */
+    private function resolvedRole(Request $request): string
+    {
+        return ($request->boolean('administrator') && $request->user()->role === 'admin')
+            ? 'admin'
+            : 'staff';
+    }
+
+    /**
+     * Apply a promotion or demotion, or explain why it cannot happen.
+     *
+     * Two refusals, both taken from the old CRM:
+     *
+     *   cant_remove_yourself_from_admin — you cannot demote yourself, so nobody
+     *   can lock themselves out of the screen that would fix it.
+     *
+     *   cant_remove_main_admin — the founding admin stays. Perfex pins staff #1;
+     *   here it is the earliest admin in the tenant, so a workspace can never be
+     *   left with nobody in charge.
+     *
+     * @return string|null  an error message, or null when the change is allowed
+     */
+    private function roleChangeError(Request $request, User $target, bool $wantsAdmin): ?string
+    {
+        $isAdmin = $target->role === 'admin';
+
+        if ($wantsAdmin === $isAdmin) {
+            return null;   // nothing is changing
+        }
+
+        if ($wantsAdmin) {
+            return null;   // promotion; the actor is already known to be an admin
+        }
+
+        if ((int) $target->id === (int) $request->user()->id) {
+            return 'You cannot remove your own administrator access.';
+        }
+
+        if ((int) $target->id === $this->foundingAdminId($target->tenant_id)) {
+            return 'The founding administrator cannot be demoted.';
+        }
+
+        return null;
+    }
+
+    /**
+     * Who Staff Management manages: staff AND admins.
+     *
+     * This used to be `where('role', 'staff')` in ten places, which meant admins
+     * were invisible on the screen — you could not see that a second one existed,
+     * let alone who they were. The old CRM lists administrators alongside everyone
+     * else with a flag on the row, and answering "who are the admins" from the
+     * screen matters more the more of them there are.
+     *
+     * Portal identities (client, vendor, third_party_vendor, company) stay out:
+     * they are not people who work here.
+     */
+    private function manageable(int $tenantId)
+    {
+        return User::where('tenant_id', $tenantId)->whereIn('role', ['staff', 'admin']);
+    }
+
+    /**
+     * The founding admin of a tenant — the account created with the company.
+     *
+     * The old CRM pins staff #1 and refuses to demote them (cant_remove_main_admin),
+     * so a workspace can never be left with nobody in charge. The equivalent here
+     * is the earliest admin in the tenant, which is per-tenant rather than a global
+     * row id.
+     */
+    private function foundingAdminId(int $tenantId): ?int
+    {
+        return User::where('tenant_id', $tenantId)->where('role', 'admin')->min('id');
+    }
+
+    /**
      * `meta` is validated only as `nullable|array`, so anything at all can be
      * posted into it — including permission keys naming modules that do not
      * exist. A forged or stale module cannot grant access (StaffPermissionService
@@ -299,8 +399,7 @@ class StaffManagementController extends Controller
     {
         $tenantId = $request->user()->tenant_id;
 
-        $staff = User::where('tenant_id', $tenantId)
-            ->where('role', 'staff')
+        $staff = $this->manageable($tenantId)
             ->findOrFail($id);
 
         $newStatus = $staff->status === 'active' ? 'inactive' : 'active';
@@ -336,8 +435,7 @@ class StaffManagementController extends Controller
     {
         $tenantId = $request->user()->tenant_id;
 
-        $staff = User::where('tenant_id', $tenantId)
-            ->where('role', 'staff')
+        $staff = $this->manageable($tenantId)
             ->findOrFail($id);
 
         // Prevent deleting staff if they have active assignments
@@ -362,8 +460,7 @@ class StaffManagementController extends Controller
             $tenantId = $request->user()->tenant_id;
 
             // Get unique internal roles from existing staff
-            $existingRoles = User::where('tenant_id', $tenantId)
-                ->where('role', 'staff')
+            $existingRoles = $this->manageable($tenantId)
                 ->whereNotNull('internal_role')
                 ->distinct()
                 ->pluck('internal_role')
@@ -426,8 +523,7 @@ class StaffManagementController extends Controller
             $tenantId = $request->user()->tenant_id;
 
             // Get unique departments from existing staff
-            $existingDepts = User::where('tenant_id', $tenantId)
-                ->where('role', 'staff')
+            $existingDepts = $this->manageable($tenantId)
                 ->whereNotNull('department')
                 ->distinct()
                 ->pluck('department')
