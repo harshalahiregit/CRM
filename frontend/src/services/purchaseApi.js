@@ -414,6 +414,24 @@ export const purchaseApi = {
     // worker the way TPV's single wide table allows.
     medicals:  (vendorId) => api.get('/purchase/workforce/medicals', { params: { vendor_id: vendorId } }).then(r => r.data),
     trainings: (vendorId) => api.get('/purchase/workforce/trainings', { params: { vendor_id: vendorId } }).then(r => r.data),
+
+    // Admin-side worker registration — the mirror of TPV's worker wizard, on
+    // Purchase's own tables. Staff may add and correct workers and record their
+    // medical/induction evidence; ACTIVATION stays admin-only server-side.
+    stats:         ()          => api.get('/purchase/workforce/workers/stats').then(r => r.data),
+    createWorker:  (data)      => api.post('/purchase/workforce/workers', data).then(r => r.data),
+    updateWorker:  (id, data)  => api.put(`/purchase/workforce/workers/${id}`, data).then(r => r.data),
+    deleteWorker:  (id)        => api.delete(`/purchase/workforce/workers/${id}`).then(r => r.data),
+    saveMedical:   (id, data)  => api.post(`/purchase/workforce/workers/${id}/medical`, data).then(r => r.data),
+    // Step 3 needs BOTH — a worker with an induction but no training never
+    // clears the step and so can never be badged.
+    saveTraining:  (id, data)  => api.post(`/purchase/workforce/workers/${id}/training`, data).then(r => r.data),
+    saveInduction: (id, data)  => api.post(`/purchase/workforce/workers/${id}/induction`, data).then(r => r.data),
+    badge:         (id)        => api.get(`/purchase/workforce/workers/${id}/badge`).then(r => r.data),
+    // PPE from the admin side — the catalogue of kit, and issuing it at the gate.
+    // Both existed in the service but were reachable only from the vendor portal.
+    ppeCatalogue:  ()          => api.get('/purchase/workforce/ppe/catalogue').then(r => r.data?.data ?? r.data),
+    issuePpe:      (id, data)  => api.post(`/purchase/workforce/workers/${id}/ppe/issue`, data).then(r => r.data),
   },
 
   // ── Workforce Competency & Skill Matrix (mirror of TPV §15) ─────────────

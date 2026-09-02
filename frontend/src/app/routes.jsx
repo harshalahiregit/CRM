@@ -259,6 +259,12 @@ const PurchaseVendorDetailLayout = lazy(() => import('@/modules/purchase/pages/v
 const PurchaseVendorOnboardings = lazy(() => import('@/modules/purchase/pages/PurchaseVendorOnboardings'))
 const PurchaseVendorOnboardingWizard = lazy(() => import('@/modules/purchase/pages/PurchaseVendorOnboardingWizard'))
 const PurchaseWorkforce = lazy(() => import('@/modules/purchase/pages/PurchaseWorkforce'))
+// Purchase workforce registration — the mirror of TPV's Workers list + 5-step
+// worker wizard, on Purchase's own tables (see docs/audit/PURCHASE-TPV-PARITY.md).
+const PurchaseWorkers = lazy(() => import('@/modules/purchase/pages/PurchaseWorkers'))
+const PurchaseWorkerWizard = lazy(() => import('@/modules/purchase/pages/PurchaseWorkerWizard'))
+const PurchaseMedicalFitness = lazy(() => import('@/modules/purchase/pages/PurchaseMedicalFitness'))
+const PurchasePpeMatrix = lazy(() => import('@/modules/purchase/pages/PurchasePpeMatrix'))
 const PurchaseCompetency = lazy(() => import('@/modules/purchase/pages/PurchaseCompetency'))
 // Purchase Kickoff — Purchase-owned pages on /api/purchase/kickoff (no TPV/shared reuse).
 const PurchaseKickoffMeetings = lazy(() => import('@/modules/purchase/pages/PurchaseKickoffMeetings'))
@@ -666,6 +672,18 @@ export default function AppRoutes() {
           {/* Admin/staff review of vendor-supplied workers. Activation inside is
               admin-only — the button is hidden for staff and the endpoint refuses them. */}
           <Route path="workforce" element={<S><PurchaseWorkforce /></S>} />
+          {/* Worker register + 5-step wizard, mirroring TPV's /app/tpv/workers.
+              Kept on their own paths rather than replacing /workforce above, so the
+              existing review screen and its links keep working. */}
+          <Route path="workers" element={<S><PurchaseWorkers /></S>} />
+          <Route path="workers/:id" element={<S><PurchaseWorkerWizard /></S>} />
+          {/* Cross-workforce medical fitness register. Vendor-scoped: the
+              endpoint 422s without a vendor, so the page asks for one first. */}
+          <Route path="medical" element={<S><PurchaseMedicalFitness /></S>} />
+          {/* PPE matrix. Purchase has no requirements table, so unlike TPV's
+              prescriptive matrix this one is OBSERVED — designation against the
+              kit workers in that role actually hold. */}
+          <Route path="ppe/matrix" element={<S><PurchasePpeMatrix /></S>} />
           {/* Workforce Competency & Skill Matrix — "No Competency, No Work" (mirror of TPV §15). */}
           <Route path="competency" element={<S><PurchaseCompetency /></S>} />
           {/* Kickoff Meetings — Purchase-owned pages on /api/purchase/kickoff (no TPV reuse) */}

@@ -266,15 +266,37 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     // Tenant-scoped, not vendor-scoped: an admin legitimately sees every vendor's
     // workers. Badge ACTIVATION is not here — it sits in the role:admin group
     // below, so staff can review but not decide who may enter the site.
+    // /stats is declared BEFORE the {worker} wildcard — a static segment would
+    // otherwise be swallowed as a worker id and 404 on model binding.
+    Route::get('/workforce/workers/stats',            [PurchaseWorkforceAdminController::class, 'stats']);
     Route::get('/workforce/workers',                  [PurchaseWorkforceAdminController::class, 'index']);
     Route::get('/workforce/workers/{worker}',         [PurchaseWorkforceAdminController::class, 'show']);
     Route::get('/workforce/workers/{worker}/ppe',     [PurchaseWorkforceAdminController::class, 'ppe']);
     Route::get('/workforce/workers/{worker}/gate',    [PurchaseWorkforceAdminController::class, 'gate']);
+    Route::get('/workforce/workers/{worker}/badge',   [PurchaseWorkforceAdminController::class, 'badge']);
+
+    // Admin-side worker registration — the TPV wizard's flow, on Purchase tables.
+    // Staff may add and correct workers and record their evidence; ACTIVATION
+    // stays admin-only in the role:admin group below.
+    Route::post('/workforce/workers',                     [PurchaseWorkforceAdminController::class, 'store']);
+    Route::put('/workforce/workers/{worker}',             [PurchaseWorkforceAdminController::class, 'update']);
+    Route::delete('/workforce/workers/{worker}',          [PurchaseWorkforceAdminController::class, 'destroy']);
+    Route::post('/workforce/workers/{worker}/medical',    [PurchaseWorkforceAdminController::class, 'saveMedical']);
+    // Step 3 clears only when BOTH a training and an induction exist, so without
+    // a training endpoint an admin-registered worker could never be badged.
+    Route::post('/workforce/workers/{worker}/training',   [PurchaseWorkforceAdminController::class, 'saveTraining']);
+    Route::post('/workforce/workers/{worker}/induction',  [PurchaseWorkforceAdminController::class, 'saveInduction']);
     // Vendor detail Medical / Training tabs. Vendor-scoped (?vendor_id=) and
     // strict about it — declared before the {worker} wildcard above would ever
     // be consulted, since these are static segments.
     Route::get('/workforce/medicals',                 [PurchaseWorkforceAdminController::class, 'medicals']);
     Route::get('/workforce/trainings',                [PurchaseWorkforceAdminController::class, 'trainings']);
+
+    // PPE from the admin side. The catalogue and issuing were reachable only
+    // through the vendor portal, so staff could see kit on a worker but could
+    // neither browse what exists nor record handing any over at the gate.
+    Route::get('/workforce/ppe/catalogue',                [PurchaseWorkforceAdminController::class, 'ppeCatalogue']);
+    Route::post('/workforce/workers/{worker}/ppe/issue',  [PurchaseWorkforceAdminController::class, 'issuePpe']);
 
     // ── Workforce Competency & Skill Matrix (mirror of TPV §15) ────────────
     // "No Competency, No Work" — the gate reads the tenant Settings requirement
