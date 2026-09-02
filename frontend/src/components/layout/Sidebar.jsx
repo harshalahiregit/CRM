@@ -85,6 +85,13 @@ const HR_RECORDS_ITEMS = [
   { label: 'Probation Management', path: '/app/hr/probation-management', icon: ShieldCheck },
   { label: 'Exit Management', path: '/app/hr/exit-management', icon: LogOut },
   { label: 'Notifications', path: '/app/hr/settings/notifications', icon: Bell },
+  // The CRM's own expense claims — not SangoeTrack's, which are still listed
+  // separately below under 'Reimbursements' until track.sangoe.in is retired.
+  // Deliberately NOT called Reimbursements: two identical labels in one nav is
+  // how somebody ends up deciding on the wrong screen, the same reason 'Staff
+  // Directory' and 'Salaries' are named as they are.
+  { label: 'Expense Claims', path: '/app/hr/expense-claims', icon: Receipt },
+  { label: 'My Expenses', path: '/app/hr/my-expenses', icon: IndianRupee },
 ]
 
 // Flat list of every HR leaf — used only for the collapsed icon rail.

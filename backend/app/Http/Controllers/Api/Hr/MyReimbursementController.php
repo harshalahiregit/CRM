@@ -134,6 +134,26 @@ class MyReimbursementController extends Controller
         ]);
     }
 
+    /**
+     * The bytes of one receipt on one of the caller's own claims.
+     *
+     * Attachment hides `path` and `disk`, and has no url accessor, so a stored
+     * file is only ever reachable through a route like this one — which is what
+     * keeps a guessed path from returning somebody else's receipt. The claim is
+     * resolved through own() first, so the ownership check is the same one the
+     * rest of this controller uses.
+     */
+    public function attachment(Request $request, int $id, int $attachmentId)
+    {
+        $claim = $this->own($request, $id);
+
+        $file = $claim->attachments()->findOrFail($attachmentId);
+
+        $f = $this->attachments->download($file);
+
+        return response()->download($f['path'], $f['filename'], ['Content-Type' => $f['mime']]);
+    }
+
     private function me(Request $request): HrEmployee
     {
         $employee = $this->identity->employeeFor($request->user());

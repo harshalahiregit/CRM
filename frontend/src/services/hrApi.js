@@ -12,6 +12,24 @@ const BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'
 // Create axios instance with auth token
 const api = axios.create({ baseURL: BASE })
 
+/**
+ * Fields plus files as multipart.
+ *
+ * `files[]` — the brackets matter: Laravel reads `files` as an array from that
+ * name, and without them only the last file survives. Nulls and undefined are
+ * dropped rather than sent as the strings "null" and "undefined", which is what
+ * FormData does with them and what makes a nullable numeric field fail
+ * validation for no visible reason.
+ */
+function toForm(fields = {}, files = []) {
+  const form = new FormData()
+  Object.entries(fields).forEach(([k, v]) => {
+    if (v !== null && v !== undefined && v !== '') form.append(k, v)
+  })
+  Array.from(files).forEach(f => form.append('files[]', f))
+  return form
+}
+
 api.interceptors.request.use(cfg => {
   const token = getToken() // reads local- or sessionStorage (remember-me aware)
   if (token) cfg.headers.Authorization = `Bearer ${token}`
@@ -1092,6 +1110,44 @@ export const hrApi = {
     recovery:            (loanId)      => api.get(`/hr/loans/${loanId}/recovery`).then(r => r.data),
     outstandingRecovery: (params = {}) => api.get('/hr/loans/recovery/outstanding', { params }).then(r => r.data?.data ?? []),
     runRecovery:         (runId)       => api.get(`/hr/payroll/runs/${runId}/loan-recovery`).then(r => r.data),
+  },
+
+  /**
+   * Expense claims — the native ones, not SangoeTrack's.
+   *
+   * Two surfaces on purpose. `me` accepts no employee id anywhere, matching the
+   * server, which is what makes "can I see somebody else's receipts" answerable
+   * without reading the controller. The admin block is gated server-side by
+   * hr.manage; the UI hides what it cannot do, but the gate is not here.
+   */
+  reimbursements: {
+    me: {
+      list:   ()                => api.get('/hr/me/reimbursements').then(r => r.data?.data ?? []),
+      get:    (id)              => api.get(`/hr/me/reimbursements/${id}`).then(r => r.data?.data),
+      // Multipart: a claim carries its receipts, so submit and reply both post
+      // files. axios sets the boundary itself — naming the content type by hand
+      // omits it and the request arrives empty.
+      create: (data, files = []) => api.post('/hr/me/reimbursements', toForm(data, files)).then(r => r.data),
+      reply:  (id, body, files = []) =>
+        api.post(`/hr/me/reimbursements/${id}/reply`, toForm({ body }, files)).then(r => r.data),
+      accept: (id)              => api.post(`/hr/me/reimbursements/${id}/accept`).then(r => r.data),
+      // These routes carry a Bearer token, so an <img src> or a bare <a href>
+      // cannot reach them — the browser sends no Authorization header. The bytes
+      // come back as a blob and become an object URL, the same way every other
+      // authenticated download in this app works.
+      file:   (id, attachmentId) =>
+        api.get(`/hr/me/reimbursements/${id}/attachments/${attachmentId}`, { responseType: 'blob' }).then(r => r.data),
+    },
+
+    list:    (params = {})   => api.get('/hr/reimbursements', { params }).then(r => r.data?.data ?? []),
+    get:     (id)            => api.get(`/hr/reimbursements/${id}`).then(r => r.data?.data),
+    approve: (id, amount, reason) => api.post(`/hr/reimbursements/${id}/approve`, { amount, reason }).then(r => r.data),
+    decline: (id, reason)    => api.post(`/hr/reimbursements/${id}/decline`, { reason }).then(r => r.data),
+    hold:    (id, reason, proposed_amount) =>
+      api.post(`/hr/reimbursements/${id}/hold`, { reason, proposed_amount }).then(r => r.data),
+    note:    (id, body)      => api.post(`/hr/reimbursements/${id}/note`, { body }).then(r => r.data),
+    file:    (id, attachmentId) =>
+      api.get(`/hr/reimbursements/${id}/attachments/${attachmentId}`, { responseType: 'blob' }).then(r => r.data),
   },
 }
 

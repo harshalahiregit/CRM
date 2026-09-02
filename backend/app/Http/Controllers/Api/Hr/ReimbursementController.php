@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Hr\HrReimbursement;
 use App\Services\Hr\ReimbursementService;
 use App\Services\Hr\RequestThreadService;
+use App\Services\Shared\AttachmentService;
 use App\Support\Hr\ReimbursementStatus;
 use Illuminate\Http\Request;
 
@@ -33,6 +34,7 @@ class ReimbursementController extends Controller
     public function __construct(
         private ReimbursementService $claims,
         private RequestThreadService $thread,
+        private AttachmentService $attachments,
     ) {
     }
 
@@ -142,6 +144,25 @@ class ReimbursementController extends Controller
             'message' => 'Note added. The employee cannot see it.',
             'data'    => ['thread' => $this->thread->forSubject($claim, asEmployee: false)],
         ]);
+    }
+
+    /**
+     * The bytes of one receipt. Reviewing a claim means opening what was sent.
+     *
+     * Scoped through find(), so it is tenant-scoped and gated by hr.manage like
+     * everything else on this controller. The attachment is looked up THROUGH
+     * the claim rather than by id alone — an id from another tenant's claim
+     * must not resolve just because the caller can manage the HR queue here.
+     */
+    public function attachment(Request $request, int $id, int $attachmentId)
+    {
+        $claim = $this->find($request, $id);
+
+        $file = $claim->attachments()->findOrFail($attachmentId);
+
+        $f = $this->attachments->download($file);
+
+        return response()->download($f['path'], $f['filename'], ['Content-Type' => $f['mime']]);
     }
 
     private function find(Request $request, int $id): HrReimbursement

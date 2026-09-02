@@ -466,6 +466,10 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/me/reimbursements/{id}',         [MyReimbursementController::class, 'show']);
     Route::post('/me/reimbursements/{id}/reply',  [MyReimbursementController::class, 'reply']);
     Route::post('/me/reimbursements/{id}/accept', [MyReimbursementController::class, 'accept']);
+    // Declared AFTER /{id} but the path is longer, so there is no ambiguity:
+    // Laravel matches on segment count first. The bytes of a receipt, reachable
+    // only through a claim the caller owns.
+    Route::get('/me/reimbursements/{id}/attachments/{attachmentId}', [MyReimbursementController::class, 'attachment']);
 
     Route::get('/me/attendance/today',       [MyAttendanceController::class, 'today']);
     Route::post('/me/attendance/check-in',   [MyAttendanceController::class, 'checkIn']);
@@ -493,5 +497,6 @@ Route::middleware(['auth:sanctum', 'hr.manage'])->prefix('hr')->group(function (
     Route::post('/reimbursements/{id}/approve',    [ReimbursementController::class, 'approve']);
     Route::post('/reimbursements/{id}/decline',    [ReimbursementController::class, 'decline']);
     Route::post('/reimbursements/{id}/hold',       [ReimbursementController::class, 'hold']);
+    Route::get('/reimbursements/{id}/attachments/{attachmentId}', [ReimbursementController::class, 'attachment']);
     Route::post('/reimbursements/{id}/note',       [ReimbursementController::class, 'note']);
 });

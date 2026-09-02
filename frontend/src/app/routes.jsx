@@ -47,6 +47,9 @@ const TrackAttendance     = lazy(() => import('@/modules/hr/pages/track/TrackAtt
 const TrackCorrections    = lazy(() => import('@/modules/hr/pages/track/TrackCorrections'))
 const TrackLeave          = lazy(() => import('@/modules/hr/pages/track/TrackLeave'))
 const TrackReimbursements = lazy(() => import('@/modules/hr/pages/track/TrackReimbursements'))
+// The CRM's own expense claims — the native replacement for the track/ pair above.
+const Reimbursements   = lazy(() => import('@/modules/hr/pages/Reimbursements'))
+const MyReimbursements = lazy(() => import('@/modules/hr/pages/MyReimbursements'))
 const TrackAdvances       = lazy(() => import('@/modules/hr/pages/track/TrackAdvances'))
 const TrackStaff          = lazy(() => import('@/modules/hr/pages/track/TrackStaff'))
 const TrackPayroll        = lazy(() => import('@/modules/hr/pages/track/TrackPayroll'))
@@ -517,6 +520,11 @@ export default function AppRoutes() {
           <Route path="recruiter-workspace" element={<S><RecruiterWorkspace /></S>} />
           <Route path="company-approvals" element={<S><CompanyApprovals /></S>} />
           <Route path="attendance" element={<S><Attendance /></S>} />
+          {/* Native expense claims. The admin queue is gated server-side by
+              hr.manage; /my-expenses needs nothing but a linked employee record,
+              because being yourself is not a permission. */}
+          <Route path="expense-claims" element={<S><Reimbursements /></S>} />
+          <Route path="my-expenses" element={<S><MyReimbursements /></S>} />
             {/* SangoeTrack — live from track.sangoe.in. Namespaced under track/
                 so the CRM's own attendance page above keeps its route. */}
             <Route path="track/attendance" element={<S><TrackAttendance /></S>} />

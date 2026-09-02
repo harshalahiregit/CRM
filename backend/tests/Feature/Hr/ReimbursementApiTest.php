@@ -192,6 +192,100 @@ class ReimbursementApiTest extends TestCase
         $this->postJson("/api/hr/reimbursements/{$claim->id}/hold", [])->assertStatus(422);
     }
 
+    /* ── receipts ────────────────────────────────────────────────────── */
+
+    /**
+     * The bytes come back, and only through a claim the caller may read.
+     *
+     * Attachment hides `path` and `disk` and exposes no url, so a stored file is
+     * reachable only through a route like this one. These pin that the route
+     * scopes the LOOKUP through the claim rather than fetching by id alone.
+     */
+    public function test_an_employee_can_open_a_receipt_on_their_own_claim(): void
+    {
+        Storage::fake('local');
+        [$staff] = $this->person('SNE-1', 'priya@example.test');
+
+        Sanctum::actingAs($staff);
+        $this->postJson('/api/hr/me/reimbursements', [
+            'title' => 'Client dinner', 'expense_date' => now()->toDateString(), 'amount_claimed' => 5000,
+            'files' => [UploadedFile::fake()->image('receipt.jpg')],
+        ])->assertCreated();
+
+        $claim = HrReimbursement::firstOrFail();
+        $file  = $claim->attachments()->firstOrFail();
+
+        $this->get("/api/hr/me/reimbursements/{$claim->id}/attachments/{$file->id}")->assertOk();
+    }
+
+    public function test_an_employee_cannot_open_a_receipt_on_somebody_elses_claim(): void
+    {
+        Storage::fake('local');
+        [$mine]  = $this->person('SNE-1', 'priya@example.test');
+        [$other] = $this->person('SNE-2', 'raj@example.test');
+
+        Sanctum::actingAs($other);
+        $this->postJson('/api/hr/me/reimbursements', [
+            'title' => 'Theirs', 'expense_date' => now()->toDateString(), 'amount_claimed' => 900,
+            'files' => [UploadedFile::fake()->image('theirs.jpg')],
+        ])->assertCreated();
+
+        $claim = HrReimbursement::firstOrFail();
+        $file  = $claim->attachments()->firstOrFail();
+
+        Sanctum::actingAs($mine);
+        $this->get("/api/hr/me/reimbursements/{$claim->id}/attachments/{$file->id}")->assertStatus(404);
+    }
+
+    /**
+     * The id of a real attachment on ANOTHER claim must not resolve just because
+     * the caller may read the claim named in the path. This is the failure the
+     * scoping exists to prevent, so it is tested rather than assumed.
+     */
+    public function test_an_attachment_id_from_another_claim_does_not_resolve(): void
+    {
+        Storage::fake('local');
+        [$staff] = $this->person('SNE-1', 'priya@example.test');
+
+        Sanctum::actingAs($staff);
+        foreach (['first', 'second'] as $n) {
+            $this->postJson('/api/hr/me/reimbursements', [
+                'title' => $n, 'expense_date' => now()->toDateString(), 'amount_claimed' => 100,
+                'files' => [UploadedFile::fake()->image("$n.jpg")],
+            ])->assertCreated();
+        }
+
+        $claims = HrReimbursement::orderBy('id')->get();
+        $theirs = $claims[1]->attachments()->firstOrFail();
+
+        // Claim A in the path, an attachment belonging to claim B.
+        $this->get("/api/hr/me/reimbursements/{$claims[0]->id}/attachments/{$theirs->id}")
+            ->assertStatus(404);
+    }
+
+    public function test_an_admin_can_open_a_receipt_and_a_plain_employee_cannot_use_the_admin_route(): void
+    {
+        Storage::fake('local');
+        [$staff] = $this->person('SNE-1', 'priya@example.test');
+        $admin = $this->user('admin@example.test', 'admin');
+
+        Sanctum::actingAs($staff);
+        $this->postJson('/api/hr/me/reimbursements', [
+            'title' => 'Client dinner', 'expense_date' => now()->toDateString(), 'amount_claimed' => 5000,
+            'files' => [UploadedFile::fake()->image('receipt.jpg')],
+        ])->assertCreated();
+
+        $claim = HrReimbursement::firstOrFail();
+        $file  = $claim->attachments()->firstOrFail();
+
+        // The employee is refused on the ADMIN route even for their own receipt —
+        // the gate is the route group, not the ownership.
+        $this->get("/api/hr/reimbursements/{$claim->id}/attachments/{$file->id}")->assertStatus(403);
+
+        Sanctum::actingAs($admin);
+        $this->get("/api/hr/reimbursements/{$claim->id}/attachments/{$file->id}")->assertOk();
+    }
+
     public function test_an_executable_is_refused_as_an_attachment(): void
     {
         Storage::fake('local');
