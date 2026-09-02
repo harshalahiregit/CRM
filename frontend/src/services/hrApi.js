@@ -829,6 +829,18 @@ export const hrApi = {
     // already existed and already accept employee_id/month/year; only this client
     // binding was missing. Returns 422 when the integration is switched off.
     syncSangoeTrack: (data = {}) => api.post('/hr/attendance/sync-sangoetrack', data).then(r => r.data),
+
+      // Clocking YOURSELF in. Separate from the endpoints above, which take an
+      // employee_id and need HR-admin rights because they record attendance FOR
+      // somebody. These take no id at all — the employee comes from the token, so
+      // they can only ever touch the caller's own record.
+      me: {
+        today:      () => api.get('/hr/me/attendance/today').then(r => r.data),
+        checkIn:    () => api.post('/hr/me/attendance/check-in').then(r => r.data),
+        checkOut:   () => api.post('/hr/me/attendance/check-out').then(r => r.data),
+        breakStart: () => api.post('/hr/me/attendance/break-start').then(r => r.data),
+        breakEnd:   () => api.post('/hr/me/attendance/break-end').then(r => r.data),
+      },
   },
 
   // ── Recruitment Services (external-company hiring intake) ────────────────

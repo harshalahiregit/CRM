@@ -1,4 +1,5 @@
 import { useTheme } from '@/context/ThemeContext'
+import MyAttendanceCard from '@/modules/hr/components/MyAttendanceCard'
 import { useAuth } from '@/context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -112,6 +113,10 @@ export default function HRDashboard() {
         </div>
         <RaiseTicketButton source="hr" />
       </div>
+
+      {/* The same control as the main dashboard, deliberately. Somebody in HR all
+          day should not have to leave the module to clock out. */}
+      <MyAttendanceCard compact />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KPI 

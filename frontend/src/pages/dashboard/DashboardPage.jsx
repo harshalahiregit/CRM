@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/context/AuthContext'
+import MyAttendanceCard from '@/modules/hr/components/MyAttendanceCard'
 import { useTheme } from '@/context/ThemeContext'
 import {
   Users, Briefcase, CheckSquare, Receipt, TrendingUp,
@@ -258,6 +259,11 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Clock in and out from the dashboard. Sits above the KPIs because it is
+          something you DO, not something you read, and it is the first thing
+          somebody opens the CRM to do in the morning. */}
+      <MyAttendanceCard compact />
 
       {/* ── KPI Cards Grid ──────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
