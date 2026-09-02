@@ -268,6 +268,8 @@ const PurchasePpeMatrix = lazy(() => import('@/modules/purchase/pages/PurchasePp
 const PurchaseGateLog = lazy(() => import('@/modules/purchase/pages/PurchaseGateLog'))
 const PurchaseWorkforceAttendance = lazy(() => import('@/modules/purchase/pages/PurchaseWorkforceAttendance'))
 const PurchasePermits = lazy(() => import('@/modules/purchase/pages/PurchasePermits'))
+const PurchaseWorkPackages = lazy(() => import('@/modules/purchase/pages/PurchaseWorkPackages'))
+const PurchaseWorkAuthorization = lazy(() => import('@/modules/purchase/pages/PurchaseWorkAuthorization'))
 const PurchaseCompetency = lazy(() => import('@/modules/purchase/pages/PurchaseCompetency'))
 // Purchase Kickoff — Purchase-owned pages on /api/purchase/kickoff (no TPV/shared reuse).
 const PurchaseKickoffMeetings = lazy(() => import('@/modules/purchase/pages/PurchaseKickoffMeetings'))
@@ -694,6 +696,11 @@ export default function AppRoutes() {
           {/* Permit To Work. Raising is open to staff; approving, rejecting,
               activating and closing are admin-only server-side. */}
           <Route path="permits" element={<S><PurchasePermits /></S>} />
+          {/* The accountability spine: what a vendor is on site to deliver, and
+              whether a given worker may do a given activity. Authorisation is
+              derived per request and writes nothing. */}
+          <Route path="work-packages" element={<S><PurchaseWorkPackages /></S>} />
+          <Route path="work-authorization" element={<S><PurchaseWorkAuthorization /></S>} />
           {/* Workforce Competency & Skill Matrix — "No Competency, No Work" (mirror of TPV §15). */}
           <Route path="competency" element={<S><PurchaseCompetency /></S>} />
           {/* Kickoff Meetings — Purchase-owned pages on /api/purchase/kickoff (no TPV reuse) */}

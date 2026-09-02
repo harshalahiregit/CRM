@@ -186,6 +186,12 @@ class PurchaseWorkPackageService
 
         return [
             'worker'     => $worker->only(['id', 'full_name', 'worker_code', 'designation', 'status']),
+            // The employing vendor by NAME. The roster already eager-loads the
+            // relation, and dropping it here forced every caller wanting a
+            // Vendor column to re-fetch the whole worker list and join on id.
+            // The vendor CHECK below reports a status ('Active'), not a company,
+            // so it cannot stand in for this.
+            'vendor'     => $vendor?->only(['id', 'company_name', 'purchase_vendor_code']),
             'activity'   => $activity?->only(['id', 'name', 'required_competency', 'requires_permit', 'permit_type']),
             'authorized' => count($blocking) === 0,
             'checks'     => $checks,
