@@ -13,15 +13,21 @@ endpoints that exist on the vendor-portal side but were never exposed to staff.
 
 ## Slices (in build order)
 
-### 1. Workforce  ← Workers list + Wizard DONE
+### 1. Workforce  ← DONE (bar the vendor-scoped dashboard)
 | Piece | Backend | Frontend |
 |---|---|---|
 | Workers list + stats | ✅ store/update/destroy/stats/badge added | ✅ `PurchaseWorkers.jsx` |
 | Worker Wizard (5 step) | ✅ medical/training/induction endpoints added | ✅ `PurchaseWorkerWizard.jsx` |
 | Medical fitness register | ✅ `medicals()` | ✅ `PurchaseMedicalFitness.jsx` |
 | PPE matrix | ✅ admin catalogue + issue routes added | ✅ `PurchasePpeMatrix.jsx` |
-| Workforce dashboard | `summary()` exists | `PurchaseWorkforceDashboard.jsx` missing |
-| Gate log / attendance | **no gate tables at all** — needs schema + endpoints | `PurchaseGateLog.jsx`, `PurchaseWorkforceAttendance.jsx` missing |
+| Gate log / attendance | ✅ built from scratch — 2 tables, service, 7 routes | ✅ `PurchaseGateLog.jsx`, `PurchaseWorkforceAttendance.jsx` |
+| Workforce dashboard | `summary()` exists (vendor-scoped) | deferred — overlaps `PurchaseWorkers` + `PurchaseWorkforce` |
+
+The gate is the one piece that was a genuine BUILD rather than a port: Purchase
+could decide whether a worker may enter and recorded nothing when it did.
+See `PurchaseGateTest` for the two rules worth keeping: a refusal is not a
+crossing (it must not consume the in/out alternation or reach the roster), and
+attendance hours stay null on a day with no exit.
 
 Nav: Workforce · Medical Fitness · PPE Matrix · Competency.
 

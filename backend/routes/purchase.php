@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\Purchase\PurchaseGateController;
+use App\Http\Controllers\Api\Purchase\PurchasePermitController;
 use App\Http\Controllers\Api\Purchase\PurchaseRequestController;
 use App\Http\Controllers\Api\Purchase\PurchaseOrderController;
 use App\Http\Controllers\Api\Purchase\GoodsReceiptController;
@@ -293,6 +294,15 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/workforce/medicals',                 [PurchaseWorkforceAdminController::class, 'medicals']);
     Route::get('/workforce/trainings',                [PurchaseWorkforceAdminController::class, 'trainings']);
 
+    // ── Permit To Work ─────────────────────────────────────────────────────
+    // Reads and raising a request are open to staff; the DECISIONS live in the
+    // role:admin group below. Whoever raises a permit must not also clear it.
+    Route::get('/permits/stats',                 [PurchasePermitController::class, 'stats']);
+    Route::get('/permits',                       [PurchasePermitController::class, 'index']);
+    Route::post('/permits',                      [PurchasePermitController::class, 'store']);
+    Route::get('/permits/{permit}',              [PurchasePermitController::class, 'show']);
+    Route::post('/permits/{permit}/jsa',         [PurchasePermitController::class, 'addJsaStep']);
+
     // ── Site gate (mirror of TPV's gate) ───────────────────────────────────
     // Purchase could decide whether a worker may enter but recorded nothing when
     // it did, so there was no gate log and no attendance. Static segments are
@@ -529,6 +539,13 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('purchase')->group(fun
 
     // Workforce step 5 — activating a worker admits a person to the site, so it
     // is an admin decision, not a staff one and never the vendor's.
+    // Permit decisions. Clearing dangerous work to proceed is an admin act, and
+    // separating it from raising the request is the point of the permit.
+    Route::post('/permits/{permit}/approve',  [PurchasePermitController::class, 'approve']);
+    Route::post('/permits/{permit}/reject',   [PurchasePermitController::class, 'reject']);
+    Route::post('/permits/{permit}/activate', [PurchasePermitController::class, 'activate']);
+    Route::post('/permits/{permit}/close',    [PurchasePermitController::class, 'close']);
+
     Route::post('/workforce/workers/{worker}/activate',   [PurchaseWorkforceAdminController::class, 'activate']);
     // Worker lifecycle — suspend/reinstate/terminate withhold or restore site access.
     Route::post('/workforce/workers/{worker}/suspend',    [PurchaseWorkforceAdminController::class, 'suspend']);
