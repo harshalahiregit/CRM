@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\Auth\SessionService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
@@ -287,12 +288,25 @@ class StaffManagementController extends Controller
         $newStatus = $staff->status === 'active' ? 'inactive' : 'active';
         $staff->update(['status' => $newStatus]);
 
+        // Deactivating has to end the sessions that already exist, not just stop
+        // the next sign-in. Sanctum tokens carry no status check of their own, so
+        // without this a deactivated person keeps working until they happen to
+        // log out — which is exactly when nobody is watching. CompanyAdminService
+        // already does this on its own deactivate path; this one did not.
+        $revoked = 0;
+        if ($newStatus === 'inactive') {
+            $revoked = app(SessionService::class)->forceLogout($staff, $request->user());
+        }
+
         return response()->json([
             'status' => 'success',
-            'message' => "Staff member status changed to {$newStatus}",
+            'message' => $newStatus === 'inactive'
+                ? "Staff member deactivated and signed out of {$revoked} " . ($revoked === 1 ? 'session' : 'sessions')
+                : 'Staff member reactivated',
             'data' => [
                 'id' => $staff->id,
                 'status' => $staff->status,
+                'sessions_revoked' => $revoked,
             ],
         ]);
     }

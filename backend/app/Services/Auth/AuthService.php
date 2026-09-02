@@ -441,6 +441,24 @@ class AuthService
             ->first();
     }
 
+    /**
+     * Only an ACTIVE account may sign in.
+     *
+     * This was a denylist of pending / suspended / rejected, and it missed
+     * 'inactive' — the status the Deactivate button in Staff Management actually
+     * writes (StaffManagementController::toggleStatus), and the one
+     * VendorService and TpvAccessService write when revoking access. So the
+     * control that exists to stop someone signing in was the one status sign-in
+     * ignored.
+     *
+     * It is an allowlist now, which fails in the safe direction: a status added
+     * later is refused until somebody deliberately admits it, rather than
+     * silently granting access the day it is introduced. The named cases keep
+     * their specific wording so people are told what to do about it.
+     *
+     * The five statuses a user row can hold today are active, pending, inactive,
+     * suspended and rejected.
+     */
     private function assertUserCanLogin(User $user): void
     {
         if ($user->isPending()) {
@@ -453,6 +471,22 @@ class AuthService
 
         if ($user->status === 'rejected') {
             throw new BusinessException('Your registration was rejected. Contact support.', 403);
+        }
+
+        if ($user->status === 'inactive') {
+            throw new BusinessException('Your account has been deactivated. Contact your administrator.', 403);
+        }
+
+        // Anything that is not one of the five known values — including null on a
+        // row written before the column had a default — is refused rather than
+        // waved through.
+        if ($user->status !== 'active') {
+            Log::channel('auth')->warning('Login refused: unrecognised account status', [
+                'user_id' => $user->id,
+                'status'  => $user->status,
+            ]);
+
+            throw new BusinessException('Your account is not active. Contact your administrator.', 403);
         }
 
         if ($user->access_expires_at && $user->access_expires_at->isPast()) {
