@@ -66,7 +66,30 @@ class PurchaseKickoffService
         $openActions = $actions->filter(fn ($a) => PurchaseMomActionStatus::isOpen($a->status));
         $closedActions = $actions->where('status', PurchaseMomActionStatus::CLOSED)->count();
 
-        $byType = $m()->selectRaw('meeting_type, COUNT(*) as c')->groupBy('meeting_type')->pluck('c', 'meeting_type');
+        // A LIST of rows, not a keyed map. pluck() here produced
+        // {"kickoff": 3} — a JSON object — and the dashboard card maps over
+        // this, so it crashed with "list.map is not a function" the moment a
+        // tenant had a meeting. The shared engine's shape is
+        // [{type, label, count}, ...] and the same card renders both.
+        $byType = $m()->get(['meeting_type'])
+            ->groupBy('meeting_type')
+            ->map(fn ($g, $type) => [
+                'type'  => $type,
+                'label' => \App\Support\Purchase\PurchaseMeetingTypeCatalog::label($type),
+                'count' => $g->count(),
+            ])->sortByDesc('count')->values()->all();
+
+        // Meetings per vendor, same shape as the shared engine's by_vendor.
+        // Purchase meetings carry no project, so by_project is deliberately
+        // absent — the card treats a missing key as "no data", which is true,
+        // rather than showing an empty panel that looks like a loading failure.
+        $byVendor = $m()->whereNotNull('purchase_vendor_id')
+            ->with('vendor:id,company_name')->get(['id', 'purchase_vendor_id'])
+            ->groupBy('purchase_vendor_id')
+            ->map(fn ($g) => [
+                'name'  => $g->first()->vendor?->company_name ?? 'Unknown',
+                'count' => $g->count(),
+            ])->sortByDesc('count')->values()->all();
 
         return [
             'total'         => $m()->count(),
@@ -86,7 +109,12 @@ class PurchaseKickoffService
             'open_issues'   => PurchaseMomIssue::where('tenant_id', $tenantId)
                                     ->whereIn('status', PurchaseMomIssueStatus::OPEN_STATES)->count(),
             'closure_rate'  => $actions->count() > 0 ? (int) round($closedActions / $actions->count() * 100) : 0,
-            'by_type'       => $byType,
+            // Counters the shared dashboard reads that Purchase was not
+            // reporting — they rendered as blank tiles rather than zeroes.
+            'total_actions'  => $actions->count(),
+            'closed_actions' => $closedActions,
+            'by_type'        => $byType,
+            'by_vendor'      => $byVendor,
         ];
     }
 

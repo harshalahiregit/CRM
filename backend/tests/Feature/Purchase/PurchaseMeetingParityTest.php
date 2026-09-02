@@ -253,4 +253,41 @@ class PurchaseMeetingParityTest extends TestCase
         $after = $this->getJson('/api/purchase/kickoff/registers/actions')->assertOk()->json();
         $this->assertSame($a->fresh()->task_id, $after[0]['task_id']);
     }
+
+    /**
+     * The dashboard breakdowns must be LISTS.
+     *
+     * by_type was built with pluck(), which produces a keyed map — {"kickoff":3}
+     * — and serialises as a JSON object. The shared dashboard card maps over it,
+     * so the meetings page died with "list.map is not a function" as soon as a
+     * tenant had one meeting. A shape, not a value, so only a shape check
+     * catches it.
+     */
+    public function test_dashboard_breakdowns_are_lists_not_keyed_maps(): void
+    {
+        Sanctum::actingAs($this->admin());
+
+        $this->meeting($this->vendor('DashCo'), 'One');
+
+        $body = $this->getJson('/api/purchase/kickoff/dashboard')->assertOk()->json();
+
+        foreach (['by_type', 'by_vendor'] as $key) {
+            $this->assertArrayHasKey($key, $body);
+            $this->assertIsArray($body[$key], "{$key} is not an array");
+            $this->assertSame(
+                range(0, count($body[$key]) - 1),
+                array_keys($body[$key]),
+                "{$key} is a keyed map; the dashboard card maps over it and will throw"
+            );
+        }
+
+        // Same row shape the shared engine emits, so one card renders both.
+        $this->assertSame(['type', 'label', 'count'], array_keys($body['by_type'][0]));
+        $this->assertSame(['name', 'count'], array_keys($body['by_vendor'][0]));
+
+        // Counters the shared dashboard reads that Purchase was not reporting.
+        foreach (['total_actions', 'closed_actions'] as $key) {
+            $this->assertArrayHasKey($key, $body, "dashboard is missing '{$key}'");
+        }
+    }
 }

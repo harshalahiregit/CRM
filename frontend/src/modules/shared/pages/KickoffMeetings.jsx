@@ -371,7 +371,11 @@ function Kpi({ label, value, icon: Icon, color, danger }) {
 
 /** One dashboard breakdown (by type / project / vendor) — top rows + count. */
 function BreakdownCard({ title, rows, keyField, empty = 'No data' }) {
-  const list = rows || []
+  // Array-checked, not just null-checked: an endpoint answering with a keyed
+  // map ({"kickoff": 3}) instead of a list passes `rows || []` and then throws
+  // "list.map is not a function", which takes down the whole page rather than
+  // this one card.
+  const list = Array.isArray(rows) ? rows : []
   const max = Math.max(1, ...list.map(r => r.count || 0))
   return (
     <div className="pr-kpi" style={{ padding: 14 }}>

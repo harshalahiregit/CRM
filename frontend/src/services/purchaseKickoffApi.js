@@ -3,6 +3,50 @@ import { purchaseApi } from './purchaseApi'
 const k = purchaseApi.kickoff
 
 /**
+ * Translate a Purchase meeting into the shape the shared screens read.
+ *
+ * Eloquent snake-cases relation names on serialise, so some already line up
+ * (`agendaItems` → `agenda_items`, `creator`) and the rest do not. Probing a
+ * real response rather than guessing gave five that differ:
+ *
+ *   action_items   → mom_items      mom_decisions → decisions
+ *   mom_issues     → issues         participants  → attendees
+ *   vendor         → subject / subject_list
+ *
+ * These are additive: the original keys stay, so nothing that reads Purchase's
+ * own names breaks. Without this the meeting page rendered but every panel —
+ * actions, decisions, issues, attendees — was empty, and the list showed the
+ * fallback title instead of the vendor.
+ */
+function toSharedMeeting(m) {
+  if (!m || typeof m !== 'object') return m
+
+  const vendor = m.vendor
+  // The shared screens support several meetings per subject and render a list;
+  // a Purchase meeting has exactly one vendor, so the list is that one entry.
+  const subject = vendor
+    ? { id: vendor.id, name: vendor.company_name, label: 'Vendor', is_primary: true }
+    : null
+
+  return {
+    ...m,
+    mom_items: m.mom_items ?? m.action_items ?? [],
+    decisions: m.decisions ?? m.mom_decisions ?? [],
+    issues:    m.issues    ?? m.mom_issues    ?? [],
+    attendees: m.attendees ?? m.participants  ?? [],
+    subject:      m.subject ?? subject,
+    subject_list: m.subject_list ?? (subject ? [subject] : []),
+  }
+}
+
+/** Apply the translation to whatever envelope the endpoint answers with. */
+function mapMeetings(res) {
+  if (Array.isArray(res)) return res.map(toSharedMeeting)
+  if (Array.isArray(res?.data)) return { ...res, data: res.data.map(toSharedMeeting) }
+  return res
+}
+
+/**
  * Translate the shared meeting form's body into what Purchase's endpoint takes.
  *
  * The shared engine attaches a meeting to any allowlisted subject, so it sends
@@ -58,10 +102,11 @@ function toPurchaseMeeting(payload = {}) {
  */
 export const purchaseKickoffApi = {
   /* ── Meetings ─────────────────────────────────────────────── */
-  list:      k.list,
+  // Both read paths go through the shape translation above.
+  list:      (params) => k.list(params).then(mapMeetings),
   stats:     k.stats,
   dashboard: k.dashboard,
-  get:       k.get,
+  get:       (id) => k.get(id).then(toSharedMeeting),
   // Shared calls it "schedule"; Purchase's endpoint is a plain create. Both
   // take the SAME body from the form, so both go through one translator.
   schedule:  (payload) => k.create(toPurchaseMeeting(payload)),
