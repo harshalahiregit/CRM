@@ -536,7 +536,10 @@ function CreateModal({ vendorId, onClose, onCreated }) {
       // Blank optional fields are dropped rather than posted as '' — the request
       // rules are nullable, and an empty string is not the same as "not supplied".
       const payload = Object.fromEntries(Object.entries(f).filter(([, v]) => v !== '' && v !== null))
-      const w = await purchaseApi.workforce.createWorker({ ...payload, vendor_id: Number(f.vendor_id) })
+      // `purchase_vendor_id`, not `vendor_id` — the latter names a company on
+      // the shared vendors table, whose ids are unrelated to these.
+      const { vendor_id: _drop, ...rest } = payload
+      const w = await purchaseApi.workforce.createWorker({ ...rest, purchase_vendor_id: Number(f.vendor_id) })
       onCreated(w?.id ?? w?.data?.id)
     } catch (e) {
       const errObj = e?.response?.data?.errors

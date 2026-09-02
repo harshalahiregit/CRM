@@ -51,7 +51,10 @@ return new class extends Migration
             $table->timestamps();
 
             // The attendance query: one worker's crossings, newest first.
-            $table->index(['tenant_id', 'purchase_worker_id', 'scanned_at']);
+            // Named explicitly: the generated name is 65 characters, one over
+            // MySQL's 64-character limit, so `migrate` aborts on production
+            // while every SQLite test passes.
+            $table->index(['tenant_id', 'purchase_worker_id', 'scanned_at'], 'pgs_tenant_worker_scanned_idx');
             // The gate log: everything at a site on a day.
             $table->index(['tenant_id', 'scanned_at']);
         });

@@ -266,8 +266,16 @@ class PurchaseWorkforceAdminController extends Controller
     /** Register a worker against a vendor. Step 1 of the wizard. */
     public function store(Request $request)
     {
+        // The module's convention is `purchase_vendor_id` — every Purchase
+        // FormRequest uses it, and `vendor_id` means a DIFFERENT company on the
+        // shared vendors table whose ids are unrelated. This endpoint was the
+        // one place taking the short name, which made it the one place where
+        // copying a payload from another Purchase form would silently attach a
+        // worker to the wrong vendor. Both are accepted so existing callers keep
+        // working; the long name wins.
         $data = $request->validate([
-            'vendor_id'       => 'required|integer',
+            'purchase_vendor_id' => 'required_without:vendor_id|integer',
+            'vendor_id'          => 'required_without:purchase_vendor_id|integer',
             'full_name'       => 'required|string|max:150',
             'gender'          => 'nullable|string|max:20',
             'dob'             => 'nullable|date',
@@ -298,8 +306,8 @@ class PurchaseWorkforceAdminController extends Controller
             'department'        => 'nullable|string|max:120',
         ]);
 
-        $vendor = $this->vendorForTenant($request, (int) $data['vendor_id']);
-        unset($data['vendor_id']);
+        $vendor = $this->vendorForTenant($request, (int) ($data['purchase_vendor_id'] ?? $data['vendor_id']));
+        unset($data['vendor_id'], $data['purchase_vendor_id']);
 
         return response()->json($this->service->create($vendor, $data), 201);
     }
