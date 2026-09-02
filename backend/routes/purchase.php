@@ -18,6 +18,9 @@ use App\Http\Controllers\Api\Purchase\PurchaseOnboardingController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorDocumentController;
 use App\Http\Controllers\Api\Purchase\PurchaseContactController;
 use App\Http\Controllers\Api\Purchase\PurchaseKickoffController;
+// Mounted unchanged: meeting types carry nothing module-specific, so Purchase
+// shares the shared engine's controller rather than a duplicate table.
+use App\Http\Controllers\Api\Shared\MeetingTypeSettingsController;
 use App\Http\Controllers\Api\Purchase\PurchaseMomActionController;
 use App\Http\Controllers\Api\Purchase\PurchaseMomIssueController;
 use App\Http\Controllers\Api\Purchase\PurchaseMomDecisionController;
@@ -518,6 +521,22 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/kickoff/staff',                   [PurchaseKickoffController::class, 'staff']);
     Route::get('/kickoff/vendors',                 [PurchaseKickoffController::class, 'vendors']);
     Route::get('/kickoff/vendor-status',           [PurchaseKickoffController::class, 'vendorStatus']);
+    Route::get('/kickoff/history',                 [PurchaseKickoffController::class, 'history']);
+    // Subjects the SHARED engine supports and Purchase does not. They answer
+    // with an empty list rather than 404 — the shared meeting form requests
+    // both on mount, and a 404 would read as an error on a working screen.
+    Route::get('/kickoff/projects',                [PurchaseKickoffController::class, 'projects']);
+    Route::get('/kickoff/customers',               [PurchaseKickoffController::class, 'customers']);
+    Route::post('/kickoff/ai/suggest-agenda',      [PurchaseKickoffController::class, 'aiSuggestAgenda']);
+
+    // Meeting types are tenant-scoped and carry nothing module-specific
+    // (tenant_id, key, label, templates, is_active, sort_order), so the SHARED
+    // controller is mounted here unchanged rather than copied onto a duplicate
+    // table that would then drift.
+    Route::get('/meeting-type-settings',                  [MeetingTypeSettingsController::class, 'index']);
+    Route::post('/meeting-type-settings',                 [MeetingTypeSettingsController::class, 'store']);
+    Route::put('/meeting-type-settings/{meetingType}',    [MeetingTypeSettingsController::class, 'update'])->whereNumber('meetingType');
+    Route::delete('/meeting-type-settings/{meetingType}', [MeetingTypeSettingsController::class, 'destroy'])->whereNumber('meetingType');
 
     Route::get('/kickoff',                         [PurchaseKickoffController::class, 'index']);
     Route::post('/kickoff',                        [PurchaseKickoffController::class, 'store']);
@@ -548,11 +567,15 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::post('/kickoff/{kickoff}/mom/decide',   [PurchaseKickoffController::class, 'momDecide']);
     Route::post('/kickoff/{kickoff}/mom/revise',   [PurchaseKickoffController::class, 'momRevise']);
     Route::post('/kickoff/{kickoff}/publish',      [PurchaseKickoffController::class, 'publish']);
+    Route::post('/kickoff/{kickoff}/ai-summary',   [PurchaseKickoffController::class, 'aiSummary']);
     // MOM action engine (Meeting → Action → Owner → Due → Evidence → Verification → Closure).
     Route::get('/kickoff/{kickoff}/actions',                        [PurchaseMomActionController::class, 'index']);
     Route::post('/kickoff/{kickoff}/actions',                       [PurchaseMomActionController::class, 'store']);
     Route::put('/kickoff/{kickoff}/actions/{action}',              [PurchaseMomActionController::class, 'update'])->whereNumber('action');
     Route::post('/kickoff/{kickoff}/actions/{action}/progress',   [PurchaseMomActionController::class, 'progress'])->whereNumber('action');
+    // Turn a MOM action into a real Task so it lands in someone's list instead
+    // of living only in the minutes.
+    Route::post('/kickoff/{kickoff}/actions/{action}/push-task',  [PurchaseKickoffController::class, 'pushActionTask'])->whereNumber('action');
     Route::get('/kickoff/{kickoff}/actions/{action}/evidence',    [PurchaseMomActionController::class, 'evidence'])->whereNumber('action');
     Route::delete('/kickoff/{kickoff}/actions/{action}',          [PurchaseMomActionController::class, 'destroy'])->whereNumber('action');
     // MOM issue register (track to resolution; convert to NCR / CAPA).

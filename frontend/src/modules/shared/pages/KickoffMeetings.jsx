@@ -5,7 +5,10 @@ import {
   Users, AlertTriangle, ClipboardCheck, Pencil, BellRing, Eye, Download, Loader2, Mail, MessageCircle, Smartphone,
   ChevronLeft, ChevronRight, List, LayoutGrid, Laptop, Building2, UserX, ListChecks, Trash2, Settings2, UserCheck,
 } from 'lucide-react'
-import { kickoffApi } from '@/services/kickoffApi'
+// Resolves per call to the meeting engine of the module in the URL — the
+// shared engine under /app/tpv, Purchase's under /app/purchase. Aliased to
+// the old name so the call sites below read unchanged.
+import { meetingEngineApi as kickoffApi, meetingBase } from '@/services/meetingEngineApi'
 import { useAuth } from '@/context/AuthContext'
 import {
   KO_STATUS, koStatusCfg, koModeLabel, fmtDate, fmtDateTime, isKoClosed,
@@ -122,7 +125,7 @@ export default function KickoffMeetings() {
         </div>
         <div style={{ display: 'flex', gap: 9 }}>
           <button onClick={load} style={ghostBtn}><RefreshCw size={14} /> Refresh</button>
-          <button onClick={() => navigate('/app/tpv/kickoff/new')} style={solidBtn}><Plus size={15} /> Schedule meeting</button>
+          <button onClick={() => navigate(`${meetingBase()}/kickoff/new`)} style={solidBtn}><Plus size={15} /> Schedule meeting</button>
         </div>
       </div>
 
@@ -256,9 +259,9 @@ export default function KickoffMeetings() {
           {[1, 2, 3].map(i => <div key={i} className="skeleton" style={{ height: 64, borderRadius: 12, background: 'var(--border)' }} />)}
         </div>
       ) : view === 'calendar' ? (
-        <MeetingCalendar data={rows} onOpen={(mid) => navigate(`/app/tpv/kickoff/${mid}`)} />
+        <MeetingCalendar data={rows} onOpen={(mid) => navigate(`${meetingBase()}/kickoff/${mid}`)} />
       ) : rows.length === 0 ? (
-        <EmptyState filter={filter} onNew={() => navigate('/app/tpv/kickoff/new')} />
+        <EmptyState filter={filter} onNew={() => navigate(`${meetingBase()}/kickoff/new`)} />
       ) : (
         <div className="pr-glass" style={{ padding: 0, borderRadius: 16, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
@@ -277,7 +280,7 @@ export default function KickoffMeetings() {
                   const busyView = pdfBusy === `${m.id}:view`
                   const busyDl   = pdfBusy === `${m.id}:dl`
                   return (
-                    <tr key={m.id} className="ko-row" onClick={() => navigate(`/app/tpv/kickoff/${m.id}`)} style={{ cursor: 'pointer', borderTop: '1px solid var(--border)' }}>
+                    <tr key={m.id} className="ko-row" onClick={() => navigate(`${meetingBase()}/kickoff/${m.id}`)} style={{ cursor: 'pointer', borderTop: '1px solid var(--border)' }}>
                       {/* The meeting's own reference (MTG-YYYY-NNNN), not the row
                           id: it is what the MOM prints and what a vendor quotes. */}
                       <td style={td}>
@@ -314,7 +317,7 @@ export default function KickoffMeetings() {
                           {/* Opens the full create/edit form — participants, MOM
                               items, mode and venue. The old inline modal only
                               carried a handful of fields. */}
-                          <ActionBtn title="Edit" icon={Pencil} color="#a78bfa" onClick={() => navigate(`/app/tpv/kickoff/${m.id}/edit`)} />
+                          <ActionBtn title="Edit" icon={Pencil} color="#a78bfa" onClick={() => navigate(`${meetingBase()}/kickoff/${m.id}/edit`)} />
                           <ActionBtn title="Reminder" icon={BellRing} color="#f59e0b" onClick={() => setRemindFor(m)} />
                           <ActionBtn title="View PDF" icon={busyView ? Loader2 : Eye} color="#10b981" spin={busyView} onClick={() => handlePdf(m, false)} />
                           <ActionBtn title="Download PDF" icon={busyDl ? Loader2 : Download} color="#7C3AED" spin={busyDl} onClick={() => handlePdf(m, true)} />

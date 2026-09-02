@@ -6,7 +6,10 @@ import {
   FileText, History, RotateCcw, Sparkles,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
-import { kickoffApi } from '@/services/kickoffApi'
+// Resolves per call to the meeting engine of the module in the URL — the
+// shared engine under /app/tpv, Purchase's under /app/purchase. Aliased to
+// the old name so the call sites below read unchanged.
+import { meetingEngineApi as kickoffApi, meetingBase } from '@/services/meetingEngineApi'
 import { meetingApi } from '@/services/meetingApi'
 import { tpvApi } from '@/services/tpvApi'
 import { KO_MODES, actStatusCfg, issueStatusCfg } from '../kickoffConstants'
@@ -768,7 +771,7 @@ export default function KickoffMeetingCreate() {
         }
       }
 
-      navigate(newId ? `/app/tpv/kickoff/${newId}` : '/app/tpv/kickoff')
+      navigate(newId ? `${meetingBase()}/kickoff/${newId}` : `${meetingBase()}/kickoff`)
     } catch (e) {
       setErr(e?.response?.data?.message || 'Could not save the meeting.')
       setSaving(false)
@@ -784,14 +787,14 @@ export default function KickoffMeetingCreate() {
       {/* ── Page Header ──────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 22, flexWrap: 'wrap', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-          <button onClick={() => navigate('/app/tpv/kickoff')}
+          <button onClick={() => navigate(`${meetingBase()}/kickoff`)}
             style={{ width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)', marginTop: 3, flexShrink: 0 }}>
             <ArrowLeft size={16} />
           </button>
           <div>
             {/* Breadcrumb */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>
-              <span style={{ cursor: 'pointer', color: '#a78bfa' }} onClick={() => navigate('/app/tpv/kickoff')}>Kickoff Meetings</span>
+              <span style={{ cursor: 'pointer', color: '#a78bfa' }} onClick={() => navigate(`${meetingBase()}/kickoff`)}>Kickoff Meetings</span>
               <ChevronRight size={12} />
               <span>{isEdit ? 'Edit' : 'Create New'}{loading ? ' · loading…' : ''}</span>
             </div>
@@ -840,7 +843,7 @@ export default function KickoffMeetingCreate() {
             <div style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8 }}>
               {/* Distribution is gated by approval now — the full submit → approve →
                   distribute workflow lives on the meeting detail page. */}
-              <button onClick={() => navigate(`/app/tpv/kickoff/${editId}`)}
+              <button onClick={() => navigate(`${meetingBase()}/kickoff/${editId}`)}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9,
                   fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: 'none', color: '#fff',
                   background: 'linear-gradient(145deg,#f59e0b,#d97706)' }}>
@@ -1729,7 +1732,7 @@ export default function KickoffMeetingCreate() {
                   Saved as a draft — nobody is notified until you <strong style={{ color: 'var(--text-h)' }}>Publish</strong> it from the meeting page.
                 </div>
               )}
-              <button onClick={() => navigate('/app/tpv/kickoff')} disabled={saving}
+              <button onClick={() => navigate(`${meetingBase()}/kickoff`)} disabled={saving}
                 style={{
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                   padding: '10px 20px', borderRadius: 11, cursor: 'pointer', fontSize: 13, fontWeight: 600,

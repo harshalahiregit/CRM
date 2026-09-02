@@ -327,6 +327,26 @@ export const purchaseApi = {
     staff:        ()         => api.get('/purchase/kickoff/staff').then(r => r.data),
     vendors:      ()         => api.get('/purchase/kickoff/vendors').then(r => r.data),
     vendorStatus: (vendorId) => api.get('/purchase/kickoff/vendor-status', { params: { vendor_id: vendorId } }).then(r => r.data),
+    // Meetings for a vendor (or the whole tenant), newest first — so a
+    // recurring meeting is planned against the last one, not from scratch.
+    history:      (params = {}) => api.get('/purchase/kickoff/history', { params }).then(r => r.data),
+    // Subjects the SHARED engine supports and Purchase does not; both answer
+    // with an empty list so the shared form's pickers render empty rather than
+    // erroring on a screen that is working correctly.
+    projects:     ()         => api.get('/purchase/kickoff/projects').then(r => r.data),
+    customers:    ()         => api.get('/purchase/kickoff/customers').then(r => r.data),
+
+    // Meeting types are tenant-scoped and shared with the other engine — the
+    // same controller serves both, so these are not a Purchase-only catalogue.
+    typeSettings: ()         => api.get('/purchase/meeting-type-settings').then(r => r.data),
+    createType:   (data)     => api.post('/purchase/meeting-type-settings', data).then(r => r.data),
+    updateType:   (id, data) => api.put(`/purchase/meeting-type-settings/${id}`, data).then(r => r.data),
+    deleteType:   (id)       => api.delete(`/purchase/meeting-type-settings/${id}`).then(r => r.data),
+
+    // AI — served by the shared MeetingAIService, so the prompt and its
+    // "invent nothing" guardrail are the same on both sides.
+    aiSuggestAgenda: (data)      => api.post('/purchase/kickoff/ai/suggest-agenda', data).then(r => r.data),
+    aiSummary:       (meetingId) => api.post(`/purchase/kickoff/${meetingId}/ai-summary`).then(r => r.data),
     // Agenda builder (Meeting.docx §3/§4).
     agenda: {
       list:         (id)          => api.get(`/purchase/kickoff/${id}/agenda`).then(r => r.data),
@@ -387,6 +407,9 @@ export const purchaseApi = {
         return api.post(`/purchase/kickoff/${id}/actions/${aid}/progress`, data).then(r => r.data)
       },
       evidenceBlob: (id, aid) => api.get(`/purchase/kickoff/${id}/actions/${aid}/evidence`, { responseType: 'blob' }).then(r => r.data),
+      // Turn the action into a real Task so it lands in someone's list rather
+      // than living only in the minutes. Refused if already pushed.
+      pushTask: (id, aid)     => api.post(`/purchase/kickoff/${id}/actions/${aid}/push-task`).then(r => r.data),
       remove: (id, aid)       => api.delete(`/purchase/kickoff/${id}/actions/${aid}`).then(r => r.data),
     },
     // MOM issue register — track to resolution; convert to NCR / CAPA.

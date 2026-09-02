@@ -79,12 +79,13 @@ class PurchaseMomIssueController extends Controller
         $this->assertIssue($request, $kickoff, $issue);
 
         $data = $request->validate([
-            'target' => ['required', Rule::in(['ncr', 'capa', 'approval'])],
+            'target' => ['required', Rule::in(['ncr', 'capa', 'approval', 'task'])],
         ]);
 
         $result = match ($data['target']) {
             'ncr'      => $this->service->convertToNcr($issue, $request->user()),
             'approval' => $this->service->convertToApproval($issue, $request->user()),
+            'task'     => $this->service->convertToTask($issue, $request->user()),
             default    => $this->service->convertToCapa($issue, $request->user()),
         };
 

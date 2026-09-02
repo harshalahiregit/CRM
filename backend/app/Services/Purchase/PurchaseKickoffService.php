@@ -809,6 +809,114 @@ class PurchaseKickoffService
         $meeting->recordAudit('document_deleted', $actor, 'Document removed: '.$label);
     }
 
+    /**
+     * Push a MOM action into the Task module as a real Task.
+     *
+     * An action that lives only in the minutes gets chased only by whoever
+     * re-reads them. As a Task it lands in someone's list with a due date and
+     * shows on the vendor's Tasks tab, which is the whole point of raising it.
+     *
+     * Mirrors Shared\KickoffMeetingService::pushActionToTask; the differences
+     * are Purchase's own: the subject link is `purchase_vendor` (TaskService
+     * already accepts that rel_type), and the assignee is resolved through a
+     * participant rather than an attendee.
+     */
+    public function pushActionToTask(PurchaseMomActionItem $item, User $actor): PurchaseMomActionItem
+    {
+        // The link column is what makes this idempotent — without the guard a
+        // second click silently creates a duplicate task for the same action.
+        if ($item->task_id) {
+            throw new BusinessException('This action is already linked to a task.');
+        }
+
+        $meeting = $item->meeting()->with(['vendor', 'participants'])->first();
+
+        $title = trim(strip_tags((string) $item->description));
+        if ($title === '') {
+            throw new BusinessException('Add a description before creating a task from this action.');
+        }
+        $title = mb_substr($title, 0, 200);
+
+        // Link the task to the vendor when the meeting is about one, so it shows
+        // on that vendor's Tasks tab.
+        $relType = 'standalone';
+        $relId = null;
+        if ($meeting?->purchase_vendor_id) {
+            $relType = 'purchase_vendor';
+            $relId = (int) $meeting->purchase_vendor_id;
+        }
+
+        // The responsible participant's login becomes the assignee, when they
+        // have one — participants are often external and carry no user account.
+        $assigneeIds = [];
+        if ($item->responsible_participant_id) {
+            $uid = $meeting?->participants->firstWhere('id', $item->responsible_participant_id)?->user_id;
+            if ($uid) {
+                $assigneeIds[] = $uid;
+            }
+        }
+
+        $priorityMap = ['Low' => 'low', 'Medium' => 'medium', 'High' => 'high', 'Urgent' => 'urgent'];
+        $priority = $priorityMap[$item->priority] ?? 'medium';
+
+        $backlink = 'From meeting '.($meeting?->meeting_no ?: ('#'.$meeting?->id))
+            .' · action '.$item->action_ref;
+
+        $task = app(\App\Services\Task\TaskService::class)->create([
+            'name' => $title,
+            'description' => (string) $item->description."\n\n<p><em>{$backlink}</em></p>",
+            'priority' => $priority,
+            'start_date' => now()->toDateString(),
+            'due_date' => optional($item->target_date)->toDateString(),
+            'rel_type' => $relType,
+            'rel_id' => $relId,
+            'assignee_ids' => $assigneeIds,
+        ], $actor->tenant_id, $actor->id);
+
+        $item->forceFill(['task_id' => $task->id])->save();
+
+        $meeting?->recordAudit('action_pushed_to_task', $actor,
+            "Action {$item->action_ref} pushed to task #{$task->id}");
+
+        Log::channel('purchase')->info('Purchase meeting action pushed to task', [
+            'action_id' => $item->id, 'task_id' => $task->id, 'tenant_id' => $actor->tenant_id,
+        ]);
+
+        return $item->fresh();
+    }
+
+    /**
+     * Every meeting held for one vendor, newest first.
+     *
+     * The vendor's meeting history — what the workspace links to and what the
+     * create screen shows so a recurring meeting is planned against the last
+     * one rather than from scratch.
+     */
+    public function vendorHistory(int $tenantId, ?int $vendorId = null, int $limit = 50): array
+    {
+        $q = PurchaseKickoffMeeting::where('tenant_id', $tenantId)
+            ->with('vendor:id,company_name')
+            ->orderByDesc('scheduled_at');
+
+        if ($vendorId) {
+            $q->where('purchase_vendor_id', $vendorId);
+        }
+
+        return $q->limit($limit)->get()->map(fn ($m) => [
+            'id' => $m->id,
+            'meeting_no' => $m->meeting_no ?: $m->reference,
+            'title' => $m->title,
+            'meeting_type' => $m->meeting_type,
+            'meeting_type_label' => $m->meeting_type_label,
+            'status' => $m->status,
+            'status_label' => $m->status_label,
+            'scheduled_at' => $m->scheduled_at,
+            'vendor' => $m->vendor?->company_name,
+            'purchase_vendor_id' => $m->purchase_vendor_id,
+            'mom_status' => $m->mom_status,
+        ])->all();
+    }
+
     /* ── internals ─────────────────────────────────────────────── */
 
     /** Persist a MOM row and flip the previous current one. */

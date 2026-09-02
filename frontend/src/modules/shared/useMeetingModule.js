@@ -1,6 +1,6 @@
 import { useLocation } from 'react-router-dom'
 import { kickoffApi } from '@/services/kickoffApi'
-import { purchaseApi } from '@/services/purchaseApi'
+import { purchaseKickoffApi } from '@/services/purchaseKickoffApi'
 
 /**
  * Meeting-module context — the same idea as useVendorModule(), for the meeting
@@ -29,7 +29,10 @@ export function useMeetingModule() {
   if (pathname.startsWith('/app/purchase')) {
     return {
       key: 'purchase',
-      api: purchaseApi.kickoff,
+      // The adapter, not purchaseApi.kickoff directly — it presents Purchase's
+      // engine under the shared method names and reconciles three argument
+      // shapes that differ between the two clients.
+      api: purchaseKickoffApi,
       base: '/app/purchase',
       label: 'Purchase',
       // Purchase meetings are scoped to a vendor and carry no project link, so

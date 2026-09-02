@@ -181,6 +181,56 @@ class PurchaseMomIssueService
         }
     }
 
+    /**
+     * Escalate an issue into a real Task. Idempotent, like the other three.
+     *
+     * NCR/CAPA/Approval are the heavyweight escalations; plenty of meeting
+     * issues are simply "someone needs to go and do this", and without a task
+     * target those were either forced into an NCR they did not warrant or left
+     * in the minutes to be forgotten.
+     */
+    public function convertToTask(PurchaseMomIssue $issue, User $actor): PurchaseMomIssue
+    {
+        $this->assertNotConverted($issue);
+        $meeting = $issue->meeting;
+
+        $title = trim((string) $issue->title);
+        if ($title === '') {
+            throw new BusinessException('Add a title before creating a task from this issue.');
+        }
+
+        // Link to the vendor when the meeting has one, so the task shows on that
+        // vendor's Tasks tab. TaskService already accepts this rel_type.
+        $relType = $meeting?->purchase_vendor_id ? 'purchase_vendor' : 'standalone';
+        $relId = $meeting?->purchase_vendor_id ? (int) $meeting->purchase_vendor_id : null;
+
+        $backlink = 'From meeting '.($meeting?->meeting_no ?: ('#'.$meeting?->id))
+            .' · issue '.$issue->issue_ref;
+
+        $task = app(\App\Services\Task\TaskService::class)->create([
+            'name' => mb_substr($title, 0, 200),
+            'description' => (string) $issue->description."\n\n<p><em>{$backlink}</em></p>",
+            'priority' => $this->taskPriorityFor($issue->severity),
+            'start_date' => now()->toDateString(),
+            'due_date' => optional($issue->due_date)->toDateString(),
+            'rel_type' => $relType,
+            'rel_id' => $relId,
+        ], (int) $issue->tenant_id, (int) $actor->id);
+
+        return $this->stampConversion($issue, 'Task', '#'.$task->id, $task->id, $actor);
+    }
+
+    /** Issue severity → task priority (the Task module uses lowercase names). */
+    private function taskPriorityFor(?string $severity): string
+    {
+        return match ($severity) {
+            'Critical' => 'urgent',
+            'High' => 'high',
+            'Low' => 'low',
+            default => 'medium',
+        };
+    }
+
     private function stampConversion(PurchaseMomIssue $issue, string $to, ?string $ref, ?int $id, User $actor): PurchaseMomIssue
     {
         $issue->update([

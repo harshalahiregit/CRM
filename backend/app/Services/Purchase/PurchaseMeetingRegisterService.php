@@ -192,10 +192,10 @@ class PurchaseMeetingRegisterService
                 'is_open' => $a->is_open,
                 'is_overdue' => $a->is_overdue,
                 'agenda_item' => null,
-                // Purchase actions carry no task_id — there is no push-to-task
-                // on this side yet, so the register reports none rather than
-                // implying a link that cannot exist.
-                'task_id' => null,
+                // Set once the action has been pushed into the Task module —
+                // the register shows the link so an item already being chased
+                // as a task is not chased twice.
+                'task_id' => $a->task_id,
                 'has_evidence' => $a->has_evidence,
             ], $meetings[$a->purchase_kickoff_meeting_id] ?? null))
             ->filter(fn ($r) => $this->matchesContext($r, $filters))

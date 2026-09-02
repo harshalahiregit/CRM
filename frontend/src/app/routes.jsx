@@ -281,10 +281,7 @@ const PurchaseAuthorityMatrix = lazy(() => import('@/modules/purchase/pages/Purc
 const PurchasePrequalification = lazy(() => import('@/modules/purchase/pages/PurchasePrequalification'))
 const PurchaseRiskDueDiligence = lazy(() => import('@/modules/purchase/pages/PurchaseRiskDueDiligence'))
 const PurchaseCompetency = lazy(() => import('@/modules/purchase/pages/PurchaseCompetency'))
-// Purchase Kickoff — Purchase-owned pages on /api/purchase/kickoff (no TPV/shared reuse).
-const PurchaseKickoffMeetings = lazy(() => import('@/modules/purchase/pages/PurchaseKickoffMeetings'))
-const PurchaseKickoffCreate = lazy(() => import('@/modules/purchase/pages/PurchaseKickoffCreate'))
-const PurchaseKickoffDetail = lazy(() => import('@/modules/purchase/pages/PurchaseKickoffDetail'))
+// Purchase meetings now render the SHARED kickoff screens; see the routes below.
 
 // Purchase Vendor Portal (lazy) — independent PurchaseVendor auth.
 const PurchasePortalShell = lazy(() => import('@/pages/purchase-portal/PurchasePortalShell'))
@@ -735,10 +732,17 @@ export default function AppRoutes() {
           <Route path="risk" element={<S><PurchaseRiskDueDiligence /></S>} />
           {/* Workforce Competency & Skill Matrix — "No Competency, No Work" (mirror of TPV §15). */}
           <Route path="competency" element={<S><PurchaseCompetency /></S>} />
-          {/* Kickoff Meetings — Purchase-owned pages on /api/purchase/kickoff (no TPV reuse) */}
-          <Route path="kickoff" element={<S><PurchaseKickoffMeetings /></S>} />
-          <Route path="kickoff/new" element={<S><PurchaseKickoffCreate /></S>} />
-          <Route path="kickoff/:id" element={<S><PurchaseKickoffDetail /></S>} />
+          {/* Meetings — the SAME three screens TPV uses, on Purchase's tables.
+              meetingEngineApi resolves the engine from the path, so these post
+              to /api/purchase/kickoff here and /api/kickoff under /app/tpv.
+              The Purchase-owned copies they replace were 2,073 lines against
+              the shared engine's 4,715: no calendar, no meeting-type manager,
+              no live vendor snapshot, no AI agenda or summary, no carry-forward
+              picker, and no cross-meeting registers. */}
+          <Route path="kickoff" element={<S><KickoffMeetings /></S>} />
+          <Route path="kickoff/new" element={<S><KickoffMeetingCreate /></S>} />
+          <Route path="kickoff/:id/edit" element={<S><KickoffMeetingCreate /></S>} />
+          <Route path="kickoff/:id" element={<S><KickoffMeetingDetail /></S>} />
           {/* The SAME register screen TPV uses. useMeetingModule() resolves the
               Purchase engine on this path, so decisions, issues and the open
               action backlog now read ACROSS meetings here too — previously they

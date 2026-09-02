@@ -6,7 +6,10 @@ import {
   Sparkles, Eye, Download, Video, ExternalLink, ClipboardCheck, ThumbsUp, Undo2, RotateCcw, ListChecks,
   Plus, Mail, MailCheck, Pencil, Building2, UserCheck, Briefcase, UserX, Trash2,
 } from 'lucide-react'
-import { kickoffApi } from '@/services/kickoffApi'
+// Resolves per call to the meeting engine of the module in the URL — the
+// shared engine under /app/tpv, Purchase's under /app/purchase. Aliased to
+// the old name so the call sites below read unchanged.
+import { meetingEngineApi as kickoffApi, meetingBase } from '@/services/meetingEngineApi'
 import { meetingApi } from '@/services/meetingApi'
 import {
   KO_STATUS, koStatusCfg, koNextStatuses, koModeLabel, fmtDateTime, fmtDate,
@@ -67,7 +70,7 @@ export default function KickoffMeetingDetail() {
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 18 }}>
-        <button onClick={() => navigate('/app/tpv/kickoff')} style={{ width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)', marginTop: 3, flexShrink: 0 }}>
+        <button onClick={() => navigate(`${meetingBase()}/kickoff`)} style={{ width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)', marginTop: 3, flexShrink: 0 }}>
           <ArrowLeft size={16} />
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -230,7 +233,7 @@ export default function KickoffMeetingDetail() {
           )}
 
           {/* This subject's whole meeting history + rollup totals */}
-          <VendorHistoryCard m={m} onOpen={(mid) => navigate(`/app/tpv/kickoff/${mid}`)} />
+          <VendorHistoryCard m={m} onOpen={(mid) => navigate(`${meetingBase()}/kickoff/${mid}`)} />
         </div>
 
         {/* Right column */}
@@ -282,14 +285,14 @@ export default function KickoffMeetingDetail() {
           <ActionItemsCard m={m} meetingId={id} onChanged={load} onError={setErr} />
 
           {/* Agenda with its per-item discussion + decision (§7) */}
-          <AgendaCard m={m} onEdit={() => navigate(`/app/tpv/kickoff/${id}/edit`)} />
+          <AgendaCard m={m} onEdit={() => navigate(`${meetingBase()}/kickoff/${id}/edit`)} />
 
           {/* Decision register (§9) */}
-          <DecisionsCard m={m} onEdit={() => navigate(`/app/tpv/kickoff/${id}/edit`)} />
+          <DecisionsCard m={m} onEdit={() => navigate(`${meetingBase()}/kickoff/${id}/edit`)} />
 
           {/* Issues raised (§10) — track + escalate */}
           <IssuesCard m={m} meetingId={id} onChanged={load} onError={setErr}
-            onEdit={() => navigate(`/app/tpv/kickoff/${id}/edit`)} />
+            onEdit={() => navigate(`${meetingBase()}/kickoff/${id}/edit`)} />
 
           {/* Who the invitation and the minutes actually reached (§13) */}
           <DistributionCard meetingId={id} m={m} onError={setErr} />
@@ -679,7 +682,7 @@ function DecisionsCard({ m, onEdit }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
         <SectionTitle icon={ShieldCheck}>Decisions <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: 12 }}>· {rows.length}</span></SectionTitle>
         <div style={{ display: 'flex', gap: 6 }}>
-          <a href="/app/tpv/meetings/registers/decisions" style={registerLink}>Decision Register</a>
+          <a href={`${meetingBase()}/meetings/registers/decisions`} style={registerLink}>Decision Register</a>
           {onEdit && <button onClick={onEdit} style={addOnFormBtn}><Plus size={12} /> Add</button>}
         </div>
       </div>
@@ -722,7 +725,7 @@ function IssuesCard({ m, meetingId, onChanged, onError, onEdit }) {
         <SectionTitle icon={AlertTriangle}>Issues Raised <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: 12 }}>· {rows.length}</span></SectionTitle>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           {rows.length > 0 && <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{open} open</span>}
-          <a href="/app/tpv/meetings/registers/issues" style={registerLink}>Issue Register</a>
+          <a href={`${meetingBase()}/meetings/registers/issues`} style={registerLink}>Issue Register</a>
           {onEdit && <button onClick={onEdit} style={addOnFormBtn}><Plus size={12} /> Add</button>}
         </div>
       </div>
