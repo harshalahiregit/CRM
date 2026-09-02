@@ -36,6 +36,30 @@ export function readStoredSection() {
 }
 
 /**
+ * Which accordion section owns the current route, so navigating INTO a module
+ * opens that module's section and pulls it to the top of the sidebar — the job
+ * the old pinned-module block used to do. Returns null for pages that live in
+ * no section (Dashboard, Tasks, Customers…), leaving whatever is open alone.
+ *
+ * Keep the prefixes in step with SECTION_IDS and the routes each module owns.
+ */
+const SECTION_ROUTE_PREFIXES = [
+  ['/app/hr', 'hr'],
+  ['/app/sales', 'sales'],
+  ['/app/accounts', 'accounts'],
+  ['/app/helpdesk', 'helpdesk'],
+  ['/app/inventory', 'inventory'],
+  ['/app/purchase', 'purchase'],
+  ['/app/tpv', 'tpv'],
+]
+
+export function sectionForPath(pathname) {
+  if (!pathname) return null
+  const hit = SECTION_ROUTE_PREFIXES.find(([prefix]) => pathname.startsWith(prefix))
+  return hit ? hit[1] : null
+}
+
+/**
  * HR's inner groups — Recruitment and HR Records.
  *
  * These are NOT an accordion. The module level allows one open section because
@@ -84,5 +108,5 @@ export function useSidebarSection() {
     } catch { /* not remembering is fine; crashing is not */ }
   }, [openGroups])
 
-  return { openSection, toggleSection, isGroupOpen, toggleGroup }
+  return { openSection, setOpenSection, toggleSection, isGroupOpen, toggleGroup }
 }

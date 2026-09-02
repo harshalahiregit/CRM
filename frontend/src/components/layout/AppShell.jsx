@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
-import { useSidebarSection } from './sidebarSection'
+import { useSidebarSection, sectionForPath } from './sidebarSection'
 import Header from './Header'
 import MobileBottomNav from './MobileBottomNav'
 import CommandPalette from '@/components/CommandPalette'
@@ -15,10 +15,21 @@ export default function AppShell() {
   // Owned here, not inside Sidebar: two Sidebars are mounted (the off-canvas
   // mobile drawer and the desktop one) and they must not disagree about which
   // accordion section is open. See sidebarSection.js.
-  const { openSection, toggleSection, isGroupOpen, toggleGroup } = useSidebarSection()
+  const { openSection, setOpenSection, toggleSection, isGroupOpen, toggleGroup } = useSidebarSection()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const { isDark } = useTheme()
   const { pathname } = useLocation()
+
+  // Being IN a module opens that module's section and (via Sidebar's scroll
+  // effect) pulls it to the top of the sidebar — so navigating to Inventory
+  // shows the Inventory menu at the top, instead of leaving it closed and
+  // buried. Only fires on a real route change, so a section you close by hand
+  // while staying on the page stays closed. Pages in no section leave the
+  // sidebar as-is.
+  useEffect(() => {
+    const section = sectionForPath(pathname)
+    if (section) setOpenSection(section)
+  }, [pathname, setOpenSection])
 
   const sidebarW = sidebarCollapsed ? 72 : 260
 

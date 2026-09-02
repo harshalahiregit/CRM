@@ -50,9 +50,25 @@ const MODULE_SEARCH = [
   { label: 'Compliance', path: '/app/tpv/compliance',   icon: ShieldCheck,     kw: 'hsse checklists' },
 ]
 
-// NOTE: PINNED_MODULES was removed with the pinned-header block it fed. The
-// sidebar no longer derives anything from the current route — sections open on
-// a click and only on a click.
+// Which module the current route belongs to — used to PIN that module's header
+// at the TOP of the sidebar, with its sub-pages right under it, so the module
+// you are working in is always the first thing in the list and its sub-pages
+// need no scrolling to reach. Ordered longest-prefix-first so e.g.
+// /app/tpv/compliance resolves to Compliance, not TPV.
+const PINNED_MODULES = [
+  { base: '/app/tpv/compliance', label: 'Compliance', icon: ShieldCheck,     path: '/app/tpv/compliance' },
+  { base: '/app/dashboard',      label: 'Dashboard',  icon: LayoutDashboard, path: '/app/dashboard' },
+  { base: '/app/tasks',          label: 'Tasks',      icon: CheckSquare,     path: '/app/tasks' },
+  { base: '/app/projects',       label: 'Projects',   icon: FolderOpen,      path: '/app/projects' },
+  { base: '/app/helpdesk',       label: 'Helpdesk',   icon: LifeBuoy,        path: '/app/helpdesk/tickets' },
+  { base: '/app/inventory',      label: 'Inventory',  icon: Boxes,           path: '/app/inventory' },
+  { base: '/app/sales',          label: 'Sales',      icon: TrendingUp,      path: '/app/sales/dashboard' },
+  { base: '/app/accounts',       label: 'Accounts',   icon: Landmark,        path: '/app/accounts' },
+  { base: '/app/hr',             label: 'HR',         icon: Users,           path: '/app/hr/dashboard' },
+  { base: '/app/purchase',       label: 'Purchase',   icon: ShoppingCart,    path: '/app/purchase/dashboard' },
+  { base: '/app/tpv',            label: 'TPV',        icon: UserCheck,       path: '/app/tpv/dashboard' },
+  { base: '/app/customers',      label: 'Customers',  icon: Building2,       path: '/app/customers' },
+]
 
 // ── HRMS sidebar structure (paths/APIs/permissions unchanged) ──
 //   HRMS
@@ -207,6 +223,12 @@ const PURCHASE_SUB_ITEMS = [
   { label: 'Dashboard',        path: '/app/purchase/dashboard',     icon: LayoutDashboard },
   { label: 'Items',            path: '/app/purchase/catalog',       icon: Package },
   { label: 'Vendors',          path: '/app/purchase/vendors',       icon: Truck },
+  // Workforce mirrors TPV's worker register — the list plus the 5-step wizard.
+  // Competency was built server-side and had no nav entry, so it was unreachable.
+  { label: 'Workforce',        path: '/app/purchase/workers',       icon: UserCheck },
+  { label: 'Medical Fitness',  path: '/app/purchase/medical',       icon: ShieldCheck },
+  { label: 'PPE Matrix',       path: '/app/purchase/ppe/matrix',    icon: Shield },
+  { label: 'Competency',       path: '/app/purchase/competency',    icon: GraduationCap },
   { label: 'Meetings',         path: '/app/purchase/kickoff',       icon: CalendarDays },
   { label: 'Vendor-Items',     path: '/app/purchase/vendor-items',  icon: Boxes },
   { label: 'Purchase request', path: '/app/purchase/requests',      icon: ClipboardList },
@@ -275,44 +297,37 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
    * only on a click; the last click is what gets remembered.
    */
   const navRef = useRef(null)
+  const { pathname } = useLocation()
   /**
-   * Bring the open section into view — on a reload AND on a click.
+   * Pull the open module's header to the TOP of the sidebar — so the module you
+   * are in sits at the top with its items below it.
    *
-   * This used to run on mount only, so clicking a section never scrolled. That
-   * left the LAST section unusable: click "Thirdparty Vendor" and its header is
-   * already visible (you just clicked it), so everything it opens lands below
-   * the fold with nothing bringing it back.
+   * Runs on BOTH openSection AND pathname changes: navigating into a module
+   * (AppShell opens its section from the route) must scroll even when that
+   * section was already the open one, e.g. after a refresh that restored it —
+   * a plain [openSection] dependency would see no change and never fire.
    *
-   * Measuring the header alone is what made it useless here — the header being
-   * on screen says nothing about whether its ITEMS are. So measure the section's
-   * whole block: header plus everything the click revealed. If that block does
-   * not fit, pull the header up towards the top of the nav, which shows as many
-   * of its items as the space allows.
-   *
-   * Only on opening. Scrolling when a section CLOSES would jump the list under
-   * someone who just clicked to collapse it.
+   * Deferred to the next frame so the accordion's items have laid out before we
+   * measure. Adjusts the nav's OWN scrollTop rather than scrollIntoView: the
+   * mobile Sidebar is always mounted (just translated off-canvas), and
+   * scrollIntoView on a hidden copy would scroll its ancestors, the window
+   * included. Touching nav.scrollTop can only ever move this one element. The
+   * browser clamps to the real scroll range, so a short last section simply
+   * stops where its content ends.
    */
   useEffect(() => {
-    if (!openSection) return          // closing: leave the scroll alone
+    if (!openSection) return          // nothing open: leave the scroll alone
     const nav = navRef.current
-    const header = nav?.querySelector(`[data-section="${openSection}"]`)
-    if (!nav || !header) return
-
-    // The block wrapping this section's header and its items. Falling back to
-    // the header keeps this a no-op rather than a crash if the markup changes.
-    const block = header.closest('[data-section-block]') || header
-    const navBox = nav.getBoundingClientRect()
-    const blockBox = block.getBoundingClientRect()
-    const headBox = header.getBoundingClientRect()
-
-    const fits = blockBox.top >= navBox.top && blockBox.bottom <= navBox.bottom
-    if (fits) return                  // already fully visible: do not twitch
-
-    // Header towards the top, so the items below it get the remaining space.
-    // The browser clamps to the real scroll range, so a short last section
-    // simply stops where the content ends.
-    nav.scrollTop += headBox.top - navBox.top - 8
-  }, [openSection])
+    if (!nav) return
+    const raf = requestAnimationFrame(() => {
+      const header = nav.querySelector(`[data-section="${openSection}"]`)
+      if (!header) return
+      const navBox = nav.getBoundingClientRect()
+      const headBox = header.getBoundingClientRect()
+      nav.scrollTop += headBox.top - navBox.top - 8
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [openSection, pathname])
 
   // HR's inner groups (Recruitment, HR Records) start closed and open only on a
   // click — and independently of each other, unlike the module accordion above.
@@ -322,9 +337,35 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
   const tpvItems = ['third_party_vendor', 'vendor'].includes(user?.role)
     ? TPV_VENDOR_ITEMS
     : TPV_ADMIN_ITEMS
+
+  /**
+   * The module the current route lives in — pinned at the TOP of the sidebar so
+   * clicking into a module puts it first, with its sub-pages immediately under
+   * it. `pinOpen` collapses just the pinned list without touching the accordion.
+   *
+   * HR is deliberately absent from activeSubItems. It has a three-level tree —
+   * Recruitment, HR Records, then the SangoeTrack set below a rule — and the pin
+   * renders a FLAT list, which would drop both the grouping and the separator.
+   * Its own block below renders the real tree, and AppShell opens that section
+   * from the route so HR still comes to the top.
+   */
+  const [pinOpen, setPinOpen] = useState(true)
+  const activeModule = PINNED_MODULES.find(m => pathname.startsWith(m.base))
+  const activeSubItems = {
+    '/app/helpdesk':  HELPDESK_SUB_ITEMS,
+    '/app/inventory': INVENTORY_SUB_ITEMS,
+    '/app/sales':     SALES_SUB_ITEMS,
+    '/app/accounts':  ACCOUNTS_SUB_ITEMS,
+    '/app/purchase':  PURCHASE_SUB_ITEMS,
+    '/app/tpv':       tpvItems,
+  }[activeModule?.base] || []
+  // Which module's normal block to hide (it is shown in the pin instead). Only
+  // in the expanded sidebar — the collapsed icon rail shows no pin, so hide
+  // nothing there.
+  const pinnedBase = !collapsed && activeSubItems.length > 0 ? activeModule?.base : null
+
   const [activeLeadsCount, setActiveLeadsCount] = useState(null)
   const [moduleQuery, setModuleQuery] = useState('')
-  const { pathname } = useLocation()
   const q = moduleQuery.trim().toLowerCase()
   // Modules first, then any sub-page whose name matches — one combined list.
   const moduleResults = q ? [
@@ -485,14 +526,44 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
       {/* min-h-0 lets this flex child shrink so its own overflow scrolls, even
           with the fixed logo/search blocks taking space above it. */}
       <nav ref={navRef} className="flex-1 min-h-0 pb-3 overflow-y-auto scrollbar-hide">
-        {/* The pinned open-module block was removed here.
-            It duplicated the module's own sub-nav lower down (which is why a
-            `pinnedBase` guard existed to hide that copy), and because it was
-            inserted at the TOP of this scroll container, entering or leaving a
-            module changed the number of rows above the scroll position. The
-            browser keeps scrollTop, so the content slid under you and you had to
-            scroll to find where you were. With the accordion below, the list is
-            short enough that the pin has nothing left to solve. */}
+        {/* Pinned open-module — the module you are in, kept at the TOP of the
+            sidebar. Its header is sticky (stays put while you scroll) and its
+            sub-pages sit right under it, so moving around the open module never
+            needs a scroll. Both live INSIDE this scroll container, so the
+            sidebar scrolls normally and the fixed footer can never squeeze the
+            scroll area to nothing. The module's duplicate block further down is
+            hidden while it is pinned (see the pinnedBase guards below). */}
+        {!collapsed && activeModule && activeSubItems.length > 0 && (
+          <>
+            <div className="sb-pin-head sticky top-0 z-20 flex items-center gap-2 px-3 py-2 mb-0.5" style={{ background: 'var(--bg-sidebar)' }}>
+              <button onClick={() => navigate(activeModule.path)} className="flex items-center gap-2 min-w-0 flex-1">
+                <activeModule.icon size={15} style={{ color: '#a78bfa' }} className="shrink-0" />
+                <span className="text-sm font-semibold truncate" style={{ color: 'var(--text-h)' }}>{activeModule.label}</span>
+                <span className="text-[9px] font-black px-1.5 py-0.5 rounded shrink-0" style={{ background: 'rgba(124,58,237,0.22)', color: '#a78bfa' }}>OPEN</span>
+              </button>
+              <button onClick={() => setPinOpen(o => !o)} className="shrink-0 p-0.5" aria-label={pinOpen ? 'Collapse' : 'Expand'} title={pinOpen ? 'Collapse' : 'Expand'}>
+                <ChevronDown size={14} className={clsx('transition-transform duration-200', !pinOpen && '-rotate-90')} style={{ color: '#a78bfa' }} />
+              </button>
+            </div>
+            {pinOpen && activeSubItems.map(item => {
+              const Icon = item.icon
+              return (
+                <NavLink key={`pin-${item.path}`} to={item.path} end={item.end}>
+                  {({ isActive }) => (
+                    <div className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ paddingLeft: '28px' }}>
+                      <div className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(124,58,237,0.06)' }}>
+                        <Icon size={12} />
+                      </div>
+                      <span className="truncate text-xs">{item.label}</span>
+                      {isActive && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#c4b5fd' }} />}
+                    </div>
+                  )}
+                </NavLink>
+              )
+            })}
+            <div className="mx-3 my-2" style={{ borderTop: '1px solid var(--border)' }} />
+          </>
+        )}
 
         {/* Section label */}
         {!collapsed && <p className="label-caps px-5 mb-2">Main Menu</p>}
@@ -653,7 +724,7 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
         </div>
 
         {/* ── Accounts Module sub-nav ── */}
-        <div data-section-block className={clsx('mt-2')}>
+        <div data-section-block className={clsx('mt-2', pinnedBase === '/app/accounts' && 'hidden')}>
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Accounts & Finance</p>}
           <button
             onClick={() => toggleSection('accounts')}
@@ -683,7 +754,7 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
         </div>
 
         {/* ── Sales Module sub-nav ── */}
-        <div data-section-block className={clsx('mt-2')}>
+        <div data-section-block className={clsx('mt-2', pinnedBase === '/app/sales' && 'hidden')}>
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Sales & Revenue</p>}
           <button
             onClick={() => toggleSection('sales')}
@@ -724,7 +795,7 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
         </div>
 
         {/* ── Helpdesk Module sub-nav ── */}
-        <div data-section-block className={clsx('mt-2')}>
+        <div data-section-block className={clsx('mt-2', pinnedBase === '/app/helpdesk' && 'hidden')}>
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#22d3ee' }}>Helpdesk & Support</p>}
           <button
             onClick={() => toggleSection('helpdesk')}
@@ -776,7 +847,7 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
         </div>
 
         {/* ── Inventory Module sub-nav ── */}
-        <div data-section-block className={clsx('mt-2')}>
+        <div data-section-block className={clsx('mt-2', pinnedBase === '/app/inventory' && 'hidden')}>
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#10b981' }}>Inventory</p>}
           <button
             onClick={() => toggleSection('inventory')}
@@ -808,7 +879,7 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
         </div>
 
         {/* ── Purchase Module sub-nav ── */}
-        <div data-section-block className={clsx('mt-2')}>
+        <div data-section-block className={clsx('mt-2', pinnedBase === '/app/purchase' && 'hidden')}>
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Purchase</p>}
           <button
             onClick={() => toggleSection('purchase')}
@@ -838,7 +909,7 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
         </div>
 
         {/* ── TPV Module sub-nav ── */}
-        <div data-section-block className={clsx('mt-2')}>
+        <div data-section-block className={clsx('mt-2', pinnedBase === '/app/tpv' && 'hidden')}>
           {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Thirdparty Vendor</p>}
           <button
             onClick={() => toggleSection('tpv')}
