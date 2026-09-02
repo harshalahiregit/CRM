@@ -434,6 +434,21 @@ export const purchaseApi = {
     issuePpe:      (id, data)  => api.post(`/purchase/workforce/workers/${id}/ppe/issue`, data).then(r => r.data),
   },
 
+  // ── Site gate ─────────────────────────────────────────────────────────
+  // Purchase could decide whether a worker may enter but recorded nothing when
+  // it did, so it had no gate log and no attendance. The decision and its
+  // reasons are stored per scan, never re-derived on read.
+  gate: {
+    stats:      (date)        => api.get('/purchase/gate/stats', { params: date ? { date } : {} }).then(r => r.data),
+    log:        (params = {}) => api.get('/purchase/gate/log', { params }).then(r => r.data?.data ?? r.data),
+    onSite:     (date)        => api.get('/purchase/gate/on-site', { params: date ? { date } : {} }).then(r => r.data?.data ?? r.data),
+    scan:       (workerId, data = {}) => api.post(`/purchase/gate/workers/${workerId}/scan`, data).then(r => r.data),
+    attendance: (workerId, params = {}) => api.get(`/purchase/gate/workers/${workerId}/attendance`, { params }).then(r => r.data),
+    // Non-person crossings (TPV §20) — equipment / material / vehicle / visitor.
+    events:      (params = {}) => api.get('/purchase/gate/events', { params }).then(r => r.data?.data ?? r.data),
+    storeEvent:  (data)        => api.post('/purchase/gate/events', data).then(r => r.data),
+  },
+
   // ── Workforce Competency & Skill Matrix (mirror of TPV §15) ─────────────
   // "No Competency, No Work" — records of what a worker holds; the badge gate
   // matches these against the tenant Settings requirement.

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\Purchase\PurchaseGateController;
 use App\Http\Controllers\Api\Purchase\PurchaseRequestController;
 use App\Http\Controllers\Api\Purchase\PurchaseOrderController;
 use App\Http\Controllers\Api\Purchase\GoodsReceiptController;
@@ -291,6 +292,18 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     // be consulted, since these are static segments.
     Route::get('/workforce/medicals',                 [PurchaseWorkforceAdminController::class, 'medicals']);
     Route::get('/workforce/trainings',                [PurchaseWorkforceAdminController::class, 'trainings']);
+
+    // ── Site gate (mirror of TPV's gate) ───────────────────────────────────
+    // Purchase could decide whether a worker may enter but recorded nothing when
+    // it did, so there was no gate log and no attendance. Static segments are
+    // declared before the {worker} routes so they are not read as worker ids.
+    Route::get('/gate/stats',                            [PurchaseGateController::class, 'stats']);
+    Route::get('/gate/log',                              [PurchaseGateController::class, 'log']);
+    Route::get('/gate/on-site',                          [PurchaseGateController::class, 'onSite']);
+    Route::get('/gate/events',                           [PurchaseGateController::class, 'events']);
+    Route::post('/gate/events',                          [PurchaseGateController::class, 'storeEvent']);
+    Route::post('/gate/workers/{worker}/scan',           [PurchaseGateController::class, 'scan']);
+    Route::get('/gate/workers/{worker}/attendance',      [PurchaseGateController::class, 'workerAttendance']);
 
     // PPE from the admin side. The catalogue and issuing were reachable only
     // through the vendor portal, so staff could see kit on a worker but could

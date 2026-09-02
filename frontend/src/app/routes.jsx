@@ -265,6 +265,8 @@ const PurchaseWorkers = lazy(() => import('@/modules/purchase/pages/PurchaseWork
 const PurchaseWorkerWizard = lazy(() => import('@/modules/purchase/pages/PurchaseWorkerWizard'))
 const PurchaseMedicalFitness = lazy(() => import('@/modules/purchase/pages/PurchaseMedicalFitness'))
 const PurchasePpeMatrix = lazy(() => import('@/modules/purchase/pages/PurchasePpeMatrix'))
+const PurchaseGateLog = lazy(() => import('@/modules/purchase/pages/PurchaseGateLog'))
+const PurchaseWorkforceAttendance = lazy(() => import('@/modules/purchase/pages/PurchaseWorkforceAttendance'))
 const PurchaseCompetency = lazy(() => import('@/modules/purchase/pages/PurchaseCompetency'))
 // Purchase Kickoff — Purchase-owned pages on /api/purchase/kickoff (no TPV/shared reuse).
 const PurchaseKickoffMeetings = lazy(() => import('@/modules/purchase/pages/PurchaseKickoffMeetings'))
@@ -684,6 +686,10 @@ export default function AppRoutes() {
               prescriptive matrix this one is OBSERVED — designation against the
               kit workers in that role actually hold. */}
           <Route path="ppe/matrix" element={<S><PurchasePpeMatrix /></S>} />
+          {/* Site gate. A refused scan is not a crossing, so it appears in the
+              log but never on the roster or in attendance. */}
+          <Route path="gate-log" element={<S><PurchaseGateLog /></S>} />
+          <Route path="attendance" element={<S><PurchaseWorkforceAttendance /></S>} />
           {/* Workforce Competency & Skill Matrix — "No Competency, No Work" (mirror of TPV §15). */}
           <Route path="competency" element={<S><PurchaseCompetency /></S>} />
           {/* Kickoff Meetings — Purchase-owned pages on /api/purchase/kickoff (no TPV reuse) */}
