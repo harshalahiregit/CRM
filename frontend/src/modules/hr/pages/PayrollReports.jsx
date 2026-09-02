@@ -172,8 +172,8 @@ function EmployeeReport({ params, showToast }) {
       {rows.length === 0 ? <HrEmpty icon={Users} title="No payroll data" hint="No processed payroll matches the current filters." />
         : (
           <div className="card-3d overflow-x-auto" style={{ padding:'6px' }}>
-            <table className="w-full text-sm" style={{ minWidth:900 }}>
-              <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Employee','Department','Designation','Structure','Gross','Benefits','Deductions','Net','Payslip'].map(h=><th key={h} className="text-left px-3 py-3 label-caps whitespace-nowrap">{h}</th>)}</tr></thead>
+            <table className="w-full text-sm" style={{ minWidth:1180 }}>
+              <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Employee','Department','Designation','Structure','Gross','Benefits','Deductions','Statutory','Loan','Variable','Net Payable','Payslip'].map(h=><th key={h} className="text-left px-3 py-3 label-caps whitespace-nowrap">{h}</th>)}</tr></thead>
               <tbody>
                 {rows.map((r,i) => (
                   <tr key={i} style={{ borderBottom:'1px solid var(--border)' }}>
@@ -184,7 +184,15 @@ function EmployeeReport({ params, showToast }) {
                     <td className="px-3 py-2.5 font-semibold" style={{ color:'#10b981' }}>{inr(r.gross_salary)}</td>
                     <td className="px-3 py-2.5" style={{ color:'#3b82f6' }}>{inr(r.total_benefits)}</td>
                     <td className="px-3 py-2.5" style={{ color:'#f87171' }}>{inr(r.total_deductions)}</td>
-                    <td className="px-3 py-2.5 font-black" style={{ color:'var(--text-h)' }}>{inr(r.net_salary)}</td>
+                    {/* net_salary is the FROZEN structural net — it excludes this
+                        period's statutory split, loan instalment and variable
+                        earnings. Showing it under a column called "Net" invited
+                        someone to pay from it. The components are shown, and the
+                        bold figure is now what actually reaches the bank. */}
+                    <td className="px-3 py-2.5" style={{ color:'#f87171' }}>{inr(r.statutory_deductions)}</td>
+                    <td className="px-3 py-2.5" style={{ color:'#f87171' }}>{inr(r.loan_deduction)}</td>
+                    <td className="px-3 py-2.5" style={{ color:'#3b82f6' }}>{inr(r.variable_earnings)}</td>
+                    <td className="px-3 py-2.5 font-black" style={{ color:'var(--text-h)' }}>{inr(r.net_payable)}</td>
                     <td className="px-3 py-2.5"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={r.payslip_status==='Generated'?{background:'rgba(16,185,129,0.12)',color:'#10b981'}:{background:'var(--bg-input)',color:'var(--text-muted)'}}>{r.payslip_status}</span></td>
                   </tr>
                 ))}
