@@ -76,15 +76,44 @@ class PerUserSenderIdentityTest extends TestCase
         $this->assertNull($this->resolvedFrom());
     }
 
-    public function test_identity_can_be_saved_through_the_profile_endpoint(): void
+    /**
+     * The identity is NOT self-service.
+     *
+     * TenantMailer uses mail_from_email verbatim as the From address, so while
+     * this was settable on the user's own profile any signed-in user could send
+     * CRM mail as anyone — a colleague, a director, a customer — behind nothing
+     * but a well-formed-email check. An admin sets it on the staff record.
+     *
+     * This test previously asserted the opposite. It is inverted rather than
+     * deleted so the endpoint can never quietly start accepting the field again.
+     */
+    public function test_a_user_cannot_set_their_own_sender_identity(): void
     {
         $user = $this->user();
         \Laravel\Sanctum\Sanctum::actingAs($user);
 
         $this->putJson('/api/auth/profile', [
             'name' => 'Priya', 'mail_from_name' => 'Priya Sales', 'mail_from_email' => 'priya@company.com',
+        ])->assertOk();   // the request succeeds; the sender fields are simply ignored
+
+        $this->assertNull($user->fresh()->mail_from_email, 'A user must not be able to set their own From address.');
+        $this->assertNull($user->fresh()->mail_from_name);
+    }
+
+    public function test_an_admin_can_set_it_on_a_staff_record(): void
+    {
+        $staff = $this->user();
+        $staff->forceFill(['role' => 'staff'])->save();
+
+        $admin = $this->user();
+        $admin->forceFill(['role' => 'admin', 'tenant_id' => $staff->tenant_id])->save();
+        \Laravel\Sanctum\Sanctum::actingAs($admin);
+
+        $this->putJson("/api/admin/staff/{$staff->id}", [
+            'name' => $staff->name, 'mail_from_name' => 'Priya Sales', 'mail_from_email' => 'priya@company.com',
         ])->assertOk();
 
-        $this->assertSame('priya@company.com', $user->fresh()->mail_from_email);
+        $this->assertSame('priya@company.com', $staff->fresh()->mail_from_email);
+        $this->assertSame('Priya Sales', $staff->fresh()->mail_from_name);
     }
 }

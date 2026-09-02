@@ -231,6 +231,13 @@ class StaffManagementController extends Controller
             'designation'   => 'nullable|string|max:100',
             'status'        => 'sometimes|required|in:active,inactive,suspended',
             'meta'          => 'nullable|array',
+            // ST1 — the sender identity outgoing mail goes out as. Set HERE, by an
+            // admin, and not on the user's own profile: TenantMailer uses this
+            // verbatim as the From address, so a self-service field let any signed-in
+            // user send CRM mail as anyone — a colleague, a director, a customer —
+            // with nothing but a well-formed-email check in the way.
+            'mail_from_name'  => 'nullable|string|max:120',
+            'mail_from_email' => 'nullable|email|max:191',
         ]);
 
         if ($validator->fails()) {
@@ -244,6 +251,7 @@ class StaffManagementController extends Controller
         $updateData = $request->only([
             'name', 'email', 'phone', 'internal_role',
             'department', 'designation', 'status',
+            'mail_from_name', 'mail_from_email',
         ]);
 
         // Merge meta (preserve existing keys not in new payload)

@@ -46,7 +46,17 @@ export default function MyProfile() {
     if (!form.name.trim()) return toast.error('Name is required')
     setSaving(true)
     try {
-      const r = await api.put('/auth/profile', form)
+      // Sent explicitly rather than posting the whole form: the sender identity
+      // is admin-set and read-only here. The endpoint ignores it either way, but
+      // naming the editable fields means a future change to how the payload is
+      // applied server-side cannot quietly make it settable again.
+      const r = await api.put('/auth/profile', {
+        name: form.name,
+        phone: form.phone,
+        designation: form.designation,
+        department: form.department,
+        emails_enabled: form.emails_enabled,
+      })
       const updated = r.data?.data
       toast.success('Profile updated')
       setMe((m) => ({ ...m, ...updated }))
@@ -70,6 +80,15 @@ export default function MyProfile() {
       toast.error(e?.response?.data?.message || 'Could not change your password.')
     } finally { setChanging(false) }
   }
+
+  const readOnlyField = (label, value) => (
+    <div>
+      <label className="label">{label}</label>
+      <p className="text-sm py-2" style={{ color: value ? 'var(--text-h)' : 'var(--text-muted)' }}>
+        {value || 'Workspace default'}
+      </p>
+    </div>
+  )
 
   const field = (label, key, type = 'text', placeholder = '') => (
     <div>
@@ -119,15 +138,20 @@ export default function MyProfile() {
             </label>
           </div>
 
-          {/* ST1 — the user's own outgoing-mail sender identity. */}
+          {/* ST1 — read-only. The sender identity is set by an admin on the staff
+              record, not here: TenantMailer uses it verbatim as the From address,
+              so a self-service field let anyone send CRM mail as anyone else.
+              Shown rather than hidden because people need to know what their mail
+              goes out as — but as text, since an input that silently discards what
+              you type is worse than no input at all. */}
           <div className="md:col-span-2 pt-2 mt-1" style={{ borderTop: '1px solid var(--border)' }}>
             <p className="label-caps mb-1" style={{ color: 'var(--text-muted)' }}>Email sender identity</p>
             <p className="text-[11px] mb-3" style={{ color: 'var(--text-muted)' }}>
-              Optional. When set, mail you send shows this as the sender (over the workspace default).
+              Set by an admin. Mail you send goes out as this; with nothing set, the workspace default is used.
             </p>
           </div>
-          {field('From name', 'mail_from_name', 'text', 'e.g. Priya from Sangoe')}
-          {field('From email', 'mail_from_email', 'email', 'you@company.com')}
+          {readOnlyField('From name', form.mail_from_name)}
+          {readOnlyField('From email', form.mail_from_email)}
         </div>
         <div className="flex justify-end mt-4">
           <button onClick={save} disabled={saving}
