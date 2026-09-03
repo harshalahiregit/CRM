@@ -1211,6 +1211,31 @@ export const hrApi = {
   },
 
   /**
+   * Attendance corrections — a punch that was wrong, or never made.
+   *
+   * The CRM had none of this natively; the only corrections routes were a proxy
+   * to SangoeTrack's. `me` accepts no employee id, matching the server.
+   */
+  corrections: {
+    me: {
+      list:     ()   => api.get('/hr/me/corrections').then(r => r.data?.data ?? []),
+      // The day as it stands, so somebody can see what they are correcting.
+      day:      (date) => api.get('/hr/me/corrections/day', { params: { date } }).then(r => r.data?.data),
+      get:      (id) => api.get(`/hr/me/corrections/${id}`).then(r => r.data?.data),
+      create:   (data) => api.post('/hr/me/corrections', data).then(r => r.data),
+      reply:    (id, body) => api.post(`/hr/me/corrections/${id}/reply`, { body }).then(r => r.data),
+      withdraw: (id) => api.patch(`/hr/me/corrections/${id}/withdraw`).then(r => r.data),
+    },
+
+    list:    (params = {}) => api.get('/hr/corrections', { params }).then(r => r.data?.data ?? []),
+    get:     (id)          => api.get(`/hr/corrections/${id}`).then(r => r.data?.data),
+    approve: (id, remarks) => api.post(`/hr/corrections/${id}/approve`, { remarks }).then(r => r.data),
+    reject:  (id, remarks) => api.post(`/hr/corrections/${id}/reject`, { remarks }).then(r => r.data),
+    hold:    (id, reason)  => api.post(`/hr/corrections/${id}/hold`, { reason }).then(r => r.data),
+    note:    (id, body)    => api.post(`/hr/corrections/${id}/note`, { body }).then(r => r.data),
+  },
+
+  /**
    * An employee's own leave.
    *
    * Separate from hrApi.leave, which is HR's — that one takes an employee_id and

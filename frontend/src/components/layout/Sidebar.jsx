@@ -108,6 +108,10 @@ const HR_RECORDS_ITEMS = [
   // 'My Leave', beside My Expenses and My Advances — the self-service set. HR's
   // own Leave Management sits above; SangoeTrack's 'Leave' is below.
   { label: 'My Leave', path: '/app/hr/my-leave', icon: CalendarOff },
+  // Named apart from SangoeTrack's 'Corrections' below, for the same reason as
+  // Expense Claims and Attendance Register.
+  { label: 'Correction Requests', path: '/app/hr/corrections', icon: PenLine },
+  { label: 'My Corrections', path: '/app/hr/my-corrections', icon: PenLine },
 ]
 
 // Flat list of every HR leaf — used only for the collapsed icon rail.

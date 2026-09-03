@@ -18,6 +18,8 @@ use App\Http\Controllers\Api\Hr\MyAttendanceController;
 use App\Http\Controllers\Api\Hr\AdvanceController;
 use App\Http\Controllers\Api\Hr\AttendanceReportController;
 use App\Http\Controllers\Api\Hr\MyAdvanceController;
+use App\Http\Controllers\Api\Hr\AttendanceCorrectionController;
+use App\Http\Controllers\Api\Hr\MyAttendanceCorrectionController;
 use App\Http\Controllers\Api\Hr\MyLeaveController;
 use App\Http\Controllers\Api\Hr\MyReimbursementController;
 use App\Http\Controllers\Api\Hr\ReimbursementController;
@@ -504,6 +506,17 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::patch('/me/leave/{id}/cancel',    [MyLeaveController::class, 'cancel']);
     Route::get('/me/leave/{id}/attachment',  [MyLeaveController::class, 'attachment']);
 
+    // ── My attendance corrections ───────────────────────────────────────
+    // Asking for a wrong or missing punch to be fixed. The CRM had no native
+    // corrections at all — only a proxy to SangoeTrack's.
+    // 'day' is declared before /{id} so it is never read as a record id.
+    Route::get('/me/corrections',              [MyAttendanceCorrectionController::class, 'index']);
+    Route::get('/me/corrections/day',          [MyAttendanceCorrectionController::class, 'day']);
+    Route::post('/me/corrections',             [MyAttendanceCorrectionController::class, 'store']);
+    Route::get('/me/corrections/{id}',         [MyAttendanceCorrectionController::class, 'show']);
+    Route::post('/me/corrections/{id}/reply',  [MyAttendanceCorrectionController::class, 'reply']);
+    Route::patch('/me/corrections/{id}/withdraw', [MyAttendanceCorrectionController::class, 'withdraw']);
+
     Route::get('/me/attendance/today',       [MyAttendanceController::class, 'today']);
     Route::post('/me/attendance/check-in',   [MyAttendanceController::class, 'checkIn']);
     Route::post('/me/attendance/check-out',  [MyAttendanceController::class, 'checkOut']);
@@ -525,6 +538,14 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
 // check is how a list-everything endpoint ends up open, which is exactly what
 // happened in the first draft of ReimbursementController.
 Route::middleware(['auth:sanctum', 'hr.manage'])->prefix('hr')->group(function () {
+    // ── Attendance corrections ──────────────────────────────────────────
+    Route::get('/corrections',                 [AttendanceCorrectionController::class, 'index']);
+    Route::get('/corrections/{id}',            [AttendanceCorrectionController::class, 'show']);
+    Route::post('/corrections/{id}/approve',   [AttendanceCorrectionController::class, 'approve']);
+    Route::post('/corrections/{id}/reject',    [AttendanceCorrectionController::class, 'reject']);
+    Route::post('/corrections/{id}/hold',      [AttendanceCorrectionController::class, 'hold']);
+    Route::post('/corrections/{id}/note',      [AttendanceCorrectionController::class, 'note']);
+
     // ── Attendance reports ──────────────────────────────────────────────
     // Read-only, so looking at them cannot affect a payroll run. 'departments'
     // is declared before the {employeeId} route so it is not read as an id.
