@@ -220,6 +220,8 @@ export default function Reimbursements() {
                     </div>
                     <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
                       {claim.employee?.name} · {claim.employee?.department || '—'} · spent {claim.expense_date}
+                      {claim.category ? ` · ${claim.category}` : ''}
+                      {claim.employee?.employee_code ? ` · ${claim.employee.employee_code}` : ''}
                     </p>
                   </div>
                   <div className="text-right">
@@ -256,6 +258,16 @@ export default function Reimbursements() {
                       </div>
                       {files.error && <p className="text-[11px] mt-1" style={{ color: '#f87171' }}>{files.error}</p>}
                     </div>
+                  )}
+
+                  {/* Decided-by and decided-at were stored from the start and never shown.
+                      "Who approved this and when" is the question that gets asked months
+                      later, and the thread below answers it only if you read the whole thing. */}
+                  {claim.decided_at && (
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      Decided {new Date(claim.decided_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      {claim.decided_by_name ? ` by ${claim.decided_by_name}` : ''}
+                    </p>
                   )}
 
                   <div>

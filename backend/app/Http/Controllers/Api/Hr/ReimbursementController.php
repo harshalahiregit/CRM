@@ -69,7 +69,12 @@ class ReimbursementController extends Controller
         return response()->json([
             'status' => 'success',
             'data'   => [
-                'claim'  => $claim->load(['employee:id,name,employee_code,department', 'attachments']),
+                // decided_by is a user id; the NAME is what a person needs, and the
+                // relation cannot simply be loaded because Eloquent would serialise
+                // it over the decided_by column itself.
+                'claim'  => tap($claim->load(['employee:id,name,employee_code,department', 'attachments']), function ($c) {
+                    $c->setAttribute('decided_by_name', optional($c->decidedBy()->first())->name);
+                }),
                 // asEmployee: false — an admin sees internal notes as well.
                 'thread' => $this->thread->forSubject($claim, asEmployee: false),
                 'can'    => [

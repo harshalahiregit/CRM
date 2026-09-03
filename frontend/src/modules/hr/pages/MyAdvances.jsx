@@ -82,7 +82,7 @@ export default function MyAdvances() {
   const [busy,    setBusy]    = useState(false)
 
   const [creating, setCreating] = useState(false)
-  const [form,     setForm]     = useState({ purpose: '', amount_requested: '', advance_type: '', project_site: '', required_date: '', expected_settlement_date: '' })
+  const [form,     setForm]     = useState({ purpose: '', amount_requested: '', advance_type: '', category: '', project_site: '', required_date: '', expected_settlement_date: '' })
   const [newFiles, setNewFiles] = useState([])
 
   const [openId,     setOpenId]     = useState(null)
@@ -127,7 +127,7 @@ export default function MyAdvances() {
       await hrApi.advances.me.create({ ...form, purpose: form.purpose.trim() }, newFiles)
       toast.success('Advance requested. It goes to your manager first.')
       setCreating(false)
-      setForm({ purpose: '', amount_requested: '', advance_type: '', project_site: '', required_date: '', expected_settlement_date: '' })
+      setForm({ purpose: '', amount_requested: '', advance_type: '', category: '', project_site: '', required_date: '', expected_settlement_date: '' })
       setNewFiles([])
       load()
     } catch (e) {
@@ -229,6 +229,18 @@ export default function MyAdvances() {
               <input value={form.advance_type} onChange={e => setForm(f => ({ ...f, advance_type: e.target.value }))}
                 placeholder="travel, site, purchase…" className="w-full rounded-lg text-sm" style={inputStyle} />
             </Field>
+            <Field label="Category">
+              {/* Accepted by the server since day one and never asked for, so every
+                  advance was filed uncategorised. Suggestions, not a closed list. */}
+              <input list="advance-categories" value={form.category} maxLength={60}
+                onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+                placeholder="e.g. Travel, Site expense"
+                className="w-full rounded-lg text-sm" style={inputStyle} />
+              <datalist id="advance-categories">
+                {['Travel', 'Site expense', 'Purchase', 'Event', 'Salary advance', 'Other']
+                  .map(c => <option key={c} value={c} />)}
+              </datalist>
+            </Field>
             <Field label="Project / site">
               <input value={form.project_site} onChange={e => setForm(f => ({ ...f, project_site: e.target.value }))}
                 className="w-full rounded-lg text-sm" style={inputStyle} />
@@ -319,6 +331,41 @@ export default function MyAdvances() {
                 </div>
 
                 <div className="p-5 overflow-y-auto flex flex-col gap-4">
+                  {/* Everything the request carries. This pane showed a purpose and an
+                      amount; type, category, site and both dates were captured and never
+                      said back, so the employee could not check what they had filed. */}
+                  <div className="grid gap-2 text-[11px]" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', color: 'var(--text-muted)' }}>
+                    {[['Type', a.advance_type], ['Category', a.category], ['Project / site', a.project_site],
+                      ['Needed by', a.required_date], ['Settle by', a.expected_settlement_date],
+                      ['Requested', inr(a.amount_requested)]].map(([k, v]) => v ? (
+                        <div key={k}><span className="uppercase tracking-wider font-bold">{k}</span><br />
+                          <span style={{ color: 'var(--text-p)' }}>{String(v)}</span></div>
+                    ) : null)}
+                  </div>
+
+                  {/* What actually happened to the money — none of this was shown. */}
+                  {a.disbursed_at && (
+                    <div className="rounded-xl text-[11px]" style={{ padding: 10, background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.25)', color: '#34d399' }}>
+                      {inr(a.disbursed_amount)} paid by {String(a.disbursement_mode || '').replace('_', ' ')}
+                      {a.disbursement_reference ? ` · ref ${a.disbursement_reference}` : ''}
+                      {` · ${String(a.disbursed_at).slice(0, 10)}`}
+                    </div>
+                  )}
+
+                  {/* Settlements, every attempt — a rejected one is kept on purpose. */}
+                  {!!a.settlements?.length && (
+                    <div className="flex flex-col gap-1.5">
+                      <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Settlements</p>
+                      {a.settlements.map(st => (
+                        <div key={st.id} className="rounded-lg text-[11px]" style={{ padding: '8px 10px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-p)' }}>
+                          <span className="font-bold">{inr(st.actual_expense)} spent</span> · {st.case_label}
+                          <span className="ml-1" style={{ color: st.status === 'accepted' ? '#34d399' : st.status === 'rejected' ? '#f87171' : '#fbbf24' }}>({st.status})</span>
+                          {st.review_remarks ? <span className="block mt-0.5" style={{ color: 'var(--text-muted)' }}>{st.review_remarks}</span> : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   {!!a.attachments?.length && (
                     <div className="flex flex-wrap gap-1.5">
                       {a.attachments.map(f => (

@@ -415,6 +415,32 @@ export default function Advances() {
                       ) : null)}
                   </div>
 
+                  {/* What happened to the money. The pane described the REQUEST in full
+                      and then said nothing about the payment or the bills that came back,
+                      which is the half an approver is accountable for. */}
+                  {a.disbursed_at && (
+                    <div className="rounded-xl text-[11px]" style={{ padding: 10, background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.25)', color: '#34d399' }}>
+                      {inr(a.disbursed_amount)} paid by {String(a.disbursement_mode || '').replace('_', ' ')}
+                      {a.disbursement_reference ? ` · ref ${a.disbursement_reference}` : ''}
+                      {` · ${String(a.disbursed_at).slice(0, 10)}`}
+                    </div>
+                  )}
+
+                  {!!a.settlements?.length && (
+                    <div className="flex flex-col gap-1.5">
+                      <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                        Settlements · every attempt is kept
+                      </p>
+                      {a.settlements.map(st => (
+                        <div key={st.id} className="rounded-lg text-[11px]" style={{ padding: '8px 10px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-p)' }}>
+                          <span className="font-bold">{inr(st.actual_expense)} spent</span> · {st.case_label}
+                          <span className="ml-1" style={{ color: st.status === 'accepted' ? '#34d399' : st.status === 'rejected' ? '#f87171' : '#fbbf24' }}>({st.status})</span>
+                          {st.review_remarks ? <span className="block mt-0.5" style={{ color: 'var(--text-muted)' }}>{st.review_remarks}</span> : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   {!!a.attachments?.length && (
                     <div className="flex flex-wrap gap-1.5">
                       {a.attachments.map(f => (

@@ -105,7 +105,7 @@ export default function MyReimbursements() {
   const [busy,    setBusy]    = useState(false)
 
   const [creating, setCreating] = useState(false)
-  const [form,     setForm]     = useState({ title: '', description: '', expense_date: '', amount_claimed: '' })
+  const [form,     setForm]     = useState({ title: '', description: '', category: '', expense_date: '', amount_claimed: '' })
   const [newFiles, setNewFiles] = useState([])
 
   const [openId,    setOpenId]    = useState(null)
@@ -144,7 +144,7 @@ export default function MyReimbursements() {
       await hrApi.reimbursements.me.create({ ...form, title: form.title.trim() }, newFiles)
       toast.success('Claim submitted.')
       setCreating(false)
-      setForm({ title: '', description: '', expense_date: '', amount_claimed: '' })
+      setForm({ title: '', description: '', category: '', expense_date: '', amount_claimed: '' })
       setNewFiles([])
       load()
     } catch (e) {
@@ -234,6 +234,19 @@ export default function MyReimbursements() {
                 onChange={e => setForm(f => ({ ...f, expense_date: e.target.value }))}
                 className="w-full rounded-lg text-sm" style={inputStyle} />
             </Field>
+            <Field label="Category">
+              {/* The backend has always accepted this and the form never asked for
+                  it, so every claim was filed uncategorised. Free text with
+                  suggestions — a closed list would be wrong within a month. */}
+              <input list="claim-categories" value={form.category} maxLength={60}
+                onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+                placeholder="e.g. Travel, Meals, Stationery"
+                className="w-full rounded-lg text-sm" style={inputStyle} />
+              <datalist id="claim-categories">
+                {['Travel', 'Meals', 'Accommodation', 'Fuel', 'Stationery', 'Client entertainment', 'Other']
+                  .map(c => <option key={c} value={c} />)}
+              </datalist>
+            </Field>
           </div>
 
           <Field label="Anything the approver should know (optional)">
@@ -307,6 +320,11 @@ export default function MyReimbursements() {
                       <Pill status={claim.status} />
                     </div>
                     <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>spent {claim.expense_date}</p>
+                    {/* Everything the claim carries, said back. A form that asks for a
+                        field and never shows it again teaches people not to fill it in. */}
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      {claim.category ? `${claim.category} · ` : ''}filed {String(claim.created_at || '').slice(0, 10)}
+                    </p>
                   </div>
                   <p className="text-lg font-bold" style={{ color: 'var(--text-h)', fontVariantNumeric: 'tabular-nums' }}>
                     {inr(claim.amount_approved ?? claim.amount_claimed)}
@@ -315,6 +333,10 @@ export default function MyReimbursements() {
                 </div>
 
                 <div className="p-5 overflow-y-auto flex flex-col gap-4">
+                  {claim.description && (
+                    <p className="text-xs whitespace-pre-wrap" style={{ color: 'var(--text-p)' }}>{claim.description}</p>
+                  )}
+
                   {!!claim.attachments?.length && (
                     <div className="flex flex-wrap gap-1.5">
                       {claim.attachments.map(a => (
