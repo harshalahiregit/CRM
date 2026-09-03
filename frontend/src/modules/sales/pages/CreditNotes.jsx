@@ -16,7 +16,7 @@ import { exportSalesList } from '@/services/salesApi'
 const fmt = v => '₹' + Number(v||0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'
 const STATUSES = ['Open','Closed','Void']
-const EMPTY = { client_id:'', invoice_number:'', amount:'', discount_type:'none', adminnote:'', clientnote:'', terms:'', reason:'', tags:'' }
+const EMPTY = { client_id:'', invoice_id:'', amount:'', discount_type:'none', adminnote:'', clientnote:'', terms:'', reason:'', tags:'' }
 const EMPTY_REFUND = { amount:'', mode:'Bank Transfer', reference:'', note:'' }
 const PAY_MODES = ['Bank Transfer','Cash','Cheque','Stripe','Razorpay','PayPal','UPI']
 
@@ -33,6 +33,7 @@ export default function CreditNotes() {
   const [openMenu, setOpenMenu] = useState(null)
   const [form, setForm]         = useState(EMPTY)
   const [refundForm, setRefundForm] = useState(EMPTY_REFUND)
+  const [clientInvoices, setClientInvoices] = useState([])
 
   // Routed through the shared Toast so every module notifies identically
   // (and error toasts get the per-field validation detail + tip).
@@ -61,6 +62,16 @@ export default function CreditNotes() {
   }
   useEffect(()=>{ load() },[filter])
 
+  // That customer's invoices, so the credit note is linked to a real one.
+  useEffect(() => {
+    if (!form.client_id) { setClientInvoices([]); return }
+    let cancelled = false
+    salesApi.invoices.list({ client_id: form.client_id })
+      .then(d => { if (!cancelled) setClientInvoices(Array.isArray(d) ? d : (d?.data ?? [])) })
+      .catch(() => { if (!cancelled) setClientInvoices([]) })
+    return () => { cancelled = true }
+  }, [form.client_id])
+
   // Preselect the customer + open the create drawer when arriving from the
   // customer profile (?client_id=…&new=1).
   useEffect(() => {
@@ -86,7 +97,27 @@ export default function CreditNotes() {
   }
   const handleRefund = async () => {
     if(!refundForm.amount) return showToast('Amount required','error')
-    showToast('Refund recorded!'); setShowRefund(false); setRefundForm(EMPTY_REFUND)
+    if(!selectedCN) return showToast('No credit note selected','error')
+
+    // This used to say "Refund recorded!" and call nothing at all — the dialog
+    // closed, the form reset, and the refund existed only in the user's memory.
+    // The endpoint and creditNoteApi.refund() were both already there.
+    try {
+      // `reference` is what the form calls it; the API wants transaction_id.
+      await salesApi.creditNotes.refund(selectedCN.id, {
+        amount: Number(refundForm.amount),
+        mode: refundForm.mode,
+        transaction_id: refundForm.reference || null,
+        note: refundForm.note || null,
+      })
+      showToast('Refund recorded!')
+      setShowRefund(false); setRefundForm(EMPTY_REFUND); setSelectedCN(null)
+      load()
+    } catch (e) {
+      // The server caps the amount at what is left on the note, so this is a
+      // reason worth showing rather than a generic failure.
+      showToast(e?.response?.data?.message || e?.message || 'Could not record the refund','error')
+    }
   }
 
   const stats = {
@@ -175,7 +206,7 @@ export default function CreditNotes() {
                     onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                     <td className="py-3.5 px-4 font-bold" style={{color:'#a78bfa'}}>{cn.number}</td>
                     <td className="py-3.5 px-4 font-semibold" style={{color:'var(--text-h)'}}>{cn.client}</td>
-                    <td className="py-3.5 px-4" style={{color:'var(--text-muted)'}}>{cn.invoice_number||'—'}</td>
+                    <td className="py-3.5 px-4" style={{color:'var(--text-muted)'}}>{cn.invoice?.invoice_number || cn.invoice_number || '—'}</td>
                     <td className="py-3.5 px-4 font-bold" style={{color:'#10b981'}}>{fmt(cn.amount)}</td>
                     <td className="py-3.5 px-4 whitespace-nowrap" style={{color:'var(--text-muted)'}}>{fmtDate(cn.date)}</td>
                     <td className="py-3.5 px-4 max-w-[180px]" style={{color:'var(--text-muted)'}}><span className="truncate block">{cn.reason||'—'}</span></td>
@@ -235,7 +266,14 @@ export default function CreditNotes() {
                     </div>
                     <div>
                       <label className="label">Related Invoice</label>
-                      <input className="input-3d text-sm" placeholder="INV-2026-001 (optional)" value={form.invoice_number} onChange={e => sf('invoice_number', e.target.value)} />
+                      {/* Was free text posted as invoice_number, which
+                          StoreCreditNoteRequest does not accept — so the note was
+                          never linked and the list column always read "—".
+                          A picker of that client's own invoices sends a real id. */}
+                      <select className="input-3d text-sm" value={form.invoice_id} onChange={e => sf('invoice_id', e.target.value ? Number(e.target.value) : '')} disabled={!form.client_id}>
+                        <option value="">{form.client_id ? 'Not against an invoice' : 'Pick a customer first'}</option>
+                        {clientInvoices.map(i => <option key={i.id} value={i.id}>{i.invoice_number || `#${i.id}`} · {i.total}</option>)}
+                      </select>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">

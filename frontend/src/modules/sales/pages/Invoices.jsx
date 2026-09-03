@@ -38,7 +38,7 @@ const EMPTY = {
   due_date: DUE_DEFAULT, currency:'INR', sale_agent:'', discount_type:'before_tax',
   discount_mode:'fixed', discount_value: 0,
   recurring: false, recur_interval:'1', recur_type:'month', cycles:'0',
-  allowed_modes: ['Bank Transfer','UPI','Razorpay'],
+  allowed_payment_modes: ['Bank Transfer','UPI','Razorpay'],
   cancel_overdue_reminders: false,
   adminnote:'', clientnote:'', terms:'', tags:'',
   line_items: [],
@@ -69,7 +69,7 @@ export default function Invoices() {
   const showToast = (msg, type = 'success') =>
     type === 'error' ? toast.error(msg) : type === 'info' ? toast.info(msg) : toast.success(msg)
   const sf = (k,v) => setForm(p=>({...p,[k]:v}))
-  const toggleMode = (m) => sf('allowed_modes', form.allowed_modes.includes(m) ? form.allowed_modes.filter(x=>x!==m) : [...form.allowed_modes,m])
+  const toggleMode = (m) => sf('allowed_payment_modes', form.allowed_payment_modes.includes(m) ? form.allowed_payment_modes.filter(x=>x!==m) : [...form.allowed_payment_modes,m])
 
   // Load EVERY invoice, not the active tab's.
   //
@@ -483,7 +483,7 @@ export default function Invoices() {
                 <p className="label-caps mb-4" style={{ color: '#a78bfa' }}>Allowed Payment Modes</p>
                 <div className="flex flex-wrap gap-2">
                   {PAY_MODES.map(m => {
-                    const active = form.allowed_modes.includes(m)
+                    const active = form.allowed_payment_modes.includes(m)
                     return (
                       <button key={m} onClick={() => toggleMode(m)}
                         className="px-3 py-2 rounded-xl text-xs font-bold transition-all"

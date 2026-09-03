@@ -5,6 +5,7 @@ import {
   ChevronDown, Tag, MessageSquare, User, MapPin,
   Eye, EyeOff, LayoutTemplate
 } from 'lucide-react'
+import api from '@/lib/api'
 import { salesApi } from '@/services/salesApi'
 import LoadError from '@/components/ui/LoadError'
 import { leadApi } from '@/services/leadApi'
@@ -24,13 +25,15 @@ const fmt = v => '₹' + Number(v || 0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
 const STATUSES = ['Draft', 'Pending Review', 'Sent', 'Viewed', 'Under Negotiation', 'Revision Requested', 'Accepted', 'Declined', 'Expired']
-const STAFF = ['Zafar Farooque', 'Priya Sharma', 'Rohit Verma', 'Anjali Singh', 'Karan Mehta']
+// Was a hardcoded array of five names, posted as a string under `assigned`.
+// StoreProposalRequest wants `assigned_to` — a users id — so every proposal was
+// saved unowned and the Assigned column below always read "—".
 
 const EMPTY_FORM = {
   subject: '', rel_type: 'customer', rel_id: '', project_id: '',
   date: new Date().toISOString().split('T')[0], open_till: '',
   currency: 'INR', discount_type: 'none', status: 'Open',
-  assigned: '', proposal_to: '',
+  assigned_to: '', proposal_to: '',
   address: '', city: '', state: '', country: 'India', zip: '',
   email: '', phone: '', allow_comments: false, tags: '', notes: '', terms: '',
   line_items: [], template_id: '',
@@ -52,6 +55,7 @@ export default function Proposals() {
   const [showDrawer, setShowDrawer] = useState(false)
   const [openMenu, setOpenMenu] = useState(null)
   const [form, setForm]       = useState(EMPTY_FORM)
+  const [assignees, setAssignees] = useState([])
   const [showAddr, setShowAddr] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(null)
 
@@ -70,6 +74,15 @@ export default function Proposals() {
       .catch(e => setLoadError(e))
       .finally(() => setLoading(false))
   }
+
+  // Real people, so the id posted as assigned_to actually resolves.
+  useEffect(() => {
+    let cancelled = false
+    api.get('/assignees')
+      .then(r => { if (!cancelled) setAssignees(r?.data?.data || []) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => { load() }, [filter, search])
   useEffect(() => { salesApi.proposalTemplates.list().then(setTemplates).catch(() => {}) }, [])
@@ -251,7 +264,7 @@ export default function Proposals() {
                       )}
                     </td>
                     <td className="py-3.5 px-4 whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{fmtDate(p.open_till)}</td>
-                    <td className="py-3.5 px-4" style={{ color: 'var(--text-muted)' }}>{p.assigned || '—'}</td>
+                    <td className="py-3.5 px-4" style={{ color: 'var(--text-muted)' }}>{assignees.find(u => u.id === p.assigned_to)?.name || p.assigned_to_name || '—'}</td>
                     <td className="py-3.5 px-4"><StatusBadge status={p.status} /></td>
                     <td className="py-3.5 px-4" onClick={e => e.stopPropagation()}>
                       <RowMenu width={188}>
@@ -410,9 +423,9 @@ export default function Proposals() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="label">Assigned Staff</label>
-                      <select className="input-3d text-sm" value={form.assigned} onChange={e => sf('assigned', e.target.value)}>
+                      <select className="input-3d text-sm" value={form.assigned_to} onChange={e => sf('assigned_to', e.target.value ? Number(e.target.value) : '')}>
                         <option value="">Unassigned</option>
-                        {STAFF.map(s => <option key={s} value={s}>{s}</option>)}
+                        {assignees.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                       </select>
                     </div>
                     <div>

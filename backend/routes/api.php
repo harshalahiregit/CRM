@@ -6,6 +6,13 @@ require __DIR__.'/hr.php';
 // SangoeTrack (track.sangoe.in) — relays only, owns no CRM table.
 // The attendance app's own surface, /api/Hrm/*, answering in SangoeTrack's
 // shape so the app can be repointed by changing one line.
+// Who work can be assigned to. Same gate as the other option lists, so a
+// salesperson can read it — /api/admin/staff is admin-only and could not serve
+// the screens that need an owner picker.
+Route::middleware(['auth:sanctum', 'role:admin,staff'])->group(function () {
+    Route::get('/assignees', [\App\Http\Controllers\Api\AssigneeController::class, 'index']);
+});
+
 require __DIR__.'/hrm.php';
 require __DIR__.'/sangoetrack.php';
 require __DIR__.'/performance.php';
