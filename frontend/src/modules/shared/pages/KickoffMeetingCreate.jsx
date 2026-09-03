@@ -427,6 +427,49 @@ export default function KickoffMeetingCreate() {
     vendorApi.contacts.list(vendorId).then(r => setContacts(r?.data ?? r)).catch(() => setContacts([]))
   }, [vendorApi])
 
+  /**
+   * The meeting's length, derived from start and end.
+   *
+   * Computed ONCE and read by both the Duration field and the summary rail.
+   * The two used to disagree: the field computed it live, while the rail printed
+   * form.duration_minutes — seeded at 60 and never updated again once duration
+   * stopped being a manual field. An 11:10 -> 12:09 meeting therefore read
+   * "59 min" on the left and "60 min" on the right.
+   */
+  const durationLabel = useMemo(() => {
+    const st = form.meeting_time, en = form.meeting_end_time
+    if (!st || !en || st === en) return '—'
+    const [h1, m1] = st.split(':').map(Number)
+    const [h2, m2] = en.split(':').map(Number)
+    // Add a day when the end is earlier than the start, or a 23:00 -> 00:30
+    // meeting would read as minus 22.5 hours.
+    let mins = (h2 * 60 + m2) - (h1 * 60 + m1)
+    if (mins < 0) mins += 24 * 60
+    const h = Math.floor(mins / 60), m = mins % 60
+    return `${h ? `${h} hr ` : ''}${m ? `${m} min` : (h ? '' : '0 min')}`.trim()
+  }, [form.meeting_time, form.meeting_end_time])
+
+  /**
+   * Whether the chosen start has already gone by.
+   *
+   * `min` on <input type="time"> is not a real guard: browsers mark the field
+   * invalid but still let the value be picked or typed, and the attribute is
+   * computed at render so it goes stale as the clock moves — a form opened at
+   * 11:09 happily accepts 11:10 at 11:12. The submit check catches it, but only
+   * after the user has filled the whole form, so this says it immediately.
+   *
+   * An unchanged stored start is fine: editing an old meeting to write up its
+   * minutes must not be flagged as an error.
+   */
+  const startInPast = useMemo(() => {
+    if (!form.meeting_date || !form.meeting_time) return false
+    const start = new Date(`${form.meeting_date}T${form.meeting_time}`)
+    if (Number.isNaN(start.getTime())) return false
+    const stored = storedStartRef.current ? new Date(storedStartRef.current) : null
+    if (stored && Math.abs(stored.getTime() - start.getTime()) < 60 * 1000) return false
+    return start.getTime() < Date.now() - 2 * 60 * 1000
+  }, [form.meeting_date, form.meeting_time])
+
   const set = (k) => (e) => {
     const val = e.target.type === 'checkbox' ? e.target.checked : e.target.value
     setForm(f => ({ ...f, [k]: val }))
@@ -1154,8 +1197,14 @@ export default function KickoffMeetingCreate() {
                 <TextInput type="date" min={isEdit ? undefined : new Date().toLocaleDateString('en-CA')} value={form.meeting_date} onChange={set('meeting_date')} />
               </Field>
               <Field label="Start Time *">
-                {/* When the meeting is today, the earliest selectable time is now. */}
+                {/* `min` is advisory only — see startInPast. The message below is
+                    the part the user actually sees. */}
                 <TextInput type="time" min={form.meeting_date === new Date().toLocaleDateString('en-CA') ? new Date().toTimeString().slice(0, 5) : undefined} value={form.meeting_time} onChange={set('meeting_time')} />
+                {startInPast && (
+                  <span style={{ fontSize: 11, color: '#f87171', fontWeight: 700 }}>
+                    That time has already passed — pick a later one.
+                  </span>
+                )}
               </Field>
               <Field label="End Time *">
                 {/* No `min`: an end EARLIER than the start is legitimate and means
@@ -1169,17 +1218,7 @@ export default function KickoffMeetingCreate() {
               <Field label="Duration">
                 {/* Auto-computed from start→end — no longer a manual field. */}
                 <div style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 13.5, fontWeight: 700 }}>
-                  {(() => {
-                    if (!form.meeting_time || !form.meeting_end_time || form.meeting_end_time === form.meeting_time) return '—'
-                    const [h1, m1] = form.meeting_time.split(':').map(Number)
-                    const [h2, m2] = form.meeting_end_time.split(':').map(Number)
-                    // Add a day when the end is earlier than the start, or a
-                    // 23:00 -> 00:30 meeting would read as minus 22.5 hours.
-                    let mins = (h2 * 60 + m2) - (h1 * 60 + m1)
-                    if (mins < 0) mins += 24 * 60
-                    const h = Math.floor(mins / 60); const m = mins % 60
-                    return `${h ? `${h} hr ` : ''}${m ? `${m} min` : (h ? '' : '0 min')}`.trim()
-                  })()}
+                  {durationLabel}
                 </div>
               </Field>
               <Field label="Planned Date (optional)">
@@ -1763,7 +1802,7 @@ export default function KickoffMeetingCreate() {
               )}
 
               <SummaryRow label="Duration">
-                {form.duration_minutes ? `${form.duration_minutes} min` : '—'}
+                {durationLabel}
               </SummaryRow>
 
               <SummaryRow label="Participants">
@@ -1790,13 +1829,18 @@ export default function KickoffMeetingCreate() {
                   <span style={{ fontSize: 12, color: 'var(--text-h)' }}>{err}</span>
                 </div>
               )}
-              <button onClick={save} disabled={saving || generatingLink}
+              {/* Blocked, not just warned, while the start is in the past — the
+                  submit check would reject it anyway, and refusing up front
+                  beats filling in the whole form first. */}
+              <button onClick={save} disabled={saving || generatingLink || startInPast}
+                title={startInPast ? 'The start time has already passed' : undefined}
                 style={{
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-                  padding: '11px 20px', borderRadius: 11, border: 'none', cursor: (saving || generatingLink) ? 'wait' : 'pointer',
+                  padding: '11px 20px', borderRadius: 11, border: 'none',
+                  cursor: (saving || generatingLink) ? 'wait' : (startInPast ? 'not-allowed' : 'pointer'),
                   fontSize: 13.5, fontWeight: 800, color: '#fff',
-                  background: (saving || generatingLink) ? 'rgba(124,58,237,0.5)' : 'linear-gradient(145deg,#a78bfa,#7C3AED)',
-                  boxShadow: (saving || generatingLink) ? 'none' : '0 8px 22px -6px rgba(124,58,237,.6)',
+                  background: (saving || generatingLink || startInPast) ? 'rgba(124,58,237,0.5)' : 'linear-gradient(145deg,#a78bfa,#7C3AED)',
+                  boxShadow: (saving || generatingLink || startInPast) ? 'none' : '0 8px 22px -6px rgba(124,58,237,.6)',
                 }}>
                 {generatingLink ? 'Generating link…' : saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Save as Draft')}
               </button>
