@@ -33,6 +33,8 @@ class HrmCalendarContractTest extends TestCase
 
     private const DATE = '2026-09-15';
 
+    private HrEmployee $employee;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -44,7 +46,7 @@ class HrmCalendarContractTest extends TestCase
             'password' => Hash::make('Password123!'), 'role' => 'staff', 'status' => 'active',
         ]);
 
-        HrEmployee::create([
+        $this->employee = HrEmployee::create([
             'tenant_id' => $tenant->id, 'employee_code' => 'SNE-1', 'name' => 'Priya',
             'department' => 'Ops', 'designation' => 'Analyst', 'joining_date' => '2020-01-01',
             'status' => 'Active', 'user_id' => $user->id, 'app_login_enabled' => true,
@@ -87,6 +89,60 @@ class HrmCalendarContractTest extends TestCase
         }
     }
 
+    /**
+     * A holiday scoped to one department belongs to that department only.
+     *
+     * Neither app endpoint applied `applicable_for`, so a single department's
+     * shutdown was published to the whole workspace and the phone showed people a
+     * day off they do not get.
+     */
+    public function test_a_holiday_for_another_department_is_not_shown(): void
+    {
+        $mine    = $this->employee->department_id;
+        $otherDept  = ($mine ?? 0) + 99;
+
+        DB::table('hr_holidays')->insert([
+            'tenant_id' => 1, 'title' => 'Plant Shutdown', 'holiday_date' => '2026-09-22',
+            'holiday_type' => 'Company', 'applicable_for' => 'Department',
+            'department_id' => $otherDept, 'is_optional' => false, 'is_active' => true,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $titles = collect($this->postJson('/api/Hrm/holidays-list', ['workspace_id' => '1'])
+            ->assertOk()->json('data'))->pluck('title');
+
+        $this->assertNotContains('Plant Shutdown', $titles);
+        $this->assertContains('Independence Day', $titles, 'Organisation-wide holidays must still show.');
+
+        $calendar = collect($this->getJson('/api/Hrm/events?month=9&year=2026')->assertOk()->json('data'))->pluck('title');
+        $this->assertNotContains('Plant Shutdown', $calendar, 'The calendar must apply the same rule.');
+    }
+
+    /** Each configured type is told apart, not collapsed into a yes/no. */
+    public function test_every_holiday_type_reaches_the_app_distinctly(): void
+    {
+        $types = ['Festival' => '2026-09-16', 'Company' => '2026-09-17'];
+        foreach ($types as $type => $date) {
+            DB::table('hr_holidays')->insert([
+                'tenant_id' => 1, 'title' => $type.' Day', 'holiday_date' => $date,
+                'holiday_type' => $type, 'applicable_for' => 'Organization',
+                'is_optional' => false, 'is_active' => true,
+                'created_at' => now(), 'updated_at' => now(),
+            ]);
+        }
+
+        $rows = collect($this->postJson('/api/Hrm/holidays-list', ['workspace_id' => '1'])
+            ->assertOk()->json('data'))->keyBy('title');
+
+        $this->assertSame('national-holiday', $rows['Independence Day']['className']);
+        $this->assertSame('festival-holiday', $rows['Festival Day']['className']);
+        $this->assertSame('company-holiday',  $rows['Company Day']['className']);
+
+        // Distinct colours on the calendar, for the same reason.
+        $cal = collect($this->getJson('/api/Hrm/events?month=9&year=2026')->assertOk()->json('data'))->keyBy('title');
+        $this->assertNotSame($cal['Independence Day']['color'], $cal['Festival Day']['color']);
+    }
+
     public function test_an_optional_holiday_is_distinguishable_from_a_public_one(): void
     {
         DB::table('hr_holidays')->insert([
@@ -99,7 +155,9 @@ class HrmCalendarContractTest extends TestCase
         $rows = collect($this->postJson('/api/Hrm/holidays-list', ['workspace_id' => '1'])
             ->assertOk()->json('data'))->keyBy('title');
 
-        $this->assertSame('public-holiday', $rows['Independence Day']['className']);
+        // 'national-holiday' now, not the old catch-all: the class carries the
+        // configured type so the phone can tell the four kinds apart.
+        $this->assertSame('national-holiday', $rows['Independence Day']['className']);
         $this->assertSame('optional-holiday', $rows['Optional Festival']['className']);
     }
 }

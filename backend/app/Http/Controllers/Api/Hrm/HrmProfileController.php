@@ -201,9 +201,10 @@ class HrmProfileController extends Controller
 
         $from = \Illuminate\Support\Carbon::createFromDate($year, $month, 1)->startOfMonth();
 
-        $rows = DB::table('hr_holidays')
-            ->where('tenant_id', $tenantId)
+        // Same rule as /holidays-list: only what this employee actually observes.
+        $rows = \App\Models\Hr\HrHoliday::where('tenant_id', $tenantId)
             ->where('is_active', true)
+            ->visibleTo($employee)
             ->whereDate('holiday_date', '>=', $from->toDateString())
             ->whereDate('holiday_date', '<=', $from->copy()->endOfMonth()->toDateString())
             ->orderBy('holiday_date')
@@ -216,9 +217,12 @@ class HrmProfileController extends Controller
             // `e.startDate == getDateFormmatted(date)` — plain string equality
             // against 'yyyy-MM-dd' — so a trailing ' 00:00:00' meant no day ever
             // matched and the day's event list was always empty.
-            'start_date'  => \Illuminate\Support\Carbon::parse($h->holiday_date)->toDateString(),
-            'end_date'    => \Illuminate\Support\Carbon::parse($h->holiday_date)->toDateString(),
-            'color'       => $h->is_optional ? '#f59e0b' : '#7C3AED',
+            'start_date'  => $h->holiday_date->toDateString(),
+            'end_date'    => $h->holiday_date->toDateString(),
+            // Colour follows the TYPE, not a yes/no, so National, Festival and
+            // Company holidays are told apart on the calendar as the admin screen
+            // implies they are.
+            'color'       => $h->appColor(),
             'description' => (string) ($h->description ?? ''),
         ])->values()->all());
     }

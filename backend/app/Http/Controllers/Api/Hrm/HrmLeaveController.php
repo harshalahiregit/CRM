@@ -227,20 +227,22 @@ class HrmLeaveController extends Controller
             return HrmResponse::ok([]);
         }
 
-        $rows = DB::table('hr_holidays')
-            ->where('tenant_id', $tenantId)
+        // Through the model, not DB::table, so the visibility scope and the
+        // type-aware class name are the SAME rule the calendar endpoint uses.
+        $rows = \App\Models\Hr\HrHoliday::where('tenant_id', $tenantId)
             ->where('is_active', true)
+            ->visibleTo($employee)
             ->orderBy('holiday_date')
             ->get();
 
-        return HrmResponse::ok($rows->map(fn ($h) => [
+        return HrmResponse::ok($rows->map(fn (\App\Models\Hr\HrHoliday $h) => [
             'title'     => (string) $h->title,
             // Y-m-d for the same reason the calendar needs it: the app compares
             // these as plain strings and parses them for the day/month chips,
             // never as a datetime.
-            'start'     => \Illuminate\Support\Carbon::parse($h->holiday_date)->toDateString(),
-            'end'       => \Illuminate\Support\Carbon::parse($h->holiday_date)->toDateString(),
-            'className' => $h->is_optional ? 'optional-holiday' : 'public-holiday',
+            'start'     => $h->holiday_date->toDateString(),
+            'end'       => $h->holiday_date->toDateString(),
+            'className' => $h->appClassName(),
         ])->values()->all());
     }
 
