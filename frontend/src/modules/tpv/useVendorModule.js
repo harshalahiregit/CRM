@@ -79,10 +79,22 @@ function cfg(c) {
     onboardingPath: c.onboardingPath ?? ((id) => `${base}/onboarding/${id}`),
     // The onboarding LIST route (the wizard's "back" target) — always <base>/onboarding.
     onboardingListPath: `${base}/onboarding`,
+    // Vendor code lives under a different column per module (`vendor_code` on
+    // the shared vendors table, `purchase_vendor_code` on purchase_vendors), so
+    // a component shared by both must not read either name directly.
+    codeOf: (v) => v?.vendor_code ?? v?.purchase_vendor_code ?? null,
+    // The foreign-key name a create payload must use. StoreTpvOnboardingRequest
+    // requires `vendor_id`; StorePurchaseOnboardingRequest requires
+    // `purchase_vendor_id`. A shared form posting either name blindly gets a 422
+    // from the other module, so the key is part of the module config.
+    vendorIdKey: c.engagement === 'purchase' ? 'purchase_vendor_id' : 'vendor_id',
     // Kickoff create is the shared page; pre-scope it to the vendor.
-    kickoffNewPath: (vendorId) => `/app/tpv/kickoff/new?vendor=${vendorId}`,
-    // Kickoff workspace (shared engine) — reached as a button, never a nav tab.
-    kickoffListPath: '/app/tpv/kickoff',
+    // Keyed on the MODULE, not hardcoded to TPV: these were fixed strings, so a
+    // Purchase vendor's "Kickoff Meeting" button navigated into the TPV module
+    // and showed another module's meetings.
+    kickoffNewPath: (vendorId) => `/app/${c.key}/kickoff/new?vendor=${vendorId}`,
+    // Kickoff workspace — reached as a button, never a nav tab.
+    kickoffListPath: `/app/${c.key}/kickoff`,
     ...c,
   }
 }

@@ -32,7 +32,13 @@ class SafetyEngagementController extends Controller
         $data = $request->validate([
             'category'     => ['required', Rule::in(SafetyObservation::CATEGORIES)],
             'severity'     => ['sometimes', Rule::in(SafetyObservation::SEVERITIES)],
-            'vendor_id'    => 'nullable|integer',
+            'vendor_id'    => 'nullable|integer|exists:vendors,id',
+            // Purchase vendors live in their own table with unrelated ids, so
+            // they need their own column: posting one into vendor_id would not
+            // fail, it would attach the record to whichever shared vendor held
+            // that number. A safety record filed against the wrong company is
+            // worse than one filed against nobody.
+            'purchase_vendor_id' => 'nullable|integer|exists:purchase_vendors,id',
             'observed_at'  => 'nullable|date',
             'location'     => 'nullable|string|max:200',
             'description'  => 'required|string',
@@ -45,6 +51,7 @@ class SafetyEngagementController extends Controller
             'category'     => $data['category'],
             'severity'     => $data['severity'] ?? 'Low',
             'vendor_id'    => $data['vendor_id'] ?? null,
+            'purchase_vendor_id' => $data['purchase_vendor_id'] ?? null,
             'observed_at'  => $data['observed_at'] ?? now(),
             'location'     => $data['location'] ?? null,
             'description'  => $data['description'],
@@ -84,7 +91,13 @@ class SafetyEngagementController extends Controller
     {
         $data = $request->validate([
             'topic'            => 'required|string|max:200',
-            'vendor_id'        => 'nullable|integer',
+            'vendor_id'        => 'nullable|integer|exists:vendors,id',
+            // Purchase vendors live in their own table with unrelated ids, so
+            // they need their own column: posting one into vendor_id would not
+            // fail, it would attach the record to whichever shared vendor held
+            // that number. A safety record filed against the wrong company is
+            // worse than one filed against nobody.
+            'purchase_vendor_id' => 'nullable|integer|exists:purchase_vendors,id',
             'held_at'          => 'nullable|date',
             'location'         => 'nullable|string|max:200',
             'attendee_count'   => 'nullable|integer|min:0|max:5000',
@@ -97,6 +110,7 @@ class SafetyEngagementController extends Controller
             'conducted_by'     => $request->user()->id,
             'topic'            => $data['topic'],
             'vendor_id'        => $data['vendor_id'] ?? null,
+            'purchase_vendor_id' => $data['purchase_vendor_id'] ?? null,
             'held_at'          => $data['held_at'] ?? now(),
             'location'         => $data['location'] ?? null,
             'attendee_count'   => $data['attendee_count'] ?? 0,

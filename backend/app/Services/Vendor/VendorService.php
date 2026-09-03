@@ -80,12 +80,22 @@ class VendorService
                 if (empty($password)) {
                     $vendor->setAttribute('generated_password', $plain);
                 }
+
+                // Welcome the vendor immediately with their login details so they
+                // can sign in and complete onboarding — not only at activation.
+                $vendor->setAttribute('welcome_password', $plain);
             }
 
             $this->syncContacts($vendor, $contacts);
 
             return $vendor;
         });
+
+        // Sent after the transaction commits (the notifier defers via afterCommit).
+        if ($vendor->getAttribute('welcome_password')) {
+            app(\App\Services\Tpv\TpvActivationNotifier::class)
+                ->onCredentialsIssued($vendor, $vendor->getAttribute('welcome_password'));
+        }
 
         $vendor->recordAudit('Vendor Created', null, null, ['vendor_code' => $vendor->vendor_code]);
 

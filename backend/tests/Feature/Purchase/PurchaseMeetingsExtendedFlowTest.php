@@ -53,7 +53,9 @@ class PurchaseMeetingsExtendedFlowTest extends TestCase
     {
         return $this->postJson('/api/purchase/kickoff', array_merge([
             'purchase_vendor_id' => $this->vendor()->id, 'title' => 'M '.Str::random(4),
-            'meeting_type' => 'kickoff', 'scheduled_at' => now()->subDay()->toDateTimeString(),
+            'meeting_type' => 'kickoff',
+            'scheduled_at' => now()->addDay()->toDateTimeString(),
+            'end_at' => now()->addDay()->addHour()->toDateTimeString(),
         ], $extra))->assertCreated()->json();
     }
 
@@ -63,7 +65,7 @@ class PurchaseMeetingsExtendedFlowTest extends TestCase
         $m = $this->schedule([
             'priority' => 'High', 'confidentiality' => 'Confidential', 'chairperson' => 'Ms Chair',
             'coordinator' => 'Mr Coord', 'organizer' => 'Org', 'department' => 'Procurement',
-            'client_name' => 'Acme', 'mode' => 'hybrid', 'end_at' => now()->toDateTimeString(),
+            'client_name' => 'Acme', 'mode' => 'hybrid', 'end_at' => now()->addDay()->addHours(2)->toDateTimeString(),
         ]);
         $this->assertMatchesRegularExpression('/^MTG-\d{4}-\d{4}$/', $m['meeting_no']);
         $this->assertSame('High', $m['priority']);
@@ -75,7 +77,7 @@ class PurchaseMeetingsExtendedFlowTest extends TestCase
     public function test_agenda_builder_template_and_copy(): void
     {
         $vendorId = $this->vendor()->id;
-        $m1 = $this->postJson('/api/purchase/kickoff', ['purchase_vendor_id' => $vendorId, 'title' => 'Prev', 'meeting_type' => 'kickoff', 'scheduled_at' => now()->subDays(3)->toDateTimeString()])->json();
+        $m1 = $this->postJson('/api/purchase/kickoff', ['purchase_vendor_id' => $vendorId, 'title' => 'Prev', 'meeting_type' => 'kickoff', 'scheduled_at' => now()->addDay()->toDateTimeString(), 'end_at' => now()->addDay()->addHour()->toDateTimeString()])->json();
 
         $this->postJson("/api/purchase/kickoff/{$m1['id']}/agenda", ['item' => 'Safety review', 'duration_minutes' => 15, 'priority' => 'High'])
             ->assertCreated()->assertJsonPath('item', 'Safety review');
@@ -85,7 +87,7 @@ class PurchaseMeetingsExtendedFlowTest extends TestCase
         $this->assertGreaterThan(1, count($afterTemplate));
 
         // a second meeting for the same vendor can copy the previous agenda
-        $m2 = $this->postJson('/api/purchase/kickoff', ['purchase_vendor_id' => $vendorId, 'title' => 'New', 'meeting_type' => 'kickoff', 'scheduled_at' => now()->toDateTimeString()])->json();
+        $m2 = $this->postJson('/api/purchase/kickoff', ['purchase_vendor_id' => $vendorId, 'title' => 'New', 'meeting_type' => 'kickoff', 'scheduled_at' => now()->addDays(2)->toDateTimeString(), 'end_at' => now()->addDays(2)->addHour()->toDateTimeString()])->json();
         $copied = $this->postJson("/api/purchase/kickoff/{$m2['id']}/agenda/copy-previous")->assertOk()->json();
         $this->assertSame(count($afterTemplate), count($copied));
     }
@@ -94,11 +96,11 @@ class PurchaseMeetingsExtendedFlowTest extends TestCase
     public function test_previous_summary_and_carry_forward(): void
     {
         $vendorId = $this->vendor()->id;
-        $m1 = $this->postJson('/api/purchase/kickoff', ['purchase_vendor_id' => $vendorId, 'title' => 'P', 'meeting_type' => 'kickoff', 'scheduled_at' => now()->subDays(5)->toDateTimeString()])->json();
+        $m1 = $this->postJson('/api/purchase/kickoff', ['purchase_vendor_id' => $vendorId, 'title' => 'P', 'meeting_type' => 'kickoff', 'scheduled_at' => now()->addDay()->toDateTimeString(), 'end_at' => now()->addDay()->addHour()->toDateTimeString()])->json();
         $this->postJson("/api/purchase/kickoff/{$m1['id']}/actions", ['description' => 'Fix', 'responsible_names' => 'A'])->assertCreated();
         $this->postJson("/api/purchase/kickoff/{$m1['id']}/issues", ['title' => 'Gap', 'severity' => 'High'])->assertCreated();
 
-        $m2 = $this->postJson('/api/purchase/kickoff', ['purchase_vendor_id' => $vendorId, 'title' => 'N', 'meeting_type' => 'kickoff', 'scheduled_at' => now()->toDateTimeString()])->json();
+        $m2 = $this->postJson('/api/purchase/kickoff', ['purchase_vendor_id' => $vendorId, 'title' => 'N', 'meeting_type' => 'kickoff', 'scheduled_at' => now()->addDays(2)->toDateTimeString(), 'end_at' => now()->addDays(2)->addHour()->toDateTimeString()])->json();
 
         $this->getJson("/api/purchase/kickoff/{$m2['id']}/previous-summary")
             ->assertOk()->assertJsonPath('actions.open', 1)->assertJsonPath('issues.open', 1);

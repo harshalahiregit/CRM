@@ -72,7 +72,9 @@
     <title>{{ $meetingNo }} — Minutes of Meeting</title>
     <style>
         @page { margin: 34px 40px 56px; }
-        body { font-family: DejaVu Sans, sans-serif; font-size: 11.5px; color: #1f2937; line-height: 1.55; }
+        body { font-family: DejaVu Sans, sans-serif; font-size: 11.5px; color: #1f2937; line-height: 1.55; word-wrap: break-word; }
+        /* Break long unbroken strings so they wrap in the PDF instead of overflowing. */
+        td, th, p, div, li, span { word-wrap: break-word; overflow-wrap: break-word; }
         .head { border-bottom: 3px solid {{ $brand }}; padding-bottom: 12px; margin-bottom: 18px; }
         .head td { vertical-align: middle; }
         .company { font-size: 19px; font-weight: bold; color: {{ $brand }}; }

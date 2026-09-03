@@ -1,24 +1,28 @@
 /**
- * Session persistence for auth. "Remember me" decides WHERE the session lives:
- *   - checked   → localStorage  (survives a browser restart)
- *   - unchecked → sessionStorage (cleared when the tab/browser closes)
+ * Session persistence for auth. The token always lives in localStorage so EVERY
+ * tab shares one session — a tab opened from an email deep-link recognises the
+ * existing login and lands on the target page instead of bouncing to login.
  *
- * All reads fall back across both stores, so the rest of the app never has to
- * care which one holds the current session.
+ * "Remember me" no longer changes WHERE the session is stored; it is recorded as
+ * a flag that the idle-timeout uses to decide whether this session may sit idle
+ * indefinitely (remembered) or is signed out after the idle window (not). So a
+ * non-remembered session is still protected — by the idle timeout on the server,
+ * not by dying with the tab.
+ *
+ * All reads still fall back across both stores, so any older sessionStorage-only
+ * session keeps working until the next login migrates it to localStorage.
  */
 const KEYS = ['crm_token', 'crm_user', 'crm_tenant', 'crm_remember']
 
 export function setAuth({ token, user, tenant, remember }) {
-  const store = remember ? localStorage : sessionStorage
-  const other = remember ? sessionStorage : localStorage
+  localStorage.setItem('crm_token', token)
+  localStorage.setItem('crm_user', JSON.stringify(user))
+  localStorage.setItem('crm_tenant', JSON.stringify(tenant))
+  localStorage.setItem('crm_remember', remember ? '1' : '0')
 
-  store.setItem('crm_token', token)
-  store.setItem('crm_user', JSON.stringify(user))
-  store.setItem('crm_tenant', JSON.stringify(tenant))
-  store.setItem('crm_remember', remember ? '1' : '0')
-
-  // Make sure a session never lingers in the other store.
-  KEYS.forEach(k => other.removeItem(k))
+  // A session must never linger in sessionStorage (older builds wrote there for
+  // non-remembered logins); otherwise a stale copy could shadow this one.
+  KEYS.forEach(k => sessionStorage.removeItem(k))
 }
 
 export function getToken() {

@@ -52,7 +52,7 @@ class TpvWorkerController extends Controller
     {
         $this->assertTenant($request, $worker);
 
-        $worker->load(['vendor', 'medical.recorder:id,name', 'induction.recorder:id,name', 'ppeIssues.issuer:id,name', 'creator:id,name', 'auditLogs']);
+        $worker->load(['vendor', 'medical.recorder:id,name', 'medicalHistory.recorder:id,name', 'induction.recorder:id,name', 'ppeIssues.issuer:id,name', 'creator:id,name', 'auditLogs']);
 
         // The single-worker detail is the edit surface — the managing staff / owning
         // vendor who keyed the Aadhaar need the full number back to amend it. Every
@@ -84,7 +84,11 @@ class TpvWorkerController extends Controller
     {
         $this->assertTenant($request, $worker);
 
-        return response()->json($this->workerService->saveMedical($worker, $request->validated(), $request->user()));
+        // §16 legal capture — the IP is stamped server-side (never trusted from the
+        // client); geolocation + photo arrive in the validated body.
+        $data = [...$request->validated(), 'system_ip' => $request->ip()];
+
+        return response()->json($this->workerService->saveMedical($worker, $data, $request->user()));
     }
 
     public function saveInduction(SaveWorkerInductionRequest $request, TpvWorker $worker)

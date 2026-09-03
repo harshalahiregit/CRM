@@ -22,6 +22,13 @@ class PurchaseWorker extends Model
         'worker_code', 'full_name', 'gender', 'dob', 'phone', 'email', 'designation',
         'id_proof_type', 'id_proof_number', 'address', 'city', 'state', 'pincode',
         'photo_path', 'status', 'notes',
+        // TPV parity — identity depth and the employment facts a badge is issued
+        // against. The medical/induction/PPE/training state deliberately stays in
+        // its own tables rather than being mirrored here.
+        'blood_group', 'skill_category', 'trade', 'age_reason',
+        'emergency_contact', 'emergency_phone', 'bocw_number',
+        'experience_years', 'joining_date', 'exit_date',
+        'project', 'site', 'department',
         // Workforce lifecycle. current_step and the badge are written by the
         // service (forceFill), never mass-assigned from a request — a vendor must
         // not be able to post itself a badge.
@@ -33,6 +40,14 @@ class PurchaseWorker extends Model
         'current_step'      => 'integer',
         'badge_issued_at'   => 'datetime',
         'badge_valid_until' => 'date',
+        'joining_date'      => 'date',
+        'exit_date'         => 'date',
+        'experience_years'  => 'float',
+        'card_issued_at'    => 'datetime',
+        'punch_count'       => 'integer',
+        'punch_1_at'        => 'datetime',
+        'punch_2_at'        => 'datetime',
+        'punch_3_at'        => 'datetime',
     ];
 
     /** The gate scans this; it is a credential, so it never rides along in a payload. */

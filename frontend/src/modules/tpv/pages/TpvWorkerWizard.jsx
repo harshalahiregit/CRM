@@ -345,6 +345,13 @@ function Step2Medical({ worker, editable, onSaved, onNext, api }) {
     doctor_comments: m.restrictions || m.doctor_comments || '',
     external_doctor_name: (m.exam_type === 'external' ? m.examiner_name : '') || m.external_doctor_name || '',
     external_pdf: null,
+    // External-doctor exam: the certified fitness outcome (no longer hardcoded to
+    // Fit) + whether a report file is already on record.
+    external_fitness: (m.exam_type === 'external' ? m.fitness_status : '') || 'Fit',
+    has_report: !!m.document_path,
+    // §16 legal capture — optional signer/scene photo (base64); IP + geolocation
+    // are captured automatically at save.
+    capture_photo: null,
     signature_data: '',
     stamp_data: '',
   })
@@ -563,6 +570,27 @@ function Step2Medical({ worker, editable, onSaved, onNext, api }) {
     setTimeout(() => win.print(), 400)
   }
 
+  // §16 — best-effort geolocation for the legal-capture trio. Resolves to
+  // "lat,long" or null (never rejects) so a denied prompt can't block the save.
+  function captureGeo() {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) return resolve(null)
+      navigator.geolocation.getCurrentPosition(
+        (p) => resolve(`${p.coords.latitude.toFixed(6)},${p.coords.longitude.toFixed(6)}`),
+        () => resolve(null),
+        { timeout: 6000, maximumAge: 60000 },
+      )
+    })
+  }
+
+  const onCapturePhoto = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) { setF((p) => ({ ...p, capture_photo: null })); return }
+    const reader = new FileReader()
+    reader.onload = () => setF((p) => ({ ...p, capture_photo: reader.result }))
+    reader.readAsDataURL(file)
+  }
+
   const saveMedical = async () => {
     if (f.medical_type === 'internal') {
       if (!f.doctor_name.trim()) { alert('Doctor Name is required.'); return }
@@ -572,6 +600,7 @@ function Step2Medical({ worker, editable, onSaved, onNext, api }) {
       if (medicalResult === 'Pending Vitals') { alert('Enter height and weight so a fitness result can be determined.'); return }
     } else if (f.medical_type === 'external') {
       if (!f.external_doctor_name.trim()) { alert('External Doctor Name is required.'); return }
+      if (!f.external_pdf && !f.has_report) { alert('Upload the external medical report (PDF or image).'); return }
     }
 
     setSaving(true)
@@ -579,10 +608,20 @@ function Step2Medical({ worker, editable, onSaved, onNext, api }) {
       const [sys, dia] = (f.blood_pressure || '').split('/').map(s => parseInt(s, 10))
       const isExternal = f.medical_type === 'external'
       // Map the form onto the canonical tpv_worker_medicals contract the API
-      // validates (SaveWorkerMedicalRequest). fitness_status is derived from the
-      // computed physical result; an external certificate is taken as certifying
-      // fitness. This is also what the badge gate reads, so the two must agree.
-      const payload = {
+      // validates (SaveWorkerMedicalRequest). For an internal exam fitness is the
+      // computed physical result; for an external one it is the outcome the
+      // examiner certified on the uploaded report (NO longer hardcoded to Fit).
+      // fitness_status is what the badge gate reads, so it must be truthful.
+      // §16 legal capture — best-effort browser geolocation (permission-gated);
+      // the server stamps the IP. Denied/unavailable → recorded without geo.
+      let geo = null
+      try { geo = await captureGeo() } catch { /* denied or unavailable */ }
+
+      const fitness = isExternal
+        ? f.external_fitness
+        : (medicalResult === 'Medically Fit' ? 'Fit' : 'Unfit')
+
+      const fields = {
         exam_type: isExternal ? 'external' : 'internal',
         exam_date: new Date().toISOString().slice(0, 10),
         examiner_name: (isExternal ? f.external_doctor_name : f.doctor_name) || null,
@@ -592,11 +631,29 @@ function Step2Medical({ worker, editable, onSaved, onNext, api }) {
         bp_systolic: Number.isFinite(sys) ? sys : null,
         bp_diastolic: Number.isFinite(dia) ? dia : null,
         vision: f.eyesight || null,
-        screening_responses: Object.keys(mhAnswers).length ? mhAnswers : null,
-        screening_score: allMhAnswered ? totalMhScore : null,
-        fitness_status: isExternal ? 'Fit' : (medicalResult === 'Medically Fit' ? 'Fit' : 'Unfit'),
+        fitness_status: fitness,
         restrictions: f.doctor_comments || null,
-        signature_data: f.signature_data || undefined,
+        geo_location: geo || undefined,
+        capture_photo: f.capture_photo || undefined,
+      }
+      // Mental-health screening + the examiner signature belong to the internal exam.
+      if (!isExternal) {
+        fields.screening_responses = Object.keys(mhAnswers).length ? mhAnswers : null
+        fields.screening_score = allMhAnswered ? totalMhScore : null
+        if (f.signature_data) fields.signature_data = f.signature_data
+      }
+
+      // External report file → multipart, so the uploaded PDF is actually sent
+      // and persisted (document_path) instead of being silently dropped.
+      let payload = fields
+      if (isExternal && f.external_pdf) {
+        const fd = new FormData()
+        Object.entries(fields).forEach(([k, v]) => {
+          if (v === null || v === undefined) return
+          fd.append(k, typeof v === 'object' ? JSON.stringify(v) : v)
+        })
+        fd.append('report_file', f.external_pdf)
+        payload = fd
       }
 
       await api.workers.saveMedical(worker.id, payload)
@@ -648,6 +705,45 @@ function Step2Medical({ worker, editable, onSaved, onNext, api }) {
           ✨ Auto Pre-filled from Step 1
         </div>
       </div>
+
+      {/* Medical History — every past exam, newest first (P0-2). Re-tests over
+          time accumulate here; the top row is the current fitness the gate reads. */}
+      {Array.isArray(worker.medical_history) && worker.medical_history.length > 0 && (
+        <div style={{ marginBottom: 18, border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+          <div style={{ padding: '8px 14px', background: 'var(--bg-input)', fontSize: 12, fontWeight: 800, color: 'var(--text-h)' }}>
+            🩺 Medical History ({worker.medical_history.length})
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ textAlign: 'left', color: 'var(--text-muted)' }}>
+                  <th style={{ padding: '6px 14px', fontWeight: 700 }}>Date</th>
+                  <th style={{ padding: '6px 14px', fontWeight: 700 }}>Type</th>
+                  <th style={{ padding: '6px 14px', fontWeight: 700 }}>Examiner</th>
+                  <th style={{ padding: '6px 14px', fontWeight: 700 }}>Fitness</th>
+                  <th style={{ padding: '6px 14px', fontWeight: 700 }}>Valid Until</th>
+                </tr>
+              </thead>
+              <tbody>
+                {worker.medical_history.map((m, i) => (
+                  <tr key={m.id} style={{ borderTop: '1px solid var(--border)', background: i === 0 ? 'rgba(16,185,129,0.06)' : 'transparent' }}>
+                    <td style={{ padding: '6px 14px' }}>
+                      {m.exam_date ? new Date(m.exam_date).toLocaleDateString() : '—'}
+                      {i === 0 && <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, color: '#15803d' }}>CURRENT</span>}
+                    </td>
+                    <td style={{ padding: '6px 14px', textTransform: 'capitalize' }}>{m.exam_type || '—'}</td>
+                    <td style={{ padding: '6px 14px' }}>{m.examiner_name || '—'}</td>
+                    <td style={{ padding: '6px 14px', fontWeight: 700, color: String(m.fitness_status || '').startsWith('Fit') ? '#15803d' : '#b91c1c' }}>
+                      {String(m.fitness_status || '—').replace(/_/g, ' ')}
+                    </td>
+                    <td style={{ padding: '6px 14px' }}>{m.valid_until ? new Date(m.valid_until).toLocaleDateString() : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Type Selector */}
       {!f.medical_type ? (
@@ -824,12 +920,38 @@ function Step2Medical({ worker, editable, onSaved, onNext, api }) {
       ) : (
         /* External Doctor PDF Upload Form */
         <div>
-          <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-h)', marginBottom: 12 }}>🏥 Upload External Doctor Medical PDF Report</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 16 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-h)', marginBottom: 12 }}>🏥 Upload External Doctor Medical Report</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
             <Field label="External Doctor Name *"><TextInput value={f.external_doctor_name} onChange={set('external_doctor_name')} placeholder="Dr. Full Name" /></Field>
-            <Field label="Attach Medical PDF Report *">
-              <input type="file" accept="application/pdf" onChange={e => setF(p => ({ ...p, external_pdf: e.target.files[0] }))} style={{ ...inputStyle, padding: 8 }} />
+            <Field label="Certified Fitness Outcome *">
+              <select value={f.external_fitness} onChange={set('external_fitness')} style={inputStyle}>
+                <option value="Fit">Fit</option>
+                <option value="Fit_With_Restrictions">Fit With Restrictions</option>
+                <option value="Unfit">Unfit</option>
+              </select>
             </Field>
+          </div>
+          <Field label={`Attach Medical Report — PDF or image ${f.has_report ? '' : '*'}`}>
+            <input type="file" accept="application/pdf,image/*" onChange={e => setF(p => ({ ...p, external_pdf: e.target.files[0] }))} style={{ ...inputStyle, padding: 8 }} />
+          </Field>
+          {f.has_report && !f.external_pdf && (
+            <p style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 6 }}>✓ A report is already on file — upload a new file only to replace it.</p>
+          )}
+        </div>
+      )}
+
+      {/* §16 Legal-verification capture — optional photo; IP + location auto-recorded */}
+      {f.medical_type && f.medical_type !== 'skip' && (
+        <div style={{ marginTop: 18, padding: '12px 14px', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--bg-input)' }}>
+          <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text-h)', marginBottom: 8 }}>🔏 Legal Verification Capture</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, alignItems: 'end' }}>
+            <Field label="Signer / Scene Photo (optional)">
+              <input type="file" accept="image/*" capture="environment" onChange={onCapturePhoto} style={{ ...inputStyle, padding: 8 }} />
+            </Field>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+              📍 Location &amp; 🌐 IP are recorded automatically with the signature for legal verification.
+              {f.capture_photo && <span style={{ color: '#15803d', fontWeight: 700 }}> · Photo attached ✓</span>}
+            </div>
           </div>
         </div>
       )}

@@ -53,16 +53,8 @@ export default function PurchasePortalKickoff() {
           )}
 
           {meeting.mom_available
-            ? <InfoBox>Minutes of Meeting (MOM) are available. {meeting.acknowledged_at ? 'You have acknowledged them.' : 'Please review and acknowledge below.'}</InfoBox>
+            ? <InfoBox>Minutes of Meeting (MOM) are available. Open the Governance → Meetings tab to read the minutes and download any documents.</InfoBox>
             : <InfoBox>Minutes of Meeting have not been published yet.</InfoBox>}
-
-          {meeting.acknowledged_at ? (
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 16px', borderRadius: 10, background: 'rgba(16,185,129,0.12)', color: '#10b981', fontWeight: 700, fontSize: 13 }}>
-              <CheckCircle2 size={15} /> Acknowledged on {fmt(meeting.acknowledged_at)}
-            </div>
-          ) : meeting.mom_available ? (
-            <button onClick={accept} disabled={busy} style={primaryBtn}><CheckCircle2 size={15} /> {busy ? 'Submitting…' : 'Acknowledge MOM'}</button>
-          ) : null}
         </div>
       )}
     </div>

@@ -310,7 +310,51 @@ export const purchaseApi = {
     stats:  ()            => api.get('/purchase/kickoff/stats').then(r => r.data),
     dashboard: ()         => api.get('/purchase/kickoff/dashboard').then(r => r.data),
     previousSummary: (id) => api.get(`/purchase/kickoff/${id}/previous-summary`).then(r => r.data),
+    // WRITES carried items into an existing meeting.
     carryForward: (id)    => api.post(`/purchase/kickoff/${id}/carry-forward`).then(r => r.data),
+    // READS what a new meeting could carry — the meeting form's preview. Same
+    // params and response shape as the shared engine's carry-forward.
+    carryForwardPreview: (params = {}) => api.get('/purchase/kickoff/carry-forward', { params }).then(r => r.data),
+    // Cross-meeting registers — decisions, issues and the open-action backlog
+    // read ACROSS every meeting rather than inside one. Method names and
+    // parameters mirror kickoffApi.registers exactly, because the same
+    // MeetingRegisters page renders both modules.
+    registers: {
+      options:   ()            => api.get('/purchase/kickoff/registers/options').then(r => r.data),
+      decisions: (params = {}) => api.get('/purchase/kickoff/registers/decisions', { params }).then(r => r.data),
+      issues:    (params = {}) => api.get('/purchase/kickoff/registers/issues', { params }).then(r => r.data),
+      actions:   (params = {}) => api.get('/purchase/kickoff/registers/actions', { params }).then(r => r.data),
+    },
+    // Participant pickers + the live vendor snapshot a meeting is planned
+    // against. `vendors` lists PURCHASE vendors — the shared engine's picker
+    // reads the separate `vendors` table, whose ids are unrelated.
+    staff:        ()         => api.get('/purchase/kickoff/staff').then(r => r.data),
+    vendors:      ()         => api.get('/purchase/kickoff/vendors').then(r => r.data),
+    // excludeMeetingId = the meeting being edited, so it is not counted as
+    // its own history (see kickoffApi.vendorStatus).
+    vendorStatus: (vendorId, excludeMeetingId) => api.get('/purchase/kickoff/vendor-status', {
+      params: { vendor_id: vendorId, exclude_meeting_id: excludeMeetingId || undefined },
+    }).then(r => r.data),
+    // Meetings for a vendor (or the whole tenant), newest first — so a
+    // recurring meeting is planned against the last one, not from scratch.
+    history:      (params = {}) => api.get('/purchase/kickoff/history', { params }).then(r => r.data),
+    // Subjects the SHARED engine supports and Purchase does not; both answer
+    // with an empty list so the shared form's pickers render empty rather than
+    // erroring on a screen that is working correctly.
+    projects:     ()         => api.get('/purchase/kickoff/projects').then(r => r.data),
+    customers:    ()         => api.get('/purchase/kickoff/customers').then(r => r.data),
+
+    // Meeting types are tenant-scoped and shared with the other engine — the
+    // same controller serves both, so these are not a Purchase-only catalogue.
+    typeSettings: ()         => api.get('/purchase/meeting-type-settings').then(r => r.data),
+    createType:   (data)     => api.post('/purchase/meeting-type-settings', data).then(r => r.data),
+    updateType:   (id, data) => api.put(`/purchase/meeting-type-settings/${id}`, data).then(r => r.data),
+    deleteType:   (id)       => api.delete(`/purchase/meeting-type-settings/${id}`).then(r => r.data),
+
+    // AI — served by the shared MeetingAIService, so the prompt and its
+    // "invent nothing" guardrail are the same on both sides.
+    aiSuggestAgenda: (data)      => api.post('/purchase/kickoff/ai/suggest-agenda', data).then(r => r.data),
+    aiSummary:       (meetingId) => api.post(`/purchase/kickoff/${meetingId}/ai-summary`).then(r => r.data),
     // Agenda builder (Meeting.docx §3/§4).
     agenda: {
       list:         (id)          => api.get(`/purchase/kickoff/${id}/agenda`).then(r => r.data),
@@ -338,6 +382,17 @@ export const purchaseApi = {
     },
     // Stored MOM PDF as a blob for inline view / download.
     momBlob: (id) => api.get(`/purchase/kickoff/${id}/mom`, { responseType: 'blob' }).then(r => r.data),
+    // Labelled supporting documents (multiple upload). actionItemId scopes to an action's evidence.
+    documents:       (id, actionItemId) => api.get(`/purchase/kickoff/${id}/documents`, { params: actionItemId ? { action_item_id: actionItemId } : {} }).then(r => r.data?.data ?? r.data),
+    uploadDocuments: (id, files, labels, actionItemId) => {
+      const fd = new FormData()
+      files.forEach((f) => fd.append('files[]', f))
+      labels.forEach((l) => fd.append('labels[]', l ?? ''))
+      if (actionItemId) fd.append('action_item_id', actionItemId)
+      return upload(`/purchase/kickoff/${id}/documents`, fd)
+    },
+    deleteDocument:  (id, docId) => api.delete(`/purchase/kickoff/${id}/documents/${docId}`).then(r => r.data),
+    documentBlob:    (id, docId) => api.get(`/purchase/kickoff/${id}/documents/${docId}/download`, { responseType: 'blob' }).then(r => r.data),
     // MOM approval lifecycle (Draft → Pending Organizer → Pending Chairperson → Approved → Distributed).
     momSubmit: (id)        => api.post(`/purchase/kickoff/${id}/mom/submit`).then(r => r.data),
     momDecide: (id, data)  => api.post(`/purchase/kickoff/${id}/mom/decide`, data).then(r => r.data),
@@ -360,6 +415,9 @@ export const purchaseApi = {
         return api.post(`/purchase/kickoff/${id}/actions/${aid}/progress`, data).then(r => r.data)
       },
       evidenceBlob: (id, aid) => api.get(`/purchase/kickoff/${id}/actions/${aid}/evidence`, { responseType: 'blob' }).then(r => r.data),
+      // Turn the action into a real Task so it lands in someone's list rather
+      // than living only in the minutes. Refused if already pushed.
+      pushTask: (id, aid)     => api.post(`/purchase/kickoff/${id}/actions/${aid}/push-task`).then(r => r.data),
       remove: (id, aid)       => api.delete(`/purchase/kickoff/${id}/actions/${aid}`).then(r => r.data),
     },
     // MOM issue register — track to resolution; convert to NCR / CAPA.
@@ -403,6 +461,39 @@ export const purchaseApi = {
     // worker the way TPV's single wide table allows.
     medicals:  (vendorId) => api.get('/purchase/workforce/medicals', { params: { vendor_id: vendorId } }).then(r => r.data),
     trainings: (vendorId) => api.get('/purchase/workforce/trainings', { params: { vendor_id: vendorId } }).then(r => r.data),
+
+    // Admin-side worker registration — the mirror of TPV's worker wizard, on
+    // Purchase's own tables. Staff may add and correct workers and record their
+    // medical/induction evidence; ACTIVATION stays admin-only server-side.
+    stats:         ()          => api.get('/purchase/workforce/workers/stats').then(r => r.data),
+    createWorker:  (data)      => api.post('/purchase/workforce/workers', data).then(r => r.data),
+    updateWorker:  (id, data)  => api.put(`/purchase/workforce/workers/${id}`, data).then(r => r.data),
+    deleteWorker:  (id)        => api.delete(`/purchase/workforce/workers/${id}`).then(r => r.data),
+    saveMedical:   (id, data)  => api.post(`/purchase/workforce/workers/${id}/medical`, data).then(r => r.data),
+    // Step 3 needs BOTH — a worker with an induction but no training never
+    // clears the step and so can never be badged.
+    saveTraining:  (id, data)  => api.post(`/purchase/workforce/workers/${id}/training`, data).then(r => r.data),
+    saveInduction: (id, data)  => api.post(`/purchase/workforce/workers/${id}/induction`, data).then(r => r.data),
+    badge:         (id)        => api.get(`/purchase/workforce/workers/${id}/badge`).then(r => r.data),
+    // PPE from the admin side — the catalogue of kit, and issuing it at the gate.
+    // Both existed in the service but were reachable only from the vendor portal.
+    ppeCatalogue:  ()          => api.get('/purchase/workforce/ppe/catalogue').then(r => r.data?.data ?? r.data),
+    issuePpe:      (id, data)  => api.post(`/purchase/workforce/workers/${id}/ppe/issue`, data).then(r => r.data),
+  },
+
+  // ── Site gate ─────────────────────────────────────────────────────────
+  // Purchase could decide whether a worker may enter but recorded nothing when
+  // it did, so it had no gate log and no attendance. The decision and its
+  // reasons are stored per scan, never re-derived on read.
+  gate: {
+    stats:      (date)        => api.get('/purchase/gate/stats', { params: date ? { date } : {} }).then(r => r.data),
+    log:        (params = {}) => api.get('/purchase/gate/log', { params }).then(r => r.data?.data ?? r.data),
+    onSite:     (date)        => api.get('/purchase/gate/on-site', { params: date ? { date } : {} }).then(r => r.data?.data ?? r.data),
+    scan:       (workerId, data = {}) => api.post(`/purchase/gate/workers/${workerId}/scan`, data).then(r => r.data),
+    attendance: (workerId, params = {}) => api.get(`/purchase/gate/workers/${workerId}/attendance`, { params }).then(r => r.data),
+    // Non-person crossings (TPV §20) — equipment / material / vehicle / visitor.
+    events:      (params = {}) => api.get('/purchase/gate/events', { params }).then(r => r.data?.data ?? r.data),
+    storeEvent:  (data)        => api.post('/purchase/gate/events', data).then(r => r.data),
   },
 
   // ── Workforce Competency & Skill Matrix (mirror of TPV §15) ─────────────
@@ -536,6 +627,15 @@ export const purchaseApi = {
     kickoffPdf:      (id)        => api.get(`/purchase/onboarding/${id}/kickoff`, { responseType: 'blob' }).then(r => r.data),
     acceptKickoff:   (id)        => api.post(`/purchase/onboarding/${id}/kickoff/accept`).then(r => r.data),
     logKickoffEvent: (id, event) => api.post(`/purchase/onboarding/${id}/kickoff/log`, { event }).then(r => r.data),
+    // §10 checklist — WHAT was verified, as against the approval chain's WHO
+    // signed. The rule engine picks the item list from the vendor's risk level
+    // and category, so a Critical vendor draws a longer list than a routine one.
+    checklist:    (id)        => api.get(`/purchase/onboarding/${id}/checklist`).then(r => r.data),
+    // Merged server-side, so sending one item never clears the rest.
+    setChecklist: (id, state) => api.post(`/purchase/onboarding/${id}/checklist`, { state }).then(r => r.data),
+    // The artefact the site gate and the vendor both point at. Lazily generated
+    // on first request for approvals that predate the feature.
+    workStartLetter: (id) => api.get(`/purchase/onboarding/${id}/work-start-letter`, { responseType: 'blob' }).then(r => r.data),
     // Admin decisions (mirror tpvApi.onboarding).
     approve:         (id, remarks = '') => api.post(`/purchase/onboarding/${id}/approve`, { remarks }).then(r => r.data),
     reject:          (id, remarks = '') => api.post(`/purchase/onboarding/${id}/reject`, { remarks }).then(r => r.data),

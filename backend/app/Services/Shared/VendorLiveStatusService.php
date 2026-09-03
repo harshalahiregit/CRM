@@ -33,9 +33,10 @@ use App\Support\Tpv\TpvWorkerStatus;
 class VendorLiveStatusService
 {
     /**
+     * @param  int|null  $excludeMeetingId  the meeting being edited, if any — see has_history below.
      * @return array{vendor: array<string,mixed>, sections: array<int, array<string,mixed>>}
      */
-    public function snapshot(int $tenantId, int $vendorId): array
+    public function snapshot(int $tenantId, int $vendorId, ?int $excludeMeetingId = null): array
     {
         $vendor = Vendor::where('tenant_id', $tenantId)->find($vendorId);
         if (! $vendor) {
@@ -59,9 +60,26 @@ class VendorLiveStatusService
             $this->gate($workerIds),
         ]));
 
+        // Whether this vendor has any prior kickoff meeting. The live-status and
+        // carry-forward panels are only meaningful for a RECURRING vendor — on a
+        // vendor's very first meeting there is no history to review or carry, so
+        // the UI hides both when this is false.
+        // "Has a PRIOR meeting" — which is not the same as "has a meeting".
+        // While EDITING a meeting, that meeting itself is already saved, so
+        // counting it made a vendor's very first meeting look like a repeat:
+        // the carry-forward and live-status panels both appeared, offering to
+        // carry items from the meeting you were sitting in. The caller passes
+        // the meeting being edited so it is excluded.
+        $hasHistory = $this->safe(fn () => \App\Models\Shared\KickoffMeeting::where('tenant_id', $tenantId)
+            ->where('kickoffable_type', $vendor::class)
+            ->where('kickoffable_id', $vendor->id)
+            ->when($excludeMeetingId, fn ($q) => $q->whereKeyNot($excludeMeetingId))
+            ->exists(), false);
+
         return [
             'vendor' => ['id' => $vendor->id, 'name' => $vendor->company_name],
             'sections' => $sections,
+            'has_history' => (bool) $hasHistory,
         ];
     }
 

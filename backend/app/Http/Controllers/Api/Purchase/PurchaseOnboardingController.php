@@ -195,4 +195,49 @@ class PurchaseOnboardingController extends Controller
     {
         abort_unless((int) $onboarding->tenant_id === (int) $request->user()->tenant_id, 404, 'Onboarding not found');
     }
+
+    /* ── §10 Onboarding checklist ─────────────────────────────────────────
+     *
+     * The approval chain records WHO signed; the checklist records WHAT was
+     * verified. Purchase had the first and not the second, so "was the JSA
+     * actually reviewed before we let them start?" lived only in the approver's
+     * memory.
+     */
+
+    public function checklist(Request $request, PurchaseOnboarding $onboarding,
+        \App\Services\Purchase\PurchaseOnboardingChecklistService $checklists)
+    {
+        $this->assertTenant($request, $onboarding);
+
+        return response()->json($checklists->checklist($onboarding));
+    }
+
+    /** Tick/untick items ({ state: { "label": bool, ... } }). */
+    public function saveChecklist(Request $request, PurchaseOnboarding $onboarding,
+        \App\Services\Purchase\PurchaseOnboardingChecklistService $checklists)
+    {
+        $this->assertTenant($request, $onboarding);
+
+        $data = $request->validate([
+            'state'   => 'required|array|min:1',
+            'state.*' => 'boolean',
+        ]);
+
+        $checklists->setChecklist($onboarding, $data['state']);
+
+        return response()->json($checklists->checklist($onboarding));
+    }
+
+    /**
+     * The work-start letter. purchase_onboardings has carried the path column
+     * all along with nothing writing to it, so an approved vendor had no
+     * document saying they were cleared to start.
+     */
+    public function workStartLetter(Request $request, PurchaseOnboarding $onboarding,
+        \App\Services\Purchase\PurchaseWorkStartLetterService $letters)
+    {
+        $this->assertTenant($request, $onboarding);
+
+        return $letters->stream($onboarding);
+    }
 }

@@ -5,7 +5,10 @@ import {
   Users, AlertTriangle, ClipboardCheck, Pencil, BellRing, Eye, Download, Loader2, Mail, MessageCircle, Smartphone,
   ChevronLeft, ChevronRight, List, LayoutGrid, Laptop, Building2, UserX, ListChecks, Trash2, Settings2, UserCheck,
 } from 'lucide-react'
-import { kickoffApi } from '@/services/kickoffApi'
+// Resolves per call to the meeting engine of the module in the URL — the
+// shared engine under /app/tpv, Purchase's under /app/purchase. Aliased to
+// the old name so the call sites below read unchanged.
+import { meetingEngineApi as kickoffApi, meetingBase } from '@/services/meetingEngineApi'
 import { useAuth } from '@/context/AuthContext'
 import {
   KO_STATUS, koStatusCfg, koModeLabel, fmtDate, fmtDateTime, isKoClosed,
@@ -118,11 +121,11 @@ export default function KickoffMeetings() {
         <div>
           <p className="label-caps" style={{ color: '#a78bfa', margin: 0, fontSize: 11, fontWeight: 800, letterSpacing: '0.08em' }}>PRE-ONBOARDING</p>
           <h1 style={{ color: 'var(--text-h)', fontSize: 24, fontWeight: 900, margin: '2px 0 0', letterSpacing: '-0.02em' }}>Meetings</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '4px 0 0' }}>Schedule, track attendance & minutes, and capture vendor acknowledgement.</p>
+          <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '4px 0 0' }}>Schedule, track attendance & minutes, and share them with the vendor.</p>
         </div>
         <div style={{ display: 'flex', gap: 9 }}>
           <button onClick={load} style={ghostBtn}><RefreshCw size={14} /> Refresh</button>
-          <button onClick={() => navigate('/app/tpv/kickoff/new')} style={solidBtn}><Plus size={15} /> Schedule meeting</button>
+          <button onClick={() => navigate(`${meetingBase()}/kickoff/new`)} style={solidBtn}><Plus size={15} /> Schedule meeting</button>
         </div>
       </div>
 
@@ -256,16 +259,16 @@ export default function KickoffMeetings() {
           {[1, 2, 3].map(i => <div key={i} className="skeleton" style={{ height: 64, borderRadius: 12, background: 'var(--border)' }} />)}
         </div>
       ) : view === 'calendar' ? (
-        <MeetingCalendar data={rows} onOpen={(mid) => navigate(`/app/tpv/kickoff/${mid}`)} />
+        <MeetingCalendar data={rows} onOpen={(mid) => navigate(`${meetingBase()}/kickoff/${mid}`)} />
       ) : rows.length === 0 ? (
-        <EmptyState filter={filter} onNew={() => navigate('/app/tpv/kickoff/new')} />
+        <EmptyState filter={filter} onNew={() => navigate(`${meetingBase()}/kickoff/new`)} />
       ) : (
         <div className="pr-glass" style={{ padding: 0, borderRadius: 16, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1180, fontSize: 12.5 }}>
               <thead>
                 <tr>
-                  {['ID', 'Third Party Vendor', 'Participants', 'Meeting Mode', 'Planned Date', 'MOM Sent', 'Status', 'Acknowledgement', 'Response', 'Attendance', 'Meeting Date', 'Created At'].map(h => (
+                  {['ID', 'Third Party Vendor', 'Participants', 'Meeting Mode', 'Planned Date', 'MOM Sent', 'Status', 'Attendance', 'Meeting Date', 'Created At'].map(h => (
                     <th key={h} style={th}>{h}</th>
                   ))}
                   <th style={{ ...th, textAlign: 'right', position: 'sticky', right: 0, background: 'var(--bg-card)' }}>Actions</th>
@@ -277,7 +280,7 @@ export default function KickoffMeetings() {
                   const busyView = pdfBusy === `${m.id}:view`
                   const busyDl   = pdfBusy === `${m.id}:dl`
                   return (
-                    <tr key={m.id} className="ko-row" onClick={() => navigate(`/app/tpv/kickoff/${m.id}`)} style={{ cursor: 'pointer', borderTop: '1px solid var(--border)' }}>
+                    <tr key={m.id} className="ko-row" onClick={() => navigate(`${meetingBase()}/kickoff/${m.id}`)} style={{ cursor: 'pointer', borderTop: '1px solid var(--border)' }}>
                       {/* The meeting's own reference (MTG-YYYY-NNNN), not the row
                           id: it is what the MOM prints and what a vendor quotes. */}
                       <td style={td}>
@@ -303,18 +306,6 @@ export default function KickoffMeetings() {
                       <td style={td}>{m.planned_date ? fmtDate(m.planned_date) : '—'}</td>
                       <td style={td}><YesNo yes={!!m.mom_path} /></td>
                       <td style={td}><span style={{ padding: '3px 10px', borderRadius: 999, background: cfg.bg, color: cfg.color, fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}>{cfg.label}</span></td>
-                      <td style={td}>
-                        {/* Three states now, not two: an expired 48h window is
-                            not the same as one still waiting for a reply. */}
-                        {m.is_acknowledged
-                          ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#10b981', fontWeight: 700 }}><CheckCircle2 size={13} /> Acknowledged</span>
-                          : m.acknowledgement_expired
-                            ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#ef4444', fontWeight: 700 }}><XCircle size={13} /> Expired</span>
-                            : m.acknowledgement_sent_at
-                              ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#f59e0b', fontWeight: 700 }}><Clock size={13} /> Awaiting</span>
-                              : <span style={{ color: 'var(--text-muted)' }}>Not sent</span>}
-                      </td>
-                      <td style={td}>{m.acknowledged_by_name || '—'}</td>
                       <td style={td}><Attn present={m.attended_count ?? 0} total={m.attendees_count ?? 0} /></td>
                       {/* Meeting Date = when it is/was held. */}
                       <td style={td}>{m.scheduled_at ? fmtDateTime(m.scheduled_at) : '—'}</td>
@@ -326,7 +317,7 @@ export default function KickoffMeetings() {
                           {/* Opens the full create/edit form — participants, MOM
                               items, mode and venue. The old inline modal only
                               carried a handful of fields. */}
-                          <ActionBtn title="Edit" icon={Pencil} color="#a78bfa" onClick={() => navigate(`/app/tpv/kickoff/${m.id}/edit`)} />
+                          <ActionBtn title="Edit" icon={Pencil} color="#a78bfa" onClick={() => navigate(`${meetingBase()}/kickoff/${m.id}/edit`)} />
                           <ActionBtn title="Reminder" icon={BellRing} color="#f59e0b" onClick={() => setRemindFor(m)} />
                           <ActionBtn title="View PDF" icon={busyView ? Loader2 : Eye} color="#10b981" spin={busyView} onClick={() => handlePdf(m, false)} />
                           <ActionBtn title="Download PDF" icon={busyDl ? Loader2 : Download} color="#7C3AED" spin={busyDl} onClick={() => handlePdf(m, true)} />
@@ -380,7 +371,11 @@ function Kpi({ label, value, icon: Icon, color, danger }) {
 
 /** One dashboard breakdown (by type / project / vendor) — top rows + count. */
 function BreakdownCard({ title, rows, keyField, empty = 'No data' }) {
-  const list = rows || []
+  // Array-checked, not just null-checked: an endpoint answering with a keyed
+  // map ({"kickoff": 3}) instead of a list passes `rows || []` and then throws
+  // "list.map is not a function", which takes down the whole page rather than
+  // this one card.
+  const list = Array.isArray(rows) ? rows : []
   const max = Math.max(1, ...list.map(r => r.count || 0))
   return (
     <div className="pr-kpi" style={{ padding: 14 }}>

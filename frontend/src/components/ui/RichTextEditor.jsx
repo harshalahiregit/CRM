@@ -362,7 +362,10 @@ export default function RichTextEditor({ value = '', onChange, placeholder = 'Wr
         onDrop={handleImageDrop}
         data-placeholder={placeholder}
         className="rte-body px-4 py-3 text-sm outline-none"
-        style={{ minHeight, color: 'var(--text-h)' }}
+        // overflowWrap:anywhere breaks a long unbroken string (e.g. "aaaa…")
+        // so it wraps inside the box instead of overflowing the card; wide
+        // block content (tables/media) scrolls within its own bounds.
+        style={{ minHeight, color: 'var(--text-h)', overflowWrap: 'anywhere', wordBreak: 'break-word', overflowX: 'auto' }}
         suppressContentEditableWarning
       />
       <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={insertImage} />

@@ -4,7 +4,7 @@ import {
   ShieldCheck, AlertTriangle, ListChecks, Search, RefreshCw, Loader2,
   Download, ExternalLink, CalendarDays, Building2, FolderKanban, X,
 } from 'lucide-react'
-import { kickoffApi } from '@/services/kickoffApi'
+import { useMeetingModule } from '../useMeetingModule'
 import { fmtDate } from '../kickoffConstants'
 import { KIT3D_STYLE } from '@/components/ui/kit3d'
 
@@ -46,6 +46,9 @@ export default function MeetingRegisters() {
   const navigate = useNavigate()
   const { register } = useParams()
   const tab = TABS[register] ? register : 'decisions'
+  // Which meeting engine this mount talks to. The two hold different companies
+  // on unrelated ids, so it follows the route rather than defaulting.
+  const mod = useMeetingModule()
 
   const [rows, setRows] = useState([])
   const [options, setOptions] = useState(null)
@@ -59,7 +62,7 @@ export default function MeetingRegisters() {
   const [vendor, setVendor] = useState('')
   const [project, setProject] = useState('')
 
-  useEffect(() => { kickoffApi.registers.options().then(setOptions).catch(() => {}) }, [])
+  useEffect(() => { mod.api.registers.options().then(setOptions).catch(() => {}) }, [mod.api])
   useEffect(() => { setStatus(''); setSeverity(''); setVendor(''); setProject(''); setSearch('') }, [tab])
 
   const load = useCallback(() => {
@@ -71,11 +74,11 @@ export default function MeetingRegisters() {
     if (vendor) params.vendor = vendor
     if (project) params.project_id = project
 
-    kickoffApi.registers[tab](params)
+    mod.api.registers[tab](params)
       .then(d => setRows(Array.isArray(d) ? d : []))
       .catch(e => setError(e?.response?.data?.message || 'Could not load the register.'))
       .finally(() => setLoading(false))
-  }, [tab, search, status, severity, vendor, project])
+  }, [mod.api, tab, search, status, severity, vendor, project])
 
   // Debounced so typing in the search box does not fire a request per keystroke.
   useEffect(() => {
@@ -137,7 +140,7 @@ export default function MeetingRegisters() {
           const on = key === tab
           const TIcon = t.icon
           return (
-            <button key={key} onClick={() => navigate(`/app/tpv/meetings/registers/${key}`)}
+            <button key={key} onClick={() => navigate(`${mod.base}/meetings/registers/${key}`)}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 14px', borderRadius: 10,
                 fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
@@ -197,10 +200,14 @@ export default function MeetingRegisters() {
           <option value="">All vendors</option>
           {vendors.map(v => <option key={v} value={v}>{v}</option>)}
         </select>
-        <select value={project} onChange={e => setProject(e.target.value)} style={filterInput}>
-          <option value="">All projects</option>
-          {projects.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-        </select>
+        {/* Purchase meetings are scoped to a vendor and carry no project, so
+            the filter is hidden there rather than shown permanently empty. */}
+        {mod.hasProjects && (
+          <select value={project} onChange={e => setProject(e.target.value)} style={filterInput}>
+            <option value="">All projects</option>
+            {projects.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          </select>
+        )}
 
         <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 'auto' }}>
           {loading ? 'Loading…' : `${rows.length} row${rows.length === 1 ? '' : 's'}`}
@@ -269,7 +276,7 @@ export default function MeetingRegisters() {
                     </td>
                     <td style={{ ...td, textAlign: 'right' }}>
                       {r.meeting_id && (
-                        <button onClick={() => navigate(`/app/tpv/kickoff/${r.meeting_id}`)} title="Open the meeting"
+                        <button onClick={() => navigate(mod.meetingPath(r.meeting_id))} title="Open the meeting"
                           style={{ background: 'none', border: 'none', cursor: 'pointer', color: cfg.colour, padding: 4 }}>
                           <ExternalLink size={14} />
                         </button>

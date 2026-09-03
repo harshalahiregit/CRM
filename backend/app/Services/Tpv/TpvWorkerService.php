@@ -103,6 +103,16 @@ class TpvWorkerService
         // the client's.
         $data['screening_band'] = Fitness::bandForScore($data['screening_score'] ?? null);
 
+        // External-doctor exam: persist the uploaded prescription/report so an
+        // external medical is never recorded with its evidence thrown away. Stored
+        // on the private disk; the path is kept in document_path.
+        if (isset($data['report_file']) && $data['report_file'] instanceof \Illuminate\Http\UploadedFile) {
+            $data['document_path'] = $data['report_file']->store(
+                'tpv/medical/'.$worker->tenant_id.'/'.$worker->id, 'local'
+            );
+        }
+        unset($data['report_file']);
+
         // The examiner's signature arrives as a base64 PNG data URL; decode it to a
         // stored file and keep only the path. Same convention as the legacy path.
         if (! empty($data['signature_data']) && str_contains($data['signature_data'], 'base64,')) {
@@ -113,19 +123,43 @@ class TpvWorkerService
         }
         unset($data['signature_data']);
 
-        // A medical certificate is conventionally current for one year. If the
-        // examiner did not stamp an explicit expiry, derive it from the exam date
-        // (falling back to today) so the currency window is always enforceable at
-        // the gate and at badge activation.
-        if (empty($data['valid_until'])) {
-            $base = ! empty($data['exam_date']) ? \Illuminate\Support\Carbon::parse($data['exam_date']) : now();
-            $data['valid_until'] = $base->copy()->addYear()->toDateString();
+        // §16 legal capture — the examiner's/scene photo (base64 → stored file).
+        // system_ip and geo_location are plain columns and pass straight through.
+        if (! empty($data['capture_photo']) && str_contains($data['capture_photo'], 'base64,')) {
+            $binary = base64_decode(explode('base64,', $data['capture_photo'])[1]);
+            $path   = 'workers/medical/photos/photo_'.uniqid().'.png';
+            \Illuminate\Support\Facades\Storage::disk('public')->put($path, $binary);
+            $data['capture_photo_path'] = $path;
+        }
+        unset($data['capture_photo']);
+
+        // Each medical is a DATED record. Default to today so periodic re-tests
+        // accumulate as history; re-saving the same day's exam updates it in place
+        // (composite unique worker+exam_date), a new date is a new history row.
+        if (empty($data['exam_date'])) {
+            $data['exam_date'] = now()->toDateString();
         }
 
-        $worker->medical()->updateOrCreate(
-            ['tpv_worker_id' => $worker->id],
-            [...$data, 'tenant_id' => $worker->tenant_id, 'recorded_by' => $actor->id]
-        );
+        // A medical certificate is conventionally current for one year. If the
+        // examiner did not stamp an explicit expiry, derive it from the exam date
+        // so the currency window is always enforceable at the gate and at badge
+        // activation.
+        if (empty($data['valid_until'])) {
+            $data['valid_until'] = \Illuminate\Support\Carbon::parse($data['exam_date'])->copy()->addYear()->toDateString();
+        }
+
+        // Upsert keyed on (worker, exam_date). Match on the DATE part only
+        // (exam_date is stored as a datetime, so a raw string match would miss and
+        // then collide on the unique index). Uses medicalHistory() (a plain
+        // hasMany) rather than medical(), which now carries a latest-of-many
+        // constraint and must not be written through.
+        $values = [...$data, 'tenant_id' => $worker->tenant_id, 'recorded_by' => $actor->id];
+        $existing = $worker->medicalHistory()->whereDate('exam_date', $data['exam_date'])->first();
+        if ($existing) {
+            $existing->update($values);
+        } else {
+            $worker->medicalHistory()->create($values);
+        }
         $worker->update(['current_step' => max($worker->current_step, 2)]);
 
         $worker->recordAudit('Medical Recorded', $actor, null, ['fitness' => $data['fitness_status'] ?? null]);
@@ -143,6 +177,23 @@ class TpvWorkerService
     {
         if (! $worker->isEditable()) {
             throw new BusinessException('This worker is no longer editable.');
+        }
+
+        // §8 — "No Medical, No Training". The trainer must see a passed, current
+        // medical before recording induction. Skipped where the site doesn't
+        // require it (medical_status = 2); otherwise a Fit + non-expired medical
+        // is mandatory. Mirrors the badge blockers() so the two agree.
+        if ((int) ($worker->medical_status ?? 0) !== 2) {
+            $medical = $worker->medical;
+            if (! $medical) {
+                throw new BusinessException('Training cannot be recorded until the worker has completed a medical examination (or medical is skipped for this site).');
+            }
+            if (! $medical->isPassing()) {
+                throw new BusinessException('Training is blocked — the medical outcome is not Fit. Resolve the medical before recording training.');
+            }
+            if ($medical->isExpired()) {
+                throw new BusinessException('Training is blocked — the medical certificate has expired. Record a current medical first.');
+            }
         }
 
         // Accept the legacy field names the wizard sends and map them onto the

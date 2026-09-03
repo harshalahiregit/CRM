@@ -9,6 +9,7 @@ use App\Http\Requests\Shared\TransitionKickoffRequest;
 use App\Http\Requests\Shared\UpdateKickoffMeetingRequest;
 use App\Models\Shared\KickoffAttendee;
 use App\Models\Shared\KickoffMeeting;
+use App\Models\Shared\KickoffMeetingDocument;
 use App\Models\Shared\KickoffMomItem;
 use App\Models\Shared\MeetingIssue;
 use App\Models\User;
@@ -54,9 +55,17 @@ class KickoffMeetingController extends Controller
      */
     public function vendorStatus(Request $request, VendorLiveStatusService $status)
     {
-        $data = $request->validate(['vendor_id' => 'required|integer']);
+        $data = $request->validate([
+            'vendor_id' => 'required|integer',
+            // The meeting being edited, so it is not counted as its own history.
+            'exclude_meeting_id' => 'nullable|integer',
+        ]);
 
-        return response()->json($status->snapshot($request->user()->tenant_id, (int) $data['vendor_id']));
+        return response()->json($status->snapshot(
+            $request->user()->tenant_id,
+            (int) $data['vendor_id'],
+            isset($data['exclude_meeting_id']) ? (int) $data['exclude_meeting_id'] : null,
+        ));
     }
 
     /**
@@ -214,6 +223,79 @@ class KickoffMeetingController extends Controller
 
         return response()->json(
             $this->kickoffService->uploadMom($kickoffMeeting, $request->file('mom'), $request->user())
+        );
+    }
+
+    /* ── Labelled supporting documents (multiple upload) ────────────────────── */
+
+    public function documents(Request $request, KickoffMeeting $kickoffMeeting)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+
+        // ?mom_item_id=N lists a specific action's evidence; omitted = meeting-level.
+        $momItemId = $request->integer('mom_item_id') ?: null;
+        $query = KickoffMeetingDocument::where('kickoff_meeting_id', $kickoffMeeting->id)
+            ->when($momItemId, fn ($q) => $q->where('kickoff_mom_item_id', $momItemId),
+                fn ($q) => $q->whereNull('kickoff_mom_item_id'))
+            ->with('uploader:id,name')->orderByDesc('id');
+
+        return response()->json(['data' => $query->get()]);
+    }
+
+    public function uploadDocuments(Request $request, KickoffMeeting $kickoffMeeting)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+        $data = $request->validate([
+            'files'   => 'required|array|min:1',
+            'files.*' => 'file|mimes:pdf,doc,docx,xls,xlsx,png,jpg,jpeg|max:10240',
+            'labels'   => 'nullable|array',
+            'labels.*' => 'nullable|string|max:160',
+            // Optional: attach to a specific MoM action item as its evidence.
+            'mom_item_id' => 'nullable|integer|exists:kickoff_mom_items,id',
+        ]);
+
+        $momItemId = $data['mom_item_id'] ?? null;
+
+        $this->kickoffService->uploadDocuments(
+            $kickoffMeeting,
+            $request->file('files', []),
+            $request->input('labels', []),
+            $request->user(),
+            $momItemId
+        );
+
+        // Return the matching, fresh list so the client re-renders in one round-trip.
+        $list = KickoffMeetingDocument::where('kickoff_meeting_id', $kickoffMeeting->id)
+            ->when($momItemId, fn ($q) => $q->where('kickoff_mom_item_id', $momItemId),
+                fn ($q) => $q->whereNull('kickoff_mom_item_id'))
+            ->with('uploader:id,name')->orderByDesc('id')->get();
+
+        return response()->json(['data' => $list], 201);
+    }
+
+    public function deleteDocument(Request $request, KickoffMeeting $kickoffMeeting, KickoffMeetingDocument $document)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+        $this->kickoffService->deleteDocument($kickoffMeeting, $document, $request->user());
+
+        return response()->json(['message' => 'Document removed']);
+    }
+
+    public function downloadDocument(Request $request, KickoffMeeting $kickoffMeeting, KickoffMeetingDocument $document)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+        abort_unless((int) $document->kickoff_meeting_id === (int) $kickoffMeeting->id, 404, 'Document not found.');
+        abort_unless(
+            $document->path && Storage::disk('kickoff_docs')->exists($document->path),
+            404,
+            'Document file is missing.'
+        );
+
+        return Storage::disk('kickoff_docs')->response(
+            $document->path,
+            $document->original_name,
+            [],
+            $request->boolean('inline') ? 'inline' : 'attachment'
         );
     }
 
@@ -544,15 +626,17 @@ class KickoffMeetingController extends Controller
      * here — hidden on the model everywhere else, so this is the only place it
      * is legitimately returned. The frontend composes the link from origin.
      */
+    /**
+     * Distribute the approved minutes to the vendor. No public link / token any
+     * more — the vendor reads the minutes in their logged-in portal, and this
+     * marks them Distributed and sends the notification (e-mail + in-app popup).
+     */
     public function publish(Request $request, KickoffMeeting $kickoffMeeting)
     {
         $this->assertTenant($request, $kickoffMeeting);
-        $published = $this->kickoffService->publishForAck($kickoffMeeting, $request->user());
+        $distributed = $this->kickoffService->distributeMom($kickoffMeeting, $request->user());
 
-        return response()->json([
-            'meeting' => $published,
-            'ack_token' => $published->getRawOriginal('ack_token'),
-        ]);
+        return response()->json(['meeting' => $distributed]);
     }
 
     public function destroy(Request $request, KickoffMeeting $kickoffMeeting)

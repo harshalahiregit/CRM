@@ -37,8 +37,13 @@ import PagerBar from '@/components/ui/PagerBar'
 /* ───────────────────────────────────────────────────────────────
    Universal Data Grid — Ticket inbox (SDS "Nova" flagship component).
    Sticky sortable header · density switch · column show/hide (persisted)
-   · saved views · bulk actions · inline status edit · CSV export.
-   Backend untouched: uses tickets.list / setStatus / assign / remove.
+   · saved views · bulk assign/delete · CSV export.
+
+   Status is READ-ONLY here — shown as a pill, changed only from inside the
+   ticket. Both the inline row dropdown and the bulk "Set status…" are gone:
+   moving a ticket's state is a decision that needs the thread in front of you,
+   and it was the one bulk action whose effect could not be reviewed afterwards.
+   Backend untouched: uses tickets.list / assign / remove.
 ─────────────────────────────────────────────────────────────── */
 
 const normalize = (raw) => (Array.isArray(raw) ? raw : raw?.data || [])
@@ -226,28 +231,10 @@ export default function TicketGrid() {
   const selectAllFiltered = () => setSelected(new Set(rows.map(t => t.id)))
   const toggleOne = (id) => setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
 
-  // Row status change — optimistic so the pill flips instantly instead of waiting
-  // on a full list refetch. Patch the row in cache, roll back on error, then
-  // reconcile the list + sidebar badges once settled.
-  const rowStatus = useMutation({
-    mutationFn: ({ id, status }) => helpdeskApi.tickets.setStatus(id, status),
-    onMutate: async ({ id, status }) => {
-      await qc.cancelQueries({ queryKey: ['helpdesk-tickets'] })
-      const prev = qc.getQueryData(['helpdesk-tickets'])
-      qc.setQueryData(['helpdesk-tickets'], (old) => {
-        if (!old) return old
-        const patch = (row) => row.id === id ? { ...row, status } : row
-        return Array.isArray(old) ? old.map(patch) : { ...old, data: (old.data || []).map(patch) }
-      })
-      return { prev }
-    },
-    onError: (_e, _v, ctx) => { if (ctx?.prev !== undefined) qc.setQueryData(['helpdesk-tickets'], ctx.prev) },
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: ['helpdesk-tickets'] })
-      qc.invalidateQueries({ queryKey: ['helpdesk-status-counts'] })
-      qc.invalidateQueries({ queryKey: ['helpdesk-unseen-count'] })
-    },
-  })
+  // The row-status mutation lived here. It went with the inline Select — status
+  // is now read-only in the grid and is changed from inside the ticket, where
+  // TicketIntelligencePanel owns it (and asks for confirmation first).
+
   // REQ-05: opening a ticket marks it seen for THIS user. Clear its "new" dot in
   // the grid cache optimistically (instant feedback), fire the PATCH best-effort,
   // and refresh the sidebar unseen badge once the server confirms.
@@ -413,15 +400,11 @@ export default function TicketGrid() {
               </span>
             )}
             <div className="flex-1" />
-            <Select
-              value=""
-              onChange={v => v && bulk.mutate({ action: 'status', value: v })}
-              options={(settings?.statuses || []).map(s => ({ value: s.name, label: s.name, dot: s.color }))}
-              placeholder="Set status…"
-              size="sm"
-              className="w-36"
-              ariaLabel="Set status for selected tickets"
-            />
+            {/* No bulk "Set status…" either — same rule as the row pill above.
+                Sweeping forty tickets into Resolved from a toolbar is the same
+                decision made forty times with none of the context, and it is
+                the one bulk action that cannot be seen to be wrong afterwards.
+                Assignment stays: routing work is a list-level job. */}
             <Select
               value=""
               onChange={v => v && bulk.mutate({ action: 'assign', value: Number(v) })}
@@ -557,14 +540,17 @@ export default function TicketGrid() {
                           return <span title={tip} style={{ cursor: 'default' }}>{name || email}</span>
                         })()}
                         {c.key === 'department' && deptName(t.department_id)}
+                        {/* Status is READ-ONLY here. Moving a ticket's state is
+                            a decision that belongs with the ticket — where the
+                            thread, the SLA clock and the reply box are — not a
+                            dropdown brushed past in a list of forty rows. The
+                            pill keeps the colour it had as a control so the
+                            grid still scans the same way. */}
                         {c.key === 'status' && (
-                          <Select
-                            value={t.status}
-                            onChange={v => rowStatus.mutate({ id: t.id, status: v })}
-                            options={(settings?.statuses || [{ id: 0, name: t.status }]).map(s => ({ value: s.name, label: s.name, dot: s.color }))}
-                            size="sm"
-                            ariaLabel={`Status for ticket ${t.id}`}
-                            buttonStyle={{
+                          <span
+                            title={`${t.status} — open the ticket to change it`}
+                            style={{
+                              display: 'inline-block',
                               color: sColor,
                               background: `${sColor}18`,
                               border: `1px solid ${sColor}30`,
@@ -573,8 +559,11 @@ export default function TicketGrid() {
                               fontSize: 11.5,
                               fontWeight: 700,
                               textTransform: 'capitalize',
+                              whiteSpace: 'nowrap',
                             }}
-                          />
+                          >
+                            {t.status}
+                          </span>
                         )}
                         {c.key === 'assignee' && (
                           <span className="inline-flex items-center gap-1.5">

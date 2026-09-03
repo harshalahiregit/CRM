@@ -15,6 +15,13 @@ export const purchasePortalApi = {
 
   me: () => api.get('/portal/purchase/me').then(r => r.data),
 
+  // ── In-app (bell) notifications — the vendor's own (Purchase-owned store) ──
+  notifications: {
+    list:        () => api.get('/portal/purchase/notifications').then(r => r.data),
+    markRead:    (id) => api.patch(`/portal/purchase/notifications/${id}/read`).then(r => r.data),
+    markAllRead: () => api.post('/portal/purchase/notifications/read-all').then(r => r.data),
+  },
+
   // Rich dashboard payload (vendor, onboarding %, pending items, commercial counts).
   dashboard: () => api.get('/portal/purchase/dashboard').then(r => r.data),
 
@@ -218,6 +225,7 @@ export const purchasePortalApi = {
     requestExtension:(payload)     => api.post('/portal/purchase/extensions/request', payload).then(r => r.data),
     meetings:        ()            => api.get('/portal/purchase/meetings').then(r => r.data),
     meetingMom:      (id)          => api.get(`/portal/purchase/meetings/${id}/mom`).then(r => r.data),
+    meetingDocument: (id, docId)   => api.get(`/portal/purchase/meetings/${id}/documents/${docId}/download`, { responseType: 'blob' }).then(r => r.data),
     actions:         ()            => api.get('/portal/purchase/actions').then(r => r.data),
     respondAction:   (id, payload) => api.post(`/portal/purchase/actions/${id}/respond`, payload).then(r => r.data),
     uploadCertificate: (workerId, fd) => upload(`/portal/purchase/workers/${workerId}/certificates`, fd),

@@ -264,7 +264,7 @@ export const tpvApi = {
       fd.append('vendor_id', vendor_id)
       return upload('/tpv/workers/upload', fd)
     },
-    saveMedical:     (id, data) => api.post(`/tpv/workers/${id}/medical`, data).then(r => r.data),
+    saveMedical:     (id, data) => api.post(`/tpv/workers/${id}/medical`, data, data instanceof FormData ? { headers: { 'Content-Type': undefined } } : undefined).then(r => r.data),
     markMedical:     (id, data) => api.post(`/tpv/workers/${id}/mark-medical`, data).then(r => r.data),
     saveInduction:   (id, data) => api.post(`/tpv/workers/${id}/induction`, data).then(r => r.data),
     markInduction:   (id, data) => api.post(`/tpv/workers/${id}/mark-induction`, data).then(r => r.data),

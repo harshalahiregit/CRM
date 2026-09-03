@@ -30,9 +30,16 @@ class StoreKickoffMeetingRequest extends FormRequest
             'subject_ids' => 'nullable|array',
             'subject_ids.*' => 'integer',
 
-            'scheduled_at' => 'nullable|date',
-            'end_at' => 'nullable|date',
-            'duration_minutes' => 'nullable|integer|min:5|max:1440',
+            // Start and end are both mandatory and drive the duration (the client
+            // no longer sends duration_minutes — the service derives it from these
+            // two). A meeting can never be scheduled into the past; a small grace
+            // absorbs client/server clock skew.
+            'scheduled_at' => ['required', 'date', function ($attr, $value, $fail) {
+                if (\Illuminate\Support\Carbon::parse($value)->lt(now()->subMinutes(2))) {
+                    $fail('The meeting start time cannot be in the past.');
+                }
+            }],
+            'end_at' => 'required|date|after:scheduled_at',
             'mode' => 'nullable|string|in:online,onsite,hybrid',
             'location' => 'nullable|string|max:255',
             'planned_date' => 'nullable|date',
@@ -98,7 +105,7 @@ class StoreKickoffMeetingRequest extends FormRequest
             // Meeting.docx §7 — Agenda -> Discussion -> Decision -> Action, captured
             // per agenda item instead of one meeting-level minutes blob.
             'agenda_items.*.discussion' => 'nullable|string|max:5000',
-            'agenda_items.*.decision' => 'nullable|string|max:2000',
+            'agenda_items.*.decision' => 'nullable|string|max:5000',
             // §9 — supporting documents (list of paths/labels) + previous-discussion ref.
             'agenda_items.*.supporting_documents' => 'nullable|array',
             'agenda_items.*.supporting_documents.*' => 'string|max:255',

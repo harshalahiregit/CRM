@@ -71,9 +71,12 @@ class PurchaseMeetingsFlowTest extends TestCase
             'purchase_vendor_id' => $vendor->id,
             'title'              => 'Kickoff — '.$vendor->company_name,
             'meeting_type'       => 'kickoff',
-            'scheduled_at'       => now()->subDay()->toDateTimeString(),
+            'scheduled_at'       => now()->addDay()->toDateTimeString(),
+            'end_at'             => now()->addDay()->addHour()->toDateTimeString(),
         ])->assertCreated()->json('id');
 
+        // Meetings are born as drafts — publish, then complete.
+        $this->postJson("/api/purchase/kickoff/{$id}/transition", ['status' => 'Scheduled'])->assertOk();
         $this->postJson("/api/purchase/kickoff/{$id}/transition", ['status' => 'Completed', 'minutes' => 'Discussed scope.'])
             ->assertOk()->assertJsonPath('status', 'Completed');
 
@@ -86,20 +89,25 @@ class PurchaseMeetingsFlowTest extends TestCase
         Sanctum::actingAs($this->user('admin'));
         $vendor = $this->vendor();
 
-        // 1. Schedule → Scheduled, minutes Draft.
+        // 1. Schedule → saved as a Draft, minutes Draft.
         $create = $this->postJson('/api/purchase/kickoff', [
             'purchase_vendor_id' => $vendor->id,
             'title'              => 'Kickoff meeting',
             'meeting_type'       => 'kickoff',
-            'scheduled_at'       => now()->subDay()->toDateTimeString(),
+            'scheduled_at'       => now()->addDay()->toDateTimeString(),
+            'end_at'             => now()->addDay()->addHour()->toDateTimeString(),
         ])->assertCreated();
         $id = $create->json('id');
-        $create->assertJsonPath('status', 'Scheduled')->assertJsonPath('mom_status', 'Draft');
+        $create->assertJsonPath('status', 'Draft')->assertJsonPath('mom_status', 'Draft');
 
-        // 2. Publish is refused before the meeting is even completed.
+        // 2. Publish the meeting (Draft → Scheduled).
+        $this->postJson("/api/purchase/kickoff/{$id}/transition", ['status' => 'Scheduled'])
+            ->assertOk()->assertJsonPath('status', 'Scheduled');
+
+        // 3. Sending minutes is refused before the meeting is even completed.
         $this->postJson("/api/purchase/kickoff/{$id}/publish")->assertStatus(422);
 
-        // 3. Complete the meeting.
+        // 4. Complete the meeting.
         $this->postJson("/api/purchase/kickoff/{$id}/transition", ['status' => 'Completed', 'minutes' => 'Notes.'])
             ->assertOk()->assertJsonPath('status', 'Completed');
 

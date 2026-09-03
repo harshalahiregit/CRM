@@ -56,6 +56,59 @@ class PurchaseActivationNotifier
         return $this->dispatch($vendor, null, true);
     }
 
+    /**
+     * Welcome + login credentials, sent the moment a vendor is added (before
+     * activation) so they can sign in and complete onboarding. Mirrors the TPV
+     * TpvActivationNotifier::onCredentialsIssued.
+     */
+    public function onCredentialsIssued(PurchaseVendor $vendor, string $password): void
+    {
+        $id = $vendor->id;
+        $pw = $password;
+
+        DB::afterCommit(function () use ($id, $pw) {
+            $fresh = PurchaseVendor::find($id);
+            if (! $fresh || ! $fresh->email) {
+                return;
+            }
+            $ctx = $this->context($fresh, $pw);
+            $status = $this->channels->emailHtml(
+                $fresh->email,
+                'Welcome to the '.$ctx['companyName'].' Procurement Portal — your login details',
+                view('emails.purchase.welcome_credentials', $ctx)->render(),
+                ['vendor_id' => $fresh->id, 'event' => 'credentials_issued'],
+                $this->welcomePlainText($fresh, $pw, $ctx),
+                $fresh->tenant_id,
+            );
+            if ($status !== 'sent') {
+                Log::channel('purchase')->warning('Purchase welcome-credentials e-mail not delivered', [
+                    'purchase_vendor_id' => $fresh->id, 'status' => $status,
+                ]);
+            }
+        });
+    }
+
+    private function welcomePlainText(PurchaseVendor $vendor, string $password, array $ctx): string
+    {
+        return implode("\n", [
+            "Hello {$vendor->company_name},",
+            '',
+            'Your vendor account has been created. Sign in to complete your onboarding.',
+            '',
+            "Login URL:  {$ctx['portalUrl']}",
+            "Login ID:   {$vendor->email}",
+            "Password:   {$password}",
+            "Vendor Code: {$vendor->purchase_vendor_code}",
+            '',
+            'Please change your password after your first login.',
+            '',
+            "Need help? Contact {$ctx['supportEmail']}",
+            '',
+            'Regards,',
+            $ctx['companyName'],
+        ]);
+    }
+
     /** The most recent notification for the Vendor Detail dashboard. */
     public function latestFor(PurchaseVendor $vendor): ?LogEntry
     {

@@ -9,6 +9,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Services\Shared\KickoffMeetingService;
 use App\Support\Shared\KickoffStatus;
+use App\Support\Shared\MomApprovalStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Tests\TestCase;
@@ -49,7 +50,7 @@ class KickoffEnhancementsTest extends TestCase
 
     private function meeting(array $data = []): KickoffMeeting
     {
-        return $this->svc()->schedule(array_merge([
+        $m = $this->svc()->schedule(array_merge([
             'title'        => 'Kickoff',
             'scheduled_at' => now()->addDay()->toDateTimeString(),
             'attendees'    => [
@@ -57,6 +58,10 @@ class KickoffEnhancementsTest extends TestCase
                 ['name' => 'Rahul Patil', 'email' => 'rahul@v.com', 'organisation' => 'XYZ Vendor'],
             ],
         ], $data), $this->actor);
+
+        // Meetings are now born as drafts; publish so tests exercise the live
+        // (Scheduled) lifecycle exactly as before the draft/publish split.
+        return $this->svc()->transition($m, KickoffStatus::SCHEDULED, [], $this->actor);
     }
 
     /* ── 1. structured MOM items ─────────────────────────────────────── */
@@ -252,114 +257,35 @@ class KickoffEnhancementsTest extends TestCase
         $this->assertNotNull($done->completed_at);
     }
 
-    public function test_publishing_opens_a_48_hour_window(): void
+    /* ── 5. distribution of approved minutes (acknowledgement removed) ── */
+
+    public function test_distributing_approved_minutes_marks_them_distributed(): void
     {
         $m = $this->completedWithMom();
 
-        $published = $this->svc()->publishForAck($m, $this->actor);
+        $distributed = $this->svc()->distributeMom($m, $this->actor);
 
-        $this->assertSame(KickoffMeeting::ACK_PENDING, $published->acknowledgement_status);
-        $this->assertNotNull($published->acknowledgement_sent_at);
-        $this->assertEqualsWithDelta(
-            48, $published->acknowledgement_sent_at->diffInHours($published->acknowledgement_deadline), 0.1
-        );
-        $this->assertTrue($published->acknowledgement_open);
+        $this->assertSame(MomApprovalStatus::DISTRIBUTED, $distributed->mom_status);
+        $this->assertNotNull($distributed->mom_distributed_at);
+        // No public acknowledgement token is ever minted any more.
+        $this->assertNull($distributed->getRawOriginal('ack_token'));
     }
 
-    public function test_acknowledgement_after_48_hours_is_refused(): void
+    public function test_minutes_cannot_be_distributed_before_approval(): void
     {
-        $m = $this->completedWithMom();
-        $this->svc()->publishForAck($m, $this->actor);
+        $m = $this->meeting(['scheduled_at' => now()->subHour()->toDateTimeString()]);
+        $this->svc()->transition($m, KickoffStatus::COMPLETED, [], $this->actor);
+        $m->fresh()->update(['mom_path' => 'fake/mom.pdf']);
+        // Still Draft minutes (never submitted/approved).
 
-        Carbon::setTestNow(now()->addHours(49));
-
-        $stale = $m->fresh();
-        $this->assertTrue($stale->acknowledgement_expired);
-
-        try {
-            $this->svc()->acknowledge($stale, ['name' => 'Vendor Rep'], ['ip' => '1.1.1.1']);
-            $this->fail('an expired window must refuse the acknowledgement');
-        } catch (BusinessException $e) {
-            $this->assertStringContainsString('expired', strtolower($e->getMessage()));
-        }
-
-        $this->assertSame(KickoffMeeting::ACK_EXPIRED, $stale->fresh()->acknowledgement_status);
-        $this->assertNull($stale->fresh()->acknowledged_at);
-
-        Carbon::setTestNow();
-    }
-
-    public function test_acknowledgement_inside_the_window_succeeds(): void
-    {
-        $m = $this->completedWithMom();
-        $this->svc()->publishForAck($m, $this->actor);
-
-        Carbon::setTestNow(now()->addHours(47));
-        $acked = $this->svc()->acknowledge($m->fresh(), ['name' => 'Vendor Rep'], ['ip' => '1.1.1.1']);
-
-        $this->assertNotNull($acked->acknowledged_at);
-        $this->assertSame(KickoffMeeting::ACK_ACKNOWLEDGED, $acked->acknowledgement_status);
-        $this->assertNull($acked->getRawOriginal('ack_token'), 'the link stays single-use');
-
-        Carbon::setTestNow();
-    }
-
-    /** A meeting published before the window existed has no deadline to breach. */
-    public function test_a_meeting_with_no_deadline_never_expires(): void
-    {
-        $m = $this->completedWithMom();
-        $this->svc()->publishForAck($m, $this->actor);
-        $m->fresh()->update(['acknowledgement_deadline' => null]);
-
-        $this->assertFalse($m->fresh()->acknowledgement_expired);
-        $this->assertTrue($m->fresh()->acknowledgement_open);
-    }
-
-    /* ── 6. vendor response on acknowledgement ───────────────────────── */
-
-    public function test_a_comment_is_stored_with_the_acknowledgement(): void
-    {
-        $m = $this->completedWithMom();
-        $this->svc()->publishForAck($m, $this->actor);
-
-        $acked = $this->svc()->acknowledge($m->fresh(), [
-            'name'    => 'Vendor Rep',
-            'comment' => 'Agreed, but item 3 needs a revised target date.',
-        ], ['ip' => '1.1.1.1']);
-
-        $this->assertSame('Agreed, but item 3 needs a revised target date.', $acked->acknowledgement_comment);
-        $this->assertSame(KickoffMeeting::ACK_ACKNOWLEDGED, $acked->acknowledgement_status);
-    }
-
-    /** Every existing caller posts no comment at all — that must keep working. */
-    public function test_acknowledging_without_a_comment_still_works(): void
-    {
-        $m = $this->completedWithMom();
-        $this->svc()->publishForAck($m, $this->actor);
-
-        $acked = $this->svc()->acknowledge($m->fresh(), ['name' => 'Vendor Rep'], ['ip' => '1.1.1.1']);
-
-        $this->assertNotNull($acked->acknowledged_at);
-        $this->assertNull($acked->acknowledgement_comment);
-    }
-
-    public function test_a_whitespace_only_comment_is_stored_as_null(): void
-    {
-        $m = $this->completedWithMom();
-        $this->svc()->publishForAck($m, $this->actor);
-
-        $acked = $this->svc()->acknowledge($m->fresh(), ['name' => 'Rep', 'comment' => "   \n  "], ['ip' => '1.1.1.1']);
-
-        $this->assertNull($acked->acknowledgement_comment, 'blank input must not masquerade as a response');
+        $this->expectException(BusinessException::class);
+        $this->svc()->distributeMom($m->fresh(), $this->actor);
     }
 
     /**
-     * A meeting whose minutes are ready to distribute.
-     *
-     * Meeting.docx §12 puts an approval chain in front of distribution — Draft ->
-     * Organizer -> Chairperson -> Approved — and publishForAck enforces it. These
-     * tests are about the acknowledgement WINDOW, not the approval workflow, so
-     * the helper walks the chain rather than each test restating it.
+     * A meeting whose minutes are approved and ready to distribute — the approval
+     * chain (Draft -> Organizer -> Chairperson -> Approved) walked once here so
+     * each test does not restate it.
      */
     private function completedWithMom(): KickoffMeeting
     {

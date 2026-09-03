@@ -26,9 +26,10 @@ class UpdatePurchaseKickoffRequest extends FormRequest
             'organizer'         => 'sometimes|nullable|string|max:160',
             'department'        => 'sometimes|nullable|string|max:120',
             'client_name'       => 'sometimes|nullable|string|max:200',
-            'scheduled_at'      => 'sometimes|nullable|date',
-            'end_at'            => 'sometimes|nullable|date',
-            'duration_minutes'  => 'sometimes|nullable|integer|min:0|max:1440',
+            // Duration is derived server-side; non-past enforced only when the
+            // start is actually MOVED (see withValidator).
+            'scheduled_at'      => 'sometimes|required|date',
+            'end_at'            => 'sometimes|required|date|after:scheduled_at',
             'mode'              => 'sometimes|nullable|in:online,onsite,hybrid',
             'location'          => 'sometimes|nullable|string|max:500',
             'meeting_platform'  => 'sometimes|nullable|string|max:100',
@@ -47,5 +48,23 @@ class UpdatePurchaseKickoffRequest extends FormRequest
             'participants.*.role'                => 'nullable|string|max:100',
             'participants.*.attended'            => 'nullable|boolean',
         ];
+    }
+
+    /** Block a past start ONLY when it is genuinely being moved to the past. */
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            if (! $this->filled('scheduled_at')) {
+                return;
+            }
+            $new = \Illuminate\Support\Carbon::parse($this->input('scheduled_at'));
+            $meeting = $this->route('kickoff');
+            $stored = $meeting && $meeting->scheduled_at
+                ? \Illuminate\Support\Carbon::parse($meeting->scheduled_at)
+                : null;
+            if ((! $stored || ! $new->equalTo($stored)) && $new->lt(now()->subMinutes(2))) {
+                $validator->errors()->add('scheduled_at', 'The meeting start time cannot be in the past.');
+            }
+        });
     }
 }

@@ -95,15 +95,29 @@ class MeetingAIService
     {
         $meeting->loadMissing(['momItems', 'decisions', 'issues']);
 
-        $facts = [
+        return $this->summariseFacts([
             'title' => $meeting->title,
             'type' => $meeting->meeting_type_label,
             'decisions' => $meeting->decisions->map(fn ($d) => $d->decision)->all(),
             'actions' => $meeting->momItems->map(fn ($a) => trim(strip_tags((string) $a->description))
                 .($a->responsible_names ? ' — '.$a->responsible_names : ''))->all(),
             'issues' => $meeting->issues->map(fn ($i) => $i->title.' ('.$i->severity.')')->all(),
-        ];
+        ]);
+    }
 
+    /**
+     * Summarise a meeting from facts already gathered.
+     *
+     * Split out of summariseMinutes() so the Purchase engine — whose meetings
+     * are a different model with different relation names — reuses the SAME
+     * prompt and the same guardrails. Two copies of the prompt would drift, and
+     * the "use only the facts, invent nothing" instruction is the part that
+     * must not.
+     *
+     * @param  array{title:?string, type:?string, decisions:array, actions:array, issues:array}  $facts
+     */
+    public function summariseFacts(array $facts): array
+    {
         if (empty($facts['decisions']) && empty($facts['actions']) && empty($facts['issues'])) {
             throw new BusinessException('There are no minutes to summarise yet — add decisions, actions or issues first.');
         }

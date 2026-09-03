@@ -26,6 +26,15 @@ export default function PortalDashboard() {
   const [work, setWork] = useState({ summary: {}, projects: [], tasks: [], tickets: [], kb: [] })
   const [loading, setLoad] = useState(true)
   const [kbArticle, setKbArticle] = useState(null)   // { loading, title, content, ... } | null
+  const [notifs, setNotifs] = useState([])           // real in-app notifications (bell store)
+
+  // Real notifications for the dashboard card — the bell's own feed. Falls back
+  // to derived onboarding milestones below when the vendor has none yet.
+  useEffect(() => {
+    portalApi.notifications.list()
+      .then(d => setNotifs(d?.items ?? []))
+      .catch(() => {})
+  }, [])
 
   const openKbArticle = async (item) => {
     setKbArticle({ loading: true, title: item.title })
@@ -466,8 +475,21 @@ export default function PortalDashboard() {
             </div>
           </div>
 
-          {/* Notifications — shown as placeholder-style items since no notification API is wired yet */}
-          {onboarding ? (
+          {/* Real notifications from the bell store; falls back to derived
+              onboarding milestones when the vendor has none yet. */}
+          {notifs.length > 0 ? (
+            <div>
+              {notifs.slice(0, 5).map((n) => (
+                <div key={n.id} className="portal-notif-item">
+                  <span className="portal-notif-dot" style={{ background: n.is_read ? '#9ca3af' : '#7C3AED' }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: n.is_read ? 500 : 700, color: 'var(--text-h)' }}>{n.title}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{fmtDate(n.created_at)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : onboarding ? (
             <div>
               {[
                 { dot: '#7C3AED', text: `Onboarding at Step ${onboarding.current_step}`, time: fmtDate(onboarding.updated_at || onboarding.created_at) },

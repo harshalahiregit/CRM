@@ -62,7 +62,7 @@ export default function TpvOnboardings() {
 
   const filtered = rows.filter(r => {
     const q = search.toLowerCase()
-    const matchSearch = !q || r.vendor?.company_name?.toLowerCase().includes(q) || r.vendor?.vendor_code?.toLowerCase().includes(q)
+    const matchSearch = !q || r.vendor?.company_name?.toLowerCase().includes(q) || cfg.codeOf(r.vendor)?.toLowerCase().includes(q)
     return matchSearch && (filterStatus === 'All' || r.status === filterStatus)
   })
 
@@ -142,7 +142,7 @@ export default function TpvOnboardings() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
                     <span style={{ color: 'var(--text-h)', fontWeight: 700, fontSize: 15 }}>{r.vendor?.company_name || 'Vendor'}</span>
-                    <span style={{ color: '#a78bfa', fontWeight: 800, fontSize: 12 }}>{r.vendor?.vendor_code}</span>
+                    <span style={{ color: '#a78bfa', fontWeight: 800, fontSize: 12 }}>{cfg.codeOf(r.vendor)}</span>
                     <StatusPill cfg={obStatusCfg(r.status)} />
                     {r.vendor?.status && <StatusPill cfg={vendorStatusCfg(r.vendor.status)} />}
                     {r.vendor?.vendor_type === 'temporary' && (
@@ -178,13 +178,14 @@ export default function TpvOnboardings() {
 
       {/* Starting an onboarding lands on the VENDOR record, not the wizard —
           the wizard is the vendor's own screen in the portal. */}
-      {creating && <CreateModal api={cfg.api} onClose={() => setCreating(false)} onCreated={(_id, vendorId) => { setCreating(false); navigate(cfg.viewPath(vendorId)) }} />}
+      {creating && <CreateModal cfg={cfg} onClose={() => setCreating(false)} onCreated={(_id, vendorId) => { setCreating(false); navigate(cfg.viewPath(vendorId)) }} />}
     </div>
   )
 }
 
 // ── Start-onboarding modal ───────────────────────────────────────────────────
-function CreateModal({ onClose, onCreated, api = tpvApi }) {
+function CreateModal({ onClose, onCreated, cfg }) {
+  const api = cfg?.api ?? tpvApi
   const [vendors, setVendors] = useState([])
   const [vendorId, setVendorId] = useState('')
   const [saving, setSaving] = useState(false)
@@ -200,7 +201,8 @@ function CreateModal({ onClose, onCreated, api = tpvApi }) {
     if (!vendorId) { alert('Select a vendor.'); return }
     setSaving(true)
     try {
-      const ob = await api.onboarding.create({ vendor_id: Number(vendorId) })
+      // The FK name differs per module — see cfg.vendorIdKey.
+      const ob = await api.onboarding.create({ [cfg?.vendorIdKey ?? 'vendor_id']: Number(vendorId) })
       // The vendor id comes from the picker — the created record only carries it
       // as a foreign key, and the caller navigates to the vendor record.
       onCreated(ob?.id ?? ob?.data?.id, Number(vendorId))

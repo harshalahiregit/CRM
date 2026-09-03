@@ -182,6 +182,23 @@ class VendorDocumentService
             'document_id' => $doc->id, 'tenant_id' => $doc->tenant_id, 'decision' => $decision,
         ]);
 
+        // In-app (bell) notification to the vendor's portal login — a TPV vendor
+        // is a real User, so it uses the shared bell store. Best-effort.
+        $vendor = $doc->vendor;
+        if ($vendor && $vendor->user_id) {
+            $label = $doc->type ?? 'A document';
+            app(\App\Services\NotificationService::class)->notify(
+                (int) $vendor->user_id,
+                (int) $vendor->tenant_id,
+                $decision === 'approve' ? 'document.approved' : 'document.rejected',
+                $decision === 'approve'
+                    ? "Document approved: {$label}"
+                    : "Document rejected: {$label}",
+                $remarks,
+                '/vendor-portal/documents',
+            );
+        }
+
         return $doc->fresh(['reviewer:id,name']);
     }
 

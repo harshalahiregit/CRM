@@ -19,6 +19,13 @@ const upload = (url, formData) =>
 export const portalApi = {
   me:         () => api.get('/portal/me').then(r => r.data),
 
+  // ── In-app (bell) notifications — the vendor's own, from the shared store ──
+  notifications: {
+    list:        () => api.get('/portal/notifications').then(r => r.data),
+    markRead:    (id) => api.patch(`/portal/notifications/${id}/read`).then(r => r.data),
+    markAllRead: () => api.post('/portal/notifications/read-all').then(r => r.data),
+  },
+
   // ── My Work — projects/tasks/tickets assigned to this vendor / TPV ──────
   // Role-gated (not vendor.portal), so it works even before a vendor-master
   // profile exists. Returns the unwrapped payload.
@@ -125,7 +132,7 @@ export const portalApi = {
     progress:      (id)        => api.get(`/portal/workers/${id}/progress`).then(r => r.data),
     create:        (data)      => api.post('/portal/workers', data).then(r => r.data),
     update:        (id, data)  => api.put(`/portal/workers/${id}`, data).then(r => r.data),
-    saveMedical:   (id, data)  => api.post(`/portal/workers/${id}/medical`, data).then(r => r.data),
+    saveMedical:   (id, data)  => api.post(`/portal/workers/${id}/medical`, data, data instanceof FormData ? { headers: { 'Content-Type': undefined } } : undefined).then(r => r.data),
     saveInduction: (id, data)  => api.post(`/portal/workers/${id}/induction`, data).then(r => r.data),
     // Portal-owned, ownership-checked. These two used to hit the admin /tpv/*
     // routes, which forced third_party_vendor into the admin role gate.
@@ -256,6 +263,7 @@ export const portalApi = {
     requestExtension:(payload)     => api.post('/portal/extensions/request', payload).then(r => r.data),
     meetings:        ()            => api.get('/portal/meetings').then(r => r.data),
     meetingMom:      (id)          => api.get(`/portal/meetings/${id}/mom`).then(r => r.data),
+    meetingDocument: (id, docId)   => api.get(`/portal/meetings/${id}/documents/${docId}/download`, { responseType: 'blob' }).then(r => r.data),
     actions:         ()            => api.get('/portal/actions').then(r => r.data),
     respondAction:   (id, payload) => api.post(`/portal/actions/${id}/respond`, payload).then(r => r.data),
     ppeMatrix:       ()            => api.get('/portal/ppe-matrix').then(r => r.data),

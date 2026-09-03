@@ -50,6 +50,10 @@ class CheckHelpdeskSla extends Command
         foreach ($tenantIds as $tenantId) {
             $tenantId = (int) $tenantId;
 
+            // No HTTP request here, so point the mailer at THIS tenant's
+            // Settings → Email SMTP (not .env) before any breach mail goes out.
+            app(\App\Services\Mail\TenantMailConfigurator::class)->applyForTenant($tenantId);
+
             // Priorities that actually carry a target. A ticket on any other
             // priority is untracked — compute() returns ['tracked' => false].
             $tracked = TicketPriority::forTenant($tenantId)

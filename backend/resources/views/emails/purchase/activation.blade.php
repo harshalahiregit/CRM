@@ -31,7 +31,7 @@
       {{-- Details --}}
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:4px 0;margin:0 0 22px;">
         @foreach ([
-          'Registered Email'  => $vendor->email,
+          'Login ID (email)'  => $vendor->email,
           'Vendor Code'       => $vendor->purchase_vendor_code,
           'Registration Type' => $registrationType,
           'Activation Date'   => $activationDate,
@@ -50,8 +50,19 @@
             <div style="font-size:13px;font-weight:800;color:#92400e;margin-bottom:8px;">Your temporary password</div>
             <div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:17px;font-weight:700;color:#111827;background:#ffffff;border:1px dashed #fbbf24;border-radius:8px;padding:10px 14px;display:inline-block;">{{ $tempPassword }}</div>
             <div style="font-size:12.5px;color:#92400e;line-height:1.6;margin-top:12px;">
-              <strong>First login:</strong> sign in with the email and temporary password above.<br>
+              <strong>First login:</strong> sign in with the login ID and temporary password above.<br>
               <strong>Please change your password immediately</strong> after your first login — this temporary one is single-use by convention and should not be reused or shared.
+            </div>
+          </td></tr>
+        </table>
+      @else
+        {{-- Scenario A: self-registered vendor who chose their own password. --}}
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;margin:0 0 22px;">
+          <tr><td style="padding:16px;">
+            <div style="font-size:13px;font-weight:800;color:#1e40af;margin-bottom:6px;">Signing in</div>
+            <div style="font-size:12.5px;color:#1e3a8a;line-height:1.6;">
+              Log in with the <strong>login ID above</strong> and the <strong>password you chose when you registered</strong>.
+              If you have forgotten it, use “Forgot password” on the login page to reset it.
             </div>
           </td></tr>
         </table>

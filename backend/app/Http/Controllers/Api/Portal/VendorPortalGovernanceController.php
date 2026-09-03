@@ -13,6 +13,8 @@ use App\Models\Shared\KickoffMeeting;
 use App\Models\Shared\KickoffMomItem;
 use App\Models\Vendor\Vendor;
 use App\Services\Tpv\TpvApprovalService;
+use App\Support\Shared\KickoffStatus;
+use App\Support\Shared\MomApprovalStatus;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -159,9 +161,22 @@ class VendorPortalGovernanceController extends Controller
 
         $meetings = KickoffMeeting::where('tenant_id', $vendor->tenant_id)
             ->where('kickoffable_type', 'vendor')->where('kickoffable_id', $vendor->id)
+            // Never expose unpublished drafts to the vendor.
+            ->where('status', '!=', KickoffStatus::DRAFT)
             ->with('attendees:id,kickoff_meeting_id,name,role')
             ->latest('scheduled_at')
-            ->get(['id', 'reference', 'title', 'meeting_type', 'status', 'scheduled_at', 'mode', 'location', 'mom_path', 'kickoffable_type', 'kickoffable_id']);
+            ->get(['id', 'reference', 'title', 'meeting_type', 'status', 'scheduled_at', 'mode', 'location', 'meeting_platform', 'meeting_link', 'mom_status', 'mom_path', 'kickoffable_type', 'kickoffable_id']);
+
+        // The minutes are only the vendor's to see once approved+distributed. Add
+        // a flag the portal reads, and hide mom_path until then so the "download"
+        // control can't reach an unapproved document.
+        $meetings->each(function ($m) {
+            $available = MomApprovalStatus::isDistributable($m->mom_status);
+            $m->setAttribute('mom_available', $available);
+            if (! $available) {
+                $m->setAttribute('mom_path', null);
+            }
+        });
 
         return response()->json(['data' => $meetings]);
     }
@@ -170,9 +185,47 @@ class VendorPortalGovernanceController extends Controller
     {
         $this->assertMeetingOwned($request, $kickoffMeeting);
 
+        // Point 8: the vendor sees the minutes only after they are approved and
+        // distributed — never a draft or an in-review set.
+        abort_unless(
+            MomApprovalStatus::isDistributable($kickoffMeeting->mom_status),
+            403,
+            'These minutes are not yet available.'
+        );
+
         return response()->json($kickoffMeeting->load([
             'agendaItems', 'momItems.responsible:id,name', 'decisions', 'issues',
+            // Labelled supporting documents the vendor can download.
+            'documents',
         ]));
+    }
+
+    /**
+     * Download one of a meeting's labelled documents. Available to the owning
+     * vendor only once the minutes are approved+distributed (same gate as the
+     * MoM itself).
+     */
+    public function meetingDocument(Request $request, KickoffMeeting $kickoffMeeting, \App\Models\Shared\KickoffMeetingDocument $document)
+    {
+        $this->assertMeetingOwned($request, $kickoffMeeting);
+        abort_unless(
+            MomApprovalStatus::isDistributable($kickoffMeeting->mom_status),
+            403,
+            'These documents are not yet available.'
+        );
+        abort_unless((int) $document->kickoff_meeting_id === (int) $kickoffMeeting->id, 404, 'Document not found.');
+        abort_unless(
+            $document->path && Storage::disk('kickoff_docs')->exists($document->path),
+            404,
+            'Document file is missing.'
+        );
+
+        return Storage::disk('kickoff_docs')->response(
+            $document->path,
+            $document->original_name,
+            [],
+            $request->boolean('inline') ? 'inline' : 'attachment'
+        );
     }
 
     public function actions(Request $request)

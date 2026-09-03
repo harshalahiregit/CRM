@@ -31,6 +31,12 @@ const schema = z.object({
   remember: z.boolean().optional(),
 })
 
+// Post-login home when the user came to /login directly (no email deep-link).
+const roleHome = (role) =>
+  role === 'company' ? '/company-portal/dashboard'
+  : role === 'third_party_vendor' ? '/vendor-portal/dashboard'
+  : '/app/dashboard'
+
 // ── Left Panel Features ───────────────────────────────────────────────
 const FEATURES = [
   'Unified Control Hub',
@@ -49,7 +55,12 @@ export default function LoginPage() {
   const { login } = useAuth()
   const navigate  = useNavigate()
   const location  = useLocation()
-  const from      = location.state?.from?.pathname || '/app/dashboard'
+  // The page the email/deep-link pointed at, preserved by ProtectedRoute as
+  // location.state.from (pathname + query + hash). Only same-origin internal
+  // paths are honoured — never an off-site or protocol-relative URL.
+  const fromLoc   = location.state?.from
+  const fromPath  = fromLoc ? `${fromLoc.pathname}${fromLoc.search || ''}${fromLoc.hash || ''}` : null
+  const safeFrom  = fromPath && fromPath.startsWith('/') && !fromPath.startsWith('//') ? fromPath : null
 
   const [showPw,    setShowPw]    = useState(false)
   const [roleOpen,  setRoleOpen]  = useState(false)
@@ -85,7 +96,7 @@ export default function LoginPage() {
     if (selectedRoleObj?.purchaseVendor) {
       try {
         await purchaseVendorAuthApi.login(values.email, values.password)
-        navigate('/purchase-portal/dashboard', { replace: true })
+        navigate(safeFrom || '/purchase-portal/dashboard', { replace: true })
       } catch (e) {
         setApiError(e?.response?.data?.message || 'Invalid credentials.')
       }
@@ -94,9 +105,10 @@ export default function LoginPage() {
 
     const result = await login(values)
     if (result.success) {
-      if (result.role === 'company') navigate('/company-portal/dashboard', { replace: true })
-      else if (result.role === 'third_party_vendor') navigate('/vendor-portal/dashboard', { replace: true })
-      else navigate(from, { replace: true })
+      // Every role returns to the email's target page when there is one; a
+      // direct login (no deep-link) falls back to that role's home. The route
+      // guards still redirect if the target isn't allowed for the role.
+      navigate(safeFrom || roleHome(result.role), { replace: true })
     } else {
       setApiError(result.message)
     }

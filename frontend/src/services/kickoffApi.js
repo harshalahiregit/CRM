@@ -45,7 +45,11 @@ export const kickoffApi = {
   distribution: (id) => api.get(`/kickoff/meetings/${id}/distribution`).then(r => r.data),
 
   // A vendor's live governance status (Meeting.docx §4) — { vendor, sections }.
-  vendorStatus: (vendorId) => api.get('/kickoff/vendor-status', { params: { vendor_id: vendorId } }).then(r => r.data),
+  // excludeMeetingId = the meeting being edited, so it is not counted as its
+  // own history and a vendor's FIRST meeting does not offer carry-forward.
+  vendorStatus: (vendorId, excludeMeetingId) => api.get('/kickoff/vendor-status', {
+    params: { vendor_id: vendorId, exclude_meeting_id: excludeMeetingId || undefined },
+  }).then(r => r.data),
   // AI layer (Meeting.docx §18) — suggest an agenda before, summarise minutes after.
   aiSuggestAgenda: (data) => api.post('/kickoff/ai/suggest-agenda', data).then(r => r.data),
   aiSummary: (meetingId) => api.post(`/kickoff/meetings/${meetingId}/ai-summary`).then(r => r.data),
@@ -91,9 +95,22 @@ export const kickoffApi = {
   momDecide: (id, data)      => api.post(`/kickoff/meetings/${id}/mom/decide`, data).then(r => r.data),
   momRevise: (id)            => api.post(`/kickoff/meetings/${id}/mom/revise`).then(r => r.data),
 
-  // Returns { meeting, ack_token } — the token is disclosed only here. The page
-  // composes the link from window.location.origin, as the badge QR does.
+  // Distribute the approved minutes to the vendor (no public link any more —
+  // the vendor reads them in their portal, notified by e-mail + in-app popup).
   publish: (id) => api.post(`/kickoff/meetings/${id}/publish`).then(r => r.data),
+
+  // Labelled supporting documents (multiple upload). Each file carries a label.
+  // momItemId (optional) scopes to one action's evidence; omitted = meeting-level.
+  documents:       (id, momItemId) => api.get(`/kickoff/meetings/${id}/documents`, { params: momItemId ? { mom_item_id: momItemId } : {} }).then(r => r.data?.data ?? r.data),
+  uploadDocuments: (id, files, labels, momItemId) => {
+    const fd = new FormData()
+    files.forEach((f) => fd.append('files[]', f))
+    labels.forEach((l) => fd.append('labels[]', l ?? ''))
+    if (momItemId) fd.append('mom_item_id', momItemId)
+    return upload(`/kickoff/meetings/${id}/documents`, fd)
+  },
+  deleteDocument:  (id, docId) => api.delete(`/kickoff/meetings/${id}/documents/${docId}`).then(r => r.data),
+  documentBlob:    (id, docId) => api.get(`/kickoff/meetings/${id}/documents/${docId}/download`, { responseType: 'blob' }).then(r => r.data),
 
   // Action Engine — progress one MOM action (status/remark/priority/evidence file).
   // Multipart so an evidence document can ride along with the status change.

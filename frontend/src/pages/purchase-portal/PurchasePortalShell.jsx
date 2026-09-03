@@ -23,6 +23,7 @@ export default function PurchasePortalShell() {
       brandTitle="Purchase Vendor Portal"
       loadVendor={() => purchasePortalApi.me().then(d => d?.vendor ?? null)}
       onLogout={onLogout}
+      notificationsApi={purchasePortalApi.notifications}
       builtRoutes={{
         dashboard:  'dashboard',
         onboarding: 'onboarding',

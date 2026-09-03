@@ -94,6 +94,38 @@ class TaskNotifier
     }
 
     /**
+     * A checklist item was assigned to someone. Checklist items previously had NO
+     * notification at all — this gives them the same in-app bell + email leg as a
+     * subtask assignment. Gated by notify_assigned; self-assignment is silent.
+     */
+    public function checklistAssigned(Task $task, string $description, ?int $userId, int $actorId): void
+    {
+        $userId = $userId ? (int) $userId : null;
+        if (! $userId || $userId === $actorId || ! $this->config->on($task->tenant_id, 'notify_assigned')) {
+            return;
+        }
+
+        $actor = $this->name($actorId);
+        $item  = trim($description) !== '' ? mb_strimwidth(trim($description), 0, 120, '…') : 'a checklist item';
+
+        $this->bell(
+            [$userId], $task->tenant_id, 'task.checklist_assigned',
+            "{$actor} assigned you a checklist item",
+            "{$item} — on \"{$task->name}\"",
+            $this->link($task), $actorId,
+        );
+
+        $this->mail(
+            $task->tenant_id, $this->emails([$userId]),
+            fn () => new TaskActivityMail(
+                $task, $this->tree->ancestryOf($task, $task->tenant_id),
+                'You were assigned a checklist item', "{$item}\n\nTask: {$task->name}",
+            ),
+            "checklist assignment on task {$task->id}",
+        );
+    }
+
+    /**
      * A subtask was finished. Goes UP the tree — the people who own the work
      * this sits inside are the ones who care that it closed.
      */

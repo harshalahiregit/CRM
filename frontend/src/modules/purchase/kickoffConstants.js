@@ -7,6 +7,7 @@
 
 // ── Status — App\Support\Purchase\PurchaseKickoffStatus ──────────────────────
 export const PK_STATUS = {
+  DRAFT: 'Draft',
   SCHEDULED: 'Scheduled',
   DELAYED: 'Delayed',
   COMPLETED: 'Completed',
@@ -14,6 +15,7 @@ export const PK_STATUS = {
 }
 
 export const PK_STATUS_CONFIG = {
+  [PK_STATUS.DRAFT]:     { label: 'Draft',     color: '#a78bfa', bg: 'rgba(167,139,250,0.15)' },
   [PK_STATUS.SCHEDULED]: { label: 'Scheduled', color: '#0ea5e9', bg: 'rgba(14,165,233,0.15)' },
   [PK_STATUS.DELAYED]:   { label: 'Delayed',   color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
   [PK_STATUS.COMPLETED]: { label: 'Completed', color: '#10b981', bg: 'rgba(16,185,129,0.15)' },
@@ -21,12 +23,13 @@ export const PK_STATUS_CONFIG = {
 }
 export const pkStatusCfg = (s) => PK_STATUS_CONFIG[s] || PK_STATUS_CONFIG[PK_STATUS.SCHEDULED]
 
-export const isPkOpen   = (s) => s === PK_STATUS.SCHEDULED || s === PK_STATUS.DELAYED
+export const isPkDraft  = (s) => s === PK_STATUS.DRAFT
+export const isPkOpen   = (s) => s === PK_STATUS.DRAFT || s === PK_STATUS.SCHEDULED || s === PK_STATUS.DELAYED
 export const isPkClosed = (s) => s === PK_STATUS.COMPLETED || s === PK_STATUS.CANCELLED
 
-/** Permitted moves — mirrors PurchaseKickoffStatus::TRANSITIONS so the UI only
- *  offers actions the server will accept. */
+/** Permitted moves — mirrors PurchaseKickoffStatus::TRANSITIONS. Draft → Scheduled is "Publish". */
 export const PK_TRANSITIONS = {
+  [PK_STATUS.DRAFT]:     [PK_STATUS.SCHEDULED, PK_STATUS.CANCELLED],
   [PK_STATUS.SCHEDULED]: [PK_STATUS.DELAYED, PK_STATUS.COMPLETED, PK_STATUS.CANCELLED],
   [PK_STATUS.DELAYED]:   [PK_STATUS.SCHEDULED, PK_STATUS.COMPLETED, PK_STATUS.CANCELLED],
   [PK_STATUS.COMPLETED]: [],
