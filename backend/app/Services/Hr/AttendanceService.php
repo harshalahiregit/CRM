@@ -25,7 +25,34 @@ class AttendanceService
     public function __construct(
         private AttendanceRepository $attendanceRepository,
         private ShiftService $shifts,
+        private \App\Services\Settings\SettingsService $settings,
     ) {
+    }
+
+    /**
+     * The workspace's own working day.
+     *
+     * These were constants, and the HR settings screen offered start time, end
+     * time, grace period and full-day hours that NOTHING read — it saved, it
+     * persisted, and every attendance record was still stamped 09:00/18:00/15
+     * with overtime past 8 hours. A control that claims to do something and does
+     * not is worse than no control.
+     *
+     * The constants remain the fallback, so a workspace that has never touched
+     * settings behaves exactly as before.
+     */
+    private function dayRules(int $tenantId): array
+    {
+        $s = $this->settings->getGroup($tenantId, \App\Support\Hr\HrSetting::GROUP);
+
+        [$start, $end, $grace] = HrAttendance::SHIFTS['General'];
+
+        return [
+            'start'          => $s['company_start_time'] ?: $start,
+            'end'            => $s['company_end_time'] ?: $end,
+            'grace'          => (int) ($s['late_grace_minutes'] ?? $grace),
+            'standard_hours' => (float) ($s['standard_day_hours'] ?: HrAttendance::STANDARD_HOURS),
+        ];
     }
 
     /* ─────────────── Listing & dashboard ─────────────── */
@@ -412,11 +439,25 @@ class AttendanceService
 
     private function applyShift(HrAttendance $record, string $shift): void
     {
-        $preset = HrAttendance::SHIFTS[$shift] ?? HrAttendance::SHIFTS['General'];
         $record->shift = $shift;
-        if ($shift !== 'Custom') {
-            [$record->shift_start, $record->shift_end, $record->grace_period] = $preset;
+
+        if ($shift === 'Custom') {
+            return;
         }
+
+        // 'General' IS the company's working day, so it comes from settings.
+        // The other presets are named shifts with their own hours and are left
+        // alone — somebody on Night shift is not working the office day.
+        if ($shift === 'General') {
+            $rules = $this->dayRules((int) $record->tenant_id);
+            $record->shift_start   = $rules['start'];
+            $record->shift_end     = $rules['end'];
+            $record->grace_period  = $rules['grace'];
+
+            return;
+        }
+
+        [$record->shift_start, $record->shift_end, $record->grace_period] = HrAttendance::SHIFTS[$shift];
     }
 
     /** Apply editable fields from a manual/correction payload. */
@@ -468,6 +509,15 @@ class AttendanceService
      */
     public function restampAndSave(HrAttendance $a): HrAttendance
     {
+        // A record created outside the normal clock-in flow — from the app, or
+        // from an approved correction — arrives with no shift at all, so the
+        // late/grace rules had nothing to work from and grace_period stayed 0.
+        // Only filled when absent, so a Custom shift or a deliberately chosen one
+        // is never overwritten.
+        if (! $a->shift_start) {
+            $this->applyShift($a, $a->shift ?: 'General');
+        }
+
         $this->applyStatusFromCheckIn($a);
         $this->recompute($a);
         $a->save();
@@ -485,7 +535,10 @@ class AttendanceService
                 ? abs($a->break_start->diffInMinutes($a->break_end)) : 0;
             $net = max(0, $gross - $break);
             $a->working_hours  = round($net / 60, 2);
-            $a->overtime_hours = round(max(0, ($net / 60) - HrAttendance::STANDARD_HOURS), 2);
+            // The workspace's full day, not a constant — otherwise overtime
+            // starts accruing at 8 hours while the settings screen says 9.
+            $standard = $this->dayRules((int) $a->tenant_id)['standard_hours'];
+            $a->overtime_hours = round(max(0, ($net / 60) - $standard), 2);
         } else {
             $a->working_hours  = $a->working_hours ?? null;
             $a->overtime_hours = $a->overtime_hours ?? null;

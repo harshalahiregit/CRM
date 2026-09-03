@@ -14,6 +14,13 @@ namespace App\Support\Hr;
  * Every entry carries a TYPE and a DEFAULT. The default is what the system does
  * today, so turning settings on changes nothing until somebody edits one — a
  * settings screen that silently alters behaviour on first save is a bad trade.
+ *
+ * The working-day defaults MUST therefore match HrAttendance::SHIFTS['General']
+ * and STANDARD_HOURS exactly. They did not — 09:30/18:30 and a 9-hour day against
+ * the constants' 09:00/18:00 and 8 — which was harmless only while nothing read
+ * them. The moment attendance began honouring these, those numbers would have
+ * moved every workspace's working day without anybody asking for it. Changing one
+ * of these means changing the constant too; there is a test pinning the pair.
  */
 class HrSetting
 {
@@ -32,11 +39,11 @@ class HrSetting
     public const DEFINITIONS = [
         /* ── the working day ─────────────────────────────────────────── */
         'company_start_time' => [
-            'Working day starts', self::TYPE_TIME, '09:30',
+            'Working day starts', self::TYPE_TIME, '09:00',
             'Used to decide whether a clock-in counts as late.', 'Working day',
         ],
         'company_end_time' => [
-            'Working day ends', self::TYPE_TIME, '18:30',
+            'Working day ends', self::TYPE_TIME, '18:00',
             'The end of a standard shift.', 'Working day',
         ],
         'late_grace_minutes' => [
@@ -48,11 +55,11 @@ class HrSetting
             'A clock-out beyond this is flagged rather than silently accepted.', 'Working day',
         ],
         'standard_day_hours' => [
-            'Full day', self::TYPE_DECIMAL, 9,
+            'Full day', self::TYPE_DECIMAL, 8,
             'Hours in a full working day. Anything beyond it counts as overtime.', 'Working day',
         ],
         'half_day_hours' => [
-            'Half day', self::TYPE_DECIMAL, 4.5,
+            'Half day', self::TYPE_DECIMAL, 4,
             'Hours that count as half a day.', 'Working day',
         ],
 

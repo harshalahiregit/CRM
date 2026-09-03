@@ -25,6 +25,21 @@ const inr = n =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 })
     .format(Number(n) || 0)
 
+
+/**
+ * A date somebody can read.
+ *
+ * These fields arrive as full ISO timestamps — "2026-09-03T00:00:00.000000Z" —
+ * and were interpolated bare, so the cards showed the timestamp while the audit
+ * lines right below them were formatted properly.
+ */
+const day = v => {
+  if (!v) return ''
+  const d = new Date(v)
+  return Number.isNaN(d.getTime())
+    ? String(v).slice(0, 10)
+    : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
 const STATUS = {
   pending:   { fg: '#fbbf24', bg: 'rgba(251,191,36,0.12)', label: 'Pending' },
   on_hold:   { fg: '#60a5fa', bg: 'rgba(96,165,250,0.12)', label: 'On hold' },
@@ -219,7 +234,7 @@ export default function Reimbursements() {
                       <Pill status={claim.status} />
                     </div>
                     <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                      {claim.employee?.name} · {claim.employee?.department || '—'} · spent {claim.expense_date}
+                      {claim.employee?.name} · {claim.employee?.department || '—'} · spent {day(claim.expense_date)}
                       {claim.category ? ` · ${claim.category}` : ''}
                       {claim.employee?.employee_code ? ` · ${claim.employee.employee_code}` : ''}
                     </p>

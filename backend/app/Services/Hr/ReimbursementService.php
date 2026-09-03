@@ -134,6 +134,7 @@ class ReimbursementService
      */
     public function approve(HrReimbursement $claim, User $actor, ?float $amount = null, ?string $reason = null): HrReimbursement
     {
+        $this->assertNotOwnClaim($claim, $actor);
         $this->assertOpen($claim);
 
         // Compared against what is currently in force, not the original claim.
@@ -188,6 +189,7 @@ class ReimbursementService
 
     public function decline(HrReimbursement $claim, User $actor, string $reason): HrReimbursement
     {
+        $this->assertNotOwnClaim($claim, $actor);
         $this->assertOpen($claim);
 
         if (trim($reason) === '') {
@@ -219,6 +221,7 @@ class ReimbursementService
      */
     public function hold(HrReimbursement $claim, User $actor, string $reason, ?float $proposedAmount = null): HrReimbursement
     {
+        $this->assertNotOwnClaim($claim, $actor);
         $this->assertOpen($claim);
 
         if (trim($reason) === '') {
@@ -258,6 +261,26 @@ class ReimbursementService
     public function note(HrReimbursement $claim, User $actor, string $body): void
     {
         $this->thread->note($claim, $actor, $body);
+    }
+
+    /**
+     * Nobody decides their own claim.
+     *
+     * Advances have refused this from the start; expense claims did not, so an
+     * admin could submit and approve their own money with no warning and the
+     * amount then flowed straight into the payroll report. The asymmetry was not
+     * a decision anybody made.
+     *
+     * Applies to everyone, however senior — the same rule the advance ladder
+     * uses, and the one with no exception there either.
+     */
+    private function assertNotOwnClaim(HrReimbursement $claim, User $actor): void
+    {
+        $employee = $claim->relationLoaded('employee') ? $claim->employee : $claim->employee()->first();
+
+        if ($employee && $employee->user_id !== null && (int) $employee->user_id === (int) $actor->id) {
+            throw new BusinessException('You cannot decide your own expense claim.', 403);
+        }
     }
 
     private function assertOpen(HrReimbursement $claim): void
