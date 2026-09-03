@@ -112,6 +112,9 @@ const HR_RECORDS_ITEMS = [
   // Expense Claims and Attendance Register.
   { label: 'Correction Requests', path: '/app/hr/corrections', icon: PenLine },
   { label: 'My Corrections', path: '/app/hr/my-corrections', icon: PenLine },
+  { label: 'Demo Requests', path: '/app/hr/demo-requests', icon: MessageSquare },
+  // 'HR Settings', not 'Settings' — SangoeTrack has its own Settings entry below.
+  { label: 'HR Settings', path: '/app/hr/settings', icon: Settings2 },
 ]
 
 // Flat list of every HR leaf — used only for the collapsed icon rail.

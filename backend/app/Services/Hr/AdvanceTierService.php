@@ -5,7 +5,9 @@ namespace App\Services\Hr;
 use App\Models\Hr\HrAdvance;
 use App\Models\Hr\HrEmployee;
 use App\Models\User;
+use App\Services\Settings\SettingsService;
 use App\Support\Hr\AdvanceStage;
+use App\Support\Hr\HrSetting;
 
 /**
  * Who may approve an advance, and at which rung.
@@ -35,11 +37,82 @@ class AdvanceTierService
     /**
      * Whether the same person is barred from approving at two rungs.
      *
-     * True is the correct default: it is the whole point of separating tiers.
-     * A small tenant with one approver will need this relaxed, and that is a
-     * decision for whoever runs the company, not for this file.
+     * The fallback when a workspace has not set it. Settings win: this is now
+     * hr.advance_require_distinct_approvers, so a company with fewer approvers
+     * than tiers can relax it without a deploy — which is the decision it always
+     * should have been.
      */
     public const REQUIRE_DISTINCT_APPROVERS = true;
+
+    public function __construct(private SettingsService $settings)
+    {
+    }
+
+    /**
+     * How high the ladder actually goes for a given amount.
+     *
+     * SangoeTrack's tiers were fixed in code, so a ₹500 advance took the same
+     * three signatures as a ₹5,00,000 one. Two thresholds change that:
+     * at or below the manager limit only the manager is needed; at or below the
+     * accounts limit a director is not. Zero — the default — means no shortcut,
+     * so behaviour is unchanged until somebody sets them.
+     */
+    public function ladderFor(HrAdvance $advance): array
+    {
+        $amount = $advance->effectiveAmount();
+        $s      = $this->settings->getGroup((int) $advance->tenant_id, HrSetting::GROUP);
+
+        $managerLimit  = (float) ($s['advance_manager_limit'] ?? 0);
+        $accountsLimit = (float) ($s['advance_accounts_limit'] ?? 0);
+
+        if ($managerLimit > 0 && $amount <= $managerLimit) {
+            return [AdvanceStage::MANAGER];
+        }
+
+        if ($accountsLimit > 0 && $amount <= $accountsLimit) {
+            return [AdvanceStage::MANAGER, AdvanceStage::ACCOUNTS];
+        }
+
+        return AdvanceStage::LADDER;
+    }
+
+    /**
+     * The tier whose turn it is, honouring the thresholds.
+     *
+     * Once the ladder for this amount is exhausted the request is finished —
+     * which is how a small advance skips straight to ready-to-disburse instead
+     * of waiting on rungs its amount does not require.
+     */
+    public function nextTierFor(HrAdvance $advance): ?string
+    {
+        $next = AdvanceStage::nextTier($advance->isOnHold() ? (string) $advance->held_from : (string) $advance->status);
+
+        if ($next === null) {
+            return null;
+        }
+
+        return in_array($next, $this->ladderFor($advance), true) ? $next : null;
+    }
+
+    /** Whether this tier is the last one this amount requires. */
+    public function isFinalTier(HrAdvance $advance, string $tier): bool
+    {
+        $ladder = $this->ladderFor($advance);
+
+        return $tier === end($ladder);
+    }
+
+    private function requiresDistinctApprovers(HrAdvance $advance): bool
+    {
+        $value = $this->settings->get(
+            (int) $advance->tenant_id,
+            HrSetting::GROUP,
+            'advance_require_distinct_approvers',
+            self::REQUIRE_DISTINCT_APPROVERS
+        );
+
+        return filter_var($value, FILTER_VALIDATE_BOOLEAN);
+    }
 
     /** internal_role values that hold each rung, beyond an admin standing in. */
     public const TIER_ROLES = [
@@ -56,7 +129,7 @@ class AdvanceTierService
      */
     public function refusalReason(HrAdvance $advance, User $actor): ?string
     {
-        $tier = AdvanceStage::nextTier((string) $advance->status);
+        $tier = $this->nextTierFor($advance);
 
         if ($tier === null) {
             return AdvanceStage::isDecided((string) $advance->status)
@@ -74,7 +147,7 @@ class AdvanceTierService
         }
 
         // Rule 3: not the same person twice on one advance.
-        if (self::REQUIRE_DISTINCT_APPROVERS && $this->alreadyApproved($advance, $actor)) {
+        if ($this->requiresDistinctApprovers($advance) && $this->alreadyApproved($advance, $actor)) {
             return 'You have already approved this advance at an earlier stage. Somebody else has to approve it here.';
         }
 

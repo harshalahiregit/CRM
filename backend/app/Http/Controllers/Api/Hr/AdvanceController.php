@@ -74,7 +74,13 @@ class AdvanceController extends Controller
 
         // Whether THIS user can act is per-request, so it is answered per row
         // rather than left for the client to guess from a role.
-        $rows->each(fn ($a) => $a->setAttribute('my_refusal', $this->tiers->refusalReason($a, $request->user())));
+        $rows->each(function ($a) use ($request) {
+            $a->setAttribute('my_refusal', $this->tiers->refusalReason($a, $request->user()));
+            // Threshold-aware: the model's own next_tier ignores the amount limits,
+            // so a small advance would otherwise be shown waiting on a rung it
+            // does not need.
+            $a->setAttribute('next_tier', $this->tiers->nextTierFor($a));
+        });
 
         return response()->json(['status' => 'success', 'data' => $rows]);
     }
@@ -268,18 +274,22 @@ class AdvanceController extends Controller
     /** The three rungs and where this request has got to, for the client. */
     private function ladder(HrAdvance $advance): array
     {
-        $next = $advance->next_tier;
+        $next = $this->tiers->nextTierFor($advance);
+        // Only the rungs this AMOUNT requires. Drawing all three for an advance
+        // that needs one would promise signatures nobody is waiting for.
+        $ladder = $this->tiers->ladderFor($advance);
+
         $done = array_flip(array_slice(
-            AdvanceStage::LADDER,
+            $ladder,
             0,
-            $next === null ? count(AdvanceStage::LADDER) : (int) array_search($next, AdvanceStage::LADDER, true)
+            $next === null ? count($ladder) : (int) array_search($next, $ladder, true)
         ));
 
         return array_map(fn ($tier) => [
             'tier'    => $tier,
             'done'    => isset($done[$tier]),
             'current' => $tier === $next,
-        ], AdvanceStage::LADDER);
+        ], $ladder);
     }
 
     private function find(Request $request, int $id): HrAdvance

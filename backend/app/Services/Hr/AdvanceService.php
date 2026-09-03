@@ -152,7 +152,7 @@ class AdvanceService
             throw new BusinessException($refusal, 403);
         }
 
-        $tier = AdvanceStage::nextTier((string) $advance->status);
+        $tier = $this->tiers->nextTierFor($advance);
 
         // Compared against what is in force now, not the original request, so
         // restoring a figure is a real change and gets written.
@@ -164,9 +164,14 @@ class AdvanceService
         }
 
         return DB::transaction(function () use ($advance, $actor, $amount, $reason, $changed, $current, $tier) {
-            $final    = $amount ?? $current;
-            $reaches  = AdvanceStage::REACHES[$tier];
-            $complete = $reaches === AdvanceStage::APPROVED;
+            $final = $amount ?? $current;
+
+            // The amount decides how high the ladder goes. When this tier is the
+            // last one the amount requires, the request is ready to disburse —
+            // otherwise a small advance would stop at 'manager approved' and wait
+            // forever on rungs its own thresholds said it did not need.
+            $complete = $this->tiers->isFinalTier($advance, $tier);
+            $reaches  = $complete ? AdvanceStage::APPROVED : AdvanceStage::REACHES[$tier];
 
             $advance->update([
                 'status'          => $reaches,

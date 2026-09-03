@@ -114,6 +114,10 @@ class HrAdvance extends Model
      */
     public function getNextTierAttribute(): ?string
     {
+        // The STRUCTURAL next tier, ignoring the amount thresholds — a model
+        // accessor cannot read settings without a query per row. Controllers
+        // overwrite this with AdvanceTierService::nextTierFor, which is the one
+        // that knows a small advance may not need the whole ladder.
         return AdvanceStage::nextTier($this->isOnHold() ? (string) $this->held_from : (string) $this->status);
     }
 

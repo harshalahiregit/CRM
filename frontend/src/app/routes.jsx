@@ -56,6 +56,8 @@ const AttendanceReports = lazy(() => import('@/modules/hr/pages/AttendanceReport
 const MyLeave = lazy(() => import('@/modules/hr/pages/MyLeave'))
 const MyCorrections = lazy(() => import('@/modules/hr/pages/MyCorrections'))
 const Corrections   = lazy(() => import('@/modules/hr/pages/Corrections'))
+const HrSettings    = lazy(() => import('@/modules/hr/pages/HrSettings'))
+const DemoRequests  = lazy(() => import('@/modules/hr/pages/DemoRequests'))
 const TrackAdvances       = lazy(() => import('@/modules/hr/pages/track/TrackAdvances'))
 const TrackStaff          = lazy(() => import('@/modules/hr/pages/track/TrackStaff'))
 const TrackPayroll        = lazy(() => import('@/modules/hr/pages/track/TrackPayroll'))
@@ -558,6 +560,8 @@ export default function AppRoutes() {
               only ever touches your own. */}
           <Route path="my-corrections" element={<S><MyCorrections /></S>} />
           <Route path="corrections" element={<S><Corrections /></S>} />
+          <Route path="settings" element={<S><HrSettings /></S>} />
+          <Route path="demo-requests" element={<S><DemoRequests /></S>} />
             {/* SangoeTrack — live from track.sangoe.in. Namespaced under track/
                 so the CRM's own attendance page above keeps its route. */}
             <Route path="track/attendance" element={<S><TrackAttendance /></S>} />

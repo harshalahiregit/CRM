@@ -1211,6 +1211,25 @@ export const hrApi = {
   },
 
   /**
+   * HR settings. The schema comes back with the values so the screen renders
+   * from what the server enforces, rather than a field list copied into React.
+   */
+  settings: {
+    get:    ()       => api.get('/hr/settings').then(r => r.data?.data),
+    save:   (values) => api.put('/hr/settings', values).then(r => r.data?.data),
+    // The short allowlist an employee's own screens may read.
+    mine:   ()       => api.get('/hr/me/settings').then(r => r.data?.data ?? {}),
+  },
+
+  /** Inbound demo enquiries. */
+  demoRequests: {
+    list:   (params = {}) => api.get('/hr/demo-requests', { params }).then(r => r.data?.data ?? []),
+    get:    (id)          => api.get(`/hr/demo-requests/${id}`).then(r => r.data?.data),
+    create: (data)        => api.post('/hr/demo-requests', data).then(r => r.data),
+    update: (id, data)    => api.put(`/hr/demo-requests/${id}`, data).then(r => r.data),
+  },
+
+  /**
    * Attendance corrections — a punch that was wrong, or never made.
    *
    * The CRM had none of this natively; the only corrections routes were a proxy

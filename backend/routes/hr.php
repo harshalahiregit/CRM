@@ -20,6 +20,8 @@ use App\Http\Controllers\Api\Hr\AttendanceReportController;
 use App\Http\Controllers\Api\Hr\MyAdvanceController;
 use App\Http\Controllers\Api\Hr\AttendanceCorrectionController;
 use App\Http\Controllers\Api\Hr\MyAttendanceCorrectionController;
+use App\Http\Controllers\Api\Hr\DemoRequestController;
+use App\Http\Controllers\Api\Hr\HrSettingsController;
 use App\Http\Controllers\Api\Hr\MyLeaveController;
 use App\Http\Controllers\Api\Hr\MyReimbursementController;
 use App\Http\Controllers\Api\Hr\ReimbursementController;
@@ -517,6 +519,10 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::post('/me/corrections/{id}/reply',  [MyAttendanceCorrectionController::class, 'reply']);
     Route::patch('/me/corrections/{id}/withdraw', [MyAttendanceCorrectionController::class, 'withdraw']);
 
+    // The few settings an employee's own screens need. A short allowlist, not
+    // the whole group — hiding fields in the client is not hiding them.
+    Route::get('/me/settings', [HrSettingsController::class, 'forEmployee']);
+
     Route::get('/me/attendance/today',       [MyAttendanceController::class, 'today']);
     Route::post('/me/attendance/check-in',   [MyAttendanceController::class, 'checkIn']);
     Route::post('/me/attendance/check-out',  [MyAttendanceController::class, 'checkOut']);
@@ -538,6 +544,19 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
 // check is how a list-everything endpoint ends up open, which is exactly what
 // happened in the first draft of ReimbursementController.
 Route::middleware(['auth:sanctum', 'hr.manage'])->prefix('hr')->group(function () {
+    // ── Demo requests ───────────────────────────────────────────────────
+    // Inbound enquiries. Unclaimed ones (tenant_id null) are visible to every
+    // workspace until somebody starts working on one.
+    Route::get('/demo-requests',        [DemoRequestController::class, 'index']);
+    Route::post('/demo-requests',       [DemoRequestController::class, 'store']);
+    Route::get('/demo-requests/{id}',   [DemoRequestController::class, 'show']);
+    Route::put('/demo-requests/{id}',   [DemoRequestController::class, 'update']);
+
+    // ── HR settings ─────────────────────────────────────────────────────
+    // The controls that used to be constants — the advance thresholds above all.
+    Route::get('/settings',  [HrSettingsController::class, 'index']);
+    Route::put('/settings',  [HrSettingsController::class, 'update']);
+
     // ── Attendance corrections ──────────────────────────────────────────
     Route::get('/corrections',                 [AttendanceCorrectionController::class, 'index']);
     Route::get('/corrections/{id}',            [AttendanceCorrectionController::class, 'show']);

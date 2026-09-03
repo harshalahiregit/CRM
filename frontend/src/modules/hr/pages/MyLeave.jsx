@@ -47,6 +47,9 @@ export default function MyLeave() {
   const [error,    setError]    = useState(null)
   const [busy,     setBusy]     = useState(false)
 
+  // Upcoming holidays, so nobody books leave over one. Read access to holidays
+  // is open to any signed-in user already — only writing them is HR's.
+  const [holidays, setHolidays] = useState([])
   const [creating, setCreating] = useState(false)
   const [form,     setForm]     = useState(EMPTY)
   const [file,     setFile]     = useState(null)
@@ -68,6 +71,18 @@ export default function MyLeave() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    let cancelled = false
+    hrApi.leave.holidays.list({ from: new Date().toISOString().slice(0, 10) })
+      .then(r => {
+        if (cancelled) return
+        const rows = Array.isArray(r) ? r : (r?.data ?? [])
+        setHolidays(rows.slice(0, 6))
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   /**
    * Ask the server what this range costs, whenever it is complete.
@@ -148,6 +163,21 @@ export default function MyLeave() {
           <Plus size={14} /> Apply for leave
         </button>
       </div>
+
+      {!!holidays.length && (
+        <div className="rounded-xl flex flex-wrap items-center gap-x-4 gap-y-1"
+          style={{ padding: '9px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+          <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+            Upcoming holidays
+          </span>
+          {holidays.map(h => (
+            <span key={h.id} className="text-[11px]" style={{ color: 'var(--text-p)' }}>
+              <b>{String(h.holiday_date || '').slice(0, 10)}</b> {h.title}
+              {h.is_optional ? <span style={{ color: 'var(--text-muted)' }}> (optional)</span> : null}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Balances first: nobody decides to take leave without knowing this. */}
       {!!balances.length && (
