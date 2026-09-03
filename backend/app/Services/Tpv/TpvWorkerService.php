@@ -43,12 +43,13 @@ class TpvWorkerService
     public function create(array $data, User $actor): TpvWorker
     {
         $tenantId = $actor->tenant_id;
+        $data     = $this->normaliseIdentity($data);
         $this->assertVendor($data['vendor_id'], $tenantId);
         $this->assertWorkPackage($data['work_package_id'] ?? null, $tenantId, $data['vendor_id'] ?? null);
         $this->assertActivity($data['activity_id'] ?? null, $tenantId, $data['work_package_id'] ?? null);
         $this->assertAadharUnique($data['aadhar_number'] ?? null, $tenantId);
 
-        $worker = TpvWorker::create([
+        $worker = $this->insertWithFreshCode([
             ...$data,
             'tenant_id'    => $tenantId,
             'created_by'   => $actor->id,
@@ -79,6 +80,7 @@ class TpvWorkerService
         if (array_key_exists('activity_id', $data)) {
             $this->assertActivity($data['activity_id'], $worker->tenant_id, $data['work_package_id'] ?? $worker->work_package_id);
         }
+        $data = $this->normaliseIdentity($data);
         $this->assertAadharUnique($data['aadhar_number'] ?? null, $worker->tenant_id, $worker->id);
 
         $worker->update($data);
@@ -1039,6 +1041,44 @@ class TpvWorkerService
         }
         if ($workPackageId && (int) $activity->work_package_id !== (int) $workPackageId) {
             throw new BusinessException('That activity belongs to a different work package.');
+        }
+    }
+
+    /**
+     * A blank Aadhar has to reach the column as NULL, never ''.
+     *
+     * The table carries unique(tenant_id, aadhar_number): NULLs never collide,
+     * but two workers both saved with an empty string do — so a form left blank
+     * on the second worker would be rejected as a duplicate of the first.
+     */
+    private function normaliseIdentity(array $data): array
+    {
+        if (array_key_exists('aadhar_number', $data)) {
+            $aadhar = trim((string) $data['aadhar_number']);
+            $data['aadhar_number'] = $aadhar === '' ? null : $aadhar;
+        }
+
+        return $data;
+    }
+
+    /**
+     * Create the worker, re-deriving worker_code if another request took the
+     * number first. The unique index is the arbiter; this just tries again with
+     * the next free code instead of surfacing a raw duplicate-key error.
+     */
+    private function insertWithFreshCode(array $attributes): TpvWorker
+    {
+        for ($attempt = 0; ; $attempt++) {
+            try {
+                return TpvWorker::create($attributes);
+            } catch (\Illuminate\Database\QueryException $e) {
+                $duplicateCode = str_contains($e->getMessage(), 'worker_code')
+                    && (str_contains($e->getMessage(), 'Duplicate entry') || str_contains($e->getMessage(), 'UNIQUE constraint failed'));
+
+                if (! $duplicateCode || $attempt >= 4 || ! empty($attributes['worker_code'])) {
+                    throw $e;
+                }
+            }
         }
     }
 

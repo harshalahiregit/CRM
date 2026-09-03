@@ -75,14 +75,33 @@ class TpvWorker extends Model
     {
         static::creating(function (TpvWorker $w) {
             if (empty($w->worker_code)) {
-                $year  = date('Y');
-                $count = static::withTrashed()
-                               ->where('tenant_id', $w->tenant_id)
-                               ->whereYear('created_at', $year)
-                               ->count() + 1;
-                $w->worker_code = 'WRK-'.$year.'-'.str_pad((string) $count, 3, '0', STR_PAD_LEFT);
+                $w->worker_code = static::nextWorkerCode((int) $w->tenant_id);
             }
         });
+    }
+
+    /**
+     * The next free WRK-<year>-<n> for this tenant.
+     *
+     * Deliberately NOT count()+1. The count only matches the highest number
+     * issued while every row ever created is still in the table — hard-delete
+     * one and the count falls behind, so the generator hands back a code that
+     * already exists and the insert dies on unique(tenant_id, worker_code).
+     * Read the highest suffix actually issued instead, and step past it.
+     */
+    public static function nextWorkerCode(int $tenantId, ?string $year = null): string
+    {
+        $year   = $year ?: date('Y');
+        $prefix = 'WRK-'.$year.'-';
+
+        $highest = static::withTrashed()
+            ->where('tenant_id', $tenantId)
+            ->where('worker_code', 'like', $prefix.'%')
+            ->pluck('worker_code')
+            ->map(fn ($code) => (int) substr((string) $code, strlen($prefix)))
+            ->max();
+
+        return $prefix.str_pad((string) (((int) $highest) + 1), 3, '0', STR_PAD_LEFT);
     }
 
     /* ── Relationships ──────────────────────────────────────────────────── */
