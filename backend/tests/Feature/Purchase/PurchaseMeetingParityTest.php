@@ -430,4 +430,37 @@ class PurchaseMeetingParityTest extends TestCase
         // Purchase's own baseline is still underneath it.
         $this->assertArrayHasKey('kickoff', $body['types']);
     }
+
+    /**
+     * Every Purchase meeting type ships an agenda, as TPV's do.
+     *
+     * All 24 types were declared but only five carried a template, so the other
+     * nineteen offered nothing to load — and now that the schedule form can pick
+     * ANY template, a type with none is a visibly empty row in the picker.
+     */
+    public function test_every_purchase_meeting_type_has_an_agenda_template(): void
+    {
+        Sanctum::actingAs($this->admin());
+
+        $body = $this->getJson('/api/purchase/meeting-types')->assertOk()->json();
+
+        $missing = array_values(array_diff(
+            array_keys($body['types']),
+            array_keys(array_filter($body['templates'], fn ($t) => is_array($t) && count($t))),
+        ));
+
+        $this->assertSame([], $missing, 'these types have no agenda template: '.implode(', ', $missing));
+    }
+
+    /** The two modules offer the same set of templated types. */
+    public function test_purchase_offers_the_same_templated_types_as_tpv(): void
+    {
+        $templated = function (string $base) {
+            return collect(config($base.'.templates', []))
+                ->filter(fn ($t) => is_array($t) && count($t))
+                ->keys()->sort()->values()->all();
+        };
+
+        $this->assertSame($templated('meetings'), $templated('purchase_meetings'));
+    }
 }

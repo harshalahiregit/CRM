@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams, useParams } from 'react-router-dom'
 import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, Plus, Trash2,
   AlertTriangle, ChevronRight, Laptop, Building2, CheckCircle2, Send, Download,
-  FileText, History, RotateCcw, Sparkles,
+  FileText, History, RotateCcw, Sparkles, Search, LayoutTemplate,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 // Resolves per call to the meeting engine of the module in the URL — the
@@ -18,7 +18,7 @@ import { meetingApi } from '@/services/meetingApi'
 import { useVendorModule } from '@/modules/tpv/useVendorModule'
 import { KO_MODES, actStatusCfg, issueStatusCfg } from '../kickoffConstants'
 import {
-  KIT3D_STYLE, labelStyle, inputStyle, Field, TextInput,
+  KIT3D_STYLE, labelStyle, inputStyle, Field, TextInput, Overlay,
 } from '@/components/ui/kit3d'
 // Kickoff dropdowns are searchable (same as Tickets) — this adapter keeps the
 // kit3d SelectInput API but renders the type-to-search popover Select.
@@ -241,6 +241,10 @@ export default function KickoffMeetingCreate() {
   const [severities,   setSeverities]   = useState(['Low', 'Medium', 'High', 'Critical'])
   const [categories,   setCategories]   = useState([])
   const [templates,    setTemplates]    = useState({})   // per-type standard agendas
+  // Any template can be loaded, not just the selected type's — the picker below
+  // lists them all with a search box over both names and agenda lines.
+  const [templatePicker, setTemplatePicker] = useState(false)
+  const [templateQuery,  setTemplateQuery]  = useState('')
   const [mtgPriorities, setMtgPriorities] = useState(['Low', 'Medium', 'High', 'Urgent'])
   const [confLevels,    setConfLevels]    = useState(['Public', 'Internal', 'Confidential', 'Restricted'])
 
@@ -559,7 +563,38 @@ export default function KickoffMeetingCreate() {
   // already present (same topic) are skipped, so loading twice is harmless and a
   // template never clobbers what the user has already typed.
   const templateForType = templates[form.meeting_type] || []
-  const loadTemplate = () => {
+
+  // Every type that actually has a standard agenda, with the numbers a person
+  // picks on — how many lines it adds and how long it runs.
+  const allTemplates = useMemo(() => (
+    Object.entries(templates || {})
+      .map(([key, items]) => ({
+        key,
+        label: meetingTypes[key] || key.replace(/_/g, ' '),
+        items: Array.isArray(items) ? items : [],
+      }))
+      .filter(t => t.items.length)
+      .map(t => ({
+        ...t,
+        minutes: t.items.reduce((sum, i) => sum + (Number(i.duration_minutes) || 0), 0),
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+  ), [templates, meetingTypes])
+
+  // Search matches the template's NAME and its agenda lines, so "audit" finds a
+  // template whose title never says audit but whose agenda does.
+  const templateMatches = useMemo(() => {
+    const q = templateQuery.trim().toLowerCase()
+    if (!q) return allTemplates
+    return allTemplates.filter(t =>
+      t.label.toLowerCase().includes(q)
+      || t.key.toLowerCase().includes(q)
+      || t.items.some(i => (i.item || '').toLowerCase().includes(q)),
+    )
+  }, [allTemplates, templateQuery])
+
+  const loadTemplate = (typeKey = form.meeting_type) => {
+    const templateForType = templates[typeKey] || []
     if (!templateForType.length) return
     setAgendaItems(prev => {
       const seen = new Set(prev.map(a => (a.item || '').trim().toLowerCase()))
@@ -580,6 +615,7 @@ export default function KickoffMeetingCreate() {
         .filter(Boolean)
       return [...prev, ...fromTemplate, ...fromStatus]
     })
+    setTemplatePicker(false)
   }
 
   // ── carry-forward from previous meetings ──────────────────────────────────
@@ -1342,6 +1378,76 @@ export default function KickoffMeetingCreate() {
               </div>
             )}
 
+            {/* Template picker — search over every standard agenda. Closes on the
+                X or Cancel only, never on a backdrop click. */}
+            {templatePicker && (
+              <Overlay onClose={() => setTemplatePicker(false)} width={620}>
+                <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 800, color: 'var(--text-h)' }}>Load an agenda template</h3>
+                <p style={{ margin: '0 0 16px', fontSize: 12.5, color: 'var(--text-muted)' }}>
+                  Lines are appended to the agenda you already have — nothing is overwritten, and a
+                  topic already on the list is skipped. This does not change the meeting type.
+                </p>
+
+                <div style={{ position: 'relative', marginBottom: 14 }}>
+                  <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                  <input
+                    autoFocus
+                    value={templateQuery}
+                    onChange={e => setTemplateQuery(e.target.value)}
+                    placeholder="Search templates by name or agenda line…"
+                    style={{ ...inputStyle, paddingLeft: 34 }}
+                  />
+                </div>
+
+                {templateMatches.length === 0 ? (
+                  <div style={{ padding: '24px 16px', borderRadius: 12, background: 'var(--bg-input)', border: '1px dashed var(--border)', textAlign: 'center' }}>
+                    <p style={{ margin: 0, fontSize: 12.5, color: 'var(--text-muted)' }}>
+                      No template matches “{templateQuery}”. Templates are created under
+                      Settings → Meeting Types.
+                    </p>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '46vh', overflowY: 'auto' }}>
+                    {templateMatches.map(t => (
+                      <button
+                        key={t.key}
+                        type="button"
+                        onClick={() => loadTemplate(t.key)}
+                        style={{
+                          textAlign: 'left', padding: '12px 14px', borderRadius: 10, cursor: 'pointer',
+                          border: `1px solid ${t.key === form.meeting_type ? 'rgba(124,58,237,0.45)' : 'var(--border)'}`,
+                          background: t.key === form.meeting_type ? 'rgba(124,58,237,0.08)' : 'var(--bg-input)',
+                        }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                          <strong style={{ fontSize: 13, color: 'var(--text-h)' }}>
+                            {t.label}
+                            {t.key === form.meeting_type && (
+                              <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 800, color: '#7C3AED' }}>SELECTED TYPE</span>
+                            )}
+                          </strong>
+                          <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                            {t.items.length} item{t.items.length === 1 ? '' : 's'}
+                            {t.minutes > 0 && ` · ${t.minutes} min`}
+                          </span>
+                        </div>
+                        <div style={{ marginTop: 6, fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                          {t.items.slice(0, 4).map(i => i.item).filter(Boolean).join(' · ')}
+                          {t.items.length > 4 && ` … +${t.items.length - 4} more`}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
+                  <button type="button" onClick={() => setTemplatePicker(false)}
+                    style={{ padding: '9px 20px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}>
+                    Cancel
+                  </button>
+                </div>
+              </Overlay>
+            )}
+
             {/* Agenda builder — structured items (topic · owner · duration · priority) */}
             <div style={{ marginTop: 18 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8, flexWrap: 'wrap' }}>
@@ -1349,9 +1455,17 @@ export default function KickoffMeetingCreate() {
                 <div style={{ display: 'flex', gap: 8 }}>
                   {/* Standard agenda for the selected type — appended, never destructive. */}
                   {templateForType.length > 0 && (
-                    <button type="button" onClick={loadTemplate} style={addBtn}
+                    <button type="button" onClick={() => loadTemplate()} style={addBtn}
                       title={`Load the standard ${meetingTypes[form.meeting_type] || ''} agenda`}>
                       <FileText size={13} /> Load {meetingTypes[form.meeting_type] || 'standard'} template
+                    </button>
+                  )}
+                  {/* Any OTHER template. The one-click above only ever offered the
+                      selected type's agenda, so the rest were unreachable here. */}
+                  {allTemplates.length > 0 && (
+                    <button type="button" onClick={() => { setTemplateQuery(''); setTemplatePicker(true) }} style={addBtn}
+                      title="Search and load any agenda template">
+                      <LayoutTemplate size={13} /> Browse templates ({allTemplates.length})
                     </button>
                   )}
                   {/* §18 — AI drafts an agenda from the type, vendor status and open items. */}
