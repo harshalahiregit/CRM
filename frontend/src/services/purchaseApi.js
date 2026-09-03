@@ -56,7 +56,10 @@ export const purchaseApi = {
     list:    (params = {}) => api.get('/purchase/contracts', { params }).then(r => r.data),
     stats:   ()            => api.get('/purchase/contracts/stats').then(r => r.data),
     get:     (id)          => api.get(`/purchase/contracts/${id}`).then(r => r.data),
-    referenceable: (vendorId) => api.get('/purchase/contracts/referenceable', { params: { vendor_id: vendorId } }).then(r => r.data),
+    // purchase_vendor_id, not vendor_id: the controller validates that name and
+    // answered 422 on every vendor selection, so contract referencing on a
+    // purchase order was silently dead.
+    referenceable: (vendorId) => api.get('/purchase/contracts/referenceable', { params: { purchase_vendor_id: vendorId } }).then(r => r.data),
     create:  (data)        => api.post('/purchase/contracts', data).then(r => r.data),
     update:  (id, data)    => api.put(`/purchase/contracts/${id}`, data).then(r => r.data),
     delete:  (id)          => api.delete(`/purchase/contracts/${id}`).then(r => r.data),

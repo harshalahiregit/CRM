@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, Check, FileText, LayoutTemplate, Printer, Download, Send, UserPlus } from 'lucide-react'
+import api from '@/lib/api'
 import { proposalApi } from '@/services/proposalApi'
 import { proposalTemplateApi } from '@/services/proposalTemplateApi'
 import { customerApi } from '@/services/customerApi'
@@ -44,6 +45,7 @@ export default function ProposalWizard() {
   const [contacts, setContacts] = useState([])
   const [addingContact, setAddingContact] = useState(false)
   const [step, setStep] = useState(editing ? 1 : 0)
+  const [assignees, setAssignees] = useState([])
   // Launched from a customer profile? Lock that customer (Phase 1).
   const lockedClientId = params.get('client_id') || ''
   const [form, setForm] = useState(() => ({ ...EMPTY, rel_id: lockedClientId }))
@@ -54,6 +56,15 @@ export default function ProposalWizard() {
   const [savedProposal, setSavedProposal] = useState(null)
 
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
+
+  // Real users, so assigned_to is an id the backend accepts.
+  useEffect(() => {
+    let cancelled = false
+    api.get('/assignees')
+      .then(r => { if (!cancelled) setAssignees(r?.data?.data || []) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => { proposalTemplateApi.list().then(setTemplates).catch(() => {}) }, [])
   useEffect(() => {
@@ -306,6 +317,19 @@ export default function ProposalWizard() {
       {step === 1 && (
         <div className="card-3d max-w-3xl space-y-4" style={{ padding: '24px' }}>
           <div><label className="label">Subject *</label><input className="input-3d text-sm" value={form.subject} onChange={e => sf('subject', e.target.value)} placeholder="Website redesign proposal" /></div>
+
+          {/* The step is called Assignment and had no way to assign anybody.
+              The control existed only in a drawer in Proposals.jsx whose
+              setShowDrawer(true) is never called — dead code — so every proposal
+              was created unowned and the Assigned column always read "—". */}
+          <div>
+            <label className="label">Assigned Staff</label>
+            <select className="input-3d text-sm" value={form.assigned_to}
+              onChange={e => sf('assigned_to', e.target.value ? Number(e.target.value) : '')}>
+              <option value="">Unassigned</option>
+              {assignees.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          </div>
           
           <div className="grid md:grid-cols-3 gap-4">
             <div>

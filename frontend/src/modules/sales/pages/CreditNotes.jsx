@@ -15,7 +15,9 @@ import { exportSalesList } from '@/services/salesApi'
 
 const fmt = v => '₹' + Number(v||0).toLocaleString('en-IN')
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'
-const STATUSES = ['Open','Closed','Void']
+// 'Partially Applied' is a status the server sets after a refund or a partial
+// application. Leaving it out hid those notes from every tab except All.
+const STATUSES = ['Open','Partially Applied','Closed','Void']
 const EMPTY = { client_id:'', invoice_id:'', amount:'', discount_type:'none', adminnote:'', clientnote:'', terms:'', reason:'', tags:'' }
 const EMPTY_REFUND = { amount:'', mode:'Bank Transfer', reference:'', note:'' }
 const PAY_MODES = ['Bank Transfer','Cash','Cheque','Stripe','Razorpay','PayPal','UPI']
@@ -43,15 +45,53 @@ export default function CreditNotes() {
   const sf = (k,v) => setForm(p=>({...p,[k]:v}))
 
   const [confirmDel, setConfirmDel] = useState(null)
+  const [showApply, setShowApply] = useState(false)
+  const [applyInvoices, setApplyInvoices] = useState([])
+  const [applyInvoiceId, setApplyInvoiceId] = useState('')
 
-  // Delete reported success and called nothing; DELETE /sales/credit-notes/{id}
-  // has existed all along.
-  const doDelete = async () => {
+  /**
+   * Voiding a credit note.
+   *
+   * DELETE /sales/credit-notes/{id} calls CreditNoteService::void — it does not
+   * remove the note, so calling this "delete" told people something untrue about
+   * their own accounting records. It also called salesApi.creditNotes.delete,
+   * which does not exist on the service: the only method is void(), so every
+   * click threw a TypeError straight into an error toast.
+   */
+  const doVoid = async () => {
     try {
-      await salesApi.creditNotes.delete(confirmDel.id)
-      showToast('Credit note deleted')
+      await salesApi.creditNotes.void(confirmDel.id)
+      showToast('Credit note voided')
       setConfirmDel(null); load()
-    } catch (e) { showToast(e.message || 'Could not delete the credit note', 'error'); setConfirmDel(null) }
+    } catch (e) { showToast(e?.response?.data?.message || e.message || 'Could not void the credit note', 'error'); setConfirmDel(null) }
+  }
+
+  /**
+   * Applying a note's balance against one of that customer's invoices.
+   *
+   * The menu item used to show "Applied to invoice!" and call nothing — the same
+   * lie the refund told, two lines away from it. POST /credit-notes/{id}/apply
+   * has been there all along.
+   */
+  const openApply = async (cn) => {
+    setSelectedCN(cn); setApplyInvoiceId(''); setShowApply(true)
+    try {
+      const d = await salesApi.invoices.list({ client_id: cn.client_id })
+      setApplyInvoices(Array.isArray(d) ? d : (d?.data ?? []))
+    } catch { setApplyInvoices([]) }
+  }
+
+  const doApply = async () => {
+    if (!applyInvoiceId) return showToast('Pick an invoice', 'error')
+    try {
+      await salesApi.creditNotes.applyToInvoice(selectedCN.id, Number(applyInvoiceId))
+      showToast('Applied to invoice')
+      setShowApply(false); setSelectedCN(null); load()
+    } catch (e) {
+      // The server refuses a fully-paid invoice and caps the amount; both are
+      // reasons worth reading.
+      showToast(e?.response?.data?.message || e.message || 'Could not apply the credit note', 'error')
+    }
   }
 
   const load = () => {
@@ -125,7 +165,7 @@ export default function CreditNotes() {
     open: data.filter(c=>c.status==='Open').length,
     closed: data.filter(c=>c.status==='Closed').length,
     void: data.filter(c=>c.status==='Void').length,
-    available: data.filter(c=>c.status==='Open').reduce((s,c)=>s+c.amount,0),
+    available: data.filter(c=>c.status==='Open').reduce((s,c)=>s+c.remaining,0),
   }
 
   // Search + rows-per-page over the (server status-filtered) list. Client-side
@@ -206,17 +246,17 @@ export default function CreditNotes() {
                     onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                     <td className="py-3.5 px-4 font-bold" style={{color:'#a78bfa'}}>{cn.number}</td>
                     <td className="py-3.5 px-4 font-semibold" style={{color:'var(--text-h)'}}>{cn.client}</td>
-                    <td className="py-3.5 px-4" style={{color:'var(--text-muted)'}}>{cn.invoice?.invoice_number || cn.invoice_number || '—'}</td>
-                    <td className="py-3.5 px-4 font-bold" style={{color:'#10b981'}}>{fmt(cn.amount)}</td>
+                    <td className="py-3.5 px-4" style={{color:'var(--text-muted)'}}>{cn.invoice?.number || '—'}</td>
+                    <td className="py-3.5 px-4 font-bold" style={{color:'#10b981'}}>{fmt(cn.total)}</td>
                     <td className="py-3.5 px-4 whitespace-nowrap" style={{color:'var(--text-muted)'}}>{fmtDate(cn.date)}</td>
                     <td className="py-3.5 px-4 max-w-[180px]" style={{color:'var(--text-muted)'}}><span className="truncate block">{cn.reason||'—'}</span></td>
                     <td className="py-3.5 px-4"><StatusBadge status={cn.status}/></td>
                     <td className="py-3.5 px-4" onClick={e=>e.stopPropagation()}>
                       <RowMenu width={188}>
                         {[
-                          {icon:ArrowRightLeft, label:'Apply to Invoice', action:()=>showToast('Applied to invoice!')},
+                          {icon:ArrowRightLeft, label:'Apply to Invoice', action:()=>openApply(cn)},
                           {icon:Receipt, label:'Create Refund', action:()=>{setSelectedCN(cn);setShowRefund(true)}},
-                          {icon:Ban, label:'Mark Void', action:()=>showToast('Marked void!')},
+                          {icon:Ban, label:'Mark Void', action:()=>setConfirmDel(cn), danger:true},
                           {icon:Trash2, label:'Delete', action:()=>setConfirmDel(cn), danger:true},
                         ].map(a=>(
                           <button key={a.label} onClick={()=>a.action()}
@@ -272,7 +312,7 @@ export default function CreditNotes() {
                           A picker of that client's own invoices sends a real id. */}
                       <select className="input-3d text-sm" value={form.invoice_id} onChange={e => sf('invoice_id', e.target.value ? Number(e.target.value) : '')} disabled={!form.client_id}>
                         <option value="">{form.client_id ? 'Not against an invoice' : 'Pick a customer first'}</option>
-                        {clientInvoices.map(i => <option key={i.id} value={i.id}>{i.invoice_number || `#${i.id}`} · {i.total}</option>)}
+                        {clientInvoices.map(i => <option key={i.id} value={i.id}>{i.number || `#${i.id}`} · {i.total}</option>)}
                       </select>
                     </div>
                   </div>
@@ -411,12 +451,46 @@ export default function CreditNotes() {
           </div>
         </>
       )}
+      {/* Applying a note against one of that customer's invoices. The menu
+          item used to be a toast and nothing else. */}
+      {showApply && selectedCN && (
+        <>
+          <div className="drawer-backdrop" onClick={() => setShowApply(false)} />
+          <div className="drawer-panel" style={{ width: 'min(460px, 95vw)' }}>
+            <div className="drawer-header">
+              <div>
+                <h3 className="text-base font-bold" style={{ color: 'var(--text-h)' }}>Apply to invoice</h3>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  {selectedCN.credit_note_number || selectedCN.number || `#${selectedCN.id}`} · {fmt(selectedCN.remaining ?? selectedCN.total)} available
+                </p>
+              </div>
+            </div>
+            <div className="drawer-body space-y-3">
+              <div>
+                <label className="label">Invoice</label>
+                <select className="input-3d text-sm" value={applyInvoiceId} onChange={e => setApplyInvoiceId(e.target.value)}>
+                  <option value="">Select an invoice…</option>
+                  {applyInvoices.map(i => <option key={i.id} value={i.id}>{i.number || `#${i.id}`} · balance {i.balance}</option>)}
+                </select>
+                {!applyInvoices.length && (
+                  <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>This customer has no invoices to apply against.</p>
+                )}
+              </div>
+            </div>
+            <div className="drawer-footer flex gap-2">
+              <button className="btn-3d flex-1" onClick={() => setShowApply(false)}>Cancel</button>
+              <button className="btn-primary-3d flex-1" onClick={doApply} disabled={!applyInvoiceId}>Apply</button>
+            </div>
+          </div>
+        </>
+      )}
+
       {confirmDel && (
         <ConfirmDialog
           title="Delete this credit note?"
           message={`${confirmDel.number} will be permanently removed.`}
           confirmLabel="Delete" tone="danger"
-          onCancel={() => setConfirmDel(null)} onConfirm={doDelete}
+          onCancel={() => setConfirmDel(null)} onConfirm={doVoid}
         />
       )}
 
