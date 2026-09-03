@@ -368,9 +368,8 @@ class KickoffMeetingService
         // Keep the outside world in sync. When a PUBLISHED meeting has its
         // time/place changed or its roster edited, the people already invited
         // must get the corrected details — re-send the invitation (the invite
-        // service rebuilds the ledger and re-attaches a fresh .ics), and the
-        // reminder scheduler always reads the current scheduled_at so reminders
-        // move with the meeting automatically. A draft still tells nobody.
+        // service rebuilds the ledger and re-attaches a fresh .ics). A draft
+        // still tells nobody.
         $meeting->refresh();
         $scheduleChanged = $before !== [
             'scheduled_at' => optional($meeting->scheduled_at)->toDateTimeString(),
@@ -379,6 +378,17 @@ class KickoffMeetingService
             'location' => $meeting->location,
         ];
         $rosterChanged = array_key_exists('attendees', $data);
+
+        // Re-arm the reminders when the meeting MOVES. The runner does read the
+        // live scheduled_at, but it also skips any window already listed in
+        // reminders_sent — so a meeting whose 24h reminder had gone out could be
+        // pushed a week later and never remind anyone again. Clearing the
+        // ledger lets every window fire afresh against the new time.
+        if ($before['scheduled_at'] !== optional($meeting->scheduled_at)->toDateTimeString()) {
+            $meeting->reminders_sent = [];
+            $meeting->saveQuietly();
+        }
+
         if ($wasPublished && $meeting->scheduled_at && ($scheduleChanged || $rosterChanged)) {
             try {
                 $this->invites->sendInvitations($meeting->fresh(['attendees', 'agendaItems']), $actor);
@@ -1418,6 +1428,81 @@ class KickoffMeetingService
         }
 
         return $sent;
+    }
+
+    /**
+     * Follow-ups AFTER a meeting has happened.
+     *
+     * runDueReminders only ever looks forward (`scheduled_at > now`), so once a
+     * meeting started nothing further was sent and the minutes could sit
+     * unwritten with no nudge to anyone.
+     *
+     * Recorded in the same reminders_sent list under an `after:` key, so a
+     * 60-minute BEFORE reminder and a 60-minute AFTER follow-up cannot be
+     * mistaken for one another and suppress each other.
+     */
+    public function runDueFollowUps(): int
+    {
+        $offsets = collect(config('meetings.followup_offsets_minutes', []))
+            ->map(fn ($m) => (int) $m)->filter(fn ($m) => $m > 0)->unique()->sort()->values();
+        if ($offsets->isEmpty()) {
+            return 0;
+        }
+
+        $now = now();
+        $meetings = KickoffMeeting::whereIn('status', [Status::SCHEDULED, Status::DELAYED, Status::COMPLETED])
+            ->whereNotNull('scheduled_at')
+            ->where('scheduled_at', '<=', $now)
+            ->where('scheduled_at', '>=', (clone $now)->subMinutes($offsets->max() + 1440))
+            ->with('attendees', 'kickoffable')
+            ->get();
+
+        $sent = 0;
+        foreach ($meetings as $meeting) {
+            // Once the minutes are out, a follow-up has nothing left to chase.
+            if (MomApprovalStatus::isDistributable($meeting->mom_status)) {
+                continue;
+            }
+            $already = collect($meeting->reminders_sent ?? [])->map(fn ($k) => (string) $k);
+            $minutesSince = (int) round($meeting->scheduled_at->diffInMinutes($now, false));
+            $due = $offsets->filter(fn ($o) => ! $already->contains("after:{$o}") && $minutesSince >= $o)->values();
+            if ($due->isEmpty()) {
+                continue;
+            }
+            $this->dispatchFollowUp($meeting, (int) $due->max());
+            $meeting->reminders_sent = $already->merge($due->map(fn ($o) => "after:{$o}"))->unique()->values()->all();
+            $meeting->saveQuietly();
+            $sent++;
+        }
+
+        return $sent;
+    }
+
+    /** One post-meeting follow-up e-mail to every attendee with an address. */
+    private function dispatchFollowUp(KickoffMeeting $meeting, int $offsetMinutes): void
+    {
+        $subjectName = KickoffSubject::nameOf($meeting->kickoffable);
+        $when = $meeting->scheduled_at ? $meeting->scheduled_at->format('d M Y, g:i A') : 'recently';
+        $subject = "Follow-up: {$meeting->title}";
+        $body = "The meeting \"{$meeting->title}\""
+            .($subjectName ? " with {$subjectName}" : '')
+            ." was held on {$when}. The minutes have not been published yet —"
+            .' they will be shared here as soon as they are approved.';
+
+        foreach ($meeting->attendees as $attendee) {
+            if (! $attendee->email) {
+                continue;
+            }
+            $this->notifications->email(
+                $attendee->email, $subject, $body,
+                ['category' => 'System', 'kickoff_meeting_id' => $meeting->id],
+                $meeting->tenant_id,
+            );
+        }
+
+        Log::channel('tpv')->info('Kickoff follow-up sent', [
+            'meeting_id' => $meeting->id, 'offset_minutes' => $offsetMinutes,
+        ]);
     }
 
     /** Send one automatic reminder e-mail to every attendee with an address. */

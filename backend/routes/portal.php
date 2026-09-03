@@ -3,8 +3,10 @@
 use App\Http\Controllers\Api\Portal\PurchasePortalCommerceController;
 use App\Http\Controllers\Api\Portal\PurchasePortalContactController;
 use App\Http\Controllers\Api\Portal\PurchasePortalController;
+use App\Http\Controllers\Api\Portal\PurchasePortalMedicalController;
 use App\Http\Controllers\Api\Portal\PurchasePortalWorkforceController;
 use App\Http\Controllers\Api\Portal\VendorPortalController;
+use App\Http\Controllers\Api\Portal\VendorPortalMedicalController;
 use App\Http\Controllers\Api\Portal\VendorWorkController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorAuthController;
 use Illuminate\Support\Facades\Route;
@@ -139,7 +141,22 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     Route::get('/workers/{worker}/badge',                 [VendorPortalController::class, 'workerBadge']);
     Route::get('/workers/{worker}/progress',              [VendorPortalController::class, 'workerProgress']);
     Route::put('/workers/{worker}',                       [VendorPortalController::class, 'updateWorker']);
+    // Bulk roster import — portal-owned, vendor taken from the token. Was
+    // hitting the admin /tpv/workers/upload route and 403ing every vendor.
+    Route::post('/workers/upload',                        [VendorPortalController::class, 'uploadWorkers']);
     Route::post('/workers/{worker}/medical',              [VendorPortalController::class, 'saveMedical']);
+    // Medical module (External Medical Flow) — the vendor uploads third-party
+    // certificates, sees the quality team's verdict and answers it.
+    Route::get('/medical',                                [VendorPortalMedicalController::class, 'index']);
+    Route::get('/medical/template',                       [VendorPortalMedicalController::class, 'template']);
+    Route::get('/medical/batches',                        [VendorPortalMedicalController::class, 'batches']);
+    Route::post('/medical/bulk',                          [VendorPortalMedicalController::class, 'bulkUpload']);
+    Route::get('/medical/{medical}',                      [VendorPortalMedicalController::class, 'show'])->whereNumber('medical');
+    Route::post('/medical/{medical}/resubmit',            [VendorPortalMedicalController::class, 'resubmit'])->whereNumber('medical');
+    Route::post('/medical/{medical}/comment',             [VendorPortalMedicalController::class, 'comment'])->whereNumber('medical');
+    Route::get('/medical/{medical}/certificate',          [VendorPortalMedicalController::class, 'certificate'])->whereNumber('medical');
+    Route::get('/medical/{medical}/document',             [VendorPortalMedicalController::class, 'document'])->whereNumber('medical');
+    Route::post('/workers/{worker}/medical/external',     [VendorPortalMedicalController::class, 'store'])->whereNumber('worker');
     Route::post('/workers/{worker}/induction',            [VendorPortalController::class, 'saveInduction']);
     // Punch + entry card. These were the portal's last two calls into the ADMIN
     // /tpv/* group, which is why third_party_vendor had been added to that
@@ -250,6 +267,17 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::get('/workers/{worker}/readiness',         [PurchasePortalWorkforceController::class, 'readiness']);
     Route::post('/workers/{worker}/documents',        [PurchasePortalWorkforceController::class, 'uploadDocument']);
     Route::post('/workers/{worker}/medical',          [PurchasePortalWorkforceController::class, 'saveMedical']);
+    // Medical module (External Medical Flow) — Purchase mirror.
+    Route::get('/medical',                            [PurchasePortalMedicalController::class, 'index']);
+    Route::get('/medical/template',                   [PurchasePortalMedicalController::class, 'template']);
+    Route::get('/medical/batches',                    [PurchasePortalMedicalController::class, 'batches']);
+    Route::post('/medical/bulk',                      [PurchasePortalMedicalController::class, 'bulkUpload']);
+    Route::get('/medical/{medical}',                  [PurchasePortalMedicalController::class, 'show'])->whereNumber('medical');
+    Route::post('/medical/{medical}/resubmit',        [PurchasePortalMedicalController::class, 'resubmit'])->whereNumber('medical');
+    Route::post('/medical/{medical}/comment',         [PurchasePortalMedicalController::class, 'comment'])->whereNumber('medical');
+    Route::get('/medical/{medical}/certificate',      [PurchasePortalMedicalController::class, 'certificate'])->whereNumber('medical');
+    Route::get('/medical/{medical}/document',         [PurchasePortalMedicalController::class, 'document'])->whereNumber('medical');
+    Route::post('/workers/{worker}/medical/external', [PurchasePortalMedicalController::class, 'store'])->whereNumber('worker');
     Route::post('/workers/{worker}/training',         [PurchasePortalWorkforceController::class, 'saveTraining']);
     Route::post('/workers/{worker}/induction',        [PurchasePortalWorkforceController::class, 'saveInduction']);
 

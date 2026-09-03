@@ -3,6 +3,7 @@
 namespace App\Support\Tpv;
 
 use App\Models\Tpv\TpvSetting;
+use App\Support\Medical\MedicalQcStatus;
 
 /**
  * The per-tenant TPV settings catalog (Sangoe TPV §34).
@@ -108,6 +109,12 @@ class TpvSettings
     public function catalog(string $name, ?int $tenantId = null): array
     {
         return $this->catalogs($tenantId)[$name] ?? [];
+    }
+
+    /** Medical module — certificate currency, quality check, prerequisite. */
+    public function medical(?int $tenantId = null): array
+    {
+        return $this->effective('medical', $tenantId);
     }
 
     /**
@@ -234,6 +241,21 @@ class TpvSettings
                 'permit_types'            => \App\Models\Tpv\WorkPermit::TYPES,
                 'violation_types'         => ViolationType::TYPES,
                 'compliance_categories'   => ComplianceCatalog::CATEGORIES,
+            ],
+            // The Medical module's knobs. The reason catalogue is here rather
+            // than hard-coded because a site's grounds for refusing a worker are
+            // a policy decision, not ours.
+            'medical' => [
+                'validity_months'        => (int) config('medical.certificate.validity_months', 12),
+                'auto_approve_internal'  => (bool) config('medical.qc.auto_approve_internal', false),
+                'max_iterations'         => (int) config('medical.qc.max_iterations', 10),
+                'block_induction'        => (bool) config('medical.prerequisite.block_induction', true),
+                'pending_message'        => (string) config('medical.prerequisite.pending_message', 'Medical Report is Pending'),
+                'not_applicable_default' => (bool) config('medical.prerequisite.not_applicable_default', false),
+                // Empty means "every admin reviews"; naming users narrows it to
+                // the people actually assigned to the quality check.
+                'qc_approver_ids'        => [],
+                'reasons'                => MedicalQcStatus::defaultReasons(),
             ],
             default => [],
         };

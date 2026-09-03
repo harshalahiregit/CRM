@@ -30,6 +30,7 @@ class TpvSetting extends Model
         'onboarding_checklists',
         'approval_routing',
         'catalogs',
+        'medical',
     ];
 
     protected $fillable = ['tenant_id', 'group', 'payload', 'updated_by'];

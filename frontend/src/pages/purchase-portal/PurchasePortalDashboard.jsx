@@ -3,12 +3,13 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Building2, ClipboardList, FileText, ShieldCheck, CalendarDays, ChevronRight,
-  Hash, Tag, Activity, FileWarning, CalendarClock, Clock,
+  Hash, Tag, Activity, FileWarning, CalendarClock, Clock, Video, X,
 } from 'lucide-react'
 import { purchasePortalApi } from '@/services/purchasePortalApi'
 import { KIT3D_STYLE, StatusBadge as StatusPill } from '@/components/ui/kit3d'
 import PurchaseRegistrationBadge from '@/modules/purchase/components/PurchaseRegistrationBadge'
 import TemporaryVendorValidityBadge from '@/modules/purchase/components/TemporaryVendorValidityBadge'
+import MedicalPendingBanner from '@/components/medical/MedicalPendingBanner'
 
 const onbCfg = (s) => ({
   In_Progress:  { label: 'In Progress',  color: '#0ea5e9', bg: 'rgba(14,165,233,0.15)' },
@@ -29,6 +30,9 @@ export default function PurchasePortalDashboard() {
   const [checklist, setChecklist] = useState(null)
   const [kickoff, setKickoff] = useState(null)
   const [showWelcome, setShowWelcome] = useState(false)
+  // The join-link popup. Dismissal is remembered PER MEETING id, so a new
+  // meeting pops again but the same one does not nag on every page load.
+  const [linkDismissed, setLinkDismissed] = useState(false)
   const [dismissing, setDismissing] = useState(false)
 
   // Hide immediately, then persist. If the call fails the banner returns on the
@@ -93,9 +97,61 @@ export default function PurchasePortalDashboard() {
     ]
   }, [onb, vendor])
 
+  // Only for a meeting that is still ahead and actually has a link to join.
+  // A past meeting's link is noise, and an on-site meeting has none.
+  const joinKey = kickoff?.id ? `pv-join-dismissed-${kickoff.id}` : null
+  const meetingAhead = kickoff?.scheduled_at && new Date(kickoff.scheduled_at).getTime() > Date.now()
+  const showJoin = Boolean(kickoff?.meeting_link) && meetingAhead && !linkDismissed
+  useEffect(() => {
+    if (!joinKey) return
+    // localStorage can throw in a private window; a popup is not worth an error.
+    try { if (localStorage.getItem(joinKey)) setLinkDismissed(true) } catch { /* show it */ }
+  }, [joinKey])
+  const dismissJoin = () => {
+    setLinkDismissed(true)
+    try { if (joinKey) localStorage.setItem(joinKey, '1') } catch { /* fine */ }
+  }
+
   return (
     <div style={{ padding: 24 }}>
       <style>{KIT3D_STYLE}</style>
+
+      {/* The medical prerequisite, said before a trainer has to say it. */}
+      <MedicalPendingBanner base="/portal/purchase" to="/purchase-portal/medical" />
+
+      {/* Join-the-meeting popup — the link also goes out by e-mail, but a vendor
+          who is already logged in should not have to go and find that mail. */}
+      {showJoin && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 80, padding: 16 }}>
+          <div className="pr-glass" style={{ padding: 22, width: 420, maxWidth: '95vw', position: 'relative' }}>
+            {/* Closes on the X only — never on a backdrop click. */}
+            <button onClick={dismissJoin} aria-label="Close"
+              style={{ position: 'absolute', top: 10, right: 10, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}>
+              <X size={16} />
+            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(145deg,#7C3AED,#5b21b6)' }}>
+                <Video size={17} color="#fff" />
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-h)' }}>Your meeting is online</div>
+            </div>
+            <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '0 0 4px', lineHeight: 1.5 }}>
+              {kickoff.title || 'Kickoff meeting'}
+            </p>
+            <p style={{ fontSize: 12.5, color: 'var(--text-h)', fontWeight: 700, margin: '0 0 16px' }}>
+              {fmtDateTime(kickoff.scheduled_at)}
+            </p>
+            <a href={kickoff.meeting_link} target="_blank" rel="noopener noreferrer" onClick={dismissJoin}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px 18px', borderRadius: 10, background: 'linear-gradient(135deg,#7C3AED,#6d28d9)', color: '#fff', fontWeight: 800, fontSize: 13.5, textDecoration: 'none' }}>
+              <Video size={15} /> Join the meeting
+            </a>
+            <button onClick={dismissJoin}
+              style={{ width: '100%', marginTop: 8, padding: '9px 14px', borderRadius: 10, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700 }}>
+              Not now
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Vendor header */}
       <div className="pr-glass" style={{ padding: '20px 22px', borderRadius: 16, marginBottom: 18, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>

@@ -11,6 +11,7 @@ use App\Models\Purchase\PurchaseWorkerMedical;
 use App\Models\Purchase\PurchaseWorkerTraining;
 use App\Models\User;
 use App\Repositories\Purchase\PurchaseWorkerRepository;
+use App\Support\Medical\MedicalWorkflow;
 use App\Support\Purchase\PurchaseMedicalFitness;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
@@ -91,48 +92,27 @@ class PurchaseWorkforceService
         ]);
     }
 
-    public function saveMedical(PurchaseWorker $worker, array $data): PurchaseWorkerMedical
+    /**
+     * Step 2 — medical.
+     *
+     * Delegated to the Medical module so a certificate keyed in here is the same
+     * kind of thing as one a doctor filed: it gets a certificate number, a
+     * health score, a place in the quality-check queue and a timeline. Having a
+     * second, quieter way to create a medical would mean a worker could be
+     * cleared without anyone reviewing the certificate.
+     */
+    public function saveMedical(PurchaseWorker $worker, array $data, User|PurchaseVendor|null $actor = null): PurchaseWorkerMedical
     {
-        $medical = PurchaseWorkerMedical::create(array_merge($this->tenantKeys($worker), [
-            'exam_date'        => $data['exam_date'] ?? null,
-            'expiry_date'      => $data['expiry_date'] ?? null,
-            'fitness_status'   => $data['fitness_status'] ?? 'Pending',
-            'blood_group'      => $data['blood_group'] ?? null,
-            'remarks'          => $data['remarks'] ?? null,
-            // Depth (TPV §16 parity).
-            'restrictions'     => $data['restrictions'] ?? null,
-            'examiner_name'    => $data['examiner_name'] ?? null,
-            'approved_by'      => $data['approved_by'] ?? null,
-            'approved_at'      => ! empty($data['approved_by']) ? now() : null,
-            'certificate_path' => $data['certificate_path'] ?? null,
-            'document_path'    => $data['document_path'] ?? null,
-            // Examination depth (TPV parity). valid_until mirrors expiry_date —
-            // expiry_date stays the column the fitness gate reads, so the two can
-            // never disagree about when a medical lapses.
-            'recorded_by'         => $data['recorded_by'] ?? null,
-            'exam_type'           => $data['exam_type'] ?? null,
-            'clinic_name'         => $data['clinic_name'] ?? null,
-            'valid_until'         => $data['valid_until'] ?? ($data['expiry_date'] ?? null),
-            'height_cm'           => $data['height_cm'] ?? null,
-            'weight_kg'           => $data['weight_kg'] ?? null,
-            'bp_systolic'         => $data['bp_systolic'] ?? null,
-            'bp_diastolic'        => $data['bp_diastolic'] ?? null,
-            'vision'              => $data['vision'] ?? null,
-            'screening_responses' => $data['screening_responses'] ?? null,
-            'screening_score'     => $data['screening_score'] ?? null,
-            'screening_band'      => $data['screening_band'] ?? null,
-            'signature_path'      => $data['signature_path'] ?? null,
-            'capture_photo_path'  => $data['capture_photo_path'] ?? null,
-            'system_ip'           => $data['system_ip'] ?? null,
-            'geo_location'        => $data['geo_location'] ?? null,
-        ]));
+        $actor ??= request()?->user();
 
-        // Step 2 clears on a PASSING result (Fit OR Fit-with-restrictions).
-        // Recording an Unfit examination is a valid thing to do — it just is not
-        // progress, and the pointer must not claim it is.
-        $this->advanceTo($worker, 2, $this->readiness($worker->fresh())['medical_ok']);
-
-        return $medical;
+        return app(PurchaseMedicalWorkflowService::class)->record(
+            $worker,
+            $data,
+            $actor,
+            $actor instanceof PurchaseVendor
+                ? MedicalWorkflow::ORIGIN_VENDOR_UPLOAD
+                : MedicalWorkflow::ORIGIN_ADMIN,
+        );
     }
 
     public function saveTraining(PurchaseWorker $worker, array $data): PurchaseWorkerTraining
@@ -165,6 +145,17 @@ class PurchaseWorkforceService
 
     public function saveInduction(PurchaseWorker $worker, array $data): PurchaseWorkerInduction
     {
+        // The Medical module's prerequisite block, mirroring TPV: no safety
+        // induction until medical clearance exists. One verdict answers it, so
+        // this refusal and the "Medical Report is Pending" banner always say the
+        // same thing — including where the project bypass makes it moot.
+        $medicalWorkflow = app(PurchaseMedicalWorkflowService::class);
+        $clearance = $medicalWorkflow->clearanceFor($worker);
+        if ($clearance['required'] && ! $clearance['cleared']
+            && ($medicalWorkflow->config($worker->tenant_id)['block_induction'] ?? true)) {
+            throw new BusinessException('Safety induction is blocked — '.$clearance['message']);
+        }
+
         $induction = PurchaseWorkerInduction::create(array_merge($this->tenantKeys($worker), [
             'induction_date' => $data['induction_date'] ?? null,
             'status'         => $data['status'] ?? 'Pending',
@@ -214,6 +205,19 @@ class PurchaseWorkforceService
      * The wizard resumes from this column, so a later save must never drag a
      * worker backwards, and a failed medical or induction must not advance it.
      */
+    /**
+     * Step 2 clears on medical CLEARANCE, never merely on a medical existing:
+     * recording an Unfit — or an unreviewed — examination is a valid thing to
+     * do, it just is not progress, and the pointer must not claim it is.
+     *
+     * Public because the Medical module records examinations of its own (the
+     * doctor portal), and both routes must move the pointer by the same rule.
+     */
+    public function syncMedicalStep(PurchaseWorker $worker): void
+    {
+        $this->advanceTo($worker, 2, $this->readiness($worker)['medical_ok']);
+    }
+
     private function advanceTo(PurchaseWorker $worker, int $step, bool $cleared): void
     {
         if (! $cleared) {
@@ -397,17 +401,15 @@ class PurchaseWorkforceService
     {
         $today = now()->startOfDay();
 
-        $med = $worker->relationLoaded('latestMedical') ? $worker->latestMedical : $worker->latestMedical()->first();
         $ind = $worker->relationLoaded('latestInduction') ? $worker->latestInduction : $worker->latestInduction()->first();
 
         $documentsOk = ($worker->documents_count ?? $worker->documents()->count()) > 0;
-        // Medical clears on any PASSING verdict (Fit OR Fit-with-restrictions) that
-        // is still within its currency window — TPV parity. A "Fit with
-        // Restrictions" worker is fit subject to the recorded restrictions, so it
-        // must not fail readiness the way the old exact-'Fit' match did.
-        $medicalOk   = $med
-            && PurchaseMedicalFitness::isPassing($med->fitness_status)
-            && (! $med->expiry_date || $med->expiry_date->gte($today));
+        // Medical clears on the module's clearance verdict — a passing, current
+        // certificate that the quality team has ACCEPTED, or a project where
+        // medical does not apply at all. A signed-but-unreviewed certificate is
+        // deliberately not readiness.
+        $medicalClearance = app(PurchaseMedicalWorkflowService::class)->clearanceFor($worker);
+        $medicalOk   = $medicalClearance['cleared'];
         // Training clears when a Completed, unexpired record exists — honouring the
         // TPV-parity valid_until window and the legacy expiry_date alike. Typed or
         // free-text titles both count.
@@ -438,6 +440,8 @@ class PurchaseWorkforceService
         return [
             'documents_ok'         => $documentsOk,
             'medical_ok'           => $medicalOk,
+            // The reason, for the dashboard banner.
+            'medical_clearance'    => $medicalClearance,
             'training_ok'          => $trainingOk,
             'induction_ok'         => $inductionOk,
             'competency_ok'        => $competencyOk,

@@ -34,12 +34,23 @@ class TpvWorkerController extends Controller
         $data = $request->validated();
         $user = $request->user();
 
-        // Smart vendor resolution: prefer portalVendor / user vendor email / user vendor_id / first vendor
+        // Whose workers are these? The answer is the one the operator gave.
+        //
+        // This used to be a five-step fallback chain in which the vendor the
+        // admin actually PICKED came fourth — behind their own vendor link and
+        // behind any vendor whose e-mail happened to match theirs — and ended by
+        // silently using the first vendor in the tenant. An import could
+        // therefore land under a vendor nobody chose, which reads to everyone as
+        // "the upload said it worked and the workers vanished".
+        //
+        // Now: a portal session is bound to its own vendor and cannot name
+        // another; an admin's explicit choice is honoured; and if there is no
+        // choice to honour we refuse rather than guess.
         $vendorId = $request->attributes->get('portalVendor')?->id
-            ?? $user->vendor_id
-            ?? \App\Models\Vendor\Vendor::where('tenant_id', $user->tenant_id)->where('email', $user->email)->first()?->id
             ?? $request->input('vendor_id')
-            ?? \App\Models\Vendor\Vendor::where('tenant_id', $user->tenant_id)->first()?->id;
+            ?? $user->vendor_id;
+
+        abort_unless($vendorId, 422, 'Choose the vendor these workers belong to before uploading.');
 
         $data['vendor_id'] = (int) $vendorId;
 
@@ -168,12 +179,23 @@ class TpvWorkerController extends Controller
 
         $user = $request->user();
 
-        // Smart vendor resolution: prefer portalVendor / user vendor email / user vendor_id / first vendor
+        // Whose workers are these? The answer is the one the operator gave.
+        //
+        // This used to be a five-step fallback chain in which the vendor the
+        // admin actually PICKED came fourth — behind their own vendor link and
+        // behind any vendor whose e-mail happened to match theirs — and ended by
+        // silently using the first vendor in the tenant. An import could
+        // therefore land under a vendor nobody chose, which reads to everybody
+        // as "the upload said it worked and the workers vanished".
+        //
+        // Now: a portal session is bound to its own vendor and cannot name
+        // another; an admin's explicit choice is honoured; and where there is no
+        // choice to honour we refuse rather than guess.
         $vendorId = $request->attributes->get('portalVendor')?->id
-            ?? $user->vendor_id
-            ?? \App\Models\Vendor\Vendor::where('tenant_id', $user->tenant_id)->where('email', $user->email)->first()?->id
             ?? $request->input('vendor_id')
-            ?? \App\Models\Vendor\Vendor::where('tenant_id', $user->tenant_id)->first()?->id;
+            ?? $user->vendor_id;
+
+        abort_unless($vendorId, 422, 'Choose the vendor these workers belong to before uploading.');
 
         $res = $this->workerService->bulkUpload(
             $request->file('worker_file'),

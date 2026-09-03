@@ -273,6 +273,21 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     // Competency & Training + Skill Matrix (Sangoe TPV §15).
     // §3/§16 Medical Fitness register — cross-workforce medical view.
     Route::get('/medical',                                [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'index']);
+    // Medical module — the quality check, the timeline and the external intake.
+    Route::get('/medical/template',                       [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'template']);
+    // The Medical report. Declared BEFORE /medical/{medical} so "report" is
+    // never swallowed as an id.
+    Route::get('/medical/report',                         [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'report']);
+    Route::get('/medical/report/export',                  [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'reportExport']);
+    Route::get('/medical/batches',                        [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'batches']);
+    Route::post('/medical/bulk',                          [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'bulkUpload']);
+    Route::get('/medical/{medical}',                      [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'show'])->whereNumber('medical');
+    Route::post('/medical/{medical}/decide',              [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'decide'])->whereNumber('medical');
+    Route::post('/medical/{medical}/comment',             [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'comment'])->whereNumber('medical');
+    Route::get('/medical/{medical}/certificate',          [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'certificate'])->whereNumber('medical');
+    Route::get('/medical/{medical}/document',             [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'document'])->whereNumber('medical');
+    Route::post('/workers/{worker}/medical/external',     [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'storeExternal'])->whereNumber('worker');
+    Route::get('/workers/{worker}/medical-history',       [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'workerHistory'])->whereNumber('worker');
     Route::get('/competency',                             [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'index']);
     Route::get('/workers/{worker}/competency',            [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'worker'])->where('worker', '[0-9]+');
     Route::post('/workers/{worker}/competencies',         [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'addCompetency'])->where('worker', '[0-9]+');

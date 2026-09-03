@@ -23,11 +23,15 @@ class TpvWorkPackage extends Model
     protected $fillable = [
         'tenant_id', 'reference', 'vendor_id', 'project_id', 'contract_id', 'name', 'description',
         'scope', 'location', 'start_date', 'end_date', 'status', 'notes', 'created_by',
+        // "Not Applicable for the Project" — the medical bypass. Null means
+        // follow the tenant default; true/false is an explicit decision here.
+        'medical_not_applicable',
     ];
 
     protected $casts = [
         'start_date' => 'date',
         'end_date' => 'date',
+        'medical_not_applicable' => 'boolean',
     ];
 
     protected static function booted(): void

@@ -47,5 +47,6 @@ require __DIR__.'/shared.php';
 
 // Purchase / procure-to-pay module + the vendor + company self-service portals.
 require __DIR__.'/purchase.php';
+require __DIR__.'/medical.php';
 require __DIR__.'/portal.php';
 require __DIR__.'/company_portal.php';

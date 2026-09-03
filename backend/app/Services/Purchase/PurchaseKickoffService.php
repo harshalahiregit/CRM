@@ -239,6 +239,15 @@ class PurchaseKickoffService
             'mode' => $meeting->mode,
             'location' => $meeting->location,
         ];
+        // Moving the meeting must re-arm its reminders. reminders_sent records
+        // which windows have fired; leaving it as-is meant a meeting whose 24h
+        // reminder had already gone out could be moved a week later and never
+        // remind anyone again.
+        if ($before['scheduled_at'] !== optional($meeting->scheduled_at)->toDateTimeString()) {
+            $meeting->reminders_sent = [];
+            $meeting->saveQuietly();
+        }
+
         if ($wasPublished && $meeting->scheduled_at && ($scheduleChanged || array_key_exists('participants', $data))) {
             $this->notifyParticipants($meeting->fresh('participants'), true);
         }
@@ -757,6 +766,79 @@ class PurchaseKickoffService
         }
 
         return $sent;
+    }
+
+    /**
+     * Follow-ups AFTER a meeting has happened.
+     *
+     * The reminder runner only ever looked forward (`scheduled_at > now`), so
+     * once a meeting started nothing else was sent — the minutes could sit
+     * unwritten indefinitely with no nudge to anyone.
+     *
+     * Tracked in the same reminders_sent list but under an `after:` key, so a
+     * 60-minute BEFORE reminder and a 60-minute AFTER follow-up cannot be
+     * mistaken for each other and cancel one another out.
+     */
+    public function runDueFollowUps(): int
+    {
+        $offsets = collect(config('meetings.followup_offsets_minutes', []))
+            ->map(fn ($m) => (int) $m)->filter(fn ($m) => $m > 0)->unique()->sort()->values();
+        if ($offsets->isEmpty()) {
+            return 0;
+        }
+
+        $now = now();
+        $meetings = PurchaseKickoffMeeting::whereIn('status', [Status::SCHEDULED, Status::DELAYED, Status::COMPLETED])
+            ->whereNotNull('scheduled_at')
+            ->where('scheduled_at', '<=', $now)
+            ->where('scheduled_at', '>=', (clone $now)->subMinutes($offsets->max() + 1440))
+            ->with('participants', 'vendor')
+            ->get();
+
+        $sent = 0;
+        foreach ($meetings as $meeting) {
+            // Once the minutes are out, the follow-up has no purpose.
+            if (MomStatus::isDistributable($meeting->mom_status)) {
+                continue;
+            }
+            $already = collect($meeting->reminders_sent ?? [])->map(fn ($k) => (string) $k);
+            $minutesSince = (int) round($meeting->scheduled_at->diffInMinutes($now, false));
+            $due = $offsets->filter(fn ($o) => ! $already->contains("after:{$o}") && $minutesSince >= $o)->values();
+            if ($due->isEmpty()) {
+                continue;
+            }
+            $this->dispatchFollowUp($meeting, (int) $due->max());
+            $meeting->reminders_sent = $already->merge($due->map(fn ($o) => "after:{$o}"))->unique()->values()->all();
+            $meeting->saveQuietly();
+            $sent++;
+        }
+
+        return $sent;
+    }
+
+    private function dispatchFollowUp(PurchaseKickoffMeeting $meeting, int $offsetMinutes): void
+    {
+        $vendorName = $meeting->vendor?->company_name;
+        $when = $meeting->scheduled_at ? $meeting->scheduled_at->format('d M Y, g:i A') : 'recently';
+        $subject = "Follow-up: {$meeting->title}";
+        $body = "The meeting \"{$meeting->title}\""
+            .($vendorName ? " with {$vendorName}" : '')
+            ." was held on {$when}. The minutes have not been published yet —"
+            .' they will be shared here as soon as they are approved.';
+
+        foreach ($meeting->participants as $participant) {
+            if (! $participant->email) {
+                continue;
+            }
+            $this->notifications->email(
+                $participant->email, $subject, $body,
+                ['category' => 'Purchase', 'purchase_kickoff_meeting_id' => $meeting->id],
+                $meeting->tenant_id,
+            );
+        }
+        Log::channel('purchase')->info('Purchase kickoff follow-up sent', [
+            'meeting_id' => $meeting->id, 'offset_minutes' => $offsetMinutes,
+        ]);
     }
 
     private function dispatchAutoReminder(PurchaseKickoffMeeting $meeting, int $offsetMinutes): void

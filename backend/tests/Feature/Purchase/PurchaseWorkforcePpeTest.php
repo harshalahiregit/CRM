@@ -78,12 +78,30 @@ class PurchaseWorkforcePpeTest extends TestCase
         ]);
     }
 
+    /**
+     * Clear the medical's quality check.
+     *
+     * Since the Medical module, a certificate is not clearance until the quality
+     * team accepts it — so a fixture that needs a worker PAST the medical step
+     * has to say so. Set directly rather than through the workflow service:
+     * what these tests are about is what happens after clearance, not how it is
+     * granted (MedicalGatesTrainingTest covers that).
+     */
+    private function approveMedical(PurchaseWorker $w): void
+    {
+        $w->fresh()->latestMedical?->forceFill([
+            'qc_status' => \App\Support\Medical\MedicalQcStatus::APPROVED,
+            'qc_at'     => now(),
+        ])->save();
+    }
+
     /** A worker taken all the way to "PPE issued", ready for a badge. */
     private function readyWorker(PurchaseVendor $v): PurchaseWorker
     {
         $w = $this->worker($v);
         $this->wf->addDocument($w, 'id_proof', UploadedFile::fake()->create('id.pdf', 5));
         $this->wf->saveMedical($w, ['fitness_status' => 'Fit', 'exam_date' => now()->toDateString()]);
+        $this->approveMedical($w);
         $this->wf->saveTraining($w, ['title' => 'Safety', 'status' => 'Completed']);
         $this->wf->saveInduction($w, ['status' => 'Completed']);
 
@@ -129,12 +147,17 @@ class PurchaseWorkforcePpeTest extends TestCase
         $this->assertSame(1, (int) $w->fresh()->current_step);
     }
 
-    public function test_fit_medical_advances_to_step_two(): void
+    public function test_fit_medical_advances_to_step_two_once_cleared(): void
     {
         $w = $this->worker($this->vendor('FitCo'));
 
         $this->wf->saveMedical($w, ['fitness_status' => 'Fit', 'exam_date' => now()->toDateString()]);
 
+        // Signed but not yet reviewed — the step must not claim progress.
+        $this->assertSame(1, (int) $w->fresh()->current_step);
+
+        $this->approveMedical($w);
+        $this->wf->syncMedicalStep($w->fresh());
         $this->assertSame(2, (int) $w->fresh()->current_step);
     }
 
@@ -143,6 +166,8 @@ class PurchaseWorkforcePpeTest extends TestCase
     {
         $w = $this->worker($this->vendor('TrainCo'));
         $this->wf->saveMedical($w, ['fitness_status' => 'Fit', 'exam_date' => now()->toDateString()]);
+        $this->approveMedical($w);
+        $this->wf->syncMedicalStep($w->fresh());
 
         $this->wf->saveTraining($w, ['title' => 'Safety', 'status' => 'Pending']);
         $this->assertSame(2, (int) $w->fresh()->current_step);
@@ -159,6 +184,8 @@ class PurchaseWorkforcePpeTest extends TestCase
     {
         $w = $this->worker($this->vendor('ResumeCo'));
         $this->wf->saveMedical($w, ['fitness_status' => 'Fit', 'exam_date' => now()->toDateString()]);
+        $this->approveMedical($w);
+        $this->wf->syncMedicalStep($w->fresh());
 
         $this->assertSame(2, (int) PurchaseWorker::find($w->id)->current_step);
     }

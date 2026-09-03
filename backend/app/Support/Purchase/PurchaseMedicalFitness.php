@@ -33,6 +33,22 @@ final class PurchaseMedicalFitness
         self::EXPIRED               => 'Expired',
     ];
 
+    /** Mental-health screening bands (informational triage, not a hard gate). */
+    public const BANDS = ['Low', 'Moderate', 'High'];
+
+    /**
+     * Band a screening score. Kept server-side, and identical to the TPV rule,
+     * so the same answers score the same on both sides.
+     */
+    public static function bandForScore(?int $score): ?string
+    {
+        if ($score === null) {
+            return null;
+        }
+
+        return $score >= 10 ? 'High' : ($score >= 5 ? 'Moderate' : 'Low');
+    }
+
     public static function label(?string $v): string
     {
         return self::LABELS[$v] ?? (string) $v;

@@ -477,6 +477,11 @@ function WpModal({ row, vendors, onClose, onSaved }) {
     // scoped before anybody has been picked to deliver it.
     purchase_vendor_id: row?.purchase_vendor_id ? String(row.purchase_vendor_id) : '',
     status:      row?.status || 'Planned',
+    // '' = follow the site default, 'true'/'false' = decided for this package.
+    // Kept as a string so it rides the same '' → null conversion as every other
+    // optional field on save.
+    medical_not_applicable: row?.medical_not_applicable === null || row?.medical_not_applicable === undefined
+      ? '' : String(row.medical_not_applicable),
     name:        row?.name || '',
     location:    row?.location || '',
     // date columns arrive as full ISO timestamps from the model cast; the input
@@ -506,6 +511,8 @@ function WpModal({ row, vendors, onClose, onSaved }) {
       // is the honest "not supplied".
       const payload = Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v === '' ? null : v]))
       payload.purchase_vendor_id = f.purchase_vendor_id ? Number(f.purchase_vendor_id) : null
+      // The select yields strings; the column is a nullable boolean.
+      payload.medical_not_applicable = f.medical_not_applicable === '' ? null : f.medical_not_applicable === 'true'
       if (row) await wpApi.update(row.id, payload)
       else await wpApi.create(payload)
       onSaved()
@@ -546,6 +553,18 @@ function WpModal({ row, vendors, onClose, onSaved }) {
         <Field label="Scope" full>
           <textarea value={f.scope} onChange={set('scope')} rows={2} style={{ ...inputStyle, resize: 'vertical' }}
             placeholder="What is in — and what is deliberately out." />
+        </Field>
+        {/* The medical bypass. Scoped to the package because that IS the project
+            a worker is assigned to: on, and the medical prerequisite lifts for
+            everyone on it — safety induction stops being blocked and work
+            authorization reports medical as Not Applicable rather than failing. */}
+        <Field label="Medical requirement" full>
+          <SelectInput value={f.medical_not_applicable} onChange={set('medical_not_applicable')} pairs
+            options={[
+              ['',      'Follow the site default'],
+              ['false', 'Required — workers need medical clearance'],
+              ['true',  'Not applicable for this project'],
+            ]} />
         </Field>
         <Field label="Notes" full>
           <textarea value={f.notes} onChange={set('notes')} rows={2} style={{ ...inputStyle, resize: 'vertical' }} />

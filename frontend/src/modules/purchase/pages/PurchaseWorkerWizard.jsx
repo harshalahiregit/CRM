@@ -503,12 +503,28 @@ function Step2Medical({ worker, editable, onSaved, onNext }) {
     external_doctor_name: '',
     // External exam: the fitness the examiner certified on their own report.
     external_fitness: 'Fit',
+    // §16 legal capture (TPV parity) — the examiner's signature/stamp as a base64
+    // PNG and an optional scene photo. IP is stamped server-side; geo is read at
+    // save time, so neither is held in the form.
+    signature_data: '',
+    stamp_data: '',
+    capture_photo: null,
   })
 
   const [saving, setSaving] = useState(false)
   const [saved, setSaved]   = useState(false)
   const [mhVer, setMhVer]   = useState(1)
-  const [mhAnswers, setMhAnswers] = useState({})
+  const [mhAnswers, setMhAnswers] = useState(m.screening_responses && typeof m.screening_responses === 'object' ? m.screening_responses : {})
+
+  const [sigTab, setSigTab]         = useState('upload')
+  const [sigPreview, setSigPreview] = useState(m.signature_path ? `/storage/${m.signature_path}` : null)
+  const [stampText, setStampText]   = useState('')
+  const [stampFont, setStampFont]   = useState('bold 20px Arial')
+  const [stampColor, setStampColor] = useState('#0d47a1')
+
+  const sigCanvasRef   = useRef(null)
+  const stampCanvasRef = useRef(null)
+  const isSigDrawing   = useRef(false)
 
   const set = (k) => (e) => { setF(p => ({ ...p, [k]: e.target.value })); setSaved(false) }
 
@@ -663,6 +679,71 @@ function Step2Medical({ worker, editable, onSaved, onNext }) {
     setTimeout(() => win.print(), 400)
   }
 
+  /* ── §16 signature / stamp / legal capture (mirrors the TPV wizard) ──── */
+
+  const startSigDraw = (e) => {
+    const canvas = sigCanvasRef.current; if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    const rect = canvas.getBoundingClientRect()
+    ctx.beginPath()
+    ctx.moveTo((e.clientX || e.touches?.[0]?.clientX) - rect.left, (e.clientY || e.touches?.[0]?.clientY) - rect.top)
+    isSigDrawing.current = true
+  }
+
+  const doSigDraw = (e) => {
+    if (!isSigDrawing.current) return
+    const canvas = sigCanvasRef.current; if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    const rect = canvas.getBoundingClientRect()
+    ctx.lineTo((e.clientX || e.touches?.[0]?.clientX) - rect.left, (e.clientY || e.touches?.[0]?.clientY) - rect.top)
+    ctx.stroke()
+  }
+
+  const stopSigDraw = () => {
+    if (isSigDrawing.current && sigCanvasRef.current) {
+      setF(p => ({ ...p, signature_data: sigCanvasRef.current.toDataURL('image/png') }))
+    }
+    isSigDrawing.current = false
+  }
+
+  const clearSigCanvas = () => {
+    const canvas = sigCanvasRef.current; if (!canvas) return
+    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height)
+    setF(p => ({ ...p, signature_data: '' }))
+  }
+
+  const renderStamp = () => {
+    const canvas = stampCanvasRef.current; if (!canvas || !stampText.trim()) return
+    const ctx = canvas.getContext('2d')
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.strokeStyle = stampColor; ctx.lineWidth = 3; ctx.strokeRect(8, 8, canvas.width - 16, canvas.height - 16)
+    ctx.font = stampFont; ctx.fillStyle = stampColor; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.fillText(stampText, canvas.width / 2, canvas.height / 2)
+    setF(p => ({ ...p, stamp_data: canvas.toDataURL('image/png') }))
+  }
+
+  // Best-effort geolocation. Resolves to "lat,long" or null (never rejects), so a
+  // denied browser prompt cannot block the save.
+  function captureGeo() {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) return resolve(null)
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve(`${pos.coords.latitude.toFixed(6)},${pos.coords.longitude.toFixed(6)}`),
+        () => resolve(null),
+        { timeout: 6000, maximumAge: 60000 },
+      )
+    })
+  }
+
+  const onCapturePhoto = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) { setF(p => ({ ...p, capture_photo: null })); return }
+    const reader = new FileReader()
+    reader.onload = () => setF(p => ({ ...p, capture_photo: reader.result }))
+    reader.readAsDataURL(file)
+  }
+
   const saveMedical = async () => {
     if (f.medical_type === 'internal') {
       if (!f.doctor_name.trim()) { alert('Doctor Name is required.'); return }
@@ -700,15 +781,49 @@ function Step2Medical({ worker, editable, onSaved, onNext }) {
       }
       if (f.doctor_comments.trim()) lines.push(`Doctor comments: ${f.doctor_comments.trim()}`)
 
-      await purchaseApi.workforce.saveMedical(worker.id, {
+      // Legal capture — best-effort geolocation (permission-gated); the server
+      // stamps the IP. Denied or unavailable → saved without geo.
+      let geo = null
+      try { geo = await captureGeo() } catch { /* denied or unavailable */ }
+
+      const [sys, dia] = (f.blood_pressure || '').split('/').map(n => parseInt(n, 10))
+
+      const payload = {
         exam_date: new Date().toISOString().slice(0, 10),
         valid_until: f.valid_until || null,
         fitness_status: fitness,
         provider: f.organization_name || null,
-        // The endpoint keeps five columns; the rest of the examination rides here
-        // so the record still explains the verdict rather than losing it.
+        exam_type: isExternal ? 'external' : 'internal',
+        clinic_name: f.organization_name || null,
+        examiner_name: (isExternal ? f.external_doctor_name : f.doctor_name) || null,
+        blood_group: f.blood_group || null,
+        restrictions: f.doctor_comments || null,
+        // The prose stays — it is what a reader sees on the record — but the
+        // facts behind it are columns now too, so the fitness bands and the
+        // reports are computed from data instead of re-read out of a sentence.
         remarks: lines.join('\n').slice(0, 2000),
-      })
+        // The signature, and the capture that ties it to a place and a device.
+        // Sent for BOTH exam types: an external report is signed off too.
+        signature_data: f.signature_data || undefined,
+        capture_photo: f.capture_photo || undefined,
+        geo_location: geo || undefined,
+      }
+
+      // Vitals and the scored screening belong to the internal examination — an
+      // external report carries the examiner's own findings, not ours.
+      if (!isExternal) {
+        Object.assign(payload, {
+          height_cm: f.height ? Number(f.height) : undefined,
+          weight_kg: f.weight ? Number(f.weight) : undefined,
+          bp_systolic: Number.isFinite(sys) ? sys : undefined,
+          bp_diastolic: Number.isFinite(dia) ? dia : undefined,
+          vision: f.eyesight || undefined,
+          screening_responses: Object.keys(mhAnswers).length ? mhAnswers : undefined,
+          screening_score: allMhAnswered ? totalMhScore : undefined,
+        })
+      }
+
+      await purchaseApi.workforce.saveMedical(worker.id, payload)
       setSaved(true)
       onSaved()
       if (onNext) onNext()
@@ -941,6 +1056,76 @@ function Step2Medical({ worker, editable, onSaved, onNext }) {
           </Field>
           <div style={{ marginTop: 14 }}>
             <button type="button" onClick={() => setF(p => ({ ...p, medical_type: '' }))} style={{ padding: '8px 16px', borderRadius: 8, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)', fontWeight: 800, cursor: 'pointer' }}>← Change Medical Type</button>
+          </div>
+        </div>
+      )}
+
+      {/* Examiner signature / stamp. Outside the internal-exam branch on purpose:
+          an external report is signed off too, and the legal capture below is
+          meaningless without the signature it belongs to. */}
+      {f.medical_type && f.medical_type !== 'skip' && (
+        <div style={{ marginTop: 18 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-h)', marginBottom: 12, borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>&#9997; Worker Acknowledgement &amp; Signature</h3>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+            <button type="button" onClick={() => setSigTab('upload')} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: sigTab === 'upload' ? '#0284c7' : 'var(--bg-input)', color: sigTab === 'upload' ? '#fff' : 'var(--text-muted)', fontWeight: 800, cursor: 'pointer' }}>Upload Signature</button>
+            <button type="button" onClick={() => setSigTab('draw')} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: sigTab === 'draw' ? '#0284c7' : 'var(--bg-input)', color: sigTab === 'draw' ? '#fff' : 'var(--text-muted)', fontWeight: 800, cursor: 'pointer' }}>Draw Signature</button>
+            <button type="button" onClick={() => setSigTab('stamp')} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: sigTab === 'stamp' ? '#0284c7' : 'var(--bg-input)', color: sigTab === 'stamp' ? '#fff' : 'var(--text-muted)', fontWeight: 800, cursor: 'pointer' }}>Stamp / Text Generator</button>
+          </div>
+
+          <div style={{ padding: 16, borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+            {sigTab === 'upload' && (
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 8 }}>Upload Signature (JPG/PNG, max 2MB):</label>
+                <input type="file" accept="image/jpeg,image/png" onChange={e => {
+                  const file = e.target.files[0]
+                  if (!file) return
+                  const reader = new FileReader()
+                  reader.onload = ev => {
+                    setSigPreview(ev.target.result)
+                    setF(p => ({ ...p, signature_data: ev.target.result }))
+                  }
+                  reader.readAsDataURL(file)
+                }} style={{ ...inputStyle, padding: 8 }} />
+                {sigPreview && <img src={sigPreview} alt="Signature preview" style={{ marginTop: 10, maxHeight: 100, borderRadius: 6, border: '1px solid var(--border)', padding: 4 }} />}
+              </div>
+            )}
+
+            {sigTab === 'draw' && (
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 8 }}>Draw signature using mouse or touch:</label>
+                <canvas ref={sigCanvasRef} width={500} height={150} onMouseDown={startSigDraw} onMouseMove={doSigDraw} onMouseUp={stopSigDraw} onMouseLeave={stopSigDraw} onTouchStart={startSigDraw} onTouchMove={doSigDraw} onTouchEnd={stopSigDraw} style={{ background: '#fff', border: '2px dashed var(--border)', borderRadius: 8, cursor: 'crosshair', display: 'block', maxWidth: '100%' }} />
+                <button type="button" onClick={clearSigCanvas} style={{ marginTop: 8, padding: '4px 12px', borderRadius: 6, background: '#ef4444', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 800 }}>Clear Signature</button>
+              </div>
+            )}
+
+            {sigTab === 'stamp' && (
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 8 }}>Type Stamp Text:</label>
+                <div style={{ display: 'flex', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+                  <input type="text" value={stampText} onChange={e => setStampText(e.target.value)} placeholder="Type stamp text..." style={{ ...inputStyle, flex: 1, minWidth: 160 }} />
+                  <select value={stampFont} onChange={e => setStampFont(e.target.value)} style={{ ...inputStyle, width: 140 }}><option value="bold 20px Arial">Arial Bold</option><option value="italic bold 18px Georgia">Georgia Italic</option><option value="bold 18px Courier New">Courier</option></select>
+                  <select value={stampColor} onChange={e => setStampColor(e.target.value)} style={{ ...inputStyle, width: 110 }}><option value="#0d47a1">Blue</option><option value="#1a7a3c">Green</option><option value="#b71c1c">Red</option><option value="#111">Black</option></select>
+                  <button type="button" onClick={renderStamp} style={{ padding: '6px 14px', borderRadius: 8, background: '#0284c7', color: '#fff', fontWeight: 800, border: 'none', cursor: 'pointer' }}>Stamp</button>
+                </div>
+                <canvas ref={stampCanvasRef} width={500} height={120} style={{ background: '#fff', border: '2px dashed var(--border)', borderRadius: 8, display: 'block', maxWidth: '100%' }} />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Legal-verification capture — optional photo; IP + location auto-recorded */}
+      {f.medical_type && f.medical_type !== 'skip' && (
+        <div style={{ marginTop: 18, padding: '12px 14px', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--bg-input)' }}>
+          <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text-h)', marginBottom: 8 }}>Legal Verification Capture</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, alignItems: 'end' }}>
+            <Field label="Signer / Scene Photo (optional)">
+              <input type="file" accept="image/*" capture="environment" onChange={onCapturePhoto} style={{ ...inputStyle, padding: 8 }} />
+            </Field>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+              Location and IP are recorded automatically with the signature for legal verification.
+              {f.capture_photo && <span style={{ color: '#15803d', fontWeight: 700 }}> &middot; Photo attached</span>}
+            </div>
           </div>
         </div>
       )}
