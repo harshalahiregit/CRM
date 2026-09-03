@@ -110,8 +110,16 @@ class HrmLeaveController extends Controller
             return [
                 'id'         => $t->id,
                 'title'      => $t->name,
-                'days'       => $this->number($b->available_balance ?? 0),
-                'used'       => $this->number($b->used ?? 0),
+                // INTEGERS, not the formatted strings the rest of this file uses:
+                // their LeaveType model declares `int? days` and `int? used`, so a
+                // string throws _TypeError inside fromJson and the whole leave-type
+                // list fails to parse — the app then offers no leave types at all.
+                //
+                // Half-days cannot be represented in an int. Available is FLOORED
+                // rather than rounded, because showing 11 when 10.5 remain invites
+                // somebody to book a day they do not have.
+                'days'       => (int) floor((float) ($b->available_balance ?? 0)),
+                'used'       => (int) round((float) ($b->used ?? 0)),
                 // 0 means selectable. No balance assigned means they cannot take it.
                 'is_disable' => $b ? 0 : 1,
             ];

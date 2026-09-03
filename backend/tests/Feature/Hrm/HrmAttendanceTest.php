@@ -223,16 +223,23 @@ class HrmAttendanceTest extends TestCase
             'type' => 'monthly', 'month' => 3, 'year' => 2026,
         ])->assertOk();
 
+        // `data` is a LIST, one entry per day — AttendanceHistory declares
+        // List<AttendanceData> and iterates it, and the screen renders each entry
+        // as a card with its own date and total. This test asserted a single
+        // object until the app's own model threw on it.
+        $this->assertIsArray($r->json('data'));
+
         foreach (['total_time', 'date', 'history'] as $k) {
-            $this->assertArrayHasKey($k, $r->json('data'), "data.{$k} is missing.");
+            $this->assertArrayHasKey($k, $r->json('data.0'), "data.0.{$k} is missing.");
         }
 
         foreach (['id', 'status', 'clock_in', 'clock_out', 'total'] as $k) {
-            $this->assertArrayHasKey($k, $r->json('data.history.0'), "history.{$k} is missing.");
+            $this->assertArrayHasKey($k, $r->json('data.0.history.0'), "history.{$k} is missing.");
         }
 
-        $this->assertSame('09:00', $r->json('data.history.0.clock_in'));
-        $this->assertSame('09:00', $r->json('data.history.0.total'));
+        $this->assertSame('2026-03-02', $r->json('data.0.date'));
+        $this->assertSame('09:00', $r->json('data.0.history.0.clock_in'));
+        $this->assertSame('09:00', $r->json('data.0.history.0.total'));
     }
 
     /** The date cast persists midnight, which silently drops month-end days. */
@@ -248,7 +255,8 @@ class HrmAttendanceTest extends TestCase
 
         $this->postJson('/api/Hrm/attendence-history', ['month' => 3, 'year' => 2026])
             ->assertOk()
-            ->assertJsonCount(1, 'data.history');
+            ->assertJsonCount(1, 'data')
+            ->assertJsonCount(1, 'data.0.history');
     }
 
     public function test_history_never_shows_another_employees_days(): void
@@ -272,7 +280,7 @@ class HrmAttendanceTest extends TestCase
 
         $this->postJson('/api/Hrm/attendence-history', ['month' => 3, 'year' => 2026])
             ->assertOk()
-            ->assertJsonCount(0, 'data.history');
+            ->assertJsonCount(0, 'data');
     }
 
     public function test_an_unlinked_login_gets_a_refusal_not_a_crash(): void

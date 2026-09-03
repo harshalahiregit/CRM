@@ -91,6 +91,14 @@ class HrmAttendanceController extends Controller
                 return HrmResponse::fail('You are already clocked in.');
             }
 
+            // A finished day cannot be started again. The table holds ONE check_in
+            // and ONE check_out per day, so a second clock-in overwrote the first
+            // and left the earlier check_out behind — a day whose end precedes its
+            // beginning, and hours computed from nonsense.
+            if ($today && $today->check_in && $today->check_out) {
+                return HrmResponse::fail('You have already completed your shift today.');
+            }
+
             $today ??= new HrAttendance([
                 'tenant_id'   => $employee->tenant_id,
                 'employee_id' => $employee->id,
@@ -215,17 +223,26 @@ class HrmAttendanceController extends Controller
             ->orderBy('date')
             ->get();
 
-        return HrmResponse::ok([
-            'total_time' => $this->formatHours((float) $rows->sum('working_hours')),
-            'date'       => $from->format('Y-m'),
-            'history'    => $rows->map(fn (HrAttendance $a) => [
+        // A LIST, one entry per day — not a single object.
+        //
+        // AttendanceHistory declares `List<AttendanceData>? data` and iterates it;
+        // the screen renders each entry as a card with its own date and total,
+        // holding that day's punches. Returning an object made Map.forEach receive
+        // a one-argument closure, which throws inside fromJson — so the app showed
+        // NO history at all rather than showing it wrongly.
+        $byDay = $rows->groupBy(fn (HrAttendance $a) => $a->date->format('Y-m-d'));
+
+        return HrmResponse::ok($byDay->map(fn ($dayRows, $day) => [
+            'total_time' => $this->formatHours((float) $dayRows->sum('working_hours')),
+            'date'       => $day,
+            'history'    => $dayRows->map(fn (HrAttendance $a) => [
                 'id'        => $a->id,
                 'status'    => $a->status,
                 'clock_in'  => $this->time($a->check_in),
                 'clock_out' => $this->time($a->check_out),
                 'total'     => $this->hours($a),
             ])->values()->all(),
-        ]);
+        ])->values()->all());
     }
 
     /* ── internals ───────────────────────────────────────────────────── */
