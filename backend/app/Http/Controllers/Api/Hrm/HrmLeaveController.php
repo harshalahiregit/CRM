@@ -235,8 +235,11 @@ class HrmLeaveController extends Controller
 
         return HrmResponse::ok($rows->map(fn ($h) => [
             'title'     => (string) $h->title,
-            'start'     => (string) $h->holiday_date,
-            'end'       => (string) $h->holiday_date,
+            // Y-m-d for the same reason the calendar needs it: the app compares
+            // these as plain strings and parses them for the day/month chips,
+            // never as a datetime.
+            'start'     => \Illuminate\Support\Carbon::parse($h->holiday_date)->toDateString(),
+            'end'       => \Illuminate\Support\Carbon::parse($h->holiday_date)->toDateString(),
             'className' => $h->is_optional ? 'optional-holiday' : 'public-holiday',
         ])->values()->all());
     }

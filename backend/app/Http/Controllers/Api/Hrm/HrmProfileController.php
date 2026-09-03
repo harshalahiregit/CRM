@@ -212,8 +212,12 @@ class HrmProfileController extends Controller
         return HrmResponse::ok($rows->map(fn ($h) => [
             'id'          => $h->id,
             'title'       => (string) $h->title,
-            'start_date'  => (string) $h->holiday_date,
-            'end_date'    => (string) $h->holiday_date,
+            // Y-m-d, not a datetime. The calendar matches a tapped day with
+            // `e.startDate == getDateFormmatted(date)` — plain string equality
+            // against 'yyyy-MM-dd' — so a trailing ' 00:00:00' meant no day ever
+            // matched and the day's event list was always empty.
+            'start_date'  => \Illuminate\Support\Carbon::parse($h->holiday_date)->toDateString(),
+            'end_date'    => \Illuminate\Support\Carbon::parse($h->holiday_date)->toDateString(),
             'color'       => $h->is_optional ? '#f59e0b' : '#7C3AED',
             'description' => (string) ($h->description ?? ''),
         ])->values()->all());
