@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\Hrm\HrmAttendanceController;
+use App\Http\Controllers\Api\Hrm\HrmAdminController;
 use App\Http\Controllers\Api\Hrm\HrmAuthController;
 use App\Http\Controllers\Api\Hrm\HrmClaimController;
 use App\Http\Controllers\Api\Hrm\HrmFileController;
@@ -84,6 +85,48 @@ Route::prefix('Hrm')->group(function () {
         Route::post('/notifications',             [HrmProfileController::class, 'notifications']);
         Route::post('/notifications/mark-read',   [HrmProfileController::class, 'markNotificationsRead']);
         Route::post('/notification-preferences',  [HrmProfileController::class, 'notificationPreferences']);
+        // A SEPARATE save route, not the same one with a body. Found by diffing
+        // the app's URL table against what is served — assuming one route did
+        // both would have left every preference change silently unsaved.
+        Route::post('/notification-preferences/save', [HrmProfileController::class, 'notificationPreferences']);
         Route::post('/fcm-token',                 [HrmProfileController::class, 'fcmToken']);
+
+        // ── Admin ───────────────────────────────────────────────────────
+        // A permission refusal here is 200 with status 0, never 401: the app
+        // treats 401 as a dead session and wipes local storage, so answering a
+        // permission problem that way signs somebody out mid-shift.
+        //
+        // Two of these are GET, matching the app's own calls.
+        Route::get('/admin/dashboard',                    [HrmAdminController::class, 'dashboard']);
+        Route::get('/admin/attendance-details',           [HrmAdminController::class, 'attendanceDetails']);
+        Route::post('/admin/pending-approvals',           [HrmAdminController::class, 'pendingApprovals']);
+        Route::get('/admin/pending-approvals',            [HrmAdminController::class, 'pendingApprovals']);
+
+        Route::post('/admin/approve-reject-leave',         [HrmAdminController::class, 'decideLeave']);
+        Route::post('/admin/approve-reject-raise',         [HrmAdminController::class, 'decideRaise']);
+        Route::post('/admin/approve-reject-reimbursement', [HrmAdminController::class, 'decideReimbursement']);
+        Route::post('/admin/approve-reject-advance',       [HrmAdminController::class, 'decideAdvance']);
+        Route::post('/admin/disburse-advance',             [HrmAdminController::class, 'disburseAdvance']);
+
+        Route::get('/admin/pending-settlements',           [HrmAdminController::class, 'pendingSettlements']);
+        Route::post('/admin/pending-settlements',          [HrmAdminController::class, 'pendingSettlements']);
+        Route::post('/admin/review-settlement',            [HrmAdminController::class, 'reviewSettlement']);
+
+        Route::get('/admin/employees-list',                [HrmAdminController::class, 'employees']);
+        Route::post('/admin/employees-list',               [HrmAdminController::class, 'employees']);
+        Route::get('/admin/assignable-roles',              [HrmAdminController::class, 'assignableRoles']);
+        Route::post('/admin/create-employee',              [HrmAdminController::class, 'createEmployee']);
+        Route::post('/admin/reset-employee-password',      [HrmAdminController::class, 'resetPassword']);
+
+        Route::get('/admin/demo-requests',                 [HrmAdminController::class, 'demoRequests']);
+        Route::post('/admin/demo-requests',                [HrmAdminController::class, 'demoRequests']);
+        Route::post('/admin/update-demo-request',          [HrmAdminController::class, 'updateDemoRequest']);
+
+        Route::get('/admin/payroll-overview',              [HrmAdminController::class, 'payrollOverview']);
+        Route::post('/admin/set-employee-salary',          [HrmAdminController::class, 'setEmployeeSalary']);
+        Route::get('/admin/reports',                       [HrmAdminController::class, 'reports']);
+        Route::post('/admin/reports',                      [HrmAdminController::class, 'reports']);
+        Route::get('/admin/reports-summary',               [HrmAdminController::class, 'reportsSummary']);
+        Route::post('/admin/reports-summary',              [HrmAdminController::class, 'reportsSummary']);
     });
 });
