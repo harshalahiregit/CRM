@@ -11,7 +11,11 @@ import { useAuth } from '@/context/AuthContext'
 // the old name so the call sites below read unchanged.
 import { meetingEngineApi as kickoffApi, meetingBase } from '@/services/meetingEngineApi'
 import { meetingApi } from '@/services/meetingApi'
-import { tpvApi } from '@/services/tpvApi'
+// The VENDOR api for the module in the URL. The picker, the ?vendor= prefill
+// and the contacts list were all pinned to tpvApi, so on /app/purchase this
+// page listed TPV's companies — a different table whose ids are unrelated to
+// purchase_vendors, so nothing selected here could ever be the right vendor.
+import { useVendorModule } from '@/modules/tpv/useVendorModule'
 import { KO_MODES, actStatusCfg, issueStatusCfg } from '../kickoffConstants'
 import {
   KIT3D_STYLE, labelStyle, inputStyle, Field, TextInput,
@@ -50,6 +54,24 @@ const toLocalTime = (iso) => {
 const combineDateTime = (date, time) => {
   if (!date) return ''
   return `${date}T${time || '09:00'}:00`
+}
+/**
+ * The END instant, given the meeting's date and its start/end clock times.
+ *
+ * End was previously combined with the START date unconditionally, so a meeting
+ * running 23:00 -> 00:30 produced an end BEFORE its start. The backend rejects
+ * that (`end_at` must be `after:scheduled_at`), so a late meeting simply could
+ * not be saved and the error pointed at a field the user had filled correctly.
+ * An end at or before the start means the next day.
+ */
+const combineEndDateTime = (date, startTime, endTime) => {
+  if (!date || !endTime) return ''
+  if (!startTime || endTime > startTime) return combineDateTime(date, endTime)
+  const next = new Date(`${date}T00:00:00`)
+  next.setDate(next.getDate() + 1)
+  const pad2 = (n) => String(n).padStart(2, '0')
+  const nextDate = `${next.getFullYear()}-${pad2(next.getMonth() + 1)}-${pad2(next.getDate())}`
+  return combineDateTime(nextDate, endTime)
 }
 // Rich-text fields store HTML; the carry-forward list shows them as plain text.
 const stripHtml = (s) => (s || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
@@ -106,6 +128,12 @@ function ErrBanner({ msg }) {
 export default function KickoffMeetingCreate() {
   const navigate = useNavigate()
   const { user } = useAuth()
+  const vendorApi = useVendorModule().api
+  // The start instant as STORED, so editing an old meeting (adding its
+  // minutes, say) is not blocked by the no-past-scheduling rule. Both
+  // backends already allow an unchanged past start; the client did not, so
+  // a past meeting could not be saved at all.
+  const storedStartRef = useRef(null)
 
   // ── data sources ────────────────────────────────────────────────────────
   const [vendors, setVendors]   = useState([])
@@ -149,12 +177,12 @@ export default function KickoffMeetingCreate() {
     // Load ALL vendors for the picker, not just those tagged with the 'tpv'
     // engagement — an admin scheduling a kickoff must be able to pick any vendor
     // (a vendor added without the tpv tag was previously invisible here).
-    tpvApi.vendors.list({ engagement: '' }).then(r => {
+    vendorApi.vendors.list({ engagement: '' }).then(r => {
       const list = r?.data ?? r ?? []
       // A vendor passed via ?vendor= may not be in the (TPV-filtered) picker — fetch
       // it from the shared master and merge so it can be selected.
       if (preVendorId && !list.some(v => String(v.id) === String(preVendorId))) {
-        tpvApi.vendors.get(preVendorId)
+        vendorApi.vendors.get(preVendorId)
           .then(res => { const v = res?.data ?? res; setVendors(v?.id ? [v, ...list] : list) })
           .catch(() => setVendors(list))
       } else {
@@ -164,9 +192,9 @@ export default function KickoffMeetingCreate() {
     if (preVendorId) {
       setForm(f => ({ ...f, subject_id: preVendorId }))
       setVendorIdsRaw([String(preVendorId)])
-      tpvApi.contacts.list(preVendorId).then(r => setContacts(r?.data ?? r)).catch(() => {})
+      vendorApi.contacts.list(preVendorId).then(r => setContacts(r?.data ?? r)).catch(() => {})
     }
-  }, [preVendorId])
+  }, [preVendorId, vendorApi])
 
   // ── form state ──────────────────────────────────────────────────────────
   const [form, setForm] = useState({
@@ -260,6 +288,7 @@ export default function KickoffMeetingCreate() {
             : (m.subject?.id ? [String(m.subject.id)] : [])
         )
 
+        storedStartRef.current = m.scheduled_at || null
         setForm({
           subject_id:       m.subject?.id ? String(m.subject.id) : '',
           meeting_type:     m.meeting_type || 'kickoff',
@@ -395,8 +424,8 @@ export default function KickoffMeetingCreate() {
   // ── load vendor contacts when vendor changes ─────────────────────────────
   const loadContacts = useCallback((vendorId) => {
     if (!vendorId) { setContacts([]); return }
-    tpvApi.contacts.list(vendorId).then(r => setContacts(r?.data ?? r)).catch(() => setContacts([]))
-  }, [])
+    vendorApi.contacts.list(vendorId).then(r => setContacts(r?.data ?? r)).catch(() => setContacts([]))
+  }, [vendorApi])
 
   const set = (k) => (e) => {
     const val = e.target.type === 'checkbox' ? e.target.checked : e.target.value
@@ -639,12 +668,19 @@ export default function KickoffMeetingCreate() {
     if (!form.meeting_date) { setErr('Meeting Date is required.'); return }
     if (!form.meeting_time) { setErr('Start Time is required.'); return }
     if (!form.meeting_end_time) { setErr('End Time is required.'); return }
-    // End must be after start (duration is derived from the two).
-    if (form.meeting_end_time <= form.meeting_time) { setErr('End Time must be after Start Time.'); return }
-    // No scheduling into the past (the backend enforces this too).
+    // Equal start and end is a zero-length meeting; an EARLIER end means the
+    // meeting runs past midnight and ends the next day (see combineEndDateTime).
+    if (form.meeting_end_time === form.meeting_time) { setErr('End Time must be after Start Time.'); return }
+    // No scheduling into the past — but only for a start the user actually
+    // MOVED. Editing an old meeting (to write up its minutes) keeps its original
+    // time, which both backends accept and the client used to refuse.
     {
       const startTs = new Date(`${form.meeting_date}T${form.meeting_time}`)
-      if (startTs.getTime() < Date.now() - 2 * 60 * 1000) { setErr('The meeting time cannot be in the past.'); return }
+      const stored = storedStartRef.current ? new Date(storedStartRef.current) : null
+      const unchanged = stored && Math.abs(stored.getTime() - startTs.getTime()) < 60 * 1000
+      if (!unchanged && startTs.getTime() < Date.now() - 2 * 60 * 1000) {
+        setErr('The meeting time cannot be in the past.'); return
+      }
     }
     // Location only required for on-site meetings
     if (form.mode !== 'online' && !form.location) { setErr('City / Location is required.'); return }
@@ -668,7 +704,7 @@ export default function KickoffMeetingCreate() {
         scheduled_at,
         // End is mandatory; duration is derived from start→end server-side, so
         // the client no longer sends duration_minutes.
-        end_at:           combineDateTime(form.meeting_date, form.meeting_end_time),
+        end_at:           combineEndDateTime(form.meeting_date, form.meeting_time, form.meeting_end_time),
         planned_date:     form.planned_date || undefined,
         mode:             form.mode,
         // On-site and hybrid both have a physical location; online does not.
@@ -1122,17 +1158,25 @@ export default function KickoffMeetingCreate() {
                 <TextInput type="time" min={form.meeting_date === new Date().toLocaleDateString('en-CA') ? new Date().toTimeString().slice(0, 5) : undefined} value={form.meeting_time} onChange={set('meeting_time')} />
               </Field>
               <Field label="End Time *">
-                {/* End must be after start; duration is computed from the two. */}
-                <TextInput type="time" min={form.meeting_time || undefined} value={form.meeting_end_time} onChange={set('meeting_end_time')} />
+                {/* No `min`: an end EARLIER than the start is legitimate and means
+                    the meeting runs past midnight. The hint below says so, so it
+                    cannot be mistaken for a typo. */}
+                <TextInput type="time" value={form.meeting_end_time} onChange={set('meeting_end_time')} />
+                {form.meeting_time && form.meeting_end_time && form.meeting_end_time < form.meeting_time && (
+                  <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>Ends next day</span>
+                )}
               </Field>
               <Field label="Duration">
                 {/* Auto-computed from start→end — no longer a manual field. */}
                 <div style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 13.5, fontWeight: 700 }}>
                   {(() => {
-                    if (!form.meeting_time || !form.meeting_end_time || form.meeting_end_time <= form.meeting_time) return '—'
+                    if (!form.meeting_time || !form.meeting_end_time || form.meeting_end_time === form.meeting_time) return '—'
                     const [h1, m1] = form.meeting_time.split(':').map(Number)
                     const [h2, m2] = form.meeting_end_time.split(':').map(Number)
-                    const mins = (h2 * 60 + m2) - (h1 * 60 + m1)
+                    // Add a day when the end is earlier than the start, or a
+                    // 23:00 -> 00:30 meeting would read as minus 22.5 hours.
+                    let mins = (h2 * 60 + m2) - (h1 * 60 + m1)
+                    if (mins < 0) mins += 24 * 60
                     const h = Math.floor(mins / 60); const m = mins % 60
                     return `${h ? `${h} hr ` : ''}${m ? `${m} min` : (h ? '' : '0 min')}`.trim()
                   })()}
