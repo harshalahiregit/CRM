@@ -93,6 +93,8 @@ class PurchaseWorkforceService
 
     public function saveMedical(PurchaseWorker $worker, array $data): PurchaseWorkerMedical
     {
+        $data = $this->decodeMedicalCapture($data);
+
         $medical = PurchaseWorkerMedical::create(array_merge($this->tenantKeys($worker), [
             'exam_date'        => $data['exam_date'] ?? null,
             'expiry_date'      => $data['expiry_date'] ?? null,
@@ -120,7 +122,10 @@ class PurchaseWorkforceService
             'vision'              => $data['vision'] ?? null,
             'screening_responses' => $data['screening_responses'] ?? null,
             'screening_score'     => $data['screening_score'] ?? null,
-            'screening_band'      => $data['screening_band'] ?? null,
+            // The band is derived here, never taken from the client — the scoring
+            // rule is ours. Same thresholds the TPV wizard bands against, so a
+            // report can read both modules' screenings as one scale.
+            'screening_band'      => $this->screeningBand($data['screening_score'] ?? null),
             'signature_path'      => $data['signature_path'] ?? null,
             'capture_photo_path'  => $data['capture_photo_path'] ?? null,
             'system_ip'           => $data['system_ip'] ?? null,
@@ -133,6 +138,47 @@ class PurchaseWorkforceService
         $this->advanceTo($worker, 2, $this->readiness($worker->fresh())['medical_ok']);
 
         return $medical;
+    }
+
+    /**
+     * Decode the base64 capture into stored files.
+     *
+     * The signature and the scene photo reach us as PNG data URLs (drawn on a
+     * canvas, typed as a stamp, or picked from the device). Only the resulting
+     * path is stored, which is why the client is not allowed to send one.
+     */
+    private function decodeMedicalCapture(array $data): array
+    {
+        foreach ([
+            'signature_data' => ['signature_path', 'purchase/workers/signatures/sig_'],
+            'capture_photo'  => ['capture_photo_path', 'purchase/workers/medical/photos/photo_'],
+        ] as $field => [$column, $prefix]) {
+            $value = $data[$field] ?? null;
+
+            if (is_string($value) && str_contains($value, 'base64,')) {
+                $binary = base64_decode(explode('base64,', $value)[1], true);
+
+                if ($binary !== false && $binary !== '') {
+                    $path = $prefix.uniqid().'.png';
+                    Storage::disk('public')->put($path, $binary);
+                    $data[$column] = $path;
+                }
+            }
+
+            unset($data[$field]);
+        }
+
+        return $data;
+    }
+
+    /** Screening bands. Mirrors the TPV thresholds so the two modules agree. */
+    private function screeningBand(?int $score): ?string
+    {
+        if ($score === null) {
+            return null;
+        }
+
+        return $score >= 10 ? 'High' : ($score >= 5 ? 'Moderate' : 'Low');
     }
 
     public function saveTraining(PurchaseWorker $worker, array $data): PurchaseWorkerTraining
