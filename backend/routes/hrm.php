@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Api\Hrm\HrmAttendanceController;
 use App\Http\Controllers\Api\Hrm\HrmAuthController;
+use App\Http\Controllers\Api\Hrm\HrmClaimController;
+use App\Http\Controllers\Api\Hrm\HrmFileController;
 use App\Http\Controllers\Api\Hrm\HrmLeaveController;
 use Illuminate\Support\Facades\Route;
 
@@ -28,6 +30,13 @@ Route::prefix('Hrm')->group(function () {
     // Open: somebody signing in has no token yet.
     Route::post('/login', [HrmAuthController::class, 'login']);
 
+    // Signed, not authenticated: the app gives these URLs to an image widget,
+    // which sends no Authorization header. The signature carries the permission
+    // and expires; Laravel rejects a tampered or stale one before the controller.
+    Route::get('/file/{attachment}', [HrmFileController::class, 'show'])
+        ->name('hrm.file')
+        ->middleware('signed');
+
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('/logout',          [HrmAuthController::class, 'logout']);
         Route::post('/refresh',         [HrmAuthController::class, 'refresh']);
@@ -49,5 +58,16 @@ Route::prefix('Hrm')->group(function () {
         Route::post('/holidays-list',           [HrmLeaveController::class, 'holidays']);
         Route::post('/get-attendance-raises',   [HrmLeaveController::class, 'raises']);
         Route::post('/submit-attendance-raise', [HrmLeaveController::class, 'submitRaise']);
+
+        // Expense claims and advances, on the same services the CRM screens use.
+        Route::post('/get-reimbursements',      [HrmClaimController::class, 'reimbursements']);
+        Route::post('/submit-reimbursement',    [HrmClaimController::class, 'submitReimbursement']);
+        Route::post('/reimbursement-report',    [HrmClaimController::class, 'reimbursements']);
+        Route::post('/advance/my-requests',     [HrmClaimController::class, 'myAdvances']);
+        Route::post('/advance/submit',          [HrmClaimController::class, 'submitAdvance']);
+        Route::post('/advance/detail',          [HrmClaimController::class, 'advanceDetail']);
+        Route::post('/advance/submit-settlement',[HrmClaimController::class, 'submitSettlement']);
+        Route::post('/advance/ledger',          [HrmClaimController::class, 'advanceLedger']);
+        Route::post('/advance/payroll-summary', [HrmClaimController::class, 'payrollSummary']);
     });
 });
