@@ -68,7 +68,11 @@ class HrmProfileTest extends TestCase
             'password' => Hash::make('Password123!'), 'role' => 'staff', 'status' => 'active',
         ]);
 
-        $this->postJson('/api/Hrm/edit-profile', ['email' => 'taken@example.test'])->assertStatus(422);
+        // 200 with status 0, not 422: the app discards the body of a non-200, so
+        // a 422 told somebody "Validation failed" and never named the address.
+        $r = $this->postJson('/api/Hrm/edit-profile', ['email' => 'taken@example.test'])->assertOk();
+        $this->assertSame(0, $r->json('status'));
+        $this->assertArrayHasKey('email', $r->json('errors'));
     }
 
     /** Deleting deactivates: the history refers to this person. */

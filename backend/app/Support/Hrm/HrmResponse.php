@@ -18,7 +18,8 @@ use Illuminate\Http\JsonResponse;
  *   HTTP 200    even for a refusal. The app checks the body, not the status
  *               line, so a 422 is read as a transport failure rather than
  *               "you typed the wrong password".
- *   HTTP 403    for validation problems, which is what their backend returns.
+ *   HTTP 403    is what their backend returns for validation — NOT reproduced
+ *               here, and invalid() below says why.
  *   HTTP 401    ONLY for a genuinely dead session. The app treats 401 as
  *               destructive — it wipes local storage, including the cached
  *               clock-in state, and drops the user at the login screen with no
@@ -51,14 +52,30 @@ class HrmResponse
         ]);
     }
 
-    /** Validation, their way: 403 with the same envelope. */
+    /**
+     * A rejected field.
+     *
+     * SangoeTrack answers 403 here, and this deliberately does not, because the
+     * app cannot read a 403. Its network layer keeps the body only on a 200 —
+     * anything else is toasted once and discarded, returning null — so the
+     * calling controller then falls back to its own generic message. The result
+     * on track is two toasts, the second one useless, and the `errors` map below
+     * unreachable by any screen.
+     *
+     * 200 with status 0 is the same envelope every other refusal on this surface
+     * already uses, and the app handles it properly: one toast, naming the field.
+     * Diverging from track by one status code is worth a usable error.
+     */
     public static function invalid(string $message, array $errors = []): JsonResponse
     {
         return response()->json([
             'status'  => 0,
             'message' => $message,
             'errors'  => $errors,
-        ], 403);
+            // The app reads `data` on some paths; an empty list keeps every
+            // parse site on the success shape rather than hitting a null.
+            'data'    => [],
+        ]);
     }
 
     /**

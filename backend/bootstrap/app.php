@@ -62,6 +62,24 @@ return Application::configure(basePath: dirname(__DIR__))
         // JSON error responses for API routes
         $exceptions->render(function (\Throwable $e, Request $request) {
             if ($request->is('api/*') || $request->wantsJson()) {
+                // The attendance app is not the React frontend and cannot read the
+                // shape below. It tests `status == 1` as an INTEGER, treats any
+                // non-200 as a failure whose body it toasts and then discards, and
+                // SangoeTrack answers 403 for a rejected field rather than 422.
+                //
+                // Left on the generic branch, a missing field toasted the literal
+                // words "Validation failed" and named nothing, so whoever was
+                // holding the phone could not tell which box to fix. The first
+                // real message is promoted to `message` for exactly that reason;
+                // `errors` still carries the full set.
+                if ($e instanceof ValidationException && $request->is('api/Hrm/*')) {
+                    return \App\Support\Hrm\HrmResponse::invalid(
+                        collect($e->errors())->flatten()->first()
+                            ?: 'Please check the details and try again.',
+                        $e->errors(),
+                    );
+                }
+
                 // Preserve the existing {status, message, errors} shape the frontend
                 // was already built against for form-validation failures.
                 if ($e instanceof ValidationException) {

@@ -122,17 +122,18 @@ class HrmAdminController extends Controller
     /** The four queues, in one call, as the app's dashboard expects. */
     public function pendingApprovals(Request $request)
     {
-        if ($deny = $this->deny($request)) {
+        if ($deny = $this->denyApprover($request)) {
             return $deny;
         }
 
         $tenantId = (int) $request->user()->tenant_id;
+        $only     = $this->queueScope($request->user());
 
         return HrmResponse::ok([
-            'leaves'         => $this->pendingLeaves($tenantId),
-            'raises'         => $this->pendingRaises($tenantId),
-            'reimbursements' => $this->pendingClaims($tenantId),
-            'advances'       => $this->pendingAdvances($tenantId),
+            'leaves'         => $this->pendingLeaves($tenantId, $only),
+            'raises'         => $this->pendingRaises($tenantId, $only),
+            'reimbursements' => $this->pendingClaims($tenantId, $only),
+            'advances'       => $this->pendingAdvances($tenantId, $only),
         ]);
     }
 
@@ -140,7 +141,7 @@ class HrmAdminController extends Controller
 
     public function decideLeave(Request $request)
     {
-        if ($deny = $this->deny($request)) {
+        if ($deny = $this->denyApprover($request)) {
             return $deny;
         }
 
@@ -155,6 +156,10 @@ class HrmAdminController extends Controller
 
         if (! $leave) {
             return HrmResponse::fail('That leave request could not be found.');
+        }
+
+        if ($deny = $this->denyDecisionFor($request, (int) $leave->employee_id)) {
+            return $deny;
         }
 
         if (! in_array($leave->status, ['Submitted', 'Draft', 'Pending'], true)) {
@@ -173,7 +178,7 @@ class HrmAdminController extends Controller
 
     public function decideRaise(Request $request)
     {
-        if ($deny = $this->deny($request)) {
+        if ($deny = $this->denyApprover($request)) {
             return $deny;
         }
 
@@ -187,6 +192,10 @@ class HrmAdminController extends Controller
 
         if (! $c) {
             return HrmResponse::fail('That correction could not be found.');
+        }
+
+        if ($deny = $this->denyDecisionFor($request, (int) $c->employee_id)) {
+            return $deny;
         }
 
         try {
@@ -205,7 +214,7 @@ class HrmAdminController extends Controller
 
     public function decideReimbursement(Request $request)
     {
-        if ($deny = $this->deny($request)) {
+        if ($deny = $this->denyApprover($request)) {
             return $deny;
         }
 
@@ -219,6 +228,10 @@ class HrmAdminController extends Controller
 
         if (! $claim) {
             return HrmResponse::fail('That claim could not be found.');
+        }
+
+        if ($deny = $this->denyDecisionFor($request, (int) $claim->employee_id)) {
+            return $deny;
         }
 
         try {
@@ -244,7 +257,7 @@ class HrmAdminController extends Controller
      */
     public function decideAdvance(Request $request)
     {
-        if ($deny = $this->deny($request)) {
+        if ($deny = $this->denyApprover($request)) {
             return $deny;
         }
 
@@ -258,6 +271,10 @@ class HrmAdminController extends Controller
 
         if (! $advance) {
             return HrmResponse::fail('That advance could not be found.');
+        }
+
+        if ($deny = $this->denyDecisionFor($request, (int) $advance->employee_id)) {
+            return $deny;
         }
 
         try {
@@ -755,9 +772,97 @@ class HrmAdminController extends Controller
         return HrmResponse::fail('You do not have access to this.');
     }
 
-    private function pendingLeaves(int $tenantId): array
+    /**
+     * The gate for the approval queue, which is wider than deny() by one person:
+     * the line manager.
+     *
+     * A line manager is the FIRST rung of the advance ladder and the person who
+     * approves their own reports' leave and attendance corrections — yet deny()
+     * admits only admins, HR, accounts and directors, so from the phone a manager
+     * could not act on anything and every advance stopped dead at tier one.
+     *
+     * Deliberately not used on the rest of this controller: payroll, salaries,
+     * employee creation and password resets are not a line manager's business,
+     * and widening deny() itself would have handed them all four.
+     */
+    private function denyApprover(Request $request): ?\Illuminate\Http\JsonResponse
+    {
+        $user = $request->user();
+
+        if ($user instanceof User && $this->managesAnyone($user)) {
+            return null;
+        }
+
+        return $this->deny($request);
+    }
+
+    /** A manager only in the real sense — somebody actually reports to them. */
+    private function managesAnyone(User $user): bool
+    {
+        $me = $this->employeeOf($user);
+
+        return $me !== null
+            && HrEmployee::where('tenant_id', $user->tenant_id)
+                ->where('reporting_manager_id', $me->id)
+                ->exists();
+    }
+
+    private function employeeOf(User $user): ?HrEmployee
+    {
+        return HrEmployee::where('tenant_id', $user->tenant_id)
+            ->where('user_id', $user->id)
+            ->first();
+    }
+
+    /**
+     * Which employees' requests this person may see, or null for all of them.
+     *
+     * Admins, HR, accounts and directors oversee the whole workspace. A line
+     * manager sees their own reports and nobody else — an approval queue says
+     * who needed money and what for, which is not the whole company's reading.
+     */
+    private function queueScope(User $user): ?array
+    {
+        if ($user->isAdmin() || $user->canManageHrQueue()
+            || app(\App\Services\Hr\AdvanceTierService::class)->holdsAnyTierRole($user)) {
+            return null;
+        }
+
+        $me = $this->employeeOf($user);
+
+        // Empty, not null: somebody through the gate with no employee record sees
+        // nothing, rather than everything.
+        return $me
+            ? HrEmployee::where('tenant_id', $user->tenant_id)
+                ->where('reporting_manager_id', $me->id)
+                ->pluck('id')
+                ->all()
+            : [];
+    }
+
+    /**
+     * Stop a line manager deciding for somebody who is not theirs.
+     *
+     * Without this, admitting managers to the queue above would have let any one
+     * of them approve any employee in the workspace: these endpoints check the
+     * tenant and the current status, never whose request it is. Advances are also
+     * checked far more thoroughly by AdvanceTierService; this is the floor.
+     */
+    private function denyDecisionFor(Request $request, ?int $employeeId): ?\Illuminate\Http\JsonResponse
+    {
+        $scope = $this->queueScope($request->user());
+
+        if ($scope === null || ($employeeId !== null && in_array($employeeId, $scope, true))) {
+            return null;
+        }
+
+        return HrmResponse::fail('That request is not one of your reports.');
+    }
+
+    private function pendingLeaves(int $tenantId, ?array $onlyEmployees = null): array
     {
         return HrLeaveApplication::where('tenant_id', $tenantId)
+            ->when($onlyEmployees !== null, fn ($q) => $q->whereIn('employee_id', $onlyEmployees))
             ->whereIn('status', ['Submitted', 'Pending'])
             ->with(['employee:id,name', 'leaveType:id,name'])
             ->orderByDesc('id')
@@ -775,9 +880,10 @@ class HrmAdminController extends Controller
             ])->values()->all();
     }
 
-    private function pendingRaises(int $tenantId): array
+    private function pendingRaises(int $tenantId, ?array $onlyEmployees = null): array
     {
         return HrAttendanceCorrection::where('tenant_id', $tenantId)
+            ->when($onlyEmployees !== null, fn ($q) => $q->whereIn('employee_id', $onlyEmployees))
             ->whereIn('status', [HrAttendanceCorrection::PENDING, HrAttendanceCorrection::ON_HOLD])
             ->with('employee:id,name')
             ->orderByDesc('id')
@@ -794,9 +900,10 @@ class HrmAdminController extends Controller
             ])->values()->all();
     }
 
-    private function pendingClaims(int $tenantId): array
+    private function pendingClaims(int $tenantId, ?array $onlyEmployees = null): array
     {
         return HrReimbursement::where('tenant_id', $tenantId)
+            ->when($onlyEmployees !== null, fn ($q) => $q->whereIn('employee_id', $onlyEmployees))
             ->whereIn('status', [ReimbursementStatus::PENDING, ReimbursementStatus::ON_HOLD])
             ->with(['employee:id,name', 'attachments'])
             ->orderByDesc('id')
@@ -816,9 +923,10 @@ class HrmAdminController extends Controller
             ])->values()->all();
     }
 
-    private function pendingAdvances(int $tenantId): array
+    private function pendingAdvances(int $tenantId, ?array $onlyEmployees = null): array
     {
         return HrAdvance::where('tenant_id', $tenantId)
+            ->when($onlyEmployees !== null, fn ($q) => $q->whereIn('employee_id', $onlyEmployees))
             ->whereIn('status', [
                 AdvanceStage::PENDING, AdvanceStage::MANAGER_APPROVED,
                 AdvanceStage::ACCOUNTS_APPROVED, AdvanceStage::APPROVED, AdvanceStage::ON_HOLD,
