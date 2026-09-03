@@ -312,23 +312,23 @@ class HrmClaimController extends Controller
             // department when it was left blank — which is what the box being
             // optional means. Echoing the employee's unconditionally hid the fact
             // that a typed value was being thrown away.
-            'department'               => (string) ($a->department ?: ($a->employee->department ?? '')),
-            'project_site'             => (string) ($a->project_site ?? ''),
+            'department'               => $this->blankToNull((string) ($a->department ?: ($a->employee->department ?? ''))),
+            'project_site'             => $this->blankToNull((string) ($a->project_site ?? '')),
             'purpose'                  => (string) $a->purpose,
             'amount_requested'         => $this->money($a->amount_requested),
-            'amount_approved'          => $this->money($a->amount_approved),
+            'amount_approved'          => $this->moneyOrNull($a->amount_approved),
             'amount_modified'          => $this->amountModified($a),
-            'amount_modified_reason'   => $this->modifiedReason($a),
-            'required_date'            => $this->date($a->required_date),
-            'expected_settlement_date' => $this->date($a->expected_settlement_date),
-            'attachment'               => $this->firstAttachmentUrl($a),
+            'amount_modified_reason'   => $this->blankToNull($this->modifiedReason($a)),
+            'required_date'            => $this->dateOrNull($a->required_date),
+            'expected_settlement_date' => $this->dateOrNull($a->expected_settlement_date),
+            'attachment'               => $this->blankToNull($this->firstAttachmentUrl($a)),
             'status'                   => (string) $a->status,
-            'rejection_reason'         => $this->declineReason($a),
+            'rejection_reason'         => $this->blankToNull($this->declineReason($a)),
             'has_disbursement'         => (bool) $a->disbursed_at,
-            'disbursed_on'             => $this->date($a->disbursed_at),
-            'payment_mode'             => (string) ($a->disbursement_mode ?? ''),
-            'utr_reference'            => (string) ($a->disbursement_reference ?? ''),
-            'settlement_status'        => $s ? (string) $s->status : '',
+            'disbursed_on'             => $this->dateOrNull($a->disbursed_at),
+            'payment_mode'             => $this->blankToNull((string) ($a->disbursement_mode ?? '')),
+            'utr_reference'            => $this->blankToNull((string) ($a->disbursement_reference ?? '')),
+            'settlement_status'        => $s ? (string) $s->status : null,
             // Only once the money is out and nothing is already under review.
             'can_upload_settlement'    => $a->status === AdvanceStage::DISBURSED,
             'settlement'               => $s ? [
@@ -337,7 +337,7 @@ class HrmClaimController extends Controller
                 'settlement_case'            => $this->settlementCase($s),
                 'case_label'                 => (string) $s->case_label,
                 'status'                     => (string) $s->status,
-                'reviewer_remarks'           => (string) ($s->review_remarks ?? ''),
+                'reviewer_remarks'           => $this->blankToNull((string) ($s->review_remarks ?? '')),
                 'extra_reimbursement_amount' => $this->money($s->extra_due),
             ] : null,
             'ledger'                   => $withLedger ? $this->ledger($a) : [],
@@ -400,6 +400,31 @@ class HrmClaimController extends Controller
     }
 
     /** Strings throughout: their models read String? and print blanks for null. */
+    /**
+     * Nullable fields must be sent as NULL, not as an empty string.
+     *
+     * The app's AdvanceRequestData declares these `String?` and leans on that:
+     * `effectiveAmount` is `amountApproved ?? amountRequested`, so an empty
+     * string — which is not null — stopped the fallback and left the amount chip
+     * on every pending advance blank. The optional detail rows are guarded with
+     * `!= null`, so '' also rendered a labelled row with nothing after it, and
+     * `paymentMode ?? '—'` printed nothing instead of a dash.
+     */
+    private function blankToNull(?string $value): ?string
+    {
+        return ($value === null || $value === '') ? null : $value;
+    }
+
+    private function moneyOrNull($value): ?string
+    {
+        return $this->blankToNull($this->money($value));
+    }
+
+    private function dateOrNull($value): ?string
+    {
+        return $this->blankToNull($this->date($value));
+    }
+
     private function money($value): string
     {
         if ($value === null || $value === '') {

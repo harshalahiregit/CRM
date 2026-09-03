@@ -300,7 +300,10 @@ class HrmClaimTest extends TestCase
         $row = $this->postJson('/api/Hrm/advance/my-requests', [])->json('data.0');
 
         $this->assertSame('', $row['amount_modified']);
-        $this->assertSame('', $row['amount_modified_reason']);
+        // NULL, not '': the app declares amountModifiedReason as String? and hides
+        // the row with `!= null`. An empty string passes that guard and renders a
+        // labelled "Modification Reason" row with nothing after it.
+        $this->assertNull($row['amount_modified_reason']);
     }
 
     public function test_a_changed_amount_and_its_reason_reach_the_app(): void
