@@ -1,0 +1,289 @@
+<?php
+
+namespace Tests\Feature\Hrm;
+
+use App\Models\Hr\HrAttendance;
+use App\Models\Hr\HrEmployee;
+use App\Models\Tenant;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
+use Laravel\Sanctum\Sanctum;
+use Tests\TestCase;
+
+/**
+ * The app's daily path against the CRM.
+ *
+ * These assert the CONTRACT the Dart models expect, key by key and type by
+ * type, because a key the app does not recognise renders blank rather than
+ * failing — the app would look like it was losing data, with nothing in a log.
+ *
+ * Two of their quirks are pinned deliberately: `attendence_id` is misspelled on
+ * clock-in-out and break-toggle while `home` uses `attendance_id`, and
+ * `is_clockin` is an int while `is_on_break` is a bool in the same payload.
+ */
+class HrmAttendanceTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private ?Tenant $t = null;
+
+    private function tenant(): Tenant
+    {
+        return $this->t ??= Tenant::create(['name' => 'S', 'slug' => 'hrma-t', 'status' => 'active']);
+    }
+
+    private function person(): array
+    {
+        $user = User::create([
+            'tenant_id' => $this->tenant()->id, 'name' => 'Priya', 'email' => 'priya@example.test',
+            'password' => Hash::make('Password123!'), 'role' => 'staff', 'status' => 'active',
+        ]);
+
+        $employee = HrEmployee::create([
+            'tenant_id' => $this->tenant()->id, 'employee_code' => 'SNE-1', 'name' => 'Priya',
+            'department' => 'Ops', 'designation' => 'Analyst', 'joining_date' => '2020-01-01',
+            'status' => 'Active', 'user_id' => $user->id, 'app_login_enabled' => true,
+        ]);
+
+        Sanctum::actingAs($user);
+
+        return [$user, $employee];
+    }
+
+    /* ── home ────────────────────────────────────────────────────────── */
+
+    public function test_home_returns_every_key_the_model_reads_with_the_right_types(): void
+    {
+        $this->person();
+
+        $r = $this->postJson('/api/Hrm/home', ['workspace_id' => $this->tenant()->id])->assertOk();
+
+        $this->assertSame(1, $r->json('status'));
+
+        foreach (['is_clockin', 'attendance_id', 'clock_in', 'clock_out', 'total_hours', 'is_on_break', 'announcements'] as $k) {
+            $this->assertArrayHasKey($k, $r->json('data'), "data.{$k} is missing — the app renders it blank.");
+        }
+
+        // int? isClockin — not a bool.
+        $this->assertIsInt($r->json('data.is_clockin'));
+        // bool? isOnBreak — not an int. Theirs, in the same payload.
+        $this->assertIsBool($r->json('data.is_on_break'));
+        // String? — the app shows "--" for an empty one, and crashes on a number.
+        $this->assertIsString($r->json('data.clock_in'));
+        $this->assertIsString($r->json('data.total_hours'));
+        // The app iterates this without a null guard.
+        $this->assertIsArray($r->json('data.announcements'));
+    }
+
+    public function test_announcements_carry_every_field_their_model_reads(): void
+    {
+        [, $employee] = $this->person();
+
+        DB::table('hr_holidays')->insert([
+            'tenant_id' => $this->tenant()->id, 'title' => 'Diwali', 'description' => 'Festival',
+            'holiday_date' => now()->addDays(5)->toDateString(), 'holiday_type' => 'Public',
+            'applicable_for' => 'All', 'is_optional' => false, 'is_active' => true,
+            'created_by' => 1, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $a = $this->postJson('/api/Hrm/home', [])->assertOk()->json('data.announcements.0');
+
+        foreach (['id', 'title', 'start_date', 'end_date', 'description', 'workspace', 'created_by'] as $k) {
+            $this->assertArrayHasKey($k, $a, "announcement.{$k} is missing.");
+        }
+    }
+
+    /* ── clocking ────────────────────────────────────────────────────── */
+
+    public function test_clock_in_returns_their_misspelled_key(): void
+    {
+        Storage::fake('local');
+        $this->person();
+
+        $r = $this->postJson('/api/Hrm/clock-in-out', [
+            'workspace_id' => $this->tenant()->id, 'type' => 'clockin',
+            'latitude' => '18.52', 'longitude' => '73.85',
+        ])->assertOk();
+
+        $this->assertSame(1, $r->json('status'));
+
+        // attendence_id, not attendance_id. Correcting the spelling breaks the app.
+        foreach (['is_clockin', 'clock_in', 'clock_out', 'total_hours', 'attendence_id', 'attendence_clock_in'] as $k) {
+            $this->assertArrayHasKey($k, $r->json('data'), "data.{$k} is missing.");
+        }
+
+        $this->assertSame(1, $r->json('data.is_clockin'));
+        $this->assertNotEmpty($r->json('data.clock_in'));
+    }
+
+    public function test_the_whole_day_clock_in_break_and_out(): void
+    {
+        Storage::fake('local');
+        [, $employee] = $this->person();
+
+        // A real shift, not four calls in the same microsecond. recompute()
+        // needs the clock-out to be strictly later than the clock-in, so an
+        // instantaneous day legitimately produces no hours — which would make
+        // this test assert something no real day does.
+        $this->postJson('/api/Hrm/clock-in-out', ['type' => 'clockin'])->assertOk();
+
+        $this->travel(2)->hours();
+        $this->postJson('/api/Hrm/break-toggle', ['type' => 'start'])
+            ->assertOk()->assertJsonPath('data.is_on_break', true);
+
+        $this->travel(30)->minutes();
+        $this->postJson('/api/Hrm/break-toggle', ['type' => 'continue'])
+            ->assertOk()->assertJsonPath('data.is_on_break', false);
+
+        $this->travel(5)->hours();
+        $r = $this->postJson('/api/Hrm/clock-in-out', ['type' => 'clockout'])->assertOk();
+        $this->travelBack();
+
+        $this->assertSame(0, $r->json('data.is_clockin'));
+        $this->assertNotEmpty($r->json('data.clock_out'));
+
+        $day = HrAttendance::where('employee_id', $employee->id)->firstOrFail();
+        $this->assertNotNull($day->check_in);
+        $this->assertNotNull($day->check_out);
+        // 7h30m elapsed, less the 30-minute break.
+        $this->assertNotNull($day->working_hours, 'Hours must be computed, as they are for a CRM clock-out.');
+        $this->assertEqualsWithDelta(7.0, (float) $day->working_hours, 0.05, 'The break must be deducted.');
+    }
+
+    public function test_a_selfie_is_stored_when_sent(): void
+    {
+        Storage::fake('local');
+        $this->person();
+
+        $this->postJson('/api/Hrm/clock-in-out', [
+            'type' => 'clockin', 'selfie' => UploadedFile::fake()->image('me.jpg'),
+        ])->assertOk()->assertJsonPath('status', 1);
+
+        $this->assertNotEmpty(Storage::disk('local')->allFiles(), 'The selfie was not stored.');
+    }
+
+    /** A punch must never be lost because a camera failed. */
+    public function test_clocking_works_without_a_selfie(): void
+    {
+        Storage::fake('local');
+        $this->person();
+
+        $this->postJson('/api/Hrm/clock-in-out', ['type' => 'clockin'])
+            ->assertOk()->assertJsonPath('status', 1);
+    }
+
+    /* ── refusals are 200 with status 0 ──────────────────────────────── */
+
+    public function test_double_clock_in_is_refused_without_an_http_error(): void
+    {
+        Storage::fake('local');
+        $this->person();
+
+        $this->postJson('/api/Hrm/clock-in-out', ['type' => 'clockin'])->assertOk();
+
+        $r = $this->postJson('/api/Hrm/clock-in-out', ['type' => 'clockin'])->assertOk();
+
+        $this->assertSame(0, $r->json('status'));
+        $this->assertStringContainsString('already clocked in', (string) $r->json('message'));
+    }
+
+    public function test_clocking_out_without_clocking_in_is_refused(): void
+    {
+        $this->person();
+
+        $r = $this->postJson('/api/Hrm/clock-in-out', ['type' => 'clockout'])->assertOk();
+        $this->assertSame(0, $r->json('status'));
+    }
+
+    public function test_a_break_before_clocking_in_is_refused(): void
+    {
+        $this->person();
+
+        $r = $this->postJson('/api/Hrm/break-toggle', ['type' => 'start'])->assertOk();
+        $this->assertSame(0, $r->json('status'));
+    }
+
+    /* ── history ─────────────────────────────────────────────────────── */
+
+    public function test_history_returns_their_shape(): void
+    {
+        [, $employee] = $this->person();
+
+        HrAttendance::create([
+            'tenant_id' => $this->tenant()->id, 'employee_id' => $employee->id, 'date' => '2026-03-02',
+            'check_in' => '2026-03-02 09:00:00', 'check_out' => '2026-03-02 18:00:00',
+            'working_hours' => 9, 'status' => 'Present',
+        ]);
+
+        $r = $this->postJson('/api/Hrm/attendence-history', [
+            'type' => 'monthly', 'month' => 3, 'year' => 2026,
+        ])->assertOk();
+
+        foreach (['total_time', 'date', 'history'] as $k) {
+            $this->assertArrayHasKey($k, $r->json('data'), "data.{$k} is missing.");
+        }
+
+        foreach (['id', 'status', 'clock_in', 'clock_out', 'total'] as $k) {
+            $this->assertArrayHasKey($k, $r->json('data.history.0'), "history.{$k} is missing.");
+        }
+
+        $this->assertSame('09:00', $r->json('data.history.0.clock_in'));
+        $this->assertSame('09:00', $r->json('data.history.0.total'));
+    }
+
+    /** The date cast persists midnight, which silently drops month-end days. */
+    public function test_history_includes_the_last_day_of_the_month(): void
+    {
+        [, $employee] = $this->person();
+
+        HrAttendance::create([
+            'tenant_id' => $this->tenant()->id, 'employee_id' => $employee->id, 'date' => '2026-03-31',
+            'check_in' => '2026-03-31 09:00:00', 'check_out' => '2026-03-31 18:00:00',
+            'working_hours' => 9, 'status' => 'Present',
+        ]);
+
+        $this->postJson('/api/Hrm/attendence-history', ['month' => 3, 'year' => 2026])
+            ->assertOk()
+            ->assertJsonCount(1, 'data.history');
+    }
+
+    public function test_history_never_shows_another_employees_days(): void
+    {
+        [, $mine] = $this->person();
+
+        $otherUser = User::create([
+            'tenant_id' => $this->tenant()->id, 'name' => 'Raj', 'email' => 'raj@example.test',
+            'password' => Hash::make('Password123!'), 'role' => 'staff', 'status' => 'active',
+        ]);
+        $other = HrEmployee::create([
+            'tenant_id' => $this->tenant()->id, 'employee_code' => 'SNE-2', 'name' => 'Raj',
+            'department' => 'Ops', 'designation' => 'Analyst', 'joining_date' => '2020-01-01',
+            'status' => 'Active', 'user_id' => $otherUser->id,
+        ]);
+
+        HrAttendance::create([
+            'tenant_id' => $this->tenant()->id, 'employee_id' => $other->id, 'date' => '2026-03-02',
+            'check_in' => '2026-03-02 09:00:00', 'status' => 'Present',
+        ]);
+
+        $this->postJson('/api/Hrm/attendence-history', ['month' => 3, 'year' => 2026])
+            ->assertOk()
+            ->assertJsonCount(0, 'data.history');
+    }
+
+    public function test_an_unlinked_login_gets_a_refusal_not_a_crash(): void
+    {
+        $user = User::create([
+            'tenant_id' => $this->tenant()->id, 'name' => 'NoEmp', 'email' => 'no@example.test',
+            'password' => Hash::make('Password123!'), 'role' => 'staff', 'status' => 'active',
+        ]);
+        Sanctum::actingAs($user);
+
+        $r = $this->postJson('/api/Hrm/home', [])->assertOk();
+        $this->assertSame(0, $r->json('status'));
+    }
+}

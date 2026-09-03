@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\Hrm\HrmAttendanceController;
 use App\Http\Controllers\Api\Hrm\HrmAuthController;
 use Illuminate\Support\Facades\Route;
 
@@ -30,5 +31,12 @@ Route::prefix('Hrm')->group(function () {
         Route::post('/logout',          [HrmAuthController::class, 'logout']);
         Route::post('/refresh',         [HrmAuthController::class, 'refresh']);
         Route::post('/change-password', [HrmAuthController::class, 'changePassword']);
+
+        // The daily path. Paths are the app's, misspellings included:
+        // /attendence-history is how its URL table spells it.
+        Route::post('/home',                [HrmAttendanceController::class, 'home']);
+        Route::post('/clock-in-out',        [HrmAttendanceController::class, 'clock']);
+        Route::post('/break-toggle',        [HrmAttendanceController::class, 'breakToggle']);
+        Route::post('/attendence-history',  [HrmAttendanceController::class, 'history']);
     });
 });

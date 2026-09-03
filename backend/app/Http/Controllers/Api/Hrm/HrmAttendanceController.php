@@ -1,0 +1,326 @@
+<?php
+
+namespace App\Http\Controllers\Api\Hrm;
+
+use App\Http\Controllers\Controller;
+use App\Models\Hr\HrAttendance;
+use App\Models\Hr\HrEmployee;
+use App\Services\Hr\AttendanceService;
+use App\Services\Hr\EmployeeIdentityService;
+use App\Support\Hrm\HrmResponse;
+use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+
+/**
+ * The app's daily path: the home screen, clocking, breaks and history.
+ *
+ * Field names come from the app's Dart models and are reproduced EXACTLY,
+ * including two inconsistencies that are theirs and must not be tidied:
+ *
+ *   `attendence_id`  — misspelled — is what clock-in-out and break-toggle send
+ *                      and read. `home` uses the correctly spelled
+ *                      `attendance_id`. Both spellings are live, on different
+ *                      endpoints, and "fixing" either silently breaks the app.
+ *
+ *   `is_clockin` is an INT while `is_on_break` is a BOOL, in the same payload.
+ *   Their models declare them that way, so sending a bool for the first, or an
+ *   int for the second, fails to parse.
+ *
+ * The route itself is /attendence-history, misspelled in the app's URL table.
+ */
+class HrmAttendanceController extends Controller
+{
+    public function __construct(
+        private EmployeeIdentityService $identity,
+        private AttendanceService $attendance,
+    ) {
+    }
+
+    /** The home screen: today's clock state plus announcements. */
+    public function home(Request $request)
+    {
+        $employee = $this->employee($request);
+
+        if (! $employee) {
+            return HrmResponse::fail('Your login is not linked to an employee record. Contact HR.');
+        }
+
+        $today = $this->today($employee);
+
+        return HrmResponse::ok([
+            // int, not bool — their model declares int? isClockin.
+            'is_clockin'    => $today && $today->check_in && ! $today->check_out ? 1 : 0,
+            'attendance_id' => $today?->id,
+            'clock_in'      => $this->time($today?->check_in),
+            'clock_out'     => $this->time($today?->check_out),
+            'total_hours'   => $this->hours($today),
+            // bool here, unlike is_clockin above. Theirs, not a typo of mine.
+            'is_on_break'   => (bool) ($today && $today->break_start && ! $today->break_end),
+            // Never null: the app iterates this without a guard.
+            'announcements' => $this->announcements($employee),
+        ]);
+    }
+
+    /**
+     * Clock in or out.
+     *
+     * Multipart, with a `selfie` file. The selfie is stored when sent and the
+     * punch is recorded either way — refusing a clock-out because a camera
+     * failed would strand somebody at the end of a shift.
+     */
+    public function clock(Request $request)
+    {
+        $employee = $this->employee($request);
+
+        if (! $employee) {
+            return HrmResponse::fail('Your login is not linked to an employee record. Contact HR.');
+        }
+
+        $data = $request->validate([
+            'type'      => 'required|in:clockin,clockout',
+            'latitude'  => 'nullable|string|max:40',
+            'longitude' => 'nullable|string|max:40',
+            'selfie'    => 'nullable|file|max:10240',
+        ]);
+
+        $today = $this->today($employee);
+
+        if ($data['type'] === 'clockin') {
+            if ($today && $today->check_in && ! $today->check_out) {
+                return HrmResponse::fail('You are already clocked in.');
+            }
+
+            $today ??= new HrAttendance([
+                'tenant_id'   => $employee->tenant_id,
+                'employee_id' => $employee->id,
+                'date'        => now()->toDateString(),
+                'status'      => 'Present',
+            ]);
+
+            $today->check_in = now();
+            $today->save();
+        } else {
+            if (! $today || ! $today->check_in) {
+                return HrmResponse::fail('You have not clocked in today.');
+            }
+
+            if ($today->check_out) {
+                return HrmResponse::fail('You have already clocked out.');
+            }
+
+            // An open break would otherwise be counted as worked time.
+            if ($today->break_start && ! $today->break_end) {
+                $today->break_end = now();
+            }
+
+            $today->check_out = now();
+            $today->save();
+        }
+
+        $this->storeSelfie($request, $employee, $data['type']);
+
+        // Status, hours and overtime from the same code the CRM uses.
+        $today = $this->attendance->restampAndSave($today);
+
+        return HrmResponse::ok([
+            'is_clockin'          => $today->check_in && ! $today->check_out ? 1 : 0,
+            'clock_in'            => $this->time($today->check_in),
+            'clock_out'           => $this->time($today->check_out),
+            'total_hours'         => $this->hours($today),
+            // Their spelling, on this endpoint.
+            'attendence_id'       => $today->id,
+            'attendence_clock_in' => $this->time($today->check_in),
+        ], $data['type'] === 'clockin' ? 'Clocked in.' : 'Clocked out.');
+    }
+
+    /** Start or end a break. */
+    public function breakToggle(Request $request)
+    {
+        $employee = $this->employee($request);
+
+        if (! $employee) {
+            return HrmResponse::fail('Your login is not linked to an employee record. Contact HR.');
+        }
+
+        $data = $request->validate(['type' => 'required|in:start,continue']);
+
+        $today = $this->today($employee);
+
+        if (! $today || ! $today->check_in || $today->check_out) {
+            return HrmResponse::fail('You need to be clocked in to take a break.');
+        }
+
+        $onBreak = $today->break_start && ! $today->break_end;
+
+        if ($data['type'] === 'start') {
+            if ($onBreak) {
+                return HrmResponse::fail('You are already on a break.');
+            }
+
+            // One break a day is what the columns hold. Restarting after ending
+            // one would overwrite the first and lose the time already deducted.
+            if ($today->break_end) {
+                return HrmResponse::fail('You have already taken your break today.');
+            }
+
+            $today->break_start = now();
+        } else {
+            if (! $onBreak) {
+                return HrmResponse::fail('You are not on a break.');
+            }
+
+            $today->break_end = now();
+        }
+
+        $today->save();
+        $today = $this->attendance->restampAndSave($today);
+
+        return HrmResponse::ok([
+            'is_on_break' => (bool) ($today->break_start && ! $today->break_end),
+        ], $data['type'] === 'start' ? 'Break started.' : 'Break ended.');
+    }
+
+    /**
+     * A month of the caller's own attendance.
+     *
+     * The route is /attendence-history — misspelled in the app's URL table, and
+     * reproduced rather than corrected.
+     */
+    public function history(Request $request)
+    {
+        $employee = $this->employee($request);
+
+        if (! $employee) {
+            return HrmResponse::fail('Your login is not linked to an employee record. Contact HR.');
+        }
+
+        $data = $request->validate([
+            'type'  => 'nullable|string',
+            'month' => 'nullable',
+            'year'  => 'nullable',
+        ]);
+
+        $month = (int) ($data['month'] ?? now()->month);
+        $year  = (int) ($data['year'] ?? now()->year);
+
+        $from = Carbon::createFromDate($year, $month, 1)->startOfMonth();
+
+        $rows = HrAttendance::where('tenant_id', $employee->tenant_id)
+            ->where('employee_id', $employee->id)
+            // whereDate, not between: the date cast persists midnight, so an
+            // equality range silently drops the last day of the month.
+            ->whereDate('date', '>=', $from->toDateString())
+            ->whereDate('date', '<=', $from->copy()->endOfMonth()->toDateString())
+            ->orderBy('date')
+            ->get();
+
+        return HrmResponse::ok([
+            'total_time' => $this->formatHours((float) $rows->sum('working_hours')),
+            'date'       => $from->format('Y-m'),
+            'history'    => $rows->map(fn (HrAttendance $a) => [
+                'id'        => $a->id,
+                'status'    => $a->status,
+                'clock_in'  => $this->time($a->check_in),
+                'clock_out' => $this->time($a->check_out),
+                'total'     => $this->hours($a),
+            ])->values()->all(),
+        ]);
+    }
+
+    /* ── internals ───────────────────────────────────────────────────── */
+
+    private function employee(Request $request): ?HrEmployee
+    {
+        return $this->identity->employeeFor($request->user());
+    }
+
+    private function today(HrEmployee $employee): ?HrAttendance
+    {
+        return HrAttendance::where('tenant_id', $employee->tenant_id)
+            ->where('employee_id', $employee->id)
+            ->whereDate('date', now()->toDateString())
+            ->first();
+    }
+
+    /** Strings, not nulls: their model reads String? and shows a blank as "--". */
+    private function time($value): string
+    {
+        return $value ? Carbon::parse($value)->format('H:i') : '';
+    }
+
+    private function hours(?HrAttendance $a): string
+    {
+        if (! $a) {
+            return '';
+        }
+
+        // Not yet clocked out: show the time worked so far rather than nothing,
+        // which is what somebody glancing at the app actually wants.
+        if ($a->check_in && ! $a->check_out) {
+            return $this->formatHours(abs(Carbon::parse($a->check_in)->diffInMinutes(now())) / 60);
+        }
+
+        return $a->working_hours !== null ? $this->formatHours((float) $a->working_hours) : '';
+    }
+
+    private function formatHours(float $hours): string
+    {
+        $h = (int) floor($hours);
+        $m = (int) round(($hours - $h) * 60);
+
+        if ($m === 60) {
+            $h++;
+            $m = 0;
+        }
+
+        return sprintf('%02d:%02d', $h, $m);
+    }
+
+    /**
+     * Announcements: holidays coming up.
+     *
+     * The CRM has no announcements table, and their model's fields map cleanly
+     * onto holidays — which is what an attendance app's home screen is actually
+     * for. Every key their model reads is present.
+     */
+    private function announcements(HrEmployee $employee): array
+    {
+        if (! \Illuminate\Support\Facades\Schema::hasTable('hr_holidays')) {
+            return [];
+        }
+
+        return \Illuminate\Support\Facades\DB::table('hr_holidays')
+            ->where('tenant_id', $employee->tenant_id)
+            ->where('is_active', true)
+            ->whereDate('holiday_date', '>=', now()->toDateString())
+            ->orderBy('holiday_date')
+            ->limit(10)
+            ->get()
+            ->map(fn ($h) => [
+                'id'          => $h->id,
+                'title'       => $h->title,
+                'start_date'  => (string) $h->holiday_date,
+                'end_date'    => (string) $h->holiday_date,
+                'description' => (string) ($h->description ?? ''),
+                'workspace'   => $employee->tenant_id,
+                'created_by'  => $h->created_by,
+            ])->values()->all();
+    }
+
+    /** Best effort: a punch is never lost because a photo could not be saved. */
+    private function storeSelfie(Request $request, HrEmployee $employee, string $type): void
+    {
+        if (! $request->hasFile('selfie')) {
+            return;
+        }
+
+        try {
+            $request->file('selfie')->store("hr/attendance/tenant_{$employee->tenant_id}/{$employee->id}", 'local');
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Selfie not stored', [
+                'employee' => $employee->id, 'type' => $type, 'error' => $e->getMessage(),
+            ]);
+        }
+    }
+}
