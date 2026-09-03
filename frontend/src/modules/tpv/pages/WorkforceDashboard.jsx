@@ -409,7 +409,10 @@ function BulkUploadModal({ vendorId, onClose, onUploaded, api, isPortal }) {
     if (!file) { alert('Please select a CSV or Excel file.'); return }
     setUploading(true)
     try {
-      const res = await api.workers.uploadWorkers(file, vendorId || 1)
+      // `vendorId || 1` used to send every unattributed import to vendor 1.
+      // Undefined lets the server decide honestly: the token's vendor on the
+      // portal, or a 422 asking an admin to choose.
+      const res = await api.workers.uploadWorkers(file, vendorId || undefined)
       setResult(res)
     } catch (e) {
       alert(e?.response?.data?.message || 'Bulk upload failed')

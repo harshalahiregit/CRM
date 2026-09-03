@@ -203,7 +203,13 @@ function WpModal({ row, vendors, onClose, onSaved }) {
     { k: 'notes', label: 'Notes', area: true },
   ]
   const seed = () => {
-    const b = { vendor_id: row?.vendor_id || '', status: row?.status || 'Planned' }
+    const b = {
+      vendor_id: row?.vendor_id || '',
+      status: row?.status || 'Planned',
+      // Tri-state on purpose: null means "follow the tenant default", so a
+      // package that has never been decided is not silently forced either way.
+      medical_not_applicable: row?.medical_not_applicable ?? null,
+    }
     fields.forEach(f => { b[f.k] = row?.[f.k] ?? '' })
     return b
   }
@@ -216,6 +222,10 @@ function WpModal({ row, vendors, onClose, onSaved }) {
     setSaving(true); setErr(null)
     try {
       const payload = Object.fromEntries(Object.entries(form).filter(([, v]) => v !== '' && v !== null))
+      // A deliberate "medical DOES apply here" is `false`, and the filter above
+      // keeps it — but an untouched tri-state is null and is correctly omitted,
+      // leaving the package on the tenant default.
+
       if (row) await tpvApi.workPackages.update(row.id, payload)
       else await tpvApi.workPackages.create(payload)
       onSaved()
@@ -248,6 +258,25 @@ function WpModal({ row, vendors, onClose, onSaved }) {
                 : <input type={f.type || 'text'} value={form[f.k]} onChange={set(f.k)} style={inp} />}
             </label>
           ))}
+          {/* The medical bypass. Scoped to the package because that IS the
+              project a worker is assigned to: turning it on lifts the medical
+              prerequisite for everyone on this package — safety induction stops
+              being blocked, and work authorization reports medical as Not
+              Applicable rather than failing. */}
+          <label style={{ ...lbl, gridColumn: '1 / -1' }}>Medical requirement
+            <select
+              value={form.medical_not_applicable === null || form.medical_not_applicable === undefined ? '' : String(form.medical_not_applicable)}
+              onChange={e => setForm(p => ({
+                ...p,
+                medical_not_applicable: e.target.value === '' ? null : e.target.value === 'true',
+              }))}
+              style={inp}
+            >
+              <option value="">Follow the site default</option>
+              <option value="false">Required — workers need medical clearance</option>
+              <option value="true">Not applicable for this project</option>
+            </select>
+          </label>
         </div>
         {err && <p style={{ color: '#ef4444', fontSize: 12.5, margin: '10px 0 0' }}>{err}</p>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>

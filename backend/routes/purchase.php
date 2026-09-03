@@ -303,6 +303,23 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     // strict about it — declared before the {worker} wildcard above would ever
     // be consulted, since these are static segments.
     Route::get('/workforce/medicals',                 [PurchaseWorkforceAdminController::class, 'medicals']);
+
+    // Medical module — the register, the quality check, the timeline and the
+    // external intake. Mirrors the TPV side route for route.
+    Route::get('/medical',                            [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'index']);
+    Route::get('/medical/template',                   [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'template']);
+    // Declared BEFORE /medical/{medical} so "report" is never read as an id.
+    Route::get('/medical/report',                     [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'report']);
+    Route::get('/medical/report/export',              [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'reportExport']);
+    Route::get('/medical/batches',                    [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'batches']);
+    Route::post('/medical/bulk',                      [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'bulkUpload']);
+    Route::get('/medical/{medical}',                  [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'show'])->whereNumber('medical');
+    Route::post('/medical/{medical}/decide',          [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'decide'])->whereNumber('medical');
+    Route::post('/medical/{medical}/comment',         [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'comment'])->whereNumber('medical');
+    Route::get('/medical/{medical}/certificate',      [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'certificate'])->whereNumber('medical');
+    Route::get('/medical/{medical}/document',         [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'document'])->whereNumber('medical');
+    Route::post('/workforce/workers/{worker}/medical/external', [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'storeExternal'])->whereNumber('worker');
+    Route::get('/workforce/workers/{worker}/medical-history',   [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'workerHistory'])->whereNumber('worker');
     Route::get('/workforce/trainings',                [PurchaseWorkforceAdminController::class, 'trainings']);
 
     // ── Cross-vendor registers ─────────────────────────────────────────────

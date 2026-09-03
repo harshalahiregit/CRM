@@ -412,6 +412,19 @@ const PortalOrderDetail = lazy(() => import('@/pages/vendor-portal/PortalOrderDe
 const PortalInvoiceDetail = lazy(() => import('@/pages/vendor-portal/PortalInvoiceDetail'))
 const PortalWorkforceShell = lazy(() => import('@/pages/vendor-portal/PortalWorkforceShell'))
 
+// Medical module — the doctor portal (one login, both vendor sides), the admin
+// doctor directory, and the public certificate check the QR opens.
+const DoctorPortalShell = lazy(() => import('@/pages/doctor-portal/DoctorPortalShell'))
+const DoctorDashboard   = lazy(() => import('@/pages/doctor-portal/DoctorDashboard'))
+const DoctorExamination = lazy(() => import('@/pages/doctor-portal/DoctorExamination'))
+const DoctorExaminations = lazy(() => import('@/pages/doctor-portal/DoctorExaminations'))
+const DoctorProfile     = lazy(() => import('@/pages/doctor-portal/DoctorProfile'))
+const MedicalDoctors    = lazy(() => import('@/pages/medical/MedicalDoctors'))
+const MedicalVerify     = lazy(() => import('@/pages/public/MedicalVerify'))
+const VendorMedicalPanel = lazy(() => import('@/components/medical/VendorMedicalPanel'))
+const TpvMedicalReport = lazy(() => import('@/modules/tpv/pages/TpvMedicalReport'))
+const PurchaseMedicalReport = lazy(() => import('@/modules/purchase/pages/PurchaseMedicalReport'))
+
 function ComingSoon({ name }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[55vh] gap-4 animate-fade-in">
@@ -457,6 +470,7 @@ function RootRedirect() {
   // No 'vendor' branch: a Purchase Vendor is never a User session. They sign in at
   // /purchase-portal/login and hold a PurchaseVendor token under its own storage key.
   if (role === 'company') return <Navigate to="/company-portal/dashboard" replace />
+  if (role === 'doctor') return <Navigate to="/doctor-portal/dashboard" replace />
   return <Navigate to="/app/dashboard" replace />
 }
 
@@ -464,6 +478,24 @@ export default function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<RootRedirect />} />
+
+      {/* Public certificate check — what the QR on a medical certificate opens.
+          No auth by design: a guard or an inspector holding the paper has to be
+          able to check it. The API answers thinly (standing, not findings). */}
+      <Route path="/verify/medical" element={<S><MedicalVerify /></S>} />
+      <Route path="/verify/medical/:certificate" element={<S><MedicalVerify /></S>} />
+
+      {/* Doctor portal — the Internal Medical Flow. One login serves both vendor
+          sides; the module switch lives in the shell. */}
+      <Route path="/doctor-portal" element={
+        <ProtectedRoute roles={['doctor']}><S><DoctorPortalShell /></S></ProtectedRoute>
+      }>
+        <Route index element={<Navigate to="dashboard" replace />} />
+        <Route path="dashboard"    element={<S><DoctorDashboard /></S>} />
+        <Route path="examine"      element={<S><DoctorExamination /></S>} />
+        <Route path="examinations" element={<S><DoctorExaminations /></S>} />
+        <Route path="profile"      element={<S><DoctorProfile /></S>} />
+      </Route>
 
       {/* Auth routes */}
       <Route path="/auth">
@@ -497,7 +529,7 @@ export default function AppRoutes() {
       {/* Protected app routes — internal staff/admin only. Portal-only roles
           (TPV vendor, vendor, company) are bounced to their own portal, so a
           vendor can never reach the admin shell by link or by typing a URL. */}
-      <Route path="/app" element={<ProtectedRoute blockRoles={['third_party_vendor', 'vendor', 'company']}><AppShell /></ProtectedRoute>}>
+      <Route path="/app" element={<ProtectedRoute blockRoles={['third_party_vendor', 'vendor', 'company', 'doctor']}><AppShell /></ProtectedRoute>}>
 
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<S><DashboardPage /></S>} />
@@ -695,9 +727,12 @@ export default function AppRoutes() {
               existing review screen and its links keep working. */}
           <Route path="workers" element={<S><PurchaseWorkers /></S>} />
           <Route path="workers/:id" element={<S><PurchaseWorkerWizard /></S>} />
-          {/* Cross-workforce medical fitness register. Vendor-scoped: the
-              endpoint 422s without a vendor, so the page asks for one first. */}
+          {/* Cross-workforce medical fitness register + quality check —
+              tenant-wide, mirroring TPV, because a reviewer works a queue
+              across vendors rather than one vendor at a time. */}
           <Route path="medical" element={<S><PurchaseMedicalFitness /></S>} />
+          <Route path="medical/doctors" element={<S><MedicalDoctors /></S>} />
+          <Route path="medical/report" element={<S><PurchaseMedicalReport /></S>} />
           {/* PPE matrix. Purchase has no requirements table, so unlike TPV's
               prescriptive matrix this one is OBSERVED — designation against the
               kit workers in that role actually hold. */}
@@ -780,8 +815,12 @@ export default function AppRoutes() {
           <Route path="approval-register" element={<S><TpvApprovalRegister /></S>} />
           {/* §15 Competency & Training. */}
           <Route path="competency" element={<S><TpvCompetency /></S>} />
-          {/* §3/§16 Medical Fitness register. */}
+          {/* §3/§16 Medical Fitness register + the Medical module's quality
+              check. The doctor directory is deliberately module-neutral: one
+              doctor serves both vendor sides, so there is one list of them. */}
           <Route path="medical" element={<S><TpvMedicalFitness /></S>} />
+          <Route path="medical/doctors" element={<S><MedicalDoctors /></S>} />
+          <Route path="medical/report" element={<S><TpvMedicalReport /></S>} />
           {/* §19 Unified Work Authorization — read-only composite verdict. */}
           <Route path="work-authorization" element={<S><TpvWorkAuthorization /></S>} />
           {/* §24 Non-Conformance Reports. */}
@@ -991,6 +1030,9 @@ export default function AppRoutes() {
         <Route path="overview"          element={<S><MyOverview /></S>} />
         <Route path="customers"         element={<S><MyCustomers /></S>} />
         <Route path="kb"                element={<S><MyKb /></S>} />
+        {/* Medical — the External Medical Flow. The vendor files certificates
+            its own doctor signed and answers the quality team about them. */}
+        <Route path="medical"           element={<S><VendorMedicalPanel base="/portal" /></S>} />
         <Route path="projects"          element={<S><MyWork view="projects" /></S>} />
         <Route path="tasks"             element={<S><MyWork view="tasks" /></S>} />
         <Route path="tickets"           element={<S><MyWork view="tickets" /></S>} />
@@ -1063,6 +1105,8 @@ export default function AppRoutes() {
             lifecycle; step 5 (badge) is read-only here, activation is admin-only. */}
         <Route path="workforce"  element={<S><PurchasePortalWorkforce /></S>} />
         <Route path="ppe"        element={<S><PurchasePortalPpe /></S>} />
+        {/* Medical — the Purchase mirror of the External Medical Flow. */}
+        <Route path="medical"    element={<S><VendorMedicalPanel base="/portal/purchase" /></S>} />
         <Route path="profile"    element={<S><PurchasePortalProfile /></S>} />
         <Route path="support"    element={<S><PurchasePortalSupport /></S>} />
 

@@ -30,6 +30,8 @@ export default function PurchasePortalShell() {
         overview:   'overview',
         profile:    'profile',
         contact:    'contacts',
+        // External Medical Flow — upload certificates, answer the quality team.
+        medical:    'medical',
         comply:     'compliance',
         documents:  'documents',
         kb:         'kb',

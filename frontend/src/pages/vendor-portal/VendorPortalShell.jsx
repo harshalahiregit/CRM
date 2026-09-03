@@ -34,6 +34,8 @@ export default function VendorPortalShell() {
         overview:   'overview',
         profile:    'registration',   // "My Company"
         contact:    'contacts',
+        // External Medical Flow — upload certificates, answer the quality team.
+        medical:    'medical',
         customer:   'customers',
         comply:     'compliance',
         documents:  'documents',      // statutory documents / files

@@ -138,11 +138,13 @@ export const portalApi = {
     // routes, which forced third_party_vendor into the admin role gate.
     markPunch:       (id, punch_count, punch_reason) => api.post(`/portal/workers/${id}/mark-punch`, { punch_count, punch_reason }).then(r => r.data),
     markCardStatus:  (id, card_status) => api.post(`/portal/workers/${id}/mark-card-status`, { card_status }).then(r => r.data),
-    uploadWorkers: (file, vendor_id = null) => {
+    // Portal-owned like markPunch/markCardStatus above. Posting this to the
+    // admin /tpv route is what told every vendor "Unauthorized. Required role:
+    // admin or staff". No vendor_id is sent — the server takes it from the token.
+    uploadWorkers: (file) => {
       const fd = new FormData()
       fd.append('worker_file', file)
-      if (vendor_id) fd.append('vendor_id', vendor_id)
-      return upload('/tpv/workers/upload', fd)
+      return upload('/portal/workers/upload', fd)
     },
     // Read-only: the vendor VIEWS the admin-issued badge and, until it is issued,
     // sees exactly what is still blocking it. Issuing itself stays admin-only.

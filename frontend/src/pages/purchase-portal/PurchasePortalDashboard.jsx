@@ -9,6 +9,7 @@ import { purchasePortalApi } from '@/services/purchasePortalApi'
 import { KIT3D_STYLE, StatusBadge as StatusPill } from '@/components/ui/kit3d'
 import PurchaseRegistrationBadge from '@/modules/purchase/components/PurchaseRegistrationBadge'
 import TemporaryVendorValidityBadge from '@/modules/purchase/components/TemporaryVendorValidityBadge'
+import MedicalPendingBanner from '@/components/medical/MedicalPendingBanner'
 
 const onbCfg = (s) => ({
   In_Progress:  { label: 'In Progress',  color: '#0ea5e9', bg: 'rgba(14,165,233,0.15)' },
@@ -114,6 +115,9 @@ export default function PurchasePortalDashboard() {
   return (
     <div style={{ padding: 24 }}>
       <style>{KIT3D_STYLE}</style>
+
+      {/* The medical prerequisite, said before a trainer has to say it. */}
+      <MedicalPendingBanner base="/portal/purchase" to="/purchase-portal/medical" />
 
       {/* Join-the-meeting popup — the link also goes out by e-mail, but a vendor
           who is already logged in should not have to go and find that mail. */}

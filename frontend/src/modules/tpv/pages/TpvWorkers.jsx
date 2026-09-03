@@ -641,8 +641,12 @@ function BulkUploadModal({ vendorId, onClose, onUploaded, api, isPortal }) {
 
   const doUpload = async () => {
     if (!file) { alert('Please select a CSV or Excel file.'); return }
-    const targetVid = isPortal ? 1 : Number(vid || vendorId)
-    if (!targetVid) { alert('Please select an employing vendor.'); return }
+
+    // On the portal the vendor is the caller — the server reads it from the
+    // token. This used to send a hardcoded vendor id of 1, so a vendor's import
+    // landed under somebody else's workforce and vanished from their own list.
+    const targetVid = isPortal ? undefined : Number(vid || vendorId)
+    if (!isPortal && !targetVid) { alert('Please select an employing vendor.'); return }
 
     setUploading(true)
     try {
@@ -694,10 +698,23 @@ function BulkUploadModal({ vendorId, onClose, onUploaded, api, isPortal }) {
           <strong style={{ color: result.status === 'success' ? '#047857' : '#991b1b', fontSize: 14, display: 'block', marginBottom: 6 }}>
             {result.message}
           </strong>
+          {/* Say WHICH rows were skipped and why. A bare "3 duplicate/skipped"
+              is indistinguishable from an import that silently failed. */}
+          {result.duplicates && result.duplicates.length > 0 && (
+            <>
+              <span style={{ fontSize: 11.5, fontWeight: 800, color: '#92400e' }}>Already registered</span>
+              <ul style={{ margin: '4px 0 8px', paddingLeft: 18, fontSize: 12, color: '#92400e' }}>
+                {result.duplicates.map((d, i) => <li key={i}>{d}</li>)}
+              </ul>
+            </>
+          )}
           {result.errors && result.errors.length > 0 && (
-            <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12, color: '#b91c1c' }}>
-              {result.errors.map((err, i) => <li key={i}>{err}</li>)}
-            </ul>
+            <>
+              <span style={{ fontSize: 11.5, fontWeight: 800, color: '#b91c1c' }}>Could not be read</span>
+              <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 12, color: '#b91c1c' }}>
+                {result.errors.map((err, i) => <li key={i}>{err}</li>)}
+              </ul>
+            </>
           )}
         </div>
       )}

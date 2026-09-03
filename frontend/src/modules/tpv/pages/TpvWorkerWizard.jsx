@@ -20,6 +20,7 @@ import {
   KIT3D_STYLE, labelStyle, inputStyle, Overlay, ModalFooter, InfoBox,
   Field, TextInput, SelectInput, StatusBadge as StatusPill,
 } from '@/components/ui/kit3d'
+import WorkerHealthPanel from '@/components/medical/WorkerHealthPanel'
 
 const STEP_ICONS  = { profile: UserCheck, medical: HeartPulse, induction: GraduationCap, ppe: HardHat, badge: QrCode }
 const STEP_COLORS = { profile: '#0ea5e9', medical: '#ec4899', induction: '#8b5cf6', ppe: '#f59e0b', badge: '#10b981' }
@@ -708,44 +709,13 @@ function Step2Medical({ worker, editable, onSaved, onNext, api }) {
         </div>
       </div>
 
-      {/* Medical History — every past exam, newest first (P0-2). Re-tests over
-          time accumulate here; the top row is the current fitness the gate reads. */}
-      {Array.isArray(worker.medical_history) && worker.medical_history.length > 0 && (
-        <div style={{ marginBottom: 18, border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
-          <div style={{ padding: '8px 14px', background: 'var(--bg-input)', fontSize: 12, fontWeight: 800, color: 'var(--text-h)' }}>
-            🩺 Medical History ({worker.medical_history.length})
-          </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead>
-                <tr style={{ textAlign: 'left', color: 'var(--text-muted)' }}>
-                  <th style={{ padding: '6px 14px', fontWeight: 700 }}>Date</th>
-                  <th style={{ padding: '6px 14px', fontWeight: 700 }}>Type</th>
-                  <th style={{ padding: '6px 14px', fontWeight: 700 }}>Examiner</th>
-                  <th style={{ padding: '6px 14px', fontWeight: 700 }}>Fitness</th>
-                  <th style={{ padding: '6px 14px', fontWeight: 700 }}>Valid Until</th>
-                </tr>
-              </thead>
-              <tbody>
-                {worker.medical_history.map((m, i) => (
-                  <tr key={m.id} style={{ borderTop: '1px solid var(--border)', background: i === 0 ? 'rgba(16,185,129,0.06)' : 'transparent' }}>
-                    <td style={{ padding: '6px 14px' }}>
-                      {m.exam_date ? new Date(m.exam_date).toLocaleDateString() : '—'}
-                      {i === 0 && <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, color: '#15803d' }}>CURRENT</span>}
-                    </td>
-                    <td style={{ padding: '6px 14px', textTransform: 'capitalize' }}>{m.exam_type || '—'}</td>
-                    <td style={{ padding: '6px 14px' }}>{m.examiner_name || '—'}</td>
-                    <td style={{ padding: '6px 14px', fontWeight: 700, color: String(m.fitness_status || '').startsWith('Fit') ? '#15803d' : '#b91c1c' }}>
-                      {String(m.fitness_status || '—').replace(/_/g, ' ')}
-                    </td>
-                    <td style={{ padding: '6px 14px' }}>{m.valid_until ? new Date(m.valid_until).toLocaleDateString() : '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      {/* The worker's health record — every past examination, its quality-check
+          state, the overall score and which way it is moving, each row one click
+          from its certificate. Replaces the flat history table this step used to
+          draw: the same rows, plus the two facts a profile is actually for. */}
+      <div style={{ marginBottom: 18 }}>
+        <WorkerHealthPanel module="tpv" workerId={worker.id} compact />
+      </div>
 
       {/* Type Selector */}
       {!f.medical_type ? (

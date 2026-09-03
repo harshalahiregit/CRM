@@ -55,6 +55,8 @@ class PurchaseWorkPackageController extends Controller
             'end_date'           => 'nullable|date|after_or_equal:start_date',
             'status'             => ['nullable', Rule::in(PurchaseWorkPackage::STATUSES)],
             'notes'              => 'nullable|string|max:5000',
+            // "Not Applicable for the Project" — the medical bypass.
+            'medical_not_applicable' => 'nullable|boolean',
         ]);
 
         return response()->json(
@@ -77,6 +79,8 @@ class PurchaseWorkPackageController extends Controller
             'end_date'           => 'nullable|date|after_or_equal:start_date',
             'status'             => ['nullable', Rule::in(PurchaseWorkPackage::STATUSES)],
             'notes'              => 'nullable|string|max:5000',
+            // "Not Applicable for the Project" — the medical bypass.
+            'medical_not_applicable' => 'nullable|boolean',
         ]);
 
         return response()->json($this->service->update($workPackage, $data));
