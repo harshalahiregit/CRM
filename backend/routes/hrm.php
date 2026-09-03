@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\Hrm\HrmAuthController;
 use App\Http\Controllers\Api\Hrm\HrmClaimController;
 use App\Http\Controllers\Api\Hrm\HrmFileController;
 use App\Http\Controllers\Api\Hrm\HrmLeaveController;
+use App\Http\Controllers\Api\Hrm\HrmProfileController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -36,6 +37,10 @@ Route::prefix('Hrm')->group(function () {
     Route::get('/file/{attachment}', [HrmFileController::class, 'show'])
         ->name('hrm.file')
         ->middleware('signed');
+
+    // Reached from the sign-in screen, before anybody has a token.
+    Route::post('/forgot-password', [HrmProfileController::class, 'forgotPassword']);
+    Route::post('/demo-request',    [HrmProfileController::class, 'demoRequest']);
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('/logout',          [HrmAuthController::class, 'logout']);
@@ -69,5 +74,16 @@ Route::prefix('Hrm')->group(function () {
         Route::post('/advance/submit-settlement',[HrmClaimController::class, 'submitSettlement']);
         Route::post('/advance/ledger',          [HrmClaimController::class, 'advanceLedger']);
         Route::post('/advance/payroll-summary', [HrmClaimController::class, 'payrollSummary']);
+
+        // Profile, salary, calendar and notifications.
+        Route::post('/edit-profile',              [HrmProfileController::class, 'editProfile']);
+        Route::post('/delete-account',            [HrmProfileController::class, 'deleteAccount']);
+        Route::post('/salary-details',            [HrmProfileController::class, 'salaryDetails']);
+        // GET, unlike almost everything else the app calls.
+        Route::get('/events',                     [HrmProfileController::class, 'events']);
+        Route::post('/notifications',             [HrmProfileController::class, 'notifications']);
+        Route::post('/notifications/mark-read',   [HrmProfileController::class, 'markNotificationsRead']);
+        Route::post('/notification-preferences',  [HrmProfileController::class, 'notificationPreferences']);
+        Route::post('/fcm-token',                 [HrmProfileController::class, 'fcmToken']);
     });
 });
