@@ -48,6 +48,7 @@ class AdvanceService
                 'reference'                => HrAdvance::nextReference((int) $employee->tenant_id),
                 'advance_type'             => $data['advance_type'] ?? null,
                 'category'                 => $data['category'] ?? null,
+                'department'               => $data['department'] ?? null,
                 'project_site'             => $data['project_site'] ?? null,
                 'purpose'                  => $data['purpose'],
                 'amount_requested'         => $data['amount_requested'],

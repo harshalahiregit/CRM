@@ -308,7 +308,11 @@ class HrmClaimController extends Controller
             'advance_type'             => (string) ($a->advance_type ?? ''),
             'advance_type_label'       => $this->titleise($a->advance_type),
             'category'                 => (string) ($a->category ?? ''),
-            'department'               => (string) ($a->employee->department ?? ''),
+            // The value entered on the request, falling back to the employee's own
+            // department when it was left blank — which is what the box being
+            // optional means. Echoing the employee's unconditionally hid the fact
+            // that a typed value was being thrown away.
+            'department'               => (string) ($a->department ?: ($a->employee->department ?? '')),
             'project_site'             => (string) ($a->project_site ?? ''),
             'purpose'                  => (string) $a->purpose,
             'amount_requested'         => $this->money($a->amount_requested),

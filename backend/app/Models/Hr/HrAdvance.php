@@ -27,7 +27,7 @@ class HrAdvance extends Model
 
     protected $fillable = [
         'tenant_id', 'employee_id', 'reference',
-        'advance_type', 'category', 'project_site', 'purpose',
+        'advance_type', 'category', 'department', 'project_site', 'purpose',
         'amount_requested', 'amount_approved',
         'required_date', 'expected_settlement_date',
         'status', 'held_from', 'proposed_amount',
