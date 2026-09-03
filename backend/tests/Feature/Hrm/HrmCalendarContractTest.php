@@ -158,6 +158,7 @@ class HrmCalendarContractTest extends TestCase
         // 'national-holiday' now, not the old catch-all: the class carries the
         // configured type so the phone can tell the four kinds apart.
         $this->assertSame('national-holiday', $rows['Independence Day']['className']);
-        $this->assertSame('optional-holiday', $rows['Optional Festival']['className']);
+        // Exactly 'optional': the calendar compares this string directly.
+        $this->assertSame('optional', $rows['Optional Festival']['className']);
     }
 }

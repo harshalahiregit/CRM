@@ -217,7 +217,10 @@ class HrmLeaveTest extends TestCase
         }
 
         $this->assertSame('public-holiday', $rows[0]['className']);
-        $this->assertSame('optional-holiday', $rows[1]['className']);
+        // Exactly 'optional' — the calendar compares this string directly to pick
+        // the badge and the dot colour, so a tidier spelling renders an optional
+        // day as a mandatory one.
+        $this->assertSame('optional', $rows[1]['className']);
     }
 
     /* ── attendance raises ───────────────────────────────────────────── */

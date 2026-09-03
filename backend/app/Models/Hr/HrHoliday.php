@@ -75,10 +75,17 @@ class HrHoliday extends Model
      */
     public function appClassName(): string
     {
+        // Exactly 'optional' — not a tidier 'optional-holiday'. The calendar
+        // tests `h.className == 'optional'` by string equality in six places to
+        // pick the badge, the dot colour and the "Optional Leave" label, so any
+        // other spelling silently renders an optional day as a mandatory one.
         if ($this->is_optional || $this->holiday_type === 'Optional') {
-            return 'optional-holiday';
+            return 'optional';
         }
 
+        // Everything else reads as mandatory to the app (`!= 'optional'`), and
+        // the type is carried rather than blanked so the screen can start
+        // distinguishing them without another backend change.
         return match ($this->holiday_type) {
             'National' => 'national-holiday',
             'Festival' => 'festival-holiday',
