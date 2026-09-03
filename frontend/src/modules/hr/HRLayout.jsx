@@ -74,7 +74,7 @@ const TRACK = [
   { label: 'Staff Directory', path: '/app/hr/track/staff',          icon: Contact,       ready: true  },
   { label: 'Demo Requests',   path: '/app/hr/track/demo-requests',  icon: MessageSquare, ready: true  },
   { label: 'Reports',         path: '/app/hr/track/reports',        icon: BarChart3,     ready: true  },
-  { label: 'Holidays',        path: '/app/hr/track/holidays',       icon: PartyPopper,   ready: true  },
+  { label: 'Holidays',        path: '/app/hr/holidays',             icon: PartyPopper,   ready: true  },
   { label: 'Settings',        path: '/app/hr/track/settings',       icon: Settings,      ready: true  },
 ]
 

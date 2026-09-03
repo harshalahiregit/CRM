@@ -64,6 +64,7 @@ const TrackPayroll        = lazy(() => import('@/modules/hr/pages/track/TrackPay
 const TrackDemoRequests   = lazy(() => import('@/modules/hr/pages/track/TrackDemoRequests'))
 const TrackReports        = lazy(() => import('@/modules/hr/pages/track/TrackReports'))
 const TrackHolidays       = lazy(() => import('@/modules/hr/pages/track/TrackHolidays'))
+const Holidays            = lazy(() => import('@/modules/hr/pages/Holidays'))
 const TrackSettings       = lazy(() => import('@/modules/hr/pages/track/TrackSettings'))
 const HRDashboard = lazy(() => import('@/modules/hr/pages/HRDashboard'))
 const ManpowerRequests = lazy(() => import('@/modules/hr/pages/ManpowerRequests'))
@@ -606,6 +607,7 @@ export default function AppRoutes() {
             <Route path="track/demo-requests" element={<S><TrackDemoRequests /></S>} />
             <Route path="track/reports" element={<S><TrackReports /></S>} />
             <Route path="track/holidays" element={<S><TrackHolidays /></S>} />
+            <Route path="holidays" element={<S><Holidays /></S>} />
             <Route path="track/settings" element={<S><TrackSettings /></S>} />
           <Route path="organization-setup" element={<S><OrganizationSetup /></S>} />
           <Route path="org-chart" element={<S><OrgChart /></S>} />
