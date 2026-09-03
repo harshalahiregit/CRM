@@ -53,6 +53,7 @@ const MyReimbursements = lazy(() => import('@/modules/hr/pages/MyReimbursements'
 const Advances        = lazy(() => import('@/modules/hr/pages/Advances'))
 const MyAdvances      = lazy(() => import('@/modules/hr/pages/MyAdvances'))
 const AttendanceReports = lazy(() => import('@/modules/hr/pages/AttendanceReports'))
+const MyLeave = lazy(() => import('@/modules/hr/pages/MyLeave'))
 const TrackAdvances       = lazy(() => import('@/modules/hr/pages/track/TrackAdvances'))
 const TrackStaff          = lazy(() => import('@/modules/hr/pages/track/TrackStaff'))
 const TrackPayroll        = lazy(() => import('@/modules/hr/pages/track/TrackPayroll'))
@@ -548,6 +549,9 @@ export default function AppRoutes() {
           <Route path="my-advances" element={<S><MyAdvances /></S>} />
           {/* Read-only: looking at a report cannot affect a payroll run. */}
           <Route path="attendance-reports" element={<S><AttendanceReports /></S>} />
+          {/* Self-service leave. The other leave routes are HR's — they file on
+              somebody's behalf; this one only ever touches your own. */}
+          <Route path="my-leave" element={<S><MyLeave /></S>} />
             {/* SangoeTrack — live from track.sangoe.in. Namespaced under track/
                 so the CRM's own attendance page above keeps its route. */}
             <Route path="track/attendance" element={<S><TrackAttendance /></S>} />

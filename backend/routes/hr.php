@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\Hr\MyAttendanceController;
 use App\Http\Controllers\Api\Hr\AdvanceController;
 use App\Http\Controllers\Api\Hr\AttendanceReportController;
 use App\Http\Controllers\Api\Hr\MyAdvanceController;
+use App\Http\Controllers\Api\Hr\MyLeaveController;
 use App\Http\Controllers\Api\Hr\MyReimbursementController;
 use App\Http\Controllers\Api\Hr\ReimbursementController;
 use App\Http\Controllers\Api\Hr\SangoeTrackSyncController;
@@ -487,6 +488,21 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::post('/me/advances/{id}/cancel',     [MyAdvanceController::class, 'cancel']);
     Route::post('/me/advances/{id}/settlement', [MyAdvanceController::class, 'settle']);
     Route::get('/me/advances/{id}/attachments/{attachmentId}', [MyAdvanceController::class, 'attachment']);
+
+    // ── My leave ────────────────────────────────────────────────────────
+    // The existing leave routes are HR's: they take an employee_id and are gated
+    // on managing the queue, so there was no way to apply for your OWN leave in
+    // the CRM — that only existed in the app, against SangoeTrack.
+    //
+    // No employee_id is accepted anywhere here. 'balances' and 'preview' are
+    // declared before /{id} so neither is captured as a record id.
+    Route::get('/me/leave',                  [MyLeaveController::class, 'index']);
+    Route::get('/me/leave/balances',         [MyLeaveController::class, 'balances']);
+    Route::post('/me/leave/preview',         [MyLeaveController::class, 'preview']);
+    Route::post('/me/leave',                 [MyLeaveController::class, 'store']);
+    Route::get('/me/leave/{id}',             [MyLeaveController::class, 'show']);
+    Route::patch('/me/leave/{id}/cancel',    [MyLeaveController::class, 'cancel']);
+    Route::get('/me/leave/{id}/attachment',  [MyLeaveController::class, 'attachment']);
 
     Route::get('/me/attendance/today',       [MyAttendanceController::class, 'today']);
     Route::post('/me/attendance/check-in',   [MyAttendanceController::class, 'checkIn']);

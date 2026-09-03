@@ -21,12 +21,15 @@ const api = axios.create({ baseURL: BASE })
  * FormData does with them and what makes a nullable numeric field fail
  * validation for no visible reason.
  */
-function toForm(fields = {}, files = []) {
+function toForm(fields = {}, files = [], fieldName = 'files[]') {
   const form = new FormData()
   Object.entries(fields).forEach(([k, v]) => {
     if (v !== null && v !== undefined && v !== '') form.append(k, v)
   })
-  Array.from(files).forEach(f => form.append('files[]', f))
+  // The field name is a parameter because endpoints disagree: claims and
+  // advances take a `files[]` array, leave takes a single `attachment`. Sending
+  // the wrong name is silent — the server simply never sees the file.
+  Array.from(files).forEach(f => form.append(fieldName, f))
   return form
 }
 
@@ -1205,6 +1208,28 @@ export const hrApi = {
 
     file: (id, attachmentId) =>
       api.get(`/hr/advances/${id}/attachments/${attachmentId}`, { responseType: 'blob' }).then(r => r.data),
+  },
+
+  /**
+   * An employee's own leave.
+   *
+   * Separate from hrApi.leave, which is HR's — that one takes an employee_id and
+   * files leave on somebody's behalf. Nothing here accepts one, matching the
+   * server, so "could this book leave against a colleague" is answerable without
+   * reading the controller.
+   */
+  myLeave: {
+    list:     ()   => api.get('/hr/me/leave').then(r => r.data?.data ?? []),
+    balances: ()   => api.get('/hr/me/leave/balances').then(r => r.data?.data ?? []),
+    get:      (id) => api.get(`/hr/me/leave/${id}`).then(r => r.data?.data),
+    // The day count comes from the server so the number somebody sees while
+    // picking dates is the number they will actually be charged.
+    preview:  (data) => api.post('/hr/me/leave/preview', data).then(r => r.data?.data),
+    apply:    (data, file = null) =>
+      api.post('/hr/me/leave', toForm(data, file ? [file] : [], 'attachment')).then(r => r.data),
+    cancel:   (id) => api.patch(`/hr/me/leave/${id}/cancel`).then(r => r.data),
+    fileBlob: (id) =>
+      api.get(`/hr/me/leave/${id}/attachment`, { responseType: 'blob' }).then(r => r.data),
   },
 
   /**

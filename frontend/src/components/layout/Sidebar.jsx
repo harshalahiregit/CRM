@@ -105,6 +105,9 @@ const HR_RECORDS_ITEMS = [
   // the nav: the only 'Attendance' entry points at SangoeTrack's copy below, so
   // the native one was unreachable and looked missing.
   { label: 'Attendance Register', path: '/app/hr/attendance', icon: CalendarCheck },
+  // 'My Leave', beside My Expenses and My Advances — the self-service set. HR's
+  // own Leave Management sits above; SangoeTrack's 'Leave' is below.
+  { label: 'My Leave', path: '/app/hr/my-leave', icon: CalendarOff },
 ]
 
 // Flat list of every HR leaf — used only for the collapsed icon rail.
