@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\Hrm\HrmAttendanceController;
 use App\Http\Controllers\Api\Hrm\HrmAuthController;
+use App\Http\Controllers\Api\Hrm\HrmLeaveController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -38,5 +39,15 @@ Route::prefix('Hrm')->group(function () {
         Route::post('/clock-in-out',        [HrmAttendanceController::class, 'clock']);
         Route::post('/break-toggle',        [HrmAttendanceController::class, 'breakToggle']);
         Route::post('/attendence-history',  [HrmAttendanceController::class, 'history']);
+
+        // Leave, holidays and "attendance raises" — their name for what the CRM
+        // calls a correction, so it is backed by the same service.
+        Route::post('/get-leaves',              [HrmLeaveController::class, 'myLeaves']);
+        Route::post('/get-leaves-types',        [HrmLeaveController::class, 'leaveTypes']);
+        Route::post('/leave-request',           [HrmLeaveController::class, 'applyLeave']);
+        Route::post('/leave-balance',           [HrmLeaveController::class, 'leaveBalance']);
+        Route::post('/holidays-list',           [HrmLeaveController::class, 'holidays']);
+        Route::post('/get-attendance-raises',   [HrmLeaveController::class, 'raises']);
+        Route::post('/submit-attendance-raise', [HrmLeaveController::class, 'submitRaise']);
     });
 });
