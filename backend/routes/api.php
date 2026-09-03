@@ -4,6 +4,9 @@ require __DIR__.'/auth.php';
 require __DIR__.'/admin.php';
 require __DIR__.'/hr.php';
 // SangoeTrack (track.sangoe.in) — relays only, owns no CRM table.
+// The attendance app's own surface, /api/Hrm/*, answering in SangoeTrack's
+// shape so the app can be repointed by changing one line.
+require __DIR__.'/hrm.php';
 require __DIR__.'/sangoetrack.php';
 require __DIR__.'/performance.php';
 require __DIR__.'/leave.php';
