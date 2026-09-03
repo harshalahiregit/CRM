@@ -154,6 +154,23 @@ class TpvSettingsController extends Controller
                 'compliance_categories'   => 'sometimes|array',
                 'compliance_categories.*' => 'string|max:80',
             ]),
+            'medical' => $request->validate([
+                'validity_months'        => 'sometimes|integer|min:1|max:60',
+                'auto_approve_internal'  => 'sometimes|boolean',
+                // The cap has to stay a small number: it exists to end a
+                // conversation, and a limit of 200 would not.
+                'max_iterations'         => 'sometimes|integer|min:1|max:20',
+                'block_induction'        => 'sometimes|boolean',
+                'pending_message'        => 'sometimes|string|max:160',
+                'not_applicable_default' => 'sometimes|boolean',
+                'qc_approver_ids'        => 'sometimes|array',
+                'qc_approver_ids.*'      => 'integer',
+                'reasons'                => 'sometimes|array',
+                'reasons.*.value'        => 'required|string|max:60',
+                'reasons.*.label'        => 'required|string|max:160',
+                'reasons.*.applies_to'   => 'sometimes|array',
+                'reasons.*.applies_to.*' => 'string|max:20',
+            ]),
             default => abort(404, 'Unknown settings group.'),
         };
     }

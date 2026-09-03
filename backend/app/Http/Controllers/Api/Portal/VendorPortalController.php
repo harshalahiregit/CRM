@@ -867,6 +867,31 @@ class VendorPortalController extends Controller
         );
     }
 
+    /**
+     * Bulk worker import, vendor side.
+     *
+     * The portal used to post this one action to the ADMIN route, so a vendor
+     * uploading their own roster was told "Unauthorized. Required role: admin or
+     * staff" — the same trap the punch and card-status actions were pulled out
+     * of. Same service, ownership taken from the token: a vendor_id in the body
+     * is ignored, so this cannot be pointed at somebody else's workforce.
+     */
+    public function uploadWorkers(Request $request)
+    {
+        $request->validate([
+            'worker_file' => 'required|file|mimes:csv,xls,xlsx,txt,zip|max:20480',
+        ]);
+
+        $vendor = $this->portalVendor($request);
+
+        return response()->json($this->workerService->bulkUpload(
+            $request->file('worker_file'),
+            $vendor->id,
+            $vendor->tenant_id,
+            $request->user(),
+        ));
+    }
+
     /** Worker stats derived from the vendor's own workers only. */
     public function workerStats(Request $request)
     {

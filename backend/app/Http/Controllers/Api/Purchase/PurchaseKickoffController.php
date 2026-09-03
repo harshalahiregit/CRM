@@ -41,13 +41,37 @@ class PurchaseKickoffController extends Controller
 
     /**
      * The configurable meeting-type catalogue (Sangoe TPV §9 / §39) — powers the
-     * "Meeting Type" picker on the New Meeting form. Kickoff is one type here.
+     * "Meeting Type" picker, and every option list the meeting form reads.
+     *
+     * This used to return only `types` and `default`. The form also asks for
+     * `templates`, `priorities`, `confidentiality`, `issue_severities` and
+     * `issue_categories` — so on Purchase the agenda TEMPLATES never arrived and
+     * the "Load template" button, which only renders when its type has one,
+     * simply never appeared. config/purchase_meetings.php has had all of it the
+     * whole time; nothing was returning it.
+     *
+     * Types and templates come through the shared catalog with Purchase's own
+     * config as the baseline, so a type added on Purchase's Meeting Types
+     * settings page (the shared controller is mounted there) shows up here too.
      */
-    public function meetingTypes(Request $request)
+    public function meetingTypes(Request $request, \App\Support\Shared\MeetingTypeCatalog $catalog)
     {
+        $tenantId = (int) $request->user()->tenant_id;
+        $base = 'purchase_meetings';
+
         return response()->json([
-            'types'    => \App\Support\Purchase\PurchaseMeetingTypeCatalog::types(),
-            'default'  => \App\Support\Purchase\PurchaseMeetingTypeCatalog::DEFAULT,
+            'types'             => $catalog->types($tenantId, $base),
+            'templates'         => $catalog->templates($tenantId, $base),
+            // `default` kept alongside `default_type` — the shared engine emits
+            // the latter, and this endpoint has always emitted the former.
+            'default'           => \App\Support\Purchase\PurchaseMeetingTypeCatalog::DEFAULT,
+            'default_type'      => config($base.'.default_type', 'kickoff'),
+            'priorities'        => config($base.'.priorities', ['Low', 'Medium', 'High']),
+            'meeting_priorities' => config($base.'.meeting_priorities', ['Low', 'Medium', 'High', 'Urgent']),
+            'confidentiality'   => config($base.'.confidentiality', ['Public', 'Internal', 'Confidential', 'Restricted']),
+            'issue_severities'  => config($base.'.issue_severities', ['Low', 'Medium', 'High', 'Critical']),
+            'issue_categories'  => config($base.'.issue_categories', []),
+            'decision_statuses' => config($base.'.decision_statuses', ['Active', 'Superseded', 'Rescinded']),
         ]);
     }
 

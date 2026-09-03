@@ -24,8 +24,12 @@ class SendKickoffReminders extends Command
     public function handle(KickoffMeetingService $service): int
     {
         $sent = $service->runDueReminders();
+        // The same command drives BOTH directions: reminders before the meeting
+        // and follow-ups after it. One scheduler entry, so a follow-up cannot be
+        // left unscheduled by someone wiring up only half of it.
+        $followed = $service->runDueFollowUps();
 
-        $this->info("Kickoff: reminder(s) fired for {$sent} meeting(s).");
+        $this->info("Kickoff: reminder(s) fired for {$sent} meeting(s), follow-up(s) for {$followed}.");
 
         return self::SUCCESS;
     }

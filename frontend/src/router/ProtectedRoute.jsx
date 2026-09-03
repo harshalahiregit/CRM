@@ -28,6 +28,9 @@ function homeFor(role) {
   // token, not a User session, and lands via PurchaseVendorPortalGuard instead.
   if (role === 'third_party_vendor') return '/vendor-portal/dashboard'
   if (role === 'company') return '/company-portal/dashboard'
+  // A doctor examines workers and nothing else — the internal /app shell would
+  // show them a CRM they have no business in.
+  if (role === 'doctor') return '/doctor-portal/dashboard'
   return '/app/dashboard'
 }
 

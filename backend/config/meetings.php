@@ -274,4 +274,19 @@ return [
     */
     'reminder_offsets_minutes' => [1440, 60],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Automatic follow-up windows (minutes AFTER the meeting start)
+    |--------------------------------------------------------------------------
+    |
+    | Sent to every participant once the meeting has happened, nudging whoever
+    | owns the minutes to publish them and telling attendees what to expect.
+    | Read by BOTH engines (the Purchase service reads this same key), so one
+    | list governs the whole product. Set to [] to disable.
+    |
+    | Default: 2 hours after the start, then 24 hours after.
+    |
+    */
+    'followup_offsets_minutes' => [120, 1440],
+
 ];

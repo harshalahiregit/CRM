@@ -12,6 +12,7 @@ import { useAuth } from '@/context/AuthContext'
 import { obStatusCfg, poStatusCfg, invStatusCfg, fmtMoney, fmtDate } from './portalConstants'
 import { KIT3D_STYLE } from '@/components/ui/kit3d'
 import './portal.css'
+import MedicalPendingBanner from '@/components/medical/MedicalPendingBanner'
 
 /**
  * Vendor portal landing — professional SaaS dashboard.
@@ -187,6 +188,9 @@ export default function PortalDashboard() {
   return (
     <div>
       <style>{KIT3D_STYLE}</style>
+
+      {/* The medical prerequisite, said before a trainer has to say it. */}
+      <MedicalPendingBanner base="/portal" to="/vendor-portal/medical" />
 
       {/* ── Hero Welcome Card ─────────────────────────────────────────── */}
       <div className="portal-hero">

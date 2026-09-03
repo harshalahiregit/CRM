@@ -22,9 +22,11 @@ class PurchaseWorkPackage extends Model
         'tenant_id', 'reference', 'purchase_vendor_id', 'project_id', 'contract_id',
         'name', 'description', 'scope', 'location',
         'start_date', 'end_date', 'status', 'notes', 'created_by',
+        // "Not Applicable for the Project" — the medical bypass.
+        'medical_not_applicable',
     ];
 
-    protected $casts = ['start_date' => 'date', 'end_date' => 'date'];
+    protected $casts = ['start_date' => 'date', 'end_date' => 'date', 'medical_not_applicable' => 'boolean'];
 
     protected static function booted(): void
     {

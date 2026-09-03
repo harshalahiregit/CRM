@@ -22,7 +22,7 @@ import SelectInput from '@/components/ui/SearchableSelectInput'
 
 /**
  * Kickoff meeting detail — schedule, attendee registry, status transitions,
- * minutes upload, and the vendor-acknowledgement link.
+ * minutes upload, and sending the approved minutes to the vendor.
  */
 export default function KickoffMeetingDetail() {
   const { id } = useParams()
@@ -31,7 +31,7 @@ export default function KickoffMeetingDetail() {
   const [loading, setLoad] = useState(true)
   const [err, setErr]     = useState(null)
   const [ackLink, setAckLink] = useState(null)
-  const [publishBusy, setPublishBusy] = useState(false)   // "Send for acknowledgement" in flight
+  const [publishBusy, setPublishBusy] = useState(false)   // "Send minutes to vendor" in flight
   const [action, setAction]   = useState(null)   // { to } transition modal
   const [linkData, setLinkData]     = useState(null)    // online meeting link data
   const [genLinkBusy, setGenLinkBusy] = useState(false) // link generation in progress
@@ -565,7 +565,7 @@ function AgendaCard({ m, onEdit }) {
   )
 }
 
-/* ── Distribution tracker (§13 — Sent / Viewed / Acknowledged, per person) ── */
+/* ── Distribution tracker (§13 — Sent / Viewed, per person) ── */
 const PARTY_LABEL = {
   internal: 'Internal', vendor: 'Vendor', client: 'Client',
   management: 'Management', other: 'Other stakeholder',
@@ -619,16 +619,19 @@ function DistributionCard({ meetingId, m, onError }) {
         <p style={{ fontSize: 12, color: '#10b981', margin: '8px 0 0', fontWeight: 600 }}>{note}</p>
       )}
 
+      {/* No "Acknowledged" tile: the vendor acknowledgement link was removed, so
+          nothing can set that state any more. Left in, it would sit at zero for
+          every meeting and read as "nobody acknowledged" rather than "we no
+          longer ask for one". */}
       {totals && mom.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, margin: '12px 0 4px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, margin: '12px 0 4px' }}>
           <Tot label="Sent" value={totals.sent} colour="#a78bfa" />
           <Tot label="Viewed" value={totals.viewed} colour="#0ea5e9" />
-          <Tot label="Acknowledged" value={totals.acknowledged} colour="#10b981" />
           <Tot label="No address" value={totals.no_address} colour="#f59e0b" />
         </div>
       )}
 
-      <RecipientList title="Minutes" rows={mom} empty="The minutes have not been distributed yet — approve them, then Send for acknowledgement." />
+      <RecipientList title="Minutes" rows={mom} empty="The minutes have not been distributed yet — approve them, then send them to the vendor." />
       <RecipientList title="Invitation" rows={invites} empty="No invitation has been sent for this meeting yet." />
     </div>
   )
@@ -1079,8 +1082,8 @@ function DocumentsCard({ m, onError }) {
 
 /* ── MOM approval & distribution (Meeting.docx — approve before distribute) ────
  * The minutes move Draft → Pending Approval → Approved → Distributed. The author
- * submits; an approver approves or returns with a reason; distribution is the
- * vendor-acknowledgement send (in the card below), which the server refuses until
+ * submits; an approver approves or returns with a reason; distribution sends the
+ * approved minutes to the vendor (the card below), which the server refuses until
  * the minutes are Approved. This card owns the approval steps + the audit stamps. */
 function MomApprovalCard({ m, onChanged, onError }) {
   const [busy, setBusy]           = useState(null)   // submit|approve|return|revise
@@ -1173,7 +1176,7 @@ function MomApprovalCard({ m, onChanged, onError }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 10, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)' }}>
             <CheckCircle2 size={15} style={{ color: '#10b981', flexShrink: 0 }} />
-            <span style={{ fontSize: 12, color: 'var(--text-h)' }}>Approved — send to the vendor from the acknowledgement card below.</span>
+            <span style={{ fontSize: 12, color: 'var(--text-h)' }}>Approved — send to the vendor from the card below.</span>
           </div>
           <MomBtn onClick={revise} busy={busy === 'revise'} icon={RotateCcw} tone="#94a3b8" full>Reopen for revision</MomBtn>
         </div>

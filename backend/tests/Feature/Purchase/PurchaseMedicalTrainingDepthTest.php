@@ -75,8 +75,14 @@ class PurchaseMedicalTrainingDepthTest extends TestCase
         $this->assertSame('Dr Rao', $m->fresh()->examiner_name);
         $this->assertTrue($m->fresh()->isPassing());
 
+        // A restricted-but-passing verdict is not readiness on its own: the
+        // quality check has to accept it first.
+        $this->assertFalse($this->wf->readiness($w->fresh())['medical_ok'], 'unreviewed is not cleared');
+        $this->approveMedical($w);
+
         // Readiness accepts the restricted verdict and the step advances.
         $this->assertTrue($this->wf->readiness($w->fresh())['medical_ok']);
+        $this->wf->syncMedicalStep($w->fresh());
         $this->assertSame(2, (int) $w->fresh()->current_step);
     }
 
@@ -163,5 +169,22 @@ class PurchaseMedicalTrainingDepthTest extends TestCase
 
         $this->assertSame('Other', $t->fresh()->training_type);
         $this->assertContains($t->fresh()->training_type, PurchaseWorkerTraining::TYPES);
+    }
+
+    /**
+     * Clear the medical's quality check.
+     *
+     * Since the Medical module, a certificate is not clearance until the quality
+     * team accepts it, so a fixture that needs a worker PAST the medical step
+     * has to say so. Set directly rather than through the workflow service:
+     * these tests are about what happens after clearance, not how it is granted
+     * (MedicalGatesTrainingTest covers that).
+     */
+    private function approveMedical(PurchaseWorker $w): void
+    {
+        $w->fresh()->latestMedical?->forceFill([
+            'qc_status' => \App\Support\Medical\MedicalQcStatus::APPROVED,
+            'qc_at'     => now(),
+        ])->save();
     }
 }

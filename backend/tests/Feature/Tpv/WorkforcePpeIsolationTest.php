@@ -76,6 +76,12 @@ class WorkforcePpeIsolationTest extends TestCase
         ]);
     }
 
+    /** An admin who can rule on a medical certificate's quality check. */
+    private function reviewer(): User
+    {
+        return $this->user('admin');
+    }
+
     /** A vendor company plus the portal login that owns it. */
     private function vendorWithLogin(string $name): array
     {
@@ -511,6 +517,19 @@ class WorkforcePpeIsolationTest extends TestCase
             'fitness_status' => 'Fit', 'examined_on' => now()->toDateString(),
         ])->assertOk();
         $this->assertSame(2, (int) $worker->fresh()->current_step);
+
+        // 21b — the quality check. Since the Medical module, a vendor-filed
+        // certificate is not clearance until the quality team accepts it, so the
+        // induction below would otherwise be refused. The vendor cannot do this
+        // to itself: the decision is made as the reviewer, then the vendor
+        // session resumes.
+        app(\App\Services\Tpv\TpvMedicalWorkflowService::class)->decide(
+            $worker->fresh()->medical,
+            \App\Support\Medical\MedicalQcStatus::APPROVED,
+            [],
+            $this->reviewer(),
+        );
+        Sanctum::actingAs($user);
 
         // 22 — induction
         $this->postJson("/api/portal/workers/{$worker->id}/induction", [

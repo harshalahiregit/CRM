@@ -396,8 +396,12 @@ class PurchaseWorkforceAdminController extends Controller
             'screening_responses' => 'nullable|array',
             'screening_score'     => 'nullable|integer|min:0',
             'screening_band'      => 'nullable|string|max:20',
-            'signature_path'      => 'nullable|string|max:255',
-            'capture_photo_path'  => 'nullable|string|max:255',
+            // Signature and scene photo arrive as base64 data URLs and are decoded
+            // to stored files by the service. The *_path columns are deliberately
+            // NOT accepted from the client — a caller must not get to name a
+            // storage path or point the record at someone else's file.
+            'signature_data'      => 'nullable|string',
+            'capture_photo'       => 'nullable|string',
             'geo_location'        => 'nullable|string|max:120',
         ]);
 

@@ -20,6 +20,7 @@ import {
   KIT3D_STYLE, labelStyle, inputStyle, Overlay, ModalFooter, InfoBox,
   Field, TextInput, SelectInput, StatusBadge as StatusPill,
 } from '@/components/ui/kit3d'
+import WorkerHealthPanel from '@/components/medical/WorkerHealthPanel'
 
 const STEP_ICONS  = { profile: UserCheck, medical: HeartPulse, induction: GraduationCap, ppe: HardHat, badge: QrCode }
 const STEP_COLORS = { profile: '#0ea5e9', medical: '#ec4899', induction: '#8b5cf6', ppe: '#f59e0b', badge: '#10b981' }
@@ -636,12 +637,14 @@ function Step2Medical({ worker, editable, onSaved, onNext, api }) {
         geo_location: geo || undefined,
         capture_photo: f.capture_photo || undefined,
       }
-      // Mental-health screening + the examiner signature belong to the internal exam.
+      // Mental-health screening belongs to the internal exam only. The signature
+      // does not — an external report is signed off too, and the §16 legal
+      // capture (IP + geo + photo) is stored against it either way.
       if (!isExternal) {
         fields.screening_responses = Object.keys(mhAnswers).length ? mhAnswers : null
         fields.screening_score = allMhAnswered ? totalMhScore : null
-        if (f.signature_data) fields.signature_data = f.signature_data
       }
+      if (f.signature_data) fields.signature_data = f.signature_data
 
       // External report file → multipart, so the uploaded PDF is actually sent
       // and persisted (document_path) instead of being silently dropped.
@@ -706,44 +709,13 @@ function Step2Medical({ worker, editable, onSaved, onNext, api }) {
         </div>
       </div>
 
-      {/* Medical History — every past exam, newest first (P0-2). Re-tests over
-          time accumulate here; the top row is the current fitness the gate reads. */}
-      {Array.isArray(worker.medical_history) && worker.medical_history.length > 0 && (
-        <div style={{ marginBottom: 18, border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
-          <div style={{ padding: '8px 14px', background: 'var(--bg-input)', fontSize: 12, fontWeight: 800, color: 'var(--text-h)' }}>
-            🩺 Medical History ({worker.medical_history.length})
-          </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead>
-                <tr style={{ textAlign: 'left', color: 'var(--text-muted)' }}>
-                  <th style={{ padding: '6px 14px', fontWeight: 700 }}>Date</th>
-                  <th style={{ padding: '6px 14px', fontWeight: 700 }}>Type</th>
-                  <th style={{ padding: '6px 14px', fontWeight: 700 }}>Examiner</th>
-                  <th style={{ padding: '6px 14px', fontWeight: 700 }}>Fitness</th>
-                  <th style={{ padding: '6px 14px', fontWeight: 700 }}>Valid Until</th>
-                </tr>
-              </thead>
-              <tbody>
-                {worker.medical_history.map((m, i) => (
-                  <tr key={m.id} style={{ borderTop: '1px solid var(--border)', background: i === 0 ? 'rgba(16,185,129,0.06)' : 'transparent' }}>
-                    <td style={{ padding: '6px 14px' }}>
-                      {m.exam_date ? new Date(m.exam_date).toLocaleDateString() : '—'}
-                      {i === 0 && <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, color: '#15803d' }}>CURRENT</span>}
-                    </td>
-                    <td style={{ padding: '6px 14px', textTransform: 'capitalize' }}>{m.exam_type || '—'}</td>
-                    <td style={{ padding: '6px 14px' }}>{m.examiner_name || '—'}</td>
-                    <td style={{ padding: '6px 14px', fontWeight: 700, color: String(m.fitness_status || '').startsWith('Fit') ? '#15803d' : '#b91c1c' }}>
-                      {String(m.fitness_status || '—').replace(/_/g, ' ')}
-                    </td>
-                    <td style={{ padding: '6px 14px' }}>{m.valid_until ? new Date(m.valid_until).toLocaleDateString() : '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      {/* The worker's health record — every past examination, its quality-check
+          state, the overall score and which way it is moving, each row one click
+          from its certificate. Replaces the flat history table this step used to
+          draw: the same rows, plus the two facts a profile is actually for. */}
+      <div style={{ marginBottom: 18 }}>
+        <WorkerHealthPanel module="tpv" workerId={worker.id} compact />
+      </div>
 
       {/* Type Selector */}
       {!f.medical_type ? (
@@ -855,55 +827,6 @@ function Step2Medical({ worker, editable, onSaved, onNext, api }) {
             <Field label="Doctor Comments *"><TextInput multiline rows={3} value={f.doctor_comments} onChange={set('doctor_comments')} placeholder="Enter medical remarks and observations" /></Field>
           </div>
 
-          {/* Worker Signature & Stamp Tabs */}
-          <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-h)', marginBottom: 12, borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>✍ Worker Acknowledgement & Signature</h3>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-            <button type="button" onClick={() => setSigTab('upload')} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: sigTab === 'upload' ? '#0284c7' : 'var(--bg-input)', color: sigTab === 'upload' ? '#fff' : 'var(--text-muted)', fontWeight: 800, cursor: 'pointer' }}>📁 Upload Signature</button>
-            <button type="button" onClick={() => setSigTab('draw')} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: sigTab === 'draw' ? '#0284c7' : 'var(--bg-input)', color: sigTab === 'draw' ? '#fff' : 'var(--text-muted)', fontWeight: 800, cursor: 'pointer' }}>🖊 Draw Signature</button>
-            <button type="button" onClick={() => setSigTab('stamp')} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: sigTab === 'stamp' ? '#0284c7' : 'var(--bg-input)', color: sigTab === 'stamp' ? '#fff' : 'var(--text-muted)', fontWeight: 800, cursor: 'pointer' }}>💮 Stamp / Text Generator</button>
-          </div>
-
-          <div style={{ padding: 16, borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', marginBottom: 20 }}>
-            {sigTab === 'upload' && (
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 8 }}>Upload Signature (JPG/PNG, max 2MB):</label>
-                <input type="file" accept="image/jpeg,image/png" onChange={e => {
-                  const file = e.target.files[0]
-                  if (file) {
-                    const reader = new FileReader()
-                    reader.onload = ev => {
-                      setSigPreview(ev.target.result)
-                      setF(p => ({ ...p, signature_data: ev.target.result }))
-                    }
-                    reader.readAsDataURL(file)
-                  }
-                }} style={{ ...inputStyle, padding: 8 }} />
-                {sigPreview && <img src={sigPreview} alt="Signature Preview" style={{ marginTop: 10, maxHeight: 100, borderRadius: 6, border: '1px solid var(--border)', padding: 4 }} />}
-              </div>
-            )}
-
-            {sigTab === 'draw' && (
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 8 }}>Draw signature using mouse or touch:</label>
-                <canvas ref={sigCanvasRef} width={500} height={150} onMouseDown={startSigDraw} onMouseMove={doSigDraw} onMouseUp={stopSigDraw} onMouseLeave={stopSigDraw} onTouchStart={startSigDraw} onTouchMove={doSigDraw} onTouchEnd={stopSigDraw} style={{ background: '#fff', border: '2px dashed var(--border)', borderRadius: 8, cursor: 'crosshair', display: 'block' }} />
-                <button type="button" onClick={clearSigCanvas} style={{ marginTop: 8, padding: '4px 12px', borderRadius: 6, background: '#ef4444', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 800 }}>Clear Signature</button>
-              </div>
-            )}
-
-            {sigTab === 'stamp' && (
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 8 }}>Type Stamp Text:</label>
-                <div style={{ display: 'flex', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
-                  <input type="text" value={stampText} onChange={e => setStampText(e.target.value)} placeholder="Type stamp text..." style={{ ...inputStyle, flex: 1, minWidth: 160 }} />
-                  <select value={stampFont} onChange={e => setStampFont(e.target.value)} style={{ ...inputStyle, width: 140 }}><option value="bold 20px Arial">Arial Bold</option><option value="italic bold 18px Georgia">Georgia Italic</option><option value="bold 18px Courier New">Courier</option></select>
-                  <select value={stampColor} onChange={e => setStampColor(e.target.value)} style={{ ...inputStyle, width: 110 }}><option value="#0d47a1">Blue</option><option value="#1a7a3c">Green</option><option value="#b71c1c">Red</option><option value="#111">Black</option></select>
-                  <button type="button" onClick={renderStamp} style={{ padding: '6px 14px', borderRadius: 8, background: '#0284c7', color: '#fff', fontWeight: 800, border: 'none', cursor: 'pointer' }}>💮 Stamp</button>
-                </div>
-                <canvas ref={stampCanvasRef} width={500} height={120} style={{ background: '#fff', border: '2px dashed var(--border)', borderRadius: 8, display: 'block' }} />
-              </div>
-            )}
-          </div>
-
           {/* ℞ Prescription Generator Banner */}
           <div style={{ padding: 14, borderRadius: 12, background: 'linear-gradient(135deg, #0d47a1, #1565c0)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 20 }}>
             <div>
@@ -937,6 +860,61 @@ function Step2Medical({ worker, editable, onSaved, onNext, api }) {
           {f.has_report && !f.external_pdf && (
             <p style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 6 }}>✓ A report is already on file — upload a new file only to replace it.</p>
           )}
+        </div>
+      )}
+
+      {/* Examiner signature / stamp. Deliberately OUTSIDE the internal-exam
+          branch: an external report is signed off too, and the §16 legal
+          capture below is meaningless without the signature it belongs to. */}
+      {f.medical_type && f.medical_type !== 'skip' && (
+        <div style={{ marginTop: 18 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-h)', marginBottom: 12, borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>✍ Worker Acknowledgement & Signature</h3>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <button type="button" onClick={() => setSigTab('upload')} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: sigTab === 'upload' ? '#0284c7' : 'var(--bg-input)', color: sigTab === 'upload' ? '#fff' : 'var(--text-muted)', fontWeight: 800, cursor: 'pointer' }}>📁 Upload Signature</button>
+            <button type="button" onClick={() => setSigTab('draw')} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: sigTab === 'draw' ? '#0284c7' : 'var(--bg-input)', color: sigTab === 'draw' ? '#fff' : 'var(--text-muted)', fontWeight: 800, cursor: 'pointer' }}>🖊 Draw Signature</button>
+            <button type="button" onClick={() => setSigTab('stamp')} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: sigTab === 'stamp' ? '#0284c7' : 'var(--bg-input)', color: sigTab === 'stamp' ? '#fff' : 'var(--text-muted)', fontWeight: 800, cursor: 'pointer' }}>💮 Stamp / Text Generator</button>
+        </div>
+
+        <div style={{ padding: 16, borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', marginBottom: 20 }}>
+          {sigTab === 'upload' && (
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 8 }}>Upload Signature (JPG/PNG, max 2MB):</label>
+              <input type="file" accept="image/jpeg,image/png" onChange={e => {
+                const file = e.target.files[0]
+                if (file) {
+                  const reader = new FileReader()
+                  reader.onload = ev => {
+                    setSigPreview(ev.target.result)
+                    setF(p => ({ ...p, signature_data: ev.target.result }))
+                  }
+                  reader.readAsDataURL(file)
+                }
+              }} style={{ ...inputStyle, padding: 8 }} />
+              {sigPreview && <img src={sigPreview} alt="Signature Preview" style={{ marginTop: 10, maxHeight: 100, borderRadius: 6, border: '1px solid var(--border)', padding: 4 }} />}
+            </div>
+          )}
+
+          {sigTab === 'draw' && (
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 8 }}>Draw signature using mouse or touch:</label>
+              <canvas ref={sigCanvasRef} width={500} height={150} onMouseDown={startSigDraw} onMouseMove={doSigDraw} onMouseUp={stopSigDraw} onMouseLeave={stopSigDraw} onTouchStart={startSigDraw} onTouchMove={doSigDraw} onTouchEnd={stopSigDraw} style={{ background: '#fff', border: '2px dashed var(--border)', borderRadius: 8, cursor: 'crosshair', display: 'block' }} />
+              <button type="button" onClick={clearSigCanvas} style={{ marginTop: 8, padding: '4px 12px', borderRadius: 6, background: '#ef4444', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 800 }}>Clear Signature</button>
+            </div>
+          )}
+
+          {sigTab === 'stamp' && (
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 8 }}>Type Stamp Text:</label>
+              <div style={{ display: 'flex', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+                <input type="text" value={stampText} onChange={e => setStampText(e.target.value)} placeholder="Type stamp text..." style={{ ...inputStyle, flex: 1, minWidth: 160 }} />
+                <select value={stampFont} onChange={e => setStampFont(e.target.value)} style={{ ...inputStyle, width: 140 }}><option value="bold 20px Arial">Arial Bold</option><option value="italic bold 18px Georgia">Georgia Italic</option><option value="bold 18px Courier New">Courier</option></select>
+                <select value={stampColor} onChange={e => setStampColor(e.target.value)} style={{ ...inputStyle, width: 110 }}><option value="#0d47a1">Blue</option><option value="#1a7a3c">Green</option><option value="#b71c1c">Red</option><option value="#111">Black</option></select>
+                <button type="button" onClick={renderStamp} style={{ padding: '6px 14px', borderRadius: 8, background: '#0284c7', color: '#fff', fontWeight: 800, border: 'none', cursor: 'pointer' }}>💮 Stamp</button>
+              </div>
+              <canvas ref={stampCanvasRef} width={500} height={120} style={{ background: '#fff', border: '2px dashed var(--border)', borderRadius: 8, display: 'block' }} />
+            </div>
+          )}
+        </div>
         </div>
       )}
 
