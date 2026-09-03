@@ -109,13 +109,26 @@ class HrmAttendanceController extends Controller
             $today->check_in = now();
             $today->save();
         } else {
-            if (! $today || ! $today->check_in) {
-                return HrmResponse::fail('You have not clocked in today.');
+            // A shift that began before midnight is still the shift being ended.
+            // Keyed strictly to today's date, somebody who clocked in at 22:00
+            // could not clock out at 02:00: the record exists, filed under
+            // yesterday, and they were told they had never clocked in — with no
+            // way to close the day from the phone.
+            $open = ($today && $today->check_in && ! $today->check_out)
+                ? $today
+                : $this->openShift($employee);
+
+            if (! $open) {
+                // Say which of the two it is; "you never clocked in" when the real
+                // answer is "you already left" wastes somebody's morning.
+                return HrmResponse::fail(
+                    $today && $today->check_out
+                        ? 'You have already clocked out.'
+                        : 'You have not clocked in today.'
+                );
             }
 
-            if ($today->check_out) {
-                return HrmResponse::fail('You have already clocked out.');
-            }
+            $today = $open;
 
             // An open break would otherwise be counted as worked time.
             if ($today->break_start && ! $today->break_end) {
@@ -250,6 +263,24 @@ class HrmAttendanceController extends Controller
     private function employee(Request $request): ?HrEmployee
     {
         return $this->identity->employeeFor($request->user());
+    }
+
+    /**
+     * The shift still running — today's, or yesterday's if it crossed midnight.
+     *
+     * Bounded to one day back on purpose: an abandoned record from last week is
+     * a correction for HR to make, not something a clock-out should silently
+     * close and stamp with the wrong hours.
+     */
+    private function openShift(HrEmployee $employee): ?HrAttendance
+    {
+        return HrAttendance::where('tenant_id', $employee->tenant_id)
+            ->where('employee_id', $employee->id)
+            ->whereNotNull('check_in')
+            ->whereNull('check_out')
+            ->whereDate('date', '>=', now()->copy()->subDay()->toDateString())
+            ->orderByDesc('date')
+            ->first();
     }
 
     private function today(HrEmployee $employee): ?HrAttendance

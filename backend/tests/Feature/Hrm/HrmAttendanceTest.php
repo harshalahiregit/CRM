@@ -191,6 +191,31 @@ class HrmAttendanceTest extends TestCase
         $this->assertStringContainsString('already clocked in', (string) $r->json('message'));
     }
 
+    /**
+     * A night shift crosses midnight, and the record stays filed under the day it
+     * began. Looked up strictly by today's date, clocking out at 02:00 answered
+     * "You have not clocked in today" and there was no way to close the day.
+     */
+    public function test_a_shift_that_began_before_midnight_can_still_be_clocked_out(): void
+    {
+        [, $employee] = $this->person();
+
+        $this->travelTo(now()->setTime(22, 0));
+        $this->postJson('/api/Hrm/clock-in-out', ['type' => 'clockin'])->assertOk();
+
+        // Past midnight — a different calendar day from the one that was started.
+        $this->travel(4)->hours();
+        $r = $this->postJson('/api/Hrm/clock-in-out', ['type' => 'clockout'])->assertOk();
+
+        $this->assertSame(1, $r->json('status'), (string) $r->json('message'));
+        $this->assertSame(0, $r->json('data.is_clockin'));
+        $this->travelBack();
+
+        $day = HrAttendance::where('employee_id', $employee->id)->firstOrFail();
+        $this->assertNotNull($day->check_out, 'The overnight shift was never closed.');
+        $this->assertTrue($day->check_out->gt($day->check_in));
+    }
+
     public function test_clocking_out_without_clocking_in_is_refused(): void
     {
         $this->person();
