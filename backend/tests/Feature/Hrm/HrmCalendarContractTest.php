@@ -65,6 +65,13 @@ class HrmCalendarContractTest extends TestCase
 
     public function test_calendar_events_carry_plain_dates_the_app_can_match(): void
     {
+        DB::table('hr_events')->insert([
+            'tenant_id' => 1, 'title' => 'Quarterly Townhall', 'description' => 'All hands',
+            'start_date' => self::DATE, 'end_date' => null, 'color' => '#7C3AED',
+            'applicable_for' => 'Organization', 'is_active' => true,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
         $row = $this->getJson('/api/Hrm/events?month=9&year=2026')->assertOk()->json('data.0');
 
         // Exactly this, character for character — the app compares strings.
@@ -114,8 +121,15 @@ class HrmCalendarContractTest extends TestCase
         $this->assertNotContains('Plant Shutdown', $titles);
         $this->assertContains('Independence Day', $titles, 'Organisation-wide holidays must still show.');
 
+        // Events carry the same scope rule, on their own table.
+        DB::table('hr_events')->insert([
+            'tenant_id' => 1, 'title' => 'Dept Only Offsite', 'start_date' => '2026-09-22',
+            'color' => '#7C3AED', 'applicable_for' => 'Department', 'department_id' => $otherDept,
+            'is_active' => true, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
         $calendar = collect($this->getJson('/api/Hrm/events?month=9&year=2026')->assertOk()->json('data'))->pluck('title');
-        $this->assertNotContains('Plant Shutdown', $calendar, 'The calendar must apply the same rule.');
+        $this->assertNotContains('Dept Only Offsite', $calendar, 'The calendar must apply the same rule.');
     }
 
     /** Each configured type is told apart, not collapsed into a yes/no. */
@@ -138,9 +152,8 @@ class HrmCalendarContractTest extends TestCase
         $this->assertSame('festival-holiday', $rows['Festival Day']['className']);
         $this->assertSame('company-holiday',  $rows['Company Day']['className']);
 
-        // Distinct colours on the calendar, for the same reason.
-        $cal = collect($this->getJson('/api/Hrm/events?month=9&year=2026')->assertOk()->json('data'))->keyBy('title');
-        $this->assertNotSame($cal['Independence Day']['color'], $cal['Festival Day']['color']);
+        // The calendar endpoint is events now, not holidays, so the type lives
+        // entirely in className above — there is nothing to cross-check here.
     }
 
     public function test_an_optional_holiday_is_distinguishable_from_a_public_one(): void

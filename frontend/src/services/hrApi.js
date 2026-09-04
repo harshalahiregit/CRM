@@ -527,6 +527,16 @@ export const hrApi = {
       update:    (id, data)    => api.put(`/hr/leave/holidays/${id}`, data).then(r => r.data),
       setStatus: (id, active)  => api.patch(`/hr/leave/holidays/${id}/status`, { is_active: active }).then(r => r.data),
     },
+    // Company events — something happening, not a day off. Separate from
+    // holidays because the attendance app keeps two lists and draws them
+    // differently on its calendar.
+    events: {
+      list:      (params = {}) => api.get('/hr/leave/events', { params }).then(r => r.data),
+      get:       (id)          => api.get(`/hr/leave/events/${id}`).then(r => r.data),
+      create:    (data)        => api.post('/hr/leave/events', data).then(r => r.data),
+      update:    (id, data)    => api.put(`/hr/leave/events/${id}`, data).then(r => r.data),
+      setStatus: (id, active)  => api.patch(`/hr/leave/events/${id}/status`, { is_active: active }).then(r => r.data),
+    },
     // Leave Reports & Analytics (final phase) — read-only.
     reports: {
       filters:     ()            => api.get('/hr/leave/reports/filters').then(r => r.data),

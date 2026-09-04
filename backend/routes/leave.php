@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\Hr\EmployeeLeaveBalanceController;
+use App\Http\Controllers\Api\Hr\EventController;
 use App\Http\Controllers\Api\Hr\HolidayController;
 use App\Http\Controllers\Api\Hr\LeaveReportController;
 use App\Http\Controllers\Api\Hr\LeaveApplicationController;
@@ -57,6 +58,15 @@ Route::middleware('auth:sanctum')->prefix('hr/leave')->group(function () {
     Route::post('/holidays',             [HolidayController::class, 'store']);
     Route::put('/holidays/{id}',         [HolidayController::class, 'update']);
     Route::patch('/holidays/{id}/status',[HolidayController::class, 'updateStatus']);
+
+    // Company events — something happening, as opposed to a day off. Kept beside
+    // holidays because the admin screen shows them together and the app reads
+    // both for the same calendar.
+    Route::get('/events',                [EventController::class, 'index']);
+    Route::get('/events/{id}',           [EventController::class, 'show']);
+    Route::post('/events',               [EventController::class, 'store']);
+    Route::put('/events/{id}',           [EventController::class, 'update']);
+    Route::patch('/events/{id}/status',  [EventController::class, 'updateStatus']);
 
     // Leave Reports & Analytics (final phase). Read-only over existing Leave data.
     Route::get('/reports/filters',     [LeaveReportController::class, 'filterOptions']);

@@ -186,13 +186,21 @@ class HrmProfileController extends Controller
 
     /* ── calendar ────────────────────────────────────────────────────── */
 
-    /** Holidays as calendar events. GET, unlike almost everything else here. */
+    /**
+     * Company events for the calendar month. GET, unlike almost everything here.
+     *
+     * Events, NOT holidays. This used to answer from hr_holidays because there
+     * was nowhere else to read from, which put every holiday in both of the
+     * app's lists — counted twice on the day marker and listed a second time
+     * under "Events" — while the calendar's "Event" legend chip could never be
+     * filled by anything. Holidays are /holidays-list; this is its own table.
+     */
     public function events(Request $request)
     {
         $employee = $this->identity->employeeFor($request->user());
         $tenantId = $employee?->tenant_id ?? $request->user()->tenant_id;
 
-        if (! Schema::hasTable('hr_holidays')) {
+        if (! Schema::hasTable('hr_events')) {
             return HrmResponse::ok([]);
         }
 
@@ -200,30 +208,33 @@ class HrmProfileController extends Controller
         $year  = (int) $request->query('year', now()->year);
 
         $from = \Illuminate\Support\Carbon::createFromDate($year, $month, 1)->startOfMonth();
+        $to   = $from->copy()->endOfMonth();
 
-        // Same rule as /holidays-list: only what this employee actually observes.
-        $rows = \App\Models\Hr\HrHoliday::where('tenant_id', $tenantId)
+        // Overlap, not containment: a two-day offsite starting in the previous
+        // month still belongs on this month's calendar.
+        $rows = \App\Models\Hr\HrEvent::where('tenant_id', $tenantId)
             ->where('is_active', true)
             ->visibleTo($employee)
-            ->whereDate('holiday_date', '>=', $from->toDateString())
-            ->whereDate('holiday_date', '<=', $from->copy()->endOfMonth()->toDateString())
-            ->orderBy('holiday_date')
+            ->whereDate('start_date', '<=', $to->toDateString())
+            ->where(function ($q) use ($from) {
+                $q->whereNull('end_date')
+                  ->whereDate('start_date', '>=', $from->toDateString());
+                $q->orWhereDate('end_date', '>=', $from->toDateString());
+            })
+            ->orderBy('start_date')
             ->get();
 
-        return HrmResponse::ok($rows->map(fn ($h) => [
-            'id'          => $h->id,
-            'title'       => (string) $h->title,
+        return HrmResponse::ok($rows->map(fn ($e) => [
+            'id'          => $e->id,
+            'title'       => (string) $e->title,
             // Y-m-d, not a datetime. The calendar matches a tapped day with
             // `e.startDate == getDateFormmatted(date)` — plain string equality
             // against 'yyyy-MM-dd' — so a trailing ' 00:00:00' meant no day ever
             // matched and the day's event list was always empty.
-            'start_date'  => $h->holiday_date->toDateString(),
-            'end_date'    => $h->holiday_date->toDateString(),
-            // Colour follows the TYPE, not a yes/no, so National, Festival and
-            // Company holidays are told apart on the calendar as the admin screen
-            // implies they are.
-            'color'       => $h->appColor(),
-            'description' => (string) ($h->description ?? ''),
+            'start_date'  => $e->start_date->toDateString(),
+            'end_date'    => $e->effectiveEnd()->toDateString(),
+            'color'       => (string) $e->color,
+            'description' => (string) ($e->description ?? ''),
         ])->values()->all());
     }
 

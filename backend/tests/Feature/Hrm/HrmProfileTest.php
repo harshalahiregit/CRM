@@ -141,10 +141,15 @@ class HrmProfileTest extends TestCase
     {
         $this->person();
 
-        DB::table('hr_holidays')->insert([
-            'tenant_id' => $this->tenant()->id, 'title' => 'Diwali', 'description' => 'Festival',
-            'holiday_date' => '2026-03-10', 'holiday_type' => 'Public', 'applicable_for' => 'All',
-            'is_optional' => false, 'is_active' => true, 'created_at' => now(), 'updated_at' => now(),
+        // An EVENT, not a holiday. This endpoint used to answer from hr_holidays
+        // because there was nowhere else to read from, which put every holiday
+        // in both of the app's lists. Holidays are /holidays-list now.
+        DB::table('hr_events')->insert([
+            'tenant_id' => $this->tenant()->id, 'title' => 'Annual Offsite',
+            'description' => 'Two days away', 'start_date' => '2026-03-10',
+            'end_date' => '2026-03-11', 'color' => '#10b981',
+            'applicable_for' => 'Organization', 'is_active' => true,
+            'created_at' => now(), 'updated_at' => now(),
         ]);
 
         $row = $this->getJson('/api/Hrm/events?month=3&year=2026')->assertOk()->json('data.0');
