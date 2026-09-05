@@ -40,6 +40,40 @@ class NotificationQueueService
         return ['processed' => $items->count(), 'sent' => $sent, 'failed' => $failed];
     }
 
+    /**
+     * Deliver the queue items belonging to specific notifications, now.
+     *
+     * The scheduled sweep is right for notifications a module raises in passing —
+     * nobody is watching, and a minute either way costs nothing. It is wrong for
+     * something a person just pressed Send on: an announcement that sits Pending
+     * until a cron fires looks broken, and on a machine with no scheduler running
+     * it never arrives at all. That is exactly how push appeared not to work
+     * while it was in fact working perfectly.
+     *
+     * Scoped to the given notifications rather than flushing the whole tenant
+     * queue, so pressing Send does not quietly drag unrelated backlog along with
+     * it and take the response time with it.
+     */
+    public function processNow(array $notificationIds, ?User $actor = null): array
+    {
+        if ($notificationIds === []) {
+            return ['processed' => 0, 'sent' => 0, 'failed' => 0];
+        }
+
+        $items = HrNotificationQueueItem::with('notification')
+            ->where('status', HrNotificationQueueItem::PENDING)
+            ->whereIn('notification_id', $notificationIds)
+            ->orderBy('id')->get();
+
+        $sent = 0; $failed = 0;
+        foreach ($items as $item) {
+            [$ok] = $this->deliver($item, $actor);
+            $ok ? $sent++ : $failed++;
+        }
+
+        return ['processed' => $items->count(), 'sent' => $sent, 'failed' => $failed];
+    }
+
     /** Retry one failed queue item (respects the retry ceiling). */
     public function retry(int $id, int $tenantId, ?User $actor = null): array
     {

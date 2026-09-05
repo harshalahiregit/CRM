@@ -24,8 +24,10 @@ use Illuminate\Support\Facades\DB;
  */
 class AnnouncementService
 {
-    public function __construct(private NotificationEngine $engine)
-    {
+    public function __construct(
+        private NotificationEngine $engine,
+        private NotificationQueueService $queue,
+    ) {
     }
 
     /**
@@ -75,10 +77,20 @@ class AnnouncementService
             }
         });
 
+        // Delivered now, not on the next scheduled sweep. Somebody just pressed
+        // Send and is watching their phone; a queue item sitting Pending until a
+        // cron fires reads as "push does not work", and on a machine with no
+        // scheduler running it never arrives at all.
+        $delivery = $this->queue->processNow(
+            collect($created)->pluck('id')->filter()->all(),
+            $actor,
+        );
+
         return [
             'recipients'    => count($recipients),
             'notifications' => count($created),
             'attachment'    => $path,
+            'pushed'        => $delivery['sent'],
         ];
     }
 
