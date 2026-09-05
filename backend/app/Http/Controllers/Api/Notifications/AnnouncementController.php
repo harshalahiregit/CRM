@@ -46,16 +46,19 @@ class AnnouncementController extends Controller
             'user_ids.*' => 'integer',
             'channels'   => 'nullable|array',
             'channels.*' => ['string', Rule::in(['in_app', 'push', 'email'])],
-            // A policy or a notice, which is what people attach. Capped so an
-            // announcement cannot be used to move a large file to every phone.
-            'attachment' => 'nullable|file|mimes:pdf|max:10240',
+            // Several files, and not only PDFs — a photograph of a notice board
+            // or a scanned circular is exactly what people attach. Capped per
+            // file and in number so an announcement cannot be used to push a
+            // large payload to every phone in the company.
+            'attachments'   => 'nullable|array|max:10',
+            'attachments.*' => 'file|mimes:pdf,jpg,jpeg,png,webp,heic,doc,docx,xls,xlsx|max:10240',
         ]);
 
         $result = $this->announcements->send(
             $request->user()->tenant_id,
             $data,
             $request->user(),
-            $request->file('attachment'),
+            $request->file('attachments', []),
         );
 
         if ($result['recipients'] === 0) {

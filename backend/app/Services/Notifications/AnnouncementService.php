@@ -34,7 +34,7 @@ class AnnouncementService
      * @param  array{title: string, body: string, audience: string, department?: ?string, user_ids?: array, channels?: array}  $data
      * @return array{recipients: int, notifications: int, attachment: ?string}
      */
-    public function send(int $tenantId, array $data, User $actor, ?UploadedFile $attachment = null): array
+    public function send(int $tenantId, array $data, User $actor, array $files = []): array
     {
         $recipients = $this->resolveRecipients($tenantId, $data);
 
@@ -42,9 +42,24 @@ class AnnouncementService
             return ['recipients' => 0, 'notifications' => 0, 'attachment' => null];
         }
 
-        $path = $attachment
-            ? $attachment->store("hr/announcements/tenant_{$tenantId}", 'local')
-            : null;
+        // Several files, of whatever kind was allowed through validation — a
+        // policy PDF, a photograph of a notice board, a scanned circular. One
+        // attachment was never the real shape of an announcement.
+        $attachments = [];
+        foreach ($files as $file) {
+            if (! $file instanceof UploadedFile) {
+                continue;
+            }
+
+            $attachments[] = [
+                'path' => $file->store("hr/announcements/tenant_{$tenantId}", 'local'),
+                // The name the sender chose, kept for display. The stored path is
+                // randomised, so without this every attachment reads as a hash.
+                'name' => $file->getClientOriginalName(),
+                'mime' => $file->getClientMimeType(),
+                'size' => $file->getSize(),
+            ];
+        }
 
         $created = $this->engine->dispatch(
             $tenantId,
@@ -57,6 +72,7 @@ class AnnouncementService
                     'title' => $data['title'],
                     'body'  => $data['body'],
                 ],
+                'attachments'        => $attachments,
             ],
             $actor,
         );
@@ -64,15 +80,18 @@ class AnnouncementService
         // The phone reads `notifications`, not `hr_notifications`. Same message,
         // the store each reader actually looks at — not a duplicate to any one
         // person, who sees it once wherever they happen to be.
-        DB::transaction(function () use ($recipients, $tenantId, $data, $path) {
+        DB::transaction(function () use ($recipients, $tenantId, $data, $attachments) {
             foreach ($recipients as $userId) {
                 Notification::create([
-                    'tenant_id' => $tenantId,
-                    'user_id'   => $userId,
-                    'type'      => 'announcement',
-                    'title'     => $data['title'],
-                    'message'   => $data['body'],
-                    'link'      => $path ? route('hr.announcement.file', ['path' => base64_encode($path)]) : null,
+                    'tenant_id'   => $tenantId,
+                    'user_id'     => $userId,
+                    'type'        => 'announcement',
+                    'title'       => $data['title'],
+                    'message'     => $data['body'],
+                    // Paths, not URLs. A signed link expires within the hour, so
+                    // one written into a row is dead by the time it is read, and
+                    // a permanent one is a public link to a company document.
+                    'attachments' => $attachments ?: null,
                 ]);
             }
         });
@@ -89,7 +108,7 @@ class AnnouncementService
         return [
             'recipients'    => count($recipients),
             'notifications' => count($created),
-            'attachment'    => $path,
+            'attachments'   => count($attachments),
             'pushed'        => $delivery['sent'],
         ];
     }

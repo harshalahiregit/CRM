@@ -26,13 +26,15 @@ class HrNotification extends Model
         'tenant_id', 'module', 'entity_type', 'entity_id', 'event', 'priority', 'notification_type',
         'title', 'message', 'sender_id', 'recipient_user_id', 'recipient_role',
         'action_url', 'action_label', 'is_read', 'read_at', 'expires_at',
-    ];
+    
+        'attachments',];
 
     protected $casts = [
         'is_read'    => 'boolean',
         'read_at'    => 'datetime',
         'expires_at' => 'datetime',
-    ];
+    
+        'attachments' => 'array',];
 
     public function recipient()
     {

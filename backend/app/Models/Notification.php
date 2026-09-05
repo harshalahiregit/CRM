@@ -11,11 +11,13 @@ class Notification extends Model
 
     protected $fillable = [
         'tenant_id', 'user_id', 'type', 'title', 'message', 'link', 'read_at',
-    ];
+    
+        'attachments',];
 
     protected $casts = [
         'read_at' => 'datetime',
-    ];
+    
+        'attachments' => 'array',];
 
     protected $appends = ['is_read'];
 

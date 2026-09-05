@@ -85,6 +85,7 @@ class NotificationEngine
                 'action_url' => $opts['action_url'] ?? null,
                 'action_label' => $opts['action_label'] ?? null,
                 'expires_at' => ! empty($opts['expires_at']) ? Carbon::parse($opts['expires_at']) : null,
+                            'attachments' => $opts['attachments'] ?? null,
             ]);
             $notification->recordAudit('Notification Created', $actor, null, ['module' => $module, 'event' => $event, 'type' => $notification->notification_type]);
 

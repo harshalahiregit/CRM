@@ -39,6 +39,14 @@ Route::prefix('Hrm')->group(function () {
         ->name('hrm.file')
         ->middleware('signed');
 
+    // A file attached to an announcement. Signed for the same reason: the app
+    // opens these in a viewer that sends no Authorization header.
+    Route::get('/announcement-file/{notification}/{index}',
+        [\App\Http\Controllers\Api\Hrm\HrmAnnouncementFileController::class, 'show'])
+        ->whereNumber('index')
+        ->name('hrm.announcement.file')
+        ->middleware('signed');
+
     // Reached from the sign-in screen, before anybody has a token.
     Route::post('/forgot-password', [HrmProfileController::class, 'forgotPassword']);
     Route::post('/demo-request',    [HrmProfileController::class, 'demoRequest']);

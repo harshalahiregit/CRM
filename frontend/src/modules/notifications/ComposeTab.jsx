@@ -14,7 +14,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react'
-import { Megaphone, Paperclip, Users, Building2, UserRound, X, Send } from 'lucide-react'
+import { Megaphone, Paperclip, Image as ImageIcon, Users, Building2, UserRound, X, Send } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { HrLoading } from '@/components/ui/HrState'
 import { GRAD } from './ui'
@@ -39,7 +39,7 @@ export default function ComposeTab({ showToast }) {
   const [userIds, setUserIds] = useState([])
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
-  const [file, setFile] = useState(null)
+  const [files, setFiles] = useState([])
   const [channels, setChannels] = useState(['in_app', 'push'])
   const [search, setSearch] = useState('')
   const [data, setData] = useState(null)
@@ -83,13 +83,13 @@ export default function ComposeTab({ showToast }) {
     if (audience === 'department') form.append('department', department)
     if (audience === 'employees') userIds.forEach(id => form.append('user_ids[]', id))
     channels.forEach(c => form.append('channels[]', c))
-    if (file) form.append('attachment', file)
+    files.forEach(f => form.append('attachments[]', f))
 
     setSending(true)
     try {
       const res = await hrApi.notifications.announcements.send(form)
       showToast(res.message || 'Announcement sent')
-      setTitle(''); setBody(''); setFile(null); setUserIds([])
+      setTitle(''); setBody(''); setFiles([]); setUserIds([])
     } catch (e) {
       showToast(e.response?.data?.message || 'Could not send the announcement', 'error')
     } finally { setSending(false) }
@@ -116,20 +116,40 @@ export default function ComposeTab({ showToast }) {
           onChange={e => setBody(e.target.value)}
           placeholder="What people need to know. This is what appears on their phone." />
 
-        <label className="label mt-3">Attach a PDF</label>
-        {file ? (
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm"
-            style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
-            <Paperclip size={13} style={{ color: '#a78bfa' }} />
-            <span className="flex-1 truncate" style={{ color: 'var(--text-h)' }}>{file.name}</span>
-            <button onClick={() => setFile(null)} title="Remove"><X size={14} style={{ color: '#f87171' }} /></button>
+        <label className="label mt-3">Attach files</label>
+        {/* Several, and not only PDFs — a photograph of a notice board or a
+            scanned circular is exactly what people attach. Adding more appends
+            rather than replacing, because a file picker that quietly discards
+            the previous selection is how an attachment goes missing. */}
+        <input type="file" multiple
+          accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.doc,.docx,.xls,.xlsx"
+          className="input-3d text-sm"
+          onChange={e => {
+            setFiles(f => [...f, ...Array.from(e.target.files || [])].slice(0, 10))
+            e.target.value = ''
+          }} />
+
+        {files.length > 0 && (
+          <div className="flex flex-col gap-1.5 mt-2">
+            {files.map((f, i) => (
+              <div key={`${f.name}-${i}`} className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm"
+                style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                {f.type.startsWith('image/')
+                  ? <ImageIcon size={13} style={{ color: '#10b981' }} />
+                  : <Paperclip size={13} style={{ color: '#a78bfa' }} />}
+                <span className="flex-1 truncate" style={{ color: 'var(--text-h)' }}>{f.name}</span>
+                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                  {(f.size / 1024).toFixed(0)} KB
+                </span>
+                <button onClick={() => setFiles(list => list.filter((_, j) => j !== i))} title="Remove">
+                  <X size={14} style={{ color: '#f87171' }} />
+                </button>
+              </div>
+            ))}
           </div>
-        ) : (
-          <input type="file" accept="application/pdf" className="input-3d text-sm"
-            onChange={e => setFile(e.target.files?.[0] || null)} />
         )}
         <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
-          A policy or a notice. PDF, up to 10 MB.
+          Photos and documents. Up to 10 files, 10 MB each. {files.length > 0 && `${files.length} attached.`}
         </p>
       </div>
 

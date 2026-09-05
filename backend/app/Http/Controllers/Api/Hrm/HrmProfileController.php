@@ -268,6 +268,21 @@ class HrmProfileController extends Controller
                 'body'       => (string) ($n->message ?? ''),
                 'is_read'    => $n->read_at !== null,
                 'created_at' => $n->created_at ? $n->created_at->toDateTimeString() : '',
+                // Always a list, never null: the app iterates this, and a null
+                // would have to be guarded at every call site instead of once.
+                'attachments' => collect($n->attachments ?? [])->values()->map(fn ($a, $i) => [
+                    'name' => (string) ($a['name'] ?? 'Attachment'),
+                    'mime' => (string) ($a['mime'] ?? ''),
+                    'size' => (int) ($a['size'] ?? 0),
+                    // Signed and short-lived. The files are on the private disk;
+                    // the app opens these in a viewer that sends no token, which
+                    // is the same reason the punch selfies are signed.
+                    'url'  => \Illuminate\Support\Facades\URL::temporarySignedRoute(
+                        'hrm.announcement.file',
+                        now()->addHours(6),
+                        ['notification' => $n->id, 'index' => $i],
+                    ),
+                ])->values()->all(),
             ])->values()->all(),
             'Success',
             [
