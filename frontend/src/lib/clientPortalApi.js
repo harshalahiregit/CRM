@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { attachMediaCompression } from './mediaCompress'
 import { isSessionFailure } from './sessionFailure'
 
 /**
@@ -22,6 +23,10 @@ const cpApi = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api',
   headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
 })
+
+// Uploads are shrunk on the way out — see src/lib/mediaCompress.js. Hooked
+// here rather than at the ~50 upload sites, so every one is covered.
+attachMediaCompression(cpApi)
 
 cpApi.interceptors.request.use((config) => {
   const t = clientToken.get()

@@ -2,11 +2,16 @@
 // submission (/api/public/web-to-lead). The public calls MUST NOT send an
 // auth token, so they use a bare axios instance (not @/lib/api).
 import axios from 'axios'
+import { attachMediaCompression } from '@/lib/mediaCompress'
 import api from '@/lib/api'
 import { handleErr } from '@/services/apiError'
 
 const BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'
 const publicClient = axios.create({ baseURL: BASE, headers: { 'Content-Type': 'application/json', Accept: 'application/json' } })
+
+// Uploads are shrunk on the way out — see src/lib/mediaCompress.js. Hooked
+// here rather than at the ~50 upload sites, so every one is covered.
+attachMediaCompression(publicClient)
 
 export const webToLeadApi = {
   // ── Admin ──

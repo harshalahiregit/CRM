@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { attachMediaCompression } from './mediaCompress'
 import { getToken, clearAuth } from '@/lib/authStorage'
 import { isSessionFailure } from '@/lib/sessionFailure'
 
@@ -10,6 +11,10 @@ const api = axios.create({
   },
   withCredentials: false, // Changed from true - not needed for token-based auth
 })
+
+// Uploads are shrunk on the way out — see src/lib/mediaCompress.js. Hooked
+// here rather than at the ~50 upload sites, so every one is covered.
+attachMediaCompression(api)
 
 // ── Request interceptor: attach token ────────────────────────────────
 api.interceptors.request.use((config) => {
