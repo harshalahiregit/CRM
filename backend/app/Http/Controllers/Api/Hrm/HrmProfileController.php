@@ -343,12 +343,25 @@ class HrmProfileController extends Controller
      */
     public function fcmToken(Request $request)
     {
-        $data = $request->validate(['fcm_token' => 'required|string|max:500']);
+        $data = $request->validate([
+            'fcm_token'   => 'required|string|max:500',
+            'platform'    => 'nullable|string|max:16',
+            'device_name' => 'nullable|string|max:120',
+        ]);
 
         $user = $request->user();
-        $meta = $user->meta ?? [];
-        $meta['fcm_token'] = $data['fcm_token'];
-        $user->forceFill(['meta' => $meta])->save();
+
+        // One row per DEVICE. This used to write a single token into
+        // users.meta['fcm_token'], so somebody with a phone and a tablet
+        // silently lost one — whichever registered last overwrote the other and
+        // the first simply stopped receiving, with nothing anywhere to show it.
+        \App\Models\Hr\HrDeviceToken::remember(
+            (int) $user->tenant_id,
+            (int) $user->id,
+            $data['fcm_token'],
+            $data['platform'] ?? null,
+            $data['device_name'] ?? null,
+        );
 
         return HrmResponse::ok([], 'Token registered.');
     }

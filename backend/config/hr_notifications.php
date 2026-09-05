@@ -36,6 +36,22 @@ return [
 
     'modules' => [
 
+        // Announcements composed by hand in the Notification Center, rather than
+        // raised by something happening in a module. The subject and body are
+        // whatever was typed — the placeholders carry it through the same
+        // renderer every other event uses, so one path builds every notification.
+        'Announcement' => [
+            'Broadcast' => [
+                'priority' => 'Info',
+                'subject'  => '{{title}}',
+                'body'     => '{{body}}',
+                // in_app puts it in the bell and the Center; push puts it on the
+                // phone. Email is deliberately not default — an announcement to
+                // everyone should not become an inbox-wide mail without asking.
+                'channels' => ['in_app', 'push'],
+            ],
+        ],
+
         'Recruitment' => [
             'Interview Scheduled' => ['priority' => 'Info',    'subject' => 'Interview scheduled — {{employee}}', 'body' => 'An interview for {{employee}} ({{module}}) has been scheduled on {{date}}.'],
             'Interview Tomorrow'  => ['priority' => 'Warning', 'subject' => 'Interview tomorrow — {{employee}}', 'body' => 'Reminder: the interview for {{employee}} is scheduled for {{date}}.', 'reminder' => ['days' => [1], 'repeat' => false]],

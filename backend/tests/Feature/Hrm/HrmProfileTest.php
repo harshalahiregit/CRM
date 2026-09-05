@@ -249,13 +249,44 @@ class HrmProfileTest extends TestCase
         $this->assertFalse($this->postJson('/api/Hrm/notification-preferences', [])->json('data.push_enabled'));
     }
 
-    public function test_an_fcm_token_is_stored(): void
+    public function test_an_fcm_token_is_stored_per_device(): void
     {
         [$user] = $this->person();
 
         $this->postJson('/api/Hrm/fcm-token', ['fcm_token' => 'abc123'])->assertOk()->assertJsonPath('status', 1);
 
-        $this->assertSame('abc123', $user->fresh()->meta['fcm_token']);
+        $this->assertDatabaseHas('hr_device_tokens', [
+            'user_id'    => $user->id,
+            'token_hash' => hash('sha256', 'abc123'),
+        ]);
+    }
+
+    /**
+     * A phone and a tablet are two devices, not one overwriting the other.
+     *
+     * The token used to live in users.meta['fcm_token'], so whichever registered
+     * last won and the other silently stopped receiving anything — no error, no
+     * record, just a device that had quietly gone deaf.
+     */
+    public function test_a_second_device_does_not_replace_the_first(): void
+    {
+        [$user] = $this->person();
+
+        $this->postJson('/api/Hrm/fcm-token', ['fcm_token' => 'phone-token', 'platform' => 'android'])->assertOk();
+        $this->postJson('/api/Hrm/fcm-token', ['fcm_token' => 'tablet-token', 'platform' => 'android'])->assertOk();
+
+        $this->assertCount(2, \App\Models\Hr\HrDeviceToken::forUser((int) $user->tenant_id, (int) $user->id));
+    }
+
+    /** The same device registering again is the same row, not a second one. */
+    public function test_re_registering_the_same_device_does_not_duplicate_it(): void
+    {
+        [$user] = $this->person();
+
+        $this->postJson('/api/Hrm/fcm-token', ['fcm_token' => 'same-token'])->assertOk();
+        $this->postJson('/api/Hrm/fcm-token', ['fcm_token' => 'same-token'])->assertOk();
+
+        $this->assertCount(1, \App\Models\Hr\HrDeviceToken::forUser((int) $user->tenant_id, (int) $user->id));
     }
 
     /* ── open endpoints ──────────────────────────────────────────────── */

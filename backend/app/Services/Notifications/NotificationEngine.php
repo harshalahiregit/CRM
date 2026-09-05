@@ -45,7 +45,11 @@ class NotificationEngine
         $bodyTpl = $template->body ?? ($def['body'] ?? '');
         $rendered = $this->renderer->renderTemplate($subjectTpl, $bodyTpl, $context);
 
-        $channels = $template ? $template->enabledChannels() : ['in_app', 'email'];
+        // A caller may name the channels. The Notification Center's composer does:
+        // an announcement chooses in-app and push, and must not inherit an
+        // email default that would mail the whole company without being asked.
+        $channels = $opts['channels']
+            ?? ($template ? $template->enabledChannels() : ($def['channels'] ?? ['in_app', 'email']));
         $priority = $opts['priority'] ?? ($def['priority'] ?? 'Info');
 
         $recipients = [];

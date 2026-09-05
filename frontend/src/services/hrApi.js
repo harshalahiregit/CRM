@@ -978,6 +978,12 @@ export const hrApi = {
     markAllRead: ()            => api.post('/hr/notifications/mark-all-read').then(r => r.data),
     forEmployee: (employeeId)  => api.get(`/hr/notifications/employee/${employeeId}`).then(r => r.data),
     resend:      (id)          => api.post(`/hr/notifications/${id}/resend`).then(r => r.data),
+    // Announcements composed by hand. Multipart, because one can carry a PDF.
+    announcements: {
+      audience: ()     => api.get('/hr/notifications/announcements/audience').then(r => r.data),
+      send:     (form) => api.post('/hr/notifications/announcements', form,
+                          { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data),
+    },
     // Templates
     templates: {
       list:      (params = {}) => api.get('/hr/notifications/templates', { params }).then(r => r.data),

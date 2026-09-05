@@ -9,11 +9,14 @@ namespace App\Services\Notifications\Channels;
  */
 class ChannelManager
 {
-    private const PREPARED = ['sms', 'whatsapp', 'teams', 'slack', 'push'];
+    // Push left this list when the Firebase service account arrived; it is a
+    // real channel now. The rest still have no provider and say so.
+    private const PREPARED = ['sms', 'whatsapp', 'teams', 'slack'];
 
     public function __construct(
         private InAppChannel $inApp,
         private EmailChannel $email,
+        private PushChannel $push,
     ) {
     }
 
@@ -22,6 +25,10 @@ class ChannelManager
         return match ($channel) {
             'in_app' => $this->inApp,
             'email'  => $this->email,
+            // Real, since the Firebase service account arrived. Previously fell
+            // through to PreparedChannel, which honestly reported push as not
+            // configured rather than pretending to deliver.
+            'push'   => $this->push,
             default  => new PreparedChannel($channel),
         };
     }
