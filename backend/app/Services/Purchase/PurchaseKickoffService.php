@@ -14,6 +14,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Repositories\Purchase\PurchaseKickoffRepository;
 use App\Services\Notifications\NotificationService;
+use App\Services\Purchase\PurchaseVendorNotificationService;
 use App\Services\Shared\OnlineMeetingService;
 use App\Models\Purchase\PurchaseMomActionItem;
 use App\Models\Purchase\PurchaseMomDecision;
@@ -44,6 +45,15 @@ class PurchaseKickoffService
     public function __construct(
         private PurchaseKickoffRepository $repo,
         private NotificationService $notifications,
+        // The vendor's OWN bell (purchase_vendor_notifications). Its store had
+        // exactly two writers — documents and onboarding — so nothing a meeting
+        // ever did reached the vendor in-app.
+        //
+        // Required, NOT `?Foo $bell = null`: the container prefers the default
+        // for a parameter that has one, so a nullable dependency is silently
+        // never injected and every write here becomes a no-op. Nothing
+        // constructs this service by hand, so there is nothing to be lenient for.
+        private PurchaseVendorNotificationService $vendorBell,
     ) {
     }
 
@@ -383,6 +393,36 @@ class PurchaseKickoffService
         return $newStart->copy()->addMinutes((int) $minutes);
     }
 
+    /**
+     * Drop a row in the vendor's own bell.
+     *
+     * Separate from notifyParticipants(), which e-mails the roster: a
+     * participant is a named person with an address, while the bell belongs to
+     * the vendor ACCOUNT and is what they see when they next open the portal.
+     * A vendor who does not read the e-mail had no other way to learn a meeting
+     * had been booked, moved, or had expired.
+     *
+     * Never allowed to break the operation it reports on — a bell that cannot
+     * be written is not a reason to fail scheduling a meeting.
+     */
+    private function tellVendor(PurchaseKickoffMeeting $meeting, string $type, string $title, ?string $message = null): void
+    {
+        try {
+            $this->vendorBell->notify(
+                $meeting->purchase_vendor_id,
+                (int) $meeting->tenant_id,
+                $type,
+                $title,
+                $message,
+                '/purchase-portal/kickoff',
+            );
+        } catch (\Throwable $e) {
+            Log::channel('purchase')->warning('Vendor bell write failed', [
+                'meeting_id' => $meeting->id, 'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     private function computeDuration($scheduledAt, $endAt): ?int
     {
         if (empty($scheduledAt) || empty($endAt)) {
@@ -408,6 +448,16 @@ class PurchaseKickoffService
      */
     private function notifyParticipants(PurchaseKickoffMeeting $meeting, bool $isUpdate): void
     {
+        // The same news, in the vendor's bell. E-mail reaches named people; this
+        // reaches the account, which is what the portal shows.
+        $when = $meeting->scheduled_at ? $meeting->scheduled_at->format('d M Y, g:i A') : 'a date to be confirmed';
+        $this->tellVendor(
+            $meeting,
+            $isUpdate ? 'meeting.updated' : 'meeting.scheduled',
+            $isUpdate ? 'Meeting updated: '.$meeting->title : 'Meeting scheduled: '.$meeting->title,
+            ($isUpdate ? 'The details changed. It is now on ' : 'Scheduled for ').$when.'.',
+        );
+
         $meeting->loadMissing('participants', 'vendor');
 
         $vendorName = $meeting->vendor?->company_name;
@@ -1013,6 +1063,13 @@ class PurchaseKickoffService
                 $meeting->tenant_id,
             );
         }
+
+        $this->tellVendor(
+            $meeting,
+            'meeting.expired',
+            'Meeting expired: '.$meeting->title,
+            'Its scheduled time passed without the meeting being completed or cancelled.',
+        );
 
         Log::channel('purchase')->info('Purchase kickoff expiry notice sent', [
             'meeting_id' => $meeting->id, 'tenant_id' => $meeting->tenant_id,

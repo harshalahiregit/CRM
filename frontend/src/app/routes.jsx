@@ -1140,6 +1140,8 @@ export default function AppRoutes() {
         <Route path="support"    element={<S><PurchasePortalSupport /></S>} />
 
         {/* Commercial (read-only) — one component, driven by the view prop. */}
+        {/* The Inventory items the buyer approved this vendor to supply. */}
+        <Route path="items"       element={<S><PurchasePortalCommercial view="items" /></S>} />
         <Route path="orders"      element={<S><PurchasePortalCommercial view="orders" /></S>} />
         <Route path="quotations"  element={<S><PurchasePortalCommercial view="quotations" /></S>} />
         <Route path="contracts"   element={<S><PurchasePortalCommercial view="contracts" /></S>} />

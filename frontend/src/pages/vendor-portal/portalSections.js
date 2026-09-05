@@ -17,7 +17,7 @@ import {
   FileMinus, BookOpen, Wallet, FolderKanban, ListChecks, Coins, CalendarClock,
   CalendarDays, CheckSquare, StickyNote, Files, LifeBuoy, BookMarked, Lock,
   BellRing, ShieldCheck, HardHat, AlertTriangle, BellDot, Package, Truck,
-  Award, Gavel, MessageSquare, Share2, AppWindow, LayoutGrid, Store,
+  Award, Gavel, MessageSquare, Share2, AppWindow, LayoutGrid, Store, Boxes,
 } from 'lucide-react'
 
 /**
@@ -47,6 +47,9 @@ export const PORTAL_NAV = [
   {
     group: 'Commercial',
     items: [
+      // What this vendor is approved to supply. Purchase-only: the mapping is
+      // purchase_vendor_items → Inventory, and TPV has no equivalent.
+      { key: 'items',              label: 'My Items',           icon: Boxes },
       { key: 'quotation',          label: 'Quotation',          icon: FileText },
       { key: 'contracts',          label: 'Contracts',          icon: FileSignature },
       { key: 'purchase-order',     label: 'Purchase Order',     icon: ShoppingCart },
@@ -121,17 +124,32 @@ export const SECTION_INDEX = PORTAL_NAV.reduce((acc, { group, items }) => {
  * @returns groups of { group, items: [{ key, label, icon, to, built, gated }] }
  */
 export function resolveNav({ base, builtRoutes = {}, vendor }) {
-  return PORTAL_NAV.map(({ group, items }) => ({
-    group,
-    items: items
-      .filter(it => !it.gate || it.gate(vendor))
-      .map(it => {
-        const seg = builtRoutes[it.key]
-        return {
-          ...it,
-          built: Boolean(seg),
-          to: seg ? `${base}/${seg}` : `${base}/s/${it.key}`,
-        }
-      }),
-  }))
+  // Only what this portal has actually BUILT is offered.
+  //
+  // The tree above is the roadmap and stays complete — but rendering all of it
+  // gave a vendor a sidebar of forty entries where most led to a "coming soon"
+  // card. That is not a menu, it is a list of disappointments, and it buried
+  // the dozen things they can really do. Adding a key to builtRoutes is still
+  // all it takes to reveal a section.
+  //
+  // Two sections can share one route (HSSE Documents and Documents both point
+  // at the statutory library). Keeping both would show the same page twice
+  // under two names, so the first one wins and the later duplicate is dropped.
+  const seen = new Set()
+
+  return PORTAL_NAV
+    .map(({ group, items }) => ({
+      group,
+      items: items
+        .filter(it => !it.gate || it.gate(vendor))
+        .map(it => ({ ...it, seg: builtRoutes[it.key] }))
+        .filter(it => {
+          if (!it.seg || seen.has(it.seg)) return false
+          seen.add(it.seg)
+          return true
+        })
+        .map(({ seg, ...it }) => ({ ...it, built: true, to: `${base}/${seg}` })),
+    }))
+    // A group whose every section is unbuilt renders as a bare heading.
+    .filter(g => g.items.length > 0)
 }

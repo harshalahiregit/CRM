@@ -41,6 +41,22 @@ const VIEWS = {
       { k: 'total', h: 'Total', money: true, align: 'right' }, { k: 'status', h: 'Status', pill: true },
     ],
   },
+  items: {
+    title: 'My Items',
+    // No `detail`: there is nothing behind the row. The mapping IS the record,
+    // and the item facts on it come straight from the Item Master.
+    list: () => purchasePortalApi.items(),
+    empty: 'No items have been mapped to your account yet. Your buyer adds these, and they appear here as soon as they do.',
+    cols: [
+      { k: 'item.name', h: 'Item', strong: true },
+      { k: 'item.sku', h: 'SKU' },
+      { k: 'item.group', h: 'Group' },
+      { k: 'item.unit', h: 'Unit' },
+      { k: 'effective_date', h: 'Effective', fmt: date },
+      { k: 'remarks', h: 'Remarks' },
+      { k: 'status', h: 'Status', pill: true },
+    ],
+  },
   quotations: {
     title: 'Quotations', list: () => purchasePortalApi.commercial.quotations(), detail: (id) => purchasePortalApi.commercial.quotation(id),
     cols: [
@@ -84,7 +100,12 @@ const VIEWS = {
 }
 
 function cellValue(row, col) {
-  const raw = row[col.k]
+  // A dotted key reads through nested objects — the item rows carry their
+  // Inventory facts under `item`, because those are read from the Item Master
+  // rather than copied onto the mapping.
+  const raw = col.k.includes('.')
+    ? col.k.split('.').reduce((acc, part) => (acc == null ? acc : acc[part]), row)
+    : row[col.k]
   if (col.money) return money(raw, row.currency)
   if (col.fmt) return col.fmt(raw)
   if (col.pill) return <Pill value={raw} />
@@ -230,7 +251,11 @@ function StatementView() {
 }
 
 function Center({ children }) { return <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>{children}</div> }
-function Empty() { return <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 48, fontSize: 14 }}>Nothing here yet.</div> }
+function Empty({ text }) {
+  // A view can say something more useful than "nothing here" — an empty
+  // item list is not a fault, it means the buyer has not mapped any yet.
+  return <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 48, fontSize: 14, maxWidth: 460, marginInline: 'auto', lineHeight: 1.6 }}>{text || 'Nothing here yet.'}</div>
+}
 
 /* ── RFQ invitations + quote submission (vendor write path) ───────────────── */
 function RfqPanel({ onSubmitted }) {
@@ -369,7 +394,7 @@ export default function PurchasePortalCommercial({ view }) {
       <div className="pp-card">
         <h2 style={{ fontSize: 17, fontWeight: 800, color: 'var(--text-h)', margin: '0 0 14px' }}>{cfg.title}</h2>
         {rows === null ? <Center><Loader2 className="spin" size={22} /></Center>
-          : rows.length === 0 ? <Empty />
+          : rows.length === 0 ? <Empty text={cfg.empty} />
           : (
             <div style={{ overflowX: 'auto' }}>
               <table className="pp-table">

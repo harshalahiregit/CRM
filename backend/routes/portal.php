@@ -307,6 +307,9 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::get('/invoices/{id}',                      [PurchasePortalCommerceController::class, 'invoice']);
     Route::get('/debit-notes',                        [PurchasePortalCommerceController::class, 'debitNotes']);
     Route::get('/debit-notes/{id}',                   [PurchasePortalCommerceController::class, 'debitNote']);
+    // The Inventory items this vendor is approved to supply. Admin has been
+    // able to map these all along; the vendor could not see the result.
+    Route::get('/items',                              [PurchasePortalCommerceController::class, 'items']);
     Route::get('/payments',                            [PurchasePortalCommerceController::class, 'payments']);
     Route::get('/statement',                          [PurchasePortalCommerceController::class, 'statement']);
 

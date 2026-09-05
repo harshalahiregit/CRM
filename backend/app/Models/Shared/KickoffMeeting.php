@@ -4,6 +4,7 @@ namespace App\Models\Shared;
 
 use App\Casts\BusinessDateTime;
 use App\Models\Traits\Auditable;
+use App\Models\Concerns\GeneratesSequentialCode;
 use App\Models\Traits\BelongsToTenant;
 use App\Models\Traits\NormalisesBusinessTimes;
 use App\Models\User;
@@ -23,7 +24,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class KickoffMeeting extends Model
 {
-    use Auditable, BelongsToTenant, NormalisesBusinessTimes, SoftDeletes;
+    use Auditable, BelongsToTenant, GeneratesSequentialCode, NormalisesBusinessTimes, SoftDeletes;
 
     protected $table = 'kickoff_meetings';
 
@@ -106,12 +107,12 @@ class KickoffMeeting extends Model
     {
         static::creating(function (KickoffMeeting $m) {
             if (empty($m->meeting_no)) {
-                $year = date('Y');
-                $n = static::withTrashed()
-                    ->where('tenant_id', $m->tenant_id)
-                    ->whereYear('created_at', $year)
-                    ->count() + 1;
-                $m->meeting_no = sprintf('MTG-%s-%04d', $year, $n);
+                // Highest issued + 1, not count + 1 — see GeneratesSequentialCode.
+                // Deleting a meeting used to make the NEXT one collide on
+                // meeting_no, which is unique per tenant.
+                $m->meeting_no = static::nextSequentialCode(
+                    'meeting_no', 'MTG-'.date('Y').'-', (int) $m->tenant_id, 4,
+                );
             }
         });
     }
