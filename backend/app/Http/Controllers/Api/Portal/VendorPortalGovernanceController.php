@@ -184,10 +184,10 @@ class VendorPortalGovernanceController extends Controller
             if (! $available) {
                 $m->setAttribute('mom_path', null);
             }
-            // A join link for a meeting that has finished is worse than none —
-            // it looks like it should still work. Withheld once expired; the
-            // portal shows why instead.
-            if ($m->is_expired) {
+            // A join link is offered only while the meeting is actually going
+            // to happen. "Not expired" is not the same test: a CANCELLED meeting
+            // is not expired either, and kept handing out a working link.
+            if (! in_array($m->timing_state, ['upcoming', 'live'], true)) {
                 $m->setAttribute('meeting_link', null);
             }
         });

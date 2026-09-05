@@ -98,14 +98,25 @@ export default function PurchasePortalDashboard() {
     ]
   }, [onb, vendor])
 
-  // Offered while the meeting has not yet EXPIRED — not only while it is still
-  // in the future. The old test compared the start against the browser clock,
+  // Offered while the meeting has not yet ENDED — not only while it is still in
+  // the future. The original test compared the start against the browser clock,
   // so the popup vanished at the very moment the meeting began and the vendor
-  // lost the link exactly when they needed it. `is_expired` is derived on the
-  // server against the tenant's timezone, which is the clock the meeting was
-  // booked on; a browser in another zone got the answer wrong outright.
+  // lost the link exactly when they needed it.
+  //
+  // Written to fail CLOSED. Asking `!kickoff.is_expired` looks equivalent and is
+  // not: on an endpoint that does not send that field it reads as undefined,
+  // `!undefined` is true, and the popup cheerfully offered a meeting that ended
+  // two days ago. So the meeting must PROVE it is still open — either the server
+  // says which state it is in, or its own end time is still ahead of us.
   const joinKey = kickoff?.id ? `pv-join-dismissed-${kickoff.id}` : null
-  const meetingOpen = Boolean(kickoff?.scheduled_at) && !kickoff?.is_expired
+  const meetingOpen = (() => {
+    if (!kickoff?.scheduled_at) return false
+    if (kickoff.timing_state) return kickoff.timing_state === 'upcoming' || kickoff.timing_state === 'live'
+    // No timing from the server: fall back to the meeting's own clock rather
+    // than assuming it is fine.
+    const end = new Date(kickoff.ends_at || kickoff.scheduled_at).getTime()
+    return Number.isFinite(end) && Date.now() < end
+  })()
   const showJoin = Boolean(kickoff?.meeting_link) && meetingOpen && !linkDismissed
   useEffect(() => {
     if (!joinKey) return
