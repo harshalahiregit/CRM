@@ -10,6 +10,7 @@ import { KIT3D_STYLE, StatusBadge as StatusPill } from '@/components/ui/kit3d'
 import PurchaseRegistrationBadge from '@/modules/purchase/components/PurchaseRegistrationBadge'
 import TemporaryVendorValidityBadge from '@/modules/purchase/components/TemporaryVendorValidityBadge'
 import MedicalPendingBanner from '@/components/medical/MedicalPendingBanner'
+import MeetingScheduleCard from '@/components/portal/MeetingScheduleCard'
 
 const onbCfg = (s) => ({
   In_Progress:  { label: 'In Progress',  color: '#0ea5e9', bg: 'rgba(14,165,233,0.15)' },
@@ -97,11 +98,15 @@ export default function PurchasePortalDashboard() {
     ]
   }, [onb, vendor])
 
-  // Only for a meeting that is still ahead and actually has a link to join.
-  // A past meeting's link is noise, and an on-site meeting has none.
+  // Offered while the meeting has not yet EXPIRED — not only while it is still
+  // in the future. The old test compared the start against the browser clock,
+  // so the popup vanished at the very moment the meeting began and the vendor
+  // lost the link exactly when they needed it. `is_expired` is derived on the
+  // server against the tenant's timezone, which is the clock the meeting was
+  // booked on; a browser in another zone got the answer wrong outright.
   const joinKey = kickoff?.id ? `pv-join-dismissed-${kickoff.id}` : null
-  const meetingAhead = kickoff?.scheduled_at && new Date(kickoff.scheduled_at).getTime() > Date.now()
-  const showJoin = Boolean(kickoff?.meeting_link) && meetingAhead && !linkDismissed
+  const meetingOpen = Boolean(kickoff?.scheduled_at) && !kickoff?.is_expired
+  const showJoin = Boolean(kickoff?.meeting_link) && meetingOpen && !linkDismissed
   useEffect(() => {
     if (!joinKey) return
     // localStorage can throw in a private window; a popup is not worth an error.
@@ -133,13 +138,16 @@ export default function PurchasePortalDashboard() {
               <div style={{ width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(145deg,#7C3AED,#5b21b6)' }}>
                 <Video size={17} color="#fff" />
               </div>
-              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-h)' }}>Your meeting is online</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-h)' }}>
+              {kickoff.is_live ? 'Your meeting is starting now' : 'Your meeting is online'}
+            </div>
             </div>
             <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '0 0 4px', lineHeight: 1.5 }}>
               {kickoff.title || 'Kickoff meeting'}
             </p>
             <p style={{ fontSize: 12.5, color: 'var(--text-h)', fontWeight: 700, margin: '0 0 16px' }}>
               {fmtDateTime(kickoff.scheduled_at)}
+              {kickoff.is_live && <span style={{ color: '#16a34a', marginLeft: 8 }}>● In progress</span>}
             </p>
             <a href={kickoff.meeting_link} target="_blank" rel="noopener noreferrer" onClick={dismissJoin}
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px 18px', borderRadius: 10, background: 'linear-gradient(135deg,#7C3AED,#6d28d9)', color: '#fff', fontWeight: 800, fontSize: 13.5, textDecoration: 'none' }}>
@@ -152,6 +160,12 @@ export default function PurchasePortalDashboard() {
           </div>
         </div>
       )}
+
+      {/* The schedule, with anything that has expired called out. Same component
+          as the TPV portal so both vendors are told the same thing. */}
+      <div style={{ marginBottom: 18 }}>
+        <MeetingScheduleCard load={purchasePortalApi.governance.meetings} to="/purchase-portal/governance" />
+      </div>
 
       {/* Vendor header */}
       <div className="pr-glass" style={{ padding: '20px 22px', borderRadius: 16, marginBottom: 18, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>

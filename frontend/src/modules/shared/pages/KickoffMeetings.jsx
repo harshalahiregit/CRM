@@ -70,7 +70,12 @@ export default function KickoffMeetings() {
   const quickMatch = (m) => {
     switch (quickView) {
       case 'my':           return mine(m)
-      case 'upcoming':     return !isKoClosed(m.status) && m.scheduled_at && new Date(m.scheduled_at).getTime() >= now
+      // timing_state is derived on the server against the TENANT's timezone.
+      // Recomputing it here from the browser clock gave a different answer for
+      // anyone working in another zone, and said nothing about a meeting whose
+      // slot had already passed while it was still open.
+      case 'upcoming':     return m.timing_state === 'upcoming' || m.timing_state === 'live'
+      case 'expired':      return m.timing_state === 'expired'
       // Completed meetings whose minutes are not yet distributed — the MOM is owed.
       case 'pending_mom':  return m.status === KO_STATUS.COMPLETED && m.mom_status !== 'Distributed'
       case 'open_actions': return (m.open_actions ?? 0) > 0
@@ -178,7 +183,11 @@ export default function KickoffMeetings() {
         {[
           ['all', 'All', CalendarDays, data.length],
           ['my', 'My Meetings', UserCheck, data.filter(mine).length],
-          ['upcoming', 'Upcoming', Clock, data.filter(m => !isKoClosed(m.status) && m.scheduled_at && new Date(m.scheduled_at).getTime() >= now).length],
+          ['upcoming', 'Upcoming', Clock, data.filter(m => m.timing_state === 'upcoming' || m.timing_state === 'live').length],
+          // Meetings whose time has passed with nobody closing them off. They
+          // used to hide inside "Upcoming" forever, which is why nothing ever
+          // got chased.
+          ['expired', 'Expired', AlertTriangle, data.filter(m => m.timing_state === 'expired').length],
           ['pending_mom', 'Pending MOM', ClipboardCheck, data.filter(m => m.status === KO_STATUS.COMPLETED && m.mom_status !== 'Distributed').length],
           ['open_actions', 'Open Actions', ListChecks, data.filter(m => (m.open_actions ?? 0) > 0).length],
           ['templates', 'Templates', LayoutGrid, null],
@@ -305,7 +314,23 @@ export default function KickoffMeetings() {
                           from the meeting datetime, which has its own column. */}
                       <td style={td}>{m.planned_date ? fmtDate(m.planned_date) : '—'}</td>
                       <td style={td}><YesNo yes={!!m.mom_path} /></td>
-                      <td style={td}><span style={{ padding: '3px 10px', borderRadius: 999, background: cfg.bg, color: cfg.color, fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}>{cfg.label}</span></td>
+                      <td style={td}>
+                        <span style={{ padding: '3px 10px', borderRadius: 999, background: cfg.bg, color: cfg.color, fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}>{cfg.label}</span>
+                        {/* Status says what was decided; this says the slot has
+                            passed and nobody closed it. Both, because
+                            "Scheduled · EXPIRED" is the honest description. */}
+                        {m.is_expired && (
+                          <span title={`Ended ${m.ends_at ? new Date(m.ends_at).toLocaleString() : ''} and never closed`}
+                            style={{ marginLeft: 6, padding: '3px 8px', borderRadius: 999, background: 'rgba(220,38,38,0.10)', color: '#b91c1c', fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap' }}>
+                            EXPIRED
+                          </span>
+                        )}
+                        {m.is_live && (
+                          <span style={{ marginLeft: 6, padding: '3px 8px', borderRadius: 999, background: 'rgba(34,197,94,0.12)', color: '#15803d', fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap' }}>
+                            ● LIVE
+                          </span>
+                        )}
+                      </td>
                       <td style={td}><Attn present={m.attended_count ?? 0} total={m.attendees_count ?? 0} /></td>
                       {/* Meeting Date = when it is/was held. */}
                       <td style={td}>{m.scheduled_at ? fmtDateTime(m.scheduled_at) : '—'}</td>

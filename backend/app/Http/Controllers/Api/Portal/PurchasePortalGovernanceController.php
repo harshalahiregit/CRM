@@ -160,11 +160,20 @@ class PurchasePortalGovernanceController extends Controller
             ->where('purchase_vendor_id', $v->id)
             // Never expose unpublished drafts to the vendor.
             ->where('status', '!=', \App\Support\Purchase\PurchaseKickoffStatus::DRAFT)
-            ->latest('id')->get();
+            // Ordered by when the meeting IS, not by the order rows happened to
+            // be written — the shared engine has always ordered this way and the
+            // two portals listed the same vendor's meetings differently.
+            ->latest('scheduled_at')->get();
 
         // The minutes are the vendor's to see only once approved+distributed.
         $meetings->each(function ($m) {
             $m->setAttribute('mom_available', \App\Support\Purchase\PurchaseMomApprovalStatus::isDistributable($m->mom_status));
+            // A join link for a meeting that has finished is worse than none —
+            // it looks like it should still work. Withheld once expired; the
+            // portal shows why instead.
+            if ($m->is_expired) {
+                $m->setAttribute('meeting_link', null);
+            }
         });
 
         return response()->json(['data' => $meetings]);

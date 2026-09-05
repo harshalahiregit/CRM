@@ -2,10 +2,13 @@
 
 namespace App\Models\Shared;
 
+use App\Casts\BusinessDateTime;
 use App\Models\Traits\Auditable;
 use App\Models\Traits\BelongsToTenant;
+use App\Models\Traits\NormalisesBusinessTimes;
 use App\Models\User;
 use App\Support\Shared\KickoffStatus as Status;
+use App\Support\Shared\MeetingTiming;
 use App\Support\Shared\KickoffSubject;
 use App\Support\Shared\MeetingTypeCatalog;
 use App\Support\Shared\MomApprovalStatus;
@@ -20,7 +23,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class KickoffMeeting extends Model
 {
-    use Auditable, BelongsToTenant, SoftDeletes;
+    use Auditable, BelongsToTenant, NormalisesBusinessTimes, SoftDeletes;
 
     protected $table = 'kickoff_meetings';
 
@@ -60,9 +63,13 @@ class KickoffMeeting extends Model
     ];
 
     protected $casts = [
-        'scheduled_at' => 'datetime',
-        'end_at' => 'datetime',
-        'original_scheduled_at' => 'datetime',
+        // Person-entered wall clocks in the tenant's timezone, NOT UTC instants —
+        // see App\Casts\BusinessDateTime. The plain 'datetime' cast used to
+        // publish these as UTC, so a 09:00 meeting came back as 14:30 and
+        // walked another +05:30 down the day on every re-save.
+        'scheduled_at' => BusinessDateTime::class,
+        'end_at' => BusinessDateTime::class,
+        'original_scheduled_at' => BusinessDateTime::class,
         'completed_at' => 'datetime',
         'acknowledged_at' => 'datetime',
         'duration_minutes' => 'integer',
@@ -115,6 +122,8 @@ class KickoffMeeting extends Model
         'status_label', 'is_acknowledged', 'subject', 'subject_list',
         'acknowledgement_open', 'acknowledgement_expired', 'can_complete',
         'meeting_type_label', 'mom_status_label',
+        // Clock-derived; see the Timing block below.
+        'ends_at', 'timing_state', 'timing_label', 'is_expired', 'is_live', 'minutes_until_start',
     ];
 
     /** Human label for the MOM approval state. Defaults to Draft. */
@@ -264,6 +273,66 @@ class KickoffMeeting extends Model
     public function getCanCompleteAttribute(): bool
     {
         return $this->scheduled_at === null || $this->scheduled_at->isPast();
+    }
+
+    /* ── Timing ───────────────────────────────────────────────────────────
+     *
+     * Where the meeting sits against the clock, as opposed to what people
+     * decided about it (that is `status`). Derived on every read, so a meeting
+     * becomes Expired the moment its end passes without a job having to run.
+     * Appended, so every payload that carries a meeting carries this too —
+     * the list, the detail, the portal and both dashboards read the same
+     * answer instead of each re-deriving it from scheduled_at.
+     */
+
+    /** When the meeting actually ends: the stored end, else start + duration. */
+    public function getEndsAtAttribute(): ?\Illuminate\Support\Carbon
+    {
+        return MeetingTiming::endsAt(
+            $this->scheduled_at, $this->end_at, $this->duration_minutes, $this->tenant_id,
+        );
+    }
+
+    /** draft | upcoming | live | expired | closed */
+    public function getTimingStateAttribute(): string
+    {
+        return MeetingTiming::state(
+            $this->scheduled_at,
+            $this->end_at,
+            $this->duration_minutes,
+            $this->status === Status::DRAFT,
+            Status::isClosed($this->status),
+            $this->tenant_id,
+        );
+    }
+
+    public function getTimingLabelAttribute(): string
+    {
+        return MeetingTiming::label($this->timing_state);
+    }
+
+    /**
+     * Ended while still open — nobody completed or cancelled it.
+     *
+     * This is what every "this meeting has expired" message keys off, and what
+     * withholds the join link: a link to a meeting that finished yesterday is
+     * worse than no link, because it looks like it should work.
+     */
+    public function getIsExpiredAttribute(): bool
+    {
+        return $this->timing_state === MeetingTiming::EXPIRED;
+    }
+
+    /** Running right now — started, not yet ended, not closed. */
+    public function getIsLiveAttribute(): bool
+    {
+        return $this->timing_state === MeetingTiming::LIVE;
+    }
+
+    /** Negative once the meeting has begun; null when it has no date. */
+    public function getMinutesUntilStartAttribute(): ?int
+    {
+        return MeetingTiming::minutesUntilStart($this->scheduled_at, $this->tenant_id);
     }
 
     public function getStatusLabelAttribute(): string
