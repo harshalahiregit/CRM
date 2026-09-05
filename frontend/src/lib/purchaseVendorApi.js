@@ -39,8 +39,9 @@ pvApi.interceptors.response.use(
     // Purchase vendor accounts only") must not clear their token.
     if (isSessionFailure(error, !!pvToken.get())) {
       pvToken.clear()
-      if (!window.location.pathname.startsWith('/purchase-portal/login')) {
-        window.location.href = '/purchase-portal/login'
+      // The single login page — this portal no longer has one of its own.
+      if (!window.location.pathname.startsWith('/auth/login')) {
+        window.location.href = '/auth/login?role=purchase_vendor'
       }
     }
     return Promise.reject(error)

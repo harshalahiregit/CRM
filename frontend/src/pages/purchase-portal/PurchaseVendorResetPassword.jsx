@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { purchaseVendorAuthApi } from '@/services/purchaseVendorAuthApi'
-import { AuthShell, lbl, inp, primaryBtn, linkStyle, errStyle } from './PurchaseVendorLogin'
+import { AuthShell, lbl, inp, primaryBtn, linkStyle, errStyle } from './portalAuthChrome'
 
 /** Purchase Vendor reset-password — consumes the emailed token. */
 export default function PurchaseVendorResetPassword() {
@@ -20,7 +20,7 @@ export default function PurchaseVendorResetPassword() {
   const submit = async (e) => {
     e.preventDefault()
     setBusy(true); setErr('')
-    try { await purchaseVendorAuthApi.resetPassword(form); navigate('/purchase-portal/login') }
+    try { await purchaseVendorAuthApi.resetPassword(form); navigate('/auth/login?role=purchase_vendor') }
     catch (e) { setErr(e?.response?.data?.message || 'Reset failed.') } finally { setBusy(false) }
   }
 
@@ -33,7 +33,7 @@ export default function PurchaseVendorResetPassword() {
         <div><label style={lbl}>Confirm Password</label><input type="password" value={form.password_confirmation} onChange={set('password_confirmation')} style={inp} required /></div>
         {err && <div style={errStyle}>{err}</div>}
         <button type="submit" disabled={busy} style={primaryBtn}>{busy ? 'Updating…' : 'Update password'}</button>
-        <div style={{ textAlign: 'center', fontSize: 12.5 }}><Link to="/purchase-portal/login" style={linkStyle}>Back to Sign In</Link></div>
+        <div style={{ textAlign: 'center', fontSize: 12.5 }}><Link to="/auth/login?role=purchase_vendor" style={linkStyle}>Back to Sign In</Link></div>
       </form>
     </AuthShell>
   )

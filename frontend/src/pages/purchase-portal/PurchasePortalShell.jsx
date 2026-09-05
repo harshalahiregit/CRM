@@ -14,7 +14,7 @@ export default function PurchasePortalShell() {
   const navigate = useNavigate()
 
   const onLogout = async () => {
-    try { await purchaseVendorAuthApi.logout() } finally { navigate('/purchase-portal/login') }
+    try { await purchaseVendorAuthApi.logout() } finally { navigate('/auth/login?role=purchase_vendor') }
   }
 
   return (

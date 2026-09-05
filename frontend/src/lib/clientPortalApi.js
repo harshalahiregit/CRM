@@ -42,8 +42,9 @@ cpApi.interceptors.response.use(
     // out for clicking a tab they were never granted.
     if (isSessionFailure(error, !!clientToken.get())) {
       clientToken.clear()
-      if (!window.location.pathname.startsWith('/portal/login')) {
-        window.location.href = '/portal/login'
+      // The single login page — this portal no longer has one of its own.
+      if (!window.location.pathname.startsWith('/auth/login')) {
+        window.location.href = '/auth/login?role=client'
       }
     }
     return Promise.reject(error)
