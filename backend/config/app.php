@@ -65,7 +65,11 @@ return [
     |
     */
 
-    'timezone' => 'UTC',
+    // Storage stays UTC. Presentation converts per tenant — see
+    // SettingsFormatter and the 'localization.timezone' setting, which the
+    // numbering engine and every localised screen already rely on. Changing this
+    // to Asia/Kolkata "to fix" attendance times broke both of those instead.
+    'timezone' => env('APP_TIMEZONE', 'UTC'),
 
     /*
     |--------------------------------------------------------------------------

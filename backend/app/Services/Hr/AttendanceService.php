@@ -2,6 +2,7 @@
 
 namespace App\Services\Hr;
 
+use App\Support\Hr\TenantTime;
 use App\Exceptions\BusinessException;
 use App\Models\Hr\HrAttendance;
 use App\Models\Hr\HrEmployee;
@@ -398,8 +399,8 @@ class AttendanceService
                 'Designation'   => $r->employee?->designation,
                 'Shift'         => $r->shift,
                 'Date'          => optional($r->date)->toDateString(),
-                'Check In'      => optional($r->check_in)->format('H:i'),
-                'Check Out'     => optional($r->check_out)->format('H:i'),
+                'Check In'      => TenantTime::hm($r->check_in, $r->tenant_id),
+                'Check Out'     => TenantTime::hm($r->check_out, $r->tenant_id),
                 'Break'         => $this->breakLabel($r),
                 'Working Hours' => $r->working_hours,
                 'Overtime'      => $r->overtime_hours,
@@ -418,10 +419,12 @@ class AttendanceService
             'date'          => optional($r->date)->toDateString(),
             'status'        => $r->status,
             'shift'         => $r->shift,
-            'check_in'      => optional($r->check_in)->format('H:i'),
-            'check_out'     => optional($r->check_out)->format('H:i'),
-            'break_start'   => optional($r->break_start)->format('H:i'),
-            'break_end'     => optional($r->break_end)->format('H:i'),
+            // Stored UTC, read on the workspace's clock. Without this a 2:11pm
+            // arrival showed as 08:41 on every attendance screen and export.
+            'check_in'      => TenantTime::hm($r->check_in, $r->tenant_id),
+            'check_out'     => TenantTime::hm($r->check_out, $r->tenant_id),
+            'break_start'   => TenantTime::hm($r->break_start, $r->tenant_id),
+            'break_end'     => TenantTime::hm($r->break_end, $r->tenant_id),
             'working_hours' => $r->working_hours,
             'overtime_hours'=> $r->overtime_hours,
             'remarks'       => $r->remarks,
@@ -431,7 +434,7 @@ class AttendanceService
     private function breakLabel(HrAttendance $r): ?string
     {
         if ($r->break_start && $r->break_end) {
-            return $r->break_start->format('H:i').'–'.$r->break_end->format('H:i');
+            return TenantTime::hm($r->break_start, $r->tenant_id).'–'.TenantTime::hm($r->break_end, $r->tenant_id);
         }
 
         return null;

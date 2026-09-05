@@ -255,8 +255,11 @@ class HrmProfileController extends Controller
             ->take($perPage)
             ->get();
 
-        return HrmResponse::ok([
-            'data' => $rows->map(fn (Notification $n) => [
+        // `data` is the LIST itself and the counts sit beside it. The controller
+        // does `res['data'] as List` and `res['unread_count']` separately, so
+        // wrapping them together threw a cast error and the screen never opened.
+        return HrmResponse::ok(
+            $rows->map(fn (Notification $n) => [
                 // Their model declares `final int id` with no fallback — a null
                 // here crashes the app rather than rendering blank.
                 'id'         => $n->id,
@@ -266,9 +269,12 @@ class HrmProfileController extends Controller
                 'is_read'    => $n->read_at !== null,
                 'created_at' => $n->created_at ? $n->created_at->toDateTimeString() : '',
             ])->values()->all(),
-            'unread_count' => (clone $query)->whereNull('read_at')->count(),
-            'has_more'     => $total > $page * $perPage,
-        ]);
+            'Success',
+            [
+                'unread_count' => (clone $query)->whereNull('read_at')->count(),
+                'has_more'     => $total > $page * $perPage,
+            ],
+        );
     }
 
     public function markNotificationsRead(Request $request)
@@ -291,7 +297,18 @@ class HrmProfileController extends Controller
 
         $n = $query->update(['read_at' => now()]);
 
-        return HrmResponse::ok(['marked' => $n], 'Marked as read.');
+        // The app reads unread_count straight off the response here too, to
+        // update the bell badge without a second round trip.
+        return HrmResponse::ok(
+            ['marked' => $n],
+            'Marked as read.',
+            [
+                'unread_count' => Notification::where('tenant_id', $user->tenant_id)
+                    ->where('user_id', $user->id)
+                    ->whereNull('read_at')
+                    ->count(),
+            ],
+        );
     }
 
     public function notificationPreferences(Request $request)

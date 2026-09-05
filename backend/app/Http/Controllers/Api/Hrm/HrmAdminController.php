@@ -19,6 +19,7 @@ use App\Services\Hr\EmployeeIdentityService;
 use App\Services\Hr\ReimbursementService;
 use App\Support\Hr\AdvanceStage;
 use App\Support\Hr\ReimbursementStatus;
+use App\Support\Hr\TenantTime;
 use App\Support\Hrm\HrmResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -99,7 +100,7 @@ class HrmAdminController extends Controller
 
         $employees = HrEmployee::where('tenant_id', $tenantId)->orderBy('name')->get();
 
-        return HrmResponse::ok($employees->map(function (HrEmployee $e) use ($today) {
+        return HrmResponse::ok($employees->map(function (HrEmployee $e) use ($today, $tenantId) {
             $a = $today->get($e->id);
 
             return [
@@ -113,8 +114,10 @@ class HrmAdminController extends Controller
                 'avatar'        => '',
                 // "Absent" when nothing was recorded — which is the honest reading.
                 'status'        => (string) ($a->status ?? 'Absent'),
-                'clock_in'      => $a && $a->check_in ? $a->check_in->format('H:i') : '',
-                'clock_out'     => $a && $a->check_out ? $a->check_out->format('H:i') : '',
+                // The workspace's clock, not the server's — stored UTC would show
+                // an admin a 2:11pm arrival as 08:41.
+                'clock_in'      => TenantTime::hm($a?->check_in, $tenantId),
+                'clock_out'     => TenantTime::hm($a?->check_out, $tenantId),
             ];
         })->values()->all());
     }

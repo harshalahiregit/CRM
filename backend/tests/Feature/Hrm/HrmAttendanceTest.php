@@ -240,7 +240,11 @@ class HrmAttendanceTest extends TestCase
 
         HrAttendance::create([
             'tenant_id' => $this->tenant()->id, 'employee_id' => $employee->id, 'date' => '2026-03-02',
-            'check_in' => '2026-03-02 09:00:00', 'check_out' => '2026-03-02 18:00:00',
+            // Stored UTC, which is 09:00-18:00 on the workspace's Asia/Kolkata
+            // clock. The app prints these strings verbatim, so it must receive
+            // the local wall time — sending the raw UTC column showed a 9am
+            // arrival as 03:30.
+            'check_in' => '2026-03-02 03:30:00', 'check_out' => '2026-03-02 12:30:00',
             'working_hours' => 9, 'status' => 'Present',
         ]);
 
@@ -263,7 +267,9 @@ class HrmAttendanceTest extends TestCase
         }
 
         $this->assertSame('2026-03-02', $r->json('data.0.date'));
+        // 09:00 on the workspace clock, not the 03:30 that is in the column.
         $this->assertSame('09:00', $r->json('data.0.history.0.clock_in'));
+        $this->assertSame('18:00', $r->json('data.0.history.0.clock_out'));
         $this->assertSame('09:00', $r->json('data.0.history.0.total'));
     }
 

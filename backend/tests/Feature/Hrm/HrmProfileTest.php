@@ -172,22 +172,28 @@ class HrmProfileTest extends TestCase
             ]);
         }
 
-        $d = $this->postJson('/api/Hrm/notifications', ['page' => 1, 'per_page' => 20])
-            ->assertOk()->json('data');
+        $body = $this->postJson('/api/Hrm/notifications', ['page' => 1, 'per_page' => 20])
+            ->assertOk()->json();
 
-        foreach (['data', 'unread_count', 'has_more'] as $k) {
-            $this->assertArrayHasKey($k, $d, "notifications.{$k} is missing.");
+        // `data` is the LIST, with the counts BESIDE it — not nested inside.
+        // The app does `res['data'] as List` and reads res['unread_count']
+        // separately, so nesting them together threw
+        // "_Map<String, dynamic> is not a subtype of List<dynamic>" and the
+        // notifications screen died the moment it opened.
+        $this->assertIsList($body['data'], 'data must be the list itself.');
+        foreach (['unread_count', 'has_more'] as $k) {
+            $this->assertArrayHasKey($k, $body, "{$k} must sit beside data, not inside it.");
         }
-        $this->assertCount(20, $d['data']);
-        $this->assertTrue($d['has_more']);
-        $this->assertSame(25, $d['unread_count']);
+        $this->assertCount(20, $body['data']);
+        $this->assertTrue($body['has_more']);
+        $this->assertSame(25, $body['unread_count']);
 
         foreach (['id', 'type', 'title', 'body', 'is_read', 'created_at'] as $k) {
-            $this->assertArrayHasKey($k, $d['data'][0], "notification.{$k} is missing.");
+            $this->assertArrayHasKey($k, $body['data'][0], "notification.{$k} is missing.");
         }
         // Their model declares a non-nullable int; a null here crashes the app.
-        $this->assertIsInt($d['data'][0]['id']);
-        $this->assertIsBool($d['data'][0]['is_read']);
+        $this->assertIsInt($body['data'][0]['id']);
+        $this->assertIsBool($body['data'][0]['is_read']);
     }
 
     public function test_marking_read_all_and_by_id(): void
@@ -199,11 +205,15 @@ class HrmProfileTest extends TestCase
 
         $this->postJson('/api/Hrm/notifications/mark-read', ['ids' => [$a->id]])->assertOk();
         $this->assertNotNull($a->fresh()->read_at);
-        $this->assertSame(1, $this->postJson('/api/Hrm/notifications', [])->json('data.unread_count'));
+        $this->assertSame(1, $this->postJson('/api/Hrm/notifications', [])->json('unread_count'));
 
         // No ids means all of them.
         $this->postJson('/api/Hrm/notifications/mark-read', [])->assertOk();
-        $this->assertSame(0, $this->postJson('/api/Hrm/notifications', [])->json('data.unread_count'));
+        $this->assertSame(0, $this->postJson('/api/Hrm/notifications', [])->json('unread_count'));
+
+        // mark-read answers with the new count too, so the bell badge updates
+        // without a second round trip — the app reads it straight off that reply.
+        $this->assertSame(0, $this->postJson('/api/Hrm/notifications/mark-read', [])->json('unread_count'));
     }
 
     public function test_notifications_never_show_another_users(): void
@@ -215,7 +225,7 @@ class HrmProfileTest extends TestCase
         ]);
         Notification::create(['tenant_id' => $this->tenant()->id, 'user_id' => $other->id, 'type' => 't', 'title' => 'Theirs']);
 
-        $this->postJson('/api/Hrm/notifications', [])->assertOk()->assertJsonCount(0, 'data.data');
+        $this->postJson('/api/Hrm/notifications', [])->assertOk()->assertJsonCount(0, 'data');
     }
 
     public function test_preferences_read_defaults_then_save(): void

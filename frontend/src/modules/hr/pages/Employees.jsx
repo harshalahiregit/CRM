@@ -453,12 +453,29 @@ export default function Employees() {
                   {!form.skip_probation ? (
                     <>
                       <select className="input-3d text-sm" value={form.probation_policy_id||''} onChange={e=>setForm({...form,probation_policy_id:e.target.value})}>
-                        <option value="">Choose a probation policy…</option>
+                        <option value="">{probationPolicies.length ? 'Choose a probation policy…' : 'No probation policies defined yet'}</option>
                         {probationPolicies.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
-                      <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
-                        The probation record is created with the employee. If it cannot be created, the employee is not created either.
-                      </p>
+                      {/* Same treatment as Department above. A fresh workspace has no
+                          policies, so this required dropdown was empty with nothing to
+                          pick and nothing said why — the form simply could not be
+                          completed. Say where policies come from, offer the way there,
+                          and point at the exemption for a hire that genuinely has none. */}
+                      {!probationPolicies.length ? (
+                        <>
+                          <button type="button" onClick={()=>navigate('/app/hr/probation-management')}
+                            className="text-[10px] mt-1 underline block" style={{ color:'#a78bfa' }}>
+                            Create one in Probation Management
+                          </button>
+                          <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+                            Or tick “exempt” below if this hire has no probation.
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+                          The probation record is created with the employee. If it cannot be created, the employee is not created either.
+                        </p>
+                      )}
                     </>
                   ) : (
                     <input className="input-3d text-sm" placeholder="Why is this hire exempt from probation?"

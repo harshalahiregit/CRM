@@ -28,13 +28,22 @@ use Illuminate\Http\JsonResponse;
  */
 class HrmResponse
 {
-    public static function ok(array $data = [], string $message = 'Success'): JsonResponse
+    /**
+     * @param array $extra keys the app reads as SIBLINGS of `data`, not inside it.
+     *
+     * The notifications screen is the case that needs this: it does
+     * `res['data'] as List` and separately `res['unread_count']`, so nesting the
+     * pagination inside `data` made `data` a Map and threw
+     * "_Map<String, dynamic> is not a subtype of List<dynamic>" — the screen
+     * died on open. Extra keys go alongside, never inside.
+     */
+    public static function ok(array $data = [], string $message = 'Success', array $extra = []): JsonResponse
     {
-        return response()->json([
+        return response()->json(array_merge([
             'status'  => 1,
             'message' => $message,
             'data'    => $data,
-        ]);
+        ], $extra));
     }
 
     /**

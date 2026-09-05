@@ -7,6 +7,7 @@ use App\Models\Hr\HrAttendance;
 use App\Models\Hr\HrEmployee;
 use App\Services\Hr\AttendanceService;
 use App\Services\Hr\EmployeeIdentityService;
+use App\Support\Hr\TenantTime;
 use App\Support\Hrm\HrmResponse;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -260,9 +261,19 @@ class HrmAttendanceController extends Controller
 
     /* ── internals ───────────────────────────────────────────────────── */
 
+    /**
+     * Every action starts here, so this is also where the workspace clock is
+     * settled — see time(), which formats stored UTC on the tenant's own clock
+     * and has no other way to know whose workspace it is.
+     */
+    private ?int $tenantId = null;
+
     private function employee(Request $request): ?HrEmployee
     {
-        return $this->identity->employeeFor($request->user());
+        $employee = $this->identity->employeeFor($request->user());
+        $this->tenantId = $employee?->tenant_id ?? $request->user()?->tenant_id;
+
+        return $employee;
     }
 
     /**
@@ -287,14 +298,19 @@ class HrmAttendanceController extends Controller
     {
         return HrAttendance::where('tenant_id', $employee->tenant_id)
             ->where('employee_id', $employee->id)
-            ->whereDate('date', now()->toDateString())
+            ->whereDate('date', TenantTime::today($employee->tenant_id))
             ->first();
     }
 
-    /** Strings, not nulls: their model reads String? and shows a blank as "--". */
+    /**
+     * Strings, not nulls: their model reads String? and shows a blank as "--".
+     *
+     * On the workspace's clock, not the server's. Stored UTC, a 2:11pm clock-in
+     * was sent to the phone as "08:41".
+     */
     private function time($value): string
     {
-        return $value ? Carbon::parse($value)->format('H:i') : '';
+        return TenantTime::hm($value, $this->tenantId);
     }
 
     private function hours(?HrAttendance $a): string
