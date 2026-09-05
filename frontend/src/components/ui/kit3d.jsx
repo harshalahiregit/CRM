@@ -4,6 +4,7 @@
 
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
+import SearchableSelectInput from './SearchableSelectInput'
 
 export const labelStyle = { display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }
 export const inputStyle = { width: '100%', padding: '9px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }
@@ -114,10 +115,21 @@ export const Field = ({ label, children, full }) => (
   </div>
 )
 export const TextInput = (props) => <input {...props} style={{ ...inputStyle, ...(props.style || {}) }} />
-export const SelectInput = ({ options, pairs, ...p }) => (
-  <select {...p} style={{ ...inputStyle, cursor: 'pointer' }}>
-    {options.map(o => pairs ? <option key={o[0]} value={o[0]}>{o[1]}</option> : <option key={o} value={o}>{o}</option>)}
-  </select>
+/**
+ * The kit's dropdown — now type-to-search, everywhere, without a single call
+ * site changing.
+ *
+ * It used to render a bare <select>, so a list of two hundred vendors or
+ * products could only be scrolled. SearchableSelectInput takes the identical
+ * prop contract and renders the popover Select, which grows a filter box
+ * automatically once a list passes eight options — long lists become
+ * searchable, short enums (status, yes/no) stay exactly as they were.
+ *
+ * `searchable` is passed through for the rare call site that wants to force the
+ * box on or off.
+ */
+export const SelectInput = ({ options = [], pairs, searchable = 'auto', ...p }) => (
+  <SearchableSelectInput options={options} pairs={pairs} searchable={searchable} {...p} />
 )
 
 export const TotalRow = ({ label, value, strong }) => (
