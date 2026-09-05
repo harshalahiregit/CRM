@@ -129,26 +129,25 @@ const HR_RECORDS_ITEMS = [
 //
 // Two labels differ from the obvious choice, because HR already owns the word:
 //
-//   'Staff Directory'  not Employees — /app/hr/employees is the recruitment-side
-//                      record. These are the people who punch in, a different
-//                      list, and two identical labels is how somebody ends up
-//                      trusting the wrong screen.
 //   'Salaries'         not Payroll — HR Records already has Payroll, and this
-//                      screen only sets a monthly figure. SangoeTrack has no API
-//                      for payslips or components, so 'Salaries' is also the
-//                      more honest name for what it does.
+//                      screen only sets a monthly figure.
+//
+// These pointed at /app/hr/track/* until the native screens replaced them. This
+// is the rail people actually click; HRLayout has a second copy of the same
+// list, and for a while only that one was repointed — so the menu still opened
+// SangoeTrack's screens while the CRM's own sat built and unreachable. Change
+// both, or neither is really changed.
 const HR_TRACK_ITEMS = [
-  { label: 'Attendance',      path: '/app/hr/track/attendance',     icon: Clock },
-  { label: 'Corrections',     path: '/app/hr/track/corrections',    icon: PenLine },
-  { label: 'Leave',           path: '/app/hr/track/leave',          icon: CalendarOff },
-  { label: 'Reimbursements',  path: '/app/hr/track/reimbursements', icon: Receipt },
-  { label: 'Advances',        path: '/app/hr/track/advances',       icon: Wallet },
-  { label: 'Salaries',        path: '/app/hr/track/payroll',        icon: IndianRupee },
-  { label: 'Staff Directory', path: '/app/hr/track/staff',          icon: Contact },
-  { label: 'Demo Requests',   path: '/app/hr/track/demo-requests',  icon: MessageSquare },
-  { label: 'Reports',         path: '/app/hr/track/reports',        icon: BarChart3 },
-  { label: 'Holidays',        path: '/app/hr/track/holidays',       icon: PartyPopper },
-  { label: 'Settings',        path: '/app/hr/track/settings',       icon: Settings2 },
+  { label: 'Attendance',      path: '/app/hr/attendance',           icon: Clock },
+  { label: 'Corrections',     path: '/app/hr/corrections',          icon: PenLine },
+  { label: 'Leave',           path: '/app/hr/leave-management',     icon: CalendarOff },
+  { label: 'Reimbursements',  path: '/app/hr/expense-claims',       icon: Receipt },
+  { label: 'Advances',        path: '/app/hr/advances',             icon: Wallet },
+  { label: 'Salaries',        path: '/app/hr/payroll',              icon: IndianRupee },
+  { label: 'Demo Requests',   path: '/app/hr/demo-requests',        icon: MessageSquare },
+  { label: 'Reports',         path: '/app/hr/attendance-reports',   icon: BarChart3 },
+  { label: 'Holidays',        path: '/app/hr/holidays',             icon: PartyPopper },
+  { label: 'Settings',        path: '/app/hr/settings',             icon: Settings2 },
 ]
 
 const HR_ALL_LEAVES = [HR_DASHBOARD, ...HR_RECRUITMENT_ITEMS, HR_EMPLOYEES, ...HR_RECORDS_ITEMS, ...HR_TRACK_ITEMS]
