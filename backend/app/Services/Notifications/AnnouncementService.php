@@ -27,6 +27,7 @@ class AnnouncementService
     public function __construct(
         private NotificationEngine $engine,
         private NotificationQueueService $queue,
+        private \App\Services\Hr\AttachmentStore $attachments,
     ) {
     }
 
@@ -45,21 +46,27 @@ class AnnouncementService
         // Several files, of whatever kind was allowed through validation — a
         // policy PDF, a photograph of a notice board, a scanned circular. One
         // attachment was never the real shape of an announcement.
-        $attachments = [];
-        foreach ($files as $file) {
-            if (! $file instanceof UploadedFile) {
-                continue;
-            }
+        $attachments = $this->attachments->storeMany($files, "hr/announcements/tenant_{$tenantId}");
 
-            $attachments[] = [
-                'path' => $file->store("hr/announcements/tenant_{$tenantId}", 'local'),
-                // The name the sender chose, kept for display. The stored path is
-                // randomised, so without this every attachment reads as a hash.
-                'name' => $file->getClientOriginalName(),
-                'mime' => $file->getClientMimeType(),
-                'size' => $file->getSize(),
-            ];
-        }
+        // The app rows first, so their ids exist before the push goes out. A push
+        // carries the id the phone will look up; created the other way round it
+        // would carry the CRM's id, which the phone cannot resolve, and tapping
+        // the notification could never reach its attachments.
+        $appIds = [];
+        DB::transaction(function () use ($recipients, $tenantId, $data, $attachments, &$appIds) {
+            foreach ($recipients as $userId) {
+                $appIds[$userId] = Notification::create([
+                    'tenant_id'   => $tenantId,
+                    'user_id'     => $userId,
+                    'type'        => 'announcement',
+                    'title'       => $data['title'],
+                    'message'     => $data['body'],
+                    // Paths, not URLs. A signed link expires within hours, so one
+                    // written into a row is dead by the time it is read.
+                    'attachments' => $attachments ?: null,
+                ])->id;
+            }
+        });
 
         $created = $this->engine->dispatch(
             $tenantId,
@@ -77,24 +84,14 @@ class AnnouncementService
             $actor,
         );
 
-        // The phone reads `notifications`, not `hr_notifications`. Same message,
-        // the store each reader actually looks at — not a duplicate to any one
-        // person, who sees it once wherever they happen to be.
-        DB::transaction(function () use ($recipients, $tenantId, $data, $attachments) {
-            foreach ($recipients as $userId) {
-                Notification::create([
-                    'tenant_id'   => $tenantId,
-                    'user_id'     => $userId,
-                    'type'        => 'announcement',
-                    'title'       => $data['title'],
-                    'message'     => $data['body'],
-                    // Paths, not URLs. A signed link expires within the hour, so
-                    // one written into a row is dead by the time it is read, and
-                    // a permanent one is a public link to a company document.
-                    'attachments' => $attachments ?: null,
-                ]);
+        // Point each CRM notification at the app row it mirrors, before the push
+        // is sent — that link is what the phone follows when somebody taps it.
+        foreach ($created as $notification) {
+            $appId = $appIds[$notification->recipient_user_id] ?? null;
+            if ($appId) {
+                $notification->forceFill(['app_notification_id' => $appId])->save();
             }
-        });
+        }
 
         // Delivered now, not on the next scheduled sweep. Somebody just pressed
         // Send and is watching their phone; a queue item sitting Pending until a

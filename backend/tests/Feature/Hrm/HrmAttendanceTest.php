@@ -79,15 +79,24 @@ class HrmAttendanceTest extends TestCase
         $this->assertIsArray($r->json('data.announcements'));
     }
 
+    /**
+     * The home screen shows announcements somebody wrote, not the holiday list.
+     *
+     * It used to return upcoming holidays, because when that was written there
+     * were no announcements to return. There are now, and a section headed
+     * "Announcements" showing the holiday calendar was both wrong and redundant —
+     * holidays have their own screen with a month view.
+     */
     public function test_announcements_carry_every_field_their_model_reads(): void
     {
-        [, $employee] = $this->person();
+        [$user, $employee] = $this->person();
 
-        DB::table('hr_holidays')->insert([
-            'tenant_id' => $this->tenant()->id, 'title' => 'Diwali', 'description' => 'Festival',
-            'holiday_date' => now()->addDays(5)->toDateString(), 'holiday_type' => 'Public',
-            'applicable_for' => 'All', 'is_optional' => false, 'is_active' => true,
-            'created_by' => 1, 'created_at' => now(), 'updated_at' => now(),
+        \App\Models\Notification::create([
+            'tenant_id' => $this->tenant()->id,
+            'user_id'   => $user->id,
+            'type'      => 'announcement',
+            'title'     => 'Office closed Friday',
+            'message'   => 'Diwali. Back on Monday.',
         ]);
 
         $a = $this->postJson('/api/Hrm/home', [])->assertOk()->json('data.announcements.0');
@@ -95,6 +104,34 @@ class HrmAttendanceTest extends TestCase
         foreach (['id', 'title', 'start_date', 'end_date', 'description', 'workspace', 'created_by'] as $k) {
             $this->assertArrayHasKey($k, $a, "announcement.{$k} is missing.");
         }
+
+        $this->assertSame('Office closed Friday', $a['title']);
+        // Drives the "n new" count on the home screen, which used to say "New"
+        // whether or not anything was.
+        $this->assertArrayHasKey('is_read', $a);
+        $this->assertArrayHasKey('attachments', $a);
+    }
+
+    /** An announcement for one department must not appear on everyone's home screen. */
+    public function test_only_this_persons_announcements_are_shown(): void
+    {
+        [$user] = $this->person();
+
+        $other = \App\Models\User::create([
+            'tenant_id' => $this->tenant()->id, 'name' => 'Someone Else',
+            'email' => 'other'.uniqid().'@example.test', 'password' => bcrypt('x'),
+            'role' => 'staff', 'status' => 'active',
+        ]);
+
+        \App\Models\Notification::create([
+            'tenant_id' => $this->tenant()->id, 'user_id' => $other->id,
+            'type' => 'announcement', 'title' => 'Not for you', 'message' => 'Ops only.',
+        ]);
+
+        $titles = collect($this->postJson('/api/Hrm/home', [])->assertOk()->json('data.announcements'))
+            ->pluck('title');
+
+        $this->assertNotContains('Not for you', $titles);
     }
 
     /* ── clocking ────────────────────────────────────────────────────── */

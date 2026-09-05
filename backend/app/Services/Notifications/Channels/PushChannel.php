@@ -34,6 +34,24 @@ class PushChannel implements ChannelContract
         return 'push';
     }
 
+    /**
+     * The key the app switches on to decide where a tap should go.
+     *
+     * Mirrors the module names the engine already uses, so a new module gets a
+     * working tap by naming itself rather than by editing a list here.
+     */
+    private function typeFor(HrNotification $notification): string
+    {
+        return match ((string) $notification->module) {
+            'Announcement' => 'announcement',
+            'Leave'        => 'leave',
+            'Expense'      => 'reimbursement',
+            'Advance'      => 'advance',
+            'Attendance'   => 'attendance_raise',
+            default        => strtolower((string) $notification->module),
+        };
+    }
+
     public function send(HrNotification $notification): array
     {
         if (! $this->fcm->configured()) {
@@ -62,7 +80,14 @@ class PushChannel implements ChannelContract
                 (string) $notification->title,
                 (string) $notification->message,
                 array_filter([
-                    'notification_id' => (string) $notification->id,
+                    // The id the PHONE can look up, not the CRM's. The two
+                    // in-app stores have independent ids, and sending the wrong
+                    // one meant a tapped notification could never open itself.
+                    'notification_id' => (string) ($notification->app_notification_id ?? ''),
+                    // Without a type, _navigateFromData returns immediately and
+                    // the tap does nothing at all. Announcements had no type, so
+                    // every one of them was a dead tap.
+                    'type'            => $this->typeFor($notification),
                     'module'          => (string) $notification->module,
                     'event'           => (string) $notification->event,
                     'action_url'      => (string) $notification->action_url,

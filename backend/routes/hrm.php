@@ -91,6 +91,10 @@ Route::prefix('Hrm')->group(function () {
         // GET, unlike almost everything else the app calls.
         Route::get('/events',                     [HrmProfileController::class, 'events']);
         Route::post('/notifications',             [HrmProfileController::class, 'notifications']);
+        // One notification, for a tap arriving from outside the app with only an
+        // id to go on.
+        Route::post('/notifications/{id}', [HrmProfileController::class, 'notification'])
+            ->whereNumber('id');
         Route::post('/notifications/mark-read',   [HrmProfileController::class, 'markNotificationsRead']);
         Route::post('/notification-preferences',  [HrmProfileController::class, 'notificationPreferences']);
         // A SEPARATE save route, not the same one with a body. Found by diffing

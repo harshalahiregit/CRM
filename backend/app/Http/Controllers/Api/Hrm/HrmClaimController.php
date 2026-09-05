@@ -65,6 +65,7 @@ class HrmClaimController extends Controller
             'amount'        => $this->money($c->amount_approved ?? $c->amount_claimed),
             'expense_date'  => $this->date($c->expense_date),
             'receipt'       => $this->firstAttachmentUrl($c),
+            'receipts'      => $this->attachmentUrls($c),
             'status'        => $this->claimStatus($c),
             'admin_remarks' => $this->claimRemarks($c),
             'created_at'    => $this->date($c->created_at),
@@ -84,7 +85,12 @@ class HrmClaimController extends Controller
             'amount'       => 'required|numeric|min:0.01',
             'expense_date' => 'required|date',
             'description'  => 'nullable|string|max:2000',
+            // 'receipt' stays for the version of the app already on people's
+            // phones; 'receipts[]' is what a newer one sends. Dropping the
+            // singular would break every install that has not updated.
             'receipt'      => 'nullable|file|max:10240|mimes:pdf,png,jpg,jpeg,webp,heic',
+            'receipts'     => 'nullable|array',
+            'receipts.*'   => 'file|max:10240|mimes:pdf,png,jpg,jpeg,webp,heic,doc,docx,xls,xlsx',
         ]);
 
         $claim = $this->claims->submit($employee, [
@@ -94,10 +100,13 @@ class HrmClaimController extends Controller
             'amount_claimed' => $data['amount'],
         ], $request->user());
 
-        if ($request->hasFile('receipt')) {
+        // One claim, however many proofs it took. A taxi receipt, a hotel bill
+        // and the folio are three files for one expense, and forcing them into
+        // one meant people photographed a desk with all three laid out on it.
+        foreach ($this->uploadedFiles($request) as $file) {
             $this->attachments->upload(
                 HrReimbursement::class, $claim->id, (int) $claim->tenant_id,
-                $request->file('receipt'), null, [], $request->user()
+                $file, null, [], $request->user()
             );
         }
 
@@ -532,6 +541,43 @@ class HrmClaimController extends Controller
      * protected route would answer 401 and the receipt would show as a broken
      * image. The signature carries the permission instead, and expires.
      */
+    /**
+     * Every file on this request, old shape or new.
+     *
+     * @return array<\Illuminate\Http\UploadedFile>
+     */
+    private function uploadedFiles(Request $request): array
+    {
+        $files = $request->file('receipts', []);
+        $files = is_array($files) ? $files : [$files];
+
+        if ($request->hasFile('receipt')) {
+            $files[] = $request->file('receipt');
+        }
+
+        return array_values(array_filter(
+            $files,
+            fn ($f) => $f instanceof \Illuminate\Http\UploadedFile,
+        ));
+    }
+
+    /**
+     * Every attachment, as signed links.
+     *
+     * Their model reads a single `receipt`, so that key stays and carries the
+     * first — an older app keeps working. `receipts` is the whole list for a
+     * newer one, which is the only way a claim with three proofs shows three.
+     */
+    private function attachmentUrls($subject): array
+    {
+        return $subject->attachments->map(fn ($file) => [
+            'name' => (string) ($file->name ?? 'Attachment'),
+            'url'  => \Illuminate\Support\Facades\URL::temporarySignedRoute(
+                'hrm.file', now()->addDays(7), ['attachment' => $file->id],
+            ),
+        ])->values()->all();
+    }
+
     private function firstAttachmentUrl($subject): string
     {
         $file = $subject->attachments->first();

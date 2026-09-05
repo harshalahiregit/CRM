@@ -50,7 +50,10 @@ class AnnouncementController extends Controller
             // or a scanned circular is exactly what people attach. Capped per
             // file and in number so an announcement cannot be used to push a
             // large payload to every phone in the company.
-            'attachments'   => 'nullable|array|max:10',
+            // No cap on how many. A circular can be five pages of scans, and a
+            // limit chosen for tidiness is a limit somebody hits at the worst
+            // moment. Each file is still capped, which is what protects the box.
+            'attachments'   => 'nullable|array',
             'attachments.*' => 'file|mimes:pdf,jpg,jpeg,png,webp,heic,doc,docx,xls,xlsx|max:10240',
         ]);
 

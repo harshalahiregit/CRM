@@ -7,6 +7,7 @@ use App\Models\Hr\HrAttendance;
 use App\Models\Hr\HrEmployee;
 use App\Services\Hr\AttendanceService;
 use App\Services\Hr\EmployeeIdentityService;
+use App\Models\Notification;
 use App\Support\Hr\TenantTime;
 use App\Support\Hrm\HrmResponse;
 use Carbon\Carbon;
@@ -345,33 +346,43 @@ class HrmAttendanceController extends Controller
     }
 
     /**
-     * Announcements: holidays coming up.
+     * Announcements: the ones somebody actually wrote and sent to this person.
      *
-     * The CRM has no announcements table, and their model's fields map cleanly
-     * onto holidays — which is what an attendance app's home screen is actually
-     * for. Every key their model reads is present.
+     * This used to return upcoming holidays, because when it was written the CRM
+     * had no announcements to return. It does now — they are composed in the
+     * Notification Center — and a section headed "Announcements" showing the
+     * holiday calendar was both wrong and redundant, since holidays have their
+     * own screen with a month view.
+     *
+     * Only this employee's own, because an announcement can be addressed to one
+     * department and must not appear on everybody's home screen.
      */
     private function announcements(HrEmployee $employee): array
     {
-        if (! \Illuminate\Support\Facades\Schema::hasTable('hr_holidays')) {
+        if (! $employee->user_id) {
             return [];
         }
 
-        return \Illuminate\Support\Facades\DB::table('hr_holidays')
-            ->where('tenant_id', $employee->tenant_id)
-            ->where('is_active', true)
-            ->whereDate('holiday_date', '>=', now()->toDateString())
-            ->orderBy('holiday_date')
-            ->limit(10)
+        return Notification::where('tenant_id', $employee->tenant_id)
+            ->where('user_id', $employee->user_id)
+            ->where('type', 'announcement')
+            ->orderByDesc('created_at')
+            ->limit(5)
             ->get()
-            ->map(fn ($h) => [
-                'id'          => $h->id,
-                'title'       => $h->title,
-                'start_date'  => (string) $h->holiday_date,
-                'end_date'    => (string) $h->holiday_date,
-                'description' => (string) ($h->description ?? ''),
+            ->map(fn (Notification $n) => [
+                'id'          => $n->id,
+                'title'       => (string) $n->title,
+                // Their model reads a start and an end and prints them as a
+                // range. An announcement happens once, so both are the moment it
+                // was sent rather than a fabricated span.
+                'start_date'  => $n->created_at?->toDateString() ?? '',
+                'end_date'    => $n->created_at?->toDateString() ?? '',
+                'description' => (string) $n->message,
                 'workspace'   => $employee->tenant_id,
-                'created_by'  => $h->created_by,
+                'created_by'  => null,
+                // So the card can say which ones still need reading.
+                'is_read'     => $n->read_at !== null,
+                'attachments' => count($n->attachments ?? []),
             ])->values()->all();
     }
 

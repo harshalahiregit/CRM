@@ -259,37 +259,79 @@ class HrmProfileController extends Controller
         // does `res['data'] as List` and `res['unread_count']` separately, so
         // wrapping them together threw a cast error and the screen never opened.
         return HrmResponse::ok(
-            $rows->map(fn (Notification $n) => [
-                // Their model declares `final int id` with no fallback — a null
-                // here crashes the app rather than rendering blank.
-                'id'         => $n->id,
-                'type'       => (string) ($n->type ?? ''),
-                'title'      => (string) ($n->title ?? ''),
-                'body'       => (string) ($n->message ?? ''),
-                'is_read'    => $n->read_at !== null,
-                'created_at' => $n->created_at ? $n->created_at->toDateTimeString() : '',
-                // Always a list, never null: the app iterates this, and a null
-                // would have to be guarded at every call site instead of once.
-                'attachments' => collect($n->attachments ?? [])->values()->map(fn ($a, $i) => [
-                    'name' => (string) ($a['name'] ?? 'Attachment'),
-                    'mime' => (string) ($a['mime'] ?? ''),
-                    'size' => (int) ($a['size'] ?? 0),
-                    // Signed and short-lived. The files are on the private disk;
-                    // the app opens these in a viewer that sends no token, which
-                    // is the same reason the punch selfies are signed.
-                    'url'  => \Illuminate\Support\Facades\URL::temporarySignedRoute(
-                        'hrm.announcement.file',
-                        now()->addHours(6),
-                        ['notification' => $n->id, 'index' => $i],
-                    ),
-                ])->values()->all(),
-            ])->values()->all(),
+            $rows->map(fn (Notification $n) => $this->notificationPayload($n))->values()->all(),
             'Success',
             [
                 'unread_count' => (clone $query)->whereNull('read_at')->count(),
                 'has_more'     => $total > $page * $perPage,
             ],
         );
+    }
+
+    /**
+     * One notification, with its attachments.
+     *
+     * What a tapped push opens. The list already carries everything, but a tap
+     * from outside the app arrives with nothing loaded and only an id to go on —
+     * fetching the list and searching it would mean paging until the right one
+     * turns up, which for an older announcement is several requests to show one
+     * message.
+     */
+    public function notification(Request $request, int $id)
+    {
+        $user = $request->user();
+
+        $n = Notification::where('tenant_id', $user->tenant_id)
+            ->where('user_id', $user->id)
+            ->find($id);
+
+        // Scoped to the caller, so an id from somebody else's push is a 404 and
+        // not somebody else's announcement.
+        if (! $n) {
+            return HrmResponse::fail('That notification is no longer available.');
+        }
+
+        // Opening it is reading it.
+        if (! $n->read_at) {
+            $n->forceFill(['read_at' => now()])->save();
+        }
+
+        return HrmResponse::ok($this->notificationPayload($n));
+    }
+
+    /**
+     * One notification as the app reads it — the only place this shape is built.
+     *
+     * The list and the detail screen must agree, and they only will if there is
+     * one of these rather than two that look alike.
+     */
+    private function notificationPayload(Notification $n): array
+    {
+        return [
+            // Their model declares `final int id` with no fallback — a null here
+            // crashes the app rather than rendering blank.
+            'id'         => $n->id,
+            'type'       => (string) ($n->type ?? ''),
+            'title'      => (string) ($n->title ?? ''),
+            'body'       => (string) ($n->message ?? ''),
+            'is_read'    => $n->read_at !== null,
+            'created_at' => $n->created_at ? $n->created_at->toDateTimeString() : '',
+            // Always a list, never null: the app iterates this, and a null would
+            // have to be guarded at every call site instead of once here.
+            'attachments' => collect($n->attachments ?? [])->values()->map(fn ($a, $i) => [
+                'name' => (string) ($a['name'] ?? 'Attachment'),
+                'mime' => (string) ($a['mime'] ?? ''),
+                'size' => (int) ($a['size'] ?? 0),
+                // Signed and short-lived. The files are on the private disk and
+                // the app opens them in a viewer that sends no token — the same
+                // reason the punch selfies are signed.
+                'url'  => \Illuminate\Support\Facades\URL::temporarySignedRoute(
+                    'hrm.announcement.file',
+                    now()->addHours(6),
+                    ['notification' => $n->id, 'index' => $i],
+                ),
+            ])->values()->all(),
+        ];
     }
 
     public function markNotificationsRead(Request $request)
