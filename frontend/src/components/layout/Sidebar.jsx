@@ -1,13 +1,5 @@
 import {
-  LayoutDashboard, Users, Briefcase, CheckSquare, FolderOpen, Receipt, Truck, LifeBuoy,
-  BarChart2, Settings, ChevronLeft, ChevronRight, LogOut, User, Zap,
-  Package, UserCheck, CalendarDays, FileText, Rocket, Building2, ClipboardList,
-  ChevronDown, Shield, UserCog, IndianRupee, Banknote, CalendarCheck, FileSignature, CreditCard, FileX, ShoppingBag,
-  UserPlus, Link2, RefreshCw, LayoutTemplate, Globe, TrendingUp, Landmark, BookText, Scale,
-  ArrowLeftRight, BookOpen, Boxes, PackagePlus, PackageMinus, Warehouse, History, Network, FileQuestion,
-  BarChart3, Activity, Layers3, ScanLine, ClipboardCheck, ShoppingCart, Hourglass, Wrench,
-  CalendarRange, Handshake, Factory, Undo2, Wallet, Award, GraduationCap, ShieldCheck, Bell, Search, X,
-  Settings2, Clock, PenLine, CalendarOff, Contact, MessageSquare, PartyPopper
+  Activity, ArrowLeftRight, Award, Banknote, BarChart2, BarChart3, Bell, BookOpen, BookText, Boxes, Briefcase, Building2, CalendarCheck, CalendarClock, CalendarDays, CalendarOff, CalendarRange, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList, Clock, Contact, CreditCard, Factory, FileQuestion, FileSignature, FileText, FileX, FolderOpen, Globe, GraduationCap, Handshake, HelpCircle, History, Hourglass, IndianRupee, Landmark, Layers3, LayoutDashboard, LayoutTemplate, LifeBuoy, Link2, LogOut, MessageSquare, Network, Package, PackageMinus, PackagePlus, PartyPopper, PenLine, Receipt, RefreshCw, Rocket, Scale, ScanLine, Search, Settings, Settings2, Shield, ShieldCheck, ShoppingBag, ShoppingCart, TrendingUp, Truck, Undo2, User, UserCheck, UserCog, UserPlus, UserRound, Users, Wallet, Warehouse, Wrench, X, Zap,
 } from 'lucide-react'
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -64,76 +56,84 @@ const HR_DASHBOARD = { label: 'Dashboard', path: '/app/hr/dashboard', icon: Layo
 const HR_EMPLOYEES = { label: 'Employees', path: '/app/hr/employees', icon: Building2 }
 
 const HR_RECRUITMENT_ITEMS = [
-  { label: 'Manpower Requests', path: '/app/hr/manpower-requests', icon: ClipboardList },
-  { label: 'Job Postings', path: '/app/hr/jobs', icon: Briefcase },
-  { label: 'Candidates', path: '/app/hr/candidates', icon: Users },
-  { label: 'Interviews', path: '/app/hr/interviews', icon: CalendarDays },
-  { label: 'Offer Letters', path: '/app/hr/offers', icon: FileText },
-  { label: 'Onboarding', path: '/app/hr/onboarding', icon: Rocket },
+  { label: 'Manpower Requests',  path: '/app/hr/manpower-requests',   icon: ClipboardList },
+  { label: 'Job Postings',       path: '/app/hr/jobs',                icon: Briefcase },
+  { label: 'Candidates',         path: '/app/hr/candidates',          icon: Users },
+  { label: 'Interviews',         path: '/app/hr/interviews',          icon: CalendarClock },
+  // Belongs with interviews, not adrift in a general list.
+  { label: 'Interview Questions', path: '/app/hr/interview-questions', icon: HelpCircle },
+  { label: 'Offer Letters',      path: '/app/hr/offers',              icon: FileSignature },
+  { label: 'Onboarding',         path: '/app/hr/onboarding',          icon: UserPlus },
 ]
 
-const HR_RECORDS_ITEMS = [
-  { label: 'Organization Setup', path: '/app/hr/organization-setup', icon: Boxes },
-  { label: 'Organization Chart', path: '/app/hr/org-chart', icon: Network },
-  { label: 'Interview Questions', path: '/app/hr/interview-questions', icon: FileQuestion },
-  { label: 'HR Operations', path: '/app/hr/operations', icon: Settings2 },
-  { label: 'Employee Surveys', path: '/app/hr/surveys', icon: ClipboardList },
-  { label: 'Payroll', path: '/app/hr/payroll', icon: Wallet },
-  { label: 'Performance', path: '/app/hr/performance', icon: Award },
-  { label: 'Leave Management', path: '/app/hr/leave-management', icon: CalendarDays },
-  { label: 'Learning & Development', path: '/app/hr/learning-development', icon: GraduationCap },
-  { label: 'Probation Management', path: '/app/hr/probation-management', icon: ShieldCheck },
-  { label: 'Exit Management', path: '/app/hr/exit-management', icon: LogOut },
-  { label: 'Notifications', path: '/app/hr/settings/notifications', icon: Bell },
-  // 'Attendance Reports', not 'Reports' — SangoeTrack already has a Reports
-  // entry, and this one is specifically the payroll-facing view.
-  { label: 'Attendance Reports', path: '/app/hr/attendance-reports', icon: BarChart3 },
-  // The CRM's OWN attendance register — every employee, every day, editable.
-  // It has existed at /app/hr/attendance all along with no way to reach it from
-  // the nav: the only 'Attendance' entry points at SangoeTrack's copy below, so
-  // the native one was unreachable and looked missing.
-  { label: 'Attendance Register', path: '/app/hr/attendance', icon: CalendarCheck },
-  // 'My Leave', beside My Expenses and My Advances — the self-service set. HR's
-  // own Leave Management sits above; SangoeTrack's 'Leave' is below.
-  { label: 'My Leave', path: '/app/hr/my-leave', icon: CalendarOff },
-  // Named apart from SangoeTrack's 'Corrections' below, for the same reason as
-  // Expense Claims and Attendance Register.
-  { label: 'Correction Requests', path: '/app/hr/corrections', icon: PenLine },
-  { label: 'My Corrections', path: '/app/hr/my-corrections', icon: PenLine },
-  // Holidays & Events — the company calendar the attendance app reads. It lived
-  // only in the SangoeTrack block, so removing that block took the entry with it
-  // and the screen became unreachable while still existing.
-  { label: 'Holidays & Events', path: '/app/hr/holidays', icon: PartyPopper },
-  { label: 'Demo Requests', path: '/app/hr/demo-requests', icon: MessageSquare },
-  // 'HR Settings', not 'Settings' — SangoeTrack has its own Settings entry below.
-  { label: 'HR Settings', path: '/app/hr/settings', icon: Settings2 },
-]
-
-// Expense and Advance, each with the team-wide screen and the person's own.
+// ── HR, grouped by what somebody came to do ───────────────────────────────────
 //
-// These were four flat entries — 'Expense Claims' beside 'My Expenses', and the
-// same for advances — and the awkward labels existed only to tell them apart
-// from SangoeTrack's copies. Those copies are gone, so the pair becomes a group
-// with the plain names back.
-const HR_EXPENSE_ITEMS = [
-  { label: 'All Claims',  path: '/app/hr/expense-claims', icon: Receipt },
-  { label: 'My Expenses', path: '/app/hr/my-expenses',    icon: IndianRupee },
+// These were one flat list of twenty entries under 'HR Records', which is a list
+// you scan rather than read. Grouped by task instead: attendance things together,
+// requests together, the employee lifecycle together. Each group is small enough
+// to take in at a glance, and the rail collapses to a handful of rows.
+
+const HR_ATTENDANCE_ITEMS = [
+  { label: 'Attendance Register', path: '/app/hr/attendance',          icon: CalendarCheck },
+  { label: 'Correction Requests', path: '/app/hr/corrections',         icon: PenLine },
+  { label: 'Attendance Reports',  path: '/app/hr/attendance-reports',  icon: BarChart3 },
+  { label: 'Holidays & Events',   path: '/app/hr/holidays',            icon: PartyPopper },
 ]
 
-const HR_ADVANCE_ITEMS = [
-  { label: 'All Requests', path: '/app/hr/advances',    icon: Banknote },
-  { label: 'My Advances',  path: '/app/hr/my-advances', icon: Banknote },
+// Expense and Advance live here rather than as groups of their own — they are
+// two more things an employee asks for, alongside leave.
+const HR_REQUEST_ITEMS = [
+  { label: 'Leave Management', path: '/app/hr/leave-management', icon: CalendarDays },
+  { label: 'Expense Claims',   path: '/app/hr/expense-claims',   icon: Receipt },
+  { label: 'Advances',         path: '/app/hr/advances',         icon: Wallet },
+]
+
+const HR_LIFECYCLE_ITEMS = [
+  { label: 'Probation Management',   path: '/app/hr/probation-management',  icon: ShieldCheck },
+  { label: 'Performance',            path: '/app/hr/performance',           icon: Award },
+  { label: 'Learning & Development', path: '/app/hr/learning-development',  icon: GraduationCap },
+  { label: 'Employee Surveys',       path: '/app/hr/surveys',               icon: ClipboardList },
+  { label: 'Exit Management',        path: '/app/hr/exit-management',       icon: LogOut },
+]
+
+const HR_ORG_ITEMS = [
+  { label: 'Organization Setup', path: '/app/hr/organization-setup', icon: FolderOpen },
+  { label: 'Organization Chart', path: '/app/hr/org-chart',          icon: Network },
+  { label: 'HR Operations',      path: '/app/hr/operations',         icon: Settings2 },
+]
+
+// Left at the top level because they are opened often and on their own.
+const HR_TOP_LEVEL = [
+  { label: 'Payroll',        path: '/app/hr/payroll',                icon: IndianRupee },
+  { label: 'Notifications',  path: '/app/hr/settings/notifications', icon: Bell },
+  { label: 'Demo Requests',  path: '/app/hr/demo-requests',          icon: MessageSquare },
+  { label: 'HR Settings',    path: '/app/hr/settings',               icon: Settings2 },
+]
+
+// ── A person's own requests ───────────────────────────────────────────────────
+//
+// NOT duplicates of the screens above, though they look like it. The API has two
+// surfaces on purpose: /hr/me/* is auth-only and returns your own, while
+// /hr/advances and /hr/corrections require hr.advances and hr.manage. Somebody
+// without those permissions opening the management screen gets a 403, so these
+// are the only way they can see what they asked for.
+//
+// Hidden from anyone who can already see the management screens, which is what
+// makes an admin's rail free of the pair. When per-permission menus arrive this
+// condition is the thing to replace.
+const HR_MINE_ITEMS = [
+  { label: 'My Leave',       path: '/app/hr/my-leave',        icon: CalendarOff },
+  { label: 'My Expenses',    path: '/app/hr/my-expenses',     icon: IndianRupee },
+  { label: 'My Advances',    path: '/app/hr/my-advances',     icon: Banknote },
+  { label: 'My Corrections', path: '/app/hr/my-corrections',  icon: PenLine },
 ]
 
 // Flat list of every HR leaf — used only for the collapsed icon rail.
-// (The SangoeTrack block that used to sit here is gone. Once its screens were
-// deleted, every entry in it pointed at the CRM's own path — 'Reimbursements'
-// and 'Expense Claims' were the same URL, so were 'Advances' and 'Advance
-// Requests', 'Attendance' and 'Attendance Register', and six more. Two rows to
-// the same screen is how somebody decides on the one they thought was different.)
-
-
-const HR_ALL_LEAVES = [HR_DASHBOARD, ...HR_RECRUITMENT_ITEMS, HR_EMPLOYEES, ...HR_RECORDS_ITEMS, ...HR_EXPENSE_ITEMS, ...HR_ADVANCE_ITEMS]
+const HR_ALL_LEAVES = [
+  HR_DASHBOARD, HR_EMPLOYEES,
+  ...HR_RECRUITMENT_ITEMS, ...HR_ATTENDANCE_ITEMS, ...HR_REQUEST_ITEMS,
+  ...HR_LIFECYCLE_ITEMS, ...HR_ORG_ITEMS, ...HR_TOP_LEVEL, ...HR_MINE_ITEMS,
+]
 
 // Grouped so the ~17 sales micro-modules stay scannable instead of rendering
 // as one long flat list. A muted mini-header is emitted whenever `group`
@@ -287,9 +287,12 @@ const TPV_VENDOR_ITEMS = [
 const SUBMODULE_SEARCH = [
   ...HR_RECRUITMENT_ITEMS.map(i => ({ ...i, module: 'HR' })),
   { ...HR_EMPLOYEES, module: 'HR' },
-  ...HR_RECORDS_ITEMS.map(i => ({ ...i, module: 'HR' })),
-  ...HR_EXPENSE_ITEMS.map(i => ({ ...i, module: 'HR' })),
-  ...HR_ADVANCE_ITEMS.map(i => ({ ...i, module: 'HR' })),
+  ...HR_ATTENDANCE_ITEMS.map(i => ({ ...i, module: 'HR' })),
+  ...HR_REQUEST_ITEMS.map(i => ({ ...i, module: 'HR' })),
+  ...HR_LIFECYCLE_ITEMS.map(i => ({ ...i, module: 'HR' })),
+  ...HR_ORG_ITEMS.map(i => ({ ...i, module: 'HR' })),
+  ...HR_TOP_LEVEL.map(i => ({ ...i, module: 'HR' })),
+  ...HR_MINE_ITEMS.map(i => ({ ...i, module: 'HR' })),
   ...SALES_SUB_ITEMS.map(i => ({ ...i, module: 'Sales' })),
   ...ACCOUNTS_SUB_ITEMS.map(i => ({ ...i, module: 'Accounts' })),
   ...HELPDESK_SUB_ITEMS.map(i => ({ ...i, module: 'Helpdesk' })),
@@ -643,17 +646,34 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
                   {/* Employees (top-level) */}
                   <HrLeaf item={HR_EMPLOYEES} />
 
-                  {/* HR Records group */}
-                  <HrGroupHeader label="HR Records" icon={FolderOpen} expanded={isGroupOpen('hr-records')} onToggle={() => toggleGroup('hr-records')} />
-                  {isGroupOpen('hr-records') && HR_RECORDS_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
+                  {/* Attendance */}
+                  <HrGroupHeader label="Attendance" icon={CalendarCheck} expanded={isGroupOpen('hr-attendance')} onToggle={() => toggleGroup('hr-attendance')} />
+                  {isGroupOpen('hr-attendance') && HR_ATTENDANCE_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
 
-                  {/* Expense group — the team's claims and the person's own */}
-                  <HrGroupHeader label="Expense" icon={Receipt} expanded={isGroupOpen('expense')} onToggle={() => toggleGroup('expense')} />
-                  {isGroupOpen('expense') && HR_EXPENSE_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
+                  {/* Requests — leave, expense and advance are three things people ask for */}
+                  <HrGroupHeader label="Requests" icon={Receipt} expanded={isGroupOpen('hr-requests')} onToggle={() => toggleGroup('hr-requests')} />
+                  {isGroupOpen('hr-requests') && HR_REQUEST_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
 
-                  {/* Advance group — same shape */}
-                  <HrGroupHeader label="Advance" icon={Wallet} expanded={isGroupOpen('advance')} onToggle={() => toggleGroup('advance')} />
-                  {isGroupOpen('advance') && HR_ADVANCE_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
+                  {/* Employee lifecycle */}
+                  <HrGroupHeader label="Employee Lifecycle" icon={Award} expanded={isGroupOpen('hr-lifecycle')} onToggle={() => toggleGroup('hr-lifecycle')} />
+                  {isGroupOpen('hr-lifecycle') && HR_LIFECYCLE_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
+
+                  {/* Organization */}
+                  <HrGroupHeader label="Organization" icon={FolderOpen} expanded={isGroupOpen('hr-org')} onToggle={() => toggleGroup('hr-org')} />
+                  {isGroupOpen('hr-org') && HR_ORG_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
+
+                  {/* Opened often enough to stay at the top level */}
+                  {HR_TOP_LEVEL.map(item => <HrLeaf key={item.path} item={item} />)}
+
+                  {/* A person's own requests — only for somebody who cannot open the
+                      management screens above, which would 403 for them. This is the
+                      line to replace when per-permission menus arrive. */}
+                  {user?.role !== 'admin' && (
+                    <>
+                      <HrGroupHeader label="My Requests" icon={UserRound} expanded={isGroupOpen('hr-mine')} onToggle={() => toggleGroup('hr-mine')} />
+                      {isGroupOpen('hr-mine') && HR_MINE_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
+                    </>
+                  )}
                 </>
               )}
           </div>

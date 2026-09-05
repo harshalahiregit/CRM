@@ -11,8 +11,9 @@
  * rather than something to discover at payroll.
  */
 
+import { useNavigate } from 'react-router-dom'
 import { useState, useEffect, useCallback } from 'react'
-import { PenLine, Check, X, PauseCircle, Lock, RefreshCw, ArrowRight } from 'lucide-react'
+import { PenLine, Check, X, PauseCircle, Lock, RefreshCw, ArrowRight, Plus } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import { useToast } from '@/components/ui/Toast'
@@ -58,6 +59,7 @@ function Change({ label, from, to }) {
 }
 
 export default function Corrections() {
+  const navigate = useNavigate()
   const toast = useToast()
 
   const [tab,     setTab]     = useState('open')
@@ -142,11 +144,23 @@ export default function Corrections() {
             Approving writes the day and recomputes the hours.
           </p>
         </div>
+        {/* my-own-button — this page lists everybody's; somebody still needs to
+            raise their own, and the form for it already exists on the personal
+            page. Navigating there rather than duplicating the form keeps one
+            place where a request is created, and keeps that page reachable now
+            that it is out of the admin's menu. */}
+        <div className="flex items-center gap-2">
+        <button onClick={() => navigate('/app/hr/my-corrections')} title="Raise a correction for your own attendance"
+          className="rounded-lg text-xs font-bold flex items-center gap-1.5 text-white"
+          style={{ padding: '7px 12px', background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>
+          <Plus size={13} /> Raise Correction
+        </button>
         <button onClick={load} disabled={loading}
           className="rounded-lg text-xs font-semibold flex items-center gap-1.5"
           style={{ padding: '7px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-p)' }}>
           <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> Refresh
         </button>
+        </div>
       </div>
 
       <div className="flex gap-1.5 flex-wrap">
