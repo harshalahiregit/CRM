@@ -85,18 +85,6 @@ const HR_RECORDS_ITEMS = [
   { label: 'Probation Management', path: '/app/hr/probation-management', icon: ShieldCheck },
   { label: 'Exit Management', path: '/app/hr/exit-management', icon: LogOut },
   { label: 'Notifications', path: '/app/hr/settings/notifications', icon: Bell },
-  // The CRM's own expense claims — not SangoeTrack's, which are still listed
-  // separately below under 'Reimbursements' until track.sangoe.in is retired.
-  // Deliberately NOT called Reimbursements: two identical labels in one nav is
-  // how somebody ends up deciding on the wrong screen, the same reason 'Staff
-  // Directory' and 'Salaries' are named as they are.
-  { label: 'Expense Claims', path: '/app/hr/expense-claims', icon: Receipt },
-  { label: 'My Expenses', path: '/app/hr/my-expenses', icon: IndianRupee },
-  // Native advances. SangoeTrack's 'Advances' is still listed below until
-  // track.sangoe.in is retired, so these carry distinct labels for the same
-  // reason Expense Claims does.
-  { label: 'Advance Requests', path: '/app/hr/advances', icon: Banknote },
-  { label: 'My Advances', path: '/app/hr/my-advances', icon: Banknote },
   // 'Attendance Reports', not 'Reports' — SangoeTrack already has a Reports
   // entry, and this one is specifically the payroll-facing view.
   { label: 'Attendance Reports', path: '/app/hr/attendance-reports', icon: BarChart3 },
@@ -112,45 +100,40 @@ const HR_RECORDS_ITEMS = [
   // Expense Claims and Attendance Register.
   { label: 'Correction Requests', path: '/app/hr/corrections', icon: PenLine },
   { label: 'My Corrections', path: '/app/hr/my-corrections', icon: PenLine },
+  // Holidays & Events — the company calendar the attendance app reads. It lived
+  // only in the SangoeTrack block, so removing that block took the entry with it
+  // and the screen became unreachable while still existing.
+  { label: 'Holidays & Events', path: '/app/hr/holidays', icon: PartyPopper },
   { label: 'Demo Requests', path: '/app/hr/demo-requests', icon: MessageSquare },
   // 'HR Settings', not 'Settings' — SangoeTrack has its own Settings entry below.
   { label: 'HR Settings', path: '/app/hr/settings', icon: Settings2 },
 ]
 
-// Flat list of every HR leaf — used only for the collapsed icon rail.
-// ── SangoeTrack ────────────────────────────────────────────────────────────
+// Expense and Advance, each with the team-wide screen and the person's own.
 //
-// Live from track.sangoe.in — the app people actually clock into. These read and
-// write THEIR data; the CRM stores none of it, so nothing here can drift out of
-// step with what an employee sees on their phone.
-//
-// Flat, under their own names, rather than behind a collapsible group: they are
-// things HR does daily, not a sub-system to go hunting for.
-//
-// Two labels differ from the obvious choice, because HR already owns the word:
-//
-//   'Salaries'         not Payroll — HR Records already has Payroll, and this
-//                      screen only sets a monthly figure.
-//
-// These pointed at /app/hr/track/* until the native screens replaced them. This
-// is the rail people actually click; HRLayout has a second copy of the same
-// list, and for a while only that one was repointed — so the menu still opened
-// SangoeTrack's screens while the CRM's own sat built and unreachable. Change
-// both, or neither is really changed.
-const HR_TRACK_ITEMS = [
-  { label: 'Attendance',      path: '/app/hr/attendance',           icon: Clock },
-  { label: 'Corrections',     path: '/app/hr/corrections',          icon: PenLine },
-  { label: 'Leave',           path: '/app/hr/leave-management',     icon: CalendarOff },
-  { label: 'Reimbursements',  path: '/app/hr/expense-claims',       icon: Receipt },
-  { label: 'Advances',        path: '/app/hr/advances',             icon: Wallet },
-  { label: 'Salaries',        path: '/app/hr/payroll',              icon: IndianRupee },
-  { label: 'Demo Requests',   path: '/app/hr/demo-requests',        icon: MessageSquare },
-  { label: 'Reports',         path: '/app/hr/attendance-reports',   icon: BarChart3 },
-  { label: 'Holidays',        path: '/app/hr/holidays',             icon: PartyPopper },
-  { label: 'Settings',        path: '/app/hr/settings',             icon: Settings2 },
+// These were four flat entries — 'Expense Claims' beside 'My Expenses', and the
+// same for advances — and the awkward labels existed only to tell them apart
+// from SangoeTrack's copies. Those copies are gone, so the pair becomes a group
+// with the plain names back.
+const HR_EXPENSE_ITEMS = [
+  { label: 'All Claims',  path: '/app/hr/expense-claims', icon: Receipt },
+  { label: 'My Expenses', path: '/app/hr/my-expenses',    icon: IndianRupee },
 ]
 
-const HR_ALL_LEAVES = [HR_DASHBOARD, ...HR_RECRUITMENT_ITEMS, HR_EMPLOYEES, ...HR_RECORDS_ITEMS, ...HR_TRACK_ITEMS]
+const HR_ADVANCE_ITEMS = [
+  { label: 'All Requests', path: '/app/hr/advances',    icon: Banknote },
+  { label: 'My Advances',  path: '/app/hr/my-advances', icon: Banknote },
+]
+
+// Flat list of every HR leaf — used only for the collapsed icon rail.
+// (The SangoeTrack block that used to sit here is gone. Once its screens were
+// deleted, every entry in it pointed at the CRM's own path — 'Reimbursements'
+// and 'Expense Claims' were the same URL, so were 'Advances' and 'Advance
+// Requests', 'Attendance' and 'Attendance Register', and six more. Two rows to
+// the same screen is how somebody decides on the one they thought was different.)
+
+
+const HR_ALL_LEAVES = [HR_DASHBOARD, ...HR_RECRUITMENT_ITEMS, HR_EMPLOYEES, ...HR_RECORDS_ITEMS, ...HR_EXPENSE_ITEMS, ...HR_ADVANCE_ITEMS]
 
 // Grouped so the ~17 sales micro-modules stay scannable instead of rendering
 // as one long flat list. A muted mini-header is emitted whenever `group`
@@ -305,7 +288,8 @@ const SUBMODULE_SEARCH = [
   ...HR_RECRUITMENT_ITEMS.map(i => ({ ...i, module: 'HR' })),
   { ...HR_EMPLOYEES, module: 'HR' },
   ...HR_RECORDS_ITEMS.map(i => ({ ...i, module: 'HR' })),
-  ...HR_TRACK_ITEMS.map(i => ({ ...i, module: 'HR' })),
+  ...HR_EXPENSE_ITEMS.map(i => ({ ...i, module: 'HR' })),
+  ...HR_ADVANCE_ITEMS.map(i => ({ ...i, module: 'HR' })),
   ...SALES_SUB_ITEMS.map(i => ({ ...i, module: 'Sales' })),
   ...ACCOUNTS_SUB_ITEMS.map(i => ({ ...i, module: 'Accounts' })),
   ...HELPDESK_SUB_ITEMS.map(i => ({ ...i, module: 'Helpdesk' })),
@@ -663,11 +647,13 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
                   <HrGroupHeader label="HR Records" icon={FolderOpen} expanded={isGroupOpen('hr-records')} onToggle={() => toggleGroup('hr-records')} />
                   {isGroupOpen('hr-records') && HR_RECORDS_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
 
-                  {/* SangoeTrack — flat, no group header, by request. A rule
-                      above the set separates it from HR's own records without
-                      making it something to expand before it can be seen. */}
-                  <div className="mx-5 my-2" style={{ height: 1, background: 'var(--border)' }} aria-hidden="true" />
-                  {HR_TRACK_ITEMS.map(item => <HrLeaf key={item.path} item={item} />)}
+                  {/* Expense group — the team's claims and the person's own */}
+                  <HrGroupHeader label="Expense" icon={Receipt} expanded={isGroupOpen('expense')} onToggle={() => toggleGroup('expense')} />
+                  {isGroupOpen('expense') && HR_EXPENSE_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
+
+                  {/* Advance group — same shape */}
+                  <HrGroupHeader label="Advance" icon={Wallet} expanded={isGroupOpen('advance')} onToggle={() => toggleGroup('advance')} />
+                  {isGroupOpen('advance') && HR_ADVANCE_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
                 </>
               )}
           </div>

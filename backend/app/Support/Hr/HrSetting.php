@@ -38,12 +38,17 @@ class HrSetting
      */
     public const DEFINITIONS = [
         /* ── the working day ─────────────────────────────────────────── */
+        // 09:30-18:30 with a 15-minute grace window, per the HR meeting of
+        // 2026-09-05. These are the AUTHORITY: HrAttendance::SHIFTS seeds a new
+        // record when no setting is readable, and follows these rather than the
+        // other way round. An earlier pass had this backwards and moved the
+        // working day to 09:00-18:00 to match the constant.
         'company_start_time' => [
-            'Working day starts', self::TYPE_TIME, '09:00',
+            'Working day starts', self::TYPE_TIME, '09:30',
             'Used to decide whether a clock-in counts as late.', 'Working day',
         ],
         'company_end_time' => [
-            'Working day ends', self::TYPE_TIME, '18:00',
+            'Working day ends', self::TYPE_TIME, '18:30',
             'The end of a standard shift.', 'Working day',
         ],
         'late_grace_minutes' => [
@@ -55,12 +60,43 @@ class HrSetting
             'A clock-out beyond this is flagged rather than silently accepted.', 'Working day',
         ],
         'standard_day_hours' => [
-            'Full day', self::TYPE_DECIMAL, 8,
+            'Full day', self::TYPE_DECIMAL, 9,
             'Hours in a full working day. Anything beyond it counts as overtime.', 'Working day',
         ],
         'half_day_hours' => [
             'Half day', self::TYPE_DECIMAL, 4,
             'Hours that count as half a day.', 'Working day',
+        ],
+
+        /* ── late marks ──────────────────────────────────────────────── */
+        //
+        // The policy itself is numbers on this screen, not a rule in code, so HR
+        // can change the thresholds or switch the whole thing off without a
+        // release. Nothing enforces these yet — the settings land first so the
+        // policy is captured and adjustable when the deduction is built.
+        'late_marks_enabled' => [
+            'Deduct for repeated late marks', self::TYPE_BOOL, false,
+            'When off, a late clock-in is recorded but never costs any pay.', 'Late marks',
+        ],
+        'late_marks_first_penalty_at' => [
+            'Late marks before the first deduction', self::TYPE_INT, 3,
+            'How many late marks in a month before half a day is deducted.', 'Late marks',
+        ],
+        'late_marks_first_penalty_days' => [
+            'First deduction', self::TYPE_DECIMAL, 0.5,
+            'Days of pay deducted when the count above is reached. 0.5 is half a day.', 'Late marks',
+        ],
+        'late_marks_second_penalty_at' => [
+            'Late marks before the second deduction', self::TYPE_INT, 5,
+            'How many late marks before a further deduction. 0 turns it off.', 'Late marks',
+        ],
+        'late_marks_second_penalty_days' => [
+            'Second deduction', self::TYPE_DECIMAL, 0.5,
+            'Days of pay deducted at the second threshold. 1 is a full day.', 'Late marks',
+        ],
+        'late_marks_reset_monthly' => [
+            'Count late marks per month', self::TYPE_BOOL, true,
+            'When on, the count starts again on the first of each month.', 'Late marks',
         ],
 
         /* ── attendance ──────────────────────────────────────────────── */

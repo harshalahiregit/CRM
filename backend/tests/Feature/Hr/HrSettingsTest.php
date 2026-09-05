@@ -83,9 +83,12 @@ class HrSettingsTest extends TestCase
     {
         $values = app(SettingsService::class)->getGroup($this->tenant()->id, HrSetting::GROUP);
 
-        // Must equal HrAttendance::SHIFTS['General'], or enabling settings would
-        // silently move every workspace's working day.
-        $this->assertSame('09:00', $values['company_start_time']);
+        // The company working day, 09:30-18:30, agreed 2026-09-05. The setting is
+        // the authority and HrAttendance::SHIFTS is the seed that follows it —
+        // asserted together because when they drifted apart, a workspace that had
+        // never opened the settings screen quietly got a different working day
+        // from one that had.
+        $this->assertSame('09:30', $values['company_start_time']);
         $this->assertSame(\App\Models\Hr\HrAttendance::SHIFTS['General'][0], $values['company_start_time']);
         $this->assertSame((float) \App\Models\Hr\HrAttendance::STANDARD_HOURS, (float) $values['standard_day_hours']);
         $this->assertSame(0.0, (float) $values['advance_manager_limit'], 'Zero means no shortcut.');

@@ -16,7 +16,11 @@ class HrAttendance extends Model
 
     /** Shift presets: [start, end, grace-minutes]. "Custom" carries its own times. */
     public const SHIFTS = [
-        'General' => ['09:00', '18:00', 15],
+        // Seed values only. The working day is configured per workspace under
+        // HR Settings -> Working day; AttendanceService reads those and falls
+        // back here when a setting is unreadable. Keep this row in step with
+        // HrSetting's defaults so a fresh workspace behaves the same either way.
+        'General' => ['09:30', '18:30', 15],
         'Morning' => ['06:00', '14:00', 10],
         'Evening' => ['14:00', '22:00', 10],
         'Night'   => ['22:00', '06:00', 10],
@@ -24,7 +28,13 @@ class HrAttendance extends Model
     ];
 
     /** Standard full working day (hours) used for overtime/half-day derivation. */
-    public const STANDARD_HOURS = 8.0;
+    // 09:30-18:30 is a nine-hour span. Overtime accrues past this, and it is a
+    // fallback only — HR Settings -> Working day -> 'Full day' is the authority
+    // and is what a workspace should change.
+    //
+    // OPEN: whether a lunch break should come off before overtime starts. Nine
+    // hours is the stated span, not necessarily the payable day.
+    public const STANDARD_HOURS = 9.0;
 
     protected $fillable = [
         'tenant_id', 'employee_id', 'date',

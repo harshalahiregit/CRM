@@ -77,8 +77,16 @@ class AttendanceHonoursSettingsTest extends TestCase
         $this->assertSame(20, (int) $day->grace_period);
     }
 
-    /** Untouched settings must behave exactly as the constants always did. */
-    public function test_defaults_still_give_the_old_behaviour(): void
+    /**
+     * A workspace that has changed nothing gets the company's working day.
+     *
+     * 09:30-18:30 with 15 minutes' grace, agreed 2026-09-05. This assertion is
+     * the point of the test: an earlier pass moved the default to 09:00 to match
+     * a constant in HrAttendance, which quietly shifted the working day for
+     * every workspace that had never opened the settings screen. The setting is
+     * the authority; the constant follows it.
+     */
+    public function test_untouched_settings_give_the_companys_working_day(): void
     {
         [, $e] = $this->person();
 
@@ -86,8 +94,34 @@ class AttendanceHonoursSettingsTest extends TestCase
 
         $day = HrAttendance::where('employee_id', $e->id)->firstOrFail();
 
-        $this->assertSame('09:00', substr((string) $day->shift_start, 0, 5));
+        $this->assertSame('09:30', substr((string) $day->shift_start, 0, 5));
+        $this->assertSame('18:30', substr((string) $day->shift_end, 0, 5));
         $this->assertSame(15, (int) $day->grace_period);
+    }
+
+    /**
+     * The late-mark policy is numbers on the settings screen, not a rule in code.
+     *
+     * Nothing enforces them yet. They are pinned here so the agreed policy —
+     * 3 late marks cost half a day, a 5th costs another half — survives as data
+     * that HR can change, rather than becoming constants somebody has to hunt
+     * for later.
+     */
+    public function test_the_late_mark_policy_is_configurable_data(): void
+    {
+        $t = $this->tenant()->id;
+        $svc = app(\App\Services\Settings\SettingsService::class);
+
+        $this->assertSame(3, (int) $svc->get($t, 'hr', 'late_marks_first_penalty_at'));
+        $this->assertSame(5, (int) $svc->get($t, 'hr', 'late_marks_second_penalty_at'));
+        $this->assertEqualsWithDelta(0.5, (float) $svc->get($t, 'hr', 'late_marks_first_penalty_days'), 0.001);
+
+        // Off until the deduction is built, so nobody loses pay to a half-finished rule.
+        $this->assertFalse((bool) $svc->get($t, 'hr', 'late_marks_enabled'));
+
+        // And changeable without a release.
+        $this->set(['late_marks_first_penalty_at' => 4]);
+        $this->assertSame(4, (int) $svc->get($t, 'hr', 'late_marks_first_penalty_at'));
     }
 
     /** Overtime past the configured full day, not past a hardcoded 8. */
