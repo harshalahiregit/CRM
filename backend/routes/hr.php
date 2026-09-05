@@ -605,3 +605,11 @@ Route::middleware(['auth:sanctum', 'hr.advances'])->prefix('hr')->group(function
     Route::post('/advances/{id}/note',                     [AdvanceController::class, 'note']);
     Route::get('/advances/{id}/attachments/{attachmentId}', [AdvanceController::class, 'attachment']);
 });
+
+// A punch selfie. Signed, not authenticated: the attendance register renders
+// these in an <img>, which sends no Authorization header. See the controller.
+Route::get('/hr/attendance/{attendance}/selfie/{which}',
+    [\App\Http\Controllers\Api\Hr\AttendanceSelfieController::class, 'show'])
+    ->whereIn('which', ['in', 'out'])
+    ->name('hr.attendance.selfie')
+    ->middleware('signed');

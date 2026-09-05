@@ -140,7 +140,10 @@ class HrmAttendanceController extends Controller
             $today->save();
         }
 
-        $this->storeSelfie($request, $employee, $data['type']);
+        // Keep what the punch came with. The app sends coordinates and a selfie on
+        // every clock in and out — it refuses to punch without the photo — and all
+        // of it used to be validated and dropped.
+        $this->recordPunchEvidence($request, $today, $employee, $data['type']);
 
         // Status, hours and overtime from the same code the CRM uses.
         $today = $this->attendance->restampAndSave($today);
@@ -372,18 +375,55 @@ class HrmAttendanceController extends Controller
             ])->values()->all();
     }
 
-    /** Best effort: a punch is never lost because a photo could not be saved. */
-    private function storeSelfie(Request $request, HrEmployee $employee, string $type): void
-    {
-        if (! $request->hasFile('selfie')) {
-            return;
+    /**
+     * Where the punch happened, the photo taken with it, and the address it came
+     * from — against the in or the out, whichever this was.
+     *
+     * Best effort throughout: a punch is never lost because a photo could not be
+     * written or a column could not be filled. Somebody standing at a gate has
+     * done their part, and refusing the punch would cost them a day's attendance
+     * over a storage problem that is not theirs.
+     *
+     * The selfie was previously stored and its path discarded, so the file
+     * existed on disk with nothing pointing at it. The path is kept now, which
+     * is what makes it viewable from the register.
+     */
+    private function recordPunchEvidence(
+        Request $request,
+        HrAttendance $today,
+        HrEmployee $employee,
+        string $type,
+    ): void {
+        $out = $type === 'clockout';
+
+        $fields = [
+            ($out ? 'check_out_latitude'  : 'check_in_latitude')  => $request->input('latitude'),
+            ($out ? 'check_out_longitude' : 'check_in_longitude') => $request->input('longitude'),
+            // The app does not send an address today; the column is filled when a
+            // caller has one, so a reverse-geocode can drop in without a change here.
+            ($out ? 'check_out_address'   : 'check_in_address')   => $request->input('address'),
+            ($out ? 'check_out_ip'        : 'check_in_ip')        => $request->ip(),
+        ];
+
+        if ($request->hasFile('selfie')) {
+            try {
+                $path = $request->file('selfie')->store(
+                    "hr/attendance/tenant_{$employee->tenant_id}/{$employee->id}",
+                    'local',
+                );
+                $fields[$out ? 'check_out_selfie' : 'check_in_selfie'] = $path;
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Selfie not stored', [
+                    'employee' => $employee->id, 'type' => $type, 'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         try {
-            $request->file('selfie')->store("hr/attendance/tenant_{$employee->tenant_id}/{$employee->id}", 'local');
+            $today->forceFill(array_filter($fields, fn ($v) => $v !== null && $v !== ''))->save();
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('Selfie not stored', [
-                'employee' => $employee->id, 'type' => $type, 'error' => $e->getMessage(),
+            \Illuminate\Support\Facades\Log::warning('Punch evidence not stored', [
+                'attendance' => $today->id, 'type' => $type, 'error' => $e->getMessage(),
             ]);
         }
     }

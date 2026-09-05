@@ -425,6 +425,19 @@ class AttendanceService
             'check_out'     => TenantTime::hm($r->check_out, $r->tenant_id),
             'break_start'   => TenantTime::hm($r->break_start, $r->tenant_id),
             'break_end'     => TenantTime::hm($r->break_end, $r->tenant_id),
+            // Punch evidence. The app collects all of this on every punch and
+            // refuses to clock in without the photo, so the register showing only
+            // a time was hiding the part that proves the time.
+            'check_in_latitude'   => $r->check_in_latitude,
+            'check_in_longitude'  => $r->check_in_longitude,
+            'check_in_address'    => $r->check_in_address,
+            'check_in_ip'         => $r->check_in_ip,
+            'check_in_selfie_url' => $r->check_in_selfie_url,
+            'check_out_latitude'   => $r->check_out_latitude,
+            'check_out_longitude'  => $r->check_out_longitude,
+            'check_out_address'    => $r->check_out_address,
+            'check_out_ip'         => $r->check_out_ip,
+            'check_out_selfie_url' => $r->check_out_selfie_url,
             'working_hours' => $r->working_hours,
             'overtime_hours'=> $r->overtime_hours,
             'remarks'       => $r->remarks,
