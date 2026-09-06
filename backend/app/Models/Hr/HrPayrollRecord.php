@@ -27,6 +27,10 @@ class HrPayrollRecord extends Model
         'pf_wages', 'pf_employee', 'pf_employer', 'eps_employer',
         'esic_wages', 'esic_employee', 'esic_employer',
         'pt_amount', 'tds_amount', 'bonus_amount', 'gratuity_amount',
+        // LWF (half-yearly) and voluntary PF. Same $fillable trap the comments
+        // below already warn about — added as columns without being listed here,
+        // create() drops them and the register prints zeros.
+        'lwf_employee', 'lwf_employer', 'vpf_amount',
         'taxable_earnings', 'statutory_deductions', 'statutory_meta',
         // Year-to-date tax context. Without these in $fillable, create() drops them
         // silently and every figure lands as zero — which is exactly what happened
@@ -46,6 +50,9 @@ class HrPayrollRecord extends Model
         'annual_ctc'       => 'decimal:2',
         'monthly_ctc'      => 'decimal:2',
         'gross_salary'     => 'decimal:2',
+        'lwf_employee'     => 'decimal:2',
+        'lwf_employer'     => 'decimal:2',
+        'vpf_amount'       => 'decimal:2',
         'total_benefits'   => 'decimal:2',
         'total_deductions' => 'decimal:2',
         'net_salary'       => 'decimal:2',

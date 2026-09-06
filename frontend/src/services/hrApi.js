@@ -407,6 +407,15 @@ export const hrApi = {
       departments: (params = {})  => api.get('/hr/payroll/reports/departments', { params }).then(r => r.data),
       components:  (params = {})  => api.get('/hr/payroll/reports/components', { params }).then(r => r.data),
       trends:      (params = {})  => api.get('/hr/payroll/reports/trends', { params }).then(r => r.data),
+    },
+    // The statutory registers — the documents a month is FILED with, keyed by
+    // payroll run so they show what was actually paid rather than a fresh
+    // calculation that could disagree with the payslips already issued.
+    registers: {
+      pf:   (runId) => api.get(`/hr/payroll/runs/${runId}/registers/pf`).then(r => r.data?.data),
+      esic: (runId) => api.get(`/hr/payroll/runs/${runId}/registers/esic`).then(r => r.data?.data),
+      pt:   (runId) => api.get(`/hr/payroll/runs/${runId}/registers/pt`).then(r => r.data?.data),
+      lwf:  (runId) => api.get(`/hr/payroll/runs/${runId}/registers/lwf`).then(r => r.data?.data),
       // CSV (Excel) or PDF export → triggers a browser download.
       export: (report, format, params = {}) => api.get('/hr/payroll/reports/export', { params: { ...params, report, format }, responseType: 'blob' }).then(r => {
         const url = URL.createObjectURL(r.data)

@@ -46,6 +46,7 @@ use App\Http\Controllers\Api\Hr\VariableEarningController;
 use App\Http\Controllers\Api\Hr\PayrollRunController;
 use App\Http\Controllers\Api\Hr\PayslipController;
 use App\Http\Controllers\Api\Hr\PayrollReportController;
+use App\Http\Controllers\Api\Hr\StatutoryRegisterController;
 use Illuminate\Support\Facades\Route;
 
 // ── HR Module Routes (Sanctum) ──────────────────────────────────────────
@@ -462,6 +463,14 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/payroll/reports/departments', [PayrollReportController::class, 'departments']);
     Route::get('/payroll/reports/components',  [PayrollReportController::class, 'components']);
     Route::get('/payroll/reports/trends',      [PayrollReportController::class, 'trends']);
+
+    // Statutory registers — the documents a month is FILED with, as opposed to
+    // the reports above, which are for reading. Keyed by payroll run because a
+    // register must reflect what was actually paid, not a fresh calculation.
+    Route::get('/payroll/runs/{run}/registers/pf',   [StatutoryRegisterController::class, 'pf'])->whereNumber('run');
+    Route::get('/payroll/runs/{run}/registers/esic', [StatutoryRegisterController::class, 'esic'])->whereNumber('run');
+    Route::get('/payroll/runs/{run}/registers/pt',   [StatutoryRegisterController::class, 'pt'])->whereNumber('run');
+    Route::get('/payroll/runs/{run}/registers/lwf',  [StatutoryRegisterController::class, 'lwf'])->whereNumber('run');
     Route::get('/payroll/reports/export',      [PayrollReportController::class, 'export']);
 
     // Enterprise Salary Reports (Phase 2) — read-only over structures/snapshots/revisions.

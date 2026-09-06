@@ -69,6 +69,11 @@ class HrEmployee extends Model
         // statutory jurisdiction Professional Tax is levied under — the two are NOT
         // interchangeable, which is why PT no longer reads `location`.
         'location','work_state','shift','official_email','project_id',
+        // Grouping ABOVE department, which every payroll report subtotals by, and
+        // the skill category that decides which minimum-wage floor applies.
+        'branch','division','unit','zone','category',
+        // The salary register's DOLeft, and pay withheld for this run.
+        'exit_date','hold_salary',
         // #43 — the individual's own skills, carried from the candidate on hire.
         // Compared against the department/designation/grade/role skill profile.
         'skills',
@@ -100,6 +105,8 @@ class HrEmployee extends Model
         'include_in_org_chart' => 'boolean',
         'app_login_enabled'    => 'boolean',
         'joining_date'         => 'date',
+        'exit_date'            => 'date',
+        'hold_salary'          => 'boolean',
         'dob'                  => 'date',
         'probation_end_date'   => 'date',
         'confirmation_date'    => 'date',
