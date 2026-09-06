@@ -249,6 +249,10 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/employees',                [EmployeeController::class, 'index']);
     Route::post('/employees',               [EmployeeController::class, 'store']);
     Route::get('/employees/{employee}/profile', [EmployeeController::class, 'profile']);
+    // The extended record. Declared beside /profile so both sit under the same
+    // tenant assertion the controller makes.
+    Route::get('/employees/{employee}/detail',  [EmployeeController::class, 'detail']);
+    Route::put('/employees/{employee}/detail',  [EmployeeController::class, 'updateDetail']);
 
     // Exit Interview (SPK-1) — internal form, reuses the employee record for prefill.
     Route::get('/exit-interviews',                        [ExitInterviewController::class, 'index']);
@@ -543,7 +547,17 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
 // Gated on the GROUP rather than inside each method: a method that forgets the
 // check is how a list-everything endpoint ends up open, which is exactly what
 // happened in the first draft of ReimbursementController.
-Route::middleware(['auth:sanctum', 'hr.manage'])->prefix('hr')->group(function () {
+//
+// `permission:hr_attendance,view_global` REPLACES the old `hr.manage` gate. That
+// gate was a hardcoded list of role strings, so changing who may run HR meant
+// editing PHP and deploying. This reads the permission grid an admin ticks in
+// Staff Management, which is the whole point of the grid existing.
+//
+// Nobody loses access in the swap: `permissions:sync` grants hr_attendance to
+// exactly the roles canManageHrQueue() admitted (hr_executive, hr_recruiter),
+// and admins bypass the grid entirely. `permissions:audit` proves it per user
+// by running both rules side by side.
+Route::middleware(['auth:sanctum', 'permission:hr_attendance,view_global'])->prefix('hr')->group(function () {
     // ── Demo requests ───────────────────────────────────────────────────
     // Inbound enquiries. Unclaimed ones (tenant_id null) are visible to every
     // workspace until somebody starts working on one.

@@ -253,6 +253,33 @@ class HrmAttendanceTest extends TestCase
         $this->assertTrue($day->check_out->gt($day->check_in));
     }
 
+    /**
+     * The same for a break, which had no such fallback.
+     *
+     * A night-shift worker clocking in at 22:00 and taking their break at 00:30
+     * was told "You need to be clocked in to take a break" — the record exists,
+     * filed under yesterday. Note the FIXED start time: the day-long test above
+     * clocks in at whatever time it happens to run, so this only failed when the
+     * suite ran late in the evening, which is a bug that hides for weeks.
+     */
+    public function test_a_break_can_be_taken_after_midnight_on_a_night_shift(): void
+    {
+        $this->person();
+
+        $this->travelTo(now()->setTime(22, 0));
+        $this->postJson('/api/Hrm/clock-in-out', ['type' => 'clockin'])->assertOk();
+
+        $this->travel(150)->minutes();   // 00:30 — the next calendar day
+        $this->postJson('/api/Hrm/break-toggle', ['type' => 'start'])
+            ->assertOk()->assertJsonPath('data.is_on_break', true);
+
+        $this->travel(30)->minutes();
+        $this->postJson('/api/Hrm/break-toggle', ['type' => 'continue'])
+            ->assertOk()->assertJsonPath('data.is_on_break', false);
+
+        $this->travelBack();
+    }
+
     public function test_clocking_out_without_clocking_in_is_refused(): void
     {
         $this->person();

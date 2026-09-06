@@ -171,7 +171,16 @@ class HrmAttendanceController extends Controller
 
         $data = $request->validate(['type' => 'required|in:start,continue']);
 
+        // The same fallback clock-out makes: a shift that began before midnight
+        // is still the shift being broken from. Keyed strictly to today's date,
+        // somebody who clocked in at 22:00 was told at 00:30 that they had never
+        // clocked in — their record exists, filed under yesterday — and there
+        // was no way to take a break from the phone for the rest of the night.
         $today = $this->today($employee);
+
+        if (! $today || ! $today->check_in || $today->check_out) {
+            $today = $this->openShift($employee);
+        }
 
         if (! $today || ! $today->check_in || $today->check_out) {
             return HrmResponse::fail('You need to be clocked in to take a break.');

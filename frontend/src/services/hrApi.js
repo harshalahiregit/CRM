@@ -248,6 +248,11 @@ export const hrApi = {
     list:   (params = {}) => api.get('/hr/employees', { params }).then(r => Array.isArray(r.data) ? r.data : (r.data?.data ?? [])),
     listPaged: (params = {}) => api.get('/hr/employees', { params }).then(r => r.data),
     stats:  ()            => api.get('/hr/employees/stats').then(r => r.data),
+    // The extended record — personal, address, education, emergency contact,
+    // bank, identity, statutory. Always returns every key (null where unset) so
+    // the form renders without special-casing a person nobody has filled in yet.
+    detail:     (id)       => api.get(`/hr/employees/${id}/detail`).then(r => r.data?.data ?? {}),
+    saveDetail: (id, data) => api.put(`/hr/employees/${id}/detail`, data).then(r => r.data?.data ?? {}),
     // Work-state vocabulary for the statutory jurisdiction field. Served by the
     // backend so the options offered and the states PT rules are keyed by are one list.
     workStates: ()        => api.get('/hr/employees/work-states').then(r => r.data?.data ?? []),

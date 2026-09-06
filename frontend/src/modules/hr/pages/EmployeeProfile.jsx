@@ -11,6 +11,7 @@ import { useAuth } from '@/context/AuthContext'
 import { canManageHrQueue } from '../constants'
 import EmployeeLifecyclePanel from '../components/EmployeeLifecyclePanel'
 import EmployeeLoanCard from '../components/EmployeeLoanCard'
+import EmployeeDetailPanel from '../components/EmployeeDetailPanel'
 import EmployeeScoreCard from '../components/EmployeeScoreCard'
 import EmployeeSkillsPanel from '../components/EmployeeSkillsPanel'      // #43
 import EmployeeAttendancePanel from '../components/EmployeeAttendancePanel' // #38
@@ -364,22 +365,48 @@ export default function EmployeeProfile() {
 
         {tab==='personal' && (
           <div>
+            {/* Identity, from the employee row itself. Everything below comes
+                from the editable detail record — blood group, marital status,
+                nationality, father's name, permanent address and pincode used to
+                be repeated here as read-only copies of the onboarding form, so
+                each appeared TWICE on this tab: once uneditable and stale, once
+                editable. One field, one place. */}
             <Grid>
               <Field k="Full Name" v={e.name}/>
               <Field k="Date of Birth" v={fmtDate(e.dob) !== '—' ? fmtDate(e.dob) : fmtDate(data.submission?.personal?.dob)}/>
               <Field k="Gender" v={e.gender || data.submission?.personal?.gender}/>
-              <Field k="Blood Group" v={data.submission?.personal?.blood_group}/>
-              <Field k="Marital Status" v={data.submission?.personal?.marital_status}/>
-              <Field k="Nationality" v={data.recruitment?.nationality}/>
               <Field k="Mobile" v={e.phone}/>
               <Field k="Email" v={e.email}/>
-              <Field k="Father / Guardian" v={data.submission?.personal?.father_name}/>
               <Field k="Present Address" v={data.submission?.address?.current || e.address} full/>
-              <Field k="Permanent Address" v={data.submission?.address?.permanent} full/>
-              <Field k="City / State" v={[data.submission?.address?.city, data.submission?.address?.state].filter(Boolean).join(', ')}/>
-              <Field k="Pincode" v={data.submission?.address?.pincode}/>
-              <Field k="Emergency Contact" v={data.submission?.emergency?.name ? `${data.submission.emergency.name}${data.submission.emergency.relation?` (${data.submission.emergency.relation})`:''}${data.submission.emergency.phone?` · ${data.submission.emergency.phone}`:''}` : '—'} full/>
             </Grid>
+
+            {/* The editable record. Everything above is the identity summary
+                that comes off the employee row; everything below is stored on
+                hr_employee_details and can be corrected. It used to be read-only
+                and sourced from the onboarding form, so a wrong value entered
+                during onboarding stayed wrong and a directly-added employee
+                showed nothing at all. */}
+            <div className="mt-5">
+              <EmployeeDetailPanel
+                employeeId={id}
+                group="personal"
+                showToast={showToast}
+                fallback={{
+                  father_name:            data.submission?.personal?.father_name,
+                  mother_name:            data.submission?.personal?.mother_name,
+                  marital_status:         data.submission?.personal?.marital_status,
+                  blood_group:            data.submission?.personal?.blood_group,
+                  nationality:            data.recruitment?.nationality,
+                  permanent_address:      data.submission?.address?.permanent,
+                  permanent_city:         data.submission?.address?.city,
+                  permanent_state:        data.submission?.address?.state,
+                  permanent_pincode:      data.submission?.address?.pincode,
+                  emergency_name:         data.submission?.emergency?.name,
+                  emergency_relationship: data.submission?.emergency?.relation,
+                  emergency_phone:        data.submission?.emergency?.phone,
+                }}/>
+            </div>
+
             <AiInsight hint="Will flag missing personal details (emergency contact, blood group, nationality) needed for compliance." />
           </div>
         )}
@@ -462,21 +489,22 @@ export default function EmployeeProfile() {
                 Renders nothing when the employee has no loans. */}
             <EmployeeLoanCard employeeId={id} />
 
-            <p className="text-[11px] font-bold uppercase mb-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Bank Details</p>
-            <Grid>
-              <Field k="Account Holder" v={data.submission?.bank?.account_name}/>
-              <Field k="Bank" v={data.submission?.bank?.bank_name}/>
-              <Field k="Account Number" v={data.submission?.bank?.account_number} mono/>
-              <Field k="IFSC" v={data.submission?.bank?.ifsc} mono/>
-              <Field k="Branch" v={data.submission?.bank?.branch}/>
-            </Grid>
-            <p className="text-[11px] font-bold uppercase mt-5 mb-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Tax (read-only — managed under Payroll)</p>
-            <Grid>
-              <Field k="PAN" v={data.submission?.bank?.pan}/>
-              <Field k="Tax Regime" v={null}/>
-              <Field k="Investment Declaration" v={null}/>
-              <Field k="Form 16" v={null}/>
-            </Grid>
+            {/* Bank, identity and statutory numbers — editable, and the same
+                record payroll reads. These were read-only views of the
+                onboarding form: an IFSC typed wrongly there could never be
+                corrected, and payroll worked from a spreadsheet instead. */}
+            <EmployeeDetailPanel
+              employeeId={id}
+              group="bank"
+              showToast={showToast}
+              fallback={{
+                bank_account_holder_name: data.submission?.bank?.account_name,
+                bank_name:                data.submission?.bank?.bank_name,
+                bank_account_number:      data.submission?.bank?.account_number,
+                bank_ifsc:                data.submission?.bank?.ifsc,
+                bank_branch:              data.submission?.bank?.branch,
+                pan_number:               data.submission?.bank?.pan,
+              }}/>
 
             {/* Payroll — current salary + history (Payroll Phase 3). Read-only here;
                 assign/revise happens in Payroll → Employee Salary. */}

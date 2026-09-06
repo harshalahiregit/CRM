@@ -10,14 +10,6 @@ const TIMEZONES = [
   'Asia/Tokyo','Europe/London','Europe/Paris','America/New_York',
   'America/Los_Angeles','America/Chicago','Australia/Sydney',
 ]
-const PROFILE_GROUPS = [
-  'Standard Staff','Senior Staff','Management','IT Admin',
-  'Support Team','Sales Team','HR Team','Finance Team','Operations Team',
-]
-const MEMBER_DEPARTMENTS = [
-  'Support','IT','Billing','Passwords','HR','Misuse',
-  'Compliance','Sales','IT Projects','Marketing','Finance','Operations',
-]
 
 // ── Full Permissions Matrix ─────────────────────────────────────────────────
 const PERMISSION_MODULES = [
@@ -37,7 +29,10 @@ const PERMISSION_MODULES = [
   { key:'inventory',       label:'Inventory',             actions:['view_global','create','edit','delete'] },
   { key:'goals',           label:'Goals',                 actions:['view_global','create','edit','delete'] },
   { key:'surveys',         label:'Surveys',               actions:['view_global','create','edit','delete'] },
-  { key:'appointments',    label:'Appointments',          actions:['view','create','edit','delete','approve','view_reports'] },
+  // The standard five, like every other row. This offered 'view', 'approve'
+  // and 'view_reports' — none of which are capabilities, so ticking them
+  // saved nothing and the box came back empty with no error shown.
+  { key:'appointments',    label:'Appointments',          actions:['view_own','view_global','create','edit','delete'] },
   { key:'delivery_notes',  label:'Delivery Notes',        actions:['view_own','view_global'] },
   { key:'hr_recruitment',  label:'HR Recruitment',        actions:['view_own','view_global','create','edit','delete'] },
   { key:'hr_checklists',   label:'HR Layoff Checklists',  actions:['view_own','view_global','create','edit','delete'] },
@@ -67,9 +62,7 @@ const EMPTY_FORM = {
   first_name:'', last_name:'', email:'', phone:'', password:'',
   internal_role:'', staff_role_id:'', department:'', designation:'', status:'active',
   is_moderator:false, use_firstname_as_username:false,
-  profile_group:'Standard Staff', priority:1,
-  specialty:'', bio:'', nb_type:'',
-  jabber_language:'System Default', timezone:'System Default',
+  bio:'', timezone:'System Default',
   staff_signature:'',
   member_departments:[],
   permissions:{},
@@ -82,7 +75,7 @@ const EMPTY_FORM = {
 // `designations` is gone from the signature: roles are fetched here from
 // /admin/roles now, so the parent no longer has to pass a list that came from a
 // different source than the permissions did.
-export default function StaffModal({ staff, departments, onClose, onSuccess }) {
+export default function StaffModal({ staff, departments = [], jobTitles = [], onClose, onSuccess }) {
   const [activeTab,     setActiveTab]     = useState('profile')
   const { user: actor } = useAuth()
 
@@ -146,12 +139,7 @@ export default function StaffModal({ staff, departments, onClose, onSuccess }) {
         status:                   staff.status || 'active',
         is_moderator:             meta.is_moderator || false,
         use_firstname_as_username:meta.use_firstname_as_username || false,
-        profile_group:            meta.profile_group || 'Standard Staff',
-        priority:                 meta.priority || 1,
-        specialty:                meta.specialty || '',
         bio:                      meta.bio || '',
-        nb_type:                  meta.nb_type || '',
-        jabber_language:          meta.jabber_language || 'System Default',
         timezone:                 meta.timezone || 'System Default',
         staff_signature:          meta.staff_signature || '',
         member_departments:       meta.member_departments || [],
@@ -246,12 +234,7 @@ export default function StaffModal({ staff, departments, onClose, onSuccess }) {
       meta: {
         is_moderator:              formData.is_moderator,
         use_firstname_as_username: formData.use_firstname_as_username,
-        profile_group:             formData.profile_group,
-        priority:                  formData.priority,
-        specialty:                 formData.specialty,
         bio:                       formData.bio,
-        nb_type:                   formData.nb_type,
-        jabber_language:           formData.jabber_language,
         timezone:                  formData.timezone,
         staff_signature:           formData.staff_signature,
         member_departments:        formData.member_departments,
@@ -399,14 +382,6 @@ export default function StaffModal({ staff, departments, onClose, onSuccess }) {
                 </label>
               </div>
 
-              {/* Profile Group */}
-              <div>
-                <label style={lbl}>Profile Group</label>
-                <select value={formData.profile_group} onChange={e=>set('profile_group',e.target.value)} style={inp('profile_group')}>
-                  {PROFILE_GROUPS.map(g=><option key={g}>{g}</option>)}
-                </select>
-              </div>
-
               {/* First + Last Name */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -430,51 +405,11 @@ export default function StaffModal({ staff, departments, onClose, onSuccess }) {
                 {errors.email&&<p className="text-[10px] mt-1" style={{ color:'#ef4444' }}>{errors.email[0]}</p>}
               </div>
 
-              {/* Priority */}
-              <div>
-                <label style={lbl}>Priority (1–10)</label>
-                <div className="flex items-center gap-3">
-                  <button type="button" onClick={()=>set('priority',Math.max(1,formData.priority-1))}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-lg"
-                    style={{ background:'var(--bg-input)', border:'1px solid var(--border)', color:'var(--text-h)' }}>−</button>
-                  <input type="range" min="1" max="10" value={formData.priority}
-                    onChange={e=>set('priority',Number(e.target.value))}
-                    className="flex-1" style={{ accentColor:'#7C3AED' }}/>
-                  <button type="button" onClick={()=>set('priority',Math.min(10,formData.priority+1))}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-lg"
-                    style={{ background:'var(--bg-input)', border:'1px solid var(--border)', color:'var(--text-h)' }}>+</button>
-                  <span className="w-10 h-8 rounded-lg flex items-center justify-center text-sm font-black"
-                    style={{ background:'rgba(124,58,237,0.12)', color:'#7C3AED' }}>{formData.priority}</span>
-                </div>
-              </div>
-
               {/* Phone */}
               <div>
                 <label style={lbl}>Phone</label>
                 <input type="text" value={formData.phone} onChange={e=>set('phone',e.target.value)}
                   placeholder="+91 98765 43210" style={inp('phone')}/>
-              </div>
-
-              {/* Specialty + NB Type */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label style={lbl}>Specialty</label>
-                  <input type="text" value={formData.specialty} onChange={e=>set('specialty',e.target.value)}
-                    placeholder="e.g., Recruitment" style={inp('specialty')}/>
-                </div>
-                <div>
-                  <label style={lbl}>NB Type</label>
-                  <input type="text" value={formData.nb_type} onChange={e=>set('nb_type',e.target.value)}
-                    placeholder="e.g., Full-time" style={inp('nb_type')}/>
-                </div>
-              </div>
-
-              {/* Jabber Language */}
-              <div>
-                <label style={lbl}>Jabber Language / Locale</label>
-                <select value={formData.jabber_language} onChange={e=>set('jabber_language',e.target.value)} style={inp('jabber_language')}>
-                  {['System Default','English','Hindi','Marathi','Gujarati','Tamil','Telugu','Bengali'].map(l=><option key={l}>{l}</option>)}
-                </select>
               </div>
 
               {/* Staff Signature */}
@@ -513,16 +448,31 @@ export default function StaffModal({ staff, departments, onClose, onSuccess }) {
                   <label style={lbl}>Department</label>
                   <select value={formData.department} onChange={e=>set('department',e.target.value)} style={inp('department')}>
                     <option value="">Select Department</option>
-                    {departments.map(d=><option key={d} value={d}>{d}</option>)}
+                    {departments.map(d=><option key={d.id} value={d.name}>{d.name}</option>)}
                   </select>
+                  <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+                    Managed under HR &rarr; Organization Setup.
+                  </p>
                 </div>
               </div>
 
-              {/* Job Title */}
+              {/* Job Title — a designation record, not free text. Distinct from
+                  Role above: Role decides what somebody may DO, a job title is
+                  what they ARE. Two Senior Engineers can hold different roles. */}
               <div>
                 <label style={lbl}>Job Title</label>
-                <input type="text" value={formData.designation} onChange={e=>set('designation',e.target.value)}
-                  placeholder="e.g., Senior HR Executive" style={inp('designation')}/>
+                <select value={formData.designation} onChange={e=>set('designation',e.target.value)} style={inp('designation')}>
+                  <option value="">Select Job Title</option>
+                  {jobTitles.map(t=><option key={t.id} value={t.name}>{t.name}</option>)}
+                  {/* A title typed before designations became records would vanish
+                      from the dropdown and silently clear on the next save. */}
+                  {formData.designation && !jobTitles.some(t=>t.name===formData.designation) && (
+                    <option value={formData.designation}>{formData.designation}</option>
+                  )}
+                </select>
+                <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+                  Managed under HR &rarr; Organization Setup.
+                </p>
               </div>
 
               {/* Status */}
@@ -634,11 +584,20 @@ export default function StaffModal({ staff, departments, onClose, onSuccess }) {
                 </div>
               </div>
 
-              {/* Member Departments */}
+              {/* Member Departments — the departments this person also works
+                  across, beyond their own. Drawn from the department records so
+                  there is one list; it used to be twelve names hardcoded in this
+                  file, which is why 'Passwords' and 'Misuse' were on it. */}
               <div>
                 <label style={lbl}>Member Departments</label>
+                {departments.length === 0 && (
+                  <p className="text-[11px] mb-2" style={{ color:'var(--text-muted)' }}>
+                    No departments yet — add them under HR &rarr; Organization Setup.
+                  </p>
+                )}
                 <div className="grid grid-cols-3 gap-2">
-                  {MEMBER_DEPARTMENTS.map(dept=>{
+                  {departments.map(d=>{
+                    const dept = d.name
                     const checked = formData.member_departments.includes(dept)
                     return (
                       <label key={dept} onClick={()=>toggleDept(dept)}

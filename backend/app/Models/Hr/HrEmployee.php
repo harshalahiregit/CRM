@@ -9,6 +9,20 @@ class HrEmployee extends Model
 {
     use Auditable;
 
+    /**
+     * Keep department_id / designation_id in step with the names on every save.
+     *
+     * Both forms, the SangoeTrack importer and the onboarding conversion all
+     * write the text and none of them wrote the link, so the org chart and the
+     * reporting rollups — which read the FK — saw an empty company. Doing it
+     * here means no caller has to remember. See OrgLink for why an unknown name
+     * creates a record rather than being dropped.
+     */
+    protected static function booted(): void
+    {
+        static::saving(fn (self $employee) => \App\Support\Hr\OrgLink::apply($employee));
+    }
+
     protected $table = 'hr_employees';
 
     /** Employee codes read SNE-YYYY-NNN. */
@@ -169,6 +183,17 @@ class HrEmployee extends Model
     public function reportingManager()
     {
         return $this->belongsTo(HrEmployee::class, 'reporting_manager_id');
+    }
+
+    /**
+     * Personal, bank, identity and statutory detail.
+     *
+     * A separate row created on demand: most of it is blank for most people, and
+     * these are the fields most likely to need their own permission later.
+     */
+    public function detail()
+    {
+        return $this->hasOne(HrEmployeeDetail::class, 'employee_id');
     }
 
     /*

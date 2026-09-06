@@ -302,7 +302,14 @@ const SUBMODULE_SEARCH = [
 ]
 
 export default function Sidebar({ collapsed, onToggle, openSection, toggleSection, isGroupOpen, toggleGroup }) {
-  const { user, tenant, logout } = useAuth()
+  const { user, tenant, logout, canSee, scopeOf } = useAuth()
+
+  // Whether this person runs HR for the company, or only has their own record
+  // here. Answered by the server through the permission grid — the sidebar used
+  // to guess from `user.role`, so every management item rendered for everybody
+  // and each one 403'd on click, and a team lead who genuinely could approve
+  // things was shown the same menu as somebody who could not.
+  const managesHr = canSee('hr_attendance')
   const { isDark } = useTheme()
   const navigate = useNavigate()
   /**
@@ -646,13 +653,19 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
                   {/* Employees (top-level) */}
                   <HrLeaf item={HR_EMPLOYEES} />
 
-                  {/* Attendance */}
-                  <HrGroupHeader label="Attendance" icon={CalendarCheck} expanded={isGroupOpen('hr-attendance')} onToggle={() => toggleGroup('hr-attendance')} />
-                  {isGroupOpen('hr-attendance') && HR_ATTENDANCE_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
+                  {/* Attendance and Requests are the HR QUEUES — everybody's
+                      records, not your own. Shown only to somebody the server
+                      will actually let in, so the menu stops offering doors that
+                      are locked. */}
+                  {managesHr && (
+                    <>
+                      <HrGroupHeader label="Attendance" icon={CalendarCheck} expanded={isGroupOpen('hr-attendance')} onToggle={() => toggleGroup('hr-attendance')} />
+                      {isGroupOpen('hr-attendance') && HR_ATTENDANCE_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
 
-                  {/* Requests — leave, expense and advance are three things people ask for */}
-                  <HrGroupHeader label="Requests" icon={Receipt} expanded={isGroupOpen('hr-requests')} onToggle={() => toggleGroup('hr-requests')} />
-                  {isGroupOpen('hr-requests') && HR_REQUEST_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
+                      <HrGroupHeader label="Requests" icon={Receipt} expanded={isGroupOpen('hr-requests')} onToggle={() => toggleGroup('hr-requests')} />
+                      {isGroupOpen('hr-requests') && HR_REQUEST_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
+                    </>
+                  )}
 
                   {/* Employee lifecycle */}
                   <HrGroupHeader label="Employee Lifecycle" icon={Award} expanded={isGroupOpen('hr-lifecycle')} onToggle={() => toggleGroup('hr-lifecycle')} />
@@ -665,10 +678,12 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
                   {/* Opened often enough to stay at the top level */}
                   {HR_TOP_LEVEL.map(item => <HrLeaf key={item.path} item={item} />)}
 
-                  {/* A person's own requests — only for somebody who cannot open the
-                      management screens above, which would 403 for them. This is the
-                      line to replace when per-permission menus arrive. */}
-                  {user?.role !== 'admin' && (
+                  {/* A person's own requests — for somebody who cannot open the
+                      management screens above. Now an actual answer rather than
+                      "is this person an admin", which was wrong for everybody in
+                      between: an accounts user saw both sets, a team lead neither
+                      of the right ones. */}
+                  {!managesHr && (
                     <>
                       <HrGroupHeader label="My Requests" icon={UserRound} expanded={isGroupOpen('hr-mine')} onToggle={() => toggleGroup('hr-mine')} />
                       {isGroupOpen('hr-mine') && HR_MINE_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}

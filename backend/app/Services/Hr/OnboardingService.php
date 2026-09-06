@@ -27,6 +27,7 @@ class OnboardingService
     public function __construct(
         private EmployeeService $employeeService,
         private CandidateService $candidateService,
+        private EmployeeDetailService $employeeDetails,
     ) {
     }
 
@@ -520,6 +521,16 @@ class OnboardingService
                 'probation_optional'     => true,
             ], $onboarding->tenant_id);
         }
+
+        // Carry across what the joiner already filled in themselves — bank
+        // account, UAN, emergency contact, permanent address. It was collected
+        // on the onboarding form and then left there: HR re-typed all of it from
+        // a document the person had already completed. Only fills blanks, so a
+        // correction made after conversion is never overwritten.
+        $this->employeeDetails->carryFromOnboarding(
+            $employee,
+            \App\Models\Hr\HrEmployeeOnboarding::where('onboarding_id', $onboarding->id)->first()?->profile,
+        );
 
         // Auto-complete every remaining onboarding step — no manual ticking.
         $onboarding->update([
