@@ -29,11 +29,16 @@ import RichTextEditor from '@/components/ui/RichTextEditor'
 import MultiSearchSelect from '@/components/ui/MultiSearchSelect'
 
 // ── Platform options for online meetings ─────────────────────────────────────
+// Jitsi first, and it replaces the old "Generic Link (stub)" option — which
+// produced https://meet.example.com/…, a URL that opens nothing. Jitsi is what
+// that option was pretending to be: a real, unique room needing no credentials.
+// Google Meet, Zoom and Teams schedule through their APIs when the tenant has
+// them configured, and otherwise hand back that platform's own start-now link.
 const PLATFORM_OPTIONS = [
+  ['jitsi',       'Jitsi Meet (no setup needed)'],
   ['google_meet', 'Google Meet'],
   ['zoom',        'Zoom'],
   ['teams',       'Microsoft Teams'],
-  ['stub',        'Generic Link (stub)'],
 ]
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -51,9 +56,24 @@ const toLocalTime = (iso) => {
   const p = n => String(n).padStart(2, '0')
   return `${p(d.getHours())}:${p(d.getMinutes())}`
 }
+/**
+ * The instant a date box and a time box name, sent so the server cannot mistake it.
+ *
+ * This used to send a bare `2026-09-04T14:30:00`. A bare wall clock does not
+ * name a moment until you say in which timezone, and each end of the wire
+ * assumed a different one: the server read it as UTC and published it back as
+ * UTC, the browser localised it a second time, and a meeting entered at 09:00
+ * reappeared at 14:30. Re-saving then stored 14:30 and it slid another +05:30
+ * down the day on every edit.
+ *
+ * An ISO instant with its offset is unambiguous, so the meeting lands on the
+ * hour that was typed — and a colleague in another country reads it correctly
+ * converted to their own clock rather than shifted.
+ */
 const combineDateTime = (date, time) => {
   if (!date) return ''
-  return `${date}T${time || '09:00'}:00`
+  const at = new Date(`${date}T${time || '09:00'}:00`)
+  return Number.isNaN(at.getTime()) ? '' : at.toISOString()
 }
 /**
  * The END instant, given the meeting's date and its start/end clock times.
@@ -222,7 +242,7 @@ export default function KickoffMeetingCreate() {
     work_package:     '',
     project_id:       '',       // soft link into the Projects module (§16)
     is_completed:     false,
-    meeting_platform: 'stub',  // used when mode = 'online'
+    meeting_platform: 'jitsi',  // used when mode = 'online'
   })
   const [projects, setProjects] = useState([])   // { id, name, project_code, client_name, ... }
   // Meeting.docx §2 wants a real Customer on the meeting, and §5 wants
@@ -318,7 +338,7 @@ export default function KickoffMeetingCreate() {
           work_package:     m.work_package || '',
           project_id:       m.project_id || '',
           is_completed:     m.status === 'Completed',
-          meeting_platform: m.meeting_platform || 'stub',
+          meeting_platform: (!m.meeting_platform || m.meeting_platform === 'stub') ? 'jitsi' : m.meeting_platform,
         })
 
         setParticipants((m.attendees || []).map(a => ({
@@ -881,7 +901,11 @@ export default function KickoffMeetingCreate() {
       if (newId && (form.mode === 'online' || form.mode === 'hybrid') && !(isEdit && existingLink)) {
         setGenLink(true)
         try {
-          await meetingApi.generateLink(newId, form.meeting_platform)
+          // THROUGH THE MODULE'S API. This line used to call the shared
+          // engine's route directly, so a Purchase meeting id was looked up in
+          // kickoff_meetings and came back "No query results for model
+          // [App\Models\Shared\KickoffMeeting]" — the link was never created.
+          await kickoffApi.generateLink(newId, form.meeting_platform)
         } catch (_) {
           // Non-fatal — the detail page shows a "Generate link" button as fallback
         } finally {

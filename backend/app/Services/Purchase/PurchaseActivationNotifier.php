@@ -222,7 +222,10 @@ class PurchaseActivationNotifier
             'companyName'      => config('app.name', 'Our Company'),
             'logoUrl'          => config('mail.logo_url'),
             'supportEmail'     => config('mail.support_address', config('mail.from.address', 'support@example.com')),
-            'portalUrl'        => FrontendUrl::to('/purchase-portal/login'),
+            // The single sign-in page, with the identity preselected. The portal
+            // no longer has a login screen of its own; /purchase-portal/login
+            // still redirects here for links already in the wild.
+            'portalUrl'        => FrontendUrl::to('/auth/login?role=purchase_vendor'),
             'registrationType' => PurchaseRegistrationType::label($vendor->registration_type),
             'activationDate'   => now()->format('d M Y, H:i'),
             'tempPassword'     => $tempPassword,

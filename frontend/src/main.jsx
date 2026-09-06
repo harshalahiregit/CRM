@@ -7,7 +7,13 @@ import './index.css'
 // any editor mounts — so rich-text size/colour always survive save + re-edit,
 // regardless of which editor happens to load first.
 import '@/lib/quillConfig'
+// Type-to-search on every hand-written <select> in the app. Installed once,
+// globally, because the alternative was editing 697 of them across 209 files.
+// Short lists and keyboard users keep the native control untouched.
+import { installSearchableSelects } from '@/lib/searchableSelects'
 import App from './App.jsx'
+
+installSearchableSelects()
 
 const queryClient = new QueryClient({
   defaultOptions: {

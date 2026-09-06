@@ -30,6 +30,7 @@ class UpdateDocumentNumberConfigRequest extends FormRequest
         $defaults = [
             'prefix' => '', 'suffix' => '', 'padding' => '0',
             'minimum_digits' => 4, 'starting_number' => 1, 'reset_rule' => 'never',
+            'direction' => 'up', 'step' => 1,
             'enabled' => false, 'locked' => false, 'manual_override' => false, 'decrement_on_delete' => false,
         ];
 
@@ -58,6 +59,10 @@ class UpdateDocumentNumberConfigRequest extends FormRequest
             // same string (pad '1': seq 111 -> "1111" == seq 1111). Forbid digits.
             'padding'             => ['nullable', 'string', 'size:1', 'regex:/^[^0-9]$|^0$/'],
             'starting_number'     => ['nullable', 'integer', 'min:1'],
+            // The baseline says WHERE a series starts; these two say which way it
+            // runs from there and by how much.
+            'direction'           => ['nullable', Rule::in(['up', 'down'])],
+            'step'                => ['nullable', 'integer', 'min:1', 'max:1000'],
             'reset_rule'          => ['nullable', Rule::in($rules)],
             'enabled'             => ['nullable', 'boolean'],
             'locked'              => ['nullable', 'boolean'],

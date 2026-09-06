@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { attachMediaCompression } from './mediaCompress'
 import { isSessionFailure } from './sessionFailure'
 
 /**
@@ -23,6 +24,10 @@ const cpApi = axios.create({
   headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
 })
 
+// Uploads are shrunk on the way out — see src/lib/mediaCompress.js. Hooked
+// here rather than at the ~50 upload sites, so every one is covered.
+attachMediaCompression(cpApi)
+
 cpApi.interceptors.request.use((config) => {
   const t = clientToken.get()
   if (t) config.headers.Authorization = `Bearer ${t}`
@@ -37,8 +42,9 @@ cpApi.interceptors.response.use(
     // out for clicking a tab they were never granted.
     if (isSessionFailure(error, !!clientToken.get())) {
       clientToken.clear()
-      if (!window.location.pathname.startsWith('/portal/login')) {
-        window.location.href = '/portal/login'
+      // The single login page — this portal no longer has one of its own.
+      if (!window.location.pathname.startsWith('/auth/login')) {
+        window.location.href = '/auth/login?role=client'
       }
     }
     return Promise.reject(error)

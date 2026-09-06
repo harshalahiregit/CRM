@@ -23,6 +23,7 @@ export default function MedicalDoctors() {
   const [showNew, setShowNew] = useState(false)
   const [editing, setEditing] = useState(null)
   const [confirm, setConfirm] = useState(null)
+  const [resetting, setResetting] = useState(null)
   const [credentials, setCredentials] = useState(null)
 
   const load = useCallback(() => {
@@ -32,6 +33,20 @@ export default function MedicalDoctors() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  /**
+   * Issue a new password.
+   *
+   * The one set at creation is shown once and only hashed after that, so an
+   * admin who did not write it down had no way back into the account and the
+   * doctor was effectively locked out for good.
+   */
+  const resetPassword = async () => {
+    try {
+      const res = await medicalApi.doctors.resetPassword(resetting.id)
+      setCredentials({ email: resetting.user?.email, password: res.temporary_password })
+    } catch (e) { toast.error(e) } finally { setResetting(null) }
+  }
 
   const deactivate = async () => {
     try {
@@ -104,6 +119,15 @@ export default function MedicalDoctors() {
                     <button onClick={() => setEditing(d)} style={{ ...S.btn, padding: '4px 10px', fontSize: 11.5 }}>Edit</button>
                     {d.is_active && (
                       <button
+                        onClick={() => setResetting(d)}
+                        title="Issue a new password — the current one cannot be read back"
+                        style={{ ...S.btn, padding: '4px 10px', fontSize: 11.5, marginLeft: 6 }}
+                      >
+                        Reset password
+                      </button>
+                    )}
+                    {d.is_active && (
+                      <button
                         onClick={() => setConfirm(d)}
                         style={{ ...S.btn, padding: '4px 10px', fontSize: 11.5, marginLeft: 6, color: '#ef4444', borderColor: '#ef444455' }}
                       >
@@ -136,6 +160,14 @@ export default function MedicalDoctors() {
       />
 
       <CredentialsModal credentials={credentials} onClose={() => setCredentials(null)} />
+
+      {resetting && <ConfirmDialog
+        title="Issue a new password?"
+        message={`${resetting?.user?.name || 'This doctor'} will be signed out everywhere and the current password will stop working. The new one is shown once — hand it over straight away.`}
+        confirmLabel="Reset password"
+        onConfirm={resetPassword}
+        onCancel={() => setResetting(null)}
+      />}
 
       {/* ConfirmDialog renders when mounted — there is no `open` prop. */}
       {confirm && <ConfirmDialog

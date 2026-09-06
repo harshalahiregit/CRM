@@ -15,7 +15,8 @@ import { S, FitnessPill, QcPill, HealthScore, humanise } from '@/components/medi
  * than a paper one.
  */
 export default function DoctorExaminations() {
-  const { module } = useOutletContext()
+  const { module, audience } = useOutletContext()
+  const isVendorSide = (audience?.kind ?? 'vendor') === 'vendor'
   const [rows, setRows] = useState(null)
   const [statuses, setStatuses] = useState([])
   const [status, setStatus] = useState('')
@@ -34,9 +35,14 @@ export default function DoctorExaminations() {
   // A doctor READS their own examinations. They neither rule on them nor argue
   // about them: the quality check is somebody else's job, and the conversation
   // about a certificate belongs to the vendor and the reviewer.
+  //
+  // The certificate lives at a different path for the three general audiences,
+  // because their records are in the general register rather than a vendor one.
   const source = {
     get:         (id) => medicalApi.doctor.examination(module, id),
-    certificate: (id) => medicalApi.doctor.certificate(module, id),
+    certificate: (id) => (isVendorSide
+      ? medicalApi.doctor.certificate(module, id)
+      : medicalApi.doctor.personCertificate(module, id)),
   }
 
   return (
@@ -47,7 +53,7 @@ export default function DoctorExaminations() {
             <FileText size={20} /> My examinations
           </h1>
           <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: 12.5 }}>
-            {module === 'tpv' ? 'TPV vendors' : 'Purchase vendors'} · what the quality team has done with each one.
+            {audience?.label || 'This audience'} · what the quality team has done with each one.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -64,7 +70,7 @@ export default function DoctorExaminations() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ textAlign: 'left', color: 'var(--text-muted)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                {['Certificate', 'Worker', 'Outcome', 'Review', 'Score', 'Valid until', ''].map((h, i) => <th key={i} style={S.th}>{h}</th>)}
+                {['Certificate', isVendorSide ? 'Worker' : 'Person', 'Outcome', 'Review', 'Score', 'Valid until', ''].map((h, i) => <th key={i} style={S.th}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -73,7 +79,7 @@ export default function DoctorExaminations() {
               ) : rows === null ? (
                 <tr><td colSpan={7} style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={7} style={{ padding: 18, color: 'var(--text-muted)' }}>No examinations recorded on this side yet.</td></tr>
+                <tr><td colSpan={7} style={{ padding: 18, color: 'var(--text-muted)' }}>No examinations recorded for this audience yet.</td></tr>
               ) : rows.map(m => (
                 <tr key={m.id} onClick={() => setOpenId(m.id)} style={{ borderTop: '1px solid var(--border)', cursor: 'pointer' }}>
                   <td style={{ ...S.td, fontWeight: 700, color: 'var(--text-h)' }}>
@@ -97,7 +103,7 @@ export default function DoctorExaminations() {
                   <td style={{ ...S.td, color: m.is_expired ? '#ef4444' : 'var(--text-muted)' }}>{m.valid_until || m.expiry_date || '—'}</td>
                   <td style={S.td}>
                     <button
-                      onClick={e => { e.stopPropagation(); medicalApi.doctor.certificate(module, m.id) }}
+                      onClick={e => { e.stopPropagation(); source.certificate(m.id) }}
                       style={{ ...S.btn, padding: '4px 10px', fontSize: 11.5 }}
                     >
                       <FileText size={12} /> PDF

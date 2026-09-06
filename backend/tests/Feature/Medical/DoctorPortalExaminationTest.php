@@ -71,6 +71,9 @@ class DoctorPortalExaminationTest extends TestCase
         ]);
     }
 
+    /** A 1x1 PNG — the smallest thing that reads as a real image. */
+    private const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+
     /** A complete, ordinary examination payload. */
     private function examination(array $overrides = []): array
     {
@@ -91,6 +94,11 @@ class DoctorPortalExaminationTest extends TestCase
             'investigations' => [['name' => 'Chest X-ray', 'result' => 'Normal']],
             'medical_history' => ['conditions' => [], 'habits' => ['None']],
             'geo_location'   => '19.1197,72.8468',
+            // The signature and the camera photo are now required, alongside the
+            // location: together they are what makes the certificate evidence
+            // rather than an assertion. A 1x1 PNG is all the endpoint checks for.
+            'signature_data' => self::PNG,
+            'capture_photo'  => self::PNG,
             'doctor_remarks' => 'Cleared for general duties.',
         ], $overrides);
     }

@@ -22,6 +22,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Jitsi
+    |--------------------------------------------------------------------------
+    | The server Jitsi rooms are created on, and which the in-app meeting room
+    | embeds. It defaults to the free public instance, which needs no account
+    | and no keys — but on that instance the person who STARTS a meeting has to
+    | sign in once with Google/GitHub/Facebook, and 8x8 offer no uptime promise
+    | or branding control there.
+    |
+    | Point JITSI_DOMAIN at your own Jitsi server (e.g. meet.yourcompany.com)
+    | and both of those go away: no sign-in, your branding, your uptime. The
+    | room screen reads the host out of each meeting's stored link, so existing
+    | meetings keep working and only new links move to the new server.
+    */
+    'jitsi' => [
+        'domain' => env('JITSI_DOMAIN', 'meet.jit.si'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Google Meet (via Google Calendar API + service account)
     |--------------------------------------------------------------------------
     */

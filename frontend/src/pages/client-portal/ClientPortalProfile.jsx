@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { clientPortalApi } from '@/lib/clientPortalApi'
-import { lbl, inp, primaryBtn, errStyle, okStyle } from './ClientPortalLogin'
+import { lbl, inp, primaryBtn, errStyle, okStyle } from './portalAuthChrome'
 
 /**
  * The contact's own details and password.

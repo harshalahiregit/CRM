@@ -200,7 +200,7 @@ export default function RichTextEditor({ value = '', onChange, placeholder = 'Wr
     // Auto-downscale + recompress so even a big phone photo embeds small — no
     // more "max 500 KB, resize it yourself" and no multi-MB base64 in the DB.
     try {
-      const dataUrl = await compressImage(file, { maxDim: 1600, quality: 0.82 })
+      const dataUrl = await compressImage(file, { maxDim: 1600 })
       if (!dataUrl) return
       insertHTML(`<img src="${dataUrl}" alt="" style="width:${IMAGE_SIZES[key]}" /><p><br></p>`)
     } catch {
@@ -218,7 +218,7 @@ export default function RichTextEditor({ value = '', onChange, placeholder = 'Wr
     e.preventDefault()
     for (const file of files) {
       try {
-        const dataUrl = await compressImage(file, { maxDim: 1600, quality: 0.82 })
+        const dataUrl = await compressImage(file, { maxDim: 1600 })
         if (dataUrl) insertHTML(`<img src="${dataUrl}" alt="" style="width:100%" /><p><br></p>`)
       } catch { /* ignore one bad file */ }
     }

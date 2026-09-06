@@ -4,6 +4,7 @@
  */
 
 import axios from 'axios'
+import { attachMediaCompression } from '@/lib/mediaCompress'
 import { getToken, clearAuth } from '@/lib/authStorage'
 import { isSessionFailure } from '@/lib/sessionFailure'
 
@@ -11,6 +12,10 @@ const BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'
 
 // Create axios instance with auth token
 const api = axios.create({ baseURL: BASE })
+
+// Uploads are shrunk on the way out — see src/lib/mediaCompress.js. Hooked
+// here rather than at the ~50 upload sites, so every one is covered.
+attachMediaCompression(api)
 
 /**
  * Fields plus files as multipart.
@@ -56,6 +61,10 @@ api.interceptors.response.use(
 // logged-in bearer token or hard-redirect to /auth/login on 401, so the portals
 // can show their own friendly errors and behave as a real anonymous client.
 const publicApi = axios.create({ baseURL: BASE })
+
+// Uploads are shrunk on the way out — see src/lib/mediaCompress.js. Hooked
+// here rather than at the ~50 upload sites, so every one is covered.
+attachMediaCompression(publicApi)
 
 // ── Dashboard ─────────────────────────────────────────────────────────
 export const hrApi = {

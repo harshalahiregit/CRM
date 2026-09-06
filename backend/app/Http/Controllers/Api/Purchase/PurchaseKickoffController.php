@@ -12,7 +12,9 @@ use App\Services\Purchase\PurchaseKickoffContentService;
 use App\Services\Purchase\PurchaseKickoffService;
 use App\Services\Purchase\PurchaseMeetingRegisterService;
 use App\Services\Purchase\PurchaseVendorLiveStatusService;
+use App\Services\Shared\OnlineMeetingService;
 use App\Support\Purchase\PurchaseKickoffStatus;
+use App\Services\Shared\MeetingRoomNotes;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -103,6 +105,37 @@ class PurchaseKickoffController extends Controller
         return response()->json($this->service->find($kickoff->id, $request->user()->tenant_id));
     }
 
+    /**
+     * Generate (or regenerate) the online meeting link.
+     *
+     * Purchase meetings live in their own table, so they need their own route:
+     * posting a Purchase meeting id to the shared engine's endpoint is what
+     * produced "No query results for model [App\Models\Shared\KickoffMeeting]".
+     */
+    public function generateLink(Request $request, PurchaseKickoffMeeting $kickoff, OnlineMeetingService $meetings)
+    {
+        $this->assertTenant($request, $kickoff);
+
+        $data = $request->validate([
+            'platform' => ['nullable', 'string', Rule::in(OnlineMeetingService::ACCEPTED)],
+        ]);
+
+        $link = $meetings->createMeeting($kickoff, $data['platform'] ?? null);
+
+        return response()->json([
+            'meeting' => $kickoff->fresh(),
+            'link'    => $link,
+        ]);
+    }
+
+    /** The stored link, if this meeting has one. */
+    public function link(Request $request, PurchaseKickoffMeeting $kickoff, OnlineMeetingService $meetings)
+    {
+        $this->assertTenant($request, $kickoff);
+
+        return response()->json($meetings->getLinkData($kickoff));
+    }
+
     public function update(UpdatePurchaseKickoffRequest $request, PurchaseKickoffMeeting $kickoff,
         PurchaseKickoffContentService $content)
     {
@@ -132,6 +165,37 @@ class PurchaseKickoffController extends Controller
         ]);
 
         return response()->json($this->service->transition($kickoff, $data['status'], $data, $request->user()));
+    }
+
+
+    /**
+     * Notes typed in the live meeting room (agenda notes + minutes).
+     *
+     * The room shows the video and this meeting record on one screen, so the
+     * agenda and the roster are in front of the note-taker instead of in
+     * another tab. It autosaves, which is why this is separate from `update`:
+     * update is a form submission with its own validation and side effects
+     * (re-notifying the roster, re-deriving the duration), and none of that
+     * should fire every few seconds while people are talking.
+     */
+    public function saveRoomNotes(Request $request, PurchaseKickoffMeeting $kickoff, MeetingRoomNotes $notes)
+    {
+        $this->assertTenant($request, $kickoff);
+
+        $request->validate([
+            'minutes'             => 'nullable|string|max:20000',
+            'agenda'              => 'nullable|array',
+            'agenda.*.id'         => 'required|integer',
+            'agenda.*.discussion' => 'nullable|string|max:5000',
+            'agenda.*.decision'   => 'nullable|string|max:5000',
+        ]);
+
+        return response()->json($notes->save(
+            $kickoff,
+            $request->input('minutes'),
+            $request->input('agenda', []),
+            $request->has('minutes'),
+        ));
     }
 
     public function attendance(Request $request, PurchaseKickoffMeeting $kickoff)

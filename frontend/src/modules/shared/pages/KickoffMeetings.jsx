@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   CalendarDays, Plus, RefreshCw, Clock, CheckCircle2, XCircle, Send,
   Users, AlertTriangle, ClipboardCheck, Pencil, BellRing, Eye, Download, Loader2, Mail, MessageCircle, Smartphone,
-  ChevronLeft, ChevronRight, List, LayoutGrid, Laptop, Building2, UserX, ListChecks, Trash2, Settings2, UserCheck,
+  ChevronLeft, ChevronRight, List, LayoutGrid, Laptop, Building2, UserX, ListChecks, Trash2, Settings2, UserCheck, Search,
 } from 'lucide-react'
 // Resolves per call to the meeting engine of the module in the URL — the
 // shared engine under /app/tpv, Purchase's under /app/purchase. Aliased to
@@ -29,6 +29,14 @@ export default function KickoffMeetings() {
   const [stats, setStats] = useState(null)
   const [loading, setLoad] = useState(true)
   const [filter, setFilter] = useState('All')
+  // Free-text search over the fields a person actually remembers a meeting by:
+  // its number, its title, the vendor, the type, where it was held.
+  const [search, setSearch] = useState('')
+  // Bulk selection, by meeting id. A Set so ticking a row is O(1) rather than
+  // rebuilding an array on every click.
+  const [selected, setSelected] = useState(() => new Set())
+  const [confirmDelete, setConfirmDelete] = useState(null)   // 'bulk' | meeting | null
+  const [deleting, setDeleting] = useState(false)
   const [banner, setBanner] = useState(null)
   const [pdfBusy, setPdfBusy] = useState(null)
   const [view, setView] = useState('list')   // 'list' | 'calendar'
@@ -59,7 +67,7 @@ export default function KickoffMeetings() {
   // Projects for the §16 rollup filter — soft link, empty on failure.
   useEffect(() => { kickoffApi.projects().then(d => { if (Array.isArray(d)) setProjects(d) }).catch(() => {}) }, [])
   // Any change to a filter or page size sends the reader back to page 1.
-  useEffect(() => { setPage(1) }, [filter, pageSize, projectF, quickView])
+  useEffect(() => { setPage(1) }, [filter, pageSize, projectF, quickView, search])
 
   // Quick views (Meeting.docx nav sub-items) + project rollup are applied
   // client-side over the loaded rows (same pattern as the calendar's filters).
@@ -70,16 +78,37 @@ export default function KickoffMeetings() {
   const quickMatch = (m) => {
     switch (quickView) {
       case 'my':           return mine(m)
-      case 'upcoming':     return !isKoClosed(m.status) && m.scheduled_at && new Date(m.scheduled_at).getTime() >= now
+      // timing_state is derived on the server against the TENANT's timezone.
+      // Recomputing it here from the browser clock gave a different answer for
+      // anyone working in another zone, and said nothing about a meeting whose
+      // slot had already passed while it was still open.
+      case 'upcoming':     return m.timing_state === 'upcoming' || m.timing_state === 'live'
+      case 'expired':      return m.timing_state === 'expired'
       // Completed meetings whose minutes are not yet distributed — the MOM is owed.
       case 'pending_mom':  return m.status === KO_STATUS.COMPLETED && m.mom_status !== 'Distributed'
       case 'open_actions': return (m.open_actions ?? 0) > 0
       default:             return true
     }
   }
+  // Matched against everything a person might type. Vendor names live on
+  // subject_list, so searching "Acme" has to reach into it rather than only the
+  // title — that is how most people look for a meeting.
+  const needle = search.trim().toLowerCase()
+  const searchMatch = (m) => {
+    if (!needle) return true
+    const hay = [
+      m.meeting_no, m.reference, m.title, m.meeting_type, m.location,
+      m.status, m.mode, m.organizer, m.chairperson,
+      ...(m.subject_list || []).map(x => x.name),
+      m.subject?.name,
+    ].filter(Boolean).join(' ').toLowerCase()
+    return hay.includes(needle)
+  }
+
   const rows = data
     .filter(m => projectF === 'All' || String(m.project_id) === String(projectF))
     .filter(quickMatch)
+    .filter(searchMatch)
 
   // View / Download the MOM PDF — generate on demand if none exists yet.
   const handlePdf = async (m, download) => {
@@ -109,6 +138,55 @@ export default function KickoffMeetings() {
   const curPage    = Math.min(page, totalPages)
   const pageRows   = pageSize === 'all' ? rows : rows.slice((curPage - 1) * pageSize, curPage * pageSize)
   const rangeFrom  = total === 0 ? 0 : (pageSize === 'all' ? 1 : (curPage - 1) * pageSize + 1)
+
+  /* ── Selection ─────────────────────────────────────────────────────────
+   *
+   * The header tick selects the PAGE, not the whole result set. Selecting
+   * hundreds of rows the reader cannot see, from a control that sits above
+   * twenty-five of them, is how a bulk delete takes out more than intended;
+   * everything beyond the page is a second, explicit click.
+   */
+  const allOnPageSelected = pageRows.length > 0 && pageRows.every(m => selected.has(m.id))
+  const toggleAllOnPage = () => setSelected(prev => {
+    const next = new Set(prev)
+    if (allOnPageSelected) pageRows.forEach(m => next.delete(m.id))
+    else pageRows.forEach(m => next.add(m.id))
+    return next
+  })
+  const toggleOne = (id) => setSelected(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+  const hiddenMatches = total - pageRows.length
+  const allFilteredSelected = total > 0 && rows.every(m => selected.has(m.id))
+  const selectAllFiltered = () => setSelected(new Set(rows.map(m => m.id)))
+  const clearSelection = () => setSelected(new Set())
+
+  // A meeting is only ever soft-deleted, but it disappears from every list and
+  // takes its minutes with it — an admin decision, not a staff one.
+  const canDelete = user?.role === 'admin'
+
+  // Only what is both selected and still on screen: a filter change can leave
+  // ids selected that the reader can no longer see, and those must not be swept
+  // up by a Delete they aimed at what is in front of them.
+  const selectedVisible = rows.filter(m => selected.has(m.id))
+
+  const runDelete = async (targets) => {
+    if (!targets.length) return
+    setDeleting(true)
+    // allSettled, not all: one failure (a meeting someone else just deleted)
+    // must not abandon the rest half-done and unreported.
+    const results = await Promise.allSettled(targets.map(m => kickoffApi.delete(m.id)))
+    const failed = results.filter(r => r.status === 'rejected').length
+    setDeleting(false)
+    setConfirmDelete(null)
+    clearSelection()
+    setBanner(failed
+      ? { tone: 'error', text: `Deleted ${targets.length - failed} of ${targets.length}. ${failed} could not be deleted.` }
+      : { tone: 'ok', text: `Deleted ${targets.length} meeting${targets.length === 1 ? '' : 's'}.` })
+    load()
+  }
   const rangeTo    = pageSize === 'all' ? total : Math.min(curPage * pageSize, total)
 
   return (
@@ -165,20 +243,32 @@ export default function KickoffMeetings() {
         </>
       )}
 
-      {banner && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '11px 14px', borderRadius: 12, marginBottom: 14, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)' }}>
-          <AlertTriangle size={15} style={{ color: '#ef4444', flexShrink: 0 }} />
-          <span style={{ fontSize: 13, color: 'var(--text-h)', flex: 1 }}>{banner}</span>
-          <button onClick={() => setBanner(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><XCircle size={15} /></button>
-        </div>
-      )}
+      {/* A string is an error (every caller that predates this passed one); an
+          {tone, text} object lets a success be reported without alarm red. */}
+      {banner && (() => {
+        const ok = typeof banner === 'object' && banner.tone === 'ok'
+        const text = typeof banner === 'string' ? banner : banner.text
+        const hue = ok ? '16,185,129' : '239,68,68'
+        const Icon = ok ? CheckCircle2 : AlertTriangle
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '11px 14px', borderRadius: 12, marginBottom: 14, background: `rgba(${hue},0.1)`, border: `1px solid rgba(${hue},0.4)` }}>
+            <Icon size={15} style={{ color: ok ? '#10b981' : '#ef4444', flexShrink: 0 }} />
+            <span style={{ fontSize: 13, color: 'var(--text-h)', flex: 1 }}>{text}</span>
+            <button onClick={() => setBanner(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><XCircle size={15} /></button>
+          </div>
+        )
+      })()}
 
       {/* Quick views (Meeting.docx nav sub-items) — client-side over loaded rows. */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap', borderBottom: '1px solid var(--border)', paddingBottom: 2 }}>
         {[
           ['all', 'All', CalendarDays, data.length],
           ['my', 'My Meetings', UserCheck, data.filter(mine).length],
-          ['upcoming', 'Upcoming', Clock, data.filter(m => !isKoClosed(m.status) && m.scheduled_at && new Date(m.scheduled_at).getTime() >= now).length],
+          ['upcoming', 'Upcoming', Clock, data.filter(m => m.timing_state === 'upcoming' || m.timing_state === 'live').length],
+          // Meetings whose time has passed with nobody closing them off. They
+          // used to hide inside "Upcoming" forever, which is why nothing ever
+          // got chased.
+          ['expired', 'Expired', AlertTriangle, data.filter(m => m.timing_state === 'expired').length],
           ['pending_mom', 'Pending MOM', ClipboardCheck, data.filter(m => m.status === KO_STATUS.COMPLETED && m.mom_status !== 'Distributed').length],
           ['open_actions', 'Open Actions', ListChecks, data.filter(m => (m.open_actions ?? 0) > 0).length],
           ['templates', 'Templates', LayoutGrid, null],
@@ -194,6 +284,53 @@ export default function KickoffMeetings() {
           )
         })}
       </div>
+
+      {/* Search + bulk actions. Hidden on the templates tab, which lists
+          meeting TYPES rather than meetings and has its own controls. */}
+      {quickView !== 'templates' && (
+        <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ position: 'relative', flex: '1 1 260px', maxWidth: 380 }}>
+            <Search size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search by number, title, vendor, type or venue…"
+              style={{ width: '100%', padding: '8px 30px 8px 32px', borderRadius: 10, fontSize: 12.5,
+                background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)' }}
+            />
+            {search && (
+              <button onClick={() => setSearch('')} title="Clear search" aria-label="Clear search"
+                style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 2, display: 'flex' }}>
+                <XCircle size={14} />
+              </button>
+            )}
+          </div>
+
+          {selected.size > 0 && (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, padding: '6px 12px', borderRadius: 10, background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.25)', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, fontWeight: 800, color: '#a78bfa' }}>{selected.size} selected</span>
+              {/* The page is ticked but there are more matches behind it. */}
+              {allOnPageSelected && hiddenMatches > 0 && !allFilteredSelected && (
+                <button onClick={selectAllFiltered}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: '#7C3AED', textDecoration: 'underline' }}>
+                  Select all {total} matching
+                </button>
+              )}
+              {canDelete && (
+                <button onClick={() => setConfirmDelete('bulk')} disabled={deleting}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 800,
+                    cursor: deleting ? 'wait' : 'pointer', border: '1px solid rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.08)', color: '#ef4444' }}>
+                  <Trash2 size={13} /> Delete
+                </button>
+              )}
+              <button onClick={clearSelection}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)' }}>
+                Clear
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Filter chips + view toggle */}
       <div style={{ display: quickView === 'templates' ? 'none' : 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -261,13 +398,19 @@ export default function KickoffMeetings() {
       ) : view === 'calendar' ? (
         <MeetingCalendar data={rows} onOpen={(mid) => navigate(`${meetingBase()}/kickoff/${mid}`)} />
       ) : rows.length === 0 ? (
-        <EmptyState filter={filter} onNew={() => navigate(`${meetingBase()}/kickoff/new`)} />
+        <EmptyState filter={filter} search={search} onClearSearch={() => setSearch('')}
+          onNew={() => navigate(`${meetingBase()}/kickoff/new`)} />
       ) : (
         <div className="pr-glass" style={{ padding: 0, borderRadius: 16, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1180, fontSize: 12.5 }}>
               <thead>
                 <tr>
+                  <th style={{ ...th, width: 34, paddingRight: 0 }}>
+                    <input type="checkbox" checked={allOnPageSelected} onChange={toggleAllOnPage}
+                      aria-label="Select every meeting on this page" title="Select every meeting on this page"
+                      style={{ cursor: 'pointer', width: 14, height: 14, accentColor: '#7C3AED' }} />
+                  </th>
                   {['ID', 'Third Party Vendor', 'Participants', 'Meeting Mode', 'Planned Date', 'MOM Sent', 'Status', 'Attendance', 'Meeting Date', 'Created At'].map(h => (
                     <th key={h} style={th}>{h}</th>
                   ))}
@@ -280,7 +423,14 @@ export default function KickoffMeetings() {
                   const busyView = pdfBusy === `${m.id}:view`
                   const busyDl   = pdfBusy === `${m.id}:dl`
                   return (
-                    <tr key={m.id} className="ko-row" onClick={() => navigate(`${meetingBase()}/kickoff/${m.id}`)} style={{ cursor: 'pointer', borderTop: '1px solid var(--border)' }}>
+                    <tr key={m.id} className="ko-row" onClick={() => navigate(`${meetingBase()}/kickoff/${m.id}`)}
+                      style={{ cursor: 'pointer', borderTop: '1px solid var(--border)', background: selected.has(m.id) ? 'rgba(124,58,237,0.06)' : undefined }}>
+                      {/* stopPropagation, or ticking a row opens it instead. */}
+                      <td style={{ ...td, paddingRight: 0 }} onClick={e => e.stopPropagation()}>
+                        <input type="checkbox" checked={selected.has(m.id)} onChange={() => toggleOne(m.id)}
+                          aria-label={`Select ${m.meeting_no || m.title}`}
+                          style={{ cursor: 'pointer', width: 14, height: 14, accentColor: '#7C3AED' }} />
+                      </td>
                       {/* The meeting's own reference (MTG-YYYY-NNNN), not the row
                           id: it is what the MOM prints and what a vendor quotes. */}
                       <td style={td}>
@@ -305,7 +455,23 @@ export default function KickoffMeetings() {
                           from the meeting datetime, which has its own column. */}
                       <td style={td}>{m.planned_date ? fmtDate(m.planned_date) : '—'}</td>
                       <td style={td}><YesNo yes={!!m.mom_path} /></td>
-                      <td style={td}><span style={{ padding: '3px 10px', borderRadius: 999, background: cfg.bg, color: cfg.color, fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}>{cfg.label}</span></td>
+                      <td style={td}>
+                        <span style={{ padding: '3px 10px', borderRadius: 999, background: cfg.bg, color: cfg.color, fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}>{cfg.label}</span>
+                        {/* Status says what was decided; this says the slot has
+                            passed and nobody closed it. Both, because
+                            "Scheduled · EXPIRED" is the honest description. */}
+                        {m.is_expired && (
+                          <span title={`Ended ${m.ends_at ? new Date(m.ends_at).toLocaleString() : ''} and never closed`}
+                            style={{ marginLeft: 6, padding: '3px 8px', borderRadius: 999, background: 'rgba(220,38,38,0.10)', color: '#b91c1c', fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap' }}>
+                            EXPIRED
+                          </span>
+                        )}
+                        {m.is_live && (
+                          <span style={{ marginLeft: 6, padding: '3px 8px', borderRadius: 999, background: 'rgba(34,197,94,0.12)', color: '#15803d', fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap' }}>
+                            ● LIVE
+                          </span>
+                        )}
+                      </td>
                       <td style={td}><Attn present={m.attended_count ?? 0} total={m.attendees_count ?? 0} /></td>
                       {/* Meeting Date = when it is/was held. */}
                       <td style={td}>{m.scheduled_at ? fmtDateTime(m.scheduled_at) : '—'}</td>
@@ -321,6 +487,7 @@ export default function KickoffMeetings() {
                           <ActionBtn title="Reminder" icon={BellRing} color="#f59e0b" onClick={() => setRemindFor(m)} />
                           <ActionBtn title="View PDF" icon={busyView ? Loader2 : Eye} color="#10b981" spin={busyView} onClick={() => handlePdf(m, false)} />
                           <ActionBtn title="Download PDF" icon={busyDl ? Loader2 : Download} color="#7C3AED" spin={busyDl} onClick={() => handlePdf(m, true)} />
+                          {canDelete && <ActionBtn title="Delete" icon={Trash2} color="#ef4444" onClick={() => setConfirmDelete(m)} />}
                         </div>
                       </td>
                     </tr>
@@ -352,6 +519,18 @@ export default function KickoffMeetings() {
 
       {attendanceFor && <AttendanceModal id={attendanceFor} onClose={() => setAttFor(null)} onDone={() => { setAttFor(null); load() }} />}
       {reminderFor && <ReminderModal m={reminderFor} onClose={() => setRemindFor(null)} />}
+
+      {/* Deleting is confirmed, never a single click — and the dialog names what
+          is about to go, because "Delete 14 meetings?" is a different decision
+          from "Delete MTG-2026-0007?". Closes on Cancel or the X only. */}
+      {confirmDelete && (
+        <ConfirmDeleteMeetings
+          targets={confirmDelete === 'bulk' ? selectedVisible : [confirmDelete]}
+          busy={deleting}
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={() => runDelete(confirmDelete === 'bulk' ? selectedVisible : [confirmDelete])}
+        />
+      )}
     </div>
   )
 }
@@ -429,19 +608,29 @@ function ActionBtn({ title, icon: Icon, color, onClick, spin }) {
   )
 }
 
-function EmptyState({ onNew, filter }) {
+function EmptyState({ onNew, filter, search, onClearSearch }) {
+  // A search that matches nothing is not the same as having no meetings, and
+  // saying "No kickoff meetings yet" to someone who just mistyped a vendor name
+  // sends them off to create a duplicate.
+  const searching = Boolean(search)
   return (
     <div className="pr-glass" style={{ padding: '48px 24px', textAlign: 'center' }}>
       <div style={{ width: 60, height: 60, borderRadius: '50%', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(124,58,237,0.12)' }}>
-        <CalendarDays size={28} style={{ color: '#a78bfa' }} />
+        {searching ? <Search size={26} style={{ color: '#a78bfa' }} /> : <CalendarDays size={28} style={{ color: '#a78bfa' }} />}
       </div>
       <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-h)' }}>
-        {filter === 'All' ? 'No kickoff meetings yet' : `No ${filter.toLowerCase()} meetings`}
+        {searching
+          ? `No meeting matches “${search}”`
+          : (filter === 'All' ? 'No kickoff meetings yet' : `No ${filter.toLowerCase()} meetings`)}
       </h3>
       <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '6px 0 18px' }}>
-        Schedule a pre-onboarding meeting with a vendor to get started.
+        {searching
+          ? 'Try a meeting number, a vendor name, or clear the search to see them all.'
+          : 'Schedule a pre-onboarding meeting with a vendor to get started.'}
       </p>
-      {filter === 'All' && <button onClick={onNew} style={{ ...solidBtn, margin: '0 auto' }}><Plus size={15} /> Schedule meeting</button>}
+      {searching
+        ? <button onClick={onClearSearch} style={{ ...solidBtn, margin: '0 auto' }}><XCircle size={15} /> Clear search</button>
+        : filter === 'All' && <button onClick={onNew} style={{ ...solidBtn, margin: '0 auto' }}><Plus size={15} /> Schedule meeting</button>}
     </div>
   )
 }
@@ -947,6 +1136,68 @@ function AgendaList({ cursor, rows, onOpen }) {
 const navBtn = { width: 32, height: 32, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)' }
 
 /* ── Attendance modal ───────────────────────────────────────────────────────── */
+/**
+ * Confirm a meeting deletion.
+ *
+ * A meeting carries its minutes, its action items and its issue register, so
+ * this is not a row disappearing — it is a record and everything hung off it.
+ * The dialog says how many and which, and the count it shows is the count that
+ * will actually be deleted (only rows still matching the current filters).
+ */
+function ConfirmDeleteMeetings({ targets, busy, onCancel, onConfirm }) {
+  const many = targets.length !== 1
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div className="pr-glass" style={{ width: 440, maxWidth: '95vw', padding: 24, position: 'relative' }}>
+        <button onClick={onCancel} aria-label="Close" disabled={busy}
+          style={{ position: 'absolute', top: 12, right: 12, background: 'none', border: 'none', cursor: busy ? 'default' : 'pointer', color: 'var(--text-muted)' }}>
+          <XCircle size={17} />
+        </button>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(239,68,68,0.12)' }}>
+            <Trash2 size={17} style={{ color: '#ef4444' }} />
+          </div>
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: 'var(--text-h)' }}>
+            Delete {many ? `${targets.length} meetings` : 'this meeting'}?
+          </h3>
+        </div>
+
+        <p style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.55, margin: '0 0 12px' }}>
+          {many
+            ? 'Each one goes with its minutes, action items and issue register.'
+            : 'It goes with its minutes, action items and issue register.'}
+          {' '}Participants keep any invitation already sent — this does not tell them it is cancelled.
+        </p>
+
+        {/* Named, not just counted: a number alone is not enough to check. */}
+        <div style={{ maxHeight: 148, overflowY: 'auto', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-input)', padding: '8px 11px', marginBottom: 18 }}>
+          {targets.slice(0, 25).map(m => (
+            <div key={m.id} style={{ fontSize: 12, color: 'var(--text-h)', padding: '2px 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <strong>{m.meeting_no || `#${m.id}`}</strong> · {m.title || 'Untitled'}
+            </div>
+          ))}
+          {targets.length > 25 && (
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', paddingTop: 4 }}>…and {targets.length - 25} more</div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button onClick={onCancel} disabled={busy}
+            style={{ padding: '9px 18px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-muted)', cursor: busy ? 'default' : 'pointer', fontSize: 13, fontWeight: 700 }}>
+            Cancel
+          </button>
+          <button onClick={onConfirm} disabled={busy}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 20px', borderRadius: 9, border: 'none', background: busy ? 'rgba(239,68,68,0.5)' : 'linear-gradient(135deg,#ef4444,#dc2626)', color: '#fff', cursor: busy ? 'wait' : 'pointer', fontSize: 13, fontWeight: 800 }}>
+            {busy ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />}
+            {busy ? 'Deleting…' : `Delete ${many ? targets.length : ''}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function AttendanceModal({ id, onClose, onDone }) {
   const [rows, setRows] = useState(null)
   const [title, setTitle] = useState('')

@@ -83,12 +83,24 @@ class SaveExaminationRequest extends FormRequest
             'health_score'      => 'nullable|numeric|min:'.HealthScore::MIN.'|max:'.HealthScore::MAX,
             'health_score_note' => 'nullable|string|max:255',
 
-            /* ── Legal capture ───────────────────────────────────────────── */
-            // Drawn signature and camera capture arrive as base64 data URLs and
-            // are decoded to stored files by the service.
-            'signature_data' => 'nullable|string',
-            'capture_photo'  => 'nullable|string',
-            'geo_location'   => 'nullable|string|max:120',
+            /* ── Legal capture — REQUIRED ────────────────────────────────── */
+            //
+            // These three are what make the certificate evidence rather than an
+            // assertion: WHERE the examination happened, WHO signed it, and a
+            // photograph taken at the time. A certificate missing any of them
+            // cannot be stood behind afterwards, so the submission is refused
+            // rather than filed with a gap nobody notices until it matters.
+            //
+            // Enforced HERE and not only in the browser: a form can be bypassed,
+            // and this endpoint is the only thing that actually issues.
+            //
+            // The exception is a re-record of an examination already on file
+            // (see withValidator) — the capture belongs to the original visit.
+            'signature_data' => 'required|string',
+            'capture_photo'  => 'required|string',
+            // "lat,long" as the browser reports it. The format is checked because
+            // an unparseable value would silently become no location at all.
+            'geo_location'   => ['required', 'string', 'max:120', 'regex:/^-?\d{1,3}(\.\d+)?\s*,\s*-?\d{1,3}(\.\d+)?$/'],
 
             /* ── Evidence ────────────────────────────────────────────────── */
             'report_file'  => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:10240',
@@ -102,6 +114,10 @@ class SaveExaminationRequest extends FormRequest
         return [
             'fitness_status.required' => 'Record a fitness outcome — an examination without an opinion is not a certificate.',
             'exam_date.before_or_equal' => 'An examination cannot be dated in the future.',
+            'signature_data.required' => 'Sign the examination before submitting — an unsigned certificate cannot be issued.',
+            'capture_photo.required'  => 'Take the camera photo before submitting — it is part of the certificate.',
+            'geo_location.required'   => 'Location is required. Allow location access in your browser, then try again.',
+            'geo_location.regex'      => 'That location could not be read. Allow location access in your browser and let it refresh.',
         ];
     }
 }

@@ -65,6 +65,12 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('helpdesk')->gro
     // ── Manager analytics ───────────────────────────────────────
     Route::get('/analytics', [HelpdeskDashboardController::class, 'analytics']);
 
+    // ── Report section (Help Desk) ──────────────────────────────
+    // Distinct from the analytics above: that answers "what needs attention
+    // now"; this is pointed at a range, narrowed, and exported.
+    Route::get('/reports', [\App\Http\Controllers\Api\Helpdesk\HelpdeskReportController::class, 'index']);
+    Route::get('/reports/export', [\App\Http\Controllers\Api\Helpdesk\HelpdeskReportController::class, 'export']);
+
     // ── Current-user capabilities (drives the frontend nav) ─────
     Route::get('/me', [HelpdeskMeController::class, 'show']);
 

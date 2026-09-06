@@ -31,7 +31,11 @@ class LoginRequest extends FormRequest
             // resolves to exactly one account, so the role adds no precision. It
             // is still honoured when sent, which keeps every existing caller and
             // the role-scoped portal doors working unchanged.
-            'role'     => 'nullable|in:admin,staff,third_party_vendor,client,company',
+            //
+            // 'doctor' is a real User with its own portal (routes/medical.php),
+            // so it belongs on this list. It was missing, which meant a doctor
+            // login could be created but never used.
+            'role'     => 'nullable|in:admin,staff,doctor,third_party_vendor,client,company',
             'remember' => 'nullable|boolean',
         ];
     }

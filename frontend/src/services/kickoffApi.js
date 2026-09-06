@@ -41,6 +41,14 @@ export const kickoffApi = {
   // scheduled. Returns { sent, skipped, failed, in_app, recipients }.
   invite: (id) => api.post(`/kickoff/meetings/${id}/invite`).then(r => r.data),
 
+  // The online meeting link. Both engines expose these two under the same
+  // names, so a page reaches them through useMeetingModule().api and never
+  // hardcodes an engine's path — which is what sent Purchase meeting ids to the
+  // shared route and produced "No query results for model [KickoffMeeting]".
+  generateLink: (id, platform = null) =>
+    api.post(`/kickoff/meetings/${id}/generate-link`, { platform }).then(r => r.data),
+  getLink: (id) => api.get(`/kickoff/meetings/${id}/link`).then(r => r.data),
+
   // §13 per-recipient Sent / Viewed / Acknowledged tracker.
   distribution: (id) => api.get(`/kickoff/meetings/${id}/distribution`).then(r => r.data),
 
@@ -73,6 +81,10 @@ export const kickoffApi = {
 
   // Post-meeting attendance edit — [{ id, attended }]. Audit-logged server-side.
   markAttendance: (id, attendance) => api.patch(`/kickoff/meetings/${id}/attendance`, { attendance }).then(r => r.data),
+  // Notes typed in the live meeting room, autosaved beside the video: the
+  // discussion/decision per agenda point, plus the meeting minutes. Kept off
+  // `update`, whose save re-notifies the whole roster.
+  roomNotes: (id, payload) => api.post(`/kickoff/meetings/${id}/room/notes`, payload).then(r => r.data),
 
   // Manual reminder. Returns { email:{sent,skipped,failed}, whatsapp, sms, recipients }.
   // Email is a real send; whatsapp/sms are queued stubs — never implied as delivered.

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { clientPortalApi } from '@/lib/clientPortalApi'
-import { AuthShell, lbl, inp, primaryBtn, linkStyle, okStyle } from './ClientPortalLogin'
+import { AuthShell, lbl, inp, primaryBtn, linkStyle, okStyle } from './portalAuthChrome'
 
 /**
  * Forgotten password.
@@ -28,7 +28,7 @@ export default function ClientPortalForgotPassword() {
         <>
           <div style={okStyle}>If that email has portal access, a reset link is on its way.</div>
           <div style={{ textAlign: 'center', fontSize: 12.5, marginTop: 14 }}>
-            <Link to="/portal/login" style={linkStyle}>Back to sign in</Link>
+            <Link to="/auth/login?role=client" style={linkStyle}>Back to sign in</Link>
           </div>
         </>
       ) : (
@@ -39,7 +39,7 @@ export default function ClientPortalForgotPassword() {
             {busy ? 'Sending…' : 'Send reset link'}
           </button>
           <div style={{ textAlign: 'center', fontSize: 12.5 }}>
-            <Link to="/portal/login" style={linkStyle}>Back to sign in</Link>
+            <Link to="/auth/login?role=client" style={linkStyle}>Back to sign in</Link>
           </div>
         </form>
       )}

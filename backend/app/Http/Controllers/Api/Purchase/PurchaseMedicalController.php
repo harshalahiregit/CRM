@@ -224,6 +224,9 @@ class PurchaseMedicalController extends Controller
             'from'      => 'nullable|date',
             'to'        => 'nullable|date|after_or_equal:from',
             'vendor_id' => 'nullable|integer',
+            // Filterable by project and by employee, as the brief asked.
+            'project'   => 'nullable|string|max:191',
+            'worker_id' => 'nullable|integer',
         ]);
 
         return response()->json([
@@ -238,6 +241,9 @@ class PurchaseMedicalController extends Controller
             'from'      => 'nullable|date',
             'to'        => 'nullable|date|after_or_equal:from',
             'vendor_id' => 'nullable|integer',
+            // Filterable by project and by employee, as the brief asked.
+            'project'   => 'nullable|string|max:191',
+            'worker_id' => 'nullable|integer',
             'format'    => 'nullable|in:csv,xlsx',
         ]);
 

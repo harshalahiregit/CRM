@@ -63,7 +63,7 @@ class ImageCompressor {
     e.stopPropagation()
     for (const file of files) {
       try {
-        const dataUrl = await compressImage(file, { maxDim: 1600, quality: 0.82 })
+        const dataUrl = await compressImage(file, { maxDim: 1600 })
         if (!dataUrl) continue
         const range = this.quill.getSelection(true) || { index: this.quill.getLength() }
         this.quill.insertEmbed(range.index, 'image', dataUrl, 'user')
@@ -103,7 +103,7 @@ export function quillImageHandler() {
     // Ask the size the same way the TPV notepad does (Small / Medium / Full).
     const width = resolveImageWidth(window.prompt('Image size — Small / Medium / Full', 'Full') || 'Full')
     try {
-      const dataUrl = await compressImage(file, { maxDim: 1600, quality: 0.82 })
+      const dataUrl = await compressImage(file, { maxDim: 1600 })
       if (!dataUrl) return
       const range = quill.getSelection(true) || { index: quill.getLength() }
       // Paste as HTML so the width attribute rides along on the <img> — the blot

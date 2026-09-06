@@ -2,49 +2,32 @@
 //
 // Rich editors embed pasted/selected images as base64 inside the HTML. A phone
 // photo is 3–8 MB, so a couple of images bloat the stored HTML (and the DB row)
-// into megabytes and make pages crawl. Shrinking to a sane max dimension and
-// re-encoding as JPEG turns that into ~100–300 KB with no visible quality loss
-// and — crucially — no server upload pipeline to build/secure.
+// into megabytes and make pages crawl.
 //
-// PNGs are kept as PNG (they may carry transparency); GIF/SVG pass through
-// untouched (animation / vector shouldn't be rasterized). If the "compressed"
-// result somehow ends up larger, the original is kept.
+// The actual compression now lives in mediaCompress.js, which is the one policy
+// every upload in the app goes through. This kept its own copy before, so the
+// two drifted: this one always re-encoded PNG as PNG (a screenshot stayed ten
+// times bigger than it needed to be), had no size target to aim at, and dropped
+// EXIF orientation, which laid portrait phone photos on their side.
+//
+// The one difference that is deliberate: skipUnder is 0 here. Everywhere else a
+// small file is left alone because it is written to disk; here it is written
+// into a database row, so every kilobyte is worth taking.
 
-export async function compressImage(file, { maxDim = 1600, quality = 0.82 } = {}) {
+import { compressImageDataUrl } from './mediaCompress'
+
+export async function compressImage(file, { maxDim = 1600 } = {}) {
   if (!file || !file.type || !file.type.startsWith('image/')) return null
 
   const original = await fileToDataUrl(file)
+  if (typeof original !== 'string') return null
 
-  // Don't rasterize animated GIFs or vector SVGs.
-  if (file.type === 'image/gif' || file.type === 'image/svg+xml') return original
-
-  let img
+  // Never let an editor paste fail because the optimisation did.
   try {
-    img = await loadImage(original)
-  } catch {
-    return original // unreadable by the browser — keep as-is rather than lose it
-  }
-
-  const scale = Math.min(1, maxDim / Math.max(img.width, img.height))
-  const width = Math.max(1, Math.round(img.width * scale))
-  const height = Math.max(1, Math.round(img.height * scale))
-
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return original
-  ctx.drawImage(img, 0, 0, width, height)
-
-  const isPng = file.type === 'image/png'
-  let out
-  try {
-    out = isPng ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', quality)
+    return await compressImageDataUrl(original, { skipUnder: 0, maxDim })
   } catch {
     return original
   }
-
-  return out.length < original.length ? out : original
 }
 
 function fileToDataUrl(file) {
@@ -53,14 +36,5 @@ function fileToDataUrl(file) {
     reader.onload = () => resolve(reader.result)
     reader.onerror = reject
     reader.readAsDataURL(file)
-  })
-}
-
-function loadImage(src) {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => resolve(img)
-    img.onerror = reject
-    img.src = src
   })
 }

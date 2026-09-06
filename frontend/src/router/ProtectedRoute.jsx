@@ -1,4 +1,4 @@
-import { Navigate, useLocation } from 'react-router-dom'
+import { Navigate, useLocation, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 
 export function ProtectedRoute({ children, roles = [], blockRoles = [] }) {
@@ -34,8 +34,26 @@ function homeFor(role) {
   return '/app/dashboard'
 }
 
+/**
+ * Identities that do NOT authenticate as a shared User.
+ *
+ * A Purchase vendor and a customer contact each hold their own token in their
+ * own storage key, so being signed in as an admin says nothing about whether
+ * they may enter those portals. Without this, consolidating every portal onto
+ * one login page dead-ends: a signed-in admin who opens a portal link is sent
+ * to /auth/login by the portal guard and immediately bounced back to
+ * /app/dashboard by this one, never reaching the form that would let them in.
+ */
+const SEPARATE_TOKEN_ROLES = ['purchase_vendor', 'client']
+
 export function GuestRoute({ children }) {
   const { isAuthenticated, user } = useAuth()
-  if (isAuthenticated) return <Navigate to={homeFor(user?.role)} replace />
+  const [params] = useSearchParams()
+
+  // Show the form when the visitor is explicitly asking for an identity this
+  // session cannot satisfy; otherwise a signed-in user has no business here.
+  if (isAuthenticated && !SEPARATE_TOKEN_ROLES.includes(params.get('role'))) {
+    return <Navigate to={homeFor(user?.role)} replace />
+  }
   return children
 }

@@ -58,6 +58,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('kickoff')->grou
     Route::put('/meetings/{kickoffMeeting}', [KickoffMeetingController::class, 'update']);
     Route::post('/meetings/{kickoffMeeting}/transition', [KickoffMeetingController::class, 'transition']);
     Route::patch('/meetings/{kickoffMeeting}/attendance', [KickoffMeetingController::class, 'attendance']);
+    // The live meeting room autosaves what is typed beside the video: the
+    // discussion and decision per agenda point, and the minutes. Separate from
+    // the meeting's own PUT, which re-notifies the roster on every save.
+    Route::post('/meetings/{kickoffMeeting}/room/notes', [KickoffMeetingController::class, 'saveRoomNotes']);
     Route::post('/meetings/{kickoffMeeting}/remind', [KickoffMeetingController::class, 'remind']);
     // §1 "Send Invitation" — also fired automatically when a meeting is scheduled.
     Route::post('/meetings/{kickoffMeeting}/invite', [KickoffMeetingController::class, 'sendInvitations']);

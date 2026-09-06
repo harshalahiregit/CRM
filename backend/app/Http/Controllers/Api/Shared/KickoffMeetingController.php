@@ -21,6 +21,7 @@ use App\Services\Shared\VendorLiveStatusService;
 use App\Support\Shared\MeetingIssueStatus;
 use App\Support\Shared\MeetingTypeCatalog;
 use App\Support\Shared\MomActionStatus;
+use App\Services\Shared\MeetingRoomNotes;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
@@ -300,6 +301,37 @@ class KickoffMeetingController extends Controller
     }
 
     /** Mark who attended — a post-meeting edit of the attendance flags. */
+
+    /**
+     * Notes typed in the live meeting room (agenda notes + minutes).
+     *
+     * The room shows the video and this meeting record on one screen, so the
+     * agenda and the roster are in front of the note-taker instead of in
+     * another tab. It autosaves, which is why this is separate from `update`:
+     * update is a form submission with its own validation and side effects
+     * (re-notifying the roster, re-deriving the duration), and none of that
+     * should fire every few seconds while people are talking.
+     */
+    public function saveRoomNotes(Request $request, KickoffMeeting $kickoffMeeting, MeetingRoomNotes $notes)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+
+        $request->validate([
+            'minutes'             => 'nullable|string|max:20000',
+            'agenda'              => 'nullable|array',
+            'agenda.*.id'         => 'required|integer',
+            'agenda.*.discussion' => 'nullable|string|max:5000',
+            'agenda.*.decision'   => 'nullable|string|max:5000',
+        ]);
+
+        return response()->json($notes->save(
+            $kickoffMeeting,
+            $request->input('minutes'),
+            $request->input('agenda', []),
+            $request->has('minutes'),
+        ));
+    }
+
     public function attendance(Request $request, KickoffMeeting $kickoffMeeting)
     {
         $this->assertTenant($request, $kickoffMeeting);
