@@ -113,7 +113,11 @@ class PayrollService
             // `work_state` is loaded because Professional Tax is resolved per state;
             // without it the constrained eager load returns a null state and every
             // state-specific PT rule silently fails to match.
-            ->with('employee:id,name,work_state')
+            // gender and dob join work_state for the same reason the comment above
+            // gives: a constrained eager load returns NULL for anything not named,
+            // so leaving them out means gender-neutral PT slabs and an EPS
+            // contribution for somebody past 58 — silently, on every run.
+            ->with('employee:id,name,work_state,gender,dob')
             ->get();
 
         if ($salaries->isEmpty()) {
@@ -255,6 +259,14 @@ class PayrollService
         $stat = $this->statutory->forSalary($lines, $tenantId, [
             'state' => $this->workStateFor($salary->employee, $tenantId),
             'date'  => Carbon::parse($period.'-01'),
+            // Maharashtra's PT thresholds differ by gender, and EPS membership
+            // ends at 58 — both visible in the filed registers. Without these the
+            // engine falls back to gender-neutral slabs and keeps paying a pension
+            // contribution for somebody who can no longer be a member.
+            'gender'    => $salary->employee->gender ?? null,
+            'age_years' => $salary->employee->dob
+                ? Carbon::parse($salary->employee->dob)->age
+                : null,
             // Employee context switches TDS from a 12x projection to the
             // year-to-date engine, which reads the months already paid.
             'employee_id'    => $salary->employee_id,

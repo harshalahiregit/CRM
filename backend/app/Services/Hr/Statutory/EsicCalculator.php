@@ -6,7 +6,20 @@ namespace App\Services\Hr\Statutory;
  * Employees' State Insurance.
  *
  * Config keys:
- *   gross_threshold  monthly gross at or below which ESIC applies
+ *   gross_threshold  the wage at or below which ESIC applies
+ *   eligibility_base 'gross'  → the ceiling is tested against total gross pay
+ *                    'wages'  → against the ESIC wage base (Basic + DA here)
+ *
+ * WHICH ONE IS A DECISION, NOT A FACT, and it changes who is covered at all.
+ * Three people on this company's filed July register earn ABOVE the 42,000
+ * ceiling on gross — 48,478, 46,491 and 64,171 — and are nonetheless on the
+ * return, contributing on Basic + DA. Tested against gross they would be outside
+ * ESIC altogether and contribute nothing, so their reading pays MORE than the
+ * alternative, not less.
+ *
+ * The default is 'wages' because that is what was filed and what these figures
+ * have to reproduce. A tenant whose consultant reads it the other way changes one
+ * config key rather than editing code.
  *   employee_rate    % of ESIC wages deducted from the employee
  *   employer_rate    % of ESIC wages contributed by the employer
  *
@@ -23,7 +36,13 @@ class EsicCalculator
         }
 
         $threshold = isset($config['gross_threshold']) ? (float) $config['gross_threshold'] : null;
-        if ($threshold !== null && $grossForEligibility > $threshold) {
+
+        // Which figure the ceiling is tested against — see the note above.
+        $against = ($config['eligibility_base'] ?? 'wages') === 'gross'
+            ? $grossForEligibility
+            : $esicWages;
+
+        if ($threshold !== null && $against > $threshold) {
             return $this->zero('Gross above the ESIC threshold');
         }
 

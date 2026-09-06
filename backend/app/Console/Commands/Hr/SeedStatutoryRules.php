@@ -104,6 +104,11 @@ class SeedStatutoryRules extends Command
 
             ['esic', null, [
                 'gross_threshold'   => 42000,
+                // Tested against the ESIC WAGE BASE, not total gross — which is
+                // how this company files. Three people on the July register earn
+                // above 42,000 gross and are on the return regardless; on gross
+                // they would be outside ESIC and contribute nothing.
+                'eligibility_base'  => 'wages',
                 'employee_rate'     => 0.75,
                 'employer_rate'     => 3.25,
                 // Matches the filed register: employee rounds up, employer to
