@@ -260,7 +260,9 @@ class MeetingInviteService
 
     private function whenLine(KickoffMeeting $meeting): string
     {
-        $when = $meeting->scheduled_at?->format('D, d M Y · h:i A') ?: 'Date to be confirmed';
+        // The zone is named: the roster can include people in another country,
+        // and "h:i A" alone leaves them guessing which 10 o'clock is meant.
+        $when = $meeting->scheduled_at?->format('D, d M Y · h:i A T') ?: 'Date to be confirmed';
         $where = $meeting->location ?: ($meeting->mode ? ucfirst($meeting->mode) : null);
 
         return $where ? $when.' — '.$where : $when;
@@ -299,6 +301,16 @@ class MeetingInviteService
                 $lines[] = 'Agenda:';
             }
             $lines[] = ($i + 1).'. '.$item->item;
+        }
+
+        // The HTML part has a Join button; the text part had nothing, so a
+        // plain-text client showed an invitation with no way to join.
+        if ($meeting->meeting_link) {
+            $lines[] = '';
+            $lines[] = 'Join link: '.$meeting->meeting_link;
+            if ($meeting->meeting_passcode) {
+                $lines[] = 'Passcode: '.$meeting->meeting_passcode;
+            }
         }
 
         $lines[] = '';

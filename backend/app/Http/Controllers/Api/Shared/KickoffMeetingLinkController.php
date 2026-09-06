@@ -34,8 +34,10 @@ class KickoffMeetingLinkController extends Controller
             403
         );
 
+        // Jitsi belongs here too: it is the only platform that yields a real
+        // room with no credentials, which makes it the honest default.
         $request->validate([
-            'platform' => ['nullable', 'string', 'in:google_meet,zoom,teams,stub'],
+            'platform' => ['nullable', 'string', \Illuminate\Validation\Rule::in(OnlineMeetingService::ACCEPTED)],
         ]);
 
         try {

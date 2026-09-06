@@ -115,7 +115,13 @@ export const purchaseKickoffApi = {
   transition: k.transition,
   // Shared: markAttendance. Purchase: attendance.
   markAttendance: k.attendance,
+  roomNotes: k.roomNotes,
   remind:    k.remind,
+
+  // Purchase meetings mint their link on their own route — same method names as
+  // the shared engine so the meeting pages need no branch.
+  generateLink: (id, platform = null) => k.generateLink(id, platform),
+  getLink:      (id) => k.getLink(id),
   publish:   k.publish,
   history:   k.history,
   // The shared page's carryForward is the read-only PREVIEW — GET with subject

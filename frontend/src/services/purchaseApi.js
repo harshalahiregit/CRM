@@ -310,6 +310,10 @@ export const purchaseApi = {
     stats:  ()            => api.get('/purchase/kickoff/stats').then(r => r.data),
     dashboard: ()         => api.get('/purchase/kickoff/dashboard').then(r => r.data),
     previousSummary: (id) => api.get(`/purchase/kickoff/${id}/previous-summary`).then(r => r.data),
+    // The online meeting link. Purchase meetings are their own records, so they
+    // mint and read it on their own route rather than the shared engine's.
+    generateLink: (id, platform = null) => api.post(`/purchase/kickoff/${id}/generate-link`, { platform }).then(r => r.data),
+    getLink:      (id) => api.get(`/purchase/kickoff/${id}/link`).then(r => r.data),
     // WRITES carried items into an existing meeting.
     carryForward: (id)    => api.post(`/purchase/kickoff/${id}/carry-forward`).then(r => r.data),
     // READS what a new meeting could carry — the meeting form's preview. Same
@@ -372,6 +376,8 @@ export const purchaseApi = {
     transition: (id, data) => api.post(`/purchase/kickoff/${id}/transition`, data).then(r => r.data),
     // Post-meeting attendance — [{ id, attended }]. Audit-logged server-side.
     attendance: (id, rows) => api.patch(`/purchase/kickoff/${id}/attendance`, { rows }).then(r => r.data),
+    // Live meeting room autosave — same shape as the shared engine.
+    roomNotes: (id, payload) => api.post(`/purchase/kickoff/${id}/room/notes`, payload).then(r => r.data),
     // Manual reminder — email is a real send; whatsapp/sms are queued stubs.
     remind: (id)          => api.post(`/purchase/kickoff/${id}/remind`).then(r => r.data),
     generateMom: (id)     => api.post(`/purchase/kickoff/${id}/mom/generate`).then(r => r.data),

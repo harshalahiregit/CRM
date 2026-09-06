@@ -133,61 +133,203 @@ export default function PurchasePortalOnboarding() {
 }
 
 /* ── Step 1 — Kickoff acknowledgement ───────────────────────────────────────── */
+
+/**
+ * The minutes, as readable information.
+ *
+ * This step used to render the MOM as a 460px PDF viewer embedded in the page —
+ * a document in a box, unsearchable, unreadable on a phone, and nothing like the
+ * rest of the portal. The minutes are structured data on the server, so they are
+ * shown as data here (the Governance → Meetings tab already does exactly this),
+ * and the PDF stays available as the two things a PDF is actually for: View and
+ * Download.
+ */
 function StepKickoff({ onboarding, editable, onDone, onContinue }) {
-  const [pdfUrl, setPdfUrl] = useState(null)
-  const [pdfErr, setPdfErr] = useState(null)
+  const [meeting, setMeeting] = useState(null)
+  const [mom, setMom] = useState(null)
+  const [err, setErr] = useState(null)
   const [checked, setChecked] = useState(!!onboarding.acknowledged)
   const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(true)
   const acknowledged = !!onboarding.acknowledged
 
   useEffect(() => {
-    let url
-    purchasePortalApi.onboarding.kickoffPdf(onboarding.id)
-      .then(blob => { url = URL.createObjectURL(blob); setPdfUrl(url); setPdfErr(null); purchasePortalApi.onboarding.logKickoffEvent(onboarding.id, 'viewed').catch(() => {}) })
-      .catch((e) => setPdfErr(e?.response?.data?.message || 'Kickoff meeting is not completed yet.'))
-    return () => { if (url) URL.revokeObjectURL(url) }
+    let alive = true
+    setLoading(true)
+
+    purchasePortalApi.kickoff.get()
+      .then(async (d) => {
+        if (!alive) return
+        const m = d?.meeting ?? null
+        setMeeting(m)
+
+        // The minutes themselves, only once they have been approved and
+        // distributed — the endpoint enforces that, so a 403 here is a normal
+        // "not published yet", not an error worth showing.
+        if (m?.id && m.mom_available) {
+          try {
+            const detail = await purchasePortalApi.governance.meetingMom(m.id)
+            if (alive) setMom(detail)
+          } catch { /* not distributed yet */ }
+        }
+        if (!m) setErr('No kickoff meeting has been scheduled for you yet.')
+      })
+      .catch(() => alive && setErr('Could not load the kickoff meeting.'))
+      .finally(() => alive && setLoading(false))
+
+    // Viewing the step is the event the audit trail cares about, whether or not
+    // the PDF is ever opened.
+    purchasePortalApi.onboarding.logKickoffEvent(onboarding.id, 'viewed').catch(() => {})
+
+    return () => { alive = false }
   }, [onboarding.id])
+
+  const openPdf = async () => {
+    try {
+      const blob = await purchasePortalApi.onboarding.kickoffPdf(onboarding.id)
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener')
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+      purchasePortalApi.onboarding.logKickoffEvent(onboarding.id, 'viewed').catch(() => {})
+    } catch (e) {
+      setErr(e?.response?.data?.message || 'The MOM document is not available yet.')
+    }
+  }
+
+  const download = async () => {
+    try {
+      const blob = await purchasePortalApi.onboarding.kickoffPdf(onboarding.id)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = `Kickoff-MOM-${onboarding.id}.pdf`
+      document.body.appendChild(a); a.click(); a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 30000)
+      purchasePortalApi.onboarding.logKickoffEvent(onboarding.id, 'downloaded').catch(() => {})
+    } catch (e) {
+      setErr(e?.response?.data?.message || 'The MOM document is not available yet.')
+    }
+  }
 
   const accept = async () => {
     if (!acknowledged) {
       if (!checked) return
       setBusy(true)
       try { await purchasePortalApi.onboarding.acceptKickoff(onboarding.id); onDone?.() }
-      catch (e) { setPdfErr(e?.response?.data?.message || 'Could not record acknowledgement.'); setBusy(false); return }
+      catch (e) { setErr(e?.response?.data?.message || 'Could not record acknowledgement.'); setBusy(false); return }
       setBusy(false)
     }
     onContinue?.()
   }
 
-  const download = async () => {
-    try {
-      const blob = await purchasePortalApi.onboarding.kickoffPdf(onboarding.id)
-      const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `Kickoff-MOM-${onboarding.id}.pdf`
-      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000)
-      purchasePortalApi.onboarding.logKickoffEvent(onboarding.id, 'downloaded').catch(() => {})
-    } catch { /* non-fatal */ }
-  }
+  const agenda    = mom?.agenda_items ?? mom?.agendaItems ?? []
+  const actions   = mom?.action_items ?? mom?.actionItems ?? []
+  const decisions = mom?.mom_decisions ?? mom?.momDecisions ?? []
+  const issues    = mom?.mom_issues ?? mom?.momIssues ?? []
+  const canAcknowledge = !!meeting
 
   return (
     <div>
       <StepHead title="Kickoff MOM Review & Acknowledgement" sub="Step 1 · Review the Minutes of Meeting" />
-      {pdfErr && !pdfUrl ? (
+
+      {loading ? (
+        <div style={{ padding: 24, color: 'var(--text-muted)', fontSize: 13 }}>
+          <Loader2 size={16} className="pp-spin" /> Loading the meeting…
+        </div>
+      ) : !meeting ? (
         <div style={{ padding: '24px 20px', borderRadius: 14, textAlign: 'center', background: 'rgba(239,68,68,0.06)', border: '1.5px dashed rgba(239,68,68,0.3)' }}>
           <AlertTriangle size={30} style={{ color: '#ef4444' }} />
-          <h3 style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-h)', margin: '8px 0 4px' }}>{pdfErr}</h3>
-          <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: 0 }}>The kickoff meeting must be completed and its MOM published before you can acknowledge.</p>
+          <h3 style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-h)', margin: '8px 0 4px' }}>{err || 'No kickoff meeting yet'}</h3>
+          <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: 0 }}>The procurement team will schedule one and you will be notified.</p>
         </div>
       ) : (
         <>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 10, justifyContent: 'flex-end' }}>
-            <button onClick={() => pdfUrl && window.open(pdfUrl, '_blank', 'noopener')} style={tbBtn}><Eye size={13} /> View</button>
-            <button onClick={download} style={tbBtn}><Download size={13} /> Download</button>
+          {/* The meeting itself */}
+          <div style={koCard}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--text-h)' }}>{meeting.title || 'Kickoff Meeting'}</h3>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{meeting.status_label || meeting.status}</span>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={openPdf} style={koGhostBtn}><Eye size={13} /> View MOM</button>
+                <button onClick={download} style={koGhostBtn}><Download size={13} /> Download PDF</button>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px 20px' }}>
+              <KoFact label="Scheduled" value={meeting.scheduled_at ? new Date(meeting.scheduled_at).toLocaleString() : '—'} />
+              <KoFact label="Mode" value={meeting.mode ? String(meeting.mode).replace(/_/g, ' ') : '—'} />
+              <KoFact label="Location" value={meeting.location || '—'} />
+            </div>
+
+            {meeting.meeting_link && (
+              <a href={meeting.meeting_link} target="_blank" rel="noopener noreferrer" style={koJoinBtn}>
+                Join the online meeting
+              </a>
+            )}
           </div>
-          <div style={{ height: 460, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 12, background: '#525659' }}>
-            {pdfUrl ? <iframe title="Kickoff MOM" src={pdfUrl} style={{ width: '100%', height: 460, border: 'none' }} />
-              : <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#cbd5e1' }}><Loader2 size={20} className="pp-spin" /></div>}
-          </div>
-          <div style={{ marginTop: 16, padding: '14px 16px', borderRadius: 13, background: acknowledged ? 'rgba(16,185,129,0.06)' : 'var(--bg-input)', border: `1px solid ${acknowledged ? 'rgba(16,185,129,0.3)' : 'var(--border)'}` }}>
+
+          {/* The minutes, as information */}
+          {!meeting.mom_available ? (
+            <div style={{ ...koCard, color: 'var(--text-muted)', fontSize: 12.5 }}>
+              The Minutes of Meeting have not been published yet. They will appear here once the
+              procurement team has approved and circulated them.
+            </div>
+          ) : (
+            <div style={koCard}>
+              <h3 style={{ margin: '0 0 12px', fontSize: 13.5, fontWeight: 800, color: 'var(--text-h)' }}>Minutes of Meeting</h3>
+
+              {!mom ? (
+                <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Loading the minutes…</span>
+              ) : (
+                <div style={{ display: 'grid', gap: 14 }}>
+                  <KoSection title="Agenda" empty="No agenda was recorded.">
+                    {agenda.map((a, i) => (
+                      <li key={a.id ?? i} style={koLi}>{a.title || a.item || a.description}</li>
+                    ))}
+                  </KoSection>
+
+                  <KoSection title="Decisions" empty="No decisions were recorded.">
+                    {decisions.map((d, i) => (
+                      <li key={d.id ?? i} style={koLi}>
+                        {d.decision || d.description}
+                        {d.decided_by ? <span style={koMeta}> — {d.decided_by}</span> : null}
+                      </li>
+                    ))}
+                  </KoSection>
+
+                  <KoSection title="Action items" empty="No actions were assigned.">
+                    {actions.map((a, i) => (
+                      <li key={a.id ?? i} style={koLi}>
+                        {a.description || a.action}
+                        <span style={koMeta}>
+                          {a.owner ? ` — ${a.owner}` : ''}
+                          {a.due_date ? ` · due ${new Date(a.due_date).toLocaleDateString()}` : ''}
+                          {a.status ? ` · ${String(a.status).replace(/_/g, ' ')}` : ''}
+                        </span>
+                      </li>
+                    ))}
+                  </KoSection>
+
+                  {issues.length > 0 && (
+                    <KoSection title="Issues raised" empty="">
+                      {issues.map((it, i) => (
+                        <li key={it.id ?? i} style={koLi}>
+                          {it.description || it.issue}
+                          {it.status ? <span style={koMeta}> · {String(it.status).replace(/_/g, ' ')}</span> : null}
+                        </li>
+                      ))}
+                    </KoSection>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {err && <div style={{ fontSize: 12.5, color: '#ef4444', marginBottom: 10 }}>{err}</div>}
+
+          {/* Acknowledgement — unchanged in meaning */}
+          <div style={{ marginTop: 4, padding: '14px 16px', borderRadius: 13, background: acknowledged ? 'rgba(16,185,129,0.06)' : 'var(--bg-input)', border: `1px solid ${acknowledged ? 'rgba(16,185,129,0.3)' : 'var(--border)'}` }}>
             {acknowledged ? (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 800, color: '#10b981' }}><CheckCircle2 size={15} /> MOM Acknowledged</span>
@@ -196,7 +338,7 @@ function StepKickoff({ onboarding, editable, onDone, onContinue }) {
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: editable ? 'pointer' : 'not-allowed', flex: 1, minWidth: 240 }}>
-                  <input type="checkbox" checked={checked} disabled={!editable || !pdfUrl} onChange={e => setChecked(e.target.checked)} style={{ width: 17, height: 17, accentColor: '#7C3AED' }} />
+                  <input type="checkbox" checked={checked} disabled={!editable || !canAcknowledge} onChange={e => setChecked(e.target.checked)} style={{ width: 17, height: 17, accentColor: '#7C3AED' }} />
                   <span style={{ fontSize: 13, color: 'var(--text-h)', fontWeight: 600 }}>I have read and understood the Minutes of Meeting.</span>
                 </label>
                 <button onClick={accept} disabled={!checked || busy || !editable} style={{ ...solidBtn, opacity: (!checked || !editable) ? 0.6 : 1 }}>
@@ -210,6 +352,33 @@ function StepKickoff({ onboarding, editable, onDone, onContinue }) {
     </div>
   )
 }
+
+function KoFact({ label, value }) {
+  return (
+    <div>
+      <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-h)', textTransform: label === 'Mode' ? 'capitalize' : 'none' }}>{value}</div>
+    </div>
+  )
+}
+
+function KoSection({ title, empty, children }) {
+  const items = Array.isArray(children) ? children.filter(Boolean) : (children ? [children] : [])
+  return (
+    <div>
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6 }}>{title}</div>
+      {items.length === 0
+        ? (empty ? <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{empty}</span> : null)
+        : <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 5 }}>{items}</ul>}
+    </div>
+  )
+}
+
+const koCard = { padding: 16, borderRadius: 13, background: 'var(--bg-card)', border: '1px solid var(--border)', marginBottom: 14 }
+const koGhostBtn = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 13px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-h)', cursor: 'pointer', fontSize: 12, fontWeight: 700 }
+const koJoinBtn = { display: 'inline-flex', alignItems: 'center', gap: 7, marginTop: 14, padding: '9px 16px', borderRadius: 9, textDecoration: 'none', fontSize: 12.5, fontWeight: 800, color: '#fff', background: 'linear-gradient(145deg,#22c55e,#16a34a)' }
+const koLi = { fontSize: 12.5, color: 'var(--text-h)', lineHeight: 1.55 }
+const koMeta = { color: 'var(--text-muted)', fontWeight: 500 }
 
 /* ── Step 2 — Company profile ────────────────────────────────────────────────── */
 function StepProfile({ onboarding, editable, onSaved, onContinue }) {
