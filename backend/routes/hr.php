@@ -14,6 +14,17 @@ use App\Http\Controllers\Api\Hr\OnboardingController;
 use App\Http\Controllers\Api\Hr\EmployeeAssetController;
 use App\Http\Controllers\Api\Hr\EmployeeController;
 use App\Http\Controllers\Api\Hr\AttendanceController;
+use App\Http\Controllers\Api\Hr\MyAttendanceController;
+use App\Http\Controllers\Api\Hr\AdvanceController;
+use App\Http\Controllers\Api\Hr\AttendanceReportController;
+use App\Http\Controllers\Api\Hr\MyAdvanceController;
+use App\Http\Controllers\Api\Hr\AttendanceCorrectionController;
+use App\Http\Controllers\Api\Hr\MyAttendanceCorrectionController;
+use App\Http\Controllers\Api\Hr\DemoRequestController;
+use App\Http\Controllers\Api\Hr\HrSettingsController;
+use App\Http\Controllers\Api\Hr\MyLeaveController;
+use App\Http\Controllers\Api\Hr\MyReimbursementController;
+use App\Http\Controllers\Api\Hr\ReimbursementController;
 use App\Http\Controllers\Api\Hr\SangoeTrackSyncController;
 use App\Http\Controllers\Api\Hr\ExitInterviewController;
 use App\Http\Controllers\Api\Hr\OrganizationController;
@@ -450,6 +461,74 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/attendance/export',         [AttendanceController::class, 'export']);
     Route::get('/attendance',                [AttendanceController::class, 'index']);
     Route::post('/attendance',               [AttendanceController::class, 'storeManual']);
+    // ── Self service ────────────────────────────────────────────────────
+    // Clocking YOURSELF in, from the CRM dashboard or the HR module. No
+    // employee_id is accepted: the employee is resolved from the token, so these
+    // can only ever touch the caller's own record. Being a linked employee is the
+    // authorisation — nobody needs a grant to be themselves.
+    // ── My expense claims ───────────────────────────────────────────────
+    // No employee_id anywhere: the claim is found by id AND owner, so a guessed
+    // id returns 404 rather than somebody else's receipts.
+    Route::get('/me/reimbursements',              [MyReimbursementController::class, 'index']);
+    Route::post('/me/reimbursements',             [MyReimbursementController::class, 'store']);
+    Route::get('/me/reimbursements/{id}',         [MyReimbursementController::class, 'show']);
+    Route::post('/me/reimbursements/{id}/reply',  [MyReimbursementController::class, 'reply']);
+    Route::post('/me/reimbursements/{id}/accept', [MyReimbursementController::class, 'accept']);
+    // Declared AFTER /{id} but the path is longer, so there is no ambiguity:
+    // Laravel matches on segment count first. The bytes of a receipt, reachable
+    // only through a claim the caller owns.
+    Route::get('/me/reimbursements/{id}/attachments/{attachmentId}', [MyReimbursementController::class, 'attachment']);
+
+    // ── My advances ─────────────────────────────────────────────────────
+    // Same guarantee as the claims above: no employee_id is accepted anywhere.
+    // 'outstanding' is declared BEFORE /{id} so it is never captured as a record
+    // id — the trap this file already notes for sync-sangoetrack.
+    Route::get('/me/advances',                  [MyAdvanceController::class, 'index']);
+    Route::get('/me/advances/outstanding',      [MyAdvanceController::class, 'outstanding']);
+    Route::post('/me/advances',                 [MyAdvanceController::class, 'store']);
+    Route::get('/me/advances/{id}',             [MyAdvanceController::class, 'show']);
+    Route::post('/me/advances/{id}/reply',      [MyAdvanceController::class, 'reply']);
+    Route::post('/me/advances/{id}/accept',     [MyAdvanceController::class, 'accept']);
+    Route::post('/me/advances/{id}/cancel',     [MyAdvanceController::class, 'cancel']);
+    Route::post('/me/advances/{id}/settlement', [MyAdvanceController::class, 'settle']);
+    Route::get('/me/advances/{id}/attachments/{attachmentId}', [MyAdvanceController::class, 'attachment']);
+
+    // ── My leave ────────────────────────────────────────────────────────
+    // The existing leave routes are HR's: they take an employee_id and are gated
+    // on managing the queue, so there was no way to apply for your OWN leave in
+    // the CRM — that only existed in the app, against SangoeTrack.
+    //
+    // No employee_id is accepted anywhere here. 'balances' and 'preview' are
+    // declared before /{id} so neither is captured as a record id.
+    Route::get('/me/leave',                  [MyLeaveController::class, 'index']);
+    Route::get('/me/leave/balances',         [MyLeaveController::class, 'balances']);
+    Route::post('/me/leave/preview',         [MyLeaveController::class, 'preview']);
+    Route::post('/me/leave',                 [MyLeaveController::class, 'store']);
+    Route::get('/me/leave/{id}',             [MyLeaveController::class, 'show']);
+    Route::patch('/me/leave/{id}/cancel',    [MyLeaveController::class, 'cancel']);
+    Route::get('/me/leave/{id}/attachment',  [MyLeaveController::class, 'attachment']);
+
+    // ── My attendance corrections ───────────────────────────────────────
+    // Asking for a wrong or missing punch to be fixed. The CRM had no native
+    // corrections at all — only a proxy to SangoeTrack's.
+    // 'day' is declared before /{id} so it is never read as a record id.
+    Route::get('/me/corrections',              [MyAttendanceCorrectionController::class, 'index']);
+    Route::get('/me/corrections/day',          [MyAttendanceCorrectionController::class, 'day']);
+    Route::post('/me/corrections',             [MyAttendanceCorrectionController::class, 'store']);
+    Route::get('/me/corrections/{id}',         [MyAttendanceCorrectionController::class, 'show']);
+    Route::post('/me/corrections/{id}/reply',  [MyAttendanceCorrectionController::class, 'reply']);
+    Route::patch('/me/corrections/{id}/withdraw', [MyAttendanceCorrectionController::class, 'withdraw']);
+
+    // The few settings an employee's own screens need. A short allowlist, not
+    // the whole group — hiding fields in the client is not hiding them.
+    Route::get('/me/settings', [HrSettingsController::class, 'forEmployee']);
+
+    Route::get('/me/attendance/today',       [MyAttendanceController::class, 'today']);
+    Route::post('/me/attendance/check-in',   [MyAttendanceController::class, 'checkIn']);
+    Route::post('/me/attendance/check-out',  [MyAttendanceController::class, 'checkOut']);
+    Route::post('/me/attendance/break-start',[MyAttendanceController::class, 'breakStart']);
+    Route::post('/me/attendance/break-end',  [MyAttendanceController::class, 'breakEnd']);
+
     Route::post('/attendance/check-in',      [AttendanceController::class, 'checkIn']);
     Route::post('/attendance/check-out',     [AttendanceController::class, 'checkOut']);
     Route::post('/attendance/break-start',   [AttendanceController::class, 'breakStart']);
@@ -458,4 +537,71 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     // captured as a record id.
     Route::post('/attendance/sync-sangoetrack', [SangoeTrackSyncController::class, 'store']);
     Route::patch('/attendance/{attendance}', [AttendanceController::class, 'correct']);
+});
+
+// ── Expense claims, admin side ──────────────────────────────────────────────
+// Gated on the GROUP rather than inside each method: a method that forgets the
+// check is how a list-everything endpoint ends up open, which is exactly what
+// happened in the first draft of ReimbursementController.
+Route::middleware(['auth:sanctum', 'hr.manage'])->prefix('hr')->group(function () {
+    // ── Demo requests ───────────────────────────────────────────────────
+    // Inbound enquiries. Unclaimed ones (tenant_id null) are visible to every
+    // workspace until somebody starts working on one.
+    Route::get('/demo-requests',        [DemoRequestController::class, 'index']);
+    Route::post('/demo-requests',       [DemoRequestController::class, 'store']);
+    Route::get('/demo-requests/{id}',   [DemoRequestController::class, 'show']);
+    Route::put('/demo-requests/{id}',   [DemoRequestController::class, 'update']);
+
+    // ── HR settings ─────────────────────────────────────────────────────
+    // The controls that used to be constants — the advance thresholds above all.
+    Route::get('/settings',  [HrSettingsController::class, 'index']);
+    Route::put('/settings',  [HrSettingsController::class, 'update']);
+
+    // ── Attendance corrections ──────────────────────────────────────────
+    Route::get('/corrections',                 [AttendanceCorrectionController::class, 'index']);
+    Route::get('/corrections/{id}',            [AttendanceCorrectionController::class, 'show']);
+    Route::post('/corrections/{id}/approve',   [AttendanceCorrectionController::class, 'approve']);
+    Route::post('/corrections/{id}/reject',    [AttendanceCorrectionController::class, 'reject']);
+    Route::post('/corrections/{id}/hold',      [AttendanceCorrectionController::class, 'hold']);
+    Route::post('/corrections/{id}/note',      [AttendanceCorrectionController::class, 'note']);
+
+    // ── Attendance reports ──────────────────────────────────────────────
+    // Read-only, so looking at them cannot affect a payroll run. 'departments'
+    // is declared before the {employeeId} route so it is not read as an id.
+    Route::get('/reports/attendance',             [AttendanceReportController::class, 'monthly']);
+    Route::get('/reports/attendance/departments', [AttendanceReportController::class, 'byDepartment']);
+    Route::get('/reports/attendance/{employeeId}', [AttendanceReportController::class, 'forEmployee']);
+
+    Route::get('/reimbursements',                  [ReimbursementController::class, 'index']);
+    Route::get('/reimbursements/{id}',             [ReimbursementController::class, 'show']);
+    Route::post('/reimbursements/{id}/approve',    [ReimbursementController::class, 'approve']);
+    Route::post('/reimbursements/{id}/decline',    [ReimbursementController::class, 'decline']);
+    Route::post('/reimbursements/{id}/hold',       [ReimbursementController::class, 'hold']);
+    Route::get('/reimbursements/{id}/attachments/{attachmentId}', [ReimbursementController::class, 'attachment']);
+
+
+    Route::post('/reimbursements/{id}/note',       [ReimbursementController::class, 'note']);
+});
+
+// ── Advances ───────────────────────────────────────────────────────────────
+// Its own gate, not hr.manage: the three tiers that approve an advance are a
+// line manager, accounts and a director, and none of them are HR.
+Route::middleware(['auth:sanctum', 'hr.advances'])->prefix('hr')->group(function () {
+    // The gate gets you into the queue; it does not get you a rung. Which tier
+    // may act on a given request is decided per request by AdvanceTierService,
+    // and a manager sees only their own reports' requests.
+    //
+    // The settlement routes are declared BEFORE /advances/{id} so 'settlements'
+    // is never matched as a record id.
+    Route::get('/advances',                                [AdvanceController::class, 'index']);
+    Route::get('/advances/settlements',                    [AdvanceController::class, 'settlements']);
+    Route::post('/advances/settlements/{settlementId}/accept', [AdvanceController::class, 'acceptSettlement']);
+    Route::post('/advances/settlements/{settlementId}/reject', [AdvanceController::class, 'rejectSettlement']);
+    Route::get('/advances/{id}',                           [AdvanceController::class, 'show']);
+    Route::post('/advances/{id}/approve',                  [AdvanceController::class, 'approve']);
+    Route::post('/advances/{id}/decline',                  [AdvanceController::class, 'decline']);
+    Route::post('/advances/{id}/hold',                     [AdvanceController::class, 'hold']);
+    Route::post('/advances/{id}/disburse',                 [AdvanceController::class, 'disburse']);
+    Route::post('/advances/{id}/note',                     [AdvanceController::class, 'note']);
+    Route::get('/advances/{id}/attachments/{attachmentId}', [AdvanceController::class, 'attachment']);
 });

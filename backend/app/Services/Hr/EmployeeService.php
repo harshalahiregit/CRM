@@ -46,7 +46,13 @@ class EmployeeService
     public function create(array $data, int $tenantId, ?User $actor = null): HrEmployee
     {
         $data['tenant_id'] = $tenantId;
-        $empCode = 'SNE-'.date('Y').'-'.str_pad(HrEmployee::where('tenant_id', $tenantId)->count() + 1, 3, '0', STR_PAD_LEFT);
+
+        // Was `count() + 1`, which reuses a code as soon as anyone is deleted:
+        // five employees, delete the third, and the next create asks for -005
+        // while -005 already exists. HrEmployee::nextEmployeeCode takes the
+        // highest sequence actually issued instead, and is shared with the
+        // SangoeTrack importer so the two cannot drift apart.
+        $empCode = HrEmployee::nextEmployeeCode($tenantId);
 
         $skipProbation    = (bool) ($data['skip_probation'] ?? false);
         $probationOptional = (bool) ($data['probation_optional'] ?? false);

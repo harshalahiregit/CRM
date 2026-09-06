@@ -4,6 +4,7 @@ import { Plus, Search, MoreVertical, Edit, Trash2, Power, UserCheck, UserX, Shie
 import api from '@/lib/api'
 import { useAuth } from '@/context/AuthContext'
 import StaffModal from '@/components/admin/StaffModal'
+import RolesModal from '@/components/admin/RolesModal'
 import DeleteConfirmModal from '@/components/admin/DeleteConfirmModal'
 
 export default function StaffManagementPage() {
@@ -35,6 +36,7 @@ export default function StaffManagementPage() {
 
   // Modal states
   const [showStaffModal,  setShowStaffModal]  = useState(false)
+  const [showRolesModal, setShowRolesModal] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [selectedStaff,   setSelectedStaff]   = useState(null)
   const [actionMenuOpen,  setActionMenuOpen]  = useState(null)
@@ -167,6 +169,15 @@ export default function StaffManagementPage() {
             Manage internal team members, roles, and permissions
           </p>
         </div>
+        {/* Roles were seeded and assignable but never editable — the API shipped
+            without a screen, which removes the point of roles being records. */}
+        <button
+          onClick={() => setShowRolesModal(true)}
+          className="px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2"
+          style={{ background:'var(--bg-input)', border:'1px solid var(--border)', color:'var(--text-p)' }}
+        >
+          <Shield size={16} /> Roles
+        </button>
         <button
           onClick={() => { setSelectedStaff(null); setShowStaffModal(true) }}
           className="px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 text-white"
@@ -294,6 +305,15 @@ export default function StaffManagementPage() {
                         <div>
                           <div className="flex items-center gap-1.5">
                             <span className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>{member.name}</span>
+                            {/* Admins appear in this list now, so the list has to
+                                say which they are — "who are the admins" should be
+                                answerable from the screen, not the database. */}
+                            {member.role === 'admin' && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase flex items-center gap-1"
+                                style={{ background:'rgba(16,185,129,0.12)', color:'#10b981', border:'1px solid rgba(16,185,129,0.2)' }}>
+                                <Shield size={9}/> ADMIN
+                              </span>
+                            )}
                             {meta.is_moderator && (
                               <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase flex items-center gap-1"
                                 style={{ background:'rgba(245,158,11,0.12)', color:'#f59e0b', border:'1px solid rgba(245,158,11,0.2)' }}>
@@ -442,10 +462,16 @@ export default function StaffManagementPage() {
       </div>
 
       {/* ── Modals ────────────────────────────────────────── */}
+      {showRolesModal && (
+        <RolesModal
+          onClose={() => setShowRolesModal(false)}
+          onChanged={() => { fetchDesignations(); fetchStaff() }}
+        />
+      )}
+
       {showStaffModal && (
         <StaffModal
           staff={selectedStaff}
-          designations={designations}
           departments={departments}
           onClose={() => { setShowStaffModal(false); setSelectedStaff(null) }}
           onSuccess={() => {

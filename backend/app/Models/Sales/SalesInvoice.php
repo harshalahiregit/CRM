@@ -111,16 +111,35 @@ class SalesInvoice extends Model
         $this->saveQuietly();
     }
 
+    /**
+     * Recompute what is settled, and from that the balance and status.
+     *
+     * TDS withheld by the customer settles the invoice even though it never
+     * arrives as cash: they deduct it at source and pay it to the government on
+     * our behalf. Without counting it a ₹1,00,000 invoice paid as ₹98,000 cash
+     * plus ₹2,000 TDS sat at "Partially Paid" with a ₹2,000 balance forever —
+     * it appeared in ageing and generated overdue reminders to customers who had
+     * paid in full. SalesPostingBridge already debits TDS Receivable for exactly
+     * this amount, so before this the ledger and the invoice disagreed.
+     *
+     * `paid` deliberately stays CASH RECEIVED. It feeds cash-flow reporting, and
+     * money that never reached the bank must not appear there. Only settlement —
+     * and therefore balance and status — includes the TDS.
+     */
     public function recalcBalance(): void
     {
-        $paid = $this->payments()->sum('amount')
+        $cash = $this->payments()->sum('amount')
               + $this->creditApplications()->sum('amount');
-        $this->paid    = round($paid, 2);
-        $this->balance = round($this->total - $paid, 2);
+        $tds  = $this->payments()->sum('tds_amount');
+
+        $settled = round($cash + $tds, 2);
+
+        $this->paid    = round($cash, 2);
+        $this->balance = round($this->total - $settled, 2);
 
         if ($this->balance <= 0) {
             $this->status = 'Paid';
-        } elseif ($this->paid > 0) {
+        } elseif ($settled > 0) {
             $this->status = 'Partially Paid';
         }
 

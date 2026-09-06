@@ -47,6 +47,17 @@ const TrackAttendance     = lazy(() => import('@/modules/hr/pages/track/TrackAtt
 const TrackCorrections    = lazy(() => import('@/modules/hr/pages/track/TrackCorrections'))
 const TrackLeave          = lazy(() => import('@/modules/hr/pages/track/TrackLeave'))
 const TrackReimbursements = lazy(() => import('@/modules/hr/pages/track/TrackReimbursements'))
+// The CRM's own expense claims — the native replacement for the track/ pair above.
+const Reimbursements   = lazy(() => import('@/modules/hr/pages/Reimbursements'))
+const MyReimbursements = lazy(() => import('@/modules/hr/pages/MyReimbursements'))
+const Advances        = lazy(() => import('@/modules/hr/pages/Advances'))
+const MyAdvances      = lazy(() => import('@/modules/hr/pages/MyAdvances'))
+const AttendanceReports = lazy(() => import('@/modules/hr/pages/AttendanceReports'))
+const MyLeave = lazy(() => import('@/modules/hr/pages/MyLeave'))
+const MyCorrections = lazy(() => import('@/modules/hr/pages/MyCorrections'))
+const Corrections   = lazy(() => import('@/modules/hr/pages/Corrections'))
+const HrSettings    = lazy(() => import('@/modules/hr/pages/HrSettings'))
+const DemoRequests  = lazy(() => import('@/modules/hr/pages/DemoRequests'))
 const TrackAdvances       = lazy(() => import('@/modules/hr/pages/track/TrackAdvances'))
 const TrackStaff          = lazy(() => import('@/modules/hr/pages/track/TrackStaff'))
 const TrackPayroll        = lazy(() => import('@/modules/hr/pages/track/TrackPayroll'))
@@ -592,6 +603,27 @@ export default function AppRoutes() {
           <Route path="recruiter-workspace" element={<S><RecruiterWorkspace /></S>} />
           <Route path="company-approvals" element={<S><CompanyApprovals /></S>} />
           <Route path="attendance" element={<S><Attendance /></S>} />
+          {/* Native expense claims. The admin queue is gated server-side by
+              hr.manage; /my-expenses needs nothing but a linked employee record,
+              because being yourself is not a permission. */}
+          <Route path="expense-claims" element={<S><Reimbursements /></S>} />
+          <Route path="my-expenses" element={<S><MyReimbursements /></S>} />
+          {/* Advances. The admin queue has its own gate (hr.advances), because
+              the approvers are a line manager, accounts and a director — none of
+              whom satisfy the HR gate the claims queue uses. */}
+          <Route path="advances" element={<S><Advances /></S>} />
+          <Route path="my-advances" element={<S><MyAdvances /></S>} />
+          {/* Read-only: looking at a report cannot affect a payroll run. */}
+          <Route path="attendance-reports" element={<S><AttendanceReports /></S>} />
+          {/* Self-service leave. The other leave routes are HR's — they file on
+              somebody's behalf; this one only ever touches your own. */}
+          <Route path="my-leave" element={<S><MyLeave /></S>} />
+          {/* Corrections. 'corrections' is the approver queue; 'my-corrections'
+              only ever touches your own. */}
+          <Route path="my-corrections" element={<S><MyCorrections /></S>} />
+          <Route path="corrections" element={<S><Corrections /></S>} />
+          <Route path="settings" element={<S><HrSettings /></S>} />
+          <Route path="demo-requests" element={<S><DemoRequests /></S>} />
             {/* SangoeTrack — live from track.sangoe.in. Namespaced under track/
                 so the CRM's own attendance page above keeps its route. */}
             <Route path="track/attendance" element={<S><TrackAttendance /></S>} />

@@ -247,8 +247,32 @@ Example: `CustomerLinkedRecordsController::meetings()` selects
 live for weeks. Grep new queries for columns and confirm their migration has run.
 
 **No queue worker runs here.** `supervisorctl` is not installed. `queue:restart`
-is harmless but signals nothing. If mail must send, `QUEUE_CONNECTION` has to be
-`sync` or someone must run a worker.
+is harmless but signals nothing. `QUEUE_CONNECTION` is `database` and 21 Mailables
+implement `ShouldQueue`, so queued mail does not fail — it accumulates in the
+`jobs` table silently, and the symptom people report is "the customer never got
+the email", which looks like a mail problem and is not.
+
+Check the backlog at any time:
+
+```bash
+php artisan queue:health          # exits 1 when a job has been waiting too long
+```
+
+Plesk has no supervisor, but it does have cron. A worker that exits hourly and is
+respawned by cron is enough, and it self-heals if the process dies:
+
+```
+# Plesk → Scheduled Tasks, every hour
+cd /var/www/vhosts/sangoe.in/app.sangoe.in/backend && php artisan queue:work --stop-when-empty --tries=3 --max-time=3600
+
+# and, if anything is ever scheduled, every minute
+cd /var/www/vhosts/sangoe.in/app.sangoe.in/backend && php artisan schedule:run
+```
+
+`--stop-when-empty` matters: without it the process runs for the full hour doing
+nothing and two overlap on the boundary. `--tries=3` stops a permanently failing
+job being retried forever; those land in `failed_jobs`, which `queue:health`
+counts.
 
 **`build-deploy-package.ps1` is PowerShell.** Use the bash version in §3.
 

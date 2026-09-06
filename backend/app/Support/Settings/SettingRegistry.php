@@ -20,6 +20,12 @@ final class SettingRegistry
     public static function definition(): array
     {
         return [
+            // HR settings are generated from App\Support\Hr\HrSetting so the
+            // screen, the validation and the store all read one list. A second
+            // copy here would drift, and set() fails SILENTLY on a key the
+            // registry does not know.
+            'hr' => \App\Support\Hr\HrSetting::registryGroup(),
+
             'general' => [
                 'company_name'  => ['cast' => 'string', 'default' => null,      'rules' => ['nullable', 'string', 'max:191']],
                 'app_name'      => ['cast' => 'string', 'default' => null,      'rules' => ['nullable', 'string', 'max:100']],
@@ -225,7 +231,11 @@ final class SettingRegistry
             return null;
         }
         return match (self::meta($group, $key)['cast'] ?? 'string') {
-            'bool', 'boolean' => $value ? '1' : '0',
+            // filter_var, not truthiness. PHP considers the STRING "false" true,
+            // so a form or query string sending "false" stored 1 and read back as
+            // true — write and read disagreed, and a setting somebody switched
+            // off switched itself on. cast() has always read booleans this way.
+            'bool', 'boolean' => filter_var($value, FILTER_VALIDATE_BOOLEAN) ? '1' : '0',
             'array', 'json'   => json_encode($value),
             default           => (string) $value,
         };

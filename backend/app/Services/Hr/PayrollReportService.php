@@ -48,6 +48,20 @@ class PayrollReportService
             'total_benefits'   => (float) $r->total_benefits,
             'total_deductions' => (float) $r->total_deductions,
             'net_salary'       => (float) $r->net_salary,
+
+            // The period figures that net_salary excludes, and the figure that
+            // actually reaches the bank. Same arithmetic as
+            // PayrollService::presentRecord — kept identical deliberately, so the
+            // payroll screen and this report can never disagree about someone's pay.
+            'statutory_deductions' => (float) $r->statutory_deductions,
+            'loan_deduction'       => (float) $r->loan_deduction,
+            'variable_earnings'    => (float) $r->variable_earnings,
+            'net_payable'          => round(
+                (float) $r->net_salary + (float) $r->variable_earnings
+                - (float) $r->statutory_deductions - (float) $r->loan_deduction,
+                2
+            ),
+
             'payslip_status'   => $r->payslip_status,
             'period'           => $this->periodLabel((int) $r->payroll_year, (int) $r->payroll_month),
         ])->all();
@@ -145,10 +159,17 @@ class PayrollReportService
             ],
             default => [ // summary = employee-wise report
                 'title'   => 'Payroll Summary Report',
-                'headers' => ['Employee', 'Code', 'Department', 'Designation', 'Structure', 'Gross', 'Benefits', 'Deductions', 'Net', 'Payslip'],
+                // 'Net' alone was misleading here: it showed the frozen structural
+                // net, so an export used to decide payments understated statutory
+                // deductions and loan recovery and ignored variable earnings. The
+                // components are now beside it and the final column is what is
+                // actually payable.
+                'headers' => ['Employee', 'Code', 'Department', 'Designation', 'Structure', 'Gross', 'Benefits', 'Deductions', 'Net (structural)', 'Statutory', 'Loan', 'Variable', 'Net Payable', 'Payslip'],
                 'rows'    => array_map(fn ($e) => [
                     $e['employee_name'], $e['employee_code'], $e['department'], $e['designation'], $e['structure_name'],
-                    $e['gross_salary'], $e['total_benefits'], $e['total_deductions'], $e['net_salary'], $e['payslip_status'],
+                    $e['gross_salary'], $e['total_benefits'], $e['total_deductions'], $e['net_salary'],
+                    $e['statutory_deductions'], $e['loan_deduction'], $e['variable_earnings'], $e['net_payable'],
+                    $e['payslip_status'],
                 ], $this->employees($tenantId, $filters)),
             ],
         };

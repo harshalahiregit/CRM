@@ -17,6 +17,27 @@ const api = axios.create({ baseURL: BASE })
 // here rather than at the ~50 upload sites, so every one is covered.
 attachMediaCompression(api)
 
+/**
+ * Fields plus files as multipart.
+ *
+ * `files[]` — the brackets matter: Laravel reads `files` as an array from that
+ * name, and without them only the last file survives. Nulls and undefined are
+ * dropped rather than sent as the strings "null" and "undefined", which is what
+ * FormData does with them and what makes a nullable numeric field fail
+ * validation for no visible reason.
+ */
+function toForm(fields = {}, files = [], fieldName = 'files[]') {
+  const form = new FormData()
+  Object.entries(fields).forEach(([k, v]) => {
+    if (v !== null && v !== undefined && v !== '') form.append(k, v)
+  })
+  // The field name is a parameter because endpoints disagree: claims and
+  // advances take a `files[]` array, leave takes a single `attachment`. Sending
+  // the wrong name is silent — the server simply never sees the file.
+  Array.from(files).forEach(f => form.append(fieldName, f))
+  return form
+}
+
 api.interceptors.request.use(cfg => {
   const token = getToken() // reads local- or sessionStorage (remember-me aware)
   if (token) cfg.headers.Authorization = `Bearer ${token}`
@@ -483,7 +504,17 @@ export const hrApi = {
       apply:  (formData)    => api.post('/hr/leave/applications', formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data),
       submit: (id)          => api.patch(`/hr/leave/applications/${id}/submit`).then(r => r.data),
       cancel: (id)          => api.patch(`/hr/leave/applications/${id}/cancel`).then(r => r.data),
-      attachmentUrl: (id)   => `${BASE}/hr/leave/applications/${id}/attachment`,
+      /**
+       * The bytes, not a URL.
+       *
+       * This used to hand back `${BASE}/…/attachment` for an <a href>, which the
+       * browser follows WITHOUT the Authorization header — so the route, which is
+       * behind auth:sanctum, answered 401 and the attachment could never be
+       * opened. Fetching as a blob is how every other authenticated download in
+       * this app works.
+       */
+      attachmentBlob: (id) =>
+        api.get(`/hr/leave/applications/${id}/attachment`, { responseType: 'blob' }).then(r => r.data),
       // Day count for a range BEFORE applying. The answer depends on the
       // employee's shift, so the breakdown says which days were excluded and why.
       preview: (data)       => api.post('/hr/leave/applications/preview', data).then(r => r.data),
@@ -589,7 +620,10 @@ export const hrApi = {
       update:      (id, formData) => { formData.append('_method', 'PUT'); return api.post(`/hr/exit/requests/${id}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data) },
       submit:      (id)          => api.patch(`/hr/exit/requests/${id}/submit`).then(r => r.data),
       withdraw:    (id, data)    => api.patch(`/hr/exit/requests/${id}/withdraw`, data).then(r => r.data),
-      attachmentUrl: (id)        => `${BASE}/hr/exit/requests/${id}/attachment`,
+      // Same fix as leave: a bare href reaches a token-protected route with no
+      // token. See the note there.
+      attachmentBlob: (id) =>
+        api.get(`/hr/exit/requests/${id}/attachment`, { responseType: 'blob' }).then(r => r.data),
     },
     // Exit Approval workflow (Phase 3). Submitted → Under Review → Approved / Rejected.
     approvals: {
@@ -838,6 +872,18 @@ export const hrApi = {
     // already existed and already accept employee_id/month/year; only this client
     // binding was missing. Returns 422 when the integration is switched off.
     syncSangoeTrack: (data = {}) => api.post('/hr/attendance/sync-sangoetrack', data).then(r => r.data),
+
+      // Clocking YOURSELF in. Separate from the endpoints above, which take an
+      // employee_id and need HR-admin rights because they record attendance FOR
+      // somebody. These take no id at all — the employee comes from the token, so
+      // they can only ever touch the caller's own record.
+      me: {
+        today:      () => api.get('/hr/me/attendance/today').then(r => r.data),
+        checkIn:    () => api.post('/hr/me/attendance/check-in').then(r => r.data),
+        checkOut:   () => api.post('/hr/me/attendance/check-out').then(r => r.data),
+        breakStart: () => api.post('/hr/me/attendance/break-start').then(r => r.data),
+        breakEnd:   () => api.post('/hr/me/attendance/break-end').then(r => r.data),
+      },
   },
 
   // ── Recruitment Services (external-company hiring intake) ────────────────
@@ -1089,6 +1135,164 @@ export const hrApi = {
     recovery:            (loanId)      => api.get(`/hr/loans/${loanId}/recovery`).then(r => r.data),
     outstandingRecovery: (params = {}) => api.get('/hr/loans/recovery/outstanding', { params }).then(r => r.data?.data ?? []),
     runRecovery:         (runId)       => api.get(`/hr/payroll/runs/${runId}/loan-recovery`).then(r => r.data),
+  },
+
+  /**
+   * Expense claims — the native ones, not SangoeTrack's.
+   *
+   * Two surfaces on purpose. `me` accepts no employee id anywhere, matching the
+   * server, which is what makes "can I see somebody else's receipts" answerable
+   * without reading the controller. The admin block is gated server-side by
+   * hr.manage; the UI hides what it cannot do, but the gate is not here.
+   */
+  reimbursements: {
+    me: {
+      list:   ()                => api.get('/hr/me/reimbursements').then(r => r.data?.data ?? []),
+      get:    (id)              => api.get(`/hr/me/reimbursements/${id}`).then(r => r.data?.data),
+      // Multipart: a claim carries its receipts, so submit and reply both post
+      // files. axios sets the boundary itself — naming the content type by hand
+      // omits it and the request arrives empty.
+      create: (data, files = []) => api.post('/hr/me/reimbursements', toForm(data, files)).then(r => r.data),
+      reply:  (id, body, files = []) =>
+        api.post(`/hr/me/reimbursements/${id}/reply`, toForm({ body }, files)).then(r => r.data),
+      accept: (id)              => api.post(`/hr/me/reimbursements/${id}/accept`).then(r => r.data),
+      // These routes carry a Bearer token, so an <img src> or a bare <a href>
+      // cannot reach them — the browser sends no Authorization header. The bytes
+      // come back as a blob and become an object URL, the same way every other
+      // authenticated download in this app works.
+      file:   (id, attachmentId) =>
+        api.get(`/hr/me/reimbursements/${id}/attachments/${attachmentId}`, { responseType: 'blob' }).then(r => r.data),
+    },
+
+    list:    (params = {})   => api.get('/hr/reimbursements', { params }).then(r => r.data?.data ?? []),
+    get:     (id)            => api.get(`/hr/reimbursements/${id}`).then(r => r.data?.data),
+    approve: (id, amount, reason) => api.post(`/hr/reimbursements/${id}/approve`, { amount, reason }).then(r => r.data),
+    decline: (id, reason)    => api.post(`/hr/reimbursements/${id}/decline`, { reason }).then(r => r.data),
+    hold:    (id, reason, proposed_amount) =>
+      api.post(`/hr/reimbursements/${id}/hold`, { reason, proposed_amount }).then(r => r.data),
+    note:    (id, body)      => api.post(`/hr/reimbursements/${id}/note`, { body }).then(r => r.data),
+    file:    (id, attachmentId) =>
+      api.get(`/hr/reimbursements/${id}/attachments/${attachmentId}`, { responseType: 'blob' }).then(r => r.data),
+  },
+
+  /**
+   * Advances — money out before it is spent, settled against bills afterwards.
+   *
+   * Not loans: hrApi.loans is payroll recovery in installments, a different
+   * thing with a different table. The ladder here is manager → accounts →
+   * director, and the server decides whose turn it is; nothing in this file
+   * names a tier, because a client that could name its tier could name the last.
+   */
+  advances: {
+    me: {
+      list:        ()   => api.get('/hr/me/advances').then(r => r.data?.data ?? []),
+      outstanding: ()   => api.get('/hr/me/advances/outstanding').then(r => r.data?.data),
+      get:         (id) => api.get(`/hr/me/advances/${id}`).then(r => r.data?.data),
+      create: (data, files = []) => api.post('/hr/me/advances', toForm(data, files)).then(r => r.data),
+      reply:  (id, body, files = []) =>
+        api.post(`/hr/me/advances/${id}/reply`, toForm({ body }, files)).then(r => r.data),
+      accept: (id) => api.post(`/hr/me/advances/${id}/accept`).then(r => r.data),
+      cancel: (id) => api.post(`/hr/me/advances/${id}/cancel`).then(r => r.data),
+      // The bills go up with the figure, in one request, so a settlement cannot
+      // exist without the paperwork that justifies it.
+      settle: (id, data, files = []) =>
+        api.post(`/hr/me/advances/${id}/settlement`, toForm(data, files)).then(r => r.data),
+      file:   (id, attachmentId) =>
+        api.get(`/hr/me/advances/${id}/attachments/${attachmentId}`, { responseType: 'blob' }).then(r => r.data),
+    },
+
+    list:     (params = {}) => api.get('/hr/advances', { params }).then(r => r.data?.data ?? []),
+    get:      (id)          => api.get(`/hr/advances/${id}`).then(r => r.data?.data),
+    approve:  (id, amount, reason) => api.post(`/hr/advances/${id}/approve`, { amount, reason }).then(r => r.data),
+    decline:  (id, reason)  => api.post(`/hr/advances/${id}/decline`, { reason }).then(r => r.data),
+    hold:     (id, reason, proposed_amount) =>
+      api.post(`/hr/advances/${id}/hold`, { reason, proposed_amount }).then(r => r.data),
+    note:     (id, body)    => api.post(`/hr/advances/${id}/note`, { body }).then(r => r.data),
+    disburse: (id, mode, reference, amount) =>
+      api.post(`/hr/advances/${id}/disburse`, { mode, reference, amount }).then(r => r.data),
+
+    settlements:      ()              => api.get('/hr/advances/settlements').then(r => r.data?.data ?? []),
+    acceptSettlement: (id, remarks)   => api.post(`/hr/advances/settlements/${id}/accept`, { remarks }).then(r => r.data),
+    rejectSettlement: (id, remarks)   => api.post(`/hr/advances/settlements/${id}/reject`, { remarks }).then(r => r.data),
+
+    file: (id, attachmentId) =>
+      api.get(`/hr/advances/${id}/attachments/${attachmentId}`, { responseType: 'blob' }).then(r => r.data),
+  },
+
+  /**
+   * HR settings. The schema comes back with the values so the screen renders
+   * from what the server enforces, rather than a field list copied into React.
+   */
+  settings: {
+    get:    ()       => api.get('/hr/settings').then(r => r.data?.data),
+    save:   (values) => api.put('/hr/settings', values).then(r => r.data?.data),
+    // The short allowlist an employee's own screens may read.
+    mine:   ()       => api.get('/hr/me/settings').then(r => r.data?.data ?? {}),
+  },
+
+  /** Inbound demo enquiries. */
+  demoRequests: {
+    list:   (params = {}) => api.get('/hr/demo-requests', { params }).then(r => r.data?.data ?? []),
+    get:    (id)          => api.get(`/hr/demo-requests/${id}`).then(r => r.data?.data),
+    create: (data)        => api.post('/hr/demo-requests', data).then(r => r.data),
+    update: (id, data)    => api.put(`/hr/demo-requests/${id}`, data).then(r => r.data),
+  },
+
+  /**
+   * Attendance corrections — a punch that was wrong, or never made.
+   *
+   * The CRM had none of this natively; the only corrections routes were a proxy
+   * to SangoeTrack's. `me` accepts no employee id, matching the server.
+   */
+  corrections: {
+    me: {
+      list:     ()   => api.get('/hr/me/corrections').then(r => r.data?.data ?? []),
+      // The day as it stands, so somebody can see what they are correcting.
+      day:      (date) => api.get('/hr/me/corrections/day', { params: { date } }).then(r => r.data?.data),
+      get:      (id) => api.get(`/hr/me/corrections/${id}`).then(r => r.data?.data),
+      create:   (data) => api.post('/hr/me/corrections', data).then(r => r.data),
+      reply:    (id, body) => api.post(`/hr/me/corrections/${id}/reply`, { body }).then(r => r.data),
+      withdraw: (id) => api.patch(`/hr/me/corrections/${id}/withdraw`).then(r => r.data),
+    },
+
+    list:    (params = {}) => api.get('/hr/corrections', { params }).then(r => r.data?.data ?? []),
+    get:     (id)          => api.get(`/hr/corrections/${id}`).then(r => r.data?.data),
+    approve: (id, remarks) => api.post(`/hr/corrections/${id}/approve`, { remarks }).then(r => r.data),
+    reject:  (id, remarks) => api.post(`/hr/corrections/${id}/reject`, { remarks }).then(r => r.data),
+    hold:    (id, reason)  => api.post(`/hr/corrections/${id}/hold`, { reason }).then(r => r.data),
+    note:    (id, body)    => api.post(`/hr/corrections/${id}/note`, { body }).then(r => r.data),
+  },
+
+  /**
+   * An employee's own leave.
+   *
+   * Separate from hrApi.leave, which is HR's — that one takes an employee_id and
+   * files leave on somebody's behalf. Nothing here accepts one, matching the
+   * server, so "could this book leave against a colleague" is answerable without
+   * reading the controller.
+   */
+  myLeave: {
+    list:     ()   => api.get('/hr/me/leave').then(r => r.data?.data ?? []),
+    balances: ()   => api.get('/hr/me/leave/balances').then(r => r.data?.data ?? []),
+    get:      (id) => api.get(`/hr/me/leave/${id}`).then(r => r.data?.data),
+    // The day count comes from the server so the number somebody sees while
+    // picking dates is the number they will actually be charged.
+    preview:  (data) => api.post('/hr/me/leave/preview', data).then(r => r.data?.data),
+    apply:    (data, file = null) =>
+      api.post('/hr/me/leave', toForm(data, file ? [file] : [], 'attachment')).then(r => r.data),
+    cancel:   (id) => api.patch(`/hr/me/leave/${id}/cancel`).then(r => r.data),
+    fileBlob: (id) =>
+      api.get(`/hr/me/leave/${id}/attachment`, { responseType: 'blob' }).then(r => r.data),
+  },
+
+  /**
+   * Attendance for payroll. Read-only — nothing here changes a figure, so
+   * looking at a report cannot affect a run.
+   */
+  attendanceReports: {
+    monthly:     (params = {}) => api.get('/hr/reports/attendance', { params }).then(r => r.data?.data),
+    departments: (params = {}) => api.get('/hr/reports/attendance/departments', { params }).then(r => r.data?.data),
+    employee:    (id, params = {}) => api.get(`/hr/reports/attendance/${id}`, { params }).then(r => r.data?.data),
   },
 }
 

@@ -18,7 +18,9 @@ const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', gender:'', address:'',
   probation_policy_id:'', skip_probation:false, probation_skip_reason:'',
   // #29 — what this person is, and the comment's explicit "option to consider
   // person in org. chart while entering in system".
-  worker_type:'employee', include_in_org_chart:true }
+  worker_type:'employee', include_in_org_chart:true,
+  // Attendance-app access. Off by default — granted, never assumed.
+  app_login_enabled:false }
 
 // Avatar built from initials (no photo store) — consistent across card & list.
 const Avatar = ({ name, dept, size=44 }) => {
@@ -96,6 +98,7 @@ export default function Employees() {
 
   const [showModal, setShowModal] = useState(false)
   const [editingId, setEditingId] = useState(null)
+  const [appBusy, setAppBusy] = useState(null)
   const [form, setForm]           = useState(EMPTY_FORM)
   const [saving, setSaving]       = useState(false)
   const [toast, setToast]         = useState(null)
@@ -145,7 +148,7 @@ export default function Employees() {
     // than to '': an employee the list endpoint did not return them for would
     // otherwise open with "Show on the org chart" unticked and save it off.
     setForm({ ...EMPTY_FORM, ...Object.fromEntries(Object.keys(EMPTY_FORM).map(k=>[
-      k, emp[k] ?? (k === 'status' ? 'Active' : (k in { worker_type:1, include_in_org_chart:1 } ? EMPTY_FORM[k] : '')),
+      k, emp[k] ?? (k === 'status' ? 'Active' : (k in { worker_type:1, include_in_org_chart:1, app_login_enabled:1 } ? EMPTY_FORM[k] : '')),
     ])) })
     setShowModal(true)
   }
@@ -168,6 +171,32 @@ export default function Employees() {
       setShowModal(false); setForm(EMPTY_FORM); setEditingId(null)
     } catch (e) { showToast(e.response?.data?.message||'Failed','error') }
     finally { setSaving(false) }
+  }
+
+  /**
+   * Grant or revoke attendance-app access from the list.
+   *
+   * This was only settable inside the employee form, so answering "who can use
+   * the app" meant opening every record one at a time — which is a question HR
+   * asks far more often than they edit an employee.
+   *
+   * PATCHes the one field rather than the whole form: sending the full record
+   * back from a list row would resave stale values for everything else on it.
+   */
+  const toggleAppAccess = async (emp) => {
+    const next = !emp.app_login_enabled
+    setAppBusy(emp.id)
+    try {
+      await hrApi.employees.update(emp.id, { app_login_enabled: next })
+      setEmployees(prev => prev.map(e => e.id === emp.id ? { ...e, app_login_enabled: next } : e))
+      showToast(next
+        ? `${emp.name} can now sign in to the attendance app`
+        : `${emp.name} can no longer sign in to the attendance app`)
+    } catch (e) {
+      showToast(e.response?.data?.message || 'Could not change app access', 'error')
+    } finally {
+      setAppBusy(null)
+    }
   }
 
   const resetFilters = () => { setDeptF('All'); setDesigF('All'); setStatusF('All'); setJoinedFrom(''); setSearch('') }
@@ -252,6 +281,25 @@ export default function Employees() {
                   <div className="px-2.5 py-2 rounded-xl" style={{ background:'var(--bg-input)' }}><p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Department</p><p className="text-xs font-bold mt-0.5" style={{ color:deptColor(emp.department) }}>{emp.department||'—'}</p></div>
                   <div className="px-2.5 py-2 rounded-xl" style={{ background:'var(--bg-input)' }}><p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Joined</p><p className="text-xs font-bold mt-0.5" style={{ color:'var(--text-h)' }}>{fmtDate(emp.joining_date)}</p></div>
                   <div className="px-2.5 py-2 rounded-xl col-span-2" style={{ background:'var(--bg-input)' }}><p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Reporting Manager</p><p className="text-xs font-semibold mt-0.5" style={{ color:'var(--text-h)' }}>{emp.reporting_manager_name||'—'}</p></div>
+                  {/* Same control as the list view. Whichever view somebody works in,
+                      "can this person clock in on their phone" has to be answerable and
+                      changeable there — a toggle that exists in only one of two views is
+                      the same as missing for anybody using the other. */}
+                  <div className="px-2.5 py-2 rounded-xl col-span-2 flex items-center gap-2" style={{ background:'var(--bg-input)' }}>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px]" style={{ color:'var(--text-muted)' }}>Attendance app</p>
+                      <p className="text-xs font-bold mt-0.5" style={{ color: emp.app_login_enabled ? '#34d399' : 'var(--text-muted)' }}>
+                        {emp.app_login_enabled ? 'Can sign in' : 'No access'}
+                      </p>
+                    </div>
+                    <button type="button" onClick={()=>toggleAppAccess(emp)} disabled={appBusy===emp.id}
+                      title={emp.app_login_enabled ? 'Revoke attendance-app access' : 'Grant attendance-app access'}
+                      className="w-11 h-6 rounded-full relative transition-all shrink-0"
+                      style={{ background: emp.app_login_enabled ? '#10b981' : 'var(--border)', opacity: appBusy===emp.id ? 0.6 : 1 }}>
+                      <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all"
+                        style={{ left: emp.app_login_enabled ? '22px' : '2px' }}/>
+                    </button>
+                  </div>
                 </div>
                 <div className="flex gap-2 mt-auto">
                   <button onClick={()=>openProfile(emp.id)} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}><Eye size={12}/> View Profile</button>
@@ -265,7 +313,7 @@ export default function Employees() {
         /* ── LIST VIEW ── */
         <div className="card-3d overflow-x-auto" style={{ padding:'6px' }}>
           <table className="w-full text-sm" style={{ minWidth:820 }}>
-            <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Employee ID','Employee','Department','Designation','Status','Reporting Manager','Joining Date','Actions'].map(h=><th key={h} className="text-left px-3 py-3 label-caps whitespace-nowrap">{h}</th>)}</tr></thead>
+            <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Employee ID','Employee','Department','Designation','Status','App Access','Reporting Manager','Joining Date','Actions'].map(h=><th key={h} className="text-left px-3 py-3 label-caps whitespace-nowrap">{h}</th>)}</tr></thead>
             <tbody>
               {employees.map(emp=>{
                 const ss = STATUS_S(emp.status)
@@ -279,6 +327,22 @@ export default function Employees() {
                     <td className="px-3 py-2.5">
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:ss.bg, color:ss.c }}>{emp.status}</span>
                       <OnboardingBadge status={emp.onboarding_status} progress={emp.onboarding_progress}/>
+                    </td>
+                    {/* Who can clock in on their phone, answerable from the list rather
+                        than by opening every record one at a time. Clicking it toggles
+                        access directly — stopPropagation because the row opens a profile. */}
+                    <td className="px-3 py-2.5" onClick={e=>e.stopPropagation()}>
+                      <button type="button" onClick={()=>toggleAppAccess(emp)}
+                        disabled={appBusy===emp.id}
+                        title={emp.app_login_enabled ? 'Can sign in to the attendance app — click to revoke' : 'No app access — click to grant'}
+                        className="text-[10px] font-bold px-2 py-0.5 rounded-lg"
+                        style={{
+                          background: emp.app_login_enabled ? 'rgba(52,211,153,0.14)' : 'var(--bg-input)',
+                          color:      emp.app_login_enabled ? '#34d399' : 'var(--text-muted)',
+                          border:     `1px solid ${emp.app_login_enabled ? 'rgba(52,211,153,0.35)' : 'var(--border)'}`,
+                        }}>
+                        {appBusy===emp.id ? '…' : emp.app_login_enabled ? 'Allowed' : 'Off'}
+                      </button>
                     </td>
                     <td className="px-3 py-2.5" style={{ color:'var(--text-muted)' }}>{emp.reporting_manager_name||'—'}</td>
                     <td className="px-3 py-2.5 whitespace-nowrap" style={{ color:'var(--text-muted)' }}>{fmtDate(emp.joining_date)}</td>
@@ -342,15 +406,30 @@ export default function Employees() {
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="label">Department *</label>
                   <select className="input-3d text-sm" value={form.department} onChange={e=>setForm({...form,department:e.target.value})}>
-                    <option value="">Select...</option>
+                    <option value="">{deptNames.length ? 'Select...' : 'No departments defined yet'}</option>
                     {deptOptions(form).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
+                  {/* Both lists come from Organization Setup, and both fields are required —
+                      so an empty workspace could not create an employee at all and gave no
+                      hint why. Say where they come from, and offer the way there. */}
+                  {!deptNames.length && (
+                    <button type="button" onClick={()=>navigate('/app/hr/organization-setup')}
+                      className="text-[10px] mt-1 underline" style={{ color:'#a78bfa' }}>
+                      Add departments in Organization Setup
+                    </button>
+                  )}
                 </div>
                 <div><label className="label">Designation *</label>
                   <select className="input-3d text-sm" value={form.designation} onChange={e=>setForm({...form,designation:e.target.value})}>
-                    <option value="">Select...</option>
+                    <option value="">{desigNames.length ? 'Select...' : 'No designations defined yet'}</option>
                     {desigOptions(form).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
+                  {!desigNames.length && (
+                    <button type="button" onClick={()=>navigate('/app/hr/organization-setup')}
+                      className="text-[10px] mt-1 underline" style={{ color:'#a78bfa' }}>
+                      Add designations in Organization Setup
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -409,6 +488,23 @@ export default function Employees() {
                     Show on the org chart
                   </label>
                 </div>
+              </div>
+
+              {/* Attendance-app access. HR decides who clocks in on a phone;
+                  Staff Management decides what someone can do inside the CRM.
+                  Two different questions, so two different screens.
+                  Off by default: access is granted, never assumed. */}
+              <div className="rounded-xl px-3 py-2.5" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input type="checkbox" className="mt-0.5" checked={form.app_login_enabled === true}
+                    onChange={e=>setForm({...form,app_login_enabled:e.target.checked})}/>
+                  <span>
+                    <span className="text-xs font-bold block" style={{ color:'var(--text-h)' }}>Can sign in to the attendance app</span>
+                    <span className="text-[11px]" style={{ color:'var(--text-muted)' }}>
+                      Lets this person clock in and out from their phone. Turning it off signs them out of the app; it does not affect their CRM login.
+                    </span>
+                  </span>
+                </label>
               </div>
 
               {/* Work State drives Professional Tax. A saved value that is not in the

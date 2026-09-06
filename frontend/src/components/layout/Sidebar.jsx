@@ -2,7 +2,7 @@ import {
   LayoutDashboard, Users, Briefcase, CheckSquare, FolderOpen, Receipt, Truck, LifeBuoy,
   BarChart2, Settings, ChevronLeft, ChevronRight, LogOut, User, Zap,
   Package, UserCheck, CalendarDays, FileText, Rocket, Building2, ClipboardList,
-  ChevronDown, Shield, UserCog, IndianRupee, FileSignature, CreditCard, FileX, ShoppingBag,
+  ChevronDown, Shield, UserCog, IndianRupee, Banknote, CalendarCheck, FileSignature, CreditCard, FileX, ShoppingBag,
   UserPlus, Link2, RefreshCw, LayoutTemplate, Globe, TrendingUp, Landmark, BookText, Scale,
   ArrowLeftRight, BookOpen, Boxes, PackagePlus, PackageMinus, Warehouse, History, Network, FileQuestion,
   BarChart3, Activity, Layers3, ScanLine, ClipboardCheck, ShoppingCart, Hourglass, Wrench,
@@ -90,6 +90,36 @@ const HR_RECORDS_ITEMS = [
   // written and never once opened.
   { label: 'Medical Records', path: '/app/medical/general', icon: Stethoscope },
   { label: 'Notifications', path: '/app/hr/settings/notifications', icon: Bell },
+  // The CRM's own expense claims — not SangoeTrack's, which are still listed
+  // separately below under 'Reimbursements' until track.sangoe.in is retired.
+  // Deliberately NOT called Reimbursements: two identical labels in one nav is
+  // how somebody ends up deciding on the wrong screen, the same reason 'Staff
+  // Directory' and 'Salaries' are named as they are.
+  { label: 'Expense Claims', path: '/app/hr/expense-claims', icon: Receipt },
+  { label: 'My Expenses', path: '/app/hr/my-expenses', icon: IndianRupee },
+  // Native advances. SangoeTrack's 'Advances' is still listed below until
+  // track.sangoe.in is retired, so these carry distinct labels for the same
+  // reason Expense Claims does.
+  { label: 'Advance Requests', path: '/app/hr/advances', icon: Banknote },
+  { label: 'My Advances', path: '/app/hr/my-advances', icon: Banknote },
+  // 'Attendance Reports', not 'Reports' — SangoeTrack already has a Reports
+  // entry, and this one is specifically the payroll-facing view.
+  { label: 'Attendance Reports', path: '/app/hr/attendance-reports', icon: BarChart3 },
+  // The CRM's OWN attendance register — every employee, every day, editable.
+  // It has existed at /app/hr/attendance all along with no way to reach it from
+  // the nav: the only 'Attendance' entry points at SangoeTrack's copy below, so
+  // the native one was unreachable and looked missing.
+  { label: 'Attendance Register', path: '/app/hr/attendance', icon: CalendarCheck },
+  // 'My Leave', beside My Expenses and My Advances — the self-service set. HR's
+  // own Leave Management sits above; SangoeTrack's 'Leave' is below.
+  { label: 'My Leave', path: '/app/hr/my-leave', icon: CalendarOff },
+  // Named apart from SangoeTrack's 'Corrections' below, for the same reason as
+  // Expense Claims and Attendance Register.
+  { label: 'Correction Requests', path: '/app/hr/corrections', icon: PenLine },
+  { label: 'My Corrections', path: '/app/hr/my-corrections', icon: PenLine },
+  { label: 'Demo Requests', path: '/app/hr/demo-requests', icon: MessageSquare },
+  // 'HR Settings', not 'Settings' — SangoeTrack has its own Settings entry below.
+  { label: 'HR Settings', path: '/app/hr/settings', icon: Settings2 },
 ]
 
 // Flat list of every HR leaf — used only for the collapsed icon rail.

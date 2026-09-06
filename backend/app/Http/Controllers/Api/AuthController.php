@@ -281,9 +281,12 @@ class AuthController extends Controller
             'designation'     => 'nullable|string|max:120',
             'department'      => 'nullable|string|max:120',
             'emails_enabled'  => 'nullable|boolean',
-            // ST1 — the user's own outgoing-mail sender identity.
-            'mail_from_name'  => 'nullable|string|max:120',
-            'mail_from_email' => 'nullable|email|max:191',
+            // ST1 — mail_from_name / mail_from_email are NOT settable here.
+            // TenantMailer uses them verbatim as the From address on outgoing
+            // mail, so a self-service field let any signed-in user send as
+            // anyone. An admin sets them on the staff record instead
+            // (StaffManagementController::update). Left readable below so the
+            // profile screen can show what was configured for you.
         ]);
 
         $user->fill($data)->save();

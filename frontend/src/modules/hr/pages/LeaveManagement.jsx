@@ -6,6 +6,7 @@ import {
   Check, Ban, Eye, Paperclip, Send, LayoutGrid, List, ChevronLeft, ChevronRight, BarChart3,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { openAuthedFile } from '@/lib/openAuthedFile'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import LeaveReports from './LeaveReports'
 
@@ -624,13 +625,13 @@ function LeaveApproval({ showToast }) {
             </table>
           </div>}
 
-      {review && <ReviewDrawer app={review} onClose={()=>setReview(null)} onDecide={(kind)=>{ setDecision({ kind, app:review, remarks:'' }); setReview(null) }} />}
+      {review && <ReviewDrawer showToast={showToast} app={review} onClose={()=>setReview(null)} onDecide={(kind)=>{ setDecision({ kind, app:review, remarks:'' }); setReview(null) }} />}
       {decision && <DecisionModal decision={decision} setDecision={setDecision} onDone={()=>{ setDecision(null); load() }} showToast={showToast} />}
     </div>
   )
 }
 
-function ReviewDrawer({ app, onClose, onDecide }) {
+function ReviewDrawer({ app, onClose, onDecide, showToast }) {
   const st = APP_ST[app.status]||{}
   return (
     <div className="modal-backdrop"><div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:640, width:'95%', maxHeight:'92vh', overflowY:'auto' }}>
@@ -641,7 +642,7 @@ function ReviewDrawer({ app, onClose, onDecide }) {
           <div key={k} className={k==='Reason'?'col-span-2':''} style={{ background:'var(--bg-input)', borderRadius:12, padding:'10px 12px' }}><p className="text-[10px] font-bold uppercase" style={{ color:'var(--text-muted)' }}>{k}</p><p className="text-sm font-semibold mt-0.5" style={{ color:'var(--text-h)' }}>{v}</p></div>
         ))}
       </div>
-      {app.has_attachment && <a href={hrApi.leave.applications.attachmentUrl(app.id)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl mb-4" style={{ background:'rgba(59,130,246,0.1)', color:'#60a5fa' }}><Paperclip size={13}/> View Attachment</a>}
+      {app.has_attachment && <button type="button" onClick={()=>openAuthedFile(hrApi.leave.applications.attachmentBlob, app.id, showToast)} className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl mb-4" style={{ background:'rgba(59,130,246,0.1)', color:'#60a5fa' }}><Paperclip size={13}/> View Attachment</button>}
       <p className="text-[11px] font-bold uppercase mb-2" style={{ color:'var(--text-muted)' }}>Timeline</p>
       <div className="space-y-1.5 mb-4">{(app.timeline||[]).map((t,i)=>(
         <div key={i} className="flex items-center justify-between px-3 py-1.5 rounded-xl" style={{ background:'var(--bg-input)' }}><span className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{t.action}</span><span className="text-[10px]" style={{ color:'var(--text-muted)' }}>{t.actor_name} · {t.created_at?new Date(t.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short'}):''}</span></div>

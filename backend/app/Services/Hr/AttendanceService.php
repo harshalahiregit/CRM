@@ -456,6 +456,25 @@ class AttendanceService
         $a->status = $a->check_in->gt($limit) ? 'Late' : 'Present';
     }
 
+    /**
+     * Re-derive status, hours and overtime after the punch times are edited,
+     * then save.
+     *
+     * The single public way in for anything that changes a punch outside the
+     * normal clock-in flow — an approved correction, above all. Both halves are
+     * already implemented privately here; a correction service recomputing hours
+     * itself would be a second answer to "how long did they work", and the two
+     * would drift.
+     */
+    public function restampAndSave(HrAttendance $a): HrAttendance
+    {
+        $this->applyStatusFromCheckIn($a);
+        $this->recompute($a);
+        $a->save();
+
+        return $a->fresh();
+    }
+
     /** Recompute working hours and overtime from the punch times. */
     private function recompute(HrAttendance $a): void
     {

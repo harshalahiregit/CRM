@@ -55,9 +55,17 @@ class PayrollReportRepository
                 ->leftJoin('hr_payslips as ps', function ($j) use ($tenantId) {
                     $j->on('ps.payroll_record_id', '=', 'r.id')->where('ps.tenant_id', '=', $tenantId);
                 })
+                // statutory_deductions, loan_deduction and variable_earnings are
+                // selected because `net_salary` on a payroll record is the FROZEN
+                // structural net — it does not include this period's statutory
+                // split (PF, ESIC, PT, TDS), any loan instalment, or variable
+                // earnings. Without them the report cannot show what actually
+                // reaches the bank. All three sit on the same row under the same
+                // alias, so this costs no extra join.
                 ->selectRaw("e.name, e.employee_code, e.department, e.designation,
                     st.name as structure_name,
                     r.gross_salary, r.total_benefits, r.total_deductions, r.net_salary,
+                    r.statutory_deductions, r.loan_deduction, r.variable_earnings,
                     COALESCE(ps.status, 'Pending') as payslip_status,
                     run.payroll_year, run.payroll_month")
                 ->orderBy('e.name')
