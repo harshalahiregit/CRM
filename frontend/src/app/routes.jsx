@@ -130,6 +130,9 @@ const RolesSettings = lazy(() => import('@/modules/settings/pages/RolesSettings'
 const DepartmentsSettings = lazy(() => import('@/modules/settings/pages/DepartmentsSettings'))
 const GeneralBrandingSettings = lazy(() => import('@/modules/settings/pages/GeneralBrandingSettings'))
 const LocalizationSettings = lazy(() => import('@/modules/settings/pages/LocalizationSettings'))
+// Where online meetings are held — the answer to "why is it asking me to sign
+// in with Google?", which is the free public Jitsi server's rule, not ours.
+const MeetingServerSettings = lazy(() => import('@/modules/settings/pages/MeetingServerSettings'))
 const CurrencySettings = lazy(() => import('@/modules/settings/pages/CurrencySettings'))
 const DocumentNumberingSettings = lazy(() => import('@/modules/settings/pages/DocumentNumberingSettings'))
 const EmailTemplatesSettings = lazy(() => import('@/modules/settings/pages/EmailTemplatesSettings'))
@@ -1004,6 +1007,7 @@ export default function AppRoutes() {
           <Route path="expense-categories" element={<S><ExpenseCategoriesSettings /></S>} />
           <Route path="account-groups" element={<S><AccountGroupsSettings /></S>} />
           <Route path="localization" element={<S><LocalizationSettings /></S>} />
+          <Route path="meetings" element={<S><MeetingServerSettings /></S>} />
           <Route path="currency" element={<S><CurrencySettings /></S>} />
           <Route path="numbering" element={<S><DocumentNumberingSettings /></S>} />
           <Route path="email-templates" element={<S><EmailTemplatesSettings /></S>} />

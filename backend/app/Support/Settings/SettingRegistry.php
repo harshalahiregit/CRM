@@ -42,6 +42,18 @@ final class SettingRegistry
             ],
 
             // ── Increment C: Localization ────────────────────────────────
+            /*
+             * Where online meetings are actually held.
+             *
+             * Empty means the deployment default (JITSI_DOMAIN, else 8x8's free
+             * meet.jit.si). The public server makes whoever STARTS a room sign in
+             * with Google/GitHub/Facebook — pointing this at your own Jitsi is
+             * what removes that, and it is a setting rather than a redeploy
+             * because it is the kind of thing an administrator changes once.
+             */
+            'meetings' => [
+                'jitsi_domain' => ['cast' => 'string', 'default' => null, 'rules' => ['nullable', 'string', 'max:191']],
+            ],
             'localization' => [
                 'language'       => ['cast' => 'string', 'default' => 'en',           'rules' => ['nullable', 'string', 'max:10']],
                 'locale'         => ['cast' => 'string', 'default' => 'en_IN',        'rules' => ['nullable', 'string', 'max:20']],
