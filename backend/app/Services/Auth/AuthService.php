@@ -451,6 +451,17 @@ class AuthService
             throw new BusinessException('Your account has been suspended. Contact support.', 403);
         }
 
+        // 'inactive' means access was REVOKED, and it was not checked here at
+        // all — so deactivating an account did not actually close it. Every
+        // caller that sets this status means to shut the door: deactivating a
+        // doctor (MedicalDoctorController::destroy), deactivating a vendor
+        // (VendorService), revoking TPV access. Only the TPV path was safe,
+        // and only by accident — it also sets access_expires_at, which IS
+        // checked below. The others left a working login behind.
+        if ($user->status === 'inactive') {
+            throw new BusinessException('This account has been deactivated. Contact your administrator.', 403);
+        }
+
         if ($user->status === 'rejected') {
             throw new BusinessException('Your registration was rejected. Contact support.', 403);
         }
