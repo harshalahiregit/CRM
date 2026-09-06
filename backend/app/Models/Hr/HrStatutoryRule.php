@@ -20,7 +20,7 @@ class HrStatutoryRule extends Model
     // Both are premiums rather than contributions, but they are configured,
     // resolved and effective-dated exactly like the rest, so they belong here
     // rather than in a parallel scheme of their own.
-    public const TYPES = ['pf', 'esic', 'pt', 'bonus', 'gratuity', 'tds', 'wcp', 'mediclaim'];
+    public const TYPES = ['pf', 'esic', 'pt', 'lwf', 'bonus', 'gratuity', 'tds', 'wcp', 'mediclaim'];
 
     protected $fillable = [
         'tenant_id', 'rule_type', 'state', 'effective_from', 'effective_to',

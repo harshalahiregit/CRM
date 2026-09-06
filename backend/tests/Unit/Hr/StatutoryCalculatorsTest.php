@@ -59,7 +59,11 @@ class StatutoryCalculatorsTest extends TestCase
         $r = (new PfCalculator)->calculate(15000, $cfg);
 
         $this->assertSame(1800.0, $r['employer']);
-        $this->assertEqualsWithDelta(1249.5, $r['eps'], 0.01);
+        // 1250, not 1249.50. EPFO works in whole rupees — there is no paise column
+        // on the ECR — and the filed July 2026 register shows EPS 1250 with EPF
+        // 550 against a 15,000 ceiling. This asserted the raw 8.33% before, which
+        // is fifty paise out against the portal every month.
+        $this->assertEqualsWithDelta(1250.0, $r['eps'], 0.01);
         $this->assertEqualsWithDelta($r['employer'], $r['eps'] + $r['epf'], 0.01, 'EPS + EPF must equal the employer share');
     }
 

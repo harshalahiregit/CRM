@@ -42,12 +42,33 @@ class HrEmployeeDetail extends Model
         'uan_number', 'pf_number', 'esic_number', 'esic_ip_number',
         'pf_nominee_name', 'pf_nominee_relation',
         'is_international_worker', 'has_previous_pf', 'tax_regime',
+        // Whether each deduction applies to THIS person. The rules decide what PF
+        // is; these decide whether they have it. MUST be listed: create() drops
+        // any key not whitelisted, so an omission silently leaves the default.
+        'pf_applicable', 'eps_applicable', 'esic_applicable',
+        'pt_applicable', 'lwf_applicable', 'gratuity_applicable',
+        'pf_joining_date', 'vpf_amount', 'vpf_percent', 'restrict_pf_to_ceiling',
+        'esic_dispensary', 'is_disabled',
     ];
 
     protected $casts = [
         'passport_expiry'         => 'date',
         'is_international_worker' => 'boolean',
         'has_previous_pf'         => 'boolean',
+        'pf_applicable'           => 'boolean',
+        'eps_applicable'          => 'boolean',
+        'esic_applicable'         => 'boolean',
+        'pt_applicable'           => 'boolean',
+        'lwf_applicable'          => 'boolean',
+        'gratuity_applicable'     => 'boolean',
+        'is_disabled'             => 'boolean',
+        // Nullable on purpose — null means "follow the rule", which is different
+        // from false. A plain boolean cast would turn null into false and quietly
+        // take everybody off the ceiling.
+        'restrict_pf_to_ceiling'  => 'boolean',
+        'pf_joining_date'         => 'date',
+        'vpf_amount'              => 'decimal:2',
+        'vpf_percent'             => 'decimal:2',
     ];
 
     public function employee(): BelongsTo

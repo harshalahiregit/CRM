@@ -27,8 +27,19 @@ class EsicCalculator
             return $this->zero('Gross above the ESIC threshold');
         }
 
-        $employee = round($esicWages * (float) ($config['employee_rate'] ?? 0) / 100, 2);
-        $employer = round($esicWages * (float) ($config['employer_rate'] ?? 0) / 100, 2);
+        // Rounding is not decorative here — it is how the filed register reads.
+        // Derived from a month already filed (July 2026, 8 employees): the
+        // employee's share rounds UP to the next rupee and the employer's to the
+        // NEAREST. Plain round() on both is wrong on 3 of those 8 rows, and plain
+        // ceil() on both is wrong on 4 — a rupee out per employee per month, in a
+        // number that has to agree with a government portal.
+        $roundUp = ($config['round_employee_up'] ?? true);
+
+        $employeeRaw = $esicWages * (float) ($config['employee_rate'] ?? 0) / 100;
+        $employerRaw = $esicWages * (float) ($config['employer_rate'] ?? 0) / 100;
+
+        $employee = $roundUp ? (float) ceil($employeeRaw) : round($employeeRaw, 2);
+        $employer = round($employerRaw);
 
         return ['applicable' => true, 'wages' => round($esicWages, 2),
                 'employee' => $employee, 'employer' => $employer, 'reason' => null];

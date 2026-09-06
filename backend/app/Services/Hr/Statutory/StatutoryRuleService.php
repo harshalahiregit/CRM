@@ -194,6 +194,30 @@ class StatutoryRuleService
             }
         }
 
+        // LWF is a flat amount in named months, not a rate on anything. A rule
+        // with no amount deducts nothing and reads as "this state has no LWF"
+        // rather than as an unfinished setup.
+        if ($type === 'lwf') {
+            $employee = (float) ($config['employee_amount'] ?? 0);
+            $employer = (float) ($config['employer_amount'] ?? 0);
+
+            if ($employee <= 0 && $employer <= 0) {
+                throw new BusinessException('Set an employee or employer amount — an LWF rule with neither deducts nothing.');
+            }
+
+            $months = $config['months'] ?? [];
+
+            if (! is_array($months)) {
+                throw new BusinessException('Months must be a list of month numbers, e.g. [6, 12].');
+            }
+
+            foreach ($months as $m) {
+                if (! is_numeric($m) || (int) $m < 1 || (int) $m > 12) {
+                    throw new BusinessException('Each LWF month must be a number from 1 to 12.');
+                }
+            }
+        }
+
         return $config;
     }
 
