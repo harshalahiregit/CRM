@@ -429,9 +429,13 @@ const PortalWorkforceShell = lazy(() => import('@/pages/vendor-portal/PortalWork
 const DoctorPortalShell = lazy(() => import('@/pages/doctor-portal/DoctorPortalShell'))
 const DoctorDashboard   = lazy(() => import('@/pages/doctor-portal/DoctorDashboard'))
 const DoctorExamination = lazy(() => import('@/pages/doctor-portal/DoctorExamination'))
+const DoctorExamForm    = lazy(() => import('@/pages/doctor-portal/DoctorExamForm'))
+const DoctorGroupFindings = lazy(() => import('@/pages/doctor-portal/DoctorGroupFindings'))
 const DoctorExaminations = lazy(() => import('@/pages/doctor-portal/DoctorExaminations'))
 const DoctorProfile     = lazy(() => import('@/pages/doctor-portal/DoctorProfile'))
 const MedicalDoctors    = lazy(() => import('@/pages/medical/MedicalDoctors'))
+const MedicalGeneralRegister = lazy(() => import('@/pages/medical/MedicalGeneralRegister'))
+const MedicalGeneralReport   = lazy(() => import('@/pages/medical/MedicalGeneralReport'))
 const MedicalVerify     = lazy(() => import('@/pages/public/MedicalVerify'))
 const VendorMedicalPanel = lazy(() => import('@/components/medical/VendorMedicalPanel'))
 const TpvMedicalReport = lazy(() => import('@/modules/tpv/pages/TpvMedicalReport'))
@@ -504,7 +508,12 @@ export default function AppRoutes() {
       }>
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard"    element={<S><DoctorDashboard /></S>} />
+        {/* Choosing WHO and the examination itself are two pages, not one long
+            scroll. A doctor pressed Open and the form appeared below the fold,
+            which looks exactly like a button that did nothing. */}
         <Route path="examine"      element={<S><DoctorExamination /></S>} />
+        <Route path="examine/form"  element={<S><DoctorExamForm /></S>} />
+        <Route path="examine/group" element={<S><DoctorGroupFindings /></S>} />
         <Route path="examinations" element={<S><DoctorExaminations /></S>} />
         <Route path="profile"      element={<S><DoctorProfile /></S>} />
       </Route>
@@ -545,6 +554,15 @@ export default function AppRoutes() {
 
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<S><DashboardPage /></S>} />
+
+        {/* The general medical register — internal staff, client contacts and
+            site visitors. Deliberately NOT under tpv/ or purchase/: these people
+            belong to no vendor, and filing them under one of the two vendor
+            modules would be the wrong claim about who they are. The doctor
+            portal has been writing these all along with nothing able to read
+            them back. */}
+        <Route path="medical/general"        element={<S><MedicalGeneralRegister /></S>} />
+        <Route path="medical/general/report" element={<S><MedicalGeneralReport /></S>} />
         <Route path="sessions" element={<S><ActiveSessions /></S>} />
         <Route path="profile" element={<S><MyProfile /></S>} />
         <Route path="modules" element={<S><ModulesPage /></S>} />

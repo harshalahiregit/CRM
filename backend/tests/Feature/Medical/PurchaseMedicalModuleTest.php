@@ -32,6 +32,9 @@ class PurchaseMedicalModuleTest extends TestCase
 {
     use RefreshDatabase;
 
+    /** A 1x1 PNG — the smallest thing that reads as a real image. */
+    private const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+
     private const TENANT = 1;
 
     protected function setUp(): void
@@ -93,6 +96,8 @@ class PurchaseMedicalModuleTest extends TestCase
             'exam_date'      => now()->toDateString(),
             'height_cm'      => 170, 'weight_kg' => 70,
             'bp_systolic'    => 118, 'bp_diastolic' => 78,
+            'geo_location'   => '19.1197,72.8468',
+            'signature_data' => self::PNG, 'capture_photo' => self::PNG,
         ])->assertStatus(201);
 
         $medical = $worker->fresh()->latestMedical;
@@ -245,6 +250,10 @@ class PurchaseMedicalModuleTest extends TestCase
         Sanctum::actingAs($this->doctor());
         $this->postJson("/api/doctor/purchase/workers/{$worker->id}/examination", [
             'fitness_status' => 'Fit', 'exam_date' => now()->toDateString(),
+            // Location, signature and camera photo are mandatory on a doctor's
+            // examination — they are what the certificate rests on.
+            'geo_location' => '19.1197,72.8468',
+            'signature_data' => self::PNG, 'capture_photo' => self::PNG,
         ])->assertStatus(201);
 
         $medical = $worker->fresh()->latestMedical;

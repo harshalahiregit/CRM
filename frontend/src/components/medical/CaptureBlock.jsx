@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
-import { Camera, PenLine, MapPin, RotateCcw, Check } from 'lucide-react'
+import { Camera, PenLine, MapPin, RotateCcw, Check, HelpCircle } from 'lucide-react'
 import { S } from './MedicalBits'
+import LocationHelpModal from './LocationHelpModal'
 
 /**
  * The three captures that make a prescription verifiable: the doctor's drawn
  * signature, a photo taken by the camera at sign-time, and where the device was
  * standing.
  *
- * All three are optional at the field level and captured together here, because
- * they only mean anything as a set — a signature with no place and no moment is
- * just a picture of a name.
+ * All three are REQUIRED — the server refuses an examination missing any of
+ * them — and they are captured together here because they only mean anything as
+ * a set: a signature with no place and no moment is just a picture of a name.
  *
  * The camera is best-effort: browsers refuse it without HTTPS and without the
  * user's consent, and a doctor in a clinic with no camera still has to be able
@@ -198,6 +199,7 @@ function CameraCapture({ value, onChange }) {
 
 function GeoCapture({ value, onChange }) {
   const [state, setState] = useState('idle')
+  const [help, setHelp] = useState(false)
 
   // Asked for once, on open: the location that matters is where the examination
   // happened, and a doctor should not have to remember to press a button for the
@@ -205,14 +207,18 @@ function GeoCapture({ value, onChange }) {
   useEffect(() => { if (!value) locate() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const locate = () => {
-    if (!navigator.geolocation) { setState('unavailable'); return }
+    if (!navigator.geolocation) { setState('unavailable'); setHelp(true); return }
     setState('locating')
     navigator.geolocation.getCurrentPosition(
       pos => {
         onChange(`${pos.coords.latitude.toFixed(6)},${pos.coords.longitude.toFixed(6)}`)
         setState('done')
       },
-      () => setState('denied'),
+      // Refused, timed out, or unavailable. Location is mandatory on an
+      // examination, so this is a hard stop rather than a missing nicety — the
+      // guidance opens straight away instead of leaving "permission refused" on
+      // screen with nothing the doctor can do about it.
+      () => { setState('denied'); setHelp(true) },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
     )
   }
@@ -239,9 +245,20 @@ function GeoCapture({ value, onChange }) {
           </span>
         )}
       </div>
-      <button type="button" onClick={locate} style={{ ...S.btn, padding: '4px 10px', fontSize: 11.5, marginTop: 6 }}>
-        <MapPin size={12} /> {value ? 'Update' : 'Capture location'}
-      </button>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+        <button type="button" onClick={locate} style={{ ...S.btn, minHeight: 40, padding: '8px 12px', fontSize: 12 }}>
+          <MapPin size={13} /> {value ? 'Update' : 'Capture location'}
+        </button>
+        {/* Always offered, not only after a refusal: the operating system's own
+            switch can be off before the browser is ever asked, and then the
+            prompt never appears at all. */}
+        <button type="button" onClick={() => setHelp(true)}
+          style={{ ...S.btn, minHeight: 40, padding: '8px 12px', fontSize: 12 }}>
+          <HelpCircle size={13} /> Location help
+        </button>
+      </div>
+
+      <LocationHelpModal open={help} reason={state} onClose={() => setHelp(false)} onRetry={locate} />
     </Panel>
   )
 }

@@ -146,3 +146,78 @@ export const S = {
 }
 
 export const TONES = { FITNESS_TONE, QC_TONE, CLEARANCE_TONE }
+
+/* ── Form primitives ─────────────────────────────────────────────────────
+ *
+ * These lived inside the examination page. The form now has a page of its own
+ * and the admin register renders the same shapes, so they moved here rather
+ * than being copied — two drifting copies of a field wrapper is how one screen
+ * quietly stops looking like the other.
+ */
+
+export function Card({ title, action, children, tone }) {
+  return (
+    <section className="pr-glass" style={{ padding: 14, borderRadius: 14, borderLeft: tone ? `3px solid ${tone}` : undefined }}>
+      {(title || action) && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8 }}>
+          <h2 style={{ margin: 0, fontSize: 12.5, fontWeight: 800, color: 'var(--text-h)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{title}</h2>
+          {action}
+        </div>
+      )}
+      {children}
+    </section>
+  )
+}
+
+export function Row({ children }) {
+  return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 10 }}>{children}</div>
+}
+
+export function Field({ label, hint, children }) {
+  return (
+    <div>
+      <label style={S.label}>{label}</label>
+      {children}
+      {hint && <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 3 }}>{hint}</div>}
+    </div>
+  )
+}
+
+/* ── Findings ────────────────────────────────────────────────────────────
+ *
+ * A finding is what an examination FOUND, in words — "blood pressure, high"
+ * rather than "164". Four severities, and they are coloured the same wherever
+ * they appear so that "the red ones" means one thing across the whole module.
+ */
+
+export const SEVERITY_TONE = {
+  critical: '#ef4444',
+  serious:  '#f97316',
+  watch:    '#f59e0b',
+  note:     '#6366f1',
+}
+
+export const SEVERITY_WORD = {
+  critical: 'Critical',
+  serious:  'Serious',
+  watch:    'Watch',
+  note:     'Note',
+}
+
+export function FindingPill({ finding, showDetail = true }) {
+  const tone = SEVERITY_TONE[finding.severity] || '#6b7280'
+
+  return (
+    <span title={SEVERITY_WORD[finding.severity]} style={{
+      display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 9px',
+      borderRadius: 8, background: `${tone}1a`, border: `1px solid ${tone}55`,
+      color: tone, fontSize: 11.5, fontWeight: 700, lineHeight: 1.35,
+    }}>
+      <span style={{ width: 6, height: 6, borderRadius: 3, background: tone, flexShrink: 0 }} />
+      {finding.label}
+      {showDetail && finding.detail && (
+        <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>· {finding.detail}</span>
+      )}
+    </span>
+  )
+}

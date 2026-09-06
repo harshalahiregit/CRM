@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import { UserCog, RotateCcw, Save } from 'lucide-react'
+import { UserCog, RotateCcw, Save, Camera } from 'lucide-react'
 import { useToast } from '@/hooks/useToast'
 import { medicalApi } from '@/services/medicalApi'
 import { S } from '@/components/medical/MedicalBits'
@@ -14,6 +14,19 @@ import { S } from '@/components/medical/MedicalBits'
  * not worth the paper. The signature is drawn once here and reused, rather than
  * being re-drawn on every examination.
  */
+/**
+ * Read a chosen image into a data URL.
+ *
+ * The same shape the signature canvas produces, so the server decodes both
+ * through one path rather than growing a second upload endpoint for one field.
+ */
+function readImage(file, onDone) {
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = () => onDone(String(reader.result || ''))
+  reader.readAsDataURL(file)
+}
+
 export default function DoctorProfile() {
   const { me, refreshMe } = useOutletContext()
   const toast = useToast()
@@ -25,6 +38,9 @@ export default function DoctorProfile() {
     clinic_name: '', clinic_address: '', phone: '',
   })
   const [signature, setSignature] = useState('')
+  // The doctor's own photograph. The column existed from the start but
+  // nothing could set it, so a profile could never actually be completed.
+  const [photo, setPhoto] = useState('')
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
@@ -70,13 +86,18 @@ export default function DoctorProfile() {
   const save = async () => {
     setBusy(true)
     try {
-      await medicalApi.doctor.updateProfile({ ...form, signature_data: signature || undefined })
+      await medicalApi.doctor.updateProfile({
+        ...form,
+        signature_data: signature || undefined,
+        photo_data: photo || undefined,
+      })
       await refreshMe?.()
       toast.success('Profile saved.')
     } catch (e) { toast.error(e) } finally { setBusy(false) }
   }
 
   const stored = me?.profile?.signature_path
+  const storedPhoto = me?.profile?.photo_path
 
   return (
     <div style={{ maxWidth: 780 }}>
@@ -144,8 +165,48 @@ export default function DoctorProfile() {
         </div>
       </section>
 
+      <section className="pr-glass" style={{ padding: 16, borderRadius: 14, marginBottom: 14 }}>
+        <h2 style={{ margin: '0 0 4px', fontSize: 12.5, fontWeight: 800, color: 'var(--text-h)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          Photograph
+        </h2>
+        <p style={{ margin: '0 0 10px', fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+          Your own photograph, shown beside your name on the certificates you issue.
+          Not to be confused with the camera capture taken during an examination, which is of the patient.
+        </p>
+
+        <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          {(photo || storedPhoto) && (
+            <img
+              src={photo || `/storage/${storedPhoto}`}
+              alt="doctor"
+              style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 14, border: '1px solid var(--border)', background: '#fff' }}
+            />
+          )}
+          <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+            <label style={{ ...S.btn, minHeight: 44, cursor: 'pointer', display: 'inline-flex' }}>
+              <Camera size={14} /> {(photo || storedPhoto) ? 'Replace photo' : 'Choose a photo'}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={e => readImage(e.target.files?.[0], setPhoto)}
+                style={{ display: 'none' }}
+              />
+            </label>
+            {photo && (
+              <button type="button" onClick={() => setPhoto('')}
+                style={{ ...S.btn, minHeight: 44, marginLeft: 8 }}>
+                <RotateCcw size={13} /> Undo
+              </button>
+            )}
+            <p style={{ margin: '8px 0 0', fontSize: 11, color: 'var(--text-muted)' }}>
+              A head-and-shoulders photo works best. Saved when you press Save profile.
+            </p>
+          </div>
+        </div>
+      </section>
+
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <button onClick={save} disabled={busy} style={{ ...S.btnPrimary, padding: '10px 22px', opacity: busy ? 0.5 : 1 }}>
+        <button onClick={save} disabled={busy} style={{ ...S.btnPrimary, padding: '10px 22px', minHeight: 46, opacity: busy ? 0.5 : 1 }}>
           <Save size={15} /> {busy ? 'Saving…' : 'Save profile'}
         </button>
       </div>

@@ -7,7 +7,7 @@ import {
   ArrowLeftRight, BookOpen, Boxes, PackagePlus, PackageMinus, Warehouse, History, Network, FileQuestion,
   BarChart3, Activity, Layers3, ScanLine, ClipboardCheck, ShoppingCart, Hourglass, Wrench,
   CalendarRange, Handshake, Factory, Undo2, Wallet, Award, GraduationCap, ShieldCheck, Bell, Search, X,
-  Settings2, Clock, PenLine, CalendarOff, Contact, MessageSquare, PartyPopper
+  Settings2, Clock, PenLine, CalendarOff, Contact, MessageSquare, PartyPopper, Stethoscope
 } from 'lucide-react'
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -84,6 +84,11 @@ const HR_RECORDS_ITEMS = [
   { label: 'Learning & Development', path: '/app/hr/learning-development', icon: GraduationCap },
   { label: 'Probation Management', path: '/app/hr/probation-management', icon: ShieldCheck },
   { label: 'Exit Management', path: '/app/hr/exit-management', icon: LogOut },
+  // Occupational-health records for people who belong to no vendor: internal
+  // staff, client contacts and site visitors. The doctor portal has been filing
+  // these since it was built and nothing could read them, so the register was
+  // written and never once opened.
+  { label: 'Medical Records', path: '/app/medical/general', icon: Stethoscope },
   { label: 'Notifications', path: '/app/hr/settings/notifications', icon: Bell },
 ]
 
