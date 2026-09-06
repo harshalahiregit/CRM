@@ -4,6 +4,7 @@ namespace App\Models\Purchase;
 
 use App\Casts\BusinessDateTime;
 use App\Models\Purchase\PurchaseVendor;
+use App\Models\Concerns\GeneratesSequentialCode;
 use App\Models\Traits\Auditable;
 use App\Models\Traits\BelongsToTenant;
 use App\Models\Traits\NormalisesBusinessTimes;
@@ -25,7 +26,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class PurchaseKickoffMeeting extends Model
 {
-    use Auditable, BelongsToTenant, NormalisesBusinessTimes, SoftDeletes;
+    use Auditable, BelongsToTenant, GeneratesSequentialCode, NormalisesBusinessTimes, SoftDeletes;
 
     protected $table = 'purchase_kickoff_meetings';
 
@@ -76,12 +77,14 @@ class PurchaseKickoffMeeting extends Model
     {
         static::creating(function (self $m) {
             if (empty($m->meeting_no)) {
-                $year = now()->year;
-                $n = static::withTrashed()
-                    ->where('tenant_id', $m->tenant_id)
-                    ->whereYear('created_at', $year)
-                    ->count() + 1;
-                $m->meeting_no = sprintf('MTG-%d-%04d', $year, $n);
+                // Highest issued + 1, not count + 1 — see GeneratesSequentialCode.
+                // meeting_no has no unique index, so the old count-based version
+                // did not fail on a collision, it wrote a DUPLICATE: delete one
+                // meeting and the next reused its number. That number is what the
+                // minutes print and what a vendor quotes back at you.
+                $m->meeting_no = static::nextSequentialCode(
+                    'meeting_no', 'MTG-'.now()->year.'-', (int) $m->tenant_id, 4,
+                );
             }
         });
     }
