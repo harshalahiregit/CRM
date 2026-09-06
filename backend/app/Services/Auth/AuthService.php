@@ -36,7 +36,7 @@ class AuthService
         // their own account by guessing at them from elsewhere.
         $throttleKey = 'login:'.strtolower($data['email']).'|'.request()->ip();
 
-        $user = $this->findUserForLogin($data['email'], $data['role']);
+        $user = $this->findUserForLogin($data['email'], $data['role'] ?? null);
         [$maxAttempts, $decayMinutes] = $this->lockoutPolicy($user);
 
         if ($maxAttempts > 0 && RateLimiter::tooManyAttempts($throttleKey, $maxAttempts)) {
@@ -423,8 +423,15 @@ class AuthService
         return [max(0, $max), max(1, $decay)];
     }
 
-    private function findUserForLogin(string $email, string $role): ?User
+    private function findUserForLogin(string $email, ?string $role): ?User
     {
+        // No role given — the shape the app posts. users.email is unique, so the
+        // address alone identifies the account; the role only ever narrowed a
+        // search that could not return two rows anyway.
+        if ($role === null || $role === '') {
+            return User::with('tenant')->where('email', $email)->first();
+        }
+
         if ($role === 'staff') {
             return User::with('tenant')
                 ->where('email', $email)

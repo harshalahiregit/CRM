@@ -15,6 +15,7 @@
  */
 
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '@/context/AuthContext'
 import { useState, useEffect, useCallback } from 'react'
 import { Wallet, Check, X, PauseCircle, Lock, RefreshCw, Banknote, AlertTriangle, Plus } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
@@ -208,6 +209,7 @@ function SettlementQueue({ rows, loading, onDone }) {
 
 export default function Advances() {
   const navigate = useNavigate()
+  const { can: mayDo } = useAuth()
   const toast = useToast()
 
   const [tab,     setTab]     = useState('open')
@@ -311,11 +313,13 @@ export default function Advances() {
             place where a request is created, and keeps that page reachable now
             that it is out of the admin's menu. */}
         <div className="flex items-center gap-2">
+        {mayDo('self', 'create') && (
         <button onClick={() => navigate('/app/hr/my-advances')} title="Request an advance for yourself"
           className="rounded-lg text-xs font-bold flex items-center gap-1.5 text-white"
           style={{ padding: '7px 12px', background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>
           <Plus size={13} /> Request Advance
         </button>
+        )}
         <button onClick={load} disabled={loading}
           className="rounded-lg text-xs font-semibold flex items-center gap-1.5"
           style={{ padding: '7px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-p)' }}>
