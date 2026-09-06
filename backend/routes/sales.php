@@ -33,6 +33,12 @@ Route::middleware('auth:sanctum')->prefix('sales')->group(function () {
     // Dashboard
     Route::get('/dashboard', [SalesDashboardController::class, 'index']);
 
+    // ── Report section (Sales) ──────────────────────────────────
+    // Distinct from the dashboard above: that describes the current month
+    // and is fixed; this is pointed at a range, narrowed, and exported.
+    Route::get('/reports', [\App\Http\Controllers\Api\Sales\SalesReportController::class, 'index']);
+    Route::get('/reports/export', [\App\Http\Controllers\Api\Sales\SalesReportController::class, 'export']);
+
     // Unified activity timeline (polymorphic subject)
     Route::get('/activities', [SalesActivityController::class, 'index']);
 
