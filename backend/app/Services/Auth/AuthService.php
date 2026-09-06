@@ -483,10 +483,6 @@ class AuthService
         // (VendorService), revoking TPV access. Only the TPV path was safe,
         // and only by accident — it also sets access_expires_at, which IS
         // checked below. The others left a working login behind.
-        if ($user->status === 'inactive') {
-            throw new BusinessException('This account has been deactivated. Contact your administrator.', 403);
-        }
-
         if ($user->status === 'rejected') {
             throw new BusinessException('Your registration was rejected. Contact support.', 403);
         }
