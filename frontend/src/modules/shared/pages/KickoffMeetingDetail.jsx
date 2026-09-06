@@ -10,7 +10,6 @@ import {
 // shared engine under /app/tpv, Purchase's under /app/purchase. Aliased to
 // the old name so the call sites below read unchanged.
 import { meetingEngineApi as kickoffApi, meetingBase } from '@/services/meetingEngineApi'
-import { meetingApi } from '@/services/meetingApi'
 import {
   KO_STATUS, koStatusCfg, koNextStatuses, koModeLabel, fmtDateTime, fmtDate,
   actStatusCfg, actNextStatuses, issueStatusCfg, issueNextStatuses, ISSUE_TO_INCIDENT_SEVERITY,
@@ -40,9 +39,11 @@ export default function KickoffMeetingDetail() {
     const mtg = d?.data ?? d
     setM(mtg)
     setLoad(false)
-    // Fetch stored online meeting link if applicable
-    if (mtg?.mode === 'online' && mtg?.meeting_platform) {
-      meetingApi.getLink(id).then(setLinkData).catch(() => {})
+    // The stored link, through the module's own API — a Purchase meeting's link
+    // lives on the Purchase route. Asked for whenever the meeting HAS one:
+    // gating on mode === 'online' hid the link on hybrid meetings.
+    if (mtg?.meeting_link || mtg?.meeting_platform) {
+      kickoffApi.getLink(id).then(setLinkData).catch(() => {})
     }
   }).catch(() => { setErr('Could not load this meeting.'); setLoad(false) })
   useEffect(() => { load() }, [id])
@@ -78,6 +79,15 @@ export default function KickoffMeetingDetail() {
             <h1 style={{ color: 'var(--text-h)', fontSize: 23, fontWeight: 900, margin: 0, letterSpacing: '-0.02em' }}>{m.title}</h1>
             {m.meeting_no && <span style={{ padding: '3px 9px', borderRadius: 7, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 11.5, fontWeight: 800, letterSpacing: '0.02em' }}>{m.meeting_no}</span>}
             <span style={{ padding: '4px 11px', borderRadius: 999, background: cfg.bg, color: cfg.color, fontSize: 12, fontWeight: 800 }}>{cfg.label}</span>
+            {/* Where the meeting sits against the clock, beside what was decided
+                about it. Derived on the server so this page, the list and both
+                vendor portals cannot disagree about whether it has passed. */}
+            {m.is_expired && (
+              <span style={{ padding: '4px 11px', borderRadius: 999, background: 'rgba(220,38,38,0.12)', color: '#b91c1c', fontSize: 12, fontWeight: 800 }}>Expired</span>
+            )}
+            {m.is_live && (
+              <span style={{ padding: '4px 11px', borderRadius: 999, background: 'rgba(34,197,94,0.14)', color: '#15803d', fontSize: 12, fontWeight: 800 }}>● In progress</span>
+            )}
             {m.priority && <span style={{ padding: '3px 9px', borderRadius: 7, fontSize: 11, fontWeight: 800, background: m.priority === 'Urgent' || m.priority === 'High' ? 'rgba(239,68,68,0.14)' : 'rgba(148,163,184,0.15)', color: m.priority === 'Urgent' || m.priority === 'High' ? '#ef4444' : 'var(--text-muted)' }}>{m.priority}</span>}
             {m.confidentiality && m.confidentiality !== 'Public' && <span style={{ padding: '3px 9px', borderRadius: 7, fontSize: 11, fontWeight: 800, background: 'rgba(245,158,11,0.14)', color: '#d97706' }}>{m.confidentiality}</span>}
           </div>
@@ -178,11 +188,15 @@ export default function KickoffMeetingDetail() {
               onGenerate={async (platform) => {
                 setGenLinkBusy(true); setErr(null)
                 try {
-                  const res = await meetingApi.generateLink(m.id, platform)
+                  const res = await kickoffApi.generateLink(m.id, platform)
                   setLinkData(res.link)
                   setM(res.meeting)
                 } catch (e) {
-                  setErr(e?.response?.data?.message || 'Could not generate meeting link.')
+                  // Name the field the server refused. A bare 422 body reads
+                  // "Validation failed", which tells the reader nothing about
+                  // what to change.
+                  const detail = Object.values(e?.response?.data?.errors || {}).flat()[0]
+                  setErr(detail || e?.response?.data?.message || 'Could not generate meeting link.')
                 } finally { setGenLinkBusy(false) }
               }}
             />
@@ -1295,6 +1309,19 @@ function HPill({ tone, children }) {
   return <span style={{ padding: '2px 7px', borderRadius: 6, background: `${tone}1f`, color: tone, fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap' }}>{children}</span>
 }
 
+/**
+ * A <input type="datetime-local"> value as an unambiguous instant.
+ *
+ * The picker yields "2026-09-04T14:30" — a wall clock with no timezone. Sent as
+ * it stands, the server had to guess which zone it meant, guessed UTC, and the
+ * rescheduled meeting landed an offset away from the time that was picked.
+ */
+const localInputToInstant = (v) => {
+  if (!v) return undefined
+  const at = new Date(v)
+  return Number.isNaN(at.getTime()) ? undefined : at.toISOString()
+}
+
 /* ── Transition modal ─────────────────────────────────────────────────────── */
 function TransitionModal({ m, to, onClose, onDone }) {
   // Publishing a draft: prefill the drafted time so the admin can confirm or tweak it.
@@ -1313,8 +1340,8 @@ function TransitionModal({ m, to, onClose, onDone }) {
     setSaving(true); setErr(null)
     try {
       const payload = { status: to }
-      if (to === KO_STATUS.DELAYED) { payload.delay_reason = form.delay_reason; if (form.scheduled_at) payload.scheduled_at = form.scheduled_at }
-      if (to === KO_STATUS.SCHEDULED && form.scheduled_at) payload.scheduled_at = form.scheduled_at
+      if (to === KO_STATUS.DELAYED) { payload.delay_reason = form.delay_reason; if (form.scheduled_at) payload.scheduled_at = localInputToInstant(form.scheduled_at) }
+      if (to === KO_STATUS.SCHEDULED && form.scheduled_at) payload.scheduled_at = localInputToInstant(form.scheduled_at)
       if (to === KO_STATUS.COMPLETED && form.minutes) payload.minutes = form.minutes
       const updated = await kickoffApi.transition(m.id, payload)
       onDone(updated?.data ?? updated)
@@ -1386,12 +1413,16 @@ function TransitionModal({ m, to, onClose, onDone }) {
  *   3. busy              → spinner
  */
 const PLATFORM_LABELS = {
+  jitsi:       'Jitsi Meet',
   google_meet: 'Google Meet',
   zoom:        'Zoom',
   teams:       'Microsoft Teams',
+  // Kept for meetings saved before Jitsi replaced it — the server regenerates
+  // those as Jitsi, but the stored value is still 'stub' until they do.
   stub:        'Generic Link',
 }
 const PLATFORM_COLORS = {
+  jitsi:       '#1d76ba',
   google_meet: '#4285F4',
   zoom:        '#2D8CFF',
   teams:       '#6264A7',
@@ -1408,7 +1439,7 @@ function OnlineMeetingCard({ meeting, linkData, busy, onGenerate }) {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const platform    = linkData?.platform ?? meeting.meeting_platform ?? 'stub'
+  const platform    = linkData?.platform ?? meeting.meeting_platform ?? 'jitsi'
   const color       = PLATFORM_COLORS[platform] ?? '#a78bfa'
   const platformLbl = PLATFORM_LABELS[platform]  ?? platform
 
@@ -1429,6 +1460,15 @@ function OnlineMeetingCard({ meeting, linkData, busy, onGenerate }) {
         </div>
       ) : linkData?.link ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* Run the call inside the CRM, next to the agenda and the roster.
+              Only Jitsi can do this: Meet and Teams refuse to be embedded and
+              Zoom needs a reviewed app, so those keep the plain Open link. */}
+          {platform === 'jitsi' && (
+            <a href={`${meetingBase()}/kickoff/${meeting.id}/room`}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '11px 14px', borderRadius: 11, background: 'linear-gradient(145deg,#34d399,#10b981)', color: '#fff', fontSize: 13, fontWeight: 800, textDecoration: 'none', boxShadow: '0 8px 20px -6px #10b98188' }}>
+              <Video size={15} /> Join here — with the agenda and notes
+            </a>
+          )}
           {/* Link row */}
           <div style={{ display: 'flex', gap: 7 }}>
             <input

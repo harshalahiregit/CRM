@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Send, Upload, Calendar, ChevronDown, ChevronRight, FileCheck, Video } from 'lucide-react'
+import { Send, Upload, Calendar, ChevronDown, ChevronRight, FileCheck, Video, AlertTriangle } from 'lucide-react'
 
 /**
  * §32 governance tabs shared by both vendor portals (TPV + Purchase). Purely
@@ -12,6 +12,35 @@ const label = (s) => String(s || '').replace(/_/g, ' ')
 const dt = (v) => (v ? new Date(v).toLocaleString() : '—')
 const d = (v) => (v ? new Date(v).toLocaleDateString() : '—')
 const STATUS_TONE = { Open: '#d97706', In_Progress: '#0891b2', Closed: '#16a34a', Verified: '#16a34a', Pending: '#64748b' }
+
+/* ── Meeting timing ────────────────────────────────────────────────────────
+ *
+ * `status` is what people decided about the meeting; `timing_state` is where it
+ * sits against the clock, and the backend derives it (App\Support\Shared\
+ * MeetingTiming) so the portal, the dashboards and the admin screens cannot
+ * disagree about whether a meeting has passed. Both are shown, because
+ * "Scheduled · Expired" is the honest description of a meeting nobody closed.
+ */
+const TIMING_TONE = { upcoming: '#0891b2', live: '#16a34a', expired: '#dc2626', closed: '#64748b', draft: '#64748b' }
+
+/** "2:30 PM – 3:30 PM" from a start and an end on the same day. */
+const timeRange = (start, end) => {
+  if (!start) return '—'
+  const from = new Date(start)
+  const opts = { hour: 'numeric', minute: '2-digit' }
+  if (!end) return from.toLocaleString()
+  const to = new Date(end)
+  const sameDay = from.toDateString() === to.toDateString()
+  return sameDay
+    ? `${from.toLocaleDateString()}, ${from.toLocaleTimeString([], opts)} – ${to.toLocaleTimeString([], opts)}`
+    : `${from.toLocaleString()} – ${to.toLocaleString()}`
+}
+
+const durationText = (mins) => {
+  const n = Number(mins)
+  if (!Number.isFinite(n) || n <= 0) return null
+  return n >= 60 ? `${Math.floor(n / 60)}h${n % 60 ? ` ${n % 60}m` : ''}` : `${n} min`
+}
 
 /* ── Meetings & MOM ───────────────────────────────────────────────────── */
 export function MeetingsTab({ gov }) {
@@ -40,17 +69,46 @@ export function MeetingsTab({ gov }) {
             <span style={{ flex: 1 }} />
             <Pill text={label(m.meeting_type)} tone="#64748b" />
             <Pill text={label(m.status)} tone={STATUS_TONE[m.status]} />
+            {/* Where it sits against the clock, beside what was decided. */}
+            {m.timing_state && m.timing_state !== 'closed' && (
+              <Pill text={m.timing_label || m.timing_state} tone={TIMING_TONE[m.timing_state]} />
+            )}
           </button>
           <div style={{ fontSize: 12, color: 'var(--text-muted)', margin: '6px 0 0', paddingLeft: 26 }}>
-            {dt(m.scheduled_at)} · {label(m.mode)}{m.location ? ` · ${m.location}` : ''}
+            {/* The full slot, not just the start — a start time alone never said
+                when the meeting was over, so nothing on this screen could tell
+                you whether it had. */}
+            {timeRange(m.scheduled_at, m.ends_at)}
+            {durationText(m.duration_minutes) ? ` · ${durationText(m.duration_minutes)}` : ''}
+            {' · '}{label(m.mode)}{m.location ? ` · ${m.location}` : ''}
           </div>
-          {/* Join the online meeting straight from the portal (point 11). */}
-          {m.meeting_link && m.mode !== 'onsite' && m.status !== 'Completed' && m.status !== 'Cancelled' && (
-            <div style={{ paddingLeft: 26, marginTop: 8 }}>
+
+          {/* Expired: the slot passed and nobody completed or cancelled it. Said
+              plainly, because the vendor's question is "is this still happening?" */}
+          {m.is_expired && (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, margin: '8px 0 0 26px', padding: '8px 11px', borderRadius: 9, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.25)' }}>
+              <AlertTriangle size={14} style={{ color: '#dc2626', flexShrink: 0, marginTop: 1 }} />
+              <span style={{ fontSize: 12, color: '#b91c1c', fontWeight: 600 }}>
+                This meeting has expired — its time passed on {dt(m.ends_at)} and it was never
+                marked complete. The join link is no longer available. The organiser has been notified.
+              </span>
+            </div>
+          )}
+
+          {/* Join the online meeting straight from the portal (point 11).
+              Deliberately gated on the CLOCK as well as the status: the link was
+              offered for meetings that had already finished, which reads as
+              though they are still open. */}
+          {m.meeting_link && m.mode !== 'onsite' && !m.is_expired && m.status !== 'Completed' && m.status !== 'Cancelled' && (
+            <div style={{ paddingLeft: 26, marginTop: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
               <a href={m.meeting_link} target="_blank" rel="noopener noreferrer"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 9, fontSize: 12.5, fontWeight: 800, textDecoration: 'none', color: '#fff', background: 'linear-gradient(145deg,#22c55e,#16a34a)' }}>
-                <Video size={14} /> Join meeting
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 9, fontSize: 12.5, fontWeight: 800, textDecoration: 'none', color: '#fff', background: m.is_live ? 'linear-gradient(145deg,#22c55e,#16a34a)' : 'linear-gradient(145deg,#38bdf8,#0284c7)' }}>
+                <Video size={14} /> {m.is_live ? 'Join now' : 'Join meeting'}
               </a>
+              {m.is_live && <span style={{ fontSize: 11.5, fontWeight: 800, color: '#16a34a' }}>● In progress</span>}
+              {!m.is_live && Number.isFinite(Number(m.minutes_until_start)) && Number(m.minutes_until_start) > 0 && (
+                <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>starts in {durationText(m.minutes_until_start)}</span>
+              )}
             </div>
           )}
           {open === m.id && <MomDetail data={mom[m.id]} gov={gov} meetingId={m.id} />}

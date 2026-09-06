@@ -28,8 +28,11 @@ class SendKickoffReminders extends Command
         // and follow-ups after it. One scheduler entry, so a follow-up cannot be
         // left unscheduled by someone wiring up only half of it.
         $followed = $service->runDueFollowUps();
+        // ...and the third direction: a meeting whose slot passed while it
+        // was still open. Neither a reminder nor a follow-up says that.
+        $expired  = $service->runDueExpiryNotices();
 
-        $this->info("Kickoff: reminder(s) fired for {$sent} meeting(s), follow-up(s) for {$followed}.");
+        $this->info("Kickoff: reminder(s) fired for {$sent} meeting(s), follow-up(s) for {$followed}, expiry notice(s) for {$expired}.");
 
         return self::SUCCESS;
     }

@@ -14,7 +14,7 @@ export default function PurchasePortalShell() {
   const navigate = useNavigate()
 
   const onLogout = async () => {
-    try { await purchaseVendorAuthApi.logout() } finally { navigate('/purchase-portal/login') }
+    try { await purchaseVendorAuthApi.logout() } finally { navigate('/auth/login?role=purchase_vendor') }
   }
 
   return (
@@ -37,6 +37,7 @@ export default function PurchasePortalShell() {
         kb:         'kb',
         meeting:    'kickoff',   // Purchase kickoff meeting
         // Commercial — read-only documents raised against this vendor.
+        items:                'items',
         'quotation':          'quotations',
         'contracts':          'contracts',
         'purchase-order':     'orders',

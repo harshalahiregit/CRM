@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\Settings\AccessCatalogController;
 use App\Http\Controllers\Api\Settings\CompanySettingController;
 use App\Http\Controllers\Api\Settings\DocumentNumberingController;
 use App\Http\Controllers\Api\Settings\EmailTemplateController;
@@ -35,6 +36,20 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('settings')->group(fun
         ->where('group', 'localization|currency|numbering|upload|security|notifications');
     Route::put('/group/{group}', [SettingsGroupController::class, 'update'])
         ->where('group', 'localization|currency|numbering|upload|security|notifications');
+
+    // Roles & Departments — created from the UI instead of by a developer.
+    // These are staff JOB roles (users.internal_role), not account types:
+    // an account type is a whole portal and stays in code. See the
+    // access_roles migration for why the two are kept apart.
+    Route::get('/roles',                   [AccessCatalogController::class, 'roles']);
+    Route::post('/roles',                  [AccessCatalogController::class, 'storeRole']);
+    Route::put('/roles/{role}',            [AccessCatalogController::class, 'updateRole'])->whereNumber('role');
+    Route::delete('/roles/{role}',         [AccessCatalogController::class, 'destroyRole'])->whereNumber('role');
+
+    Route::get('/departments',                   [AccessCatalogController::class, 'departments']);
+    Route::post('/departments',                  [AccessCatalogController::class, 'storeDepartment']);
+    Route::put('/departments/{department}',      [AccessCatalogController::class, 'updateDepartment'])->whereNumber('department');
+    Route::delete('/departments/{department}',   [AccessCatalogController::class, 'destroyDepartment'])->whereNumber('department');
 
     // Document Numbering Engine — the single source of truth for document numbers.
     // `validate` is declared before `{type}` so it is never captured as a type.

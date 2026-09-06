@@ -150,6 +150,10 @@ export const purchasePortalApi = {
     accept: () => api.post('/portal/purchase/kickoff/accept').then(r => r.data),
   },
 
+  // The Inventory items this vendor is approved to supply. Read-only: the
+  // mapping is the buyer's to make, the vendor's to see.
+  items: () => api.get('/portal/purchase/items').then(r => r.data),
+
   // ── Commercial — own vendor only, read-only lists + detail (with items) ──
   // The vendor sees the documents raised against them: orders, quotations,
   // contracts, invoices, debit notes, payments, and a running statement.

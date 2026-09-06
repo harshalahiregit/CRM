@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { purchaseVendorAuthApi } from '@/services/purchaseVendorAuthApi'
-import { AuthShell, lbl, inp, primaryBtn, linkStyle, errStyle } from './PurchaseVendorLogin'
+import { AuthShell, lbl, inp, primaryBtn, linkStyle, errStyle } from './portalAuthChrome'
 
 /**
  * Purchase Vendor self-registration — creates ONLY a PurchaseVendor.
@@ -30,7 +30,7 @@ export default function PurchaseVendorRegister() {
   if (done) return (
     <AuthShell title="Check your email" subtitle="Verify your email to activate your account">
       <p style={{ color: 'var(--text-muted, #9ca3af)', fontSize: 13, textAlign: 'center' }}>Registration received. Once your email is verified you can sign in.</p>
-      <Link to="/purchase-portal/login" style={{ ...primaryBtn, display: 'block', textAlign: 'center', textDecoration: 'none', marginTop: 12 }}>Back to Sign In</Link>
+      <Link to="/auth/login?role=purchase_vendor" style={{ ...primaryBtn, display: 'block', textAlign: 'center', textDecoration: 'none', marginTop: 12 }}>Back to Sign In</Link>
     </AuthShell>
   )
 
@@ -52,7 +52,7 @@ export default function PurchaseVendorRegister() {
         <div><label style={lbl}>Confirm Password</label><input type="password" value={form.password_confirmation} onChange={set('password_confirmation')} style={inp} required /></div>
         {err && <div style={errStyle}>{err}</div>}
         <button type="submit" disabled={busy} style={primaryBtn}>{busy ? 'Registering…' : 'Register'}</button>
-        <div style={{ textAlign: 'center', fontSize: 12.5 }}><Link to="/purchase-portal/login" style={linkStyle}>Already have an account? Sign in</Link></div>
+        <div style={{ textAlign: 'center', fontSize: 12.5 }}><Link to="/auth/login?role=purchase_vendor" style={linkStyle}>Already have an account? Sign in</Link></div>
       </form>
     </AuthShell>
   )

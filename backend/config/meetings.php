@@ -289,4 +289,15 @@ return [
     */
     'followup_offsets_minutes' => [120, 1440],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Expiry notice
+    |--------------------------------------------------------------------------
+    | How far back the expiry sweep looks. A meeting that ended while still open
+    | is notified once; anything that expired longer ago than this is left
+    | alone, so switching the sweep on does not mail the roster of every meeting
+    | anyone ever forgot to close. Set to 0 to disable expiry notices entirely.
+    */
+    'expiry_notice_lookback_hours' => 48,
+
 ];

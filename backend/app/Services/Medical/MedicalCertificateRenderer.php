@@ -61,7 +61,26 @@ class MedicalCertificateRenderer
             return null;
         }
 
-        $mime = match (strtolower(pathinfo($absolutePath, PATHINFO_EXTENSION))) {
+        $extension = strtolower(pathinfo($absolutePath, PATHINFO_EXTENSION));
+
+        // dompdf rasterises PNG, JPEG and GIF through the PHP GD extension and
+        // throws outright when it is absent. Vector art (the barcode and the QR
+        // code) goes through php-svg-lib instead and is unaffected.
+        //
+        // Without this guard a server with no GD cannot render ANY certificate
+        // that carries a signature or a camera photo — which, now that both are
+        // mandatory, means every certificate. Omitting the two pictures leaves a
+        // document that still states the outcome, still carries the licence
+        // number, and still verifies by QR; refusing to render leaves nothing.
+        if (! extension_loaded('gd') && $extension !== 'svg') {
+            Log::warning('Medical certificate rendered without its images: the PHP GD extension is not installed', [
+                'path' => basename($absolutePath),
+            ]);
+
+            return null;
+        }
+
+        $mime = match ($extension) {
             'jpg', 'jpeg' => 'image/jpeg',
             'gif'         => 'image/gif',
             'svg'         => 'image/svg+xml',

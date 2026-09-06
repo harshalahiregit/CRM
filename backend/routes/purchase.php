@@ -539,6 +539,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/kickoff/vendors',                 [PurchaseKickoffController::class, 'vendors']);
     Route::get('/kickoff/vendor-status',           [PurchaseKickoffController::class, 'vendorStatus']);
     Route::get('/kickoff/history',                 [PurchaseKickoffController::class, 'history']);
+    // The online meeting link. Purchase meetings are their own records, so they
+    // mint and read their link here rather than through the shared engine.
+    Route::post('/kickoff/{kickoff}/generate-link', [PurchaseKickoffController::class, 'generateLink'])->whereNumber('kickoff');
+    Route::get('/kickoff/{kickoff}/link',          [PurchaseKickoffController::class, 'link'])->whereNumber('kickoff');
     // Read-only PREVIEW of carryable items, for the meeting form. The writing
     // half lives at POST /kickoff/{kickoff}/carry-forward and is unrelated.
     Route::get('/kickoff/carry-forward',           [PurchaseKickoffController::class, 'carryForwardPreview']);
@@ -564,6 +568,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::put('/kickoff/{kickoff}',               [PurchaseKickoffController::class, 'update']);
     Route::post('/kickoff/{kickoff}/transition',   [PurchaseKickoffController::class, 'transition']);
     Route::patch('/kickoff/{kickoff}/attendance',  [PurchaseKickoffController::class, 'attendance']);
+    // The live meeting room autosaves what is typed beside the video: the
+    // discussion and decision per agenda point, and the minutes. Separate from
+    // the meeting's own PUT, which re-notifies the roster on every save.
+    Route::post('/kickoff/{kickoff}/room/notes',   [PurchaseKickoffController::class, 'saveRoomNotes'])->whereNumber('kickoff');
     Route::post('/kickoff/{kickoff}/remind',       [PurchaseKickoffController::class, 'remind']);
     Route::post('/kickoff/{kickoff}/mom',          [PurchaseKickoffController::class, 'uploadMom']);
     Route::post('/kickoff/{kickoff}/mom/generate', [PurchaseKickoffController::class, 'generateMom']);

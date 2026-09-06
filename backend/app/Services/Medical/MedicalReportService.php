@@ -28,7 +28,7 @@ class MedicalReportService
 {
     /**
      * @param  'tpv'|'purchase'  $module
-     * @param  array{from?:string,to?:string,vendor_id?:int|string|null}  $filters
+     * @param  array{from?:string,to?:string,vendor_id?:int|string|null,project?:string|null,worker_id?:int|string|null}  $filters
      */
     public function build(string $module, int $tenantId, array $filters = []): array
     {
@@ -41,11 +41,15 @@ class MedicalReportService
                 'from'      => $filters['from'] ?? null,
                 'to'        => $filters['to'] ?? null,
                 'vendor_id' => $filters['vendor_id'] ?? null,
+                'project'   => $filters['project'] ?? null,
+                'worker_id' => $filters['worker_id'] ?? null,
             ],
             'generated_at' => now()->toDateTimeString(),
             'totals'       => $this->totals($rows),
             'health'       => $this->health($rows),
             'by_vendor'    => $this->byVendor($rows),
+            'by_worker'    => $this->byWorker($rows),
+            'by_project'   => $this->byProject($rows),
             'by_doctor'    => $this->byDoctor($rows),
             'by_month'     => $this->byMonth($rows),
             'rejections'   => $this->rejections($rows),
@@ -76,6 +80,18 @@ class MedicalReportService
             $query = $shape['scope_vendor']($query, (int) $vendorId);
         }
 
+        // The brief asked for the report to be filterable by project and by
+        // employee as well as by vendor. Both live on the WORKER, not on the
+        // examination, so both reach through the worker relation — and both
+        // engines keep the same column names, so one closure serves each.
+        if ($project = trim((string) ($filters['project'] ?? ''))) {
+            $query = $shape['scope_project']($query, $project);
+        }
+
+        if ($workerId = ($filters['worker_id'] ?? null)) {
+            $query = $shape['scope_worker']($query, (int) $workerId);
+        }
+
         return $query->get()->map(function ($m) use ($shape) {
             [$vendorId, $vendorName] = $shape['vendor_of']($m);
 
@@ -84,6 +100,12 @@ class MedicalReportService
                 'worker_id'   => $shape['worker_key']($m),
                 'vendor_id'   => $vendorId,
                 'vendor'      => $vendorName ?: 'Unassigned',
+                // Named and placed, so the report can answer "how is THIS project
+                // doing" and "what is this person's history" — the two questions
+                // the brief asked for that a vendor breakdown cannot.
+                'worker'      => $shape['worker_name']($m) ?: 'Unknown worker',
+                'worker_code' => $m->worker?->worker_code,
+                'project'     => $m->worker?->project ?: null,
                 'exam_date'   => $m->exam_date ? Carbon::parse($m->exam_date) : null,
                 'fitness'     => $m->fitness_status,
                 'passing'     => $m->isPassing(),
@@ -115,23 +137,32 @@ class MedicalReportService
         if ($module === 'purchase') {
             return [
                 'model'        => PurchaseWorkerMedical::class,
-                'with'         => ['worker:id,full_name,worker_code,purchase_vendor_id', 'worker.vendor:id,company_name', 'doctor:id,name'],
+                'with'         => ['worker:id,full_name,worker_code,purchase_vendor_id,project', 'worker.vendor:id,company_name', 'doctor:id,name'],
                 'vendor_label' => 'Purchase vendor',
                 // Purchase keeps the vendor on the medical itself.
                 'vendor_of'    => fn ($m) => [$m->purchase_vendor_id, $m->worker?->vendor?->company_name],
                 'worker_key'   => fn ($m) => $m->purchase_worker_id,
+                'worker_name'  => fn ($m) => $m->worker?->full_name,
                 'scope_vendor' => fn ($q, $id) => $q->where('purchase_vendor_id', $id),
+                // Project is free text on the worker, so match on it rather than
+                // an id — a project the worker was assigned to before the work
+                // package existed still has its name recorded.
+                'scope_project' => fn ($q, $name) => $q->whereHas('worker', fn ($w) => $w->where('project', 'like', "%{$name}%")),
+                'scope_worker'  => fn ($q, $id) => $q->where('purchase_worker_id', $id),
             ];
         }
 
         return [
             'model'        => TpvWorkerMedical::class,
-            'with'         => ['worker:id,name,worker_code,vendor_id', 'worker.vendor:id,company_name', 'doctor:id,name'],
+            'with'         => ['worker:id,name,worker_code,vendor_id,project', 'worker.vendor:id,company_name', 'doctor:id,name'],
             'vendor_label' => 'TPV vendor',
             // TPV reaches its vendor through the worker.
             'vendor_of'    => fn ($m) => [$m->worker?->vendor_id, $m->worker?->vendor?->company_name],
             'worker_key'   => fn ($m) => $m->tpv_worker_id,
+            'worker_name'  => fn ($m) => $m->worker?->name,
             'scope_vendor' => fn ($q, $id) => $q->whereHas('worker', fn ($w) => $w->where('vendor_id', $id)),
+            'scope_project' => fn ($q, $name) => $q->whereHas('worker', fn ($w) => $w->where('project', 'like', "%{$name}%")),
+            'scope_worker'  => fn ($q, $id) => $q->where('tpv_worker_id', $id),
         ];
     }
 
@@ -228,6 +259,58 @@ class MedicalReportService
                 'successes'      => $group->where('cleared', true)->count(),
                 'success_rate'   => $decided ? round($group->where('qc', MedicalQcStatus::APPROVED)->count() / $decided * 100, 1) : null,
                 'avg_score'      => $scored->count() ? round($scored->avg('score'), 1) : null,
+            ];
+        })->sortByDesc('examinations')->values()->all();
+    }
+
+    /**
+     * Per-worker history — one line per person, newest examination first.
+     *
+     * This is what makes the report filterable "by employee": the employee
+     * picker is built from these rows, so it only ever offers people who
+     * actually appear in the report being looked at.
+     */
+    private function byWorker(Collection $rows): array
+    {
+        return $rows->groupBy('worker_id')->map(function (Collection $group) {
+            $first  = $group->first();
+            $scored = $group->whereNotNull('score');
+            $latest = $group->sortByDesc(fn ($r) => $r['exam_date']?->getTimestamp() ?? 0)->first();
+
+            return [
+                'worker_id'    => $first['worker_id'],
+                'worker'       => $first['worker'],
+                'worker_code'  => $first['worker_code'],
+                'vendor'       => $first['vendor'],
+                'project'      => $first['project'],
+                'examinations' => $group->count(),
+                'reexams'      => $group->where('is_reexam', true)->count(),
+                'latest_exam'  => $latest['exam_date']?->toDateString(),
+                'fitness'      => $latest['fitness'],
+                'cleared'      => (bool) $latest['cleared'],
+                'expired'      => (bool) $latest['expired'],
+                'avg_score'    => $scored->count() ? round($scored->avg('score'), 1) : null,
+                'latest_score' => $latest['score'],
+            ];
+        })->sortBy('worker')->values()->all();
+    }
+
+    /** Per-project totals — the same outcome columns, grouped by where the work is. */
+    private function byProject(Collection $rows): array
+    {
+        return $rows->groupBy(fn ($r) => $r['project'] ?: 'Unassigned')->map(function (Collection $group, $project) {
+            $decided = $group->whereIn('qc', [MedicalQcStatus::APPROVED, MedicalQcStatus::REJECTED])->count();
+            $scored  = $group->whereNotNull('score');
+
+            return [
+                'project'      => $project,
+                'examinations' => $group->count(),
+                'workers'      => $group->pluck('worker_id')->unique()->count(),
+                'successes'    => $group->where('cleared', true)->count(),
+                'unfit'        => $group->where('fitness', 'Unfit')->count(),
+                'pending_review' => $group->where('qc', MedicalQcStatus::PENDING)->count(),
+                'success_rate' => $decided ? round($group->where('qc', MedicalQcStatus::APPROVED)->count() / $decided * 100, 1) : null,
+                'avg_score'    => $scored->count() ? round($scored->avg('score'), 1) : null,
             ];
         })->sortByDesc('examinations')->values()->all();
     }

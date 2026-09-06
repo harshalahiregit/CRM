@@ -11,6 +11,7 @@ use App\Models\Purchase\PurchaseOrder;
 use App\Models\Purchase\PurchaseQuotation;
 use App\Models\Purchase\PurchaseRfq;
 use App\Models\Purchase\PurchaseVendor;
+use App\Models\Purchase\PurchaseVendorItem;
 use App\Services\Purchase\PurchaseQuotationService;
 use App\Support\Purchase\RfqVendorStatus;
 use Illuminate\Database\Eloquent\Model;
@@ -49,6 +50,42 @@ class PurchasePortalCommerceController extends Controller
     public function debitNotes(Request $request)
     {
         return response()->json($this->scoped($request, PurchaseDebitNote::class)->latest('id')->get());
+    }
+
+    /**
+     * The items this vendor is approved to supply.
+     *
+     * Admin has always been able to map Inventory items to a vendor
+     * (purchase_vendor_items), and the vendor had no way to see the result — so
+     * the one party the mapping is ABOUT could not confirm it, and had to ask.
+     *
+     * The item facts are read from the joined Inventory product, never copied:
+     * Inventory stays the single Item Master, exactly as the admin screen reads
+     * it. Only the columns a vendor needs are selected — cost price and
+     * stock levels are ours, not theirs.
+     */
+    public function items(Request $request)
+    {
+        $rows = $this->scoped($request, PurchaseVendorItem::class)
+            ->with(['product:id,name,sku,sku_code,base_unit,group_id', 'product.group:id,name'])
+            ->latest('id')
+            ->get();
+
+        return response()->json(
+            $rows->map(fn (PurchaseVendorItem $row) => [
+                'id'             => $row->id,
+                'status'         => $row->status,
+                'status_label'   => $row->status_label,
+                'effective_date' => optional($row->effective_date)->toDateString(),
+                'remarks'        => $row->remarks,
+                'item'           => $row->product ? [
+                    'name'  => $row->product->name,
+                    'sku'   => $row->product->sku ?: $row->product->sku_code,
+                    'unit'  => $row->product->base_unit,
+                    'group' => $row->product->group?->name,
+                ] : null,
+            ])->values()
+        );
     }
 
     /** Payments are scoped through their invoice's purchase_vendor_id. */

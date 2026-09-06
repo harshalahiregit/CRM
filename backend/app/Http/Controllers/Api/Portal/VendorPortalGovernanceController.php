@@ -159,13 +159,21 @@ class VendorPortalGovernanceController extends Controller
     {
         $vendor = $this->portalVendor($request);
 
+        // kickoffable_type stores the MODEL CLASS (App\Models\Vendor\Vendor), not
+        // the short subject key. Comparing it to 'vendor' matched no row ever, so
+        // this tab showed the vendor an empty list however many meetings they
+        // had — and assertMeetingOwned below refused every one of them.
         $meetings = KickoffMeeting::where('tenant_id', $vendor->tenant_id)
-            ->where('kickoffable_type', 'vendor')->where('kickoffable_id', $vendor->id)
+            ->where('kickoffable_type', Vendor::class)->where('kickoffable_id', $vendor->id)
             // Never expose unpublished drafts to the vendor.
             ->where('status', '!=', KickoffStatus::DRAFT)
             ->with('attendees:id,kickoff_meeting_id,name,role')
             ->latest('scheduled_at')
-            ->get(['id', 'reference', 'title', 'meeting_type', 'status', 'scheduled_at', 'mode', 'location', 'meeting_platform', 'meeting_link', 'mom_status', 'mom_path', 'kickoffable_type', 'kickoffable_id']);
+            // tenant_id, end_at and duration_minutes are not shown as fields —
+            // they are what the appended timing attributes are derived FROM.
+            // Without them every meeting reached the portal with no end and no
+            // tenant clock, so none could ever read as expired.
+            ->get(['id', 'tenant_id', 'reference', 'title', 'meeting_type', 'status', 'scheduled_at', 'end_at', 'duration_minutes', 'mode', 'location', 'meeting_platform', 'meeting_link', 'mom_status', 'mom_path', 'kickoffable_type', 'kickoffable_id']);
 
         // The minutes are only the vendor's to see once approved+distributed. Add
         // a flag the portal reads, and hide mom_path until then so the "download"
@@ -175,6 +183,12 @@ class VendorPortalGovernanceController extends Controller
             $m->setAttribute('mom_available', $available);
             if (! $available) {
                 $m->setAttribute('mom_path', null);
+            }
+            // A join link is offered only while the meeting is actually going
+            // to happen. "Not expired" is not the same test: a CANCELLED meeting
+            // is not expired either, and kept handing out a working link.
+            if (! in_array($m->timing_state, ['upcoming', 'live'], true)) {
+                $m->setAttribute('meeting_link', null);
             }
         });
 
@@ -233,7 +247,7 @@ class VendorPortalGovernanceController extends Controller
         $vendor = $this->portalVendor($request);
 
         $meetingIds = KickoffMeeting::where('tenant_id', $vendor->tenant_id)
-            ->where('kickoffable_type', 'vendor')->where('kickoffable_id', $vendor->id)->pluck('id');
+            ->where('kickoffable_type', Vendor::class)->where('kickoffable_id', $vendor->id)->pluck('id');
 
         $actions = KickoffMomItem::where('tenant_id', $vendor->tenant_id)
             ->whereIn('kickoff_meeting_id', $meetingIds)
@@ -328,7 +342,7 @@ class VendorPortalGovernanceController extends Controller
         $vendor = $this->portalVendor($request);
         abort_unless(
             (int) $m->tenant_id === (int) $vendor->tenant_id
-                && $m->kickoffable_type === 'vendor' && (int) $m->kickoffable_id === (int) $vendor->id,
+                && $m->kickoffable_type === Vendor::class && (int) $m->kickoffable_id === (int) $vendor->id,
             404, 'Meeting not found'
         );
     }
@@ -338,7 +352,7 @@ class VendorPortalGovernanceController extends Controller
         $vendor = $this->portalVendor($request);
         $ok = KickoffMeeting::where('id', $item->kickoff_meeting_id)
             ->where('tenant_id', $vendor->tenant_id)
-            ->where('kickoffable_type', 'vendor')->where('kickoffable_id', $vendor->id)->exists();
+            ->where('kickoffable_type', Vendor::class)->where('kickoffable_id', $vendor->id)->exists();
         abort_unless($ok, 404, 'Action not found');
     }
 }

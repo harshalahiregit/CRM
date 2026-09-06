@@ -12,6 +12,21 @@ export const settingsApi = {
     list:    () => api.get('/settings/recycle-bin').then(r => r.data).catch(handleErr),
     restore: (type, id) => api.post('/settings/recycle-bin/restore', { type, id }).then(r => r.data).catch(handleErr),
   },
+  // Roles & Departments — maintained from Settings instead of by a developer.
+  // `roles` are staff JOB roles (users.internal_role); account types are
+  // returned alongside, read-only, because each one is a whole portal.
+  roles: {
+    list:   () => api.get('/settings/roles').then(r => r.data).catch(handleErr),
+    create: (data) => api.post('/settings/roles', data).then(r => r.data).catch(handleErr),
+    update: (id, data) => api.put(`/settings/roles/${id}`, data).then(r => r.data).catch(handleErr),
+    remove: (id) => api.delete(`/settings/roles/${id}`).then(r => r.data).catch(handleErr),
+  },
+  departments: {
+    list:   () => api.get('/settings/departments').then(r => r.data?.data ?? r.data).catch(handleErr),
+    create: (data) => api.post('/settings/departments', data).then(r => r.data).catch(handleErr),
+    update: (id, data) => api.put(`/settings/departments/${id}`, data).then(r => r.data).catch(handleErr),
+    remove: (id) => api.delete(`/settings/departments/${id}`).then(r => r.data).catch(handleErr),
+  },
   // Document Numbering Engine — configuration, preview, reset, validation.
   numbering: {
     list:     () => api.get('/settings/numbering').then(r => r.data).catch(handleErr),

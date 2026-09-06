@@ -422,20 +422,56 @@ class PurchasePortalController extends Controller
             'scheduled_at'    => optional($meeting->scheduled_at)->toIso8601String(),
             'mode'            => $meeting->mode,
             'location'        => $meeting->location,
-            'meeting_link'    => $meeting->meeting_link,
+            // A link to a meeting that is not happening is worse than none — it
+            // looks like it should still work. Same rule as the meetings list.
+            // Offered only while the meeting is actually going to happen —
+            // upcoming or in progress. "Not expired" is not the same thing: a
+            // CANCELLED meeting is not expired either, and was still handing out
+            // a working join link for a meeting nobody was going to attend.
+            'meeting_link'    => in_array($meeting->timing_state, ['upcoming', 'live'], true)
+                ? $meeting->meeting_link
+                : null,
             'mom_available'   => $momAvailable,
+            // This payload is hand-built, so the model's appended timing does
+            // NOT ride along — it has to be named here. Without it the dashboard
+            // read is_expired as undefined, and `!undefined` is true, so the
+            // join popup offered a meeting that had already ended.
+            'ends_at'         => optional($meeting->ends_at)->toIso8601String(),
+            'duration_minutes' => $meeting->duration_minutes,
+            'timing_state'    => $meeting->timing_state,
+            'timing_label'    => $meeting->timing_label,
+            'is_expired'      => $meeting->is_expired,
+            'is_live'         => $meeting->is_live,
         ]]);
     }
 
-    /** Resolve the Purchase kickoff meeting attached to the caller's own vendor (no URL id). */
+    /**
+     * The one kickoff meeting worth showing the caller's own vendor.
+     *
+     * Two things were wrong with taking `latest()`:
+     *
+     *  - it ordered by CREATION, so a meeting booked later for an earlier date
+     *    won over the one actually coming up;
+     *  - it included DRAFTS, which are deliberately invisible to a vendor
+     *    everywhere else — this endpoint showed them one anyway.
+     *
+     * What a vendor wants is the meeting that needs them: the one happening now,
+     * else the next one due. Only when neither exists does the most recent past
+     * meeting stand in, so the tab still has something to show.
+     */
     private function ownKickoff(Request $request): ?PurchaseKickoffMeeting
     {
         $vendor = $this->purchaseVendor($request);
 
-        return PurchaseKickoffMeeting::forTenant($vendor->tenant_id)
+        $meetings = PurchaseKickoffMeeting::forTenant($vendor->tenant_id)
             ->where('purchase_vendor_id', $vendor->id)
-            ->latest()
-            ->first();
+            ->where('status', '!=', \App\Support\Purchase\PurchaseKickoffStatus::DRAFT)
+            ->orderBy('scheduled_at')
+            ->get();
+
+        return $meetings->firstWhere('is_live', true)
+            ?? $meetings->firstWhere('timing_state', 'upcoming')
+            ?? $meetings->last();
     }
 
     /* ── Purchase-owned portal resolution (independent of the shared vendor

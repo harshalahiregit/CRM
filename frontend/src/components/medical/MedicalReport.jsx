@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { BarChart3, RefreshCw, Download, Building2, Stethoscope, AlertTriangle, Timer } from 'lucide-react'
+import { BarChart3, RefreshCw, Download, Building2, Stethoscope, AlertTriangle, Timer, HardHat, UserRound } from 'lucide-react'
 import LoadError from '@/components/ui/LoadError'
 import { KIT3D_STYLE as TPV_STYLE } from '@/components/ui/kit3d'
 import { medicalApi } from '@/services/medicalApi'
@@ -42,7 +42,11 @@ const isDark = () =>
 export default function MedicalReport({ module = 'tpv', accent = '#a78bfa' }) {
   const [report, setReport] = useState(null)
   const [loadError, setLoadError] = useState(null)
-  const [filters, setFilters] = useState({ from: '', to: '', vendor_id: '' })
+  // Project and employee sit beside the date range and vendor, because the
+  // report is meant to answer "how is THIS project doing" and "what is this
+  // person's history", not only "how is this vendor doing".
+  const EMPTY_FILTERS = { from: '', to: '', vendor_id: '', project: '', worker_id: '' }
+  const [filters, setFilters] = useState(EMPTY_FILTERS)
   const [dark, setDark] = useState(isDark)
 
   useEffect(() => {
@@ -109,8 +113,26 @@ export default function MedicalReport({ module = 'tpv', accent = '#a78bfa' }) {
             </select>
           </div>
         )}
-        {(filters.from || filters.to || filters.vendor_id) && (
-          <button onClick={() => setFilters({ from: '', to: '', vendor_id: '' })} style={{ ...S.btn, alignSelf: 'flex-end' }}>Clear</button>
+        <div>
+          <label style={S.lbl}>Project</label>
+          <input value={filters.project} placeholder="Any project"
+            onChange={e => setFilters(f => ({ ...f, project: e.target.value }))} style={S.select} />
+        </div>
+
+        <div>
+          <label style={S.lbl}>Employee</label>
+          <select value={filters.worker_id} onChange={e => setFilters(f => ({ ...f, worker_id: e.target.value }))} style={S.select}>
+            <option value="">Everyone</option>
+            {/* Drawn from the rows in scope, so the list only ever offers people
+                who actually appear in the report being looked at. */}
+            {(report?.by_worker ?? []).filter(w => w.worker_id).map(w => (
+              <option key={w.worker_id} value={w.worker_id}>{w.worker}</option>
+            ))}
+          </select>
+        </div>
+
+        {Object.values(filters).some(Boolean) && (
+          <button onClick={() => setFilters(EMPTY_FILTERS)} style={{ ...S.btn, alignSelf: 'flex-end' }}>Clear</button>
         )}
       </div>
 
@@ -237,6 +259,45 @@ export default function MedicalReport({ module = 'tpv', accent = '#a78bfa' }) {
                   v.rejected, v.unfit, v.expired,
                   v.success_rate === null ? '—' : `${v.success_rate}%`,
                   v.avg_score ?? '—',
+                ])}
+              />
+            )}
+          </Card>
+
+          {/* ── Projects ─────────────────────────────────────────────── */}
+          {/* The operational question the vendor breakdown cannot answer: how is
+              THIS site doing. Workers carry their project, so the same outcome
+              columns regroup by it. */}
+          <Card title="By project" icon={HardHat} style={{ marginTop: 14 }}>
+            {(report.by_project ?? []).length === 0 ? (
+              <Empty>No examinations in this range.</Empty>
+            ) : (
+              <Table
+                head={['Project', 'Exams', 'Workers', 'Cleared', 'Unfit', 'Awaiting', 'Success', 'Avg score']}
+                rows={report.by_project.map(p => [
+                  p.project, p.examinations, p.workers, p.successes, p.unfit, p.pending_review,
+                  p.success_rate === null ? '—' : `${p.success_rate}%`,
+                  p.avg_score ?? '—',
+                ])}
+              />
+            )}
+          </Card>
+
+          {/* ── Workers ──────────────────────────────────────────────── */}
+          {/* One line per person, showing their LATEST result rather than their
+              first — somebody who failed and has since passed a re-examination
+              is fit, and a report that says otherwise is worse than none. */}
+          <Card title="By worker" icon={UserRound} style={{ marginTop: 14 }}>
+            {(report.by_worker ?? []).length === 0 ? (
+              <Empty>No examinations in this range.</Empty>
+            ) : (
+              <Table
+                head={['Worker', 'Code', 'Vendor', 'Project', 'Exams', 'Re-exams', 'Latest', 'Fitness', 'Cleared', 'Avg score']}
+                rows={report.by_worker.map(w => [
+                  w.worker, w.worker_code || '—', w.vendor, w.project || '—',
+                  w.examinations, w.reexams, w.latest_exam || '—', w.fitness || '—',
+                  w.cleared ? 'Yes' : (w.expired ? 'Expired' : 'No'),
+                  w.avg_score ?? '—',
                 ])}
               />
             )}

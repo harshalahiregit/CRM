@@ -8,6 +8,7 @@ use App\Support\Medical\HealthScore;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Barryvdh\DomPDF\PDF as PdfInstance;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -44,6 +45,34 @@ class MedicalCertificatePdfService
      * same certificate is not re-rendered on every download, but regenerated
      * whenever the record has changed since.
      */
+    /**
+     * Render and store, but never at the cost of the examination itself.
+     *
+     * The certificate is generated the moment an examination is recorded,
+     * because handing it over is the doctor's next action. But a PDF is a
+     * rendering of a record that is already saved — if dompdf cannot produce it
+     * (most commonly because the PHP GD extension is absent, which it needs to
+     * embed the signature and the camera photo) the right outcome is a recorded
+     * examination and no PDF yet, not a lost examination.
+     *
+     * Returns null when it could not render. The certificate regenerates on the
+     * next download attempt, so enabling GD fixes every record retroactively.
+     */
+    public function tryStore(Model $medical, array $subject = []): ?string
+    {
+        try {
+            return $this->store($medical, $subject);
+        } catch (\Throwable $e) {
+            Log::warning('Medical certificate could not be rendered; the examination is saved regardless', [
+                'medical_id' => $medical->getKey(),
+                'model'      => $medical::class,
+                'error'      => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
     public function store(Model $medical, array $subject = []): string
     {
         $path = 'medical/certificates/'.$medical->getKey().'-'.($medical->certificate_no ?: 'draft').'.pdf';

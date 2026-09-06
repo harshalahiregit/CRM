@@ -61,7 +61,7 @@ export default function ClientPortalShell() {
 
   const signOut = async () => {
     await clientPortalApi.logout()
-    navigate('/portal/login', { replace: true })
+    navigate('/auth/login?role=client', { replace: true })
   }
 
   const link = ({ isActive }) => ({

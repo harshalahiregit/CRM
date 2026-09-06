@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { attachMediaCompression } from './mediaCompress'
 import { isSessionFailure } from '@/lib/sessionFailure'
 
 /**
@@ -21,6 +22,10 @@ const pvApi = axios.create({
   headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
 })
 
+// Uploads are shrunk on the way out — see src/lib/mediaCompress.js. Hooked
+// here rather than at the ~50 upload sites, so every one is covered.
+attachMediaCompression(pvApi)
+
 pvApi.interceptors.request.use((config) => {
   const t = pvToken.get()
   if (t) config.headers.Authorization = `Bearer ${t}`
@@ -34,8 +39,9 @@ pvApi.interceptors.response.use(
     // Purchase vendor accounts only") must not clear their token.
     if (isSessionFailure(error, !!pvToken.get())) {
       pvToken.clear()
-      if (!window.location.pathname.startsWith('/purchase-portal/login')) {
-        window.location.href = '/purchase-portal/login'
+      // The single login page — this portal no longer has one of its own.
+      if (!window.location.pathname.startsWith('/auth/login')) {
+        window.location.href = '/auth/login?role=purchase_vendor'
       }
     }
     return Promise.reject(error)

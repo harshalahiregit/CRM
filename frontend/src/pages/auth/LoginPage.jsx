@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { Eye, EyeOff, ChevronDown, Shield, Zap, Globe, Lock, CheckCircle, User, Star } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { purchaseVendorAuthApi } from '@/services/purchaseVendorAuthApi'
+import { clientPortalApi } from '@/lib/clientPortalApi'
 import sangoeFull from '@/assets/sangoe-full.png'
 
 /**
@@ -18,9 +19,12 @@ import sangoeFull from '@/assets/sangoe-full.png'
 const ROLES = [
   { value: 'admin',               label: 'Admin',                icon: '🛡️' },
   { value: 'staff',               label: 'Staff / Employee',     icon: '👔' },
+  // Examining doctors sign in here too — they are ordinary Users with their own
+  // portal, not a separate identity like a Purchase Vendor.
+  { value: 'doctor',              label: 'Doctor',               icon: '🩺' },
   { value: 'purchase_vendor',     label: 'Purchase Vendor',      icon: '📦', purchaseVendor: true },
   { value: 'third_party_vendor',  label: 'Third-Party Vendor',   icon: '🤝' },
-  { value: 'client',              label: 'Client / Customer',    icon: '👤' },
+  { value: 'client',              label: 'Client / Customer',    icon: '👤', clientPortal: true },
   { value: 'company',             label: 'Company',              icon: '🏢' },
 ]
 
@@ -35,6 +39,12 @@ const schema = z.object({
 const roleHome = (role) =>
   role === 'company' ? '/company-portal/dashboard'
   : role === 'third_party_vendor' ? '/vendor-portal/dashboard'
+  // The two identities that carry their own token rather than a User session.
+  : role === 'purchase_vendor' ? '/purchase-portal/dashboard'
+  : role === 'client' ? '/portal/dashboard'
+  // A doctor has no access to the /app shell at all, so sending them there
+  // first would only make the route guard bounce them.
+  : role === 'doctor' ? '/doctor-portal/dashboard'
   : '/app/dashboard'
 
 // ── Left Panel Features ───────────────────────────────────────────────
@@ -87,16 +97,30 @@ export default function LoginPage() {
   }, [searchParams]) // eslint-disable-line react-hooks/exhaustive-deps
   const selectedRoleObj = ROLES.find(r => r.value === watchedRole)
   const isPurchaseVendor = Boolean(selectedRoleObj?.purchaseVendor)
+  // Password reset belongs to whichever identity store holds the account: the
+  // shared pages reset a User, which is the wrong record for a portal login.
+  const forgotPath = isPurchaseVendor ? '/purchase-portal/forgot-password'
+    : selectedRoleObj?.clientPortal ? '/portal/forgot-password'
+    : '/auth/forgot-password'
 
   const onSubmit = async (values) => {
     setApiError('')
 
-    // Purchase Vendors authenticate against their own endpoint and carry a
-    // PurchaseVendor token, so they never touch the shared User login.
-    if (selectedRoleObj?.purchaseVendor) {
+    // Two identities do not authenticate as a shared User: a Purchase vendor and
+    // a customer contact each hit their own endpoint and hold their own token.
+    // They used to have login pages of their own, which is why a vendor could
+    // land on a second sign-in screen and think they were in the wrong place.
+    // Handled here so /auth/login is the ONLY way into the product.
+    const portalLogin = selectedRoleObj?.purchaseVendor
+      ? purchaseVendorAuthApi.login
+      : selectedRoleObj?.clientPortal
+        ? clientPortalApi.login
+        : null
+
+    if (portalLogin) {
       try {
-        await purchaseVendorAuthApi.login(values.email, values.password)
-        navigate(safeFrom || '/purchase-portal/dashboard', { replace: true })
+        await portalLogin(values.email, values.password)
+        navigate(safeFrom || roleHome(values.role), { replace: true })
       } catch (e) {
         setApiError(e?.response?.data?.message || 'Invalid credentials.')
       }
@@ -316,16 +340,21 @@ export default function LoginPage() {
         <div className="flex items-center justify-between mt-4">
           {/* A Purchase Vendor registers and resets against its own portal —
               the shared pages create a User, which is the wrong identity. */}
-          <Link to={isPurchaseVendor ? '/purchase-portal/forgot-password' : '/auth/forgot-password'}
+          <Link to={forgotPath}
             className="flex items-center gap-1.5 text-xs transition-colors" style={{ color: '#8b85a8' }}
             onMouseEnter={e=>e.currentTarget.style.color='#edeaf8'} onMouseLeave={e=>e.currentTarget.style.color='#8b85a8'}>
             <Lock size={12} /> Forgot Password?
           </Link>
-          <Link to={isPurchaseVendor ? '/purchase-portal/register' : '/auth/register'}
-            className="flex items-center gap-1.5 text-xs font-semibold transition-colors" style={{ color: '#a78bfa' }}
-            onMouseEnter={e=>e.currentTarget.style.color='#c4b5fd'} onMouseLeave={e=>e.currentTarget.style.color='#a78bfa'}>
-            <Star size={12} /> Register here →
-          </Link>
+          {/* A customer contact never self-registers — access begins with a
+              staff member inviting a real contact of a real customer — so the
+              link is simply not offered for that identity. */}
+          {!selectedRoleObj?.clientPortal && (
+            <Link to={isPurchaseVendor ? '/purchase-portal/register' : '/auth/register'}
+              className="flex items-center gap-1.5 text-xs font-semibold transition-colors" style={{ color: '#a78bfa' }}
+              onMouseEnter={e=>e.currentTarget.style.color='#c4b5fd'} onMouseLeave={e=>e.currentTarget.style.color='#a78bfa'}>
+              <Star size={12} /> Register here →
+            </Link>
+          )}
         </div>
 
         {/* Last login bar */}

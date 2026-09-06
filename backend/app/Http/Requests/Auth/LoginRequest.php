@@ -21,7 +21,11 @@ class LoginRequest extends FormRequest
             // holds a token whose tokenable is purchase_vendors. Issuing a User token
             // here could never satisfy EnsurePurchaseVendorPortalAccess, so this door
             // is closed server-side and not merely hidden in the role selector.
-            'role'     => 'required|in:admin,staff,third_party_vendor,client,company',
+            // 'doctor' is a real User with its own portal (routes/medical.php),
+            // so it belongs on this list. It was missing, which meant a doctor
+            // login could be created but never used: the selector had no entry
+            // and this rule would have refused the value anyway.
+            'role'     => 'required|in:admin,staff,doctor,third_party_vendor,client,company',
             'remember' => 'nullable|boolean',
         ];
     }

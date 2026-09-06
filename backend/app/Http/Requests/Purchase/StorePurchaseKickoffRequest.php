@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Purchase;
 
+use App\Support\Shared\BusinessTime;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -30,7 +31,10 @@ class StorePurchaseKickoffRequest extends FormRequest
             'client_name'            => 'nullable|string|max:200',
             // Start + end mandatory and non-past; duration derived server-side.
             'scheduled_at'           => ['required', 'date', function ($attr, $value, $fail) {
-                if (\Illuminate\Support\Carbon::parse($value)->lt(now()->subMinutes(2))) {
+                // Read in the tenant's timezone, because that is what the
+                // form's clock means. Parsed as UTC it drifted by the offset,
+                // so an afternoon meeting today read as still hours away.
+                if (BusinessTime::parse($value, $this->user()?->tenant_id)->lt(now()->subMinutes(2))) {
                     $fail('The meeting start time cannot be in the past.');
                 }
             }],

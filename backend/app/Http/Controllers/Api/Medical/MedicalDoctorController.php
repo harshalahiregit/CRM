@@ -50,6 +50,14 @@ class MedicalDoctorController extends Controller
             'clinic_address' => 'nullable|string|max:255',
             'modules'        => 'nullable|array',
             'modules.*'      => ['string', Rule::in(['tpv', 'purchase'])],
+        ], [
+            // The default wording for a taken e-mail is "The email has already
+            // been taken", which does not say WHERE. The address is the login,
+            // so the clash is with any account in the system — a colleague who
+            // is already staff, or this doctor entered once before.
+            'email.unique'      => 'This email address already has a login. Use a different address, or edit the existing account.',
+            'license_no.required' => 'The licence number is required — it is printed on every certificate this doctor signs.',
+            'password.min'      => 'A password you set yourself must be at least 8 characters. Leave it blank to have one generated.',
         ]);
 
         $tenantId = $request->user()->tenant_id;
@@ -127,6 +135,41 @@ class MedicalDoctorController extends Controller
         return response()->json([
             'message' => 'Doctor updated.',
             'data'    => $profile->fresh()->load('user:id,name,email,phone,status,role'),
+        ]);
+    }
+
+    /**
+     * Issue a new password for a doctor's login.
+     *
+     * The password set at creation is shown once and stored only as a hash, so
+     * an admin who did not write it down had no way back in — and there was no
+     * reset here, which made a mislaid password the end of the account. The
+     * doctor's identity is not reissued: the same login, the same licence, the
+     * same certificates, one new credential.
+     */
+    public function resetPassword(Request $request, int $id)
+    {
+        $profile = $this->find($request, $id);
+        $user = $profile->user;
+
+        abort_unless($user, 404, 'This doctor has no login to reset.');
+
+        $data = $request->validate([
+            'password' => 'nullable|string|min:8|max:72',
+        ], [
+            'password.min' => 'A password you set yourself must be at least 8 characters. Leave it blank to have one generated.',
+        ]);
+
+        $password = $data['password'] ?? str()->password(12, true, true, false);
+        $user->update(['password' => Hash::make($password)]);
+
+        // Every token the old password issued is now stale — a reset that left
+        // live sessions open would not be a reset.
+        $user->tokens()->delete();
+
+        return response()->json([
+            'message' => 'Password reset. Hand it to the doctor now — it cannot be shown again.',
+            'temporary_password' => $password,
         ]);
     }
 
