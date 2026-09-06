@@ -51,8 +51,11 @@ use Illuminate\Support\Facades\Route;
 // ── HR Module Routes (Sanctum) ──────────────────────────────────────────
 Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
 
-    // Dashboard
-    Route::get('/dashboard', [HRDashboardController::class, 'index']);
+    // Dashboard — company-wide headcount, attrition and attendance figures.
+    // Sat in this auth-only group with no check inside the controller either, so
+    // any signed-in account could read them.
+    Route::get('/dashboard', [HRDashboardController::class, 'index'])
+        ->middleware('permission:hr_attendance,view_global');
 
     // Manpower Requests — L1/L2 Approval Workflow → HR Queue → JD → Job Posting
     Route::get('/manpower-requests',                            [ManpowerRequestController::class, 'index']);
@@ -279,9 +282,16 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/employees/{employee}/attendance', [AttendanceController::class, 'employeeAttendance']);
 
     // Assets — read-only views onto the Inventory register. HRMS owns no asset data.
-    Route::get('/employees/{employee}/assets/summary', [EmployeeAssetController::class, 'summary']);
-    Route::get('/employees/{employee}/assets/{asset}', [EmployeeAssetController::class, 'show'])->where('asset', '[0-9]+');
-    Route::get('/employees/{employee}/assets',         [EmployeeAssetController::class, 'index']);
+    //
+    // Gated: this is the serial number of the laptop and phone issued to a named
+    // colleague. The controller makes no check of its own, so until now any
+    // signed-in account could walk the employee ids and read the lot.
+    Route::get('/employees/{employee}/assets/summary', [EmployeeAssetController::class, 'summary'])
+        ->middleware('permission:hr_attendance,view_global');
+    Route::get('/employees/{employee}/assets/{asset}', [EmployeeAssetController::class, 'show'])
+        ->where('asset', '[0-9]+')->middleware('permission:hr_attendance,view_global');
+    Route::get('/employees/{employee}/assets',         [EmployeeAssetController::class, 'index'])
+        ->middleware('permission:hr_attendance,view_global');
 
     Route::get('/employees/{employee}',     [EmployeeController::class, 'show']);
     Route::put('/employees/{employee}',     [EmployeeController::class, 'update']);

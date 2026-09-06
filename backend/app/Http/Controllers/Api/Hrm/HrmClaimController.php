@@ -12,6 +12,7 @@ use App\Services\Hr\AdvanceTierService;
 use App\Services\Hr\EmployeeIdentityService;
 use App\Services\Hr\ReimbursementService;
 use App\Services\Shared\AttachmentService;
+use App\Support\Hr\HrmUpload;
 use App\Support\Hr\AdvanceStage;
 use App\Support\Hr\ReimbursementStatus;
 use App\Support\Hrm\HrmResponse;
@@ -88,9 +89,9 @@ class HrmClaimController extends Controller
             // 'receipt' stays for the version of the app already on people's
             // phones; 'receipts[]' is what a newer one sends. Dropping the
             // singular would break every install that has not updated.
-            'receipt'      => 'nullable|file|max:10240|mimes:pdf,png,jpg,jpeg,webp,heic',
-            'receipts'     => 'nullable|array',
-            'receipts.*'   => 'file|max:10240|mimes:pdf,png,jpg,jpeg,webp,heic,doc,docx,xls,xlsx',
+            // Any file type — see HrmUpload. `receipt` (singular) is what older
+            // installed builds of the app post; both are accepted.
+            ...HrmUpload::rulesWithLegacy('receipts', 'receipt'),
         ]);
 
         $claim = $this->claims->submit($employee, [
@@ -149,7 +150,10 @@ class HrmClaimController extends Controller
             'amount_requested'         => 'required|numeric|min:0.01',
             'required_date'            => 'nullable|date',
             'expected_settlement_date' => 'nullable|date',
-            'attachment'               => 'nullable|file|max:10240|mimes:pdf,png,jpg,jpeg,webp,heic',
+            // Was ONE file of six allowed types. An advance for a site trip
+            // carries a quotation, a permit and two photographs, and people were
+            // picking which one mattered most.
+            ...HrmUpload::rulesWithLegacy('attachments', 'attachment'),
         ]);
 
         try {
@@ -158,10 +162,17 @@ class HrmClaimController extends Controller
             return HrmResponse::fail($e->getMessage());
         }
 
-        if ($request->hasFile('attachment')) {
+        // Both names: `attachments[]` from a current build, `attachment` from one
+        // already on somebody's phone.
+        $files = array_merge(
+            (array) $request->file('attachments', []),
+            array_filter([$request->file('attachment')]),
+        );
+
+        foreach ($files as $file) {
             $this->attachments->upload(
                 HrAdvance::class, $advance->id, (int) $advance->tenant_id,
-                $request->file('attachment'), null, [], $request->user()
+                $file, null, [], $request->user()
             );
         }
 
@@ -204,8 +215,7 @@ class HrmClaimController extends Controller
             'advance_id'       => 'required',
             'actual_expense'   => 'required|numeric|min:0',
             'settlement_notes' => 'nullable|string|max:2000',
-            'bills'            => 'nullable|array|max:10',
-            'bills.*'          => 'file|max:10240|mimes:pdf,png,jpg,jpeg,webp,heic',
+            ...HrmUpload::rules('bills'),
         ]);
 
         $advance = HrAdvance::where('tenant_id', $employee->tenant_id)

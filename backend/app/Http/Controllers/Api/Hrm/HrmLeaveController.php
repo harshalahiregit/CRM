@@ -12,6 +12,8 @@ use App\Models\Hr\HrLeaveType;
 use App\Services\Hr\AttendanceCorrectionService;
 use App\Services\Hr\EmployeeIdentityService;
 use App\Services\Hr\LeaveApplicationService;
+use App\Services\Shared\AttachmentService;
+use App\Support\Hr\HrmUpload;
 use App\Support\Hrm\HrmResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -37,6 +39,7 @@ class HrmLeaveController extends Controller
         private EmployeeIdentityService $identity,
         private LeaveApplicationService $leave,
         private AttendanceCorrectionService $corrections,
+        private AttachmentService $attachments,
     ) {
     }
 
@@ -140,12 +143,16 @@ class HrmLeaveController extends Controller
             'end_date'      => 'required|date|after_or_equal:start_date',
             'leave_reason'  => 'nullable|string|max:2000',
             'remark'        => 'nullable|string|max:2000',
+            // Sick leave asks for a medical certificate and there was nowhere to
+            // put one, so people applied on the app and mailed the certificate
+            // separately — which HR then had to marry up by hand.
+            ...HrmUpload::rules('attachments'),
         ]);
 
         try {
             // The employee is the caller. Any user_id the app sent is ignored —
             // it comes from its own prefs and must never decide whose leave this is.
-            $this->leave->apply([
+            $leave = $this->leave->apply([
                 'employee_id'   => $employee->id,
                 'leave_type_id' => (int) $data['leave_type_id'],
                 'from_date'     => $data['start_date'],
@@ -157,6 +164,14 @@ class HrmLeaveController extends Controller
             // Their refusals are 200 with status 0, so the person sees the reason
             // rather than "something went wrong".
             return HrmResponse::fail($e->getMessage());
+        }
+
+        // apply() hands back the presented array, so the id comes from there.
+        foreach ((array) $request->file('attachments', []) as $file) {
+            $this->attachments->upload(
+                HrLeaveApplication::class, (int) $leave['id'], (int) $employee->tenant_id,
+                $file, null, [], $request->user()
+            );
         }
 
         return HrmResponse::ok([], 'Leave applied for.');
@@ -286,10 +301,14 @@ class HrmLeaveController extends Controller
             'login_time'      => 'nullable|string|max:8',
             'logout_time'     => 'nullable|string|max:8',
             'reason'          => 'required|string|max:2000',
+            // A correction is an argument about what happened on a day. A
+            // photograph of the register or the gate pass is the evidence for
+            // it, and there was no way to send one.
+            ...HrmUpload::rules('attachments'),
         ]);
 
         try {
-            $this->corrections->request($employee, [
+            $correction = $this->corrections->request($employee, [
                 'attendance_date'     => $data['attendance_date'],
                 // Their times may arrive as HH:mm or HH:mm:ss; the service wants HH:mm.
                 'requested_check_in'  => $this->normaliseTime($data['login_time'] ?? null),
@@ -298,6 +317,13 @@ class HrmLeaveController extends Controller
             ], $request->user());
         } catch (BusinessException $e) {
             return HrmResponse::fail($e->getMessage());
+        }
+
+        foreach ((array) $request->file('attachments', []) as $file) {
+            $this->attachments->upload(
+                HrAttendanceCorrection::class, $correction->id, (int) $employee->tenant_id,
+                $file, null, [], $request->user()
+            );
         }
 
         return HrmResponse::ok([], 'Submitted successfully');
