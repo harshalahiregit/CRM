@@ -207,6 +207,73 @@ class JulyPayrollEndToEndTest extends TestCase
         $this->assertEquals(75, $r->lwf_employer);
     }
 
+    /**
+     * Voluntary PF is deducted, recorded, and named on the payslip.
+     *
+     * The PF register has a VPF column and nothing computed it, so it printed
+     * zero however much somebody had chosen to save.
+     */
+    public function test_voluntary_pf_is_deducted_and_shown(): void
+    {
+        $e = $this->hire('SD300', 'Saves extra', [
+            'BASIC' => 14259, 'DA' => 4194, 'HRA' => 6710,
+        ], 'Male', '1985-01-01');
+
+        $e->detail->update(['vpf_amount' => 2000]);
+
+        $run = $this->runJuly();
+        $r = $run->records()->where('employee_id', $e->id)->firstOrFail();
+
+        $this->assertEquals(2000, $r->vpf_amount, 'VPF is recorded on the run');
+        $this->assertEquals(1800, $r->pf_employee, 'and is separate from the statutory 12%');
+
+        \Laravel\Sanctum\Sanctum::actingAs($this->admin);
+        $pf = $this->getJson("/api/hr/payroll/runs/{$run->id}/registers/pf")->json('data.register');
+        $this->assertEquals(2000, $pf['rows'][0]['vpf'], 'and prints in the register column');
+    }
+
+    /** A percentage works too, on the PF wage base. */
+    public function test_voluntary_pf_can_be_a_percentage(): void
+    {
+        $e = $this->hire('SD301', 'Saves a share', [
+            'BASIC' => 14259, 'DA' => 4194,
+        ], 'Male', '1985-01-01');
+
+        // 10% of the capped PF wages (15,000), not of gross.
+        $e->detail->update(['vpf_percent' => 10]);
+
+        $r = $this->runJuly()->records()->where('employee_id', $e->id)->firstOrFail();
+
+        $this->assertEquals(1500, $r->vpf_amount);
+    }
+
+    /**
+     * A deduction with no line on the payslip is a support call.
+     *
+     * LWF was already being subtracted from net pay with nothing naming it.
+     */
+    public function test_lwf_and_vpf_appear_as_named_payslip_lines(): void
+    {
+        $e = $this->hire('SD302', 'June payslip', [
+            'BASIC' => 14259, 'DA' => 4194,
+        ], 'Male', '1985-01-01');
+
+        $e->detail->update(['vpf_amount' => 500]);
+
+        $june = HrPayrollRun::create([
+            'tenant_id' => $this->tenantId, 'payroll_month' => 6, 'payroll_year' => 2026,
+            'status' => HrPayrollRun::DRAFT,
+        ]);
+        app(PayrollService::class)->process($june->id, $this->tenantId, $this->admin);
+
+        $record = $june->fresh()->records()->where('employee_id', $e->id)->firstOrFail();
+        $codes = DB::table('hr_payroll_record_lines')
+            ->where('payroll_record_id', $record->id)->pluck('code')->all();
+
+        $this->assertContains('LWF', $codes, 'June deducts LWF, so the payslip must name it');
+        $this->assertContains('VPF', $codes, 'and the voluntary contribution too');
+    }
+
     /** And the registers read that run. */
     public function test_the_registers_read_the_processed_run(): void
     {

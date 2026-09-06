@@ -416,6 +416,13 @@ export const hrApi = {
       esic: (runId) => api.get(`/hr/payroll/runs/${runId}/registers/esic`).then(r => r.data?.data),
       pt:   (runId) => api.get(`/hr/payroll/runs/${runId}/registers/pt`).then(r => r.data?.data),
       lwf:  (runId) => api.get(`/hr/payroll/runs/${runId}/registers/lwf`).then(r => r.data?.data),
+    },
+    // The salary transfer advice. Anybody who cannot be paid by transfer comes
+    // back WITH the reason, so the screen can say "42 paid, 3 not" rather than a
+    // total nobody can reconcile against headcount.
+    bank: {
+      advice: (runId) => api.get(`/hr/payroll/runs/${runId}/bank-advice`).then(r => r.data?.data),
+      csvUrl: (runId) => `/hr/payroll/runs/${runId}/bank-advice.csv`,
       // CSV (Excel) or PDF export → triggers a browser download.
       export: (report, format, params = {}) => api.get('/hr/payroll/reports/export', { params: { ...params, report, format }, responseType: 'blob' }).then(r => {
         const url = URL.createObjectURL(r.data)

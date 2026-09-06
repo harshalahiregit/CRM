@@ -256,6 +256,11 @@ class PayrollService
 
         $lines = array_merge($structure['lines'] ?? [], $variableLines);
 
+        // Loaded here rather than eager-loaded on the salary query: it is one row
+        // per employee per run, and putting it in that constrained select is how
+        // the gender/dob omission happened in the first place.
+        $detail = $salary->employee?->detail;
+
         $stat = $this->statutory->forSalary($lines, $tenantId, [
             'state' => $this->workStateFor($salary->employee, $tenantId),
             'date'  => Carbon::parse($period.'-01'),
@@ -267,6 +272,9 @@ class PayrollService
             'age_years' => $salary->employee->dob
                 ? Carbon::parse($salary->employee->dob)->age
                 : null,
+            // Voluntary PF is the employee's own choice, held on their record.
+            'vpf_amount'  => $detail?->vpf_amount,
+            'vpf_percent' => $detail?->vpf_percent,
             // Employee context switches TDS from a 12x projection to the
             // year-to-date engine, which reads the months already paid.
             'employee_id'    => $salary->employee_id,

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Hr;
 
 use App\Http\Controllers\Controller;
 use App\Models\Hr\HrPayrollRun;
+use App\Services\Hr\Payroll\BankAdviceService;
 use App\Services\Hr\Payroll\StatutoryRegisterService;
 use Illuminate\Http\Request;
 
@@ -17,8 +18,36 @@ use Illuminate\Http\Request;
  */
 class StatutoryRegisterController extends Controller
 {
-    public function __construct(private StatutoryRegisterService $registers)
+    public function __construct(
+        private StatutoryRegisterService $registers,
+        private BankAdviceService $bank,
+    ) {
+    }
+
+    /**
+     * The salary transfer advice, and the CSV a bank portal takes.
+     *
+     * Anybody who cannot be paid by transfer is returned WITH THE REASON rather
+     * than dropped, so the figure on screen reads "42 paid, 3 not" instead of a
+     * total nobody can reconcile against headcount.
+     */
+    public function bankAdvice(Request $request, int $runId)
     {
+        $run = $this->run($request, $runId);
+
+        return response()->json(['status' => 'success', 'data' => $this->bank->forRun($run)]);
+    }
+
+    public function bankAdviceCsv(Request $request, int $runId)
+    {
+        $run = $this->run($request, $runId);
+
+        $name = sprintf('salary-advice-%02d-%d.csv', $run->payroll_month, $run->payroll_year);
+
+        return response($this->bank->csv($run), 200, [
+            'Content-Type'        => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="'.$name.'"',
+        ]);
     }
 
     public function pf(Request $request, int $runId)
@@ -41,10 +70,15 @@ class StatutoryRegisterController extends Controller
         return $this->register($request, $runId, 'lwf');
     }
 
+    private function run(Request $request, int $runId): HrPayrollRun
+    {
+        return HrPayrollRun::where('tenant_id', (int) $request->user()->tenant_id)
+            ->findOrFail($runId);
+    }
+
     private function register(Request $request, int $runId, string $kind)
     {
-        $run = HrPayrollRun::where('tenant_id', (int) $request->user()->tenant_id)
-            ->findOrFail($runId);
+        $run = $this->run($request, $runId);
 
         return response()->json([
             'status' => 'success',

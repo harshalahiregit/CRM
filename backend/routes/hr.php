@@ -471,6 +471,11 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/payroll/runs/{run}/registers/esic', [StatutoryRegisterController::class, 'esic'])->whereNumber('run');
     Route::get('/payroll/runs/{run}/registers/pt',   [StatutoryRegisterController::class, 'pt'])->whereNumber('run');
     Route::get('/payroll/runs/{run}/registers/lwf',  [StatutoryRegisterController::class, 'lwf'])->whereNumber('run');
+
+    // The salary transfer advice. Separate from the registers because it moves
+    // money rather than reporting on it.
+    Route::get('/payroll/runs/{run}/bank-advice',     [StatutoryRegisterController::class, 'bankAdvice'])->whereNumber('run');
+    Route::get('/payroll/runs/{run}/bank-advice.csv', [StatutoryRegisterController::class, 'bankAdviceCsv'])->whereNumber('run');
     Route::get('/payroll/reports/export',      [PayrollReportController::class, 'export']);
 
     // Enterprise Salary Reports (Phase 2) — read-only over structures/snapshots/revisions.
