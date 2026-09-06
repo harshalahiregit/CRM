@@ -26,6 +26,11 @@ final class DocumentTypeRegistry
     private const TYPES = [
         // ── Finance ──────────────────────────────────────────────────────
         'invoice'            => ['Invoice',            'Finance',     '{PREFIX}-{YYYY}-{NEXT}', 'INV',   3, 'yearly'],
+        // A proforma and a tax invoice are separate legal documents, each with
+        // its own run — they cannot share the invoice sequence.
+        'proforma_invoice'   => ['Proforma Invoice',   'Finance',     '{PREFIX}-{YYYY}-{NEXT}', 'PI',    3, 'yearly'],
+        'tax_invoice'        => ['Tax Invoice',        'Finance',     '{PREFIX}-{YYYY}-{NEXT}', 'TAX',   3, 'yearly'],
+        'proposal'           => ['Proposal',           'Sales',       '{PREFIX}-{YYYY}-{NEXT}', 'PRP',   3, 'yearly'],
         'quotation'          => ['Quotation',          'Finance',     '{PREFIX}-{YYYY}-{NEXT}', 'QTN',   3, 'yearly'],
         'estimate'           => ['Estimate',           'Finance',     '{PREFIX}-{YYYY}-{NEXT}', 'EST',   3, 'yearly'],
         'credit_note'        => ['Credit Note',        'Finance',     '{PREFIX}-{YYYY}-{NEXT}', 'CN',    3, 'yearly'],
@@ -38,6 +43,9 @@ final class DocumentTypeRegistry
         'purchase_order'     => ['Purchase Order',     'Purchase',    '{PREFIX}-{YYYY}-{NEXT}', 'PO',    3, 'yearly'],
         'purchase_request'   => ['Purchase Request',   'Purchase',    '{PREFIX}-{YYYY}-{NEXT}', 'PR',    3, 'yearly'],
         'vendor_bill'        => ['Vendor Bill',        'Purchase',    '{PREFIX}-{YYYY}-{NEXT}', 'PINV',  3, 'yearly'],
+        // TPV had a vendor-code type and Purchase did not, so only one of the
+        // two mirrored registers could have its codes configured from Settings.
+        'purchase_vendor'    => ['Purchase Vendor Code', 'Purchase',   '{PREFIX}-{YYYY}-{NEXT}', 'PV',    5, 'yearly'],
 
         // ── Inventory ────────────────────────────────────────────────────
         'grn'                => ['GRN',                'Inventory',   '{PREFIX}-{YYYY}-{NEXT}', 'GRN',   3, 'yearly'],
@@ -129,6 +137,10 @@ final class DocumentTypeRegistry
             'minimum_digits'      => $d['minimum_digits'],
             'padding'             => '0',
             'starting_number'     => 1,
+            // Which way the series counts, and by how much. Up-in-ones is what
+            // the engine always did, so every existing series is unchanged.
+            'direction'           => 'up',
+            'step'                => 1,
             'reset_rule'          => $d['reset_rule'],
             'epoch'               => 0,
             'enabled'             => false,   // OPT-IN: modules keep their own numbering until switched on
