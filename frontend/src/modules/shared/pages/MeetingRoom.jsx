@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, Users, ListChecks, FileText, Loader2, AlertTriangle, Info,
+  ArrowLeft, Users, ListChecks, FileText, Loader2, AlertTriangle,
   CheckCircle2, Save, Video, ExternalLink, PanelRightClose, PanelRightOpen, Clock,
 } from 'lucide-react'
 import { meetingEngineApi as kickoffApi, meetingBase } from '@/services/meetingEngineApi'
@@ -39,8 +39,10 @@ import { KIT3D_STYLE } from '@/components/ui/kit3d'
  *  - agenda notes  → meeting_agenda_items.discussion / .decision
  *  - minutes       → kickoff_meetings.minutes
  *    both through POST …/room/notes, autosaved while typing.
- *  - attendance    → the existing attendance endpoint, audit-logged, so a tick
- *    made here is indistinguishable from one made by hand.
+ *  - attendance    → recorded from the call itself through POST …/room/presence,
+ *    which reports who is in the room every twenty seconds. Somebody who joins
+ *    under a name that is not on the roster is added to it rather than dropped,
+ *    which is what the earlier name-matching version did to nearly everyone.
  */
 export default function MeetingRoom() {
   const { id } = useParams()
@@ -59,18 +61,27 @@ export default function MeetingRoom() {
   const [minutes, setMinutes]         = useState('')
   const [saveState, setSaveState]     = useState('idle')   // idle | saving | saved | error
 
-  const [joined, setJoined]         = useState(false)
-  const [inCall, setInCall]         = useState([])
-  const [autoMarked, setAutoMarked] = useState([])
+  const [joined, setJoined]     = useState(false)
+  const [inCall, setInCall]     = useState([])
+  // The roster as the server last reconciled it — who has been in the call,
+  // when they arrived, how long they stayed.
+  const [roster, setRoster]     = useState(null)
+  const [heldFrom, setHeldFrom] = useState(null)
+  const [tick, setTick]         = useState(0)
 
   const frameRef  = useRef(null)
   const apiRef    = useRef(null)
   const saveTimer = useRef(null)
+  const beatTimer = useRef(null)
+  // The name this browser joins under. Read inside the heartbeat, which is
+  // created once, so it has to be a ref rather than a captured value.
+  const displayNameRef = useRef('')
   // The autosave fires from a timer and from the hang-up handler, both of which
   // close over state. A ref keeps them reading what is on screen NOW rather than
   // whatever was there when the handler was created.
   const latest = useRef({ agendaNotes: {}, minutes: '', id })
   latest.current = { agendaNotes, minutes, id }
+  displayNameRef.current = meeting?.chairperson || meeting?.organizer || ''
 
   /* ── Load the meeting ─────────────────────────────────────────────── */
 
@@ -89,8 +100,11 @@ export default function MeetingRoom() {
     return () => { alive = false }
   }, [id])
 
-  const attendees = meeting?.attendees || []
+  // The server's reconciled roster once the call has started, the stored one
+  // before that — so the panel is populated the moment the page opens.
+  const attendees = roster ?? meeting?.attendees ?? []
   const agenda    = meeting?.agenda_items || []
+  const stillIn   = useMemo(() => new Set(inCall.map(norm)), [inCall])
 
   /* ── Autosave ─────────────────────────────────────────────────────── */
 
@@ -119,31 +133,70 @@ export default function MeetingRoom() {
   // fired yet when the chair clicks away.
   useEffect(() => () => { clearTimeout(saveTimer.current); save() }, [save])
 
-  /* ── Attendance, marked as people arrive ──────────────────────────── */
+  /* ── Attendance, recorded as the call happens ─────────────────────── */
 
   /**
-   * Match a name from the call against the roster.
+   * Report who is in the call, right now.
    *
-   * Matching is on the display name, because that is all the embedding API
-   * gives us about other participants. A guest who joins under a different name
-   * will not match and stays for manual ticking; nothing is ever un-ticked.
+   * This used to tick the roster by matching a person's Jitsi display name
+   * against their name on the roster, character for character — which is almost
+   * nobody. People type their own name into the prejoin box, guests type a
+   * first name, and the chair is often not on the roster at all. Everyone else
+   * was watched arriving on screen and then dropped, so the meeting ended with
+   * an empty attendance list.
+   *
+   * So the room now reports the WHOLE ROOM as it stands, repeatedly, and the
+   * server reconciles it (see MeetingPresence). Sending a snapshot rather than
+   * one arrival at a time is what makes it safe to repeat: the same snapshot
+   * applied twice is the same result, so a dropped request, a reload or a crash
+   * costs nothing, and nobody has to be matched by name to be counted.
    */
-  const markPresent = useCallback((displayName) => {
-    const norm = (s) => String(s || '').trim().toLowerCase()
-    const hit = (meeting?.attendees || []).find(a => norm(a.name) === norm(displayName))
-    if (!hit || hit.attended) return
+  const beat = useCallback(async (ended = false) => {
+    const api = apiRef.current
+    if (!api) return
 
-    setAutoMarked(prev => (prev.includes(hit.id) ? prev : [...prev, hit.id]))
-    // 'Online' rather than 'Present': both engines accept the same values, and
-    // this records HOW they attended — they joined the call, they were not in
-    // the room. The distinction is already in the roster's vocabulary.
-    kickoffApi.markAttendance(id, [{ id: hit.id, attended: true, attendance_status: 'Online' }])
-      .then(() => setMeeting(m => ({
-        ...m,
-        attendees: (m.attendees || []).map(a => a.id === hit.id ? { ...a, attended: true, attendance_status: 'Online' } : a),
-      })))
-      .catch(() => {/* a failed tick is not worth interrupting a live meeting */})
-  }, [id, meeting?.attendees])
+    let people = []
+    try {
+      const me = api.myUserId?.()
+      people = (api.getParticipantsInfo?.() || []).map(p => ({
+        key: String(p.participantId ?? p.id ?? ''),
+        name: p.displayName || p.formattedDisplayName || '',
+        // The signed-in user, so the server can tie the chair to their account
+        // rather than to whatever name their browser remembered.
+        self: me != null && String(p.participantId ?? p.id) === String(me),
+      }))
+
+      // Some Jitsi builds list only the OTHER people in the room. Left at that,
+      // the one person certain to be in the meeting — whoever opened it — would
+      // be the one person never recorded, which is exactly the complaint this
+      // set out to fix. Added explicitly when the list does not carry them.
+      if (me != null && !people.some(p => p.self)) {
+        people.push({ key: String(me), name: displayNameRef.current || '', self: true })
+      }
+    } catch { /* the call is going down; report the end with what we have */ }
+
+    try {
+      const d = await kickoffApi.roomPresence(latest.current.id, { in_call: people, ended })
+      if (d?.attendees) setRoster(d.attendees)
+      if (d?.actual_start_at) setHeldFrom(d.actual_start_at)
+    } catch { /* a lost heartbeat is repaired by the next one */ }
+  }, [])
+
+  // While the call runs, every 20 seconds. Someone who joins and leaves between
+  // two beats is still recorded — they appear in one of them.
+  useEffect(() => {
+    if (!joined) return
+    beat()
+    beatTimer.current = setInterval(beat, PRESENCE_MS)
+    return () => clearInterval(beatTimer.current)
+  }, [joined, beat])
+
+  // Drives the "running for 12 min" counter without re-rendering the video.
+  useEffect(() => {
+    if (!joined) return
+    const t = setInterval(() => setTick(n => n + 1), 30000)
+    return () => clearInterval(t)
+  }, [joined])
 
   /* ── The call ─────────────────────────────────────────────────────── */
 
@@ -164,7 +217,7 @@ export default function MeetingRoom() {
   const isJitsi = (meeting?.meeting_platform ?? 'jitsi') === 'jitsi' && !!jitsi
   // Only the free public server demands a sign-in from whoever starts the
   // meeting. A self-hosted one does not, so do not warn about it there.
-  const publicJitsi = jitsi?.domain === 'meet.jit.si'
+  const publicJitsi = jitsi?.domain === PUBLIC_JITSI
 
   useEffect(() => {
     if (!started || !isJitsi || !frameRef.current || apiRef.current) return
@@ -195,15 +248,18 @@ export default function MeetingRoom() {
       })
       apiRef.current = api
 
-      api.addListener('videoConferenceJoined', (e) => { setJoined(true); markPresent(e?.displayName) })
-      api.addListener('participantJoined', (e) => {
-        setInCall(prev => [...new Set([...prev, e?.displayName].filter(Boolean))])
-        markPresent(e?.displayName)
-      })
-      api.addListener('participantLeft', () => {
-        setInCall((api.getParticipantsInfo?.() || []).map(p => p.displayName).filter(Boolean))
-      })
-      api.addListener('displayNameChange', (e) => markPresent(e?.displayname ?? e?.displayName))
+      // Every change to the room is reported straight away as well as on the
+      // timer, so the panel keeps up with the call rather than lagging it.
+      const names = () => (api.getParticipantsInfo?.() || []).map(p => p.displayName).filter(Boolean)
+
+      api.addListener('videoConferenceJoined', () => { setJoined(true); setInCall(names()); beat() })
+      api.addListener('participantJoined', () => { setInCall(names()); beat() })
+      api.addListener('participantLeft', () => { setInCall(names()); beat() })
+      api.addListener('displayNameChange', () => { setInCall(names()); beat() })
+      // The call ended — the last person left, or the public server cut it off.
+      // Close the record here rather than waiting for the chair to click away,
+      // so the meeting stops reading as "In progress" the moment it is over.
+      api.addListener('videoConferenceLeft', () => { setJoined(false); beat(true) })
       api.addListener('readyToClose', () => { setJoined(false); leave() })
     }).catch(() => {
       // The script is fetched from the meeting's own Jitsi server, so this
@@ -222,13 +278,17 @@ export default function MeetingRoom() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started, isJitsi, jitsi?.domain, jitsi?.room])
 
-  /** Hang up, make sure the notes are stored, and go back to the record. */
+  /** Hang up, close the record, make sure the notes are stored, and go back. */
   const leave = useCallback(async () => {
     clearTimeout(saveTimer.current)
+    clearInterval(beatTimer.current)
+    // Before the hang-up: once the call is torn down there is nobody left to
+    // report, and this is the moment the meeting actually finished.
+    await beat(true)
     await save()
     try { apiRef.current?.executeCommand('hangup') } catch { /* already ended */ }
     navigate(`${meetingBase()}/kickoff/${latest.current.id}`)
-  }, [save, navigate])
+  }, [save, beat, navigate])
 
   /* ── Render ───────────────────────────────────────────────────────── */
 
@@ -237,6 +297,11 @@ export default function MeetingRoom() {
 
   const presentCount = attendees.filter(a => a.attended).length
   const timing = describeTiming(meeting.scheduled_at, meeting.end_at)
+  // The counter is recomputed on every `tick`, which is what makes it move.
+  const running = useMemo(
+    () => (heldFrom && joined ? elapsedSeconds(heldFrom) : null),
+    [heldFrom, joined, tick],
+  )
 
   return (
     <Shell>
@@ -254,6 +319,14 @@ export default function MeetingRoom() {
         <span style={{ ...SX.timingPill, background: `${timing.color}1a`, color: timing.color, border: `1px solid ${timing.color}44` }}>
           <Clock size={11} /> {timing.label}
         </span>
+        {/* How long the call has actually been running, as opposed to how long
+            it was booked for. The two are routinely different and only one of
+            them is a fact. */}
+        {running !== null && (
+          <span style={{ ...SX.timingPill, background: 'rgba(16,185,129,0.10)', color: '#10b981', border: '1px solid rgba(16,185,129,0.28)' }}>
+            Running {fmtSpan(running)}
+          </span>
+        )}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
           <SaveBadge state={saveState} />
           <button onClick={() => setPanelOpen(o => !o)} title={panelOpen ? 'Hide the notes panel' : 'Show the notes panel'} style={SX.iconBtn}>
@@ -331,11 +404,12 @@ export default function MeetingRoom() {
               )}
 
               {tab === 'attendees' && (
-                attendees.length === 0 ? <Empty>Nobody is on the roster for this meeting.</Empty> : (
+                attendees.length === 0 ? <Empty>Nobody has joined this meeting yet.</Empty> : (
                   <>
                     <p style={SX.hint}>
-                      Ticked automatically when someone joins under the name on the roster.
-                      Anyone who joins under a different name can still be ticked by hand on the meeting page.
+                      Recorded from the call itself — who arrived, when, and how long they stayed.
+                      Somebody who joins under a name that is not on the roster is added here rather
+                      than left out.
                     </p>
                     {attendees.map(a => (
                       <div key={a.id} style={SX.attendeeRow}>
@@ -345,15 +419,21 @@ export default function MeetingRoom() {
                             : <span style={{ width: 11, height: 11, borderRadius: '50%', border: '1.5px solid var(--text-muted)' }} />}
                         </span>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-h)' }}>{a.name}</div>
+                          <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-h)' }}>
+                            {a.name}
+                            {a.is_guest && <span style={SX.guestTag}>GUEST</span>}
+                          </div>
                           {a.organisation && <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>{a.organisation}</div>}
+                          {a.joined_at && (
+                            <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
+                              Joined {fmtClock(a.joined_at)}
+                              {a.seconds_in_call > 0 ? ` · ${fmtSpan(a.seconds_in_call)} in the call` : ''}
+                            </div>
+                          )}
                         </div>
-                        {autoMarked.includes(a.id) && <span style={{ fontSize: 9.5, fontWeight: 800, color: '#10b981' }}>JOINED</span>}
+                        {stillIn.has(norm(a.name)) && <span style={{ fontSize: 9.5, fontWeight: 800, color: '#10b981' }}>IN CALL</span>}
                       </div>
                     ))}
-                    {inCall.length > 0 && (
-                      <p style={{ marginTop: 12, fontSize: 11, color: 'var(--text-muted)' }}>In the call now: {inCall.join(', ')}</p>
-                    )}
                   </>
                 )
               )}
@@ -417,17 +497,23 @@ function StartCard({ meeting, timing, publicJitsi, onStart }) {
         </div>
 
         {publicJitsi && (
-          <div style={{ ...SX.startNote, borderColor: 'rgba(245,158,11,0.35)', background: 'rgba(245,158,11,0.10)' }}>
-            <Info size={14} style={{ color: '#f59e0b', flexShrink: 0, marginTop: 1 }} />
+          <div style={{ ...SX.startNote, borderColor: 'rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.10)' }}>
+            <AlertTriangle size={14} style={{ color: '#ef4444', flexShrink: 0, marginTop: 1 }} />
             <div>
-              <strong style={{ color: '#f59e0b', fontSize: 12.5 }}>Jitsi will ask the first person to sign in</strong>
+              <strong style={{ color: '#ef4444', fontSize: 12.5 }}>
+                On the free public server this call will be cut off after 5 minutes
+              </strong>
               <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                The free public Jitsi server asks whoever <em>starts</em> a meeting to sign in once with
-                Google, GitHub or Facebook. It is Jitsi asking, not this system, and it costs nothing.
-                Everyone who joins after you — vendors included — walks straight in with no account.
+                {PUBLIC_JITSI} allows a call to run <em>inside</em> another site for five minutes only
+                — it is a demo allowance, and 8x8 end the call when it runs out. It also asks whoever
+                starts a meeting to sign in with Google, GitHub or Facebook. Both are their rules for
+                their free server, and nothing in this system can change them.
                 <br /><br />
-                If you would rather nobody signed in at all, Jitsi can be run on your own server and
-                this screen will use it automatically.
+                <strong style={{ color: 'var(--text-h)' }}>To hold a real meeting:</strong> open it in a
+                new tab, where the five-minute limit does not apply — or, so that neither problem comes
+                up again, set your own Jitsi address under <em>Settings → Meeting Server</em>. Attendance
+                and the notes are recorded either way; in a new tab the attendance is ticked by hand on
+                the meeting page.
               </p>
             </div>
           </div>
@@ -467,6 +553,60 @@ function OtherPlatform({ meeting }) {
       </div>
     </div>
   )
+}
+
+/* ── Small formatters ────────────────────────────────────────────────────── */
+
+/** How often the room reports who is in the call. */
+const PRESENCE_MS = 20000
+
+/** 8x8's free server: it signs the host in, and cuts embedded calls off at 5 minutes. */
+const PUBLIC_JITSI = 'meet.jit.si'
+
+const norm = (s) => String(s || '').trim().toLowerCase()
+
+/**
+ * "14:32" in the reader's own timezone.
+ *
+ * Unlike the booked slot — a wall clock somebody typed, which must not be
+ * re-localised — these are machine instants stamped as the call happened, so
+ * localising them is exactly right: everyone sees when it happened for them.
+ */
+const fmtClock = (v) => {
+  const d = asInstant(v)
+  return d ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'
+}
+
+/**
+ * A UTC instant the server sent as a bare "Y-m-d H:i:s".
+ *
+ * The Z has to be put back before parsing: without it the browser reads the
+ * value as local time and everything derived from it is out by the viewer's
+ * offset. A value that already carries an offset is left alone.
+ */
+function asInstant(v) {
+  const raw = String(v || '').trim()
+  if (!raw) return null
+  const hasZone = /[Zz]$|[+-]\d\d:?\d\d$/.test(raw)
+  const d = new Date(raw.replace(' ', 'T') + (hasZone ? '' : 'Z'))
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+/** A span of seconds as something a person would say out loud. */
+function fmtSpan(seconds) {
+  const s = Math.max(0, Math.round(seconds))
+  if (s < 60) return 'under a minute'
+  const mins = Math.round(s / 60)
+  if (mins < 60) return `${mins} min`
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return m ? `${h} hr ${m} min` : `${h} hr`
+}
+
+/** Seconds since the call started. */
+function elapsedSeconds(startedAt) {
+  const d = asInstant(startedAt)
+  return d ? Math.max(0, Math.round((Date.now() - d.getTime()) / 1000)) : 0
 }
 
 /* ── Timing ──────────────────────────────────────────────────────────────── */
@@ -579,6 +719,7 @@ const SX = {
   panelFoot: { padding: '9px 14px', borderTop: '1px solid var(--border)', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   smallBtn: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 13px', borderRadius: 9, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' },
   hint: { margin: '0 0 10px', fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.5 },
+  guestTag: { marginLeft: 6, padding: '1px 5px', borderRadius: 5, fontSize: 8.5, fontWeight: 900, letterSpacing: '0.04em', background: 'rgba(167,139,250,0.16)', color: '#a78bfa' },
   attendeeRow: { display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px', marginBottom: 6, borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)' },
   textarea: { width: '100%', marginTop: 3, resize: 'vertical', padding: '7px 9px', borderRadius: 8, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)', fontSize: 12, lineHeight: 1.5, fontFamily: 'inherit' },
 

@@ -14,6 +14,7 @@ use App\Services\Purchase\PurchaseMeetingRegisterService;
 use App\Services\Purchase\PurchaseVendorLiveStatusService;
 use App\Services\Shared\OnlineMeetingService;
 use App\Support\Purchase\PurchaseKickoffStatus;
+use App\Services\Shared\MeetingPresence;
 use App\Services\Shared\MeetingRoomNotes;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -198,6 +199,36 @@ class PurchaseKickoffController extends Controller
         ));
     }
 
+    /**
+     * Who is in the call right now.
+     *
+     * The room posts this every few seconds while the meeting runs. It is a
+     * snapshot of the whole room rather than one arrival or departure at a
+     * time, which is what makes it safe to repeat: see MeetingPresence for why
+     * events were the wrong shape here.
+     *
+     * `ended` closes the record off — the chair left, or the call finished.
+     */
+    public function roomPresence(Request $request, PurchaseKickoffMeeting $kickoff, MeetingPresence $presence)
+    {
+        $this->assertTenant($request, $kickoff);
+
+        $data = $request->validate([
+            'in_call' => 'present|array|max:200',
+            'in_call.*.key' => 'nullable|string|max:191',
+            'in_call.*.name' => 'nullable|string|max:191',
+            'in_call.*.self' => 'nullable|boolean',
+            'ended' => 'nullable|boolean',
+        ]);
+
+        return response()->json($presence->reconcile(
+            $kickoff,
+            $data['in_call'] ?? [],
+            (bool) ($data['ended'] ?? false),
+            $request->user(),
+        ));
+    }
+
     public function attendance(Request $request, PurchaseKickoffMeeting $kickoff)
     {
         $this->assertTenant($request, $kickoff);
@@ -302,7 +333,11 @@ class PurchaseKickoffController extends Controller
         $file = $this->service->currentMomFile($kickoff);
         abort_unless($file, 404, 'MOM not available yet.');
 
-        $this->service->markMomViewed($kickoff);
+        // Deliberately NOT marked viewed here. This is the administrator's own
+        // download, and mom_viewed_at is shown on the meeting as "Viewed by
+        // vendor" — stamping it from this route made the tracker assert the
+        // vendor had read minutes that only the sender had opened. The stamp is
+        // set where the vendor actually reads them, in the portal.
 
         return response()->download($file['path'], $file['filename'], [
             'Content-Type'        => $file['mime'],

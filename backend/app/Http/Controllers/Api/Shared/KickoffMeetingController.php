@@ -21,6 +21,7 @@ use App\Services\Shared\VendorLiveStatusService;
 use App\Support\Shared\MeetingIssueStatus;
 use App\Support\Shared\MeetingTypeCatalog;
 use App\Support\Shared\MomActionStatus;
+use App\Services\Shared\MeetingPresence;
 use App\Services\Shared\MeetingRoomNotes;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -332,6 +333,36 @@ class KickoffMeetingController extends Controller
         ));
     }
 
+    /**
+     * Who is in the call right now.
+     *
+     * The room posts this every few seconds while the meeting runs. It is a
+     * snapshot of the whole room rather than one arrival or departure at a
+     * time, which is what makes it safe to repeat: see MeetingPresence for why
+     * events were the wrong shape here.
+     *
+     * `ended` closes the record off — the chair left, or the call finished.
+     */
+    public function roomPresence(Request $request, KickoffMeeting $kickoffMeeting, MeetingPresence $presence)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+
+        $data = $request->validate([
+            'in_call' => 'present|array|max:200',
+            'in_call.*.key' => 'nullable|string|max:191',
+            'in_call.*.name' => 'nullable|string|max:191',
+            'in_call.*.self' => 'nullable|boolean',
+            'ended' => 'nullable|boolean',
+        ]);
+
+        return response()->json($presence->reconcile(
+            $kickoffMeeting,
+            $data['in_call'] ?? [],
+            (bool) ($data['ended'] ?? false),
+            $request->user(),
+        ));
+    }
+
     public function attendance(Request $request, KickoffMeeting $kickoffMeeting)
     {
         $this->assertTenant($request, $kickoffMeeting);
@@ -598,6 +629,26 @@ class KickoffMeetingController extends Controller
     }
 
     /** Stream the stored MoM document — inline for View, attachment for Download. */
+    /**
+     * The minutes as DATA, in the shape both portals already agreed on.
+     *
+     * `momFile` returns the PDF, which is the record but not the reading
+     * experience: a page image does not reflow on a phone and cannot be searched
+     * by the person who has to act on it. Only the two portal controllers could
+     * produce the structured view, so the onboarding wizard — which serves the
+     * admin surface too — had to embed the PDF instead. One endpoint, both
+     * surfaces, same payload.
+     */
+    public function momData(Request $request, KickoffMeeting $kickoffMeeting)
+    {
+        $this->assertTenant($request, $kickoffMeeting);
+
+        return response()->json(\App\Support\Shared\VendorMomView::for(
+            $kickoffMeeting,
+            (bool) $kickoffMeeting->mom_path,
+        ));
+    }
+
     public function momFile(Request $request, KickoffMeeting $kickoffMeeting)
     {
         $this->assertTenant($request, $kickoffMeeting);

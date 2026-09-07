@@ -35,6 +35,9 @@ class PurchaseKickoffMeeting extends Model
         'reference', 'meeting_no', 'title', 'meeting_type', 'agenda', 'status',
         'priority', 'confidentiality', 'chairperson', 'coordinator', 'organizer', 'department', 'client_name',
         'scheduled_at', 'end_at', 'duration_minutes', 'reminders_sent', 'mode', 'location',
+        // When the call itself ran, written by MeetingPresence as people arrive
+        // and leave. The slot above is the plan; this is the record.
+        'actual_start_at', 'actual_end_at', 'presence_seen_at',
         'original_scheduled_at', 'delay_reason',
         'minutes', 'completed_at',
         'mom_status',
@@ -52,6 +55,13 @@ class PurchaseKickoffMeeting extends Model
         'scheduled_at'              => BusinessDateTime::class,
         'end_at'                    => BusinessDateTime::class,
         'original_scheduled_at'     => BusinessDateTime::class,
+        // Machine timestamps, NOT wall clocks: nobody types these, they are
+        // stamped as the call happens. UTC like every other `now()` on the
+        // model — BusinessDateTime is for times a person entered, and using
+        // it here would shift them by the tenant's offset.
+        'actual_start_at'           => 'datetime',
+        'actual_end_at'             => 'datetime',
+        'presence_seen_at'          => 'datetime',
         'completed_at'              => 'datetime',
         'acknowledged_at'          => 'datetime',
         'mom_submitted_at'          => 'datetime',
@@ -70,6 +80,11 @@ class PurchaseKickoffMeeting extends Model
         'status_label', 'is_acknowledged', 'meeting_type_label', 'mom_status_label',
         // Clock-derived; see the Timing block below. Mirrors the shared engine.
         'ends_at', 'timing_state', 'timing_label', 'is_expired', 'is_live', 'minutes_until_start',
+        // The record of the call itself, not the slot it was booked into.
+        'has_ended', 'held_minutes',
+        // Whether a minutes DOCUMENT exists — asked the same way of both
+        // engines, which store it in entirely different places.
+        'has_mom_document',
     ];
 
     /** Auto-assign a Meeting-No (MTG-YYYY-NNNN) per tenant/year on create (§2). */
@@ -172,6 +187,23 @@ class PurchaseKickoffMeeting extends Model
         return $this->hasOne(PurchaseKickoffMom::class, 'purchase_kickoff_meeting_id')->where('is_current', true);
     }
 
+    /**
+     * Is there a minutes document to open?
+     *
+     * The one admin screen drives both engines, and it asked `mom_path` — a
+     * column this engine does not have; the document lives in purchase_kickoff_mom.
+     * So View and Download never appeared and the button always said "Generate
+     * PDF": people pressed it again and again, which is why some meetings carry
+     * three generated copies of the same minutes. One question, answered the
+     * same way by both engines.
+     */
+    public function getHasMomDocumentAttribute(): bool
+    {
+        return $this->relationLoaded('currentMom')
+            ? (bool) $this->getRelation('currentMom')
+            : $this->currentMom()->exists();
+    }
+
     public function getStatusLabelAttribute(): string
     {
         return Status::label($this->status);
@@ -215,7 +247,7 @@ class PurchaseKickoffMeeting extends Model
         );
     }
 
-    /** draft | upcoming | live | expired | closed */
+    /** draft | upcoming | live | ended | expired | closed */
     public function getTimingStateAttribute(): string
     {
         return MeetingTiming::state(
@@ -225,6 +257,15 @@ class PurchaseKickoffMeeting extends Model
             $this->status === Status::DRAFT,
             Status::isClosed($this->status),
             $this->tenant_id,
+            // What the call actually did, which outranks what was booked: a
+            // meeting everyone left after seven minutes is over, however much
+            // of its hour is left.
+            $this->actual_start_at,
+            $this->actual_end_at,
+            // The last heartbeat. A call whose browser was closed without
+            // hanging up reports no end at all, and this is what stops the
+            // meeting reading "In progress" for ever afterwards.
+            $this->presence_seen_at,
         );
     }
 
@@ -242,7 +283,27 @@ class PurchaseKickoffMeeting extends Model
      */
     public function getIsExpiredAttribute(): bool
     {
-        return $this->timing_state === MeetingTiming::EXPIRED;
+        // Both finished states: a call that was held and ended cannot be joined
+        // either, and every consumer of this asks the same question.
+        return in_array($this->timing_state, MeetingTiming::FINISHED, true);
+    }
+
+    /** The call was held and has finished — as opposed to never having happened. */
+    public function getHasEndedAttribute(): bool
+    {
+        return $this->timing_state === MeetingTiming::ENDED;
+    }
+
+    /**
+     * How long the meeting actually ran, in minutes. Null until it has ended.
+     *
+     * The booked length is `duration_minutes`; this is what really happened,
+     * and the two are shown side by side so a meeting that took twenty minutes
+     * of its booked hour reads as exactly that.
+     */
+    public function getHeldMinutesAttribute(): ?int
+    {
+        return MeetingTiming::heldMinutes($this->actual_start_at, $this->actual_end_at ?: $this->presence_seen_at);
     }
 
     /** Running right now — started, not yet ended, not closed. */

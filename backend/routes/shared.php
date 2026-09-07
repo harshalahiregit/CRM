@@ -62,6 +62,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('kickoff')->grou
     // discussion and decision per agenda point, and the minutes. Separate from
     // the meeting's own PUT, which re-notifies the roster on every save.
     Route::post('/meetings/{kickoffMeeting}/room/notes', [KickoffMeetingController::class, 'saveRoomNotes']);
+    // Who is in the call right now, reported every few seconds while it runs.
+    // A snapshot rather than join/leave events — see MeetingPresence.
+    Route::post('/meetings/{kickoffMeeting}/room/presence', [KickoffMeetingController::class, 'roomPresence']);
     Route::post('/meetings/{kickoffMeeting}/remind', [KickoffMeetingController::class, 'remind']);
     // §1 "Send Invitation" — also fired automatically when a meeting is scheduled.
     Route::post('/meetings/{kickoffMeeting}/invite', [KickoffMeetingController::class, 'sendInvitations']);
@@ -75,6 +78,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('kickoff')->grou
     Route::delete('/meetings/{kickoffMeeting}/documents/{document}', [KickoffMeetingController::class, 'deleteDocument']);
     Route::post('/meetings/{kickoffMeeting}/mom/generate', [KickoffMeetingController::class, 'generateMom']);
     Route::get('/meetings/{kickoffMeeting}/mom', [KickoffMeetingController::class, 'momFile']);
+    // The same minutes as data — see momData for why both exist.
+    Route::get('/meetings/{kickoffMeeting}/mom-data', [KickoffMeetingController::class, 'momData']);
     // MOM approval workflow — submit → approve/return → (publish = distribute).
     Route::post('/meetings/{kickoffMeeting}/mom/submit', [KickoffMeetingController::class, 'momSubmit']);
     Route::post('/meetings/{kickoffMeeting}/mom/decide', [KickoffMeetingController::class, 'momDecide']);

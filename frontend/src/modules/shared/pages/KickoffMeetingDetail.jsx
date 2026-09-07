@@ -144,7 +144,7 @@ export default function KickoffMeetingDetail() {
               <Detail icon={Clock} label="Date & time" value={fmtDateTime(m.scheduled_at)} />
               <Detail icon={Clock} label="Duration" value={m.duration_minutes ? `${m.duration_minutes} min` : '—'} />
               {m.end_at && <Detail icon={Clock} label="End time" value={fmtDateTime(m.end_at)} />}
-              <Detail icon={MapPin} label={m.mode === 'online' ? 'Meeting link' : 'Location'} value={m.location || '—'} />
+              <Detail icon={MapPin} label="Location" value={m.location || '—'} />
               <Detail icon={CalendarDays} label="Mode" value={koModeLabel(m.mode)} />
               {m.chairperson && <Detail icon={Users} label="Chairperson" value={m.chairperson} />}
               {m.coordinator && <Detail icon={Users} label="Coordinator" value={m.coordinator} />}
@@ -169,6 +169,17 @@ export default function KickoffMeetingDetail() {
                 <MetaDetail icon={ShieldCheck} label="Confidentiality" value={m.confidentiality} />
               </div>
             )}
+            {/* What actually happened, beside what was booked. Until the call
+                itself was recorded there was nothing to show here — a meeting
+                held for seven minutes of its hour looked identical to one that
+                ran the full hour, and to one nobody attended at all. */}
+            <HeldRecord meeting={m} />
+
+            {/* The join link, in full. It was only ever a button, so nobody
+                could read it, copy it, or paste it to somebody who had not been
+                invited through the system. */}
+            <MeetingLinkRow meeting={m} />
+
             {m.status === KO_STATUS.DELAYED && m.delay_reason && (
               <div style={{ marginTop: 14, padding: '11px 13px', borderRadius: 11, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.32)' }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: '#f59e0b', marginBottom: 3 }}>DELAYED · originally {fmtDate(m.original_scheduled_at)}</div>
@@ -228,8 +239,23 @@ export default function KickoffMeetingDetail() {
                           <span title="No e-mail address — this person cannot receive the invitation or the minutes"
                             style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#f59e0b' }}>no e-mail</span>
                         )}
+                        {/* Added by the call, not by whoever built the roster.
+                            Says so plainly, so an unexpected name reads as
+                            "somebody turned up" rather than a data error. */}
+                        {a.is_guest && (
+                          <span title="Joined the call under a name that was not on the roster"
+                            style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#a78bfa' }}>joined as guest</span>
+                        )}
                       </div>
                       <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{[a.role, a.organisation].filter(Boolean).join(' · ') || '—'}</div>
+                      {/* Recorded by the call, not typed by anyone: this is the
+                          evidence behind the pill on the right. */}
+                      {a.joined_at && (
+                        <div style={{ fontSize: 11, color: '#10b981', marginTop: 2 }}>
+                          In the call {clockOf(a.joined_at)}–{clockOf(a.left_at)}
+                          {a.seconds_in_call > 60 ? ` · ${Math.round(a.seconds_in_call / 60)} min` : ''}
+                        </div>
+                      )}
                     </div>
                     <AttendancePill attendee={a} />
                   </div>
@@ -921,7 +947,7 @@ function MomCard({ m, onUploaded, onError }) {
   const openPdf = async (download) => {
     setBusy(download ? 'dl' : 'view'); onError(null)
     try {
-      if (!m.mom_path) onUploaded(await kickoffApi.generateMom(m.id))
+      if (!hasDoc) onUploaded(await kickoffApi.generateMom(m.id))
       const blob = await kickoffApi.momBlob(m.id)
       const url = URL.createObjectURL(blob)
       if (download) {
@@ -937,11 +963,18 @@ function MomCard({ m, onUploaded, onError }) {
     } finally { setBusy(null) }
   }
 
+  // Whether a minutes document exists, asked in a way both engines answer.
+  // This card gated everything on `mom_path`, which only the shared engine has,
+  // so on Purchase the View and Download buttons never appeared however many
+  // documents had been generated — and the generate button never changed its
+  // label, so people pressed it repeatedly and made duplicates.
+  const hasDoc = m.has_mom_document ?? !!m.mom_path
+
   return (
     <div className="pr-glass" style={{ padding: 20 }}>
       <SectionTitle icon={FileText}>Minutes document</SectionTitle>
 
-      {m.mom_path ? (
+      {hasDoc ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, padding: '11px 13px', borderRadius: 11, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)' }}>
           <FileText size={16} style={{ color: '#10b981', flexShrink: 0 }} />
           <span style={{ fontSize: 12.5, color: 'var(--text-h)', flex: 1 }}>MOM document ready</span>
@@ -959,11 +992,11 @@ function MomCard({ m, onUploaded, onError }) {
       )}
 
       {/* Generate / View / Download */}
-      <div style={{ display: 'grid', gridTemplateColumns: m.mom_path ? '1fr 1fr' : '1fr', gap: 8, marginTop: 10 }}>
-        <MomBtn onClick={generate} busy={busy === 'gen'} icon={Sparkles} tone="#7C3AED">{m.mom_path ? 'Regenerate PDF' : 'Generate PDF'}</MomBtn>
-        {m.mom_path && <MomBtn onClick={() => openPdf(false)} busy={busy === 'view'} icon={Eye} tone="#10b981">View PDF</MomBtn>}
+      <div style={{ display: 'grid', gridTemplateColumns: hasDoc ? '1fr 1fr' : '1fr', gap: 8, marginTop: 10 }}>
+        <MomBtn onClick={generate} busy={busy === 'gen'} icon={Sparkles} tone="#7C3AED">{hasDoc ? 'Regenerate PDF' : 'Generate PDF'}</MomBtn>
+        {hasDoc && <MomBtn onClick={() => openPdf(false)} busy={busy === 'view'} icon={Eye} tone="#10b981">View PDF</MomBtn>}
       </div>
-      {m.mom_path && (
+      {hasDoc && (
         <MomBtn onClick={() => openPdf(true)} busy={busy === 'dl'} icon={Download} tone="#0ea5e9" full>Download PDF</MomBtn>
       )}
 
@@ -1262,7 +1295,10 @@ function VendorHistoryCard({ m, onOpen }) {
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, margin: '12px 0 14px' }}>
             <HStat label="Meetings"     value={t.meetings} />
-            <HStat label="Completed"    value={t.completed} color="#10b981" />
+            {/* "Held" is the calls that actually ran, counted from the record of
+                each one. "Completed" beside it is a status somebody set, and the
+                two routinely disagree — which is the point of showing both. */}
+            <HStat label="Held"         value={t.held} color={t.held ? '#10b981' : undefined} />
             <HStat label="Open actions" value={t.open_actions} color={t.open_actions ? '#f59e0b' : undefined} />
             <HStat label="Open issues"  value={t.open_issues} color={t.open_issues ? '#ef4444' : undefined} />
           </div>
@@ -1281,6 +1317,16 @@ function VendorHistoryCard({ m, onOpen }) {
                       {cur && <span style={{ fontSize: 9.5, fontWeight: 800, color: '#a78bfa' }}>THIS MEETING</span>}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{row.meeting_type_label} · {row.scheduled_at ? fmtDateTime(row.scheduled_at) : 'Unscheduled'}</div>
+                    {/* What the meeting did, under when it was booked. A history
+                        of scheduled times alone never said whether any of them
+                        happened. */}
+                    {row.actual_start_at && (
+                      <div style={{ fontSize: 10.5, color: '#10b981', marginTop: 2 }}>
+                        {row.actual_end_at
+                          ? `Held ${clockOf(row.actual_start_at)}–${clockOf(row.actual_end_at)}${row.held_minutes ? ` · ${row.held_minutes} min` : ''}`
+                          : 'In progress now'}
+                      </div>
+                    )}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                     {row.open_actions > 0 && <HPill tone="#f59e0b">{row.open_actions} act</HPill>}
@@ -1576,6 +1622,147 @@ const MetaDetail = ({ icon: Icon, label, value }) => value ? (
     <span style={{ fontSize: 12.5, color: 'var(--text-h)', fontWeight: 600 }}>{value}</span>
   </div>
 ) : null
+
+/**
+ * What the meeting actually did, as opposed to what it was booked to do.
+ *
+ * `scheduled_at` and `duration_minutes` are a plan somebody typed. These two
+ * columns are written by the live room as people arrive and leave, and the gap
+ * between them is usually the interesting part: an hour was booked, the call
+ * ran nineteen minutes. Nothing is shown at all for a meeting nobody joined
+ * through the room — an empty panel would read as "nobody came", which is a
+ * different and much stronger claim than "we have no record".
+ */
+function HeldRecord({ meeting: m }) {
+  if (!m.actual_start_at) return null
+
+  const booked = m.duration_minutes || null
+  const held = m.held_minutes
+  const running = !m.actual_end_at
+
+  return (
+    <div style={{
+      marginTop: 14, padding: '11px 13px', borderRadius: 11,
+      background: running ? 'rgba(16,185,129,0.08)' : 'rgba(148,163,184,0.10)',
+      border: `1px solid ${running ? 'rgba(16,185,129,0.32)' : 'var(--border)'}`,
+    }}>
+      <div style={{ fontSize: 11, fontWeight: 800, color: running ? '#10b981' : 'var(--text-muted)', marginBottom: 4, letterSpacing: '0.03em' }}>
+        {running ? 'IN PROGRESS NOW' : 'HELD'}
+      </div>
+      <div style={{ fontSize: 12.5, color: 'var(--text-h)' }}>
+        {running ? (
+          <>Started {fmtDateTime(m.actual_start_at)} — still running.</>
+        ) : (
+          <>
+            {fmtDateTime(m.actual_start_at)} to {clockOf(m.actual_end_at)}
+            {held !== null && held !== undefined && (
+              <> · ran <strong>{held < 1 ? 'under a minute' : `${held} min`}</strong></>
+            )}
+            {booked ? <span style={{ color: 'var(--text-muted)' }}> of {booked} min booked</span> : null}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The join link, readable and copyable.
+ *
+ * It existed only behind a "Join" button, so nobody could see where the meeting
+ * actually was, read it out over the phone, or send it to somebody the system
+ * had not invited — all of which people do.
+ */
+function MeetingLinkRow({ meeting: m }) {
+  const [copied, setCopied] = useState(false)
+  if (!m.meeting_link) return null
+
+  const copy = () => {
+    navigator.clipboard?.writeText(m.meeting_link)
+      .then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800) })
+      .catch(() => {/* an unavailable clipboard is not worth an error banner */})
+  }
+
+  return (
+    <div style={{ marginTop: 14, padding: '11px 13px', borderRadius: 11, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5 }}>
+        <Video size={12} style={{ color: '#a78bfa' }} />
+        <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.03em' }}>MEETING LINK</span>
+        {m.meeting_passcode && (
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>· passcode <strong style={{ color: 'var(--text-h)' }}>{m.meeting_passcode}</strong></span>
+        )}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <a href={m.meeting_link} target="_blank" rel="noopener noreferrer"
+          style={{ fontSize: 12, color: '#a78bfa', fontWeight: 600, wordBreak: 'break-all', flex: '1 1 220px', minWidth: 0 }}>
+          {m.meeting_link}
+        </a>
+        <button onClick={copy} title="Copy the link"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 11.5, fontWeight: 700, background: 'var(--bg-card)', border: '1px solid var(--border)', color: copied ? '#10b981' : 'var(--text-h)', flexShrink: 0 }}>
+          <Copy size={12} /> {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Where an attendance mark came from.
+ *
+ * Three sources, and they are not equally strong. Being seen in the call says
+ * when somebody arrived and how long they stayed. A Join click says only that
+ * they opened the meeting — which for a call held on Google Meet or Teams is
+ * the only thing this system can honestly know. A hand-tick says a person
+ * decided, which outranks both.
+ *
+ * Shown because the difference matters to whoever reads the register later.
+ */
+function AttendanceEvidence({ attendee: a }) {
+  if (!a.joined_at && !a.attendance_source) return null
+
+  if (a.attendance_source === 'call' || (a.joined_at && a.seconds_in_call > 0)) {
+    return (
+      <div style={{ fontSize: 11, color: '#10b981', marginTop: 2 }}>
+        In the call {clockOf(a.joined_at)}–{clockOf(a.left_at)}
+        {a.seconds_in_call > 60 ? ` · ${Math.round(a.seconds_in_call / 60)} min` : ''}
+      </div>
+    )
+  }
+
+  if (a.attendance_source === 'link') {
+    return (
+      <div style={{ fontSize: 11, color: '#0ea5e9', marginTop: 2 }} title={a.remark || undefined}>
+        Opened the meeting {clockOf(a.joined_at)}
+        <span style={{ color: 'var(--text-muted)' }}> · joined from the portal</span>
+      </div>
+    )
+  }
+
+  if (a.attendance_source === 'manual') {
+    return <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Marked by hand</div>
+  }
+
+  return a.joined_at
+    ? <div style={{ fontSize: 11, color: '#10b981', marginTop: 2 }}>In the call {clockOf(a.joined_at)}</div>
+    : null
+}
+
+
+/**
+ * "14:32" in the reader's own timezone.
+ *
+ * These are machine instants stamped as the call happened — not the booked
+ * slot, which is a wall clock somebody typed and must not be re-localised. The
+ * Z is put back when the server sent the bare "Y-m-d H:i:s" form, without which
+ * the browser reads a UTC instant as local time.
+ */
+const clockOf = (v) => {
+  const raw = String(v || '').trim()
+  if (!raw) return '—'
+  const hasZone = /[Zz]$|[+-]\d\d:?\d\d$/.test(raw)
+  const d = new Date(raw.replace(' ', 'T') + (hasZone ? '' : 'Z'))
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
 
 /**
  * One attendee's recorded attendance (Meeting.docx §6).
