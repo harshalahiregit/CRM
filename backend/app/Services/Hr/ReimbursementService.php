@@ -23,7 +23,12 @@ use Illuminate\Support\Facades\DB;
  */
 class ReimbursementService
 {
-    public function __construct(private RequestThreadService $thread)
+    public function __construct(
+        private RequestThreadService $thread,
+        // This flow told the employee nothing: they submitted a claim and heard
+        // nothing, it was approved and they heard nothing.
+        private RequestNotifier $notifier,
+    )
     {
     }
 
@@ -50,6 +55,10 @@ class ReimbursementService
                 $actor,
                 ['amount_claimed' => (float) $claim->amount_claimed]
             );
+
+            $this->notifier->tell($employee, 'Expense Claim', 'submitted',
+                'Your claim for '.$this->money((float) $claim->amount_claimed)
+                .' is with your approver.', $actor);
 
             return $claim;
         });
@@ -183,6 +192,9 @@ class ReimbursementService
                 ['amount' => $final]
             );
 
+            $this->notifier->tell($claim->employee, 'Expense Claim', 'approved',
+                'Your claim was approved for '.$this->money($final).'.', $actor);
+
             return $claim->fresh();
         });
     }
@@ -206,6 +218,9 @@ class ReimbursementService
             ]);
 
             $this->thread->event($claim, 'declined', 'Claim declined. Reason: ' . trim($reason), $actor, ['reason' => trim($reason)]);
+
+            $this->notifier->tell($claim->employee, 'Expense Claim', 'declined',
+                'Your expense claim was declined. '.trim($reason), $actor);
 
             return $claim->fresh();
         });

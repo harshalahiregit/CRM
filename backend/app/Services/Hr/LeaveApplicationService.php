@@ -28,6 +28,9 @@ class LeaveApplicationService
         private LeaveApplicationRepository $repo,
         private EmployeeLeaveBalanceRepository $balances,
         private ShiftService $shifts,
+        // Nothing told the employee their leave had been submitted, approved or
+        // rejected. They had to open the app and look.
+        private RequestNotifier $notifier,
     ) {
     }
 
@@ -180,6 +183,10 @@ class LeaveApplicationService
         }
         $app->update(['status' => HrLeaveApplication::SUBMITTED, 'applied_at' => now(), 'updated_by' => $actor?->id]);
         $app->recordAudit('Leave Submitted', $actor);
+
+        $this->notifier->tell($app->employee, 'Leave', 'submitted',
+            'Your leave from '.$app->from_date.' to '.$app->to_date.' is with your approver.',
+            $actor);
 
         return $this->show($id, $tenantId);
     }

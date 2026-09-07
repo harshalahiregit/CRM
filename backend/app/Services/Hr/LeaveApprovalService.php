@@ -25,6 +25,7 @@ class LeaveApprovalService
         private LeaveApplicationRepository $repo,
         private EmployeeLeaveBalanceService $balanceService,
         private EmployeeLeaveBalanceRepository $balances,
+        private RequestNotifier $notifier,
     ) {
     }
 
@@ -70,6 +71,9 @@ class LeaveApprovalService
                 'decision_remarks' => $remarks, 'updated_by' => $actor?->id,
             ]);
             $app->recordAudit('Leave Approved', $actor, $remarks, ['days' => (float) $app->days]);
+
+            $this->notifier->tell($app->employee, 'Leave', 'approved',
+                'Your leave from '.$app->from_date.' to '.$app->to_date.' was approved.', $actor);
         });
         $this->log('Leave approved', $tenantId, $app->id);
 
@@ -88,6 +92,9 @@ class LeaveApprovalService
             'decision_remarks' => $remarks, 'updated_by' => $actor?->id,
         ]);
         $app->recordAudit('Leave Rejected', $actor, $remarks);
+
+        $this->notifier->tell($app->employee, 'Leave', 'rejected',
+            'Your leave request was rejected.'.($remarks ? ' '.trim($remarks) : ''), $actor);
         $this->log('Leave rejected', $tenantId, $app->id);
 
         return $this->present($this->find($id, $tenantId), true, $tenantId);
