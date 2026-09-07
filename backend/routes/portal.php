@@ -64,6 +64,9 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     Route::post('/documents',                       [VendorPortalController::class, 'uploadDocument']);
     Route::post('/documents/{document}/resubmit',   [VendorPortalController::class, 'resubmitDocument']);
     Route::get('/documents/{document}/download',    [VendorPortalController::class, 'downloadDocument']);
+    Route::delete('/documents/{document}',          [VendorPortalController::class, 'deleteDocument']);
+    Route::get('/documents/{document}/versions',    [VendorPortalController::class, 'documentVersions']);
+    Route::get('/documents/{document}/versions/{version}/download', [VendorPortalController::class, 'downloadDocumentVersion']);
 
     Route::get('/orders',                [VendorPortalController::class, 'orders']);
     Route::get('/orders/{purchaseOrder}', [VendorPortalController::class, 'order']);
@@ -81,6 +84,8 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     Route::get('/onboarding/{onboarding}/progress',       [VendorPortalController::class, 'onboardingProgress']);
     Route::get('/onboarding/{onboarding}/kickoff',        [VendorPortalController::class, 'kickoffPdf']);
     Route::get('/onboarding/{onboarding}/work-start-letter', [VendorPortalController::class, 'workStartLetter']);
+    // The minutes as data, from the same resolver as the PDF above.
+    Route::get('/onboarding/{onboarding}/kickoff-data', [VendorPortalController::class, 'kickoffData']);
     Route::post('/onboarding/{onboarding}/kickoff/accept',[VendorPortalController::class, 'acceptKickoff']);
     Route::post('/onboarding/{onboarding}/kickoff/log',   [VendorPortalController::class, 'logKickoffEvent']);
     Route::post('/onboarding/{onboarding}/profile',       [VendorPortalController::class, 'saveProfile']);
@@ -184,7 +189,14 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     Route::post('/approvals/request',                     [$gov, 'requestApproval']);
     Route::post('/extensions/request',                    [$gov, 'requestExtension']);
     Route::get('/meetings',                               [$gov, 'meetings']);
+    // Opening the meeting is recorded here, so a meeting held on Google Meet,
+    // Zoom or Teams still leaves evidence of who turned up — see
+    // MeetingJoinRecorder. Returns the link for the browser to open.
+    Route::post('/meetings/{kickoffMeeting}/join',        [$gov, 'joinMeeting']);
     Route::get('/meetings/{kickoffMeeting}/mom',          [$gov, 'meetingMom']);
+    // The minutes DOCUMENT. Distributing minutes the recipient cannot open is
+    // not distributing them; until this existed the PDF was admin-only.
+    Route::get('/meetings/{kickoffMeeting}/mom/file',     [$gov, 'meetingMomFile']);
     Route::get('/meetings/{kickoffMeeting}/documents/{document}/download', [$gov, 'meetingDocument']);
     Route::get('/actions',                                [$gov, 'actions']);
     Route::post('/actions/{momItem}/respond',             [$gov, 'respondAction']);
@@ -233,6 +245,8 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::get('/onboarding/{onboarding}',            [PurchasePortalController::class, 'onboardingShow']);
     Route::get('/onboarding/{onboarding}/progress',   [PurchasePortalController::class, 'onboardingProgress']);
     Route::get('/onboarding/{onboarding}/kickoff',        [PurchasePortalController::class, 'onboardingKickoffPdf']);
+    Route::get('/onboarding/{onboarding}/work-start-letter', [PurchasePortalController::class, 'workStartLetter']);
+    Route::get('/onboarding/{onboarding}/kickoff-data', [PurchasePortalController::class, 'onboardingKickoffData']);
     Route::post('/onboarding/{onboarding}/kickoff/accept',[PurchasePortalController::class, 'onboardingAcceptKickoff']);
     Route::post('/onboarding/{onboarding}/kickoff/log',   [PurchasePortalController::class, 'onboardingLogKickoffEvent']);
     Route::post('/onboarding/{onboarding}/profile',   [PurchasePortalController::class, 'saveProfile']);
@@ -245,6 +259,9 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::post('/documents',                         [PurchasePortalController::class, 'uploadDocument']);
     Route::post('/documents/{document}/resubmit',     [PurchasePortalController::class, 'resubmitDocument']);
     Route::get('/documents/{document}/download',      [PurchasePortalController::class, 'downloadDocument']);
+    Route::delete('/documents/{document}',            [PurchasePortalController::class, 'deleteDocument']);
+    Route::get('/documents/{document}/versions',      [PurchasePortalController::class, 'documentVersions']);
+    Route::get('/documents/{document}/versions/{version}/download', [PurchasePortalController::class, 'downloadDocumentVersion']);
 
     Route::get('/kickoff',                            [PurchasePortalController::class, 'kickoff']);
     // Acknowledgement removed — the vendor just views the approved minutes.
@@ -290,6 +307,14 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::get('/workers/{worker}/ppe/compliance',    [PurchasePortalWorkforceController::class, 'workerPpeCompliance']);
     Route::post('/workers/{worker}/ppe/issue',        [PurchasePortalWorkforceController::class, 'issueWorkerPpe']);
     Route::post('/ppe/issues/{issue}/return',         [PurchasePortalWorkforceController::class, 'returnWorkerPpe']);
+    // ── Site gate — READ ONLY. Recording a crossing is the security desk's act
+    // and stays admin-side; a vendor that could write its own scans could
+    // manufacture attendance. Scoped to the caller's own workers by the token.
+    Route::post('/workers/upload',                    [PurchasePortalWorkforceController::class, 'uploadWorkers']);
+    Route::get('/gate/stats',                         [PurchasePortalWorkforceController::class, 'gateStats']);
+    Route::get('/gate-log',                           [PurchasePortalWorkforceController::class, 'gateLog']);
+    Route::get('/gate/on-site',                       [PurchasePortalWorkforceController::class, 'onSite']);
+    Route::get('/workers/{worker}/attendance',        [PurchasePortalWorkforceController::class, 'workerAttendance']);
     Route::get('/workers/{worker}/badge',             [PurchasePortalWorkforceController::class, 'workerBadge']);
 
     // ── Commercial (own vendor only; read-only) ─────────────────────────
@@ -321,6 +346,12 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::get('/task-statuses',                      [$ppar, 'taskStatuses']);
     Route::patch('/tasks/{task}/status',              [$ppar, 'updateTaskStatus'])->where('task', '[0-9]+');
     Route::get('/work-tickets',                       [$ppar, 'tickets']);
+    // The vendor raises and replies to its own support tickets - the TPV portal
+    // has had these since day one; Purchase had only the read above, which is
+    // why its Tickets screen was mounted read-only.
+    Route::post('/work-tickets',                      [$ppar, 'raiseTicket']);
+    Route::get('/work-tickets/{ticket}',              [$ppar, 'ticket'])->where('ticket', '[0-9]+');
+    Route::post('/work-tickets/{ticket}/reply',       [$ppar, 'replyTicket'])->where('ticket', '[0-9]+');
     Route::get('/expenses',                           [$ppar, 'expenses']);
     Route::post('/expenses',                          [$ppar, 'storeExpense']);
     Route::get('/feedback',                           [$ppar, 'feedback']);
@@ -342,13 +373,23 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     // models (separate DB). No PPE requirement matrix (Purchase has none).
     $pgov = \App\Http\Controllers\Api\Portal\PurchasePortalGovernanceController::class;
     Route::get('/ncrs',                               [$pgov, 'ncrs']);
+    // The site's PPE rule, read-only — a badge refused for "mandatory PPE not
+    // issued" is only actionable if the vendor can see what is required.
+    Route::get('/ppe-matrix',                         [$pgov, 'ppeMatrix']);
     Route::post('/ncrs/{ncr}/respond',                [$pgov, 'respondNcr']);
     Route::get('/capas',                              [$pgov, 'capas']);
     Route::post('/capas/{capa}/evidence',             [$pgov, 'submitCapaEvidence']);
     Route::post('/approvals/request',                 [$pgov, 'requestApproval']);
     Route::post('/extensions/request',                [$pgov, 'requestExtension']);
     Route::get('/meetings',                           [$pgov, 'meetings']);
+    // Opening the meeting is recorded here, so a meeting held on Google Meet,
+    // Zoom or Teams still leaves evidence of who turned up — see
+    // MeetingJoinRecorder. Returns the link for the browser to open.
+    Route::post('/meetings/{kickoff}/join',            [$pgov, 'joinMeeting']);
     Route::get('/meetings/{kickoff}/mom',             [$pgov, 'meetingMom']);
+    // The minutes DOCUMENT. Distributing minutes the recipient cannot open is
+    // not distributing them; until this existed the PDF was admin-only.
+    Route::get('/meetings/{kickoff}/mom/file',         [$pgov, 'meetingMomFile']);
     Route::get('/meetings/{kickoff}/documents/{document}/download', [$pgov, 'meetingDocument']);
     Route::get('/actions',                            [$pgov, 'actions']);
     Route::post('/actions/{action}/respond',          [$pgov, 'respondAction']);
