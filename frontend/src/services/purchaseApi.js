@@ -381,6 +381,9 @@ export const purchaseApi = {
     attendance: (id, rows) => api.patch(`/purchase/kickoff/${id}/attendance`, { rows }).then(r => r.data),
     // Live meeting room autosave — same shape as the shared engine.
     roomNotes: (id, payload) => api.post(`/purchase/kickoff/${id}/room/notes`, payload).then(r => r.data),
+    // Who is in the call right now — a snapshot of the whole room, posted
+    // repeatedly while the meeting runs. See the backend's MeetingPresence.
+    roomPresence: (id, payload) => api.post(`/purchase/kickoff/${id}/room/presence`, payload).then(r => r.data),
     // Manual reminder — email is a real send; whatsapp/sms are queued stubs.
     remind: (id)          => api.post(`/purchase/kickoff/${id}/remind`).then(r => r.data),
     generateMom: (id)     => api.post(`/purchase/kickoff/${id}/mom/generate`).then(r => r.data),
@@ -454,6 +457,19 @@ export const purchaseApi = {
   // Tenant-scoped server-side: vendor_id here only FILTERS, it never authorises.
   // Badge activation is role:admin on the backend — the UI hides the button for
   // staff, and the endpoint refuses them regardless.
+  /**
+   * PPE requirement matrix — role needs item. Purchase had no matrix at all, so
+   * its gate accepted any single item as "equipped"; these rules let the badge
+   * and the site gate name what is actually missing.
+   */
+  ppe: {
+    requirements:      ()          => api.get('/purchase/ppe/requirements').then(r => r.data),
+    addRequirement:    (data)      => api.post('/purchase/ppe/requirements', data).then(r => r.data),
+    updateRequirement: (id, data)  => api.put(`/purchase/ppe/requirements/${id}`, data).then(r => r.data),
+    deleteRequirement: (id)        => api.delete(`/purchase/ppe/requirements/${id}`).then(r => r.data),
+    workerCompliance:  (workerId)  => api.get(`/purchase/ppe/compliance/workers/${workerId}`).then(r => r.data),
+  },
+
   workforce: {
     workers:  (params = {}) => api.get('/purchase/workforce/workers', { params }).then(r => r.data),
     worker:   (id)          => api.get(`/purchase/workforce/workers/${id}`).then(r => r.data),
@@ -475,6 +491,10 @@ export const purchaseApi = {
     // Purchase's own tables. Staff may add and correct workers and record their
     // medical/induction evidence; ACTIVATION stays admin-only server-side.
     stats:         ()          => api.get('/purchase/workforce/workers/stats').then(r => r.data),
+    // Bulk import. The vendor is the one the operator PICKED — never guessed.
+    uploadWorkers: (file, vendorId) => { const fd = new FormData(); fd.append('worker_file', file);
+      fd.append('vendor_id', vendorId);
+      return api.post('/purchase/workforce/workers/upload', fd).then(r => r.data) },
     createWorker:  (data)      => api.post('/purchase/workforce/workers', data).then(r => r.data),
     updateWorker:  (id, data)  => api.put(`/purchase/workforce/workers/${id}`, data).then(r => r.data),
     deleteWorker:  (id)        => api.delete(`/purchase/workforce/workers/${id}`).then(r => r.data),
@@ -699,14 +719,25 @@ export const purchaseApi = {
     },
   },
 
-  // A vendor-bound document api matching the shape PurchaseVendorDocuments wants,
-  // so the same component works for admin (bound to a vendorId) and the portal.
+  /**
+   * A vendor-bound document api, in the shape VendorDocumentsPanel expects.
+   *
+   * The panel is shared with the portal, where the vendor is resolved from the
+   * token and there is no id to pass — so every method here takes the portal's
+   * argument list and supplies the vendorId itself. `upload` in particular must
+   * accept (vendorId, type, file): it used to take (type, file), so the shared
+   * panel's call would have sent the type as the vendor.
+   */
   documentsFor: (vendorId) => ({
-    checklist: ()          => purchaseApi.documents.checklist(vendorId),
-    upload:    (type, file) => purchaseApi.documents.upload(vendorId, type, file),
+    checklist: ()            => purchaseApi.documents.checklist(vendorId),
+    upload:    (_v, type, file) => purchaseApi.documents.upload(vendorId, type, file),
     resubmit:  (docId, file) => purchaseApi.documents.resubmit(docId, file),
     review:    (docId, decision, remarks) => purchaseApi.documents.review(docId, decision, remarks),
-    open:      (docId)      => purchaseApi.documents.open(docId),
+    delete:    (docId)       => purchaseApi.documents.delete(docId),
+    versions:  (docId)       => purchaseApi.documents.versions(docId),
+    downloadVersion: (docId, versionId) => purchaseApi.documents.downloadVersion(docId, versionId),
+    restoreVersion:  (docId, versionId) => purchaseApi.documents.restoreVersion(docId, versionId),
+    open:      (docId)       => purchaseApi.documents.open(docId),
   }),
 }
 
