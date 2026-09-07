@@ -12,6 +12,7 @@
  */
 
 import { useNavigate } from 'react-router-dom'
+import { GRAD } from '@/components/ui/brand'
 import { useAuth } from '@/context/AuthContext'
 import { useState, useEffect, useCallback } from 'react'
 import { PenLine, Check, X, PauseCircle, Lock, RefreshCw, ArrowRight, Plus } from 'lucide-react'
@@ -155,7 +156,7 @@ export default function Corrections() {
         {mayDo('self', 'create') && (
         <button onClick={() => navigate('/app/hr/my-corrections')} title="Raise a correction for your own attendance"
           className="rounded-lg text-xs font-bold flex items-center gap-1.5 text-white"
-          style={{ padding: '7px 12px', background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>
+          style={{ padding: '7px 12px', background: GRAD }}>
           <Plus size={13} /> Raise Correction
         </button>
         )}

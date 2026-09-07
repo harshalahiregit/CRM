@@ -14,6 +14,7 @@
  */
 
 import { useNavigate } from 'react-router-dom'
+import { GRAD } from '@/components/ui/brand'
 import { useAuth } from '@/context/AuthContext'
 import { useState, useEffect, useCallback } from 'react'
 import { Receipt, Check, X, PauseCircle, Lock, RefreshCw, Plus } from 'lucide-react'
@@ -178,7 +179,7 @@ export default function Reimbursements() {
         {mayDo('self', 'create') && (
         <button onClick={() => navigate('/app/hr/my-expenses')} title="Raise your own expense claim"
           className="rounded-lg text-xs font-bold flex items-center gap-1.5 text-white"
-          style={{ padding: '7px 12px', background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>
+          style={{ padding: '7px 12px', background: GRAD }}>
           <Plus size={13} /> New Claim
         </button>
         )}

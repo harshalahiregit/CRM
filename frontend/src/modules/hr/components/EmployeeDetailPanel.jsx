@@ -17,6 +17,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react'
+import { GRAD } from '@/components/ui/brand'
 import { Pencil, X, Save } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 
@@ -190,7 +191,7 @@ export default function EmployeeDetailPanel({ employeeId, group, fallback = {}, 
               </button>
               <button onClick={save} disabled={saving}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white"
-                style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', opacity: saving ? 0.6 : 1 }}>
+                style={{ background: GRAD, opacity: saving ? 0.6 : 1 }}>
                 <Save size={12}/> {saving ? 'Saving…' : 'Save'}
               </button>
             </>

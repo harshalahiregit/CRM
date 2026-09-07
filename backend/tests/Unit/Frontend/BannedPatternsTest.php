@@ -216,7 +216,6 @@ class BannedPatternsTest extends TestCase
         'modules/hr/pages/ProbationReports.jsx' => 1,
         'modules/hr/pages/RecruitmentServices.jsx' => 6,
         'modules/hr/pages/SalaryReports.jsx' => 1,
-        'modules/hr/pages/StatutorySettings.jsx' => 1,
         'modules/hr/pages/TaxDeclarations.jsx' => 1,
         'modules/purchase/pages/PurchaseDebitNotes.jsx' => 6,
         'modules/purchase/pages/PurchaseInvoices.jsx' => 5,
@@ -281,7 +280,6 @@ class BannedPatternsTest extends TestCase
         // Feedback, Login and Shell). The portal needs the shared Btn extraction
         // too — recorded so it cannot grow, not blessed.
         'pages/client-portal/ClientPortalRecords.jsx' => 2,
-        'pages/client-portal/ClientPortalLogin.jsx' => 1,
         'pages/client-portal/ClientPortalShell.jsx' => 1,
         'pages/company-portal/CompanyCandidates.jsx' => 4,
         'pages/company-portal/CompanyDashboard.jsx' => 1,

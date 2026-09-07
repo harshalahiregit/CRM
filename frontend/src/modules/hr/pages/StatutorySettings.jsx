@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
+import { GRAD } from '@/components/ui/brand'
 import { Plus, Pencil, Trash2, X, Scale, MapPin, AlertTriangle, Info, ShieldCheck } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
-
-const GRAD = 'linear-gradient(135deg,#7C3AED,#5b21b6)'
 
 /* ────────────────────────────────────────────────────────────────────────
    The rule book, described declaratively.
@@ -630,7 +629,7 @@ function MonthPicker({ label, hint, value, onChange }) {
             <button key={m} type="button" onClick={()=>toggle(m)}
               className="px-2.5 py-1 rounded-lg text-[11px] font-bold"
               style={on
-                ? { background:'linear-gradient(135deg,#7C3AED,#5b21b6)', color:'#fff' }
+                ? { background:GRAD, color:'#fff' }
                 : { background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>
               {name.slice(0, 3)}
             </button>
