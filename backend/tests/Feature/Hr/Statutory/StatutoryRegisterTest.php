@@ -139,6 +139,11 @@ class StatutoryRegisterTest extends TestCase
 
         $this->assertEquals(2350.0, $c['ac_01'], 'A/C 01 = PF + VPF + EPF');
         $this->assertEquals(1250.0, $c['ac_10'], 'A/C 10 = EPS');
+
+        // The rates come from the PF rule, and the defaults are the ones the
+        // July challan was actually filed at: A/C 02 at 0.85% and A/C 21 at
+        // 0.5%. 0.85% of 15,000 is 127.50, which the challan rounds to 128.
+        $this->assertEquals(128.0, $c['ac_02'], 'A/C 02 = 0.85% of PF wages');
         $this->assertEquals(75.0, $c['ac_21'], 'A/C 21 = 0.5% of EDLI wages');
     }
 

@@ -69,7 +69,7 @@ class StatutoryRegisterService
             'rows'      => $rows->all(),
             'totals'    => $this->sum($rows, ['gross_salary', 'pf_salary', 'edli_salary', 'eps_salary', 'pf', 'vpf', 'epf', 'eps', 'total']),
             'employees' => $rows->count(),
-            'challan'   => $this->pfChallan($rows),
+            'challan'   => $this->pfChallan($rows, $this->pfRule($run)),
         ];
     }
 
@@ -80,15 +80,25 @@ class StatutoryRegisterService
      * 21 and 22 the EDLI insurance. This is why the register carries an EDLI wage
      * column at all.
      */
-    private function pfChallan(Collection $rows): array
+    private function pfChallan(Collection $rows, ?array $pfConfig = null): array
     {
         $t = $this->sum($rows, ['pf', 'vpf', 'epf', 'eps', 'edli_salary', 'pf_salary']);
 
+        // A/C 02 is EPFO's administration charge and A/C 21 the EDLI premium.
+        // Both are rates set by notification, so they come from the PF rule.
+        //
+        // The defaults are the ones the company's own July challan was filed at:
+        // A/C 02 shows 1,148 against a PF salary of 135,000, which is 0.85% —
+        // NOT the 0.5% I first assumed, and 473 rupees a month short of it. A/C
+        // 21 shows 675, which is 0.5% of the same figure.
+        $adminRate = (float) ($pfConfig['admin_charge_rate'] ?? 0.85);
+        $edliRate  = (float) ($pfConfig['edli_rate'] ?? 0.5);
+
         return [
             'ac_01' => round($t['pf'] + $t['vpf'] + $t['epf'], 2),
-            'ac_02' => round($t['pf_salary'] * 0.5 / 100, 2),
+            'ac_02' => round($t['pf_salary'] * $adminRate / 100),
             'ac_10' => $t['eps'],
-            'ac_21' => round($t['edli_salary'] * 0.5 / 100, 2),
+            'ac_21' => round($t['edli_salary'] * $edliRate / 100),
             'ac_22' => 0.0,
         ];
     }
@@ -186,6 +196,16 @@ class StatutoryRegisterService
                 ? 'LWF is deducted twice a year, in June and December. Nothing is due for this month.'
                 : null,
         ];
+    }
+
+    /** The PF rule in force for this run, for the challan's two rates. */
+    private function pfRule(HrPayrollRun $run): ?array
+    {
+        return app(\App\Services\Hr\Statutory\StatutoryRuleResolver::class)->resolve(
+            'pf',
+            (int) $run->tenant_id,
+            \Illuminate\Support\Carbon::create((int) $run->payroll_year, (int) $run->payroll_month, 1),
+        );
     }
 
     /** @return Collection<int, HrPayrollRecord> */

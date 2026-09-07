@@ -78,6 +78,9 @@ Route::prefix('Hrm')->group(function () {
         Route::post('/submit-reimbursement',    [HrmClaimController::class, 'submitReimbursement']);
         Route::post('/reimbursement-report',    [HrmClaimController::class, 'reimbursements']);
         Route::post('/advance/my-requests',     [HrmClaimController::class, 'myAdvances']);
+        // The option lists the advance form offers. Settings now, not Dart
+        // literals — so adding a type reaches every phone without an app update.
+        Route::post('/advance/options',         [HrmClaimController::class, 'advanceOptions']);
         Route::post('/advance/submit',          [HrmClaimController::class, 'submitAdvance']);
         Route::post('/advance/detail',          [HrmClaimController::class, 'advanceDetail']);
         Route::post('/advance/submit-settlement',[HrmClaimController::class, 'submitSettlement']);

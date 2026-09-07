@@ -100,6 +100,11 @@ class SeedStatutoryRules extends Command
                 // EPS membership ends at 58; after that the whole employer share
                 // goes to EPF. One employee in the July register is past it.
                 'eps_max_age'         => 58,
+                // The two challan rates. A/C 02 is EPFO's administration charge
+                // and A/C 21 the EDLI premium. 0.85% is what the July challan was
+                // filed at — 1,148 against a PF salary of 135,000.
+                'admin_charge_rate'   => 0.85,
+                'edli_rate'           => 0.5,
             ], 'EPFO: 12% employee, 12% employer (8.33% EPS capped at 15,000 wages = 1,250), EPS ends at 58'],
 
             ['esic', null, [
