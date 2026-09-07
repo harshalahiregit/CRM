@@ -124,9 +124,20 @@ class TaskCommentTest extends TestCase
         $this->assertSame(2, substr_count($t->comments()->sole()->content, 'data:image/png;base64,'));
     }
 
-    /** There is still a ceiling, and it says something useful when it is hit. */
+    /**
+     * There is still a ceiling, and it says something useful when it is hit.
+     *
+     * The ceiling is a real 5 MB, so proving it has to send a real 5 MB — and
+     * that string is copied several times on its way through the request body,
+     * the JSON decode and the validator. Against PHP's default 128 MB that
+     * exhausted memory and took the whole suite down with it, which is a worse
+     * outcome than a slow test. Raised here rather than lowering the limit,
+     * because the limit is the thing under test.
+     */
     public function test_an_absurdly_large_comment_is_refused_with_a_readable_reason(): void
     {
+        ini_set('memory_limit', '512M');
+
         $t = $this->task();
 
         $this->comment($t, str_repeat('x', 5_000_001))
