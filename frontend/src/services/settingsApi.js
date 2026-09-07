@@ -58,6 +58,13 @@ export const settingsApi = {
     update: (data) => api.put('/settings/mail', data).then(r => r.data).catch(handleErr),
     test: (to) => api.post('/settings/mail/test', { to }).then(r => r.data).catch(handleErr),
   },
+  whatsapp: {
+    get:    ()     => api.get('/settings/whatsapp').then(r => r.data).catch(handleErr),
+    update: (data) => api.put('/settings/whatsapp', data).then(r => r.data).catch(handleErr),
+    // A read against Meta — proves the token works without spending a message.
+    verify: ()     => api.post('/settings/whatsapp/verify').then(r => r.data).catch(handleErr),
+    test:   (to)   => api.post('/settings/whatsapp/test', { to }).then(r => r.data).catch(handleErr),
+  },
   company: {
     get: () => api.get('/settings/company').then(r => r.data).catch(handleErr),
     update: (data) => api.put('/settings/company', data).then(r => r.data).catch(handleErr),

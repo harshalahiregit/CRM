@@ -12,7 +12,9 @@ class LeaveApplicationRepository
     public function filtered(int $tenantId, array $f): Collection
     {
         return HrLeaveApplication::where('tenant_id', $tenantId)
-            ->with(['employee:id,name,employee_code,department,designation', 'leaveType:id,name,code,color', 'policy:id,name'])
+            // user_id for the same reason as find(): anything that notifies from
+            // one of these rows needs employee->user to resolve.
+            ->with(['employee:id,tenant_id,user_id,name,employee_code,department,designation', 'leaveType:id,name,code,color', 'policy:id,name'])
             ->when(! empty($f['employee_id']), fn ($q) => $q->where('employee_id', $f['employee_id']))
             ->when(! empty($f['leave_type_id']), fn ($q) => $q->where('leave_type_id', $f['leave_type_id']))
             ->when(! empty($f['status']) && $f['status'] !== 'All', fn ($q) => $q->where('status', $f['status']))
@@ -25,7 +27,19 @@ class LeaveApplicationRepository
     public function find(int $id, int $tenantId): ?HrLeaveApplication
     {
         return HrLeaveApplication::where('tenant_id', $tenantId)
-            ->with(['employee:id,name,employee_code,department,designation', 'leaveType:id,name,code,color', 'policy:id,name,negative_balance_allowed', 'auditLogs'])
+            // tenant_id and user_id are not decoration. A column list silently
+            // gives you NULL for anything it omits, so both were missing here
+            // and neither failed loudly:
+            //   - user_id backs HrEmployee::user(), a belongsTo. Without it the
+            //     relation resolves to NULL.
+            //   - tenant_id is what RequestNotifier dispatches under. A null
+            //     tenant matches no rules, so the engine created nothing.
+            // LeaveApprovalService approves from THIS model, so approving a
+            // leave deducted the balance and wrote the audit line while telling
+            // the employee nothing on any channel — no exception, no log line,
+            // nothing to notice. Adding a column to a list like this is cheap;
+            // leaving one out is invisible.
+            ->with(['employee:id,tenant_id,user_id,name,employee_code,department,designation', 'leaveType:id,name,code,color', 'policy:id,name,negative_balance_allowed', 'auditLogs'])
             ->find($id);
     }
 

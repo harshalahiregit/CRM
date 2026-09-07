@@ -532,6 +532,36 @@ class HrmProfileController extends Controller
     }
 
     /**
+     * The signed-in user's own picture.
+     *
+     * The picture belongs to the ACCOUNT, so this asks for nothing but the
+     * token: sign in on a second phone and it is there, because there is no
+     * stored link and no host baked into a signature to go stale. That is what
+     * broke the old path — a signed URL is only valid on the host it was signed
+     * on, so moving the server made every saved picture look lost.
+     *
+     * 204 rather than 404 when there is no picture: "this person has not set
+     * one" is a normal state, and an error would have the app draw a broken
+     * image where a placeholder belongs.
+     */
+    public function myAvatar(Request $request)
+    {
+        $path = (string) $request->user()->avatar;
+        $disk = \Illuminate\Support\Facades\Storage::disk('local');
+
+        if ($path === '' || ! str_starts_with($path, 'avatars/') || ! $disk->exists($path)) {
+            return response()->noContent();
+        }
+
+        return response()->file($disk->path($path), [
+            // The filename changes on every upload, so the URL is stable while
+            // the content is not — without this the phone would show the old
+            // picture until its cache expired.
+            'Cache-Control' => 'private, no-cache, must-revalidate',
+        ]);
+    }
+
+    /**
      * Serve an avatar, for a signed link only.
      *
      * The file lives on the private disk; this is the one door to it, and the
@@ -561,14 +591,7 @@ class HrmProfileController extends Controller
      */
     private function avatarUrl(?string $path): string
     {
-        if (! $path) {
-            return '';
-        }
-
-        return \Illuminate\Support\Facades\URL::temporarySignedRoute(
-            'hrm.avatar',
-            now()->addDays(7),
-            ['path' => base64_encode($path)],
-        );
+        return \App\Support\Hrm\HrmAvatar::url($path);
     }
+
 }

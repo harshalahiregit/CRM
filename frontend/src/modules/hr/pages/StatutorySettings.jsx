@@ -34,6 +34,8 @@ const FIELDS = {
     ['wage_ceiling', 'Wage ceiling', 'num'],
     ['restrict_to_ceiling', 'Restrict contribution to the ceiling', 'bool'],
     ['eps_max_age', 'EPS ends at age', 'num', 'Pension membership stops here — usually 58. Past it the whole employer share goes to EPF instead. Leave blank to never stop.'],
+    ['admin_charge_rate', 'A/C 02 — admin charge %', 'num', "EPFO's administration charge on the challan. Has been 1.10, 0.85, 0.65 and 0.50 over the years, so it is a setting rather than a constant."],
+    ['edli_rate', 'A/C 21 — EDLI %', 'num', 'The EDLI insurance premium on the challan.'],
   ],
   esic: [
     ['gross_threshold', 'Wage threshold', 'num', 'At or below this, ESIC applies. Above it, it does not.'],

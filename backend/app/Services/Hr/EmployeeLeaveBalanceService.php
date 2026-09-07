@@ -112,6 +112,98 @@ class EmployeeLeaveBalanceService
         return $this->forEmployee($employee->id, $tenantId);
     }
 
+    /**
+     * Assign one policy to a whole group in a single action.
+     *
+     * Without this, "everyone in Sales moves to the new leave policy" meant HR
+     * opening forty employees one at a time, and the department scope on a
+     * policy was decoration -- it described who the policy was FOR but nothing
+     * acted on it. Scope is explicit rather than read off the policy so an
+     * admin can also roll a policy out to a subset, or to a hand-picked list.
+     *
+     * Each employee runs through the same assignPolicy() path, so carry
+     * forward, the ledger transactions and the audit trail are identical to a
+     * one-person assignment. One employee failing (no balances, a race) does
+     * not abandon the rest -- the failures come back named, so whoever pressed
+     * the button knows exactly who was missed instead of guessing from a count.
+     */
+    public function assignPolicyToMany(array $data, int $tenantId, ?User $actor = null): array
+    {
+        $policy = HrLeavePolicy::where('tenant_id', $tenantId)->find($data['leave_policy_id']);
+        if (! $policy) {
+            throw new BusinessException('Leave policy not found', 404);
+        }
+
+        $scope = $data['scope'] ?? 'all';
+        $q = HrEmployee::where('tenant_id', $tenantId)->where('status', 'Active');
+
+        switch ($scope) {
+            case 'department':
+                if (empty($data['department_id'])) {
+                    throw new BusinessException('Choose a department.');
+                }
+                $q->where('department_id', (int) $data['department_id']);
+                break;
+            case 'designation':
+                if (empty($data['designation_id'])) {
+                    throw new BusinessException('Choose a designation.');
+                }
+                $q->where('designation_id', (int) $data['designation_id']);
+                break;
+            case 'grade':
+                if (empty($data['grade_id'])) {
+                    throw new BusinessException('Choose a grade.');
+                }
+                $q->where('grade_id', (int) $data['grade_id']);
+                break;
+            case 'employees':
+                $ids = array_filter(array_map('intval', (array) ($data['employee_ids'] ?? [])));
+                if ($ids === []) {
+                    throw new BusinessException('Choose at least one employee.');
+                }
+                $q->whereIn('id', $ids);
+                break;
+            case 'all':
+                break;
+            default:
+                throw new BusinessException('Unknown scope.');
+        }
+
+        $employees = $q->get(['id', 'name']);
+        if ($employees->isEmpty()) {
+            throw new BusinessException('No active employees match that selection.');
+        }
+
+        $assigned = 0;
+        $failed = [];
+
+        foreach ($employees as $employee) {
+            try {
+                $this->assignPolicy([
+                    'employee_id'     => $employee->id,
+                    'leave_policy_id' => $policy->id,
+                    'effective_from'  => $data['effective_from'] ?? null,
+                ], $tenantId, $actor);
+                $assigned++;
+            } catch (\Throwable $e) {
+                $failed[] = ['employee_id' => $employee->id, 'name' => $employee->name, 'reason' => $e->getMessage()];
+            }
+        }
+
+        $policy->recordAudit('Policy Bulk Assigned', $actor, null, [
+            'scope' => $scope, 'matched' => $employees->count(), 'assigned' => $assigned, 'failed' => count($failed),
+        ]);
+        $this->log("Policy bulk assigned ({$scope}): {$assigned} of {$employees->count()}", $tenantId, $policy->id);
+
+        return [
+            'policy'   => ['id' => $policy->id, 'name' => $policy->name],
+            'scope'    => $scope,
+            'matched'  => $employees->count(),
+            'assigned' => $assigned,
+            'failed'   => $failed,
+        ];
+    }
+
     /** Manually allocate additional leave to an employee's active balance for a type. */
     public function allocate(array $data, int $tenantId, ?User $actor = null): array
     {

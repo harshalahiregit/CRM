@@ -66,6 +66,8 @@ return [
             'Rejected'         => ['priority' => 'Warning', 'subject' => 'Leave rejected — {{employee}}', 'body' => 'Your leave request was rejected.'],
             'Cancelled'        => ['priority' => 'Info',    'subject' => 'Leave cancelled — {{employee}}', 'body' => 'A leave request was cancelled.'],
             'Pending Approval' => ['priority' => 'Warning', 'subject' => 'Leave pending approval — {{employee}}', 'body' => 'A leave request from {{employee}} is awaiting your approval.', 'reminder' => ['days' => [0], 'repeat' => true, 'escalation' => true]],
+            // My Services uses the verb it acted on ('submitted', 'approved').
+            '*'                => ['priority' => 'Info', 'subject' => '{{title}}', 'body' => '{{body}}'],
         ],
 
         'Exit' => [
@@ -94,8 +96,32 @@ return [
             'Goal Due'       => ['priority' => 'Warning', 'subject' => 'Goal due — {{employee}}', 'body' => 'A goal for {{employee}} is due on {{date}}.', 'reminder' => ['days' => [7, 1, 0], 'repeat' => false]],
         ],
 
+        /*
+         | My Services — what an employee asked for and what happened to it.
+         |
+         | The '*' entries are the important part. The engine skips silently
+         | when an event is not registered, and these callers pass the verb they
+         | actually used ('approved', 'part-approved', 'paid out'), so every one
+         | of these notifications was written as an app row and then dropped:
+         | no push, no email, no WhatsApp, no queue item at all.
+         |
+         | '*' is a deliberate per-module opt-in, not a global default — an
+         | unregistered module still skips, so nothing starts notifying by
+         | accident. The subject and body are overridden per send by
+         | RequestNotifier, which already carries the specific wording.
+         */
         'Attendance' => [
             'Attendance Exception' => ['priority' => 'Warning', 'subject' => 'Attendance exception — {{employee}}', 'body' => 'An attendance exception was recorded for {{employee}} on {{date}}.'],
+            'Clock-out reminder'   => ['priority' => 'Info',    'subject' => 'You are still clocked in', 'body' => '{{body}}'],
+            '*'                    => ['priority' => 'Info',    'subject' => '{{title}}', 'body' => '{{body}}'],
+        ],
+
+        'Expense' => [
+            '*' => ['priority' => 'Info', 'subject' => '{{title}}', 'body' => '{{body}}'],
+        ],
+
+        'Advance' => [
+            '*' => ['priority' => 'Info', 'subject' => '{{title}}', 'body' => '{{body}}'],
         ],
 
         'Purchase' => [

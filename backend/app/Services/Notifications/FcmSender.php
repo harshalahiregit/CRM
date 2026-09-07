@@ -58,17 +58,30 @@ class FcmSender
 
         $project = config('services.fcm.project_id');
 
+        // BOTH a notification block and data, deliberately.
+        //
+        // The notification block is what makes delivery the system's problem
+        // rather than the app's: Android draws it whether the app is alive,
+        // asleep or killed. Sending data-only instead — which was tried, to get
+        // the full-colour app logo onto the notification — meant Google
+        // accepted the message and NOTHING appeared on the phone, because that
+        // path depends on the app's background isolate being allowed to run.
+        // An arriving notification with a plain icon beats a prettier one that
+        // never arrives.
+        //
+        // The data half still travels, so the app can route a tap to the right
+        // screen, and so the foreground handler can draw the richer version
+        // (colour logo included) when the app is open.
+        //
+        // Values are cast to strings because FCM rejects a number or a bool in
+        // `data` outright, and an empty PHP array encodes as a JSON list, which
+        // FCM refuses with "Cannot bind a list to map for field 'data'".
         $message = [
             'token'        => $token,
             'notification' => ['title' => $title, 'body' => $body],
             'android'      => ['priority' => 'high'],
         ];
 
-        // Only when there is something to send. An empty PHP array encodes as a
-        // JSON list, and FCM refuses the whole message with "Cannot bind a list
-        // to map for field 'data'" — so every push would fail for want of a
-        // payload nobody asked for. Values are cast to strings because FCM
-        // rejects a number or a bool here outright.
         if ($data !== []) {
             $message['data'] = array_map(fn ($v) => (string) $v, $data);
         }
@@ -94,8 +107,13 @@ class FcmSender
         // INVALID_ARGUMENT on a token: it was never valid, or belongs to another
         // Firebase project — which is exactly what every old token looks like
         // after the project is changed.
-        $retire = in_array($status, ['NOT_FOUND', 'UNREGISTERED'], true)
-            || ($status === 'INVALID_ARGUMENT' && str_contains(strtolower($reason), 'token'));
+        // SENDER_ID_MISMATCH: minted under a DIFFERENT Firebase project, so this
+        // server can never send to it. Left in the table it fails on every
+        // single send forever, which is what makes a working queue look broken —
+        // one such token had been failing since the project was switched.
+        $retire = in_array($status, ['NOT_FOUND', 'UNREGISTERED', 'SENDER_ID_MISMATCH'], true)
+            || ($status === 'INVALID_ARGUMENT' && str_contains(strtolower($reason), 'token'))
+            || str_contains(strtolower($reason), 'senderid mismatch');
 
         return ['ok' => false, 'error' => $reason, 'retire' => $retire];
     }

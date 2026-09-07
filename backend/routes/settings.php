@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\Settings\EmailTemplateController;
 use App\Http\Controllers\Api\Settings\FormatSettingController;
 use App\Http\Controllers\Api\Settings\GeneralSettingController;
 use App\Http\Controllers\Api\Settings\MailSettingController;
+use App\Http\Controllers\Api\Settings\WhatsAppSettingController;
 use App\Http\Controllers\Api\Settings\SettingsGroupController;
 use Illuminate\Support\Facades\Route;
 
@@ -74,6 +75,12 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('settings')->group(fun
     Route::get('/mail',       [MailSettingController::class, 'show']);
     Route::put('/mail',       [MailSettingController::class, 'update']);
     Route::post('/mail/test', [MailSettingController::class, 'testSend']);
+
+    // WhatsApp sender — same shape as /mail: read, save, prove it works.
+    Route::get('/whatsapp',         [WhatsAppSettingController::class, 'show']);
+    Route::put('/whatsapp',         [WhatsAppSettingController::class, 'update']);
+    Route::post('/whatsapp/verify', [WhatsAppSettingController::class, 'verify']);
+    Route::post('/whatsapp/test',   [WhatsAppSettingController::class, 'testSend']);
 
     // Company & Finance (registered state + GSTIN for tax auto-split)
     Route::get('/company', [CompanySettingController::class, 'show']);

@@ -7,6 +7,7 @@ use App\Models\Notification;
 use App\Models\User;
 use App\Services\Notifications\NotificationEngine;
 use App\Services\Notifications\NotificationQueueService;
+use App\Services\Notifications\NotificationService;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -32,6 +33,7 @@ class RequestNotifier
     public function __construct(
         private NotificationEngine $engine,
         private NotificationQueueService $queue,
+        private NotificationService $prefs,
     ) {
     }
 
@@ -69,11 +71,20 @@ class RequestNotifier
 
             $created = $this->engine->dispatch(
                 $employee->tenant_id,
-                'HR',
-                $kind.' '.$event,
+                // The MODULE, not the literal 'HR'. Nothing is registered under
+                // 'HR', so the engine skipped every one of these silently and
+                // no push, email or WhatsApp ever left the building. The module
+                // is also what PushChannel switches on to decide where a tap
+                // should land, so 'HR' made every notification a dead tap too.
+                $this->moduleFor($kind),
+                $event,
                 [
                     'recipient_user_ids' => [$user->id],
-                    'channels'           => ['in_app', 'push'],
+                    // WhatsApp is opt-in per workspace, from Settings >
+                    // Notifications, because every message costs the tenant
+                    // money. It is off in the registry default, so nothing
+                    // starts sending because this line was added.
+                    'channels'           => $this->channelsFor($employee->tenant_id),
                     'context'            => array_merge([
                         'title' => $title,
                         'body'  => $body,
@@ -95,6 +106,42 @@ class RequestNotifier
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * The registered module a request kind belongs to.
+     *
+     * Deliberately the same names PushChannel::typeFor() switches on, so a tap
+     * target and a notification registration can never disagree.
+     */
+    private function moduleFor(string $kind): string
+    {
+        return match ($kind) {
+            'Leave'                 => 'Leave',
+            'Expense Claim'         => 'Expense',
+            'Advance'               => 'Advance',
+            'Attendance Correction' => 'Attendance',
+            'Attendance'            => 'Attendance',
+            default                 => $kind,
+        };
+    }
+
+    /**
+     * Which channels this workspace wants for HR notifications.
+     *
+     * In-app and push are unconditional -- they are the app's own bell and cost
+     * nothing. WhatsApp is asked for, so an admin turns it on in Settings
+     * rather than someone editing this file.
+     */
+    private function channelsFor(int $tenantId): array
+    {
+        $channels = ['in_app', 'push'];
+
+        if ($this->prefs->allows('whatsapp', 'HR', $tenantId)) {
+            $channels[] = 'whatsapp';
+        }
+
+        return $channels;
     }
 
     /** The tap target the app opens when somebody taps the push. */

@@ -76,6 +76,14 @@ class HrSetting
             'Half day', self::TYPE_DECIMAL, 4,
             'Hours that count as half a day.', 'Working day',
         ],
+        'clock_out_reminder_enabled' => [
+            'Remind people to clock out', self::TYPE_BOOL, true,
+            'Nudges anyone still clocked in after the hours below. The app already offers each person their own switch for this.', 'Working day',
+        ],
+        'clock_out_reminder_after_hours' => [
+            'Remind after', self::TYPE_DECIMAL, 10,
+            'Hours clocked in before the reminder goes out. One reminder per person per day.', 'Working day',
+        ],
 
         /* ── late marks ──────────────────────────────────────────────── */
         //

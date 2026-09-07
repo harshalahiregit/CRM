@@ -72,8 +72,17 @@ class LeaveApprovalService
             ]);
             $app->recordAudit('Leave Approved', $actor, $remarks, ['days' => (float) $app->days]);
 
+            // Formatted, because these dates are cast to datetime and a bare
+            // concatenation puts "2026-12-15 00:00:00" in front of the employee
+            // — in a WhatsApp message and a push, where there is no second
+            // chance to read it. A single day says one date, not the same one
+            // twice.
+            $from = $app->from_date?->format('d M Y');
+            $to   = $app->to_date?->format('d M Y');
+            $when = ($from === $to) ? "on {$from}" : "from {$from} to {$to}";
+
             $this->notifier->tell($app->employee, 'Leave', 'approved',
-                'Your leave from '.$app->from_date.' to '.$app->to_date.' was approved.', $actor);
+                "Your leave {$when} was approved.", $actor);
         });
         $this->log('Leave approved', $tenantId, $app->id);
 

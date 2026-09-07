@@ -514,6 +514,8 @@ export const hrApi = {
       list:       (params = {})  => api.get('/hr/leave/balances', { params }).then(r => r.data),
       forEmployee:(employeeId)   => api.get(`/hr/leave/balances/${employeeId}`).then(r => r.data),
       assign:     (data)         => api.post('/hr/leave/balances/assign', data).then(r => r.data),
+      // One policy, a whole group. scope: all | department | designation | grade | employees
+      assignBulk: (data)         => api.post('/hr/leave/balances/assign-bulk', data).then(r => r.data),
       allocate:   (data)         => api.post('/hr/leave/balances/allocate', data).then(r => r.data),
       adjust:     (data)         => api.post('/hr/leave/balances/adjust', data).then(r => r.data),
       history:    (balanceId)    => api.get(`/hr/leave/balances/history/${balanceId}`).then(r => r.data),

@@ -29,6 +29,7 @@ Route::middleware('auth:sanctum')->prefix('hr/leave')->group(function () {
     // Employee Leave Balance & Allocation (Phase 2). {employee} kept last (least specific).
     Route::get('/balances',                   [EmployeeLeaveBalanceController::class, 'index']);
     Route::post('/balances/assign',           [EmployeeLeaveBalanceController::class, 'assign']);
+    Route::post('/balances/assign-bulk',      [EmployeeLeaveBalanceController::class, 'assignBulk']);
     Route::post('/balances/allocate',         [EmployeeLeaveBalanceController::class, 'allocate']);
     Route::post('/balances/adjust',           [EmployeeLeaveBalanceController::class, 'adjust']);
     Route::get('/balances/history/{balance}', [EmployeeLeaveBalanceController::class, 'history']);
