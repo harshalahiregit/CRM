@@ -64,12 +64,29 @@ class HrmProfileController extends Controller
             'name'      => 'sometimes|string|max:120',
             'email'     => 'sometimes|email|max:191|unique:users,email,'.$user->id,
             'mobile_no' => 'nullable|string|max:40',
+            // The app has always posted the picture under 'profile'. It was never
+            // read: the handler returned avatar => '' hardcoded, so somebody
+            // chose a photo, saw it appear, pressed Save, was told "Profile
+            // updated" — and it was gone on the next launch. Silently.
+            'profile'   => 'nullable|image|max:5120',
         ]);
 
+        // Stored as WebP through the shared store: a phone camera hands over
+        // several megabytes for something displayed at 80 pixels across.
+        $avatarPath = $user->avatar;
+
+        if ($request->hasFile('profile')) {
+            $stored = app(\App\Services\Hr\AttachmentStore::class)
+                ->store($request->file('profile'), 'avatars/t'.$user->tenant_id);
+
+            $avatarPath = $stored['path'];
+        }
+
         $user->forceFill(array_filter([
-            'name'  => $data['name'] ?? null,
-            'email' => $data['email'] ?? null,
-            'phone' => $data['mobile_no'] ?? null,
+            'name'   => $data['name'] ?? null,
+            'email'  => $data['email'] ?? null,
+            'phone'  => $data['mobile_no'] ?? null,
+            'avatar' => $avatarPath,
         ], fn ($v) => $v !== null))->save();
 
         // The employee record carries the same person's name; letting the two
@@ -82,7 +99,10 @@ class HrmProfileController extends Controller
             'name'      => (string) $user->name,
             'email'     => (string) $user->email,
             'mobile_no' => (string) ($user->phone ?? ''),
-            'avatar'    => '',
+            // A full URL, because the app normalises the host out of it and
+            // loads it directly. An empty string is what it had before, and it
+            // reads as "this person has no picture".
+            'avatar'    => $this->avatarUrl($user->fresh()->avatar),
         ], 'Profile updated.');
     }
 
@@ -509,5 +529,46 @@ class HrmProfileController extends Controller
         $trimmed = rtrim(rtrim(number_format((float) $value, 2, '.', ''), '0'), '.');
 
         return $trimmed === '' ? '0' : $trimmed;
+    }
+
+    /**
+     * Serve an avatar, for a signed link only.
+     *
+     * The file lives on the private disk; this is the one door to it, and the
+     * signature is what stops the URL being shared or guessed.
+     */
+    public function avatar(Request $request, string $path)
+    {
+        $decoded = base64_decode($path, true);
+
+        // Refuse anything that is not a path we would have written. Without this
+        // a crafted value walks out of the avatars directory.
+        if (! $decoded || ! str_starts_with($decoded, 'avatars/') || str_contains($decoded, '..')) {
+            abort(404);
+        }
+
+        abort_unless(\Illuminate\Support\Facades\Storage::disk('local')->exists($decoded), 404);
+
+        return response()->file(\Illuminate\Support\Facades\Storage::disk('local')->path($decoded));
+    }
+
+    /**
+     * A URL the phone can load for a stored avatar.
+     *
+     * Served through the signed-file route rather than a public path: an avatar
+     * is a photograph of an employee, and a guessable public URL to
+     * storage/avatars is a directory of everybody's faces.
+     */
+    private function avatarUrl(?string $path): string
+    {
+        if (! $path) {
+            return '';
+        }
+
+        return \Illuminate\Support\Facades\URL::temporarySignedRoute(
+            'hrm.avatar',
+            now()->addDays(7),
+            ['path' => base64_encode($path)],
+        );
     }
 }

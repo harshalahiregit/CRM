@@ -89,6 +89,9 @@ Route::prefix('Hrm')->group(function () {
 
         // Profile, salary, calendar and notifications.
         Route::post('/edit-profile',              [HrmProfileController::class, 'editProfile']);
+        // Signed, and OUTSIDE the auth group: an <img> tag cannot send a bearer
+        // token, so the signature is what authorises it.
+
         Route::post('/delete-account',            [HrmProfileController::class, 'deleteAccount']);
         Route::post('/salary-details',            [HrmProfileController::class, 'salaryDetails']);
         // GET, unlike almost everything else the app calls.
@@ -145,3 +148,10 @@ Route::prefix('Hrm')->group(function () {
         Route::post('/admin/reports-summary',              [HrmAdminController::class, 'reportsSummary']);
     });
 });
+
+// The avatar file itself. Signed rather than authenticated, because the phone
+// loads it in an image widget that carries no Authorization header — and signed
+// rather than public, because it is a photograph of a named employee.
+Route::get('/Hrm/avatar/{path}', [\App\Http\Controllers\Api\Hrm\HrmProfileController::class, 'avatar'])
+    ->middleware('signed')
+    ->name('hrm.avatar');
