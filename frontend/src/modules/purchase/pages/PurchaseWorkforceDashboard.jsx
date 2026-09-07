@@ -4,7 +4,7 @@ import {
   Users, UserCheck, HeartPulse, GraduationCap, HardHat, QrCode, RefreshCw, Plus,
 } from 'lucide-react'
 import { useVendorModule } from '@/modules/tpv/useVendorModule'
-import { KIT3D_STYLE, StatusBadge as StatusPill } from '@/components/ui/kit3d'
+import { KIT3D_STYLE, StatusBadge as StatusPill, PRIMARY_GRADIENT } from '@/components/ui/kit3d'
 import { fmtDate } from '../constants'
 // The canonical Purchase worker vocabulary lives beside the register that owns
 // it — the same way PurchaseWorkforceAttendance borrows its roster helpers from
@@ -126,7 +126,7 @@ export default function PurchaseWorkforceDashboard() {
           <RefreshCw size={14} /> Refresh
         </button>
         <button onClick={() => navigate(`${base}/workers`)}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 10, background: 'linear-gradient(135deg,#7C3AED,#6d28d9)', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 10, background: PRIMARY_GRADIENT, color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>
           <Plus size={15} /> Register Worker
         </button>
       </div>

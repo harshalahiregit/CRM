@@ -3,7 +3,8 @@ import {
   Upload, RotateCcw, Eye, Trash2, CheckCircle, XCircle, FileText, Loader,
   AlertTriangle, Download, History, Info, HelpCircle, ChevronRight, Search,
 } from 'lucide-react'
-import { Overlay, ModalFooter, InfoBox, StatusBadge as StatusPill } from '@/components/ui/kit3d'
+import { Overlay, ModalFooter, InfoBox, StatusBadge as StatusPill, PRIMARY_GRADIENT } from '@/components/ui/kit3d'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { readFieldErrors } from '@/services/apiError'
 import { DOC_CATEGORY_ORDER, COMPLIANCE_PROVIDERS, categoryOf } from './documentCatalog'
 
@@ -68,6 +69,7 @@ export default function VendorDocumentsPanel({
   const [providerSearch, setProviderSearch] = useState({})
   const [submittedRequests, setSubmittedRequests] = useState([])
   const [stagedFiles, setStagedFiles] = useState({})
+  const [confirmDelete, setConfirmDelete] = useState(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [sortBy, setSortBy] = useState('STATUS')
@@ -208,8 +210,11 @@ export default function VendorDocumentsPanel({
     } catch { setErr('Could not open that document.') }
   }
 
+  // Asked through the shared ConfirmDialog rather than window.confirm: a browser
+  // dialog blocks the page, cannot be styled, and on a phone reads like a virus
+  // warning. BannedPatternsTest enforces this across the front end.
   const del = async (row) => {
-    if (!window.confirm(`Remove the uploaded ${row.type_label}? You can upload it again afterwards.`)) return
+    setConfirmDelete(null)
     setErr(null)
     try {
       await api.delete(row.document_id)
@@ -348,7 +353,7 @@ export default function VendorDocumentsPanel({
               style={{
                 padding: '6px 12px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
                 border: statusFilter === f ? '1px solid transparent' : '1px solid var(--border)',
-                background: statusFilter === f ? 'linear-gradient(135deg,#7C3AED,#5b21b6)' : 'var(--bg-card)',
+                background: statusFilter === f ? PRIMARY_GRADIENT : 'var(--bg-card)',
                 color: statusFilter === f ? '#fff' : 'var(--text-muted)',
               }}>
               {f.charAt(0) + f.slice(1).toLowerCase()}
@@ -410,7 +415,7 @@ export default function VendorDocumentsPanel({
                     onDrop={(e) => handleDrop(e, row)}
                     onView={() => viewPreview(row)}
                     onHistory={() => setHistoryDoc(row.document_id)}
-                    onDelete={() => del(row)}
+                    onDelete={() => setConfirmDelete(row)}
                     onReview={(decision) => setReviewing({ row, decision })}
                     onSample={() => downloadSample(row)}
                     inputRef={(el) => { inputs.current[row.type] = el }}
@@ -424,6 +429,16 @@ export default function VendorDocumentsPanel({
       })}
 
       {footer?.({ complete, totalMissing, totalRejected })}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title={`Remove ${confirmDelete.type_label}?`}
+          message="The upload is removed and you can upload the document again afterwards. Anything already approved cannot be removed."
+          confirmLabel="Remove upload"
+          onConfirm={() => del(confirmDelete)}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
 
       {reviewing && <ReviewModal reviewing={reviewing} onClose={() => setReviewing(null)} onConfirm={runReview} />}
 
@@ -444,7 +459,7 @@ export default function VendorDocumentsPanel({
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <a href={previewDoc.url} target="_blank" rel="noreferrer" download
-              style={{ padding: '8px 16px', borderRadius: 8, background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', color: '#fff', textDecoration: 'none', fontSize: 12, fontWeight: 700 }}>
+              style={{ padding: '8px 16px', borderRadius: 8, background: PRIMARY_GRADIENT, color: '#fff', textDecoration: 'none', fontSize: 12, fontWeight: 700 }}>
               Download file
             </a>
           </div>
@@ -524,7 +539,7 @@ function DocumentRow({
                 </div>
               </div>
               <button type="button" onClick={onPick} disabled={busy}
-                style={{ padding: '7px 14px', borderRadius: 8, background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: busy ? 'wait' : 'pointer' }}>
+                style={{ padding: '7px 14px', borderRadius: 8, background: PRIMARY_GRADIENT, color: '#fff', border: 'none', fontSize: 12, fontWeight: 700, cursor: busy ? 'wait' : 'pointer' }}>
                 {busy ? 'Uploading…' : 'Choose file'}
               </button>
             </div>
@@ -550,7 +565,7 @@ function DocumentRow({
             <div style={{ ...tinted('#7C3AED', 0.07), marginTop: 10, padding: '9px 13px', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 12, color: 'var(--text-h)', fontWeight: 600 }}>Download the sample, fill it in, and upload the signed copy.</span>
               <button type="button" onClick={onSample}
-                style={{ padding: '6px 13px', borderRadius: 8, background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', color: '#fff', border: 'none', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                style={{ padding: '6px 13px', borderRadius: 8, background: PRIMARY_GRADIENT, color: '#fff', border: 'none', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 <Download size={12} /> Download sample
               </button>
             </div>
