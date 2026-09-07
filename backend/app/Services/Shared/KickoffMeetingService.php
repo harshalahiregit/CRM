@@ -40,6 +40,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use App\Services\Shared\MeetingJoinRecorder;
 
 class KickoffMeetingService
 {
@@ -1362,6 +1363,11 @@ class KickoffMeetingService
             if (! $changes) {
                 continue;
             }
+
+            // A person looking at the meeting knows something the system does
+            // not, so a tick made by hand outranks anything observed — and the
+            // register says so rather than presenting all three the same way.
+            $changes['attendance_source'] = MeetingJoinRecorder::SOURCE_MANUAL;
 
             $attendee->update($changes);
 
@@ -2772,6 +2778,12 @@ class KickoffMeetingService
             'overdue_actions' => (int) $meetings->sum('overdue_actions'),
             'open_issues' => (int) $meetings->sum('open_issues'),
             'awaiting_ack' => $meetings->where('status', Status::COMPLETED)->whereNull('acknowledged_at')->count(),
+            // Actually held, and for how long in total. "Completed" above is a
+            // status somebody set; these two come from the calls themselves, so
+            // the history can say what happened rather than only what was
+            // decided about it.
+            'held' => $meetings->whereNotNull('actual_end_at')->count(),
+            'held_minutes' => (int) $meetings->sum(fn ($m) => (int) $m->held_minutes),
         ];
 
         return [

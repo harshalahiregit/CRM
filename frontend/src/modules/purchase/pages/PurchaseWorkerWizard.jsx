@@ -5,6 +5,7 @@ import {
   Check, AlertTriangle, ShieldCheck, Loader,
 } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
+import { useVendorModule } from '@/modules/tpv/useVendorModule'
 import { useAuth } from '@/context/AuthContext'
 import AuditTimeline from '@/components/ui/AuditTimeline'
 import { canApprovePR, canManagePR, fmtDate } from '../constants'
@@ -51,12 +52,22 @@ const ID_PROOF_TYPES = ['Aadhaar', 'PAN', 'Voter ID', 'Driving Licence', 'Passpo
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 export default function PurchaseWorkerWizard() {
+  /*
+   * Admin screen and portal screen are the same screen — the TPV convention.
+   * `useVendorModule` resolves the client from the PATH, because a Purchase
+   * vendor holds a PurchaseVendor token and has no `user.role` to test. Each
+   * step resolves it for itself rather than having it drilled through six
+   * levels of props.
+   */
+  const { api, portal: isPortal } = useVendorModule()
+
   const { id: routeId } = useParams()
   const navigate = useNavigate()
   const { user } = useAuth()
   const admin  = canApprovePR(user)   // activation is role:admin server-side
-  const manage = canManagePR(user)
-  const backHref = '/app/purchase/workers'
+  // A vendor manages its own people — see PurchaseWorkers for why.
+  const manage = canManagePR(user) || isPortal
+  const backHref = isPortal ? '/purchase-portal/workforce/workers' : '/app/purchase/workers'
 
   // `workers/new` opens the wizard with nothing registered yet — Step 1 creates
   // the worker, and every later step addresses it by the id the API hands back.
@@ -74,7 +85,7 @@ export default function PurchaseWorkerWizard() {
   const load = useCallback(async (keepStep = false) => {
     if (!workerId) { setLoading(false); return }
     try {
-      const res = await purchaseApi.workforce.worker(workerId)
+      const res = await api.workforce.worker(workerId)
       const w = res?.worker ?? res?.data?.worker
       setWorker(w)
       setReadiness(res?.readiness ?? res?.data?.readiness ?? null)
@@ -94,6 +105,26 @@ export default function PurchaseWorkerWizard() {
   const onCreated = (created) => { pinnedStep.current = 2; setWorkerId(String(created.id)) }
 
   const progress = useMemo(() => buildProgress(worker, readiness), [worker, readiness])
+
+  /**
+   * A step with a form registers how to persist it, so leaving the step keeps
+   * what was typed.
+   *
+   * Changing step used to swap the panel and nothing else: half a worker's
+   * details, typed and then abandoned by pressing the next step, were gone with
+   * no warning. The worker endpoint takes a partial update, so what has been
+   * entered is stored on the way past.
+   */
+  const flushRef = useRef(null)
+  const registerFlush = useCallback((fn) => { flushRef.current = fn }, [])
+
+  const goStep = async (step) => {
+    // Never trap somebody on a step: a draft that will not save is a reason to
+    // say so, not a reason to refuse to move.
+    try { await flushRef.current?.() } catch { /* the step reports its own error */ }
+    flushRef.current = null
+    setActive(step)
+  }
 
   if (loading) {
     return <div style={{ padding: 24, color: 'var(--text-muted)' }}>Loading worker…</div>
@@ -162,19 +193,37 @@ export default function PurchaseWorkerWizard() {
           <ul style={{ margin: 0, paddingLeft: 28, color: '#f59e0b', fontSize: 12, lineHeight: 1.7 }}>
             {progress.blockers.map((b, i) => <li key={i}>{b}</li>)}
           </ul>
+
+          {/* Whose move it is. Naming the blocker is not the same as saying what
+              to do about it — and when the answer is "nothing", saying so stops
+              the vendor searching for a document they have already sent. */}
+          {progress.medical_clearance && !progress.medical_clearance.cleared && (
+            <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed rgba(245,158,11,0.35)', fontSize: 12, lineHeight: 1.6 }}>
+              {progress.medical_clearance.action ? (
+                <span style={{ color: 'var(--text-h)' }}>
+                  <strong>What to do:</strong> {progress.medical_clearance.action}
+                </span>
+              ) : (
+                <span style={{ color: 'var(--text-muted)' }}>
+                  <strong style={{ color: 'var(--text-h)' }}>Nothing is needed from you.</strong>{' '}
+                  The quality team is reviewing the certificate; the badge unblocks itself once they approve it.
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
       {worker.status === WORKER_STATUS.TERMINATED && worker.notes && (
         <InfoBox tone="danger"><strong>Terminated:</strong> {lastNoteLine(worker.notes)}</InfoBox>
       )}
 
-      <Stepper steps={steps} active={active} onGo={setActive} />
+      <Stepper steps={steps} active={active} onGo={goStep} />
 
       <div style={{ marginTop: 18 }}>
-        {active === 1 && <StepProfile worker={worker} editable={editable} onSaved={refresh} onNext={() => setActive(2)} />}
-        {active === 2 && <Step2Medical worker={worker} editable={editable} onSaved={refresh} onNext={() => setActive(3)} />}
-        {active === 3 && <StepInduction worker={worker} readiness={readiness} editable={editable} onSaved={refresh} onNext={() => setActive(4)} />}
-        {active === 4 && <StepPpe worker={worker} manage={manage} onChanged={refresh} onNext={() => setActive(5)} />}
+        {active === 1 && <StepProfile worker={worker} editable={editable} onSaved={refresh} onNext={() => goStep(2)} registerFlush={registerFlush} />}
+        {active === 2 && <Step2Medical worker={worker} editable={editable} onSaved={refresh} onNext={() => goStep(3)} />}
+        {active === 3 && <StepInduction worker={worker} readiness={readiness} editable={editable} onSaved={refresh} onNext={() => goStep(4)} />}
+        {active === 4 && <StepPpe worker={worker} manage={manage} onChanged={refresh} onNext={() => goStep(5)} />}
         {active === 5 && <StepBadge worker={worker} badge={badge} progress={progress} admin={admin} onChanged={refresh} />}
       </div>
 
@@ -218,7 +267,13 @@ function buildProgress(worker, readiness) {
   const blockers = []
   if (worker) {
     if (!r.documents_ok)  blockers.push('No documents are on file for this worker.')
-    if (!r.medical_ok)    blockers.push('No current medical fitness certificate on record.')
+    // The medical module's own verdict, which knows the difference between "you
+    // have not sent one" and "we have it and have not looked yet". The flat
+    // string this replaced said the certificate was missing even when it was
+    // sitting in the quality queue, which sent vendors hunting for nothing.
+    if (!r.medical_ok) {
+      blockers.push(r.medical_clearance?.message || 'No current medical fitness certificate on record.')
+    }
     if (!r.training_ok)   blockers.push('No completed, unexpired training on record.')
     if (!r.induction_ok)  blockers.push('Site induction has not been completed.')
     if (!r.competency_ok) {
@@ -332,7 +387,9 @@ const apiError = (e, fallback) => {
 }
 
 // ── Step 1 — Profile ─────────────────────────────────────────────────────────
-function StepProfile({ worker, editable, onCreated, onSaved, onNext }) {
+function StepProfile({ worker, editable, onCreated, onSaved, onNext, registerFlush }) {
+  const { api, portal: isPortal } = useVendorModule()
+
   const creating = !worker
   const [f, setF] = useState({
     vendor_id: worker?.purchase_vendor_id ? String(worker.purchase_vendor_id) : '',
@@ -344,17 +401,23 @@ function StepProfile({ worker, editable, onCreated, onSaved, onNext }) {
   })
   const [saving, setSaving] = useState(false)
   const [saved, setSaved]   = useState(false)
-  const set = (k) => (e) => { setF(p => ({ ...p, [k]: e.target.value })); setSaved(false) }
+  // Has anything been typed since the last successful save? Read by the flush
+  // below, which is registered once, so it must be a ref rather than state that
+  // callback would have closed over stale.
+  const dirty = useRef(false)
+  const set = (k) => (e) => { setF(p => ({ ...p, [k]: e.target.value })); setSaved(false); dirty.current = true }
 
   // The vendor the worker is supplied by. Only needed while registering — the FK
   // is fixed at creation and the API refuses to move a worker between vendors.
   const [vendors, setVendors] = useState([])
   useEffect(() => {
     if (!creating) return
+    // A vendor in its own portal has one employer and no list to choose from.
+    if (isPortal) return
     purchaseApi.vendors.list({ per_page: 200 })
       .then(d => setVendors(d?.data ?? d ?? []))
       .catch(() => setVendors([]))
-  }, [creating])
+  }, [creating, isPortal])
 
   // Site work has a statutory floor; surface it before the profile is saved.
   const age = ageOf(f.dob)
@@ -362,6 +425,32 @@ function StepProfile({ worker, editable, onCreated, onSaved, onNext }) {
   // Only an Aadhaar number has the fixed 12-digit shape worth checking.
   const aadhaarish = f.id_proof_type === 'Aadhaar'
   const badAadhaar = aadhaarish && f.id_proof_number && !/^\d{12}$/.test(f.id_proof_number)
+
+  /**
+   * Keep the half-filled form when the user moves to another step.
+   *
+   * Only for a worker that already exists: while REGISTERING there is no record
+   * to attach a draft to, and quietly creating one from a half-typed form would
+   * put unnamed workers on the roster.
+   */
+  const saveDraft = async () => {
+    if (creating || !editable || !dirty.current || !worker?.id) return
+    try {
+      const payload = Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v === '' ? null : v]))
+      delete payload.vendor_id
+      await api.workforce.updateWorker(worker.id, payload)
+      dirty.current = false
+    } catch { /* a lost draft must not block navigation */ }
+  }
+
+  // Registered once, read through a ref, so the flush the wizard calls always
+  // sees what is on screen now.
+  const draftRef = useRef(saveDraft)
+  draftRef.current = saveDraft
+  useEffect(() => {
+    registerFlush?.(() => draftRef.current())
+    return () => registerFlush?.(null)
+  }, [registerFlush])
 
   const save = async () => {
     if (creating && !f.vendor_id) { alert('Select the vendor this worker is supplied by.'); return }
@@ -374,13 +463,13 @@ function StepProfile({ worker, editable, onCreated, onSaved, onNext }) {
       const payload = Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v === '' ? null : v]))
       if (creating) {
         payload.vendor_id = Number(f.vendor_id)
-        const created = await purchaseApi.workforce.createWorker(payload)
+        const created = await api.workforce.createWorker(payload)
         setSaved(true)
         onCreated(created?.worker ?? created)
         return
       }
       delete payload.vendor_id   // create-only; update() rejects nothing but never reads it
-      await purchaseApi.workforce.updateWorker(worker.id, payload)
+      await api.workforce.updateWorker(worker.id, payload)
       setSaved(true); onSaved()
     } catch (e) {
       alert(apiError(e, creating ? 'Failed to register worker' : 'Failed to save profile'))
@@ -477,6 +566,8 @@ function StepProfile({ worker, editable, onCreated, onSaved, onNext }) {
  * the badge gate reads, so it carries the truthful outcome and nothing else.
  */
 function Step2Medical({ worker, editable, onSaved, onNext }) {
+  const { api } = useVendorModule()
+
   // Newest first — the top row is the current fitness the readiness gate reads.
   const history = useMemo(() => sortMedicals(worker.medicals), [worker.medicals])
   const m = history[0] || {}
@@ -823,7 +914,7 @@ function Step2Medical({ worker, editable, onSaved, onNext }) {
         })
       }
 
-      await purchaseApi.workforce.saveMedical(worker.id, payload)
+      await api.workforce.saveMedical(worker.id, payload)
       setSaved(true)
       onSaved()
       if (onNext) onNext()
@@ -1205,6 +1296,8 @@ const INDUCTION_TOPICS = ['Site Safety Rules', 'PPE Usage', 'Work at Height', 'E
  * vendor in its own portal, so the gate can still hold after this step is done.
  */
 function StepInduction({ worker, readiness, editable, onSaved, onNext }) {
+  const { api } = useVendorModule()
+
   const history = useMemo(() => sortInductions(worker.inductions), [worker.inductions])
   const ind = history[0] || {}
 
@@ -1272,7 +1365,7 @@ function StepInduction({ worker, readiness, editable, onSaved, onNext }) {
         ? (f.start_time ? Math.round((now - new Date(f.start_time)) / 60000) : 15)
         : f.duration_minutes
 
-      await purchaseApi.workforce.saveInduction(worker.id, buildInductionPayload({
+      await api.workforce.saveInduction(worker.id, buildInductionPayload({
         type: f.induction_type, trainer: finalTrainer, location: f.location, duration: dur, topics,
       }))
       setSaved(true)
@@ -1299,7 +1392,7 @@ function StepInduction({ worker, readiness, editable, onSaved, onNext }) {
   const openGroupModal = async () => {
     setLoadingWorkers(true)
     try {
-      const res = await purchaseApi.workforce.workers(worker.purchase_vendor_id ? { vendor_id: worker.purchase_vendor_id } : {})
+      const res = await api.workforce.workers(worker.purchase_vendor_id ? { vendor_id: worker.purchase_vendor_id } : {})
       const list = res?.data ?? res ?? []
       setVendorWorkers(Array.isArray(list) ? list : [])
       setGroupModalOpen(true)
@@ -1515,6 +1608,8 @@ function buildInductionPayload({ type, trainer, location, duration, topics }) {
 
 /** One session, many workers — the same induction saved against each in turn. */
 function WizardGroupInductionModal({ workers, onClose, onCompleted }) {
+  const { api } = useVendorModule()
+
   const [selectedIds, setSelectedIds] = useState(workers.map(w => w.id))
   const [f, setF] = useState({
     induction_type: 'General Safety',
@@ -1546,7 +1641,7 @@ function WizardGroupInductionModal({ workers, onClose, onCompleted }) {
       for (const w of activeWorkers) {
         count++
         setProgressMsg(`Saving worker ${count}/${activeWorkers.length}: ${w.full_name}...`)
-        await purchaseApi.workforce.saveInduction(w.id, buildInductionPayload({
+        await api.workforce.saveInduction(w.id, buildInductionPayload({
           type: f.induction_type, trainer: finalTrainer, location: f.location, duration: 15, topics,
         }))
       }
@@ -1627,6 +1722,8 @@ function WizardGroupInductionModal({ workers, onClose, onCompleted }) {
  * profile has stopped being a draft.
  */
 function StepPpe({ worker, manage, onChanged, onNext }) {
+  const { api } = useVendorModule()
+
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [acting, setActing] = useState(null)
@@ -1635,7 +1732,7 @@ function StepPpe({ worker, manage, onChanged, onNext }) {
 
   const load = useCallback(() => {
     setLoading(true)
-    purchaseApi.workforce.ppe(worker.id)
+    api.workforce.ppe(worker.id)
       .then(setData)
       .catch(() => setData(null))
       .finally(() => setLoading(false))
@@ -1645,7 +1742,7 @@ function StepPpe({ worker, manage, onChanged, onNext }) {
   const giveBack = async (issueId, condition, qty) => {
     setBusy(true); setErr(null)
     try {
-      await purchaseApi.workforce.returnPpe(issueId, { condition, qty })
+      await api.workforce.returnPpe(issueId, { condition, qty })
       setActing(null)
       load()
       // Handing everything back drops the worker out of "PPE issued".
@@ -1829,6 +1926,8 @@ function PpeReturnDialog({ row, outstanding, busy, onClose, onConfirm }) {
 
 // ── Step 5 — Access Control 3D Pass & Card Status ────────────────────────────
 function StepBadge({ worker, badge, progress, admin, onChanged }) {
+  const { api } = useVendorModule()
+
   const [isFlipped, setIsFlipped] = useState(false)
 
   const [editModalOpen, setEditModalOpen] = useState(false)
@@ -1865,7 +1964,7 @@ function StepBadge({ worker, badge, progress, admin, onChanged }) {
   const handleActivate = async () => {
     setActivating(true)
     try {
-      await purchaseApi.workforce.activate(worker.id, validUntil ? { valid_until: validUntil } : {})
+      await api.workforce.activate(worker.id, validUntil ? { valid_until: validUntil } : {})
       onChanged()
     } catch (e) {
       alert(apiError(e, 'Could not issue the entry badge.'))
@@ -1880,13 +1979,13 @@ function StepBadge({ worker, badge, progress, admin, onChanged }) {
   const suspendWorker = async () => {
     const reason = window.prompt('Reason for suspending this worker (optional):') ?? ''
     setBusy(true)
-    try { await purchaseApi.workforce.suspend(worker.id, reason.trim() || null); onChanged() }
+    try { await api.workforce.suspend(worker.id, reason.trim() || null); onChanged() }
     catch (e) { alert(apiError(e, 'Could not suspend this worker.')) }
     finally { setBusy(false) }
   }
   const reinstateWorker = async () => {
     setBusy(true)
-    try { await purchaseApi.workforce.reinstate(worker.id); onChanged() }
+    try { await api.workforce.reinstate(worker.id); onChanged() }
     catch (e) { alert(apiError(e, 'Could not reinstate this worker.')) }
     finally { setBusy(false) }
   }
@@ -1894,7 +1993,7 @@ function StepBadge({ worker, badge, progress, admin, onChanged }) {
     if (!window.confirm('Terminate this worker? This is permanent and stops their badge scanning at the gate.')) return
     const reason = window.prompt('Reason for termination (optional):') ?? ''
     setBusy(true)
-    try { await purchaseApi.workforce.terminate(worker.id, reason.trim() || null); onChanged() }
+    try { await api.workforce.terminate(worker.id, reason.trim() || null); onChanged() }
     catch (e) { alert(apiError(e, 'Could not terminate this worker.')) }
     finally { setBusy(false) }
   }
@@ -1902,7 +2001,7 @@ function StepBadge({ worker, badge, progress, admin, onChanged }) {
   const handleSaveEdit = async () => {
     setSavingEdit(true)
     try {
-      await purchaseApi.workforce.updateWorker(worker.id, editData)
+      await api.workforce.updateWorker(worker.id, editData)
       setEditModalOpen(false)
       onChanged()
     } catch (e) {

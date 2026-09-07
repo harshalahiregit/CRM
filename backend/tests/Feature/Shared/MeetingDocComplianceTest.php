@@ -166,13 +166,18 @@ class MeetingDocComplianceTest extends TestCase
         $rows = MeetingDistribution::where('kickoff_meeting_id', $m->id)
             ->where('kind', MeetingDistribution::KIND_INVITE)->get();
 
-        $this->assertCount(3, $rows, 'every participant is accounted for');
-        $this->assertSame(2, $rows->where('status', MeetingDistribution::SENT)->count());
+        // The three typed participants, plus the two people who are involved
+        // whether or not anybody listed them: the vendor the meeting is about,
+        // and the person who called it. Building the list from the roster alone
+        // meant a meeting with an empty roster invited nobody at all and still
+        // reported success — see MeetingInvitationReachTest.
+        $this->assertCount(5, $rows, 'every participant is accounted for');
+        $this->assertSame(4, $rows->where('status', MeetingDistribution::SENT)->count());
         // Someone with no address is recorded honestly rather than as delivered.
         $this->assertSame(1, $rows->where('status', MeetingDistribution::SKIPPED)->count());
         // §13's recipient groups are derived, not guessed.
         $this->assertEqualsCanonicalizing(
-            ['internal', 'vendor', 'management'],
+            ['internal', 'vendor', 'management', 'vendor', 'internal'],
             $rows->pluck('party')->all()
         );
     }

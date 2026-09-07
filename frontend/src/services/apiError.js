@@ -114,4 +114,45 @@ export function handleErr(err) {
   throw error
 }
 
+/**
+ * Field errors out of a RAW axios error, keyed by the form's own field names.
+ *
+ * `handleErr` is for services that normalise as they go; the onboarding wizards
+ * do not, and their 422 arrives as a plain axios error whose `data.message` is
+ * always the literal words "Validation failed". Reading that first — which they
+ * did — showed the vendor a sentence that named nothing while the per-field
+ * detail sat unread one key away.
+ *
+ * `prefix` strips the payload path ("profile.") so the keys match the inputs.
+ *
+ * @returns {{map: Object, list: Array<{key,label,message}>, summary: string|null}}
+ */
+export function readFieldErrors(err, prefix = '') {
+  const data = err?.response?.data ?? {}
+  const raw = data.errors && typeof data.errors === 'object' && !Array.isArray(data.errors) ? data.errors : null
+
+  const map = {}
+  const list = []
+  if (raw) {
+    Object.entries(raw).forEach(([path, msgs]) => {
+      const key = prefix && path.startsWith(prefix) ? path.slice(prefix.length) : path
+      const message = Array.isArray(msgs) ? msgs[0] : String(msgs)
+      map[key] = message
+      list.push({ key, label: prettyField(key), message })
+    })
+  }
+
+  // The server's own headline is worth showing ONLY when it says something —
+  // "Validation failed" is not a reason, it is a restatement of the status code.
+  const GENERIC = ['validation failed', 'the given data was invalid.', 'server error', 'error']
+  const msg = typeof data.message === 'string' ? data.message.trim() : ''
+  const useful = msg && !GENERIC.includes(msg.toLowerCase()) ? msg : null
+
+  const summary = list.length
+    ? (list.length === 1 ? `${list[0].label}: ${list[0].message}` : `Please correct ${list.length} fields below.`)
+    : (useful || (err?.response ? `Could not save (error ${err.response.status}).` : "Can't reach the server — check your connection."))
+
+  return { map, list, summary }
+}
+
 export default handleErr

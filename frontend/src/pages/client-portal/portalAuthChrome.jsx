@@ -7,6 +7,7 @@
  * login page (/auth/login?role=client), so the chrome moved here rather than
  * leaving a "Login" file that contains no login.
  */
+import { Building2 } from 'lucide-react'
 
 export function AuthShell({ title, subtitle, children }) {
   return (

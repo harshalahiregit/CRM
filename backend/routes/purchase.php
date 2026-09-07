@@ -30,6 +30,7 @@ use App\Http\Controllers\Api\Purchase\PurchaseApprovalController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorItemController;
 use App\Http\Controllers\Api\Purchase\PurchaseCompetencyController;
+use App\Http\Controllers\Api\Purchase\PurchasePpeRequirementController;
 use App\Http\Controllers\Api\Purchase\PurchaseWorkforceAdminController;
 use App\Http\Controllers\Api\Purchase\PurchaseOrderReturnController;
 use App\Http\Controllers\Api\Purchase\PurchaseReportController;
@@ -281,6 +282,16 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     // below, so staff can review but not decide who may enter the site.
     // /stats is declared BEFORE the {worker} wildcard — a static segment would
     // otherwise be swallowed as a worker id and 404 on model binding.
+    // ── PPE requirement matrix (role -> required PPE). Reads are open to
+    // staff; writes are admin-only inside the controller, because changing what
+    // PPE is legally required is not a clerical act.
+    Route::get('/ppe/requirements',                   [PurchasePpeRequirementController::class, 'index']);
+    Route::post('/ppe/requirements',                  [PurchasePpeRequirementController::class, 'store']);
+    Route::put('/ppe/requirements/{requirement}',     [PurchasePpeRequirementController::class, 'update']);
+    Route::delete('/ppe/requirements/{requirement}',  [PurchasePpeRequirementController::class, 'destroy']);
+    Route::get('/ppe/compliance/workers/{worker}',    [PurchasePpeRequirementController::class, 'worker']);
+
+    Route::post('/workforce/workers/upload',          [PurchaseWorkforceAdminController::class, 'uploadWorkers']);
     Route::get('/workforce/workers/stats',            [PurchaseWorkforceAdminController::class, 'stats']);
     Route::get('/workforce/workers',                  [PurchaseWorkforceAdminController::class, 'index']);
     Route::get('/workforce/workers/{worker}',         [PurchaseWorkforceAdminController::class, 'show']);
@@ -572,6 +583,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     // discussion and decision per agenda point, and the minutes. Separate from
     // the meeting's own PUT, which re-notifies the roster on every save.
     Route::post('/kickoff/{kickoff}/room/notes',   [PurchaseKickoffController::class, 'saveRoomNotes'])->whereNumber('kickoff');
+    // Who is in the call right now, reported every few seconds while it runs.
+    // A snapshot rather than join/leave events — see MeetingPresence.
+    Route::post('/kickoff/{kickoff}/room/presence', [PurchaseKickoffController::class, 'roomPresence'])->whereNumber('kickoff');
     Route::post('/kickoff/{kickoff}/remind',       [PurchaseKickoffController::class, 'remind']);
     Route::post('/kickoff/{kickoff}/mom',          [PurchaseKickoffController::class, 'uploadMom']);
     Route::post('/kickoff/{kickoff}/mom/generate', [PurchaseKickoffController::class, 'generateMom']);

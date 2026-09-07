@@ -9,7 +9,9 @@ export const settingsApi = {
   },
   // ST2 — global recycle bin: list soft-deleted records + restore one.
   recycleBin: {
-    list:    () => api.get('/settings/recycle-bin').then(r => r.data).catch(handleErr),
+    // Filtering is server-side: with sixty-odd registered types, fetching
+    // everything to filter in the browser would mean sixty queries per keystroke.
+    list:    (params = {}) => api.get('/settings/recycle-bin', { params }).then(r => r.data).catch(handleErr),
     restore: (type, id) => api.post('/settings/recycle-bin/restore', { type, id }).then(r => r.data).catch(handleErr),
   },
   // Roles & Departments — maintained from Settings instead of by a developer.

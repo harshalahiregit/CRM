@@ -6,6 +6,7 @@ use App\Exceptions\BusinessException;
 use App\Models\Inventory\Movement;
 use App\Models\Inventory\Product;
 use App\Models\Inventory\Warehouse;
+use App\Models\Purchase\PurchasePpeRequirement;
 use App\Models\Purchase\PurchaseWorker;
 use App\Models\Purchase\PurchaseWorkerPpeIssue;
 use App\Models\User;
@@ -42,16 +43,15 @@ class PurchasePpeService
      */
     private const RETURN_CONDITIONS = [
         'returned' => 'return',
-        'damaged'  => null,
-        'lost'     => null,
+        'damaged' => null,
+        'lost' => null,
     ];
 
     public function __construct(
         private StockService $stock,
         private ConfigService $config,
         private PpeInventoryService $catalogueSource,
-    ) {
-    }
+    ) {}
 
     /* ── Reads ──────────────────────────────────────────────────────── */
 
@@ -70,7 +70,7 @@ class PurchasePpeService
      */
     public function summaryForVendor(int $vendorId, int $tenantId): array
     {
-        $rows  = $this->catalogue($tenantId);
+        $rows = $this->catalogue($tenantId);
         $today = now()->toDateString();
 
         $mine = fn () => PurchaseWorkerPpeIssue::query()
@@ -79,13 +79,13 @@ class PurchasePpeService
                 PurchaseWorker::where('purchase_vendor_id', $vendorId)->select('id'));
 
         return [
-            'total_items'        => $rows->count(),
-            'total_available'    => (float) $rows->sum('available'),
-            'low_stock_items'    => $rows->where('status', 'low_stock')->count(),
+            'total_items' => $rows->count(),
+            'total_available' => (float) $rows->sum('available'),
+            'low_stock_items' => $rows->where('status', 'low_stock')->count(),
             'out_of_stock_items' => $rows->where('status', 'out_of_stock')->count(),
-            'total_issued'       => (float) $mine()->where('status', 'issued')->sum(DB::raw('qty - returned_qty')),
-            'issued_today'       => (float) $mine()->whereDate('issued_date', $today)->sum('qty'),
-            'returned_today'     => (float) $mine()->whereDate('returned_at', $today)->sum('returned_qty'),
+            'total_issued' => (float) $mine()->where('status', 'issued')->sum(DB::raw('qty - returned_qty')),
+            'issued_today' => (float) $mine()->whereDate('issued_date', $today)->sum('qty'),
+            'returned_today' => (float) $mine()->whereDate('returned_at', $today)->sum('returned_qty'),
         ];
     }
 
@@ -112,30 +112,98 @@ class PurchasePpeService
     }
 
     /**
-     * Whether the worker is equipped enough to be badged.
+     * The rules that apply to this worker.
      *
-     * Purchase has no per-role PPE requirement matrix (TpvPpeRequirement is a TPV
-     * table and its scopes read TPV worker fields), so the rule here is the
-     * simpler one the Purchase data supports: holding at least one item counts as
-     * PPE issued. Stated explicitly rather than silently reusing a TPV matrix that
-     * would never match a Purchase worker.
+     * One row per product: two rules naming the same item (say an "all workers"
+     * helmet and a "Fitter" helmet) are one requirement, not two, so the
+     * checklist never asks for the same thing twice.
+     */
+    public function requiredFor(PurchaseWorker $worker): Collection
+    {
+        return PurchasePpeRequirement::query()
+            ->where('tenant_id', $worker->tenant_id)
+            ->where('is_active', true)
+            ->with('product:id,name,sku,status')
+            ->get()
+            ->filter(fn (PurchasePpeRequirement $r) => $r->product && $r->matches($worker))
+            ->unique('product_id')
+            ->values();
+    }
+
+    /** Product ids this worker currently holds (issued, not fully handed back). */
+    private function heldProductIds(PurchaseWorker $worker): Collection
+    {
+        return $this->heldBy($worker)->pluck('inventory_item_id')->filter()->unique();
+    }
+
+    /**
+     * The mandatory items this worker is short of, as Inventory products.
+     *
+     * Only MANDATORY rules appear: optional and conditional PPE is advisory and
+     * must never block a badge or a gate crossing.
+     */
+    public function missingMandatoryFor(PurchaseWorker $worker): Collection
+    {
+        $held = $this->heldProductIds($worker);
+
+        return $this->requiredFor($worker)
+            ->filter(fn (PurchasePpeRequirement $r) => $r->isMandatory())
+            ->reject(fn (PurchasePpeRequirement $r) => $held->contains($r->product_id))
+            ->map(fn (PurchasePpeRequirement $r) => $r->product)
+            ->values();
+    }
+
+    /**
+     * Whether the worker is equipped enough to be badged, and the full picture.
+     *
+     * Purchase used to have no requirement matrix at all, so the rule was the
+     * weakest the data supported: holding ANY one item counted as equipped. A
+     * worker with one pair of gloves passed a check that on TPV demanded a
+     * helmet and boots BY NAME — and since both the badge and the site gate read
+     * this, that was a safety difference between the engines, not a cosmetic one.
+     *
+     * With rules configured, compliance means holding every mandatory item.
+     * With NONE configured the old behaviour stands (any item counts), so a
+     * tenant that has not filled the matrix in is not suddenly locked out of
+     * issuing badges — the gate tightens as the matrix is filled, never before.
      */
     public function complianceFor(PurchaseWorker $worker): array
     {
         $held = $this->heldBy($worker);
+        $heldIds = $held->pluck('inventory_item_id')->filter()->unique();
+        $required = $this->requiredFor($worker);
+
+        $items = $required->map(fn (PurchasePpeRequirement $r) => [
+            'product_id' => $r->product_id,
+            'name' => $r->product->name,
+            'sku' => $r->product->sku,
+            'ppe_class' => $r->ppe_class ?? 'mandatory',
+            'condition' => $r->condition,
+            'qty' => $r->qty,
+            'mandatory' => $r->isMandatory(),
+            'held' => $heldIds->contains($r->product_id),
+        ])->values();
+
+        $missing = $items->where('mandatory', true)->where('held', false)->values();
 
         return [
             'designation' => $worker->designation,
-            'items'       => $held->map(fn (PurchaseWorkerPpeIssue $i) => [
-                'issue_id'   => $i->id,
+            // Whether a matrix has been configured at all. The screens need this
+            // to tell "fully equipped" apart from "nothing is required yet".
+            'configured' => $required->isNotEmpty(),
+            'required' => $items->all(),
+            'missing' => $missing->all(),
+            // What the worker actually holds, matrix or no matrix.
+            'items' => $held->map(fn (PurchaseWorkerPpeIssue $i) => [
+                'issue_id' => $i->id,
                 'product_id' => $i->inventory_item_id,
-                'name'       => $i->item,
-                'qty'        => (float) $i->qty - (float) $i->returned_qty,
-                'size'       => $i->size,
-                'issued_on'  => optional($i->issued_date)->toDateString(),
+                'name' => $i->item,
+                'qty' => (float) $i->qty - (float) $i->returned_qty,
+                'size' => $i->size,
+                'issued_on' => optional($i->issued_date)->toDateString(),
             ])->values()->all(),
             'held_count' => $held->count(),
-            'compliant'  => $held->isNotEmpty(),
+            'compliant' => $required->isEmpty() ? $held->isNotEmpty() : $missing->isEmpty(),
         ];
     }
 
@@ -151,7 +219,7 @@ class PurchasePpeService
     public function issue(PurchaseWorker $worker, array $data, ?User $actor = null): PurchaseWorkerPpeIssue
     {
         $tenantId = (int) $worker->tenant_id;
-        $qty      = round((float) ($data['qty'] ?? 0), 3);
+        $qty = round((float) ($data['qty'] ?? 0), 3);
 
         if ($qty <= 0) {
             throw new BusinessException('Quantity must be greater than zero.', 422);
@@ -176,28 +244,28 @@ class PurchasePpeService
 
         return DB::transaction(function () use ($worker, $product, $qty, $data, $actor, $tenantId, $warehouseId) {
             $issue = PurchaseWorkerPpeIssue::create([
-                'tenant_id'          => $tenantId,
+                'tenant_id' => $tenantId,
                 'purchase_worker_id' => $worker->id,
-                'inventory_item_id'  => $product->id,
-                'item'               => $product->name,
-                'qty'                => $qty,
-                'size'               => $data['size'] ?? null,
-                'issued_date'        => $data['issued_date'] ?? now()->toDateString(),
-                'issued_by'          => $actor?->id,
-                'notes'              => $data['notes'] ?? null,
-                'status'             => 'issued',
-                'returned_qty'       => 0,
+                'inventory_item_id' => $product->id,
+                'item' => $product->name,
+                'qty' => $qty,
+                'size' => $data['size'] ?? null,
+                'issued_date' => $data['issued_date'] ?? now()->toDateString(),
+                'issued_by' => $actor?->id,
+                'notes' => $data['notes'] ?? null,
+                'status' => 'issued',
+                'returned_qty' => 0,
             ]);
 
             $this->stock->record([
-                'product_id'     => $product->id,
-                'type'           => 'issue',
-                'quantity'       => $qty,
-                'warehouse_id'   => $warehouseId,
-                'reason'         => 'PPE issued to purchase worker',
-                'notes'          => trim(sprintf('%s (worker #%d)', $worker->full_name ?? 'Worker', $worker->id)),
+                'product_id' => $product->id,
+                'type' => 'issue',
+                'quantity' => $qty,
+                'warehouse_id' => $warehouseId,
+                'reason' => 'PPE issued to purchase worker',
+                'notes' => trim(sprintf('%s (worker #%d)', $worker->full_name ?? 'Worker', $worker->id)),
                 'reference_type' => 'purchase_ppe_issue',
-                'reference_id'   => $issue->id,
+                'reference_id' => $issue->id,
             ], $tenantId, $actor?->id);
 
             $this->syncWorkerPpeState($worker);
@@ -222,7 +290,7 @@ class PurchasePpeService
         }
 
         $outstanding = round((float) $issue->qty - (float) $issue->returned_qty, 3);
-        $qty         = round((float) ($data['qty'] ?? $outstanding), 3);
+        $qty = round((float) ($data['qty'] ?? $outstanding), 3);
 
         if ($qty <= 0) {
             throw new BusinessException('Quantity must be greater than zero.', 422);
@@ -237,21 +305,21 @@ class PurchasePpeService
         // Only a genuine return needs a site — resolving one for a write-off would
         // fail a tenant with no warehouse, for a call that touches no stock.
         $movementType = self::RETURN_CONDITIONS[$condition];
-        $warehouseId  = $movementType
+        $warehouseId = $movementType
             ? $this->resolveWarehouseId((int) $issue->tenant_id, $this->issuedFromWarehouseId($issue))
             : null;
 
         return DB::transaction(function () use ($issue, $qty, $condition, $data, $actor, $movementType, $warehouseId) {
             if ($movementType && $issue->inventory_item_id) {
                 $this->stock->record([
-                    'product_id'     => $issue->inventory_item_id,
-                    'type'           => $movementType,
-                    'quantity'       => $qty,
-                    'warehouse_id'   => $warehouseId,
-                    'reason'         => 'PPE '.$condition,
-                    'notes'          => $data['notes'] ?? null,
+                    'product_id' => $issue->inventory_item_id,
+                    'type' => $movementType,
+                    'quantity' => $qty,
+                    'warehouse_id' => $warehouseId,
+                    'reason' => 'PPE '.$condition,
+                    'notes' => $data['notes'] ?? null,
                     'reference_type' => 'purchase_ppe_issue',
-                    'reference_id'   => $issue->id,
+                    'reference_id' => $issue->id,
                 ], (int) $issue->tenant_id, $actor?->id);
             }
 
@@ -259,11 +327,11 @@ class PurchasePpeService
 
             $issue->update([
                 'returned_qty' => $returned,
-                'returned_at'  => now(),
-                'returned_by'  => $actor?->id,
+                'returned_at' => now(),
+                'returned_by' => $actor?->id,
                 'return_notes' => $data['notes'] ?? $issue->return_notes,
                 // Fully accounted for → the issue closes under its outcome.
-                'status'       => $returned >= (float) $issue->qty ? $condition : 'issued',
+                'status' => $returned >= (float) $issue->qty ? $condition : 'issued',
             ]);
 
             if ($issue->worker) {

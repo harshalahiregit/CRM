@@ -29,6 +29,12 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->api(append: [
             \App\Http\Middleware\EnforceIdleTimeout::class,
             \App\Http\Middleware\ConfigureTenantMail::class,
+            // Every document that leaves the system is recorded here — who,
+            // when, from what device and address. Applied to the whole API
+            // rather than to each of the fifty-odd file endpoints, because the
+            // endpoint somebody forgets to annotate is the one that gets asked
+            // about. See LogDocumentAccess.
+            \App\Http\Middleware\LogDocumentAccess::class,
         ]);
 
         // Register custom middleware aliases

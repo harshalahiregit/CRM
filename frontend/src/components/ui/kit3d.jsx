@@ -6,6 +6,16 @@ import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import SearchableSelectInput from './SearchableSelectInput'
 
+/**
+ * The product's primary gradient, in one place.
+ *
+ * It was copy-pasted into 274 call sites, which is why BannedPatternsTest
+ * refuses new inline copies: a gradient repeated everywhere cannot be restyled
+ * centrally. components/ui is the exempt layer precisely because this is where
+ * it belongs, so new code imports it from here.
+ */
+export const PRIMARY_GRADIENT = 'linear-gradient(135deg, #7C3AED, #5b21b6)'
+
 export const labelStyle = { display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }
 export const inputStyle = { width: '100%', padding: '9px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }
 

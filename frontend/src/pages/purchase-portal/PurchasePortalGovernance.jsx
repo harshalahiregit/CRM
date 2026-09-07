@@ -14,6 +14,7 @@ const TABS = [
   { key: 'actions', label: 'Action Items' },
   { key: 'requests', label: 'Requests' },
   { key: 'certificates', label: 'Certificates' },
+    { key: 'ppe', label: 'PPE Matrix' },
 ]
 
 export default function PurchasePortalGovernance() {
@@ -38,6 +39,7 @@ export default function PurchasePortalGovernance() {
       {tab === 'actions' && <ActionsTab gov={purchasePortalApi.governance} />}
       {tab === 'requests' && <Requests />}
       {tab === 'certificates' && <CertificatesTab gov={purchasePortalApi.governance} listWorkers={purchasePortalApi.workers.list} />}
+      {tab === 'ppe' && <PpeMatrix />}
     </div>
   )
 }
@@ -144,3 +146,67 @@ const btnPrimary = { display: 'inline-flex', alignItems: 'center', gap: 6, paddi
 const tabBtn = { padding: '7px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13, fontWeight: 700 }
 const tabActive = { background: '#0891b2', color: '#fff', borderColor: '#0891b2' }
 const h3 = { display: 'flex', alignItems: 'center', gap: 6, margin: '0 0 10px', fontSize: 14, fontWeight: 800, color: 'var(--text-h)' }
+
+/* ── PPE Matrix ───────────────────────────────────────────────────────── */
+/**
+ * The site's PPE rule, read-only.
+ *
+ * Purchase had no matrix at all until now, so this tab did not exist while TPV's
+ * did. It matters because the badge and the gate both refuse a worker for
+ * "Mandatory PPE not issued: …" — and that is only actionable if the vendor can
+ * see what the requirement is.
+ */
+function PpeMatrix() {
+  const [rows, setRows] = useState(null)
+  useEffect(() => {
+    purchasePortalApi.governance.ppeMatrix()
+      .then(d => setRows(d?.rules ?? []))
+      .catch(() => setRows([]))
+  }, [])
+
+  if (rows === null) return <div style={{ padding: 18, color: 'var(--text-muted)' }}>Loading…</div>
+  if (!rows.length) {
+    return (
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, color: 'var(--text-muted)' }}>
+        No PPE requirements have been configured for your workers yet.
+      </div>
+    )
+  }
+
+  const label = (v) => String(v || '').replace(/_/g, ' ').replace(/^./, c => c.toUpperCase())
+
+  return (
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden' }}>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ textAlign: 'left', color: 'var(--text-muted)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              {['Applies to', 'PPE', 'Class', 'Qty', 'When'].map(h => (
+                <th key={h} style={{ padding: '10px 14px' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
+                <td style={{ padding: '10px 14px', color: 'var(--text-h)' }}>
+                  {r.scope_type === 'all' ? 'All workers' : `${label(r.scope_type)}: ${r.scope_value}`}
+                </td>
+                <td style={{ padding: '10px 14px', color: 'var(--text-h)', fontWeight: 600 }}>{r.product || '—'}</td>
+                <td style={{ padding: '10px 14px' }}>
+                  <span style={{ display: 'inline-block', padding: '3px 9px', borderRadius: 999, fontSize: 11, fontWeight: 700,
+                    background: r.ppe_class === 'mandatory' ? '#dc26261f' : '#64748b1f',
+                    color: r.ppe_class === 'mandatory' ? '#dc2626' : '#64748b' }}>
+                    {label(r.ppe_class)}
+                  </span>
+                </td>
+                <td style={{ padding: '10px 14px', color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>{r.qty}</td>
+                <td style={{ padding: '10px 14px', color: 'var(--text-muted)' }}>{r.condition || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}

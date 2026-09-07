@@ -199,17 +199,17 @@ export default function TpvVendorDocuments({ vendorId, vendor, manage, api = tpv
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {actionSuccess && (
-        <div style={{ padding: '12px 16px', borderRadius: 10, background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ padding: '12px 16px', borderRadius: 10, background: 'rgba(16,185,129,0.10)', border: '1px solid rgba(16,185,129,0.34)', color: 'var(--text-h)', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
           <CheckCircle size={16} /> {actionSuccess}
         </div>
       )}
 
       {/* Top Metrics Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
-        <MetricCard label="Pending Documents" value={metrics.pending} color="#f59e0b" icon={Clock} bg="#fffbeb" border="#fde68a" />
-        <MetricCard label="Approved Documents" value={metrics.approved} color="#10b981" icon={CheckCircle} bg="#f0fdf4" border="#bbf7d0" />
-        <MetricCard label="Rejected Documents" value={metrics.rejected} color="#ef4444" icon={XCircle} bg="#fef2f2" border="#fca5a5" />
-        <MetricCard label="Missing / Optional" value={metrics.missing} color="#6b7280" icon={AlertCircle} bg="#f8fafc" border="#e2e8f0" />
+        <MetricCard label="Pending Documents" value={metrics.pending} color="#f59e0b" icon={Clock} tone="245,158,11" />
+        <MetricCard label="Approved Documents" value={metrics.approved} color="#10b981" icon={CheckCircle} tone="16,185,129" />
+        <MetricCard label="Rejected Documents" value={metrics.rejected} color="#ef4444" icon={XCircle} tone="239,68,68" />
+        <MetricCard label="Missing / Optional" value={metrics.missing} color="var(--text-muted)" icon={AlertCircle} tone="148,163,184" />
       </div>
 
       {/* Main Container Card */}
@@ -298,7 +298,7 @@ export default function TpvVendorDocuments({ vendorId, vendor, manage, api = tpv
                   const cfg        = docStatusCfg(row.status)
 
                   return (
-                    <tr key={row.type} style={{ borderBottom: '1px solid var(--border)', background: isRejected ? '#fff5f5' : isApproved ? '#f8fafc' : 'transparent' }}>
+                    <tr key={row.type} style={{ borderBottom: '1px solid var(--border)', background: isRejected ? 'rgba(239,68,68,0.07)' : isApproved ? 'rgba(16,185,129,0.06)' : 'transparent' }}>
                       <td style={tdStyle}>
                         <div style={{ fontWeight: 800, color: 'var(--text-h)' }}>
                           {row.type_label} {row.required && <span style={{ color: '#ef4444' }}>*</span>}
@@ -335,7 +335,7 @@ export default function TpvVendorDocuments({ vendorId, vendor, manage, api = tpv
                       <td style={tdStyle}>
                         <StatusPill cfg={cfg} />
                         {isRejected && row.remarks && (
-                          <div style={{ fontSize: 11, color: '#dc2626', marginTop: 3, maxWidth: 160, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={row.remarks}>
+                          <div style={{ fontSize: 11, color: '#f87171', marginTop: 3, maxWidth: 160, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={row.remarks}>
                             Rationale: {row.remarks}
                           </div>
                         )}
@@ -423,7 +423,7 @@ export default function TpvVendorDocuments({ vendorId, vendor, manage, api = tpv
         <Overlay onClose={() => setPreviewDoc(null)} width={previewDoc.type === 'image' ? 680 : 850} showClose={false}>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--text-h)' }}>{previewDoc.name}</h3>
-            <button onClick={() => setPreviewDoc(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 18 }}>✕</button>
+            <button onClick={() => setPreviewDoc(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--text-muted)' }}>✕</button>
           </div>
           <div style={{ padding: 20, textAlign: 'center', maxHeight: 600, overflowY: 'auto' }}>
             {previewDoc.type === 'image' ? (
@@ -441,11 +441,19 @@ export default function TpvVendorDocuments({ vendorId, vendor, manage, api = tpv
   )
 }
 
-function MetricCard({ label, value, color, icon: Icon, bg, border }) {
+/**
+ * A metric card that reads in both themes.
+ *
+ * These four were opaque pastel fills (#fffbeb, #f0fdf4, #fef2f2, #f8fafc) with
+ * a hardcoded slate label, so in dark mode they were four bright white cards
+ * punched into the page. `tone` is now an "r,g,b" triple washed over whatever
+ * surface is behind it, and the label wears a theme token.
+ */
+function MetricCard({ label, value, color, icon: Icon, tone }) {
   return (
-    <div style={{ padding: '14px 16px', borderRadius: 12, background: bg, border: `1px solid ${border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <div style={{ padding: '14px 16px', borderRadius: 12, background: `rgba(${tone},0.10)`, border: `1px solid rgba(${tone},0.34)`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <div>
-        <div style={{ fontSize: 11.5, fontWeight: 700, color: '#475569' }}>{label}</div>
+        <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)' }}>{label}</div>
         <div style={{ fontSize: 22, fontWeight: 900, color, marginTop: 2 }}>{value}</div>
       </div>
       <Icon size={22} style={{ color }} />
@@ -475,7 +483,7 @@ function ReviewModal({ reviewing, onClose, onConfirm }) {
           {isApprove ? <CheckCircle size={18} style={{ color: '#10b981' }} /> : <XCircle size={18} style={{ color: '#ef4444' }} />}
           {isApprove ? 'Approve Compliance Document' : 'Reject Compliance Document'}
         </h3>
-        <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 18 }}>✕</button>
+        <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--text-muted)' }}>✕</button>
       </div>
 
       <form onSubmit={handleSubmit} style={{ padding: 22 }}>
@@ -552,7 +560,7 @@ function VersionHistoryDrawer({ documentId, onClose, onRestored, api = tpvApi })
         <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-h)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <History size={18} style={{ color: '#7C3AED' }} /> Document Version &amp; Audit History
         </h3>
-        <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 18 }}>✕</button>
+        <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--text-muted)' }}>✕</button>
       </div>
 
       <div style={{ padding: 22, maxHeight: 520, overflowY: 'auto' }}>
@@ -580,7 +588,7 @@ function VersionHistoryDrawer({ documentId, onClose, onRestored, api = tpvApi })
                   </button>
                 </div>
                 {v.remarks && (
-                  <div style={{ marginTop: 6, padding: 8, borderRadius: 6, background: '#fef2f2', border: '1px solid #fca5a5', fontSize: 11.5, color: '#991b1b' }}>
+                  <div style={{ marginTop: 6, padding: 8, borderRadius: 6, background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.34)', fontSize: 11.5, color: 'var(--text-h)' }}>
                     <strong>Remarks:</strong> {v.remarks}
                   </div>
                 )}

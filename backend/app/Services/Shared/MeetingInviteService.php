@@ -192,24 +192,61 @@ class MeetingInviteService
      */
     public function recipients(KickoffMeeting $meeting): array
     {
-        $meeting->loadMissing('attendees');
+        $meeting->loadMissing('attendees', 'kickoffable', 'creator');
         $out = [];
         $seen = [];
 
-        foreach ($meeting->attendees as $a) {
-            $key = strtolower((string) ($a->email ?: 'row#'.$a->id));
-            if (isset($seen[$key])) {
-                continue;
+        $add = function (?string $name, ?string $email, string $party, ?int $attendeeId, ?int $userId) use (&$out, &$seen) {
+            $key = strtolower((string) ($email ?: 'row#'.$attendeeId));
+            if ($key === '' || isset($seen[$key])) {
+                return;
             }
             $seen[$key] = true;
-
             $out[] = [
-                'name' => $a->name,
-                'email' => $a->email,
-                'party' => $this->partyFor($a),
-                'attendee_id' => $a->id,
-                'user_id' => $a->user_id,
+                'name' => $name,
+                'email' => $email,
+                'party' => $party,
+                'attendee_id' => $attendeeId,
+                'user_id' => $userId,
             ];
+        };
+
+        foreach ($meeting->attendees as $a) {
+            $add($a->name, $a->email, $this->partyFor($a), $a->id, $a->user_id);
+        }
+
+        /*
+         * The vendor the meeting is ABOUT, and the person who called it.
+         *
+         * This list used to be the typed roster and nothing else, which meant a
+         * meeting scheduled for a vendor without anybody hand-adding a
+         * participant row invited nobody at all — the send reported success
+         * having e-mailed no one, and the vendor first heard about the meeting
+         * when it did not happen. The two people who are certainly involved are
+         * the vendor and the organiser, and neither had to be on the roster.
+         *
+         * Added after the roster, and skipped when the same address is already
+         * there, so anybody explicitly listed keeps their own name and party.
+         */
+        $subject = $meeting->kickoffable;
+        if ($subject && ! empty($subject->email)) {
+            $add(
+                $subject->company_name ?? $subject->name ?? 'Vendor',
+                $subject->email,
+                MeetingDistribution::PARTY_VENDOR,
+                null,
+                null,
+            );
+        }
+
+        if ($meeting->creator && $meeting->creator->email) {
+            $add(
+                $meeting->creator->name,
+                $meeting->creator->email,
+                MeetingDistribution::PARTY_INTERNAL,
+                null,
+                $meeting->creator->id,
+            );
         }
 
         return $out;

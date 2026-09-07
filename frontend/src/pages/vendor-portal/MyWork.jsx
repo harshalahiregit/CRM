@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Loader2, Plus, X, Send } from 'lucide-react'
+import RichText from '@/components/ui/RichText'
 import { portalApi } from '@/services/portalApi'
 
 /**
@@ -137,12 +138,13 @@ function TicketModal({ api, id, onClose }) {
       {!t ? <Center /> : (
         <>
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}><Pill value={t.status} /><span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Priority: {t.priority}</span></div>
-          <div style={{ fontSize: 13.5, color: 'var(--text-body,#cbd5e1)', whiteSpace: 'pre-wrap', paddingBottom: 12, borderBottom: '1px solid var(--border,rgba(255,255,255,0.08))' }}>{t.description}</div>
+          <RichText html={t.description_html} text={t.description}
+            style={{ fontSize: 13.5, color: 'var(--text-body,#cbd5e1)', paddingBottom: 12, borderBottom: '1px solid var(--border,rgba(255,255,255,0.08))' }} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '12px 0' }}>
             {(t.replies || []).map(r => (
               <div key={r.id} style={{ alignSelf: r.mine ? 'flex-end' : 'flex-start', maxWidth: '80%', background: r.mine ? 'rgba(124,58,237,0.15)' : 'var(--bg-input,rgba(255,255,255,0.05))', borderRadius: 10, padding: '8px 12px' }}>
                 <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginBottom: 2 }}>{r.author}</div>
-                <div style={{ fontSize: 13, color: 'var(--text-h)', whiteSpace: 'pre-wrap' }}>{r.message}</div>
+                <RichText html={r.message_html} text={r.message} style={{ fontSize: 13, color: 'var(--text-h)' }} />
               </div>
             ))}
           </div>

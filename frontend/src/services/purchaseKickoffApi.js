@@ -116,6 +116,7 @@ export const purchaseKickoffApi = {
   // Shared: markAttendance. Purchase: attendance.
   markAttendance: k.attendance,
   roomNotes: k.roomNotes,
+  roomPresence: k.roomPresence,
   remind:    k.remind,
 
   // Purchase meetings mint their link on their own route — same method names as

@@ -49,7 +49,6 @@ class BannedPatternsTest extends TestCase
         'modules/hr/pages/ManpowerRequests.jsx' => 4,
         'modules/inventory/pages/InventorySettings.jsx' => 1,
         'modules/projects/pages/ProjectDetail.jsx' => 1,
-        'modules/purchase/components/PurchaseVendorDocuments.jsx' => 4,
         'modules/purchase/pages/PurchaseAnalytics.jsx' => 1,
         'modules/purchase/pages/PurchaseCapaRegister.jsx' => 1,
         'modules/purchase/pages/PurchaseDebitNotes.jsx' => 10,

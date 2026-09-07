@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { CalendarDays, Video, AlertTriangle, ChevronRight } from 'lucide-react'
+import { CalendarDays, Video, AlertTriangle, CheckCircle2, ChevronRight, Copy } from 'lucide-react'
 
 /**
  * The vendor's meeting schedule, on the portal dashboard.
@@ -22,11 +22,12 @@ import { CalendarDays, Video, AlertTriangle, ChevronRight } from 'lucide-react'
 const TONE = {
   upcoming: { fg: '#0369a1', bg: 'rgba(14,165,233,0.10)', bd: 'rgba(14,165,233,0.30)' },
   live:     { fg: '#15803d', bg: 'rgba(34,197,94,0.12)',  bd: 'rgba(34,197,94,0.35)' },
+  ended:    { fg: '#475569', bg: 'rgba(100,116,139,0.10)', bd: 'rgba(100,116,139,0.28)' },
   expired:  { fg: '#b91c1c', bg: 'rgba(220,38,38,0.08)',  bd: 'rgba(220,38,38,0.28)' },
 }
 
 /** Labels for the locally re-derived state — timing_label is the fetched one. */
-const LABEL = { upcoming: 'Upcoming', live: 'In progress', expired: 'Expired' }
+const LABEL = { upcoming: 'Upcoming', live: 'In progress', ended: 'Ended', expired: 'Expired' }
 
 const fmt = (v) => (v ? new Date(v).toLocaleString([], {
   day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
@@ -41,6 +42,9 @@ const startsIn = (mins) => {
   if (n < 1440) return `in ${Math.floor(n / 60)}h`
   return `in ${Math.floor(n / 1440)} day${Math.floor(n / 1440) === 1 ? '' : 's'}`
 }
+
+/** How long a call may go unheard from before it counts as over (server: 3 min). */
+const STALE_MS = 3 * 60 * 1000
 
 /** How often the card re-reads the clock, and re-asks the server. */
 const TICK_MS  = 30 * 1000
@@ -58,6 +62,21 @@ const FETCH_MS = 5 * 60 * 1000
  */
 function stateNow(m, now) {
   if (m.timing_state === 'draft' || m.timing_state === 'closed') return m.timing_state
+
+  // What the call actually did outranks the slot it was booked into, exactly as
+  // it does on the server (MeetingTiming). Without this the card would go on
+  // re-deriving "In progress" from the booked hour for a meeting everyone left
+  // ten minutes in — which is the whole reason that state stopped being
+  // believable.
+  if (m.actual_end_at) return 'ended'
+  if (m.actual_start_at) {
+    // A call nobody has been heard from for minutes is over, whether or not
+    // anyone hung up — a shut laptop reports no ending at all. Same window the
+    // server uses, so the card and the record never disagree.
+    const seen = m.presence_seen_at ? new Date(m.presence_seen_at).getTime() : null
+    return seen && now - seen > STALE_MS ? 'ended' : 'live'
+  }
+
   if (!m.scheduled_at) return m.timing_state
   const start = new Date(m.scheduled_at).getTime()
   const end   = m.ends_at ? new Date(m.ends_at).getTime() : start + 60 * 60 * 1000
@@ -70,6 +89,22 @@ const minutesUntil = (m, now) => {
   if (!m.scheduled_at) return null
   const start = new Date(m.scheduled_at).getTime()
   return Number.isFinite(start) ? Math.round((start - now) / 60000) : null
+}
+
+/** The join link in the open, with a one-press copy. */
+function CopyLink({ link }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      onClick={() => navigator.clipboard?.writeText(link)
+        .then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800) })
+        .catch(() => {/* no clipboard: the link is still readable below */})}
+      title={link}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 11, fontWeight: 700, background: 'var(--bg-input, #fff)', border: '1px solid var(--border, #e2e8f0)', color: copied ? '#15803d' : 'var(--text-muted, #64748b)', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <Copy size={12} style={{ flexShrink: 0 }} />
+      {copied ? 'Link copied' : link.replace(/^https?:\/\//, '')}
+    </button>
+  )
 }
 
 export default function MeetingScheduleCard({ load, to, limit = 3 }) {
@@ -112,7 +147,11 @@ export default function MeetingScheduleCard({ load, to, limit = 3 }) {
   // Re-derived on every tick, not read off the fetched row.
   const live = rows.map(m => {
     const state = stateNow(m, now)
-    return { ...m, timing_state: state, is_expired: state === 'expired', is_live: state === 'live',
+    // `is_expired` gates the join link, and a meeting that has ENDED cannot be
+    // joined either — both finished states have to close it.
+    return { ...m, timing_state: state,
+             is_expired: state === 'expired' || state === 'ended',
+             is_live: state === 'live',
              minutes_until_start: minutesUntil(m, now) }
   })
   const shown = live
@@ -167,7 +206,19 @@ export default function MeetingScheduleCard({ load, to, limit = 3 }) {
 
               {/* The one thing a vendor looking at an expired meeting needs to
                   know: it is not happening, and nobody is waiting for them. */}
-              {m.is_expired && (
+              {/* Ended and expired both mean "over", and they are different
+                  news: one happened, the other was missed. Saying "expired" for
+                  a meeting the vendor sat through would be plainly wrong. */}
+              {m.timing_state === 'ended' && (
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginTop: 7, fontSize: 11.5, color: tone.fg, fontWeight: 600 }}>
+                  <CheckCircle2 size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+                  <span>
+                    This meeting has ended
+                    {m.held_minutes ? ` — it ran ${m.held_minutes} min` : ''}. The minutes will be shared with you.
+                  </span>
+                </div>
+              )}
+              {m.timing_state === 'expired' && (
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginTop: 7, fontSize: 11.5, color: tone.fg, fontWeight: 600 }}>
                   <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
                   <span>This meeting has expired. The organiser has been notified and will reschedule or close it.</span>
@@ -177,10 +228,17 @@ export default function MeetingScheduleCard({ load, to, limit = 3 }) {
               {/* Joinable right up to the end, not only before the start — the
                   link used to disappear the moment the meeting began. */}
               {!m.is_expired && m.meeting_link && m.mode !== 'onsite' && (
-                <a href={m.meeting_link} target="_blank" rel="noopener noreferrer"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, padding: '6px 12px', borderRadius: 8, fontSize: 11.5, fontWeight: 800, textDecoration: 'none', color: '#fff', background: m.is_live ? 'linear-gradient(145deg,#22c55e,#16a34a)' : 'linear-gradient(145deg,#38bdf8,#0284c7)' }}>
-                  <Video size={13} /> {m.is_live ? 'Join now' : 'Join meeting'}
-                </a>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                  <a href={m.meeting_link} target="_blank" rel="noopener noreferrer"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, fontSize: 11.5, fontWeight: 800, textDecoration: 'none', color: '#fff', background: m.is_live ? 'linear-gradient(145deg,#22c55e,#16a34a)' : 'linear-gradient(145deg,#38bdf8,#0284c7)' }}>
+                    <Video size={13} /> {m.is_live ? 'Join now' : 'Join meeting'}
+                  </a>
+                  {/* The link itself, not only a button over it. A vendor
+                      joining from their phone, or passing it to a colleague who
+                      was not invited through the portal, needs to be able to
+                      read and copy it. */}
+                  <CopyLink link={m.meeting_link} />
+                </div>
               )}
             </div>
           )

@@ -96,10 +96,43 @@ class PurchaseDocumentService
     }
 
     /**
+     * Who is acting, when it may be either kind of account.
+     *
+     * The Purchase portal authenticates as a PurchaseVendor — its own model with
+     * its own token — not as a User. Typing these two methods `User` meant the
+     * vendor's own upload could never run: `purchaseVendor()` asserts the caller
+     * IS a PurchaseVendor, and the next line handed that same object to a `User`
+     * parameter, so every upload from the portal was a TypeError and a 500. The
+     * vendor was told "something went wrong on our side" and step 3 of onboarding
+     * could not be completed at all.
+     *
+     * `review()` and `destroy()` stay typed `User` deliberately — a vendor may
+     * never approve or delete its own document, and the type is the guard.
+     */
+    private function actorUser(User|PurchaseVendor|null $actor): ?User
+    {
+        return $actor instanceof User ? $actor : null;
+    }
+
+    /**
+     * Display name for the audit trail. Null for a User — AuditLogService already
+     * snapshots `$actor->name` in that case and the label must not override it.
+     * A PurchaseVendor signs as its company, since it has no `name` column.
+     */
+    private function actorLabel(User|PurchaseVendor|null $actor): ?string
+    {
+        if (! $actor instanceof PurchaseVendor) {
+            return null;
+        }
+
+        return trim(($actor->company_name ?: 'Vendor').' (Vendor Portal)');
+    }
+
+    /**
      * Upload (or replace) a document of a given type. Replacing removes the old
      * file and resets the review state so it's re-reviewed.
      */
-    public function upload(PurchaseVendor $vendor, string $type, UploadedFile $file, User $actor): PurchaseDocument
+    public function upload(PurchaseVendor $vendor, string $type, UploadedFile $file, User|PurchaseVendor $actor): PurchaseDocument
     {
         $this->assertType($type);
 
@@ -132,7 +165,7 @@ class PurchaseDocumentService
             $doc = PurchaseDocument::create($data);
         }
 
-        $doc->recordAudit('Document Uploaded', $actor, null, ['type' => $type]);
+        $doc->recordAudit('Document Uploaded', $this->actorUser($actor), null, ['type' => $type], $this->actorLabel($actor));
 
         Log::channel('purchase')->info('Purchase document uploaded', [
             'document_id' => $doc->id, 'purchase_vendor_id' => $vendor->id, 'tenant_id' => $vendor->tenant_id, 'type' => $type,
@@ -189,7 +222,7 @@ class PurchaseDocumentService
     }
 
     /** Replace a rejected document's file, returning it to review. */
-    public function resubmit(PurchaseDocument $doc, UploadedFile $file, User $actor): PurchaseDocument
+    public function resubmit(PurchaseDocument $doc, UploadedFile $file, User|PurchaseVendor $actor): PurchaseDocument
     {
         if ($doc->isApproved()) {
             throw new BusinessException('An approved document cannot be resubmitted.');
@@ -210,7 +243,7 @@ class PurchaseDocumentService
             'reviewed_at'   => null,
         ]);
 
-        $doc->recordAudit('Document Resubmitted', $actor, null, ['type' => $doc->type]);
+        $doc->recordAudit('Document Resubmitted', $this->actorUser($actor), null, ['type' => $doc->type], $this->actorLabel($actor));
 
         Log::channel('purchase')->info('Purchase document resubmitted', [
             'document_id' => $doc->id, 'tenant_id' => $doc->tenant_id,

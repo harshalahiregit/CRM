@@ -4,6 +4,7 @@ namespace App\Services\Shared;
 
 use App\Services\Shared\MeetingProviders\MeetingProviderFactory;
 use Illuminate\Support\Facades\Log;
+use App\Support\Shared\JitsiHost;
 
 /**
  * Ad-hoc meeting links for the message composers (owner: Shivam).
@@ -40,8 +41,12 @@ class MeetingLinkService
     private function jitsi(int $tenantId): array
     {
         $room = 'CRM-' . $tenantId . '-' . bin2hex(random_bytes(4));
+        // This path hard-coded meet.jit.si, so a tenant who had configured their
+        // own server still got public-instance links from it — the escape hatch
+        // existed and simply did not reach here.
+        $host = JitsiHost::for($tenantId);
 
-        return ['platform' => 'jitsi', 'label' => 'Jitsi', 'link' => "https://meet.jit.si/{$room}", 'instant' => false];
+        return ['platform' => 'jitsi', 'label' => 'Jitsi', 'link' => "https://{$host}/{$room}", 'instant' => false];
     }
 
     /**
