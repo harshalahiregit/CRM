@@ -8,6 +8,7 @@ use App\Models\Purchase\PurchaseVendor;
 use App\Models\User;
 use App\Services\Purchase\PurchaseApprovalService;
 use App\Services\Purchase\PurchaseDocumentService;
+use App\Services\Purchase\PurchaseKickoffService;
 use App\Support\Purchase\PurchaseApprovalStage;
 use App\Support\Purchase\PurchaseOnboardingStatus as Status;
 use App\Support\Purchase\PurchaseVendorStatus as VendorStatus;
@@ -419,23 +420,50 @@ class PurchaseOnboardingService
     /* ── Step 1 — kickoff (Purchase-owned kickoff engine) ───────────────── */
 
     /** The Purchase kickoff meeting attached to this onboarding's vendor, if any. */
+    /**
+     * The kickoff meeting whose minutes Step 1 asks the vendor to acknowledge.
+     *
+     * Two things went wrong here, and together they produced a step that showed
+     * one meeting's minutes and offered another meeting's document:
+     *
+     *  - A pin to a CANCELLED meeting was honoured. Reschedule a kickoff twice
+     *     — cancel, redraft, hold — and the onboarding stayed pinned to the
+     *     cancelled first attempt, which has no approved minutes and no
+     *     document. Step 1 then asked the vendor to acknowledge the minutes of a
+     *     meeting that never happened, and every download 404'd.
+     *  - The fallback took the most recently CREATED kickoff whatever its state,
+     *     so a fresh draft outranked the meeting that was actually held.
+     *
+     * The order now follows what the step is for. A meeting whose minutes have
+     * been approved and issued is the only one there is anything to acknowledge
+     * about, so it wins; then a live pin; then the most recent meeting that was
+     * not cancelled. A cancelled meeting is never the answer.
+     */
     public function resolveKickoffMeeting(PurchaseOnboarding $onboarding): ?\App\Models\Purchase\PurchaseKickoffMeeting
     {
-        if ($onboarding->kickoff_meeting_id) {
-            $m = \App\Models\Purchase\PurchaseKickoffMeeting::forTenant($onboarding->tenant_id)->find($onboarding->kickoff_meeting_id);
-            if ($m) {
-                return $m;
-            }
+        $candidates = \App\Models\Purchase\PurchaseKickoffMeeting::forTenant($onboarding->tenant_id)
+            ->where('purchase_vendor_id', $onboarding->purchase_vendor_id)
+            // Only a Kickoff-typed meeting satisfies onboarding Step 1 — now that
+            // a vendor can have other meeting types (§9/§39), a Vendor Review or
+            // HSE meeting must not be mistaken for the kickoff.
+            ->where('meeting_type', \App\Support\Purchase\PurchaseMeetingTypeCatalog::DEFAULT)
+            ->where('status', '!=', \App\Support\Purchase\PurchaseKickoffStatus::CANCELLED)
+            ->latest()
+            ->get();
+
+        // Minutes the vendor can actually be asked about.
+        $issued = $candidates->first(
+            fn ($m) => \App\Support\Purchase\PurchaseMomApprovalStatus::isDistributable($m->mom_status)
+        );
+        if ($issued) {
+            return $issued;
         }
 
-        // Only a Kickoff-typed meeting satisfies onboarding Step 1 — now that a
-        // vendor can have other meeting types (§9/§39), a Vendor Review or HSE
-        // meeting must not be mistaken for the kickoff.
-        return \App\Models\Purchase\PurchaseKickoffMeeting::forTenant($onboarding->tenant_id)
-            ->where('purchase_vendor_id', $onboarding->purchase_vendor_id)
-            ->where('meeting_type', \App\Support\Purchase\PurchaseMeetingTypeCatalog::DEFAULT)
-            ->latest()
-            ->first();
+        $pinned = $onboarding->kickoff_meeting_id
+            ? $candidates->firstWhere('id', (int) $onboarding->kickoff_meeting_id)
+            : null;
+
+        return $pinned ?? $candidates->first();
     }
 
     /** Record the vendor's acknowledgement of the kickoff MOM (idempotent). */
@@ -447,6 +475,27 @@ class PurchaseOnboardingService
         $meeting = $this->resolveKickoffMeeting($onboarding);
         if (! $meeting) {
             throw new BusinessException('Kickoff meeting is not completed or MOM has not been sent yet.');
+        }
+
+        /*
+         * You cannot accept minutes you were never shown.
+         *
+         * The step asks the vendor to tick "I have read and understood the
+         * Minutes of Meeting", and nothing checked that there were any: an
+         * onboarding could be acknowledged, and Step 1 passed, against a meeting
+         * whose minutes were still a draft and whose document would not open.
+         * The record then said the vendor had read something that had never
+         * been issued to them — worthless as evidence, and unfair to the vendor.
+         *
+         * Both halves are required: minutes approved and issued, and a document
+         * on disk that the View button can actually return.
+         */
+        if (! \App\Support\Purchase\PurchaseMomApprovalStatus::isDistributable($meeting->mom_status)
+            || ! app(PurchaseKickoffService::class)->currentMomFile($meeting)) {
+            throw new BusinessException(
+                'The minutes of this meeting have not been issued yet, so there is nothing to acknowledge. '
+                .'They will appear here once the procurement team has approved and circulated them.'
+            );
         }
 
         // A PurchaseVendor has no `name` column — it signs as its company.
