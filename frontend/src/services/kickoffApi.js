@@ -85,6 +85,9 @@ export const kickoffApi = {
   // discussion/decision per agenda point, plus the meeting minutes. Kept off
   // `update`, whose save re-notifies the whole roster.
   roomNotes: (id, payload) => api.post(`/kickoff/meetings/${id}/room/notes`, payload).then(r => r.data),
+  // Who is in the call right now — a snapshot of the whole room, posted
+  // repeatedly while the meeting runs. See the backend's MeetingPresence.
+  roomPresence: (id, payload) => api.post(`/kickoff/meetings/${id}/room/presence`, payload).then(r => r.data),
 
   // Manual reminder. Returns { email:{sent,skipped,failed}, whatsapp, sms, recipients }.
   // Email is a real send; whatsapp/sms are queued stubs — never implied as delivered.
@@ -100,6 +103,8 @@ export const kickoffApi = {
   },
   generateMom: (id) => api.post(`/kickoff/meetings/${id}/mom/generate`).then(r => r.data),
   momBlob: (id) => api.get(`/kickoff/meetings/${id}/mom`, { responseType: 'blob' }).then(r => r.data),
+  // The same minutes as DATA (VendorMomView) — one shape, both surfaces.
+  momData: (id) => api.get(`/kickoff/meetings/${id}/mom-data`).then(r => r.data),
 
   // MOM approval workflow — submit for approval, approve/return, reopen to revise.
   // Distribution is `publish` below (now gated on approval server-side).

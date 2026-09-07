@@ -84,6 +84,7 @@ export default function KickoffMeetings() {
       // slot had already passed while it was still open.
       case 'upcoming':     return m.timing_state === 'upcoming' || m.timing_state === 'live'
       case 'expired':      return m.timing_state === 'expired'
+      case 'held':         return m.timing_state === 'ended'
       // Completed meetings whose minutes are not yet distributed — the MOM is owed.
       case 'pending_mom':  return m.status === KO_STATUS.COMPLETED && m.mom_status !== 'Distributed'
       case 'open_actions': return (m.open_actions ?? 0) > 0
@@ -269,6 +270,10 @@ export default function KickoffMeetings() {
           // used to hide inside "Upcoming" forever, which is why nothing ever
           // got chased.
           ['expired', 'Expired', AlertTriangle, data.filter(m => m.timing_state === 'expired').length],
+          // Meetings that were actually held, with the record of the call to
+          // show for it. Separated from Expired, which now means only "the slot
+          // went by and nothing happened".
+          ['held', 'Held', CheckCircle2, data.filter(m => m.timing_state === 'ended').length],
           ['pending_mom', 'Pending MOM', ClipboardCheck, data.filter(m => m.status === KO_STATUS.COMPLETED && m.mom_status !== 'Distributed').length],
           ['open_actions', 'Open Actions', ListChecks, data.filter(m => (m.open_actions ?? 0) > 0).length],
           ['templates', 'Templates', LayoutGrid, null],
@@ -460,8 +465,17 @@ export default function KickoffMeetings() {
                         {/* Status says what was decided; this says the slot has
                             passed and nobody closed it. Both, because
                             "Scheduled · EXPIRED" is the honest description. */}
-                        {m.is_expired && (
-                          <span title={`Ended ${m.ends_at ? new Date(m.ends_at).toLocaleString() : ''} and never closed`}
+                        {/* Held and finished. Not the same thing as expired,
+                            and this is the more common of the two once the
+                            call itself is recorded. */}
+                        {m.timing_state === 'ended' && (
+                          <span title={`Held ${m.actual_start_at || ''} to ${m.actual_end_at || ''}`}
+                            style={{ marginLeft: 6, padding: '3px 8px', borderRadius: 999, background: 'rgba(100,116,139,0.14)', color: '#475569', fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap' }}>
+                            ENDED{m.held_minutes ? ` · ${m.held_minutes}m` : ''}
+                          </span>
+                        )}
+                        {m.timing_state === 'expired' && (
+                          <span title={`Its slot passed ${m.ends_at ? new Date(m.ends_at).toLocaleString() : ''} and it was never held or closed`}
                             style={{ marginLeft: 6, padding: '3px 8px', borderRadius: 999, background: 'rgba(220,38,38,0.10)', color: '#b91c1c', fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap' }}>
                             EXPIRED
                           </span>

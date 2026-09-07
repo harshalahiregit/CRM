@@ -3,6 +3,7 @@
 namespace App\Services\Shared;
 
 use App\Services\Shared\MeetingProviders\MeetingProviderFactory;
+use App\Support\Shared\JitsiHost;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
 
@@ -141,10 +142,11 @@ class OnlineMeetingService
             // A fresh, unguessable room on the public Jitsi instance. No API,
             // no credentials, and the link works the moment it is created.
             $room = 'CRM-'.($meeting->tenant_id ?: 0).'-'.bin2hex(random_bytes(5));
-            // Configurable so a move to a self-hosted Jitsi is an .env change,
-            // not a code change — and so existing links keep pointing at the
-            // server they were minted on.
-            $host = config('meeting.jitsi.domain', 'meet.jit.si');
+            // The tenant's own server when they have set one, else the
+            // deployment default. Resolved per tenant rather than read from
+            // config, so an administrator can move off the public instance —
+            // and its Google sign-in — without a redeploy.
+            $host = JitsiHost::for($meeting->tenant_id ?? null);
 
             return [
                 'platform' => 'jitsi', 'link' => "https://{$host}/{$room}",
@@ -201,7 +203,7 @@ class OnlineMeetingService
             'google_meet' => 'https://meet.google.com/new',
             'zoom'        => 'https://zoom.us/start/videomeeting',
             'teams'       => 'https://teams.microsoft.com/start',
-            default       => 'https://'.config('meeting.jitsi.domain', 'meet.jit.si').'/CRM-'.bin2hex(random_bytes(5)),
+            default       => 'https://'.JitsiHost::for().'/CRM-'.bin2hex(random_bytes(5)),
         };
     }
 }

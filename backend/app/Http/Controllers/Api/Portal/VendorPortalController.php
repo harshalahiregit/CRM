@@ -21,6 +21,7 @@ use App\Models\Tpv\TpvWorkerPpeIssue;
 use App\Models\Vendor\TpvContact;
 use App\Models\Vendor\Vendor;
 use App\Models\Vendor\VendorDocument;
+use App\Models\Vendor\VendorDocumentVersion;
 use App\Services\Tpv\KickoffPdfService;
 use App\Services\Tpv\WorkStartLetterService;
 use App\Services\Tpv\PpeInventoryService;
@@ -28,6 +29,7 @@ use App\Services\Tpv\TpvOnboardingService;
 use App\Services\Tpv\TpvWorkerService;
 use App\Services\Tpv\TpvWorkPackageService;
 use App\Services\Vendor\VendorDocumentService;
+use App\Services\Vendor\VendorDocumentVersionService;
 use App\Support\Purchase\PurchaseInvoiceStatus as InvStatus;
 use App\Support\Purchase\PurchaseOrderStatus as PoStatus;
 use App\Support\UserAgentInfo;
@@ -618,6 +620,27 @@ class VendorPortalController extends Controller
         return $this->kickoffPdfService->stream($onboarding);
     }
 
+    /**
+     * The same minutes the PDF prints, as data.
+     *
+     * Resolved through the SAME resolver the PDF uses. The screen previously
+     * picked its own meeting out of the governance list while the PDF used
+     * findKickoffMeeting(), so the two could describe different meetings — the
+     * reader saw a populated document beside empty sections and concluded the
+     * screen was broken. One resolver, one meeting, or they will disagree again.
+     */
+    public function kickoffData(Request $request, TpvOnboarding $onboarding)
+    {
+        $this->assertOwned($request, $onboarding, 'Onboarding');
+
+        $meeting = $this->kickoffPdfService->findKickoffMeeting($onboarding);
+        if (! $meeting) {
+            return response()->json(['meeting' => null]);
+        }
+
+        return response()->json(\App\Support\Shared\VendorMomView::for($meeting, (bool) $meeting->mom_path));
+    }
+
     /** Stream this vendor's own HSSE Work Start Letter (issued on approval). */
     public function workStartLetter(Request $request, TpvOnboarding $onboarding)
     {
@@ -710,9 +733,22 @@ class VendorPortalController extends Controller
     {
         $this->assertOwned($request, $onboarding, 'Onboarding');
 
-        return response()->json(
-            $this->onboardingService->saveProfile($onboarding, $request->validated()['profile'], $request->user())
-        );
+        $profile = $request->validated()['profile'] ?? [];
+
+        // A draft can legitimately sift down to nothing — everything the vendor
+        // had touched so far was half-typed. Writing an empty merge would only
+        // add an audit row saying a profile was saved when none was.
+        $saved = $profile === []
+            ? $onboarding->fresh()
+            : $this->onboardingService->saveProfile($onboarding, $profile, $request->user());
+
+        // A draft keeps every field that stands on its own; anything half-finished
+        // is set aside rather than failing the save, and is named here so the
+        // wizard can say which box still needs work. Merged onto the model so the
+        // response shape every caller already reads is unchanged.
+        return response()->json(array_merge($saved->toArray(), [
+            'skipped' => $request->skippedFields(),
+        ]));
     }
 
     /** Move the wizard to a different step (persists the navigation pointer). */
@@ -786,6 +822,51 @@ class VendorPortalController extends Controller
         $file = $this->documentService->resolveDownload($document);
 
         return response()->download($file['path'], $file['filename'], ['Content-Type' => $file['mime']]);
+    }
+
+    /**
+     * Remove a document the vendor uploaded by mistake.
+     *
+     * The onboarding wizard has always drawn a Delete button on the portal, but
+     * portalApi.documents.delete was a stub that rejected with "Admin only" - so
+     * the button was there and answered an error. The service refuses an
+     * approved document; assertOwned refuses anybody else's.
+     */
+    public function deleteDocument(Request $request, VendorDocument $document)
+    {
+        $this->assertOwned($request, $document, 'Document');
+
+        $this->documentService->destroy($document);
+
+        return response()->json(['message' => 'Deleted']);
+    }
+
+    /**
+     * The document's own version history.
+     *
+     * Same story as delete: the wizard drew a History button on the portal and
+     * portalApi.documents.versions resolved to a hardcoded empty array, so the
+     * drawer always said "No previous version history recorded" no matter how
+     * many times the vendor had replaced the file.
+     */
+    public function documentVersions(Request $request, VendorDocument $document)
+    {
+        $this->assertOwned($request, $document, 'Document');
+
+        return response()->json($document->versions()->orderByDesc('version_no')->get());
+    }
+
+    public function downloadDocumentVersion(Request $request, VendorDocument $document, VendorDocumentVersion $version)
+    {
+        $this->assertOwned($request, $document, 'Document');
+        abort_unless((int) $version->vendor_document_id === (int) $document->id, 404, 'Version not found');
+
+        $file = app(VendorDocumentVersionService::class)->resolveDownload($version, $request->user());
+
+        return response()->download($file['path'], $file['filename'], [
+            'Content-Type'        => $file['mime'],
+            'Content-Disposition' => 'inline; filename="'.$file['filename'].'"',
+        ]);
     }
 
     /* ── Contacts (own vendor only) ──────────────────────────────────────── */

@@ -486,14 +486,35 @@ class PurchaseKickoffService
             .($vendorName ? " with {$vendorName}" : '')
             .", scheduled for {$when}.{$where}";
 
-        foreach ($meeting->participants as $participant) {
-            if ($participant->email) {
+        /*
+         * The vendor's own account address, and the person who called the
+         * meeting.
+         *
+         * This used to e-mail the typed participant roster and nobody else, so a
+         * meeting scheduled for a vendor without anybody hand-adding a
+         * participant row invited no one at all, and the organiser never got a
+         * copy of what they had sent. The vendor and the organiser are the two
+         * people certainly involved, and neither had to be on the roster.
+         *
+         * De-duplicated by address, so somebody already listed is not written to
+         * twice.
+         */
+        $sent = [];
+        $send = function (?string $to) use (&$sent, $subject, $body, $meeting) {
+            $key = strtolower(trim((string) $to));
+            if ($key === '' || isset($sent[$key])) {
+                return;
+            }
+            $sent[$key] = true;
             $this->notifications->email(
-                $participant->email, $subject, $body,
+                $to, $subject, $body,
                 ['category' => 'Purchase', 'purchase_kickoff_meeting_id' => $meeting->id],
                 $meeting->tenant_id,
             );
-        }
+        };
+
+        foreach ($meeting->participants as $participant) {
+            $send($participant->email);
 
             // And in the bell, for participants who have a login. E-mail alone
             // means a meeting invitation lives only in an inbox somebody may
@@ -509,6 +530,9 @@ class PurchaseKickoffService
                 );
             }
         }
+
+        $send($meeting->vendor?->email);
+        $send($meeting->creator?->email);
     }
 
     /** The vendor's most recent earlier meeting (for continuity — Meeting.docx §11). */
@@ -827,10 +851,13 @@ class PurchaseKickoffService
             $status = $row['attendance_status'] ?? null;
             if ($status && in_array($status, PurchaseKickoffParticipant::ATTENDANCE, true)) {
                 $attended = in_array($status, PurchaseKickoffParticipant::ATTENDING, true);
-                $participant->update(['attendance_status' => $status, 'attended' => $attended]);
+                // A tick made by hand outranks anything observed — see MeetingJoinRecorder.
+                $participant->update(['attendance_status' => $status, 'attended' => $attended,
+                    'attendance_source' => \App\Services\Shared\MeetingJoinRecorder::SOURCE_MANUAL]);
             } else {
                 $attended = ! empty($row['attended']);
-                $participant->update(['attended' => $attended, 'attendance_status' => $attended ? 'Present' : 'Absent']);
+                $participant->update(['attended' => $attended, 'attendance_status' => $attended ? 'Present' : 'Absent',
+                    'attendance_source' => \App\Services\Shared\MeetingJoinRecorder::SOURCE_MANUAL]);
             }
             $attended ? $present++ : $absent++;
         }

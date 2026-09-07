@@ -25,10 +25,21 @@ class PurchaseKickoffParticipant extends Model
         'tenant_id', 'purchase_kickoff_meeting_id', 'purchase_contact_id', 'user_id',
         'name', 'email', 'phone', 'organisation', 'designation', 'role', 'side',
         'attended', 'attendance_status',
+        // Written by the live room, not typed by anyone: when this person
+        // arrived, when they were last seen, how long they were in the call,
+        // and the call's own id for them. See MeetingPresence.
+        'joined_at', 'left_at', 'seconds_in_call', 'participant_key', 'is_guest',
+        // Whether this was observed in the call, recorded when they pressed
+        // Join, or ticked by hand. See MeetingJoinRecorder.
+        'attendance_source',
     ];
 
     protected $casts = [
         'attended' => 'boolean',
+        'joined_at' => 'datetime',
+        'left_at' => 'datetime',
+        'seconds_in_call' => 'integer',
+        'is_guest' => 'boolean',
     ];
 
     public function meeting()

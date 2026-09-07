@@ -111,11 +111,21 @@ class PurchaseGateService
         return $q->latest('scanned_at')->latest('id')->limit((int) ($filters['limit'] ?? 500))->get();
     }
 
-    /** Gate counters for the day — what the log page shows above the table. */
-    public function stats(int $tenantId, ?string $date = null): array
+    /**
+     * Gate counters for the day — what the log page shows above the table.
+     *
+     * `$vendorId` narrows every counter to one vendor's people, which is what the
+     * vendor portal needs: the same figures the site sees, about their own
+     * workers only. It is supplied from the authenticated vendor's token, never
+     * from the request, so it can only narrow — the admin call passes null and
+     * behaves exactly as before.
+     */
+    public function stats(int $tenantId, ?string $date = null, ?int $vendorId = null): array
     {
         $date = $date ?: now()->toDateString();
-        $base = fn () => PurchaseGateScan::forTenant($tenantId)->whereDate('scanned_at', $date);
+        $base = fn () => PurchaseGateScan::forTenant($tenantId)
+            ->whereDate('scanned_at', $date)
+            ->when($vendorId, fn ($q) => $q->where('purchase_vendor_id', $vendorId));
 
         $allowed = (clone $base())->where('decision', PurchaseGateScan::ALLOW);
 
@@ -126,7 +136,7 @@ class PurchaseGateService
             'denied'   => $base()->where('decision', PurchaseGateScan::DENY)->count(),
             // Distinct people admitted today, and how many are still inside —
             // the roster question the gate exists to answer.
-            'on_site'  => $this->onSite($tenantId, $date)->count(),
+            'on_site'  => $this->onSite($tenantId, $date, $vendorId)->count(),
             'entered'  => (clone $allowed)->where('action', 'in')->distinct('purchase_worker_id')->count('purchase_worker_id'),
         ];
     }
@@ -136,13 +146,14 @@ class PurchaseGateService
      * an entry. Computed from the log rather than a flag on the worker, so it
      * cannot drift out of step with what the gate actually recorded.
      */
-    public function onSite(int $tenantId, ?string $date = null)
+    public function onSite(int $tenantId, ?string $date = null, ?int $vendorId = null)
     {
         $date = $date ?: now()->toDateString();
 
         return PurchaseGateScan::forTenant($tenantId)
             ->whereDate('scanned_at', $date)
             ->where('decision', PurchaseGateScan::ALLOW)
+            ->when($vendorId, fn ($q) => $q->where('purchase_vendor_id', $vendorId))
             ->with('worker:id,full_name,worker_code,designation,purchase_vendor_id')
             ->latest('scanned_at')->latest('id')
             ->get()

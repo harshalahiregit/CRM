@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Purchase;
 
 use App\Http\Controllers\Controller;
+use App\Models\Purchase\PurchaseVendor;
 use App\Models\Purchase\PurchaseWorker;
 use App\Models\Purchase\PurchaseWorkerMedical;
 use App\Models\Purchase\PurchaseWorkerPpeIssue;
@@ -59,6 +60,31 @@ class PurchaseWorkforceAdminController extends Controller
      * soft-deletes the worker and these child tables carry no FK, so orphaned
      * medicals would otherwise keep appearing on the tab.
      */
+
+    /**
+     * Bulk-register workers from a sheet, against the vendor the operator picked.
+     *
+     * The vendor is taken from `vendor_id` and nothing else. TPV learned this the
+     * hard way: it once fell back through the caller's own vendor link, then any
+     * vendor whose e-mail matched, then the first vendor in the tenant — so an
+     * import could land under a company nobody chose, which reads to everyone as
+     * "the upload said it worked and the workers vanished". A missing vendor is
+     * an error, not a guess.
+     */
+    public function uploadWorkers(Request $request)
+    {
+        $data = $request->validate([
+            'worker_file' => 'required|file|mimes:csv,xls,xlsx,txt,zip|max:20480',
+            'vendor_id' => 'required|integer',
+        ], [
+            'vendor_id.required' => 'Choose the vendor these workers belong to.',
+        ]);
+
+        $vendor = PurchaseVendor::forTenant($request->user()->tenant_id)->find($data['vendor_id']);
+        abort_unless($vendor, 404, 'Vendor not found.');
+
+        return response()->json($this->service->bulkUpload($request->file('worker_file'), $vendor));
+    }
 
     public function medicals(Request $request)
     {

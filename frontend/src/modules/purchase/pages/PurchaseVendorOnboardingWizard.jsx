@@ -2,15 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, CheckCircle2, Circle } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
-import PurchaseVendorDocuments from '@/modules/purchase/components/PurchaseVendorDocuments'
-
-const docApiFor = (vendorId) => ({
-  checklist: () => purchaseApi.documents.checklist(vendorId),
-  upload: (_, type, file) => purchaseApi.documents.upload(vendorId, type, file),
-  resubmit: purchaseApi.documents.resubmit,
-  review: purchaseApi.documents.review,
-  open: purchaseApi.documents.open,
-})
+import VendorDocumentsPanel from '@/components/vendor/VendorDocumentsPanel'
+import { PURCHASE_DOC_CATALOG } from '@/components/vendor/documentCatalog'
 
 /**
  * Purchase Vendor Onboarding wizard (admin view) — step progress, document
@@ -63,7 +56,10 @@ export default function PurchaseVendorOnboardingWizard() {
 
       <div className="card-3d" style={{ padding: 18, marginBottom: 16 }}>
         <h2 style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-h)', textTransform: 'uppercase', letterSpacing: '.04em', marginTop: 0 }}>Documents</h2>
-        {vendorId ? <PurchaseVendorDocuments api={docApiFor(vendorId)} manage admin onChanged={load} /> : <div style={{ color: 'var(--text-muted)' }}>No vendor linked.</div>}
+        {vendorId
+          ? <VendorDocumentsPanel api={purchaseApi.documentsFor(vendorId)} catalog={PURCHASE_DOC_CATALOG}
+              vendorId={vendorId} manage admin reviewMode onChanged={load} />
+          : <div style={{ color: 'var(--text-muted)' }}>No vendor linked.</div>}
       </div>
 
       <div style={{ display: 'flex', gap: 8 }}>

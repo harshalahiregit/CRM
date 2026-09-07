@@ -42,6 +42,18 @@ final class SettingRegistry
             ],
 
             // ── Increment C: Localization ────────────────────────────────
+            /*
+             * Where online meetings are actually held.
+             *
+             * Empty means the deployment default (JITSI_DOMAIN, else 8x8's free
+             * meet.jit.si). The public server makes whoever STARTS a room sign in
+             * with Google/GitHub/Facebook — pointing this at your own Jitsi is
+             * what removes that, and it is a setting rather than a redeploy
+             * because it is the kind of thing an administrator changes once.
+             */
+            'meetings' => [
+                'jitsi_domain' => ['cast' => 'string', 'default' => null, 'rules' => ['nullable', 'string', 'max:191']],
+            ],
             'localization' => [
                 'language'       => ['cast' => 'string', 'default' => 'en',           'rules' => ['nullable', 'string', 'max:10']],
                 'locale'         => ['cast' => 'string', 'default' => 'en_IN',        'rules' => ['nullable', 'string', 'max:20']],
@@ -114,6 +126,17 @@ final class SettingRegistry
 
             // ── Increment D: Security (settings only — no auth changes) ───
             'security' => [
+                /*
+                 * Where an IP address is, for the document access trail.
+                 *
+                 * Empty — the default — means addresses are never sent anywhere:
+                 * the trail still records the address, the device and the
+                 * browser, which answers most questions. A URL with {ip} in it
+                 * switches the lookup on, and naming the service here makes it a
+                 * decision somebody took rather than a dependency nobody agreed
+                 * to. See App\Support\IpLocation.
+                 */
+                'ip_location_endpoint'               => ['cast' => 'string', 'default' => null,  'rules' => ['nullable', 'string', 'max:255']],
                 'password_min_length'                => ['cast' => 'int',    'default' => 8,     'rules' => ['nullable', 'integer', 'min:6', 'max:128']],
                 'require_uppercase'                  => ['cast' => 'bool',   'default' => true,  'rules' => ['nullable', 'boolean']],
                 'require_lowercase'                  => ['cast' => 'bool',   'default' => true,  'rules' => ['nullable', 'boolean']],

@@ -57,6 +57,26 @@ export default function TpvWorkerWizard() {
   useEffect(() => { load() }, [load])
   const refresh = () => load(true)
 
+  /**
+   * A step with a form registers how to persist it, so leaving the step keeps
+   * what was typed.
+   *
+   * Changing step used to swap the panel and nothing else: half a worker's
+   * details, typed and then abandoned by pressing the next step, were gone with
+   * no warning. The worker endpoints take a partial update, so what has been
+   * entered is stored on the way past.
+   */
+  const flushRef = useRef(null)
+  const registerFlush = useCallback((fn) => { flushRef.current = fn }, [])
+
+  const goStep = async (step) => {
+    // Never trap somebody on a step: a draft that will not save is a reason to
+    // say so, not a reason to refuse to move.
+    try { await flushRef.current?.() } catch { /* the step reports its own error */ }
+    flushRef.current = null
+    setActive(step)
+  }
+
   if (loading || !worker || !progress) {
     return <div style={{ padding: 24, color: 'var(--text-muted)' }}>Loading worker…</div>
   }
@@ -108,6 +128,24 @@ export default function TpvWorkerWizard() {
             {progress.blockers.map((b, i) => <li key={i}>{b}</li>)}
           </ul>
 
+          {/* Whose move it is. Naming the blocker is not the same as saying what
+              to do about it — and when the answer is "nothing", saying so stops
+              the vendor searching for a document they have already sent. */}
+          {progress.medical_clearance && !progress.medical_clearance.cleared && (
+            <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed rgba(245,158,11,0.35)', fontSize: 12, lineHeight: 1.6 }}>
+              {progress.medical_clearance.action ? (
+                <span style={{ color: 'var(--text-h)' }}>
+                  <strong>What to do:</strong> {progress.medical_clearance.action}
+                </span>
+              ) : (
+                <span style={{ color: 'var(--text-muted)' }}>
+                  <strong style={{ color: 'var(--text-h)' }}>Nothing is needed from you.</strong>{' '}
+                  The quality team is reviewing the certificate; the badge unblocks itself once they approve it.
+                </span>
+              )}
+            </div>
+          )}
+
           {/* The role's full PPE checklist, so "what's missing" is never a guess. */}
           {progress.ppe_compliance?.configured && !progress.ppe_compliance.compliant && (
             <PpeChecklist c={progress.ppe_compliance} />
@@ -118,13 +156,13 @@ export default function TpvWorkerWizard() {
         <InfoBox tone="danger"><strong>Terminated:</strong> {worker.remarks}</InfoBox>
       )}
 
-      <Stepper steps={steps} active={active} onGo={setActive} />
+      <Stepper steps={steps} active={active} onGo={goStep} />
 
       <div style={{ marginTop: 18 }}>
-        {active === 1 && <StepProfile worker={worker} editable={editable} onSaved={refresh} onNext={() => setActive(2)} api={api} />}
-        {active === 2 && <Step2Medical worker={worker} editable={editable} onSaved={refresh} onNext={() => setActive(3)} api={api} />}
-        {active === 3 && <StepInduction worker={worker} editable={editable} onSaved={refresh} onNext={() => setActive(4)} api={api} />}
-        {active === 4 && <StepPpe worker={worker} editable={editable} manage={manage} onChanged={refresh} onNext={() => setActive(5)} api={api} compliance={progress.ppe_compliance} />}
+        {active === 1 && <StepProfile worker={worker} editable={editable} onSaved={refresh} onNext={() => goStep(2)} registerFlush={registerFlush} api={api} />}
+        {active === 2 && <Step2Medical worker={worker} editable={editable} onSaved={refresh} onNext={() => goStep(3)} api={api} />}
+        {active === 3 && <StepInduction worker={worker} editable={editable} onSaved={refresh} onNext={() => goStep(4)} api={api} />}
+        {active === 4 && <StepPpe worker={worker} editable={editable} manage={manage} onChanged={refresh} onNext={() => goStep(5)} api={api} compliance={progress.ppe_compliance} />}
         {active === 5 && <StepBadge worker={worker} progress={progress} admin={admin} onChanged={refresh} api={api} />}
       </div>
 
@@ -212,7 +250,7 @@ const SaveBtn = ({ onClick, saving, saved, label = 'Save' }) => (
 )
 
 // ── Step 1 — Profile ─────────────────────────────────────────────────────────
-function StepProfile({ worker, editable, onSaved, onNext, api }) {
+function StepProfile({ worker, editable, onSaved, onNext, registerFlush, api }) {
   const [f, setF] = useState({
     name: worker.name || '', dob: worker.dob?.slice(0, 10) || '', gender: worker.gender || '',
     designation: worker.designation || '', skill_category: worker.skill_category || '',
@@ -224,7 +262,11 @@ function StepProfile({ worker, editable, onSaved, onNext, api }) {
   })
   const [saving, setSaving] = useState(false)
   const [saved, setSaved]   = useState(false)
-  const set = (k) => (e) => { setF(p => ({ ...p, [k]: e.target.value })); setSaved(false) }
+  // Has anything been typed since the last successful save? Read by the flush
+  // below, which is registered once, so it must be a ref rather than state that
+  // callback would have closed over stale.
+  const dirty = useRef(false)
+  const set = (k) => (e) => { setF(p => ({ ...p, [k]: e.target.value })); setSaved(false); dirty.current = true }
 
   // Work packages this worker can be deployed on — their own vendor's, so the
   // competency gate (Rule 4) reads the right activities. Read-only if unbadgeable.
@@ -242,11 +284,33 @@ function StepProfile({ worker, editable, onSaved, onNext, api }) {
   const age = f.dob ? Math.floor((Date.now() - new Date(f.dob)) / 31557600000) : null
   const underage = age !== null && age < 18
 
+  const persist = async () => {
+    const payload = Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v === '' ? null : v]))
+    await api.workers.update(worker.id, payload)
+    dirty.current = false
+  }
+
+  /** Keep the half-filled form when the user moves to another step. */
+  const saveDraft = async () => {
+    if (!editable || !dirty.current) return
+    // Quietly: this is a rescue on the way past, not a save the user asked for,
+    // so it must not throw an alert in front of a step they are leaving.
+    try { await persist() } catch { /* a lost draft must not block navigation */ }
+  }
+
+  // Registered once, read through a ref, so the flush the wizard calls always
+  // sees what is on screen now.
+  const draftRef = useRef(saveDraft)
+  draftRef.current = saveDraft
+  useEffect(() => {
+    registerFlush?.(() => draftRef.current())
+    return () => registerFlush?.(null)
+  }, [registerFlush])
+
   const save = async () => {
     setSaving(true)
     try {
-      const payload = Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v === '' ? null : v]))
-      await api.workers.update(worker.id, payload)
+      await persist()
       setSaved(true); onSaved()
     } catch (e) {
       const errObj = e?.response?.data?.errors

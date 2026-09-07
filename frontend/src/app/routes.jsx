@@ -130,6 +130,9 @@ const RolesSettings = lazy(() => import('@/modules/settings/pages/RolesSettings'
 const DepartmentsSettings = lazy(() => import('@/modules/settings/pages/DepartmentsSettings'))
 const GeneralBrandingSettings = lazy(() => import('@/modules/settings/pages/GeneralBrandingSettings'))
 const LocalizationSettings = lazy(() => import('@/modules/settings/pages/LocalizationSettings'))
+// Where online meetings are held — the answer to "why is it asking me to sign
+// in with Google?", which is the free public Jitsi server's rule, not ours.
+const MeetingServerSettings = lazy(() => import('@/modules/settings/pages/MeetingServerSettings'))
 const CurrencySettings = lazy(() => import('@/modules/settings/pages/CurrencySettings'))
 const DocumentNumberingSettings = lazy(() => import('@/modules/settings/pages/DocumentNumberingSettings'))
 const EmailTemplatesSettings = lazy(() => import('@/modules/settings/pages/EmailTemplatesSettings'))
@@ -306,9 +309,11 @@ const PurchasePortalDocuments = lazy(() => import('@/pages/purchase-portal/Purch
 const PurchasePortalApproval = lazy(() => import('@/pages/purchase-portal/PurchasePortalApproval'))
 const PurchasePortalKickoff = lazy(() => import('@/pages/purchase-portal/PurchasePortalKickoff'))
 const PurchasePortalPpe = lazy(() => import('@/pages/purchase-portal/PurchasePortalPpe'))
+const PurchasePortalWorkforceShell = lazy(() => import('@/pages/purchase-portal/PurchasePortalWorkforceShell'))
+const PurchaseWorkforceDashboard = lazy(() => import('@/modules/purchase/pages/PurchaseWorkforceDashboard'))
 const PurchasePortalSupport = lazy(() => import('@/pages/purchase-portal/PurchasePortalSupport'))
 const PurchasePortalProfile = lazy(() => import('@/pages/purchase-portal/PurchasePortalProfile'))
-const PurchasePortalWorkforce = lazy(() => import('@/pages/purchase-portal/PurchasePortalWorkforce'))
+
 const PurchasePortalCompliance = lazy(() => import('@/pages/purchase-portal/PurchasePortalCompliance'))
 const PurchasePortalGovernance = lazy(() => import('@/pages/purchase-portal/PurchasePortalGovernance'))
 const PurchaseVendorRegister = lazy(() => import('@/pages/purchase-portal/PurchaseVendorRegister'))
@@ -1004,6 +1009,7 @@ export default function AppRoutes() {
           <Route path="expense-categories" element={<S><ExpenseCategoriesSettings /></S>} />
           <Route path="account-groups" element={<S><AccountGroupsSettings /></S>} />
           <Route path="localization" element={<S><LocalizationSettings /></S>} />
+          <Route path="meetings" element={<S><MeetingServerSettings /></S>} />
           <Route path="currency" element={<S><CurrencySettings /></S>} />
           <Route path="numbering" element={<S><DocumentNumberingSettings /></S>} />
           <Route path="email-templates" element={<S><EmailTemplatesSettings /></S>} />
@@ -1157,8 +1163,22 @@ export default function AppRoutes() {
         <Route path="approval"   element={<S><PurchasePortalApproval /></S>} />
         <Route path="kickoff"    element={<S><PurchasePortalKickoff /></S>} />
         {/* My Workforce — unlocked once the vendor is Active. The 5-step worker
-            lifecycle; step 5 (badge) is read-only here, activation is admin-only. */}
-        <Route path="workforce"  element={<S><PurchasePortalWorkforce /></S>} />
+            lifecycle; step 5 (badge) is read-only here, activation is admin-only.
+
+            These are the SAME components the Purchase admin module uses, the way
+            TPV has always mounted TpvWorkers/TpvWorkerWizard on both surfaces.
+            They previously could not be: the portal client named the identical
+            endpoints differently (`workers.list` vs `workforce.workers`), so a
+            541-line copy of the screen existed instead — a different layout with
+            a cut-down wizard beside a 2,244-line one the portal never used. */}
+        <Route path="workforce" element={<S><PurchasePortalWorkforceShell /></S>}>
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard"   element={<S><PurchaseWorkforceDashboard /></S>} />
+          <Route path="workers"     element={<S><PurchaseWorkers /></S>} />
+          <Route path="workers/:id" element={<S><PurchaseWorkerWizard /></S>} />
+          <Route path="ppe"         element={<S><PurchasePortalPpe /></S>} />
+          <Route path="attendance"  element={<S><PurchaseWorkforceAttendance /></S>} />
+        </Route>
         <Route path="ppe"        element={<S><PurchasePortalPpe /></S>} />
         {/* Medical — the Purchase mirror of the External Medical Flow. */}
         <Route path="medical"    element={<S><VendorMedicalPanel base="/portal/purchase" /></S>} />
@@ -1181,9 +1201,14 @@ export default function AppRoutes() {
 
         {/* Parity with the TPV portal — same shared pages, Purchase api client. */}
         <Route path="customers"   element={<S><MyCustomers api={PP_API} /></S>} />
-        <Route path="projects"    element={<S><MyWork view="projects" api={PP_API} caps={{ ticketWrite: false }} /></S>} />
+        {/* Purchase used to mount these read-only (caps.ticketWrite:false), which
+            hid Raise Ticket AND made every row unclickable, so a Purchase vendor
+            could see tickets and neither open nor open one. The portal now has
+            the raise/detail/reply endpoints the TPV portal has always had, so
+            both portals mount MyWork the same way. */}
+        <Route path="projects"    element={<S><MyWork view="projects" api={PP_API} /></S>} />
         <Route path="tasks"       element={<S><MyWork view="tasks" api={PP_API} /></S>} />
-        <Route path="tickets"     element={<S><MyWork view="tickets" api={PP_API} caps={{ ticketWrite: false }} /></S>} />
+        <Route path="tickets"     element={<S><MyWork view="tickets" api={PP_API} /></S>} />
         <Route path="expenses"    element={<S><MyWork view="expenses" api={PP_API} /></S>} />
         <Route path="feedback"    element={<S><MyPerformance view="feedback" api={PP_API} /></S>} />
         <Route path="penalty"     element={<S><MyPerformance view="penalty" api={PP_API} /></S>} />

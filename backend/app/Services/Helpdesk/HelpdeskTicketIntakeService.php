@@ -2,6 +2,8 @@
 
 namespace App\Services\Helpdesk;
 
+use App\Support\RichText;
+
 use App\Services\Customer\Contracts\TicketIntakeContract;
 
 /**
@@ -51,7 +53,9 @@ class HelpdeskTicketIntakeService implements TicketIntakeContract
     ): int {
         $ticket = $this->helpdesk->createTicket([
             'subject'     => $subject,
-            'description' => $body,
+            // The customer portal posts this from a plain textarea and it is
+            // rendered as HTML in the agent console - normalise at the boundary.
+            'description' => RichText::fromUntrusted($body),
             'customer_id' => $clientId,
 
             // The portal contact is a ClientContact, not a User, so there is no

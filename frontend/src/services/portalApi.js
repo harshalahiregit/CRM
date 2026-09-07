@@ -69,11 +69,16 @@ export const portalApi = {
     get:      (id) => api.get(`/portal/onboarding/${id}`).then(r => r.data),
     progress: (id) => api.get(`/portal/onboarding/${id}/progress`).then(r => r.data),
     // Wizard write actions
-    saveProfile:     (id, profile) => api.post(`/portal/onboarding/${id}/profile`, { profile }).then(r => r.data),
+    // `draft` — see tpvApi.saveProfile; both engines behave identically here.
+    saveProfile:     (id, profile, draft = false) => api.post(`/portal/onboarding/${id}/profile`, { profile, draft }).then(r => r.data),
     setStep:         (id, step)    => api.patch(`/portal/onboarding/${id}/step`, { step }).then(r => r.data),
     submit:          (id, data={}) => api.post(`/portal/onboarding/${id}/submit`, data).then(r => r.data),
     // Step 1 — Kickoff PDF
     kickoffPdf:      (id)          => api.get(`/portal/onboarding/${id}/kickoff`, { responseType: 'blob' }).then(r => r.data),
+    // The same minutes the PDF prints, as data — resolved by the SAME
+    // server-side resolver, so the screen and the document can never
+    // describe two different meetings.
+    kickoffData:     (id)        => api.get(`/portal/onboarding/${id}/kickoff-data`).then(r => r.data),
     workStartLetter: (id)          => api.get(`/portal/onboarding/${id}/work-start-letter`, { responseType: 'blob' }).then(r => r.data),
     acceptKickoff:   (id, comment) => api.post(`/portal/onboarding/${id}/kickoff/accept`, comment ? { comment } : {}).then(r => r.data),
     logKickoffEvent: (id, event)   => api.post(`/portal/onboarding/${id}/kickoff/log`, { event }).then(r => r.data),
@@ -102,10 +107,19 @@ export const portalApi = {
       const res = await api.get(`/portal/documents/${documentId}/download`, { responseType: 'blob' })
       return URL.createObjectURL(res.data)
     },
-    // Admin-only
-    review: () => Promise.reject(new Error('Admin only')),
-    delete: () => Promise.reject(new Error('Admin only')),
-    versions: () => Promise.resolve([]),
+    // A vendor may take back and inspect its OWN work: delete an unapproved
+    // document it uploaded by mistake, and read the versions its own
+    // replacements archived. The onboarding wizard has always drawn Delete and
+    // History on the portal; both were stubs, so Delete answered "Admin only"
+    // and History always reported no history at all.
+    delete:   (documentId) => api.delete(`/portal/documents/${documentId}`).then(r => r.data),
+    versions: (documentId) => api.get(`/portal/documents/${documentId}/versions`).then(r => r.data),
+    downloadVersion: (documentId, versionId) =>
+      api.get(`/portal/documents/${documentId}/versions/${versionId}/download`, { responseType: 'blob' }).then(r => r.data),
+    // Genuinely admin-only: a vendor may never approve or reject its own
+    // document, and may not roll one back to a version an admin already judged.
+    review:         () => Promise.reject(new Error('Admin only')),
+    restoreVersion: () => Promise.reject(new Error('Admin only')),
   },
 
   // ── Contacts — mirrors tpvApi.contacts shape ────────────────────────────
@@ -265,6 +279,13 @@ export const portalApi = {
     requestExtension:(payload)     => api.post('/portal/extensions/request', payload).then(r => r.data),
     meetings:        ()            => api.get('/portal/meetings').then(r => r.data),
     meetingMom:      (id)          => api.get(`/portal/meetings/${id}/mom`).then(r => r.data),
+    // Records that this person opened the meeting, then hands back the link.
+    // A meeting held on Google Meet or Teams runs where we cannot see it, so
+    // the click is the only evidence there is — and it is worth keeping.
+    joinMeeting:     (id)          => api.post(`/portal/meetings/${id}/join`).then(r => r.data),
+    // The minutes document itself. Distributing minutes the recipient cannot
+    // open is not distributing them — this had no route at all until now.
+    meetingMomFile:  (id)          => api.get(`/portal/meetings/${id}/mom/file`, { responseType: 'blob' }).then(r => r.data),
     meetingDocument: (id, docId)   => api.get(`/portal/meetings/${id}/documents/${docId}/download`, { responseType: 'blob' }).then(r => r.data),
     actions:         ()            => api.get('/portal/actions').then(r => r.data),
     respondAction:   (id, payload) => api.post(`/portal/actions/${id}/respond`, payload).then(r => r.data),
