@@ -85,6 +85,11 @@ const COMMENT_EDITOR_CSS = `
   .task-comment-html pre{background:var(--bg-global);border:1px solid var(--border);border-radius:8px;padding:.5rem .7rem;overflow-x:auto;white-space:pre-wrap}
   .task-comment-html blockquote{border-left:3px solid var(--color-primary-500);margin:.4rem 0;padding:.2rem .8rem;opacity:.9}
   .task-comment-html img{max-width:100%;height:auto;border-radius:8px;margin:.3rem 0}
+  /* An @mention, both while it is being written and once it is stored. It has to
+     read as one thing rather than as loose text, or nobody can tell whether the
+     person will actually be notified. */
+  .mention-chip{background:color-mix(in srgb,var(--color-primary-500) 16%,transparent);color:var(--color-primary-500);border-radius:5px;padding:.05rem .3rem;font-weight:700;white-space:nowrap}
+  .task-comment-editor .ql-editor .mention-chip{cursor:default}
   .task-comment-html h2{font-size:1.15rem;font-weight:800;margin:.5rem 0 .3rem}
   .task-comment-html h3{font-size:1.02rem;font-weight:700;margin:.4rem 0 .3rem}
 `
@@ -132,6 +137,8 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
   const [commentFiles, setCommentFiles] = useState([])
   const commentFileInput = useRef(null)
   const commentQuillRef = useRef(null)
+  // The comment image being viewed full size, if any.
+  const [lightbox, setLightbox] = useState(null)
   const descQuillRef = useRef(null)
   const [pollOpen, setPollOpen] = useState(false)
   const [quickTaskOpen, setQuickTaskOpen] = useState(false)
@@ -276,9 +283,14 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
     const html = comment
     // A comment can be text, files, or both.
     if (isCommentEmpty(html) && commentFiles.length === 0) return
-    addComment.mutate({ html, files: commentFiles })
-    setComment('')
-    setCommentFiles([])
+
+    // Cleared on SUCCESS, not on send. It used to empty the box the moment the
+    // button was pressed, so a post that failed — which every comment with an
+    // image did — wiped what had just been written and put nothing in the
+    // thread. From the writer's side the button simply did nothing.
+    addComment.mutate({ html, files: commentFiles }, {
+      onSuccess: () => { setComment(''); setCommentFiles([]) },
+    })
   }
   const stageCommentFiles = (list) => {
     const picked = Array.from(list || [])
@@ -577,7 +589,11 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                           HtmlSanitizer::clean) before it is stored, so rendering the
                           stored string as HTML here is safe. */}
                       {c.content && (
+                        // An image in a comment is capped to the column width,
+                        // which for a screenshot of a form or a log is unreadable.
+                        // Clicking one opens it full size.
                         <div className="task-comment-html text-xs mt-0.5" style={{ color: 'var(--text-body)' }}
+                          onClick={(e) => { if (e.target?.tagName === 'IMG') setLightbox(e.target.getAttribute('src')) }}
                           dangerouslySetInnerHTML={{ __html: c.content }} />
                       )}
                       {(c.attachments || []).length > 0 && (
@@ -609,9 +625,18 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                   formats={COMMENT_FORMATS}
                   value={comment}
                   onChange={setComment}
-                  placeholder="Write a comment… use @name to notify someone"
+                  placeholder="Write a comment…"
                 />
               </div>
+
+              {/* The reason a post failed, where the person who wrote it is
+                  looking. The page-level banner sits far above the thread. */}
+              {addComment.isError && (
+                <p className="text-[11px] mt-2 px-3 py-2 rounded-lg"
+                  style={{ background: 'color-mix(in srgb, var(--color-danger-500) 12%, transparent)', color: 'var(--color-danger-500)' }}>
+                  {addComment.error?.message || 'The comment could not be posted.'} Your text is still here — try again.
+                </p>
+              )}
               {/* Staged attachments for the comment being written */}
               {commentFiles.length > 0 && (
                 <ul className="flex flex-wrap gap-1.5 mt-2">
@@ -635,7 +660,7 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                   <EditorActionBar quillRef={commentQuillRef} people={people} accent={TASK_ACCENT} onPoll={() => setPollOpen(true)} meeting
                     quickCreate={[{ label: 'Subtask', icon: GitBranch, onClick: () => setQuickTaskOpen(true) }]} />
                   <span className="text-[11px]" style={{ color: 'var(--text-muted)', opacity: 0.8 }}>
-                    <span className="font-semibold">@name</span> to notify · ⌘/Ctrl+↵ to post
+                    ⌘/Ctrl+↵ to post
                   </span>
                 </div>
                 <button onClick={submitComment} disabled={(isCommentEmpty(comment) && commentFiles.length === 0) || addComment.isPending}
@@ -649,6 +674,21 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
             <Card title="Polls" icon={BarChart3}>
               <PollList contextType="task" contextId={id} accent={TASK_ACCENT} onNew={() => setPollOpen(true)} />
             </Card>
+
+            {/* Full-size view of a comment image. Closes on the backdrop as well
+                as the button — this is a viewer, not a form with unsaved work in
+                it, so a stray click costs nothing. */}
+            {lightbox && (
+              <div onClick={() => setLightbox(null)}
+                style={{ position: 'fixed', inset: 0, zIndex: 1300, background: 'rgba(0,0,0,0.82)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, cursor: 'zoom-out' }}>
+                <button onClick={() => setLightbox(null)} aria-label="Close image"
+                  style={{ position: 'absolute', top: 16, right: 18, width: 34, height: 34, borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.25)', color: '#fff' }}>
+                  <X size={17} />
+                </button>
+                <img src={lightbox} alt="" onClick={(e) => e.stopPropagation()}
+                  style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 10, cursor: 'default' }} />
+              </div>
+            )}
           </div>
 
           {/* RIGHT (narrower) */}

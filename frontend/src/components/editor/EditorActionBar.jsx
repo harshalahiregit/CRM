@@ -12,6 +12,7 @@ import { createPortal } from 'react-dom'
 import { Smile, AtSign, Paperclip, BarChart3, Plus, Video } from 'lucide-react'
 import { meetingLinkApi } from '@/services/meetingLinkApi'
 import InlineMentions from './InlineMentions'
+import { insertMentionIntoQuill } from './mentionMarker'
 
 // A small, clean, work-appropriate set — enough to react without a heavy
 // emoji-library dependency (there is no Node on the live host; we keep the
@@ -132,7 +133,20 @@ export default function EditorActionBar({
   const pickEmoji = (e) => { insert(e); setEmojiOpen(false) }
   const pickPerson = (p) => {
     const name = (p.name || p.label || '').replace(/\s+/g, ' ').trim()
-    if (name) insert(`@${name} `)
+    if (!name) { setMentionOpen(false); setQ(''); return }
+
+    // In a rich editor the mention carries the person's id, so the notification
+    // does not depend on the server guessing them back out of their name — see
+    // mentionMarker. A textarea can only hold text, so it keeps "@Name".
+    const quill = quillRef?.current?.getEditor?.()
+    if (quill && !textareaRef) {
+      const range = quill.getSelection(true) || { index: quill.getLength(), length: 0 }
+      insertMentionIntoQuill(quill, range.index, p, name)
+      quill.focus()
+    } else {
+      insert(`@${name} `)
+    }
+
     setMentionOpen(false); setQ('')
   }
 

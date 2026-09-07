@@ -787,27 +787,112 @@ class TaskService
      * Resolve "@Name Surname" mentions to staff ids. Names are matched longest-first
      * so "@Anna Marie" doesn't get claimed by a user called "Anna".
      */
+    /**
+     * The shortest name that may be matched from free text.
+     *
+     * Names are matched as substrings, so a two-letter name turns every comment
+     * containing "@Dr..." — "@Drive the update over" — into a notification for
+     * whoever is called Dr. Anyone with a name this short is reachable through
+     * the picker, which carries an id and needs no guessing.
+     */
+    private const MIN_LOOSE_MENTION = 4;
+
+    /**
+     * Who was @mentioned in this comment.
+     *
+     * Two ways in, and the order matters.
+     *
+     * The picker inserts a marker carrying the person's id
+     * (`<span data-mention="12">@Priya Sharma</span>`), which is exact: it
+     * survives a rename, a middle name, a nickname, and cannot match the wrong
+     * person. That is now the primary path.
+     *
+     * The fallback reads plain "@Name" text, for a comment typed without the
+     * picker, and it used to be the ONLY path — which is why mentions barely
+     * worked. It required the person's full name, character for character:
+     * "@Priya" reached nobody, and "@Priya Sharma" reached nobody either
+     * whenever the editor put a non-breaking space between the words, which a
+     * browser does routinely. Both are handled here, and the loose match is
+     * bounded so short names stop matching the insides of ordinary words.
+     */
     private function mentionedUserIds(string $content, int $tenantId, int $actorId): array
     {
-        if (! str_contains($content, '@')) {
-            return [];
+        $hits = [];
+
+        // 1. Explicit markers from the picker — an id, not a guess.
+        if (preg_match_all('~data-mention=["\'](\d{1,12})["\']~i', $content, $m)) {
+            $hits = array_map('intval', $m[1]);
         }
 
-        $text = strip_tags($content);
+        if (! str_contains($content, '@')) {
+            return $this->keepMentionable($hits, $tenantId, $actorId);
+        }
+
+        // 2. Free text. &nbsp; (and its entity) read as ordinary spaces, and runs
+        //    of whitespace collapse, so "@Priya&nbsp;Sharma" is "@Priya Sharma".
+        $text = html_entity_decode(strip_tags($content), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $text = preg_replace('~[\x{00A0}\s]+~u', ' ', $text);
+
         $staff = User::where('tenant_id', $tenantId)
             ->whereNotIn('role', self::EXTERNAL_ROLES)
             ->where('id', '!=', $actorId)
             ->get(['id', 'name'])
+            // Longest first, so "@Priya Sharma" is credited to Priya Sharma and
+            // not to a colleague who happens to be called Priya.
             ->sortByDesc(fn ($u) => mb_strlen((string) $u->name));
 
-        $hits = [];
         foreach ($staff as $u) {
-            if ($u->name && stripos($text, '@'.$u->name) !== false) {
-                $hits[] = (int) $u->id;
+            $name = trim((string) $u->name);
+            if ($name === '' || in_array((int) $u->id, $hits, true)) {
+                continue;
+            }
+
+            // The whole name, then the first name on its own — people type what
+            // they call each other, which is almost never the full record.
+            foreach ($this->mentionForms($name) as $form) {
+                if (mb_strlen($form) < self::MIN_LOOSE_MENTION) {
+                    continue;
+                }
+                // Ends on a word boundary, so "@Ann" does not match "@Annabel".
+                if (preg_match('~@'.preg_quote($form, '~').'\b~iu', $text)) {
+                    $hits[] = (int) $u->id;
+                    break;
+                }
             }
         }
 
-        return array_values(array_unique($hits));
+        return $this->keepMentionable($hits, $tenantId, $actorId);
+    }
+
+    /** "Priya Sharma" is written as itself, or as "Priya". */
+    private function mentionForms(string $name): array
+    {
+        $first = explode(' ', $name)[0];
+
+        return $first !== $name ? [$name, $first] : [$name];
+    }
+
+    /**
+     * Only real, internal colleagues — and never the author.
+     *
+     * The marker in the HTML is whatever reached the server, so an id in it is
+     * a claim, not a fact: it is checked against the same roster the loose match
+     * uses before anybody is notified.
+     */
+    private function keepMentionable(array $ids, int $tenantId, int $actorId): array
+    {
+        $ids = array_values(array_unique(array_filter($ids)));
+        if (! $ids) {
+            return [];
+        }
+
+        return User::where('tenant_id', $tenantId)
+            ->whereNotIn('role', self::EXTERNAL_ROLES)
+            ->where('id', '!=', $actorId)
+            ->whereIn('id', $ids)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
     }
 
     /* ── Timers ─────────────────────────────────────────────────── */
