@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Plus, RefreshCw, Search, Eye, Trash2, HardHat, QrCode, AlertTriangle } from 'lucide-react'
+import { Plus, RefreshCw, Search, Eye, Trash2, HardHat, QrCode, AlertTriangle, Upload } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
+import { useVendorModule } from '@/modules/tpv/useVendorModule'
+import { readFieldErrors } from '@/services/apiError'
 import { useAuth } from '@/context/AuthContext'
 import { canManagePR } from '../constants'
 import {
@@ -13,7 +15,7 @@ import {
 // and PurchaseWorkforceService writes. Purchase calls the initial state 'Pending'
 // where TPV calls it 'Draft', so the stats endpoint still returns that count under
 // its `draft` key; the labels here follow Purchase, not the payload.
-const WORKER_STATUS = {
+export const WORKER_STATUS = {
   PENDING:    'Pending',
   ACTIVE:     'Active',
   SUSPENDED:  'Suspended',
@@ -27,7 +29,7 @@ const WORKER_STATUS_CONFIG = {
   [WORKER_STATUS.TERMINATED]: { label: 'Terminated', color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
   [WORKER_STATUS.INACTIVE]:   { label: 'Inactive',   color: '#64748b', bg: 'rgba(100,116,139,0.15)' },
 }
-const workerStatusCfg = (s) => WORKER_STATUS_CONFIG[s] || WORKER_STATUS_CONFIG[WORKER_STATUS.PENDING]
+export const workerStatusCfg = (s) => WORKER_STATUS_CONFIG[s] || WORKER_STATUS_CONFIG[WORKER_STATUS.PENDING]
 
 // Medical verdicts — App\Support\Purchase\PurchaseMedicalFitness. Fit AND
 // Fit-with-restrictions are passing, so the amber one is not a failure badge.
@@ -71,14 +73,48 @@ export default function PurchaseWorkers() {
   const { vendorId: routeVendorId } = useParams()   // present inside a vendor-scoped route
   const [searchParams] = useSearchParams()
   const { user } = useAuth()
-  const manage = canManagePR(user)
+  const manageRole = canManagePR(user)
+
+  /*
+   * One register, two surfaces — the way TPV has always done it.
+   *
+   * TpvWorkers picks its client with `isPortal ? portalApi : tpvApi` and is
+   * mounted by both the admin route and the vendor portal. Purchase hardcoded
+   * the admin client here, so its portal could not use this screen and a
+   * separate, smaller one was written instead — a different layout showing less
+   * of the same data.
+   *
+   * The portal is resolved from the PATH, not from a role: a Purchase vendor
+   * holds a PurchaseVendor token and has no `user.role` to test.
+   */
+  const cfg = useVendorModule()
+  const api = cfg.api
+  const isPortal = cfg.portal
+
+  /*
+   * A vendor manages its OWN people.
+   *
+   * `canManagePR` reads a staff role, and a Purchase vendor has none — it holds
+   * a PurchaseVendor token, so every `manage` gate would have been false and the
+   * vendor would have lost the Register button on their own workforce screen.
+   * TPV grants the same way (`manage || isPortal`).
+   *
+   * This reveals only what the vendor may actually do: register a worker, delete
+   * one still pending, issue PPE. ACTIVATION is a separate `admin` gate that
+   * stays false here, and the portal client refuses it outright — whether a
+   * worker may walk on site is the site's decision, not the vendor's.
+   */
+  const manage = manageRole || isPortal
 
   // Vendor scope. The register lives on its own path today, so ?vendor_id= is how
   // the vendor workspace deep-links one company's people; a future nested route
   // supplies the same value as a path param and nothing else has to change.
   const vendorId = routeVendorId || searchParams.get('vendor_id') || ''
 
-  const workerHref = (wid) => `/app/purchase/workers/${wid}`
+  // The portal keeps clean URLs with no vendor id in the path.
+  const workerHref = (wid) => isPortal
+    ? `/purchase-portal/workforce/workers/${wid}`
+    : `/app/purchase/workers/${wid}`
 
   const [rows, setRows]       = useState([])
   const [stats, setStats]     = useState({})
@@ -86,6 +122,7 @@ export default function PurchaseWorkers() {
   const [search, setSearch]   = useState('')
   const [filterStatus, setFilterStatus] = useState(searchParams.get('status') || 'All')
   const [creating, setCreating] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [selectedIds, setSelectedIds] = useState([])
   const [groupInducting, setGroupInducting] = useState(false)
   const [viewMode, setViewMode] = useState('cards')
@@ -95,20 +132,24 @@ export default function PurchaseWorkers() {
     try {
       // vendor_id only FILTERS — the server scopes by tenant, so a tampered id
       // narrows the list and never widens it.
-      const listRes = await purchaseApi.workforce.workers(vendorId ? { vendor_id: vendorId } : {})
+      // The portal sends no scope at all — the server reads the vendor from the
+      // token and would 404 anyone else's worker regardless.
+      const listRes = await api.workforce.workers(
+        isPortal ? {} : (vendorId ? { vendor_id: vendorId } : {}),
+      )
       const list = Array.isArray(listRes?.data ?? listRes) ? (listRes.data ?? listRes) : []
       setRows(list)
       // stats is tenant-wide, so a vendor-scoped view derives its own counters
       // rather than showing totals that contradict the rows underneath them.
-      if (vendorId) {
+      if (isPortal || vendorId) {
         setStats(deriveWorkerStats(list))
       } else {
-        const statRes = await purchaseApi.workforce.stats()
+        const statRes = await api.workforce.stats()
         setStats(statRes?.data ?? statRes ?? {})
       }
     } catch (e) { console.error('Failed to load workers', e) }
     finally { setLoading(false) }
-  }, [vendorId])
+  }, [vendorId, isPortal, api])
   useEffect(() => { fetchAll() }, [fetchAll])
 
   const filtered = rows.filter(r => {
@@ -120,7 +161,7 @@ export default function PurchaseWorkers() {
 
   const remove = async (r) => {
     if (!confirm(`Delete pending worker ${r.full_name}?`)) return
-    try { await purchaseApi.workforce.deleteWorker(r.id); fetchAll() }
+    try { await api.workforce.deleteWorker(r.id); fetchAll() }
     catch (e) { alert(e?.response?.data?.message || 'Delete failed') }
   }
 
@@ -156,10 +197,12 @@ export default function PurchaseWorkers() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: 'var(--text-h)', letterSpacing: '-0.02em' }}>
-            Workforce Register
+            {isPortal ? 'My Workforce' : 'Workforce Register'}
           </h1>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-muted)' }}>
-            Registered personnel · 5-step statutory onboarding tracking
+            {isPortal
+              ? 'Your registered personnel · 5-step statutory onboarding'
+              : 'Registered personnel · 5-step statutory onboarding tracking'}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -184,6 +227,12 @@ export default function PurchaseWorkers() {
           </button>
           {/* Staff may register and correct workers; ACTIVATION stays admin-only,
               and it lives in the wizard's step 5, not here. */}
+          {manage && (
+            <button onClick={() => setUploading(true)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', borderRadius: 10, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>
+              <Upload size={15} /> Bulk Upload
+            </button>
+          )}
           {manage && (
             <button onClick={() => setCreating(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 10, background: 'linear-gradient(135deg,#7C3AED,#6d28d9)', color: '#fff', fontWeight: 700, border: 'none', cursor: 'pointer', fontSize: 13 }}>
               <Plus size={15} /> Register Worker
@@ -356,7 +405,9 @@ export default function PurchaseWorkers() {
         </div>
       )}
 
-      {creating && <CreateModal vendorId={vendorId} onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); navigate(workerHref(id)) }} />}
+      {uploading && <BulkUploadModal vendorId={vendorId} api={api} isPortal={isPortal}
+        onClose={() => setUploading(false)} onUploaded={() => { setUploading(false); fetchAll() }} />}
+      {creating && <CreateModal vendorId={vendorId} api={api} isPortal={isPortal} onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); navigate(workerHref(id)) }} />}
       {groupInducting && <GroupInductionModal workers={selectedWorkers} onClose={() => setGroupInducting(false)} onCompleted={() => { setGroupInducting(false); setSelectedIds([]); fetchAll() }} />}
     </div>
   )
@@ -370,7 +421,123 @@ export default function PurchaseWorkers() {
  * survive the save. The per-worker chips flip as each POST lands, which is why the
  * loop is sequential: a half-finished batch still shows precisely how far it got.
  */
+/**
+ * Bulk worker import — the TPV modal, for Purchase.
+ *
+ * The two things that make an import trustworthy, and that a bare "3 skipped"
+ * destroys: it says WHICH rows did not land and WHY, and it never guesses whose
+ * workers these are. On the portal the vendor is the caller, so no id is sent;
+ * on the admin surface the operator must pick one.
+ */
+const NEWLINE = String.fromCharCode(10)
+
+function BulkUploadModal({ vendorId, api, isPortal, onClose, onUploaded }) {
+  const [file, setFile] = useState(null)
+  const [vid, setVid] = useState(vendorId ? String(vendorId) : '')
+  const [vendors, setVendors] = useState([])
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState(null)
+
+  useEffect(() => {
+    if (isPortal || vendorId) return
+    purchaseApi.vendors.list({ per_page: 200 })
+      .then(res => setVendors(Array.isArray(res?.data ?? res) ? (res.data ?? res) : []))
+      .catch(() => {})
+  }, [isPortal, vendorId])
+
+  // The same column order TPV's template uses, so one sheet serves both engines.
+  const downloadSample = () => {
+    const csv = [
+      'Full Name,Gender,DOB,Mobile,Blood Group,Designation,Skill Category,ID Number,Photo Filename',
+      'Suresh Patil,Male,1990-05-15,9876543210,B+,Electrician,Skilled,123456789012,',
+      'Priya Sharma,Female,1995-02-10,9876543212,A+,Helper,Unskilled,345678901234,',
+    ].join(NEWLINE)
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'purchase_workforce_bulk_upload_sample.csv'
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  const doUpload = async () => {
+    if (!file) { alert('Choose a CSV, Excel or ZIP file first.'); return }
+    const target = isPortal ? undefined : Number(vid || vendorId)
+    if (!isPortal && !target) { alert('Choose the vendor these workers belong to.'); return }
+
+    setBusy(true)
+    try { setResult(await api.workforce.uploadWorkers(file, target)) }
+    catch (e) { alert(readFieldErrors(e).summary) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <Overlay onClose={() => !busy && onClose()} width={640}>
+      <h2 style={{ color: 'var(--text-h)', margin: '0 0 4px', fontSize: 18, fontWeight: 800 }}>Bulk Worker Upload</h2>
+      <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '0 0 16px' }}>
+        CSV, XLS, XLSX or a ZIP holding the sheet plus photos. Columns: Full Name, Gender, DOB,
+        Mobile, Blood Group, Designation, Skill Category, ID Number, Photo Filename (optional).
+      </p>
+
+      <div style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+        <div>
+          <strong style={{ fontSize: 12.5, display: 'block', color: 'var(--text-h)' }}>Need the template?</strong>
+          <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>A sample CSV with the right headers and three example rows.</span>
+        </div>
+        <button onClick={downloadSample} style={{ padding: '7px 13px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-h)', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
+          Download sample
+        </button>
+      </div>
+
+      {!isPortal && !vendorId && (
+        <Field label="Employing Vendor *" full>
+          <SelectInput value={vid} onChange={e => setVid(e.target.value)} pairs
+            options={[['', 'Select vendor…'], ...vendors.map(v => [String(v.id), v.company_name])]} />
+        </Field>
+      )}
+
+      {!result ? (
+        <Field label="Worker file *" full>
+          <input type="file" accept=".csv,.xls,.xlsx,.txt,.zip"
+            onChange={e => setFile(e.target.files?.[0] || null)}
+            style={{ ...inputStyle, padding: 8 }} />
+        </Field>
+      ) : (
+        <div style={{ padding: 14, borderRadius: 12, marginBottom: 8, background: result.status === 'success' ? 'rgba(16,185,129,.08)' : 'rgba(245,158,11,.08)', border: `1px solid ${result.status === 'success' ? '#6ee7b7' : '#fcd34d'}` }}>
+          <strong style={{ display: 'block', marginBottom: 8, fontSize: 13.5, color: result.status === 'success' ? '#047857' : '#92400e' }}>
+            {result.message}
+          </strong>
+
+          {/* Name the rows that did not land. A bare count is indistinguishable
+              from an import that silently failed. */}
+          {result.duplicates?.length > 0 && (
+            <>
+              <span style={{ fontSize: 11.5, fontWeight: 800, color: '#92400e' }}>Already registered</span>
+              <ul style={{ margin: '4px 0 8px', paddingLeft: 18, fontSize: 12, color: '#92400e' }}>
+                {result.duplicates.map((d, i) => <li key={i}>{d}</li>)}
+              </ul>
+            </>
+          )}
+          {result.errors?.length > 0 && (
+            <>
+              <span style={{ fontSize: 11.5, fontWeight: 800, color: '#b91c1c' }}>Could not be read</span>
+              <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 12, color: '#b91c1c' }}>
+                {result.errors.map((e, i) => <li key={i}>{e}</li>)}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+
+      <ModalFooter onClose={onClose} onConfirm={result ? onUploaded : doUpload}
+        loading={busy} confirmLabel={result ? 'Done' : 'Upload & Process'} />
+    </Overlay>
+  )
+}
+
 function GroupInductionModal({ workers, onClose, onCompleted }) {
+  const { api } = useVendorModule()
+
   const [f, setF] = useState({
     induction_date: new Date().toISOString().slice(0, 10),
     conducted_by: 'Safety Officer – Rahul Sharma',
@@ -404,7 +571,7 @@ function GroupInductionModal({ workers, onClose, onCompleted }) {
       for (const w of workers) {
         count++
         setProgressMsg(`Saving worker ${count}/${workers.length}: ${w.full_name}...`)
-        await purchaseApi.workforce.saveInduction(w.id, {
+        await api.workforce.saveInduction(w.id, {
           induction_date: f.induction_date,
           status:         f.status,
           conducted_by:   conductedBy,
@@ -502,7 +669,7 @@ function GroupInductionModal({ workers, onClose, onCompleted }) {
   )
 }
 
-function CreateModal({ vendorId, onClose, onCreated }) {
+function CreateModal({ vendorId, api, isPortal, onClose, onCreated }) {
   const [vendors, setVendors] = useState([])
   const [f, setF] = useState({
     vendor_id: vendorId ? String(vendorId) : '',
@@ -515,17 +682,20 @@ function CreateModal({ vendorId, onClose, onCreated }) {
   const set = (k) => (e) => setF(p => ({ ...p, [k]: e.target.value }))
 
   useEffect(() => {
+    // A vendor registering its own worker has exactly one employer and no
+    // business listing the others — the server assigns it from the token.
+    if (isPortal) return
     purchaseApi.vendors.list({ per_page: 200 })
       .then(res => setVendors(Array.isArray(res?.data ?? res) ? (res.data ?? res) : []))
       .catch(() => {})
-  }, [])
+  }, [isPortal])
 
   const age = ageOf(f.dob)
   const isAgeException = age !== null && (age < 18 || age > 60)
   const chosen = vendors.find(v => String(v.id) === String(f.vendor_id))
 
   const create = async () => {
-    if (!f.vendor_id) { alert('Vendor is required.'); return }
+    if (!isPortal && !f.vendor_id) { alert('Vendor is required.'); return }
     if (!f.full_name?.trim()) { alert('Full Name is required.'); return }
     if (!f.gender) { alert('Gender is required.'); return }
     if (!f.dob) { alert('Date of Birth is required.'); return }
@@ -539,7 +709,9 @@ function CreateModal({ vendorId, onClose, onCreated }) {
       // `purchase_vendor_id`, not `vendor_id` — the latter names a company on
       // the shared vendors table, whose ids are unrelated to these.
       const { vendor_id: _drop, ...rest } = payload
-      const w = await purchaseApi.workforce.createWorker({ ...rest, purchase_vendor_id: Number(f.vendor_id) })
+      const w = await api.workforce.createWorker(
+        isPortal ? rest : { ...rest, purchase_vendor_id: Number(f.vendor_id) },
+      )
       onCreated(w?.id ?? w?.data?.id)
     } catch (e) {
       const errObj = e?.response?.data?.errors
@@ -561,6 +733,8 @@ function CreateModal({ vendorId, onClose, onCreated }) {
         </InfoBox>
       )}
 
+      {/* A vendor in its own portal is the employer — there is nothing to pick. */}
+      {!isPortal && (
       <Field label="Employing Vendor *" full>
         {vendorId ? (
           <div style={{ ...inputStyle, display: 'flex', alignItems: 'center', opacity: 0.9 }}>
@@ -571,6 +745,7 @@ function CreateModal({ vendorId, onClose, onCreated }) {
             options={[['', 'Select vendor…'], ...vendors.map(v => [String(v.id), `${v.company_name} · ${v.status_label || v.status}`])]} />
         )}
       </Field>
+      )}
 
       {/* Personal Info Section */}
       <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10, borderBottom: '1px solid var(--border)', paddingBottom: 4, marginTop: 10 }}>
@@ -631,7 +806,7 @@ function CreateModal({ vendorId, onClose, onCreated }) {
         <Field label="Notes" full><TextInput value={f.notes} onChange={set('notes')} placeholder="Anything the site should know about this worker" /></Field>
       </div>
 
-      <ModalFooter onClose={onClose} onConfirm={create} loading={saving} disabled={!f.vendor_id || !f.full_name || !f.dob} confirmLabel="Save &amp; Continue to Step 2 →" />
+      <ModalFooter onClose={onClose} onConfirm={create} loading={saving} disabled={(!isPortal && !f.vendor_id) || !f.full_name || !f.dob} confirmLabel="Save &amp; Continue to Step 2 →" />
     </Overlay>
   )
 }

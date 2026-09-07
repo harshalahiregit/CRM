@@ -6,6 +6,7 @@ use App\Exceptions\BusinessException;
 use App\Models\Tpv\TpvActivity;
 use App\Models\Tpv\TpvGateAttendance;
 use App\Models\Tpv\TpvWorker;
+use App\Support\Shared\WorkerImport;
 use App\Models\Tpv\TpvWorkerPpeIssue;
 use App\Models\Tpv\WorkPermit;
 use App\Models\User;
@@ -556,236 +557,108 @@ class TpvWorkerService
 
     /* ── Bulk Upload Workers ────────────────────────────────────────── */
 
+    /**
+     * Register many workers from one sheet.
+     *
+     * The READING moved to WorkerImport when Purchase gained the same feature —
+     * the BOM Excel writes into cell A1, four date formats, the Aadhaar it
+     * rewrites as scientific notation, ZIP photos, and the honest summary are
+     * all knowledge neither engine should hold a private copy of. What stays
+     * here is the writing: tpv_workers, this engine's columns, its own duplicate
+     * rule and its own worker-code sequence.
+     *
+     * Column order (unchanged, and shared with Purchase so one template serves
+     * both): name · gender · dob · mobile · blood · designation · skill ·
+     * aadhaar · photo filename.
+     */
     public function bulkUpload(mixed $file, int $vendorId, int $tenantId, User $actor): array
     {
         $this->assertVendor($vendorId, $tenantId);
 
-        $path = $file->getRealPath();
-        $ext  = strtolower($file->getClientOriginalExtension());
+        ['rows' => $rows, 'photos' => $photos, 'cleanup' => $cleanup] = WorkerImport::read($file);
 
-        $tempExtractPath = null;
-        $photosMap = []; // filename => full path
-        $dataFile = null;
-        $dataExt  = $ext;
-
-        if ($ext === 'zip') {
-            $zip = new \ZipArchive();
-            if ($zip->open($path) === true) {
-                $tempExtractPath = storage_path('app/temp_bulk_'.uniqid());
-                $zip->extractTo($tempExtractPath);
-                $zip->close();
-
-                // Find data file inside extracted directory
-                $allFiles = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($tempExtractPath));
-                foreach ($allFiles as $f) {
-                    if ($f->isDir()) continue;
-                    $fExt = strtolower($f->getExtension());
-                    $fName = $f->getFilename();
-
-                    if (in_array($fExt, ['csv', 'xls', 'xlsx']) && !$dataFile) {
-                        $dataFile = $f->getRealPath();
-                        $dataExt  = $fExt;
-                    } elseif (in_array($fExt, ['jpg', 'jpeg', 'png', 'webp'])) {
-                        $photosMap[strtolower($fName)] = $f->getRealPath();
-                        $photosMap[pathinfo($fName, PATHINFO_FILENAME)] = $f->getRealPath();
-                    }
-                }
-
-                if (!$dataFile) {
-                    if ($tempExtractPath && file_exists($tempExtractPath)) {
-                        \File::deleteDirectory($tempExtractPath);
-                    }
-                    throw new BusinessException('ZIP archive must contain a CSV or Excel file (workers.csv / workers.xlsx).');
-                }
-            } else {
-                throw new BusinessException('Failed to open uploaded ZIP file.');
-            }
-        } else {
-            $dataFile = $path;
-        }
-
-        $rows = [];
-        if ($dataExt === 'csv' || $dataExt === 'txt') {
-            if (($handle = fopen($dataFile, 'r')) !== false) {
-                $isHeader = true;
-                while (($row = fgetcsv($handle, 2000, ',')) !== false) {
-                    // Remove UTF-8 BOM if present on first cell
-                    if (isset($row[0])) {
-                        $row[0] = preg_replace('/\x{EF}\x{BB}\x{BF}/u', '', $row[0]);
-                    }
-                    if ($isHeader) { $isHeader = false; continue; }
-                    $rows[] = array_map('trim', $row);
-                }
-                fclose($handle);
-            }
-        } elseif (in_array($dataExt, ['xls', 'xlsx'])) {
-            if (class_exists('\PhpOffice\PhpSpreadsheet\IOFactory')) {
-                $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($dataFile);
-                $sheet       = $spreadsheet->getActiveSheet();
-                $rowIterator = $sheet->getRowIterator();
-                $isHeader    = true;
-                foreach ($rowIterator as $row) {
-                    if ($isHeader) { $isHeader = false; continue; }
-                    $cellIterator = $row->getCellIterator();
-                    $cellIterator->setIterateOnlyExistingCells(false);
-                    $rowData = [];
-                    foreach ($cellIterator as $cell) {
-                        $rowData[] = trim((string) $cell->getFormattedValue());
-                    }
-                    if (implode('', $rowData) === '') continue;
-                    $rows[] = $rowData;
-                }
-            } else {
-                if ($tempExtractPath && file_exists($tempExtractPath)) {
-                    \File::deleteDirectory($tempExtractPath);
-                }
-                throw new BusinessException('Excel parsing requires PhpSpreadsheet library. Please use CSV format instead.');
-            }
-        } else {
-            if ($tempExtractPath && file_exists($tempExtractPath)) {
-                \File::deleteDirectory($tempExtractPath);
-            }
-            throw new BusinessException("Unsupported file format: {$ext}");
-        }
-
-        $inserted   = 0;
-        $skipped    = 0;
-        $errors     = [];
+        $inserted = 0;
+        $skipped = 0;
+        $errors = [];
         $duplicates = [];
 
-        foreach ($rows as $index => $row) {
-            $name = trim($row[0] ?? '');
-            if (empty($name)) continue;
-
-            $gender    = ucfirst(strtolower(trim($row[1] ?? 'Male')));
-            $dobRaw    = trim($row[2] ?? '');
-            $mobile    = preg_replace('/\D/', '', trim($row[3] ?? ''));
-            $blood     = trim($row[4] ?? '');
-            $desig     = trim($row[5] ?? 'Worker');
-            $skill     = trim($row[6] ?? 'Unskilled');
-            $aadhar    = trim($row[7] ?? '');
-            $photoRef  = trim($row[8] ?? ''); // Column 9: optional Photo Filename
-
-            if ($aadhar && ! preg_match('/^\d{12}$/', $aadhar)) {
-                // Excel rewrites a 12-digit Aadhaar as 1.23E+11 the moment the
-                // sheet is opened and saved, and "invalid Aadhaar" sends the
-                // reader looking for a typo that is not there. Name the cause.
-                $errors[] = preg_match('/^\d(\.\d+)?E\+?\d+$/i', $aadhar)
-                    ? 'Row '.($index + 2).': Aadhaar "'.$aadhar.'" was saved by Excel in scientific notation. Format the column as Text (or prefix the value with an apostrophe) and upload again.'
-                    : 'Row '.($index + 2).': Aadhaar "'.$aadhar.'" is not 12 digits.';
-                $skipped++;
-                continue;
-            }
-
-            // Duplicate check
-            $query = TpvWorker::where('tenant_id', $tenantId)->where('vendor_id', $vendorId);
-            if (!empty($aadhar)) {
-                $query->where('aadhar_number', $aadhar);
-            } else {
-                $query->where('name', $name);
-                if ($mobile) $query->where('mobile', $mobile);
-            }
-
-            if ($query->exists()) {
-                // Name them. "3 duplicate/skipped" on its own is impossible to
-                // tell apart from an import that silently failed.
-                $duplicates[] = 'Row '.($index + 2).': '.$name.' is already registered under this vendor.';
-                $skipped++;
-                continue;
-            }
-
-            $dob = null;
-            if ($dobRaw) {
-                foreach (['Y-m-d', 'd/m/Y', 'd-m-Y', 'm/d/Y'] as $fmt) {
-                    $dt = \DateTime::createFromFormat($fmt, $dobRaw);
-                    if ($dt) { $dob = $dt->format('Y-m-d'); break; }
+        try {
+            foreach ($rows as $index => $row) {
+                $rowNo = $index + 2;                  // +1 header, +1 for 1-based
+                $name = trim($row[0] ?? '');
+                if ($name === '') {
+                    continue;
                 }
-                if (!$dob) {
-                    $ts = strtotime($dobRaw);
-                    if ($ts) $dob = date('Y-m-d', $ts);
+
+                $gender = ucfirst(strtolower(trim($row[1] ?? 'Male')));
+                $dob = WorkerImport::parseDate($row[2] ?? null);
+                $mobile = preg_replace('/\D/', '', trim($row[3] ?? ''));
+                $blood = trim($row[4] ?? '');
+                $desig = trim($row[5] ?? 'Worker');
+                $skill = trim($row[6] ?? 'Unskilled');
+                $aadhar = trim($row[7] ?? '');
+                $photoRef = trim($row[8] ?? '');
+
+                if ($problem = WorkerImport::aadhaarProblem($aadhar, $rowNo)) {
+                    $errors[] = $problem;
+                    $skipped++;
+
+                    continue;
                 }
-            }
 
-            $ageData = self::calcAge($dob);
+                // Identify by Aadhaar where there is one; otherwise name AND
+                // mobile together, because a name alone would refuse namesakes.
+                $exists = TpvWorker::where('tenant_id', $tenantId)
+                    ->where('vendor_id', $vendorId)
+                    ->when($aadhar !== '', fn ($q) => $q->where('aadhar_number', $aadhar))
+                    ->when($aadhar === '', function ($q) use ($name, $mobile) {
+                        $q->where('name', $name);
+                        if ($mobile) {
+                            $q->where('mobile', $mobile);
+                        }
+                    })
+                    ->exists();
 
-            $count = TpvWorker::withTrashed()->where('tenant_id', $tenantId)->count() + 1;
-            $workerCode = 'W-'.str_pad((string) $count, 5, '0', STR_PAD_LEFT);
+                if ($exists) {
+                    // Name them. "3 duplicate/skipped" on its own is impossible
+                    // to tell apart from an import that silently failed.
+                    $duplicates[] = "Row {$rowNo}: {$name} is already registered under this vendor.";
+                    $skipped++;
 
-            // Handle Profile Photo if matched in ZIP or provided
-            $photoPath = null;
-            $photoCandidateKeys = array_filter([
-                strtolower($photoRef),
-                pathinfo(strtolower($photoRef), PATHINFO_FILENAME),
-                strtolower($aadhar),
-                strtolower($mobile),
-                strtolower(str_replace(' ', '_', $name)),
-                strtolower($name)
-            ]);
-
-            foreach ($photoCandidateKeys as $key) {
-                if (isset($photosMap[$key]) && file_exists($photosMap[$key])) {
-                    $sourceImg = $photosMap[$key];
-                    $imgExt = pathinfo($sourceImg, PATHINFO_EXTENSION);
-                    $destFilename = 'workers/photos/bulk_'.uniqid().'.'.$imgExt;
-                    \Storage::disk('public')->put($destFilename, file_get_contents($sourceImg));
-                    $photoPath = $destFilename;
-                    break;
+                    continue;
                 }
+
+                $ageData = self::calcAge($dob);
+                $count = TpvWorker::withTrashed()->where('tenant_id', $tenantId)->count() + 1;
+
+                TpvWorker::create([
+                    'tenant_id' => $tenantId,
+                    'vendor_id' => $vendorId,
+                    'created_by' => $actor->id,
+                    'worker_code' => 'W-'.str_pad((string) $count, 5, '0', STR_PAD_LEFT),
+                    'name' => $name,
+                    'gender' => $gender,
+                    'dob' => $dob,
+                    'age' => $ageData['age'],
+                    'age_reason' => $ageData['age_reason'],
+                    'mobile' => $mobile,
+                    'blood_group' => $blood,
+                    'designation' => $desig,
+                    'skill_category' => $skill,
+                    'aadhar_number' => $aadhar ?: null,
+                    'photo_path' => WorkerImport::storePhoto($photos, [$photoRef, $aadhar, $mobile, str_replace(' ', '_', $name), $name]),
+                    'is_active' => true,
+                    'current_step' => 1,
+                    'status' => Status::DRAFT,
+                ]);
+
+                $inserted++;
             }
-
-            TpvWorker::create([
-                'tenant_id'      => $tenantId,
-                'vendor_id'      => $vendorId,
-                'created_by'     => $actor->id,
-                'worker_code'    => $workerCode,
-                'name'           => $name,
-                'gender'         => $gender,
-                'dob'            => $dob,
-                'age'            => $ageData['age'],
-                'age_reason'     => $ageData['age_reason'],
-                'mobile'         => $mobile,
-                'blood_group'    => $blood,
-                'designation'    => $desig,
-                'skill_category' => $skill,
-                'aadhar_number'  => $aadhar ?: null,
-                'photo_path'     => $photoPath,
-                'is_active'      => true,
-                'current_step'   => 1,
-                'status'         => Status::DRAFT,
-            ]);
-
-            $inserted++;
+        } finally {
+            $cleanup();
         }
 
-        if ($tempExtractPath && file_exists($tempExtractPath)) {
-            \File::deleteDirectory($tempExtractPath);
-        }
-
-        // "0 worker(s) imported successfully" is what made a failed import read
-        // as a success. When nothing landed, say that first and say why.
-        if ($inserted > 0) {
-            $msg = "{$inserted} worker(s) imported successfully.";
-            if ($skipped > 0) {
-                $msg .= " {$skipped} skipped.";
-            }
-        } else {
-            $msg = 'Nothing was imported.';
-            $msg .= $skipped > 0
-                ? " All {$skipped} row(s) were skipped — see the detail below."
-                : ' The file had no usable rows.';
-        }
-        if (! empty($errors)) {
-            $msg .= ' '.count($errors).' row(s) could not be read.';
-        }
-
-        return [
-            'status'     => $inserted > 0 ? 'success' : 'warning',
-            'message'    => $msg,
-            'inserted'   => $inserted,
-            'skipped'    => $skipped,
-            'duplicates' => $duplicates,
-            'errors'     => $errors,
-        ];
+        return WorkerImport::summarise($inserted, $skipped, $duplicates, $errors);
     }
 
     /* ── Entry card ─────────────────────────────────────────────────── */

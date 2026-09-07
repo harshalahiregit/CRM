@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { RefreshCw, Users, Clock, LogIn, LogOut, History } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
+import { useVendorModule } from '@/modules/tpv/useVendorModule'
 import LoadError from '@/components/ui/LoadError'
 import { KIT3D_STYLE, inputStyle, Overlay } from '@/components/ui/kit3d'
 import { fmtDate } from '../constants'
@@ -41,6 +42,15 @@ export default function PurchaseWorkforceAttendance() {
   const { vendorId: routeVendorId } = useParams()   // present inside a vendor-scoped route
   const [searchParams, setSearchParams] = useSearchParams()
 
+  /*
+   * One attendance screen, two surfaces — the TPV convention.
+   *
+   * On the portal there is no scope to choose: the server reads the vendor from
+   * the token and every one of these endpoints is already narrowed to the
+   * caller's own workers, so the picker is hidden and no vendor_id is sent.
+   */
+  const { api, portal: isPortal } = useVendorModule()
+
   // Vendor scope lives in the query string rather than in state, so one vendor's
   // attendance is deep-linkable and survives a reload — the same ?vendor_id= the
   // workforce and medical registers read.
@@ -56,27 +66,29 @@ export default function PurchaseWorkforceAttendance() {
   const [history, setHistory] = useState(null)   // the worker whose history is open
 
   useEffect(() => {
+    // A vendor has one scope — its own — and nothing to pick between.
+    if (isPortal) return
     purchaseApi.vendors.list({ per_page: 200 })
       .then(res => setVendors(asArray(res)))
       .catch(() => {})
-  }, [])
+  }, [isPortal])
 
   // The picker lists everyone on the books, not just today's arrivals: the
   // question "why was this worker not on site" is only answerable about someone
   // the roster does not contain.
   useEffect(() => {
-    purchaseApi.workforce.workers(vendorId ? { vendor_id: vendorId } : {})
+    api.workforce.workers(isPortal ? {} : (vendorId ? { vendor_id: vendorId } : {}))
       .then(res => setWorkers(asArray(res)))
       .catch(() => setWorkers([]))
-  }, [vendorId])
+  }, [vendorId, isPortal, api])
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const scope = vendorId ? { vendor_id: vendorId } : {}
+      const scope = isPortal ? {} : (vendorId ? { vendor_id: vendorId } : {})
       const [on, l] = await Promise.all([
-        purchaseApi.gate.onSite(date),
-        purchaseApi.gate.log({ ...scope, from: date, to: date, limit: 500 }),
+        api.gate.onSite(date),
+        api.gate.log({ ...scope, from: date, to: date, limit: 500 }),
       ])
       // on-site is tenant-wide; the rows it is matched against are already
       // vendor-scoped, so the intersection needs no filtering here.
@@ -85,7 +97,7 @@ export default function PurchaseWorkforceAttendance() {
       setError(null)
     } catch (e) { setError(e) }
     finally { setLoading(false) }
-  }, [vendorId, date])
+  }, [vendorId, date, isPortal, api])
   useEffect(() => { load() }, [load])
 
   const pickVendor = (id) => {
@@ -108,15 +120,19 @@ export default function PurchaseWorkforceAttendance() {
         <div>
           <h1 style={{ color: 'var(--text-h)', fontSize: 22, fontWeight: 800, margin: 0 }}>Attendance</h1>
           <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '4px 0 0' }}>
-            {vendorId ? "Daily site attendance for this vendor's workforce." : 'Daily site attendance across the site.'}
+            {isPortal
+              ? "Your workers' daily site attendance, as recorded at the gate."
+              : vendorId ? "Daily site attendance for this vendor's workforce." : 'Daily site attendance across the site.'}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <select value={vendorId} onChange={e => pickVendor(e.target.value)} disabled={!!routeVendorId}
-            style={{ ...inputStyle, width: 'auto', minWidth: 190, cursor: routeVendorId ? 'default' : 'pointer' }}>
-            <option value="">All vendors</option>
-            {vendors.map(v => <option key={v.id} value={v.id}>{v.company_name}</option>)}
-          </select>
+          {!isPortal && (
+            <select value={vendorId} onChange={e => pickVendor(e.target.value)} disabled={!!routeVendorId}
+              style={{ ...inputStyle, width: 'auto', minWidth: 190, cursor: routeVendorId ? 'default' : 'pointer' }}>
+              <option value="">All vendors</option>
+              {vendors.map(v => <option key={v.id} value={v.id}>{v.company_name}</option>)}
+            </select>
+          )}
           {/* Resets to the placeholder on pick, so the same worker can be opened
               twice without choosing someone else in between. */}
           <select value="" onChange={e => { const w = workers.find(x => String(x.id) === e.target.value); if (w) setHistory(w) }}
@@ -196,12 +212,14 @@ export default function PurchaseWorkforceAttendance() {
  * the gate does not appear — which is the point: a refusal is not attendance.
  */
 function HistoryModal({ worker, from, to, onClose }) {
+  const { api } = useVendorModule()
+
   const [data, setData] = useState(null)
   const [err, setErr] = useState(null)
 
   const load = useCallback(() => {
     setErr(null)
-    purchaseApi.gate.attendance(worker.id, { from, to })
+    api.gate.attendance(worker.id, { from, to })
       .then(d => setData(d?.data ?? d ?? null))
       .catch(e => { setData(null); setErr(e) })
   }, [worker.id, from, to])
