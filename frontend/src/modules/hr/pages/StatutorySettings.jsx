@@ -16,6 +16,7 @@ const RULE_TYPES = [
   { key:'pf',       label:'Provident Fund',   blurb:'Employee + employer share on PF-applicable wages.' },
   { key:'esic',     label:'ESIC',             blurb:'Applies only at or below the gross threshold.' },
   { key:'pt',       label:'Professional Tax', blurb:'Levied per state — one rule per state you employ in.', perState:true },
+  { key:'lwf',      label:'Labour Welfare Fund', blurb:'Per state, and HALF-YEARLY — a flat amount taken only in the months you name, not every month.', perState:true },
   { key:'bonus',    label:'Bonus',            blurb:'Statutory bonus provision.' },
   { key:'gratuity', label:'Gratuity',         blurb:'Monthly provision, and the formula the exit Full & Final settlement pays on.' },
   { key:'tds',      label:'TDS / Income Tax', blurb:'Per regime. Slabs applied marginally on year-to-date income, not a 12× projection.' },
@@ -33,11 +34,19 @@ const FIELDS = {
     ['eps_rate', 'EPS %', 'num', 'Carved OUT of the employer share, not added to it.'],
     ['wage_ceiling', 'Wage ceiling', 'num'],
     ['restrict_to_ceiling', 'Restrict contribution to the ceiling', 'bool'],
+    ['eps_max_age', 'EPS ends at age', 'num', 'Pension membership stops here — usually 58. Past it the whole employer share goes to EPF instead. Leave blank to never stop.'],
   ],
   esic: [
-    ['gross_threshold', 'Gross threshold', 'num', 'At or below this gross, ESIC applies. Above it, it does not.'],
+    ['gross_threshold', 'Wage threshold', 'num', 'At or below this, ESIC applies. Above it, it does not.'],
+    ['eligibility_base', 'Tested against', 'select:wages,gross', 'Which figure the threshold is compared with: the ESIC wage base (Basic + DA), or total gross pay. This decides who is covered at all — check it with your consultant.'],
     ['employee_rate', 'Employee share %', 'num'],
     ['employer_rate', 'Employer share %', 'num'],
+    ['round_employee_up', "Round the employee's share up to the rupee", 'bool', 'The employer share always rounds to the nearest rupee.'],
+  ],
+  lwf: [
+    ['employee_amount', 'Employee amount', 'num', 'A flat figure, not a percentage — it does not scale with salary.'],
+    ['employer_amount', 'Employer amount', 'num'],
+    ['months', 'Deducted in', 'months-list', 'The months it is taken in. Maharashtra takes it in June and December. Leave empty for every month.'],
   ],
   pt: [
     ['slabs', 'Slabs', 'slabs:amount'],
@@ -323,7 +332,11 @@ function summarise(r) {
   const c = r.config || {}
   switch (r.rule_type) {
     case 'pf':   return `Employee ${c.employee_rate ?? '—'}% · Employer ${c.employer_rate ?? '—'}%${c.wage_ceiling ? ` · ceiling ${c.wage_ceiling}` : ''}${c.restrict_to_ceiling ? ' (restricted)' : ''}`
-    case 'esic': return `Threshold ${c.gross_threshold ?? '—'} · Employee ${c.employee_rate ?? '—'}% · Employer ${c.employer_rate ?? '—'}%`
+    case 'esic': return `Threshold ${c.gross_threshold ?? '—'} on ${c.eligibility_base === 'gross' ? 'gross' : 'ESIC wages'} · Employee ${c.employee_rate ?? '—'}% · Employer ${c.employer_rate ?? '—'}%`
+    case 'lwf': {
+      const months = (c.months || []).map(m => MONTHS[Number(m) - 1]).filter(Boolean)
+      return `${c.employee_amount ?? '—'} employee + ${c.employer_amount ?? '—'} employer · ${months.length ? months.join(', ') : 'every month'}`
+    }
     case 'pt':   return `${(c.slabs || []).length} slab(s)${c.month_overrides && Object.keys(c.month_overrides).length ? ` · ${Object.keys(c.month_overrides).length} month override(s)` : ''}`
     case 'tds': {
       if (c.regimes) {
@@ -403,6 +416,7 @@ function RuleModal({ modal, setModal, meta, saving, save }) {
               </label>
             )
             if (kind === 'regimes') return <RegimeEditor key={key} config={form.config} setConfig={setConfig} />
+            if (kind === 'months-list') return <MonthPicker key={key} label={label} hint={hint} value={getIn(form.config, key) || []} onChange={v=>setConfig(key, v)} />
             if (kind === 'months') return <MonthOverrides key={key} label={label} hint={hint} value={getIn(form.config, key) || {}} onChange={v=>setConfig(key, v)} />
             if (kind?.startsWith('slabs')) return (
               <SlabEditor key={key} label={label} valueKey={kind.split(':')[1]} slabs={getIn(form.config, key) || []} onChange={v=>setConfig(key, v)} />
@@ -565,6 +579,18 @@ function SlabEditor({ label, valueKey, slabs, onChange }) {
               value={r.to ?? ''} onChange={e=>set(i, 'to', e.target.value === '' ? null : Number(e.target.value))}/>
             <input type="number" step="any" className="input-3d text-xs" style={{ width:96 }} placeholder={valueKey === 'rate' ? '%' : 'Amount'}
               value={r[valueKey] ?? ''} onChange={e=>set(i, valueKey, num(e.target.value))}/>
+            {/* Gender applies to a flat-amount slab (PT), not to a marginal tax
+                band. Maharashtra needs it: a man pays from 7,501 and a woman only
+                above 25,000, so one list for everybody charges women a tax they
+                do not owe. "Anyone" leaves the slab unrestricted. */}
+            {valueKey === 'amount' && (
+              <select className="input-3d text-xs" style={{ width:104 }}
+                value={r.gender ?? ''} onChange={e=>set(i, 'gender', e.target.value || undefined)}>
+                <option value="">Anyone</option>
+                <option value="M">Men</option>
+                <option value="F">Women</option>
+              </select>
+            )}
             <button onClick={()=>onChange(rows.filter((_, j) => j !== i))} className="p-1.5 rounded-lg" style={{ background:'rgba(239,68,68,0.1)' }}>
               <Trash2 size={12} style={{ color:'#f87171' }}/>
             </button>
@@ -574,8 +600,49 @@ function SlabEditor({ label, valueKey, slabs, onChange }) {
       <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
         {valueKey === 'rate'
           ? 'Applied marginally — each band taxes only the income inside it.'
-          : 'The first slab the monthly gross falls into wins. Leave the last "To" blank for an open top band.'}
+          : 'The first slab the monthly gross falls into wins — and where a slab names a gender, only that gender. Leave the last "To" blank for an open top band.'}
       </p>
+    </div>
+  )
+}
+
+/**
+ * Which months a half-yearly levy is taken in.
+ *
+ * Not to be confused with MonthOverrides below, which maps a month to a DIFFERENT
+ * AMOUNT. This one is a plain list of the months the deduction happens at all —
+ * LWF in June and December, and nothing in the other ten.
+ */
+function MonthPicker({ label, hint, value, onChange }) {
+  const chosen = (value || []).map(Number)
+  const toggle = (m) => onChange(
+    chosen.includes(m) ? chosen.filter(x => x !== m) : [...chosen, m].sort((a, b) => a - b)
+  )
+
+  return (
+    <div>
+      <label className="label">{label}</label>
+      <div className="flex flex-wrap gap-1.5">
+        {MONTHS.map((name, i) => {
+          const m = i + 1
+          const on = chosen.includes(m)
+          return (
+            <button key={m} type="button" onClick={()=>toggle(m)}
+              className="px-2.5 py-1 rounded-lg text-[11px] font-bold"
+              style={on
+                ? { background:'linear-gradient(135deg,#7C3AED,#5b21b6)', color:'#fff' }
+                : { background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>
+              {name.slice(0, 3)}
+            </button>
+          )
+        })}
+      </div>
+      <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+        {chosen.length === 0
+          ? 'None chosen — the deduction is taken every month.'
+          : `Taken in ${chosen.map(m => MONTHS[m - 1]).join(', ')}.`}
+      </p>
+      {hint && <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>{hint}</p>}
     </div>
   )
 }
