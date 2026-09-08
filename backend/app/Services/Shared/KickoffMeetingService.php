@@ -1642,19 +1642,46 @@ class KickoffMeetingService
             .' Its join link is no longer offered.'
             .' Please close it off, or reschedule it if it still needs to happen.';
 
-        foreach ($meeting->attendees as $attendee) {
-            if (! $attendee->email) {
-                continue;
+        /*
+         * Every recipient, on every channel they have — not just the roster rows
+         * that happen to carry an address.
+         *
+         * This looped over attendees and e-mailed the ones with an e-mail. So
+         * the vendor the meeting was ABOUT was never told it had lapsed unless
+         * somebody had also typed them onto the roster, and anybody on the
+         * roster by name alone heard nothing at all. recipients() already knows
+         * how to answer "everyone who should hear about this meeting", and it is
+         * what the invitation itself uses.
+         */
+        $mailed = 0;
+        $belled = 0;
+
+        foreach ($this->invites->recipients($meeting) as $r) {
+            if ($r['email']) {
+                $this->notifications->email(
+                    $r['email'], $subject, $body,
+                    ['category' => 'System', 'kickoff_meeting_id' => $meeting->id],
+                    $meeting->tenant_id,
+                );
+                $mailed++;
             }
-            $this->notifications->email(
-                $attendee->email, $subject, $body,
-                ['category' => 'System', 'kickoff_meeting_id' => $meeting->id],
-                $meeting->tenant_id,
-            );
+
+            // The bell as well as the mail. An expiry that only ever went out by
+            // e-mail was invisible to anyone reading the CRM, which is where the
+            // meeting itself lives.
+            if ($r['user_id'] && $this->invites->notifyInApp(
+                $meeting, (int) $r['user_id'],
+                'Meeting expired: '.$meeting->title,
+                $body,
+                $r['party'],
+            )) {
+                $belled++;
+            }
         }
 
         Log::channel('tpv')->info('Kickoff expiry notice sent', [
             'meeting_id' => $meeting->id, 'tenant_id' => $meeting->tenant_id,
+            'emailed' => $mailed, 'in_app' => $belled,
         ]);
     }
 

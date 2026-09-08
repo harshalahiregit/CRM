@@ -1084,14 +1084,34 @@ class PurchaseKickoffService
             .' Please close it off, or reschedule it if it still needs to happen.';
 
         foreach ($meeting->participants as $participant) {
-            if (! $participant->email) {
-                continue;
+            if ($participant->email) {
+                $this->notifications->email(
+                    $participant->email, $subject, $body,
+                    ['category' => 'System', 'purchase_kickoff_meeting_id' => $meeting->id],
+                    $meeting->tenant_id,
+                );
             }
-            $this->notifications->email(
-                $participant->email, $subject, $body,
-                ['category' => 'System', 'purchase_kickoff_meeting_id' => $meeting->id],
-                $meeting->tenant_id,
-            );
+
+            // And in the bell, as the invitation already does. This notice went
+            // out by e-mail only, so a participant with a login and no address
+            // was never told the meeting had lapsed — and one with both heard
+            // about it only in a mailbox they may never open.
+            if ($participant->user_id) {
+                try {
+                    app(\App\Services\NotificationService::class)->notify(
+                        (int) $participant->user_id,
+                        (int) $meeting->tenant_id,
+                        'purchase_kickoff_expired',
+                        $subject,
+                        $body,
+                        '/app/purchase/kickoff/'.$meeting->id,
+                    );
+                } catch (\Throwable $e) {
+                    Log::channel('purchase')->warning('Participant expiry bell failed', [
+                        'meeting_id' => $meeting->id, 'user_id' => $participant->user_id, 'error' => $e->getMessage(),
+                    ]);
+                }
+            }
         }
 
         $this->tellVendor(

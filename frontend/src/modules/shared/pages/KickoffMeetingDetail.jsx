@@ -640,9 +640,16 @@ function DistributionCard({ meetingId, m, onError }) {
     setBusy(true); setNote(null); onError(null)
     try {
       const r = await kickoffApi.invite(meetingId)
+      // Naming the people nobody could reach, rather than reporting a count and
+      // letting "1 had no e-mail address" pass for success. Somebody put them on
+      // the roster; if the invitation never got to them, the organiser has to
+      // know WHO before the meeting rather than after it.
+      const missed = r.unreachable || []
       setNote(`Invitation sent to ${r.sent} recipient(s)`
         + (r.in_app ? `, ${r.in_app} in-app` : '')
-        + (r.skipped ? ` · ${r.skipped} had no e-mail address` : ''))
+        + (missed.length
+          ? ` · not told (no e-mail address and no login): ${missed.join(', ')}`
+          : (r.skipped ? ` · ${r.skipped} had no e-mail address` : '')))
       load()
     } catch (e) {
       onError(e?.response?.data?.message || 'Could not send the invitation.')

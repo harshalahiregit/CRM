@@ -47,6 +47,10 @@ class MeetingInviteService
         $subject = 'Meeting invitation — '.$meeting->title;
         $ics = $this->buildIcs($meeting);
         $counts = ['sent' => 0, 'skipped' => 0, 'failed' => 0, 'in_app' => 0, 'recipients' => 0];
+        // Named, not just counted. Somebody put these people on the roster and
+        // the send reported success without reaching them — a number in a log
+        // is not going to tell the organiser WHO was never told.
+        $unreachable = [];
 
         // A fresh invitation supersedes the previous one; the old rows are the
         // history of an earlier time/roster and would double-count the tracker.
@@ -79,6 +83,13 @@ class MeetingInviteService
             $counts[$status === MeetingDistribution::SENT ? 'sent'
                 : ($status === MeetingDistribution::FAILED ? 'failed' : 'skipped')]++;
 
+            // Reached by neither channel: no address to mail, and no login to
+            // raise a bell against. They are on the roster and they do not know
+            // about the meeting.
+            if ($status !== MeetingDistribution::SENT && ! $r['user_id']) {
+                $unreachable[] = $r['name'] ?: ($r['email'] ?: 'an unnamed participant');
+            }
+
             MeetingDistribution::create([
                 'tenant_id' => $meeting->tenant_id,
                 'kickoff_meeting_id' => $meeting->id,
@@ -100,13 +111,17 @@ class MeetingInviteService
                 $meeting, (int) $r['user_id'],
                 'Meeting invitation: '.$meeting->title,
                 $this->whenLine($meeting),
+                $r['party'],
             )) {
                 $counts['in_app']++;
             }
         }
 
+        $counts['unreachable'] = array_values(array_unique($unreachable));
+
         $meeting->recordAudit('invitations_sent', $actor,
-            "Invitations sent: {$counts['sent']} e-mailed, {$counts['in_app']} in-app, {$counts['skipped']} without an address");
+            "Invitations sent: {$counts['sent']} e-mailed, {$counts['in_app']} in-app, {$counts['skipped']} without an address"
+            .($counts['unreachable'] ? ' — not told: '.implode(', ', $counts['unreachable']) : ''));
         Log::channel('tpv')->info('Meeting invitations sent', ['meeting_id' => $meeting->id] + $counts);
 
         return $counts;
@@ -159,7 +174,11 @@ class MeetingInviteService
     }
 
     /** In-app notification for a Sangoe user. Never throws. */
-    public function notifyInApp(KickoffMeeting $meeting, int $userId, string $title, string $message): bool
+    /**
+     * @param  string|null  $party  where this recipient reads the meeting — a
+     *                              vendor opens the portal, everyone else the console
+     */
+    public function notifyInApp(KickoffMeeting $meeting, int $userId, string $title, string $message, ?string $party = null): bool
     {
         try {
             Notification::create([
@@ -168,7 +187,13 @@ class MeetingInviteService
                 'type' => 'meeting',
                 'title' => $title,
                 'message' => $message,
-                'link' => '/app/tpv/kickoff/'.$meeting->id,
+                // This was always the staff console, so a vendor following their
+                // own notification arrived at a page they have no access to —
+                // the same bug the invitation e-mail had, still here because the
+                // bell was fixed separately from the mail.
+                'link' => $party === MeetingDistribution::PARTY_VENDOR
+                    ? '/vendor-portal/governance'
+                    : '/app/tpv/kickoff/'.$meeting->id,
             ]);
 
             return true;
@@ -229,13 +254,18 @@ class MeetingInviteService
          * there, so anybody explicitly listed keeps their own name and party.
          */
         $subject = $meeting->kickoffable;
-        if ($subject && ! empty($subject->email)) {
+        if ($subject && (! empty($subject->email) || ! empty($subject->user_id))) {
             $add(
                 $subject->company_name ?? $subject->name ?? 'Vendor',
                 $subject->email,
                 MeetingDistribution::PARTY_VENDOR,
                 null,
-                null,
+                // The vendor's own portal login. This was hard-coded null, so
+                // the one recipient the meeting is ABOUT was the only one who
+                // never got a bell notification — they had an e-mail and nothing
+                // in the CRM, which is the opposite of the intent. Both vendor
+                // tables carry the login as user_id.
+                $subject->user_id ?? null,
             );
         }
 
