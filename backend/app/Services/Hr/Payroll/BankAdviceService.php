@@ -54,7 +54,7 @@ class BankAdviceService
                 $excluded[] = [
                     'code'     => $r->employee?->employee_code,
                     'employee' => $r->employee?->name,
-                    'net_pay'  => (float) $r->net_salary,
+                    'net_pay'  => $this->payable($r),
                     'reason'   => $reason,
                 ];
 
@@ -72,7 +72,7 @@ class BankAdviceService
                 'account_number'  => $d->bank_account_number,
                 'ifsc'            => strtoupper((string) $d->bank_ifsc),
                 'bank_name'       => $d->bank_name,
-                'amount'          => round((float) $r->net_salary, 2),
+                'amount'          => $this->payable($r),
                 'reference'       => $this->reference($run, $r),
             ];
         }
@@ -154,11 +154,34 @@ class BankAdviceService
             return 'The IFSC is not a valid code';
         }
 
-        if ((float) $r->net_salary <= 0) {
+        if ($this->payable($r) <= 0) {
             return 'Net pay is zero';
         }
 
         return null;
+    }
+
+    /**
+     * What this person is actually owed this month.
+     *
+     * Delegated to the record, which is the only place the formula is written.
+     * It used to be spelled out here as well, and the two spellings disagreed:
+     * this file transferred `net_salary`, the frozen structure snapshot, which
+     * excludes the statutory split. On a July run reproducing filed employee
+     * SD104 that meant an advice for ₹48,478 against a true net of ₹46,539 —
+     * PF ₹1,800 and ESIC ₹139 were withheld on the payslip, remitted to the
+     * government, AND still transferred to the employee. The company paid the
+     * same ₹1,939 twice, every employee, every month, and nothing in the file
+     * disagreed with itself; the arithmetic was only wrong against a column
+     * this service never read.
+     *
+     * Keeping the wrapper rather than calling netPayable() at all three sites
+     * is deliberate — it is where that history is written down, and where the
+     * next person looks when the bank total does not match the register.
+     */
+    private function payable(HrPayrollRecord $r): float
+    {
+        return $r->netPayable();
     }
 
     /** What the employee sees on their statement. */

@@ -8,6 +8,7 @@ use App\Models\Hr\HrEmployee;
 use App\Models\Hr\HrEmployeeSalary;
 use App\Models\Hr\HrPayrollRecord;
 use App\Models\Hr\HrPayrollRun;
+use App\Models\Hr\HrPayrollRunEmployee;
 use App\Models\User;
 use App\Models\Hr\HrPayrollRecordLine;
 use App\Repositories\Hr\PayrollRunRepository;
@@ -120,6 +121,21 @@ class PayrollService
             ->with('employee:id,name,work_state,gender,dob')
             ->get();
 
+        // Honour the Pre-check selection when one was made.
+        //
+        // A run with NO selection rows keeps the original behaviour — every
+        // active salary — because that is what every existing run and test
+        // expects, and because "pay everybody" is the correct default for the
+        // ordinary month. Once HR has chosen, the choice wins, and anybody the
+        // pre-check blocked is excluded rather than paid with missing details.
+        $selected = HrPayrollRunEmployee::where('payroll_run_id', $run->id)
+            ->whereNull('blocked_reason')
+            ->pluck('employee_id');
+
+        if ($selected->isNotEmpty()) {
+            $salaries = $salaries->whereIn('employee_id', $selected->all())->values();
+        }
+
         if ($salaries->isEmpty()) {
             throw new BusinessException('No employees have an active salary to process. Assign salaries first.');
         }
@@ -140,7 +156,7 @@ class PayrollService
 
             $run->records()->delete(); // clean slate if a Draft run is (re)processed
 
-            $gross = $deductions = $net = 0.0;
+            $gross = $deductions = $net = $payable = 0.0;
             $count = 0;
 
             foreach ($salaries as $salary) {
@@ -207,15 +223,24 @@ class PayrollService
                 $gross      += (float) $salary->gross_salary;
                 $deductions += (float) $salary->total_deductions;
                 $net        += (float) $salary->net_salary;
+                // The bank figure, from the one definition of it. Accumulated
+                // here rather than derived later so the run total and the
+                // advice cannot drift apart.
+                $payable    += $record->netPayable();
                 $count++;
             }
 
             $run->update([
                 'status'           => HrPayrollRun::COMPLETED,
+                // Calculated, NOT agreed. The run now waits on the reporting
+                // manager; `status` records that the arithmetic is done and
+                // locked, `stage` records that nobody has signed it yet.
+                'stage'            => HrPayrollRun::STAGE_APPROVE,
                 'total_employees'  => $count,
                 'total_gross'      => round($gross, 2),
                 'total_deductions' => round($deductions, 2),
                 'total_net'        => round($net, 2),
+                'total_payable'    => round($payable, 2),
                 'processed_by'     => $actor?->id,
                 'processed_at'     => now(),
             ]);
@@ -346,11 +371,26 @@ class PayrollService
             'payroll_year'     => $run->payroll_year,
             'period_label'     => $this->periodLabel($run->payroll_year, $run->payroll_month),
             'status'           => $run->status,
+            // Where the run sits in the approval chain, which is a different
+            // question from whether it has been computed. See HrPayrollRun.
+            'stage'            => $run->stage ?? HrPayrollRun::STAGE_PRECHECK,
+            'stage_index'      => $run->stageIndex(),
+            'stages'           => HrPayrollRun::STAGES,
+            'is_approved'      => $run->isApproved(),
             'total_employees'  => $run->total_employees,
             'total_gross'      => (float) $run->total_gross,
             'total_deductions' => (float) $run->total_deductions,
             'total_net'        => (float) $run->total_net,
+            // What the bank is asked for, as against the sum of the frozen
+            // structure figures. The two differ by the statutory split, this
+            // period's variable earnings, loan instalments and adjustments.
+            'total_payable'    => (float) $run->total_payable,
             'processed_at'     => optional($run->processed_at)->toIso8601String(),
+            'approved_at'      => optional($run->approved_at)->toIso8601String(),
+            'approved_by'      => $run->approvedBy?->name,
+            'approval_note'    => $run->approval_note,
+            'disbursed_at'     => optional($run->disbursed_at)->toIso8601String(),
+            'disbursed_by'     => $run->disbursedBy?->name,
             'created_at'       => optional($run->created_at)->toIso8601String(),
         ];
 
@@ -368,9 +408,35 @@ class PayrollService
             $out['loan_recovery'] = $this->runLoanTotals($run);
             // #31 — what the run paid out in commissions/incentives.
             $out['variable_earnings'] = $this->variableEarnings->runTotals($run->id, (int) $run->tenant_id);
+            // Disburse-stage progress: how many transfers accounts has settled.
+            $out['payments'] = $this->runPaymentTotals($run);
         }
 
         return $out;
+    }
+
+    /**
+     * What accounts has settled on this run.
+     *
+     * Counted per person rather than inferred from the run's stage: transfers
+     * fail one at a time, and a run being finished says nothing about whether a
+     * particular person's money arrived.
+     */
+    private function runPaymentTotals(HrPayrollRun $run): array
+    {
+        $byStatus = HrPayrollRecord::where('payroll_run_id', $run->id)
+            ->selectRaw('payment_status, COUNT(*) c')
+            ->groupBy('payment_status')
+            ->pluck('c', 'payment_status');
+
+        return [
+            'pending'  => (int) ($byStatus[HrPayrollRecord::PAY_PENDING] ?? 0),
+            'paid'     => (int) ($byStatus[HrPayrollRecord::PAY_PAID] ?? 0),
+            'hold'     => (int) ($byStatus[HrPayrollRecord::PAY_HOLD] ?? 0),
+            'failed'   => (int) ($byStatus[HrPayrollRecord::PAY_FAILED] ?? 0),
+            'released' => HrPayrollRecord::where('payroll_run_id', $run->id)
+                ->where('payslip_visible', true)->count(),
+        ];
     }
 
     /**
@@ -456,14 +522,19 @@ class PayrollService
             // #31 — commission/incentive paid this period, kept beside the frozen
             // snapshot rather than folded into it.
             'variable_earnings' => (float) $r->variable_earnings,
-            // What actually reaches the bank: the frozen net, PLUS this period's
-            // variable earnings, less the statutory split and any loan instalment.
-            // `net_salary` itself is left untouched — it is the frozen snapshot
-            // every existing consumer already reads.
-            'net_payable'       => round(
-                (float) $r->net_salary + (float) $r->variable_earnings
-                - (float) $r->statutory_deductions - (float) $r->loan_deduction, 2
-            ),
+            // HR's additions net of deductions for this month only.
+            'adjustment_total'  => (float) $r->adjustment_total,
+            // What actually reaches the bank. Defined once, on the model — this
+            // used to be spelled out here AND in BankAdviceService, and the two
+            // spellings disagreed, which is how PF was paid to the government
+            // and to the employee at the same time.
+            'net_payable'       => $r->netPayable(),
+            // Set by accounts at the Disburse stage. "The run completed" is a
+            // statement about arithmetic; this is about money arriving.
+            'payment_status'    => $r->payment_status ?? HrPayrollRecord::PAY_PENDING,
+            'paid_at'           => optional($r->paid_at)->toIso8601String(),
+            'payment_note'      => $r->payment_note,
+            'payslip_visible'   => (bool) $r->payslip_visible,
         ] + $this->presentStatutory($r);
     }
 

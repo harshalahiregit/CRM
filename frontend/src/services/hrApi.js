@@ -368,6 +368,29 @@ export const hrApi = {
       generatePayslips: (id)   => api.post(`/hr/payroll/runs/${id}/generate-payslips`).then(r => r.data),
       // Frozen component + statutory breakdown behind one processed record.
       recordLines: (recordId)  => api.get(`/hr/payroll/records/${recordId}/lines`).then(r => r.data?.data ?? []),
+
+      /*
+       | The stepped run: Pre-check → Inputs → Calculate → Approve → Disburse.
+       |
+       | These sit beside `process` rather than replacing it. `process` is still
+       | what does the arithmetic; these add who chose the employees and who
+       | agreed to the amounts.
+       */
+      precheck:        (id)               => api.get(`/hr/payroll/runs/${id}/precheck`).then(r => r.data?.data ?? {}),
+      selectEmployees: (id, employeeIds)  => api.post(`/hr/payroll/runs/${id}/employees`, { employee_ids: employeeIds }).then(r => r.data?.data ?? {}),
+      confirmInputs:   (id)               => api.post(`/hr/payroll/runs/${id}/confirm-inputs`).then(r => r.data),
+
+      adjustments:     (id)               => api.get(`/hr/payroll/runs/${id}/adjustments`).then(r => r.data?.data ?? []),
+      addAdjustment:   (recordId, body)   => api.post(`/hr/payroll/records/${recordId}/adjustments`, body).then(r => r.data?.data ?? {}),
+      removeAdjustment:(adjustmentId)     => api.delete(`/hr/payroll/adjustments/${adjustmentId}`).then(r => r.data),
+
+      approve:         (id, note)         => api.post(`/hr/payroll/runs/${id}/approve`, { note }).then(r => r.data),
+      reject:          (id, note)         => api.post(`/hr/payroll/runs/${id}/reject`, { note }).then(r => r.data),
+
+      markPayment:     (recordId, payment_status, note) => api.post(`/hr/payroll/records/${recordId}/payment`, { payment_status, note }).then(r => r.data),
+      markAllPayments: (id, payment_status)            => api.post(`/hr/payroll/runs/${id}/payments`, { payment_status }).then(r => r.data),
+      releasePayslips: (id, visible)                   => api.post(`/hr/payroll/runs/${id}/release-payslips`, { visible }).then(r => r.data),
+      setPayslipVisible: (recordId, visible)           => api.post(`/hr/payroll/records/${recordId}/payslip-visibility`, { visible }).then(r => r.data),
     },
     // Statutory rule book — every rate, ceiling and slab is configured here.
     // Nothing statutory is hardcoded in the app, so an empty rule book means

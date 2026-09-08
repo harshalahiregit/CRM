@@ -14,6 +14,7 @@ import StatutorySettings from './StatutorySettings'
 import TaxDeclarations from './TaxDeclarations'
 import SalarySheet from '../components/SalarySheet'
 import VariableEarnings from '../components/VariableEarnings'
+import PayrollRunWizard from '../components/PayrollRunWizard'
 
 const GRAD = 'linear-gradient(135deg,#7C3AED,#5b21b6)'
 // 'Benefit' retained for backward compatibility (legacy employer contribution).
@@ -883,6 +884,9 @@ function PayrollProcessing({ showToast }) {
   const [creating, setCreating] = useState(false)
   const [processingId, setProcessingId] = useState(null)
   const [view, setView] = useState(null)   // run being viewed (with records)
+  // The run currently being STEPPED THROUGH. Separate from `view`, which is the
+  // read-only summary of a finished run — this one is the working screen.
+  const [wizard, setWizard] = useState(null)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -890,6 +894,24 @@ function PayrollProcessing({ showToast }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   useEffect(() => { load() }, [load])
+
+  /**
+   * Open a run in the stepped screen, and re-read it after every action.
+   *
+   * The wizard holds no derived state of its own — each stage re-reads the run
+   * and its records from the server, so what it shows is what the server will
+   * enforce. A screen that decided locally when a run was approved would go on
+   * offering buttons the API has already started refusing.
+   */
+  const openWizard = async (run) => {
+    try {
+      const [full, records] = await Promise.all([
+        hrApi.payroll.runs.get(run.id),
+        hrApi.payroll.runs.records(run.id).catch(() => []),
+      ])
+      setWizard({ ...full, records })
+    } catch { showToast('Failed to open the run', 'error') }
+  }
 
   const process = async (run) => {
     setProcessingId(run.id)
@@ -913,6 +935,20 @@ function PayrollProcessing({ showToast }) {
 
   const completed = runs.filter(r => r.status === 'Completed')
   const latest = completed[0]
+
+  // The stepped screen takes over the tab while a run is open. It is the whole
+  // job for that month, not a dialog on top of a list.
+  if (wizard) {
+    return (
+      <PayrollRunWizard
+        run={wizard}
+        records={wizard.records || []}
+        showToast={showToast}
+        onChanged={() => { openWizard(wizard); load() }}
+        onClose={() => { setWizard(null); load() }}
+      />
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -939,7 +975,7 @@ function PayrollProcessing({ showToast }) {
         : (
           <div className="card-3d overflow-x-auto" style={{ padding:'6px' }}>
             <table className="w-full text-sm" style={{ minWidth:820 }}>
-              <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Month','Employees','Gross','Deduction','Net','Status','Action'].map(h=><th key={h} className={`text-left px-3 py-3 label-caps whitespace-nowrap ${h==='Action'?'text-right':''}`}>{h}</th>)}</tr></thead>
+              <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Month','Employees','Gross','Deduction','Net','Stage','Status','Action'].map(h=><th key={h} className={`text-left px-3 py-3 label-caps whitespace-nowrap ${h==='Action'?'text-right':''}`}>{h}</th>)}</tr></thead>
               <tbody>
                 {runs.map(r => {
                   const st = RUN_ST[r.status] || {}
@@ -950,14 +986,16 @@ function PayrollProcessing({ showToast }) {
                       <td className="px-3 py-2.5 font-semibold" style={{ color:'#10b981' }}>{inr(r.total_gross)}</td>
                       <td className="px-3 py-2.5 font-semibold" style={{ color:'#f87171' }}>{inr(r.total_deductions)}</td>
                       <td className="px-3 py-2.5 font-black" style={{ color:'#0ea5e9' }}>{inr(r.total_net)}</td>
+                      {/* Where the run sits in the approval chain — a different
+                          question from whether it has been calculated, which is
+                          what Status answers. */}
+                      <td className="px-3 py-2.5"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:'rgba(124,58,237,0.1)', color:'#a78bfa' }}>{r.stage || 'Pre-check'}</span></td>
                       <td className="px-3 py-2.5"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:st.bg, color:st.c }}>{r.status}</span></td>
                       <td className="px-3 py-2.5">
                         <div className="flex gap-1.5 justify-end">
-                          {r.status === 'Draft' && <>
-                            <button onClick={()=>process(r)} disabled={processingId===r.id} className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white flex items-center gap-1" style={{ background:GRAD, opacity:processingId===r.id?0.7:1 }}><PlayCircle size={12}/> {processingId===r.id?'Processing…':'Process'}</button>
-                            <button onClick={()=>cancel(r)} title="Cancel" className="p-1.5 rounded-lg" style={{ background:'rgba(239,68,68,0.1)', color:'#f87171' }}><Ban size={13}/></button>
-                          </>}
-                          {r.status === 'Completed' && <button onClick={()=>openView(r)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg flex items-center gap-1" style={{ background:'rgba(124,58,237,0.1)', color:'#a78bfa' }}><Eye size={12}/> View</button>}
+                          {r.status !== 'Cancelled' && <button onClick={()=>openWizard(r)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white flex items-center gap-1" style={{ background:GRAD }}><PlayCircle size={12}/> {r.stage === 'Paid' ? 'Open' : 'Continue'}</button>}
+                          {r.status === 'Draft' && <button onClick={()=>cancel(r)} title="Cancel" className="p-1.5 rounded-lg" style={{ background:'rgba(239,68,68,0.1)', color:'#f87171' }}><Ban size={13}/></button>}
+                          {r.status === 'Completed' && <button onClick={()=>openView(r)} title="Summary" className="p-1.5 rounded-lg" style={{ background:'rgba(124,58,237,0.1)', color:'#a78bfa' }}><Eye size={13}/></button>}
                           {r.status === 'Cancelled' && <span className="text-[10px]" style={{ color:'var(--text-muted)' }}>—</span>}
                         </div>
                       </td>
@@ -978,7 +1016,10 @@ function PayrollProcessing({ showToast }) {
         </div>
       </div>
 
-      {creating && <CreateRunModal onClose={()=>setCreating(false)} onCreated={(run)=>{ setCreating(false); load(); process(run) }} showToast={showToast} />}
+      {/* A new run opens at Pre-check rather than processing immediately. The
+          old behaviour paid everybody the moment the month was chosen, which
+          is the decision the stepped flow exists to stop being automatic. */}
+      {creating && <CreateRunModal onClose={()=>setCreating(false)} onCreated={(run)=>{ setCreating(false); load(); openWizard(run) }} showToast={showToast} />}
       {view && <RunSummaryModal run={view} onClose={()=>setView(null)} />}
     </div>
   )
@@ -1007,10 +1048,10 @@ function CreateRunModal({ onClose, onCreated, showToast }) {
           <div><label className="label">Month</label><select className="input-3d text-sm" value={month} onChange={e=>setMonth(e.target.value)}>{MONTHS.map((m,i)=><option key={m} value={i+1}>{m}</option>)}</select></div>
           <div><label className="label">Year</label><select className="input-3d text-sm" value={year} onChange={e=>setYear(e.target.value)}>{years.map(y=><option key={y} value={y}>{y}</option>)}</select></div>
         </div>
-        <p className="text-[11px] mt-3" style={{ color:'var(--text-muted)' }}>The run is created then processed immediately from all employees with an active salary.</p>
+        <p className="text-[11px] mt-3" style={{ color:'var(--text-muted)' }}>The run opens at the pre-check, where you choose who is in it. Nothing is calculated or paid until you get there.</p>
         <div className="flex gap-3 pt-4">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>Cancel</button>
-          <button onClick={create} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:GRAD, opacity:saving?0.7:1 }}>{saving?'Creating…':'Create & Process'}</button>
+          <button onClick={create} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:GRAD, opacity:saving?0.7:1 }}>{saving?'Creating…':'Start run'}</button>
         </div>
       </div>
     </div>

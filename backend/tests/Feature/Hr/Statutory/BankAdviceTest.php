@@ -93,6 +93,73 @@ class BankAdviceTest extends TestCase
         $this->assertStringContainsString('SD104', $a['rows'][0]['reference']);
     }
 
+    /**
+     * The transfer is net of the statutory split, not the frozen snapshot.
+     *
+     * `net_salary` is the salary structure's own figure and PayrollService keeps
+     * it deliberately stable; PF, ESIC, this period's variable earnings and any
+     * loan instalment live in separate columns. This service transferred
+     * `net_salary`, so a July run reproducing filed employee SD104 wrote an
+     * advice for ₹48,478 against a true net of ₹46,539 — PF ₹1,800 and ESIC ₹139
+     * were withheld on the payslip, remitted to the government, AND paid to the
+     * employee. The company paid the same ₹1,939 twice.
+     *
+     * Every other test in this file leaves the statutory columns at zero, which
+     * is why the whole suite passed while the advice was wrong.
+     */
+    public function test_the_statutory_split_is_withheld_from_the_transfer(): void
+    {
+        $e = $this->person('SD104', 48478);
+
+        HrPayrollRecord::where('employee_id', $e->id)->update([
+            'pf_employee' => 1800, 'esic_employee' => 139, 'statutory_deductions' => 1939,
+        ]);
+
+        $a = $this->advice();
+
+        $this->assertEquals(46539, $a['rows'][0]['amount'], 'PF and ESIC must not also be transferred');
+        $this->assertEquals(46539, $a['totals']['amount']);
+    }
+
+    /** A loan instalment comes off the transfer, and a commission goes on it. */
+    public function test_loan_and_variable_earnings_move_the_transfer(): void
+    {
+        $e = $this->person('SD115', 40000);
+
+        HrPayrollRecord::where('employee_id', $e->id)->update([
+            'statutory_deductions' => 1800,
+            'loan_deduction'       => 5000,
+            'variable_earnings'    => 2500,
+        ]);
+
+        $a = $this->advice();
+
+        // 40000 + 2500 − 1800 − 5000
+        $this->assertEquals(35700, $a['rows'][0]['amount']);
+    }
+
+    /**
+     * Someone whose deductions swallow their pay is kept off the file.
+     *
+     * The zero-pay guard read the snapshot too, so a person whose statutory and
+     * loan lines exceeded it still appeared — with a positive amount the company
+     * did not owe.
+     */
+    public function test_a_person_whose_deductions_exceed_their_pay_is_excluded(): void
+    {
+        $e = $this->person('SD126', 5000);
+
+        HrPayrollRecord::where('employee_id', $e->id)->update([
+            'statutory_deductions' => 600,
+            'loan_deduction'       => 4400,
+        ]);
+
+        $a = $this->advice();
+
+        $this->assertSame(0, $a['totals']['employees']);
+        $this->assertSame('Net pay is zero', $a['excluded'][0]['reason']);
+    }
+
     /** A cash payee has no account, and must not be swept into a transfer file. */
     public function test_someone_paid_in_cash_is_excluded_with_the_reason(): void
     {

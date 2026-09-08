@@ -95,6 +95,17 @@ final class SettingRegistry
                 // on purpose: a tenant may number documents on one cycle and be taxed on another.
                 'fy_start_month'     => ['cast' => 'int', 'default' => 4, 'rules' => ['nullable', 'integer', 'min:1', 'max:12']],
 
+                // Segregation of duties on the payroll approval chain: the person
+                // who processed a run may not also approve it.
+                //
+                // FALSE by default, which is the weaker control and the right
+                // default. Requiring a second signature is correct wherever there
+                // are two people to give it, and where there are not it stops the
+                // tenant from paying anybody at all — a control nobody can satisfy
+                // gets worked around, usually by sharing a login, which is worse
+                // than not having it. So it is offered rather than assumed.
+                'require_separate_approver' => ['cast' => 'bool', 'default' => false, 'rules' => ['nullable', 'boolean']],
+
                 // Loan affordability, as a % of the employee's monthly NET salary.
                 // These are company policy, not law, so they carry real defaults
                 // rather than the "unconfigured = do nothing" rule the statutory

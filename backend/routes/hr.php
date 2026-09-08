@@ -44,6 +44,7 @@ use App\Http\Controllers\Api\Hr\EmployeeScoreController;
 use App\Http\Controllers\Api\Hr\ExitQuestionnaireController;
 use App\Http\Controllers\Api\Hr\VariableEarningController;
 use App\Http\Controllers\Api\Hr\PayrollRunController;
+use App\Http\Controllers\Api\Hr\PayrollWorkflowController;
 use App\Http\Controllers\Api\Hr\PayslipController;
 use App\Http\Controllers\Api\Hr\PayrollReportController;
 use App\Http\Controllers\Api\Hr\StatutoryRegisterController;
@@ -358,6 +359,30 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/payroll/runs/{id}/records',    [PayrollRunController::class, 'records']);
     Route::get('/payroll/records/{id}/lines',   [PayrollRunController::class, 'recordLines'])->whereNumber('id');
     Route::patch('/payroll/runs/{id}/status',   [PayrollRunController::class, 'updateStatus']);
+
+    /*
+    | The stepped run: Pre-check → Inputs → Calculate → Approve → Disburse.
+    |
+    | These sit BESIDE /process rather than replacing it. `process` still does
+    | the arithmetic and is still what a plain one-click month calls; these add
+    | the question of who chose the employees and who agreed to the amounts.
+    | A run that never touches them behaves exactly as it did before.
+    */
+    Route::get('/payroll/runs/{id}/precheck',      [PayrollWorkflowController::class, 'precheck'])->whereNumber('id');
+    Route::post('/payroll/runs/{id}/employees',    [PayrollWorkflowController::class, 'selectEmployees'])->whereNumber('id');
+    Route::post('/payroll/runs/{id}/confirm-inputs', [PayrollWorkflowController::class, 'confirmInputs'])->whereNumber('id');
+
+    Route::get('/payroll/runs/{id}/adjustments',   [PayrollWorkflowController::class, 'adjustments'])->whereNumber('id');
+    Route::post('/payroll/records/{id}/adjustments', [PayrollWorkflowController::class, 'addAdjustment'])->whereNumber('id');
+    Route::delete('/payroll/adjustments/{id}',     [PayrollWorkflowController::class, 'removeAdjustment'])->whereNumber('id');
+
+    Route::post('/payroll/runs/{id}/approve',      [PayrollWorkflowController::class, 'approve'])->whereNumber('id');
+    Route::post('/payroll/runs/{id}/reject',       [PayrollWorkflowController::class, 'reject'])->whereNumber('id');
+
+    Route::post('/payroll/records/{id}/payment',   [PayrollWorkflowController::class, 'markPayment'])->whereNumber('id');
+    Route::post('/payroll/runs/{id}/payments',     [PayrollWorkflowController::class, 'markAllPayments'])->whereNumber('id');
+    Route::post('/payroll/runs/{id}/release-payslips', [PayrollWorkflowController::class, 'releasePayslips'])->whereNumber('id');
+    Route::post('/payroll/records/{id}/payslip-visibility', [PayrollWorkflowController::class, 'setPayslipVisibility'])->whereNumber('id');
 
     // Payroll → Payslips (Phase 5). Generated from a completed run; PDF via dompdf.
     Route::get('/payroll/payslips',                    [PayslipController::class, 'index']);
