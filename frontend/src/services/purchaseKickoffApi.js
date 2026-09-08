@@ -113,8 +113,18 @@ export const purchaseKickoffApi = {
   update:    (id, payload) => k.update(id, toPurchaseMeeting(payload)),
   delete:    k.remove,
   transition: k.transition,
-  // Shared: markAttendance. Purchase: attendance.
+  // Shared: markAttendance. Purchase: attendance. This is the organiser ticking
+  // other people's rows after the fact.
   markAttendance: k.attendance,
+  // Marking MYSELF present, which is what releases the joining link — a
+  // different action, a different verb, and deliberately a different name from
+  // the one above. See MeetingAttendanceGate.
+  markOwnAttendance: (id) => k.markOwnAttendance(id),
+  // The organiser's verdict on who actually attended: the three slabs, kept
+  // beside each person's own mark rather than over it. See
+  // MeetingAttendanceReview.
+  attendanceRegister: (id) => k.attendanceRegister(id),
+  reviewAttendance: (id, rows) => k.reviewAttendance(id, rows),
   roomNotes: k.roomNotes,
   roomPresence: k.roomPresence,
   remind:    k.remind,
