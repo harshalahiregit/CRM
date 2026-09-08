@@ -140,7 +140,8 @@ return new class extends Migration
             $table->unsignedInteger('sort_order')->default(0);
             $table->timestamps();
 
-            $table->unique(['interview_round_id', 'question_id']);
+            // Named: the generated name exceeds MySQL's 64-character identifier limit.
+            $table->unique(['interview_round_id', 'question_id'], 'hr_round_questions_round_question_uq');
             $table->index(['tenant_id', 'interview_round_id']);
             $table->foreign('interview_round_id')->references('id')
                 ->on('hr_interview_rounds')->cascadeOnDelete();

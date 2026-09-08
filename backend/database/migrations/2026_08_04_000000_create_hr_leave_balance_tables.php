@@ -39,7 +39,8 @@ return new class extends Migration {
             $table->timestamps();
 
             // Fast lookup of the one active balance per employee + leave type.
-            $table->index(['tenant_id', 'employee_id', 'leave_type_id', 'status']);
+            // Named: the generated name exceeds MySQL's 64-character identifier limit.
+            $table->index(['tenant_id', 'employee_id', 'leave_type_id', 'status'], 'hr_leave_bal_tenant_emp_type_status_idx');
         });
 
         Schema::create('hr_leave_balance_transactions', function (Blueprint $table) {

@@ -74,7 +74,10 @@ return new class extends Migration
             $table->unsignedBigInteger('reconciliation_id')->nullable();
             $table->timestamps();
 
-            $table->index(['tenant_id', 'bank_account_id', 'txn_date']);
+            // Named: the generated name would be 65 chars and MySQL caps
+            // identifiers at 64. SQLite has no such limit, so this only ever
+            // fails on a server.
+            $table->index(['tenant_id', 'bank_account_id', 'txn_date'], 'acc_bank_stmt_lines_tenant_acct_date_idx');
             $table->index(['tenant_id', 'match_status']);
         });
 
@@ -105,7 +108,7 @@ return new class extends Migration
             $table->unsignedBigInteger('statement_line_id')->nullable(); // set when matched to a statement line
             $table->timestamps();
 
-            $table->unique(['reconciliation_id', 'voucher_line_id']);
+            $table->unique(['reconciliation_id', 'voucher_line_id'], 'acc_recon_lines_recon_voucher_line_uq');
             $table->index(['tenant_id', 'voucher_line_id']);
         });
 

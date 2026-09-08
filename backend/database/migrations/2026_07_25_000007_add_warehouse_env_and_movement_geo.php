@@ -53,7 +53,8 @@ return new class extends Migration
                 $table->foreignId('recorded_by')->nullable()->constrained('users')->nullOnDelete();
                 $table->timestamp('recorded_at')->nullable();
                 $table->timestamps();
-                $table->index(['tenant_id', 'warehouse_id', 'recorded_at']);
+                // Named: the generated name exceeds MySQL's 64-character identifier limit.
+                $table->index(['tenant_id', 'warehouse_id', 'recorded_at'], 'inv_wh_env_tenant_wh_recorded_idx');
             });
         }
     }

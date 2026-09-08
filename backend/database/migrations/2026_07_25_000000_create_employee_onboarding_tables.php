@@ -232,7 +232,8 @@ return new class extends Migration
             $table->string('owner_role')->default('HR');       // HR|Manager|Employee|System — who may action it
             $table->boolean('visible_to_employee')->default(false);
             $table->timestamps();
-            $table->index(['tenant_id', 'onboarding_id', 'category']);
+            // Named: the generated name exceeds MySQL's 64-character identifier limit.
+            $table->index(['tenant_id', 'onboarding_id', 'category'], 'hr_onb_tasks_tenant_onb_category_idx');
         });
 
         // ── 8. Documents — Identity Documents AND task attachments (new table; existing untouched) ──
@@ -256,7 +257,8 @@ return new class extends Migration
             $table->unsignedBigInteger('uploaded_by')->nullable();
             $table->string('source')->default('HR');            // HR|Employee|System
             $table->timestamps();
-            $table->index(['tenant_id', 'onboarding_id', 'category']);
+            // Named: the generated name exceeds MySQL's 64-character identifier limit.
+            $table->index(['tenant_id', 'onboarding_id', 'category'], 'hr_onb_docs_tenant_onb_category_idx');
         });
 
         // ── 9. Per-section submit → verify status (ESS submit/verify split; HR-only now) ──
@@ -272,7 +274,7 @@ return new class extends Migration
             $table->timestamp('verified_at')->nullable();
             $table->text('remarks')->nullable();
             $table->timestamps();
-            $table->unique(['onboarding_id', 'section']);
+            $table->unique(['onboarding_id', 'section'], 'hr_onb_section_status_onb_section_uq');
         });
     }
 

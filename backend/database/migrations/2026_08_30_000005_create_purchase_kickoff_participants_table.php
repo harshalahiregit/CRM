@@ -27,7 +27,8 @@ return new class extends Migration {
 
             $table->boolean('attended')->default(false);
             $table->timestamps();
-            $table->index(['tenant_id', 'purchase_kickoff_meeting_id']);
+            // Named: the generated name exceeds MySQL's 64-character identifier limit.
+            $table->index(['tenant_id', 'purchase_kickoff_meeting_id'], 'pur_kickoff_parts_tenant_meeting_idx');
         });
     }
 
