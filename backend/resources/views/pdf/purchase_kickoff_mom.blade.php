@@ -31,6 +31,26 @@
         'Present' => 'present', 'Late' => 'late', 'Absent' => 'absent',
         'Excused' => 'excused', 'Online' => 'online', 'Offline' => 'offline',
     ];
+    /**
+     * The ORGANISER's verdict — a separate record from the attendance mark above,
+     * and deliberately so. See MeetingAttendanceReview. Identical to the shared
+     * engine's minutes, because a Purchase vendor reading their minutes should
+     * not get a different document from a TPV one.
+     */
+    $verdictLabel = fn ($v) => \App\Support\Shared\AttendanceVerdict::label($v);
+    $verdictPill  = [
+        \App\Support\Shared\AttendanceVerdict::FULLY_PRESENT => 'present',
+        \App\Support\Shared\AttendanceVerdict::PARTIAL_ABSENT => 'late',
+        \App\Support\Shared\AttendanceVerdict::COMPLETE_ABSENT => 'absent',
+    ];
+    $window = function ($a) {
+        $mins = \App\Support\Shared\AttendanceVerdict::minutes($a->verdict_from, $a->verdict_to);
+
+        return $a->verdict_from->format('H:i').'–'.$a->verdict_to->format('H:i').($mins ? " ({$mins} min)" : '');
+    };
+    $contradicts = fn ($a) => \App\Support\Shared\AttendanceVerdict::contradictsClaim((bool) $a->attended, $a->verdict);
+    $reviewed = $attendees->filter(fn ($a) => $a->verdict !== null)->count();
+
 
     $present = $attendees->filter(fn ($a) => $a->attended)->count();
 
@@ -129,14 +149,14 @@
     <tr><td class="k">Vendor</td><td>{{ $vendorName ?: '—' }}</td><td class="k">{{ $meeting->mode === 'online' ? 'Meeting Link' : 'Location' }}</td><td>{{ $meeting->location ?: '—' }}</td></tr>
 </table>
 
-<h2>Participants &amp; Attendance ({{ $present }}/{{ $attendees->count() }} attended)</h2>
+<h2>Participants &amp; Attendance ({{ $present }}/{{ $attendees->count() }} attended@if ($reviewed), {{ $reviewed }} reviewed by the organiser@endif)</h2>
 @if ($attendees->count())
     @if (count($breakdown))
         <p class="sub" style="margin:0 0 6px;">{{ implode(' · ', $breakdown) }}</p>
     @endif
     <table class="att">
         <thead>
-            <tr><th style="width:32%">Name</th><th style="width:22%">Role</th><th style="width:28%">Organisation</th><th style="width:18%">Attendance</th></tr>
+            <tr><th style="width:26%">Name</th><th style="width:17%">Role</th><th style="width:22%">Organisation</th><th style="width:14%">Marked</th><th style="width:21%">Organiser's verdict</th></tr>
         </thead>
         <tbody>
             @foreach ($attendees as $a)
@@ -153,6 +173,23 @@
                             <span class="pill {{ $pillOf[$st] ?? 'unmarked' }}">{{ $st }}</span>
                         @else
                             <span class="pill unmarked">Not marked</span>
+                        @endif
+                    </td>
+                    {{-- The organiser's decision, printed BESIDE the mark rather
+                         than instead of it. Where the two disagree the document
+                         has to show both, or "punched CRM attendance but did not
+                         join the call" becomes an accusation with no evidence. --}}
+                    <td>
+                        @if ($a->verdict)
+                            <span class="pill {{ $verdictPill[$a->verdict] ?? 'unmarked' }}">{{ $verdictLabel($a->verdict) }}</span>
+                            @if ($a->verdict_from && $a->verdict_to)
+                                <div class="sub">{{ $window($a) }}</div>
+                            @endif
+                            @if ($contradicts($a))
+                                <div class="sub" style="font-weight:700">Marked attendance in the CRM</div>
+                            @endif
+                        @else
+                            <span class="pill unmarked">Not reviewed</span>
                         @endif
                     </td>
                 </tr>

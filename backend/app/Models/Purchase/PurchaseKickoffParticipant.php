@@ -32,6 +32,10 @@ class PurchaseKickoffParticipant extends Model
         // Whether this was observed in the call, recorded when they pressed
         // Join, or ticked by hand. See MeetingJoinRecorder.
         'attendance_source',
+        // The ORGANISER's decision, kept beside the claim above rather than on
+        // top of it — see MeetingAttendanceReview. NULL verdict means nobody has
+        // reviewed this person yet, which is not the same as absent.
+        'verdict', 'verdict_from', 'verdict_to', 'verdict_note', 'verdict_by', 'verdict_at',
     ];
 
     protected $casts = [
@@ -40,6 +44,9 @@ class PurchaseKickoffParticipant extends Model
         'left_at' => 'datetime',
         'seconds_in_call' => 'integer',
         'is_guest' => 'boolean',
+        'verdict_from' => 'datetime',
+        'verdict_to' => 'datetime',
+        'verdict_at' => 'datetime',
     ];
 
     public function meeting()

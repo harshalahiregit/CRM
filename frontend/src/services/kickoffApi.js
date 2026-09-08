@@ -54,6 +54,12 @@ export const kickoffApi = {
   // same URL, different verb and different authority. See
   // MeetingAttendanceGate.
   markOwnAttendance: (id) => api.post(`/kickoff/meetings/${id}/attendance`).then(r => r.data),
+  // The organiser's verdict on who actually attended — the three slabs, stored
+  // BESIDE each person's own attendance mark rather than over it, so "punched
+  // CRM attendance but did not join the call" stays writable. Authority is the
+  // organiser's or an admin's; the register is readable by any staff.
+  attendanceRegister: (id) => api.get(`/kickoff/meetings/${id}/attendance/register`).then(r => r.data),
+  reviewAttendance: (id, rows) => api.post(`/kickoff/meetings/${id}/attendance/review`, { rows }).then(r => r.data),
 
   // §13 per-recipient Sent / Viewed / Acknowledged tracker.
   distribution: (id) => api.get(`/kickoff/meetings/${id}/distribution`).then(r => r.data),

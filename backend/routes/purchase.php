@@ -558,6 +558,11 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     // who did not organise the meeting. The organiser and an admin already
     // hold it — see MeetingAttendanceGate.
     Route::post('/kickoff/{kickoff}/attendance',   [PurchaseKickoffController::class, 'markAttendance'])->whereNumber('kickoff');
+    // The organiser's verdict on who actually attended — the three slabs, kept
+    // BESIDE each person's own attendance mark rather than over it. See
+    // MeetingAttendanceReview; authority is the organiser's or an admin's.
+    Route::get('/kickoff/{kickoff}/attendance/register', [PurchaseKickoffController::class, 'attendanceRegister'])->whereNumber('kickoff');
+    Route::post('/kickoff/{kickoff}/attendance/review',  [PurchaseKickoffController::class, 'attendanceReview'])->whereNumber('kickoff');
     // Read-only PREVIEW of carryable items, for the meeting form. The writing
     // half lives at POST /kickoff/{kickoff}/carry-forward and is unrelated.
     Route::get('/kickoff/carry-forward',           [PurchaseKickoffController::class, 'carryForwardPreview']);

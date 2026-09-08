@@ -106,6 +106,11 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('kickoff')->grou
     // who did not organise the meeting. The organiser and an admin already
     // hold it — see MeetingAttendanceGate.
     Route::post('/meetings/{kickoffMeeting}/attendance', [KickoffMeetingLinkController::class, 'markAttendance']);
+    // The organiser's verdict on who actually attended — the three slabs, kept
+    // BESIDE each person's own attendance mark rather than over it. See
+    // MeetingAttendanceReview; authority is the organiser's or an admin's.
+    Route::get('/meetings/{kickoffMeeting}/attendance/register', [KickoffMeetingController::class, 'attendanceRegister']);
+    Route::post('/meetings/{kickoffMeeting}/attendance/review', [KickoffMeetingController::class, 'attendanceReview']);
 });
 
 // ── Polls (shared: Tasks / Helpdesk / Projects) ─────────────────────────

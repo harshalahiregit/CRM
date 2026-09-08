@@ -323,6 +323,12 @@ export const purchaseApi = {
     // same URL, different verb and different authority. See
     // MeetingAttendanceGate.
     markOwnAttendance: (id) => api.post(`/purchase/kickoff/${id}/attendance`).then(r => r.data),
+    // The organiser's verdict on who actually attended — the three slabs, stored
+    // BESIDE each person's own attendance mark rather than over it, so "punched
+    // CRM attendance but did not join the call" stays writable. Authority is the
+    // organiser's or an admin's; the register is readable by any staff.
+    attendanceRegister: (id) => api.get(`/purchase/kickoff/${id}/attendance/register`).then(r => r.data),
+    reviewAttendance: (id, rows) => api.post(`/purchase/kickoff/${id}/attendance/review`, { rows }).then(r => r.data),
     // WRITES carried items into an existing meeting.
     carryForward: (id)    => api.post(`/purchase/kickoff/${id}/carry-forward`).then(r => r.data),
     // READS what a new meeting could carry — the meeting form's preview. Same

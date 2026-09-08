@@ -11,6 +11,7 @@ import {
 // the old name so the call sites below read unchanged.
 import { meetingEngineApi as kickoffApi, meetingBase } from '@/services/meetingEngineApi'
 import MeetingJoinGate from '@/components/portal/MeetingJoinGate'
+import AttendanceReviewPanel from '@/components/meetings/AttendanceReviewPanel'
 import {
   KO_STATUS, koStatusCfg, koNextStatuses, koModeLabel, fmtDateTime, fmtDate,
   actStatusCfg, actNextStatuses, issueStatusCfg, issueNextStatuses, ISSUE_TO_INCIDENT_SEVERITY,
@@ -264,6 +265,13 @@ export default function KickoffMeetingDetail() {
               </div>
             )}
           </div>
+
+          {/* The organiser's verdict on who actually attended.
+              Marking attendance in the CRM is what released the joining link;
+              it is not proof anybody stayed in a call held somewhere we cannot
+              see. This is where that gets decided — beside each person's own
+              mark, never over it. See MeetingAttendanceReview. */}
+          <AttendanceReviewPanel api={kickoffApi} meetingId={m.id} />
 
           {/* Minutes */}
           {m.minutes && (

@@ -180,6 +180,56 @@ class PurchaseKickoffController extends Controller
         ]));
     }
 
+    /**
+     * The organiser's verdict on who actually attended.
+     *
+     * Marking attendance in the CRM is a claim — it is also how the person got
+     * the joining link at all — and the CRM cannot see a call held on Google
+     * Meet, Zoom or Teams. So the organiser decides, and the decision is stored
+     * BESIDE the claim rather than over it: "punched CRM attendance but did not
+     * join the call" is only writable if both halves survive.
+     *
+     * Body: rows[] of { id, verdict, verdict_from?, verdict_to?, verdict_note? }
+     * Verdict is one of Fully_Present | Partial_Absent | Complete_Absent, or
+     * null to take a decision back to unreviewed. Partial requires the window.
+     *
+     * Authority is the organiser's or an admin's — enforced in the service, not
+     * here, because both engines route to it.
+     */
+    public function attendanceReview(Request $request, PurchaseKickoffMeeting $kickoff,
+        \App\Services\Shared\MeetingAttendanceReview $review)
+    {
+        $this->assertTenant($request, $kickoff);
+
+        $data = $request->validate([
+            'rows' => 'required|array|min:1',
+            'rows.*.id' => 'required|integer',
+            'rows.*.verdict' => 'nullable|string|in:'.implode(',', \App\Support\Shared\AttendanceVerdict::ALL),
+            'rows.*.verdict_from' => 'nullable|date',
+            'rows.*.verdict_to' => 'nullable|date',
+            'rows.*.verdict_note' => 'nullable|string|max:2000',
+        ]);
+
+        $counts = $review->review($kickoff, $data['rows'], $request->user());
+
+        return response()->json([
+            'counts' => $counts,
+            'register' => $review->register($kickoff->fresh()),
+        ]);
+    }
+
+    /** The register as the review screen reads it: the claim and the verdict, side by side. */
+    public function attendanceRegister(Request $request, PurchaseKickoffMeeting $kickoff,
+        \App\Services\Shared\MeetingAttendanceReview $review)
+    {
+        $this->assertTenant($request, $kickoff);
+
+        return response()->json([
+            'register' => $review->register($kickoff),
+            'may_review' => $review->mayReview($kickoff, $request->user()),
+        ]);
+    }
+
     public function update(UpdatePurchaseKickoffRequest $request, PurchaseKickoffMeeting $kickoff,
         PurchaseKickoffContentService $content)
     {
