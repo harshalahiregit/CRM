@@ -290,6 +290,21 @@ export default function MeetingRoom() {
     navigate(`${meetingBase()}/kickoff/${latest.current.id}`)
   }, [save, beat, navigate])
 
+  /*
+   * The live counter, recomputed on every `tick` — which is what makes it move.
+   *
+   * It sits ABOVE the early returns deliberately. React matches hooks by call
+   * order, so a hook below `if (loading) return …` is skipped on the loading
+   * render and called on the next one: the hook count grows and React throws
+   * "Rendered more hooks than during the previous render", taking the whole
+   * screen down with it. Every dependency here is state declared at the top of
+   * the component, so nothing is lost by hoisting it.
+   */
+  const running = useMemo(
+    () => (heldFrom && joined ? elapsedSeconds(heldFrom) : null),
+    [heldFrom, joined, tick],
+  )
+
   /* ── Render ───────────────────────────────────────────────────────── */
 
   if (loading) return <Shell><Centre>Loading the meeting…</Centre></Shell>
@@ -297,11 +312,6 @@ export default function MeetingRoom() {
 
   const presentCount = attendees.filter(a => a.attended).length
   const timing = describeTiming(meeting.scheduled_at, meeting.end_at)
-  // The counter is recomputed on every `tick`, which is what makes it move.
-  const running = useMemo(
-    () => (heldFrom && joined ? elapsedSeconds(heldFrom) : null),
-    [heldFrom, joined, tick],
-  )
 
   return (
     <Shell>
