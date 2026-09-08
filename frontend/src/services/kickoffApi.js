@@ -48,6 +48,12 @@ export const kickoffApi = {
   generateLink: (id, platform = null) =>
     api.post(`/kickoff/meetings/${id}/generate-link`, { platform }).then(r => r.data),
   getLink: (id) => api.get(`/kickoff/meetings/${id}/link`).then(r => r.data),
+  // Mark MYSELF present, which is what releases the joining link to a staff
+  // attendee who did not organise the meeting. Distinct from markAttendance
+  // below, which is the organiser ticking other people's rows afterwards —
+  // same URL, different verb and different authority. See
+  // MeetingAttendanceGate.
+  markOwnAttendance: (id) => api.post(`/kickoff/meetings/${id}/attendance`).then(r => r.data),
 
   // §13 per-recipient Sent / Viewed / Acknowledged tracker.
   distribution: (id) => api.get(`/kickoff/meetings/${id}/distribution`).then(r => r.data),

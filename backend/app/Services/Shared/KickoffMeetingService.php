@@ -1693,24 +1693,40 @@ class KickoffMeetingService
         $lead = $offsetMinutes >= 1440
             ? (intdiv($offsetMinutes, 1440).' day(s)')
             : ($offsetMinutes >= 60 ? (intdiv($offsetMinutes, 60).' hour(s)') : $offsetMinutes.' minutes');
-        $where = $meeting->mode === 'online'
-            ? ($meeting->meeting_link ? " Join link: {$meeting->meeting_link}" : '')
-            : ($meeting->location ? " at {$meeting->location}" : '');
+        $online = $meeting->mode === 'online' && $meeting->meeting_link;
+        $at = $online ? '' : ($meeting->location ? " at {$meeting->location}" : '');
         $subject = "Reminder: {$meeting->title} in {$lead}";
         $body = "This is a reminder that the meeting \"{$meeting->title}\""
             .($subjectName ? " with {$subjectName}" : '')
-            ." is scheduled for {$when} (in about {$lead}).{$where}";
+            ." is scheduled for {$when} (in about {$lead}).{$at}";
 
         foreach ($meeting->attendees as $attendee) {
             if (! $attendee->email) {
                 continue;
             }
+
+            /*
+             * A reminder carries the way IN to the meeting, not the way past it.
+             *
+             * It used to carry the join link, which put the call one click from
+             * the inbox and left nothing in the register — see
+             * MeetingAttendanceGate. Where the recipient goes instead depends on
+             * who they are: a roster row with a user_id is a staff account and
+             * belongs in the console, and everybody else is in the portal. One
+             * URL for both would send half of them to a login screen they have
+             * no account for.
+             */
+            $go = $online
+                ? ' Mark your attendance to get the joining link: '.($attendee->user_id
+                    ? FrontendUrl::to('/app/tpv/kickoff/'.$meeting->id)
+                    : FrontendUrl::to('/vendor-portal/governance'))
+                : '';
             // Pass the tenant explicitly (5th arg) — the reminder runs in the
             // scheduler with no authenticated user, so it must name the tenant
             // itself or the mail would fall back to the .env mailer instead of
             // the tenant's Settings → Email SMTP.
             $this->notifications->email(
-                $attendee->email, $subject, $body,
+                $attendee->email, $subject, $body.$go,
                 ['category' => 'System', 'kickoff_meeting_id' => $meeting->id],
                 $meeting->tenant_id,
             );

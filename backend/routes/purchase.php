@@ -554,6 +554,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     // mint and read their link here rather than through the shared engine.
     Route::post('/kickoff/{kickoff}/generate-link', [PurchaseKickoffController::class, 'generateLink'])->whereNumber('kickoff');
     Route::get('/kickoff/{kickoff}/link',          [PurchaseKickoffController::class, 'link'])->whereNumber('kickoff');
+    // Marking attendance is what releases the join link to a staff attendee
+    // who did not organise the meeting. The organiser and an admin already
+    // hold it — see MeetingAttendanceGate.
+    Route::post('/kickoff/{kickoff}/attendance',   [PurchaseKickoffController::class, 'markAttendance'])->whereNumber('kickoff');
     // Read-only PREVIEW of carryable items, for the meeting form. The writing
     // half lives at POST /kickoff/{kickoff}/carry-forward and is unrelated.
     Route::get('/kickoff/carry-forward',           [PurchaseKickoffController::class, 'carryForwardPreview']);

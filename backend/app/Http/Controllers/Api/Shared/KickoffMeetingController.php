@@ -193,7 +193,15 @@ class KickoffMeetingController extends Controller
 
         // Resolve the soft project link to a display name for the detail view.
         // Single lookup here (not appended to every list row) keeps the list N+1-free.
-        $payload = $meeting->toArray();
+        // The join link is overlaid by the gate rather than left as the model
+        // wrote it: a staff attendee who is not the organiser marks attendance
+        // like anybody else, and a link sitting in this payload would make that
+        // optional. The organiser and an admin see it unchanged — see
+        // MeetingAttendanceGate.
+        $payload = array_merge(
+            $meeting->toArray(),
+            app(\App\Services\Shared\MeetingAttendanceGate::class)->stateFor($meeting, $request->user()),
+        );
         $payload['project_label'] = $meeting->project_id
             ? $projects->labelFor((int) $meeting->project_id, $request->user()->tenant_id)
             : null;

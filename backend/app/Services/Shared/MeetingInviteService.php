@@ -61,9 +61,9 @@ class MeetingInviteService
                 $result = $this->notifications->emailHtml(
                     $r['email'],
                     $subject,
-                    $this->renderInvite($meeting, $r['name']),
+                    $this->renderInvite($meeting, $r['name'], $this->meetingUrlFor($r['party'], $meeting)),
                     ['category' => 'System', 'kickoff_meeting_id' => $meeting->id],
-                    $this->inviteText($meeting, $r['name']),
+                    $this->inviteText($meeting, $r['name'], $this->meetingUrlFor($r['party'], $meeting)),
                     $meeting->tenant_id,
                     // The calendar invite — §1's "Send Invitation" is not an
                     // e-mail somebody has to retype into their diary.
@@ -305,7 +305,21 @@ class MeetingInviteService
         return $where ? $when.' — '.$where : $when;
     }
 
-    private function renderInvite(KickoffMeeting $meeting, ?string $name): string
+    /**
+     * Where this recipient opens the meeting.
+     *
+     * Every invitation used to point at /app/tpv/kickoff/{id}, which is the
+     * staff console — a vendor following it arrived at a login screen they have
+     * no account for. The party is already known per recipient, so it is used.
+     */
+    private function meetingUrlFor(string $party, KickoffMeeting $meeting): string
+    {
+        return $party === MeetingDistribution::PARTY_VENDOR
+            ? FrontendUrl::to('/vendor-portal/governance')
+            : FrontendUrl::to('/app/tpv/kickoff/'.$meeting->id);
+    }
+
+    private function renderInvite(KickoffMeeting $meeting, ?string $name, string $url): string
     {
         return view('emails.shared.meeting_invite', [
             'meeting' => $meeting,
@@ -313,13 +327,13 @@ class MeetingInviteService
             'whenLine' => $this->whenLine($meeting),
             'agendaItems' => $meeting->agendaItems,
             'subjectName' => KickoffSubject::nameOf($meeting->kickoffable),
-            'url' => FrontendUrl::to('/app/tpv/kickoff/'.$meeting->id),
+            'url' => $url,
             'companyName' => config('app.name', 'Our Company'),
             'logoUrl' => config('mail.logo_url'),
         ])->render();
     }
 
-    private function inviteText(KickoffMeeting $meeting, ?string $name): string
+    private function inviteText(KickoffMeeting $meeting, ?string $name, string $url): string
     {
         $lines = ['Dear '.($name ?: 'Sir/Madam').',', ''];
         $lines[] = 'You are invited to the following meeting.';
@@ -340,14 +354,23 @@ class MeetingInviteService
             $lines[] = ($i + 1).'. '.$item->item;
         }
 
-        // The HTML part has a Join button; the text part had nothing, so a
-        // plain-text client showed an invitation with no way to join.
+        /*
+         * The join link is deliberately NOT here.
+         *
+         * It used to be — in this text part, in the HTML button, and in the
+         * calendar attachment — which made the CRM something people walked past
+         * on their way to the call. Nobody read the agenda and nobody was
+         * recorded as attending, which is why the register kept coming out
+         * empty. The invitation now points at the meeting in the CRM, where the
+         * agenda is, and the link is released on marking attendance there.
+         *
+         * The passcode goes with it: on its own it is useless, and alongside a
+         * link it would be half a bypass.
+         */
         if ($meeting->meeting_link) {
             $lines[] = '';
-            $lines[] = 'Join link: '.$meeting->meeting_link;
-            if ($meeting->meeting_passcode) {
-                $lines[] = 'Passcode: '.$meeting->meeting_passcode;
-            }
+            $lines[] = 'This meeting is online. Open it in the CRM and mark your attendance to get the joining link:';
+            $lines[] = $url;
         }
 
         $lines[] = '';
@@ -365,6 +388,10 @@ class MeetingInviteService
      */
     private function buildIcs(KickoffMeeting $meeting): string
     {
+        // One calendar file goes to every recipient, so unlike the e-mail body
+        // it cannot be addressed per party. It points at the staff console; the
+        // vendor's own portal link is in the body they receive.
+        $crmUrl = FrontendUrl::to('/app/tpv/kickoff/'.$meeting->id);
         $start = $meeting->scheduled_at ?: now()->addDay();
         $end = $meeting->end_at
             ?: (clone $start)->addMinutes($meeting->duration_minutes ?: 60);
@@ -376,6 +403,8 @@ class MeetingInviteService
             $meeting->meeting_type_label,
             $meeting->agenda ? 'Agenda: '.$meeting->agenda : null,
             $meeting->chairperson ? 'Chairperson: '.$meeting->chairperson : null,
+            // Somewhere to go from the diary entry — the CRM, not the call.
+            $meeting->meeting_link ? 'Mark your attendance in the CRM for the joining link: '.$crmUrl : null,
         ])));
 
         $lines = [
@@ -391,7 +420,11 @@ class MeetingInviteService
             'DTEND:'.$stamp($end),
             'SUMMARY:'.$esc($meeting->title),
             'DESCRIPTION:'.$esc($description),
-            'LOCATION:'.$esc($meeting->meeting_link ?: $meeting->location),
+            // The join link never goes in the calendar entry. A LOCATION
+            // holding a Meet URL is one click away in every diary that ever
+            // synced this event — permanently outside the gate, and outside
+            // anything we could later revoke.
+            'LOCATION:'.$esc($meeting->location ?: ($meeting->meeting_link ? $crmUrl : '')),
             'STATUS:CONFIRMED',
             'END:VEVENT',
             'END:VCALENDAR',

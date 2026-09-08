@@ -360,7 +360,9 @@ export const purchasePortalApi = {
     // Records that this person opened the meeting, then hands back the link.
     // A meeting held on Google Meet or Teams runs where we cannot see it, so
     // the click is the only evidence there is — and it is worth keeping.
-    joinMeeting:     (id)          => api.post(`/portal/purchase/meetings/${id}/join`).then(r => r.data),
+    // Marking attendance is what releases the joining link — it is not in the
+    // meetings payload until this returns. See MeetingAttendanceGate.
+    markAttendance:  (id)          => api.post(`/portal/purchase/meetings/${id}/attendance`).then(r => r.data),
     // The minutes document itself. Distributing minutes the recipient cannot
     // open is not distributing them — this had no route at all until now.
     meetingMomFile:  (id)          => api.get(`/portal/purchase/meetings/${id}/mom/file`, { responseType: 'blob' }).then(r => r.data),

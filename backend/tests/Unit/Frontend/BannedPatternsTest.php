@@ -315,7 +315,6 @@ class BannedPatternsTest extends TestCase
             'pages/company-portal/CompanyRequestDetail.jsx' => 3,
             'pages/company-portal/CompanySettings.jsx' => 1,
             'pages/modules/ModulesPage.jsx' => 1,
-            'pages/purchase-portal/PurchasePortalDashboard.jsx' => 1,
             'pages/settings/MyProfile.jsx' => 1,
             'pages/vendor-portal/PortalDashboard.jsx' => 1,
         ],

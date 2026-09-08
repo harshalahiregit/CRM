@@ -317,6 +317,12 @@ export const purchaseApi = {
     // mint and read it on their own route rather than the shared engine's.
     generateLink: (id, platform = null) => api.post(`/purchase/kickoff/${id}/generate-link`, { platform }).then(r => r.data),
     getLink:      (id) => api.get(`/purchase/kickoff/${id}/link`).then(r => r.data),
+    // Mark MYSELF present, which is what releases the joining link to a staff
+    // attendee who did not organise the meeting. Distinct from markAttendance
+    // (`attendance`), which is the organiser ticking other people's rows afterwards —
+    // same URL, different verb and different authority. See
+    // MeetingAttendanceGate.
+    markOwnAttendance: (id) => api.post(`/purchase/kickoff/${id}/attendance`).then(r => r.data),
     // WRITES carried items into an existing meeting.
     carryForward: (id)    => api.post(`/purchase/kickoff/${id}/carry-forward`).then(r => r.data),
     // READS what a new meeting could carry — the meeting form's preview. Same

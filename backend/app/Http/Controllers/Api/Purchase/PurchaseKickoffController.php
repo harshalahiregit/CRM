@@ -103,7 +103,17 @@ class PurchaseKickoffController extends Controller
     {
         $this->assertTenant($request, $kickoff);
 
-        return response()->json($this->service->find($kickoff->id, $request->user()->tenant_id));
+        $meeting = $this->service->find($kickoff->id, $request->user()->tenant_id);
+
+        // The join link is overlaid by the gate rather than left as the model
+        // wrote it: a staff attendee who is not the organiser marks attendance
+        // like anybody else, and a link sitting in this payload would make that
+        // optional. The organiser and an admin see it unchanged — see
+        // MeetingAttendanceGate.
+        return response()->json(array_merge(
+            $meeting->toArray(),
+            app(\App\Services\Shared\MeetingAttendanceGate::class)->stateFor($meeting, $request->user()),
+        ));
     }
 
     /**
@@ -130,11 +140,44 @@ class PurchaseKickoffController extends Controller
     }
 
     /** The stored link, if this meeting has one. */
-    public function link(Request $request, PurchaseKickoffMeeting $kickoff, OnlineMeetingService $meetings)
+    public function link(Request $request, PurchaseKickoffMeeting $kickoff, OnlineMeetingService $meetings,
+        \App\Services\Shared\MeetingAttendanceGate $gate)
     {
         $this->assertTenant($request, $kickoff);
 
-        return response()->json($meetings->getLinkData($kickoff));
+        $data = $meetings->getLinkData($kickoff);
+        if (! $data) {
+            return response()->json(null);
+        }
+
+        // Same gate as the meeting payload. This endpoint is the other way into
+        // the link, and leaving it open would have made the first one decorative.
+        return response()->json(array_merge($data, $gate->stateFor($kickoff, $request->user())));
+    }
+
+    /**
+     * Mark attendance, and get the link in return.
+     *
+     * The staff half of what the portal already does. Without it an internal
+     * attendee could never be recorded as present — the register would carry the
+     * vendors who marked attendance in the portal and nobody from our side,
+     * which reads as a meeting the vendor attended alone.
+     */
+    public function markAttendance(Request $request, PurchaseKickoffMeeting $kickoff,
+        \App\Services\Shared\MeetingAttendanceGate $gate)
+    {
+        $this->assertTenant($request, $kickoff);
+
+        $user = $request->user();
+
+        // Staff are not always on the roster either — the organiser adds the
+        // people they expect to speak, not everyone who attends. The identity is
+        // the authenticated account, so nothing is guessed.
+        return response()->json($gate->mark($kickoff, $user, $request, [
+            'name' => $user->name,
+            'email' => $user->email,
+            'side' => 'internal',
+        ]));
     }
 
     public function update(UpdatePurchaseKickoffRequest $request, PurchaseKickoffMeeting $kickoff,

@@ -532,15 +532,16 @@ class PurchasePortalController extends Controller
             'scheduled_at'    => optional($meeting->scheduled_at)->toIso8601String(),
             'mode'            => $meeting->mode,
             'location'        => $meeting->location,
-            // A link to a meeting that is not happening is worse than none — it
-            // looks like it should still work. Same rule as the meetings list.
-            // Offered only while the meeting is actually going to happen —
-            // upcoming or in progress. "Not expired" is not the same thing: a
-            // CANCELLED meeting is not expired either, and was still handing out
-            // a working join link for a meeting nobody was going to attend.
-            'meeting_link'    => in_array($meeting->timing_state, ['upcoming', 'live'], true)
-                ? $meeting->meeting_link
-                : null,
+            // The join link is not here until the vendor marks attendance on
+            // the meeting — see MeetingAttendanceGate, which also keeps the old
+            // rule that a link is only offered while the meeting is still going
+            // to happen (a CANCELLED meeting is not "expired", and used to keep
+            // handing out a working link for a meeting nobody would attend).
+            // Spread rather than named one by one, so this payload gains
+            // attendance_marked and can_mark_attendance with the same shape the
+            // two governance lists use.
+            ...app(\App\Services\Shared\MeetingAttendanceGate::class)
+                ->stateFor($meeting, $this->purchaseVendor($request)),
             'mom_available'   => $momAvailable,
             // This payload is hand-built, so the model's appended timing does
             // NOT ride along — it has to be named here. Without it the dashboard

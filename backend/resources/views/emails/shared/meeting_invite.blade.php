@@ -56,12 +56,19 @@
         @endif
       </table>
 
+      {{-- The joining link is deliberately not in this e-mail. It is released
+           when the person marks attendance on the meeting in the CRM, which is
+           the only record we have of who turned up to a call held on Google
+           Meet, Zoom or Teams. See MeetingAttendanceGate. --}}
       @if($meeting->meeting_link)
-        <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 10px;">
           <tr><td align="center" style="border-radius:8px;background:#7c3aed;">
-            <a href="{{ $meeting->meeting_link }}" style="display:inline-block;padding:12px 26px;font-size:14px;font-weight:700;color:#ffffff;text-decoration:none;">Join the online meeting</a>
+            <a href="{{ $url }}" style="display:inline-block;padding:12px 26px;font-size:14px;font-weight:700;color:#ffffff;text-decoration:none;">Open the meeting &amp; mark attendance</a>
           </td></tr>
         </table>
+        <div style="font-size:12px;color:#6b7280;margin:0 0 24px;">
+          This meeting is online. Mark your attendance there and the joining link will appear.
+        </div>
       @endif
 
       @if($agendaItems && $agendaItems->count())

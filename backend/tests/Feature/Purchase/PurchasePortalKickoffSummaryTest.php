@@ -99,14 +99,23 @@ class PurchasePortalKickoffSummaryTest extends TestCase
         $this->assertNull($m['meeting_link']);
     }
 
-    public function test_a_meeting_in_progress_keeps_its_link(): void
+    /**
+     * The distinction this draws against the expired case above is whether the
+     * meeting is still JOINABLE — and it still is. What changed is that the
+     * link is now earned rather than given: it is withheld from the payload
+     * until the vendor marks attendance, so has_meeting_link is what says the
+     * meeting is online. See MeetingAttendanceGate.
+     */
+    public function test_a_meeting_in_progress_is_still_joinable_but_the_link_is_earned(): void
     {
         $this->meeting('Running now', -10);
 
         $m = $this->summary();
 
         $this->assertTrue($m['is_live']);
-        $this->assertNotNull($m['meeting_link']);
+        $this->assertTrue($m['has_meeting_link'], 'the dashboard still knows this is an online meeting');
+        $this->assertNull($m['meeting_link'], 'and does not hand out the link before attendance is marked');
+        $this->assertTrue($m['can_mark_attendance']);
     }
 
     /** A draft is invisible to the vendor everywhere else; it must be here too. */

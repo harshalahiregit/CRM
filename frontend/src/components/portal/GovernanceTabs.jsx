@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Send, Upload, Calendar, ChevronDown, ChevronRight, FileCheck, Video, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { Send, Upload, Calendar, ChevronDown, ChevronRight, FileCheck, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import MeetingJoinGate from '@/components/portal/MeetingJoinGate'
 import RichText from '@/components/ui/RichText'
 
 /**
@@ -51,26 +52,6 @@ export function MeetingsTab({ gov }) {
   const [momErr, setMomErr] = useState({})   // id → why it could not be shown
 
   useEffect(() => { gov.meetings().then(r => setRows(r?.data ?? [])).catch(() => setRows([])) }, [])
-
-  /**
-   * Open the meeting, recording that this person did.
-   *
-   * The window is opened FIRST, synchronously, because a browser only allows a
-   * popup during the click that asked for it — opening it after the request
-   * came back would be blocked. The recording follows into the tab already open.
-   */
-  const joinMeeting = (m) => {
-    const tab = window.open('', '_blank', 'noopener')
-    const go = (url) => { if (tab) tab.location = url; else window.location.href = url }
-
-    if (!gov?.joinMeeting) return go(m.meeting_link)
-
-    gov.joinMeeting(m.id)
-      .then(r => go(r?.link || m.meeting_link))
-      // Never stand between somebody and their meeting: a register entry that
-      // did not save is a smaller problem than a vendor who could not join.
-      .catch(() => go(m.meeting_link))
-  }
 
   const toggle = (id) => {
     if (open === id) { setOpen(null); return }
@@ -142,34 +123,46 @@ export function MeetingsTab({ gov }) {
             </div>
           )}
 
-          {/* Join the online meeting straight from the portal (point 11).
-              Deliberately gated on the CLOCK as well as the status: the link was
-              offered for meetings that had already finished, which reads as
-              though they are still open. */}
-          {m.meeting_link && m.mode !== 'onsite' && !m.is_expired && m.status !== 'Completed' && m.status !== 'Cancelled' && (
-            <div style={{ paddingLeft: 26, marginTop: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
-              {/* A button, not a bare link: opening the meeting is recorded on
-                  the way through, which is the only attendance evidence that
-                  exists for a meeting held on Google Meet, Zoom or Teams. The
-                  href stays so it still behaves like a link — middle-click,
-                  copy address — and so it works if the recording call fails. */}
-              <a href={m.meeting_link} target="_blank" rel="noopener noreferrer"
-                onClick={(e) => { e.preventDefault(); joinMeeting(m) }}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 9, fontSize: 12.5, fontWeight: 800, textDecoration: 'none', color: '#fff', background: m.is_live ? 'linear-gradient(145deg,#22c55e,#16a34a)' : 'linear-gradient(145deg,#38bdf8,#0284c7)' }}>
-                <Video size={14} /> {m.is_live ? 'Join now' : 'Join meeting'}
-              </a>
-              {m.is_live && <span style={{ fontSize: 11.5, fontWeight: 800, color: '#16a34a' }}>● In progress</span>}
-              {/* The address itself, readable — so it can be copied, read out,
-                  or opened on another device. */}
-              <a href={m.meeting_link} target="_blank" rel="noopener noreferrer" title={m.meeting_link}
-                style={{ fontSize: 11.5, color: 'var(--text-muted)', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {String(m.meeting_link).replace(/^https?:\/\//, '')}
-              </a>
-              {!m.is_live && Number.isFinite(Number(m.minutes_until_start)) && Number(m.minutes_until_start) > 0 && (
-                <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>starts in {durationText(m.minutes_until_start)}</span>
+          {/* The agenda — the reason the meeting page is worth opening at all,
+              and what is offered in place of a link in the e-mail. Shown for
+              every meeting, gated or not; the MINUTES are separate and stay
+              behind approval + distribution. */}
+          {(m.agenda || (m.agenda_items?.length > 0)) && (
+            <div style={{ paddingLeft: 26, marginTop: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 5 }}>
+                Agenda
+              </div>
+              {m.agenda && (
+                <div style={{ fontSize: 12.5, color: 'var(--text-h)', whiteSpace: 'pre-wrap', marginBottom: m.agenda_items?.length ? 7 : 0 }}>
+                  {m.agenda}
+                </div>
+              )}
+              {m.agenda_items?.length > 0 && (
+                <ol style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 3 }}>
+                  {m.agenda_items.map(a => (
+                    <li key={a.id} style={{ fontSize: 12.5, color: 'var(--text-h)' }}>
+                      {a.item}
+                      {a.owner_names ? <span style={{ color: 'var(--text-muted)' }}> · {a.owner_names}</span> : null}
+                      {a.duration_minutes ? <span style={{ color: 'var(--text-muted)' }}> · {durationText(a.duration_minutes)}</span> : null}
+                    </li>
+                  ))}
+                </ol>
               )}
             </div>
           )}
+
+          {/* The joining link, and what it costs — MeetingJoinGate, the same
+              component the Purchase kickoff, onboarding and dashboard cards
+              use. Four hand-rolled copies of this is how those screens drifted
+              apart in the first place. */}
+          <div style={{ paddingLeft: 26, marginTop: 8 }}>
+            <MeetingJoinGate meeting={m} onMark={gov.markAttendance} />
+            {m.meeting_link && !m.is_live && Number.isFinite(Number(m.minutes_until_start)) && Number(m.minutes_until_start) > 0 && (
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 5 }}>
+                starts in {durationText(m.minutes_until_start)}
+              </div>
+            )}
+          </div>
           {open === m.id && <MomDetail data={mom[m.id]} error={momErr[m.id]} gov={gov} meetingId={m.id} />}
         </div>
       ))}

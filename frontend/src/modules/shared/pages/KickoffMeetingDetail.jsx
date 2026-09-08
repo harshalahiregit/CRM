@@ -10,6 +10,7 @@ import {
 // shared engine under /app/tpv, Purchase's under /app/purchase. Aliased to
 // the old name so the call sites below read unchanged.
 import { meetingEngineApi as kickoffApi, meetingBase } from '@/services/meetingEngineApi'
+import MeetingJoinGate from '@/components/portal/MeetingJoinGate'
 import {
   KO_STATUS, koStatusCfg, koNextStatuses, koModeLabel, fmtDateTime, fmtDate,
   actStatusCfg, actNextStatuses, issueStatusCfg, issueNextStatuses, ISSUE_TO_INCIDENT_SEVERITY,
@@ -1505,6 +1506,19 @@ function OnlineMeetingCard({ meeting, linkData, busy, onGenerate }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '14px', borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
           <Loader2 size={16} className="ko-spin" style={{ color: '#a78bfa' }} />
           <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Generating meeting link…</span>
+        </div>
+      ) : (linkData?.has_meeting_link && !linkData?.meeting_link) ? (
+        /* A link exists but this account has not earned it.
+           The organiser and an admin are not gated — they chose the platform and
+           generated the link — so this is the staff attendee's view: the same
+           trade the vendor gets in the portal, and the only way an internal
+           person ever reaches the register. Without it the attendance list would
+           carry the vendors who marked attendance and nobody from our side,
+           which reads as a meeting the vendor attended alone.
+           See MeetingAttendanceGate. */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <MeetingJoinGate meeting={{ ...linkData, mode: meeting.mode, status: meeting.status, is_expired: meeting.is_expired, is_live: meeting.is_live, id: meeting.id }}
+            onMark={kickoffApi.markOwnAttendance} />
         </div>
       ) : linkData?.link ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

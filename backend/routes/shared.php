@@ -102,6 +102,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('kickoff')->grou
     // ── Online meeting link generation ────────────────────────────────────────
     Route::post('/meetings/{kickoffMeeting}/generate-link', [KickoffMeetingLinkController::class, 'generate']);
     Route::get('/meetings/{kickoffMeeting}/link', [KickoffMeetingLinkController::class, 'show']);
+    // Marking attendance is what releases the join link to a staff attendee
+    // who did not organise the meeting. The organiser and an admin already
+    // hold it — see MeetingAttendanceGate.
+    Route::post('/meetings/{kickoffMeeting}/attendance', [KickoffMeetingLinkController::class, 'markAttendance']);
 });
 
 // ── Polls (shared: Tasks / Helpdesk / Projects) ─────────────────────────

@@ -189,10 +189,11 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     Route::post('/approvals/request',                     [$gov, 'requestApproval']);
     Route::post('/extensions/request',                    [$gov, 'requestExtension']);
     Route::get('/meetings',                               [$gov, 'meetings']);
-    // Opening the meeting is recorded here, so a meeting held on Google Meet,
-    // Zoom or Teams still leaves evidence of who turned up — see
-    // MeetingJoinRecorder. Returns the link for the browser to open.
-    Route::post('/meetings/{kickoffMeeting}/join',        [$gov, 'joinMeeting']);
+    // Marking attendance is what releases the join link — it is not in the
+    // meetings payload until this has been called. A meeting held on Google
+    // Meet, Zoom or Teams runs where we cannot see it, so this press is the
+    // only evidence of turning up there is. See MeetingAttendanceGate.
+    Route::post('/meetings/{kickoffMeeting}/attendance',  [$gov, 'markAttendance']);
     Route::get('/meetings/{kickoffMeeting}/mom',          [$gov, 'meetingMom']);
     // The minutes DOCUMENT. Distributing minutes the recipient cannot open is
     // not distributing them; until this existed the PDF was admin-only.
@@ -382,10 +383,11 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::post('/approvals/request',                 [$pgov, 'requestApproval']);
     Route::post('/extensions/request',                [$pgov, 'requestExtension']);
     Route::get('/meetings',                           [$pgov, 'meetings']);
-    // Opening the meeting is recorded here, so a meeting held on Google Meet,
-    // Zoom or Teams still leaves evidence of who turned up — see
-    // MeetingJoinRecorder. Returns the link for the browser to open.
-    Route::post('/meetings/{kickoff}/join',            [$pgov, 'joinMeeting']);
+    // Marking attendance is what releases the join link — it is not in the
+    // meetings payload until this has been called. A meeting held on Google
+    // Meet, Zoom or Teams runs where we cannot see it, so this press is the
+    // only evidence of turning up there is. See MeetingAttendanceGate.
+    Route::post('/meetings/{kickoff}/attendance',      [$pgov, 'markAttendance']);
     Route::get('/meetings/{kickoff}/mom',             [$pgov, 'meetingMom']);
     // The minutes DOCUMENT. Distributing minutes the recipient cannot open is
     // not distributing them; until this existed the PDF was admin-only.

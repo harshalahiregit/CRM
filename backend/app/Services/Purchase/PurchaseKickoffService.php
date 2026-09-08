@@ -474,10 +474,13 @@ class PurchaseKickoffService
             $where .= " Location: {$meeting->location}.";
         }
         if ($meeting->meeting_link) {
-            $where .= " Join link: {$meeting->meeting_link}";
-            if ($meeting->meeting_passcode) {
-                $where .= " (passcode {$meeting->meeting_passcode})";
-            }
+            // Not the link itself. It is released when the participant marks
+            // attendance in the portal, which is the only evidence there is of
+            // who turned up to a call held on Google Meet, Zoom or Teams — see
+            // MeetingAttendanceGate. Putting it here put the meeting one click
+            // from the inbox and left the register empty.
+            $where .= ' This meeting is online. Open it in the portal and mark your attendance to get the joining link: '
+                .\App\Support\FrontendUrl::to('/purchase-portal/governance');
         }
 
         $subject = ($isUpdate ? 'Updated: ' : 'Invitation: ')."{$meeting->title}";
@@ -1134,9 +1137,12 @@ class PurchaseKickoffService
         $when = $meeting->scheduled_at ? $meeting->scheduled_at->format('d M Y, g:i A T') : 'a date to be confirmed';
         $lead = $offsetMinutes >= 1440 ? (intdiv($offsetMinutes, 1440).' day(s)')
             : ($offsetMinutes >= 60 ? (intdiv($offsetMinutes, 60).' hour(s)') : $offsetMinutes.' minutes');
-        $where = $meeting->mode === 'online'
-            ? ($meeting->meeting_link ? " Join link: {$meeting->meeting_link}" : '')
-            : ($meeting->location ? " at {$meeting->location}" : '');
+        $online = $meeting->mode === 'online' && $meeting->meeting_link;
+        // A reminder carries the way IN to the meeting, not the way past it —
+        // see MeetingAttendanceGate. Staff go to the console, everyone else to
+        // the portal; one URL for both sends half of them to a login screen
+        // they have no account for.
+        $where = $online ? '' : ($meeting->location ? " at {$meeting->location}" : '');
         $subject = "Reminder: {$meeting->title} in {$lead}";
         $body = "This is a reminder that the meeting \"{$meeting->title}\""
             .($vendorName ? " with {$vendorName}" : '')
@@ -1146,8 +1152,13 @@ class PurchaseKickoffService
             if (! $participant->email) {
                 continue;
             }
+            $go = $online
+                ? ' Mark your attendance to get the joining link: '.($participant->user_id
+                    ? \App\Support\FrontendUrl::to('/app/purchase/kickoff/'.$meeting->id)
+                    : \App\Support\FrontendUrl::to('/purchase-portal/governance'))
+                : '';
             $this->notifications->email(
-                $participant->email, $subject, $body,
+                $participant->email, $subject, $body.$go,
                 ['category' => 'Purchase', 'purchase_kickoff_meeting_id' => $meeting->id],
                 $meeting->tenant_id,
             );

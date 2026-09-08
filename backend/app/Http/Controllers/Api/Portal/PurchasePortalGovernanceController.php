@@ -16,7 +16,7 @@ use App\Support\RichText;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use App\Services\Purchase\PurchaseKickoffService;
-use App\Services\Shared\MeetingJoinRecorder;
+use App\Services\Shared\MeetingAttendanceGate;
 use App\Support\Shared\VendorMomView;
 
 /**
@@ -206,16 +206,27 @@ class PurchasePortalGovernanceController extends Controller
             // Ordered by when the meeting IS, not by the order rows happened to
             // be written — the shared engine has always ordered this way and the
             // two portals listed the same vendor's meetings differently.
+            // The agenda, so the meeting page is worth opening — that is the
+            // whole trade being offered in place of a link in the e-mail. Only
+            // the agenda columns: `discussion` and `decision` on the same table
+            // are the MINUTES, which the vendor may not see until they are
+            // approved and distributed.
+            ->with(['agendaItems' => fn ($q) => $q->select(
+                'id', 'purchase_kickoff_meeting_id', 'item', 'description', 'owner_names', 'duration_minutes', 'sort_order',
+            )->orderBy('sort_order')->orderBy('id')])
             ->latest('scheduled_at')->get();
 
         // The minutes are the vendor's to see only once approved+distributed.
-        $meetings->each(function ($m) {
+        $gate = app(MeetingAttendanceGate::class);
+
+        $meetings->each(function ($m) use ($gate, $v) {
             $m->setAttribute('mom_available', \App\Support\Purchase\PurchaseMomApprovalStatus::isDistributable($m->mom_status));
-            // A join link is offered only while the meeting is actually going
-            // to happen. "Not expired" is not the same test: a CANCELLED meeting
-            // is not expired either, and kept handing out a working link.
-            if (! in_array($m->timing_state, ['upcoming', 'live'], true)) {
-                $m->setAttribute('meeting_link', null);
+            // The join link is not in this payload until the vendor has marked
+            // attendance — see MeetingAttendanceGate. Withheld here rather than
+            // hidden in the page, because a link sitting in the JSON is readable
+            // whatever the page chooses to draw.
+            foreach ($gate->stateFor($m, $v) as $field => $value) {
+                $m->setAttribute($field, $value);
             }
         });
 
@@ -251,31 +262,36 @@ class PurchasePortalGovernanceController extends Controller
 
 
     /**
-     * Open the meeting, and record that this person did.
+     * Mark attendance, and get the link in return.
      *
-     * A meeting on Google Meet, Zoom or Teams runs somewhere this system cannot
-     * see, so nothing here can tell who attended it — the register stayed empty
-     * and somebody rebuilt it afterwards from memory. Pressing Join IS something
-     * we can see, whatever the meeting itself runs on, so the link is handed out
-     * through here rather than sitting in the page as a bare href.
+     * The meeting itself runs on Google Meet, Zoom or Teams — somewhere this
+     * system cannot see — so nothing here can tell who sat through it. What we
+     * CAN see is this account saying "I am attending", and that is the moment
+     * the link is handed over. Before it, the link is not in any response the
+     * vendor can read.
      *
-     * It records what it can honestly claim — this person opened this meeting,
-     * at this time, from this device — and says so on the register. It is not
-     * proof they stayed; {@see MeetingPresence} is that, and only for a meeting
-     * held inside the CRM.
+     * It records what it can honestly claim: this account opened this meeting,
+     * at this time, from this device. Whether they actually stayed is the
+     * organiser's to judge, from this same log.
      */
-    public function joinMeeting(Request $request, PurchaseKickoffMeeting $kickoff, MeetingJoinRecorder $recorder)
+    public function markAttendance(Request $request, PurchaseKickoffMeeting $kickoff, MeetingAttendanceGate $gate)
     {
         $v = $this->vendor($request);
         abort_unless((int) $kickoff->tenant_id === (int) $v->tenant_id && (int) $kickoff->purchase_vendor_id === (int) $v->id, 404, 'Meeting not found');
 
-        abort_unless(
-            in_array($kickoff->timing_state, ['upcoming', 'live'], true) && $kickoff->meeting_link,
-            404,
-            'This meeting is not open to join.'
-        );
-
-        return response()->json($recorder->record($kickoff, $v, $request));
+        /*
+         * A meeting scheduled FOR a vendor commonly has no roster row for that
+         * vendor. Without a row there is nowhere for the attendance to land, and
+         * the vendor would be locked out of their own meeting for ever. The
+         * identity is not guessed: it is the vendor record this request already
+         * authenticated as.
+         */
+        return response()->json($gate->mark($kickoff, $v, $request, [
+            'name' => $v->company_name ?: $v->name,
+            'email' => $v->email,
+            'organisation' => $v->company_name ?: $v->name,
+            'side' => 'external',
+        ]));
     }
 
     /**
