@@ -94,12 +94,13 @@ function insertIntoTextarea(textareaRef, value, onChange, text) {
   if (el) requestAnimationFrame(() => { el.focus(); const pos = start + text.length; el.setSelectionRange(pos, pos) })
 }
 
-// The composer's "Meeting" menu — mirrors the reference (Zoom / Google Meet /
-// Jitsi). Keys must match MeetingLinkService::PLATFORMS on the backend.
+// The composer's "Meeting" menu — the platforms calls are actually held on.
+// Keys must match MeetingLinkService::PLATFORMS on the backend, which
+// validates against that list and rejects anything else.
 const MEET_PLATFORMS = [
   { key: 'google_meet', label: 'Google Meet' },
   { key: 'zoom', label: 'Zoom' },
-  { key: 'jitsi', label: 'Jitsi' },
+  { key: 'teams', label: 'Microsoft Teams' },
 ]
 
 export default function EditorActionBar({
@@ -241,7 +242,7 @@ export default function EditorActionBar({
         </button>
       )}
 
-      {/* Meeting — Zoom / Google Meet / Jitsi link into the message */}
+      {/* Meeting — Zoom / Google Meet / Teams link into the message */}
       {meeting && (
         <div className="relative">
           <button ref={meetingBtn} type="button" onClick={() => { setMeetingOpen(v => !v); setEmojiOpen(false); setMentionOpen(false); setQuickOpen(false) }}

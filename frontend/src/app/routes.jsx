@@ -130,9 +130,6 @@ const RolesSettings = lazy(() => import('@/modules/settings/pages/RolesSettings'
 const DepartmentsSettings = lazy(() => import('@/modules/settings/pages/DepartmentsSettings'))
 const GeneralBrandingSettings = lazy(() => import('@/modules/settings/pages/GeneralBrandingSettings'))
 const LocalizationSettings = lazy(() => import('@/modules/settings/pages/LocalizationSettings'))
-// Where online meetings are held — the answer to "why is it asking me to sign
-// in with Google?", which is the free public Jitsi server's rule, not ours.
-const MeetingServerSettings = lazy(() => import('@/modules/settings/pages/MeetingServerSettings'))
 const CurrencySettings = lazy(() => import('@/modules/settings/pages/CurrencySettings'))
 const DocumentNumberingSettings = lazy(() => import('@/modules/settings/pages/DocumentNumberingSettings'))
 const EmailTemplatesSettings = lazy(() => import('@/modules/settings/pages/EmailTemplatesSettings'))
@@ -400,10 +397,6 @@ const KickoffMeetings = lazy(() => import('@/modules/shared/pages/KickoffMeeting
 const MeetingRegisters = lazy(() => import('@/modules/shared/pages/MeetingRegisters'))
 const KickoffMeetingCreate = lazy(() => import('@/modules/shared/pages/KickoffMeetingCreate'))
 const KickoffMeetingDetail = lazy(() => import('@/modules/shared/pages/KickoffMeetingDetail'))
-// The meeting run inside the CRM: the call beside its own agenda, roster and
-// notes. Full-height and outside the module shell's padding, so the video has
-// the screen.
-const MeetingRoom = lazy(() => import('@/modules/shared/pages/MeetingRoom'))
 
 // Vendor Self-Service Portal — its own chrome, gated to vendor roles. Every
 // endpoint resolves the vendor from the token (EnsureVendorPortalAccess).
@@ -823,7 +816,6 @@ export default function AppRoutes() {
           <Route path="kickoff/new" element={<S><KickoffMeetingCreate /></S>} />
           <Route path="kickoff/:id/edit" element={<S><KickoffMeetingCreate /></S>} />
           <Route path="kickoff/:id" element={<S><KickoffMeetingDetail /></S>} />
-          <Route path="kickoff/:id/room" element={<S><MeetingRoom /></S>} />
           {/* The SAME register screen TPV uses. useMeetingModule() resolves the
               Purchase engine on this path, so decisions, issues and the open
               action backlog now read ACROSS meetings here too — previously they
@@ -890,7 +882,6 @@ export default function AppRoutes() {
               before :id so "edit" is never captured as a meeting id. */}
           <Route path="kickoff/:id/edit" element={<S><KickoffMeetingCreate /></S>} />
           <Route path="kickoff/:id" element={<S><KickoffMeetingDetail /></S>} />
-          <Route path="kickoff/:id/room" element={<S><MeetingRoom /></S>} />
           {/* Meeting.docx §9's "searchable Decision Register", §10's issue
               register and §8's action backlog — across every meeting, not one. */}
           <Route path="meetings/registers" element={<S><MeetingRegisters /></S>} />
@@ -1009,7 +1000,6 @@ export default function AppRoutes() {
           <Route path="expense-categories" element={<S><ExpenseCategoriesSettings /></S>} />
           <Route path="account-groups" element={<S><AccountGroupsSettings /></S>} />
           <Route path="localization" element={<S><LocalizationSettings /></S>} />
-          <Route path="meetings" element={<S><MeetingServerSettings /></S>} />
           <Route path="currency" element={<S><CurrencySettings /></S>} />
           <Route path="numbering" element={<S><DocumentNumberingSettings /></S>} />
           <Route path="email-templates" element={<S><EmailTemplatesSettings /></S>} />

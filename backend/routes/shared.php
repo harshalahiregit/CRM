@@ -117,7 +117,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('polls')->group(
 })->where(['poll' => '[0-9]+']);
 
 // ── Ad-hoc meeting links for the message composers ──────────────────────
-// The composer's "Meeting" button mints a Zoom / Google Meet / Jitsi link to
+// The composer's "Meeting" button mints a Zoom / Google Meet / Teams link to
 // drop into a message. Distinct from /kickoff (which schedules a meeting record).
 Route::middleware(['auth:sanctum', 'role:admin,staff'])->group(function () {
     Route::post('/meeting-links', [MeetingLinkController::class, 'store']);

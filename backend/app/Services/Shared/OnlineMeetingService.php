@@ -3,7 +3,6 @@
 namespace App\Services\Shared;
 
 use App\Services\Shared\MeetingProviders\MeetingProviderFactory;
-use App\Support\Shared\JitsiHost;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
 
@@ -11,7 +10,7 @@ use Illuminate\Support\Facades\Log;
  * Mints an online-meeting link for a scheduled meeting and stores it on the
  * record.
  *
- * Two things this had to learn:
+ * Three things this had to learn:
  *
  *  1. **It serves both meeting engines.** The shared engine (kickoff_meetings)
  *     and Purchase's (purchase_kickoff_meetings) carry the same five columns —
@@ -25,32 +24,46 @@ use Illuminate\Support\Facades\Log;
  *     without credentials) or the StubProvider's https://meet.example.com/…,
  *     which is not a meeting at all. Now an unconfigured platform falls back to
  *     that platform's own instant-start URL — meet.google.com/new,
- *     zoom.us/start — and Jitsi is always a real room needing no credentials.
- *     A person clicking Join gets a meeting either way; what changes with
- *     credentials is whether it was scheduled through the provider's API.
+ *     zoom.us/start. A person clicking Join gets a meeting either way; what
+ *     changes with credentials is whether it was scheduled through the
+ *     provider's API in advance.
+ *
+ *  3. **Meetings are held on the real services, not inside the CRM.** Jitsi was
+ *     here because it was the one platform that gave a room with no account and
+ *     could be embedded in our own page. That embedding is what has gone: the
+ *     call happens on Google Meet, Zoom or Teams, and the CRM's job is the
+ *     agenda, the attendance and the minutes around it. Meetings saved earlier
+ *     still hold their old platform value and their old link, and both are still
+ *     accepted on the way in — see ACCEPTED — so nothing already scheduled
+ *     breaks. They regenerate onto a real platform.
  */
 class OnlineMeetingService
 {
-    /**
-     * Platforms offered in the UI. Jitsi is first among the credential-free
-     * options because it is the only one that yields a genuine, unique room
-     * with no configuration at all.
-     */
-    public const PLATFORMS = ['jitsi', 'google_meet', 'zoom', 'teams'];
+    /** Platforms offered in the UI. */
+    public const PLATFORMS = ['google_meet', 'zoom', 'teams'];
 
     /**
      * What a REQUEST may carry, which is wider than what we offer.
      *
-     * 'stub' was the old generic option and is still stored on every meeting
-     * created before Jitsi existed here — and the detail page sends the stored
-     * platform back when you press Generate. Rejecting it would 422 every one
-     * of those meetings, so it is accepted and normalised to Jitsi, which is
-     * what "generic link" was always pretending to be.
+     * 'stub' was the old generic option, and 'jitsi' the option that ran the
+     * call inside the CRM. Both are still stored on meetings created before
+     * this change — and the detail page sends the stored platform straight back
+     * when you press Generate. Rejecting them would 422 every one of those
+     * meetings, so they are accepted here and normalised to the default in
+     * resolvePlatform().
      */
-    public const ACCEPTED = ['jitsi', 'google_meet', 'zoom', 'teams', 'stub'];
+    public const ACCEPTED = ['google_meet', 'zoom', 'teams', 'jitsi', 'stub'];
+
+    /**
+     * Where a meeting goes when nothing has chosen for it.
+     *
+     * Google Meet, because meet.google.com/new opens a genuine meeting for
+     * anyone with a Google account and needs no configuration from us — so the
+     * fallback path is a real call rather than a placeholder.
+     */
+    public const DEFAULT_PLATFORM = 'google_meet';
 
     public const LABELS = [
-        'jitsi'       => 'Jitsi Meet',
         'google_meet' => 'Google Meet',
         'zoom'        => 'Zoom',
         'teams'       => 'Microsoft Teams',
@@ -120,11 +133,12 @@ class OnlineMeetingService
 
     private function resolvePlatform(Model $meeting, ?string $platform): string
     {
-        $chosen = $platform ?: ($meeting->meeting_platform ?: config('meeting.provider', 'jitsi'));
+        $chosen = $platform ?: ($meeting->meeting_platform ?: config('meeting.provider', self::DEFAULT_PLATFORM));
 
-        // 'stub' is a test double, never something a person picked. Anyone who
-        // lands on it gets Jitsi, which is a real room and costs nothing.
-        return in_array($chosen, self::PLATFORMS, true) ? $chosen : 'jitsi';
+        // 'stub' is a test double and 'jitsi' is the retired in-app room —
+        // neither is something a person can pick now. Anyone arriving on one of
+        // them, or on anything unrecognised, gets the default.
+        return in_array($chosen, self::PLATFORMS, true) ? $chosen : self::DEFAULT_PLATFORM;
     }
 
     private function titleFor(Model $meeting): string
@@ -138,22 +152,6 @@ class OnlineMeetingService
      */
     private function mint(string $platform, string $title, Model $meeting): array
     {
-        if ($platform === 'jitsi') {
-            // A fresh, unguessable room on the public Jitsi instance. No API,
-            // no credentials, and the link works the moment it is created.
-            $room = 'CRM-'.($meeting->tenant_id ?: 0).'-'.bin2hex(random_bytes(5));
-            // The tenant's own server when they have set one, else the
-            // deployment default. Resolved per tenant rather than read from
-            // config, so an administrator can move off the public instance —
-            // and its Google sign-in — without a redeploy.
-            $host = JitsiHost::for($meeting->tenant_id ?? null);
-
-            return [
-                'platform' => 'jitsi', 'link' => "https://{$host}/{$room}",
-                'id' => $room, 'passcode' => null, 'host_link' => null, 'instant' => false,
-            ];
-        }
-
         if ($this->isConfigured($platform)) {
             try {
                 $result = MeetingProviderFactory::make($platform)->create([
@@ -200,10 +198,9 @@ class OnlineMeetingService
     private function instantStartUrl(string $platform): string
     {
         return match ($platform) {
-            'google_meet' => 'https://meet.google.com/new',
-            'zoom'        => 'https://zoom.us/start/videomeeting',
-            'teams'       => 'https://teams.microsoft.com/start',
-            default       => 'https://'.JitsiHost::for().'/CRM-'.bin2hex(random_bytes(5)),
+            'zoom'  => 'https://zoom.us/start/videomeeting',
+            'teams' => 'https://teams.microsoft.com/start',
+            default => 'https://meet.google.com/new',
         };
     }
 }

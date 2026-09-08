@@ -13,10 +13,18 @@ use Illuminate\Support\Facades\DB;
  * Attendance used to be a tick somebody made afterwards from memory. The live
  * room improved on that by ticking automatically — but only for a person whose
  * name in the call matched a name on the roster character for character, which
- * is almost nobody: people type their own name into Jitsi's prejoin box, guests
+ * is almost nobody: people type their own name into the prejoin box, guests
  * type a first name, and the chair is often not on the roster at all. Everyone
  * else was watched arriving on screen and then quietly dropped. The meeting
  * ended with an empty attendance list and a chair who had seen it fill up.
+ *
+ * ── No caller, for now ──────────────────────────────────────────────────
+ * The in-app meeting room is gone: calls are held on Google Meet, Zoom or
+ * Teams, and the CRM cannot watch a call it does not host. So nothing posts
+ * snapshots to /room/presence today, and the endpoint stands unused rather
+ * than deleted — the reconciliation below, and the columns it writes
+ * (joined_at, left_at, seconds_in_call, attendance_source), are exactly what
+ * the self-marked attendance punch and the organiser's review need next.
  *
  * ── Snapshots, not events ───────────────────────────────────────────────
  * The room reports WHO IS IN THE CALL RIGHT NOW, every few seconds, rather than
@@ -134,8 +142,8 @@ class MeetingPresence
      * exact and survives a name change mid-meeting. The signed-in user is next:
      * the chair is whoever opened the room, and tying them by account rather
      * than by display name is why the organiser now gets marked at all — they
-     * were the one person guaranteed to be missed before, because Jitsi shows
-     * them under whatever name their browser remembered. Name is last, and only
+     * were the one person guaranteed to be missed before, because the call
+     * shows them under whatever name their browser remembered. Name is last, and only
      * against a row not already claimed by somebody else in this call.
      */
     private function match($existing, array $person, ?User $actor)

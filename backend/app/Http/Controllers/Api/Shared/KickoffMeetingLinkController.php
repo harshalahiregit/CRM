@@ -23,8 +23,9 @@ class KickoffMeetingLinkController extends Controller
      * Generate (or regenerate) an online meeting link.
      *
      * Body (optional):
-     *   platform  — 'google_meet' | 'zoom' | 'teams' | 'stub'
-     *               If omitted, falls back to MEETING_PROVIDER in .env.
+     *   platform  — 'google_meet' | 'zoom' | 'teams'
+     *               If omitted, falls back to the meeting's stored platform,
+     *               then to OnlineMeetingService::DEFAULT_PLATFORM.
      */
     public function generate(Request $request, KickoffMeeting $kickoffMeeting): JsonResponse
     {
@@ -34,8 +35,10 @@ class KickoffMeetingLinkController extends Controller
             403
         );
 
-        // Jitsi belongs here too: it is the only platform that yields a real
-        // room with no credentials, which makes it the honest default.
+        // ACCEPTED is wider than PLATFORMS on purpose: meetings scheduled
+        // before the in-app room was retired still hold 'jitsi' or 'stub', and
+        // this page posts the stored platform straight back. They are
+        // normalised to a real platform rather than rejected.
         $request->validate([
             'platform' => ['nullable', 'string', \Illuminate\Validation\Rule::in(OnlineMeetingService::ACCEPTED)],
         ]);

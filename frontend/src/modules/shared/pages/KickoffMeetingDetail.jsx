@@ -1459,20 +1459,22 @@ function TransitionModal({ m, to, onClose, onDone }) {
  *   3. busy              → spinner
  */
 const PLATFORM_LABELS = {
-  jitsi:       'Jitsi Meet',
   google_meet: 'Google Meet',
   zoom:        'Zoom',
   teams:       'Microsoft Teams',
-  // Kept for meetings saved before Jitsi replaced it — the server regenerates
-  // those as Jitsi, but the stored value is still 'stub' until they do.
+  // Two retired values, still stored on older meetings: 'stub' was the
+  // placeholder link that opened nothing, and 'jitsi' the call the CRM used to
+  // run inside itself. Both are labelled rather than left to render as a raw
+  // key, and pressing Generate moves the meeting onto a real platform.
   stub:        'Generic Link',
+  jitsi:       'Jitsi Meet (retired)',
 }
 const PLATFORM_COLORS = {
-  jitsi:       '#1d76ba',
   google_meet: '#4285F4',
   zoom:        '#2D8CFF',
   teams:       '#6264A7',
   stub:        '#a78bfa',
+  jitsi:       '#a78bfa',
 }
 
 function OnlineMeetingCard({ meeting, linkData, busy, onGenerate }) {
@@ -1485,7 +1487,7 @@ function OnlineMeetingCard({ meeting, linkData, busy, onGenerate }) {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const platform    = linkData?.platform ?? meeting.meeting_platform ?? 'jitsi'
+  const platform    = linkData?.platform ?? meeting.meeting_platform ?? 'google_meet'
   const color       = PLATFORM_COLORS[platform] ?? '#a78bfa'
   const platformLbl = PLATFORM_LABELS[platform]  ?? platform
 
@@ -1506,15 +1508,6 @@ function OnlineMeetingCard({ meeting, linkData, busy, onGenerate }) {
         </div>
       ) : linkData?.link ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {/* Run the call inside the CRM, next to the agenda and the roster.
-              Only Jitsi can do this: Meet and Teams refuse to be embedded and
-              Zoom needs a reviewed app, so those keep the plain Open link. */}
-          {platform === 'jitsi' && (
-            <a href={`${meetingBase()}/kickoff/${meeting.id}/room`}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '11px 14px', borderRadius: 11, background: 'linear-gradient(145deg,#34d399,#10b981)', color: '#fff', fontSize: 13, fontWeight: 800, textDecoration: 'none', boxShadow: '0 8px 20px -6px #10b98188' }}>
-              <Video size={15} /> Join here — with the agenda and notes
-            </a>
-          )}
           {/* Link row */}
           <div style={{ display: 'flex', gap: 7 }}>
             <input

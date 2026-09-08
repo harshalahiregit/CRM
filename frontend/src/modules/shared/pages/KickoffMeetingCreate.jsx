@@ -29,17 +29,24 @@ import RichTextEditor from '@/components/ui/RichTextEditor'
 import MultiSearchSelect from '@/components/ui/MultiSearchSelect'
 
 // ── Platform options for online meetings ─────────────────────────────────────
-// Jitsi first, and it replaces the old "Generic Link (stub)" option — which
-// produced https://meet.example.com/…, a URL that opens nothing. Jitsi is what
-// that option was pretending to be: a real, unique room needing no credentials.
-// Google Meet, Zoom and Teams schedule through their APIs when the tenant has
-// them configured, and otherwise hand back that platform's own start-now link.
+// The three services a call is actually held on. Each schedules through its
+// own API when the tenant has it configured, and otherwise hands back that
+// platform's own start-now link — meet.google.com/new, zoom.us/start — so the
+// Join button opens a real meeting either way.
+//
+// Jitsi used to head this list because it was the one option that needed no
+// account and could run inside the CRM. Both of those have gone: the call is
+// on the real service now. Meetings saved with the old value still open — the
+// server accepts it and moves them onto the default. See
+// OnlineMeetingService::ACCEPTED.
 const PLATFORM_OPTIONS = [
-  ['jitsi',       'Jitsi Meet (no setup needed)'],
   ['google_meet', 'Google Meet'],
   ['zoom',        'Zoom'],
   ['teams',       'Microsoft Teams'],
 ]
+// Kept in step with OnlineMeetingService::DEFAULT_PLATFORM.
+const DEFAULT_PLATFORM = 'google_meet'
+const PLATFORM_KEYS = PLATFORM_OPTIONS.map(([k]) => k)
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const toLocalDate = (iso) => {
@@ -242,7 +249,7 @@ export default function KickoffMeetingCreate() {
     work_package:     '',
     project_id:       '',       // soft link into the Projects module (§16)
     is_completed:     false,
-    meeting_platform: 'jitsi',  // used when mode = 'online'
+    meeting_platform: DEFAULT_PLATFORM,  // used when mode = 'online'
   })
   const [projects, setProjects] = useState([])   // { id, name, project_code, client_name, ... }
   // Meeting.docx §2 wants a real Customer on the meeting, and §5 wants
@@ -338,7 +345,11 @@ export default function KickoffMeetingCreate() {
           work_package:     m.work_package || '',
           project_id:       m.project_id || '',
           is_completed:     m.status === 'Completed',
-          meeting_platform: (!m.meeting_platform || m.meeting_platform === 'stub') ? 'jitsi' : m.meeting_platform,
+          // A meeting saved before this change holds 'jitsi' or 'stub', and
+          // neither is in the dropdown any more — left as-is the select would
+          // show blank and silently re-save nothing. Anything unrecognised
+          // falls to the default, which is what the server would pick too.
+          meeting_platform: PLATFORM_KEYS.includes(m.meeting_platform) ? m.meeting_platform : DEFAULT_PLATFORM,
         })
 
         setParticipants((m.attendees || []).map(a => ({

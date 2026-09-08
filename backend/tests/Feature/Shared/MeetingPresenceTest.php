@@ -25,8 +25,8 @@ use Tests\TestCase;
  *
  *  1. A vendor joined, was visibly in the call, and the attendance list was
  *     empty afterwards. The chair — the person who opened the room — was not
- *     marked either. Attendance was ticked by matching a person's Jitsi display
- *     name against the roster character for character, and nobody types their
+ *     marked either. Attendance was ticked by matching a person's display name
+ *     in the call against the roster character for character, and nobody types their
  *     roster name into a video call.
  *
  *  2. The meeting had been over for twenty minutes and still read "In progress",
@@ -110,7 +110,7 @@ class MeetingPresenceTest extends TestCase
     /**
      * The reported bug, in one test.
      *
-     * A vendor joins under the name they typed into Jitsi — not the name on the
+     * A vendor joins under the name they typed into the call — not the name on the
      * roster — and the meeting ends with them recorded, not dropped.
      */
     public function test_somebody_who_joins_under_an_unlisted_name_is_recorded(): void
@@ -118,7 +118,7 @@ class MeetingPresenceTest extends TestCase
         $meeting = $this->meeting();
 
         $this->presence()->reconcile($meeting, [
-            ['key' => 'jitsi-1', 'name' => 'sonu (mobile)', 'self' => false],
+            ['key' => 'p-1', 'name' => 'sonu (mobile)', 'self' => false],
         ], false, $this->actor);
 
         $rows = $meeting->fresh()->attendees;
@@ -135,7 +135,7 @@ class MeetingPresenceTest extends TestCase
     /**
      * The chair, who was the one person guaranteed to be missed.
      *
-     * They open the room from their own account, and Jitsi shows them under
+     * They open the room from their own account, and the call shows them under
      * whatever name their browser remembered — so a name match never found
      * them. Tying the local participant to the signed-in user does.
      */
@@ -149,7 +149,7 @@ class MeetingPresenceTest extends TestCase
 
         // The display name is nothing like the roster name.
         $this->presence()->reconcile($meeting, [
-            ['key' => 'jitsi-me', 'name' => "Priya's MacBook", 'self' => true],
+            ['key' => 'p-me', 'name' => "Priya's MacBook", 'self' => true],
         ], false, $this->actor);
 
         $rows = $meeting->fresh()->attendees;
@@ -171,7 +171,7 @@ class MeetingPresenceTest extends TestCase
 
         // "bale" is what they typed. It means exactly one person here.
         $this->presence()->reconcile($meeting, [
-            ['key' => 'jitsi-9', 'name' => 'bale', 'self' => false],
+            ['key' => 'p-9', 'name' => 'bale', 'self' => false],
         ], false, $this->actor);
 
         $this->assertCount(1, $meeting->fresh()->attendees, 'no duplicate row');
@@ -193,7 +193,7 @@ class MeetingPresenceTest extends TestCase
         }
 
         $this->presence()->reconcile($meeting, [
-            ['key' => 'jitsi-3', 'name' => 'Sam', 'self' => false],
+            ['key' => 'p-3', 'name' => 'Sam', 'self' => false],
         ], false, $this->actor);
 
         $rows = $meeting->fresh()->attendees;
@@ -211,7 +211,7 @@ class MeetingPresenceTest extends TestCase
         $meeting->attendees()->create(['tenant_id' => self::TENANT, 'name' => 'Khalid Ahmed', 'side' => 'internal']);
 
         $this->presence()->reconcile($meeting, [
-            ['key' => 'jitsi-4', 'name' => 'ali', 'self' => false],
+            ['key' => 'p-4', 'name' => 'ali', 'self' => false],
         ], false, $this->actor);
 
         $this->assertFalse((bool) $meeting->fresh()->attendees->firstWhere('name', 'Khalid Ahmed')->attended,
