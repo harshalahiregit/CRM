@@ -206,6 +206,11 @@ class PurchasePortalGovernanceController extends Controller
             // Ordered by when the meeting IS, not by the order rows happened to
             // be written — the shared engine has always ordered this way and the
             // two portals listed the same vendor's meetings differently.
+            // The roster, as the TPV portal has always sent it. Purchase sent
+            // none at all, so a Purchase vendor opened their own meeting and
+            // could not see who was in it — including their own people. Same
+            // three columns, so the one portal screen renders both engines.
+            ->with('participants:id,purchase_kickoff_meeting_id,name,role')
             // The agenda, so the meeting page is worth opening — that is the
             // whole trade being offered in place of a link in the e-mail. Only
             // the agenda columns: `discussion` and `decision` on the same table
@@ -228,6 +233,13 @@ class PurchasePortalGovernanceController extends Controller
             foreach ($gate->stateFor($m, $v) as $field => $value) {
                 $m->setAttribute($field, $value);
             }
+
+            // One agreed shape for both portals, as VendorMomView already does
+            // for the minutes: the shared engine calls this roster `attendees`
+            // and Purchase calls it `participants`, and one screen renders both.
+            // Sending only Purchase's own name would leave the roster invisible
+            // on this engine and nowhere for the reader to find out why.
+            $m->setAttribute('attendees', $m->participants);
         });
 
         return response()->json(['data' => $meetings]);

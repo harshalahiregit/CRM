@@ -151,6 +151,28 @@ export function MeetingsTab({ gov }) {
             </div>
           )}
 
+          {/* Who is in the meeting — both sides of it.
+              A vendor sat in this call and saw these people; hiding our own
+              side afterwards protects nothing, and when the minutes say
+              "Anjali to confirm the payment date" they need to know who Anjali
+              is. Both engines answer under `attendees` so this renders once —
+              Purchase's own column is `participants`, normalised server-side.
+              See MeetingVisibilityByRoleTest, which holds this as a decision. */}
+          {m.attendees?.length > 0 && (
+            <div style={{ paddingLeft: 26, marginTop: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 5 }}>
+                Participants · {m.attendees.length}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {m.attendees.map(a => (
+                  <span key={a.id} style={{ fontSize: 11.5, padding: '3px 9px', borderRadius: 999, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }}>
+                    {a.name}{a.role ? <span style={{ color: 'var(--text-muted)' }}> · {a.role}</span> : null}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* The joining link, and what it costs — MeetingJoinGate, the same
               component the Purchase kickoff, onboarding and dashboard cards
               use. Four hand-rolled copies of this is how those screens drifted
