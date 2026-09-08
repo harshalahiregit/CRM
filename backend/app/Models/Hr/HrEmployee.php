@@ -74,6 +74,11 @@ class HrEmployee extends Model
         'branch','division','unit','zone','category',
         // The salary register's DOLeft, and pay withheld for this run.
         'exit_date','hold_salary',
+        // Stronger than deactivating, and a different thing from hold_salary:
+        // hold is a temporary withholding for somebody still employed, this is
+        // a decision that the person is not re-engaged. MUST be listed — create()
+        // drops any key not whitelisted.
+        'blacklisted','blacklist_reason','blacklisted_at',
         // #43 — the individual's own skills, carried from the candidate on hire.
         // Compared against the department/designation/grade/role skill profile.
         'skills',
@@ -107,6 +112,8 @@ class HrEmployee extends Model
         'joining_date'         => 'date',
         'exit_date'            => 'date',
         'hold_salary'          => 'boolean',
+        'blacklisted'          => 'boolean',
+        'blacklisted_at'       => 'datetime',
         'dob'                  => 'date',
         'probation_end_date'   => 'date',
         'confirmation_date'    => 'date',

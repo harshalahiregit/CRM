@@ -38,6 +38,12 @@ class PayrollService
         private SettingsService $settings,
         private LoanDeductionService $loans,
         private VariableEarningService $variableEarnings,
+        // Attendance-derived pay. Both were settings and columns that nothing
+        // read: the late-mark thresholds were captured in September and never
+        // enforced, and `hr_attendance.overtime_hours` has been stamped on every
+        // day since attendance was built without ever reaching a payslip.
+        private \App\Services\Hr\Payroll\LateMarkDeductionService $lateMarks,
+        private \App\Services\Hr\Payroll\OvertimeService $overtime,
     ) {
     }
 
@@ -209,9 +215,26 @@ class PayrollService
                 // same money cannot be paid twice by a later run.
                 $variableTotal = $this->variableEarnings->markPaid($record, $tenantId, $period);
 
+                // Attendance-derived pay for this period. Both are computed
+                // AFTER the record exists so they can use its payable days —
+                // a day is worth gross ÷ payable days, and a flat 30 quietly
+                // overcharges anybody paid for part of a month.
+                $days = (float) ($record->payable_days ?: 0);
+                $late = $this->lateMarks->forEmployee(
+                    (int) $salary->employee_id, $tenantId, $period, (float) $salary->gross_salary, $days
+                );
+                $ot = $this->overtime->forEmployee(
+                    (int) $salary->employee_id, $tenantId, $period, (float) $salary->gross_salary, $days
+                );
+
                 $stamp = array_filter([
                     'loan_deduction'    => $loanTotal > 0 ? $loanTotal : null,
                     'variable_earnings' => $variableTotal > 0 ? $variableTotal : null,
+                    'late_marks'          => $late['late_marks'] > 0 ? $late['late_marks'] : null,
+                    'late_mark_deduction' => $late['amount'] > 0 ? $late['amount'] : null,
+                    'late_mark_reason'    => $late['reason'],
+                    'overtime_hours'      => $ot['hours'] > 0 ? $ot['hours'] : null,
+                    'overtime_amount'     => $ot['amount'] > 0 ? $ot['amount'] : null,
                 ], fn ($v) => $v !== null);
 
                 if ($stamp !== []) {
@@ -524,6 +547,13 @@ class PayrollService
             'variable_earnings' => (float) $r->variable_earnings,
             // HR's additions net of deductions for this month only.
             'adjustment_total'  => (float) $r->adjustment_total,
+            // Attendance-derived. The reason travels with the figure so a
+            // payslip can answer "why is my salary short?" on its own.
+            'late_marks'          => (int) $r->late_marks,
+            'late_mark_deduction' => (float) $r->late_mark_deduction,
+            'late_mark_reason'    => $r->late_mark_reason,
+            'overtime_hours'      => (float) $r->overtime_hours,
+            'overtime_amount'     => (float) $r->overtime_amount,
             // What actually reaches the bank. Defined once, on the model — this
             // used to be spelled out here AND in BankAdviceService, and the two
             // spellings disagreed, which is how PF was paid to the government

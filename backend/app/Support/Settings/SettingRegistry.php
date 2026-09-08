@@ -106,6 +106,51 @@ final class SettingRegistry
                 // than not having it. So it is offered rather than assumed.
                 'require_separate_approver' => ['cast' => 'bool', 'default' => false, 'rules' => ['nullable', 'boolean']],
 
+                /*
+                | Which states the Professional Tax rule screen offers.
+                |
+                | PT is a state levy and roughly a third of the country does not
+                | impose it, but the screen offered all 36 — so Delhi sat next to
+                | Maharashtra with nothing to say it collects nothing, and a slab
+                | configured against it would have deducted.
+                |
+                | A SETTING rather than a constant because the list is not ours to
+                | fix: a state can begin or repeal the levy in a budget, and the
+                | people who would notice are the ones running payroll, not the
+                | ones shipping releases. WorkStates::PT_APPLICABLE seeds it; from
+                | there it is theirs.
+                */
+                'pt_states' => [
+                    'cast' => 'array',
+                    'default' => \App\Support\Hr\WorkStates::PT_APPLICABLE,
+                    'rules' => ['nullable', 'array'],
+                ],
+
+                /*
+                | What the payroll pre-check REFUSES to pay over, as against what
+                | it merely warns about.
+                |
+                | The split is a judgement about the business, not about the code:
+                | a missing IFSC stops the money moving and a missing Aadhaar
+                | spoils a filing, and which of those is allowed to hold up a
+                | month is HR's call. Hard-coding it means a workspace either
+                | tolerates bad filings or cannot pay anybody, with no way to
+                | choose — and a control nobody can satisfy gets worked around.
+                */
+                'require_bank_for_payroll'   => ['cast' => 'bool', 'default' => true,  'rules' => ['nullable', 'boolean']],
+                'require_pan_for_payroll'    => ['cast' => 'bool', 'default' => true,  'rules' => ['nullable', 'boolean']],
+                'require_aadhaar_for_payroll'=> ['cast' => 'bool', 'default' => false, 'rules' => ['nullable', 'boolean']],
+                'require_work_state_for_payroll' => ['cast' => 'bool', 'default' => false, 'rules' => ['nullable', 'boolean']],
+
+                /*
+                | Leave only after probation.
+                |
+                | HR set this out on 5 Sep. The per-policy `probation_allowed`
+                | flag already existed and still wins where it is set — this is
+                | the workspace-wide default for the policies that say nothing.
+                */
+                'probation_blocks_leave' => ['cast' => 'bool', 'default' => true, 'rules' => ['nullable', 'boolean']],
+
                 // Loan affordability, as a % of the employee's monthly NET salary.
                 // These are company policy, not law, so they carry real defaults
                 // rather than the "unconfigured = do nothing" rule the statutory

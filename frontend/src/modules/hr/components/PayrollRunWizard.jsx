@@ -5,6 +5,10 @@ import {
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
+// The primary gradient, from the one place that owns it. Writing the literal
+// here would have made a 275th copy of a value that already cannot be restyled
+// without a find-and-replace across the codebase.
+import { GRAD } from '@/components/ui/brand'
 
 /*  ────────────────────────────────────────────────────────────────────────
     The stepped payroll run.
@@ -28,7 +32,6 @@ import { HrLoading, HrEmpty } from '@/components/ui/HrState'
     the API refuses the same things whether or not the button was hidden.
     ──────────────────────────────────────────────────────────────────────── */
 
-const GRAD = 'linear-gradient(135deg,#7C3AED,#5b21b6)'
 const money = v => v === null || v === undefined || v === '' ? '—' : `₹${Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
 
 const STAGES = [

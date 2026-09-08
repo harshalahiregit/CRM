@@ -35,10 +35,18 @@ use App\Services\Settings\SettingsService;
  *                     "no PT calculated". This is currently true of every
  *                     employee in the system, which is why PT reads ₹0.
  *
- * Aadhaar and work state are WARNINGS, not blocks: a run can legitimately be
- * paid without them (the transfer still works, the filing is what suffers), and
- * blocking payroll over a filing field would have HR entering fake numbers to
- * get the run out. A block is reserved for money that genuinely cannot move.
+ * ── Which of these BLOCK is a setting, not a decision made here ──
+ *
+ * Whether a missing Aadhaar should hold up a month is a judgement about the
+ * business, not about the code: it spoils a filing, it does not stop a
+ * transfer. Baking the answer in means a workspace either tolerates bad filings
+ * or cannot pay anybody, with no way to choose — and a control nobody can
+ * satisfy gets worked around rather than met.
+ *
+ * So each requirement is switchable under Settings → Payroll. The defaults are
+ * the conservative reading (bank and PAN block, Aadhaar and work state warn),
+ * and anything switched off still reports as a warning rather than vanishing —
+ * a requirement nobody is enforcing is still worth seeing.
  */
 class PayrollEligibilityService
 {
@@ -67,13 +75,30 @@ class PayrollEligibilityService
             $this->settings->get($tenantId, 'payroll', 'default_work_state')
         );
 
-        return $employees->map(function (HrEmployee $e) use ($salaries, $companyState) {
+        // Which requirements hold up a run, and which merely report. See the
+        // docblock: this is a judgement about the business, so it is theirs.
+        $req = [
+            'bank'       => (bool) $this->settings->get($tenantId, 'payroll', 'require_bank_for_payroll', true),
+            'pan'        => (bool) $this->settings->get($tenantId, 'payroll', 'require_pan_for_payroll', true),
+            'aadhaar'    => (bool) $this->settings->get($tenantId, 'payroll', 'require_aadhaar_for_payroll', false),
+            'work_state' => (bool) $this->settings->get($tenantId, 'payroll', 'require_work_state_for_payroll', false),
+        ];
+
+        return $employees->map(function (HrEmployee $e) use ($salaries, $companyState, $req) {
             $d = $e->detail;
 
             $blocks = [];
             $warnings = [];
 
+            // Routed through one helper so a requirement switched off still
+            // REPORTS rather than disappearing — something nobody is enforcing
+            // is still worth seeing on the screen.
+            $flag = function (bool $required, string $message) use (&$blocks, &$warnings) {
+                $required ? $blocks[] = $message : $warnings[] = $message;
+            };
+
             if (! $salaries->has($e->id)) {
+                // Never optional: there is nothing to compute from.
                 $blocks[] = 'No active salary structure assigned';
             }
 
@@ -84,25 +109,32 @@ class PayrollEligibilityService
                 $blocks[] = 'Salary is on hold';
             }
 
+            // Blacklisted is a stronger statement than deactivated and is never
+            // a warning: it is a decision that this person is not re-engaged.
+            if ($e->blacklisted) {
+                $blocks[] = 'Employee is blacklisted'
+                    .($e->blacklist_reason ? ' — '.$e->blacklist_reason : '');
+            }
+
             $payMode = $d?->pay_mode ?: 'Transfer';
             if ($payMode === 'Transfer') {
                 if (! $d?->bank_account_number) {
-                    $blocks[] = 'No bank account number';
+                    $flag($req['bank'], 'No bank account number');
                 } elseif (! $d?->bank_ifsc) {
-                    $blocks[] = 'No IFSC code';
+                    $flag($req['bank'], 'No IFSC code');
                 }
             }
 
             if (! $d?->pan_number) {
-                $blocks[] = 'PAN not on record';
+                $flag($req['pan'], 'PAN not on record');
             }
 
             if (! $d?->aadhaar_number) {
-                $warnings[] = 'Aadhaar not on record — PF and ESIC filings need it';
+                $flag($req['aadhaar'], 'Aadhaar not on record — PF and ESIC filings need it');
             }
 
             if (! WorkStates::normalize($e->work_state) && ! $companyState) {
-                $warnings[] = 'Work state not set — Professional Tax will compute as zero';
+                $flag($req['work_state'], 'Work state not set — Professional Tax will compute as zero');
             }
 
             return [

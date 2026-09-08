@@ -138,6 +138,18 @@ export default function StatutorySettings({ showToast }) {
   const [saving, setSaving]   = useState(false)
   const [defaultState, setDefaultState] = useState('')
   const [loanLimits, setLoanLimits] = useState({ warn: 40, max: 50, enforce: true })
+  // What holds up a run, who may approve it, whether probation gates leave.
+  // Each of these was a decision made in PHP until now.
+  const [runControls, setRunControls] = useState({
+    require_bank_for_payroll: true,
+    require_pan_for_payroll: true,
+    require_aadhaar_for_payroll: false,
+    require_work_state_for_payroll: false,
+    require_separate_approver: false,
+    probation_blocks_leave: true,
+  })
+  // The states that levy PT, as state CODES.
+  const [ptStates, setPtStates] = useState([])
   const [savingDefault, setSavingDefault] = useState(false)
 
   const load = useCallback(async () => {
@@ -150,6 +162,16 @@ export default function StatutorySettings({ showToast }) {
         max: m?.defaults?.loan_emi_max_percent ?? 50,
         enforce: m?.defaults?.loan_enforce_eligibility ?? true,
       })
+      const d = m?.defaults || {}
+      setRunControls({
+        require_bank_for_payroll:       d.require_bank_for_payroll ?? true,
+        require_pan_for_payroll:        d.require_pan_for_payroll ?? true,
+        require_aadhaar_for_payroll:    d.require_aadhaar_for_payroll ?? false,
+        require_work_state_for_payroll: d.require_work_state_for_payroll ?? false,
+        require_separate_approver:      d.require_separate_approver ?? false,
+        probation_blocks_leave:         d.probation_blocks_leave ?? true,
+      })
+      setPtStates(Array.isArray(d.pt_states) ? d.pt_states : [])
     } catch (e) { showToast?.(e?.message || 'Could not load statutory rules', 'error') }
     finally { setLoading(false) }
   }, [showToast])
@@ -167,6 +189,8 @@ export default function StatutorySettings({ showToast }) {
         loan_emi_warn_percent: Number(loanLimits.warn),
         loan_emi_max_percent: Number(loanLimits.max),
         loan_enforce_eligibility: !!loanLimits.enforce,
+        ...runControls,
+        pt_states: ptStates,
       })
       setDefaultState(d?.default_work_state || '')
       showToast?.('Payroll defaults saved')
@@ -259,6 +283,74 @@ export default function StatutorySettings({ showToast }) {
               A hard limit below the comfort threshold would make every warning a block, so it is raised to match.
             </p>
           )}
+        </div>
+
+        {/* What holds up a payroll run.
+
+            Each of these was decided in PHP before, which meant a workspace
+            either tolerated bad filings or could not pay anybody, with no way
+            to choose. Whether a missing Aadhaar should stop a month is a
+            judgement about the business — so it is theirs. */}
+        <div className="mt-4 pt-4" style={{ borderTop:'1px solid var(--border)' }}>
+          <div className="flex items-center gap-2 mb-1"><ShieldCheck size={15} style={{ color:'#a78bfa' }}/>
+            <p className="text-xs font-black" style={{ color:'var(--text-h)' }}>Payroll run controls</p></div>
+          <p className="text-[11px] mb-3" style={{ color:'var(--text-muted)' }}>
+            What stops an employee being paid, as against what is only reported. Anything switched off still
+            shows as a warning on the pre-check — a requirement nobody is enforcing is still worth seeing.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {[
+              ['require_bank_for_payroll',       'Bank details are required', 'Without an account and IFSC the transfer cannot be made at all.'],
+              ['require_pan_for_payroll',        'PAN is required',           'TDS is filed against it; without one the employee is taxed twice.'],
+              ['require_aadhaar_for_payroll',    'Aadhaar is required',       'Needed for the PF and ESIC filings, not for the transfer itself.'],
+              ['require_work_state_for_payroll', 'Work state is required',    'Professional Tax is levied per state; without one it computes as zero.'],
+              ['require_separate_approver',      'Payroll needs a second approver', 'The person who processed a run may not also approve it. Leave off where there is only one administrator.'],
+              ['probation_blocks_leave',         'Leave only after probation', 'Leave taken before confirmation is unpaid. A leave policy can still permit it individually.'],
+            ].map(([key, label, help]) => (
+              <label key={key} className="flex items-start gap-2 text-xs font-semibold cursor-pointer rounded-xl p-2.5"
+                style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>
+                <input type="checkbox" className="mt-0.5" checked={!!runControls[key]}
+                  onChange={e=>setRunControls(c => ({ ...c, [key]: e.target.checked }))}/>
+                <span>
+                  <span className="block" style={{ color:'var(--text-h)' }}>{label}</span>
+                  <span className="block text-[10px] font-normal mt-0.5">{help}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {/* Which states offer Professional Tax.
+
+            PT is a state levy and roughly a third of the country does not
+            impose it — the rule screen offered all 36 regardless, so Delhi sat
+            next to Maharashtra with nothing to say it collects nothing. A
+            setting rather than a constant because a budget can change it and
+            the people who notice are the ones running payroll. */}
+        <div className="mt-4 pt-4" style={{ borderTop:'1px solid var(--border)' }}>
+          <div className="flex items-center gap-2 mb-1"><Scale size={15} style={{ color:'#a78bfa' }}/>
+            <p className="text-xs font-black" style={{ color:'var(--text-h)' }}>Professional Tax states</p></div>
+          <p className="text-[11px] mb-3" style={{ color:'var(--text-muted)' }}>
+            Only these appear when a PT rule is created. Ticking a state that levies nothing invites a slab
+            that would then deduct.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {(meta.all_states || meta.work_states || []).map(s => {
+              const on = (ptStates || []).includes(s.code)
+              return (
+                <button key={s.code} type="button"
+                  onClick={()=>setPtStates(prev => on ? prev.filter(c => c !== s.code) : [...prev, s.code])}
+                  className="text-[10px] font-bold px-2.5 py-1 rounded-lg"
+                  style={{ background: on ? 'rgba(124,58,237,0.14)' : 'var(--bg-input)',
+                           color: on ? '#a78bfa' : 'var(--text-muted)' }}>
+                  {s.name}
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-[10px] mt-2" style={{ color:'var(--text-muted)' }}>
+            {(ptStates || []).length} selected. A state that already carries a PT rule here keeps appearing even if it is unticked.
+          </p>
         </div>
 
         <div className="mt-4">

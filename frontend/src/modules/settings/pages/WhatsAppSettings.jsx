@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Send, Save, ShieldCheck, AlertTriangle, MessageCircle } from 'lucide-react'
 import { settingsApi } from '@/services/settingsApi'
 import { useToast } from '@/hooks/useToast'
+import { GRAD } from '@/components/ui/brand'
 
 const BLANK = { provider: 'cloud', access_token: '', phone_number_id: '', waba_id: '', api_version: 'v21.0', enabled: false }
 
@@ -132,7 +133,7 @@ export default function WhatsAppSettings() {
         <div className="flex gap-3 pt-5 flex-wrap">
           <button onClick={save} disabled={saving}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white"
-            style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', opacity: saving ? 0.7 : 1 }}>
+            style={{ background: GRAD, opacity: saving ? 0.7 : 1 }}>
             <Save size={15} /> {saving ? 'Saving…' : 'Save'}
           </button>
           <button onClick={verify} disabled={verifying}
@@ -169,7 +170,7 @@ export default function WhatsAppSettings() {
             onChange={e => setTestTo(e.target.value)} placeholder="98765 43210" />
           <button onClick={sendTest} disabled={testing}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white"
-            style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', opacity: testing ? 0.7 : 1 }}>
+            style={{ background: GRAD, opacity: testing ? 0.7 : 1 }}>
             <Send size={15} /> {testing ? 'Sending…' : 'Send test'}
           </button>
         </div>

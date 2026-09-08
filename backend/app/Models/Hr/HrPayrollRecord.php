@@ -56,6 +56,10 @@ class HrPayrollRecord extends Model
         // trap as every block above — omitted here, create() drops them and the
         // payable figure silently loses the adjustment.
         'payment_status', 'paid_at', 'payment_note', 'payslip_visible', 'adjustment_total',
+        // Late marks and overtime, frozen at process time so an attendance
+        // correction filed in October cannot change what August paid.
+        'late_marks', 'late_mark_deduction', 'late_mark_reason',
+        'overtime_hours', 'overtime_amount',
     ];
 
     protected $casts = [
@@ -99,9 +103,11 @@ class HrPayrollRecord extends Model
         return round(
             (float) $this->net_salary
             + (float) $this->variable_earnings
+            + (float) $this->overtime_amount    // paid for hours already worked
             + (float) $this->adjustment_total   // HR's additions net of deductions
             - (float) $this->statutory_deductions
-            - (float) $this->loan_deduction,
+            - (float) $this->loan_deduction
+            - (float) $this->late_mark_deduction,
             2
         );
     }

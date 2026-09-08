@@ -89,8 +89,10 @@ class HrSetting
         //
         // The policy itself is numbers on this screen, not a rule in code, so HR
         // can change the thresholds or switch the whole thing off without a
-        // release. Nothing enforces these yet — the settings land first so the
-        // policy is captured and adjustable when the deduction is built.
+        // release. Enforced by LateMarkDeductionService at process time; the
+        // count and the money are frozen onto the payroll record, so an
+        // attendance correction filed later cannot change what a past month
+        // paid.
         'late_marks_enabled' => [
             'Deduct for repeated late marks', self::TYPE_BOOL, false,
             'When off, a late clock-in is recorded but never costs any pay.', 'Late marks',
@@ -114,6 +116,29 @@ class HrSetting
         'late_marks_reset_monthly' => [
             'Count late marks per month', self::TYPE_BOOL, true,
             'When on, the count starts again on the first of each month.', 'Late marks',
+        ],
+
+        /* ── overtime ────────────────────────────────────────────────── */
+        //
+        // Named as an allowance head on 5 Sep. Attendance has recorded
+        // `overtime_hours` per day since it was built and payroll never read the
+        // column, so the hours were visible on the attendance screen and worth
+        // nothing on the payslip.
+        //
+        // OFF by default. Switching on a payment silently, for a workspace whose
+        // people have been clocking overtime with no expectation of being paid
+        // for it, creates a back-pay argument nobody planned for.
+        'overtime_enabled' => [
+            'Pay for overtime hours', self::TYPE_BOOL, false,
+            'When off, overtime hours are recorded on attendance but never paid.', 'Overtime',
+        ],
+        'overtime_multiplier' => [
+            'Overtime rate', self::TYPE_DECIMAL, 2,
+            'Multiple of the normal hourly rate. Indian factory law sets twice the ordinary rate; 1 pays flat.', 'Overtime',
+        ],
+        'overtime_daily_cap_hours' => [
+            'Most overtime paid in one day', self::TYPE_DECIMAL, 4,
+            'Hours beyond this on a single day are recorded but not paid. 0 removes the cap.', 'Overtime',
         ],
 
         /* ── attendance ──────────────────────────────────────────────── */
