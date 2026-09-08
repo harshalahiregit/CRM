@@ -3,7 +3,7 @@ import { useTheme } from '@/context/ThemeContext'
 import {
   Wallet, Coins, Search, Plus, Pencil, X, Power, Lock, Sparkles, Layers, Users, PlayCircle, ReceiptText,
   Trash2, IndianRupee, Eye, Calendar, CheckCircle2, Ban, Plug, Download, FileText, BarChart3, Copy, History,
-  Scale, AlertTriangle, Receipt, Landmark,
+  Scale, AlertTriangle, Receipt, Landmark, LayoutGrid, Banknote, ShieldCheck, SlidersHorizontal,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
@@ -15,6 +15,7 @@ import TaxDeclarations from './TaxDeclarations'
 import SalarySheet from '../components/SalarySheet'
 import VariableEarnings from '../components/VariableEarnings'
 import PayrollRunWizard from '../components/PayrollRunWizard'
+import PayrollHub from '../components/PayrollHub'
 
 const GRAD = 'linear-gradient(135deg,#7C3AED,#5b21b6)'
 // 'Benefit' retained for backward compatibility (legacy employer contribution).
@@ -23,30 +24,67 @@ const CALC_TYPES = ['Fixed', 'Percentage', 'Formula', 'Manual']
 const TYPE_C = { Earning:{c:'#10b981',bg:'rgba(16,185,129,0.12)'}, Employer:{c:'#3b82f6',bg:'rgba(59,130,246,0.12)'}, Deduction:{c:'#f87171',bg:'rgba(239,68,68,0.1)'}, Benefit:{c:'#3b82f6',bg:'rgba(59,130,246,0.12)'} }
 const money = v => v === null || v === undefined || v === '' ? '—' : `₹${Number(v).toLocaleString('en-IN')}`
 
-// Payroll module tabs. Only "Salary Components" is built (Phase 1); the rest are
-// reserved structure for future phases — shown, locked, never routed to a page.
-const TABS = [
-  { key:'components', label:'Salary Components', icon:Coins,       ready:true },
-  { key:'structures', label:'Salary Structures', icon:Layers,      ready:true },
-  { key:'employee',   label:'Employee Salary',   icon:Users,       ready:true },
-  { key:'statutory',  label:'Statutory Rules',   icon:Scale,       ready:true },
-  { key:'declarations', label:'Tax Declarations', icon:Receipt,    ready:true },
-  // #31 — commissions/incentives sit beside the salary masters they draw their
-  // component from, and before processing, which is what collects them.
-  { key:'variable',   label:'Commissions',       icon:Landmark,    ready:true },
-  { key:'processing', label:'Payroll Processing', icon:PlayCircle,  ready:true },
-  { key:'payslips',   label:'Payslips',          icon:ReceiptText, ready:true },
-  { key:'reports',    label:'Payroll Reports',   icon:BarChart3,   ready:true },
-  { key:'salary-reports', label:'Salary Reports', icon:FileText,   ready:true },
+/*
+ * Payroll is organised by WHAT YOU ARE DOING, not by which table you are editing.
+ *
+ * It used to be ten flat tabs that opened on Salary Components — a master data
+ * screen, and the one nobody needs on a Tuesday. The work has an order to it:
+ * run the month, look at the register, pay people, then keep the masters and
+ * the rules behind it. That order is what these sections are.
+ *
+ * Nothing was rewritten to do this. Every pane below is the same component it
+ * always was, re-homed under the section it belongs to — a tab that worked
+ * yesterday works today, from a different place.
+ */
+const SECTIONS = [
+  { key:'hub',      label:'Hub',               icon:LayoutGrid },
+  { key:'run',      label:'Run Payroll',       icon:PlayCircle,        panes:[
+      { key:'processing',     label:'Run Payroll' },
+  ]},
+  { key:'register', label:'Pay Register',      icon:FileText,          panes:[
+      { key:'salary-reports', label:'Salary Register' },
+  ]},
+  { key:'payout',   label:'Payout',            icon:Banknote,          panes:[
+      { key:'payslips',       label:'Payslips' },
+  ]},
+  { key:'people',   label:'People & Salaries', icon:Users,             panes:[
+      { key:'employee',       label:'Employee Salary' },
+      // #31 — commissions sit with the people they are paid to, and ahead of
+      // the run that collects them.
+      { key:'variable',       label:'Commissions' },
+  ]},
+  { key:'declarations', label:'Declarations',  icon:Receipt,           panes:[
+      { key:'declarations',   label:'Tax Declarations' },
+  ]},
+  { key:'compliance', label:'Compliance',      icon:ShieldCheck,       panes:[
+      { key:'statutory',      label:'Statutory Rules' },
+  ]},
+  { key:'insights', label:'Insights',          icon:BarChart3,         panes:[
+      { key:'reports',        label:'Payroll Reports' },
+  ]},
+  { key:'settings', label:'Settings',          icon:SlidersHorizontal, panes:[
+      { key:'components',     label:'Salary Components' },
+      { key:'structures',     label:'Salary Structures' },
+  ]},
 ]
+
+/** The first pane of a section — what opening that tab lands on. */
+const firstPane = (sectionKey) =>
+  SECTIONS.find(s => s.key === sectionKey)?.panes?.[0]?.key ?? null
 
 export default function Payroll() {
   useTheme()
-  const [tab, setTab] = useState('components')
+  // Opens on the Hub: which month is in flight and what is blocking it, rather
+  // than a master data table.
+  const [section, setSection] = useState('hub')
+  const [tab, setTab] = useState(null)
   const [toast, setToast] = useState(null)
   const showToast = (msg, type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3000) }
 
-  const current = TABS.find(t => t.key === tab)
+  const currentSection = SECTIONS.find(s => s.key === section)
+  const panes = currentSection?.panes ?? []
+
+  const goTo = (sectionKey) => { setSection(sectionKey); setTab(firstPane(sectionKey)) }
 
   return (
     <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]">
@@ -62,22 +100,41 @@ export default function Payroll() {
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* Sections — what you are doing */}
       <div className="flex gap-1.5 flex-wrap">
-        {TABS.map(t => {
-          const active = tab === t.key
+        {SECTIONS.map(s => {
+          const active = section === s.key
           return (
-            <button key={t.key} onClick={()=>setTab(t.key)}
+            <button key={s.key} onClick={()=>goTo(s.key)}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all"
               style={{ background: active ? GRAD : 'var(--bg-input)', color: active ? '#fff' : 'var(--text-muted)', border: active ? 'none' : '1px solid var(--border)' }}>
-              <t.icon size={15}/> {t.label}
-              {!t.ready && <Lock size={11} style={{ opacity:0.7 }}/>}
+              <s.icon size={15}/> {s.label}
             </button>
           )
         })}
       </div>
 
-      {tab === 'components' ? <SalaryComponents showToast={showToast} />
+      {/* Panes within a section. Hidden when a section holds only one, so a
+          single-pane section does not grow a tab bar with one tab in it. */}
+      {panes.length > 1 && (
+        <div className="flex gap-1.5 flex-wrap">
+          {panes.map(p => {
+            const active = tab === p.key
+            return (
+              <button key={p.key} onClick={()=>setTab(p.key)}
+                className="px-3 py-1.5 rounded-lg text-[12px] font-bold transition-all"
+                style={{ background: active ? 'rgba(124,58,237,0.14)' : 'transparent',
+                         color: active ? '#a78bfa' : 'var(--text-muted)',
+                         border: `1px solid ${active ? 'transparent' : 'var(--border)'}` }}>
+                {p.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {section === 'hub' ? <PayrollHub showToast={showToast} onGoTo={goTo} onOpenRun={()=>goTo('run')} />
+        : tab === 'components' ? <SalaryComponents showToast={showToast} />
         : tab === 'structures' ? <SalaryStructures showToast={showToast} />
         : tab === 'employee' ? <EmployeeSalary showToast={showToast} />
         : tab === 'statutory' ? <StatutorySettings showToast={showToast} />
@@ -87,14 +144,7 @@ export default function Payroll() {
         : tab === 'payslips' ? <Payslips showToast={showToast} />
         : tab === 'reports' ? <PayrollReports showToast={showToast} />
         : tab === 'salary-reports' ? <SalaryReports showToast={showToast} />
-        : (
-          <div className="card-3d flex flex-col items-center justify-center text-center" style={{ padding:'56px 20px' }}>
-            <div className="rounded-2xl flex items-center justify-center mb-3" style={{ width:60, height:60, background:'rgba(124,58,237,0.1)' }}><current.icon size={26} style={{ color:'#a78bfa' }}/></div>
-            <p className="text-sm font-black" style={{ color:'var(--text-h)' }}>{current.label}</p>
-            <p className="text-xs mt-1" style={{ color:'var(--text-muted)' }}>Coming in a future Payroll phase.</p>
-            <p className="text-[11px] mt-2 max-w-md" style={{ color:'var(--text-muted)' }}>This phase delivers the Salary Components master only. Structures, employee salary, processing and payslips build on top of it later.</p>
-          </div>
-        )}
+        : null}
     </div>
   )
 }

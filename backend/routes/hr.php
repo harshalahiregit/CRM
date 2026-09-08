@@ -43,6 +43,8 @@ use App\Http\Controllers\Api\Hr\OrgChartController;
 use App\Http\Controllers\Api\Hr\EmployeeScoreController;
 use App\Http\Controllers\Api\Hr\ExitQuestionnaireController;
 use App\Http\Controllers\Api\Hr\VariableEarningController;
+use App\Http\Controllers\Api\Hr\DirectoryController;
+use App\Http\Controllers\Api\Hr\LetterController;
 use App\Http\Controllers\Api\Hr\PayrollRunController;
 use App\Http\Controllers\Api\Hr\PayrollWorkflowController;
 use App\Http\Controllers\Api\Hr\PayslipController;
@@ -258,6 +260,36 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     // tenant assertion the controller makes.
     Route::get('/employees/{employee}/detail',  [EmployeeController::class, 'detail']);
     Route::put('/employees/{employee}/detail',  [EmployeeController::class, 'updateDetail']);
+
+    /*
+    | Entry-to-exit letters.
+    |
+    | The offer, appointment and confirmation ends of the list were built; the
+    | exit end was not, so the one document a departing person actually needs —
+    | the thing their next employer asks for — was typed by hand.
+    |
+    | Each refuses to issue early, because of what it ASSERTS: a relieving
+    | letter states that dues are settled, and issuing one before clearance
+    | means certifying that in writing to a third party who will rely on it.
+    */
+    /*
+    | Where the staff and employee directories disagree.
+    |
+    | The instruction was one directory, not two. They are not merged, because
+    | they are not duplicates: `users` is a login account and `hr_employees` is
+    | an employment record, neither contains the other, and Tasks, Helpdesk and
+    | ticket threads all resolve their assignable-people lists from the staff
+    | side. The complaint was that somebody is added in one place and missing
+    | from the other — which is a reconciliation problem, solved by showing the
+    | gap rather than by a migration across four other modules.
+    */
+    Route::get('/directory/reconciliation', [DirectoryController::class, 'reconciliation']);
+    Route::post('/employees/{employee}/link-login', [DirectoryController::class, 'link'])->whereNumber('employee');
+
+    Route::get('/employees/{employee}/letters', [LetterController::class, 'available'])->whereNumber('employee');
+    Route::get('/employees/{employee}/letters/{type}', [LetterController::class, 'download'])
+        ->whereNumber('employee')
+        ->whereIn('type', \App\Services\Hr\LetterService::TYPES);
 
     // Exit Interview (SPK-1) — internal form, reuses the employee record for prefill.
     Route::get('/exit-interviews',                        [ExitInterviewController::class, 'index']);
