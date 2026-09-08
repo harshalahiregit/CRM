@@ -147,9 +147,38 @@ class PurchaseKickoffService
     }
 
     /** Schedule a kickoff against a Purchase vendor. */
+    /**
+     * A kick-off happens once per vendor — see KickoffOnce, the same rule and
+     * the same message the shared engine uses.
+     *
+     * The default meeting type IS kickoff, so the common way to break this is
+     * leaving the picker alone on a meeting meant to be a progress review.
+     */
+    private function assertKickoffIsTheFirst(?string $type, int $vendorId, int $tenantId, ?int $excludeId = null): void
+    {
+        if (! \App\Support\Shared\KickoffOnce::applies($type)) {
+            return;
+        }
+
+        $existing = PurchaseKickoffMeeting::where('tenant_id', $tenantId)
+            ->where('purchase_vendor_id', $vendorId)
+            ->where('meeting_type', \App\Support\Shared\KickoffOnce::TYPE)
+            ->whereNotIn('status', \App\Support\Shared\KickoffOnce::IGNORED_STATUSES)
+            ->when($excludeId, fn ($q) => $q->whereKeyNot($excludeId))
+            ->orderBy('id')
+            ->first();
+
+        if ($existing) {
+            throw new BusinessException(\App\Support\Shared\KickoffOnce::message($existing), 422);
+        }
+    }
+
     public function schedule(array $data, User $actor): PurchaseKickoffMeeting
     {
         $vendor = $this->resolveVendor($data['purchase_vendor_id'], $actor->tenant_id);
+
+        $type = $data['meeting_type'] ?? \App\Support\Purchase\PurchaseMeetingTypeCatalog::DEFAULT;
+        $this->assertKickoffIsTheFirst($type, $vendor->id, $actor->tenant_id);
 
         $meeting = PurchaseKickoffMeeting::create([
             'tenant_id'              => $actor->tenant_id,
@@ -157,7 +186,7 @@ class PurchaseKickoffService
             'purchase_vendor_id'     => $vendor->id,
             'purchase_onboarding_id' => $data['purchase_onboarding_id'] ?? $this->onboardingIdFor($vendor),
             'title'                  => $data['title'] ?? $this->defaultTitle($vendor),
-            'meeting_type' => $data['meeting_type'] ?? \App\Support\Purchase\PurchaseMeetingTypeCatalog::DEFAULT,
+            'meeting_type'           => $type,
             'reference'              => $data['reference'] ?? null,
             'agenda'                 => $data['agenda'] ?? null,
             // Born a draft — saving records the meeting but tells nobody. Going
@@ -236,6 +265,15 @@ class PurchaseKickoffService
         // Not simply the old end: moving the start moves the end with it, so a
         // reschedule keeps the meeting's length instead of stretching it.
         $effEnd = $this->rescheduledEnd($data, $meeting->scheduled_at, $meeting->end_at, $meeting->tenant_id);
+
+        // Changing an existing meeting's type INTO a kick-off is the other way
+        // to end up with two. Excludes itself, so re-saving the only kick-off
+        // does not refuse its own existence.
+        if (array_key_exists('meeting_type', $data)) {
+            $this->assertKickoffIsTheFirst(
+                $data['meeting_type'], (int) $meeting->purchase_vendor_id, (int) $meeting->tenant_id, $meeting->id,
+            );
+        }
 
         $meeting->update(array_filter([
             'title'             => $data['title'] ?? null,

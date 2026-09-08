@@ -4,6 +4,7 @@ namespace App\Services\Shared;
 
 use App\Contracts\ProjectDirectoryContract;
 use App\Exceptions\BusinessException;
+use App\Support\Shared\KickoffOnce;
 use App\Models\Shared\KickoffAttendee;
 use App\Models\Shared\KickoffMeeting;
 use App\Models\Shared\KickoffMeetingDocument;
@@ -165,16 +166,50 @@ class KickoffMeetingService
     }
 
     /** Schedule a meeting against a subject (or standalone). */
+    /**
+     * A kick-off happens once per subject — see KickoffOnce.
+     *
+     * The default meeting type IS kickoff, so the common way to break this is
+     * not malice but leaving the picker alone on a meeting that was meant to be
+     * a progress review. The refusal therefore names the meeting already in the
+     * way and says what to do instead.
+     *
+     * @param  Model|null  $subject       the vendor/onboarding/customer the meeting is for
+     * @param  int|null    $excludeId     the meeting being edited, which must not block itself
+     */
+    private function assertKickoffIsTheFirst(?string $type, $subject, int $tenantId, ?int $excludeId = null): void
+    {
+        if (! KickoffOnce::applies($type) || ! $subject) {
+            return;
+        }
+
+        $existing = KickoffMeeting::where('tenant_id', $tenantId)
+            ->where('kickoffable_type', $subject::class)
+            ->where('kickoffable_id', $subject->id)
+            ->where('meeting_type', KickoffOnce::TYPE)
+            ->whereNotIn('status', KickoffOnce::IGNORED_STATUSES)
+            ->when($excludeId, fn ($q) => $q->whereKeyNot($excludeId))
+            ->orderBy('id')
+            ->first();
+
+        if ($existing) {
+            throw new BusinessException(KickoffOnce::message($existing), 422);
+        }
+    }
+
     public function schedule(array $data, User $actor): KickoffMeeting
     {
         $subject = $this->resolveSubject($data['subject_type'] ?? null, $data['subject_id'] ?? null, $actor->tenant_id);
+
+        $type = $data['meeting_type'] ?? config('meetings.default_type', 'kickoff');
+        $this->assertKickoffIsTheFirst($type, $subject, $actor->tenant_id);
 
         $meeting = KickoffMeeting::create([
             'tenant_id' => $actor->tenant_id,
             'created_by' => $actor->id,
             'kickoffable_type' => $subject ? $subject::class : null,
             'kickoffable_id' => $subject?->id,
-            'meeting_type' => $data['meeting_type'] ?? config('meetings.default_type', 'kickoff'),
+            'meeting_type' => $type,
             'title' => $data['title'] ?? $this->defaultTitle($subject),
             'reference' => $data['reference'] ?? null,
             'agenda' => $data['agenda'] ?? null,
@@ -371,6 +406,15 @@ class KickoffMeetingService
         // Not simply the old end: moving the start moves the end with it, so a
         // reschedule keeps the meeting's length instead of stretching it.
         $effEnd = $this->rescheduledEnd($data, $meeting->scheduled_at, $meeting->end_at, $meeting->tenant_id);
+
+        // Changing an existing meeting's type INTO a kick-off is the other way
+        // to end up with two. Excludes itself, so re-saving a kick-off that is
+        // already the only one does not refuse its own existence.
+        if (array_key_exists('meeting_type', $data)) {
+            $this->assertKickoffIsTheFirst(
+                $data['meeting_type'], $meeting->kickoffable, $meeting->tenant_id, $meeting->id,
+            );
+        }
 
         $meeting->update(array_filter([
             'title' => $data['title'] ?? null,
