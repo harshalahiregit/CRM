@@ -6,6 +6,7 @@ import { hrApi } from '@/services/hrApi'
 import { useMasterData, withInactive } from '@/modules/hr/useMasterData'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import Modal from '@/components/ui/Modal'
+import DirectoryGapPanel from '@/modules/hr/components/DirectoryGapPanel'
 
 const DEPT_COLORS = { Engineering:'#3b82f6', Sales:'#10b981', HR:'#7C3AED', Operations:'#f59e0b', Product:'#ec4899', Marketing:'#f97316', Finance:'#6366f1' }
 const STATUS_S = s => s==='Active'?{c:'#10b981',bg:'rgba(16,185,129,0.12)'}:s==='On Leave'?{c:'#f59e0b',bg:'rgba(245,158,11,0.12)'}:{c:'#f87171',bg:'rgba(239,68,68,0.1)'}
@@ -227,6 +228,12 @@ export default function Employees() {
           <div key={k.l} className="kpi-3d"><p className="text-3xl font-black" style={{ color:k.c }}>{k.v}</p><p className="text-sm font-medium mt-1" style={{ color:'var(--text-muted)' }}>{k.l}</p></div>
         ))}
       </div>
+
+      {/* Where this list and the staff directory disagree. Somebody added in
+          one place and missing from the other is only discovered when they are
+          left off a payroll run — so it is surfaced here, next to the list it
+          is about. Silent when the two agree. */}
+      <DirectoryGapPanel showToast={showToast} />
 
       {/* Search & Filters */}
       <div className="card-3d" style={{ padding:'16px' }}>

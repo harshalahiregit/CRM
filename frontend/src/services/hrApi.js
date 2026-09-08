@@ -257,6 +257,22 @@ export const hrApi = {
     list:   (params = {}) => api.get('/hr/employees', { params }).then(r => Array.isArray(r.data) ? r.data : (r.data?.data ?? [])),
     listPaged: (params = {}) => api.get('/hr/employees', { params }).then(r => r.data),
     stats:  ()            => api.get('/hr/employees/stats').then(r => r.data),
+
+    /*
+     | Entry-to-exit letters. `letters()` asks the server which can be issued
+     | and WHY NOT for the rest — "not yet" and "never" look the same on a
+     | disabled button, and HR needs to know whether they are waiting on
+     | clearance or looking at the wrong person.
+     */
+    letters: (employeeId) => api.get(`/hr/employees/${employeeId}/letters`).then(r => r.data?.data ?? []),
+    // Blob, not JSON: this is the PDF itself.
+    letterPdf: (employeeId, type) =>
+      api.get(`/hr/employees/${employeeId}/letters/${type}`, { responseType: 'blob' }).then(r => r.data),
+
+    // Where the staff and employee directories disagree.
+    reconciliation: () => api.get('/hr/directory/reconciliation').then(r => r.data?.data ?? {}),
+    linkLogin: (employeeId, userId) =>
+      api.post(`/hr/employees/${employeeId}/link-login`, { user_id: userId }).then(r => r.data),
     // The extended record — personal, address, education, emergency contact,
     // bank, identity, statutory. Always returns every key (null where unset) so
     // the form renders without special-casing a person nobody has filled in yet.
