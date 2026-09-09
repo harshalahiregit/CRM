@@ -24,6 +24,11 @@ const ROLES = [
   { value: 'doctor',              label: 'Doctor',               icon: '🩺' },
   { value: 'purchase_vendor',     label: 'Purchase Vendor',      icon: '📦', purchaseVendor: true },
   { value: 'third_party_vendor',  label: 'Third-Party Vendor',   icon: '🤝' },
+  // `vendor` and `third_party_vendor` are two spellings of the same thing and
+  // reach the same portal; the older one was simply never listed, so the people
+  // holding it had nothing to pick. Worth collapsing into one role one day —
+  // until then it needs a door, because it is what their account says.
+  { value: 'vendor',              label: 'Vendor',               icon: '🤝' },
   { value: 'client',              label: 'Client / Customer',    icon: '👤', clientPortal: true },
   { value: 'company',             label: 'Company',              icon: '🏢' },
 ]
@@ -43,7 +48,10 @@ const schema = z.object({
 // Post-login home when the user came to /login directly (no email deep-link).
 const roleHome = (role) =>
   role === 'company' ? '/company-portal/dashboard'
-  : role === 'third_party_vendor' ? '/vendor-portal/dashboard'
+  // Both vendor spellings reach the same portal, which admits both. Without the
+  // second one a `vendor` was sent to /app, which blocks that role and bounces
+  // it back here — an infinite redirect rather than a wrong page.
+  : (role === 'third_party_vendor' || role === 'vendor') ? '/vendor-portal/dashboard'
   // The two identities that carry their own token rather than a User session.
   : role === 'purchase_vendor' ? '/purchase-portal/dashboard'
   : role === 'client' ? '/portal/dashboard'

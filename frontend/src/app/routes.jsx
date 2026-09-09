@@ -499,9 +499,17 @@ function RootRedirect() {
   const { isAuthenticated, user } = useAuth()
   if (!isAuthenticated) return <Navigate to="/auth/login" replace />
   const role = user?.role
-  if (role === 'third_party_vendor') return <Navigate to="/vendor-portal/dashboard" replace />
-  // No 'vendor' branch: a Purchase Vendor is never a User session. They sign in at
-  // /auth/login?role=purchase_vendor and hold a PurchaseVendor token under its own storage key.
+  // Both vendor spellings, because both are real User roles and the portal
+  // below admits both. This used to read "No 'vendor' branch: a Purchase Vendor
+  // is never a User session" -- true of purchase_vendor, and nothing to do with
+  // `vendor`, which three users actually hold. The two were conflated, so a
+  // vendor opening / was sent to /app, which blocks that role and bounces back
+  // to the same place: an infinite redirect, not a wrong page.
+  //
+  // purchase_vendor is genuinely absent: it signs in at
+  // /auth/login?role=purchase_vendor and holds a PurchaseVendor token under its
+  // own storage key, never a User session.
+  if (role === 'third_party_vendor' || role === 'vendor') return <Navigate to="/vendor-portal/dashboard" replace />
   if (role === 'company') return <Navigate to="/company-portal/dashboard" replace />
   if (role === 'doctor') return <Navigate to="/doctor-portal/dashboard" replace />
   return <Navigate to="/app/dashboard" replace />
