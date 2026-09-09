@@ -45,6 +45,10 @@ return Application::configure(basePath: dirname(__DIR__))
             'client.portal' => \App\Http\Middleware\EnsureClientPortalAccess::class,
             'company.portal' => \App\Http\Middleware\EnsureCompanyPortalAccess::class,
             'temp.access' => \App\Http\Middleware\EnsureTemporaryAccessNotExpired::class,
+            // Onboarding first: an unapproved vendor may not write to the
+            // operational portal. Must run AFTER a portal gate, which is what
+            // resolves the vendor onto the request.
+            'vendor.onboarded' => \App\Http\Middleware\EnsureVendorOnboardingComplete::class,
             // Staff permission grid — 'permission:module,capability'.
             'permission' => \App\Http\Middleware\EnsureStaffPermission::class,
             // The HR queue gate, so a route group carries it rather than each method.
