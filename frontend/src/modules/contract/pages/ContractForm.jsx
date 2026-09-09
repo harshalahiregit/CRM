@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, GripVertical, Save, FilePlus2 } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, GripVertical, Save, FilePlus2, FileEdit } from 'lucide-react'
 import { contractModuleApi as api } from '@/services/contractModuleApi'
 import { inputStyle, labelStyle, PRIMARY_GRADIENT, Overlay, ModalFooter } from '@/components/ui/kit3d'
 import RichTextEditor from '@/components/ui/RichTextEditor'
@@ -17,7 +17,42 @@ import RichTextEditor from '@/components/ui/RichTextEditor'
  * 2. Terms are edited as ordered PAGES, not one box. The brief asks for 2 to 10+
  *    pages, and the PDF starts a new printed page per entry, so the clause
  *    numbering people quote matches what they are holding.
+ *
+ * 3. There are two ways out of this screen. "Save as draft" keeps whatever has
+ *    been typed, no questions asked; "Create contract" first checks the record
+ *    is complete enough to actually send to somebody. Both land in the draft
+ *    state -- sending is what moves a contract on -- but only the second one
+ *    promises you could send it today.
  */
+
+/* The page runs edge to edge. Below 1280px the two panels stack; above it the
+   details sit on the left and the terms editor takes the wider right column,
+   which is where the width is worth having -- clauses are what people read.
+   The form used to be capped at 980px, which on a normal monitor left half the
+   screen empty while the clause editor was the narrowest thing on the page. */
+const FORM_CSS = `
+.cfm-cols { display: flex; flex-direction: column; gap: 16px; align-items: stretch; }
+.cfm-left, .cfm-right { min-width: 0; }
+@media (min-width: 1280px) {
+  .cfm-cols  { flex-direction: row; align-items: flex-start; }
+  .cfm-left  { flex: 1 1 0; }
+  .cfm-right { flex: 1.3 1 0; }
+}
+.cfm-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+@media (min-width: 620px) { .cfm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.cfm-full { grid-column: 1 / -1; }
+`
+
+/* Same vocabulary as the Contracts list, so a status reads the same wherever
+   it is shown. */
+const STATUS_STYLE = {
+  draft:     { bg: 'rgba(107,114,128,.12)', fg: '#6b7280', label: 'Draft' },
+  sent:      { bg: 'rgba(59,130,246,.12)',  fg: '#3b82f6', label: 'Sent' },
+  signed:    { bg: 'rgba(139,92,246,.12)',  fg: '#8b5cf6', label: 'Signed' },
+  active:    { bg: 'rgba(16,185,129,.12)',  fg: '#10b981', label: 'Active' },
+  expired:   { bg: 'rgba(245,158,11,.12)',  fg: '#f59e0b', label: 'Expired' },
+  cancelled: { bg: 'rgba(239,68,68,.12)',   fg: '#ef4444', label: 'Cancelled' },
+}
 
 const card = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18 }
 const emptyPage = () => ({ key: Math.random().toString(36).slice(2), title: '', content: '' })
@@ -45,10 +80,12 @@ export default function ContractForm() {
     party_type: 'customer', party_id: '', party_name: '', party_email: '',
     value: '', currency: 'INR', start_date: '', end_date: '', renewal_notice_days: 30,
   })
+  const [status, setStatus] = useState('draft')
   const [pages, setPages] = useState([emptyPage()])
   const [categories, setCategories] = useState([])
   const [parties, setParties] = useState({})
-  const [saving, setSaving] = useState(false)
+  // null | 'draft' | 'full' -- so only the button that was pressed says "Saving".
+  const [saving, setSaving] = useState(null)
   const [err, setErr] = useState(null)
   const [newCat, setNewCat] = useState(null)
 
@@ -64,6 +101,7 @@ export default function ContractForm() {
   useEffect(() => {
     if (!editing) return
     api.get(id).then(c => {
+      setStatus(c.status || 'draft')
       setForm({
         title: c.title ?? '', description: c.description ?? '',
         contract_category_id: c.contract_category_id ?? '',
@@ -106,14 +144,33 @@ export default function ContractForm() {
     } catch { setErr('That contract type could not be created.') }
   }
 
-  const submit = async () => {
+  /**
+   * Save.
+   *
+   * `asDraft` is not a different record -- it is a different promise. A draft is
+   * parked work, so the only thing it owes is a name you can find it by again.
+   * The full save is the one that says "this could go out", so it asks for the
+   * counterparty and at least one page of terms now rather than letting somebody
+   * discover the gap at the moment they try to send it.
+   */
+  const save = async (asDraft) => {
     setErr(null)
     if (!form.title.trim()) { setErr('Give the contract a name.'); return }
     if (form.end_date && form.start_date && form.end_date < form.start_date) {
       setErr('The end date cannot fall before the start date.'); return
     }
+    if (!asDraft) {
+      const missing = []
+      if (!form.party_id) missing.push('a customer or vendor')
+      if (!pages.some(p => hasText(p.content))) missing.push('at least one page of terms')
+      if (missing.length) {
+        setErr(`This contract still needs ${missing.join(' and ')}. `
+          + 'Use "Save as draft" to keep it and finish later.')
+        return
+      }
+    }
 
-    setSaving(true)
+    setSaving(asDraft ? 'draft' : 'full')
     try {
       const payload = {
         ...form,
@@ -131,19 +188,29 @@ export default function ContractForm() {
           .filter(p => p.title.trim() || hasText(p.content))
           .map(({ title, content }) => ({ title, content })),
       }
+      // Only ever push a status DOWN to draft when it already is one. Sending a
+      // bare `status: 'draft'` while editing a sent or signed contract would
+      // quietly un-send it, which is why the button is hidden in that case too.
+      if (asDraft) payload.status = 'draft'
+
       const saved = editing ? await api.update(id, payload) : await api.create(payload)
       navigate(`/app/contracts/${saved.id}`)
     } catch (e) {
       setErr(e?.response?.data?.message
         || Object.values(e?.response?.data?.errors || {}).flat()[0]
         || 'The contract could not be saved.')
-    } finally { setSaving(false) }
+    } finally { setSaving(null) }
   }
 
   const partyList = parties[form.party_type] || []
+  // Demoting a sent or signed contract back to a draft is not something anybody
+  // means to do, so the button is simply absent once it has left the drawer.
+  const canDraft = !editing || status === 'draft'
+  const chip = STATUS_STYLE[status] || STATUS_STYLE.draft
 
   return (
-    <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 980 }}>
+    <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16, width: '100%', boxSizing: 'border-box' }}>
+      <style>{FORM_CSS}</style>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <button onClick={() => navigate('/app/contracts')}
@@ -152,18 +219,25 @@ export default function ContractForm() {
         </button>
       </div>
 
-      <h1 style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-h)', margin: 0 }}>
-        {editing ? 'Edit contract' : 'New contract'}
-      </h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <h1 style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-h)', margin: 0 }}>
+          {editing ? 'Edit contract' : 'New contract'}
+        </h1>
+        <span style={{ background: chip.bg, color: chip.fg, fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999 }}>
+          {chip.label}
+        </span>
+      </div>
+
+      <div className="cfm-cols">
 
       {/* ── Basic details ─────────────────────────────────────── */}
-      <div style={card}>
+      <div className="cfm-left"><div style={card}>
         <h2 style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-h)', margin: '0 0 14px', textTransform: 'uppercase', letterSpacing: '.04em' }}>
           Details
         </h2>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          <div style={{ gridColumn: '1 / -1' }}>
+        <div className="cfm-grid">
+          <div className="cfm-full">
             <label style={labelStyle}>Contract name <span style={{ color: '#ef4444' }}>*</span></label>
             <input value={form.title} onChange={set('title')} style={inputStyle}
               placeholder="Annual Maintenance Agreement" />
@@ -220,6 +294,16 @@ export default function ContractForm() {
             </select>
           </div>
 
+          {/* Filled in from the chosen party, but editable -- the signatory is
+              often not the address on the account record, and this is the one
+              the signing request is actually sent to. It also squares off the
+              two-column grid, which otherwise ended on a dangling half row. */}
+          <div>
+            <label style={labelStyle}>Email for signing</label>
+            <input type="email" value={form.party_email} onChange={set('party_email')}
+              style={inputStyle} placeholder="accounts@example.com" />
+          </div>
+
           <div>
             <label style={labelStyle}>Start date</label>
             <input type="date" value={form.start_date} onChange={set('start_date')} style={inputStyle} />
@@ -238,7 +322,7 @@ export default function ContractForm() {
             </div>
           </div>
 
-          <div style={{ gridColumn: '1 / -1' }}>
+          <div className="cfm-full">
             <label style={labelStyle}>Description</label>
             <RichTextEditor
               value={form.description}
@@ -247,11 +331,11 @@ export default function ContractForm() {
               minHeight={110} />
           </div>
         </div>
-      </div>
+      </div></div>
 
       {/* ── Terms & conditions, page by page ──────────────────── */}
-      <div style={card}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+      <div className="cfm-right"><div style={card}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 10, flexWrap: 'wrap' }}>
           <div>
             <h2 style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-h)', margin: 0, textTransform: 'uppercase', letterSpacing: '.04em' }}>
               Terms &amp; Conditions
@@ -270,10 +354,10 @@ export default function ContractForm() {
           {pages.map((p, i) => (
             <div key={p.key} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: 'var(--bg-input)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <GripVertical size={14} style={{ color: 'var(--text-muted)' }} />
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>PAGE {i + 1}</span>
+                <GripVertical size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', flexShrink: 0 }}>PAGE {i + 1}</span>
                 <input value={p.title} onChange={e => setPage(p.key, 'title', e.target.value)}
-                  style={{ ...inputStyle, flex: 1, padding: '6px 10px' }} placeholder="Section heading — e.g. Scope of Work" />
+                  style={{ ...inputStyle, flex: 1, minWidth: 0, padding: '6px 10px' }} placeholder="Section heading — e.g. Scope of Work" />
                 <button type="button" onClick={() => movePage(i, -1)} disabled={i === 0}
                   style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: i === 0 ? 'default' : 'pointer', opacity: i === 0 ? .3 : 1, fontSize: 13 }}>↑</button>
                 <button type="button" onClick={() => movePage(i, 1)} disabled={i === pages.length - 1}
@@ -296,19 +380,36 @@ export default function ContractForm() {
             </div>
           ))}
         </div>
+      </div></div>
+
       </div>
 
       {err && <div style={{ color: '#ef4444', fontSize: 13 }}>{err}</div>}
 
-      <div style={{ display: 'flex', gap: 10 }}>
-        <button onClick={submit} disabled={saving}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button onClick={() => save(false)} disabled={Boolean(saving)}
           style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 18px', borderRadius: 10, border: 'none', background: PRIMARY_GRADIENT, color: '#fff', fontSize: 13, fontWeight: 700, cursor: saving ? 'default' : 'pointer', opacity: saving ? .7 : 1 }}>
-          <Save size={15} /> {saving ? 'Saving…' : (editing ? 'Save changes' : 'Create contract')}
+          <Save size={15} /> {saving === 'full' ? 'Saving…' : (editing ? 'Save changes' : 'Create contract')}
         </button>
+
+        {canDraft && (
+          <button onClick={() => save(true)} disabled={Boolean(saving)}
+            title="Keep what you have typed. Nothing is sent, and you can finish it later."
+            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 18px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-h)', fontSize: 13, fontWeight: 600, cursor: saving ? 'default' : 'pointer', opacity: saving ? .7 : 1 }}>
+            <FileEdit size={15} /> {saving === 'draft' ? 'Saving…' : 'Save as draft'}
+          </button>
+        )}
+
         <button onClick={() => navigate('/app/contracts')}
-          style={{ padding: '10px 18px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-h)', fontSize: 13, cursor: 'pointer' }}>
+          style={{ padding: '10px 18px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer' }}>
           Cancel
         </button>
+
+        {canDraft && (
+          <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+            A draft stays with your team until you send it for signature.
+          </span>
+        )}
       </div>
 
       {newCat !== null && (
