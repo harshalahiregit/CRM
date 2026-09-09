@@ -43,7 +43,7 @@ class ContractSignature extends Model
         'longitude' => 'decimal:7',
     ];
 
-    protected $appends = ['party_label', 'is_signed', 'place'];
+    protected $appends = ['party', 'party_label', 'is_signed', 'place'];
 
     public function contract()
     {
@@ -53,6 +53,23 @@ class ContractSignature extends Model
     public function user()
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    /**
+     * `signer_party` under the name every client already reads it by.
+     *
+     * Three surfaces hand out this same field: the admin list serialises the
+     * model as-is (signer_party), while the sign portal and the party portal
+     * both hand-map it to `party`. Two of the three screens matched on `party`,
+     * so on the admin list `find(s => s.party === 'company')` matched nothing
+     * and BOTH signature chips sat on the pending clock for ever -- on a
+     * contract whose status was already Active. Nothing threw, nothing logged,
+     * and the row simply lied. Appending it means the two spellings agree
+     * wherever a signature is serialised.
+     */
+    public function getPartyAttribute(): ?string
+    {
+        return $this->signer_party;
     }
 
     public function getPartyLabelAttribute(): string

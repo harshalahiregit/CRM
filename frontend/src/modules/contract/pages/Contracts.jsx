@@ -48,7 +48,10 @@ function Stat({ icon: Icon, label, value, tone = '#7C3AED', hint }) {
 
 /** Both parties at a glance — a single tick would hide the half-signed state. */
 function SignatureCell({ signatures = [] }) {
-  const of = (p) => signatures.find(s => s.party === p)
+  // `signer_party` is the column; `party` is what the two portal endpoints
+  // rename it to. This list gets the raw model, so matching only on `party`
+  // found nothing and every row showed both parties as still pending.
+  const of = (p) => signatures.find(s => (s.signer_party ?? s.party) === p)
   return (
     <div style={{ display: 'flex', gap: 10 }}>
       {[['party', 'Customer'], ['company', 'Us']].map(([key, label]) => {
