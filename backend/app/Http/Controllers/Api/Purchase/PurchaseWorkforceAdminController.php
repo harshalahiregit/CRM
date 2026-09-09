@@ -429,7 +429,16 @@ class PurchaseWorkforceAdminController extends Controller
             'signature_data'      => 'nullable|string',
             'capture_photo'       => 'nullable|string',
             'geo_location'        => 'nullable|string|max:120',
+            // The certificate the examination produced. A fitness verdict with
+            // no document behind it is an assertion, and the vendor portal has
+            // always been able to attach one — the admin form could not.
+            'certificate_file'    => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:10240',
         ]);
+
+        if ($file = $request->file('certificate_file')) {
+            $data['file_path'] = $file->store("purchase/workforce/{$worker->id}/medical", 'local');
+        }
+        unset($data['certificate_file']);
 
         $data['expiry_date']   ??= $data['valid_until'] ?? null;
         $data['examiner_name'] ??= $data['provider'] ?? null;
@@ -462,7 +471,13 @@ class PurchaseWorkforceAdminController extends Controller
             'status'        => 'nullable|string|max:40',
             'score'         => 'nullable|numeric',
             'remarks'       => 'nullable|string|max:5000',
+            'certificate_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:10240',
         ]);
+
+        if ($file = $request->file('certificate_file')) {
+            $data['file_path'] = $file->store("purchase/workforce/{$worker->id}/training", 'local');
+        }
+        unset($data['certificate_file']);
 
         return response()->json($this->service->saveTraining($worker, $data));
     }

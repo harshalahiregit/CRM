@@ -88,6 +88,18 @@ class PurchaseWorker extends Model
         return $this->hasMany(PurchaseWorkerCompetency::class, 'purchase_worker_id');
     }
 
+    /**
+     * Safety strikes against this worker, newest first.
+     *
+     * Voided rows stay in the list — the ledger keeps them — so anything
+     * counting towards termination must use ->active().
+     */
+    public function strikes()
+    {
+        return $this->hasMany(PurchaseSafetyStrike::class, 'purchase_worker_id')
+            ->orderByDesc('occurred_at')->orderByDesc('id');
+    }
+
     /** The most recent medical / induction rows drive readiness. */
     public function latestMedical()
     {

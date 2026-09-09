@@ -1,3 +1,5 @@
+import PartyContractList from '@/modules/contract/components/PartyContractList'
+import { contractsForParty } from '@/services/contractModuleApi'
 import { useState, useEffect, useRef, Fragment } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -377,6 +379,21 @@ export default function CustomerDetail() {
       {/* §10 — CSAT and NPS, which also light up Health's feedback signal. */}
       {tab === 'Experience' && <CustomerExperienceTab id={id} contacts={client.contacts ?? []} />}
 
+      {/* Contracts shows BOTH sources under one tab: the Contract module's
+          agreements on top, then the original client_contracts list below.
+          Kept rather than replaced -- that list is a working CRUD feature, it
+          just happens to be empty today. Two separate tabs was the alternative,
+          and it is what made somebody open "Contracts", see nothing, and
+          reasonably conclude their contract had not saved. */}
+      {tab === 'Contracts' && (
+        <div style={{ marginBottom: 16 }}>
+          <PartyContractList
+            fetcher={() => contractsForParty('customer', id)}
+            onOpen={(r) => nav(`/app/contracts/${r.id}`)}
+            title="Agreements"
+            emptyText="No agreements with this customer yet - create one from the Contracts module." />
+        </div>
+      )}
       {RECORD_TABS[tab] && <RecordTab clientId={id} schema={RECORD_TABS[tab]} dynamicOptions={recordOptions} />}
         </div>
       </div>

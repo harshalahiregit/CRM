@@ -131,6 +131,14 @@ export const purchasePortalApi = {
   // ── Workforce — the vendor's own workers, resolved from the token ───────
   // No vendor_id is ever sent: the server reads it from the PurchaseVendor token
   // and 404s any worker that is not the caller's.
+  trainings: () => api.get('/portal/purchase/trainings').then(r => r.data?.data ?? r.data),
+
+  // Safety strikes against this vendor's workers — read-only. Issuing belongs
+  // with the site, not with the company being struck.
+  strikes: {
+    list: (params = {}) => api.get('/portal/purchase/strikes', { params }).then(r => r.data?.data ?? r.data),
+  },
+
   workers: {
     list:      (params = {}) => api.get('/portal/purchase/workers', { params }).then(r => r.data),
     summary:   ()            => api.get('/portal/purchase/workers/summary').then(r => r.data),
@@ -140,7 +148,11 @@ export const purchasePortalApi = {
     remove:    (id)          => api.delete(`/portal/purchase/workers/${id}`).then(r => r.data),
     readiness: (id)          => api.get(`/portal/purchase/workers/${id}/readiness`).then(r => r.data),
     medical:   (id, data)    => api.post(`/portal/purchase/workers/${id}/medical`, data).then(r => r.data),
-    training:  (id, data)    => api.post(`/portal/purchase/workers/${id}/training`, data).then(r => r.data),
+    training:  (id, data)    => api.post(`/portal/purchase/workers/${id}/training`, data,
+      data instanceof FormData ? { headers: { 'Content-Type': undefined } } : undefined).then(r => r.data),
+    // Named to match portalApi so one shared page serves both portals.
+    saveTraining: (id, data) => api.post(`/portal/purchase/workers/${id}/training`, data,
+      data instanceof FormData ? { headers: { 'Content-Type': undefined } } : undefined).then(r => r.data),
     induction: (id, data)    => api.post(`/portal/purchase/workers/${id}/induction`, data).then(r => r.data),
     document:  (id, fd)      => api.post(`/portal/purchase/workers/${id}/documents`, fd).then(r => r.data),
     // Step 5 is READ ONLY here — activation is an admin decision.

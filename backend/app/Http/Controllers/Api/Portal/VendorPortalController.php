@@ -1051,6 +1051,60 @@ class VendorPortalController extends Controller
         return response()->json($this->workerService->update($worker, $updateRequest->validated(), $request->user()));
     }
 
+    /**
+     * Every training record across this vendor's own workers.
+     *
+     * The portal could record an INDUCTION and nothing else: the typed training
+     * catalogue (§15) had no portal endpoint at all, so a vendor could not file
+     * a Work-at-Height certificate for their own worker, nor see one that had
+     * been filed for them. The Purchase portal grew both; this is the mirror.
+     */
+    public function trainings(Request $request)
+    {
+        $vendor = $this->portalVendor($request);
+
+        $rows = \App\Models\Tpv\TpvWorkerTraining::forTenant($vendor->tenant_id)
+            ->whereIn('tpv_worker_id', TpvWorker::forTenant($vendor->tenant_id)
+                ->where('vendor_id', $vendor->id)->select('id'))
+            ->with('worker:id,name,worker_code')
+            ->orderByDesc('id')->limit(500)->get();
+
+        return response()->json(['data' => $rows]);
+    }
+
+    /** Record a training against one of the caller's own workers. */
+    public function saveTraining(Request $request, TpvWorker $worker)
+    {
+        $this->assertWorkerOwned($request, $worker);
+
+        $data = $request->validate([
+            // Required, and from the catalogue. TPV's table has no free-text
+            // title column, so accepting one would mean taking a field, saying
+            // it was saved, and throwing it away.
+            'training_type'    => ['required', \Illuminate\Validation\Rule::in(\App\Models\Tpv\TpvWorkerTraining::TYPES)],
+            'provider'         => 'nullable|string|max:150',
+            'completed_date'   => 'nullable|date',
+            'valid_until'      => 'nullable|date',
+            'passed'           => 'nullable|boolean',
+            'score'            => 'nullable|integer|min:0|max:100',
+            'notes'            => 'nullable|string|max:2000',
+            'certificate_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:10240',
+        ]);
+
+        if ($file = $request->file('certificate_file')) {
+            $data['certificate_path'] = $file->store("tpv/workforce/{$worker->id}/training", 'local');
+        }
+        unset($data['certificate_file']);
+
+        $row = \App\Models\Tpv\TpvWorkerTraining::create([
+            ...$data,
+            'tenant_id'     => $worker->tenant_id,
+            'tpv_worker_id' => $worker->id,
+        ]);
+
+        return response()->json($row->fresh(), 201);
+    }
+
     public function saveMedical(SaveWorkerMedicalRequest $request, TpvWorker $worker)
     {
         $this->assertWorkerOwned($request, $worker);
@@ -1209,9 +1263,11 @@ class VendorPortalController extends Controller
     {
         $this->assertWorkerOwned($request, $worker);
 
-        return response()->json(
-            $worker->strikes()->orderByDesc('issued_at')->get()
-        );
+        // The relation already orders by occurred_at. It used to be re-ordered
+        // here by `issued_at`, which is not a column on tpv_safety_strikes — so
+        // this endpoint threw rather than returning anything, and the portal's
+        // Strikes view has never once rendered.
+        return response()->json($worker->strikes()->with('issuer:id,name')->get());
     }
 
     /* ── Gate / Attendance / Strikes (read-only, own vendor scoped) ──────── */
@@ -1277,14 +1333,23 @@ class VendorPortalController extends Controller
         ]);
     }
 
+    /**
+     * Every strike across this vendor's own workers, read-only.
+     *
+     * Two of the three columns this named did not exist — `worker_id` and
+     * `issued_at`, against a table whose columns are `tpv_worker_id` and
+     * `occurred_at` — so the query threw and the vendor's Strikes screen has
+     * been dead since it was written. A strike is the one record a vendor most
+     * needs to see, since three of them end a worker's site access.
+     */
     public function strikes(Request $request)
     {
         $vendor    = $this->portalVendor($request);
         $workerIds = TpvWorker::where('vendor_id', $vendor->id)->pluck('id');
 
-        $query = \App\Models\Tpv\TpvSafetyStrike::with('worker:id,name,worker_code')
-            ->whereIn('worker_id', $workerIds)
-            ->orderByDesc('issued_at');
+        $query = \App\Models\Tpv\TpvSafetyStrike::with(['worker:id,name,worker_code', 'issuer:id,name'])
+            ->whereIn('tpv_worker_id', $workerIds)
+            ->orderByDesc('occurred_at');
 
         if ($request->filled('severity')) {
             $query->where('severity', $request->severity);

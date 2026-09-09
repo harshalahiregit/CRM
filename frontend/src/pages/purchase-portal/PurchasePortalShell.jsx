@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { HardHat, Gavel, HelpCircle, ShieldCheck } from 'lucide-react'
+import { HardHat, Gavel, HelpCircle, ShieldCheck, FileSignature } from 'lucide-react'
 import { purchasePortalApi } from '@/services/purchasePortalApi'
 import { purchaseVendorAuthApi } from '@/services/purchaseVendorAuthApi'
 import PortalShell from '@/pages/vendor-portal/PortalShell'
@@ -32,6 +32,7 @@ export default function PurchasePortalShell() {
         contact:    'contacts',
         // External Medical Flow — upload certificates, answer the quality team.
         medical:    'medical',
+        training:   'training',
         comply:     'compliance',
         documents:  'documents',
         kb:         'kb',
@@ -70,6 +71,10 @@ export default function PurchasePortalShell() {
           items: [
             { key: 'workforce',  label: 'My Workforce',    icon: HardHat,     to: 'workforce', gate: v => v?.status === 'Active' },
             { key: 'governance', label: 'Governance',      icon: Gavel,       to: 'governance' },
+            // The Contract module's agreements. Distinct from the Commercial
+            // section's Contracts view, which serves purchase_contracts — that
+            // feature has live rows and is left exactly as it was.
+            { key: 'agreements', label: 'Agreements',      icon: FileSignature, to: 'agreements' },
             { key: 'approval',   label: 'Approval Status', icon: ShieldCheck, to: 'approval' },
             { key: 'support',    label: 'Support',         icon: HelpCircle,  to: 'support' },
           ],

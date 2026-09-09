@@ -4,7 +4,7 @@ import {
   FolderKanban, ListChecks, Coins, CalendarClock, Video, CheckSquare, StickyNote,
   Paperclip, LifeBuoy, BookOpen, Lock, BellRing,
   Gauge, Trophy, Gavel, MessageSquare, Share2,
-  ClipboardCheck, ShieldCheck,
+  ClipboardCheck, ShieldCheck, HardHat, DoorOpen, AlertOctagon,
 } from 'lucide-react'
 
 /**
@@ -34,9 +34,21 @@ export const VENDOR_NAV_GROUPS = [
       { key: 'profile',    label: 'Profile',    icon: User },
       { key: 'contacts',   label: 'Contacts',   icon: Users },
       { key: 'customer',   label: 'Customer',   icon: Building2 },
-      { key: 'medical',    label: 'Medical',    icon: HeartPulse },
-      { key: 'training',   label: 'Training',   icon: GraduationCap },
       { key: 'onboarding', label: 'Onboarding', icon: ClipboardList },
+    ],
+  },
+  {
+    // Grouped as TPV groups them. Medical and Training used to sit under
+    // General here, away from the roster they are records OF — so the three
+    // screens a supervisor reads together were in two different places, and
+    // Workforce, Gate Log and Strikes had no entry at all.
+    title: 'Workforce',
+    items: [
+      { key: 'workforce', label: 'Workforce', icon: HardHat },
+      { key: 'medical',   label: 'Medical',   icon: HeartPulse },
+      { key: 'training',  label: 'Training',  icon: GraduationCap },
+      { key: 'gate-log',  label: 'Gate Log',  icon: DoorOpen },
+      { key: 'strikes',   label: 'Strikes',   icon: AlertOctagon },
     ],
   },
   {
@@ -63,6 +75,10 @@ export const VENDOR_NAV_GROUPS = [
       // module and neither is vendor-scoped.
       { key: 'todo',        label: 'Todo Item',   icon: CheckSquare },
       { key: 'notes',       label: 'Notes',       icon: StickyNote },
+      // The Contract module's agreements for this vendor. Distinct from the
+      // Commercial section's Contracts view (purchase_contracts), which is
+      // left exactly as it is.
+      { key: 'agreements',  label: 'Agreements',  icon: FileSignature },
       { key: 'attachments', label: 'Attachments', icon: Paperclip },
       { key: 'ticket',      label: 'Ticket',      icon: LifeBuoy },
       // kb_articles are tenant-wide help content with no vendor link.

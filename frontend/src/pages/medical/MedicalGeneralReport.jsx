@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import LoadError from '@/components/ui/LoadError'
 import { medicalApi } from '@/services/medicalApi'
+import { KIT3D_STYLE as GLASS_STYLE } from '@/components/ui/kit3d'
 import { S, Stat, FitnessPill, HealthScore, FindingPill, SEVERITY_TONE, humanise } from '@/components/medical/MedicalBits'
 
 /**
@@ -78,6 +79,10 @@ export default function MedicalGeneralReport() {
 
   return (
     <div>
+      {/* .pr-glass lives in this stylesheet, and the admin shell does not
+          inject it — without this the cards below have no background at all
+          and the page shows through them. */}
+      <style>{GLASS_STYLE}</style>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
         <div>
           <p style={{ margin: 0, fontSize: 11, fontWeight: 900, letterSpacing: '0.1em', color: '#a78bfa' }}>MEDICAL</p>

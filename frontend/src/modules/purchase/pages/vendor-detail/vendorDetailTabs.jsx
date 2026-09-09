@@ -1,3 +1,5 @@
+import PartyContractList from '@/modules/contract/components/PartyContractList'
+import { contractsForParty } from '@/services/contractModuleApi'
 ﻿import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Save, ExternalLink, ClipboardList, Rocket, Inbox, Plus, CalendarClock, CheckCircle2, Trash2, Users, User, HardHat, FileText, Paperclip, StickyNote, ShieldCheck } from 'lucide-react'
@@ -39,6 +41,14 @@ import PurchaseDueDiligencePanel from '@/modules/purchase/components/PurchaseDue
 // column (clients.purchase_vendor_id). A data-source swap, not a fork.
 import { VendorCustomers } from '@/modules/tpv/components/VendorCustomersPanel'
 import { useVendorWorkspace } from './vendorWorkspaceContext'
+// The list and chrome every tab is built from, plus the Workforce group.
+// Extracted so both tab files import downward and neither imports the other.
+import {
+  VendorScopedList, TabHead, Badge, Empty, card, th, td, primaryBtn, linkBtn,
+} from './vendorDetailShared'
+import {
+  WorkforceTab, MedicalTab, TrainingTab, GateLogTab, StrikesTab,
+} from './workforceTabs'
 import VendorTasksPanel from '@/components/vendor/VendorTasksPanel'
 import {
   fmtMoney, fmtDate,
@@ -64,113 +74,6 @@ import {
  */
 
 /* ── shared bits ─────────────────────────────────────────────────────────── */
-
-const card = { padding: 18 }
-const th = { textAlign: 'left', padding: '9px 12px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--text-muted)', fontWeight: 700 }
-const td = { padding: '9px 12px', color: 'var(--text-muted)', fontSize: 13 }
-
-function Badge({ cfg }) {
-  const c = cfg || { label: '—', color: '#6b7280', bg: 'rgba(107,114,128,0.15)' }
-  return <span style={{ fontSize: 11, fontWeight: 700, color: c.color, background: c.bg, padding: '2px 9px', borderRadius: 999 }}>{c.label}</span>
-}
-
-function TabHead({ title, count, actionLabel, onAction, addLabel, onAdd }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 10 }}>
-      <h2 style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-h)', margin: 0 }}>{title}{typeof count === 'number' && <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}> · {count}</span>}</h2>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        {actionLabel && <button onClick={onAction} style={linkBtn}><ExternalLink size={13} /> {actionLabel}</button>}
-        {addLabel && <button onClick={onAdd} style={primaryBtn}><Plus size={14} /> {addLabel}</button>}
-      </div>
-    </div>
-  )
-}
-
-/**
- * Reusable vendor-scoped list — fetches THIS vendor's records from a Purchase API
- * and renders them inside the workspace. Nothing here navigates away.
- *
- * `AddModal`, when given, is the module's OWN create form. It is rendered with
- * `presetVendorId` so the vendor is already chosen, and the list refreshes on
- * save. Callers pass the real form (NewRfqModal, NewOrderModal, …) — never a
- * reduced copy.
- *
- * The fetcher is held in a ref rather than a dependency: every call site passes
- * an inline arrow, so a fresh identity on each render would refire the request
- * on every state change (including opening the modal).
- */
-function VendorScopedList({
-  title, fetcher, columns, statusCfg, onRowClick,
-  AddModal, addLabel, addAsList = false, emptyText, onAdd,
-}) {
-  const { vendor } = useVendorWorkspace()
-  const [rows, setRows] = useState(null)
-  const [loadError, setLoadError] = useState(null)
-  const [adding, setAdding] = useState(false)
-  const [nonce, setNonce] = useState(0)
-  const fetchRef = useRef(fetcher)
-  fetchRef.current = fetcher
-
-  useEffect(() => {
-    let alive = true
-    setRows(null)
-    setLoadError(null)
-    fetchRef.current(vendor.id)
-      .then((r) => { if (alive) setRows(Array.isArray(r) ? r : (r?.data ?? [])) })
-      .catch((e) => { if (alive) { setRows([]); setLoadError(e) } })
-    return () => { alive = false }
-  }, [vendor.id, nonce])
-
-  return (
-    <div className="card-3d" style={card}>
-      {adding && AddModal && (
-        <AddModal
-          {...(addAsList ? { presetVendorIds: [vendor.id] } : { presetVendorId: vendor.id })}
-          onClose={() => setAdding(false)}
-          onDone={() => { setAdding(false); setNonce(n => n + 1) }}
-          onSaved={() => { setAdding(false); setNonce(n => n + 1) }}
-        />
-      )}
-      {/* onAdd takes precedence: a couple of modules expose a full-page create
-          screen rather than a modal, and navigating there beats a second form. */}
-      <TabHead title={title} count={rows?.length}
-        addLabel={(AddModal || onAdd) ? addLabel : null}
-        onAdd={onAdd || (() => setAdding(true))} />
-      {loadError ? <LoadError error={loadError} onRetry={() => setNonce(n => n + 1)} />
-        : rows === null ? <div style={{ color: 'var(--text-muted)' }}>Loading…</div>
-        : rows.length === 0 ? <Empty text={emptyText || `No ${title.toLowerCase()} for this vendor`} />
-          : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr style={{ background: 'var(--bg-input)' }}>
-                  {columns.map((c) => <th key={c.header} style={th}>{c.header}</th>)}
-                  {statusCfg && <th style={th}>Status</th>}
-                </tr></thead>
-                <tbody>
-                  {rows.map((row) => (
-                    <tr key={row.id}
-                      onClick={onRowClick ? () => onRowClick(row) : undefined}
-                      style={{ borderTop: '1px solid var(--border)', cursor: onRowClick ? 'pointer' : 'default' }}>
-                      {columns.map((c) => <td key={c.header} style={c.strong ? { ...td, color: 'var(--text-h)', fontWeight: 700 } : td}>{c.cell(row)}</td>)}
-                      {statusCfg && <td style={td}><Badge cfg={statusCfg(row.status)} /></td>}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-    </div>
-  )
-}
-
-function Empty({ text }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '32px 0', color: 'var(--text-muted)' }}>
-      <Inbox size={26} style={{ opacity: 0.6 }} />
-      <span style={{ fontSize: 13 }}>{text}</span>
-    </div>
-  )
-}
 
 /* ── General ─────────────────────────────────────────────────────────────── */
 
@@ -204,6 +107,29 @@ export function ProfileTab() {
         <span style={{ fontSize: 12, color: msg?.type === 'err' ? '#ef4444' : '#10b981' }}>{msg?.text || ''}</span>
         <button onClick={save} disabled={saving} style={primaryBtn}><Save size={14} /> {saving ? 'Saving…' : 'Save Changes'}</button>
       </div>
+    </div>
+  )
+}
+
+/**
+ * The Contract module's agreements for this vendor.
+ *
+ * Reads from that module rather than adding contracts to this one — Purchase's
+ * own contract feature (purchase_contracts, live rows) is untouched and still
+ * sits under Commercial.
+ */
+function AgreementsTab() {
+  const { vendor } = useVendorWorkspace()
+  const navigate = useNavigate()
+
+  return (
+    <div className="card-3d" style={card}>
+      <TabHead title="Agreements" />
+      <PartyContractList
+        fetcher={() => contractsForParty('purchase_vendor', vendor.id)}
+        onOpen={(r) => navigate(`/app/contracts/${r.id}`)}
+        compact
+        emptyText="No agreements with this vendor yet." />
     </div>
   )
 }
@@ -671,52 +597,6 @@ function StatementTab() {
   )
 }
 
-/* ── General: Medical & Training ─────────────────────────────────────────── */
-
-/**
- * Purchase keeps medicals and trainings NORMALISED — one row per record, not one
- * per worker — so these list the history rather than projecting a latest value.
- */
-function MedicalTab() {
-  const { vendor } = useVendorWorkspace()
-
-  return (
-    <VendorScopedList
-      title="Medical Records"
-      fetcher={(vid) => purchaseApi.workforce.medicals(vid)}
-      statusCfg={(s) => ({ label: s || '—', color: '#0ea5e9', bg: 'rgba(14,165,233,0.15)' })}
-      columns={[
-        { header: 'Worker', strong: true, cell: (r) => r.worker?.full_name || '—' },
-        { header: 'Code', cell: (r) => r.worker?.worker_code || '—' },
-        { header: 'Exam Date', cell: (r) => fmtDate(r.exam_date) },
-        { header: 'Expires', cell: (r) => fmtDate(r.expiry_date) },
-        { header: 'Fitness', cell: (r) => r.fitness_status || '—' },
-      ]}
-      key={`med-${vendor.id}`}
-    />
-  )
-}
-
-function TrainingTab() {
-  const { vendor } = useVendorWorkspace()
-
-  return (
-    <VendorScopedList
-      title="Training Records"
-      fetcher={(vid) => purchaseApi.workforce.trainings(vid)}
-      statusCfg={(s) => ({ label: s || '—', color: '#8b5cf6', bg: 'rgba(139,92,246,0.15)' })}
-      columns={[
-        { header: 'Worker', strong: true, cell: (r) => r.worker?.full_name || '—' },
-        { header: 'Code', cell: (r) => r.worker?.worker_code || '—' },
-        { header: 'Training', cell: (r) => r.title || r.name || '—' },
-        { header: 'Completed', cell: (r) => fmtDate(r.completed_at || r.training_date) },
-        { header: 'Expires', cell: (r) => fmtDate(r.expiry_date) },
-      ]}
-      key={`trn-${vendor.id}`}
-    />
-  )
-}
-
 /* ── Execution: Project / Expenses / Ticket / Meeting ────────────────────── */
 
 /**
@@ -1161,9 +1041,14 @@ export const TAB_ELEMENTS = {
   profile: <ProfileTab />,
   contacts: <ContactsTab />,
   customer: <CustomerTab />,
+  onboarding: <OnboardingTab />,
+  // Workforce — grouped as TPV groups them, beside the roster the records
+  // belong to rather than adrift under General.
+  workforce: <WorkforceTab />,
   medical: <MedicalTab />,
   training: <TrainingTab />,
-  onboarding: <OnboardingTab />,
+  'gate-log': <GateLogTab />,
+  strikes: <StrikesTab />,
   // Compliance — Purchase-native prequalification + due-diligence (mirror TPV)
   prequalification: <PrequalificationTab />,
   'due-diligence': <DueDiligenceTab />,
@@ -1182,6 +1067,7 @@ export const TAB_ELEMENTS = {
   appointment: <PurchaseVendorAppointments />,
   meeting: <MeetingTab />,
   notes: <PurchaseVendorNotes />,
+  agreements: <AgreementsTab />,
   attachments: <PurchaseVendorAttachments />,
   ticket: <TicketTab />,
   reminders: <PurchaseVendorReminders />,
@@ -1189,7 +1075,5 @@ export const TAB_ELEMENTS = {
   // anywhere in the schema — they fall through to ComingSoonTab.
 }
 
-const primaryBtn = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 8, background: '#7C3AED', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700 }
-const linkBtn = { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 7, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 700 }
 const linkInline = { background: 'none', border: 'none', color: '#7C3AED', cursor: 'pointer', fontWeight: 700, padding: 0, fontSize: 14 }
 const iconBtn = { border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-muted)', borderRadius: 7, padding: '4px 7px', cursor: 'pointer', marginLeft: 6 }

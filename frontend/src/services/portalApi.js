@@ -139,6 +139,10 @@ export const portalApi = {
 
   // ── Workers — mirrors tpvApi.workers shape ──────────────────────────────
   // vendor_id in params is silently overridden server-side.
+  // Training across this vendor's workers. Read and write, so a certificate
+  // filed here can be seen again — it could be written and never read back.
+  trainings: () => api.get('/portal/trainings').then(r => r.data?.data ?? r.data),
+
   workers: {
     list:          (params={}) => api.get('/portal/workers', { params }).then(r => r.data),
     stats:         ()          => api.get('/portal/workers/stats').then(r => r.data),
@@ -148,6 +152,10 @@ export const portalApi = {
     update:        (id, data)  => api.put(`/portal/workers/${id}`, data).then(r => r.data),
     saveMedical:   (id, data)  => api.post(`/portal/workers/${id}/medical`, data, data instanceof FormData ? { headers: { 'Content-Type': undefined } } : undefined).then(r => r.data),
     saveInduction: (id, data)  => api.post(`/portal/workers/${id}/induction`, data).then(r => r.data),
+    // The typed training catalogue. Multipart when a certificate is attached —
+    // axios must be left to set its own boundary, hence the undefined header.
+    saveTraining:  (id, data)  => api.post(`/portal/workers/${id}/training`, data,
+      data instanceof FormData ? { headers: { 'Content-Type': undefined } } : undefined).then(r => r.data),
     // Portal-owned, ownership-checked. These two used to hit the admin /tpv/*
     // routes, which forced third_party_vendor into the admin role gate.
     markPunch:       (id, punch_count, punch_reason) => api.post(`/portal/workers/${id}/mark-punch`, { punch_count, punch_reason }).then(r => r.data),

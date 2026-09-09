@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LayoutDashboard, Users, CalendarCheck, HardHat } from 'lucide-react'
+import { LayoutDashboard, Users, CalendarCheck, HardHat, AlertOctagon } from 'lucide-react'
 import ModuleShell from '@/components/layout/ModuleShell'
 import { purchasePortalApi } from '@/services/purchasePortalApi'
 
@@ -40,6 +40,9 @@ export default function PurchasePortalWorkforceShell() {
     { label: 'Workers',    path: `${base}/workers`,    icon: Users },
     { label: 'PPE',        path: `${base}/ppe`,        icon: HardHat },
     { label: 'Attendance', path: `${base}/attendance`, icon: CalendarCheck },
+    // Read-only: a strike is the site's to issue, and the third one ends a
+    // worker's access — so a vendor who cannot see the first two is blind.
+    { label: 'Strikes',    path: `${base}/strikes`,    icon: AlertOctagon },
   ]
 
   return <ModuleShell label={`Workforce${vendorName ? ` · ${vendorName}` : ''}`} badge="🦺" items={items} />

@@ -48,7 +48,7 @@ Route::middleware(['auth:sanctum', 'role:vendor,third_party_vendor'])->prefix('p
 //
 // NOTE: both middleware in ONE ->middleware([...]) call — chaining a second
 // ->middleware() replaces the first and silently drops auth:sanctum.
-Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('portal')->group(function () {
+Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access', 'vendor.onboarded'])->prefix('portal')->group(function () {
     Route::get('/me',                    [VendorPortalController::class, 'me']);
     // In-app (bell) notifications — the vendor reads/clears its own.
     Route::get('/notifications',             [VendorPortalController::class, 'notifications']);
@@ -163,6 +163,11 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     Route::get('/medical/{medical}/document',             [VendorPortalMedicalController::class, 'document'])->whereNumber('medical');
     Route::post('/workers/{worker}/medical/external',     [VendorPortalMedicalController::class, 'store'])->whereNumber('worker');
     Route::post('/workers/{worker}/induction',            [VendorPortalController::class, 'saveInduction']);
+    // The typed training catalogue (§15). The portal could record an induction
+    // and nothing else, so a vendor could neither file a Work-at-Height
+    // certificate for their own worker nor see one filed for them.
+    Route::get('/trainings',                              [VendorPortalController::class, 'trainings']);
+    Route::post('/workers/{worker}/training',             [VendorPortalController::class, 'saveTraining']);
     // Punch + entry card. These were the portal's last two calls into the ADMIN
     // /tpv/* group, which is why third_party_vendor had been added to that
     // group's role gate — exposing every vendor's onboarding along with it.
@@ -220,7 +225,7 @@ Route::prefix('purchase-vendor')->group(function () {
 // The purchase.vendor.portal middleware requires the token subject to BE a
 // PurchaseVendor, isolating this portal from the shared vendor / TPV portal.
 // URLs are unchanged (/api/portal/purchase/*).
-Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/purchase')->group(function () {
+Route::middleware(['auth:sanctum', 'purchase.vendor.portal', 'vendor.onboarded'])->prefix('portal/purchase')->group(function () {
     Route::post('/logout',                            [PurchaseVendorAuthController::class, 'logout']);
     Route::get('/dashboard',                          [PurchasePortalController::class, 'dashboard']);
     Route::get('/ppe',                                [\App\Http\Controllers\Api\Tpv\PpeController::class, 'catalogue']);
@@ -265,6 +270,9 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::get('/documents/{document}/versions/{version}/download', [PurchasePortalController::class, 'downloadDocumentVersion']);
 
     Route::get('/kickoff',                            [PurchasePortalController::class, 'kickoff']);
+    // The Kickoff tab's Accept button. Resolves the vendor's own onboarding
+    // from the token, so no id appears in the URL.
+    Route::post('/kickoff/accept',                    [PurchasePortalController::class, 'acceptKickoff']);
     // Acknowledgement removed — the vendor just views the approved minutes.
 
     // ── Contacts (own vendor only) ──────────────────────────────────────
@@ -297,6 +305,11 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::get('/medical/{medical}/document',         [PurchasePortalMedicalController::class, 'document'])->whereNumber('medical');
     Route::post('/workers/{worker}/medical/external', [PurchasePortalMedicalController::class, 'store'])->whereNumber('worker');
     Route::post('/workers/{worker}/training',         [PurchasePortalWorkforceController::class, 'saveTraining']);
+    // Reading back what the portal writes. Training could be filed and never
+    // seen again; strikes could not be seen at all, and three of them end a
+    // worker's site access.
+    Route::get('/trainings',                          [PurchasePortalWorkforceController::class, 'trainings']);
+    Route::get('/strikes',                            [PurchasePortalWorkforceController::class, 'strikes']);
     Route::post('/workers/{worker}/induction',        [PurchasePortalWorkforceController::class, 'saveInduction']);
 
     // ── Workforce step 4 (PPE) and step 5 (badge, read-only) ──────────────

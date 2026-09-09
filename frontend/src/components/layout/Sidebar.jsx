@@ -21,6 +21,15 @@ const NAV_ITEMS = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/app/dashboard' },
   { label: 'Tasks', icon: CheckSquare, path: '/app/tasks' },
   { label: 'Projects', icon: FolderOpen, path: '/app/projects' },
+  // Meetings sits here, not under TPV, because it is now company-wide: every
+  // internal role can call one and sees their own. It stayed invisible to
+  // everyone who never opens TPV or Purchase while living only in those two
+  // sidebars. EXTERNAL_ROLES never see this list, so no gate is needed.
+  { label: 'Meetings', icon: CalendarDays, path: '/app/meetings' },
+  // Contracts is its own module, not part of Sales: an agreement is signed with
+  // customers AND vendors, so burying it under one of them hides it from the
+  // other. Top-level, which places it above the Purchase module block below.
+  { label: 'Contracts', icon: FileSignature, path: '/app/contracts' },
   { label: 'Settings', icon: Settings, path: '/app/settings' },
 ]
 
@@ -31,6 +40,8 @@ const MODULE_SEARCH = [
   { label: 'Dashboard',  path: '/app/dashboard',        icon: LayoutDashboard, kw: 'home' },
   { label: 'Tasks',      path: '/app/tasks',            icon: CheckSquare,     kw: 'todo' },
   { label: 'Projects',   path: '/app/projects',         icon: FolderOpen,      kw: '' },
+  { label: 'Meetings',   path: '/app/meetings',         icon: CalendarDays,    kw: 'meeting mom minutes agenda kickoff' },
+  { label: 'Contracts',  path: '/app/contracts',        icon: FileSignature,   kw: 'agreement sign signature renewal nda' },
   { label: 'Helpdesk',   path: '/app/helpdesk/tickets', icon: LifeBuoy,        kw: 'tickets support' },
   { label: 'Inventory',  path: '/app/inventory',        icon: Boxes,           kw: 'stock warehouse items' },
   { label: 'Sales',      path: '/app/sales/dashboard',  icon: TrendingUp,      kw: 'revenue leads' },

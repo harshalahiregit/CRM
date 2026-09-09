@@ -97,6 +97,14 @@ class PurchaseSettingService
         // JSON array of {value,label,applies_to}. Empty falls back to the
         // shipped catalogue in MedicalQcStatus.
         'medical_reasons'                => '',
+
+        // ── Safety strikes ───────────────────────────────────────────────
+        // The same knobs TPV exposes as its `strike_rules` group. Thresholds
+        // are configurable because what counts as three chances differs by
+        // site, and a policy hard-coded in PHP is one nobody can change.
+        'strike_limit'                       => 3,
+        'strike_warn_at'                     => 2,
+        'strike_critical_terminates'         => true,
     ];
 
     /** Keys whose values are booleans (so the API round-trips real bools). */
@@ -107,12 +115,14 @@ class PurchaseSettingService
         'communications_auto_dispatch',
         'medical_auto_approve_internal', 'medical_block_induction',
         'medical_not_applicable_default',
+        'strike_critical_terminates',
     ];
 
     private const INT_KEYS = [
         'next_po_number', 'next_pr_number', 'pur_invoice_auto_operations_hour',
         'next_pur_order_return_number', 'temporary_vendor_validity_days',
         'medical_validity_months', 'medical_max_iterations',
+        'strike_limit', 'strike_warn_at',
     ];
 
     /** Every setting for a tenant: stored values layered over the defaults. */

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { HardHat, Gavel, HelpCircle } from 'lucide-react'
+import { HardHat, Gavel, HelpCircle, FileSignature } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { portalApi } from '@/services/portalApi'
 import TemporaryAccessBanner from '@/modules/tpv/components/TemporaryAccessBanner'
@@ -36,6 +36,7 @@ export default function VendorPortalShell() {
         contact:    'contacts',
         // External Medical Flow — upload certificates, answer the quality team.
         medical:    'medical',
+        training:   'training',
         customer:   'customers',
         comply:     'compliance',
         documents:  'documents',      // statutory documents / files
@@ -65,6 +66,10 @@ export default function VendorPortalShell() {
           items: [
             { key: 'workforce',  label: 'My Workforce', icon: HardHat, to: 'workforce', gate: v => v?.status === 'Active' },
             { key: 'governance', label: 'Governance',   icon: Gavel,   to: 'governance' },
+            // Contracts the vendor is a party to. No gate: reading an agreement
+            // they have been sent is often exactly what a vendor still awaiting
+            // approval needs to do.
+            { key: 'agreements', label: 'Contracts',    icon: FileSignature, to: 'agreements' },
             { key: 'support',    label: 'Support',      icon: HelpCircle, to: 'support' },
           ],
         },
