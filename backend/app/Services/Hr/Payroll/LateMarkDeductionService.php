@@ -109,9 +109,16 @@ class LateMarkDeductionService
             ? Carbon::parse($period.'-01')->startOfMonth()
             : $this->financialYearStart($end, $tenantId);
 
+        // whereDate, not whereBetween on date strings.
+        //
+        // `date` is cast to a datetime and stored as '2026-07-31 00:00:00',
+        // which sorts AFTER the plain bound '2026-07-31' — so a between-range
+        // silently dropped the last day of every month. A late mark on the 31st
+        // was never counted, and nothing about the result looked wrong.
         return HrAttendance::where('tenant_id', $tenantId)
             ->where('employee_id', $employeeId)
-            ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
+            ->whereDate('date', '>=', $start->toDateString())
+            ->whereDate('date', '<=', $end->toDateString())
             ->where('status', 'Late')
             ->count();
     }

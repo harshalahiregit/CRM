@@ -58,7 +58,11 @@ class OvertimeService
 
         $daily = HrAttendance::where('tenant_id', $tenantId)
             ->where('employee_id', $employeeId)
-            ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
+            // whereDate, not whereBetween — `date` is stored as a datetime, so
+            // '2026-07-31 00:00:00' sorts after the bound '2026-07-31' and the
+            // last day of every month was silently excluded.
+            ->whereDate('date', '>=', $start->toDateString())
+            ->whereDate('date', '<=', $end->toDateString())
             ->where('overtime_hours', '>', 0)
             ->pluck('overtime_hours');
 
