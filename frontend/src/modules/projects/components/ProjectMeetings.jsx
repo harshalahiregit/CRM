@@ -12,7 +12,7 @@ import Select from '@/components/ui/Select'
 const MEET_PLATFORMS = [
   { key: 'google_meet', label: 'Google Meet' },
   { key: 'zoom', label: 'Zoom' },
-  { key: 'jitsi', label: 'Jitsi' },
+  { key: 'teams', label: 'Microsoft Teams' },
 ]
 
 const fmtDateTime = d => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'
@@ -60,7 +60,7 @@ export function MeetingsTab({ projectId, canManage = false }) {
     onError: onErr,
   })
 
-  // Generate a real Zoom / Google Meet / Jitsi link into the form.
+  // Generate a real Zoom / Google Meet / Teams link into the form.
   const genLink = async (platform) => {
     if (linkBusy) return
     setLinkBusy(platform)
@@ -168,7 +168,7 @@ export function MeetingsTab({ projectId, canManage = false }) {
                 style={{ padding: '7px 10px', fontSize: 12, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)' }} />
             </div>
           </div>
-          {/* Online meeting link — generate a real Zoom / Meet / Jitsi link or paste one. */}
+          {/* Online meeting link — generate a real Zoom / Meet / Teams link or paste one. */}
           <div>
             <Label>Meeting link</Label>
             <div className="flex items-center gap-2">

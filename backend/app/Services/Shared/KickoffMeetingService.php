@@ -4,6 +4,7 @@ namespace App\Services\Shared;
 
 use App\Contracts\ProjectDirectoryContract;
 use App\Exceptions\BusinessException;
+use App\Support\Shared\KickoffOnce;
 use App\Models\Shared\KickoffAttendee;
 use App\Models\Shared\KickoffMeeting;
 use App\Models\Shared\KickoffMeetingDocument;
@@ -30,6 +31,7 @@ use App\Support\FrontendUrl;
 use App\Support\Shared\BusinessTime;
 use App\Support\Shared\KickoffStatus as Status;
 use App\Support\Shared\KickoffSubject;
+use App\Support\Shared\MeetingVisibility;
 use App\Support\Shared\MeetingIssueStatus;
 use App\Support\Shared\MeetingTypeCatalog;
 use App\Support\Shared\MomActionStatus;
@@ -52,14 +54,14 @@ class KickoffMeetingService
         private MeetingInviteService $invites,
     ) {}
 
-    public function list(int $tenantId, array $filters)
+    public function list(int $tenantId, array $filters, ?User $viewer)
     {
-        return $this->repo->filtered($tenantId, $filters);
+        return $this->repo->filtered($tenantId, $filters, $viewer);
     }
 
-    public function stats(int $tenantId): array
+    public function stats(int $tenantId, ?User $viewer): array
     {
-        return $this->repo->stats($tenantId);
+        return $this->repo->stats($tenantId, $viewer);
     }
 
     /**
@@ -67,9 +69,12 @@ class KickoffMeetingService
      * pending & overdue MOM, open & overdue actions, decisions, meetings by type,
      * and the action-closure effectiveness rate.
      */
-    public function dashboard(int $tenantId): array
+    public function dashboard(int $tenantId, ?User $viewer): array
     {
-        $meetings = KickoffMeeting::forTenant($tenantId);
+        // "All data is on the admin side" -- an admin's dashboard covers the
+        // tenant; everyone else's covers their own meetings, so the numbers
+        // always describe the list underneath them.
+        $meetings = MeetingVisibility::apply(KickoffMeeting::forTenant($tenantId), $viewer);
 
         // scheduled_at holds a wall clock in the tenant's timezone, so "today"
         // and "upcoming" have to be measured on that same clock. Against a UTC
@@ -165,16 +170,50 @@ class KickoffMeetingService
     }
 
     /** Schedule a meeting against a subject (or standalone). */
+    /**
+     * A kick-off happens once per subject — see KickoffOnce.
+     *
+     * The default meeting type IS kickoff, so the common way to break this is
+     * not malice but leaving the picker alone on a meeting that was meant to be
+     * a progress review. The refusal therefore names the meeting already in the
+     * way and says what to do instead.
+     *
+     * @param  Model|null  $subject       the vendor/onboarding/customer the meeting is for
+     * @param  int|null    $excludeId     the meeting being edited, which must not block itself
+     */
+    private function assertKickoffIsTheFirst(?string $type, $subject, int $tenantId, ?int $excludeId = null): void
+    {
+        if (! KickoffOnce::applies($type) || ! $subject) {
+            return;
+        }
+
+        $existing = KickoffMeeting::where('tenant_id', $tenantId)
+            ->where('kickoffable_type', $subject::class)
+            ->where('kickoffable_id', $subject->id)
+            ->where('meeting_type', KickoffOnce::TYPE)
+            ->whereNotIn('status', KickoffOnce::IGNORED_STATUSES)
+            ->when($excludeId, fn ($q) => $q->whereKeyNot($excludeId))
+            ->orderBy('id')
+            ->first();
+
+        if ($existing) {
+            throw new BusinessException(KickoffOnce::message($existing), 422);
+        }
+    }
+
     public function schedule(array $data, User $actor): KickoffMeeting
     {
         $subject = $this->resolveSubject($data['subject_type'] ?? null, $data['subject_id'] ?? null, $actor->tenant_id);
+
+        $type = $data['meeting_type'] ?? config('meetings.default_type', 'kickoff');
+        $this->assertKickoffIsTheFirst($type, $subject, $actor->tenant_id);
 
         $meeting = KickoffMeeting::create([
             'tenant_id' => $actor->tenant_id,
             'created_by' => $actor->id,
             'kickoffable_type' => $subject ? $subject::class : null,
             'kickoffable_id' => $subject?->id,
-            'meeting_type' => $data['meeting_type'] ?? config('meetings.default_type', 'kickoff'),
+            'meeting_type' => $type,
             'title' => $data['title'] ?? $this->defaultTitle($subject),
             'reference' => $data['reference'] ?? null,
             'agenda' => $data['agenda'] ?? null,
@@ -371,6 +410,15 @@ class KickoffMeetingService
         // Not simply the old end: moving the start moves the end with it, so a
         // reschedule keeps the meeting's length instead of stretching it.
         $effEnd = $this->rescheduledEnd($data, $meeting->scheduled_at, $meeting->end_at, $meeting->tenant_id);
+
+        // Changing an existing meeting's type INTO a kick-off is the other way
+        // to end up with two. Excludes itself, so re-saving a kick-off that is
+        // already the only one does not refuse its own existence.
+        if (array_key_exists('meeting_type', $data)) {
+            $this->assertKickoffIsTheFirst(
+                $data['meeting_type'], $meeting->kickoffable, $meeting->tenant_id, $meeting->id,
+            );
+        }
 
         $meeting->update(array_filter([
             'title' => $data['title'] ?? null,
@@ -1642,19 +1690,46 @@ class KickoffMeetingService
             .' Its join link is no longer offered.'
             .' Please close it off, or reschedule it if it still needs to happen.';
 
-        foreach ($meeting->attendees as $attendee) {
-            if (! $attendee->email) {
-                continue;
+        /*
+         * Every recipient, on every channel they have — not just the roster rows
+         * that happen to carry an address.
+         *
+         * This looped over attendees and e-mailed the ones with an e-mail. So
+         * the vendor the meeting was ABOUT was never told it had lapsed unless
+         * somebody had also typed them onto the roster, and anybody on the
+         * roster by name alone heard nothing at all. recipients() already knows
+         * how to answer "everyone who should hear about this meeting", and it is
+         * what the invitation itself uses.
+         */
+        $mailed = 0;
+        $belled = 0;
+
+        foreach ($this->invites->recipients($meeting) as $r) {
+            if ($r['email']) {
+                $this->notifications->email(
+                    $r['email'], $subject, $body,
+                    ['category' => 'System', 'kickoff_meeting_id' => $meeting->id],
+                    $meeting->tenant_id,
+                );
+                $mailed++;
             }
-            $this->notifications->email(
-                $attendee->email, $subject, $body,
-                ['category' => 'System', 'kickoff_meeting_id' => $meeting->id],
-                $meeting->tenant_id,
-            );
+
+            // The bell as well as the mail. An expiry that only ever went out by
+            // e-mail was invisible to anyone reading the CRM, which is where the
+            // meeting itself lives.
+            if ($r['user_id'] && $this->invites->notifyInApp(
+                $meeting, (int) $r['user_id'],
+                'Meeting expired: '.$meeting->title,
+                $body,
+                $r['party'],
+            )) {
+                $belled++;
+            }
         }
 
         Log::channel('tpv')->info('Kickoff expiry notice sent', [
             'meeting_id' => $meeting->id, 'tenant_id' => $meeting->tenant_id,
+            'emailed' => $mailed, 'in_app' => $belled,
         ]);
     }
 
@@ -1693,24 +1768,40 @@ class KickoffMeetingService
         $lead = $offsetMinutes >= 1440
             ? (intdiv($offsetMinutes, 1440).' day(s)')
             : ($offsetMinutes >= 60 ? (intdiv($offsetMinutes, 60).' hour(s)') : $offsetMinutes.' minutes');
-        $where = $meeting->mode === 'online'
-            ? ($meeting->meeting_link ? " Join link: {$meeting->meeting_link}" : '')
-            : ($meeting->location ? " at {$meeting->location}" : '');
+        $online = $meeting->mode === 'online' && $meeting->meeting_link;
+        $at = $online ? '' : ($meeting->location ? " at {$meeting->location}" : '');
         $subject = "Reminder: {$meeting->title} in {$lead}";
         $body = "This is a reminder that the meeting \"{$meeting->title}\""
             .($subjectName ? " with {$subjectName}" : '')
-            ." is scheduled for {$when} (in about {$lead}).{$where}";
+            ." is scheduled for {$when} (in about {$lead}).{$at}";
 
         foreach ($meeting->attendees as $attendee) {
             if (! $attendee->email) {
                 continue;
             }
+
+            /*
+             * A reminder carries the way IN to the meeting, not the way past it.
+             *
+             * It used to carry the join link, which put the call one click from
+             * the inbox and left nothing in the register — see
+             * MeetingAttendanceGate. Where the recipient goes instead depends on
+             * who they are: a roster row with a user_id is a staff account and
+             * belongs in the console, and everybody else is in the portal. One
+             * URL for both would send half of them to a login screen they have
+             * no account for.
+             */
+            $go = $online
+                ? ' Mark your attendance to get the joining link: '.($attendee->user_id
+                    ? FrontendUrl::to('/app/tpv/kickoff/'.$meeting->id)
+                    : FrontendUrl::to('/vendor-portal/governance'))
+                : '';
             // Pass the tenant explicitly (5th arg) — the reminder runs in the
             // scheduler with no authenticated user, so it must name the tenant
             // itself or the mail would fall back to the .env mailer instead of
             // the tenant's Settings → Email SMTP.
             $this->notifications->email(
-                $attendee->email, $subject, $body,
+                $attendee->email, $subject, $body.$go,
                 ['category' => 'System', 'kickoff_meeting_id' => $meeting->id],
                 $meeting->tenant_id,
             );

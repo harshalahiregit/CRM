@@ -47,6 +47,11 @@ require __DIR__.'/shared.php';
 
 // Purchase / procure-to-pay module + the vendor + company self-service portals.
 require __DIR__.'/purchase.php';
+
+// The Contract module — company-wide, its own tables. Sales/Purchase/TPV keep
+// their existing contract features; this one links out to their customers and
+// vendors rather than replacing them.
+require __DIR__.'/contract.php';
 require __DIR__.'/medical.php';
 require __DIR__.'/portal.php';
 require __DIR__.'/company_portal.php';

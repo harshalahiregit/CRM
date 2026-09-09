@@ -483,13 +483,17 @@ class AuthService
         // (VendorService), revoking TPV access. Only the TPV path was safe,
         // and only by accident — it also sets access_expires_at, which IS
         // checked below. The others left a working login behind.
+        // Named before the allowlist below catches it, so somebody who was
+        // deactivated is told that, rather than the generic "not active" --
+        // they need to know it was a decision, not a data problem.
+        if ($user->status === 'inactive') {
+            throw new BusinessException('Your account has been deactivated. Contact your administrator.', 403);
+        }
+
         if ($user->status === 'rejected') {
             throw new BusinessException('Your registration was rejected. Contact support.', 403);
         }
 
-        if ($user->status === 'inactive') {
-            throw new BusinessException('Your account has been deactivated. Contact your administrator.', 403);
-        }
 
         // Anything that is not one of the five known values — including null on a
         // row written before the column had a default — is refused rather than

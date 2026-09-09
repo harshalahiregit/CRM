@@ -11,13 +11,19 @@ import { Overlay, ModalFooter } from '@/components/ui/kit3d'
  * business rules. Validation stays server-side; this only enforces "required"
  * so the user is not made to wait on a round trip to learn a field was blank.
  *
- * fields: [{ name, label, type, required, options, placeholder, help }]
- *   type: 'text' | 'textarea' | 'number' | 'date' | 'select' | 'checkbox'
+ * fields: [{ name, label, type, required, options, placeholder, help, accept }]
+ *   type: 'text' | 'textarea' | 'number' | 'date' | 'select' | 'checkbox' | 'file'
+ *
+ * A 'file' field holds the File itself, and any form carrying one is submitted
+ * as multipart — a certificate is the evidence a medical or a training actually
+ * happened, and a record that cannot carry its certificate is an assertion.
  */
 export default function VendorAddModal({ title, fields, initial = {}, submitLabel = 'Save', onClose, onSubmit, onSaved, blockedReason = null }) {
   const [form, setForm] = useState(() => {
     const seed = {}
-    fields.forEach(f => { seed[f.name] = initial[f.name] ?? (f.type === 'checkbox' ? false : '') })
+    fields.forEach(f => {
+      seed[f.name] = initial[f.name] ?? (f.type === 'checkbox' ? false : f.type === 'file' ? null : '')
+    })
     return seed
   })
   const [busy, setBusy] = useState(false)
@@ -38,7 +44,12 @@ export default function VendorAddModal({ title, fields, initial = {}, submitLabe
       const payload = Object.fromEntries(
         Object.entries(form).filter(([, v]) => v !== '' && v !== null && v !== undefined)
       )
-      await onSubmit(payload)
+
+      // A File cannot travel as JSON. Once one is attached the whole form goes
+      // as multipart, which is also why booleans are sent as 1/0 — FormData
+      // stringifies everything, and "false" is truthy on the far side.
+      const hasFile = fields.some(f => f.type === 'file' && payload[f.name] instanceof File)
+      await onSubmit(hasFile ? toFormData(payload) : payload)
       onSaved?.()
       onClose()
     } catch (e) {
@@ -56,16 +67,20 @@ export default function VendorAddModal({ title, fields, initial = {}, submitLabe
   return (
     <Overlay onClose={busy ? () => {} : onClose} width={520}>
       <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 800, color: 'var(--text-h)' }}>{title}</h3>
-      <p style={{ margin: '0 0 18px', fontSize: 11.5, color: 'var(--text-muted)' }}>
-        Saved through the owning module — the same rules apply as adding it there.
-      </p>
+      {!blockedReason && (
+        <p style={{ margin: '0 0 18px', fontSize: 11.5, color: 'var(--text-muted)' }}>
+          Saved through the owning module — the same rules apply as adding it there.
+        </p>
+      )}
 
       {/* A prerequisite is missing (no workers to examine, no project to book
-          against). Say so instead of showing a form whose only required field is
-          an empty dropdown — the button stays visible so it never looks broken. */}
+          against). Say so INSTEAD of the form — a dead form below the warning
+          is a tall modal whose buttons are pushed off the bottom of the screen,
+          and every field in it is one nobody can submit. */}
       {blockedReason && (
         <div style={{
           display: 'flex', alignItems: 'flex-start', gap: 8, padding: 12, borderRadius: 12,
+          marginTop: 14, lineHeight: 1.5,
           background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)',
           fontSize: 12.5, color: 'var(--text-body)',
         }}>
@@ -74,7 +89,7 @@ export default function VendorAddModal({ title, fields, initial = {}, submitLabe
         </div>
       )}
 
-      <div style={{ display: 'grid', gap: 12, opacity: blockedReason ? 0.45 : 1, pointerEvents: blockedReason ? 'none' : 'auto' }}>
+      <div style={{ display: blockedReason ? 'none' : 'grid', gap: 12 }}>
         {fields.map(f => (
           <label key={f.name} style={{ display: 'block' }}>
             <span style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>
@@ -91,6 +106,10 @@ export default function VendorAddModal({ title, fields, initial = {}, submitLabe
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
+            ) : f.type === 'file' ? (
+              <input type="file" accept={f.accept}
+                onChange={e => set(f.name, e.target.files?.[0] ?? null)}
+                style={{ ...inputStyle, padding: 6 }} />
             ) : f.type === 'checkbox' ? (
               <input type="checkbox" checked={!!form[f.name]} onChange={e => set(f.name, e.target.checked)}
                 style={{ width: 16, height: 16, accentColor: '#7C3AED' }} />
@@ -108,7 +127,30 @@ export default function VendorAddModal({ title, fields, initial = {}, submitLabe
         <p style={{ margin: '14px 0 0', fontSize: 12.5, color: '#ef4444', whiteSpace: 'pre-wrap' }}>{error}</p>
       )}
 
-      <ModalFooter onClose={onClose} onConfirm={save} loading={busy} disabled={!!blockedReason} confirmLabel={submitLabel} />
+      {/* Nothing to confirm when the form is not there. One button that closes
+          beats a disabled one that looks like a failure. */}
+      {blockedReason ? (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 22 }}>
+          <button onClick={onClose} style={{ padding: '9px 20px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}>
+            Close
+          </button>
+        </div>
+      ) : (
+        <ModalFooter onClose={onClose} onConfirm={save} loading={busy} confirmLabel={submitLabel} />
+      )}
     </Overlay>
   )
+}
+
+/** Flatten a form to multipart, with booleans as 1/0 so the server reads them. */
+function toFormData(payload) {
+  const fd = new FormData()
+
+  Object.entries(payload).forEach(([k, v]) => {
+    if (v instanceof File) fd.append(k, v)
+    else if (typeof v === 'boolean') fd.append(k, v ? '1' : '0')
+    else fd.append(k, v)
+  })
+
+  return fd
 }

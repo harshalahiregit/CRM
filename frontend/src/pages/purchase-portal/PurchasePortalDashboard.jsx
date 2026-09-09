@@ -6,6 +6,7 @@ import {
   Hash, Tag, Activity, FileWarning, CalendarClock, Clock, Video, X,
 } from 'lucide-react'
 import { purchasePortalApi } from '@/services/purchasePortalApi'
+import MeetingJoinGate from '@/components/portal/MeetingJoinGate'
 import { KIT3D_STYLE, StatusBadge as StatusPill } from '@/components/ui/kit3d'
 import PurchaseRegistrationBadge from '@/modules/purchase/components/PurchaseRegistrationBadge'
 import TemporaryVendorValidityBadge from '@/modules/purchase/components/TemporaryVendorValidityBadge'
@@ -117,7 +118,10 @@ export default function PurchasePortalDashboard() {
     const end = new Date(kickoff.ends_at || kickoff.scheduled_at).getTime()
     return Number.isFinite(end) && Date.now() < end
   })()
-  const showJoin = Boolean(kickoff?.meeting_link) && meetingOpen && !linkDismissed
+  // has_meeting_link, not meeting_link: the link is withheld until attendance
+  // is marked (see MeetingAttendanceGate), so keying the popup on the link
+  // itself would mean it never appeared for the people who most need telling.
+  const showJoin = Boolean(kickoff?.has_meeting_link) && meetingOpen && !linkDismissed
   useEffect(() => {
     if (!joinKey) return
     // localStorage can throw in a private window; a popup is not worth an error.
@@ -135,8 +139,9 @@ export default function PurchasePortalDashboard() {
       {/* The medical prerequisite, said before a trainer has to say it. */}
       <MedicalPendingBanner base="/portal/purchase" to="/purchase-portal/medical" />
 
-      {/* Join-the-meeting popup — the link also goes out by e-mail, but a vendor
-          who is already logged in should not have to go and find that mail. */}
+      {/* The meeting popup. The e-mail no longer carries a joining link — it
+          points here — so for a vendor already logged in this is the fastest
+          route to marking attendance and getting in. */}
       {showJoin && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 80, padding: 16 }}>
           <div className="pr-glass" style={{ padding: 22, width: 420, maxWidth: '95vw', position: 'relative' }}>
@@ -160,10 +165,7 @@ export default function PurchasePortalDashboard() {
               {fmtDateTime(kickoff.scheduled_at)}
               {kickoff.is_live && <span style={{ color: '#16a34a', marginLeft: 8 }}>● In progress</span>}
             </p>
-            <a href={kickoff.meeting_link} target="_blank" rel="noopener noreferrer" onClick={dismissJoin}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px 18px', borderRadius: 10, background: 'linear-gradient(135deg,#7C3AED,#6d28d9)', color: '#fff', fontWeight: 800, fontSize: 13.5, textDecoration: 'none' }}>
-              <Video size={15} /> Join the meeting
-            </a>
+            <MeetingJoinGate meeting={kickoff} onMark={purchasePortalApi.governance.markAttendance} compact />
             <button onClick={dismissJoin}
               style={{ width: '100%', marginTop: 8, padding: '9px 14px', borderRadius: 10, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700 }}>
               Not now

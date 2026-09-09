@@ -184,7 +184,14 @@ export default function Select({
       {open && pos && createPortal(
         <div
           ref={popRef}
-          className="fixed z-[80] rounded-xl flex flex-col overflow-hidden"
+          // z-1500 clears every modal in the app (Overlay is 1000, the widest is
+          // 1300) and stays under the toast layer (9998). At the old z-80 this
+          // popover was portalled to <body> exactly like the modal, so the two
+          // were siblings in the same stacking context and 80 lost to 1000: the
+          // dropdown opened UNDERNEATH the dialog that contained it. Every
+          // select inside every modal was unusable -- the list was there, drawn,
+          // and unreachable.
+          className="fixed z-[1500] rounded-xl flex flex-col overflow-hidden"
           style={{
             left: pos.left,
             right: pos.right,

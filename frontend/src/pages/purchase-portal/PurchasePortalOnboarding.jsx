@@ -9,6 +9,7 @@ import VendorDocumentsPanel from '@/components/vendor/VendorDocumentsPanel'
 import { PURCHASE_DOC_CATALOG } from '@/components/vendor/documentCatalog'
 import WorkStartLetterCard from '@/components/portal/WorkStartLetterCard'
 import KickoffMomReview from '@/components/portal/KickoffMomReview'
+import MeetingJoinGate from '@/components/portal/MeetingJoinGate'
 import { KIT3D_STYLE, Field, TextInput } from '@/components/ui/kit3d'
 import { readFieldErrors } from '@/services/apiError'
 
@@ -335,11 +336,11 @@ function StepKickoff({ onboarding, editable, onDone, onContinue }) {
               <KoFact label="Location" value={meeting.location || '—'} />
             </div>
 
-            {meeting.meeting_link && (
-              <a href={meeting.meeting_link} target="_blank" rel="noopener noreferrer" style={koJoinBtn}>
-                Join the online meeting
-              </a>
-            )}
+            {/* The link is not in this payload until attendance is marked —
+                see MeetingAttendanceGate. */}
+            <div style={{ marginTop: 14 }}>
+              <MeetingJoinGate meeting={meeting} onMark={purchasePortalApi.governance.markAttendance} />
+            </div>
           </div>
 
           {/* The minutes, as information */}
@@ -402,7 +403,6 @@ function KoFact({ label, value }) {
 
 const koCard = { padding: 16, borderRadius: 13, background: 'var(--bg-card)', border: '1px solid var(--border)', marginBottom: 14 }
 const koGhostBtn = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 13px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-h)', cursor: 'pointer', fontSize: 12, fontWeight: 700 }
-const koJoinBtn = { display: 'inline-flex', alignItems: 'center', gap: 7, marginTop: 14, padding: '9px 16px', borderRadius: 9, textDecoration: 'none', fontSize: 12.5, fontWeight: 800, color: '#fff', background: 'linear-gradient(145deg,#22c55e,#16a34a)' }
 
 /* ── Step 2 — Company profile ────────────────────────────────────────────────── */
 function StepProfile({ onboarding, editable, onSaved, onContinue, registerFlush }) {

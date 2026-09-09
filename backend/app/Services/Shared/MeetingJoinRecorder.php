@@ -49,9 +49,8 @@ class MeetingJoinRecorder
     public function record(Model $meeting, $actor, Request $request): array
     {
         $link = $meeting->meeting_link;
-        $roster = method_exists($meeting, 'attendees') ? 'attendees' : 'participants';
 
-        $row = $this->rowFor($meeting, $roster, $actor);
+        $row = $this->rosterRowFor($meeting, $actor);
         if (! $row) {
             // Nobody on the roster matches, and we will not invent one: a join
             // click carries no identity beyond the account that made it, and a
@@ -99,14 +98,35 @@ class MeetingJoinRecorder
      * login and the name somebody typed onto a roster are different strings far
      * more often than not, and a wrong tick on an attendance record is worse
      * than an absent one.
+     *
+     * Public because {@see MeetingAttendanceGate} asks the same question for a
+     * different reason — not "whose row do I tick" but "has this person marked
+     * attendance yet". Two answers to that from two implementations would be a
+     * gate that opens for someone the register never credits.
      */
-    private function rowFor(Model $meeting, string $roster, $actor)
+    public function rosterRowFor(Model $meeting, $actor)
     {
+        $roster = method_exists($meeting, 'attendees') ? 'attendees' : 'participants';
         $rows = $meeting->{$roster}()->get();
 
-        $byUser = $rows->first(fn ($r) => $r->user_id && (int) $r->user_id === (int) ($actor->id ?? 0));
-        if ($byUser) {
-            return $byUser;
+        /*
+         * The users.id this actor signs in as — their own for a staff account,
+         * and the linked portal login for a vendor, which both vendor tables
+         * carry as `user_id`.
+         *
+         * Never $actor->id for a vendor. That column holds a users.id and a
+         * vendor's id comes from a different table entirely, so matching them
+         * credited vendor #5 with whatever staff member happened to be user #5
+         * on the roster. Harmless while this only stamped a remark; not harmless
+         * now that the same answer decides who is handed the join link.
+         */
+        $userId = $actor instanceof User ? (int) $actor->id : (int) ($actor->user_id ?? 0);
+
+        if ($userId) {
+            $byUser = $rows->first(fn ($r) => $r->user_id && (int) $r->user_id === $userId);
+            if ($byUser) {
+                return $byUser;
+            }
         }
 
         $email = $actor->email ?? null;

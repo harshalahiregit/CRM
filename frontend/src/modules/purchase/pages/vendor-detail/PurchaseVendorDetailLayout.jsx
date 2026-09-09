@@ -5,6 +5,7 @@ import { purchaseApi } from '@/services/purchaseApi'
 import { Overlay, ModalFooter } from '@/components/ui/kit3d'
 import { VENDOR_NAV_GROUPS } from './vendorDetailNav'
 import { TAB_ELEMENTS } from './vendorDetailTabs'
+import { KIT3D_STYLE as GLASS_STYLE } from '@/components/ui/kit3d'
 import { VendorWorkspaceContext } from './vendorWorkspaceContext'
 import PurchaseRegistrationBadge from '@/modules/purchase/components/PurchaseRegistrationBadge'
 
@@ -134,6 +135,14 @@ export default function PurchaseVendorDetailLayout() {
 
   return (
     <div style={{ padding: 20 }}>
+      {/* Several panels on this page are built on .pr-glass, which lives in
+          this stylesheet — and the admin shell does not inject it. Without this
+          the Prequalification and Due Diligence panels, and every card in the
+          Workforce group, render with no background at all and the page shows
+          straight through them. Injected once here so every tab is covered,
+          including ones added later. */}
+      <style>{GLASS_STYLE}</style>
+
       {/* Header */}
       <div className="card-3d" style={{ padding: 16, marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>

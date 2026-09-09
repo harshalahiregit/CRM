@@ -10,6 +10,8 @@ import {
 // shared engine under /app/tpv, Purchase's under /app/purchase. Aliased to
 // the old name so the call sites below read unchanged.
 import { meetingEngineApi as kickoffApi, meetingBase } from '@/services/meetingEngineApi'
+import MeetingJoinGate from '@/components/portal/MeetingJoinGate'
+import AttendanceReviewPanel from '@/components/meetings/AttendanceReviewPanel'
 import {
   KO_STATUS, koStatusCfg, koNextStatuses, koModeLabel, fmtDateTime, fmtDate,
   actStatusCfg, actNextStatuses, issueStatusCfg, issueNextStatuses, ISSUE_TO_INCIDENT_SEVERITY,
@@ -263,6 +265,13 @@ export default function KickoffMeetingDetail() {
               </div>
             )}
           </div>
+
+          {/* The organiser's verdict on who actually attended.
+              Marking attendance in the CRM is what released the joining link;
+              it is not proof anybody stayed in a call held somewhere we cannot
+              see. This is where that gets decided — beside each person's own
+              mark, never over it. See MeetingAttendanceReview. */}
+          <AttendanceReviewPanel api={kickoffApi} meetingId={m.id} />
 
           {/* Minutes */}
           {m.minutes && (
@@ -631,9 +640,16 @@ function DistributionCard({ meetingId, m, onError }) {
     setBusy(true); setNote(null); onError(null)
     try {
       const r = await kickoffApi.invite(meetingId)
+      // Naming the people nobody could reach, rather than reporting a count and
+      // letting "1 had no e-mail address" pass for success. Somebody put them on
+      // the roster; if the invitation never got to them, the organiser has to
+      // know WHO before the meeting rather than after it.
+      const missed = r.unreachable || []
       setNote(`Invitation sent to ${r.sent} recipient(s)`
         + (r.in_app ? `, ${r.in_app} in-app` : '')
-        + (r.skipped ? ` · ${r.skipped} had no e-mail address` : ''))
+        + (missed.length
+          ? ` · not told (no e-mail address and no login): ${missed.join(', ')}`
+          : (r.skipped ? ` · ${r.skipped} had no e-mail address` : '')))
       load()
     } catch (e) {
       onError(e?.response?.data?.message || 'Could not send the invitation.')
@@ -1459,20 +1475,22 @@ function TransitionModal({ m, to, onClose, onDone }) {
  *   3. busy              → spinner
  */
 const PLATFORM_LABELS = {
-  jitsi:       'Jitsi Meet',
   google_meet: 'Google Meet',
   zoom:        'Zoom',
   teams:       'Microsoft Teams',
-  // Kept for meetings saved before Jitsi replaced it — the server regenerates
-  // those as Jitsi, but the stored value is still 'stub' until they do.
+  // Two retired values, still stored on older meetings: 'stub' was the
+  // placeholder link that opened nothing, and 'jitsi' the call the CRM used to
+  // run inside itself. Both are labelled rather than left to render as a raw
+  // key, and pressing Generate moves the meeting onto a real platform.
   stub:        'Generic Link',
+  jitsi:       'Jitsi Meet (retired)',
 }
 const PLATFORM_COLORS = {
-  jitsi:       '#1d76ba',
   google_meet: '#4285F4',
   zoom:        '#2D8CFF',
   teams:       '#6264A7',
   stub:        '#a78bfa',
+  jitsi:       '#a78bfa',
 }
 
 function OnlineMeetingCard({ meeting, linkData, busy, onGenerate }) {
@@ -1485,7 +1503,7 @@ function OnlineMeetingCard({ meeting, linkData, busy, onGenerate }) {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const platform    = linkData?.platform ?? meeting.meeting_platform ?? 'jitsi'
+  const platform    = linkData?.platform ?? meeting.meeting_platform ?? 'google_meet'
   const color       = PLATFORM_COLORS[platform] ?? '#a78bfa'
   const platformLbl = PLATFORM_LABELS[platform]  ?? platform
 
@@ -1504,17 +1522,21 @@ function OnlineMeetingCard({ meeting, linkData, busy, onGenerate }) {
           <Loader2 size={16} className="ko-spin" style={{ color: '#a78bfa' }} />
           <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Generating meeting link…</span>
         </div>
+      ) : (linkData?.has_meeting_link && !linkData?.meeting_link) ? (
+        /* A link exists but this account has not earned it.
+           The organiser and an admin are not gated — they chose the platform and
+           generated the link — so this is the staff attendee's view: the same
+           trade the vendor gets in the portal, and the only way an internal
+           person ever reaches the register. Without it the attendance list would
+           carry the vendors who marked attendance and nobody from our side,
+           which reads as a meeting the vendor attended alone.
+           See MeetingAttendanceGate. */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <MeetingJoinGate meeting={{ ...linkData, mode: meeting.mode, status: meeting.status, is_expired: meeting.is_expired, is_live: meeting.is_live, id: meeting.id }}
+            onMark={kickoffApi.markOwnAttendance} />
+        </div>
       ) : linkData?.link ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {/* Run the call inside the CRM, next to the agenda and the roster.
-              Only Jitsi can do this: Meet and Teams refuse to be embedded and
-              Zoom needs a reviewed app, so those keep the plain Open link. */}
-          {platform === 'jitsi' && (
-            <a href={`${meetingBase()}/kickoff/${meeting.id}/room`}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '11px 14px', borderRadius: 11, background: 'linear-gradient(145deg,#34d399,#10b981)', color: '#fff', fontSize: 13, fontWeight: 800, textDecoration: 'none', boxShadow: '0 8px 20px -6px #10b98188' }}>
-              <Video size={15} /> Join here — with the agenda and notes
-            </a>
-          )}
           {/* Link row */}
           <div style={{ display: 'flex', gap: 7 }}>
             <input

@@ -182,6 +182,12 @@ export const purchaseApi = {
     customers: {
       list:   (vid)       => api.get(`/purchase/vendors/${vid}/customers`).then(r => r.data),
       create: (vid, data) => api.post(`/purchase/vendors/${vid}/customers`, data).then(r => r.data),
+      // search and link were missing here while TPV had them, and the Customer
+      // tab renders the SAME panel for both modules. Calling a method that is
+      // not defined throws inside the promise chain, so the panel never left
+      // "Searching..." -- no toast, nothing in the network tab, just a spinner.
+      search: (vid, q)    => api.get(`/purchase/vendors/${vid}/customers/search`, { params: { q } }).then(r => r.data),
+      link:   (vid, clientId) => api.post(`/purchase/vendors/${vid}/customers/link`, { client_id: clientId }).then(r => r.data),
     },
 
     // Commercial: native. Every purchase document already keys to
@@ -317,6 +323,18 @@ export const purchaseApi = {
     // mint and read it on their own route rather than the shared engine's.
     generateLink: (id, platform = null) => api.post(`/purchase/kickoff/${id}/generate-link`, { platform }).then(r => r.data),
     getLink:      (id) => api.get(`/purchase/kickoff/${id}/link`).then(r => r.data),
+    // Mark MYSELF present, which is what releases the joining link to a staff
+    // attendee who did not organise the meeting. Distinct from markAttendance
+    // (`attendance`), which is the organiser ticking other people's rows afterwards —
+    // same URL, different verb and different authority. See
+    // MeetingAttendanceGate.
+    markOwnAttendance: (id) => api.post(`/purchase/kickoff/${id}/attendance`).then(r => r.data),
+    // The organiser's verdict on who actually attended — the three slabs, stored
+    // BESIDE each person's own attendance mark rather than over it, so "punched
+    // CRM attendance but did not join the call" stays writable. Authority is the
+    // organiser's or an admin's; the register is readable by any staff.
+    attendanceRegister: (id) => api.get(`/purchase/kickoff/${id}/attendance/register`).then(r => r.data),
+    reviewAttendance: (id, rows) => api.post(`/purchase/kickoff/${id}/attendance/review`, { rows }).then(r => r.data),
     // WRITES carried items into an existing meeting.
     carryForward: (id)    => api.post(`/purchase/kickoff/${id}/carry-forward`).then(r => r.data),
     // READS what a new meeting could carry — the meeting form's preview. Same
@@ -335,6 +353,9 @@ export const purchaseApi = {
     // Participant pickers + the live vendor snapshot a meeting is planned
     // against. `vendors` lists PURCHASE vendors — the shared engine's picker
     // reads the separate `vendors` table, whose ids are unrelated.
+    // Category-wise picker. Purchase's vendor category lists purchase_vendors;
+    // everything else is the same directory the shared engine uses.
+    participants: ()         => api.get('/purchase/kickoff/participants').then(r => r.data),
     staff:        ()         => api.get('/purchase/kickoff/staff').then(r => r.data),
     vendors:      ()         => api.get('/purchase/kickoff/vendors').then(r => r.data),
     // excludeMeetingId = the meeting being edited, so it is not counted as
@@ -523,6 +544,19 @@ export const purchaseApi = {
     // Non-person crossings (TPV §20) — equipment / material / vehicle / visitor.
     events:      (params = {}) => api.get('/purchase/gate/events', { params }).then(r => r.data?.data ?? r.data),
     storeEvent:  (data)        => api.post('/purchase/gate/events', data).then(r => r.data),
+  },
+
+  // ── Safety strikes (mirror of TPV's) ───────────────────────────────────
+  // Three active strikes, or one Critical, terminates site access. Voiding is
+  // an appeal upheld: the row stays on the ledger and stops counting.
+  strikes: {
+    list:   (params = {}) => api.get('/purchase/strikes', { params }).then(r => r.data?.data ?? r.data),
+    stats:  ()            => api.get('/purchase/strikes/stats').then(r => r.data),
+    forWorker: (workerId) => api.get(`/purchase/workforce/workers/${workerId}/strikes`).then(r => r.data),
+    // Returns { strike, terminated, active_count } — the caller must say when
+    // issuing one has just ended somebody's site access.
+    issue:  (workerId, data) => api.post(`/purchase/workforce/workers/${workerId}/strikes`, data).then(r => r.data),
+    void:   (strikeId, reason) => api.post(`/purchase/strikes/${strikeId}/void`, { reason }).then(r => r.data),
   },
 
   // ── Workforce Competency & Skill Matrix (mirror of TPV §15) ─────────────

@@ -108,9 +108,17 @@ class KickoffMeetingAccessAuditTest extends TestCase
             ['delete', "/api/purchase/kickoff/{$this->pMeeting->id}"],
         ];
 
-        // A doctor and a TPV vendor are both Users, so only the role gate stands
+        // A TPV vendor is a User like anyone else, so only the role gate stands
         // between them and 134 admin routes. That gate is the thing under test.
-        foreach (['third_party_vendor', 'doctor', 'client', 'company'] as $role) {
+        //
+        // `doctor` was on this list and has deliberately been taken off it:
+        // Meetings is now a company-wide module and every INTERNAL role reaches
+        // it (MeetingVisibility::INTERNAL_ROLES), a doctor included. What stops
+        // a doctor reading somebody else's meeting is no longer the role gate
+        // but per-user visibility -- pinned in MeetingVisibilityByRoleTest.
+        // The externals below stay refused outright: they keep the read-only
+        // governance view in their own portal.
+        foreach (['third_party_vendor', 'client', 'company'] as $role) {
             $actor = $this->user($role);
             Sanctum::actingAs($actor);
 
@@ -156,12 +164,33 @@ class KickoffMeetingAccessAuditTest extends TestCase
      * Flagged rather than changed: the route group is shared with the TPV
      * module, so tightening it is a decision for the module's owner.
      */
-    public function test_staff_can_delete_a_meeting_just_like_an_admin(): void
+    public function test_the_staff_organiser_can_delete_a_meeting_just_like_an_admin(): void
     {
-        Sanctum::actingAs($this->user('staff'));
+        // Deleting is not an admin-only power -- the person who called the
+        // meeting can call it off. What changed is WHICH staff member: the
+        // organiser, not any staff member who knows the id (see the test below).
+        $organiser = $this->user('staff');
+        $this->meeting->forceFill(['created_by' => $organiser->id])->save();
+
+        Sanctum::actingAs($organiser);
 
         $this->deleteJson("/api/kickoff/meetings/{$this->meeting->id}")->assertOk();
         $this->assertSoftDeleted('kickoff_meetings', ['id' => $this->meeting->id]);
+    }
+
+    public function test_an_unrelated_staff_member_cannot_delete_a_meeting(): void
+    {
+        // Before Meetings opened to the whole company, ANY staff member could
+        // delete ANY meeting, because the only question asked was the tenant.
+        // With every internal role now in the module that is a stranger able to
+        // erase an HR one-to-one, so the answer is 404 -- not 403, which would
+        // confirm the meeting exists.
+        Sanctum::actingAs($this->user('staff'));
+
+        $this->deleteJson("/api/kickoff/meetings/{$this->meeting->id}")->assertStatus(404);
+        $this->assertDatabaseHas('kickoff_meetings', [
+            'id' => $this->meeting->id, 'deleted_at' => null,
+        ]);
     }
 
     /* ── 3. What a vendor sees of its OWN meetings ───────────────────────── */

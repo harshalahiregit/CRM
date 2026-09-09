@@ -4,7 +4,6 @@ namespace App\Services\Shared;
 
 use App\Services\Shared\MeetingProviders\MeetingProviderFactory;
 use Illuminate\Support\Facades\Log;
-use App\Support\Shared\JitsiHost;
 
 /**
  * Ad-hoc meeting links for the message composers (owner: Shivam).
@@ -13,40 +12,34 @@ use App\Support\Shared\JitsiHost;
  * KickoffMeeting record — so this sits beside OnlineMeetingService rather than
  * reusing it. It always returns a REAL, usable link:
  *
- *  - Jitsi        — a fresh room on the free meet.jit.si; no credentials, ever.
  *  - Google Meet  — a real scheduled Meet link when the tenant has the Google
  *                   integration configured; otherwise meet.google.com/new, the
  *                   genuine "start a new meeting" URL.
  *  - Zoom         — a real join link when Zoom S2S OAuth is configured;
  *                   otherwise zoom.us/start, Zoom's own instant-meeting starter.
+ *  - Teams        — a real join link when Microsoft Graph is configured;
+ *                   otherwise teams.microsoft.com/start.
  *
  * It never hands back the StubProvider's fake example.com link — an unusable
  * link in a real message would be worse than the honest instant-start URL.
+ *
+ * Jitsi used to be the third option here, and the one that needed no account at
+ * all. It has gone with the in-app meeting room: calls are held on the real
+ * services now, so this offers the same three platforms the scheduler does.
  */
 class MeetingLinkService
 {
-    public const PLATFORMS = ['google_meet', 'zoom', 'jitsi'];
+    public const PLATFORMS = ['google_meet', 'zoom', 'teams'];
 
     /** @return array{platform:string,label:string,link:string,instant:bool} */
     public function forPlatform(string $platform, int $tenantId, string $title = 'CRM meeting'): array
     {
         return match ($platform) {
-            'jitsi'       => $this->jitsi($tenantId),
             'google_meet' => $this->viaProviderOrFallback('google_meet', 'Google Meet', 'https://meet.google.com/new', $title, fn () => (bool) config('meeting.google_meet.credentials_path')),
             'zoom'        => $this->viaProviderOrFallback('zoom', 'Zoom', 'https://zoom.us/start/videomeeting', $title, fn () => (bool) config('meeting.zoom.account_id')),
+            'teams'       => $this->viaProviderOrFallback('teams', 'Microsoft Teams', 'https://teams.microsoft.com/start', $title, fn () => (bool) config('meeting.teams.tenant_id')),
             default       => throw new \InvalidArgumentException('Unsupported meeting platform.'),
         };
-    }
-
-    private function jitsi(int $tenantId): array
-    {
-        $room = 'CRM-' . $tenantId . '-' . bin2hex(random_bytes(4));
-        // This path hard-coded meet.jit.si, so a tenant who had configured their
-        // own server still got public-instance links from it — the escape hatch
-        // existed and simply did not reach here.
-        $host = JitsiHost::for($tenantId);
-
-        return ['platform' => 'jitsi', 'label' => 'Jitsi', 'link' => "https://{$host}/{$room}", 'instant' => false];
     }
 
     /**

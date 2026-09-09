@@ -15,7 +15,7 @@ import { DOC_CATEGORY_ORDER, COMPLIANCE_PROVIDERS, categoryOf } from './document
  * searchable, filterable, drag-and-drop, with preview, version history, delete,
  * a rejection rationale and a route to a compliance provider when the vendor
  * simply does not hold the paperwork yet. Purchase's was a flat list with an
- * Upload button, an `alert()` for errors and a `prompt()` for rejection
+ * Upload button, a browser alert for errors and a browser prompt for rejection
  * remarks — so a Purchase vendor could not preview what they had sent, could
  * not see what they had sent before, could not remove a wrong scan, and had no
  * way to tell which of eleven rows was the one still blocking them.

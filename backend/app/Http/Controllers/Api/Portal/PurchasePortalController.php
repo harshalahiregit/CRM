@@ -532,15 +532,16 @@ class PurchasePortalController extends Controller
             'scheduled_at'    => optional($meeting->scheduled_at)->toIso8601String(),
             'mode'            => $meeting->mode,
             'location'        => $meeting->location,
-            // A link to a meeting that is not happening is worse than none — it
-            // looks like it should still work. Same rule as the meetings list.
-            // Offered only while the meeting is actually going to happen —
-            // upcoming or in progress. "Not expired" is not the same thing: a
-            // CANCELLED meeting is not expired either, and was still handing out
-            // a working join link for a meeting nobody was going to attend.
-            'meeting_link'    => in_array($meeting->timing_state, ['upcoming', 'live'], true)
-                ? $meeting->meeting_link
-                : null,
+            // The join link is not here until the vendor marks attendance on
+            // the meeting — see MeetingAttendanceGate, which also keeps the old
+            // rule that a link is only offered while the meeting is still going
+            // to happen (a CANCELLED meeting is not "expired", and used to keep
+            // handing out a working link for a meeting nobody would attend).
+            // Spread rather than named one by one, so this payload gains
+            // attendance_marked and can_mark_attendance with the same shape the
+            // two governance lists use.
+            ...app(\App\Services\Shared\MeetingAttendanceGate::class)
+                ->stateFor($meeting, $this->purchaseVendor($request)),
             'mom_available'   => $momAvailable,
             // This payload is hand-built, so the model's appended timing does
             // NOT ride along — it has to be named here. Without it the dashboard
@@ -579,6 +580,39 @@ class PurchasePortalController extends Controller
      * else the next one due. Only when neither exists does the most recent past
      * meeting stand in, so the tab still has something to show.
      */
+    /**
+     * Accept the kickoff, from the standalone Kickoff tab.
+     *
+     * That tab resolves the meeting from the token and shows no ids, so its
+     * Accept button had nowhere to post: the client called
+     * /portal/purchase/kickoff/accept and no route served it. The button
+     * existed, the client method existed, and every press 404'd.
+     *
+     * Resolves the vendor's own onboarding the way the rest of this controller
+     * does, then hands off to the SAME service the id-carrying onboarding route
+     * uses. Two ways to accept a kickoff that behave differently is a defect
+     * this module has already been bitten by once -- see ownKickoff() below.
+     */
+    public function acceptKickoff(Request $request)
+    {
+        $vendor = $this->purchaseVendor($request);
+
+        $onboarding = PurchaseOnboarding::forTenant($vendor->tenant_id)
+            ->where('purchase_vendor_id', $vendor->id)
+            ->latest('id')
+            ->first();
+
+        abort_unless($onboarding, 404, 'No onboarding found for this vendor.');
+
+        $ua = \App\Support\UserAgentInfo::parse($request->userAgent());
+
+        return response()->json($this->onboardingService->acknowledgeKickoff(
+            $onboarding, $request->user(), [
+                'ip' => $request->ip(), 'browser' => $ua['browser'], 'device' => $ua['device'],
+            ],
+        ));
+    }
+
     private function ownKickoff(Request $request): ?PurchaseKickoffMeeting
     {
         $vendor = $this->purchaseVendor($request);

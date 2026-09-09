@@ -121,17 +121,39 @@ class VendorPortalMeetingsTest extends TestCase
         $this->assertNull($row['meeting_link'], 'a link to a finished meeting looks like it should still work');
     }
 
-    public function test_a_meeting_in_progress_still_hands_out_its_link(): void
+    /**
+     * A running meeting is still joinable — the link used to be withheld the
+     * moment it started, which is exactly when it is needed, and that must not
+     * come back.
+     *
+     * What changed is that the link is now EARNED rather than given: it is
+     * withheld from the payload until the vendor marks attendance, so
+     * has_meeting_link is what says this meeting is online. See
+     * MeetingAttendanceGate.
+     */
+    public function test_a_meeting_in_progress_is_still_joinable_but_the_link_is_earned(): void
     {
-        // The link used to be withheld the moment the meeting started, which is
-        // exactly when it is needed.
-        $this->meeting('Running', -10);
+        $meeting = $this->meeting('Running', -10);
 
-        $row = $this->getJson('/api/portal/meetings')->assertOk()->json('data.0');
+        $res = $this->getJson('/api/portal/meetings')->assertOk();
+        $row = $res->json('data.0');
 
         $this->assertSame('live', $row['timing_state']);
         $this->assertTrue($row['is_live']);
-        $this->assertNotNull($row['meeting_link']);
+        $this->assertTrue($row['has_meeting_link'], 'the portal still knows this is an online meeting');
+        $this->assertNull($row['meeting_link'], 'and does not hand it out before attendance is marked');
+
+        // Withheld from the whole body, not just that field — a link anywhere in
+        // this response is a link the browser has.
+        $this->assertStringNotContainsString('meet.example.test', $res->getContent());
+
+        // And marking attendance releases it, so the gate is a door, not a wall.
+        $this->postJson("/api/portal/meetings/{$meeting->id}/attendance")->assertOk()
+            ->assertJsonPath('attendance_marked', true);
+
+        $this->assertNotNull(
+            $this->getJson('/api/portal/meetings')->assertOk()->json('data.0.meeting_link')
+        );
     }
 
     public function test_drafts_stay_invisible_to_the_vendor(): void

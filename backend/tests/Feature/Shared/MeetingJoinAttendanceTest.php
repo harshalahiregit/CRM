@@ -28,9 +28,13 @@ use Tests\TestCase;
  * here observed any of it. The register stayed empty and somebody rebuilt it
  * from memory afterwards — the exact thing a register exists to prevent.
  *
- * What can be seen on every platform is somebody pressing Join in the CRM. That
- * is not proof they stayed, so it is recorded as what it is and labelled as
+ * What can be seen on every platform is somebody marking attendance in the CRM.
+ * That is not proof they stayed, so it is recorded as what it is and labelled as
  * such: three sources, ranked, each saying honestly how it knows.
+ *
+ * Marking attendance is also what RELEASES the link now — see
+ * MeetingAttendanceGate — so this is no longer a record taken on the way past.
+ * It is the thing the person came here to do.
  */
 class MeetingJoinAttendanceTest extends TestCase
 {
@@ -126,10 +130,10 @@ class MeetingJoinAttendanceTest extends TestCase
         $this->assertFalse((bool) $row->attended, 'nothing is known before they press Join');
 
         Sanctum::actingAs($this->vendorUser);
-        $res = $this->postJson("/api/portal/meetings/{$m->id}/join")->assertOk();
+        $res = $this->postJson("/api/portal/meetings/{$m->id}/attendance")->assertOk();
 
-        $this->assertSame('https://meet.google.com/abc-defg-hij', $res->json('link'),
-            'the browser still gets the real meeting link');
+        $this->assertSame('https://meet.google.com/abc-defg-hij', $res->json('meeting_link'),
+            'the browser gets the real meeting link, in exchange for the record');
         $this->assertTrue($res->json('recorded'));
 
         $row->refresh();
@@ -150,7 +154,7 @@ class MeetingJoinAttendanceTest extends TestCase
 
         Sanctum::actingAs($this->vendorUser);
         $this->withHeader('User-Agent', 'Mozilla/5.0 (iPhone) AppleWebKit Safari')
-            ->postJson("/api/portal/meetings/{$m->id}/join")->assertOk();
+            ->postJson("/api/portal/meetings/{$m->id}/attendance")->assertOk();
 
         $this->assertStringContainsString('Mobile', (string) $row->fresh()->remark);
         $this->assertStringContainsString('Safari', (string) $row->fresh()->remark);
@@ -165,9 +169,9 @@ class MeetingJoinAttendanceTest extends TestCase
         ]);
 
         Sanctum::actingAs($this->pVendor);
-        $this->postJson("/api/portal/purchase/meetings/{$m->id}/join")
+        $this->postJson("/api/portal/purchase/meetings/{$m->id}/attendance")
             ->assertOk()
-            ->assertJsonPath('link', 'https://zoom.us/j/123456')
+            ->assertJsonPath('meeting_link', 'https://zoom.us/j/123456')
             ->assertJsonPath('recorded', true);
 
         $this->assertTrue((bool) $row->fresh()->attended);
@@ -198,7 +202,7 @@ class MeetingJoinAttendanceTest extends TestCase
         $seenAt = $row->joined_at;
 
         Sanctum::actingAs($this->vendorUser);
-        $this->postJson("/api/portal/meetings/{$m->id}/join")->assertOk();
+        $this->postJson("/api/portal/meetings/{$m->id}/attendance")->assertOk();
 
         $row->refresh();
         $this->assertSame(MeetingJoinRecorder::SOURCE_CALL, $row->attendance_source,
@@ -231,22 +235,37 @@ class MeetingJoinAttendanceTest extends TestCase
     /* ── the edges ───────────────────────────────────────────────────────── */
 
     /**
-     * Somebody not on the roster gets the link and no invented row.
+     * Somebody not on the roster is seated from who they actually are.
      *
-     * A join click carries no identity beyond the account that made it, and a
-     * roster entry built from a login would put the wrong name on the register.
+     * This used to assert the opposite: no row was created, and the link was
+     * handed over anyway. That was defensible while the link was free — the
+     * recorder refuses to invent a row because a name guessed from a login puts
+     * the wrong person on the register, and it still refuses.
+     *
+     * It stopped being defensible once the link had to be earned. A meeting
+     * scheduled FOR a vendor commonly has no participant row for that vendor at
+     * all — which is why the invitation code adds them separately — so the rule
+     * as written locked those vendors out of their own meeting for ever.
+     *
+     * Nothing is guessed. The portal knows exactly who is asking, because the
+     * request authenticated as that vendor, and it passes that identity in. The
+     * name on the register is the vendor's own.
      */
-    public function test_a_joiner_who_is_not_on_the_roster_is_not_invented(): void
+    public function test_a_joiner_who_is_not_on_the_roster_is_seated_from_their_own_identity(): void
     {
         $m = $this->meeting();
 
         Sanctum::actingAs($this->vendorUser);
-        $this->postJson("/api/portal/meetings/{$m->id}/join")
+        $this->postJson("/api/portal/meetings/{$m->id}/attendance")
             ->assertOk()
-            ->assertJsonPath('recorded', false)
-            ->assertJsonPath('link', 'https://meet.google.com/abc-defg-hij');
+            ->assertJsonPath('recorded', true)
+            ->assertJsonPath('meeting_link', 'https://meet.google.com/abc-defg-hij');
 
-        $this->assertCount(0, $m->fresh()->attendees);
+        $row = $m->fresh()->attendees()->sole();
+        $this->assertSame($this->vendor->company_name, $row->name,
+            'the vendor record, not a name guessed from a login');
+        $this->assertSame($this->vendor->email, $row->email);
+        $this->assertTrue((bool) $row->attended);
     }
 
     /** A meeting that is over is not open to join, and records nothing. */
@@ -259,7 +278,7 @@ class MeetingJoinAttendanceTest extends TestCase
         ])->save();
 
         Sanctum::actingAs($this->vendorUser);
-        $this->postJson("/api/portal/meetings/{$m->id}/join")->assertNotFound();
+        $this->postJson("/api/portal/meetings/{$m->id}/attendance")->assertNotFound();
     }
 
     /** And another vendor's meeting is not joinable at all. */
@@ -277,6 +296,6 @@ class MeetingJoinAttendanceTest extends TestCase
         ]);
 
         Sanctum::actingAs($other);
-        $this->postJson("/api/portal/meetings/{$m->id}/join")->assertNotFound();
+        $this->postJson("/api/portal/meetings/{$m->id}/attendance")->assertNotFound();
     }
 }

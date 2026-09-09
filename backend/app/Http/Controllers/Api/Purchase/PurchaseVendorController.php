@@ -145,6 +145,81 @@ class PurchaseVendorController extends Controller
         );
     }
 
+    /**
+     * Existing customers this vendor could be linked to.
+     *
+     * The Customer tab renders the shared VendorCustomersPanel, which calls
+     * customers.search() before it can offer anything. Purchase's client had no
+     * such method and no endpoint behind it, so the panel threw inside its
+     * promise chain and sat on "Searching..." for ever -- no toast, nothing in
+     * the network tab, just a spinner. TPV had both, which is why it worked
+     * there and not here.
+     *
+     * Offers unlinked customers, plus ones already on THIS vendor so the search
+     * is idempotent and does not hide what is already attached.
+     */
+    public function searchCustomers(Request $request, PurchaseVendor $purchaseVendor)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        $data = $request->validate(['q' => 'nullable|string|max:120']);
+        $q = trim((string) ($data['q'] ?? ''));
+
+        $rows = \App\Models\Customer\Client::query()
+            ->where('tenant_id', (int) $request->user()->tenant_id)
+            ->where(function ($w) use ($purchaseVendor) {
+                $w->whereNull('purchase_vendor_id')
+                    ->orWhere('purchase_vendor_id', $purchaseVendor->id);
+            })
+            ->when($q !== '', function ($query) use ($q) {
+                $query->where(function ($w) use ($q) {
+                    $w->where('company', 'like', "%{$q}%")
+                        ->orWhere('phone', 'like', "%{$q}%")
+                        ->orWhere('gst_number', 'like', "%{$q}%");
+                });
+            })
+            ->orderBy('company')
+            ->limit(20)
+            ->get(['id', 'company', 'phone', 'gst_number', 'city', 'state', 'country', 'purchase_vendor_id']);
+
+        return response()->json($rows);
+    }
+
+    /**
+     * Link an existing customer to this vendor.
+     *
+     * Idempotent when it is already this vendor's, and refuses to take one that
+     * belongs to another -- a customer silently moving between vendors is worse
+     * than being told to unlink it first.
+     *
+     * Note this sets purchase_vendor_id, not vendor_id: a customer may be linked
+     * to a TPV vendor and a Purchase vendor at once, and they are different
+     * relationships on different columns.
+     */
+    public function linkCustomer(Request $request, PurchaseVendor $purchaseVendor)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        $data = $request->validate(['client_id' => 'required|integer']);
+
+        $client = \App\Models\Customer\Client::query()
+            ->where('tenant_id', (int) $request->user()->tenant_id)
+            ->find($data['client_id']);
+
+        abort_unless($client, 404, 'Customer not found.');
+
+        if ($client->purchase_vendor_id
+            && (int) $client->purchase_vendor_id !== (int) $purchaseVendor->id) {
+            abort(422, 'That customer is already linked to another purchase vendor.');
+        }
+
+        if ((int) $client->purchase_vendor_id !== (int) $purchaseVendor->id) {
+            $client->update(['purchase_vendor_id' => $purchaseVendor->id]);
+        }
+
+        return response()->json($client->fresh() ?? $client, 200);
+    }
+
     public function storeCustomer(Request $request, PurchaseVendor $purchaseVendor)
     {
         $this->assertTenant($request, $purchaseVendor);

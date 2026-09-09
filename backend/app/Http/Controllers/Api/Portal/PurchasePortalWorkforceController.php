@@ -154,6 +154,60 @@ class PurchasePortalWorkforceController extends Controller
      * The vendor id comes from the token, never the request, so these can only
      * ever narrow to the caller's own workers.
      */
+    /**
+     * Every training record across this vendor's own workers.
+     *
+     * The portal could WRITE a training (saveTraining, below) and had no way to
+     * read one back, so a vendor could file a certificate and never see it
+     * again — the same hole the admin side had on its vendor tab.
+     */
+    public function trainings(Request $request)
+    {
+        $vendor = $this->vendor($request);
+
+        $rows = \App\Models\Purchase\PurchaseWorkerTraining::forTenant($vendor->tenant_id)
+            ->whereIn('purchase_worker_id', $this->ownWorkerIds($vendor))
+            ->with('worker:id,full_name,worker_code')
+            ->orderByDesc('id')->limit(500)->get();
+
+        return response()->json(['data' => $rows]);
+    }
+
+    /**
+     * Safety strikes against this vendor's own workers — read-only.
+     *
+     * A vendor cannot issue or void one: three of them terminate a worker's site
+     * access, so the authority to hand them out belongs with the site, not with
+     * the company being struck. Seeing them is the point — a vendor who cannot
+     * see a strike cannot act on it before the third one lands.
+     */
+    public function strikes(Request $request)
+    {
+        $vendor = $this->vendor($request);
+
+        $query = \App\Models\Purchase\PurchaseSafetyStrike::forTenant($vendor->tenant_id)
+            ->whereIn('purchase_worker_id', $this->ownWorkerIds($vendor))
+            ->with(['worker:id,full_name,worker_code', 'issuer:id,name'])
+            ->orderByDesc('occurred_at');
+
+        if ($request->filled('severity')) {
+            $query->where('severity', $request->query('severity'));
+        }
+
+        if ($request->boolean('active')) {
+            $query->whereNull('voided_at');
+        }
+
+        return response()->json($query->get());
+    }
+
+    /** The ids this vendor owns — the scope everything above is narrowed to. */
+    private function ownWorkerIds($vendor)
+    {
+        return \App\Models\Purchase\PurchaseWorker::forTenant($vendor->tenant_id)
+            ->where('purchase_vendor_id', $vendor->id)->select('id');
+    }
+
     public function gateStats(Request $request, PurchaseGateService $gate)
     {
         $vendor = $this->vendor($request);

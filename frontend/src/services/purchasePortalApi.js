@@ -131,6 +131,14 @@ export const purchasePortalApi = {
   // ── Workforce — the vendor's own workers, resolved from the token ───────
   // No vendor_id is ever sent: the server reads it from the PurchaseVendor token
   // and 404s any worker that is not the caller's.
+  trainings: () => api.get('/portal/purchase/trainings').then(r => r.data?.data ?? r.data),
+
+  // Safety strikes against this vendor's workers — read-only. Issuing belongs
+  // with the site, not with the company being struck.
+  strikes: {
+    list: (params = {}) => api.get('/portal/purchase/strikes', { params }).then(r => r.data?.data ?? r.data),
+  },
+
   workers: {
     list:      (params = {}) => api.get('/portal/purchase/workers', { params }).then(r => r.data),
     summary:   ()            => api.get('/portal/purchase/workers/summary').then(r => r.data),
@@ -140,7 +148,11 @@ export const purchasePortalApi = {
     remove:    (id)          => api.delete(`/portal/purchase/workers/${id}`).then(r => r.data),
     readiness: (id)          => api.get(`/portal/purchase/workers/${id}/readiness`).then(r => r.data),
     medical:   (id, data)    => api.post(`/portal/purchase/workers/${id}/medical`, data).then(r => r.data),
-    training:  (id, data)    => api.post(`/portal/purchase/workers/${id}/training`, data).then(r => r.data),
+    training:  (id, data)    => api.post(`/portal/purchase/workers/${id}/training`, data,
+      data instanceof FormData ? { headers: { 'Content-Type': undefined } } : undefined).then(r => r.data),
+    // Named to match portalApi so one shared page serves both portals.
+    saveTraining: (id, data) => api.post(`/portal/purchase/workers/${id}/training`, data,
+      data instanceof FormData ? { headers: { 'Content-Type': undefined } } : undefined).then(r => r.data),
     induction: (id, data)    => api.post(`/portal/purchase/workers/${id}/induction`, data).then(r => r.data),
     document:  (id, fd)      => api.post(`/portal/purchase/workers/${id}/documents`, fd).then(r => r.data),
     // Step 5 is READ ONLY here — activation is an admin decision.
@@ -360,7 +372,9 @@ export const purchasePortalApi = {
     // Records that this person opened the meeting, then hands back the link.
     // A meeting held on Google Meet or Teams runs where we cannot see it, so
     // the click is the only evidence there is — and it is worth keeping.
-    joinMeeting:     (id)          => api.post(`/portal/purchase/meetings/${id}/join`).then(r => r.data),
+    // Marking attendance is what releases the joining link — it is not in the
+    // meetings payload until this returns. See MeetingAttendanceGate.
+    markAttendance:  (id)          => api.post(`/portal/purchase/meetings/${id}/attendance`).then(r => r.data),
     // The minutes document itself. Distributing minutes the recipient cannot
     // open is not distributing them — this had no route at all until now.
     meetingMomFile:  (id)          => api.get(`/portal/purchase/meetings/${id}/mom/file`, { responseType: 'blob' }).then(r => r.data),

@@ -32,6 +32,7 @@ return [
         'capa_review'         => 'CAPA Review',
         'technical'           => 'Technical Meeting',
         'commercial'          => 'Commercial Meeting',
+        'financial'           => 'Financial Meeting',
         'procurement'         => 'Procurement Meeting',
         'workforce_review'    => 'Workforce Review',
         'client'              => 'Client Meeting',
@@ -166,6 +167,13 @@ return [
             ['item' => 'Invoicing, payments & retentions',     'duration_minutes' => 15, 'priority' => 'High'],
             ['item' => 'Claims & disputes',                    'duration_minutes' => 15, 'priority' => 'Medium'],
             ['item' => 'Commercial actions & owners',          'duration_minutes' => 10, 'priority' => 'Medium'],
+        ],
+        'financial' => [
+            ['item' => 'Budget position & forecast',            'duration_minutes' => 20, 'priority' => 'High'],
+            ['item' => 'Cash flow, invoicing & receivables',    'duration_minutes' => 15, 'priority' => 'High'],
+            ['item' => 'Cost variances & recovery plan',        'duration_minutes' => 15, 'priority' => 'High'],
+            ['item' => 'Financial risks & provisions',          'duration_minutes' => 10, 'priority' => 'Medium'],
+            ['item' => 'Financial actions & owners',            'duration_minutes' => 10, 'priority' => 'Medium'],
         ],
         'procurement' => [
             ['item' => 'Requisitions & purchase-order status', 'duration_minutes' => 15, 'priority' => 'High'],

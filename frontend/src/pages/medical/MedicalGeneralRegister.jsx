@@ -4,6 +4,7 @@ import { Users, FileText, RefreshCw, Search, BarChart3, ChevronLeft, ChevronRigh
 import { medicalApi } from '@/services/medicalApi'
 import LoadError from '@/components/ui/LoadError'
 import Drawer from '@/components/ui/Drawer'
+import { KIT3D_STYLE as GLASS_STYLE } from '@/components/ui/kit3d'
 import {
   S, FitnessPill, QcPill, HealthScore, FindingPill, humanise,
 } from '@/components/medical/MedicalBits'
@@ -77,6 +78,10 @@ export default function MedicalGeneralRegister() {
 
   return (
     <div>
+      {/* .pr-glass lives in this stylesheet, and the admin shell does not
+          inject it — without this the cards below have no background at all
+          and the page shows through them. */}
+      <style>{GLASS_STYLE}</style>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: 'var(--text-h)', display: 'flex', alignItems: 'center', gap: 8 }}>

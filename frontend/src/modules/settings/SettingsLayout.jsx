@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { Mail, MailOpen, MessageCircle, SlidersHorizontal, IndianRupee, Tags, Building2, Network, Palette, UploadCloud, ShieldCheck, Bell, Globe, Coins, Hash, Trash2, Shield, Users, Wallet, LifeBuoy, ShoppingCart, HardHat, Video } from 'lucide-react'
+import { Mail, MailOpen, MessageCircle, SlidersHorizontal, IndianRupee, Tags, Building2, Network, Palette, UploadCloud, ShieldCheck, Bell, Globe, Coins, Hash, Trash2, Shield, Users, Wallet, LifeBuoy, ShoppingCart, HardHat } from 'lucide-react'
 
 // Section registry — new settings pages plug in here.
 //
@@ -10,7 +10,6 @@ import { Mail, MailOpen, MessageCircle, SlidersHorizontal, IndianRupee, Tags, Bu
 const SECTIONS = [
   { group: 'Workspace', label: 'General & Branding', path: 'general', icon: Palette },
   { group: 'Workspace', label: 'Localization', path: 'localization', icon: Globe },
-  { group: 'Workspace', label: 'Meeting Server', path: 'meetings', icon: Video },
   { group: 'Workspace', label: 'Currency & Numbers', path: 'currency', icon: Coins },
   { group: 'Workspace', label: 'Document Numbering', path: 'numbering', icon: Hash },
   { group: 'Workspace', label: 'Custom Fields', path: 'custom-fields', icon: SlidersHorizontal },
