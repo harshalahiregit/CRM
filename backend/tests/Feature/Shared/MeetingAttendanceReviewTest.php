@@ -80,6 +80,27 @@ class MeetingAttendanceReviewTest extends TestCase
         ]);
     }
 
+    /**
+     * A staff member on the roster who did NOT organise.
+     *
+     * These two cases used to use a bare staff() who was on no roster at all,
+     * and passed only because any staff member could open any meeting. Now that
+     * Meetings is scoped per user, a stranger gets 404 -- which would prove
+     * nothing about who may DECIDE. The question is whether somebody who can
+     * legitimately open the meeting can overrule the organiser, so they have to
+     * be a participant.
+     */
+    private function participant(KickoffMeeting $m): User
+    {
+        $user = $this->staff();
+        $m->attendees()->create([
+            'tenant_id' => self::TENANT, 'user_id' => $user->id,
+            'name' => $user->name, 'email' => $user->email, 'side' => 'internal',
+        ]);
+
+        return $user;
+    }
+
     private function submit(KickoffMeeting $m, array $rows)
     {
         return $this->postJson("/api/kickoff/meetings/{$m->id}/attendance/review", ['rows' => $rows]);
@@ -227,7 +248,7 @@ class MeetingAttendanceReviewTest extends TestCase
 
         // Final approval authority means one person's, not anyone who can open
         // the page — this decision can cost somebody their attendance record.
-        Sanctum::actingAs($this->staff());
+        Sanctum::actingAs($this->participant($m));
         $this->submit($m, [['id' => $row->id, 'verdict' => AttendanceVerdict::COMPLETE_ABSENT]])
             ->assertStatus(403);
 
@@ -410,7 +431,7 @@ class MeetingAttendanceReviewTest extends TestCase
         $m = $this->meeting($organiser);
         $this->claimant($m);
 
-        Sanctum::actingAs($this->staff());
+        Sanctum::actingAs($this->participant($m));
         $this->getJson("/api/kickoff/meetings/{$m->id}/attendance/register")->assertOk()
             // Readable, so the minutes can show it — but the screen is told
             // plainly that this person may not change it.

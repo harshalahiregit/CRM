@@ -196,6 +196,9 @@ export const purchaseKickoffApi = {
 
   /* ── Registers + pickers ──────────────────────────────────── */
   registers:    k.registers,
+  // Purchase's own category picker -- same shape, its own vendor set. Missing
+  // this is the "api.<name> is not a function" the parity guard exists to catch.
+  participants: k.participants,
   staff:        k.staff,
   vendors:      k.vendors,
   vendorStatus: (vendorId, excludeMeetingId) => k.vendorStatus(vendorId, excludeMeetingId),

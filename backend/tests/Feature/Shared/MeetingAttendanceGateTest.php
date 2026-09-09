@@ -189,6 +189,16 @@ class MeetingAttendanceGateTest extends TestCase
         $attendee = $this->staff();
         $meeting = $this->meeting($vendor, $organiser);
 
+        // On the roster, which is what "a staff attendee" means. This used to be
+        // left out and the test still passed, because any staff member could
+        // open any meeting -- so it was exercising the link gate through a
+        // person who had no business seeing the meeting at all. Meetings is now
+        // scoped per user, and the fixture says what the name always claimed.
+        $meeting->attendees()->create([
+            'tenant_id' => self::TENANT, 'user_id' => $attendee->id,
+            'name' => $attendee->name, 'email' => $attendee->email, 'side' => 'internal',
+        ]);
+
         Sanctum::actingAs($attendee);
         $res = $this->getJson("/api/kickoff/meetings/{$meeting->id}")->assertOk();
 

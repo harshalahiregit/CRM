@@ -31,6 +31,7 @@ use App\Support\FrontendUrl;
 use App\Support\Shared\BusinessTime;
 use App\Support\Shared\KickoffStatus as Status;
 use App\Support\Shared\KickoffSubject;
+use App\Support\Shared\MeetingVisibility;
 use App\Support\Shared\MeetingIssueStatus;
 use App\Support\Shared\MeetingTypeCatalog;
 use App\Support\Shared\MomActionStatus;
@@ -53,14 +54,14 @@ class KickoffMeetingService
         private MeetingInviteService $invites,
     ) {}
 
-    public function list(int $tenantId, array $filters)
+    public function list(int $tenantId, array $filters, ?User $viewer)
     {
-        return $this->repo->filtered($tenantId, $filters);
+        return $this->repo->filtered($tenantId, $filters, $viewer);
     }
 
-    public function stats(int $tenantId): array
+    public function stats(int $tenantId, ?User $viewer): array
     {
-        return $this->repo->stats($tenantId);
+        return $this->repo->stats($tenantId, $viewer);
     }
 
     /**
@@ -68,9 +69,12 @@ class KickoffMeetingService
      * pending & overdue MOM, open & overdue actions, decisions, meetings by type,
      * and the action-closure effectiveness rate.
      */
-    public function dashboard(int $tenantId): array
+    public function dashboard(int $tenantId, ?User $viewer): array
     {
-        $meetings = KickoffMeeting::forTenant($tenantId);
+        // "All data is on the admin side" -- an admin's dashboard covers the
+        // tenant; everyone else's covers their own meetings, so the numbers
+        // always describe the list underneath them.
+        $meetings = MeetingVisibility::apply(KickoffMeeting::forTenant($tenantId), $viewer);
 
         // scheduled_at holds a wall clock in the tenant's timezone, so "today"
         // and "upcoming" have to be measured on that same clock. Against a UTC

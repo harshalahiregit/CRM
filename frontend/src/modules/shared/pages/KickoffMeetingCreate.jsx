@@ -10,6 +10,7 @@ import { useAuth } from '@/context/AuthContext'
 // shared engine under /app/tpv, Purchase's under /app/purchase. Aliased to
 // the old name so the call sites below read unchanged.
 import { meetingEngineApi as kickoffApi, meetingBase } from '@/services/meetingEngineApi'
+import ParticipantPicker from '@/components/meetings/ParticipantPicker'
 import { meetingApi } from '@/services/meetingApi'
 // The VENDOR api for the module in the URL. The picker, the ?vendor= prefill
 // and the contacts list were all pinned to tpvApi, so on /app/purchase this
@@ -258,6 +259,11 @@ export default function KickoffMeetingCreate() {
   const [customers, setCustomers] = useState([])
   const [staff, setStaff] = useState([])
   const [participants, setParticipants] = useState([])  // [{ id, name, role, organisation }]
+  // Everyone selectable, grouped by category (admin / staff / manager / HR /
+  // doctor / customer / vendor). The old picker was a flat staff list the server
+  // hard-coded to admin+staff, so a manager, an HR executive and a doctor could
+  // not be put on a meeting at all.
+  const [directory, setDirectory] = useState([])
   const [momItems,     setMomItems]     = useState([])  // [{ id, description, responsible, remarks, target_date }]
   const [agendaItems,  setAgendaItems]  = useState([])  // [{ id, item, owner, duration_minutes, priority }]
   const [decisions,    setDecisions]    = useState([])  // Decision register
@@ -444,6 +450,12 @@ export default function KickoffMeetingCreate() {
     // the picker empty rather than blocking the whole form.
     kickoffApi.customers().then(d => { if (Array.isArray(d)) setCustomers(d) }).catch(() => {})
     kickoffApi.staff().then(d => { if (Array.isArray(d)) setStaff(d) }).catch(() => {})
+    // `kickoffApi` here IS the engine proxy (see the import), so this resolves to
+    // Purchase's own picker under /app/purchase — which matters, because the
+    // vendor category is the one thing that differs between the two engines.
+    kickoffApi.participants()
+      .then(d => { if (Array.isArray(d?.categories)) setDirectory(d.categories) })
+      .catch(() => {})
   }, [])
 
   // ── Fetch tenant default platform preference on mount ────────────────────
@@ -534,6 +546,34 @@ export default function KickoffMeetingCreate() {
       organisation: c.company_name ?? '',
       phone:        c.phone ?? c.mobile ?? '',
       side:         'external',   // vendor contacts are the external side
+    }])
+  }
+
+  /**
+   * Add anyone from the category directory.
+   *
+   * Takes the person object from the picker rather than an id: the three sets
+   * have unrelated numbering, so a bare id would make user 5 and vendor 5 the
+   * same person.
+   */
+  const addPerson = (person) => {
+    if (!person) return
+    // Already on the list: by identity where there is one, otherwise by address,
+    // so the same person picked twice does not get two roster rows. The picker
+    // greys these out, but it is re-checked here — the guard belongs with the
+    // write, not with the thing that draws the button.
+    const dup = participants.some(p =>
+      (person.user_id && String(p.user_id) === String(person.user_id)) ||
+      (person.email && p.email && p.email.toLowerCase() === person.email.toLowerCase()))
+    if (dup) return
+    setParticipants(p => [...p, {
+      ...EMPTY_PARTICIPANT(),
+      name:         person.name ?? '',
+      user_id:      person.user_id ?? null,
+      email:        person.email ?? '',
+      designation:  person.designation ?? '',
+      organisation: person.organisation ?? '',
+      side:         person.side ?? 'internal',
     }])
   }
 
@@ -804,11 +844,17 @@ export default function KickoffMeetingCreate() {
     try {
       const scheduled_at = combineDateTime(form.meeting_date, form.meeting_time)
       const payload = {
-        subject_type:     'vendor',
-        subject_id:       form.subject_id,
+        // Only claim a subject when one was actually picked. subject_type and
+        // subject_id are a required_with PAIR server-side, so sending 'vendor'
+        // beside an empty id is a guaranteed 422 -- which is what stopped an
+        // internal meeting being scheduled at all, even though the column is
+        // nullable and the service handles a null subject the whole way down.
+        // The AI-agenda call three hundred lines up already had this right.
+        subject_type:     form.subject_id ? 'vendor' : undefined,
+        subject_id:       form.subject_id || undefined,
         // Full set. The backend keeps the first on kickoffable_* and
         // writes the rest to kickoff_meeting_subjects.
-        subject_ids:      vendorIds,
+        subject_ids:      vendorIds.length ? vendorIds : undefined,
         meeting_type:     form.meeting_type || 'kickoff',
         title:            form.title || undefined,
         scheduled_at,
@@ -1152,10 +1198,23 @@ export default function KickoffMeetingCreate() {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                   <label style={labelStyle}>Participants</label>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    {/* Quick-add from the staff directory — this is what links a
-                        participant to a Sangoe identity (Meeting.docx §5), and
-                        it fills the e-mail the invitation needs. */}
-                    {staff.length > 0 && (
+                    {/* Quick-add from the directory, grouped by category — this
+                        is what links a participant to a Sangoe identity
+                        (Meeting.docx §5) and fills the e-mail the invitation
+                        needs. optgroup rather than a second dropdown so admin,
+                        staff, manager, HR, doctor, customer and vendor are one
+                        list: picking a person should not start with deciding
+                        which menu they live in. Empty categories are dropped
+                        here rather than server-side, so a tenant with no
+                        customers yet sees no empty heading. */}
+                    <ParticipantPicker
+                      categories={directory}
+                      chosen={participants}
+                      onPick={addPerson}
+                      inputStyle={inputStyle} />
+                    {/* Fallback: the directory failed to load (it is a soft
+                        fetch), so the flat staff list is better than nothing. */}
+                    {directory.length === 0 && staff.length > 0 && (
                       <select
                         onChange={e => { addFromStaff(e.target.value); e.target.value = '' }}
                         style={{ ...inputStyle, width: 'auto', fontSize: 12, padding: '5px 10px' }}>

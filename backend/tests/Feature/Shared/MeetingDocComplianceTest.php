@@ -251,17 +251,17 @@ class MeetingDocComplianceTest extends TestCase
 
         $reg = app(MeetingRegisterService::class);
 
-        $decisions = $reg->decisions($this->actor->tenant_id);
+        $decisions = $reg->decisions($this->actor->tenant_id, [], $this->actor);
         $this->assertCount(1, $decisions);
         $this->assertSame($m->meeting_no, $decisions[0]['meeting_no'], 'a register row points back at its meeting');
         $this->assertSame($this->vendor->company_name, $decisions[0]['vendor']);
 
-        $this->assertCount(1, $reg->issues($this->actor->tenant_id));
-        $this->assertCount(1, $reg->actions($this->actor->tenant_id));
+        $this->assertCount(1, $reg->issues($this->actor->tenant_id, [], $this->actor));
+        $this->assertCount(1, $reg->actions($this->actor->tenant_id, [], $this->actor));
 
         // Filters narrow rather than crash on an unknown value.
-        $this->assertCount(0, $reg->decisions($this->actor->tenant_id, ['vendor' => 'Nobody Ltd']));
-        $this->assertCount(1, $reg->decisions($this->actor->tenant_id, ['search' => 'Mobilise']));
+        $this->assertCount(0, $reg->decisions($this->actor->tenant_id, ['vendor' => 'Nobody Ltd'], $this->actor));
+        $this->assertCount(1, $reg->decisions($this->actor->tenant_id, ['search' => 'Mobilise'], $this->actor));
     }
 
     /* ── §10 — every escalation target creates a real record ──────────── */

@@ -26,6 +26,10 @@ export const kickoffApi = {
   // Customers + staff for the meeting pickers (Meeting.docx §2 / §5). Both are
   // read through the owning module's contract, never its tables.
   customers: ()        => api.get('/kickoff/customers').then(r => r.data),
+  // Everyone selectable, grouped by category (admin / staff / manager / HR /
+  // doctor / customer / vendor). `staff` above stays -- it is the flat internal
+  // list three other screens already read; this is the richer picker beside it.
+  participants: ()     => api.get('/kickoff/participants').then(r => r.data),
   staff: ()            => api.get('/kickoff/staff').then(r => r.data),
 
   // Cross-meeting registers (Meeting.docx §8 / §9 / §10) — the searchable

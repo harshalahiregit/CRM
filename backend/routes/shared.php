@@ -13,14 +13,26 @@ use Illuminate\Support\Facades\Route;
 // their logged-in portal (gated on MoM approval), so there is no longer a public
 // bearer-token acknowledgement link.
 
-// ── Shared engine (Sanctum + role:admin,staff) ──────────────────────────
+// ── Shared engine (Sanctum + every internal role) ───────────────────────
+// Meetings is a company-wide module: anyone inside the CRM can schedule one and
+// sees the meetings they organise or were invited to; an admin sees the whole
+// tenant plus the reports. That narrowing is data-level, not route-level -- see
+// MeetingVisibility -- so every role reaches the same screens.
+//
+// Externals (client / vendor / third_party_vendor) are deliberately NOT here.
+// They keep the read-only governance view in their own portal and stay fully
+// selectable as participants: being invited to a meeting and being able to
+// schedule one are different things.
+//
+// One list, referenced everywhere below, so the groups cannot drift apart.
+$internal = 'role:'.implode(',', \App\Support\Shared\MeetingVisibility::INTERNAL_ROLES);
 // Kickoff meetings are a SHARED entity — they attach polymorphically to any
 // allowlisted subject (vendor/onboarding now, Shivam's projects later), so this
 // is not a TPV route group even though TPV is the first consumer.
 //
 // NOTE: both middleware must go in ONE ->middleware([...]) call — chaining a
 // second ->middleware() replaces the first and silently drops auth:sanctum.
-Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('kickoff')->group(function () {
+Route::middleware(['auth:sanctum', $internal])->prefix('kickoff')->group(function () {
     Route::get('/meetings/stats', [KickoffMeetingController::class, 'stats']);
     Route::get('/meetings/dashboard', [KickoffMeetingController::class, 'dashboard']);
     // Declared before /meetings/{kickoffMeeting} so the wildcard cannot swallow it.
@@ -32,6 +44,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('kickoff')->grou
     // the customers table itself.
     Route::get('/customers', [KickoffMeetingController::class, 'customers']);
     // Staff for the participant picker (§5 identity linking).
+    Route::get('/participants', [KickoffMeetingController::class, 'participants']);
     Route::get('/staff', [KickoffMeetingController::class, 'staff']);
     // Cross-meeting registers (Meeting.docx §8 / §9 / §10). Declared before the
     // /meetings/{kickoffMeeting} wildcard so it cannot swallow them.
@@ -117,7 +130,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('kickoff')->grou
 // One poll engine for every editor's "Poll" button. Access is NOT decided
 // here — PollService delegates to the module that owns each poll's context,
 // so staff-only is the outer guard and per-item visibility is the inner one.
-Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('polls')->group(function () {
+Route::middleware(['auth:sanctum', $internal])->prefix('polls')->group(function () {
     Route::get('/', [PollController::class, 'index']);   // ?context_type=&context_id=
     Route::post('/', [PollController::class, 'store']);
     Route::post('/{poll}/vote', [PollController::class, 'vote']);
@@ -128,7 +141,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('polls')->group(
 // ── Ad-hoc meeting links for the message composers ──────────────────────
 // The composer's "Meeting" button mints a Zoom / Google Meet / Teams link to
 // drop into a message. Distinct from /kickoff (which schedules a meeting record).
-Route::middleware(['auth:sanctum', 'role:admin,staff'])->group(function () {
+Route::middleware(['auth:sanctum', $internal])->group(function () {
     Route::post('/meeting-links', [MeetingLinkController::class, 'store']);
 });
 
@@ -142,7 +155,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('reactions')->gr
 // Sits outside the /kickoff prefix: it is a tenant-wide preference, not a
 // property of any one meeting. Reading it is open to staff (the Kickoff form
 // needs it); only an admin may change it.
-Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('settings')->group(function () {
+Route::middleware(['auth:sanctum', $internal])->prefix('settings')->group(function () {
     Route::get('/meeting-platform', [MeetingPlatformController::class, 'show']);
     Route::put('/meeting-platform', [MeetingPlatformController::class, 'update']);
 });
