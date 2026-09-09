@@ -57,6 +57,16 @@ class ContractService
         if (! empty($filters['expiring'])) {
             $q->expiringSoon();
         }
+        // "Every contract with this customer" -- the same question
+        // /contracts/for/{type}/{id} answers, but asked through the list so it
+        // composes with the status, category and search filters beside it.
+        if (! empty($filters['party_type']) && ! empty($filters['party_id'])) {
+            $class = self::PARTY_TYPES[$filters['party_type']] ?? null;
+            if (! $class) {
+                throw new BusinessException('Unknown counterparty type.', 422);
+            }
+            $q->where('party_type', $class)->where('party_id', (int) $filters['party_id']);
+        }
 
         return $q->orderByDesc('created_at')->get();
     }
@@ -164,7 +174,12 @@ class ContractService
         }
 
         if (array_key_exists('party_type', $data)) {
-            $out += $this->resolveParty($data, $tenantId);
+            // array_merge, not `+=`. Union keeps the LEFT operand's keys, so the
+            // null this loop had already written for `party_email` silently beat
+            // the address resolveParty had just looked up -- the fallback could
+            // never fire for any client that sends the key at all. resolveParty
+            // already prefers what the caller sent, so letting it win is right.
+            $out = array_merge($out, $this->resolveParty($data, $tenantId));
         }
 
         if (array_key_exists('status', $data) && ContractStatus::isValid($data['status'])) {
@@ -200,12 +215,36 @@ class ContractService
             throw new BusinessException('That customer or vendor was not found.', 404);
         }
 
+        // `?:`, not `??`. The form posts party_name: '' and party_email: '' from
+        // an untouched field, and `??` only catches null -- so a caller sending
+        // an id with a blank name saved a blank counterparty, which prints as a
+        // blank line on the PDF. An empty string here means "I did not supply
+        // one", which is exactly what the fallback is for.
         return [
-            'party_type' => $class,
-            'party_id'   => $model->id,
-            'party_name' => $data['party_name'] ?? ($model->{self::PARTY_NAME_FIELD[$key]} ?? null),
-            'party_email' => $data['party_email'] ?? ($model->email ?? null),
+            'party_type'  => $class,
+            'party_id'    => $model->id,
+            'party_name'  => ($data['party_name'] ?? null) ?: ($model->{self::PARTY_NAME_FIELD[$key]} ?? null),
+            'party_email' => ($data['party_email'] ?? null) ?: $this->partyEmail($key, $model),
         ];
+    }
+
+    /**
+     * Where each kind of counterparty keeps the address you would write to.
+     *
+     * A customer does not have one. `clients` has no email column at all -- the
+     * address belongs to a contact person, because a company does not sign
+     * anything, a named human does. Reading `$model->email` here therefore
+     * returned nothing for the commonest party type, and the signing request
+     * opened with an empty To field.
+     */
+    private function partyEmail(string $key, $model): ?string
+    {
+        if ($key !== 'customer') {
+            return $model->email ?? null;
+        }
+
+        return $model->primaryContact?->email
+            ?: $model->contacts()->orderByDesc('is_primary')->value('email');
     }
 
     /** Replace the page set, keeping the order the client sent. */

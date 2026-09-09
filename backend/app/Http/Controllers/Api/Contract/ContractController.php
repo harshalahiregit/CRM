@@ -10,6 +10,7 @@ use App\Services\Contract\ContractSigningService;
 use App\Support\Contract\ContractParty;
 use App\Exceptions\BusinessException;
 use App\Support\Contract\ContractStatus;
+use App\Support\FrontendUrl;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -32,7 +33,7 @@ class ContractController extends Controller
     {
         return response()->json($this->contracts->list(
             $request->user()->tenant_id,
-            $request->only(['status', 'category_id', 'search', 'expiring']),
+            $request->only(['status', 'category_id', 'search', 'expiring', 'party_type', 'party_id']),
         ));
     }
 
@@ -225,8 +226,7 @@ class ContractController extends Controller
                 'This contract has no terms yet. Add them before sending it out.', 422);
         }
 
-        $signUrl = rtrim((string) env('FRONTEND_URL', 'http://localhost:5173'), '/')
-            .'/contracts/sign/'.$contract->public_token;
+        $signUrl = FrontendUrl::to('/contracts/sign/'.$contract->public_token);
 
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView(
             'pdf.contract_module', $docs->renderData($contract),
@@ -284,8 +284,12 @@ class ContractController extends Controller
         $this->assertTenant($request, $contract);
 
         return response()->json([
-            'url'        => rtrim((string) env('FRONTEND_URL', 'http://localhost:5173'), '/')
-                            .'/contracts/sign/'.$contract->public_token,
+            'url'        => FrontendUrl::to('/contracts/sign/'.$contract->public_token),
+            // The one honest answer to "why does this link say localhost". The
+            // link is copied out of the UI and pasted into a chat window, so by
+            // the time it fails it is a long way from anything that could
+            // explain itself.
+            'is_local'   => FrontendUrl::isDevFallback(),
             'verify_url' => $docs->verifyUrl($contract),
         ]);
     }
@@ -340,8 +344,20 @@ class ContractController extends Controller
         $tenantId = $request->user()->tenant_id;
 
         return response()->json([
+            // A customer has no email of its own -- `clients` has no such
+            // column. Selecting one here was a hard SQL error on MySQL (which
+            // this picker swallows, leaving all three dropdowns blank) and on
+            // SQLite quietly returned the literal string "email" under a key of
+            // the same name. The address lives on the primary contact.
             'customer' => \App\Models\Customer\Client::forTenant($tenantId)
-                ->orderBy('company')->get(['id', 'company as name', 'email']),
+                ->with(['contacts:id,client_id,email,is_primary'])
+                ->orderBy('company')->get(['id', 'company'])
+                ->map(fn ($c) => [
+                    'id'    => $c->id,
+                    'name'  => $c->company,
+                    'email' => optional($c->contacts->firstWhere('is_primary', true)
+                               ?? $c->contacts->first())->email,
+                ])->values(),
             'vendor' => \App\Models\Vendor\Vendor::forTenant($tenantId)
                 ->orderBy('company_name')->get(['id', 'company_name as name', 'email']),
             'purchase_vendor' => \App\Models\Purchase\PurchaseVendor::forTenant($tenantId)

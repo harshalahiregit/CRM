@@ -7,6 +7,7 @@ use App\Models\Contract\Contract;
 use App\Services\Contract\ContractDocumentService;
 use App\Services\Contract\ContractService;
 use App\Support\Contract\ContractParty;
+use App\Support\FrontendUrl;
 use Illuminate\Http\Request;
 
 /**
@@ -156,8 +157,7 @@ class PartyContractController extends Controller
             // contract, which is exactly who the token was minted for — and it
             // keeps every id out of the portal's own URLs.
             'pdf_url'       => url("/api/public/contracts/{$c->public_token}/pdf"),
-            'sign_url'      => rtrim((string) env('FRONTEND_URL', 'http://localhost:5173'), '/')
-                               .'/contracts/sign/'.$c->public_token,
+            'sign_url'      => FrontendUrl::to('/contracts/sign/'.$c->public_token),
             'awaiting_me'   => $c->signatures
                 ->firstWhere('signer_party', ContractParty::PARTY)?->signed_at === null,
             'signatures'    => $c->signatures->map(fn ($s) => [

@@ -3,6 +3,7 @@
 namespace App\Services\Contract;
 
 use App\Models\Contract\Contract;
+use App\Support\FrontendUrl;
 use BaconQrCode\Renderer\Image\SvgImageBackEnd;
 use BaconQrCode\Renderer\ImageRenderer;
 use BaconQrCode\Renderer\RendererStyle\RendererStyle;
@@ -55,9 +56,11 @@ class ContractDocumentService
      */
     public function verifyUrl(Contract $contract): string
     {
-        $base = rtrim((string) env('FRONTEND_URL', 'http://localhost:5173'), '/');
-
-        return $base.'/contracts/verify/'.$contract->public_token;
+        // Through FrontendUrl, never env(): this string is baked into the QR
+        // code printed on every page of every contract PDF. A localhost value
+        // here is put on paper and handed to somebody, and no later fix reaches
+        // the copies already signed.
+        return FrontendUrl::to('/contracts/verify/'.$contract->public_token);
     }
 
     /** QR as an inline SVG data URI. */
