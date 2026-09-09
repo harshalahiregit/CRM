@@ -15,9 +15,16 @@
 
       <tr>
         <td style="padding:22px 26px;border-bottom:1px solid #eceef2;">
-          @php $brandLogo = \App\Support\Brand::logoDataUri(); @endphp
+          {{-- embedData, not a data: URI. Gmail, Outlook and Apple Mail all
+               strip `data:` image sources, so the mark arrived as a broken
+               image. embedData attaches the bytes and references them by cid:,
+               which is the one inline form mail clients do render — and, like
+               the data URI, it fetches nothing remote. --}}
+          @php $brandLogo = \App\Support\Brand::logoFile(); @endphp
           @if($brandLogo)
-            <img src="{{ $brandLogo }}" alt="{{ config('app.name') }}" style="height:34px;display:block;margin-bottom:6px;">
+            <img src="{{ $message->embedData($brandLogo['data'], $brandLogo['name'], $brandLogo['mime']) }}"
+                 alt="{{ config('app.name') }}" width="120"
+                 style="height:34px;width:auto;display:block;margin-bottom:6px;border:0;outline:none;text-decoration:none;">
           @endif
           <div style="font-size:17px;font-weight:bold;color:#1f2430;">{{ config('app.name') }}</div>
           <div style="font-size:12px;color:#6b7280;margin-top:2px;">{{ $contract->reference_no }}</div>

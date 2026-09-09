@@ -77,24 +77,56 @@ export default function SendContractModal({ open, contract, onClose, onSent }) {
     setBody(toPlain(TEMPLATES[key].body(contract)))
   }
 
-  const addCc = () => {
-    const v = ccDraft.trim()
-    // A rough check only. The server validates properly, and a client-side
-    // rule strict enough to be useful also rejects addresses that are valid.
-    if (!v || !v.includes('@') || cc.includes(v)) { setCcDraft(''); return }
-    setCc(list => [...list, v])
+  /**
+   * Turn whatever is in the draft box into chips.
+   *
+   * Returns the resulting list so submit() can use it in the same tick — React
+   * state does not update synchronously, so reading `cc` straight after calling
+   * this would still see the old array.
+   *
+   * A pasted CC line is usually several addresses at once, so commas, spaces
+   * and semicolons all split.
+   */
+  const flushCc = (raw = ccDraft) => {
+    const parts = String(raw).split(/[,;\s]+/).map(s => s.trim()).filter(Boolean)
+    if (!parts.length) return cc
+
+    // A rough check only. The server validates properly, and a client-side rule
+    // strict enough to be useful also rejects addresses that are valid.
+    const bad = parts.filter(p => !p.includes('@'))
+    if (bad.length) {
+      // Silently emptying the box on a typo is what made this look broken:
+      // the address vanished and nothing said why.
+      setErr(`${bad.join(', ')} — that does not look like an email address.`)
+      return cc
+    }
+
+    const next = [...cc]
+    for (const p of parts) if (! next.includes(p)) next.push(p)
+
+    setCc(next)
     setCcDraft('')
+    setErr(null)
+
+    return next
   }
 
   const submit = async () => {
     setErr(null)
     if (!to.trim()) { setErr('Enter the address to send this to.'); return }
 
+    // An address typed but not yet turned into a chip is still an address the
+    // person meant to copy in. Dropping it on Send is the likeliest way to
+    // conclude that CC "does not work" — nothing is shown, nothing is warned,
+    // and the mail simply goes out without them.
+    const ccList = ccDraft.trim() ? flushCc() : cc
+    if (ccDraft.trim() && ccList === cc) return   // flushCc set an error
+
     setSending(true)
     try {
       const res = await onSent({
         to: to.trim(),
-        cc: cc.length ? cc : undefined,
+        cc: ccList.length ? ccList : undefined,
         subject: subject.trim() || undefined,
         body: toHtml(body),
       })
@@ -152,10 +184,20 @@ export default function SendContractModal({ open, contract, onClose, onSent }) {
         <div>
           <label style={labelStyle}>CC</label>
           <div style={{ display: 'flex', gap: 6 }}>
+            {/* Comma and Tab commit too, and the field is flushed on blur and
+                again on Send — a CC field that only responds to Enter loses the
+                address of anyone who typed it and clicked the button. */}
             <input value={ccDraft} onChange={e => setCcDraft(e.target.value)} style={inputStyle}
               placeholder="Add an address and press Enter"
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCc() } }} />
-            <button type="button" onClick={addCc}
+              onBlur={() => { if (ccDraft.trim()) flushCc() }}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ',' || e.key === 'Tab') {
+                  if (!ccDraft.trim()) return
+                  e.preventDefault()
+                  flushCc()
+                }
+              }} />
+            <button type="button" onClick={() => flushCc()}
               style={{ padding: '0 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-input)', color: '#7C3AED', cursor: 'pointer' }}>
               <Plus size={15} />
             </button>

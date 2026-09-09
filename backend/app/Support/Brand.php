@@ -66,6 +66,41 @@ final class Brand
         return self::$cached = null;
     }
 
+    /**
+     * The logo as raw bytes plus its type — for E-MAIL, not for PDF.
+     *
+     * The comment above is right about a PDF and wrong about a mail client. A
+     * `data:` image source is exactly what Gmail, Outlook and Apple Mail refuse
+     * to render: it was a filter-evasion trick, so they strip it. The header of
+     * every contract e-mail therefore arrived as a broken-image icon.
+     *
+     * Mail wants the bytes attached and referenced by `cid:`, which is what
+     * $message->embedData() builds. Still embedded, still no remote fetch, so
+     * nothing is blocked and no open is reported back to us.
+     *
+     * @return array{data:string, mime:string, name:string}|null
+     */
+    public static function logoFile(): ?array
+    {
+        foreach (self::CANDIDATES as $name) {
+            $path = public_path($name);
+
+            if (is_file($path) && is_readable($path)) {
+                return [
+                    'data' => (string) file_get_contents($path),
+                    'name' => $name,
+                    'mime' => match (pathinfo($name, PATHINFO_EXTENSION)) {
+                        'svg'         => 'image/svg+xml',
+                        'jpg', 'jpeg' => 'image/jpeg',
+                        default       => 'image/png',
+                    },
+                ];
+            }
+        }
+
+        return null;
+    }
+
     /** Test seam: forget what was found, so a fixture can change the file. */
     public static function forget(): void
     {

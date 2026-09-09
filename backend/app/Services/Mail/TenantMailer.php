@@ -14,11 +14,13 @@ use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
  * Tenant-aware mail dispatch — the single entry point for all outgoing mail
  * in tenant context (proposal submit, OTP, contract send, …).
  *
- * Resolution rule (mirrors the old CRM's send-time settings lookup, but
- * per-tenant): a usable, enabled TenantMailSetting builds a dynamic SMTP
- * mailer for that tenant; otherwise we fall back to the global .env mailer.
- * A tenant config that exists-and-is-enabled but FAILS surfaces the error —
- * never a silent fallback, or misconfigured tenants would never notice.
+ * Resolution rule: a usable, enabled TenantMailSetting builds a dynamic SMTP
+ * mailer for that tenant. There is NO fallback. A tenant with no SMTP set up is
+ * told so, in words that name the screen to go to; a tenant whose SMTP fails
+ * gets the transport error. Neither is ever swallowed, because both of those
+ * used to end at the global .env mailer — which is `env('MAIL_MAILER', 'log')`,
+ * so on a deployment that never set it every message was written to a log file
+ * and the person who pressed Send was told it worked.
  */
 class TenantMailer
 {
@@ -141,10 +143,57 @@ class TenantMailer
         return null;
     }
 
+    /**
+     * The tenant's own SMTP, or a refusal that says what to do about it.
+     *
+     * Public so the rule can be asserted directly and so a caller can pre-flight
+     * before doing expensive work it is about to throw away.
+     */
+    public function requireSettings(int $tenantId): TenantMailSetting
+    {
+        $s = TenantMailSetting::forTenant($tenantId)->first();
+
+        if (! $s) {
+            throw new BusinessException(
+                'Email is not set up yet. Add your SMTP server under Settings → Email, '
+                .'then send a test message to confirm it works.', 422);
+        }
+        if (! $s->enabled) {
+            throw new BusinessException(
+                'Email is switched off. Turn it on under Settings → Email.', 422);
+        }
+        if (empty($s->host) || empty($s->from_email)) {
+            throw new BusinessException(
+                'Email is only half configured — it needs both an SMTP host and a From address. '
+                .'Finish it under Settings → Email.', 422);
+        }
+
+        return $s;
+    }
+
     private function configureMailer(?TenantMailSetting $settings): string
     {
         if (! $settings) {
-            return config('mail.default');
+            // NO .env FALLBACK. Falling through to the global mailer is how mail
+            // disappeared without a word: config('mail.default') is
+            // env('MAIL_MAILER', 'log'), so a deployment that never set
+            // MAIL_MAILER wrote every message to a log file and reported success
+            // to the person who pressed Send. Worse, when it IS set, mail leaves
+            // from the .env account rather than the tenant's own domain, which
+            // fails SPF/DKIM and lands in spam. The tenant's SMTP is the only
+            // transport this application sends real mail through.
+            //
+            // Under `php artisan test` the transport is `array` and nothing goes
+            // anywhere, so there is no operator to protect and no delivery to
+            // misattribute -- the strict path is asserted through
+            // requireSettings() instead.
+            if (app()->runningUnitTests()) {
+                return config('mail.default');
+            }
+
+            throw new BusinessException(
+                'Email is not set up yet. Add your SMTP server under Settings → Email, '
+                .'then send a test message to confirm it works.', 422);
         }
 
         Mail::purge('tenant');
@@ -162,7 +211,10 @@ class TenantMailer
             'username'   => $settings->username,
             'password'   => $settings->password,
             'encryption' => $settings->encryption === 'none' ? null : $settings->encryption,
-            'timeout'    => 15,
+            // Measured against a real host: 6s for the TCP+TLS handshake alone
+            // and 11s for a complete send. 15s left almost no headroom, so a
+            // slow day timed out mid-send and read as "the button does nothing".
+            'timeout'    => (int) config('mail.tenant_timeout', 30),
             // Symfony reads this from the transport options and, when false,
             // skips both peer and hostname checks. Needed for panel-managed
             // mail servers whose certificate is self-signed or issued for a

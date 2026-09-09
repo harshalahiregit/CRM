@@ -18,6 +18,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Tenant SMTP Timeout
+    |--------------------------------------------------------------------------
+    |
+    | Seconds allowed for a complete send through a tenant's own SMTP server.
+    | Measured against a real host: ~6s for the TCP+TLS handshake and ~11s for a
+    | full send, so the previous 15s left almost no headroom -- a slow day timed
+    | out mid-send, which on screen looks like the Send button doing nothing.
+    |
+    */
+
+    'tenant_timeout' => (int) env('MAIL_TENANT_TIMEOUT', 30),
+
+    /*
+    |--------------------------------------------------------------------------
     | Mailer Configurations
     |--------------------------------------------------------------------------
     |
