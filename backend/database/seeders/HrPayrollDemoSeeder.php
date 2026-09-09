@@ -266,11 +266,18 @@ class HrPayrollDemoSeeder extends Seeder
         $policy = HrLeavePolicy::where('tenant_id', $this->tenantId)->first();
 
         $people = [
-            // code,     name,             dept,        designation,        gross,  gender, dob,          joined,       late, ot,  bank, probationEnd
-            ['SNE-101', 'Priya Sharma',    'Operations', 'Senior Analyst',   48478, 'Female', '1977-03-14', '2020-06-01', 0,  0,   true,  null],
-            ['SNE-102', 'Rohit Verma',     'Operations', 'Analyst',          27030, 'Male',   '1966-09-02', '2019-01-15', 0,  0,   true,  null],
-            ['SNE-103', 'Anjali Singh',    'Sales',      'Sales Executive',  22000, 'Female', '1995-11-20', '2021-04-01', 3,  0,   true,  null],
-            ['SNE-104', 'Vikram Rao',      'Operations', 'Field Supervisor', 19500, 'Male',   '1990-07-08', '2022-02-14', 6,  0,   true,  null],
+            // Names are deliberately NOT the ones the older test fixtures use
+            // (Priya Sharma, Rohit Verma, Anjali Singh, Vikram Rao all exist as
+            // SNE-2026-* records auto-created from login accounts). The pre-check
+            // lists every active employee, so a collision puts the same name on
+            // screen twice — once Ready, once Blocked — and the first thing
+            // anybody being shown the module asks is which one is real.
+            //
+            // code,     name,               dept,        designation,        gross,  gender, dob,          joined,       late, ot,  bank, probationEnd
+            ['SNE-101', 'Kavita Deshmukh',  'Operations', 'Senior Analyst',   48478, 'Female', '1977-03-14', '2020-06-01', 0,  0,   true,  null],
+            ['SNE-102', 'Sanjay Kulkarni',  'Operations', 'Analyst',          27030, 'Male',   '1966-09-02', '2019-01-15', 0,  0,   true,  null],
+            ['SNE-103', 'Neha Bhosale',     'Sales',      'Sales Executive',  22000, 'Female', '1995-11-20', '2021-04-01', 3,  0,   true,  null],
+            ['SNE-104', 'Amit Pawar',       'Operations', 'Field Supervisor', 19500, 'Male',   '1990-07-08', '2022-02-14', 6,  0,   true,  null],
             ['SNE-105', 'Meera Iyer',      'Operations', 'Technician',       17800, 'Female', '1993-01-25', '2023-08-01', 0,  16,  true,  null],
             ['SNE-106', 'Arjun Nair',      'Sales',      'Trainee',          14000, 'Male',   '2000-05-30', '2026-06-01', 0,  0,   false, '2026-12-01'],
         ];
