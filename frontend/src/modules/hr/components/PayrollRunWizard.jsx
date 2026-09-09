@@ -49,12 +49,22 @@ const PAY_C = {
   Failed:  { c: '#f87171', bg: 'rgba(239,68,68,0.1)' },
 }
 
-/** Paid is the last stage; treat it as Disburse for the rail. */
+/**
+ * Paid is the last stage; the rail shows it standing on Disburse.
+ *
+ * `finished` is what separates "working on Disburse" from "done", because the
+ * rail ticks a step only once the run is PAST it — and nothing is ever past the
+ * last one. Without it Disburse could never turn green no matter how complete
+ * the run was, and the header read "Step 5 of 5 · Disburse" over a run that had
+ * paid everybody.
+ */
 const railIndex = (stage) => {
   if (stage === 'Paid') return 4
   const i = STAGES.findIndex(s => s.key === stage)
   return i < 0 ? 0 : i
 }
+
+const isFinished = (stage) => stage === 'Paid'
 
 export default function PayrollRunWizard({ run, records = [], onClose, onChanged, showToast }) {
   const [stage, setStage] = useState(run.stage || 'Pre-check')
@@ -68,12 +78,17 @@ export default function PayrollRunWizard({ run, records = [], onClose, onChanged
 
   const at = railIndex(stage)
   const looking = railIndex(viewing)
+  const finished = isFinished(stage)
 
+  // `okMsg` may be a function of the response, for actions whose outcome is not
+  // knowable before the server answers — "mark all paid" can leave a rejected
+  // transfer alone, and saying so is the whole point.
   const act = async (fn, okMsg) => {
     setBusy(true)
     try {
       const res = await fn()
-      if (okMsg) showToast(okMsg)
+      const msg = typeof okMsg === 'function' ? okMsg(res) : okMsg
+      if (msg) showToast(msg)
       onChanged?.()
       return res
     } catch (e) {
@@ -90,7 +105,9 @@ export default function PayrollRunWizard({ run, records = [], onClose, onChanged
           <div>
             <p className="text-sm font-black" style={{ color: 'var(--text-h)' }}>{run.period_label}</p>
             <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-              Step {at + 1} of 5 · {STAGES[at]?.label}
+              {finished
+                ? <span style={{ color: '#10b981', fontWeight: 700 }}>Complete · every transfer settled</span>
+                : <>Step {at + 1} of 5 · {STAGES[at]?.label}</>}
               {run.is_approved && <> · <span style={{ color: '#10b981' }}>approved by {run.approved_by || '—'}</span></>}
             </p>
           </div>
@@ -99,8 +116,10 @@ export default function PayrollRunWizard({ run, records = [], onClose, onChanged
 
         <div className="flex items-center gap-1 overflow-x-auto pb-1">
           {STAGES.map((s, i) => {
-            const done = i < at
-            const here = i === at
+            // A run that has paid everybody is past its last stage too, even
+            // though there is no sixth step to move on to.
+            const done = i < at || (finished && i === at)
+            const here = i === at && ! finished
             const active = i === looking
             return (
               <button
@@ -622,7 +641,25 @@ function Disburse({ run, records, busy, act }) {
   const anyReleased = (p.released ?? 0) > 0
 
   const mark = (record, status) => act(() => hrApi.payroll.runs.markPayment(record.id, status, null), `${record.employee_name} · ${status}`)
-  const markAll = (status) => act(() => hrApi.payroll.runs.markAllPayments(run.id, status), `All transfers marked ${status}`)
+
+  /**
+   * Bulk settlement only touches transfers still awaiting a decision, so the
+   * message has to name what it left alone. "All transfers marked Paid" over a
+   * run holding a rejected transfer is the sentence that would let somebody
+   * believe money had moved when it had not.
+   */
+  const markAll = (status) => act(
+    () => hrApi.payroll.runs.markAllPayments(run.id, status),
+    (res) => {
+      const changed = res?.data?.changed ?? res?.changed ?? 0
+      const skipped = res?.data?.skipped ?? res?.skipped ?? {}
+      const left = Object.entries(skipped).map(([k, n]) => `${n} ${k.toLowerCase()}`).join(', ')
+      if (! changed && ! left) return `Nothing left to mark ${status.toLowerCase()}`
+      return left
+        ? `${changed} marked ${status.toLowerCase()} · left alone: ${left}`
+        : `${changed} marked ${status.toLowerCase()}`
+    },
+  )
   const release = (visible) => act(() => hrApi.payroll.runs.releasePayslips(run.id, visible), visible ? 'Payslips released' : 'Payslips hidden')
 
   return (

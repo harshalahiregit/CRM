@@ -428,6 +428,69 @@ class PayrollWorkflowTest extends TestCase
         $this->assertSame(0, $run['payments']['pending']);
     }
 
+    /**
+     * Settling the run does not overturn a decision somebody already made.
+     *
+     * This is the one that was wrong. "Mark all paid" updated every record with
+     * no condition, so a transfer the bank had REJECTED became Paid, its payslip
+     * was released saying so, and the run closed — while the money had never
+     * left. The rejection note stayed attached to the row now marked Paid, which
+     * would have been the only clue.
+     *
+     * Re-paying a failed transfer is still possible; it just has to be done
+     * deliberately, one person at a time, through that row's own button.
+     */
+    public function test_settling_the_run_leaves_failed_and_held_transfers_alone(): void
+    {
+        $failed  = $this->person('SD47');
+        $held    = $this->person('SD48');
+        $pending = $this->person('SD49');
+        $this->process();
+        $this->postJson("/api/hr/payroll/runs/{$this->run->id}/approve")->assertOk();
+
+        $this->postJson("/api/hr/payroll/records/{$this->recordFor($failed)->id}/payment", [
+            'payment_status' => 'Failed', 'note' => 'Bank rejected — IFSC mismatch',
+        ])->assertOk();
+        $this->postJson("/api/hr/payroll/records/{$this->recordFor($held)->id}/payment", [
+            'payment_status' => 'Hold', 'note' => 'Withheld pending sign-off',
+        ])->assertOk();
+
+        $res = $this->postJson("/api/hr/payroll/runs/{$this->run->id}/payments", [
+            'payment_status' => 'Paid',
+        ])->assertOk()->json();
+
+        $this->assertSame('Failed', $this->recordFor($failed)->payment_status, 'a rejected transfer was overwritten');
+        $this->assertSame('Hold', $this->recordFor($held)->payment_status, 'a deliberate hold was overwritten');
+        $this->assertSame('Paid', $this->recordFor($pending)->payment_status);
+
+        // The note must still make sense against the status it sits beside.
+        $this->assertSame('Bank rejected — IFSC mismatch', $this->recordFor($failed)->payment_note);
+
+        // And the screen is told what was left alone, so it cannot report a
+        // blanket success over transfers it never touched.
+        $this->assertSame(1, $res['changed']);
+        $this->assertSame(['Failed' => 1, 'Hold' => 1], $res['skipped']);
+    }
+
+    /** Re-paying a failed transfer stays possible, one person at a time. */
+    public function test_a_failed_transfer_can_still_be_paid_individually(): void
+    {
+        $e = $this->person('SD51');
+        $this->process();
+        $this->postJson("/api/hr/payroll/runs/{$this->run->id}/approve")->assertOk();
+
+        $this->postJson("/api/hr/payroll/records/{$this->recordFor($e)->id}/payment", [
+            'payment_status' => 'Failed', 'note' => 'Bank rejected',
+        ])->assertOk();
+
+        $this->postJson("/api/hr/payroll/records/{$this->recordFor($e)->id}/payment", [
+            'payment_status' => 'Paid', 'note' => 'Re-sent with corrected IFSC',
+        ])->assertOk();
+
+        $this->assertSame('Paid', $this->recordFor($e)->payment_status);
+        $this->assertSame('Re-sent with corrected IFSC', $this->recordFor($e)->payment_note);
+    }
+
     /* ── Payslip visibility ───────────────────────────────────────────── */
 
     public function test_payslips_are_hidden_until_they_are_released(): void

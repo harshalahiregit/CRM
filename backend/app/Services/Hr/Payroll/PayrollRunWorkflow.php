@@ -323,8 +323,24 @@ class PayrollRunWorkflow
         return $record->fresh();
     }
 
-    /** The same decision for every payable person in the run, in one action. */
-    public function markAllPayments(HrPayrollRun $run, string $status, ?User $actor = null): HrPayrollRun
+    /**
+     * The same decision for every transfer still AWAITING one.
+     *
+     * Only pending records are touched. A Hold or a Failed is something Accounts
+     * already decided about a specific person — the bank rejected the transfer,
+     * or somebody withheld it deliberately — and a bulk action must not quietly
+     * reverse that. It used to: an unqualified update over every record turned a
+     * rejected transfer into a paid one, released the payslip saying so, and
+     * closed the run, while the money had never left. The contradicting note
+     * ("Bank rejected — IFSC mismatch") stayed attached to the row now marked
+     * Paid, which is the only reason it would ever have been noticed.
+     *
+     * Re-paying a failed transfer is still possible, and deliberately one person
+     * at a time: that is what the per-row buttons are for.
+     *
+     * @return array{run:HrPayrollRun, changed:int, skipped:array<string,int>}
+     */
+    public function markAllPayments(HrPayrollRun $run, string $status, ?User $actor = null): array
     {
         if (! $run->isApproved()) {
             throw new BusinessException('Payroll must be approved before payments can be recorded.');
@@ -333,15 +349,31 @@ class PayrollRunWorkflow
             throw new BusinessException('Invalid payment status.');
         }
 
-        $run->records()->update([
-            'payment_status' => $status,
-            'paid_at'        => $status === HrPayrollRecord::PAY_PAID ? now() : null,
+        // Counted before the write, so the caller can say what it left alone
+        // rather than reporting a blanket success that skipped half the run.
+        $skipped = $run->records()
+            ->where('payment_status', '!=', HrPayrollRecord::PAY_PENDING)
+            ->where('payment_status', '!=', $status)
+            ->selectRaw('payment_status, COUNT(*) as total')
+            ->groupBy('payment_status')
+            ->pluck('total', 'payment_status')
+            ->map(fn ($n) => (int) $n)
+            ->all();
+
+        $changed = $run->records()
+            ->where('payment_status', HrPayrollRecord::PAY_PENDING)
+            ->update([
+                'payment_status' => $status,
+                'paid_at'        => $status === HrPayrollRecord::PAY_PAID ? now() : null,
+            ]);
+
+        $run->recordAudit('Payroll Payments Updated', $actor, null, [
+            'status' => $status, 'changed' => $changed, 'skipped' => $skipped,
         ]);
-        $run->recordAudit('Payroll Payments Updated', $actor, null, ['status' => $status]);
 
         $this->syncDisbursementStage($run->fresh(), $actor);
 
-        return $run->fresh();
+        return ['run' => $run->fresh(), 'changed' => $changed, 'skipped' => $skipped];
     }
 
     /**

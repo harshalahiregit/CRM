@@ -168,9 +168,15 @@ class PayrollWorkflowController extends Controller
             'payment_status' => ['required', Rule::in(HrPayrollRecord::PAYMENT_STATUSES)],
         ]);
 
-        $this->workflow->markAllPayments($run, $data['payment_status'], $request->user());
+        $result = $this->workflow->markAllPayments($run, $data['payment_status'], $request->user());
 
-        return response()->json($this->payroll->showRun($id, $this->tenant($request)));
+        // The counts travel with the run so the screen can say what it actually
+        // did — a blanket "all transfers marked Paid" is untrue the moment
+        // anything was left alone, and that is exactly when it matters.
+        return response()->json(array_merge(
+            $this->payroll->showRun($id, $this->tenant($request)),
+            ['changed' => $result['changed'], 'skipped' => $result['skipped']],
+        ));
     }
 
     public function releasePayslips(Request $request, int $id)
