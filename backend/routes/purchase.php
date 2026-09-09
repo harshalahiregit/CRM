@@ -34,6 +34,7 @@ use App\Http\Controllers\Api\Purchase\PurchasePpeRequirementController;
 use App\Http\Controllers\Api\Purchase\PurchaseWorkforceAdminController;
 use App\Http\Controllers\Api\Purchase\PurchaseOrderReturnController;
 use App\Http\Controllers\Api\Purchase\PurchaseReportController;
+use App\Http\Controllers\Api\Purchase\PurchaseSafetyStrikeController;
 use App\Http\Controllers\Api\Purchase\PurchaseSettingController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorCategoryController;
 use Illuminate\Support\Facades\Route;
@@ -175,6 +176,13 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/vendors/{purchaseVendor}/overview',  [PurchaseVendorController::class, 'overview'])->whereNumber('purchaseVendor');
     Route::get('/vendors/{purchaseVendor}/customers', [PurchaseVendorController::class, 'customers'])->whereNumber('purchaseVendor');
     Route::post('/vendors/{purchaseVendor}/customers', [PurchaseVendorController::class, 'storeCustomer'])->whereNumber('purchaseVendor');
+    // Search and link, mirroring TPV. The Customer tab renders the same shared
+    // panel for both modules and calls all four; Purchase had only two, so the
+    // panel hung on "Searching...". Declared BEFORE nothing else needs it, but
+    // note /customers/search must not be swallowed by a numeric-only wildcard --
+    // whereNumber above keeps that safe.
+    Route::get('/vendors/{purchaseVendor}/customers/search', [PurchaseVendorController::class, 'searchCustomers'])->whereNumber('purchaseVendor');
+    Route::post('/vendors/{purchaseVendor}/customers/link', [PurchaseVendorController::class, 'linkCustomer'])->whereNumber('purchaseVendor');
     Route::put('/vendors/{purchaseVendor}',          [PurchaseVendorController::class, 'update'])->whereNumber('purchaseVendor');
     Route::patch('/vendors/{purchaseVendor}/status', [PurchaseVendorController::class, 'updateStatus'])->whereNumber('purchaseVendor');
     Route::delete('/vendors/{purchaseVendor}',       [PurchaseVendorController::class, 'destroy'])->whereNumber('purchaseVendor');
@@ -314,6 +322,16 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     // strict about it — declared before the {worker} wildcard above would ever
     // be consulted, since these are static segments.
     Route::get('/workforce/medicals',                 [PurchaseWorkforceAdminController::class, 'medicals']);
+
+    // ── Safety strikes (mirror of TPV's) ───────────────────────────────────
+    // Purchase had no strikes engine at all, so a repeat offender on a Purchase
+    // crew could be sent home with nothing recording it. Reads are staff-wide;
+    // issuing and voiding are admin authority, in the role:admin group below,
+    // because the third strike ends somebody's site access.
+    // Static segments first, so "stats" is never read as a worker id.
+    Route::get('/strikes/stats',                      [PurchaseSafetyStrikeController::class, 'stats']);
+    Route::get('/strikes',                            [PurchaseSafetyStrikeController::class, 'index']);
+    Route::get('/workforce/workers/{worker}/strikes', [PurchaseSafetyStrikeController::class, 'forWorker'])->whereNumber('worker');
 
     // Medical module — the register, the quality check, the timeline and the
     // external intake. Mirrors the TPV side route for route.
@@ -546,6 +564,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/kickoff/registers/decisions',     [PurchaseKickoffController::class, 'decisionRegister']);
     Route::get('/kickoff/registers/issues',        [PurchaseKickoffController::class, 'issueRegister']);
     Route::get('/kickoff/registers/actions',       [PurchaseKickoffController::class, 'actionRegister']);
+    Route::get('/kickoff/participants',            [PurchaseKickoffController::class, 'participants']);
     Route::get('/kickoff/staff',                   [PurchaseKickoffController::class, 'staff']);
     Route::get('/kickoff/vendors',                 [PurchaseKickoffController::class, 'vendors']);
     Route::get('/kickoff/vendor-status',           [PurchaseKickoffController::class, 'vendorStatus']);
@@ -665,6 +684,11 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
 
 // Approval authority is admin-only — a requester must not approve their own PR.
 Route::middleware(['auth:sanctum', 'role:admin'])->prefix('purchase')->group(function () {
+
+    // Safety strikes are admin authority: the third strike (or one Critical)
+    // terminates site access, and an appeal decides whether it stands.
+    Route::post('/workforce/workers/{worker}/strikes', [PurchaseSafetyStrikeController::class, 'store'])->whereNumber('worker');
+    Route::post('/strikes/{strike}/void',              [PurchaseSafetyStrikeController::class, 'void'])->whereNumber('strike');
 
     // ── Settings writes — module configuration is an admin concern ─────────
     Route::put('/settings', [PurchaseSettingController::class, 'update']);

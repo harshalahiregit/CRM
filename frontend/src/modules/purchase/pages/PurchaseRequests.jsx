@@ -445,7 +445,7 @@ function RequestFormModal({ editing, setEditing, saving, requestedBy, onClose, o
         <div style={{ position: 'relative' }}>
           <Search size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: '#a78bfa' }} />
           <input value={catQ} onChange={e => { setCatQ(e.target.value); setCatOpen(true) }} onFocus={() => setCatOpen(true)} onBlur={() => setTimeout(() => setCatOpen(false), 150)}
-            placeholder={catalog.length ? (f.vendor_id ? 'Pick from catalog — contract rates auto-apply for this vendor…' : 'Pick from catalog — select a vendor first to pull contract rates…') : 'No active catalog items yet'}
+            placeholder={catalog.length ? (f.vendor_id ? 'Pick from catalog — contract rates auto-apply for this vendor…' : 'Pick from catalog — select a vendor first to pull contract rates…') : 'No catalog items yet — type your items in the table below'}
             disabled={!catalog.length} style={{ ...inputStyle, paddingLeft: 32, borderColor: '#7C3AED55' }} />
         </div>
         {catOpen && catMatches.length > 0 && (

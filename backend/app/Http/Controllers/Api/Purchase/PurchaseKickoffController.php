@@ -545,11 +545,31 @@ class PurchaseKickoffController extends Controller
      */
 
     /** Internal staff who can chair, coordinate or attend. */
+    /**
+     * Everyone selectable for a Purchase meeting, grouped by category.
+     *
+     * Same directory as the shared engine -- only the `vendor` category differs,
+     * because a Purchase meeting's vendors live in purchase_vendors. Sharing the
+     * class is the point: this picker carried the identical ['admin','staff']
+     * hard-code, so a manager, an HR executive and a doctor could not be invited
+     * to a Purchase meeting either.
+     */
+    public function participants(Request $request, \App\Services\Shared\MeetingParticipantDirectory $directory)
+    {
+        return response()->json([
+            'categories' => $directory->all(
+                (int) $request->user()->tenant_id,
+                \App\Services\Shared\MeetingParticipantDirectory::PURCHASE,
+            ),
+        ]);
+    }
+
     public function staff(Request $request)
     {
         return response()->json(
             \App\Models\User::where('tenant_id', $request->user()->tenant_id)
-                ->whereIn('role', ['admin', 'staff'])
+                // Was ['admin','staff'] -- the same gap the shared engine had.
+                ->whereIn('role', \App\Support\Shared\MeetingVisibility::INTERNAL_ROLES)
                 ->orderBy('name')
                 ->get(['id', 'name', 'email', 'designation'])
         );
@@ -638,9 +658,21 @@ class PurchaseKickoffController extends Controller
         return response()->json([]);
     }
 
-    public function customers(Request $request)
+    /**
+     * Customers for the meeting form's client picker.
+     *
+     * This returned a hardcoded empty array, so the dropdown read "No customers
+     * found" on every Purchase meeting no matter how many customers existed —
+     * a stub that was never finished and looked, from the screen, exactly like a
+     * tenant with no customers.
+     *
+     * Served through the Customer module's contract, the same way the shared
+     * engine does it, so this module still never queries the customers table
+     * itself.
+     */
+    public function customers(Request $request, \App\Services\Helpdesk\Contracts\CustomerServiceContract $customers)
     {
-        return response()->json([]);
+        return response()->json($customers->listCustomers($request->user()->tenant_id));
     }
 
     /**

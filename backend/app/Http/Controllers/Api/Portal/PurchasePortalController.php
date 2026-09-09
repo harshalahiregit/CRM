@@ -580,6 +580,39 @@ class PurchasePortalController extends Controller
      * else the next one due. Only when neither exists does the most recent past
      * meeting stand in, so the tab still has something to show.
      */
+    /**
+     * Accept the kickoff, from the standalone Kickoff tab.
+     *
+     * That tab resolves the meeting from the token and shows no ids, so its
+     * Accept button had nowhere to post: the client called
+     * /portal/purchase/kickoff/accept and no route served it. The button
+     * existed, the client method existed, and every press 404'd.
+     *
+     * Resolves the vendor's own onboarding the way the rest of this controller
+     * does, then hands off to the SAME service the id-carrying onboarding route
+     * uses. Two ways to accept a kickoff that behave differently is a defect
+     * this module has already been bitten by once -- see ownKickoff() below.
+     */
+    public function acceptKickoff(Request $request)
+    {
+        $vendor = $this->purchaseVendor($request);
+
+        $onboarding = PurchaseOnboarding::forTenant($vendor->tenant_id)
+            ->where('purchase_vendor_id', $vendor->id)
+            ->latest('id')
+            ->first();
+
+        abort_unless($onboarding, 404, 'No onboarding found for this vendor.');
+
+        $ua = \App\Support\UserAgentInfo::parse($request->userAgent());
+
+        return response()->json($this->onboardingService->acknowledgeKickoff(
+            $onboarding, $request->user(), [
+                'ip' => $request->ip(), 'browser' => $ua['browser'], 'device' => $ua['device'],
+            ],
+        ));
+    }
+
     private function ownKickoff(Request $request): ?PurchaseKickoffMeeting
     {
         $vendor = $this->purchaseVendor($request);
