@@ -16,8 +16,10 @@ use App\Models\User;
 use App\Services\Hr\AdvanceService;
 use App\Services\Hr\AttendanceCorrectionService;
 use App\Services\Hr\EmployeeIdentityService;
+use App\Services\Hr\LeaveApprovalService;
 use App\Services\Hr\ReimbursementService;
 use App\Support\Hr\AdvanceStage;
+use App\Support\Hr\HrSetting;
 use App\Support\Hr\ReimbursementStatus;
 use App\Support\Hr\TenantTime;
 use App\Support\Hrm\HrmResponse;
@@ -46,6 +48,7 @@ class HrmAdminController extends Controller
         private ReimbursementService $claims,
         private AdvanceService $advances,
         private AttendanceCorrectionService $corrections,
+        private LeaveApprovalService $leaves,
     ) {
     }
 
@@ -98,7 +101,9 @@ class HrmAdminController extends Controller
             ->get()
             ->keyBy('employee_id');
 
-        $employees = HrEmployee::where('tenant_id', $tenantId)->orderBy('name')->get();
+        $employees = HrEmployee::where('tenant_id', $tenantId)
+            ->with('user:id,avatar')
+            ->orderBy('name')->get();
 
         return HrmResponse::ok($employees->map(function (HrEmployee $e) use ($today, $tenantId) {
             $a = $today->get($e->id);
@@ -111,7 +116,7 @@ class HrmAdminController extends Controller
                 'employee_code' => (string) $e->employee_code,
                 'department'    => (string) ($e->department ?? ''),
                 'designation'   => (string) ($e->designation ?? ''),
-                'avatar'        => '',
+                'avatar'        => \App\Support\Hrm\HrmAvatar::url($e->user?->avatar),
                 // "Absent" when nothing was recorded — which is the honest reading.
                 'status'        => (string) ($a->status ?? 'Absent'),
                 // The workspace's clock, not the server's — stored UTC would show
@@ -148,6 +153,18 @@ class HrmAdminController extends Controller
             return $deny;
         }
 
+        // Lower-cased before validation. The app's leave screen sends
+        // 'Approved'/'Rejected' capitalised — it matches what the column
+        // stores — while this rule only accepted lower case, so every decision
+        // from the admin leave screen came back "The selected status is
+        // invalid." as a 200 with status 0. The app only acts on status 1, so
+        // the button did nothing at all and said nothing: Approve and Reject
+        // there had never worked. The other three decision screens happen to
+        // send lower case, which is why only leave was dead.
+        $request->merge([
+            'status' => strtolower((string) $request->input('status')),
+        ]);
+
         $data = $request->validate([
             'leave_id' => 'required|integer',
             'status'   => 'required|in:approved,rejected',
@@ -169,12 +186,25 @@ class HrmAdminController extends Controller
             return HrmResponse::fail('That leave request has already been decided.');
         }
 
-        $leave->update([
-            'status'            => $data['status'] === 'approved' ? 'Approved' : 'Rejected',
-            'decision_remarks'  => $data['remark'] ?? null,
-            'decided_by'        => $request->user()->id,
-            'decided_at'        => now(),
-        ]);
+        // Through the service, exactly like the other three decisions on this
+        // controller. This used to write the row itself, which quietly skipped
+        // everything approving a leave is actually supposed to do: the balance
+        // was never deducted and no ledger entry written, so an approved leave
+        // cost the employee nothing; no audit line was recorded; and the
+        // employee was never told, on any channel. Approving from the CRM did
+        // all of it and approving from the app did none, which is the kind of
+        // difference nobody notices until the balances are wrong.
+        $tenantId = (int) $request->user()->tenant_id;
+
+        try {
+            $data['status'] === 'approved'
+                ? $this->leaves->approve((int) $leave->id, $data['remark'] ?? null, $tenantId, $request->user())
+                : $this->leaves->reject((int) $leave->id, $data['remark'] ?? null, $tenantId, $request->user());
+        } catch (\Throwable $e) {
+            // A refusal the service raises (no balance left, already decided)
+            // is the employee's answer, not a 500.
+            return HrmResponse::fail($e->getMessage());
+        }
 
         return HrmResponse::ok([], $data['status'] === 'approved' ? 'Leave approved.' : 'Leave rejected.');
     }
@@ -332,7 +362,9 @@ class HrmAdminController extends Controller
             return $deny;
         }
 
-        $rows = HrAdvanceSettlement::where('tenant_id', $request->user()->tenant_id)
+        $tenantId = (int) $request->user()->tenant_id;
+
+        $rows = HrAdvanceSettlement::where('tenant_id', $tenantId)
             ->where('status', HrAdvanceSettlement::PENDING)
             ->with(['advance.employee:id,name', 'attachments'])
             ->orderBy('id')
@@ -343,7 +375,8 @@ class HrmAdminController extends Controller
             'settlement_id'     => $s->id,
             'advance_id'        => $s->advance?->reference ?: (string) $s->advance_id,
             'employee_name'     => (string) ($s->advance?->employee?->name ?? ''),
-            'advance_type'      => (string) ($s->advance?->advance_type ?? ''),
+            'advance_type'       => (string) ($s->advance?->advance_type ?? ''),
+            'advance_type_label' => $this->optionLabel($tenantId, 'advance_types', $s->advance?->advance_type),
             'disbursed_amount'  => $this->money($s->advance?->disbursed_amount),
             'actual_expense'    => $this->money($s->actual_expense),
             'balance_return'    => $this->money($s->balance_return),
@@ -398,6 +431,7 @@ class HrmAdminController extends Controller
         }
 
         $rows = HrEmployee::where('tenant_id', $request->user()->tenant_id)
+            ->with('user:id,avatar')
             ->orderBy('name')
             ->get();
 
@@ -411,7 +445,7 @@ class HrmAdminController extends Controller
             'department'    => (string) ($e->department ?? ''),
             'designation'   => (string) ($e->designation ?? ''),
             'status'        => (string) $e->status,
-            'avatar'        => '',
+            'avatar'        => \App\Support\Hrm\HrmAvatar::url($e->user?->avatar),
         ])->values()->all());
     }
 
@@ -879,6 +913,16 @@ class HrmAdminController extends Controller
                 'end_date'         => $l->to_date ? $l->to_date->format('Y-m-d') : '',
                 'total_leave_days' => $this->money($l->days),
                 'leave_reason'     => (string) ($l->reason ?? ''),
+                // The approval screen reads 'reason' and 'applied_on', and this
+                // list sent neither — so every leave awaiting a decision showed
+                // "No reason provided." and "Applied —", no matter what the
+                // employee typed. The approver was being asked to decide with
+                // the two facts that justify the request missing from the
+                // screen. Sent from here rather than renaming in the app, so a
+                // phone on the current build is fixed without a release; the
+                // raises list already sends 'reason' under that name.
+                'reason'           => (string) ($l->reason ?? ''),
+                'applied_on'       => $l->created_at?->format('d M Y') ?? '',
                 'status'           => (string) $l->status,
             ])->values()->all();
     }
@@ -942,6 +986,12 @@ class HrmAdminController extends Controller
                 'advance_id'            => $a->reference ?: (string) $a->id,
                 'employee_name'         => (string) ($a->employee->name ?? ''),
                 'advance_type'          => (string) ($a->advance_type ?? ''),
+                // The readable versions, which the screens show instead of the
+                // stored keys. Category was not sent at all, so the detail
+                // screen printed "—" for a value that was saved.
+                'advance_type_label'    => $this->optionLabel($tenantId, 'advance_types', $a->advance_type),
+                'category'              => (string) ($a->category ?? ''),
+                'category_label'        => $this->optionLabel($tenantId, 'advance_categories', $a->category),
                 'purpose'               => (string) $a->purpose,
                 'amount'                => $this->money($a->amount_approved ?? $a->amount_requested),
                 'amount_requested'      => $this->money($a->amount_requested),
@@ -973,6 +1023,38 @@ class HrmAdminController extends Controller
         $total = collect($this->salariesByEmployee($tenantId))->sum(fn ($s) => (float) ($s->monthly_ctc ?? 0));
 
         return $this->money($total);
+    }
+
+    /**
+     * The human label a workspace gave an option key, e.g. site_cash → "Site
+     * Cash Advance".
+     *
+     * The keys are what we store and the labels live in HR settings as
+     * "key|Label" lines, so a workspace can rename an option without a release.
+     * Approval screens were printing the raw key at people — "site_cash" — which
+     * is the storage format, not a word anybody uses.
+     */
+    private function optionLabel(int $tenantId, string $settingKey, ?string $value): string
+    {
+        $value = trim((string) $value);
+
+        if ($value === '') {
+            return '';
+        }
+
+        $raw = (string) app(\App\Services\Settings\SettingsService::class)
+            ->get($tenantId, HrSetting::GROUP, $settingKey, HrSetting::defaults()[$settingKey] ?? '');
+
+        foreach (preg_split('/\r\n|\r|\n/', $raw) ?: [] as $line) {
+            [$key, $label] = array_pad(explode('|', trim($line), 2), 2, null);
+
+            if (trim((string) $key) === $value) {
+                return trim((string) ($label ?: $key));
+            }
+        }
+
+        // Unknown key — still better than the raw value with its underscores.
+        return ucwords(str_replace('_', ' ', $value));
     }
 
     private function money($value): string

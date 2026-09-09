@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
+import { GRAD } from '@/components/ui/brand'
 import { Plus, Pencil, Trash2, X, Scale, MapPin, AlertTriangle, Info, ShieldCheck } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
-
-const GRAD = 'linear-gradient(135deg,#7C3AED,#5b21b6)'
 
 /* ────────────────────────────────────────────────────────────────────────
    The rule book, described declaratively.
@@ -16,6 +15,7 @@ const RULE_TYPES = [
   { key:'pf',       label:'Provident Fund',   blurb:'Employee + employer share on PF-applicable wages.' },
   { key:'esic',     label:'ESIC',             blurb:'Applies only at or below the gross threshold.' },
   { key:'pt',       label:'Professional Tax', blurb:'Levied per state — one rule per state you employ in.', perState:true },
+  { key:'lwf',      label:'Labour Welfare Fund', blurb:'Per state, and HALF-YEARLY — a flat amount taken only in the months you name, not every month.', perState:true },
   { key:'bonus',    label:'Bonus',            blurb:'Statutory bonus provision.' },
   { key:'gratuity', label:'Gratuity',         blurb:'Monthly provision, and the formula the exit Full & Final settlement pays on.' },
   { key:'tds',      label:'TDS / Income Tax', blurb:'Per regime. Slabs applied marginally on year-to-date income, not a 12× projection.' },
@@ -33,11 +33,21 @@ const FIELDS = {
     ['eps_rate', 'EPS %', 'num', 'Carved OUT of the employer share, not added to it.'],
     ['wage_ceiling', 'Wage ceiling', 'num'],
     ['restrict_to_ceiling', 'Restrict contribution to the ceiling', 'bool'],
+    ['eps_max_age', 'EPS ends at age', 'num', 'Pension membership stops here — usually 58. Past it the whole employer share goes to EPF instead. Leave blank to never stop.'],
+    ['admin_charge_rate', 'A/C 02 — admin charge %', 'num', "EPFO's administration charge on the challan. Has been 1.10, 0.85, 0.65 and 0.50 over the years, so it is a setting rather than a constant."],
+    ['edli_rate', 'A/C 21 — EDLI %', 'num', 'The EDLI insurance premium on the challan.'],
   ],
   esic: [
-    ['gross_threshold', 'Gross threshold', 'num', 'At or below this gross, ESIC applies. Above it, it does not.'],
+    ['gross_threshold', 'Wage threshold', 'num', 'At or below this, ESIC applies. Above it, it does not.'],
+    ['eligibility_base', 'Tested against', 'select:wages,gross', 'Which figure the threshold is compared with: the ESIC wage base (Basic + DA), or total gross pay. This decides who is covered at all — check it with your consultant.'],
     ['employee_rate', 'Employee share %', 'num'],
     ['employer_rate', 'Employer share %', 'num'],
+    ['round_employee_up', "Round the employee's share up to the rupee", 'bool', 'The employer share always rounds to the nearest rupee.'],
+  ],
+  lwf: [
+    ['employee_amount', 'Employee amount', 'num', 'A flat figure, not a percentage — it does not scale with salary.'],
+    ['employer_amount', 'Employer amount', 'num'],
+    ['months', 'Deducted in', 'months-list', 'The months it is taken in. Maharashtra takes it in June and December. Leave empty for every month.'],
   ],
   pt: [
     ['slabs', 'Slabs', 'slabs:amount'],
@@ -128,6 +138,18 @@ export default function StatutorySettings({ showToast }) {
   const [saving, setSaving]   = useState(false)
   const [defaultState, setDefaultState] = useState('')
   const [loanLimits, setLoanLimits] = useState({ warn: 40, max: 50, enforce: true })
+  // What holds up a run, who may approve it, whether probation gates leave.
+  // Each of these was a decision made in PHP until now.
+  const [runControls, setRunControls] = useState({
+    require_bank_for_payroll: true,
+    require_pan_for_payroll: true,
+    require_aadhaar_for_payroll: false,
+    require_work_state_for_payroll: false,
+    require_separate_approver: false,
+    probation_blocks_leave: true,
+  })
+  // The states that levy PT, as state CODES.
+  const [ptStates, setPtStates] = useState([])
   const [savingDefault, setSavingDefault] = useState(false)
 
   const load = useCallback(async () => {
@@ -140,6 +162,16 @@ export default function StatutorySettings({ showToast }) {
         max: m?.defaults?.loan_emi_max_percent ?? 50,
         enforce: m?.defaults?.loan_enforce_eligibility ?? true,
       })
+      const d = m?.defaults || {}
+      setRunControls({
+        require_bank_for_payroll:       d.require_bank_for_payroll ?? true,
+        require_pan_for_payroll:        d.require_pan_for_payroll ?? true,
+        require_aadhaar_for_payroll:    d.require_aadhaar_for_payroll ?? false,
+        require_work_state_for_payroll: d.require_work_state_for_payroll ?? false,
+        require_separate_approver:      d.require_separate_approver ?? false,
+        probation_blocks_leave:         d.probation_blocks_leave ?? true,
+      })
+      setPtStates(Array.isArray(d.pt_states) ? d.pt_states : [])
     } catch (e) { showToast?.(e?.message || 'Could not load statutory rules', 'error') }
     finally { setLoading(false) }
   }, [showToast])
@@ -157,6 +189,8 @@ export default function StatutorySettings({ showToast }) {
         loan_emi_warn_percent: Number(loanLimits.warn),
         loan_emi_max_percent: Number(loanLimits.max),
         loan_enforce_eligibility: !!loanLimits.enforce,
+        ...runControls,
+        pt_states: ptStates,
       })
       setDefaultState(d?.default_work_state || '')
       showToast?.('Payroll defaults saved')
@@ -251,6 +285,74 @@ export default function StatutorySettings({ showToast }) {
           )}
         </div>
 
+        {/* What holds up a payroll run.
+
+            Each of these was decided in PHP before, which meant a workspace
+            either tolerated bad filings or could not pay anybody, with no way
+            to choose. Whether a missing Aadhaar should stop a month is a
+            judgement about the business — so it is theirs. */}
+        <div className="mt-4 pt-4" style={{ borderTop:'1px solid var(--border)' }}>
+          <div className="flex items-center gap-2 mb-1"><ShieldCheck size={15} style={{ color:'#a78bfa' }}/>
+            <p className="text-xs font-black" style={{ color:'var(--text-h)' }}>Payroll run controls</p></div>
+          <p className="text-[11px] mb-3" style={{ color:'var(--text-muted)' }}>
+            What stops an employee being paid, as against what is only reported. Anything switched off still
+            shows as a warning on the pre-check — a requirement nobody is enforcing is still worth seeing.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {[
+              ['require_bank_for_payroll',       'Bank details are required', 'Without an account and IFSC the transfer cannot be made at all.'],
+              ['require_pan_for_payroll',        'PAN is required',           'TDS is filed against it; without one the employee is taxed twice.'],
+              ['require_aadhaar_for_payroll',    'Aadhaar is required',       'Needed for the PF and ESIC filings, not for the transfer itself.'],
+              ['require_work_state_for_payroll', 'Work state is required',    'Professional Tax is levied per state; without one it computes as zero.'],
+              ['require_separate_approver',      'Payroll needs a second approver', 'The person who processed a run may not also approve it. Leave off where there is only one administrator.'],
+              ['probation_blocks_leave',         'Leave only after probation', 'Leave taken before confirmation is unpaid. A leave policy can still permit it individually.'],
+            ].map(([key, label, help]) => (
+              <label key={key} className="flex items-start gap-2 text-xs font-semibold cursor-pointer rounded-xl p-2.5"
+                style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>
+                <input type="checkbox" className="mt-0.5" checked={!!runControls[key]}
+                  onChange={e=>setRunControls(c => ({ ...c, [key]: e.target.checked }))}/>
+                <span>
+                  <span className="block" style={{ color:'var(--text-h)' }}>{label}</span>
+                  <span className="block text-[10px] font-normal mt-0.5">{help}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {/* Which states offer Professional Tax.
+
+            PT is a state levy and roughly a third of the country does not
+            impose it — the rule screen offered all 36 regardless, so Delhi sat
+            next to Maharashtra with nothing to say it collects nothing. A
+            setting rather than a constant because a budget can change it and
+            the people who notice are the ones running payroll. */}
+        <div className="mt-4 pt-4" style={{ borderTop:'1px solid var(--border)' }}>
+          <div className="flex items-center gap-2 mb-1"><Scale size={15} style={{ color:'#a78bfa' }}/>
+            <p className="text-xs font-black" style={{ color:'var(--text-h)' }}>Professional Tax states</p></div>
+          <p className="text-[11px] mb-3" style={{ color:'var(--text-muted)' }}>
+            Only these appear when a PT rule is created. Ticking a state that levies nothing invites a slab
+            that would then deduct.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {(meta.all_states || meta.work_states || []).map(s => {
+              const on = (ptStates || []).includes(s.code)
+              return (
+                <button key={s.code} type="button"
+                  onClick={()=>setPtStates(prev => on ? prev.filter(c => c !== s.code) : [...prev, s.code])}
+                  className="text-[10px] font-bold px-2.5 py-1 rounded-lg"
+                  style={{ background: on ? 'rgba(124,58,237,0.14)' : 'var(--bg-input)',
+                           color: on ? '#a78bfa' : 'var(--text-muted)' }}>
+                  {s.name}
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-[10px] mt-2" style={{ color:'var(--text-muted)' }}>
+            {(ptStates || []).length} selected. A state that already carries a PT rule here keeps appearing even if it is unticked.
+          </p>
+        </div>
+
         <div className="mt-4">
           <button onClick={saveDefault} disabled={savingDefault}
             className="px-4 py-2 rounded-xl text-xs font-bold text-white" style={{ background:GRAD, opacity:savingDefault?0.7:1 }}>
@@ -323,7 +425,11 @@ function summarise(r) {
   const c = r.config || {}
   switch (r.rule_type) {
     case 'pf':   return `Employee ${c.employee_rate ?? '—'}% · Employer ${c.employer_rate ?? '—'}%${c.wage_ceiling ? ` · ceiling ${c.wage_ceiling}` : ''}${c.restrict_to_ceiling ? ' (restricted)' : ''}`
-    case 'esic': return `Threshold ${c.gross_threshold ?? '—'} · Employee ${c.employee_rate ?? '—'}% · Employer ${c.employer_rate ?? '—'}%`
+    case 'esic': return `Threshold ${c.gross_threshold ?? '—'} on ${c.eligibility_base === 'gross' ? 'gross' : 'ESIC wages'} · Employee ${c.employee_rate ?? '—'}% · Employer ${c.employer_rate ?? '—'}%`
+    case 'lwf': {
+      const months = (c.months || []).map(m => MONTHS[Number(m) - 1]).filter(Boolean)
+      return `${c.employee_amount ?? '—'} employee + ${c.employer_amount ?? '—'} employer · ${months.length ? months.join(', ') : 'every month'}`
+    }
     case 'pt':   return `${(c.slabs || []).length} slab(s)${c.month_overrides && Object.keys(c.month_overrides).length ? ` · ${Object.keys(c.month_overrides).length} month override(s)` : ''}`
     case 'tds': {
       if (c.regimes) {
@@ -403,6 +509,7 @@ function RuleModal({ modal, setModal, meta, saving, save }) {
               </label>
             )
             if (kind === 'regimes') return <RegimeEditor key={key} config={form.config} setConfig={setConfig} />
+            if (kind === 'months-list') return <MonthPicker key={key} label={label} hint={hint} value={getIn(form.config, key) || []} onChange={v=>setConfig(key, v)} />
             if (kind === 'months') return <MonthOverrides key={key} label={label} hint={hint} value={getIn(form.config, key) || {}} onChange={v=>setConfig(key, v)} />
             if (kind?.startsWith('slabs')) return (
               <SlabEditor key={key} label={label} valueKey={kind.split(':')[1]} slabs={getIn(form.config, key) || []} onChange={v=>setConfig(key, v)} />
@@ -565,6 +672,18 @@ function SlabEditor({ label, valueKey, slabs, onChange }) {
               value={r.to ?? ''} onChange={e=>set(i, 'to', e.target.value === '' ? null : Number(e.target.value))}/>
             <input type="number" step="any" className="input-3d text-xs" style={{ width:96 }} placeholder={valueKey === 'rate' ? '%' : 'Amount'}
               value={r[valueKey] ?? ''} onChange={e=>set(i, valueKey, num(e.target.value))}/>
+            {/* Gender applies to a flat-amount slab (PT), not to a marginal tax
+                band. Maharashtra needs it: a man pays from 7,501 and a woman only
+                above 25,000, so one list for everybody charges women a tax they
+                do not owe. "Anyone" leaves the slab unrestricted. */}
+            {valueKey === 'amount' && (
+              <select className="input-3d text-xs" style={{ width:104 }}
+                value={r.gender ?? ''} onChange={e=>set(i, 'gender', e.target.value || undefined)}>
+                <option value="">Anyone</option>
+                <option value="M">Men</option>
+                <option value="F">Women</option>
+              </select>
+            )}
             <button onClick={()=>onChange(rows.filter((_, j) => j !== i))} className="p-1.5 rounded-lg" style={{ background:'rgba(239,68,68,0.1)' }}>
               <Trash2 size={12} style={{ color:'#f87171' }}/>
             </button>
@@ -574,8 +693,49 @@ function SlabEditor({ label, valueKey, slabs, onChange }) {
       <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
         {valueKey === 'rate'
           ? 'Applied marginally — each band taxes only the income inside it.'
-          : 'The first slab the monthly gross falls into wins. Leave the last "To" blank for an open top band.'}
+          : 'The first slab the monthly gross falls into wins — and where a slab names a gender, only that gender. Leave the last "To" blank for an open top band.'}
       </p>
+    </div>
+  )
+}
+
+/**
+ * Which months a half-yearly levy is taken in.
+ *
+ * Not to be confused with MonthOverrides below, which maps a month to a DIFFERENT
+ * AMOUNT. This one is a plain list of the months the deduction happens at all —
+ * LWF in June and December, and nothing in the other ten.
+ */
+function MonthPicker({ label, hint, value, onChange }) {
+  const chosen = (value || []).map(Number)
+  const toggle = (m) => onChange(
+    chosen.includes(m) ? chosen.filter(x => x !== m) : [...chosen, m].sort((a, b) => a - b)
+  )
+
+  return (
+    <div>
+      <label className="label">{label}</label>
+      <div className="flex flex-wrap gap-1.5">
+        {MONTHS.map((name, i) => {
+          const m = i + 1
+          const on = chosen.includes(m)
+          return (
+            <button key={m} type="button" onClick={()=>toggle(m)}
+              className="px-2.5 py-1 rounded-lg text-[11px] font-bold"
+              style={on
+                ? { background:GRAD, color:'#fff' }
+                : { background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>
+              {name.slice(0, 3)}
+            </button>
+          )
+        })}
+      </div>
+      <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+        {chosen.length === 0
+          ? 'None chosen — the deduction is taken every month.'
+          : `Taken in ${chosen.map(m => MONTHS[m - 1]).join(', ')}.`}
+      </p>
+      {hint && <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>{hint}</p>}
     </div>
   )
 }

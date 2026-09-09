@@ -1,0 +1,241 @@
+# Deploying to `crm.nexforeconsulting.com`
+
+The Nexfore test box. **This is not the same server as `app.sangoe.in`** — every path
+in `DEPLOY.md` points at `/var/www/vhosts/sangoe.in/` and is wrong here. Use this file.
+
+First set up 8 Sep 2026. Everything below was actually run, not planned.
+
+---
+
+## 1. The environment
+
+| | |
+|---|---|
+| URL | https://crm.nexforeconsulting.com |
+| Server | `srv407120.hstgr.cloud` · Hostinger VPS · `45.90.220.5` |
+| OS / panel | Ubuntu 22.04.5 · Plesk Obsidian 18.0.80 |
+| SSH user | `nexforeconsulting.co_bhmrselvhng` (shared with the parent domain) |
+| App root | `/var/www/vhosts/nexforeconsulting.com/crm.nexforeconsulting.com/` |
+| Document root | `<app root>/public` — Laravel serves the React build; **one vhost, not two** |
+| PHP | `/opt/plesk/php/8.3/bin/php` — **8.3, not 8.2** (see §6) |
+| Composer | `/opt/psa/var/modules/composer/composer.phar` (see §6) |
+| Database | **SQLite** — `database/database.sqlite` (see §5) |
+| SSL | Let's Encrypt, auto-renewing |
+| DNS | **Cloudflare** — `crm` A record → `45.90.220.5`, grey cloud |
+| Node | **not installed** — the frontend must be built locally |
+| Disk | 387 GB, ~33% used. Not a constraint here, unlike the sangoe.in box |
+
+Seeded logins: `admin@mlacrm.com` / `Admin@12345` (also vendor@, tpv@, client@,
+and three staff accounts — see `database/seeders/DatabaseSeeder.php`).
+
+---
+
+## 2. Deploying an update
+
+Four commands from `CRM/` on your laptop. Roughly three minutes.
+
+```bash
+cd ~/Desktop/sangoe_crm/CRM
+
+# 1. Build the frontend. There is no Node on the server, so this MUST happen here.
+#    `npm run build` picks up .env.production automatically → VITE_API_URL=/api,
+#    same-origin, so the bundle works on any domain with no rebuild.
+cd frontend && npm run build && cd ..
+
+# 2. Backend source. ONE LINE — see §6 on why line continuations bite.
+rsync -avz --exclude='vendor/' --exclude='node_modules/' --exclude='.git/' --exclude='.env' --exclude='storage/logs/*' --exclude='storage/app/*' --exclude='storage/framework/cache/*' --exclude='storage/framework/sessions/*' --exclude='storage/framework/views/*' --exclude='database/*.sqlite*' backend/ nexforeconsulting.co_bhmrselvhng@45.90.220.5:/var/www/vhosts/nexforeconsulting.com/crm.nexforeconsulting.com/
+
+# 3. Frontend build. ALWAYS AFTER the backend — see §6.
+rsync -avz frontend/dist/ nexforeconsulting.co_bhmrselvhng@45.90.220.5:/var/www/vhosts/nexforeconsulting.com/crm.nexforeconsulting.com/public/
+
+# 4. Server side.
+ssh nexforeconsulting.co_bhmrselvhng@45.90.220.5 "cd /var/www/vhosts/nexforeconsulting.com/crm.nexforeconsulting.com && P=/opt/plesk/php/8.3/bin/php && \$P /opt/psa/var/modules/composer/composer.phar install --no-dev --optimize-autoloader --no-interaction && \$P -d memory_limit=-1 artisan migrate --force && \$P artisan config:cache && \$P artisan route:cache && \$P artisan view:cache"
+```
+
+### Verify
+
+```bash
+curl -sS -o /dev/null -w "%{http_code}\n" https://crm.nexforeconsulting.com/          # 200
+curl -sS -o /dev/null -w "%{http_code}\n" https://crm.nexforeconsulting.com/api/hr/payroll/runs  # 401
+curl -sS -o /dev/null -w "%{http_code}\n" https://crm.nexforeconsulting.com/.env      # 403
+```
+
+`401` on the API is the RIGHT answer — it means routing and auth both work. A `500`
+means look at `storage/logs/laravel.log`. A `404` means `route:cache` needs re-running.
+
+**Do not** grep the main JS bundle for UI text to prove a frontend deploy landed.
+Lazy-loaded routes are code-split into their own chunks, so the grep returns nothing
+on a perfectly good deploy. Fetch the specific chunk, or check a file that is new in
+this build returns 200.
+
+---
+
+## 3. `.env` never travels
+
+It is excluded from every rsync, deliberately — it holds credentials. Anything added
+locally (a new integration's keys, a mail server) **will not reach the server** and
+the feature will fail with an unhelpful error. Check `.env` on both sides before
+debugging anything config-shaped.
+
+Current server `.env` deliberately keeps outbound things off, so a test box cannot
+email or message real people:
+
+```
+MAIL_MAILER=log            # writes to storage/logs, sends nothing
+WHATSAPP_ENABLED=false
+SANGOETRACK_ENABLED=false
+MEETING_PROVIDER=stub
+```
+
+### `APP_DEBUG`
+
+Currently `true`, on purpose, so errors are readable while the box is private.
+
+**Set it to `false` before sharing the URL with anyone.** The debug page lists the
+whole environment — including `APP_KEY`, which signs session cookies. Someone with it
+can forge an admin session without a password. Any request that errors renders that
+page; no login needed.
+
+```bash
+sed -i 's/^APP_DEBUG=true/APP_DEBUG=false/' .env
+/opt/plesk/php/8.3/bin/php artisan config:cache     # NOT optional — see §6
+```
+
+---
+
+## 4. Scheduled tasks
+
+**Two cron entries, not 24.** `schedule:run` reads all 24 definitions in
+`routes/console.php` and decides internally what is due.
+
+Plesk → crm.nexforeconsulting.com → Dashboard → **Scheduled Tasks** → Add Task:
+
+| | Command | Cron |
+|---|---|---|
+| Scheduler | `/opt/plesk/php/8.3/bin/php /var/www/vhosts/nexforeconsulting.com/crm.nexforeconsulting.com/artisan schedule:run` | `* * * * *` |
+| Queue | `/opt/plesk/php/8.3/bin/php /var/www/vhosts/nexforeconsulting.com/crm.nexforeconsulting.com/artisan queue:work --stop-when-empty --tries=3 --max-time=3600` | `*/5 * * * *` |
+
+Set both to **"Do not notify"** — the default emails on every run, which is 1,440
+messages a day from the first one alone.
+
+`--stop-when-empty` lets the worker exit when the queue drains, so cron restarts it
+and there is no daemon to supervise.
+
+---
+
+## 5. Why SQLite, and what that costs
+
+**The CRM runs on SQLite, here and in production.** This box was set up on MySQL
+first, and the migrations did not survive it. Three distinct classes of failure, all
+of which only MySQL enforces:
+
+1. **Index names over 64 characters.** MySQL caps identifiers; SQLite does not.
+   13 migrations hit this. All are now fixed with explicit names.
+2. **Dropping an index a foreign key depends on.** `tax_rates` swapped its unique
+   constraint by dropping before creating; MySQL refuses. Fixed by reordering.
+3. **`TIMESTAMP NOT NULL` with no default.** MySQL gives the first such column in a
+   table an implicit `CURRENT_TIMESTAMP` and every later one an invalid zero-date.
+   Fixed by switching `approval_delegations` to `dateTime`.
+
+Then a fourth appeared — `add_app_login_to_hr_employees` uses
+`->after('sangoetrack_synced_at')`, a column a **later** migration creates. SQLite
+ignores `->after()` entirely; MySQL enforces it. That is a whole class of ordering
+bug, and finding them all is a project rather than a deploy step.
+
+**So: those 15 fixes are committed and worth keeping, but the codebase is NOT
+MySQL-ready.** Do not read them as "MySQL works now". If you ever move, budget real
+time and expect more of category 4.
+
+A `crm_test` MySQL database exists in Plesk and is unused. Harmless.
+
+### SQLite housekeeping
+
+The database is one file. It is excluded from rsync (`--exclude='database/*.sqlite*'`)
+so a deploy can never overwrite live data with your local copy.
+
+```bash
+# Back it up before anything risky
+cp database/database.sqlite database/database.sqlite.$(date +%F)
+
+# Permissions, if you ever see "readonly database"
+chmod 664 database/database.sqlite && chmod 775 database
+```
+
+---
+
+## 6. Traps this deploy actually hit
+
+**`rsync` line continuations get mangled on paste.** A multi-line command with
+trailing `\` came through with the last excludes folded into the destination
+argument. It did not error — it printed `sent 128,831 bytes` and moved on. **Run
+rsync as a single line.** And check the `sent` figure: a real backend upload is
+~20 MB, a real frontend one ~11 MB. Anything in the KB range means nothing moved.
+(`sent 19 bytes` is the same failure from the sangoe.in deploys.)
+
+**Backend rsync must run BEFORE frontend.** Backend `public/` does not carry the
+built assets, so running frontend first and backend second overwrites them.
+
+**`/usr/local/bin/composer` is a shell script, not a phar.** Running it with `php`
+prints its source and exits 0, looking like a no-op success. Use
+`/opt/psa/var/modules/composer/composer.phar`.
+
+**PHP is not on the system PATH.** `php -v` as root says "command not found" even
+though 8.2 and 8.3 are both installed under `/opt/plesk/php/`.
+
+**PHP must be 8.3.** `composer.json` claims `"php": "^8.2"` but `openspout/openspout
+^5.3` needs 8.3+, so `composer install` refuses on 8.2. The Plesk **web** PHP version
+must match the one `vendor/` was built with, or the site 500s the moment openspout is
+touched. Worth tightening `composer.json` to `^8.3`.
+
+**A fresh database exposes migrations an existing one never re-runs.** All of §5 was
+invisible until tonight because Laravel skips anything already in the `migrations`
+table. Every one of those bugs had been sitting there for months.
+
+**`config:cache` makes `.env` edits invisible.** Laravel reads the cached copy. Edit
+`.env`, then always re-run `config:cache`, or the change silently does nothing.
+
+**Multi-line pastes into a fresh SSH login get eaten by the banner.** Paste one
+command at a time, or the first few silently vanish.
+
+**Shell variables do not survive a new terminal window.** `$SRV`/`$APP` set in one
+window are empty in the next, and `rsync ... $SRV:$APP/` with both empty becomes a
+local copy. This file uses full paths throughout for that reason.
+
+---
+
+## 7. First-time setup (already done — for reference)
+
+1. Cloudflare: `crm` A record → `45.90.220.5`, **grey cloud** (orange breaks
+   Let's Encrypt HTTP-01 validation).
+2. Plesk → **+ Add Domain** → Subdomain. Document root
+   **`crm.nexforeconsulting.com/public`** — not `httpdocs`. Getting this wrong makes
+   `.env` downloadable over the web.
+3. Dashboard → **PHP** → 8.3, FPM served by Apache, `memory_limit` 512M,
+   `max_execution_time` 300.
+4. Dashboard → **SSL/TLS Certificates** → Let's Encrypt. Untick the www subdomain.
+   Then Hosting Settings → permanent 301 HTTP→HTTPS.
+5. Hosting & DNS → Hosting → **Webspace settings → SSH access** → `/bin/bash`.
+   Leave the password field **blank** — it is shared with the live
+   `nexforeconsulting.com` WordPress site and changing it breaks any existing FTP.
+   Add an SSH key instead.
+6. First deploy: §2, then `key:generate`, `migrate:fresh --force`, `db:seed --force`,
+   `storage:link`.
+
+`db:seed` partially fails on `HelpdeskSeeder` because `fake()` is a dev dependency and
+we install `--no-dev`. The users and tenant are created before that point, so it is
+harmless — the demo data simply is not generated.
+
+---
+
+## 8. Security notes
+
+- Root's `authorized_keys` on this box carries **two other people's keys**, one
+  labelled `Testing` with a placeholder email. Anything on this server — `.env`,
+  the SQLite file, deploy keys — is readable by them. Worth raising with whoever
+  administers the box.
+- ModSecurity and fail2ban are both **on**. ModSecurity was *not* blocking API POSTs
+  as of 8 Sep. If a login starts returning 403 with nothing in `laravel.log`, that is
+  where to look: Dashboard → Security → **Web Application Firewall** → Detection only.
+- The repo is private and should stay that way. If server-side `git clone` is ever
+  wanted, use a **read-only deploy key** scoped to the one repo — not a public repo,
+  and not a personal access token on a shared box.

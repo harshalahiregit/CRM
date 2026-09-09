@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\Hr\EmployeeIdentityService;
+use App\Support\Hrm\HrmAvatar;
 use App\Support\Hrm\HrmResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -147,7 +148,7 @@ class HrmAuthController extends Controller
             'mobile_no'        => $user->phone ?? '',
             'type'             => $user->role === 'admin' ? 'company' : 'employee',
             'active_workspace' => $user->tenant_id,
-            'avatar'           => '',
+            'avatar'           => HrmAvatar::url($user->avatar),
             'lang'             => 'en',
             // Beyond their model, and harmless: extra keys are ignored by
             // fromJson, and having the employee code saves a second call.
@@ -173,7 +174,37 @@ class HrmAuthController extends Controller
             'slug'       => $tenant->slug,
             'status'     => $tenant->status,
             'created_by' => null,
-            'logo'       => '',
+            'logo'       => $this->tenantLogo($tenant),
         ]];
+    }
+
+    /**
+     * The company logo the app shows in both dashboard headers.
+     *
+     * This was hardcoded to '' — so the header on every phone fell back to a
+     * placeholder and looked like a broken image, and the only way to change it
+     * would have been to edit this file. Settings > General > Branding already
+     * has a Logo URL field; read that, and keep tenants.logo_url as the older
+     * fallback so a workspace configured before the settings screen existed
+     * still shows its logo.
+     *
+     * Returned absolute, because the app hands the string straight to
+     * Image.network and a site-relative path there resolves against nothing.
+     */
+    private function tenantLogo(Tenant $tenant): string
+    {
+        $settings = app(\App\Services\Settings\SettingsService::class);
+        $logo = $settings->get($tenant->id, 'branding', 'logo_url') ?: $tenant->logo_url;
+        $logo = trim((string) $logo);
+
+        if ($logo === '') {
+            return '';
+        }
+
+        if (preg_match('#^(https?:)?//#i', $logo) === 1 || str_starts_with($logo, 'data:')) {
+            return $logo;
+        }
+
+        return url('/' . ltrim($logo, '/'));
     }
 }

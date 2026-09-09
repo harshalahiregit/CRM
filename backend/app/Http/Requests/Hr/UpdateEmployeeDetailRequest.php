@@ -91,6 +91,28 @@ class UpdateEmployeeDetailRequest extends FormRequest
             'is_international_worker' => 'nullable|boolean',
             'has_previous_pf'         => 'nullable|boolean',
             'tax_regime'              => 'nullable|string|in:Old,New',
+
+            // ── Whether each deduction applies to this person ──
+            'pf_applicable'       => 'nullable|boolean',
+            'eps_applicable'      => 'nullable|boolean',
+            'esic_applicable'     => 'nullable|boolean',
+            'pt_applicable'       => 'nullable|boolean',
+            'lwf_applicable'      => 'nullable|boolean',
+            'gratuity_applicable' => 'nullable|boolean',
+
+            // PF membership can begin after employment — a probationer enrolled
+            // on confirmation. Filing with joining_date would be wrong.
+            'pf_joining_date' => 'nullable|date',
+            // Voluntary PF: a flat amount OR a percentage, never both. Capped at
+            // 100 because a percentage above it is a typo, not a choice.
+            'vpf_amount'      => 'nullable|numeric|min:0|max:9999999',
+            'vpf_percent'     => 'nullable|numeric|min:0|max:100',
+            // Null means "follow the rule"; true/false overrides it per person.
+            'restrict_pf_to_ceiling' => 'nullable|boolean',
+
+            'esic_dispensary' => 'nullable|string|max:150',
+            // ESIC's ceiling is 25,000 for a person with disability, not 42,000.
+            'is_disabled'     => 'nullable|boolean',
         ];
     }
 

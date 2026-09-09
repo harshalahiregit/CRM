@@ -143,6 +143,13 @@ class Form16Service
                 'professional_tax' => (float) $r->pt_amount,
                 'tds'              => (float) $r->tds_amount,
             ])->all(),
+            // Quarter-by-quarter, which is the shape Part A takes and the shape
+            // the 24Q return is filed in. The monthly annexure above cannot be
+            // reconciled against a quarterly return without somebody adding up
+            // three rows by hand every time.
+            //
+            // Quarters are the FINANCIAL year's — January is Q4, not Q1.
+            'quarterly' => $this->quarterly($records, $fy),
             'declaration' => $declaration ? [
                 'status' => $declaration->status, 'regime' => $declaration->regime,
                 'counts_for_tax' => $declaration->countsForTax(),
@@ -240,5 +247,37 @@ class Form16Service
         }
 
         return $w;
+    }
+
+    /**
+     * Quarterly totals, in the financial year's quarters.
+     *
+     * Reported as deducted AND deposited with the same figure. This system
+     * records the deduction; whether the challan was filed lives with whoever
+     * files it. One column would imply we know something we do not.
+     *
+     * @param  \Illuminate\Support\Collection<int, HrPayrollRecord>  $records
+     */
+    private function quarterly($records, FinancialYear $fy): array
+    {
+        $quarters = $records
+            ->groupBy(function ($r) use ($fy) {
+                $month = (int) substr((string) $r->attendance_period, 5, 2);
+
+                return 'Q'.(int) ceil(max($fy->monthIndex($month), 1) / 3);
+            })
+            ->map(fn ($rows, $q) => [
+                'quarter'       => $q,
+                'months'        => $rows->pluck('attendance_period')->values()->all(),
+                'amount_paid'   => round($rows->sum('taxable_earnings'), 2),
+                'tax_deducted'  => round($rows->sum('tds_amount'), 2),
+                'tax_deposited' => round($rows->sum('tds_amount'), 2),
+            ])
+            ->values()
+            ->sortBy('quarter')
+            ->values()
+            ->all();
+
+        return $quarters;
     }
 }

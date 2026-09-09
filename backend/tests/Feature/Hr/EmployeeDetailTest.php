@@ -189,6 +189,51 @@ class EmployeeDetailTest extends TestCase
     }
 
     /**
+     * Saving the tab must never switch anybody's statutory deductions off.
+     *
+     * The form posts EVERY field, so a flag nobody touched arrives as null. PF,
+     * ESIC, PT, LWF and gratuity all DEFAULT TO TRUE, so coercing null to false —
+     * which is what the service does for the flags that default to false — would
+     * quietly remove PF from every employee whose record was opened and saved.
+     * Nothing on screen would say so; it would surface as a wrong salary.
+     */
+    public function test_saving_the_tab_does_not_switch_off_statutory_deductions(): void
+    {
+        $flags = ['pf_applicable', 'eps_applicable', 'esic_applicable',
+                  'pt_applicable', 'lwf_applicable', 'gratuity_applicable'];
+
+        $everyField = collect((new HrEmployeeDetail)->getFillable())
+            ->reject(fn ($f) => in_array($f, ['tenant_id', 'employee_id'], true))
+            ->mapWithKeys(fn ($f) => [$f => null])
+            ->all();
+
+        $this->saveDetail(array_merge($everyField, ['father_name' => 'Suresh']))->assertOk();
+
+        $detail = $this->employee->fresh()->detail;
+
+        foreach ($flags as $flag) {
+            $this->assertTrue((bool) $detail->{$flag}, "{$flag} was switched off by an untouched form.");
+        }
+
+        // Three-state: null means "follow the rule", not "off".
+        $this->assertNull($detail->restrict_pf_to_ceiling);
+
+        // And the ones that DO default to false stay false.
+        $this->assertFalse((bool) $detail->is_disabled);
+    }
+
+    /** Turning one off is still possible — this is a switch, not a constant. */
+    public function test_a_deduction_can_be_switched_off_deliberately(): void
+    {
+        $this->saveDetail(['pf_applicable' => false, 'esic_applicable' => false])->assertOk();
+
+        $detail = $this->employee->fresh()->detail;
+        $this->assertFalse((bool) $detail->pf_applicable);
+        $this->assertFalse((bool) $detail->esic_applicable);
+        $this->assertTrue((bool) $detail->pt_applicable, 'Only what was named should change.');
+    }
+
+    /**
      * What the joiner typed on the onboarding form reaches their employee record.
      *
      * It used to stop at the onboarding row: HR then re-typed a bank account and

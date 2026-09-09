@@ -12,6 +12,7 @@ use App\Services\Hr\AdvanceTierService;
 use App\Services\Hr\EmployeeIdentityService;
 use App\Services\Hr\ReimbursementService;
 use App\Services\Shared\AttachmentService;
+use App\Support\Hr\HrSetting;
 use App\Support\Hr\HrmUpload;
 use App\Support\Hr\AdvanceStage;
 use App\Support\Hr\ReimbursementStatus;
@@ -131,6 +132,60 @@ class HrmClaimController extends Controller
             ->get();
 
         return HrmResponse::ok($rows->map(fn (HrAdvance $a) => $this->advancePayload($a))->values()->all());
+    }
+
+    /**
+     * The option lists the advance form offers.
+     *
+     * The app had these baked into it — ten advance types and four categories as
+     * Dart literals — so adding "Medical Advance" meant rebuilding the app and
+     * getting every employee to update. They are settings now, and this is how
+     * the phone reads them.
+     *
+     * Falls back to the defaults if a workspace has cleared the setting, because
+     * an advance form with an empty type dropdown cannot be submitted at all.
+     */
+    public function advanceOptions(Request $request)
+    {
+        $tenantId = (int) $request->user()->tenant_id;
+
+        return HrmResponse::ok([
+            'types'      => $this->optionList($tenantId, 'advance_types'),
+            'categories' => $this->optionList($tenantId, 'advance_categories'),
+        ]);
+    }
+
+    /** @return array<array{value: string, label: string}> */
+    private function optionList(int $tenantId, string $key): array
+    {
+        // Read through the settings service like every other HR setting, so a
+        // tenant override wins and the registry default fills in behind it.
+        $raw = (string) app(\App\Services\Settings\SettingsService::class)
+            ->get($tenantId, HrSetting::GROUP, $key, HrSetting::defaults()[$key] ?? '');
+
+        if (trim($raw) === '') {
+            $raw = (string) (HrSetting::defaults()[$key] ?? '');
+        }
+
+        $out = [];
+
+        foreach (preg_split('/\r\n|\r|\n/', $raw) ?: [] as $line) {
+            $line = trim($line);
+
+            if ($line === '') {
+                continue;
+            }
+
+            // "value|Label", or just a label that doubles as its own value.
+            [$value, $label] = array_pad(explode('|', $line, 2), 2, null);
+
+            $out[] = [
+                'value' => trim($value),
+                'label' => trim($label ?? $value),
+            ];
+        }
+
+        return $out;
     }
 
     public function submitAdvance(Request $request)

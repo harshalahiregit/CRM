@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Plus, Trash2, GripVertical, Save, FilePlus2, FileEdit } from 'lucide-react'
 import { contractModuleApi as api } from '@/services/contractModuleApi'
 import { inputStyle, labelStyle, PRIMARY_GRADIENT, Overlay, ModalFooter } from '@/components/ui/kit3d'
@@ -73,11 +73,34 @@ const PARTY_KINDS = [
 export default function ContractForm() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const [search] = useSearchParams()
   const editing = Boolean(id)
+
+  /**
+   * A contract can be started from the counterparty's own record.
+   *
+   * The customer record's Contracts tab links here with the party already
+   * decided, so the person raising it does not re-pick from a list the customer
+   * they were just looking at — and cannot pick the wrong one. Only the two
+   * keys travel: the name and e-mail are resolved from the party list below,
+   * the same way a manual selection resolves them, so there is one place that
+   * knows how a party turns into a name.
+   *
+   * `return` is where Cancel and a successful save go back to. It is honoured
+   * only when it is a path on this app — an absolute URL in a query parameter
+   * is somebody else's redirect.
+   */
+  const fromParty = search.get('party_id')
+  const partyKind = search.get('party_type') || 'customer'
+  const backTo = (() => {
+    const r = search.get('return')
+    return r && r.startsWith('/') && !r.startsWith('//') ? r : null
+  })()
 
   const [form, setForm] = useState({
     title: '', description: '', contract_category_id: '',
-    party_type: 'customer', party_id: '', party_name: '', party_email: '',
+    party_type: search.get('party_type') || 'customer',
+    party_id: fromParty || '', party_name: '', party_email: '',
     value: '', currency: 'INR', start_date: '', end_date: '', renewal_notice_days: 30,
   })
   const [status, setStatus] = useState('draft')
@@ -95,8 +118,29 @@ export default function ContractForm() {
     // Soft loads: a picker that fails to fetch leaves the form usable rather
     // than blocking the whole page.
     api.categories().then(d => setCategories(Array.isArray(d) ? d : [])).catch(() => {})
-    api.parties().then(setParties).catch(() => {})
-  }, [])
+    api.parties().then(list => {
+      setParties(list)
+
+      // A party arriving in the URL has an id but no NAME, so resolve it here
+      // exactly as picking from the dropdown would — the field has to SHOW who
+      // the contract is with, or the person raising it cannot tell whether the
+      // right customer came through.
+      //
+      // This was also a guard against the server storing the blank: it read
+      // party_name with ??, which accepts an empty string. That is now `?:` in
+      // ContractService::resolveParty and falls back to the linked record, so
+      // the guard is no longer load-bearing — this is for the screen.
+      if (!fromParty) return
+      const chosen = (list?.[partyKind] || []).find(p => String(p.id) === String(fromParty))
+      if (chosen) {
+        setForm(f => f.party_name ? f : ({
+          ...f, party_name: chosen.name ?? '', party_email: chosen.email ?? f.party_email,
+        }))
+      }
+    }).catch(() => {})
+    // Primitives, not the URLSearchParams object: that is a fresh instance on
+    // every render, and depending on it would re-run this fetch in a loop.
+  }, [fromParty, partyKind])
 
   useEffect(() => {
     if (!editing) return
@@ -194,7 +238,10 @@ export default function ContractForm() {
       if (asDraft) payload.status = 'draft'
 
       const saved = editing ? await api.update(id, payload) : await api.create(payload)
-      navigate(`/app/contracts/${saved.id}`)
+      // Back where the contract was started from, when it was started from a
+      // record: somebody who opened this from a customer wants that customer
+      // again, not a contract screen they then have to navigate out of.
+      navigate(backTo ?? `/app/contracts/${saved.id}`)
     } catch (e) {
       setErr(e?.response?.data?.message
         || Object.values(e?.response?.data?.errors || {}).flat()[0]
@@ -213,7 +260,7 @@ export default function ContractForm() {
       <style>{FORM_CSS}</style>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <button onClick={() => navigate('/app/contracts')}
+        <button onClick={() => navigate(backTo ?? '/app/contracts')}
           style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer', padding: 0 }}>
           <ArrowLeft size={15} /> Contracts
         </button>
@@ -400,7 +447,11 @@ export default function ContractForm() {
           </button>
         )}
 
-        <button onClick={() => navigate('/app/contracts')}
+        {/* backTo, so a contract raised from a customer record goes back to it.
+            Transparent rather than outlined: Save as draft now occupies the
+            outlined slot, and two bordered buttons side by side read as two
+            equal choices when one of them is only a way out. */}
+        <button onClick={() => navigate(backTo ?? '/app/contracts')}
           style={{ padding: '10px 18px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer' }}>
           Cancel
         </button>

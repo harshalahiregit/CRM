@@ -34,6 +34,9 @@ class AdvanceService
     public function __construct(
         private RequestThreadService $thread,
         private AdvanceTierService $tiers,
+        // Nothing in this flow told the employee anything: they requested an
+        // advance and heard nothing, it was approved and they heard nothing.
+        private RequestNotifier $notifier,
     ) {
     }
 
@@ -64,6 +67,12 @@ class AdvanceService
                 $actor,
                 ['amount_requested' => (float) $advance->amount_requested]
             );
+
+            // The employee gets told. Nothing in this flow told them anything:
+            // they requested an advance and heard nothing about it again.
+            $this->notifier->tell($employee, 'Advance', 'submitted',
+                'Your advance request for '.$this->money((float) $advance->amount_requested)
+                .' is with your approver.', $actor);
 
             return $advance;
         });
@@ -197,6 +206,13 @@ class AdvanceService
                     . ($complete ? ' The request is ready to disburse.' : ''),
                 $actor, ['tier' => $tier, 'amount' => $final]);
 
+            $this->notifier->tell($advance->employee, 'Advance',
+                $complete ? 'approved' : 'part-approved',
+                $complete
+                    ? 'Your advance of '.$this->money($final).' was approved and is ready to be paid out.'
+                    : 'Your advance was approved by '.$tier.' and has moved to the next approver.',
+                $actor);
+
             return $advance->fresh();
         });
     }
@@ -226,6 +242,9 @@ class AdvanceService
             ]);
 
             $this->thread->event($advance, 'declined', 'Declined. Reason: ' . trim($reason), $actor, ['reason' => trim($reason)]);
+
+            $this->notifier->tell($advance->employee, 'Advance', 'declined',
+                'Your advance request was declined. '.trim($reason), $actor);
 
             return $advance->fresh();
         });
@@ -320,6 +339,11 @@ class AdvanceService
                 $this->money($paid) . ' disbursed by ' . str_replace('_', ' ', $mode)
                     . ($reference ? ' (' . trim($reference) . ')' : '') . '.',
                 $actor, ['amount' => $paid, 'mode' => $mode, 'reference' => trim((string) $reference) ?: null]);
+
+            // The one an employee most wants to hear: the money has gone out.
+            $this->notifier->tell($advance->employee, 'Advance', 'paid out',
+                $this->money($paid).' has been paid to you by '
+                .str_replace('_', ' ', $mode).'.', $actor);
 
             return $advance->fresh();
         });

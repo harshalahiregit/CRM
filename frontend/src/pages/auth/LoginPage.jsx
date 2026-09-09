@@ -29,7 +29,12 @@ const ROLES = [
 ]
 
 const schema = z.object({
-  role:     z.string().min(1, 'Please select a role'),
+  // Optional, so signing in here takes exactly what the app takes: an email and
+  // a password. Choosing the wrong entry used to fail a login whose credentials
+  // were correct, and the app has no such selector — so the same person could
+  // sign in on their phone and not on the website. The picker stays, because it
+  // decides which home screen you land on; it just no longer gates the form.
+  role:     z.string().optional(),
   email:    z.string().email('Enter a valid email'),
   password: z.string().min(1, 'Password is required'),
   remember: z.boolean().optional(),
@@ -261,7 +266,7 @@ export default function LoginPage() {
                   {selectedRoleObj ? selectedRoleObj.icon : <User size={13} style={{ color: '#8b85a8' }} />}
                 </span>
                 <span className="flex-1 text-sm" style={{ color: selectedRoleObj ? '#edeaf8' : '#8b85a8' }}>
-                  {selectedRoleObj ? selectedRoleObj.label : 'Choose your access role...'}
+                  {selectedRoleObj ? selectedRoleObj.label : 'Access role (optional)'}
                 </span>
                 <ChevronDown size={15} className={`transition-transform duration-200 ${roleOpen ? 'rotate-180' : ''}`} style={{ color: '#8b85a8' }} />
               </button>

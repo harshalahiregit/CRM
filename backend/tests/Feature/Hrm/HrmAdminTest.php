@@ -8,6 +8,7 @@ use App\Models\Hr\HrAttendance;
 use App\Models\Hr\HrAttendanceCorrection;
 use App\Models\Hr\HrDemoRequest;
 use App\Models\Hr\HrEmployee;
+use App\Models\Hr\HrEmployeeLeaveBalance;
 use App\Models\Hr\HrLeaveApplication;
 use App\Models\Hr\HrLeaveType;
 use App\Models\Hr\HrReimbursement;
@@ -195,6 +196,18 @@ class HrmAdminTest extends TestCase
             'tenant_id' => $this->tenant()->id, 'name' => 'Casual', 'code' => 'CL', 'category' => 'Casual',
             'paid' => true, 'yearly_limit' => 12, 'requires_approval' => true, 'is_active' => true,
         ]);
+        // A balance to deduct from. Approving now runs the same service the CRM
+        // web uses, which writes the ledger entry -- so a leave cannot be
+        // approved against an entitlement the employee does not have. The
+        // endpoint previously just flipped the column, which is why this test
+        // never needed one and why an approval deducted nothing.
+        HrEmployeeLeaveBalance::create([
+            'tenant_id' => $this->tenant()->id, 'employee_id' => $e->id,
+            'leave_type_id' => $type->id, 'allocated' => 12, 'opening_balance' => 0,
+            'used' => 0, 'adjusted' => 0, 'carried_forward' => 0, 'available_balance' => 12,
+            'effective_from' => '2026-01-01', 'status' => HrEmployeeLeaveBalance::ACTIVE,
+        ]);
+
         $l = HrLeaveApplication::create([
             'tenant_id' => $this->tenant()->id, 'employee_id' => $e->id, 'leave_type_id' => $type->id,
             'from_date' => '2026-03-02', 'to_date' => '2026-03-02', 'days' => 1, 'status' => 'Submitted',
@@ -205,6 +218,26 @@ class HrmAdminTest extends TestCase
         ])->assertOk()->assertJsonPath('status', 1);
 
         $this->assertSame('Approved', $l->fresh()->status);
+
+        // The day is actually gone from the balance. Without this the endpoint
+        // could go back to flipping a column and the test would still pass.
+        $this->assertSame(
+            1.0,
+            (float) HrEmployeeLeaveBalance::where('employee_id', $e->id)->value('used'),
+        );
+
+        // The app's leave screen sends 'Approved' capitalised, and the rule only
+        // accepted lower case -- so every decision came back "The selected
+        // status is invalid" as a 200 with status 0, and the button silently
+        // did nothing. Both spellings are accepted now.
+        $l2 = HrLeaveApplication::create([
+            'tenant_id' => $this->tenant()->id, 'employee_id' => $e->id, 'leave_type_id' => $type->id,
+            'from_date' => '2026-03-09', 'to_date' => '2026-03-09', 'days' => 1, 'status' => 'Submitted',
+        ]);
+
+        $this->postJson('/api/Hrm/admin/approve-reject-leave', [
+            'leave_id' => $l2->id, 'status' => 'Approved',
+        ])->assertOk()->assertJsonPath('status', 1);
 
         // Deciding twice is refused without an HTTP error.
         $r = $this->postJson('/api/Hrm/admin/approve-reject-leave', [

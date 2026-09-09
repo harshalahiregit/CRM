@@ -21,6 +21,7 @@ import AuditTimeline from '@/components/ui/AuditTimeline'
 import EmployeeNotifications from '@/modules/notifications/EmployeeNotifications'
 import EmployeeSalarySection from '@/modules/hr/components/EmployeeSalarySection'
 import EmployeeAssetsPanel from '@/modules/hr/components/EmployeeAssetsPanel'
+import EmployeeLetters from '@/modules/hr/components/EmployeeLetters'
 
 const DEPT_COLORS = { Engineering:'#3b82f6', Sales:'#10b981', HR:'#7C3AED', Operations:'#f59e0b', Product:'#ec4899', Marketing:'#f97316', Finance:'#6366f1' }
 const deptColor = d => DEPT_COLORS[d]||'#7C3AED'
@@ -1088,20 +1089,17 @@ export default function EmployeeProfile() {
           </div>
         )}
 
+        {/* This was seven hardcoded letter names, every one of them reading
+            "Not available" — a list that looked like a feature and was a
+            picture of one. The three that are real now generate; the offer and
+            appointment letters continue to live in the Offer workflow, which is
+            where they are actually produced. */}
         {tab==='letters' && (
-          <div>
-            <div className="space-y-2">
-              {['Appointment Letter','Confirmation Letter','Probation Extension','Promotion Letter','Warning Letter','Experience Letter','Relieving Letter'].map(l=>(
-                <div key={l} className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
-                  <Mail size={13} style={{ color:'#a78bfa' }}/>
-                  <span className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{l}</span>
-                  <span className="ml-auto text-[10px] font-semibold" style={{ color:'var(--text-muted)' }}>Not available</span>
-                </div>
-              ))}
-            </div>
-            <IntegrationNote icon={FileText} title="Letters" subtitle="Future generated letters"
-              hint="System-generated letters with templates & placeholders will be produced here. The existing Offer Letter continues to live in the Offer workflow." />
-          </div>
+          <EmployeeLetters
+            employeeId={id}
+            employeeName={data?.employee?.name}
+            showToast={showToast}
+          />
         )}
 
         {tab==='work' && (

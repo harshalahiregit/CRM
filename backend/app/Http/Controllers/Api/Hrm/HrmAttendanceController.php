@@ -332,10 +332,23 @@ class HrmAttendanceController extends Controller
             return '';
         }
 
-        // Not yet clocked out: show the time worked so far rather than nothing,
-        // which is what somebody glancing at the app actually wants.
+        // Still clocked in TODAY: show the time so far, which is what somebody
+        // glancing at the app wants — in at 09:00, it is 14:00, show 5:00.
+        //
+        // Only today. An open shift from four days ago showed 91:43, because the
+        // clock kept running on a day nobody closed; on the history screen that
+        // reads as "you worked 91 hours that day", beside a card header saying
+        // 00:00 for the same day. A day that was never clocked out has no total,
+        // and saying so is the honest answer — the correction screen is where it
+        // gets fixed.
         if ($a->check_in && ! $a->check_out) {
-            return $this->formatHours(abs(Carbon::parse($a->check_in)->diffInMinutes(now())) / 60);
+            $isToday = Carbon::parse($a->date)->isSameDay(
+                TenantTime::now($a->tenant_id)
+            );
+
+            return $isToday
+                ? $this->formatHours(abs(Carbon::parse($a->check_in)->diffInMinutes(now())) / 60)
+                : '';
         }
 
         return $a->working_hours !== null ? $this->formatHours((float) $a->working_hours) : '';

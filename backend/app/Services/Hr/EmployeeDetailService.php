@@ -36,7 +36,33 @@ class EmployeeDetailService
      * box nobody had touched, which blocked saving the whole tab. Unanswered
      * means false here, which is what the column default already says.
      */
-    private const BOOLEANS = ['is_international_worker', 'has_previous_pf'];
+    private const BOOLEANS = ['is_international_worker', 'has_previous_pf', 'is_disabled'];
+
+    /**
+     * Booleans whose column default is TRUE.
+     *
+     * These must NOT be coerced the way the ones above are. The form posts every
+     * field, so an untouched flag arrives as null — and turning null into false
+     * here would switch off PF, ESIC, PT, LWF and gratuity for everybody the
+     * moment anyone saved the tab. Null means "unchanged": dropped from the
+     * write, so a create takes the column default and an update keeps what is
+     * there.
+     */
+    private const BOOLEANS_DEFAULT_TRUE = [
+        'pf_applicable', 'eps_applicable', 'esic_applicable',
+        'pt_applicable', 'lwf_applicable', 'gratuity_applicable',
+    ];
+
+    /**
+     * Three-state, and deliberately not a boolean.
+     *
+     * null  = follow the statutory rule
+     * true  = cap this person's PF wages at the ceiling
+     * false = contribute on their full salary
+     *
+     * Casting null to false would take every employee off the ceiling.
+     */
+    private const TRISTATE = ['restrict_pf_to_ceiling'];
 
     public function get(HrEmployee $employee): array
     {
@@ -110,6 +136,22 @@ class EmployeeDetailService
     private function normalise(array $data): array
     {
         foreach ($data as $field => $value) {
+            if (in_array($field, self::BOOLEANS_DEFAULT_TRUE, true)) {
+                if ($value === null) {
+                    unset($data[$field]);
+                } else {
+                    $data[$field] = (bool) $value;
+                }
+
+                continue;
+            }
+
+            if (in_array($field, self::TRISTATE, true)) {
+                $data[$field] = $value === null ? null : (bool) $value;
+
+                continue;
+            }
+
             if (in_array($field, self::BOOLEANS, true)) {
                 $data[$field] = (bool) $value;
 

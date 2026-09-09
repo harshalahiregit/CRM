@@ -27,6 +27,8 @@ class AttendanceCorrectionService
     public function __construct(
         private RequestThreadService $thread,
         private AttendanceService $attendance,
+        // This flow told the employee nothing at any point.
+        private RequestNotifier $notifier,
     ) {
     }
 
@@ -90,6 +92,9 @@ class AttendanceCorrectionService
                 $actor,
                 ['date' => $date] + $times
             );
+
+            $this->notifier->tell($employee, 'Attendance Correction', 'submitted',
+                'Your correction for '.$date.' is with your approver.', $actor);
 
             return $correction;
         });
@@ -197,6 +202,9 @@ class AttendanceCorrectionService
                 ], 'working_hours' => $row->working_hours]
             );
 
+            $this->notifier->tell($c->employee, 'Attendance Correction', 'approved',
+                'Your correction for '.$date.' was approved and applied.', $actor);
+
             return $c->fresh();
         });
     }
@@ -219,6 +227,9 @@ class AttendanceCorrectionService
             ]);
 
             $this->thread->event($c, 'declined', 'Correction rejected. Reason: ' . trim($remarks), $actor, ['reason' => trim($remarks)]);
+
+            $this->notifier->tell($c->employee, 'Attendance Correction', 'rejected',
+                'Your attendance correction was rejected. '.trim($remarks), $actor);
 
             return $c->fresh();
         });

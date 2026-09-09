@@ -137,6 +137,7 @@ const UploadSettings = lazy(() => import('@/modules/settings/pages/UploadSetting
 const SecuritySettings = lazy(() => import('@/modules/settings/pages/SecuritySettings'))
 const NotificationPreferences = lazy(() => import('@/modules/settings/pages/NotificationPreferences'))
 const MailSettings = lazy(() => import('@/modules/settings/pages/MailSettings'))
+const WhatsAppSettings = lazy(() => import('@/modules/settings/pages/WhatsAppSettings'))
 const CustomFieldsSettings = lazy(() => import('@/modules/settings/pages/CustomFieldsSettings'))
 const CompanyFinanceSettings = lazy(() => import('@/modules/settings/pages/CompanyFinanceSettings'))
 const TaxRatesSettings = lazy(() => import('@/modules/settings/pages/TaxRatesSettings'))
@@ -1026,6 +1027,7 @@ export default function AppRoutes() {
           <Route index element={<Navigate to="general" replace />} />
           <Route path="general" element={<S><GeneralBrandingSettings /></S>} />
           <Route path="mail" element={<S><MailSettings /></S>} />
+          <Route path="whatsapp" element={<S><WhatsAppSettings /></S>} />
           <Route path="custom-fields" element={<S><CustomFieldsSettings /></S>} />
           <Route path="company" element={<S><CompanyFinanceSettings /></S>} />
           <Route path="tax-rates" element={<S><TaxRatesSettings /></S>} />

@@ -78,6 +78,9 @@ Route::prefix('Hrm')->group(function () {
         Route::post('/submit-reimbursement',    [HrmClaimController::class, 'submitReimbursement']);
         Route::post('/reimbursement-report',    [HrmClaimController::class, 'reimbursements']);
         Route::post('/advance/my-requests',     [HrmClaimController::class, 'myAdvances']);
+        // The option lists the advance form offers. Settings now, not Dart
+        // literals — so adding a type reaches every phone without an app update.
+        Route::post('/advance/options',         [HrmClaimController::class, 'advanceOptions']);
         Route::post('/advance/submit',          [HrmClaimController::class, 'submitAdvance']);
         Route::post('/advance/detail',          [HrmClaimController::class, 'advanceDetail']);
         Route::post('/advance/submit-settlement',[HrmClaimController::class, 'submitSettlement']);
@@ -86,6 +89,9 @@ Route::prefix('Hrm')->group(function () {
 
         // Profile, salary, calendar and notifications.
         Route::post('/edit-profile',              [HrmProfileController::class, 'editProfile']);
+        // Signed, and OUTSIDE the auth group: an <img> tag cannot send a bearer
+        // token, so the signature is what authorises it.
+
         Route::post('/delete-account',            [HrmProfileController::class, 'deleteAccount']);
         Route::post('/salary-details',            [HrmProfileController::class, 'salaryDetails']);
         // GET, unlike almost everything else the app calls.
@@ -108,9 +114,13 @@ Route::prefix('Hrm')->group(function () {
         // treats 401 as a dead session and wipes local storage, so answering a
         // permission problem that way signs somebody out mid-shift.
         //
-        // Two of these are GET, matching the app's own calls.
+        // Both verbs where the app POSTs, because a verb mismatch here fails
+        // silently: the app only acts on a 200 and drops anything else without
+        // a message, so a GET-only attendance-details answered every dashboard
+        // load with 405 and left Live Attendance reading "0 of 0" forever.
         Route::get('/admin/dashboard',                    [HrmAdminController::class, 'dashboard']);
         Route::get('/admin/attendance-details',           [HrmAdminController::class, 'attendanceDetails']);
+        Route::post('/admin/attendance-details',          [HrmAdminController::class, 'attendanceDetails']);
         Route::post('/admin/pending-approvals',           [HrmAdminController::class, 'pendingApprovals']);
         Route::get('/admin/pending-approvals',            [HrmAdminController::class, 'pendingApprovals']);
 
@@ -142,3 +152,24 @@ Route::prefix('Hrm')->group(function () {
         Route::post('/admin/reports-summary',              [HrmAdminController::class, 'reportsSummary']);
     });
 });
+
+// Your own picture, by your token. Nothing device-specific and nothing to
+// store: the app asks for /Hrm/avatar/me on whatever server it is pointed at
+// and gets whoever is holding the token.
+//
+// This exists because the signed link below is bound to the HOST it was signed
+// on. Move the server — a new LAN address in development, a domain change in
+// production — and every stored link 403s, so a picture that was uploaded once
+// and belongs to the ACCOUNT looked like it had been lost. Signing in on a
+// second device had the same problem for the same reason.
+Route::get('/Hrm/avatar/me', [\App\Http\Controllers\Api\Hrm\HrmProfileController::class, 'myAvatar'])
+    ->middleware('auth:sanctum')
+    ->name('hrm.avatar.me');
+
+// The older signed link, kept because builds already in people's hands still
+// hold one. Signed rather than public, because it is a photograph of a named
+// employee, and signed rather than authenticated because an <img> carries no
+// Authorization header.
+Route::get('/Hrm/avatar/{path}', [\App\Http\Controllers\Api\Hrm\HrmProfileController::class, 'avatar'])
+    ->middleware('signed')
+    ->name('hrm.avatar');

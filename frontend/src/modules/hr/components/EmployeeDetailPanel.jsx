@@ -17,6 +17,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react'
+import { GRAD } from '@/components/ui/brand'
 import { Pencil, X, Save } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 
@@ -78,11 +79,28 @@ const DETAIL_GROUPS = {
       { k: 'passport_expiry',        label: 'Passport Expiry', type: DATE },
       { k: 'driving_licence_number', label: 'Driving Licence', mono: true },
     ]},
+    { title: 'Applies to this person', hint: 'The rules decide what PF is; these decide whether this person has it. On by default — switch one off for a director who has opted out, or a consultant.', fields: [
+      { k: 'pf_applicable',       label: 'PF',        type: BOOL },
+      { k: 'eps_applicable',      label: 'EPS',       type: BOOL },
+      { k: 'esic_applicable',     label: 'ESIC',      type: BOOL },
+      { k: 'pt_applicable',       label: 'Prof. Tax', type: BOOL },
+      { k: 'lwf_applicable',      label: 'LWF',       type: BOOL },
+      { k: 'gratuity_applicable', label: 'Gratuity',  type: BOOL },
+    ]},
     { title: 'Statutory', fields: [
       { k: 'uan_number',              label: 'UAN',             mono: true },
       { k: 'pf_number',               label: 'PF Number',       mono: true },
+      // PF membership can start after employment — a probationer enrolled on
+      // confirmation — so filing with the joining date would be wrong.
+      { k: 'pf_joining_date',         label: 'PF Joining Date', type: DATE },
+      // The PF register has a VPF column. One or the other, never both.
+      { k: 'vpf_amount',              label: 'VPF Amount' },
+      { k: 'vpf_percent',             label: 'VPF %' },
       { k: 'esic_number',             label: 'ESIC Number',     mono: true },
       { k: 'esic_ip_number',          label: 'ESIC IP Number',  mono: true },
+      { k: 'esic_dispensary',         label: 'ESIC Dispensary' },
+      // ESIC's ceiling is 25,000 for a person with disability, not 42,000.
+      { k: 'is_disabled',             label: 'Person with Disability', type: BOOL },
       { k: 'pf_nominee_name',         label: 'PF Nominee' },
       { k: 'pf_nominee_relation',     label: 'Nominee Relation' },
       { k: 'tax_regime',              label: 'Tax Regime', type: PICK, options: REGIME },
@@ -173,7 +191,7 @@ export default function EmployeeDetailPanel({ employeeId, group, fallback = {}, 
               </button>
               <button onClick={save} disabled={saving}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white"
-                style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', opacity: saving ? 0.6 : 1 }}>
+                style={{ background: GRAD, opacity: saving ? 0.6 : 1 }}>
                 <Save size={12}/> {saving ? 'Saving…' : 'Save'}
               </button>
             </>

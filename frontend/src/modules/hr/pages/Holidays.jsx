@@ -17,14 +17,13 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { GRAD } from '@/components/ui/brand'
 import { PartyPopper, Plus, Pencil, Search, Power, CalendarDays } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { useToast } from '@/hooks/useToast'
 import LoadError from '@/components/ui/LoadError'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
-
-const GRAD = 'linear-gradient(135deg,#7C3AED,#5b21b6)'
 
 // Mirrors HrHoliday::TYPES. The colour is the one the app's calendar draws.
 const TYPES = [

@@ -2,7 +2,7 @@ import PartyContractList from '@/modules/contract/components/PartyContractList'
 import { contractsForParty } from '@/services/contractModuleApi'
 import { useState, useEffect, useRef, Fragment } from 'react'
 import { createPortal } from 'react-dom'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, Building2, Phone, Receipt, Wallet, CreditCard, Globe, Linkedin, Facebook, Instagram, Twitter, Package, Users2, UserPlus, Link2, Plus, Trash2, Eye, EyeOff, Upload, FileText, KeyRound, Bell, StickyNote, MapPin, Edit2, X, ChevronDown, ClipboardList, FileX, IndianRupee, RefreshCw, FileSignature, Percent, Truck, LifeBuoy, Paperclip, Send, LayoutDashboard, History, Activity, CalendarDays, ShoppingCart, FolderKanban, CheckSquare, AlertOctagon, Star, Globe2, Download,
 } from 'lucide-react'
@@ -30,7 +30,7 @@ import TimelineTab from '../components/TimelineTab'
 import ActivitiesTab from '../components/ActivitiesTab'
 import LinkedRecordsTab from '../components/LinkedRecordsTab'
 import CustomerExperienceTab from '../components/CustomerExperienceTab'
-import { CONTRACTS, EXPENSES, SUBSCRIPTIONS, PRE_ALERTS, PACKAGES, SHIPMENTS,
+import { EXPENSES, SUBSCRIPTIONS, PRE_ALERTS, PACKAGES, SHIPMENTS,
   ACTIVITIES, COMPLAINTS, DOMAINS, CUSTOMER_PURCHASE_ORDERS } from '../components/recordSchemas'
 import { CURRENCIES, LANGUAGES } from '../components/customerFormConstants'
 
@@ -100,7 +100,12 @@ const RECORD_TABS = {
   Complaints: COMPLAINTS,
   'Domain Manager': DOMAINS,
   'Purchase Orders': CUSTOMER_PURCHASE_ORDERS,
-  Contracts: CONTRACTS,
+  // Contracts is NOT here any more. It used to be a plain CRUD list with its
+  // own inline form — seven fields, no signing, no document — sitting beside
+  // the Contract module's agreements for the same customer. Two lists both
+  // called contracts, and the one you could add to was the one that could not
+  // be signed. The tab now shows this customer's agreements and sends "New
+  // contract" to the module that actually produces one.
   Expenses: EXPENSES,
   Subscriptions: SUBSCRIPTIONS,
   'Pre-Alert': PRE_ALERTS,
@@ -116,7 +121,11 @@ export default function CustomerDetail() {
   const mfmt = useMoneyFmt()
   const [client, setClient] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState('Overview')
+  // `?tab=` so a link can point at one tab of this record and come back to it.
+  // Raising a contract leaves the page entirely; without this the return trip
+  // lands on Overview and the contract that was just created is two clicks away.
+  const [urlParams] = useSearchParams()
+  const [tab, setTab] = useState(urlParams.get('tab') || 'Overview')
   // Keyed by `${id}:${tab}`, not by tab alone.
   //
   // Customers link to each other — the parent-company button navigates within
@@ -379,19 +388,26 @@ export default function CustomerDetail() {
       {/* §10 — CSAT and NPS, which also light up Health's feedback signal. */}
       {tab === 'Experience' && <CustomerExperienceTab id={id} contacts={client.contacts ?? []} />}
 
-      {/* Contracts shows BOTH sources under one tab: the Contract module's
-          agreements on top, then the original client_contracts list below.
-          Kept rather than replaced -- that list is a working CRUD feature, it
-          just happens to be empty today. Two separate tabs was the alternative,
-          and it is what made somebody open "Contracts", see nothing, and
-          reasonably conclude their contract had not saved. */}
+      {/* This customer's contract history, and the one way to add to it.
+          "New contract" hands the Contract module the party already decided,
+          so nobody re-picks from a list the customer they were just looking at
+          — and `return` brings them back here afterwards rather than stranding
+          them on a contract screen they have to navigate out of. */}
       {tab === 'Contracts' && (
         <div style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+            <button
+              onClick={() => nav(`/app/contracts/new?party_type=customer&party_id=${id}`
+                + `&return=${encodeURIComponent(`/app/customers/${id}?tab=Contracts`)}`)}
+              className="btn-3d-primary text-xs font-bold px-3 py-2 rounded-xl inline-flex items-center gap-1.5">
+              <Plus size={13} /> New contract
+            </button>
+          </div>
           <PartyContractList
             fetcher={() => contractsForParty('customer', id)}
             onOpen={(r) => nav(`/app/contracts/${r.id}`)}
-            title="Agreements"
-            emptyText="No agreements with this customer yet - create one from the Contracts module." />
+            title="Contracts"
+            emptyText="No contracts with this customer yet." />
         </div>
       )}
       {RECORD_TABS[tab] && <RecordTab clientId={id} schema={RECORD_TABS[tab]} dynamicOptions={recordOptions} />}

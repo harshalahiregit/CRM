@@ -34,6 +34,15 @@ class HrSetting
     public const TYPE_EMAIL  = 'email';
 
     /**
+     * A list of options, one per line.
+     *
+     * Stored as newline-separated text rather than JSON so the generic settings
+     * screen can render it as a textarea with no special case, and so somebody
+     * editing it sees a list rather than punctuation.
+     */
+    public const TYPE_LIST   = 'list';
+
+    /**
      * key => [label, type, default, hint, section]
      */
     public const DEFINITIONS = [
@@ -67,13 +76,23 @@ class HrSetting
             'Half day', self::TYPE_DECIMAL, 4,
             'Hours that count as half a day.', 'Working day',
         ],
+        'clock_out_reminder_enabled' => [
+            'Remind people to clock out', self::TYPE_BOOL, true,
+            'Nudges anyone still clocked in after the hours below. The app already offers each person their own switch for this.', 'Working day',
+        ],
+        'clock_out_reminder_after_hours' => [
+            'Remind after', self::TYPE_DECIMAL, 10,
+            'Hours clocked in before the reminder goes out. One reminder per person per day.', 'Working day',
+        ],
 
         /* ── late marks ──────────────────────────────────────────────── */
         //
         // The policy itself is numbers on this screen, not a rule in code, so HR
         // can change the thresholds or switch the whole thing off without a
-        // release. Nothing enforces these yet — the settings land first so the
-        // policy is captured and adjustable when the deduction is built.
+        // release. Enforced by LateMarkDeductionService at process time; the
+        // count and the money are frozen onto the payroll record, so an
+        // attendance correction filed later cannot change what a past month
+        // paid.
         'late_marks_enabled' => [
             'Deduct for repeated late marks', self::TYPE_BOOL, false,
             'When off, a late clock-in is recorded but never costs any pay.', 'Late marks',
@@ -99,6 +118,29 @@ class HrSetting
             'When on, the count starts again on the first of each month.', 'Late marks',
         ],
 
+        /* ── overtime ────────────────────────────────────────────────── */
+        //
+        // Named as an allowance head on 5 Sep. Attendance has recorded
+        // `overtime_hours` per day since it was built and payroll never read the
+        // column, so the hours were visible on the attendance screen and worth
+        // nothing on the payslip.
+        //
+        // OFF by default. Switching on a payment silently, for a workspace whose
+        // people have been clocking overtime with no expectation of being paid
+        // for it, creates a back-pay argument nobody planned for.
+        'overtime_enabled' => [
+            'Pay for overtime hours', self::TYPE_BOOL, false,
+            'When off, overtime hours are recorded on attendance but never paid.', 'Overtime',
+        ],
+        'overtime_multiplier' => [
+            'Overtime rate', self::TYPE_DECIMAL, 2,
+            'Multiple of the normal hourly rate. Indian factory law sets twice the ordinary rate; 1 pays flat.', 'Overtime',
+        ],
+        'overtime_daily_cap_hours' => [
+            'Most overtime paid in one day', self::TYPE_DECIMAL, 4,
+            'Hours beyond this on a single day are recorded but not paid. 0 removes the cap.', 'Overtime',
+        ],
+
         /* ── attendance ──────────────────────────────────────────────── */
         'ip_restrict' => [
             'Restrict clock-in to approved addresses', self::TYPE_BOOL, false,
@@ -119,6 +161,20 @@ class HrSetting
 
         /* ── the advance ladder ──────────────────────────────────────── */
         // These are why "more control" matters: the tiers were fixed in code.
+        // The app's advance form had these baked into it, so changing what a
+        // person may request meant rebuilding the app and getting everybody to
+        // update. One per line; the part before a pipe is stored, the part after
+        // is shown.
+        'advance_types' => [
+            'Advance types', self::TYPE_LIST,
+            "salary|Salary Advance\nsite_cash|Site Cash Advance\nfuel|Fuel Advance\nmaterial|Material Purchase\ntravel|Travel Advance\nemergency_loan|Emergency Loan\nvendor_payment|Vendor Payment\npetty_cash|Petty Cash\nimprest|Temporary Imprest\nother|Other",
+            'One per line, as value|Label. The app reads this, so a change reaches every phone without an update.', 'Advances',
+        ],
+        'advance_categories' => [
+            'Advance categories', self::TYPE_LIST,
+            "site_operations|Site Operations\nhr_admin|HR / Admin\ncorporate|Corporate\nother|Other",
+            'One per line, as value|Label.', 'Advances',
+        ],
         'advance_manager_limit' => [
             'Manager can approve up to', self::TYPE_DECIMAL, 0,
             'An advance at or below this needs only the manager. 0 means every advance goes the whole way.', 'Advances',
@@ -195,6 +251,12 @@ class HrSetting
             self::TYPE_BOOL => filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? false,
             self::TYPE_INT  => (int) $value,
             self::TYPE_DECIMAL => (float) $value,
+            // Normalised on the way in: blank lines and stray spaces are how a
+            // list ends up with an empty option in the middle of a dropdown.
+            self::TYPE_LIST => implode("\n", array_values(array_filter(
+                array_map('trim', preg_split('/\r\n|\r|\n/', (string) $value) ?: []),
+                fn ($line) => $line !== '',
+            ))),
             default => $value === null ? '' : (string) $value,
         };
     }

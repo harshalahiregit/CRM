@@ -93,6 +93,24 @@ class StatutoryRuleService
             'loan_emi_warn_percent'    => (float) $this->settings->get($tenantId, 'payroll', 'loan_emi_warn_percent', 40),
             'loan_emi_max_percent'     => (float) $this->settings->get($tenantId, 'payroll', 'loan_emi_max_percent', 50),
             'loan_enforce_eligibility' => (bool) $this->settings->get($tenantId, 'payroll', 'loan_enforce_eligibility', true),
+
+            /*
+            | The run's own controls.
+            |
+            | Every one of these is a judgement about the business rather than
+            | about the code, and each was hard-coded somewhere before: which
+            | states offer PT, what holds up a payroll run, whether a second
+            | person must approve it, whether probation blocks leave. Answering
+            | those in PHP means a release every time the answer changes, and
+            | the people who know the answer do not ship releases.
+            */
+            'pt_states'                => (array) $this->settings->get($tenantId, 'payroll', 'pt_states', WorkStates::PT_APPLICABLE),
+            'require_bank_for_payroll'       => (bool) $this->settings->get($tenantId, 'payroll', 'require_bank_for_payroll', true),
+            'require_pan_for_payroll'        => (bool) $this->settings->get($tenantId, 'payroll', 'require_pan_for_payroll', true),
+            'require_aadhaar_for_payroll'    => (bool) $this->settings->get($tenantId, 'payroll', 'require_aadhaar_for_payroll', false),
+            'require_work_state_for_payroll' => (bool) $this->settings->get($tenantId, 'payroll', 'require_work_state_for_payroll', false),
+            'require_separate_approver'      => (bool) $this->settings->get($tenantId, 'payroll', 'require_separate_approver', false),
+            'probation_blocks_leave'         => (bool) $this->settings->get($tenantId, 'payroll', 'probation_blocks_leave', true),
         ];
     }
 
@@ -104,7 +122,21 @@ class StatutoryRuleService
                 WorkStates::normalize($data['default_work_state']));
         }
 
-        foreach (['fy_start_month', 'loan_emi_warn_percent', 'loan_emi_max_percent', 'loan_enforce_eligibility'] as $key) {
+        if (array_key_exists('pt_states', $data)) {
+            // Codes, not names — a name can be spelled several ways and the list
+            // is matched against WorkStates::ALL keys.
+            $codes = array_values(array_filter(
+                (array) $data['pt_states'],
+                fn ($c) => is_string($c) && isset(WorkStates::ALL[$c])
+            ));
+            $this->settings->set($tenantId, 'payroll', 'pt_states', $codes);
+        }
+
+        foreach ([
+            'fy_start_month', 'loan_emi_warn_percent', 'loan_emi_max_percent', 'loan_enforce_eligibility',
+            'require_bank_for_payroll', 'require_pan_for_payroll', 'require_aadhaar_for_payroll',
+            'require_work_state_for_payroll', 'require_separate_approver', 'probation_blocks_leave',
+        ] as $key) {
             if (array_key_exists($key, $data)) {
                 $this->settings->set($tenantId, 'payroll', $key, $data[$key]);
             }
@@ -191,6 +223,30 @@ class StatutoryRuleService
                 throw new BusinessException($mode === 'fixed'
                     ? 'Set a premium amount — a fixed-mode rule with no amount deducts and costs nothing.'
                     : 'Set an employee or employer rate — a percentage rule with neither computes nothing.');
+            }
+        }
+
+        // LWF is a flat amount in named months, not a rate on anything. A rule
+        // with no amount deducts nothing and reads as "this state has no LWF"
+        // rather than as an unfinished setup.
+        if ($type === 'lwf') {
+            $employee = (float) ($config['employee_amount'] ?? 0);
+            $employer = (float) ($config['employer_amount'] ?? 0);
+
+            if ($employee <= 0 && $employer <= 0) {
+                throw new BusinessException('Set an employee or employer amount — an LWF rule with neither deducts nothing.');
+            }
+
+            $months = $config['months'] ?? [];
+
+            if (! is_array($months)) {
+                throw new BusinessException('Months must be a list of month numbers, e.g. [6, 12].');
+            }
+
+            foreach ($months as $m) {
+                if (! is_numeric($m) || (int) $m < 1 || (int) $m > 12) {
+                    throw new BusinessException('Each LWF month must be a number from 1 to 12.');
+                }
             }
         }
 

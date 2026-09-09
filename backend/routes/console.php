@@ -142,6 +142,14 @@ Schedule::command('tpv:approval-escalations')
     ->runInBackground();
 
 // Central Notification Engine — generate HR reminders + escalations (daily).
+// Hourly, because the point is to catch somebody before they leave for the day
+// with the shift still open. The command itself sends at most one per person per
+// day, so the frequency here cannot turn into nagging.
+Schedule::command('hr:clock-out-reminders')
+    ->hourly()
+    ->withoutOverlapping()
+    ->runInBackground();
+
 Schedule::command('notifications:remind')
     ->dailyAt('07:00')
     ->withoutOverlapping()

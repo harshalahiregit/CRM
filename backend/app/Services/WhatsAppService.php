@@ -3,20 +3,33 @@
 namespace App\Services;
 
 use App\Models\Hr\HrWhatsAppLog;
+use App\Services\WhatsApp\TenantWhatsApp;
 use Illuminate\Support\Facades\Log;
 use Twilio\Rest\Client;
 
+/**
+ * Recruitment's WhatsApp (interview invites, status updates, reminders).
+ *
+ * Now speaks BOTH providers. It was Twilio-only, and the day the provider
+ * default moved to Meta's Cloud API every call here would have dereferenced a
+ * client that was never built -- the Twilio branch is the only one that ever
+ * constructed one. Cloud sends go through the same CloudApiClient the
+ * notification engine uses, so there is one wire format in the codebase.
+ */
 class WhatsAppService
 {
     protected $client;
     protected $from;
     protected $enabled;
+    protected string $provider;
 
-    public function __construct()
+    public function __construct(private ?TenantWhatsApp $tenants = null)
     {
+        $this->tenants ??= app(TenantWhatsApp::class);
         $this->enabled = config('whatsapp.enabled', false);
-        
-        if ($this->enabled && config('whatsapp.provider') === 'twilio') {
+        $this->provider = (string) config('whatsapp.provider', 'cloud');
+
+        if ($this->enabled && $this->provider === 'twilio') {
             try {
                 $this->client = new Client(
                     config('whatsapp.twilio.account_sid'),
@@ -73,6 +86,10 @@ class WhatsAppService
         }
 
         try {
+            if ($this->provider === 'cloud') {
+                return $this->sendViaCloud($log, $message, $tenantId);
+            }
+
             $result = $this->client->messages->create(
                 $to,
                 [
@@ -114,7 +131,53 @@ class WhatsAppService
     }
 
     /**
+     * Meta's Cloud API path.
+     *
+     * Free text first (it reads better), template on 131047 -- which is Meta
+     * telling us the person has not messaged the business in 24 hours, so only
+     * an approved template will land.
+     */
+    protected function sendViaCloud(HrWhatsAppLog $log, string $message, ?int $tenantId): HrWhatsAppLog
+    {
+        $client = $tenantId
+            ? $this->tenants->clientFor($tenantId)
+            : $this->tenants->platformClient();
+
+        if (! $client) {
+            $log->update(['status' => 'failed', 'error_message' => 'WhatsApp is not configured.']);
+
+            return $log;
+        }
+
+        // The log holds the Twilio-shaped 'whatsapp:+91…'; Meta wants digits.
+        $to = \App\Services\WhatsApp\CloudApiClient::normalise($log->to_number);
+
+        $result = $client->sendText($to, $message);
+
+        if (! $result->ok && $result->isOutsideServiceWindow()) {
+            $result = $client->sendTemplate(
+                $to,
+                (string) config('whatsapp.cloud.notification_template'),
+                (string) config('whatsapp.cloud.notification_template_language'),
+                ['Update', $message],
+            );
+        }
+
+        if ($result->ok) {
+            $log->update(['message_sid' => $result->messageId, 'status' => 'sent', 'sent_at' => now()]);
+        } else {
+            $log->update(['status' => 'failed', 'error_message' => $result->error]);
+            Log::error('WhatsApp (cloud) send failed', ['log_id' => $log->id, 'error' => $result->error]);
+        }
+
+        return $log;
+    }
+
+    /**
      * Format phone number for WhatsApp.
+     *
+     * Twilio's shape. The Cloud API path re-normalises from this, so callers
+     * keep one convention regardless of provider.
      *
      * @param string $phone
      * @return string

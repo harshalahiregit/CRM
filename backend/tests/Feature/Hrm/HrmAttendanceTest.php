@@ -280,6 +280,59 @@ class HrmAttendanceTest extends TestCase
         $this->travelBack();
     }
 
+    /**
+     * A day that was never clocked out has no total.
+     *
+     * The running "time so far" is right for TODAY — in at 09:00, it is 14:00,
+     * show 5:00. Left unbounded it kept counting: an open shift from four days
+     * ago reported 91:43, which on the history screen reads as ninety-one hours
+     * worked that day, beside a card header saying 00:00 for the same day.
+     */
+    public function test_an_old_open_shift_reports_no_total_rather_than_a_running_clock(): void
+    {
+        [, $employee] = $this->person();
+
+        // Clocked in four days ago and never out.
+        HrAttendance::create([
+            'tenant_id' => $employee->tenant_id, 'employee_id' => $employee->id,
+            'date' => now()->subDays(4)->toDateString(),
+            'check_in' => now()->subDays(4)->setTime(9, 0),
+            'status' => 'Present',
+        ]);
+
+        $r = $this->postJson('/api/Hrm/attendence-history', [
+            'month' => (int) now()->subDays(4)->format('m'),
+            'year'  => (int) now()->subDays(4)->format('Y'),
+        ])->assertOk();
+
+        $day = collect($r->json('data'))
+            ->firstWhere('date', now()->subDays(4)->toDateString());
+
+        $this->assertNotNull($day, 'The day should still be listed.');
+        $this->assertSame('', $day['history'][0]['total'],
+            'A day nobody clocked out of has no total — a number here is a lie.');
+    }
+
+    /** Today, still clocked in, DOES show the time so far. */
+    public function test_todays_open_shift_still_shows_the_time_so_far(): void
+    {
+        [, $employee] = $this->person();
+
+        HrAttendance::create([
+            'tenant_id' => $employee->tenant_id, 'employee_id' => $employee->id,
+            'date' => now()->toDateString(),
+            'check_in' => now()->subHours(3),
+            'status' => 'Present',
+        ]);
+
+        $r = $this->postJson('/api/Hrm/attendence-history')->assertOk();
+
+        $day = collect($r->json('data'))->firstWhere('date', now()->toDateString());
+
+        $this->assertNotSame('', $day['history'][0]['total'],
+            'Somebody clocked in this morning wants to see their hours so far.');
+    }
+
     public function test_clocking_out_without_clocking_in_is_refused(): void
     {
         $this->person();

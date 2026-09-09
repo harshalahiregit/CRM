@@ -146,6 +146,35 @@ class Form16DataTest extends TestCase
         $this->assertEquals(600, $f16['other']['professional_tax'], '200 x 3');
     }
 
+    /**
+     * Quarterly totals, in the FINANCIAL year's quarters.
+     *
+     * The monthly annexure alone cannot be reconciled against a 24Q return
+     * without somebody adding up three rows by hand every quarter. And January
+     * is Q4, not Q1 — a calendar reading puts three months in the wrong return.
+     */
+    public function test_it_totals_by_financial_year_quarter(): void
+    {
+        $this->actAsHr();
+        $this->taxRules();
+        $this->verifiedDeclaration();
+
+        foreach ([4, 5, 6] as $m) {
+            $this->process($m);
+        }
+        $this->process(1, 2027);   // January — Q4 of this financial year
+
+        $q = collect($this->fetch()['quarterly'])->keyBy('quarter');
+
+        $this->assertCount(3, $q['Q1']['months'], 'April, May and June are Q1');
+        $this->assertSame(['2027-01'], $q['Q4']['months'], 'January belongs to Q4');
+
+        // Each quarter's tax is the sum of its months, and deducted is reported
+        // separately from deposited even though they agree.
+        $this->assertEquals($q['Q1']['tax_deducted'], $q['Q1']['tax_deposited']);
+        $this->assertGreaterThan(0, $q['Q1']['amount_paid']);
+    }
+
     public function test_it_reports_the_regime_and_the_chapter_via_breakdown(): void
     {
         $this->actAsHr();
