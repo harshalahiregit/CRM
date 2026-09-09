@@ -66,15 +66,23 @@ const railIndex = (stage) => {
 
 const isFinished = (stage) => stage === 'Paid'
 
+/**
+ * Which PANE a stage shows. Paid has no pane of its own — a settled run is
+ * still looked at through Disburse — and without this mapping a completed run
+ * rendered a rail with nothing underneath it: `viewing` held 'Paid', every pane
+ * tested for one of the five stage keys, and none matched.
+ */
+const paneFor = (stage) => (stage === 'Paid' ? 'Disburse' : (stage || 'Pre-check'))
+
 export default function PayrollRunWizard({ run, records = [], onClose, onChanged, showToast }) {
   const [stage, setStage] = useState(run.stage || 'Pre-check')
   const [busy, setBusy] = useState(false)
 
   // The rail lets you look BACK at a finished stage without moving the run.
   // `viewing` is where the user is; `stage` is where the run actually is.
-  const [viewing, setViewing] = useState(run.stage || 'Pre-check')
+  const [viewing, setViewing] = useState(paneFor(run.stage))
 
-  useEffect(() => { setStage(run.stage || 'Pre-check'); setViewing(run.stage || 'Pre-check') }, [run.stage])
+  useEffect(() => { setStage(run.stage || 'Pre-check'); setViewing(paneFor(run.stage)) }, [run.stage])
 
   const at = railIndex(stage)
   const looking = railIndex(viewing)
