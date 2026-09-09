@@ -13,7 +13,13 @@ return [
     |
     */
 
-    'name' => env('APP_NAME', 'Laravel'),
+    // Sangoe OS, not Laravel. This string is printed on every PDF the system
+    // issues and in the header of every e-mail it sends, so the framework's own
+    // default was appearing on contracts, minutes and offer letters going to
+    // customers and vendors. The default matters as much as the .env value:
+    // .env is gitignored, so a fresh checkout or a deploy without it would put
+    // "Laravel" back on the paperwork.
+    'name' => env('APP_NAME', 'Sangoe OS'),
 
     /*
     |--------------------------------------------------------------------------

@@ -11,7 +11,10 @@
      */
     $company  = $tenant->name ?? config('app.name');
     $brand    = $tenant->branding_color ?? '#7C3AED';
-    $logo     = $tenant->logo_url ?? null;
+    $logo     = $tenant->logo_url
+        // A tenant that has not uploaded its own mark still gets a
+        // document with a mark on it, rather than a blank header.
+        ?? \App\Support\Brand::logoDataUri();
     $meetingNo = 'PKO-' . str_pad((string) $meeting->id, 4, '0', STR_PAD_LEFT);
 
     $fmt   = fn ($d) => $d ? \Illuminate\Support\Carbon::parse($d)->format('d M Y, g:i A') : '—';

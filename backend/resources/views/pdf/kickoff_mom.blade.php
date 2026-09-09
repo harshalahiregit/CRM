@@ -8,7 +8,10 @@
      */
     $company  = $tenant->name ?? config('app.name');
     $brand    = $tenant->branding_color ?? '#7C3AED';
-    $logo     = $tenant->logo_url ?? null;
+    $logo     = $tenant->logo_url
+        // A tenant that has not uploaded its own mark still gets a
+        // document with a mark on it, rather than a blank header.
+        ?? \App\Support\Brand::logoDataUri();
     /**
      * The meeting's real reference (MTG-YYYY-NNNN), which is what the app shows
      * everywhere else. The old KO-0001 was a third, PDF-only identifier for the

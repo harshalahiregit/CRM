@@ -81,6 +81,14 @@
 <body>
     <div class="container">
         <div class="header">
+            {{-- The mark, embedded as a data URI rather than linked: a mail
+                 client that fetches a remote image either blocks it and shows a
+                 broken icon, or loads it and reports the open back to us. --}}
+            @php $brandLogo = \App\Support\Brand::logoDataUri(); @endphp
+            @if($brandLogo)
+                <img src="{{ $brandLogo }}" alt="{{ config('app.name') }}"
+                     style="height:42px;display:block;margin:0 auto 8px;">
+            @endif
             <h1>{{ config('app.name') }}</h1>
         </div>
         <div class="content">
