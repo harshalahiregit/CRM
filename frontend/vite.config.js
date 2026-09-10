@@ -54,6 +54,15 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      // Uploaded files — signatures, worker photos, induction shots — are served
+      // by Laravel from public/storage. Only /api was proxied, so in dev every
+      // one of those <img> tags asked the Vite server for a file it has never
+      // heard of and drew a broken image. Same origin in production, so this is
+      // a dev-only gap that made shipped features look broken locally.
+      '/storage': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
     },
   },
 })

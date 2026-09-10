@@ -99,6 +99,27 @@ export default function DoctorProfile() {
   const stored = me?.profile?.signature_path
   const storedPhoto = me?.profile?.photo_path
 
+  // The files on record live on the PRIVATE disk, so an <img src> cannot reach
+  // them — a plain URL carries no token. They are fetched as blobs and shown as
+  // object URLs, which is what the certificate PDFs already do. Revoked on the
+  // way out so a long session does not leak them.
+  const [storedSignatureUrl, setStoredSignatureUrl] = useState(null)
+  const [storedPhotoUrl, setStoredPhotoUrl] = useState(null)
+
+  useEffect(() => {
+    if (!stored) { setStoredSignatureUrl(null); return }
+    let url = null
+    medicalApi.doctor.evidenceUrl('signature').then(u => { url = u; setStoredSignatureUrl(u) })
+    return () => { if (url) URL.revokeObjectURL(url) }
+  }, [stored])
+
+  useEffect(() => {
+    if (!storedPhoto) { setStoredPhotoUrl(null); return }
+    let url = null
+    medicalApi.doctor.evidenceUrl('photo').then(u => { url = u; setStoredPhotoUrl(u) })
+    return () => { if (url) URL.revokeObjectURL(url) }
+  }, [storedPhoto])
+
   return (
     <div style={{ maxWidth: 780 }}>
       <header style={{ marginBottom: 16 }}>
@@ -147,7 +168,16 @@ export default function DoctorProfile() {
         {stored && !signature && (
           <div style={{ marginBottom: 10 }}>
             <div style={S.label}>Current</div>
-            <img src={`/storage/${stored}`} alt="signature on file" style={{ height: 60, background: '#fff', borderRadius: 8, padding: 4 }} />
+            {storedSignatureUrl ? (
+              <img src={storedSignatureUrl} alt="signature on file"
+                style={{ height: 60, background: '#fff', borderRadius: 8, padding: 4 }} />
+            ) : (
+              // Said out loud rather than drawing a broken-image icon, which is
+              // exactly what this looked like when the file could not be reached.
+              <div style={{ height: 60, display: 'flex', alignItems: 'center', fontSize: 12, color: 'var(--text-muted)' }}>
+                Loading the signature on file…
+              </div>
+            )}
           </div>
         )}
         <canvas
@@ -175,9 +205,9 @@ export default function DoctorProfile() {
         </p>
 
         <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-          {(photo || storedPhoto) && (
+          {(photo || storedPhotoUrl) && (
             <img
-              src={photo || `/storage/${storedPhoto}`}
+              src={photo || storedPhotoUrl}
               alt="doctor"
               style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 14, border: '1px solid var(--border)', background: '#fff' }}
             />

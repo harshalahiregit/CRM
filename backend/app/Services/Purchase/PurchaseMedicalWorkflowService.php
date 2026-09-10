@@ -2,6 +2,7 @@
 
 namespace App\Services\Purchase;
 
+use App\Support\Medical\MedicalEvidence;
 use App\Exceptions\BusinessException;
 use App\Models\Purchase\PurchaseMedicalBulkBatch;
 use App\Models\Purchase\PurchaseMedicalMessage;
@@ -701,19 +702,9 @@ class PurchaseMedicalWorkflowService
 
     private function storeDataUrl(?string $dataUrl, string $prefix): ?string
     {
-        if (! $dataUrl || ! str_contains($dataUrl, 'base64,')) {
-            return null;
-        }
-
-        $binary = base64_decode(explode('base64,', $dataUrl)[1], true);
-        if ($binary === false) {
-            return null;
-        }
-
-        $path = $prefix.uniqid().'.png';
-        Storage::disk('public')->put($path, $binary);
-
-        return $path;
+        // Private disk, random name — see MedicalEvidence for why the old
+        // public-disk + uniqid() arrangement was not the protection it looked.
+        return MedicalEvidence::put($dataUrl, $prefix);
     }
 
     /**

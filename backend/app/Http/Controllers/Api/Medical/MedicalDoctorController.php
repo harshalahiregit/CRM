@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Medical;
 use App\Http\Controllers\Controller;
 use App\Models\Medical\MedicalDoctorProfile;
 use App\Models\User;
+use App\Services\Auth\PasswordSetupLink;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -24,6 +25,8 @@ use Illuminate\Validation\Rule;
  */
 class MedicalDoctorController extends Controller
 {
+    public function __construct(private PasswordSetupLink $links) {}
+
     public function index(Request $request)
     {
         $rows = MedicalDoctorProfile::forTenant($request->user()->tenant_id)
@@ -50,6 +53,14 @@ class MedicalDoctorController extends Controller
             'clinic_address' => 'nullable|string|max:255',
             'modules'        => 'nullable|array',
             'modules.*'      => ['string', Rule::in(['tpv', 'purchase'])],
+            // How the doctor comes by their password. 'invite' is the default
+            // and the one to prefer: the doctor sets it themselves and nobody
+            // else ever learns it, so a certificate signed by them could not
+            // have been signed by the admin who created the account.
+            //
+            // 'password' stays for sites where email is unreliable, which on a
+            // construction site it often is.
+            'delivery'       => ['nullable', Rule::in(['invite', 'password'])],
         ], [
             // The default wording for a taken e-mail is "The email has already
             // been taken", which does not say WHERE. The address is the login,
@@ -61,8 +72,16 @@ class MedicalDoctorController extends Controller
         ]);
 
         $tenantId = $request->user()->tenant_id;
-        // A generated password is returned once, to the admin who created the
-        // account — never stored in the clear and never mailed from here.
+
+        // Invite unless an explicit password was asked for. Supplying one is
+        // itself a request for the password route — an admin who typed a
+        // password means to hand it over.
+        $invite = ($data['delivery'] ?? ($data['password'] ?? null ? 'password' : 'invite')) === 'invite';
+
+        // On the invite route the account still needs SOMETHING in the column:
+        // a long random string nobody has ever seen, so the only way in is the
+        // link. A generated password on the other route is returned once, to
+        // the admin who created the account, and never stored in the clear.
         $password = $data['password'] ?? str()->password(12, true, true, false);
 
         $profile = DB::transaction(function () use ($data, $tenantId, $password) {
@@ -92,10 +111,128 @@ class MedicalDoctorController extends Controller
             ]);
         });
 
+        if ($invite) {
+            $sent = $this->links->invite($profile->user, 'doctor login', $request->user()->name);
+
+            return response()->json([
+                'message' => $sent
+                    ? 'Doctor login created. An invitation to set a password has been emailed.'
+                    : 'Doctor login created, but the invitation could not be sent. Use Resend invitation, or set a password instead.',
+                'data'    => $profile->load('user:id,name,email,phone,status,role'),
+                // Deliberately absent: on this route nobody but the doctor ever
+                // learns the password, which is what makes their signature theirs.
+                'invited' => $sent,
+            ], 201);
+        }
+
         return response()->json([
-            'message'           => 'Doctor login created.',
-            'data'              => $profile->load('user:id,name,email,phone,status,role'),
-            'temporary_password' => $data['password'] ?? $password,
+            'message'            => 'Doctor login created.',
+            'data'               => $profile->load('user:id,name,email,phone,status,role'),
+            'temporary_password' => $password,
+            'invited'            => false,
+        ], 201);
+    }
+
+    /**
+     * Send (or re-send) the invitation to set a password.
+     *
+     * Needed because an invitation can fail to arrive for reasons that have
+     * nothing to do with this system — a wrong address, a full mailbox, an
+     * expired link. Without it the only remedy was to reset the password and
+     * read it out, which is the very thing the invite route exists to avoid.
+     */
+    public function invite(Request $request, int $id)
+    {
+        $profile = $this->find($request, $id);
+        $user    = $profile->user;
+
+        abort_unless($user, 404, 'This doctor has no login to invite.');
+        abort_if($user->status !== 'active', 422, 'This account is deactivated. Reactivate it before inviting.');
+
+        $sent = $this->links->invite($user, 'doctor login', $request->user()->name);
+
+        return response()->json([
+            'message' => $sent
+                ? 'Invitation sent. The link can be used once and expires in '.$this->links->expiryMinutes().' minutes.'
+                : 'The invitation could not be sent. Check the email address, or set a password instead.',
+            'invited' => $sent,
+        ], $sent ? 200 : 502);
+    }
+
+    /**
+     * Make an EXISTING user a doctor.
+     *
+     * A company doctor who already had a staff login could not become one:
+     * creating required an unused email address, and staff management can only
+     * set admin or staff. The only way through was a second account on a second
+     * address — two logins for one person, and certificates attributed to
+     * whichever they happened to be signed in as.
+     *
+     * No new password and no invitation: they already have a way in. Only the
+     * role changes, and the practising profile is attached to it.
+     */
+    public function promote(Request $request)
+    {
+        $data = $request->validate([
+            'user_id'        => 'required|integer',
+            'license_no'     => 'required|string|max:60',
+            'council'        => 'nullable|string|max:160',
+            'qualification'  => 'nullable|string|max:160',
+            'designation'    => 'nullable|string|max:120',
+            'clinic_name'    => 'nullable|string|max:160',
+            'clinic_address' => 'nullable|string|max:255',
+            'modules'        => 'nullable|array',
+            'modules.*'      => ['string', Rule::in(['tpv', 'purchase'])],
+        ], [
+            'license_no.required' => 'The licence number is required — it is printed on every certificate this doctor signs.',
+        ]);
+
+        $tenantId = $request->user()->tenant_id;
+
+        $user = User::where('tenant_id', $tenantId)->find($data['user_id']);
+        abort_unless($user, 404, 'That person is not in this workspace.');
+
+        abort_if(
+            MedicalDoctorProfile::forTenant($tenantId)->where('user_id', $user->id)->exists(),
+            422,
+            'That person is already a doctor.',
+        );
+
+        // Portal logins belong to their own registers and are not people of this
+        // company; promoting one would put a vendor inside the workspace.
+        abort_unless(
+            in_array($user->role, ['admin', 'staff'], true),
+            422,
+            'Only an internal team member can be made a doctor.',
+        );
+
+        $profile = DB::transaction(function () use ($user, $data, $tenantId) {
+            // An admin keeps their admin role: taking it away to make somebody a
+            // doctor would quietly remove their access to everything else.
+            if ($user->role === 'staff') {
+                $user->forceFill(['role' => 'doctor'])->save();
+            }
+
+            return MedicalDoctorProfile::create([
+                'tenant_id'      => $tenantId,
+                'user_id'        => $user->id,
+                'license_no'     => $data['license_no'],
+                'council'        => $data['council'] ?? null,
+                'qualification'  => $data['qualification'] ?? null,
+                'designation'    => $data['designation'] ?? null,
+                'clinic_name'    => $data['clinic_name'] ?? null,
+                'clinic_address' => $data['clinic_address'] ?? null,
+                'phone'          => $user->phone,
+                'modules'        => $data['modules'] ?? null,
+                'is_active'      => true,
+            ]);
+        });
+
+        return response()->json([
+            'message' => $profile->user->role === 'doctor'
+                ? 'This person can now sign in as a doctor with their existing password.'
+                : 'Doctor profile added. They keep their admin access and can now examine as well.',
+            'data'    => $profile->load('user:id,name,email,phone,status,role'),
         ], 201);
     }
 
