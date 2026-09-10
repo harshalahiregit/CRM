@@ -291,6 +291,40 @@ Two consequences worth stating:
 
 Roughly `issues/month × screenshots/issue × ~40 KB` (WebP, capped at 1600px).
 
+### The backend and the SPA must ship together
+
+§2 deploys in two independent rsyncs — `backend/`, then `frontend/dist/` into
+`public/`. Nothing forces them to happen together, and a backend-only deploy
+leaves the browser running an older bundle against newer PHP.
+
+**That failure is invisible from every angle except the missing feature.** The
+API is healthy, the tables are there, the routes resolve, `sire:doctor` is
+green — and a field the backend offers simply never renders, because the
+JavaScript that draws it was built before the field existed. It has already
+happened once: triage had no Category picker for an afternoon while
+`/api/sire/dashboard/options` was returning all eight of them.
+
+So stamp both halves with the same commit and let the doctor compare them. Add
+these two lines to the deploy, each immediately before its own rsync:
+
+```bash
+# before the backend rsync
+git rev-parse --short HEAD > backend/build-id.txt
+
+# after `npm run build`, before the frontend rsync
+git rev-parse --short HEAD > frontend/dist/build-id.txt
+```
+
+`sire:doctor` then reports one of three things:
+
+| | |
+|---|---|
+| `PASS  Build parity — backend and SPA are both a1b2c3d` | they shipped together |
+| `WARN  Build parity — backend is a1b2c3d, the SPA is 9f8e7d6` | **one rsync was skipped** |
+| `INFO  Build parity — not stamped` | nobody wrote the files; the check stays quiet |
+
+It never fails the run. A skew is something to act on, not a reason to refuse to
+report everything else.
 ### Two warnings that are EXPECTED here, and two commands not to run
 
 `sire:doctor` reports these on this box and both are artefacts of how we deploy —

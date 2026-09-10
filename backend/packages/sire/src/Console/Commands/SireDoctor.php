@@ -73,6 +73,7 @@ class SireDoctor extends Command
         $checks[] = $this->checkAi($ai);
         $checks[] = $this->checkArchitecture();
         $checks[] = $this->checkFrontend();
+        $checks[] = $this->checkBuildParity();
 
         $failed = array_filter($checks, fn (array $c) => $c['status'] === 'fail');
         $warned = array_filter($checks, fn (array $c) => $c['status'] === 'warn');
@@ -394,6 +395,66 @@ class SireDoctor extends Command
             count($failed).' architecture check(s) failing.',
             'SIRE core has picked up a dependency on something specific to one host.',
             'php artisan sire:architecture',
+        );
+    }
+
+    /**
+     * Is the deployed SPA the same build as the deployed backend?
+     *
+     * This deployment ships in TWO independent rsyncs -- backend/ and then
+     * frontend/dist/ into public/. Nothing forces them to happen together, and a
+     * backend-only deploy leaves the browser running an older bundle against
+     * newer PHP.
+     *
+     * That failure is invisible from every other angle. The API is healthy, the
+     * tables are there, the routes resolve, the doctor is green -- and a field
+     * the backend offers simply never renders, because the JavaScript that draws
+     * it was built before the field existed. It cost a live afternoon: triage had
+     * no Category picker while /dashboard/options was returning all eight.
+     *
+     * So both halves carry the same stamp and this compares them:
+     *
+     *   build-id.txt         written next to artisan, ships with backend/
+     *   public/build-id.txt  built into the SPA, ships with frontend/dist/
+     *
+     * Absent on a dev box, which is not a fault -- the check only speaks when it
+     * can actually tell, and never fails the run: a version skew is a warning to
+     * act on, not a reason to refuse to report everything else.
+     */
+    private function checkBuildParity(): array
+    {
+        $backendFile  = base_path('build-id.txt');
+        $frontendFile = public_path('build-id.txt');
+
+        if (! is_file($backendFile) || ! is_file($frontendFile)) {
+            return $this->result(
+                'Build parity',
+                'info',
+                'not stamped — cannot compare backend and SPA builds',
+                "This deployment ships the backend and the built SPA as two separate rsyncs,\n"
+                ."so they can silently drift a version apart.",
+                'See DEPLOY-NEXFORE.md §9 — write build-id.txt on both sides at deploy time.',
+            );
+        }
+
+        $backend  = trim((string) file_get_contents($backendFile));
+        $frontend = trim((string) file_get_contents($frontendFile));
+
+        if ($backend === '' || $frontend === '') {
+            return $this->result('Build parity', 'warn', 'a build-id.txt is empty');
+        }
+
+        if ($backend === $frontend) {
+            return $this->result('Build parity', 'pass', "backend and SPA are both {$backend}");
+        }
+
+        return $this->result(
+            'Build parity',
+            'warn',
+            "backend is {$backend}, the SPA is {$frontend}",
+            "The browser is running a different build from the API. Fields the backend\n"
+            ."offers may not render at all, and nothing else in this report will show it.",
+            'cd frontend && npm run build, then rsync frontend/dist/ into public/ — and hard-refresh.',
         );
     }
 
