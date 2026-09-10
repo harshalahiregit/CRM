@@ -36,6 +36,17 @@ Authority for who rules on what: the Conflict Resolution matrix in
 | D-21 | No pre-trip permission; role conflict | **Critical** | Security + Architecture | Open — **rows derived and FLAGGED in code** |
 | D-22 | Photo evidence, no upload capability | High | Product | Open — deferred by owner |
 | D-23 | A second dispatch-block rule has no owner | Medium | Product + Architecture | Open — recorded only |
+| D-24 | Ticket 005 has no requirement anywhere | **Critical** | Product + Step 12 maintainer | Open — build held |
+| D-25 | Lane has no entity, yet keys the rate card | **Critical** | System Architect | Open |
+| D-26 | Rate entity: four names, zero specification | **Critical** | System Architect | Open |
+| D-27 | Rate lifecycle + approval have nowhere to live | High | Architecture + Product | Open |
+| D-28 | Vendor/buy-side rates named once, specified nowhere | Medium | Commercial + Product | Open |
+| D-29 | Six exception lifecycles; Step 11 contradicts itself | **Critical** | Architecture + Product | Open — blocks ticket 013 |
+| D-30 | Exception state `waived` required but undefined | High | Product | Open — blocks ticket 013 |
+| D-31 | Exception permission key with no matrix row | **Critical** | Security + Architecture | Open |
+| D-32 | Financial/customer impact fields with no calculator | High | Product + Finance | Open |
+| D-33 | Exception→task needs another module's Task Engine | Medium | Product + Architecture | Open |
+| D-34 | SLA needs a business calendar that does not exist | High | Product | Open |
 
 ---
 
@@ -507,6 +518,180 @@ they compose**. Whoever owns D-18 (dispatch confirmation) must gate on both, and
 path is P1 alongside every other override in the package.
 
 **Needs:** Product + Architecture to state the composition rule before dispatch is built.
+
+---
+
+# ══════════════════════════════════════════════════════════════════════
+# D-24 … D-34 — found during the SNG-TRN-005 and SNG-TRN-013 pre-build
+# analyses. NEITHER TICKET WAS BUILT, so these are findings, not
+# workarounds: no code depends on any of them.
+# ══════════════════════════════════════════════════════════════════════
+
+## D-24 — SNG-TRN-005 (Rate Card) is a P0 ticket with no requirement behind it
+
+Searched the full text of all 42 documents. `rate card`, `pricing`, `tariff`, `freight`,
+`quotation` and `lane` appear as **requirements** in none of them:
+
+| Source | Rate-card requirement? |
+|---|---|
+| STOS-RTM (the traceability matrix) | **None.** §15 Customer & Sales and §16 Transport Order have no rate row. |
+| FRS Step 3 — 22 P0 + 12 P1 rows | **None.** The FRS begins at "Order to Trip". |
+| Step 5 execution pack — 25 tasks | **None.** |
+| Step 6 build blueprint — 18 tickets | **None.** |
+
+It is the **only ticket in the register with neither an RTM row nor an FRS row**. Its own four
+refs also misresolve: `FRS-P0-005` does not exist, `BR-004` resolves to *"Next Best Action"* in the
+business risk model, `DB-005` is `drivers`, and `FRS-RAT` appears in one cell and nowhere else.
+
+RTM **§48** forbids introducing a feature without a requirement ID; **§50** says an untraceable item
+must be marked a TRACEABILITY EXCEPTION and **"Do not mark it complete."**
+
+Authority to build does exist elsewhere — Step 9 makes `Rate / Quote` canonical entity #3 with change
+rule "Versioned", Step 11 carries DB-016 `transport_rates`, Step 12 marks it P0/Ready. Three of the
+four top authorities support it; only the traceability matrix is silent.
+
+**Held by the owner, 2026-09-10**, pending a requirement row or a written exception. Also noted: the
+`Dependencies` sheet omits rate → viability even though ticket 008's *Depends On* names 005.
+
+---
+
+## D-25 — The rate card's primary key dimension has no entity
+
+Three documents key rate cards on **lane**:
+
+- Step 2 `BO-005` — *"Rate Card / Contract | **Customer + lane** | …"*
+- Step 9 entity #3 — *"Rate / Quote | … | Order, Trip, customer, **lane**"*
+- Step 11 `DB-016` — *"**Lane**/customer/vendor rate cards"*
+
+**No Lane entity exists** in Step 11's twenty, and no ticket builds one. Worse, the RTM rates the
+master that would make a lane real as **P1**:
+
+> `STOS-REQ-MDM-004` — *"Maintain location master · Origin/destination reusable"* · **P1**
+
+So a rate card built now would be keyed on a dimension the specification says is not due yet, and the
+key would change when the location master lands — on a table whose historical rows FIN §12 says must
+never be rewritten. Ticket 006 already met its own *"Order has customer, lane, rate"* acceptance with
+a free-text `route` column for the same reason.
+
+---
+
+## D-26 — One entity, four names, and no specification at all
+
+| Source | Name |
+|---|---|
+| Step 11 `DB-016` | `transport_rates` |
+| STOS-DB §99 | `rate_cards` |
+| Step 5 | `order_rates` — a *different*, order-level entity |
+| Step 4 `DM-04` | "Rate Card / Rate Contract", `rate_id` |
+
+`DB-016` has **no fields, no indexes, no API, no event, no permission and no enum** anywhere in
+Step 11. The ticket is **BE-only** yet its user story is *"As an owner, I can **configure**…"* — the
+package specifies no way for an owner to do that.
+
+FIN §10 lists **eleven** rate dimensions and FIN §11 **eleven** charge components; six of the
+dimensions have no field anywhere in the system.
+
+---
+
+## D-27 — The rate lifecycle and its approval have nowhere to live
+
+Step 2 `BO-005` gives rate cards a lifecycle — **Draft / Approved / Expired** — but neither Step 9's
+nor Step 11's state machines carry a Rate machine, and there are no `STT-*` rows for it.
+
+FIN §13 requires rate approval to capture proposed rate, previous rate, margin impact, reason,
+approver and effective date; `BRW-014` requires a rate to come from an *"Approved customer contract,
+Approved rate card, or Authorized manual rate"*. Step 11 has **no approval entity**, and
+**no contract entity** — so two of BRW-014's three permitted sources cannot exist.
+
+---
+
+## D-28 — The buy-side is named once and specified nowhere
+
+*"vendor rate cards"* occurs in exactly one place in 42 documents: `DB-016`'s purpose line. Nothing
+states what a supplier rate contains, how it differs from a customer rate, or how the two resolve
+against one trip. Supplier rates would change the entity's shape materially.
+
+---
+
+## D-29 — Six exception lifecycles, and Step 11 contradicts itself
+
+| Source | States |
+|---|---|
+| **Step 9** (highest authority) | OPEN → ACKNOWLEDGED → IN_PROGRESS → MITIGATION_PLANNED → RESOLVED → VERIFIED / CLOSED |
+| **Step 11 `SM-EXC`** (LOCKED) | open → acknowledged → resolved — **`resolved` marked terminal** |
+| **Step 11 `ENUM-004`** | open, acknowledged, **in_progress**, resolved, **closed** |
+| Step 5 | open → acknowledged → **mitigated** → resolved → closed |
+| FRS `TRP-P0-012` | open → acknowledged → resolved / **waived** |
+| LSM §74 | DETECTED → CLASSIFIED → PRIORITIZED → ASSIGNED → NOTIFIED → ACTION_IN_PROGRESS → RESOLVED → VERIFIED → CLOSED, + OVERDUE → ESCALATED |
+
+**Step 11 contradicts itself twice**: `SM-EXC` has three states where `ENUM-004` has five, and
+`SM-EXC` calls `resolved` terminal while `ENUM-004` places `closed` after it. Nine distinct state
+tokens across the package — the worst state divergence found, worse than the Trip machine.
+
+Only `STT-015` (open→acknowledged) and `STT-016` (acknowledged→resolved) are defined.
+
+**Blocks SNG-TRN-013.** Awaiting the owner's Q1 ruling.
+
+---
+
+## D-30 — The exception state `waived` is required and exists nowhere
+
+FRS `TRP-P0-012`'s output is *"Open→acknowledged→resolved/**waived**"* and its control is
+*"Waiver requires reason/role"*. `BR-P0-011`'s Override column is *"Owner waiver"*.
+
+No enum or state machine in the package contains `waived`.
+
+Notable: this is the **first override written into a P0 Hard rule's own definition**, unlike
+PLN-007, CMP-007 and BRW-049, which were all deferred as P1. That makes it a closer call than the
+other overrides. **Blocks SNG-TRN-013.** Awaiting the owner's Q2 ruling.
+
+---
+
+## D-31 — An exception permission key with no matrix row
+
+`API-007` names the permission `transport.exception.create`, so unlike D-8 and D-21 **the key name
+is specified**. But Step 11's Permissions sheet has **no Exception row**, so who holds it is not.
+
+Worse, OPS §90 requires owners to be assigned **automatically** from *category; branch; role;
+escalation matrix*, and OPS §91 escalates *L1 Employee → L2 Supervisor → L3 HOD → L4 Management →
+L5 CEO*. **Branch has no model**, the escalation matrix has no entity, and "Supervisor"/"HOD" are not
+among Step 11's nine role names — the same defect as D-21.
+
+---
+
+## D-32 — Financial and customer impact are required fields with no calculator
+
+OPS §87 requires every exception to contain *financial impact* and *customer impact*. LSM §83 goes
+further: *"every exception/state should calculate financial impact"*, with examples
+(*Billing Blocked = ₹X, Idle Vehicle Risk = ₹X/day*).
+
+**No formula exists anywhere in the package**, and no cost model exists until SNG-TRN-012/018. The
+fields can be stored; nothing can populate them.
+
+---
+
+## D-33 — Exception→task requires another module's Task Engine
+
+OPS §92: *"OPS shall use Sangoe's **shared Task Engine**"*, and §93 requires automatic task creation
+(allocate driver, collect document, verify POD, resolve delay…).
+
+The Task module is outside Transport, and the standing rule for this work is that no other module may
+be modified. Exception-driven task creation therefore cannot be built inside SNG-TRN-013 without a
+cross-module decision.
+
+---
+
+## D-34 — SLA computation requires a business calendar that does not exist
+
+`BRWM §58` requires every SLA-controlled process to define **seven** elements: start event, target
+duration, warning duration, overdue duration, escalation level, **business calendar**, exception
+handling.
+
+`BRWM §59` then requires the calendar to support *working hours; weekends; holidays; branch location;
+customer-specific calendar*. **None of these has an entity.** Branch is the same missing model as
+D-31 and the ticket-009 "wrong branch" gap.
+
+Elapsed wall-clock SLA is buildable. Business-calendar SLA is not.
 
 ---
 
