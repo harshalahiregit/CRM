@@ -171,6 +171,11 @@ export const purchaseApi = {
     setStatus: (id, status)  => api.patch(`/purchase/vendors/${id}/status`, { status }).then(r => r.data),
     approve:   (id)          => api.post(`/purchase/vendors/${id}/approve`).then(r => r.data),   // admin-only
     resendActivation: (id)   => api.post(`/purchase/vendors/${id}/resend-activation`).then(r => r.data), // admin-only
+    // Temporary -> Permanent. Admin-only, and the counterpart of TPV's
+    // tpvApi.access.convert. Purchase had the temporary side complete — a
+    // registration type, an access window, an expiry that shuts the portal —
+    // and no way out of it, so a temporary vendor could only expire.
+    convertToPermanent: (id) => api.post(`/purchase/vendors/${id}/convert`).then(r => r.data),
     delete:    (id)          => api.delete(`/purchase/vendors/${id}`).then(r => r.data),
 
     // ── Vendor detail workspace tabs ─────────────────────────────────────

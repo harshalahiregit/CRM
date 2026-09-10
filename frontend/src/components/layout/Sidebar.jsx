@@ -1,9 +1,10 @@
 import {
-  Activity, ArrowLeftRight, Award, Banknote, BarChart2, BarChart3, Bell, BookOpen, BookText, Boxes, Briefcase, Building2, CalendarCheck, CalendarClock, CalendarDays, CalendarOff, CalendarRange, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList, Clock, Contact, CreditCard, Factory, FileCheck2, FileQuestion, FileSignature, FileText, FileX, FolderOpen, Globe, GraduationCap, Handshake, HelpCircle, History, Hourglass, IndianRupee, Landmark, Layers3, LayoutDashboard, LayoutTemplate, LifeBuoy, Link2, LogOut, MessageSquare, Network, Package, PackageMinus, PackagePlus, PartyPopper, PenLine, Receipt, RefreshCw, Rocket, Scale, ScanLine, Search, Settings, Settings2, Shield, ShieldCheck, SlidersHorizontal, ShoppingBag, ShoppingCart, Stethoscope, TrendingUp, Truck, Undo2, User, UserCheck, UserCog, UserPlus, UserRound, Users, Wallet, Warehouse, Wrench, X, Zap,
+  Activity, ArrowLeftRight, Award, Banknote, BarChart2, BarChart3, Bell, BookOpen, BookText, Boxes, Briefcase, Bug, Building2, CalendarCheck, CalendarClock, CalendarDays, CalendarOff, CalendarRange, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList, Clock, Contact, CreditCard, Factory, FileCheck2, FileQuestion, FileSignature, FileText, FileX, FolderOpen, Globe, GraduationCap, Handshake, HelpCircle, History, Hourglass, IndianRupee, Landmark, Layers3, LayoutDashboard, LayoutTemplate, LifeBuoy, Link2, LogOut, MessageSquare, Network, Package, PackageMinus, PackagePlus, PartyPopper, PenLine, Receipt, RefreshCw, Rocket, Scale, ScanLine, Search, Settings, Settings2, Shield, ShieldCheck, ShoppingBag, ShoppingCart, SlidersHorizontal, Stethoscope, TrendingUp, Truck, Undo2, User, UserCheck, UserCog, UserPlus, UserRound, Users, Wallet, Warehouse, Wrench, X, Zap,
 } from 'lucide-react'
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/context/AuthContext'
+import { canUseSire } from '@/lib/sire/access'
 import { useTheme } from '@/context/ThemeContext'
 import { helpdeskApi } from '@/services/helpdeskApi'
 import sangoeIcon from '@/assets/sangoe-icon.png'
@@ -189,6 +190,17 @@ const ACCOUNTS_SUB_ITEMS = [
   { label: 'Budgets',         path: '/app/accounts/budgets',         icon: BarChart2 },
   { label: 'Reports',         path: '/app/accounts/reports',         icon: Scale },
   { label: 'Settings',        path: '/app/accounts/settings',        icon: Settings },
+]
+
+// SIRE - the engineering defect track. Deliberately its own section and NOT
+// under Helpdesk: a ticket closes when the requester is happy, a SIRE case when
+// the fix ships verified. Same word "issue", different object.
+const SIRE_SUB_ITEMS = [
+  { label: 'Dashboard',     path: '/app/sire/dashboard',     icon: LayoutDashboard },
+  { label: 'My Work',       path: '/app/sire/my-work',       icon: CheckSquare },
+  { label: 'Releases',      path: '/app/sire/releases',      icon: Rocket },
+  { label: 'Quality',       path: '/app/sire/quality',       icon: ShieldCheck },
+  { label: 'Insights',      path: '/app/sire/insights',      icon: BarChart3 },
 ]
 
 const HELPDESK_SUB_ITEMS = [
@@ -992,6 +1004,39 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
             </NavLink>
           ))}
         </div>
+
+        {/* -- SIRE Module sub-nav -- internal engineering only, so a customer
+            is not shown a section that answers 403 behind every link. -- */}
+        {canUseSire(user) && (
+        <div data-section-block className={clsx('mt-2')}>
+          {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#fb7185' }}>Issues & Quality</p>}
+          <button
+            onClick={() => toggleSection('sire')}
+            data-section="sire"
+            title={collapsed ? 'Issues & Quality' : ''}
+            className="nav-3d mb-0.5 w-full"
+            style={{ justifyContent: collapsed ? 'center' : undefined, color: '#fb7185' }}
+          >
+            <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(244,63,94,0.15)' }}>
+              <Bug size={13} style={{ color: '#fb7185' }} />
+            </div>
+            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Issues & Quality</span><ChevronDown size={13} className={clsx('transition-transform duration-200', openSection === 'sire' && 'rotate-180')} /></>}
+          </button>
+          {(openSection === 'sire' || collapsed) && SIRE_SUB_ITEMS.map(({ label, path, icon: Icon }) => (
+            <NavLink key={path} to={path}>
+              {({ isActive }) => (
+                <div title={collapsed ? label : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined, paddingLeft: collapsed ? undefined : '28px' }}>
+                  <div className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(244,63,94,0.06)' }}>
+                    <Icon size={12} />
+                  </div>
+                  {!collapsed && <span className="truncate text-xs">{label}</span>}
+                  {isActive && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#fda4af' }} />}
+                </div>
+              )}
+            </NavLink>
+          ))}
+        </div>
+        )}
       </nav>
 
       {/* ── Bottom Controls ────────────────────────────────── */}

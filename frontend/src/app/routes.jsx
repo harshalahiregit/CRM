@@ -200,6 +200,19 @@ const PublicArticle = lazy(() => import('@/modules/helpdesk/public/PublicArticle
 const PublicKb = lazy(() => import('@/modules/helpdesk/public/PublicKb'))
 const PublicTicketView = lazy(() => import('@/modules/helpdesk/public/PublicTicketView'))
 
+// SIRE Module (lazy) -- the engineering defect track. Not the Helpdesk: a ticket
+// closes when the requester is satisfied, a SIRE case when the fix ships verified.
+const SireLayout = lazy(() => import('@/modules/sire/SireLayout'))
+const SireDashboard = lazy(() => import('@/modules/sire/pages/DashboardPage'))
+const SireMyWork = lazy(() => import('@/modules/sire/pages/MyWorkPage'))
+const SireIssueDetail = lazy(() => import('@/modules/sire/pages/IssueDetailPage'))
+const SireReleaseBoard = lazy(() => import('@/modules/sire/pages/ReleaseBoardPage'))
+const SireReleaseDetail = lazy(() => import('@/modules/sire/pages/ReleaseDetailPage'))
+const SireReleaseNotes = lazy(() => import('@/modules/sire/pages/ReleaseNotesPage'))
+const SireQuality = lazy(() => import('@/modules/sire/pages/QualityDashboardPage'))
+const SireInsights = lazy(() => import('@/modules/sire/pages/EngineeringInsightsPage'))
+const SireRecurrenceDetail = lazy(() => import('@/modules/sire/pages/RecurrenceDetailPage'))
+
 // Projects Module (lazy)
 const ProjectList = lazy(() => import('@/modules/projects/pages/ProjectList'))
 const ProjectDetail = lazy(() => import('@/modules/projects/pages/ProjectDetail'))
@@ -742,6 +755,20 @@ export default function AppRoutes() {
           <Route path="kb-admin" element={<S><KbAdmin /></S>} />
           <Route path="widget" element={<S><WidgetSettings /></S>} />
           <Route path="settings" element={<S><SupportSettings /></S>} />
+        </Route>
+
+        {/* SIRE MODULE (issue -> verified fix) */}
+        <Route path="sire" element={<ProtectedRoute blockRoles={['client', 'third_party_vendor', 'vendor', 'company', 'doctor']}><S><SireLayout /></S></ProtectedRoute>}>
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<S><SireDashboard /></S>} />
+          <Route path="my-work" element={<S><SireMyWork /></S>} />
+          <Route path="cases/:id" element={<S><SireIssueDetail /></S>} />
+          <Route path="releases" element={<S><SireReleaseBoard /></S>} />
+          <Route path="releases/:id" element={<S><SireReleaseDetail /></S>} />
+          <Route path="release-notes/:noteId" element={<S><SireReleaseNotes /></S>} />
+          <Route path="quality" element={<S><SireQuality /></S>} />
+          <Route path="insights" element={<S><SireInsights /></S>} />
+          <Route path="recurring/:id" element={<S><SireRecurrenceDetail /></S>} />
         </Route>
 
         {/* PURCHASE MODULE (procure-to-pay) */}

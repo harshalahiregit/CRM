@@ -1,3 +1,4 @@
+import { medicalApi } from '@/services/medicalApi'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import QRCode from 'qrcode'
@@ -426,9 +427,18 @@ function Step2Medical({ worker, editable, onSaved, onNext, api }) {
   const [mhVer, setMhVer]   = useState(1)
   const [mhAnswers, setMhAnswers] = useState(m.screening_responses && typeof m.screening_responses === 'object' ? m.screening_responses : {})
   const [sigTab, setSigTab] = useState('upload')
-  const [sigPreview, setSigPreview] = useState(
-    m.signature_path ? `/storage/${m.signature_path}` : (m.signature_file ? `/storage/${m.signature_file}` : null)
-  )
+  // The signature on record moved off the publicly-served disk, so it can
+  // no longer be shown by URL — it is fetched through the authenticated
+  // route and revoked when this step goes away.
+  const [sigPreview, setSigPreview] = useState(null)
+
+  useEffect(() => {
+    if (!m.id || !m.signature_path) return
+    let url = null
+    medicalApi.admin.evidenceUrl('tpv', m.id, 'signature')
+      .then(u => { url = u; if (u) setSigPreview(u) })
+    return () => { if (url) URL.revokeObjectURL(url) }
+  }, [m.id, m.signature_path])
   const [stampText, setStampText]   = useState('')
   const [stampFont, setStampFont]   = useState('bold 20px Arial')
   const [stampColor, setStampColor] = useState('#0d47a1')

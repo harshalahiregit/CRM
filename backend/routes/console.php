@@ -135,6 +135,15 @@ Schedule::command('tpv:temporary-access-reminders')
     ->withoutOverlapping()
     ->runInBackground();
 
+// The same for Purchase, which had no sweep at all — its temporary vendors were
+// never warned and never actually expired. Offset to :15 rather than sharing the
+// hour with the TPV sweep: both send mail through the tenant's own SMTP, and a
+// complete send against a real server was measured at ~11 seconds.
+Schedule::command('purchase:temporary-access-reminders')
+    ->hourlyAt(15)
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // Onboarding approval SLA escalations — hourly.
 Schedule::command('tpv:approval-escalations')
     ->hourly()
