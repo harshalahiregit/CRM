@@ -15,6 +15,25 @@ import { useToast } from '@/components/ui/Toast'
  */
 const STATUS_COLORS = { Active: '#10b981', Pending_Approval: '#f59e0b', Draft: '#6b7280', On_Hold: '#f59e0b', Rejected: '#ef4444', Blacklisted: '#991b1b', Inactive: '#6b7280' }
 
+/**
+ * How far this vendor has got with onboarding.
+ *
+ * A vendor with no onboarding row reads "Not started" rather than an empty
+ * cell: blank is indistinguishable from a column that failed to load, and this
+ * one exists precisely so an admin can tell the difference before activating.
+ */
+const ONBOARDING_COLORS = {
+  Approved: '#10b981', Submitted: '#0ea5e9', In_Progress: '#f59e0b',
+  Draft: '#6b7280', Rejected: '#ef4444', On_Hold: '#f59e0b', Resubmit: '#f59e0b',
+}
+
+function onboardingBadge(status) {
+  const label = status ? String(status).replace(/_/g, ' ') : 'Not started'
+  const colour = status ? (ONBOARDING_COLORS[status] || '#6b7280') : '#9ca3af'
+
+  return <span style={{ fontSize: 11, fontWeight: 700, color: colour }}>{label}</span>
+}
+
 export default function PurchaseVendors() {
   const navigate = useNavigate()
   const [rows, setRows] = useState([])
@@ -108,6 +127,7 @@ export default function PurchaseVendors() {
     { key: 'email',                label: 'Email' },
     { key: 'registration_type',    label: 'Type',     export: v => v.registration_type_label || v.registration_type || '' },
     { key: 'validity',             label: 'Remaining Validity', export: v => v.validity_countdown?.label || '' },
+    { key: 'onboarding',           label: 'Onboarding', export: v => (v.onboarding?.status || 'Not started').replace(/_/g, ' ') },
     { key: 'status',               label: 'Status',   export: v => v.status_label || v.status || '' },
     // Not on screen — the table has no room — but the single most useful
     // column in a spreadsheet, so the export carries it.
@@ -157,12 +177,12 @@ export default function PurchaseVendors() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ background: 'var(--bg-input)' }}>
-              {['Code', 'Company', 'Email', 'Type', 'Remaining Validity', 'Status', ''].map((h) => <th key={h} style={th}>{h}</th>)}
+              {['Code', 'Company', 'Email', 'Type', 'Remaining Validity', 'Onboarding', 'Status', ''].map((h) => <th key={h} style={th}>{h}</th>)}
             </tr>
           </thead>
           <tbody>
-            {loading ? <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</td></tr>
-              : rows.length === 0 ? <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>No purchase vendors yet.</td></tr>
+            {loading ? <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</td></tr>
+              : rows.length === 0 ? <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>No purchase vendors yet.</td></tr>
               : rows.map((v) => (
                 <tr key={v.id} style={{ borderTop: '1px solid var(--border)' }}>
                   <td style={td}>{v.purchase_vendor_code}</td>
@@ -170,6 +190,10 @@ export default function PurchaseVendors() {
                   <td style={td}>{v.email || '—'}</td>
                   <td style={td}><PurchaseRegistrationBadge type={v.registration_type} label={v.registration_type_label} /></td>
                   <td style={td}><TemporaryVendorValidityBadge countdown={v.validity_countdown} compact /></td>
+                  {/* Activation no longer waits for onboarding, so this is how an
+                      admin sees what they are about to approve — "Not started" is
+                      a real answer, not a blank. */}
+                  <td style={td}>{onboardingBadge(v.onboarding?.status)}</td>
                   <td style={td}><span style={{ fontSize: 11, fontWeight: 700, color: STATUS_COLORS[v.status] || '#6b7280' }}>{v.status_label || v.status}</span></td>
                   <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                     {v.status !== 'Active' && <button onClick={() => activate(v.id)} style={{ ...miniBtn, color: '#10b981' }}><CheckCircle2 size={13} /> Activate</button>}

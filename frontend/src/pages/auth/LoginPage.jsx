@@ -361,8 +361,12 @@ export default function LoginPage() {
           {/* A customer contact never self-registers — access begins with a
               staff member inviting a real contact of a real customer — so the
               link is simply not offered for that identity. */}
+          {/* One registration form for every identity. The Purchase portal had a
+              second one of its own, collecting four fields where the main form
+              collects fifteen, so which door a vendor came through decided how
+              much of their company we ever knew. */}
           {!selectedRoleObj?.clientPortal && (
-            <Link to={isPurchaseVendor ? '/purchase-portal/register' : '/auth/register'}
+            <Link to="/auth/register"
               className="flex items-center gap-1.5 text-xs font-semibold transition-colors" style={{ color: '#a78bfa' }}
               onMouseEnter={e=>e.currentTarget.style.color='#c4b5fd'} onMouseLeave={e=>e.currentTarget.style.color='#a78bfa'}>
               <Star size={12} /> Register here →

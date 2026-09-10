@@ -46,6 +46,11 @@ class StorePurchaseVendorRequest extends FormRequest
             'pincode'             => 'nullable|string|max:20',
             'account_manager_id'  => 'nullable|integer',
             'status'              => ['nullable', Rule::in(PurchaseVendorStatus::ALL)],
+            // The first portal password. Optional: left blank, the system
+            // generates one. Either way the vendor is e-mailed what it is,
+            // because that message is the only place it exists in readable form
+            // — nothing on the admin screen can show it afterwards.
+            'password'            => 'nullable|string|min:8|max:100',
         ];
     }
 }

@@ -132,6 +132,24 @@ export default function PurchaseVendorForm({ value, onChange, mode = 'create' })
         <Field label="Email">
           <input value={v.email || ''} onChange={set('email')} placeholder="vendor@company.com" style={inputStyle} />
         </Field>
+
+        {/* Create only. On an edit this field would look like "change their
+            password", which it is not — that is the vendor's own reset flow,
+            and offering it here would let an admin silently lock a vendor out
+            of an account they are already using. */}
+        {mode === 'create' && (
+          <Field label="Portal password" full>
+            <input
+              type="text" value={v.password || ''} onChange={set('password')}
+              placeholder="Leave blank to generate one automatically"
+              autoComplete="new-password" data-1p-ignore data-lpignore="true"
+              style={inputStyle} />
+            <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 5 }}>
+              E-mailed to the vendor either way — this message is the only place the
+              password is ever readable, so nothing here can show it again later.
+            </p>
+          </Field>
+        )}
       </Section>
 
       {/* 2 — Billing & Shipping */}
