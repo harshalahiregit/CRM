@@ -7,6 +7,7 @@ import PurchaseRegistrationBadge from '@/modules/purchase/components/PurchaseReg
 import TemporaryVendorValidityBadge from '@/modules/purchase/components/TemporaryVendorValidityBadge'
 import { PV_DEFAULTS } from '@/modules/purchase/components/purchaseVendorFormConstants'
 import TableToolbar from '@/components/ui/TableToolbar'
+import { useToast } from '@/components/ui/Toast'
 
 /**
  * Purchase Vendors — the admin master list for the Purchase-owned vendor entity
@@ -23,6 +24,7 @@ export default function PurchaseVendors() {
   const [modal, setModal] = useState(null)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+  const toast = useToast()
   const [editLoadingId, setEditLoadingId] = useState(null)
 
   const load = useCallback(() => {
@@ -55,7 +57,20 @@ export default function PurchaseVendors() {
     } finally { setSaving(false) }
   }
 
-  const activate = async (id) => { try { await purchaseApi.vendors.approve(id); load() } catch { /* noop */ } }
+  /**
+   * Activation can be REFUSED — an already-active vendor, or the onboarding
+   * gate. The refusal used to be swallowed, so the button looked dead: nothing
+   * moved, nothing appeared, and the only way to learn why was the server log.
+   */
+  const activate = async (id) => {
+    try {
+      await purchaseApi.vendors.approve(id)
+      load()
+      toast.success('Vendor activated')
+    } catch (e) {
+      toast.error(e?.response?.data?.message || 'That vendor could not be activated.')
+    }
+  }
 
   /**
    * Open the edit form on the FULL record, not the list row.

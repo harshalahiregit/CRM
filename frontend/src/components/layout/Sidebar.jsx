@@ -1,5 +1,5 @@
 import {
-  Activity, ArrowLeftRight, Award, Banknote, BarChart2, BarChart3, Bell, BookOpen, BookText, Boxes, Briefcase, Building2, CalendarCheck, CalendarClock, CalendarDays, CalendarOff, CalendarRange, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList, Clock, Contact, CreditCard, Factory, FileQuestion, FileSignature, FileText, FileX, FolderOpen, Globe, GraduationCap, Handshake, HelpCircle, History, Hourglass, IndianRupee, Landmark, Layers3, LayoutDashboard, LayoutTemplate, LifeBuoy, Link2, LogOut, MessageSquare, Network, Package, PackageMinus, PackagePlus, PartyPopper, PenLine, Receipt, RefreshCw, Rocket, Scale, ScanLine, Search, Settings, Settings2, Shield, ShieldCheck, ShoppingBag, ShoppingCart, Stethoscope, TrendingUp, Truck, Undo2, User, UserCheck, UserCog, UserPlus, UserRound, Users, Wallet, Warehouse, Wrench, X, Zap,
+  Activity, ArrowLeftRight, Award, Banknote, BarChart2, BarChart3, Bell, BookOpen, BookText, Boxes, Briefcase, Building2, CalendarCheck, CalendarClock, CalendarDays, CalendarOff, CalendarRange, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList, Clock, Contact, CreditCard, Factory, FileCheck2, FileQuestion, FileSignature, FileText, FileX, FolderOpen, Globe, GraduationCap, Handshake, HelpCircle, History, Hourglass, IndianRupee, Landmark, Layers3, LayoutDashboard, LayoutTemplate, LifeBuoy, Link2, LogOut, MessageSquare, Network, Package, PackageMinus, PackagePlus, PartyPopper, PenLine, Receipt, RefreshCw, Rocket, Scale, ScanLine, Search, Settings, Settings2, Shield, ShieldCheck, SlidersHorizontal, ShoppingBag, ShoppingCart, Stethoscope, TrendingUp, Truck, Undo2, User, UserCheck, UserCog, UserPlus, UserRound, Users, Wallet, Warehouse, Wrench, X, Zap,
 } from 'lucide-react'
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -286,9 +286,31 @@ const PURCHASE_SUB_ITEMS = [
 ]
 
 // Internal staff view of the TPV module.
+/**
+ * The ten SECTIONS of TPV — deliberately not its 46 pages.
+ *
+ * TPVLayout already groups every page into these ten and renders them as the
+ * strip across the top, so the sidebar names the section and the strip handles
+ * what is inside it. Listing all 46 here would duplicate that grouping in a
+ * second place, and the two would drift the first time somebody added a page.
+ *
+ * Labels, order and landing pages are taken from TPVLayout's own groups so the
+ * two navigations cannot disagree about what a section is called.
+ *
+ * Until now this held only Dashboard and Meetings, which is why eight sections
+ * of a built module were reachable only by already being somewhere inside them.
+ */
 const TPV_ADMIN_ITEMS = [
-  { label: 'Dashboard',       path: '/app/tpv/dashboard', icon: LayoutDashboard },
-  { label: 'Meetings',        path: '/app/tpv/kickoff',   icon: CalendarDays },
+  { label: 'Dashboard',     path: '/app/tpv/dashboard',          icon: LayoutDashboard },
+  { label: 'Vendors',       path: '/app/tpv/vendors',            icon: Building2 },
+  { label: 'Meetings',      path: '/app/tpv/kickoff',            icon: CalendarDays },
+  { label: 'Mobilisation',  path: '/app/tpv/onboarding',         icon: Rocket },
+  { label: 'Workforce',     path: '/app/tpv/workforce',          icon: UserCheck },
+  { label: 'Work Control',  path: '/app/tpv/work-authorization', icon: FileCheck2 },
+  { label: 'Compliance',    path: '/app/tpv/compliance',         icon: CheckSquare },
+  { label: 'Performance',   path: '/app/tpv/performance',        icon: TrendingUp },
+  { label: 'Intelligence',  path: '/app/tpv/reports',            icon: Landmark },
+  { label: 'Configuration', path: '/app/tpv/settings',           icon: SlidersHorizontal },
 ]
 // TPV (vendor) login view — only their onboarding + their workforce.
 const TPV_VENDOR_ITEMS = [
@@ -394,7 +416,8 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
   // click — and independently of each other, unlike the module accordion above.
   // State is owned by AppShell so the two mounted Sidebars agree, and persisted
   // so a refresh does not undo the click. See sidebarSection.js.
-  // Admin/staff see Dashboard + Kickoff; a TPV (vendor) login sees Onboarding + Workforce.
+  // Admin/staff see the ten TPV sections; a TPV (vendor) login sees only their
+  // own Onboarding + Workforce.
   const tpvItems = ['third_party_vendor', 'vendor'].includes(user?.role)
     ? TPV_VENDOR_ITEMS
     : TPV_ADMIN_ITEMS
