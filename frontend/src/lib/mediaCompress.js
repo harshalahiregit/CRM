@@ -140,9 +140,16 @@ async function shrink(blob, { maxDim = MAX_DIM, qualities = QUALITY_STEPS } = {}
   if (!ctx) return null
 
   const keepPng = blob.type === 'image/png'
+  // WebP in stays WebP out. Deliberately narrow: only files that ALREADY arrive
+  // as WebP take this path, so no existing upload changes format. It matters
+  // because ~61 endpoints in this app validate mimes:pdf,jpg,jpeg,png and
+  // would reject a WebP we invented for them -- widen those rules first if we
+  // ever want WebP to be the default for everything.
+  const keepWebp = blob.type === 'image/webp'
   // JPEG has no alpha channel: without a painted background the transparent
   // areas encode as black. Harmless for the PNG path, essential for the other.
-  if (!keepPng) {
+  // Both PNG and WebP carry alpha; only the JPEG path needs a painted matte.
+  if (!keepPng && !keepWebp) {
     ctx.fillStyle = '#fff'
     ctx.fillRect(0, 0, width, height)
   }
@@ -163,21 +170,26 @@ async function shrink(blob, { maxDim = MAX_DIM, qualities = QUALITY_STEPS } = {}
     ctx.globalCompositeOperation = 'source-over'
   }
 
+  // toBlob silently falls back to PNG on a format the browser cannot encode,
+  // so the result type is checked rather than assumed.
+  const outType = keepWebp ? 'image/webp' : 'image/jpeg'
+
   let best = null
   for (const quality of qualities) {
-    const out = await toBlob(canvas, 'image/jpeg', quality)
-    if (!out) break
+    const out = await toBlob(canvas, outType, quality)
+    if (!out || out.type !== outType) break
     best = out
     if (out.size <= TARGET_BYTES) break
   }
 
-  return best && best.size < blob.size ? { blob: best, type: 'image/jpeg' } : null
+  return best && best.size < blob.size ? { blob: best, type: outType } : null
 }
 
 /** Swap the extension so Laravel's `mimes:` rule sees the format we sent. */
 const renameFor = (name, type) => {
   const base = String(name || 'upload').replace(/\.[^./\\]+$/, '')
-  return `${base}.${type === 'image/png' ? 'png' : 'jpg'}`
+  const ext = { 'image/png': 'png', 'image/webp': 'webp' }[type] || 'jpg'
+  return `${base}.${ext}`
 }
 
 /**
