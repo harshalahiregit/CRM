@@ -17,3 +17,9 @@ frontend/vite.config.js.timestamp-*.mjs
 *.sql
 *.sql.gz
 *.dump
+
+# Deploy stamp — written by the deploy immediately before each rsync so
+# sire:doctor can tell whether the backend and the SPA shipped together.
+# Regenerated every deploy and specific to one machine's checkout, so it is
+# never committed. See DEPLOY-NEXFORE.md §9.
+backend/build-id.txt
