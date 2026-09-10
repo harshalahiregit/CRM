@@ -7,10 +7,14 @@ import MobileBottomNav from './MobileBottomNav'
 import CommandPalette from '@/components/CommandPalette'
 import IdleTimeoutWarning from '@/components/common/IdleTimeoutWarning'
 import AppNotificationToaster from '@/components/notifications/AppNotificationToaster'
+import ReportIssueRoot from '@/components/sire/ReportIssueRoot'
+import { canUseSire } from '@/lib/sire/access'
+import { useAuth } from '@/context/AuthContext'
 import clsx from 'clsx'
 import { useTheme } from '@/context/ThemeContext'
 
 export default function AppShell() {
+  const { user } = useAuth()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   // Owned here, not inside Sidebar: two Sidebars are mounted (the off-canvas
   // mobile drawer and the desktop one) and they must not disagree about which
@@ -109,6 +113,10 @@ export default function AppShell() {
       <IdleTimeoutWarning />
       {/* On-screen notification pop-ups (persistent until the user reacts) */}
       <AppNotificationToaster />
+      {/* SIRE Report Issue -- one click from any screen. It captures the module,
+          screen, app version, browser and recent failed requests itself, so the
+          form only ever asks for a title and what happened. */}
+      {canUseSire(user) && <ReportIssueRoot />}
     </div>
   )
 }
