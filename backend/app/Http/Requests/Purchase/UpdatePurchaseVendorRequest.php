@@ -21,6 +21,14 @@ class UpdatePurchaseVendorRequest extends FormRequest
             // Format-validated optional fields (§8)
             'phone'               => ['nullable', 'string', 'max:30', 'regex:/^[0-9+\-()\s]{6,30}$/'],
             'website'             => ['nullable', 'string', 'max:200', 'regex:~^(https?://)?([\w-]+\.)+[\w-]{2,}(/\S*)?$~i'],
+            // The person we deal with, and the company details self-registration
+            // collects. Free text for manpower and MSME — suppliers answer
+            // "50-100" and "Yes" as readily as a number or a code.
+            'contact_person'      => 'nullable|string|max:150',
+            'contact_designation' => 'nullable|string|max:120',
+            'company_phone'       => ['nullable', 'string', 'max:30', 'regex:/^[0-9+\-()\s]{6,30}$/'],
+            'manpower'            => 'nullable|string|max:60',
+            'msme'                => 'nullable|string|max:120',
             'gst_number'          => ['nullable', 'string', 'max:20', 'regex:/^[0-9A-Za-z]{1,20}$/'],
             // Required when present per §8 (Company, Vendor Category, Currency)
             'category'            => 'sometimes|required|string|max:120',
