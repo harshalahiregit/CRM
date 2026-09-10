@@ -3,6 +3,7 @@
 namespace Tests\Feature\Transport;
 
 use App\Models\Tenant;
+use App\Models\Transport\TransportDriver;
 use App\Models\Transport\TransportOrder;
 use App\Models\Transport\TransportTrip;
 use App\Models\User;
@@ -11,6 +12,7 @@ use App\Services\Transport\PretripService;
 use App\Services\Transport\TransportDriverService;
 use App\Services\Transport\TransportVehicleService;
 use App\Support\Transport\OrderStatus;
+use App\Support\Transport\PretripCheckKey;
 use App\Support\Transport\TransportPermission;
 use App\Support\Transport\TripStatus;
 use App\Support\Transport\VehicleStatus;
@@ -310,5 +312,90 @@ class DispatchApiTest extends TestCase
             $paths->every(fn (string $u) => ! str_contains($u, 'in-transit') && ! str_contains($u, 'transit')),
             'STT-006 belongs to SNG-TRN-013, which is blocked',
         );
+    }
+
+    /* ══════════ GET /dispatch — the panel's pre-flight read ══════════ */
+
+    public function test_the_get_explains_a_block_before_the_user_acts(): void
+    {
+        $a = $this->user(); Sanctum::actingAs($a);
+        $trip = $this->readyTrip(actor: $a);
+
+        TransportDriver::forTenant(self::TENANT_A)->first()
+            ->forceFill(['licence_valid_until' => now()->subDay()->toDateString()])->save();
+
+        $res = $this->getJson($this->url($trip))->assertOk();
+
+        // UX §35: a screen must be able to say WHY before the user clicks.
+        $this->assertFalse($res->json('data.readiness.ready'));
+        $this->assertNotEmpty($res->json('data.readiness.blockers'));
+        $this->assertSame(
+            PretripCheckKey::DRIVER_DOCUMENTS,
+            $res->json('data.readiness.lapsed.0.key'),
+        );
+        $this->assertNotNull($res->json('data.readiness.message'));
+    }
+
+    public function test_the_get_reads_without_dispatching(): void
+    {
+        $a = $this->user(); Sanctum::actingAs($a);
+        $trip = $this->readyTrip(actor: $a);
+
+        $this->getJson($this->url($trip))->assertOk();
+
+        $this->assertSame(TripStatus::PRETRIP_OK, $trip->fresh()->status);
+        $this->assertNull($trip->fresh()->dispatched_at);
+    }
+
+    public function test_a_ready_trip_reads_as_ready(): void
+    {
+        $a = $this->user(); Sanctum::actingAs($a);
+        $trip = $this->readyTrip(actor: $a);
+
+        $res = $this->getJson($this->url($trip))->assertOk();
+
+        $this->assertTrue($res->json('data.readiness.ready'));
+        $this->assertFalse($res->json('data.dispatched'));
+        $this->assertSame([], $res->json('data.history'));
+    }
+
+    public function test_the_get_returns_the_version_history_after_release(): void
+    {
+        $a = $this->user(); Sanctum::actingAs($a);
+        $trip = $this->readyTrip(actor: $a);
+
+        $this->patchJson($this->url($trip), $this->fields())->assertOk();
+        $this->patchJson($this->url($trip, 'dispatch/amend'), [
+            'dispatch_destination' => 'Nhava Sheva', 'reason' => 'Customer changed the drop',
+        ])->assertOk();
+
+        $res = $this->getJson($this->url($trip))->assertOk();
+
+        $this->assertSame([1, 2], array_column($res->json('data.history'), 'version'));
+        $this->assertSame('Customer changed the drop', $res->json('data.history.1.reason'));
+        // A dispatched trip has nothing left to re-validate.
+        $this->assertNull($res->json('data.readiness'));
+    }
+
+    public function test_reading_dispatch_state_is_not_releasing_it(): void
+    {
+        $a = $this->user(); Sanctum::actingAs($a);
+        $trip = $this->readyTrip(actor: $a);
+
+        // Accounts holds transport.trip.view but not transport.trip.dispatch.
+        Sanctum::actingAs($this->user(self::TENANT_A, 'staff', 'accounts'));
+
+        $this->getJson($this->url($trip))->assertOk();
+        $this->patchJson($this->url($trip), $this->fields())->assertForbidden();
+    }
+
+    public function test_the_get_on_another_tenants_trip_is_a_404(): void
+    {
+        $a = $this->user(); Sanctum::actingAs($a);
+        $trip = $this->readyTrip(actor: $a);
+
+        Sanctum::actingAs($this->user(self::TENANT_B));
+
+        $this->getJson($this->url($trip))->assertNotFound();
     }
 }

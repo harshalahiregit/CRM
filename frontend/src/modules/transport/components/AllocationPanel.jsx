@@ -7,7 +7,7 @@ import Modal from '@/components/ui/Modal'
 import { useToast } from '@/components/ui/Toast'
 import { transportAllocationApi } from '@/services/transportApi'
 import { Chip } from './MasterFormFields'
-import { vehicleStatusCfg, driverAvailabilityCfg, tripStatusCfg } from '../constants'
+import { vehicleStatusCfg, driverAvailabilityCfg } from '../constants'
 
 /**
  * Allocation panel on the trip detail page — SNG-TRN-009 step 8.
@@ -215,13 +215,18 @@ export default function AllocationPanel({ trip, assignment, canAssign, onChanged
           canAssign={canAssign} onAssign={() => { setRefusal(null); setPicker('driver') }} />
       </div>
 
-      {/* The trip's own state, so "why is this still Approved?" answers itself. */}
+      {/* The trip's own status is on the header chip and the tracker above; a
+          third copy here said nothing the reader did not already have. What
+          belongs to THIS step is whether the step is finished. */}
       <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Trip status</span>
-        <Chip cfg={tripStatusCfg(trip.status)} />
         {anything && !(hasVehicle && hasDriver) && (
           <span style={{ fontSize: 11.5, color: '#fbbf24' }}>
-            Allocated once both a vehicle and a driver are assigned.
+            This step is finished once both a vehicle and a driver are assigned.
+          </span>
+        )}
+        {hasVehicle && hasDriver && (
+          <span style={{ fontSize: 11.5, color: '#34d399' }}>
+            Vehicle and driver assigned.
           </span>
         )}
         {canAssign && anything && (

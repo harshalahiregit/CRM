@@ -185,7 +185,7 @@ final class TripStatus
         self::VIABILITY_PENDING  => 'Viability pending',
         self::APPROVED           => 'Approved',
         self::ALLOCATED          => 'Allocated',
-        self::PRETRIP_OK         => 'Pre-trip OK',
+        self::PRETRIP_OK         => 'Ready to dispatch',
         self::DISPATCHED         => 'Dispatched',
         self::IN_TRANSIT         => 'In transit',
         self::ARRIVED            => 'Arrived',

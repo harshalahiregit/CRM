@@ -190,10 +190,21 @@ class DriverEligibilityService
         $class = $driver->licence_class ? ' ('.$driver->licence_class.')' : '';
 
         if ($days !== null && $days <= $window) {
-            return [true, 'Valid'.$class.' but expires in '.$days.' day(s).'];
+            return [true, 'Valid'.$class.', but expires in '.$this->days($days).'.'];
         }
 
-        return [true, 'Valid'.$class.($days === null ? '' : ', '.$days.' day(s) remaining')];
+        return [true, 'Valid'.$class.($days === null ? '' : ' for another '.$this->days($days)).'.'];
+    }
+
+    /** "1 day" / "731 days" — never "day(s)", which is a developer writing. */
+    private function days(int $n): string
+    {
+        return $n.' '.($n === 1 ? 'day' : 'days');
+    }
+
+    private function documentCount(int $n): string
+    {
+        return $n.' '.($n === 1 ? 'document' : 'documents');
     }
 
     /** @return array{0:bool,1:string} */
@@ -215,9 +226,11 @@ class DriverEligibilityService
         $required = is_array($required) ? array_values($required) : [];
 
         if ($required === []) {
+            // "None on file and none required" is two facts a reader has to
+            // combine into "nothing is wrong". Say that instead.
             return [true, $documents->isEmpty()
-                ? 'No documents on file, and none configured as required'
-                : $documents->count().' document(s) on file, all valid'];
+                ? 'No documents are required for this driver.'
+                : $this->documentCount($documents->count()).' on file, all valid.'];
         }
 
         $missing = array_values(array_diff($required, $documents->pluck('document_type')->unique()->all()));
@@ -227,7 +240,7 @@ class DriverEligibilityService
                 .implode(', ', array_map(fn ($t) => TransportDocumentType::label($t), $missing)).'.'];
         }
 
-        return [true, 'All '.count($required).' required document(s) present and valid'];
+        return [true, 'All required documents are on file and valid.'];
     }
 
     /** FLEET §13 / CMP §18 warning window — advisory, includes the licence. */

@@ -239,6 +239,54 @@ export const transportPretripApi = {
       }),
 }
 
+/* ── Dispatch (RTM STOS-REQ-OPS-008, FRS TRP-P0-006) ──────────────────── */
+
+/**
+ * Dispatch confirmation. No Step 12 ticket owns it (D-18); the owner authorised
+ * the scope on 2026-09-10. See DispatchScope on the server.
+ *
+ * Same refusal contract as pre-trip: a 422 carries the full state in its body,
+ * so a block renders as an explanation rather than a toast. BRW-048 wants the
+ * exact reason and UX §35 forbids merely showing Blocked, and neither is
+ * possible if the client throws the body away.
+ */
+export const transportDispatchApi = {
+  /**
+   * The whole picture, without attempting anything: frozen fields, version
+   * history, and readiness RE-DERIVED live (BRW-046). A pure read — the server
+   * writes nothing, so a panel may poll it safely.
+   */
+  get: (tripId) =>
+    api.get(`/transport/trips/${tripId}/dispatch`).then((r) => r.data?.data ?? null).catch(handleErr),
+
+  /** Release the trip — pretrip_ok → dispatched. Does NOT reach in_transit. */
+  confirm: (tripId, fields) =>
+    api.patch(`/transport/trips/${tripId}/dispatch`, fields)
+      .then((r) => ({ ok: true, ...(r.data?.data ?? {}) }))
+      .catch((e) => {
+        const body = e?.response?.data
+        if (body && e?.response?.status === 422) {
+          return { ok: false, message: body.message, ...(body.data ?? {}) }
+        }
+        throw e
+      }),
+
+  /**
+   * Change a field frozen at release. A reason is mandatory — TRP-P0-006's
+   * "changes create version", and the reason is what the version is FOR.
+   */
+  amend: (tripId, fields, reason) =>
+    api.patch(`/transport/trips/${tripId}/dispatch/amend`, { ...fields, reason })
+      .then((r) => ({ ok: true, ...(r.data?.data ?? {}) }))
+      .catch((e) => {
+        const body = e?.response?.data
+        if (body && e?.response?.status === 422) {
+          return { ok: false, message: body.message, ...(body.data ?? {}) }
+        }
+        throw e
+      }),
+}
+
 /**
  * What the signed-in user may do — so a screen can hide an action the API would
  * refuse rather than show a button that 403s.
@@ -254,6 +302,7 @@ export const transportApi = {
   trips: transportTripApi,
   allocation: transportAllocationApi,
   pretrip: transportPretripApi,
+  dispatch: transportDispatchApi,
   vehicles: transportVehicleApi,
   drivers: transportDriverApi,
 }

@@ -263,6 +263,135 @@ class PretripService
 
     /* ── Step 6 · the gate, and STT-005's precondition work ──────────── */
 
+
+    /**
+     * Re-derive readiness from LIVE sources, without writing anything.
+     *
+     * ── WHY THIS EXISTS, AND WHY IT IS NOT passPretrip's GATE ─────────────
+     * passPretrip() deliberately grades the STORED checklist: the answer the
+     * dispatcher was shown is the answer that gate acts on (CMP §159). That is
+     * right for the moment a person confirms the checklist.
+     *
+     * It is not right for the moment the vehicle leaves the yard. Time passes
+     * between the two, and BRW-046 is written about the later one — "Vehicle
+     * cannot dispatch until all mandatory dispatch checks pass". A driver's
+     * licence can expire after pre-trip passes and before departure; the stored
+     * row would still read `pass`, because it records what was true when it was
+     * evaluated. Owner's ruling, 2026-09-10: re-derive at dispatch and block
+     * with the exact reason.
+     *
+     * ── IT MUST NOT PERSIST, AND THAT IS THE DESIGN ───────────────────────
+     * Rows are graded in memory and thrown away. Writing them would silently
+     * un-pass a gate a person had already passed — precisely what generate()'s
+     * GENERATABLE_FROM guard exists to prevent — and would make a read-only
+     * dispatch preview mutate the trip. The stored checklist stays the record of
+     * what was confirmed; this is a second opinion taken at departure.
+     *
+     * `completed_at` is carried over from the stored row on purpose. This asks
+     * "are the facts still true?", never "has someone re-confirmed?" — demanding
+     * a fresh human stamp at dispatch would be a new requirement, and no
+     * document asks for one.
+     *
+     * Grading reuses TripPretripCheck::readinessOf() rather than reimplementing
+     * OPS §29, so a live verdict and a stored verdict can never disagree about
+     * what the same set of results means.
+     *
+     * @return array{
+     *     status:string, ready:bool, checked:bool,
+     *     blockers:array<int,string>, warnings:array<int,string>,
+     *     lapsed:array<int,array{key:string,label:string,was:string,now:string,detail:string|null}>,
+     *     message:string|null
+     * }
+     */
+    public function revalidate(TransportTrip $trip, int $tenantId): array
+    {
+        $stored     = $this->checksFor($trip, $tenantId)->keyBy('check_key');
+        $policy     = $this->policies->all($tenantId);
+        $assignment = $this->activeAssignment($trip, $tenantId);
+        $applicable = $this->applicableChecks($trip, $assignment, $policy);
+
+        $live   = [];
+        $lapsed = [];
+
+        foreach ($applicable as $key => $isCritical) {
+            [$result, $detail] = $this->evaluate($key, $trip, $assignment, $tenantId, $isCritical, $policy);
+
+            $was = $stored->get($key);
+
+            // Unsaved by construction — nothing in this method calls save().
+            $row = new TripPretripCheck([
+                'tenant_id'   => $tenantId,
+                'trip_id'     => $trip->id,
+                'check_key'   => $key,
+                'is_critical' => $isCritical,
+                'result'      => $result,
+                'detail'      => $detail,
+            ]);
+
+            // A check the policy has only just started asking for has no stored
+            // row and therefore no stamp; it grades as outstanding, which is
+            // honest — nobody has confirmed it.
+            $row->completed_at = $was?->completed_at;
+
+            $live[] = $row;
+
+            // The case this whole method was built for: it passed when the
+            // checklist was confirmed, and it does not pass now.
+            if ($was !== null && ! $was->blocks() && $row->blocks()) {
+                $lapsed[] = [
+                    'key'    => $key,
+                    'label'  => $row->label(),
+                    'was'    => $was->result,
+                    'now'    => $result,
+                    'detail' => $detail,
+                ];
+            }
+        }
+
+        $status   = TripPretripCheck::readinessOf($live);
+        $blockers = TripPretripCheck::blockersOf($live);
+
+        // ── THE GATE IS `blocking`, NOT `status` ─────────────────────────
+        // BRW-046 with BRW-052: "Critical failure: Dispatch blocked." What
+        // stops a trip leaving is a check that FAILS, not a checklist that is
+        // incomplete.
+        //
+        // Gating on OPS §29 readiness instead would demand a fresh human
+        // confirmation at departure — the very thing this method's docblock
+        // says it does not ask — and, because a trip at `pretrip_ok` can no
+        // longer regenerate its checklist (GENERATABLE_FROM), it would strand
+        // the trip permanently in two reachable cases:
+        //
+        //   policy ENABLES a check after the trip passed  → no stored row, so
+        //   nobody has confirmed it, so IN_PROGRESS forever.
+        //
+        //   policy DISABLES every check after the trip passed → no rows at
+        //   all, so NOT_STARTED forever.
+        //
+        // Neither is a lapse. A check that is newly applicable and PASSES is
+        // not a reason to hold a vehicle in the yard; a check that is newly
+        // applicable and FAILS still blocks, because it appears in $blockers.
+        // In the ordinary case — five stored checks, all confirmed, all still
+        // passing — `blocking` and `status !== READY` agree exactly.
+        $blocking = $blockers !== [];
+
+        return [
+            'status'   => $status,
+            'ready'    => ! $blocking,
+            'blocking' => $blocking,
+            // Distinguishes "re-checked and clean" from "there was nothing to
+            // re-check", so a caller that cares can tell the two apart even
+            // though neither blocks.
+            'checked'  => $live !== [],
+            'blockers' => $blockers,
+            'warnings' => TripPretripCheck::warningsOf($live),
+            'lapsed'   => $lapsed,
+            'message'  => $blocking
+                ? $this->refusalMessage(PretripReadiness::BLOCKED, $blockers, [])
+                : null,
+        ];
+    }
+
     /**
      * Move an allocated trip to pretrip_ok once its checklist is READY.
      *
@@ -934,7 +1063,7 @@ class PretripService
         if ($failed !== []) {
             return [
                 PretripResult::forFailure($isCritical),
-                $subject.' — '.implode(' ', array_column($failed, 'detail')),
+                $subject.' — '.$this->joinDetails(array_column($failed, 'detail')),
             ];
         }
 
@@ -949,7 +1078,35 @@ class PretripService
             ];
         }
 
-        return [PretripResult::PASS, $subject.' — '.implode(' ', array_column($borrowed, 'detail'))];
+        return [PretripResult::PASS, $subject.' — '.$this->joinDetails(array_column($borrowed, 'detail'))];
+    }
+
+    /**
+     * Two verdicts, read as two sentences.
+     *
+     * These were joined with a bare space, which ran them together on screen:
+     * "Valid (HMV), 731 days remaining No documents on file" — one sentence
+     * ending where the next begins, with nothing to mark the seam. Each part is
+     * written as a sentence by its own service, so the join only has to make
+     * sure each one is terminated.
+     *
+     * @param  array<int,string>  $details
+     */
+    private function joinDetails(array $details): string
+    {
+        $parts = [];
+
+        foreach ($details as $detail) {
+            $detail = trim((string) $detail);
+            if ($detail === '') {
+                continue;
+            }
+            $parts[] = str_ends_with($detail, '.') || str_ends_with($detail, '!') || str_ends_with($detail, '?')
+                ? $detail
+                : $detail.'.';
+        }
+
+        return implode(' ', $parts);
     }
 
     /** @param array<int,mixed> $expiring */

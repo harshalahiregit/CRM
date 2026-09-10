@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Truck, Building2, Package, History, Route as RouteIcon,
-  AlertTriangle, Loader2, Gauge, Pencil, ClipboardCheck,
+  AlertTriangle, Loader2, Gauge, Pencil, ClipboardCheck, Send,
 } from 'lucide-react'
 import { transportTripApi, transportCapabilityApi } from '@/services/transportApi'
 import { useToast } from '@/components/ui/Toast'
@@ -10,23 +10,36 @@ import Modal from '@/components/ui/Modal'
 import { Wrap, Panel, KV, AuditList } from './TransportOrderDetail'
 import AllocationPanel from '../components/AllocationPanel'
 import PretripPanel from '../components/PretripPanel'
+import DispatchPanel from '../components/DispatchPanel'
+import TripProgress from '../components/TripProgress'
 import { tripStatusCfg, orderStatusCfg, fmtMoney, fmtDateTime, fmtDate } from '../constants'
 
 /**
  * Trip detail (SNG-TRN-007).
  *
- * Same layout as the order's detail page — the two records are read the same way
- * and should not feel like different products. Shared bits (Wrap, Panel, KV,
- * AuditList) are imported rather than duplicated.
+ * ── THE PAGE IS A SEQUENCE, AND IT IS LAID OUT AS ONE ────────────────────
+ * The panels are not four independent boxes; they are the stages of one job,
+ * and they only make sense in order. So the left column runs
  *
- * The only action is "Submit for viability" (STT-001), and it appears only from
- * draft. Everything else on the trip's 16-state machine belongs to a later
- * ticket, so no other button is offered — a control that cannot work is worse
- * than an absent one.
+ *     tracker  →  1 Vehicle & driver  →  2 Pre-trip checks  →  3 Dispatch
  *
- * Vehicle and driver are shown as "Not allocated" rather than hidden: the
- * columns exist, allocation is SNG-TRN-009, and saying so is more honest than
- * pretending the concept does not exist yet.
+ * with the tracker at the top naming the same steps. Someone being walked
+ * through the page for the first time can follow it top to bottom and never
+ * needs the 16-state machine explained to them.
+ *
+ * Reference material — who the customer is, which order this came from, the
+ * commercial figures — sits in the right column, and the activity trail at the
+ * foot, out of the path of the work.
+ *
+ * ── THE STATUS IS SHOWN ONCE ─────────────────────────────────────────────
+ * It used to appear five times: the header chip, a "Status" row in the Trip
+ * panel, and a chip inside each of the three stage panels. Five copies of one
+ * fact is not reassurance, it is noise — and read at different moments they
+ * could even disagree. The header chip and the tracker carry it now; the stage
+ * panels report only their own state.
+ *
+ * Vehicle and driver are shown as "Not assigned yet" rather than hidden: the
+ * concept exists and saying so is more honest than pretending it does not.
  */
 export default function TransportTripDetail() {
   const { id } = useParams()
@@ -163,31 +176,26 @@ export default function TransportTripDetail() {
         </div>
       )}
 
+      {/* Where this trip stands, before any detail. */}
+      <TripProgress status={trip.status} />
+
       <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 16, alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <Panel icon={Truck} title="Trip">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
-              <KV label="Trip number" value={trip.trip_number} />
-              <KV label="Status" value={st.label} />
-              <KV label="Approved freight" value={fmtMoney(trip.approved_freight, trip.currency)} />
-              <KV label="Currency" value={trip.currency} />
-              <KV label="Route" value={trip.route} />
-              <KV label="Created" value={fmtDateTime(trip.created_at)} />
-            </div>
-          </Panel>
-
-          {/* SNG-TRN-009. Crewing only becomes possible once the trip is
-              approved (STT-004's from-state), so before that the panel explains
-              itself rather than offering buttons the API would refuse. */}
-          <Panel icon={Truck} title="Allocation">
+          {/* Step 1. SNG-TRN-009. Assigning only becomes possible once the trip
+              is approved (STT-004's from-state), so before that the panel says
+              what has to happen first rather than offering buttons the API
+              would refuse. Titled "Vehicle & driver", not "Allocation" —
+              allocation is our word for it, not the reader's. */}
+          <Panel icon={Truck} step={1} title="Vehicle & driver"
+            subtitle="Choose which vehicle and which driver will run this trip. Only ones that are free and have valid papers are offered.">
             {['draft', 'viability_pending'].includes(trip.status) ? (
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
-                  <KV label="Vehicle" value="Not allocated" />
-                  <KV label="Driver" value="Not allocated" />
+                  <KV label="Vehicle" value="Not assigned yet" />
+                  <KV label="Driver" value="Not assigned yet" />
                 </div>
                 <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 0' }}>
-                  A trip can be crewed once it is approved.
+                  You can assign a vehicle and driver once the trip has been approved.
                 </p>
               </>
             ) : (
@@ -200,16 +208,16 @@ export default function TransportTripDetail() {
             )}
           </Panel>
 
-          {/* SNG-TRN-010. The panel appears once the trip is approved, which is
-              the first state a checklist can be built from — RTM OPS-004's
-              acceptance is "missing requirements identified", and a checklist
-              that could only be built after crewing could never identify a
-              missing driver. Before that it explains itself rather than
-              offering a control the API would refuse. */}
-          <Panel icon={ClipboardCheck} title="Pre-trip checks">
+          {/* Step 2. SNG-TRN-010. The panel appears once the trip is approved,
+              which is the first state a checklist can be built from — RTM
+              OPS-004's acceptance is "missing requirements identified", and a
+              checklist that could only be built after crewing could never
+              identify a missing driver. */}
+          <Panel icon={ClipboardCheck} step={2} title="Pre-trip checks"
+            subtitle="Confirm the trip is fit to leave. The system checks the order, the driver's papers and the vehicle's papers, and you confirm each one.">
             {['draft', 'viability_pending'].includes(trip.status) ? (
               <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 0' }}>
-                Readiness checks begin once the trip is approved.
+                These checks begin once the trip has been approved.
               </p>
             ) : (
               <PretripPanel
@@ -220,15 +228,38 @@ export default function TransportTripDetail() {
             )}
           </Panel>
 
-          <Panel icon={History} title="Activity">
-            <AuditList entries={audit} />
+          {/* Step 3. No ticket owns dispatch (D-18); the owner authorised the
+              scope on 2026-09-10. The panel appears from `allocated` onward —
+              early enough that a dispatcher can see WHY a trip cannot leave,
+              which is UX §35's whole point, and not so early that it offers a
+              control nothing could satisfy. */}
+          <Panel icon={Send} step={3} title="Dispatch"
+            subtitle="Release the trip. Record when it leaves, when it should arrive, and what the driver needs to know.">
+            {['draft', 'viability_pending', 'approved'].includes(trip.status) ? (
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 0' }}>
+                You can dispatch this trip once a vehicle and driver are assigned and the pre-trip checks have passed.
+              </p>
+            ) : (
+              <DispatchPanel
+                trip={trip}
+                canDispatch={!!grants['transport.trip.dispatch']}
+                onChanged={load}
+              />
+            )}
           </Panel>
+
         </div>
 
+        {/* Right column: reference. Nothing here is a step, so nothing here
+            competes with the sequence on the left. */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <Panel icon={Building2} title="Customer">
+          <Panel icon={Truck} title="Trip details">
             <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
               <KV label="Customer" value={trip.customer?.company} />
+              <KV label="Trip number" value={trip.trip_number} />
+              <KV label="Route" value={trip.route} />
+              <KV label="Agreed price" value={fmtMoney(trip.approved_freight, trip.currency)} />
+              <KV label="Created" value={fmtDateTime(trip.created_at)} />
             </div>
           </Panel>
 
@@ -256,6 +287,15 @@ export default function TransportTripDetail() {
             )}
           </Panel>
         </div>
+      </div>
+
+      {/* The trail sits at the foot, full width: it is what HAPPENED, and it
+          should not sit between two things a person still has to DO. */}
+      <div style={{ marginTop: 16 }}>
+        <Panel icon={History} title="History"
+          subtitle="Everything that has happened to this trip, newest first — who did it and when.">
+          <AuditList entries={audit} />
+        </Panel>
       </div>
 
       <Modal open={editOpen} onClose={() => !busy && setEditOpen(false)} style={{ maxWidth: 460, width: '92vw' }}>

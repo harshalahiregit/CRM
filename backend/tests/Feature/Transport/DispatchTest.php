@@ -4,6 +4,7 @@ namespace Tests\Feature\Transport;
 
 use App\Exceptions\BusinessException;
 use App\Models\Tenant;
+use App\Models\Transport\TransportAuditLog;
 use App\Models\Transport\TransportDriver;
 use App\Models\Transport\TransportOrder;
 use App\Models\Transport\TransportTrip;
@@ -19,6 +20,9 @@ use App\Services\Transport\TransportDriverService;
 use App\Services\Transport\TransportVehicleService;
 use App\Support\Transport\DispatchScope;
 use App\Support\Transport\DriverAvailability;
+use App\Support\Transport\PretripCheckKey;
+use App\Support\Transport\PretripReadiness;
+use App\Support\Transport\PretripResult;
 use App\Support\Transport\OrderStatus;
 use App\Support\Transport\TripStatus;
 use App\Support\Transport\VehicleStatus;
@@ -555,5 +559,260 @@ class DispatchTest extends TestCase
         $this->assertNotNull(
             TripAssignment::forTenant(self::TENANT_A)->forTrip($trip->id)->active()->first(),
         );
+    }
+
+    /* ══════════ BRW-046 — readiness re-derived at dispatch ══════════
+     *
+     * Owner's ruling, 2026-09-10: option (b). Pre-trip records what was true
+     * when it was confirmed; BRW-046 is about the moment of departure. These
+     * tests are the difference between the two.
+     */
+
+    public function test_a_licence_that_expires_after_pretrip_blocks_dispatch(): void
+    {
+        [$trip, , $driver] = $this->readyTrip();
+
+        // Passed pre-trip on a valid licence, and the stored row still says so.
+        $this->assertSame(TripStatus::PRETRIP_OK, $trip->fresh()->status);
+        $stored = $this->pretrip->checksFor($trip->fresh(), self::TENANT_A)
+            ->firstWhere('check_key', PretripCheckKey::DRIVER_DOCUMENTS);
+        $this->assertFalse($stored->blocks(), 'precondition: the check passed at pre-trip');
+
+        // Time passes. The licence lapses in the yard.
+        $driver->forceFill(['licence_valid_until' => now()->subDay()->toDateString()])->save();
+
+        try {
+            $this->dispatch->confirm($trip->fresh(), $this->fields(), self::TENANT_A, $this->actor);
+            $this->fail('a trip with a lapsed licence was dispatched');
+        } catch (BusinessException $e) {
+            // BRW-048's "exact reason", and OPS §30's pairing of reason with fix.
+            $this->assertStringContainsString('Dispatch blocked', $e->getMessage());
+            $this->assertStringContainsString('has changed since', $e->getMessage());
+            $this->assertStringContainsString('re-run the checklist', $e->getMessage());
+            $this->assertSame(422, $e->getStatusCode());
+        }
+
+        // A refusal leaves the trip where it was, so fix-and-retry stays open.
+        $this->assertSame(TripStatus::PRETRIP_OK, $trip->fresh()->status);
+        $this->assertNull($trip->fresh()->dispatched_at);
+    }
+
+    public function test_revalidation_names_the_check_that_lapsed(): void
+    {
+        [$trip, , $driver] = $this->readyTrip();
+        $driver->forceFill(['licence_valid_until' => now()->subDay()->toDateString()])->save();
+
+        $live = $this->pretrip->revalidate($trip->fresh(), self::TENANT_A);
+
+        $this->assertFalse($live['ready']);
+        $this->assertSame(PretripReadiness::BLOCKED, $live['status']);
+        $this->assertCount(1, $live['lapsed']);
+        $this->assertSame(PretripCheckKey::DRIVER_DOCUMENTS, $live['lapsed'][0]['key']);
+        // Both sides of the change, so a screen can say it USED to pass.
+        $this->assertSame(PretripResult::PASS, $live['lapsed'][0]['was']);
+        $this->assertSame(PretripResult::CRITICAL_FAIL, $live['lapsed'][0]['now']);
+    }
+
+    public function test_revalidation_writes_nothing(): void
+    {
+        [$trip, , $driver] = $this->readyTrip();
+        $driver->forceFill(['licence_valid_until' => now()->subDay()->toDateString()])->save();
+
+        $before = $this->pretrip->checksFor($trip->fresh(), self::TENANT_A)
+            ->map(fn ($c) => [$c->check_key, $c->result, $c->completed_at?->toIso8601String()])->all();
+        $audits = TransportAuditLog::forTenant(self::TENANT_A)->count();
+
+        $this->pretrip->revalidate($trip->fresh(), self::TENANT_A);
+
+        $after = $this->pretrip->checksFor($trip->fresh(), self::TENANT_A)
+            ->map(fn ($c) => [$c->check_key, $c->result, $c->completed_at?->toIso8601String()])->all();
+
+        // The stored checklist is the record of what was CONFIRMED. A second
+        // opinion taken at departure must not overwrite it.
+        $this->assertSame($before, $after);
+        $this->assertSame($audits, TransportAuditLog::forTenant(self::TENANT_A)->count());
+        $this->assertSame(TripStatus::PRETRIP_OK, $trip->fresh()->status);
+    }
+
+    public function test_a_still_valid_trip_dispatches_unchanged(): void
+    {
+        [$trip] = $this->readyTrip();
+
+        $live = $this->pretrip->revalidate($trip, self::TENANT_A);
+        $this->assertTrue($live['ready']);
+        $this->assertTrue($live['checked'], 'an empty checklist must not read as a pass');
+        $this->assertSame([], $live['lapsed']);
+
+        $moved = $this->dispatch->confirm($trip, $this->fields(), self::TENANT_A, $this->actor);
+        $this->assertSame(TripStatus::DISPATCHED, $moved->status);
+    }
+
+    public function test_fixing_the_lapse_reopens_dispatch(): void
+    {
+        [$trip, , $driver] = $this->readyTrip();
+        $driver->forceFill(['licence_valid_until' => now()->subDay()->toDateString()])->save();
+
+        $this->assertFalse($this->pretrip->revalidate($trip->fresh(), self::TENANT_A)['ready']);
+
+        $driver->forceFill(['licence_valid_until' => now()->addYear()->toDateString()])->save();
+
+        $moved = $this->dispatch->confirm($trip->fresh(), $this->fields(), self::TENANT_A, $this->actor);
+        $this->assertSame(TripStatus::DISPATCHED, $moved->status);
+    }
+
+    public function test_an_already_dispatched_trip_is_not_revalidated(): void
+    {
+        [$trip, , $driver] = $this->readyTrip();
+        $this->dispatch->confirm($trip, $this->fields(), self::TENANT_A, $this->actor);
+
+        // A licence expiring mid-trip is a transit exception (SNG-TRN-013), not
+        // a reason to refuse an amendment to a trip that has already left.
+        $driver->forceFill(['licence_valid_until' => now()->subDay()->toDateString()])->save();
+
+        $amended = $this->dispatch->amend(
+            $trip->fresh(), ['dispatch_instructions' => 'Call on arrival'], 'Customer request',
+            self::TENANT_A, $this->actor,
+        );
+
+        $this->assertSame(2, (int) $amended->dispatch_version);
+    }
+
+    /* ══════════ TRP-P0-006 — version history ══════════ */
+
+    public function test_history_is_empty_before_release(): void
+    {
+        [$trip] = $this->readyTrip();
+
+        $this->assertSame([], $this->dispatch->history($trip, self::TENANT_A));
+    }
+
+    public function test_version_one_is_the_release_itself(): void
+    {
+        [$trip] = $this->readyTrip();
+        $this->dispatch->confirm($trip, $this->fields(), self::TENANT_A, $this->actor);
+
+        $history = $this->dispatch->history($trip->fresh(), self::TENANT_A);
+
+        $this->assertCount(1, $history);
+        $this->assertSame(1, $history[0]['version']);
+        $this->assertSame('release', $history[0]['type']);
+        $this->assertNull($history[0]['before']);
+        $this->assertSame($this->actor->id, $history[0]['actor_id']);
+        // The reader of the history is exactly who needs to know Fleet did not move.
+        $this->assertFalse($history[0]['fleet_state_applied']);
+        $this->assertNotNull($history[0]['fleet_boundary']);
+    }
+
+    public function test_each_amendment_appends_a_version_with_its_reason(): void
+    {
+        [$trip] = $this->readyTrip();
+        $this->dispatch->confirm($trip, $this->fields(), self::TENANT_A, $this->actor);
+
+        $this->dispatch->amend($trip->fresh(), ['dispatch_destination' => 'Nhava Sheva'], 'Customer changed the drop', self::TENANT_A, $this->actor);
+        $this->dispatch->amend($trip->fresh(), ['dispatch_instructions' => 'Gate 4'], 'Port advisory', self::TENANT_A, $this->actor);
+
+        $history = $this->dispatch->history($trip->fresh(), self::TENANT_A);
+
+        // Oldest first — a history is read forwards.
+        $this->assertSame([1, 2, 3], array_column($history, 'version'));
+        $this->assertSame(['release', 'amendment', 'amendment'], array_column($history, 'type'));
+
+        $this->assertSame('Customer changed the drop', $history[1]['reason']);
+        $this->assertSame(['dispatch_destination'], $history[1]['fields']);
+        $this->assertSame('Bhiwandi Warehouse, Gate 3', $history[1]['before']['dispatch_destination']);
+        $this->assertSame('Nhava Sheva', $history[1]['after']['dispatch_destination']);
+
+        // Nobody may read the absence of an approver as an approval.
+        $this->assertNull($history[1]['approval']);
+        $this->assertNotNull($history[1]['approval_note']);
+    }
+
+    public function test_a_no_op_amendment_leaves_no_gap_in_the_history(): void
+    {
+        [$trip] = $this->readyTrip();
+        $this->dispatch->confirm($trip, $this->fields(), self::TENANT_A, $this->actor);
+        $this->dispatch->amend($trip->fresh(), ['dispatch_destination' => 'Bhiwandi Warehouse, Gate 3'], 'No change', self::TENANT_A, $this->actor);
+
+        $this->assertSame([1], array_column($this->dispatch->history($trip->fresh(), self::TENANT_A), 'version'));
+    }
+
+    public function test_history_carries_no_other_tenants_entries(): void
+    {
+        [$a] = $this->readyTrip(self::TENANT_A);
+        [$b] = $this->readyTrip(self::TENANT_B);
+
+        $this->dispatch->confirm($a, $this->fields(), self::TENANT_A, $this->actor);
+        $this->dispatch->confirm($b, $this->fields(), self::TENANT_B, $this->actor);
+
+        $this->assertCount(1, $this->dispatch->history($a->fresh(), self::TENANT_A));
+        $this->assertCount(1, $this->dispatch->history($b->fresh(), self::TENANT_B));
+    }
+
+    public function test_history_for_another_tenants_trip_is_a_404(): void
+    {
+        [$trip] = $this->readyTrip(self::TENANT_A);
+        $this->dispatch->confirm($trip, $this->fields(), self::TENANT_A, $this->actor);
+
+        $this->expectException(\App\Exceptions\ResourceNotFoundException::class);
+        $this->dispatch->history($trip->fresh(), self::TENANT_B);
+    }
+
+    /* ══════════ the gate blocks on FAILURE, never on incompleteness ══════
+     *
+     * A trip at pretrip_ok can no longer regenerate its checklist
+     * (GENERATABLE_FROM is [approved, allocated]). So if re-validation demanded
+     * a fresh human confirmation, a policy change after the gate was passed
+     * would strand the trip with no way out. BRW-052 is the rule that applies:
+     * a CRITICAL FAILURE blocks dispatch. These pin that down.
+     */
+
+    public function test_a_check_enabled_after_the_gate_does_not_strand_the_trip(): void
+    {
+        [$trip] = $this->readyTrip();
+
+        // The tenant widens its policy after this trip passed. The new check has
+        // no stored row, so nobody has confirmed it — but it passes, and a
+        // passing check is not a reason to hold a vehicle in the yard.
+        $policies = app(\App\Services\Transport\TransportPolicyService::class);
+        $policies->set(self::TENANT_A, 'pretrip.check.'.PretripCheckKey::VEHICLE_COMPLIANCE.'.critical', true, $this->actor);
+
+        $live = $this->pretrip->revalidate($trip->fresh(), self::TENANT_A);
+        $this->assertFalse($live['blocking']);
+
+        $moved = $this->dispatch->confirm($trip->fresh(), $this->fields(), self::TENANT_A, $this->actor);
+        $this->assertSame(TripStatus::DISPATCHED, $moved->status);
+    }
+
+    public function test_disabling_every_check_after_the_gate_does_not_strand_the_trip(): void
+    {
+        [$trip] = $this->readyTrip();
+
+        app(\App\Services\Transport\TransportPolicyService::class)
+            ->set(self::TENANT_A, 'pretrip.checks.enabled', [], $this->actor);
+
+        $live = $this->pretrip->revalidate($trip->fresh(), self::TENANT_A);
+
+        // Nothing left that COULD lapse. Not a pass on the merits, and `checked`
+        // says so — but not a reason to refuse a trip that already passed.
+        $this->assertFalse($live['checked']);
+        $this->assertFalse($live['blocking']);
+        $this->assertSame([], $live['blockers']);
+
+        $moved = $this->dispatch->confirm($trip->fresh(), $this->fields(), self::TENANT_A, $this->actor);
+        $this->assertSame(TripStatus::DISPATCHED, $moved->status);
+    }
+
+    public function test_a_newly_applicable_check_that_fails_still_blocks(): void
+    {
+        [$trip, , $driver] = $this->readyTrip();
+
+        // The distinction that matters: incompleteness does not block, a
+        // failure does — even one the policy only just started asking for.
+        $driver->forceFill(['licence_valid_until' => now()->subDay()->toDateString()])->save();
+
+        $live = $this->pretrip->revalidate($trip->fresh(), self::TENANT_A);
+
+        $this->assertTrue($live['blocking']);
+        $this->assertNotEmpty($live['blockers']);
     }
 }

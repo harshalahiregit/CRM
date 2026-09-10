@@ -8,7 +8,7 @@ import { useToast } from '@/components/ui/Toast'
 import { transportPretripApi } from '@/services/transportApi'
 import { Chip } from './MasterFormFields'
 import {
-  pretripReadinessCfg, pretripResultCfg, PRETRIP_CATEGORY_ORDER, tripStatusCfg, fmtDateTime,
+  pretripReadinessCfg, pretripResultCfg, PRETRIP_CATEGORY_ORDER, fmtDateTime,
 } from '../constants'
 
 /**
@@ -84,7 +84,7 @@ function CheckRow({ check, canPerform, onConfirm, busyId }) {
             {/* BRW-052 — whether a failure of this check blocks is policy, and
                 the row says which policy it was generated under. */}
             {check.critical
-              ? <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: '#f87171' }}>Critical</span>
+              ? <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: '#f87171' }}>Must pass</span>
               : <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Advisory</span>}
           </p>
 
@@ -223,7 +223,13 @@ export default function PretripPanel({ trip, canPerform, onChanged }) {
   const status = readiness?.status || 'not_started'
   const checks = readiness?.checks || []
   const isReady = !!readiness?.ready
-  const alreadyPassed = trip.status === 'pretrip_ok'
+  // "Has this trip already moved past pre-trip", NOT "is it exactly at
+  // pretrip_ok". Written as the narrower test when pretrip_ok was the last
+  // reachable state; once dispatch was wired, a dispatched trip stopped
+  // matching it and was offered an enabled "Pass pre-trip" button the API
+  // would refuse — UX §150's exact complaint. Any state at or beyond the gate
+  // counts, so the next state added does not reintroduce this.
+  const alreadyPassed = ['pretrip_ok', 'dispatched'].includes(trip.status)
 
   // OPS §28's category order, with anything unrecognised kept at the end rather
   // than dropped — a check the UI cannot place is the one worth showing.
@@ -242,19 +248,19 @@ export default function PretripPanel({ trip, canPerform, onChanged }) {
 
   return (
     <>
-      {/* Header: the derived status, and how far through the list we are. */}
+      {/* Header: how this step stands, and how far through the list we are.
+          "Readiness" was our word for it — the reader wants "Checks". The trip's
+          own status chip has gone: it is on the page header and the tracker, and
+          a third copy inside a step panel only invited the question of which one
+          to believe. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
-        <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Readiness</span>
+        <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Checks</span>
         <Chip cfg={pretripReadinessCfg(status)} />
         {checks.length > 0 && (
           <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
             {readiness.completed} of {readiness.total} confirmed
           </span>
         )}
-        <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Trip</span>
-          <Chip cfg={tripStatusCfg(trip.status)} />
-        </span>
       </div>
 
       {/* UX §35 — the reason lives next to the action, so nobody has to click to
@@ -279,7 +285,9 @@ export default function PretripPanel({ trip, canPerform, onChanged }) {
       {alreadyPassed && (
         <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 9, background: 'rgba(52,211,153,0.10)', border: '1px solid rgba(52,211,153,0.30)', color: '#34d399', fontSize: 12.5, display: 'flex', gap: 8 }}>
           <CheckCircle2 size={15} style={{ flexShrink: 0, marginTop: 1 }} />
-          Pre-trip checks passed. This trip is ready for dispatch.
+          {trip.status === 'dispatched'
+            ? 'These checks passed and the trip has been dispatched. Below is what was confirmed before it left.'
+            : 'All checks passed. Dispatch re-checks these before the trip leaves.'}
         </div>
       )}
 

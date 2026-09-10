@@ -182,6 +182,15 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
      * Gated on transport.trip.dispatch, which mirrors PERM-004 — SM-TRP makes
      * the Dispatcher the owner of both `allocated` and `dispatched`.
      */
+    // Reading a trip's dispatch state is not releasing it, so the GET sits on
+    // transport.trip.view — the same read/write split PRETRIP_VIEW and
+    // PRETRIP_PERFORM already draw. It carries the live readiness verdict and
+    // the version history, so a panel can explain a block before the user acts
+    // (UX §35, BRW-048) and can show TRP-P0-006's history without a second call.
+    Route::middleware('transport.permission:'.TransportPermission::TRIP_VIEW)->group(function () {
+        Route::get('/trips/{trip}/dispatch', [TransportDispatchController::class, 'show'])->whereNumber('trip');
+    });
+
     Route::middleware('transport.permission:'.TransportPermission::TRIP_DISPATCH)->group(function () {
         Route::patch('/trips/{trip}/dispatch',       [TransportDispatchController::class, 'confirm'])->whereNumber('trip');
         Route::patch('/trips/{trip}/dispatch/amend', [TransportDispatchController::class, 'amend'])->whereNumber('trip');

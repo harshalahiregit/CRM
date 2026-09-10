@@ -9,11 +9,13 @@ use App\Http\Controllers\Traits\ApiResponse;
 use App\Http\Requests\Transport\AmendDispatchRequest;
 use App\Http\Requests\Transport\DispatchTripRequest;
 use App\Services\Transport\DispatchService;
+use App\Services\Transport\PretripService;
 use App\Services\Transport\TransportAuditLogger;
 use App\Services\Transport\TransportTripService;
 use App\Support\Transport\DispatchScope;
 use App\Support\Transport\TripStatus;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 /**
  * Dispatch confirmation — RTM STOS-REQ-OPS-008, FRS TRP-P0-006.
@@ -45,7 +47,29 @@ class TransportDispatchController extends Controller
         private DispatchService $dispatch,
         private TransportTripService $trips,
         private TransportAuditLogger $audit,
+        private PretripService $pretrip,
     ) {
+    }
+
+    /**
+     * The whole dispatch picture for one trip, without attempting anything.
+     *
+     * A screen must be able to say WHY dispatch is unavailable before the user
+     * clicks — UX §35 forbids merely showing Blocked, and BRW-048 wants the
+     * exact reason. So this returns the same live readiness verdict the gate
+     * itself would use, computed by the same method, rather than leaving the
+     * panel to infer a reason from a 422 it has not triggered yet.
+     *
+     * Gated on transport.trip.view, not transport.trip.dispatch: watching a
+     * trip's dispatch state is not releasing it, and the same read/write split
+     * already separates PRETRIP_VIEW from PRETRIP_PERFORM.
+     */
+    public function show(Request $request, int $trip): JsonResponse
+    {
+        $tenantId = $request->user()->tenant_id;
+        $record   = $this->trips->find($trip, $tenantId);
+
+        return $this->success($this->payload($record, $tenantId), 'Dispatch state');
     }
 
     /** Release the trip — pretrip_ok → dispatched. */
@@ -99,6 +123,12 @@ class TransportDispatchController extends Controller
             'dispatch'    => $this->dispatch->snapshot($trip),
             // TRP-P0-006's "TAT", derived rather than stored — see DispatchScope.
             'turnaround_hours' => $trip->turnaroundHours(),
+            // TRP-P0-006's "Version history", reconstructed from the audit trail.
+            'history' => $this->dispatch->history($trip, $tenantId),
+            // BRW-046, re-derived live. Present on every response — including a
+            // success — so a panel never has to guess whether it may offer the
+            // action, and so a refusal and a pre-flight read agree by construction.
+            'readiness' => $trip->isDispatched() ? null : $this->pretrip->revalidate($trip, $tenantId),
             // Stated rather than implied: dispatched is not in transit.
             'in_transit'  => false,
             'in_transit_note' => 'STT-006 belongs to SNG-TRN-013, which is blocked.',

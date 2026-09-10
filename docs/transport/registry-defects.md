@@ -30,7 +30,7 @@ Authority for who rules on what: the Conflict Resolution matrix in
 | D-15 | Ticket refs are fabricated | **Critical** | System Architect | Open — worked around |
 | D-16 | Readiness/result enums | High | Product + Compliance | Open — resolved by authority order, mapped in code |
 | D-17 | Trip state machine split | **Critical** | Architecture + Product | ⚠️ **Ruled for one edge 2026-09-09 — Blocker 2 still open** |
-| D-18 | Dispatch confirmation has no ticket | High | Step 12 maintainer | Open — deferred by owner |
+| D-18 | Dispatch confirmation has no ticket | High | Step 12 maintainer | Built 2026-09-10 under owner authorization; ticket still absent |
 | D-19 | Ticket 010 DoD demands offline | Medium | Product + QA | Open — offline excluded, DoD unachievable |
 | D-20 | Checklist items with no data model | High | Product | Open — declared, unreachable |
 | D-21 | No pre-trip permission; role conflict | **Critical** | Security + Architecture | Open — **rows derived and FLAGGED in code** |
@@ -389,6 +389,41 @@ check.
 a document lapses after the gate is passed, nothing re-checks it. This is safe **only** because
 `pretrip_ok → dispatched` is unwired, so the trip cannot move. **The ticket that owns D-18 must
 re-validate readiness at dispatch time.**
+
+### Resolution — built 2026-09-10, still without a ticket
+
+The owner authorised a bounded "Record dispatch" scope in writing, in place of a Step 12 ticket. The
+authorization is recorded verbatim in `DispatchScope::AUTHORIZATION`; **the register still owns no
+dispatch ticket, so this defect stays open** against Step 12 rather than being closed by the code.
+
+What was built, against the list above:
+
+| Item | Status |
+| --- | --- |
+| FRS `TRP-P0-006`'s five fields | Built — `DispatchScope::FIELD_MAP`; migration `2026_12_16_000011`. TAT is derived, not stored (`TAT_DEFERRED`). |
+| Freeze on release; version any later change | Built — `DispatchService::confirm()` / `amend()`; `dispatch_version` 0 → 1 at release, +1 per amendment. |
+| "Version history" (TRP-P0-006's audit column) | Built — `DispatchService::history()`, reconstructed from `transport_audit_logs`. No versions table; see `DispatchScope::VERSION_HISTORY`. |
+| RTM `STOS-REQ-OPS-008` "Record dispatch" | Built — `pretrip_ok → dispatched` with actor and timestamp. |
+| BRW-050's eight side effects | Dispositioned individually in `DispatchScope::BRW_050_DISPOSITION` — 2 built, 2 boundary, 2 no_ticket, 2 blocked. |
+| Vehicle → In Operation, Driver → On Trip | **Not built — boundary.** Owner's ruling of 2026-09-10: Trip side must not write `transport_vehicles` / `transport_drivers`. Routed through `FleetResourceGateway`; the shipped implementation records intent and returns false. One `bind()` in `TransportNumberingServiceProvider::register()` is the whole handover to Developer A. |
+| `STT-006` `dispatched → in_transit` | **Not built.** Transit is SNG-TRN-013, blocked on the owner's Q1/Q3 ruling. |
+| Change approval after release | **Not built.** No approval entity exists in Step 11; every approval in the package is P1. An amendment carries a reason and a version but no approver, and the API and the screen both say so rather than letting silence read as approval. |
+
+**The re-validation requirement above is now met.** Owner's ruling of 2026-09-10, option (b):
+`DispatchService::assertDispatchable()` calls `PretripService::revalidate()`, which re-evaluates the
+generated checks against live sources **and writes nothing**. A trip whose facts have changed since
+the checklist was confirmed is refused, and the refusal names the check, what it says now and what it
+said before — separately from ordinary blockers, because "it never passed" and "it passed and has
+since lapsed" are different problems for a dispatcher (BRW-048, UX §35).
+
+Verified end to end in a browser on 2026-09-10: a driver licence expired after `pretrip_ok` leaves
+the pre-trip panel reading *Ready · 5 of 5 confirmed* — correctly, that is the record of what was
+confirmed — while the dispatch panel reads *Blocked* and explains the discrepancy under **"Passed at
+pre-trip, not passing now"**.
+
+**Still open for whoever writes the ticket:** notifications (SNG-TRN-021, P1), the shareable dispatch
+pack (D-22 — Transport has no document generation), dispatch override (BRW-049, P1), and TAT's
+definition, which no document gives.
 
 ---
 

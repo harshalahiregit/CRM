@@ -186,8 +186,8 @@ class VehicleEligibilityService
         $required = $this->requiredDocuments($policy, 'vehicle');
         if ($required === []) {
             return [true, $documents->isEmpty()
-                ? 'No documents on file, and none configured as required'
-                : $documents->count().' document(s) on file, all valid'];
+                ? 'No documents are required for this vehicle.'
+                : $documents->count().' '.($documents->count() === 1 ? 'document' : 'documents').' on file, all valid.'];
         }
 
         $held = $documents->pluck('document_type')->unique();

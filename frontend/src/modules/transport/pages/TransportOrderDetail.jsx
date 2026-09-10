@@ -9,6 +9,7 @@ import { useToast } from '@/components/ui/Toast'
 import Modal from '@/components/ui/Modal'
 import {
   orderStatusCfg, priorityCfg, tripStatusCfg, ORDER_TRANSITIONS, ORDER_SOURCES,
+  ORDER_STATUS_LABEL, TRIP_STATUS_LABEL,
   fmtDateTime, fmtDate, fmtLocation, fmtMoney,
 } from '../constants'
 
@@ -322,13 +323,28 @@ export function Wrap({ children }) {
   return <div className="p-5 md:p-7">{children}</div>
 }
 
-export function Panel({ icon: Icon, title, children }) {
+/**
+ * `step` and `subtitle` are optional and used by the trip page, where the panels
+ * are stages of one process rather than independent boxes. Numbering them ties
+ * each panel to the tracker at the top of that page; the subtitle says in one
+ * plain line what the stage is FOR, so the heading does not have to carry it.
+ */
+export function Panel({ icon: Icon, title, step, subtitle, children }) {
   return (
     <div className="pr-glass" style={{ padding: 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {step != null && (
+          <span style={{
+            width: 20, height: 20, borderRadius: 999, background: 'rgba(124,58,237,0.16)',
+            color: '#a78bfa', fontSize: 11, fontWeight: 900, display: 'grid', placeItems: 'center', flexShrink: 0,
+          }}>{step}</span>
+        )}
         <Icon size={15} style={{ color: '#7C3AED' }} />
         <h3 style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-h)', margin: 0, textTransform: 'uppercase', letterSpacing: '.03em' }}>{title}</h3>
       </div>
+      {subtitle && (
+        <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>{subtitle}</p>
+      )}
       {children}
     </div>
   )
@@ -362,6 +378,10 @@ export function AuditList({ entries }) {
     return <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '12px 0 0' }}>No activity recorded yet.</p>
   }
 
+  // Every event this module writes, in words. An unmapped key used to fall
+  // through to its raw name — so the activity feed read
+  // "transport.pretrip.generated" to whoever opened it, which is a developer's
+  // vocabulary on a dispatcher's screen.
   const pretty = (a) => ({
     'transport.order.created': 'Order created',
     'transport.order.updated': 'Order updated',
@@ -370,7 +390,20 @@ export function AuditList({ entries }) {
     'transport.trip.created': 'Trip created',
     'transport.trip.updated': 'Trip updated',
     'transport.trip.status_changed': 'Status changed',
+    'transport.trip.assignment_created': 'Vehicle and driver assigned',
+    'transport.trip.assignment_released': 'Vehicle and driver released',
+    'transport.pretrip.generated': 'Pre-trip checklist prepared',
+    'transport.pretrip.check_completed': 'Pre-trip check confirmed',
+    'transport.pretrip.checks_removed': 'Pre-trip checks no longer required',
+    'transport.pretrip.confirmations_revoked': 'Earlier confirmations no longer valid',
+    'transport.pretrip.invalidated': 'Pre-trip checks reset',
+    'transport.pretrip.refused': 'Pre-trip checks could not be passed',
+    'transport.dispatch.amended': 'Dispatch details changed',
   }[a] || a)
+
+  // Statuses are stored as codes; the feed should read them the way the rest of
+  // the page does. Falls back to the raw value so a new state is never hidden.
+  const statusLabel = (v) => (v ? (TRIP_STATUS_LABEL[v] || ORDER_STATUS_LABEL[v] || v) : v)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
@@ -384,7 +417,7 @@ export function AuditList({ entries }) {
               <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: 'var(--text-h)' }}>
                 {pretty(e.action)}
                 {from && to && (
-                  <span style={{ fontWeight: 500, color: 'var(--text-muted)' }}> — {from} → {to}</span>
+                  <span style={{ fontWeight: 500, color: 'var(--text-muted)' }}> — {statusLabel(from)} → {statusLabel(to)}</span>
                 )}
               </p>
               <p style={{ margin: '2px 0 0', fontSize: 11.5, color: 'var(--text-muted)' }}>

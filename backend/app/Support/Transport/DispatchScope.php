@@ -131,8 +131,41 @@ final class DispatchScope
 
     /* ── The rules that bite ──────────────────────────────────────────── */
 
-    /** BRW-046 — "Vehicle cannot dispatch until all mandatory dispatch checks pass." */
+    /**
+     * BRW-046 — "Vehicle cannot dispatch until all mandatory dispatch checks pass."
+     *
+     * ENFORCED BY RE-DERIVATION, on the owner's ruling of 2026-09-10.
+     *
+     * The first cut of this scope let the state alone carry the gate: a trip at
+     * `pretrip_ok` had passed, so it could leave. That reads BRW-046 as a
+     * statement about the checklist, when it is a statement about the VEHICLE at
+     * the moment it departs. A licence expires overnight; the stored row still
+     * says `pass`, because that is what was true when it was written.
+     *
+     * So DispatchService::assertDispatchable() now calls
+     * PretripService::revalidate(), which re-evaluates the same checks against
+     * live sources and WRITES NOTHING. A trip whose facts have changed is
+     * refused, and the refusal names the check, what it says now and what it
+     * said before — BRW-048's exact reason, and UX §35's requirement that a
+     * screen never merely show Blocked.
+     *
+     * This is not a departure from CMP §159. Deterministic means the same facts
+     * yield the same answer, not that the answer is cached.
+     */
     public const BRW_DISPATCH_READINESS = 'BRW-046';
+
+    /** How BRW-046 is satisfied, as data — asserted by DispatchTest. */
+    public const READINESS_REVALIDATED = true;
+
+    /**
+     * TRP-P0-006's "Version history", and where it is served from.
+     *
+     * There is no versions table: the audit log already stores an actor, a
+     * timestamp and a before/after pair per change. DispatchService::history()
+     * reads it back as a history — version 1 is the release, each later version
+     * one amendment with the reason it was given.
+     */
+    public const VERSION_HISTORY = 'DispatchService::history() — reconstructed from transport_audit_logs; no versions table.';
 
     /** BRW-048 — "If dispatch fails, Sangoe must display exact reason." */
     public const BRW_BLOCK_REASON = 'BRW-048';

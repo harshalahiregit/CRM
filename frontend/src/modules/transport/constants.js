@@ -77,7 +77,7 @@ export const TRIP_STATUS_LABEL = {
   viability_pending: 'Viability pending',
   approved: 'Approved',
   allocated: 'Allocated',
-  pretrip_ok: 'Pre-trip OK',
+  pretrip_ok: 'Ready to dispatch',
   dispatched: 'Dispatched',
   in_transit: 'In transit',
   arrived: 'Arrived',
@@ -89,6 +89,75 @@ export const TRIP_STATUS_LABEL = {
   collection_pending: 'Collection pending',
   settlement_pending: 'Settlement pending',
   closed: 'Closed',
+}
+
+/**
+ * The trip's journey, as the five things a person actually does to it.
+ *
+ * This is a PRESENTATION grouping, not the state machine. The machine has 16
+ * states; an operator has five jobs, and several states belong to one job (a
+ * trip is "being set up" whether it is draft, awaiting viability, or approved).
+ * Grouping them is what makes the page walkable — 16 chips explain nothing.
+ *
+ * `states` is what counts as DONE for that step. A step with no built states is
+ * marked `built: false` and rendered as still to come, because the honest answer
+ * to "what happens after dispatch?" is "that part is not built yet", and a
+ * tracker that quietly stopped at four steps would imply dispatch is the end.
+ */
+export const TRIP_JOURNEY = [
+  {
+    key: 'setup',
+    label: 'Trip set up',
+    blurb: 'The trip exists and has been approved to run.',
+    states: ['approved', 'allocated', 'pretrip_ok', 'dispatched'],
+    active: ['draft', 'viability_pending'],
+    built: true,
+  },
+  {
+    key: 'crew',
+    label: 'Vehicle & driver',
+    blurb: 'A vehicle and a driver are assigned to the trip.',
+    states: ['allocated', 'pretrip_ok', 'dispatched'],
+    active: ['approved'],
+    built: true,
+  },
+  {
+    key: 'checks',
+    label: 'Pre-trip checks',
+    blurb: 'Everything is verified as fit to leave — papers, vehicle, driver.',
+    states: ['pretrip_ok', 'dispatched'],
+    active: ['allocated'],
+    built: true,
+  },
+  {
+    key: 'dispatch',
+    label: 'Dispatch',
+    blurb: 'The trip is released, with its departure and arrival times fixed.',
+    states: ['dispatched'],
+    active: ['pretrip_ok'],
+    built: true,
+  },
+  {
+    key: 'journey',
+    label: 'On the road',
+    blurb: 'Tracking the trip, delivery and proof of delivery.',
+    states: [],
+    active: [],
+    built: false,
+  },
+]
+
+/**
+ * Where a trip stands on each step: 'done', 'current', 'todo' or 'later'.
+ *
+ * 'current' is the step being worked on right now; 'later' marks the steps that
+ * are not built, so nobody reads a grey circle as "this trip is behind".
+ */
+export const tripJourneyState = (step, status) => {
+  if (!step.built) return 'later'
+  if (step.states.includes(status)) return 'done'
+  if (step.active.includes(status)) return 'current'
+  return 'todo'
 }
 
 /**
@@ -351,3 +420,55 @@ export const pretripResultCfg = (r) => {
  * showing.
  */
 export const PRETRIP_CATEGORY_ORDER = ['commercial', 'driver', 'vehicle', 'reefer', 'documents']
+
+/* ── Dispatch (FRS TRP-P0-006) ────────────────────────────────────────── */
+
+/**
+ * The five fields TRP-P0-006 freezes at release, in the order it lists them.
+ *
+ * `type` drives the input; `hint` exists because a frozen field is one a person
+ * cannot quietly correct later, and they should know that before they type.
+ */
+export const DISPATCH_FIELDS = [
+  { key: 'planned_departure_at', label: 'ETD — planned departure', type: 'datetime-local', hint: 'Locked once you dispatch. Changing it after that needs a reason.' },
+  { key: 'planned_arrival_at', label: 'ETA — planned arrival', type: 'datetime-local', hint: 'How long the trip should take is worked out from these two times.' },
+  { key: 'pickup_contact', label: 'Pickup contact', type: 'text', hint: 'Name and number the driver should call.' },
+  { key: 'dispatch_destination', label: 'Destination', type: 'text', hint: 'Where this vehicle is actually going.' },
+  { key: 'dispatch_instructions', label: 'Instructions for the driver', type: 'textarea', hint: 'Gate, seal, documents — anything the driver needs on arrival.' },
+]
+
+export const DISPATCH_FIELD_LABEL = Object.fromEntries(DISPATCH_FIELDS.map((f) => [f.key, f.label]))
+
+/**
+ * TAT, derived rather than stored — the server sends `turnaround_hours` and
+ * DispatchScope explains why no column holds it.
+ */
+export const fmtTurnaround = (h) => {
+  if (h === null || h === undefined) return '—'
+  const n = Number(h)
+  if (!Number.isFinite(n)) return '—'
+  if (n < 1) return `${Math.round(n * 60)} min`
+  const days = Math.floor(n / 24)
+  const hours = Math.round(n % 24)
+  return days ? `${days}d ${hours}h` : `${n % 1 === 0 ? n : n.toFixed(1)}h`
+}
+
+/**
+ * `datetime-local` will not accept an ISO string with a zone, and sending its
+ * output back raw loses the seconds the API expects. These two are the pair.
+ */
+export const toLocalInput = (v) => {
+  if (!v) return ''
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+export const fromLocalInput = (v) => (v ? v.replace('T', ' ') + ':00' : null)
+
+/** A dispatch history entry — version 1 is the release, the rest are amendments. */
+export const dispatchVersionCfg = (type, version) =>
+  type === 'release'
+    ? { label: 'Dispatched', color: '#34d399', bg: 'rgba(52,211,153,0.14)' }
+    : { label: `Change ${version}`, color: '#fbbf24', bg: 'rgba(251,191,36,0.16)' }
