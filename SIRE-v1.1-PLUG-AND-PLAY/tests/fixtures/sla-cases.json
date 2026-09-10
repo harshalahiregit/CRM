@@ -1,0 +1,171 @@
+{
+  "_comment": [
+    "EXECUTABLE SPECIFICATION for SIRE SLA resolution and clock state.",
+    "",
+    "Consumed by BOTH implementations:",
+    "  tests/sla.test.mjs                              (JS reference — runs here)",
+    "  backend/tests/Unit/Sire/SireSlaPolicyTest.php   (PHP — runs in the repo)",
+    "",
+    "If the two disagree, one of them is wrong and this file says which.",
+    "Times are ISO-8601 UTC. 'now' is supplied per case so nothing is clock-dependent."
+  ],
+
+  "defaults": {
+    "warning_threshold": 0.8,
+    "pause_states": ["on_hold", "ready_for_release", "released"]
+  },
+
+  "cases": [
+    {
+      "name": "no policies configured falls back to the severity row's targets",
+      "policies": [],
+      "severity": { "code": "major", "ack_target_minutes": 60, "resolve_target_minutes": 960 },
+      "report": { "type": "bug", "priority": "p2", "status": "in_development", "sla_started_at": "2026-03-01T09:00:00Z", "acknowledged_at": null, "closed_at": null, "sla_paused_minutes": 0, "sla_paused_since": null },
+      "now": "2026-03-01T09:30:00Z",
+      "expect": {
+        "source": "severity",
+        "ack": { "target_minutes": 60, "elapsed_minutes": 30, "state": "on_track", "deadline": "2026-03-01T10:00:00Z" },
+        "resolve": { "target_minutes": 960, "elapsed_minutes": 30, "state": "on_track" }
+      }
+    },
+    {
+      "name": "no policies and no severity targets means no SLA at all",
+      "policies": [],
+      "severity": { "code": "minor", "ack_target_minutes": null, "resolve_target_minutes": null },
+      "report": { "type": "bug", "priority": "p3", "status": "triaged", "sla_started_at": "2026-03-01T09:00:00Z", "acknowledged_at": null, "closed_at": null, "sla_paused_minutes": 0, "sla_paused_since": null },
+      "now": "2026-03-05T09:00:00Z",
+      "expect": { "source": "none", "ack": { "state": null }, "resolve": { "state": null } }
+    },
+    {
+      "name": "the most specific matching policy wins over a broader one",
+      "policies": [
+        { "match": { "severity": "critical" }, "ack_minutes": 60, "resolve_minutes": 960 },
+        { "match": { "type": "bug", "priority": "p1", "severity": "critical" }, "ack_minutes": 15, "resolve_minutes": 240 },
+        { "match": {}, "ack_minutes": 480, "resolve_minutes": 4800 }
+      ],
+      "severity": { "code": "critical", "ack_target_minutes": 999, "resolve_target_minutes": 999 },
+      "report": { "type": "bug", "priority": "p1", "status": "assigned", "sla_started_at": "2026-03-01T09:00:00Z", "acknowledged_at": null, "closed_at": null, "sla_paused_minutes": 0, "sla_paused_since": null },
+      "now": "2026-03-01T09:05:00Z",
+      "expect": {
+        "source": "policy",
+        "matched_index": 1,
+        "ack": { "target_minutes": 15, "elapsed_minutes": 5, "state": "on_track" },
+        "resolve": { "target_minutes": 240, "state": "on_track" }
+      }
+    },
+    {
+      "name": "the catch-all policy applies when nothing more specific matches",
+      "policies": [
+        { "match": { "type": "bug", "priority": "p1" }, "ack_minutes": 15, "resolve_minutes": 240 },
+        { "match": {}, "ack_minutes": 480, "resolve_minutes": 4800 }
+      ],
+      "severity": { "code": "minor", "ack_target_minutes": null, "resolve_target_minutes": null },
+      "report": { "type": "enhancement", "priority": "p4", "status": "triaged", "sla_started_at": "2026-03-01T09:00:00Z", "acknowledged_at": null, "closed_at": null, "sla_paused_minutes": 0, "sla_paused_since": null },
+      "now": "2026-03-01T10:00:00Z",
+      "expect": { "source": "policy", "matched_index": 1, "ack": { "target_minutes": 480, "state": "on_track" } }
+    },
+    {
+      "name": "a null target disables that clock without disabling the other",
+      "policies": [
+        { "match": { "type": "enhancement" }, "ack_minutes": 480, "resolve_minutes": null }
+      ],
+      "severity": { "code": "minor", "ack_target_minutes": 60, "resolve_target_minutes": 600 },
+      "report": { "type": "enhancement", "priority": "p3", "status": "in_development", "sla_started_at": "2026-03-01T09:00:00Z", "acknowledged_at": null, "closed_at": null, "sla_paused_minutes": 0, "sla_paused_since": null },
+      "now": "2026-03-20T09:00:00Z",
+      "expect": {
+        "source": "policy",
+        "ack": { "target_minutes": 480, "state": "breached" },
+        "resolve": { "target_minutes": null, "state": null }
+      }
+    },
+    {
+      "name": "equal specificity resolves to the earlier policy in the list",
+      "policies": [
+        { "match": { "priority": "p2" }, "ack_minutes": 100, "resolve_minutes": 1000 },
+        { "match": { "type": "bug" }, "ack_minutes": 200, "resolve_minutes": 2000 }
+      ],
+      "severity": { "code": "major", "ack_target_minutes": null, "resolve_target_minutes": null },
+      "report": { "type": "bug", "priority": "p2", "status": "assigned", "sla_started_at": "2026-03-01T09:00:00Z", "acknowledged_at": null, "closed_at": null, "sla_paused_minutes": 0, "sla_paused_since": null },
+      "now": "2026-03-01T09:10:00Z",
+      "expect": { "source": "policy", "matched_index": 0, "ack": { "target_minutes": 100 } }
+    },
+    {
+      "name": "warning fires at exactly the configured threshold",
+      "policies": [{ "match": {}, "ack_minutes": 100, "resolve_minutes": 1000 }],
+      "severity": { "code": "major", "ack_target_minutes": null, "resolve_target_minutes": null },
+      "report": { "type": "bug", "priority": "p2", "status": "assigned", "sla_started_at": "2026-03-01T09:00:00Z", "acknowledged_at": null, "closed_at": null, "sla_paused_minutes": 0, "sla_paused_since": null },
+      "now": "2026-03-01T10:20:00Z",
+      "expect": { "ack": { "elapsed_minutes": 80, "state": "warning" } }
+    },
+    {
+      "name": "one minute before the threshold is still on track",
+      "policies": [{ "match": {}, "ack_minutes": 100, "resolve_minutes": 1000 }],
+      "severity": { "code": "major", "ack_target_minutes": null, "resolve_target_minutes": null },
+      "report": { "type": "bug", "priority": "p2", "status": "assigned", "sla_started_at": "2026-03-01T09:00:00Z", "acknowledged_at": null, "closed_at": null, "sla_paused_minutes": 0, "sla_paused_since": null },
+      "now": "2026-03-01T10:19:00Z",
+      "expect": { "ack": { "elapsed_minutes": 79, "state": "on_track" } }
+    },
+    {
+      "name": "breach at exactly the target, not one minute later",
+      "policies": [{ "match": {}, "ack_minutes": 100, "resolve_minutes": 1000 }],
+      "severity": { "code": "major", "ack_target_minutes": null, "resolve_target_minutes": null },
+      "report": { "type": "bug", "priority": "p2", "status": "assigned", "sla_started_at": "2026-03-01T09:00:00Z", "acknowledged_at": null, "closed_at": null, "sla_paused_minutes": 0, "sla_paused_since": null },
+      "now": "2026-03-01T10:40:00Z",
+      "expect": { "ack": { "elapsed_minutes": 100, "state": "breached" } }
+    },
+    {
+      "name": "a paused status reports PAUSED and stops accruing",
+      "policies": [{ "match": {}, "ack_minutes": 100, "resolve_minutes": 1000 }],
+      "severity": { "code": "major", "ack_target_minutes": null, "resolve_target_minutes": null },
+      "report": { "type": "bug", "priority": "p2", "status": "on_hold", "sla_started_at": "2026-03-01T09:00:00Z", "acknowledged_at": "2026-03-01T09:10:00Z", "closed_at": null, "sla_paused_minutes": 0, "sla_paused_since": "2026-03-01T09:30:00Z" },
+      "now": "2026-03-03T09:00:00Z",
+      "expect": { "resolve": { "state": "paused", "elapsed_minutes": 30 } }
+    },
+    {
+      "name": "time already paused is subtracted once the issue resumes",
+      "policies": [{ "match": {}, "ack_minutes": 100, "resolve_minutes": 1000 }],
+      "severity": { "code": "major", "ack_target_minutes": null, "resolve_target_minutes": null },
+      "report": { "type": "bug", "priority": "p2", "status": "in_development", "sla_started_at": "2026-03-01T09:00:00Z", "acknowledged_at": "2026-03-01T09:10:00Z", "closed_at": null, "sla_paused_minutes": 600, "sla_paused_since": null },
+      "now": "2026-03-01T20:00:00Z",
+      "expect": { "resolve": { "elapsed_minutes": 60, "state": "on_track" } }
+    },
+    {
+      "name": "a stopped clock that finished inside its target reports on_track and met",
+      "policies": [{ "match": {}, "ack_minutes": 100, "resolve_minutes": 1000 }],
+      "severity": { "code": "major", "ack_target_minutes": null, "resolve_target_minutes": null },
+      "report": { "type": "bug", "priority": "p2", "status": "closed", "sla_started_at": "2026-03-01T09:00:00Z", "acknowledged_at": "2026-03-01T09:20:00Z", "closed_at": "2026-03-01T15:00:00Z", "sla_paused_minutes": 0, "sla_paused_since": null },
+      "now": "2026-03-09T09:00:00Z",
+      "expect": {
+        "ack": { "elapsed_minutes": 20, "state": "on_track", "stopped": true, "met": true },
+        "resolve": { "elapsed_minutes": 360, "state": "on_track", "stopped": true, "met": true }
+      }
+    },
+    {
+      "name": "a stopped clock that finished late stays BREACHED forever",
+      "policies": [{ "match": {}, "ack_minutes": 100, "resolve_minutes": 1000 }],
+      "severity": { "code": "major", "ack_target_minutes": null, "resolve_target_minutes": null },
+      "report": { "type": "bug", "priority": "p2", "status": "closed", "sla_started_at": "2026-03-01T09:00:00Z", "acknowledged_at": "2026-03-01T14:00:00Z", "closed_at": "2026-03-02T09:00:00Z", "sla_paused_minutes": 0, "sla_paused_since": null },
+      "now": "2026-03-09T09:00:00Z",
+      "expect": {
+        "ack": { "elapsed_minutes": 300, "state": "breached", "stopped": true, "met": false },
+        "resolve": { "elapsed_minutes": 1440, "state": "breached", "stopped": true, "met": false }
+      }
+    },
+    {
+      "name": "a terminal status stops the resolve clock even when paused_since is stale",
+      "policies": [{ "match": {}, "ack_minutes": 100, "resolve_minutes": 1000 }],
+      "severity": { "code": "major", "ack_target_minutes": null, "resolve_target_minutes": null },
+      "report": { "type": "bug", "priority": "p2", "status": "wont_fix", "sla_started_at": "2026-03-01T09:00:00Z", "acknowledged_at": "2026-03-01T09:10:00Z", "closed_at": "2026-03-01T12:00:00Z", "sla_paused_minutes": 0, "sla_paused_since": "2026-03-01T11:00:00Z" },
+      "now": "2026-03-09T09:00:00Z",
+      "expect": { "resolve": { "stopped": true, "elapsed_minutes": 120, "state": "on_track" } }
+    },
+    {
+      "name": "reopening restarts the clocks from the new sla_started_at",
+      "policies": [{ "match": {}, "ack_minutes": 100, "resolve_minutes": 1000 }],
+      "severity": { "code": "major", "ack_target_minutes": null, "resolve_target_minutes": null },
+      "report": { "type": "bug", "priority": "p2", "status": "reopened", "sla_started_at": "2026-03-08T09:00:00Z", "acknowledged_at": null, "closed_at": null, "sla_paused_minutes": 0, "sla_paused_since": null },
+      "now": "2026-03-08T09:30:00Z",
+      "expect": { "ack": { "elapsed_minutes": 30, "state": "on_track" } }
+    }
+  ]
+}
