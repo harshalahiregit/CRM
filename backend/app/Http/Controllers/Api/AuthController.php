@@ -179,7 +179,17 @@ class AuthController extends Controller
                     'This link can be used once and expires in '.$expiry.' minutes.',
                     'If you did not request this, you can ignore this email — your current password still works.',
                 ]),
-                ['user_id' => $user->id]
+                ['user_id' => $user->id],
+                // The tenant must be passed EXPLICITLY here. Every other caller
+                // omits it and lets the service fall back to the signed-in
+                // user's tenant — but nobody is signed in when they have
+                // forgotten their password, so that fallback resolved to null,
+                // the mailer was asked to send for no tenant at all, and it
+                // refused with "Email is not set up yet" while the workspace's
+                // SMTP sat correctly configured a row away. The endpoint still
+                // answered "a reset link has been sent", so the failure was
+                // invisible from the screen and lived only in the log.
+                $user->tenant_id,
             );
 
             Log::info('Password reset link issued', ['user_id' => $user->id]);

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Building2, Plus, RefreshCw, CheckCircle2, Eye, CalendarDays, Pencil } from 'lucide-react'
+import { Building2, Plus, RefreshCw, Eye, CalendarDays, Pencil } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
 import PurchaseVendorForm, { validatePurchaseVendor } from '@/modules/purchase/components/PurchaseVendorForm'
 import PurchaseRegistrationBadge from '@/modules/purchase/components/PurchaseRegistrationBadge'
@@ -8,13 +8,12 @@ import TemporaryVendorValidityBadge from '@/modules/purchase/components/Temporar
 import { PV_DEFAULTS } from '@/modules/purchase/components/purchaseVendorFormConstants'
 import TableToolbar from '@/components/ui/TableToolbar'
 import { useToast } from '@/components/ui/Toast'
+import ToggleSwitch from '@/components/ui/ToggleSwitch'
 
 /**
  * Purchase Vendors — the admin master list for the Purchase-owned vendor entity
  * (/api/purchase/vendors). Independent of the shared Vendor and of TPV.
  */
-const STATUS_COLORS = { Active: '#10b981', Pending_Approval: '#f59e0b', Draft: '#6b7280', On_Hold: '#f59e0b', Rejected: '#ef4444', Blacklisted: '#991b1b', Inactive: '#6b7280' }
-
 /**
  * How far this vendor has got with onboarding.
  *
@@ -76,18 +75,32 @@ export default function PurchaseVendors() {
     } finally { setSaving(false) }
   }
 
+
   /**
-   * Activation can be REFUSED — an already-active vendor, or the onboarding
-   * gate. The refusal used to be swallowed, so the button looked dead: nothing
-   * moved, nothing appeared, and the only way to learn why was the server log.
+   * Portal access on and off, the same control TPV has.
+   *
+   * The list previously showed the status as text with a one-way Activate
+   * button beside it, so switching a vendor OFF was not possible from the
+   * screen that displays whether they are on — it needed the edit form, which
+   * is not where anybody looks for a state they can already see.
+   *
+   * `busyId` keeps the row's switch inert while the server answers. Without it
+   * a second click during the round trip sends the opposite instruction, and
+   * the two land in whichever order the network chooses.
    */
-  const activate = async (id) => {
+  const [busyId, setBusyId] = useState(null)
+
+  const toggleStatus = async (v) => {
+    const next = v.status === 'Active' ? 'Inactive' : 'Active'
+    setBusyId(v.id)
     try {
-      await purchaseApi.vendors.approve(id)
+      await purchaseApi.vendors.setStatus(v.id, next)
       load()
-      toast.success('Vendor activated')
+      toast.success(next === 'Active' ? 'Portal access enabled' : 'Portal access disabled')
     } catch (e) {
-      toast.error(e?.response?.data?.message || 'That vendor could not be activated.')
+      toast.error(e?.response?.data?.message || 'That status could not be changed.')
+    } finally {
+      setBusyId(null)
     }
   }
 
@@ -194,9 +207,18 @@ export default function PurchaseVendors() {
                       admin sees what they are about to approve — "Not started" is
                       a real answer, not a blank. */}
                   <td style={td}>{onboardingBadge(v.onboarding?.status)}</td>
-                  <td style={td}><span style={{ fontSize: 11, fontWeight: 700, color: STATUS_COLORS[v.status] || '#6b7280' }}>{v.status_label || v.status}</span></td>
+                  <td style={td}>
+                    <ToggleSwitch
+                      on={v.status === 'Active'}
+                      busy={busyId === v.id}
+                      onChange={() => toggleStatus(v)} />
+                  </td>
                   <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    {v.status !== 'Active' && <button onClick={() => activate(v.id)} style={{ ...miniBtn, color: '#10b981' }}><CheckCircle2 size={13} /> Activate</button>}
+                    {/* The one-way Activate button is gone — the Status switch
+                        does the same thing and undoes it too. Both ran the full
+                        activation (portal login, access window, activation
+                        e-mail), so keeping both meant two controls for one
+                        decision, only one of which could reverse it. */}
                     <button onClick={() => openEdit(v)} disabled={editLoadingId === v.id} style={miniBtn}>
                       <Pencil size={13} /> {editLoadingId === v.id ? 'Opening…' : 'Edit'}
                     </button>
