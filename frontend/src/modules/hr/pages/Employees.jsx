@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { GRAD } from '@/components/ui/brand'
 import { useTheme } from '@/context/ThemeContext'
 import { Search, Building2, Plus, X, LayoutGrid, List, Eye, Pencil } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
@@ -142,7 +143,6 @@ export default function Employees() {
   const departments = useMemo(()=>['All', ...new Set(optionsList.map(e=>e.department).filter(Boolean))], [optionsList])
   const designations = useMemo(()=>['All', ...new Set(optionsList.map(e=>e.designation).filter(Boolean))], [optionsList])
 
-  const openCreate = () => { setEditingId(null); setForm(EMPTY_FORM); setShowModal(true) }
   const openEdit = (emp) => {
     setEditingId(emp.id)
     // #29 — the two org-chart keys fall back to the EMPTY_FORM defaults rather
@@ -219,7 +219,22 @@ export default function Employees() {
               </button>
             ))}
           </div>
-          <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)', boxShadow:'0 4px 14px rgba(124,58,237,0.4)' }}><Plus size={15}/> Add Employee</button>
+          {/* People are created in Staff Management, never here.
+              A person is one thing: a login and an employment record, made
+              together. Creating from this screen produced only the second half
+              — somebody on the payroll who could not sign in — and creating the
+              same person in both places produced two of them, which is what
+              happened the first time it was tried: a second "Kavita Dekhmukh"
+              that payroll had no way to tell from the first.
+              Staff Management already writes both in one transaction, so it is
+              the one door in. This screen owns everything after that. */}
+          <button
+            onClick={() => navigate('/app/admin/staff')}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white"
+            style={{ background: GRAD, boxShadow: '0 4px 14px rgba(124,58,237,0.4)' }}
+            title="Employees are created in Staff Management, so the login and the employment record are made together">
+            <Plus size={15}/> Add Employee
+          </button>
         </div>
       </div>
 
@@ -393,7 +408,7 @@ export default function Employees() {
           off-screen on a scrolled list. */}
       <Modal open={showModal} onClose={()=>setShowModal(false)} className="max-w-lg" style={{ maxHeight:'90vh', overflowY:'auto' }}>
           <div>
-            <div className="flex items-center justify-between mb-5"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{editingId?'Edit Employee':'Add Employee'}</h2><button onClick={()=>setShowModal(false)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
+            <div className="flex items-center justify-between mb-5"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Edit Employee</h2><button onClick={()=>setShowModal(false)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
             <div className="space-y-3">
               <div><label className="label">Full Name *</label><input className="input-3d text-sm" placeholder="Arjun Sharma" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></div>
               <div className="grid grid-cols-2 gap-3">
