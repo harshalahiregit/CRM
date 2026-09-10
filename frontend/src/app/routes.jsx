@@ -236,6 +236,17 @@ const InventoryManufacturing = lazy(() => import('@/modules/inventory/pages/Inve
 // Purchase Module (lazy) — pages land here as they're built
 const PurchaseLayout = lazy(() => import('@/modules/purchase/PurchaseLayout'))
 
+// Sangoe Transport OS (STOS) — SNG-TRN-006 orders, SNG-TRN-007 trips.
+const TransportLayout      = lazy(() => import('@/modules/transport/TransportLayout'))
+const TransportOrders      = lazy(() => import('@/modules/transport/pages/TransportOrders'))
+const TransportOrderDetail = lazy(() => import('@/modules/transport/pages/TransportOrderDetail'))
+const TransportTrips       = lazy(() => import('@/modules/transport/pages/TransportTrips'))
+const TransportTripDetail  = lazy(() => import('@/modules/transport/pages/TransportTripDetail'))
+const TransportVehicles    = lazy(() => import('@/modules/transport/pages/TransportVehicles'))
+const TransportVehicleDetail = lazy(() => import('@/modules/transport/pages/TransportVehicleDetail'))
+const TransportDrivers     = lazy(() => import('@/modules/transport/pages/TransportDrivers'))
+const TransportDriverDetail  = lazy(() => import('@/modules/transport/pages/TransportDriverDetail'))
+
 const PurchaseRequests = lazy(() => import('@/modules/purchase/pages/PurchaseRequests'))
 const PurchaseOrders = lazy(() => import('@/modules/purchase/pages/PurchaseOrders'))
 const PurchaseGoodsReceived = lazy(() => import('@/modules/purchase/pages/PurchaseGoodsReceived'))
@@ -790,6 +801,20 @@ export default function AppRoutes() {
           <Route path="reports" element={<S><PurchaseReports /></S>} />
           {/* Settings — Purchase-owned config + vendor-category master */}
           <Route path="settings" element={<S><PurchaseSettings /></S>} />
+        </Route>
+
+        {/* Sangoe Transport OS — orders and trips only; later clusters arrive
+            with the tickets that build them. */}
+        <Route path="transport" element={<S><TransportLayout /></S>}>
+          <Route index element={<Navigate to="orders" replace />} />
+          <Route path="orders" element={<S><TransportOrders /></S>} />
+          <Route path="orders/:id" element={<S><TransportOrderDetail /></S>} />
+          <Route path="trips" element={<S><TransportTrips /></S>} />
+          <Route path="trips/:id" element={<S><TransportTripDetail /></S>} />
+          <Route path="vehicles" element={<S><TransportVehicles /></S>} />
+          <Route path="vehicles/:id" element={<S><TransportVehicleDetail /></S>} />
+          <Route path="drivers" element={<S><TransportDrivers /></S>} />
+          <Route path="drivers/:id" element={<S><TransportDriverDetail /></S>} />
         </Route>
 
         {/* TPV MODULE */}

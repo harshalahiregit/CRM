@@ -22,7 +22,7 @@ export const SIDEBAR_SECTION_KEY = 'sangoe_sidebar_section'
  *
  * Keep in step with the section ids the Sidebar renders.
  */
-export const SECTION_IDS = ['hr', 'sales', 'accounts', 'helpdesk', 'inventory', 'purchase', 'tpv']
+export const SECTION_IDS = ['hr', 'sales', 'accounts', 'helpdesk', 'inventory', 'purchase', 'tpv', 'transport']
 
 export function readStoredSection() {
   try {
@@ -51,6 +51,7 @@ const SECTION_ROUTE_PREFIXES = [
   ['/app/inventory', 'inventory'],
   ['/app/purchase', 'purchase'],
   ['/app/tpv', 'tpv'],
+  ['/app/transport', 'transport'],
 ]
 
 export function sectionForPath(pathname) {

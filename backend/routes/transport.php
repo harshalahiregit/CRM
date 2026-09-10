@@ -1,0 +1,177 @@
+<?php
+
+use App\Http\Controllers\Api\Transport\TransportAllocationController;
+use App\Http\Controllers\Api\Transport\TransportCapabilityController;
+use App\Http\Controllers\Api\Transport\TransportDriverController;
+use App\Http\Controllers\Api\Transport\TransportOrderController;
+use App\Http\Controllers\Api\Transport\TransportPretripController;
+use App\Http\Controllers\Api\Transport\TransportTripController;
+use App\Http\Controllers\Api\Transport\TransportVehicleController;
+use App\Support\Transport\TransportPermission;
+use Illuminate\Support\Facades\Route;
+
+/*
+|--------------------------------------------------------------------------
+| Sangoe Transport OS (STOS)
+|--------------------------------------------------------------------------
+|
+| SNG-TRN-001 — bounded context.  SNG-TRN-006 — orders.  SNG-TRN-007 — trips.
+|
+| Gated in two layers from the first commit:
+|
+|   role:admin,staff        the coarse door — matches routes/purchase.php:46 and
+|                           keeps portal identities (client, vendor, TPV,
+|                           company) off the staff surface entirely.
+|   transport.permission:*  the fine gate — the Step 11 matrix (PERM-001/002),
+|                           applied PER GROUP rather than per method, for the
+|                           reason EnsureCanManageHrQueue records: a check inside
+|                           each method is the one somebody forgets to add, and
+|                           the method they forget is the index() that lists the
+|                           whole tenant.
+|
+| Read and write are separate groups precisely so a viewer cannot reach a writer
+| route by accident — Step 11's rule is deny by default, and that is only true if
+| the gate is narrow enough to mean something.
+|
+| Path prefix is unversioned /api/transport/... matching all 2,658 existing
+| routes rather than introducing /api/v1/ for one module (agreed decision Q6).
+| Idempotency keys are waived for R1 except on GPS and e-way bill ingest, which
+| belong to SNG-TRN-020 / 025 and are not registered here.
+|
+*/
+
+Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->group(function () {
+
+    /* ── Orders — read (PERM: order.view) ─────────────────────────────── */
+    Route::middleware('transport.permission:'.TransportPermission::ORDER_VIEW)->group(function () {
+        Route::get('/orders/status-counts', [TransportOrderController::class, 'statusCounts']);
+        Route::get('/orders',              [TransportOrderController::class, 'index']);
+        Route::get('/orders/{id}',         [TransportOrderController::class, 'show'])->whereNumber('id');
+    });
+
+    /* ── Orders — write (PERM: order.create / order.update) ───────────── */
+    Route::middleware('transport.permission:'.TransportPermission::ORDER_CREATE)->group(function () {
+        Route::post('/orders', [TransportOrderController::class, 'store']);
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::ORDER_UPDATE)->group(function () {
+        Route::put('/orders/{id}',            [TransportOrderController::class, 'update'])->whereNumber('id');
+        Route::patch('/orders/{id}/status',   [TransportOrderController::class, 'transition'])->whereNumber('id');
+    });
+
+    /* ── Trips — read (PERM-001) ──────────────────────────────────────── */
+    Route::middleware('transport.permission:'.TransportPermission::TRIP_VIEW)->group(function () {
+        Route::get('/trips/status-counts', [TransportTripController::class, 'statusCounts']);
+        Route::get('/trips',              [TransportTripController::class, 'index']);
+        Route::get('/trips/{id}',         [TransportTripController::class, 'show'])->whereNumber('id');
+    });
+
+    /* ── What this user may do ────────────────────────────────────────
+     *
+     * Ungated on purpose: asking what you may do needs no permission, and a 403
+     * here would leave the UI unable to tell "you may not" from "the server is
+     * broken". Lets a screen hide an action the API would refuse instead of
+     * offering a button that 403s.
+     */
+    Route::get('/permissions', [TransportCapabilityController::class, 'index']);
+
+    /* ── Vehicle master (SNG-TRN-003) ─────────────────────────────────
+     *
+     * Gated on transport.vehicle.* — permission rows added for defect D-8,
+     * where Step 11's Permissions sheet has no Vehicle or Driver domain at all.
+     * Reads are wider than writes; deletion is Owner/Admin only. FLAGGED there.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::VEHICLE_VIEW)->group(function () {
+        Route::get('/vehicles/status-counts', [TransportVehicleController::class, 'statusCounts']);
+        Route::get('/vehicles',               [TransportVehicleController::class, 'index']);
+        Route::get('/vehicles/{id}',          [TransportVehicleController::class, 'show'])->whereNumber('id');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::VEHICLE_CREATE)->group(function () {
+        Route::post('/vehicles',                     [TransportVehicleController::class, 'store']);
+        Route::post('/vehicles/{id}/documents',      [TransportVehicleController::class, 'storeDocument'])->whereNumber('id');
+        Route::post('/vehicles/{id}/documents/{documentId}/renew', [TransportVehicleController::class, 'renewDocument'])->whereNumber('id')->whereNumber('documentId');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::VEHICLE_UPDATE)->group(function () {
+        Route::put('/vehicles/{id}',          [TransportVehicleController::class, 'update'])->whereNumber('id');
+        // FLEET §8 — status is a business event, not an editable field.
+        Route::patch('/vehicles/{id}/status', [TransportVehicleController::class, 'transition'])->whereNumber('id');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::VEHICLE_DELETE)->group(function () {
+        Route::delete('/vehicles/{id}', [TransportVehicleController::class, 'destroy'])->whereNumber('id');
+    });
+
+    /* ── Driver master (SNG-TRN-004) ──────────────────────────────────── */
+    Route::middleware('transport.permission:'.TransportPermission::DRIVER_VIEW)->group(function () {
+        Route::get('/drivers/status-counts', [TransportDriverController::class, 'statusCounts']);
+        Route::get('/drivers',               [TransportDriverController::class, 'index']);
+        Route::get('/drivers/{id}',          [TransportDriverController::class, 'show'])->whereNumber('id');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::DRIVER_CREATE)->group(function () {
+        Route::post('/drivers',                    [TransportDriverController::class, 'store']);
+        Route::post('/drivers/{id}/documents',     [TransportDriverController::class, 'storeDocument'])->whereNumber('id');
+        Route::post('/drivers/{id}/documents/{documentId}/renew', [TransportDriverController::class, 'renewDocument'])->whereNumber('id')->whereNumber('documentId');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::DRIVER_UPDATE)->group(function () {
+        Route::put('/drivers/{id}',          [TransportDriverController::class, 'update'])->whereNumber('id');
+        // Two axes, one at a time — the request says which.
+        Route::patch('/drivers/{id}/status', [TransportDriverController::class, 'transition'])->whereNumber('id');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::DRIVER_DELETE)->group(function () {
+        Route::delete('/drivers/{id}', [TransportDriverController::class, 'destroy'])->whereNumber('id');
+    });
+
+    /* ── Allocation (SNG-TRN-009) — PERM-004 ──────────────────────────
+     *
+     * API-004 is the only one of the three the registry defines. Candidates and
+     * release have no registry row (defect D-12); paths ruled 2026-09-08.
+     *
+     * All three take transport.trip.assign. Candidates deliberately shares it
+     * rather than getting a weaker gate — enumerating the fleet against a trip
+     * you may not crew serves no purpose, and Step 11 defines no separate
+     * permission that could express one (defect D-8).
+     */
+    Route::middleware('transport.permission:'.TransportPermission::TRIP_ASSIGN)->group(function () {
+        Route::post('/trips/{trip}/assign',      [TransportAllocationController::class, 'assign'])->whereNumber('trip');
+        Route::get('/trips/{trip}/candidates',   [TransportAllocationController::class, 'candidates'])->whereNumber('trip');
+        Route::delete('/trips/{trip}/assign',    [TransportAllocationController::class, 'release'])->whereNumber('trip');
+    });
+
+    /* ── Pre-trip checks (SNG-TRN-010) — defect D-21 ──────────────────
+     *
+     * Step 5 specifies exactly ONE of these paths, POST .../prechecks. Step 11's
+     * API registry has no pre-trip endpoint at all (D-15), so the other three
+     * follow this module's existing conventions rather than inventing new ones:
+     * GET on the collection reads, PATCH changes one field of one record, and a
+     * state transition is a PATCH on a named verb — as
+     * PATCH /trips/{id}/submit-viability already is for STT-001.
+     *
+     * Reads and writes are separate groups, so someone who may watch a trip's
+     * readiness cannot confirm a safety check.
+     *
+     * `pass-pretrip` is deliberately NOT named `dispatch`. It reaches
+     * `pretrip_ok` and stops; dispatch confirmation belongs to no ticket (D-18).
+     */
+    Route::middleware('transport.permission:'.TransportPermission::PRETRIP_VIEW)->group(function () {
+        Route::get('/trips/{trip}/prechecks', [TransportPretripController::class, 'index'])->whereNumber('trip');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::PRETRIP_PERFORM)->group(function () {
+        Route::post('/trips/{trip}/prechecks',           [TransportPretripController::class, 'store'])->whereNumber('trip');
+        Route::patch('/trips/{trip}/prechecks/{check}',  [TransportPretripController::class, 'complete'])->whereNumber('trip')->whereNumber('check');
+        Route::patch('/trips/{trip}/pass-pretrip',       [TransportPretripController::class, 'pass'])->whereNumber('trip');
+    });
+
+    /* ── Trips — write (PERM-002) ─────────────────────────────────────── */
+    Route::middleware('transport.permission:'.TransportPermission::TRIP_CREATE)->group(function () {
+        Route::post('/trips',                   [TransportTripController::class, 'store']);
+        Route::put('/trips/{id}',               [TransportTripController::class, 'update'])->whereNumber('id');
+        // STT-001 — the only transition this ticket owns.
+        Route::patch('/trips/{id}/submit-viability', [TransportTripController::class, 'submitForViability'])->whereNumber('id');
+    });
+});
