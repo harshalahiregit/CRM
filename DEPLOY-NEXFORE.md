@@ -325,6 +325,35 @@ git rev-parse --short HEAD > frontend/dist/build-id.txt
 
 It never fails the run. A skew is something to act on, not a reason to refuse to
 report everything else.
+### Backing the evidence up — documentation is not a backup
+
+Those screenshots exist in exactly one place: `storage/app/private/sire/` on the
+server. The rsync excludes `storage/app/*`, which is correct — it stops a deploy
+flattening uploads — but it also means nothing copies them anywhere.
+
+**An on-box copy does not count.** §5 already backs the database up with a `cp`
+next to the original; that protects against a bad migration and against nothing
+else. This box runs close to full, and a disk that fills can corrupt MySQL and
+take both copies with it.
+
+So pull them off the box. From a machine that is not the server:
+
+```bash
+rsync -avz --delete \
+  nexforeconsulting.co_bhmrselvhng@45.90.220.5:/var/www/vhosts/nexforeconsulting.com/crm.nexforeconsulting.com/storage/app/private/sire/ \
+  ./backups/sire-evidence/
+```
+
+**Take the database in the same pass.** An attachment is a row *and* a file, and
+they are stored apart. Restore a database from Tuesday over files from Friday and
+you get issues whose thumbnails 404 and files no issue references — which is
+exactly the state `/app/sire/cases/2` was in after a database arrived from
+another environment without its uploads.
+
+Size it before deciding how often: roughly
+`issues/month × screenshots/issue × ~40 KB` (WebP, capped at 1600px). At ten
+issues a week with one screenshot each that is under 20 MB a year, so frequency
+is a choice about how much re-reporting is acceptable, not a storage problem.
 ### Two warnings that are EXPECTED here, and two commands not to run
 
 `sire:doctor` reports these on this box and both are artefacts of how we deploy —

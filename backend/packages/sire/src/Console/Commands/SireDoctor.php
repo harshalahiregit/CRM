@@ -198,11 +198,35 @@ class SireDoctor extends Command
             return $this->result('providers', 'fail', "config('sire.providers') is empty — is SireServiceProvider registered?");
         }
 
-        return $this->result(
-            'providers',
-            'info',
-            sprintf('%d bound, %d on SIRE defaults, %d connected to the host', count($bound), $shipped, count($bound) - $shipped),
-        );
+        $connected = count($bound) - $shipped;
+        $detail    = sprintf('%d bound, %d on SIRE defaults, %d connected to the host', count($bound), $shipped, $connected);
+
+        // Running entirely on SIRE's own implementations is a SUPPORTED end state
+        // and the correct one for a fresh install -- six of the thirteen are meant
+        // never to be connected. So this is information, not a fault.
+        //
+        // On PRODUCTION it means something else. Nothing host-connected there is
+        // not a configuration in progress; it is a feature quietly switched off on
+        // a system people are relying on -- notifications going to a log file
+        // while everyone assumes an assignment reaches someone. That state is
+        // worth interrupting a person about, and the only page that can tell them
+        // is this one.
+        //
+        // It stays a WARN rather than a FAIL: SIRE genuinely runs this way, and
+        // refusing the whole report over it would hide the checks that matter.
+        if ($connected === 0 && app()->environment('production')) {
+            return $this->result(
+                'providers',
+                'warn',
+                $detail,
+                "Every seam is still on SIRE's own implementation. On production that usually\n"
+                ."means a host provider was written but never reached the box -- most often a\n"
+                .'cached config, or a deploy that predates it.',
+                'php artisan config:clear, then check the providers block in config/sire-host.php.',
+            );
+        }
+
+        return $this->result('providers', 'info', $detail);
     }
 
 
