@@ -8,6 +8,23 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
+// SIRE is copy-installed at packages/sire rather than pulled through Composer,
+// so its namespace is registered here as well as in composer.json's PSR-4 map.
+// Once `composer dump-autoload` has run, Composer's own loader answers first and
+// this closure never fires; it exists so the module works on a box (like the
+// deploy target) where Composer is not installed. Additive and idempotent.
+spl_autoload_register(static function (string $class): void {
+    if (! str_starts_with($class, 'Sire\\')) {
+        return;
+    }
+
+    $path = __DIR__.'/../packages/sire/src/'.str_replace('\\', '/', substr($class, 5)).'.php';
+
+    if (is_file($path)) {
+        require $path;
+    }
+});
+
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web:      __DIR__.'/../routes/web.php',

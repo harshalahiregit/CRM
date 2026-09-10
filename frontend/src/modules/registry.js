@@ -182,6 +182,28 @@ export const ALL_MODULES = [
       { label: 'Gate Log',          path: '/app/tpv/gate-log',   icon: '🔳' },
     ],
   },
+  {
+    id: 'sire',
+    name: 'Issues & Quality',
+    description: 'Engineering defect track: a report enters, and leaves as a verified fix in a shipped release. Separate from Helpdesk.',
+    version: '1.1.0',
+    author: 'Sangoe Team',
+    icon: '🐞',
+    color: 'linear-gradient(135deg,#f43f5e,#9f1239)',
+    shadowColor: '#f43f5e',
+    category: 'Engineering',
+    features: ['Report Issue (2 fields)','Auto Context Capture','Triage & Root Cause','Recurrence Detection','Release Gates','QA & Verification','Release Notes'],
+    basePath: '/app/sire',
+    launchPath: '/app/sire/dashboard',
+    navItems: [
+      { label: 'Dashboard',     path: '/app/sire/dashboard',     icon: '📊' },
+      { label: 'My Work',       path: '/app/sire/my-work',       icon: '✅' },
+      { label: 'Releases',      path: '/app/sire/releases',      icon: '🚀' },
+      { label: 'Release Notes', path: '/app/sire/release-notes', icon: '📄' },
+      { label: 'Quality',       path: '/app/sire/quality',       icon: '🛡' },
+      { label: 'Insights',      path: '/app/sire/insights',      icon: '📈' },
+    ],
+  },
 ]
 
 // Persist installed modules in localStorage
