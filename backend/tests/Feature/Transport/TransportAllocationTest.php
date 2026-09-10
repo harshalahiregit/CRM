@@ -468,8 +468,11 @@ class TransportAllocationTest extends TestCase
             array_keys(TripStatus::TRANSITIONS)
         );
 
+        // ALLOCATION must never reach past `allocated` — that is what this
+        // guards, and it is unchanged. pretrip_ok -> dispatched became live on
+        // 2026-09-10 but belongs to DispatchService, not here.
         $this->assertFalse(TripStatus::canTransition(TripStatus::ALLOCATED, TripStatus::DISPATCHED));
-        $this->assertFalse(TripStatus::canTransition(TripStatus::PRETRIP_OK, TripStatus::DISPATCHED));
+        $this->assertFalse(TripStatus::canTransition(TripStatus::DISPATCHED, TripStatus::IN_TRANSIT));
 
         // Both reverses are inferred and must keep saying so.
         $this->assertSame(

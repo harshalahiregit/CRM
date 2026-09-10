@@ -31,6 +31,24 @@ use Illuminate\Support\ServiceProvider;
  */
 class TransportNumberingServiceProvider extends ServiceProvider
 {
+    /**
+     * Bind the Fleet boundary.
+     *
+     * TODO(Developer A / Fleet): swap PendingFleetResourceGateway for the real
+     * reserve/release service. BRW-050 needs a dispatched trip to set
+     * Vehicle = In Operation and Driver = On Trip, but transport_vehicles and
+     * transport_drivers belong to Fleet and the owner ruled on 2026-09-10 that
+     * Trip side must not write them. This one line is the whole swap — no
+     * dispatch code changes.
+     */
+    public function register(): void
+    {
+        $this->app->bind(
+            \App\Services\Transport\Contracts\FleetResourceGateway::class,
+            \App\Services\Transport\PendingFleetResourceGateway::class,
+        );
+    }
+
     public function boot(): void
     {
         // TO-2026-000125  (STOS-DB §16, prototype video Scene 3)

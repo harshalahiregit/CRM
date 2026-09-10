@@ -370,32 +370,26 @@ class PretripApiTest extends TestCase
         $this->assertNotSame(TripStatus::DISPATCHED, $res->json('data.trip.status'));
     }
 
-    public function test_no_endpoint_exposes_a_dispatch_transition(): void
+    public function test_the_pretrip_endpoints_never_dispatch(): void
     {
         $actor = $this->actingAdmin();
         $trip  = $this->crewedTrip(actor: $actor);
 
-        // Not asserted as 404: routes/web.php registers an SPA catch-all for GET,
-        // so an unrouted write answers 405 rather than 404. What matters is that
-        // no dispatch endpoint exists and no trip can reach `dispatched` — D-18.
-        foreach (['dispatch', 'pass-dispatch', 'prechecks/dispatch'] as $path) {
-            $res = $this->patchJson('/api/transport/trips/'.$trip->id.'/'.$path);
-            $this->assertTrue($res->status() >= 400, "PATCH {$path} must not succeed");
-
-            $res = $this->postJson('/api/transport/trips/'.$trip->id.'/'.$path);
-            $this->assertTrue($res->status() >= 400, "POST {$path} must not succeed");
+        // Updated 2026-09-10: a dispatch endpoint now exists, separately
+        // authorised (DispatchScope). What this test guards is unchanged — the
+        // PRE-TRIP endpoints must not dispatch. The trip here is `allocated`
+        // and has not passed its checks, so nothing may move it at all.
+        foreach (['prechecks', 'prechecks/dispatch', 'pass-dispatch'] as $path) {
+            $this->postJson('/api/transport/trips/'.$trip->id.'/'.$path);
+            $this->patchJson('/api/transport/trips/'.$trip->id.'/'.$path);
         }
 
         $this->assertSame(TripStatus::ALLOCATED, $trip->fresh()->status);
 
-        // And the route table itself carries no dispatch verb.
-        $paths = collect(app('router')->getRoutes()->getRoutes())
-            ->map(fn ($r) => $r->uri())
-            ->filter(fn (string $u) => str_starts_with($u, 'api/transport/'));
-        $this->assertTrue(
-            $paths->every(fn (string $u) => ! str_contains($u, 'dispatch')),
-            'no transport route may expose dispatch while D-18 is open',
-        );
+        // And the real dispatch endpoint refuses a trip that has not passed
+        // pre-trip, so the gate cannot be walked around.
+        $this->patchJson('/api/transport/trips/'.$trip->id.'/dispatch')->assertStatus(422);
+        $this->assertSame(TripStatus::ALLOCATED, $trip->fresh()->status);
     }
 
     public function test_the_gate_refuses_a_blocked_checklist_with_the_reason(): void

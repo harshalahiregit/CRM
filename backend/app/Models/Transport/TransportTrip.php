@@ -41,10 +41,25 @@ class TransportTrip extends Model
         // SNG-TRN-009 (allocation); leaving them mass-assignable would let this
         // ticket's endpoints set them with none of that ticket's eligibility
         // checks — precisely the "no invalid/blocked allocation" rule (TRP-P0-003).
+        //
+        // The dispatch fields are withheld for the same reason and a stronger
+        // one. FRS TRP-P0-006 requires them to be FROZEN once the trip is
+        // released; mass-assignability would make that freeze a convention
+        // rather than a rule. They are written only by DispatchService, which
+        // versions and audits every change.
     ];
 
     protected $casts = [
-        'approved_freight' => 'decimal:2',
+        'approved_freight'     => 'decimal:2',
+        'planned_departure_at' => 'datetime',
+        'planned_arrival_at'   => 'datetime',
+        'dispatched_at'        => 'datetime',
+        'dispatched_by'        => 'integer',
+        'dispatch_version'     => 'integer',
+    ];
+
+    protected $attributes = [
+        'dispatch_version' => 0,
     ];
 
     protected static function booted(): void
@@ -128,5 +143,34 @@ class TransportTrip extends Model
     public function isOpen(): bool
     {
         return in_array($this->status, TripStatus::OPEN, true);
+    }
+
+    /* ── Dispatch (FRS TRP-P0-006, RTM STOS-REQ-OPS-008) ─────────────── */
+
+    /** Has this trip been released? */
+    public function isDispatched(): bool
+    {
+        return $this->dispatched_at !== null;
+    }
+
+    /**
+     * Are the five dispatch fields frozen?
+     *
+     * Version, not status: a trip amended after release keeps version >= 1 even
+     * if some later ticket moves it onward, so the freeze survives the state.
+     */
+    public function dispatchIsFrozen(): bool
+    {
+        return (int) $this->dispatch_version >= 1;
+    }
+
+    /** ETD → ETA, in hours. TRP-P0-006's "TAT", derived rather than stored. */
+    public function turnaroundHours(): ?float
+    {
+        if ($this->planned_departure_at === null || $this->planned_arrival_at === null) {
+            return null;
+        }
+
+        return round($this->planned_departure_at->floatDiffInHours($this->planned_arrival_at), 2);
     }
 }

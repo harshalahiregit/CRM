@@ -80,6 +80,9 @@ final class TransportPermission
     public const PRETRIP_VIEW    = 'transport.pretrip.view';
     public const PRETRIP_PERFORM = 'transport.pretrip.perform';
 
+    /* ── Dispatch. NOT IN THE REGISTRY — see D-18/D-21. ─────────────────── */
+    public const TRIP_DISPATCH = 'transport.trip.dispatch';
+
     /**
      * The matrix. Role => scope, for each permission.
      *
@@ -276,6 +279,27 @@ final class TransportPermission
             self::ROLE_ADMIN      => self::SCOPE_ALL,
         ],
         self::PRETRIP_PERFORM => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+
+        /* ── Dispatch — no registry row, same defect family as D-21 ─────
+         *
+         * Step 11's Permissions sheet has no Dispatch domain and the API
+         * registry names no dispatch endpoint, so unlike API-007's
+         * transport.exception.create there is not even a key to quote.
+         *
+         * The row below is NOT a guess about who dispatches, though — SM-TRP
+         * states it outright: `dispatched` is owned by the **Dispatcher**, and
+         * so is `allocated`. So this mirrors PERM-004 exactly, as pre-trip
+         * does: whoever may crew a trip and certify it fit to leave is who may
+         * release it. Accounts and Approver keep their N from PERM-004.
+         *
+         * FLAGGED for Security + Architecture, with D-18 and D-21.
+         */
+        self::TRIP_DISPATCH => [
             self::ROLE_OWNER      => self::SCOPE_ALL,
             self::ROLE_OPERATIONS => self::SCOPE_ALL,
             self::ROLE_DISPATCHER => self::SCOPE_ALL,

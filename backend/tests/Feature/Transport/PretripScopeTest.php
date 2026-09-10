@@ -197,13 +197,14 @@ class PretripScopeTest extends TestCase
         }
     }
 
-    public function test_the_owned_edge_is_wired_and_the_deferred_one_is_not(): void
+    public function test_the_owned_edge_is_wired(): void
     {
-        // Step 6 wired the owned edge. The deferred one must stay dead: dispatch
-        // confirmation needs five fields that do not exist and a ticket that
-        // does not exist (D-18).
+        // Updated 2026-09-10: pretrip_ok -> dispatched, deferred when this ticket
+        // shipped, was later authorised directly by the owner (see DispatchScope)
+        // and is now live. What ticket 010 owns is unchanged.
         $this->assertTrue(TripStatus::canTransition(TripStatus::ALLOCATED, TripStatus::PRETRIP_OK));
-        $this->assertFalse(TripStatus::canTransition(TripStatus::PRETRIP_OK, TripStatus::DISPATCHED));
+        // in_transit stays unreachable — STT-006 is SNG-TRN-013's Transit half.
+        $this->assertFalse(TripStatus::canTransition(TripStatus::DISPATCHED, TripStatus::IN_TRANSIT));
     }
 
     /* ══════════ Step 1 · readiness status, OPS §29 ══════════ */

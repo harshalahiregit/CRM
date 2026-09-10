@@ -27,10 +27,11 @@ namespace App\Support\Transport;
  *   SNG-TRN-007   draft → viability_pending                    (STT-001)
  *   SNG-TRN-009   approved → allocated, and back on release    (STT-004)
  *   SNG-TRN-010   allocated → pretrip_ok, and back on release  (STT-005, part)
+ *   (no ticket)   pretrip_ok → dispatched                      (STT-005 dest.)
+ *                 Authorised directly by the owner 2026-09-10; see DispatchScope.
  *
- * Still dead: dispatched onward. `pretrip_ok → dispatched` is dispatch
- * confirmation and belongs to no ticket in the register (D-18); billable onward
- * belongs to 015-018.
+ * Still dead: in_transit onward. STT-006 is SNG-TRN-013's Transit half, blocked
+ * on the owner's Q1/Q3 ruling; billable onward belongs to 015-018.
  *
  * Transport-owned. Stored on transport_trips.status as a plain string.
  */
@@ -109,17 +110,25 @@ final class TripStatus
         // See PretripScope::STATE_EDGE_OWNED, which carries the ruling as data.
         self::ALLOCATED => [self::APPROVED, self::PRETRIP_OK],
 
-        // ── DECLARED BY STEP 9, DELIBERATELY NOT WIRED ───────────────────
-        // pretrip_ok → dispatched is dispatch confirmation: FRS TRP-P0-006
-        // requires ETD, ETA/TAT, pickup contact, destination and instructions,
-        // freezes them on release and versions later changes. None of those five
-        // fields exists on transport_trips, and no ticket in the register owns
-        // them — the register runs 010 Pre-trip → 011 Advance → 012 Cost.
+        // STT-005's destination | pretrip_ok → dispatched
+        //         | SM-TRP: `dispatched` active, entry gate "Pre-trip passed",
+        //           exit gate "In transit", owner Dispatcher | LOCKED
         //
-        // Building it would mean inventing five columns and a versioning rule.
-        // Confirmed deferred by the owner 2026-09-09. Recorded as D-18, together
-        // with STT-006 (dispatched → in_transit), which is ownerless for the same
-        // reason. PretripScope::STATE_EDGE_DEFERRED names it as data.
+        // ── AUTHORISED WITHOUT A TICKET ──────────────────────────────────
+        // Deferred on 2026-09-09 because no Step 12 ticket owns dispatch
+        // confirmation (D-18) and the five FRS fields did not exist. The owner
+        // authorised the bounded scope in writing on 2026-09-10 and those fields
+        // now exist, so the edge is live. See DispatchScope.
+        //
+        // Under SNG-TRN-010's Q1 ruling, STT-005 is served by Step 9's two
+        // edges: its precondition and side effect landed on
+        // allocated → pretrip_ok; its destination lands here.
+        self::PRETRIP_OK => [self::APPROVED, self::DISPATCHED],
+
+        // ── STILL NOT WIRED ──────────────────────────────────────────────
+        // STT-006 (dispatched → in_transit) is the Transit half of
+        // SNG-TRN-013, blocked on the owner's Q1/Q3 ruling. Nothing writes
+        // `in_transit`. DispatchScope::STATE_EDGE_DEFERRED names it as data.
 
         // ── INFERRED, NOT A REGISTRY TRANSITION ──────────────────────────
         // pretrip_ok → approved, when an assignment is released.
@@ -141,7 +150,6 @@ final class TripStatus
         // automatic-action matrix answers "Vehicle unavailable" with
         // "Reallocation". A breakdown does not ask permission, and a system that
         // refused release here would strand the trip with a vehicle it cannot use.
-        self::PRETRIP_OK => [self::APPROVED],
 
         // ── INFERRED, NOT A REGISTRY TRANSITION ──────────────────────────
         // allocated → approved, when an assignment is released.

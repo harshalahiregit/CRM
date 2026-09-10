@@ -419,13 +419,16 @@ class PretripEvidenceAuditTest extends TestCase
         [$trip] = $this->ready();
         $this->pretrip->passPretrip($trip, self::TENANT_A, $this->actor);
 
+        // Updated 2026-09-10: dispatch is now a separate, separately-authorised
+        // service. What this test guards is that PRE-TRIP never writes it —
+        // passing the checklist must leave the trip at pretrip_ok and no further.
         $this->assertSame(TripStatus::PRETRIP_OK, $trip->fresh()->status);
-        $this->assertFalse(TripStatus::canTransition(TripStatus::PRETRIP_OK, TripStatus::DISPATCHED));
         $this->assertSame(
             0,
             TransportTrip::where('status', TripStatus::DISPATCHED)->count(),
-            'no code path in this ticket writes `dispatched`',
+            'no PRE-TRIP code path writes `dispatched` — that is DispatchService',
         );
+        $this->assertFalse(TripStatus::canTransition(TripStatus::DISPATCHED, TripStatus::IN_TRANSIT));
     }
 
     public function test_no_override_is_ever_recorded(): void

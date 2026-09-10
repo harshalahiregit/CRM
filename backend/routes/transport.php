@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\Transport\TransportAllocationController;
 use App\Http\Controllers\Api\Transport\TransportCapabilityController;
+use App\Http\Controllers\Api\Transport\TransportDispatchController;
 use App\Http\Controllers\Api\Transport\TransportDriverController;
 use App\Http\Controllers\Api\Transport\TransportOrderController;
 use App\Http\Controllers\Api\Transport\TransportPretripController;
@@ -165,6 +166,25 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
         Route::post('/trips/{trip}/prechecks',           [TransportPretripController::class, 'store'])->whereNumber('trip');
         Route::patch('/trips/{trip}/prechecks/{check}',  [TransportPretripController::class, 'complete'])->whereNumber('trip')->whereNumber('check');
         Route::patch('/trips/{trip}/pass-pretrip',       [TransportPretripController::class, 'pass'])->whereNumber('trip');
+    });
+
+    /* ── Dispatch — RTM STOS-REQ-OPS-008, FRS TRP-P0-006 ──────────────
+     *
+     * NO TICKET AND NO REGISTRY ROW. Step 12 owns no dispatch ticket (D-18) and
+     * Step 11's API registry names no dispatch endpoint. The owner authorised
+     * this bounded scope in writing on 2026-09-10; see DispatchScope.
+     *
+     * PATCH on a named verb, as submit-viability and pass-pretrip already are.
+     * `dispatch/amend` is separate from `dispatch` because TRP-P0-006 freezes
+     * the fields at release: changing one afterwards is a different act that
+     * must carry a reason and create a version.
+     *
+     * Gated on transport.trip.dispatch, which mirrors PERM-004 — SM-TRP makes
+     * the Dispatcher the owner of both `allocated` and `dispatched`.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::TRIP_DISPATCH)->group(function () {
+        Route::patch('/trips/{trip}/dispatch',       [TransportDispatchController::class, 'confirm'])->whereNumber('trip');
+        Route::patch('/trips/{trip}/dispatch/amend', [TransportDispatchController::class, 'amend'])->whereNumber('trip');
     });
 
     /* ── Trips — write (PERM-002) ─────────────────────────────────────── */

@@ -148,11 +148,14 @@ class PretripGateTest extends TestCase
         $this->assertSame(PretripScope::STATE_EDGE_OWNED, TripStatus::ALLOCATED.'->'.TripStatus::PRETRIP_OK);
     }
 
-    public function test_the_deferred_edge_stays_unwired(): void
+    public function test_the_next_edge_is_dispatch_not_transit(): void
     {
-        // D-18. Dispatch confirmation needs five fields that do not exist and a
-        // ticket that does not exist.
-        $this->assertFalse(TripStatus::canTransition(TripStatus::PRETRIP_OK, TripStatus::DISPATCHED));
+        // Updated 2026-09-10: pretrip_ok -> dispatched is now wired (authorised
+        // directly by the owner; see DispatchScope). The line this test really
+        // guards has moved one state along — nothing may reach in_transit,
+        // because STT-006 is SNG-TRN-013's Transit half and that is blocked.
+        $this->assertTrue(TripStatus::canTransition(TripStatus::PRETRIP_OK, TripStatus::DISPATCHED));
+        $this->assertFalse(TripStatus::canTransition(TripStatus::DISPATCHED, TripStatus::IN_TRANSIT));
     }
 
     public function test_the_release_reverse_edge_is_declared_as_inferred(): void

@@ -792,8 +792,11 @@ class PretripService
         $order = $trip->order;
 
         if ($order === null) {
-            // FLD-005 makes transport_trips.order_id nullable, so this is a real
-            // shape rather than a defensive branch.
+            // Defensive, not a normal shape. FLD-005 marks order_id nullable but
+            // SNG-TRN-007 deliberately made the column NOT NULL (CTR-004,
+            // "cannot create orphan trip") and recorded that as the one place
+            // Step 11 contradicts itself. So this branch only fires if the order
+            // row is deleted out from under the trip.
             return [
                 PretripResult::forFailure($isCritical),
                 'This trip has no transport order. Link an approved order before dispatch.',
