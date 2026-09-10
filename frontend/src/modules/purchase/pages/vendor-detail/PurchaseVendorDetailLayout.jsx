@@ -89,7 +89,23 @@ export default function PurchaseVendorDetailLayout() {
 
   useEffect(() => { load() }, [load])
 
-  const activate = async () => { try { await purchaseApi.vendors.approve(id); load() } catch { /* noop */ } }
+  /**
+   * Activation can be REFUSED — an already-active vendor, or the onboarding
+   * gate. Swallowing that left the button looking dead: nothing moved, nothing
+   * appeared, and the reason existed only in the server log. Reported through
+   * the same notice banner the resend already uses, so the page has one place
+   * that answers "what just happened".
+   */
+  const activate = async () => {
+    setNotice(null)
+    try {
+      await purchaseApi.vendors.approve(id)
+      load()
+      setNotice({ ok: true, text: 'Vendor activated.' })
+    } catch (e) {
+      setNotice({ ok: false, text: e?.response?.data?.message || 'That vendor could not be activated.' })
+    }
+  }
 
   // Runs the chosen onboarding decision. Reject / Hold / Send-Back require remarks;
   // Approve also really activates the account (portal login + activation email)

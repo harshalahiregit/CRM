@@ -5,6 +5,7 @@ namespace App\Services\Purchase;
 use App\Exceptions\BusinessException;
 use App\Models\Purchase\PurchaseVendor;
 use App\Models\User;
+use Illuminate\Support\Facades\Hash;
 use App\Repositories\Purchase\PurchaseVendorRepository;
 use App\Support\Purchase\PurchaseRegistrationType as RegistrationType;
 use App\Support\Purchase\PurchaseVendorStatus as Status;
@@ -51,6 +52,14 @@ class PurchaseVendorService
     {
         $tenantId = $actor->tenant_id;
 
+        // Lifted out before the spread below. `password` is fillable and the
+        // model has no hashing cast, so leaving it in $data would write the
+        // admin's typed password into the column in plain text — and every
+        // later login, which hashes what it is given before comparing, would
+        // then fail against it.
+        $chosenPassword = $data['password'] ?? null;
+        unset($data['password']);
+
         $vendor = PurchaseVendor::create([
             ...$data,
             'tenant_id'            => $tenantId,
@@ -70,8 +79,22 @@ class PurchaseVendorService
 
         // Welcome the vendor immediately with login credentials so they can sign
         // in and complete onboarding — not only at activation (mirrors TPV).
-        if (! empty($vendor->email) && ! $vendor->password) {
-            $plain = $this->portalAuth->provision($vendor->fresh(), $actor);
+        //
+        // The admin may have typed a first password or left it blank. Blank means
+        // provision() mints one and hands it back; typed means we set it here and
+        // provision() finds a password already in place and returns null. Either
+        // way the SAME mail goes out carrying whichever one applies, because an
+        // account whose password is never disclosed is an account nobody can use
+        // — and nothing on any screen can reveal it later, since only the hash
+        // is kept.
+        if ($chosenPassword) {
+            $vendor->forceFill(['password' => Hash::make($chosenPassword)])->save();
+        }
+
+        if (! empty($vendor->email)) {
+            $generated = $this->portalAuth->provision($vendor->fresh(), $actor);
+            $plain = $chosenPassword ?: $generated;
+
             if ($plain) {
                 $this->notifier->onCredentialsIssued($vendor->fresh(), $plain);
             }
@@ -303,16 +326,22 @@ class PurchaseVendorService
 
         $from = $vendor->status;
 
-        // Rule 1 — "No Approval, No Activation" (parity with VendorService). Block a
-        // raw status flip to Active unless the onboarding has been approved; the
-        // sanctioned path (PurchaseOnboardingService::approve) sets it Approved first.
-        if ($status === Status::ACTIVE && $from !== Status::ACTIVE) {
-            $obStatus = $vendor->onboarding()->value('status');
-            if ($obStatus !== \App\Support\Purchase\PurchaseOnboardingStatus::APPROVED) {
-                throw new BusinessException('Purchase vendor cannot be activated until its onboarding is approved — "No Approval, No Activation".');
-            }
-        }
-
+        // "No Approval, No Activation" is deliberately NOT enforced here any more.
+        //
+        // It assumed onboarding happens before activation. In this business it is
+        // the other way round: a vendor registers, an admin activates them, and
+        // only then do they sign in and work through the onboarding wizard. The
+        // rule made the sanctioned order impossible from the one screen an admin
+        // actually uses, and the two activation paths disagreed about it — the
+        // Activate button never checked, so the same decision succeeded or failed
+        // depending on which control was clicked.
+        //
+        // What still protects a site is unchanged and lives where it belongs:
+        // EnsureVendorOnboardingComplete refuses every operational WRITE — workers,
+        // permits, medicals, badges — until the vendor is Active. Activation is the
+        // admin saying "you may begin"; it was never the thing that let them log in
+        // (portal_status does that), and it is not the thing that clears their
+        // people for site.
         $vendor->update(['status' => $status, 'notes' => $remarks ?? $vendor->notes]);
         $vendor->recordAudit('Purchase Vendor Status Changed', $actor, $remarks, ['from' => $from, 'to' => $status]);
 

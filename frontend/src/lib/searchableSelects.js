@@ -76,11 +76,28 @@ function close() {
   document.removeEventListener('pointerdown', onOutside, true)
   document.removeEventListener('keydown', onKey, true)
   window.removeEventListener('resize', close)
-  window.removeEventListener('scroll', close, true)
+  window.removeEventListener('scroll', onScroll, true)
 }
 
 const onOutside = (e) => { if (panel && !panel.contains(e.target)) close() }
 const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close() } }
+
+/**
+ * Close when the PAGE scrolls, not when the list does.
+ *
+ * The panel is position:fixed against the field's coordinates, so a page scroll
+ * leaves it stranded — hence closing on scroll. But the listener is registered
+ * in the capture phase, which sees scroll events from every element including
+ * the panel's own option list. So scrolling the list to reach an option shut the
+ * panel on the first wheel notch, and a list long enough to need scrolling was
+ * the only kind that ever opened one.
+ */
+const onScroll = (e) => {
+  if (panel && e.target instanceof Node && panel.contains(e.target)) {
+    return
+  }
+  close()
+}
 
 function open(select) {
   close()
@@ -122,7 +139,15 @@ function open(select) {
   })
 
   const list = document.createElement('div')
-  Object.assign(list.style, { overflowY: 'auto', padding: '0 6px 8px' })
+  // overscrollBehavior: reaching the end of the list must not hand the wheel to
+  // whatever is behind the panel. Without it the modal underneath scrolls, the
+  // field moves out from under a panel pinned to its old coordinates, and the
+  // page-scroll guard then closes it.
+  Object.assign(list.style, {
+    overflowY: 'auto',
+    overscrollBehavior: 'contain',
+    padding: '0 6px 8px',
+  })
 
   const render = (query) => {
     const q = query.trim().toLowerCase()
@@ -173,10 +198,30 @@ function open(select) {
   panel.append(search, list)
   document.body.append(panel)
 
-  // Flip above the field when it would run off the bottom.
-  const height = panel.getBoundingClientRect().height
-  if (rect.bottom + 4 + height > window.innerHeight && rect.top - 4 - height > 0) {
-    panel.style.top = `${rect.top - 4 - height}px`
+  /**
+   * Put it wherever there is more room, and never taller than that room.
+   *
+   * The old rule flipped above only when the panel would overflow the bottom AND
+   * fitted entirely above. A field low on a tall modal satisfied neither: it
+   * stayed below, ran past the viewport, and the last option was sliced in half
+   * with no way to reach it — the panel is fixed-position, so scrolling the page
+   * to see the rest only closed it.
+   *
+   * Measuring the space first means the panel is always whole: shorter when it
+   * has to be, on the roomier side, and its own list scrolls for the rest.
+   */
+  const GAP = 4
+  const EDGE = 8
+  const below = window.innerHeight - rect.bottom - GAP - EDGE
+  const above = rect.top - GAP - EDGE
+  const useAbove = below < 200 && above > below
+
+  const room = Math.max(140, Math.min(320, useAbove ? above : below))
+  panel.style.maxHeight = `${room}px`
+
+  if (useAbove) {
+    const height = Math.min(panel.getBoundingClientRect().height, room)
+    panel.style.top = `${Math.max(EDGE, rect.top - GAP - height)}px`
   }
 
   search.focus()
@@ -184,7 +229,7 @@ function open(select) {
   document.addEventListener('pointerdown', onOutside, true)
   document.addEventListener('keydown', onKey, true)
   window.addEventListener('resize', close)
-  window.addEventListener('scroll', close, true)
+  window.addEventListener('scroll', onScroll, true)
 }
 
 /* ── wiring ──────────────────────────────────────────────────────────────── */

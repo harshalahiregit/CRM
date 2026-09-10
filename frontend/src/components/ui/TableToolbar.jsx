@@ -124,7 +124,16 @@ export default function TableToolbar({
       <div className="flex gap-2.5 flex-wrap items-center">
         <div className="relative flex-1 min-w-[210px]">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+          {/* type="search" + the ignore hints, because a bare text input with no
+              name is exactly what a browser and a password manager treat as a
+              username field. On the vendor lists this one filled itself with the
+              signed-in admin's saved e-mail every time the page re-mounted, and
+              the fill fires onChange — so returning from any row action ran a
+              search for "admin@…" that nobody typed. */}
           <input className="input-3d pl-9 text-sm" placeholder={placeholder}
+            type="search" name="table-filter" autoComplete="off"
+            autoCorrect="off" autoCapitalize="off" spellCheck="false"
+            data-1p-ignore data-lpignore="true" data-form-type="other"
             value={search} onChange={e => setSearch(e.target.value)} />
           {search && (
             <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2"

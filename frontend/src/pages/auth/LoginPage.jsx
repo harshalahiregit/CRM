@@ -110,10 +110,22 @@ export default function LoginPage() {
   }, [searchParams]) // eslint-disable-line react-hooks/exhaustive-deps
   const selectedRoleObj = ROLES.find(r => r.value === watchedRole)
   const isPurchaseVendor = Boolean(selectedRoleObj?.purchaseVendor)
-  // Password reset belongs to whichever identity store holds the account: the
-  // shared pages reset a User, which is the wrong record for a portal login.
-  const forgotPath = isPurchaseVendor ? '/purchase-portal/forgot-password'
-    : selectedRoleObj?.clientPortal ? '/portal/forgot-password'
+
+  /**
+   * ONE reset page, for every identity.
+   *
+   * There were three, chosen by the dropdown — and the dropdown is optional, so
+   * anybody who clicked "Forgot password" without touching it landed on the one
+   * that only resets staff accounts. A supplier or a customer contact was then
+   * told "if that email is registered, a reset link has been sent" and received
+   * nothing, with no way to discover they had used the wrong door.
+   *
+   * The role still travels, as a hint: given one, the server searches only that
+   * store; given none, it searches all three and sends a link per account it
+   * finds. Nobody has to know which table they live in.
+   */
+  const forgotPath = watchedRole
+    ? `/auth/forgot-password?role=${encodeURIComponent(watchedRole)}`
     : '/auth/forgot-password'
 
   const onSubmit = async (values) => {
@@ -361,8 +373,12 @@ export default function LoginPage() {
           {/* A customer contact never self-registers — access begins with a
               staff member inviting a real contact of a real customer — so the
               link is simply not offered for that identity. */}
+          {/* One registration form for every identity. The Purchase portal had a
+              second one of its own, collecting four fields where the main form
+              collects fifteen, so which door a vendor came through decided how
+              much of their company we ever knew. */}
           {!selectedRoleObj?.clientPortal && (
-            <Link to={isPurchaseVendor ? '/purchase-portal/register' : '/auth/register'}
+            <Link to="/auth/register"
               className="flex items-center gap-1.5 text-xs font-semibold transition-colors" style={{ color: '#a78bfa' }}
               onMouseEnter={e=>e.currentTarget.style.color='#c4b5fd'} onMouseLeave={e=>e.currentTarget.style.color='#a78bfa'}>
               <Star size={12} /> Register here →

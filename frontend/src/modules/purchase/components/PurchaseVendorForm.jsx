@@ -143,15 +143,54 @@ export default function PurchaseVendorForm({ value, onChange, mode = 'create' })
             </>
           )}
         </Field>
+        {/* Collected at self-registration and previously kept on a hidden login
+            row, so it never appeared on any screen. A supplier is a company,
+            but the person who answers is who anybody actually needs. */}
+        <Field label="Contact person">
+          <input value={v.contact_person || ''} onChange={set('contact_person')} placeholder="Ravi Menon" style={inputStyle} />
+        </Field>
+        <Field label="Designation">
+          <input value={v.contact_designation || ''} onChange={set('contact_designation')} placeholder="Director" style={inputStyle} />
+        </Field>
         <Field label="Phone">
           <input value={v.phone || ''} onChange={set('phone')} placeholder="+91 …" style={inputStyle} />
+        </Field>
+        <Field label="Company phone">
+          <input value={v.company_phone || ''} onChange={set('company_phone')} placeholder="Switchboard, if different" style={inputStyle} />
         </Field>
         <Field label="Website">
           <input value={v.website || ''} onChange={set('website')} placeholder="https://…" style={inputStyle} />
         </Field>
+        {/* Free text on purpose — suppliers answer "50-100" as often as a
+            number, and refusing that at registration loses a supplier over a
+            field nobody reports on. */}
+        <Field label="Manpower">
+          <input value={v.manpower || ''} onChange={set('manpower')} placeholder="e.g. 50-100" style={inputStyle} />
+        </Field>
+        <Field label="MSME">
+          <input value={v.msme || ''} onChange={set('msme')} placeholder="Registration number, or Yes / No" style={inputStyle} />
+        </Field>
         <Field label="Email">
           <input value={v.email || ''} onChange={set('email')} placeholder="vendor@company.com" style={inputStyle} />
         </Field>
+
+        {/* Create only. On an edit this field would look like "change their
+            password", which it is not — that is the vendor's own reset flow,
+            and offering it here would let an admin silently lock a vendor out
+            of an account they are already using. */}
+        {mode === 'create' && (
+          <Field label="Portal password" full>
+            <input
+              type="text" value={v.password || ''} onChange={set('password')}
+              placeholder="Leave blank to generate one automatically"
+              autoComplete="new-password" data-1p-ignore data-lpignore="true"
+              style={inputStyle} />
+            <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 5 }}>
+              E-mailed to the vendor either way — this message is the only place the
+              password is ever readable, so nothing here can show it again later.
+            </p>
+          </Field>
+        )}
       </Section>
 
       {/* 2 — Billing & Shipping */}

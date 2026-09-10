@@ -343,7 +343,6 @@ const PurchasePortalProfile = lazy(() => import('@/pages/purchase-portal/Purchas
 
 const PurchasePortalCompliance = lazy(() => import('@/pages/purchase-portal/PurchasePortalCompliance'))
 const PurchasePortalGovernance = lazy(() => import('@/pages/purchase-portal/PurchasePortalGovernance'))
-const PurchaseVendorRegister = lazy(() => import('@/pages/purchase-portal/PurchaseVendorRegister'))
 const PurchaseVendorForgotPassword = lazy(() => import('@/pages/purchase-portal/PurchaseVendorForgotPassword'))
 const PurchaseVendorResetPassword = lazy(() => import('@/pages/purchase-portal/PurchaseVendorResetPassword'))
 const PurchaseVendorVerifyEmail = lazy(() => import('@/pages/purchase-portal/PurchaseVendorVerifyEmail'))
@@ -1183,7 +1182,11 @@ export default function AppRoutes() {
           deleted because activation e-mails, bookmarks and printed onboarding
           packs already point here — those must land on the form, not a 404. */}
       <Route path="/purchase-portal/login" element={<Navigate to="/auth/login?role=purchase_vendor" replace />} />
-      <Route path="/purchase-portal/register"        element={<S><PurchaseVendorRegister /></S>} />
+      {/* The Purchase portal's own registration form is retired — there is one
+          register page for every identity now. Redirected rather than deleted:
+          the old path is in sent invitations and vendor bookmarks, and a 404
+          there reads as "this company stopped taking suppliers". */}
+      <Route path="/purchase-portal/register" element={<Navigate to="/auth/register" replace />} />
       <Route path="/purchase-portal/forgot-password" element={<S><PurchaseVendorForgotPassword /></S>} />
       <Route path="/purchase-portal/reset-password"  element={<S><PurchaseVendorResetPassword /></S>} />
 

@@ -34,6 +34,9 @@ class PurchaseVendor extends Model implements AuthenticatableContract
         'purchase_vendor_code', 'company_name', 'legal_name', 'vendor_type', 'registration_type',
         'email', 'phone', 'website', 'category',
         'registration_number', 'gst_number', 'pan_number',
+        // The person we deal with, and the company details self-registration
+        // collects. These used to live on a hidden second `users` row.
+        'contact_person', 'contact_designation', 'company_phone', 'manpower', 'msme',
         // Vendor-master profile/financial fields (Purchase-owned)
         'balance', 'balance_as_of', 'currency', 'language',
         'bank_details', 'payment_terms', 'return_policy',

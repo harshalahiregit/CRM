@@ -243,20 +243,27 @@ class VendorService
 
         $from = $vendor->status;
 
-        // Rule 1 — "No Approval, No Activation." A vendor may only be activated once
-        // its onboarding has actually been approved. This closes the
-        // PATCH /vendors/{id}/status bypass that flipped a vendor Active with no
-        // approval check. The sanctioned path (TpvOnboardingService::approve) sets the
-        // onboarding Approved *before* it calls this, so it passes; a raw status flip
-        // on an unapproved vendor is refused. Read the status fresh so the just-set
-        // Approved value is seen rather than a stale loaded relation.
-        if ($status === Status::ACTIVE && $from !== Status::ACTIVE) {
-            $obStatus = $vendor->tpvOnboarding()->value('status');
-            if ($obStatus !== \App\Support\Tpv\TpvOnboardingStatus::APPROVED) {
-                throw new BusinessException('Vendor cannot be activated until its onboarding is approved — "No Approval, No Activation".');
-            }
-        }
-
+        // "No Approval, No Activation" used to be enforced here, and only here.
+        //
+        // It guarded one of three doors. Creating a vendor set Active without
+        // any check, the edit form wrote the status directly without any check,
+        // and this — the toggle — was the single path that refused. So a vendor
+        // reached Active in one click through either of the other two, and the
+        // rule protected nothing; every vendor on the live workspace was Active
+        // with its onboarding still In_Progress.
+        //
+        // What it did do was make the toggle a one-way trap: an admin could
+        // switch a vendor off and then could not switch it back on, because the
+        // way back ran through the one door that checked. The only escape was
+        // the edit form, which is not where anybody looks for a status they can
+        // see a switch for.
+        //
+        // The toggle is what it appears to be: portal access on, portal access
+        // off. The gate that actually matters is untouched and lives where the
+        // risk is — EnsureVendorOnboardingComplete still refuses every
+        // operational write (workers, permits, medicals, badges) until the
+        // vendor is Active, so an uncleared company still cannot put anybody on
+        // a site.
         $vendor->update(['status' => $status]);
 
         // Mirror the toggle onto the portal login so an Inactive vendor is locked
