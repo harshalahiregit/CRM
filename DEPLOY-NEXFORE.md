@@ -239,3 +239,86 @@ harmless — the demo data simply is not generated.
 - The repo is private and should stay that way. If server-side `git clone` is ever
   wanted, use a **read-only deploy key** scoped to the one repo — not a public repo,
   and not a personal access token on a shared box.
+
+---
+
+## 9. SIRE (Issues & Quality)
+
+SIRE is copy-installed at `backend/packages/sire`, so it travels with the normal
+`backend/` rsync. No Composer step, no npm package, no queue worker, no Redis.
+
+### After every deploy
+
+```bash
+php artisan migrate --force
+php artisan route:clear && php artisan config:clear
+php artisan sire:doctor          # read-only; says what is still wrong
+```
+
+`route:clear` and `config:clear` are **not optional**. SIRE adds 76 routes, and
+its host configuration is read out of `config/sire-host.php` — a cached config
+from before a deploy is why `sire:doctor` reports *"13 bound, 13 on SIRE
+defaults, 0 connected to the host"* when the host provider is in fact present.
+
+### Once per workspace
+
+```bash
+php artisan sire:seed-defaults
+```
+
+Creates the four severities, the eight report categories, and puts every admin
+and internal user on the engineering rosters. **Nothing else creates them.**
+Without it the `triage` transition has no severity to pick, so the Category and
+Severity dropdowns are empty and no issue can leave `new`. It is idempotent and
+never overwrites a roster somebody has already narrowed.
+
+### Evidence files are not backed up by anything
+
+Report Issue screenshots are written to:
+
+```
+storage/app/private/sire/{tenant}/Report/{id}/
+```
+
+The deploy `rsync` excludes `storage/app/*`, which is correct — it stops a deploy
+flattening uploads — but it also means **nothing in this document backs them up**.
+Two consequences worth stating:
+
+- a database copied from another environment brings the attachment ROWS and not
+  the files, so every thumbnail on those issues answers 404 ("Could not load");
+- these files are the only copy that exists. Include the directory in whatever
+  takes the SQLite backup, or accept that they are lost with the box.
+
+Roughly `issues/month × screenshots/issue × ~40 KB` (WebP, capped at 1600px).
+
+### Two warnings that are EXPECTED here, and two commands not to run
+
+`sire:doctor` reports these on this box and both are artefacts of how we deploy —
+only `backend/` is rsynced, so `frontend/` does not exist on the server at all:
+
+| Warning | Why it is fine |
+|---|---|
+| `Frontend — SIRE's SPA has not been published` | Our SPA is built from `frontend/` and shipped prebuilt into `backend/public`. The published copy would live in `backend/resources/js/sire`, which nothing on this box reads. |
+| `Workflow — frontend mirror not found` | The mirror is `frontend/src/lib/sire/workflow.generated.js`, generated in development and committed. It is inside the built bundle already. |
+
+> **Do not run `php artisan vendor:publish --tag=sire-frontend` or
+> `php artisan sire:export-workflow` on the server.**
+> The first writes package sources into a directory this deployment never
+> compiles. The second writes to `../frontend/src/...`, which is outside the
+> deployed tree — it fails, and if the path ever did exist it would overwrite
+> the committed mirror with one generated from whatever code the server happens
+> to be running. `sire:export-workflow` belongs in development, before a build,
+> and its output is committed.
+
+### `Queue — queue.default is 'database'` is also fine
+
+SIRE dispatches nothing to a queue. Its notifications write the in-app row
+directly and send mail inline through `TenantMailer`; neither implements
+`ShouldQueue`. Nothing waits on a worker.
+
+### Notifications send real mail
+
+Once `HostNotificationProvider` is live, assigning an issue writes a bell
+notification **and** emails the assignee through the tenant's own SMTP. Events
+that earn an email: assigned, reassigned, ready-for-QA, QA-failed, reopened, and
+the two SLA notices. Everything else is in-app only.
