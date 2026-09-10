@@ -85,8 +85,89 @@ class PurchaseVendorService
         // The code is immutable once assigned; status changes go through updateStatus/approve.
         unset($data['purchase_vendor_code'], $data['status']);
 
+        // The edit form offers Standard/Temporary in a dropdown labelled
+        // Permanent/Temporary, and it used to write vendor_type and stop there.
+        // isTemporary() reads registration_type FIRST, so the row stayed
+        // temporary, kept its expiry and was still locked out when the window
+        // shut -- while the screen said Permanent and the save returned 200.
+        //
+        // Refusing is the honest answer rather than quietly doing the
+        // conversion here: a promotion issues a code, re-opens the portal,
+        // writes an audit entry and tells the vendor. None of that belongs in a
+        // profile save, and none of it should happen because somebody changed a
+        // dropdown while editing an address.
+        if (array_key_exists('vendor_type', $data)) {
+            $wouldBeTemporary = $data['vendor_type'] === 'temporary';
+
+            if ($wouldBeTemporary !== $vendor->isTemporary()) {
+                throw new BusinessException($wouldBeTemporary
+                    ? 'A permanent vendor cannot be made temporary. Create a temporary vendor instead.'
+                    : 'Use "Convert to Permanent" to promote this vendor — changing the type here '
+                      .'would leave the access expiry in place.', 422);
+            }
+
+            unset($data['vendor_type']);
+        }
+
         $vendor->update($data);
         $vendor->recordAudit('Purchase Vendor Updated', $actor, null, ['company_name' => $vendor->company_name]);
+
+        return $vendor->fresh();
+    }
+
+    /**
+     * Promote a temporary vendor to permanent.
+     *
+     * The counterpart of TpvAccessService::convert, and Purchase had no
+     * equivalent at all: the temporary side was complete — a registration type,
+     * an access window, an expiry that shuts the portal — with no way out of it.
+     *
+     * registration_type is what actually decides, because isTemporary() reads it
+     * first and only falls back to the legacy vendor_type when it is null. Both
+     * are written here so the two can never disagree; the edit form used to move
+     * vendor_type alone, which changed the label on screen and nothing else.
+     *
+     * Everything the window imposed is lifted at once: the expiry is cleared so
+     * EnsureTemporaryAccessNotExpired stops matching, the portal login is
+     * re-opened if the window had already shut it, and a vendor code is issued
+     * if this account somehow never got one. Clearing the expiry without
+     * re-opening the login would leave a permanent vendor who still cannot sign
+     * in, which is the same complaint one step further along.
+     */
+    public function convertToPermanent(PurchaseVendor $vendor, User $actor): PurchaseVendor
+    {
+        if (! $vendor->isTemporary()) {
+            throw new BusinessException('This vendor is already permanent.', 422);
+        }
+
+        $code = $vendor->purchase_vendor_code ?: $this->generateCode($vendor->tenant_id);
+
+        $vendor->update([
+            'registration_type'         => RegistrationType::STANDARD,
+            'vendor_type'               => 'standard',
+            'access_expires_at'         => null,
+            // Converted, not merely cleared. The hourly sweep skips this state
+            // explicitly, and it keeps the row honest about how the window
+            // ended — promoted, rather than never having had one.
+            'access_status'             => \App\Support\Purchase\PurchaseAccessStatus::CONVERTED,
+            'converted_to_permanent_at' => now(),
+            'converted_by'              => $actor->id,
+            'purchase_vendor_code'      => $code,
+            // A window that had already run out left the portal suspended. The
+            // reason for that suspension is gone, so the suspension goes too.
+            'portal_status'             => $vendor->portal_status === 'suspended'
+                ? 'active'
+                : $vendor->portal_status,
+        ]);
+
+        $vendor->recordAudit('Purchase Vendor Converted to Permanent', $actor, null, [
+            'purchase_vendor_code' => $code,
+        ]);
+        Log::channel('purchase')->info('Purchase vendor converted to permanent', [
+            'purchase_vendor_id' => $vendor->id, 'actor_id' => $actor->id,
+        ]);
+
+        $this->notifier->onConvertedToPermanent($vendor->fresh());
 
         return $vendor->fresh();
     }

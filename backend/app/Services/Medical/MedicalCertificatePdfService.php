@@ -2,6 +2,7 @@
 
 namespace App\Services\Medical;
 
+use App\Support\Medical\MedicalEvidence;
 use App\Models\Tenant;
 use App\Support\FrontendUrl;
 use App\Support\Medical\HealthScore;
@@ -116,9 +117,16 @@ class MedicalCertificatePdfService
     }
 
     /** Signature and capture live on the public disk; the PDF needs their real path. */
+    /**
+     * The evidence file on disk.
+     *
+     * Private disk first, then public — a record written before the evidence
+     * moved still has its file on the old disk, and a certificate that quietly
+     * loses its signature is worse than one extra existence check.
+     */
     private function publicPath(?string $relative): ?string
     {
-        return $relative ? Storage::disk('public')->path($relative) : null;
+        return MedicalEvidence::absolutePath($relative);
     }
 
     /** Letterhead identity — tolerant of a slim tenant row. */

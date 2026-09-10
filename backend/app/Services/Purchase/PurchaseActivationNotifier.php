@@ -50,6 +50,118 @@ class PurchaseActivationNotifier
         });
     }
 
+    /**
+     * "You are now a permanent vendor."
+     *
+     * The counterpart of the TPV notice, and the reason it matters is that the
+     * vendor has been watching a countdown. Nothing else on their portal
+     * announces that it has gone, so a conversion nobody tells them about looks
+     * from their side exactly like a system that has forgotten to expire them.
+     */
+    public function onConvertedToPermanent(PurchaseVendor $vendor): void
+    {
+        $id = $vendor->id;
+
+        DB::afterCommit(function () use ($id) {
+            $fresh = PurchaseVendor::find($id);
+            if (! $fresh || ! $fresh->email) {
+                return;
+            }
+
+            $ctx = $this->context($fresh, null);
+            $plain = 'Your account with '.$ctx['companyName'].' is now a permanent vendor account. '
+                .'The temporary access period no longer applies, and your vendor code is '
+                .$fresh->purchase_vendor_code.'.';
+
+            $status = $this->channels->emailHtml(
+                $fresh->email,
+                'You are now a permanent vendor',
+                view('emails.purchase.converted_to_permanent', $ctx)->render(),
+                ['vendor_id' => $fresh->id, 'event' => 'converted_to_permanent'],
+                $plain,
+                $fresh->tenant_id,
+            );
+
+            if ($status !== 'sent') {
+                Log::channel('purchase')->warning('Purchase conversion e-mail not delivered', [
+                    'purchase_vendor_id' => $fresh->id, 'status' => $status,
+                ]);
+            }
+        });
+    }
+
+    /** "Your temporary access ends in N." Sent once per threshold. */
+    public function onAccessExpiring(PurchaseVendor $vendor, string $threshold): void
+    {
+        $labels = ['7d' => '7 days', '3d' => '3 days', '1d' => '1 day', '6h' => '6 hours'];
+        $when = $labels[$threshold] ?? $threshold;
+        $id = $vendor->id;
+
+        DB::afterCommit(function () use ($id, $when, $threshold) {
+            $fresh = PurchaseVendor::find($id);
+            if (! $fresh || ! $fresh->email) {
+                return;
+            }
+
+            $ctx = $this->context($fresh, null) + ['when' => $when];
+            $plain = 'Your temporary access to the '.$ctx['companyName'].' procurement portal ends in '
+                .$when.'. Contact your administrator if you need it extended.';
+
+            $status = $this->channels->emailHtml(
+                $fresh->email,
+                'Your temporary access ends in '.$when,
+                view('emails.purchase.access_expiring', $ctx)->render(),
+                ['vendor_id' => $fresh->id, 'event' => 'access_expiring', 'threshold' => $threshold],
+                $plain,
+                $fresh->tenant_id,
+            );
+
+            if ($status !== 'sent') {
+                Log::channel('purchase')->warning('Purchase expiry reminder not delivered', [
+                    'purchase_vendor_id' => $fresh->id, 'threshold' => $threshold, 'status' => $status,
+                ]);
+            }
+        });
+    }
+
+    /**
+     * "Your temporary access has expired."
+     *
+     * Sent after the fact, deliberately: the vendor is already locked out by the
+     * time this lands, and a message explaining why beats a login screen that
+     * refuses them with no reason.
+     */
+    public function onAccessExpired(PurchaseVendor $vendor): void
+    {
+        $id = $vendor->id;
+
+        DB::afterCommit(function () use ($id) {
+            $fresh = PurchaseVendor::find($id);
+            if (! $fresh || ! $fresh->email) {
+                return;
+            }
+
+            $ctx = $this->context($fresh, null);
+            $plain = 'Your temporary access to the '.$ctx['companyName'].' procurement portal has expired. '
+                .'Please contact your administrator.';
+
+            $status = $this->channels->emailHtml(
+                $fresh->email,
+                'Your temporary access has expired',
+                view('emails.purchase.access_expired', $ctx)->render(),
+                ['vendor_id' => $fresh->id, 'event' => 'access_expired'],
+                $plain,
+                $fresh->tenant_id,
+            );
+
+            if ($status !== 'sent') {
+                Log::channel('purchase')->warning('Purchase expiry notice not delivered', [
+                    'purchase_vendor_id' => $fresh->id, 'status' => $status,
+                ]);
+            }
+        });
+    }
+
     /** Admin-triggered resend. Always sends, always logged. */
     public function resend(PurchaseVendor $vendor): LogEntry
     {

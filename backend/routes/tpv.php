@@ -287,6 +287,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::post('/medical/{medical}/comment',             [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'comment'])->whereNumber('medical');
     Route::get('/medical/{medical}/certificate',          [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'certificate'])->whereNumber('medical');
     Route::get('/medical/{medical}/document',             [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'document'])->whereNumber('medical');
+    // The examination's signature and camera photo. Off the public disk
+    // now — they are the proof of presence, not decoration.
+    Route::get('/medical/{medical}/evidence/{kind}', [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'evidence'])
+        ->whereNumber('medical')->whereIn('kind', ['signature', 'capture']);
     Route::post('/workers/{worker}/medical/external',     [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'storeExternal'])->whereNumber('worker');
     Route::get('/workers/{worker}/medical-history',       [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'workerHistory'])->whereNumber('worker');
     Route::get('/competency',                             [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'index']);

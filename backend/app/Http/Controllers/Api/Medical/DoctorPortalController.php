@@ -16,6 +16,7 @@ use App\Services\Medical\GeneralMedicalReportService;
 use App\Services\Medical\MedicalCertificatePdfService;
 use App\Services\Purchase\PurchaseMedicalWorkflowService;
 use App\Services\Tpv\TpvMedicalWorkflowService;
+use App\Support\Medical\MedicalEvidence;
 use App\Support\Medical\MedicalFindings;
 use App\Support\Medical\MedicalQcStatus;
 use App\Support\Medical\MedicalWorkflow;
@@ -103,9 +104,12 @@ class DoctorPortalController extends Controller
             if (! empty($data[$src]) && str_contains($data[$src], 'base64,')) {
                 $binary = base64_decode(explode('base64,', $data[$src])[1], true);
                 if ($binary !== false) {
-                    $path = 'medical/doctors/'.$column.'_'.$user->id.'_'.uniqid().'.png';
-                    Storage::disk('public')->put($path, $binary);
-                    $data[$column] = $path;
+                    // Private disk, random name. This used to be the public
+                    // disk under a uniqid() name carrying the user's own id —
+                    // and a downloadable doctor's signature is a forgeable
+                    // certificate, which is the one thing this module exists
+                    // to prevent. See MedicalEvidence.
+                    $data[$column] = MedicalEvidence::putBinary($binary, 'medical/doctors/'.$column.'_');
                 }
             }
             unset($data[$src]);
@@ -117,6 +121,32 @@ class DoctorPortalController extends Controller
         );
 
         return response()->json(['message' => 'Profile saved.', 'data' => $profile->fresh()]);
+    }
+
+    /**
+     * The doctor's own signature, stamp or photograph.
+     *
+     * These live on the private disk now, so they cannot be fetched by URL the
+     * way an <img src> used to. Served here, scoped to the caller: a doctor
+     * gets their own and nobody else's, which is the whole reason for moving
+     * them off a folder the web server hands out to anyone who asks.
+     */
+    public function evidence(Request $request, string $kind)
+    {
+        abort_unless(in_array($kind, ['signature', 'stamp', 'photo'], true), 404);
+
+        $profile = $request->user()->doctorProfile;
+        $path    = $profile?->{$kind.'_path'};
+
+        abort_unless($path && MedicalEvidence::isSafe($path), 404, 'Nothing on file.');
+
+        $disk = MedicalEvidence::diskFor($path);
+        abort_unless($disk, 404, 'The file is no longer on disk.');
+
+        return response()->file(Storage::disk($disk)->path($path), [
+            // Private to this doctor, so it must never sit in a shared cache.
+            'Cache-Control' => 'private, max-age=300',
+        ]);
     }
 
     /** Dashboard counters, across both sides the doctor serves. */

@@ -11,6 +11,7 @@ use App\Support\Medical\MedicalQcStatus;
 use App\Support\Medical\MedicalWorkflow;
 use App\Support\Tpv\TpvMedicalFitness as Fitness;
 use Illuminate\Http\UploadedFile;
+use App\Support\Medical\MedicalEvidence;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -427,17 +428,9 @@ class GeneralMedicalService
 
     private function storeDataUrl(?string $dataUrl, string $prefix): ?string
     {
-        if (! $dataUrl || ! str_contains($dataUrl, 'base64,')) {
-            return null;
-        }
-        $binary = base64_decode(explode('base64,', $dataUrl)[1], true);
-        if ($binary === false) {
-            return null;
-        }
-        $path = $prefix.uniqid().'.png';
-        Storage::disk('public')->put($path, $binary);
-
-        return $path;
+        // Private disk, random name — see MedicalEvidence for why the old
+        // public-disk + uniqid() arrangement was not the protection it looked.
+        return MedicalEvidence::put($dataUrl, $prefix);
     }
 
     private function certificateNumber(GeneralMedical $medical): string

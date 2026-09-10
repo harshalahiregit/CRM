@@ -1,0 +1,80 @@
+/**
+ * SIRE — the register table.
+ *
+ * Uses the existing kit: ui/DataTable for the grid and ui/TablePagination for
+ * paging. Column definitions live here; nothing about the table is bespoke.
+ */
+import { Link } from 'react-router-dom';
+import StatusBadge from './StatusBadge';
+import SlaChip from './SlaChip';
+import { priorityClasses, priorityLabel } from './transitionFields';
+import { sireHostUi } from '../../../lib/sire/host';
+const DataTable = sireHostUi('DataTable');
+const EmptyState = sireHostUi('EmptyState');
+const TablePagination = sireHostUi('TablePagination');
+
+const shortDate = (iso) => (iso ? new Date(iso).toLocaleDateString() : '—');
+
+export default function IssueTable({ page, loading, onPageChange }) {
+  const rows = page?.data ?? [];
+
+  const columns = [
+    {
+      key: 'report_number',
+      header: 'Issue',
+      render: (row) => (
+        <Link to={`/app/sire/cases/${row.id}`} className="block max-w-md">
+          <span className="font-mono text-[11px] text-gray-400">{row.report_number}</span>
+          <span className="block truncate text-sm font-medium text-gray-900 hover:underline dark:text-gray-100">
+            {row.title}
+          </span>
+        </Link>
+      ),
+    },
+    { key: 'status', header: 'Status', render: (row) => <StatusBadge status={row.status} size="sm" /> },
+    {
+      key: 'priority',
+      header: 'Priority',
+      render: (row) => (row.priority ? (
+        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${priorityClasses(row.priority)}`}>
+          {priorityLabel(row.priority)}
+        </span>
+      ) : '—'),
+    },
+    { key: 'severity', header: 'Severity', render: (row) => row.severity?.name ?? '—' },
+    { key: 'type', header: 'Type', render: (row) => row.category?.name ?? '—' },
+    { key: 'module', header: 'Module', render: (row) => row.module_label ?? row.module ?? '—' },
+    { key: 'assignee', header: 'Assignee', render: (row) => row.assignee?.name ?? <span className="text-gray-400">Unassigned</span> },
+    {
+      key: 'sla',
+      header: 'SLA',
+      // The worse of the two clocks. The detail view shows them separately.
+      render: (row) => <SlaChip clock={row.sla?.resolve ?? row.sla?.ack} size="sm" />,
+    },
+    { key: 'created_at', header: 'Created', render: (row) => shortDate(row.created_at) },
+  ];
+
+  if (!loading && rows.length === 0) {
+    return (
+      <EmptyState
+        title="No issues match these filters"
+        description="Clear a filter, or pick a different tile."
+      />
+    );
+  }
+
+  return (
+    <>
+      <DataTable columns={columns} rows={rows} loading={loading} rowKey="id" />
+      {page && (
+        <TablePagination
+          currentPage={page.current_page}
+          lastPage={page.last_page}
+          total={page.total}
+          perPage={page.per_page}
+          onPageChange={onPageChange}
+        />
+      )}
+    </>
+  );
+}

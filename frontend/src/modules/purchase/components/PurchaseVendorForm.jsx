@@ -115,13 +115,33 @@ export default function PurchaseVendorForm({ value, onChange, mode = 'create' })
         </Field>
         {/* Vendor Type drives the temporary access window, so it is an explicit
             choice rather than a silent default the admin never sees. Same values
-            and labels as the TPV form, so the two modules stay consistent. */}
+            and labels as the TPV form, so the two modules stay consistent.
+
+            Fixed once the vendor exists. It used to stay editable, and changing
+            it wrote vendor_type alone — but isTemporary() reads registration_type
+            first, so the row stayed temporary, kept its expiry and was still
+            locked out when the window shut, while this screen said Permanent and
+            the save returned 200. Promotion is its own action, with its own audit
+            trail and its own email: the Convert to Permanent button on the vendor
+            workspace. The server refuses the change here either way. */}
         <Field label="Vendor Type *">
-          <select value={v.vendor_type || ''} onChange={set('vendor_type')} style={inputStyle}>
-            <option value="">Select…</option>
-            <option value="standard">Permanent</option>
-            <option value="temporary">Temporary</option>
-          </select>
+          {mode === 'create' ? (
+            <select value={v.vendor_type || ''} onChange={set('vendor_type')} style={inputStyle}>
+              <option value="">Select…</option>
+              <option value="standard">Permanent</option>
+              <option value="temporary">Temporary</option>
+            </select>
+          ) : (
+            <>
+              <input readOnly value={v.vendor_type === 'temporary' ? 'Temporary' : 'Permanent'}
+                style={{ ...inputStyle, opacity: 0.7, cursor: 'not-allowed' }} />
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                {v.vendor_type === 'temporary'
+                  ? 'Use “Convert to Permanent” on the vendor workspace to promote this vendor.'
+                  : 'A permanent vendor cannot be made temporary.'}
+              </div>
+            </>
+          )}
         </Field>
         <Field label="Phone">
           <input value={v.phone || ''} onChange={set('phone')} placeholder="+91 …" style={inputStyle} />

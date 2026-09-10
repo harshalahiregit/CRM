@@ -80,7 +80,7 @@ class PurchaseTemporaryAccessAuditTest extends TestCase
      * is added, this test should flip to expecting 403 — which is exactly the
      * signal wanted.
      */
-    public function test_an_expired_temporary_vendor_still_reaches_the_portal_today(): void
+    public function test_an_expired_temporary_vendor_is_now_refused_the_portal(): void
     {
         $vendor = $this->expiredTemporaryVendor();
 
@@ -95,9 +95,12 @@ class PurchaseTemporaryAccessAuditTest extends TestCase
 
         $status = $this->getJson('/api/portal/purchase/meetings')->getStatusCode();
 
-        $this->assertSame(200, $status,
-            'documented gap: the Purchase portal does not enforce the access window on the request path. '
-            .'If middleware has since been added, change this expectation to 403.');
+        // This test used to assert 200 and called itself a documented gap: the
+        // countdown reached zero, the badge turned red, and the vendor carried on
+        // using the portal because nothing consulted the expiry on the request
+        // path. EnsurePurchaseVendorPortalAccess now does, which is the change
+        // this expectation was written to wait for.
+        $this->assertSame(403, $status, 'an expired window must close the portal on the request itself');
     }
 
     /** Whereas flipping portal_status — what the backfill does — is enforced. */
