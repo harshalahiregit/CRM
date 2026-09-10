@@ -15,6 +15,27 @@ import { sireHostUi } from '../../../lib/sire/host';
 const AsyncButton = sireHostUi('AsyncButton');
 const Modal = sireHostUi('Modal');
 
+/**
+ * A picker with nothing in it is the worst thing this form can render.
+ *
+ * "No severities" and "we could not reach the server" produce an identical empty
+ * dropdown, and the user is left clicking a control that cannot work with no idea
+ * why -- which is exactly what happened when the API was down: Triage opened with
+ * three blank selects and said nothing at all.
+ *
+ * So an empty list says which one it is, and what to do about it.
+ */
+function EmptyChoices({ label, hint }) {
+  return (
+    <p
+      className="rounded-lg px-3 py-2 text-xs"
+      style={{ background: 'var(--bg-input)', border: '1px dashed var(--border-input)', color: 'var(--text-muted)' }}
+    >
+      No {label.toLowerCase()} to choose from. {hint}
+    </p>
+  );
+}
+
 function FieldInput({ name, value, onChange, severities = [], users = [], categories = [] }) {
   const spec = FIELD_SPECS[name] ?? { label: name.replace(/_/g, ' '), type: 'text' };
   const cls = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800';
@@ -31,21 +52,33 @@ function FieldInput({ name, value, onChange, severities = [], users = [], catego
           {PRIORITIES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
         </select>
       ) : spec.type === 'severity' ? (
-        <select className={cls} value={value ?? ''} onChange={(e) => onChange(e.target.value)}>
-          <option value="">Select…</option>
-          {severities.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
+        severities.length === 0 ? (
+          <EmptyChoices label="Severities" hint="Either the server is unreachable, or sire:seed-defaults has not been run for this workspace." />
+        ) : (
+          <select className={cls} value={value ?? ''} onChange={(e) => onChange(e.target.value)}>
+            <option value="">Select…</option>
+            {severities.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        )
       ) : spec.type === 'category' ? (
-        <select className={cls} value={value ?? ''} onChange={(e) => onChange(e.target.value)}>
-          <option value="">Select…</option>
-          {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
+        categories.length === 0 ? (
+          <EmptyChoices label="Categories" hint="Run php artisan sire:seed-defaults, or check the connection." />
+        ) : (
+          <select className={cls} value={value ?? ''} onChange={(e) => onChange(e.target.value)}>
+            <option value="">Select…</option>
+            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        )
       ) : spec.type === 'user' ? (
-        <select className={cls} value={value ?? ''} onChange={(e) => onChange(e.target.value)}>
-          <option value="">Select…</option>
-          {/* The identity DTO says display_name; reading u.name rendered blank options. */}
-          {users.map((u) => <option key={u.id} value={u.id}>{u.display_name ?? u.name}</option>)}
-        </select>
+        users.length === 0 ? (
+          <EmptyChoices label="People" hint="Nobody is on the engineering rosters (sire.roles.leads / developers / qa), or the server is unreachable." />
+        ) : (
+          <select className={cls} value={value ?? ''} onChange={(e) => onChange(e.target.value)}>
+            <option value="">Select…</option>
+            {/* The identity DTO says display_name; reading u.name rendered blank options. */}
+            {users.map((u) => <option key={u.id} value={u.id}>{u.display_name ?? u.name}</option>)}
+          </select>
+        )
       ) : (
         <input className={cls} placeholder={spec.placeholder} value={value ?? ''} onChange={(e) => onChange(e.target.value)} />
       )}

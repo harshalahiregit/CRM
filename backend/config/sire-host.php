@@ -22,6 +22,23 @@ return [
         'id_field' => 'id',
         'name_field' => 'name',
         'role_field' => 'role',
+        // Off by default in SIRE, because no SIRE feature needs an address and
+        // what it never reads it cannot leak. Turned on deliberately so the
+        // notification provider below has somewhere to send mail.
+        'email_field' => 'email',
+    ],
+
+    /*
+    | Delivery is the host's job. Without this SIRE runs on its shipped provider,
+    | which LOGS the notification and sends nothing -- so filing or assigning an
+    | issue told nobody at all.
+    |
+    | SIRE still decides the audience (actor excluded, de-duplicated, collapsed);
+    | this only carries it to the bell and, for events that mean "you now have
+    | work", to the tenant's own SMTP.
+    */
+    'providers' => [
+        'notification' => \App\Sire\Host\HostNotificationProvider::class,
     ],
     'tenant' => [
         'model' => 'App\\Models\\Tenant',
