@@ -283,6 +283,23 @@ class PurchaseVendorController extends Controller
         return response()->json($this->vendors->approve($purchaseVendor, $request->user()));
     }
 
+    /**
+     * Promote a temporary vendor to permanent (role:admin).
+     *
+     * Admin authority for the same reason approve() is: it removes an expiry
+     * somebody deliberately set, and after this the account transacts with no
+     * end date. The counterpart of TPV's /vendors/{vendor}/access/convert.
+     */
+    public function convertToPermanent(Request $request, PurchaseVendor $purchaseVendor)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        return response()->json([
+            'message' => 'This vendor is now permanent.',
+            'vendor'  => $this->vendors->convertToPermanent($purchaseVendor, $request->user()),
+        ]);
+    }
+
     public function destroy(Request $request, PurchaseVendor $purchaseVendor)
     {
         $this->assertTenant($request, $purchaseVendor);

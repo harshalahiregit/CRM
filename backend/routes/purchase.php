@@ -762,6 +762,9 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('purchase')->group(fun
     Route::post('/vendors/{purchaseVendor}/approve', [PurchaseVendorController::class, 'approve'])->whereNumber('purchaseVendor');
     // Manual resend of the activation e-mail (admin authority, like activation).
     Route::post('/vendors/{purchaseVendor}/resend-activation', [PurchaseVendorController::class, 'resendActivation'])->whereNumber('purchaseVendor');
+    // Temporary -> Permanent. Admin, because it removes an expiry somebody set
+    // on purpose. TPV's counterpart is /tpv/vendors/{vendor}/access/convert.
+    Route::post('/vendors/{purchaseVendor}/convert', [PurchaseVendorController::class, 'convertToPermanent'])->whereNumber('purchaseVendor');
 
     // Admin approve/reject a purchase vendor's statutory document.
     Route::post('/documents/{document}/review',      [PurchaseVendorDocumentController::class, 'review']);
