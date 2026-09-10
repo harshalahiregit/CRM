@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Purchase;
 
+use App\Support\Medical\MedicalEvidence;
 use App\Models\Purchase\PurchaseVendor;
 use App\Models\Purchase\PurchaseWorker;
 use App\Models\Tenant;
@@ -87,8 +88,13 @@ class PurchaseMedicalSignatureTest extends TestCase
 
         $this->assertNotNull($medical->signature_path, 'the signature should be stored, not dropped');
         $this->assertNotNull($medical->capture_photo_path);
-        Storage::disk('public')->assertExists($medical->signature_path);
-        Storage::disk('public')->assertExists($medical->capture_photo_path);
+        // The PRIVATE disk, and not the served one. These two are the proof
+        // the doctor was with that person; a folder the web server hands to
+        // anyone who asks is no place for it.
+        Storage::disk(MedicalEvidence::DISK)->assertExists($medical->signature_path);
+        Storage::disk(MedicalEvidence::DISK)->assertExists($medical->capture_photo_path);
+        Storage::disk('public')->assertMissing($medical->signature_path);
+        Storage::disk('public')->assertMissing($medical->capture_photo_path);
 
         $this->assertSame('12.340000,56.780000', $medical->geo_location);
         $this->assertNotEmpty($medical->system_ip, 'the server stamps the caller IP');
@@ -111,7 +117,8 @@ class PurchaseMedicalSignatureTest extends TestCase
 
         $this->assertSame('external', $medical->exam_type);
         $this->assertNotNull($medical->signature_path);
-        Storage::disk('public')->assertExists($medical->signature_path);
+        Storage::disk(MedicalEvidence::DISK)->assertExists($medical->signature_path);
+        Storage::disk('public')->assertMissing($medical->signature_path);
     }
 
     public function test_a_client_cannot_name_the_stored_path_itself(): void

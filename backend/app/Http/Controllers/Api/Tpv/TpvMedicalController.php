@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Tpv;
 
+use App\Support\Medical\MedicalEvidence;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Medical\MedicalQcDecisionRequest;
 use App\Models\Tpv\TpvMedicalBulkBatch;
@@ -227,7 +228,32 @@ class TpvMedicalController extends Controller
         return Storage::disk('local')->download($record->document_path);
     }
 
-    /* ── Reporting ──────────────────────────────────────────────────────── */
+        /**
+     * The signature or camera photo taken at the examination.
+     *
+     * Both moved off the publicly-served disk (see MedicalEvidence): they are
+     * the proof the doctor was with that person, and a folder the web server
+     * hands to anyone who asks is no place for it. Served here instead, behind
+     * the same tenant check every other read on this record goes through.
+     */
+    public function evidence(Request $request, int $medical, string $kind)
+    {
+        abort_unless(in_array($kind, ['signature', 'capture'], true), 404);
+
+        $record = $this->find($request, $medical);
+        $path   = $kind === 'signature' ? $record->signature_path : $record->capture_photo_path;
+
+        abort_unless($path && MedicalEvidence::isSafe($path), 404, 'Nothing on this record.');
+
+        $disk = MedicalEvidence::diskFor($path);
+        abort_unless($disk, 404, 'The file is no longer on disk.');
+
+        return response()->file(Storage::disk($disk)->path($path), [
+            'Cache-Control' => 'private, max-age=300',
+        ]);
+    }
+
+/* ── Reporting ──────────────────────────────────────────────────────── */
 
     /**
      * The Medical report: volume, vendor statistics, successes and failures,

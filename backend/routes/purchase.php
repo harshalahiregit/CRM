@@ -347,6 +347,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::post('/medical/{medical}/comment',         [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'comment'])->whereNumber('medical');
     Route::get('/medical/{medical}/certificate',      [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'certificate'])->whereNumber('medical');
     Route::get('/medical/{medical}/document',         [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'document'])->whereNumber('medical');
+    // The examination's signature and camera photo. Off the public disk
+    // now — they are the proof of presence, not decoration.
+    Route::get('/medical/{medical}/evidence/{kind}', [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'evidence'])
+        ->whereNumber('medical')->whereIn('kind', ['signature', 'capture']);
     Route::post('/workforce/workers/{worker}/medical/external', [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'storeExternal'])->whereNumber('worker');
     Route::get('/workforce/workers/{worker}/medical-history',   [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'workerHistory'])->whereNumber('worker');
     Route::get('/workforce/trainings',                [PurchaseWorkforceAdminController::class, 'trainings']);

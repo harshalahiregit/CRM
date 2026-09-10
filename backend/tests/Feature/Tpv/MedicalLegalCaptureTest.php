@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Tpv;
 
+use App\Support\Medical\MedicalEvidence;
 use App\Models\Tenant;
 use App\Models\Tpv\TpvWorker;
 use App\Models\User;
@@ -57,6 +58,7 @@ class MedicalLegalCaptureTest extends TestCase
         $this->assertNotEmpty($med->system_ip, 'the server should stamp the caller IP');
         $this->assertSame('12.340000,56.780000', $med->geo_location);
         $this->assertNotNull($med->capture_photo_path);
-        Storage::disk('public')->assertExists($med->capture_photo_path);
+        Storage::disk(MedicalEvidence::DISK)->assertExists($med->capture_photo_path);
+        Storage::disk('public')->assertMissing($med->capture_photo_path);
     }
 }
