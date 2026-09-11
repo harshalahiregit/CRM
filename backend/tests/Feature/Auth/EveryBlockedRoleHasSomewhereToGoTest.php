@@ -164,12 +164,31 @@ class EveryBlockedRoleHasSomewhereToGoTest extends TestCase
         }
     }
 
-    /** The login form has to offer every role somebody actually holds. */
-    public function test_the_login_dropdown_offers_the_vendor_role(): void
+    /**
+     * The login form must NOT offer `vendor`.
+     *
+     * This test used to assert the opposite, and it was wrong. The reasoning was
+     * that `vendor` and `third_party_vendor` both route to /vendor-portal, so
+     * they must be the same thing and the older spelling merely needed a door.
+     * That was read off the ROUTING, and the routing was the broken half: the
+     * accounts holding `vendor` attach to purchase_vendors, not to `vendors`, so
+     * the option sent purchase suppliers to the TPV portal.
+     *
+     * A purchase vendor is not a User. It signs in as Purchase Vendor, against
+     * its own table and its own password. The role is retired; the branches in
+     * the three resolvers above stay only so that any row still carrying it
+     * cannot reproduce the redirect loop.
+     *
+     * See VendorRoleIsRetiredTest for the rest of the cleanup.
+     */
+    public function test_the_login_dropdown_does_not_offer_the_retired_vendor_role(): void
     {
         $login = $this->source(self::RESOLVERS['roleHome']);
 
-        $this->assertMatchesRegularExpression("/value:\s*'vendor'/", $login,
-            'people holding the vendor role have nothing to pick on the login form');
+        $this->assertDoesNotMatchRegularExpression("/value:\s*'vendor'/", $login,
+            'Vendor is back on the login form, and it sends purchase suppliers to the TPV portal');
+
+        $this->assertMatchesRegularExpression("/value:\s*'purchase_vendor'/", $login,
+            'Purchase Vendor is how a purchase supplier actually signs in');
     }
 }

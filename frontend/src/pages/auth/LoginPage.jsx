@@ -24,11 +24,20 @@ const ROLES = [
   { value: 'doctor',              label: 'Doctor',               icon: '🩺' },
   { value: 'purchase_vendor',     label: 'Purchase Vendor',      icon: '📦', purchaseVendor: true },
   { value: 'third_party_vendor',  label: 'Third-Party Vendor',   icon: '🤝' },
-  // `vendor` and `third_party_vendor` are two spellings of the same thing and
-  // reach the same portal; the older one was simply never listed, so the people
-  // holding it had nothing to pick. Worth collapsing into one role one day —
-  // until then it needs a door, because it is what their account says.
-  { value: 'vendor',              label: 'Vendor',               icon: '🤝' },
+  /*
+   * There is deliberately no "Vendor" option.
+   *
+   * It was listed briefly, on the reasoning that `vendor` and
+   * `third_party_vendor` were two spellings of one thing because both routed to
+   * /vendor-portal. That was read off the ROUTING and the routing was the broken
+   * half: the accounts holding `vendor` attach to purchase_vendors, not to
+   * `vendors`, so the option sent purchase suppliers to the TPV portal.
+   *
+   * A purchase vendor is not a User at all — it signs in below as Purchase
+   * Vendor, against its own table and its own password. The leftover `vendor`
+   * Users were second accounts for suppliers who already had that login, and
+   * they have been retired.
+   */
   { value: 'client',              label: 'Client / Customer',    icon: '👤', clientPortal: true },
   { value: 'company',             label: 'Company',              icon: '🏢' },
 ]

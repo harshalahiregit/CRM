@@ -36,17 +36,34 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // Demo vendor (active for testing)
-        User::firstOrCreate(
+        /*
+         * Demo purchase vendor.
+         *
+         * This used to seed a User with role 'vendor', which was the last thing
+         * in the system still producing that role. It was never right: a
+         * purchase vendor is not a User. It authenticates as itself out of
+         * purchase_vendors, with its own password and its own token, and the
+         * `vendor` User beside it was a second login for the same supplier that
+         * routed to the TPV portal — the wrong one.
+         *
+         * Same address and password as before, so the demo credentials printed
+         * below still work; they now sign in at the purchase vendor portal,
+         * which is where this account's records actually live.
+         */
+        \App\Models\Purchase\PurchaseVendor::firstOrCreate(
             ['email' => 'vendor@mlacrm.com'],
             [
-                'tenant_id'   => $tenant->id,
-                'name'        => 'Demo Vendor',
-                'password'    => Hash::make('Vendor@12345'),
-                'role'        => 'vendor',
-                'vendor_type' => 'standard',
-                'status'      => 'active',
-                'company'     => 'Demo Supplies Ltd',
+                'tenant_id'            => $tenant->id,
+                'company_name'         => 'Demo Supplies Ltd',
+                'purchase_vendor_code' => 'PV-DEMO01',
+                'password'             => Hash::make('Vendor@12345'),
+                'category'             => 'Supplier',
+                'currency'             => 'INR',
+                'registration_type'    => \App\Support\Purchase\PurchaseRegistrationType::STANDARD,
+                'vendor_type'          => 'standard',
+                'status'               => 'Active',
+                'portal_status'        => 'active',
+                'approved_at'          => now(),
             ]
         );
 
@@ -98,7 +115,7 @@ class DatabaseSeeder extends Seeder
         $this->command->info('');
         $this->command->info('Demo credentials:');
         $this->command->info('  Admin:  admin@mlacrm.com  / Admin@12345');
-        $this->command->info('  Vendor: vendor@mlacrm.com / Vendor@12345');
+        $this->command->info('  Vendor: vendor@mlacrm.com / Vendor@12345  (purchase vendor portal)');
         $this->command->info('  TPV:    tpv@mlacrm.com    / TPV@12345');
         $this->command->info('  Client: client@mlacrm.com / Client@12345');
     }
