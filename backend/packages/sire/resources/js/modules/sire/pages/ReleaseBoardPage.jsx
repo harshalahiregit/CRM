@@ -7,10 +7,96 @@
  */
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { sireApi } from '../../../services/sireApi';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { sireApi, toPage } from '../../../services/sireApi';
+
+const Modal = sireHostUi('Modal');
+const Button = sireHostUi('Button');
+const useToast = sireHostToast();
+
+const RELEASE_TYPES = ['major', 'minor', 'patch', 'hotfix'];
+
+/**
+ * Creating a release had no UI at all: sireApi.createRelease existed, the endpoint
+ * existed, and the empty state told you to "create a release to start tracking" --
+ * with nothing anywhere on the page that could. A release is the thing every gate,
+ * note and governance screen hangs off, so without this half the module was
+ * unreachable.
+ */
+function NewReleaseButton({ onCreated }) {
+  const [open, setOpen] = useState(false);
+  const [version, setVersion] = useState('');
+  const [name, setName] = useState('');
+  const [type, setType] = useState('patch');
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+
+  const submit = async () => {
+    if (!version.trim()) return toast?.error?.('A version is required.');
+    setBusy(true);
+    try {
+      await sireApi.createRelease({
+        version: version.trim(),
+        name: name.trim() || null,
+        release_type: type,
+        status: 'planned',
+      });
+      toast?.success?.(`Release ${version.trim()} created.`);
+      setOpen(false);
+      setVersion(''); setName(''); setType('patch');
+      onCreated?.();
+    } catch (err) {
+      toast?.error?.(err?.response?.data?.message || 'Could not create that release.');
+    } finally {
+      setBusy(false);
+    }
+    return undefined;
+  };
+
+  const field = 'w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-800';
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900"
+      >
+        New release
+      </button>
+
+      <Modal open={open} onClose={() => setOpen(false)} title="New release">
+        <div className="space-y-3">
+          <label className="block">
+            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-gray-500">Version</span>
+            <input className={field} value={version} onChange={(e) => setVersion(e.target.value)} placeholder="2026.09.1" />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-gray-500">Name (optional)</span>
+            <input className={field} value={name} onChange={(e) => setName(e.target.value)} placeholder="September patch" />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-gray-500">Type</span>
+            <select className={field} value={type} onChange={(e) => setType(e.target.value)}>
+              {RELEASE_TYPES.map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </label>
+          <p className="text-[11px] text-gray-500">
+            It starts as <strong>planned</strong>. Whether it can ship is decided by its gates, never by this form.
+          </p>
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={() => setOpen(false)} className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs dark:border-gray-600">
+              Cancel
+            </button>
+            <Button onClick={submit} loading={busy}>Create release</Button>
+          </div>
+        </div>
+      </Modal>
+    </>
+  );
+}
 import { releaseStateToken, chipClasses } from '../../../lib/sire/tokens';
-import { sireHostUi } from '../../../lib/sire/host';
+import { sireHostUi, sireHostToast } from '../../../lib/sire/host';
 const EmptyState = sireHostUi('EmptyState');
 const TablePagination = sireHostUi('TablePagination');
 
@@ -38,10 +124,13 @@ function NoteCell({ notes }) {
 export default function ReleaseBoardPage() {
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState('');
+  const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
     queryKey: ['sire', 'release-board', status, page],
-    queryFn: () => sireApi.releaseBoard({ status: status || undefined, page }).then((r) => r.data?.data ?? r.data),
+    // Same envelope trap as the issue register: unwrapping to the bare array
+    // left rows undefined, so a board with two releases rendered "No releases".
+    queryFn: () => sireApi.releaseBoard({ status: status || undefined, page }).then(toPage),
     placeholderData: (previous) => previous,
   });
 
@@ -56,6 +145,7 @@ export default function ReleaseBoardPage() {
             Governance only. SIRE records what shipped and whether it should — it does not deploy.
           </p>
         </div>
+        <div className="flex items-center gap-2">
         <select
           className="rounded-lg border border-gray-300 px-2 py-1.5 text-xs dark:border-gray-600 dark:bg-gray-800"
           value={status}
@@ -68,6 +158,8 @@ export default function ReleaseBoardPage() {
           <option value="released">Released</option>
           <option value="cancelled,rolled_back">Cancelled / rolled back</option>
         </select>
+        <NewReleaseButton onCreated={() => queryClient.invalidateQueries({ queryKey: ['sire', 'release-board'] })} />
+        </div>
       </header>
 
       {!isLoading && rows.length === 0 ? (

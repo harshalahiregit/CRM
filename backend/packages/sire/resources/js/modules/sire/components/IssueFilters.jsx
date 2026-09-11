@@ -12,7 +12,16 @@
  */
 import { FILTERS, activeFilterCount } from '../../../lib/sire/dashboardFilters';
 
-const INPUT = 'rounded-lg border border-gray-300 px-2 py-1.5 text-xs dark:border-gray-600 dark:bg-gray-800';
+/**
+ * One input style, resolved through the app's tokens rather than Tailwind greys,
+ * so a SIRE filter looks like a filter anywhere else in the CRM.
+ */
+const INPUT = 'sire-input rounded-lg px-2.5 py-1.5 text-xs';
+const INPUT_STYLE = {
+  background: 'var(--bg-input)',
+  border: '1px solid var(--border-input)',
+  color: 'var(--text-body)',
+};
 
 export default function IssueFilters({ filters, options = {}, onChange, onClear }) {
   const set = (key, value) => onChange({ ...filters, [key]: value });
@@ -31,8 +40,8 @@ export default function IssueFilters({ filters, options = {}, onChange, onClear 
         if (spec.type === 'date') {
           return (
             <label key={key} className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-wide text-gray-400">{spec.label}</span>
-              <input type="date" className={INPUT} value={filters[key] ?? ''} onChange={(e) => set(key, e.target.value)} />
+              <span className="label-caps text-[10px]">{spec.label}</span>
+              <input type="date" style={INPUT_STYLE} className={INPUT} value={filters[key] ?? ''} onChange={(e) => set(key, e.target.value)} />
             </label>
           );
         }
@@ -41,13 +50,13 @@ export default function IssueFilters({ filters, options = {}, onChange, onClear 
           const selected = filters[key] ?? [];
           return (
             <label key={key} className="flex flex-col gap-1">
-              <span className="text-[10px] uppercase tracking-wide text-gray-400">
+              <span className="label-caps text-[10px]">
                 {spec.label}{selected.length > 0 && ` (${selected.length})`}
               </span>
               <select
                 multiple
                 size={1}
-                className={`${INPUT} min-w-[9rem]`}
+                style={INPUT_STYLE} className={`${INPUT} min-w-[9rem]`}
                 value={selected}
                 onChange={(e) => set(key, Array.from(e.target.selectedOptions, (o) => o.value))}
               >
@@ -59,12 +68,19 @@ export default function IssueFilters({ filters, options = {}, onChange, onClear 
 
         return (
           <label key={key} className="flex flex-col gap-1">
-            <span className="text-[10px] uppercase tracking-wide text-gray-400">{spec.label}</span>
-            <select className={`${INPUT} min-w-[8rem]`} value={filters[key] ?? ''} onChange={(e) => set(key, e.target.value)}>
+            <span className="label-caps text-[10px]">{spec.label}</span>
+            <select style={INPUT_STYLE} className={`${INPUT} min-w-[8rem]`} value={filters[key] ?? ''} onChange={(e) => set(key, e.target.value)}>
               <option value="">All</option>
-              {list.map((o) => (
-                <option key={o.id ?? o.value} value={o.id ?? o.value}>{o.name ?? o.label}</option>
-              ))}
+              {list.map((o) => {
+                // `modules` comes back as bare strings while the other lists are
+                // objects. Reading o.id/o.name on a string gave undefined for both
+                // the key and the label, so React warned and the Module filter
+                // rendered a blank, unselectable row.
+                const value = typeof o === 'string' ? o : o.id ?? o.value;
+                const label = typeof o === 'string' ? o : o.name ?? o.label;
+
+                return <option key={value} value={value}>{label}</option>;
+              })}
             </select>
           </label>
         );

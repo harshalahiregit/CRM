@@ -57,6 +57,67 @@ class SireLocalInsights
     }
 
     /**
+     * Recommend a severity on its own.
+     *
+     * The engine is the same weighted vote classification uses -- severity was
+     * always computed, it simply had no capability of its own and so could not be
+     * enabled, declined or audited separately. AiCapability declared it from the
+     * start; nothing implemented it, which made "all 13 run locally" untrue for
+     * two of them.
+     *
+     * Its own capability flag, deliberately: a workspace may well want SIRE
+     * proposing a module while keeping severity a human judgement, and severity
+     * drives the SLA clock.
+     */
+    public function recommendSeverity(Report $report, SireUserIdentity $actor): ?AiSuggestion
+    {
+        return $this->recommendField($report, $actor, AiCapability::SEVERITY_RECOMMENDATION, 'severity');
+    }
+
+    /** Recommend a priority on its own. See recommendSeverity(). */
+    public function recommendPriority(Report $report, SireUserIdentity $actor): ?AiSuggestion
+    {
+        return $this->recommendField($report, $actor, AiCapability::PRIORITY_RECOMMENDATION, 'priority');
+    }
+
+    /** One voted field, recorded under its own capability. */
+    private function recommendField(
+        Report $report,
+        SireUserIdentity $actor,
+        string $capability,
+        string $field,
+    ): ?AiSuggestion {
+        return $this->guard($report, $capability, function () use ($report, $actor, $capability, $field) {
+            $result = $this->classifier->classify($report, $actor);
+            $vote = $result[$field];
+
+            // Abstention is an answer, not a failure -- and recording it would put
+            // an empty panel on the screen.
+            if ($vote['abstained']) {
+                return null;
+            }
+
+            return $this->record(
+                $report,
+                $capability,
+                payload: [$field => $vote],
+                confidence: $vote['confidence'] ?? null,
+                evidence: [
+                    'summary' => sprintf(
+                        'Based on %d similar issues already in this workspace.',
+                        $result['neighbour_count'],
+                    ),
+                    'signals'    => [$vote['reason']],
+                    // The neighbours the vote was taken over -- the check a
+                    // reader needs to disagree with it.
+                    'references' => $result['neighbours'] ?? [],
+                ],
+                actor: $actor,
+            );
+        });
+    }
+
+    /**
      * Recommend issue type, module, severity and priority.
      *
      * Returns null when the capability is off or nothing useful could be said.

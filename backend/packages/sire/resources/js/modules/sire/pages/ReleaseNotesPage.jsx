@@ -8,8 +8,9 @@
  */
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { sireApi } from '../../../services/sireApi';
+import ReleaseNotesReviewPanel from '../components/ReleaseNotesReviewPanel';
 import { sireHostUi } from '../../../lib/sire/host';
 import { sireHostToast } from '../../../lib/sire/host';
 const useToast = sireHostToast();
@@ -46,6 +47,7 @@ function InternalEntry({ entry }) {
 
 export default function ReleaseNotesPage() {
   const { noteId } = useParams();
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const toast = useToast();
   const [audience, setAudience] = useState('internal');
@@ -67,6 +69,11 @@ export default function ReleaseNotesPage() {
   if (isLoading) return <div className="p-6 text-sm text-gray-400">Loading…</div>;
   if (!note) return <EmptyState title="Release notes not found" />;
 
+  // AI does not rewrite these notes -- without a language model it cannot, and it
+  // does not pretend to. It REVIEWS them: which shipped issues have no
+  // customer-facing summary and will be silently omitted, which carry internal
+  // jargon, which are too terse, how many security fixes are being counted
+  // rather than described. Advisory, and only when the tenant has AI on.
   const sections = note.sections ?? [];
   const isUserFacing = note.audience === 'user';
 
@@ -84,6 +91,13 @@ export default function ReleaseNotesPage() {
           {note.status.replace(/_/g, ' ')}
         </span>
       </header>
+
+      {note.review && (
+        <ReleaseNotesReviewPanel
+          suggestion={note.review}
+          onOpenIssue={(issueId) => navigate(`/app/sire/cases/${issueId}`)}
+        />
+      )}
 
       {note.status === 'published' && (
         <div className="rounded-lg bg-green-50 px-3 py-2 text-xs text-green-800 dark:bg-green-950 dark:text-green-200">

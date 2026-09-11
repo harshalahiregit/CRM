@@ -18,14 +18,24 @@ const shortDate = (iso) => (iso ? new Date(iso).toLocaleDateString() : '—');
 export default function IssueTable({ page, loading, onPageChange }) {
   const rows = page?.data ?? [];
 
+  /** A value, or a muted placeholder that keeps the column's width and rhythm. */
+  const cell = (value, empty = '—') => (
+    <span className="whitespace-nowrap text-xs" style={{ color: value ? 'var(--text-body)' : 'var(--text-faint)' }}>
+      {value || empty}
+    </span>
+  );
+
   const columns = [
     {
       key: 'report_number',
       header: 'Issue',
       render: (row) => (
         <Link to={`/app/sire/cases/${row.id}`} className="block max-w-md">
-          <span className="font-mono text-[11px] text-gray-400">{row.report_number}</span>
-          <span className="block truncate text-sm font-medium text-gray-900 hover:underline dark:text-gray-100">
+          <span className="font-mono text-[11px]" style={{ color: 'var(--text-faint)' }}>{row.report_number}</span>
+          <span
+            className="mt-0.5 block truncate text-sm font-semibold hover:underline"
+            style={{ color: 'var(--text-h)' }}
+          >
             {row.title}
           </span>
         </Link>
@@ -41,17 +51,20 @@ export default function IssueTable({ page, loading, onPageChange }) {
         </span>
       ) : '—'),
     },
-    { key: 'severity', header: 'Severity', render: (row) => row.severity?.name ?? '—' },
-    { key: 'type', header: 'Type', render: (row) => row.category?.name ?? '—' },
-    { key: 'module', header: 'Module', render: (row) => row.module_label ?? row.module ?? '—' },
-    { key: 'assignee', header: 'Assignee', render: (row) => row.assignee?.name ?? <span className="text-gray-400">Unassigned</span> },
+    // Every one of these can legitimately be empty, and an unstyled em dash
+    // pressed against the next column is what made a row read as one run-on
+    // string ("S3 - Medium—"). One muted, padded placeholder instead.
+    { key: 'severity', header: 'Severity', render: (row) => cell(row.severity?.name) },
+    { key: 'type',     header: 'Type',     render: (row) => cell(row.category?.name) },
+    { key: 'module',   header: 'Module',   render: (row) => cell(row.module_label ?? row.module) },
+    { key: 'assignee', header: 'Assignee', render: (row) => cell(row.assignee?.name, 'Unassigned') },
     {
       key: 'sla',
       header: 'SLA',
       // The worse of the two clocks. The detail view shows them separately.
       render: (row) => <SlaChip clock={row.sla?.resolve ?? row.sla?.ack} size="sm" />,
     },
-    { key: 'created_at', header: 'Created', render: (row) => shortDate(row.created_at) },
+    { key: 'created_at', header: 'Created', render: (row) => <span className="whitespace-nowrap text-xs" style={{ color: 'var(--text-muted)' }}>{shortDate(row.created_at)}</span> },
   ];
 
   if (!loading && rows.length === 0) {
@@ -65,7 +78,22 @@ export default function IssueTable({ page, loading, onPageChange }) {
 
   return (
     <>
-      <DataTable columns={columns} rows={rows} loading={loading} rowKey="id" />
+      {/*
+        Nine columns squeezed into the page width is what made a row read as one
+        run-on string: "S3 - Medium—" and "Functional defect tasks" are two cells
+        each, but at ~120px per column the content butts straight into its
+        neighbour with nothing between them.
+
+        A floor width fixes it properly. Below that the table scrolls INSIDE this
+        container -- the page itself never scrolls sideways -- which is the same
+        treatment the release board uses, and the reason a governance table keeps
+        all its columns instead of hiding some to fit.
+      */}
+      <div className="overflow-x-auto">
+        <div style={{ minWidth: '1180px' }}>
+          <DataTable columns={columns} rows={rows} loading={loading} rowKey="id" />
+        </div>
+      </div>
       {page && (
         <TablePagination
           currentPage={page.current_page}

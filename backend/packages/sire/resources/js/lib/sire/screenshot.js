@@ -16,7 +16,7 @@
  */
 
 const MAX_EDGE = 1600;      // downscale ceiling — evidence, not print quality
-const JPEG_QUALITY = 0.75;  // disk on the production box is tight
+const QUALITY = 0.75;       // disk on the production box is tight
 
 export const canCaptureScreen = () =>
   typeof navigator !== 'undefined' &&
@@ -33,8 +33,28 @@ function drawScaled(source, width, height) {
   return canvas;
 }
 
-const toBlob = (canvas) =>
-  new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', JPEG_QUALITY));
+/**
+ * WebP first: a screenshot re-encodes roughly 25-35% smaller than the same JPEG
+ * at this quality, and these accumulate one per reported issue on a box whose
+ * disk is tight.
+ *
+ * canvas.toBlob silently falls back to PNG when it cannot encode the type asked
+ * for -- and PNG would be far LARGER than the JPEG we replaced, so the result
+ * type is checked rather than trusted, and anything that is not WebP falls back
+ * to JPEG explicitly.
+ */
+const encode = (canvas, type) =>
+  new Promise((resolve) => canvas.toBlob(resolve, type, QUALITY));
+
+const toImage = async (canvas) => {
+  const webp = await encode(canvas, 'image/webp');
+  if (webp && webp.type === 'image/webp') {
+    return new File([webp], 'screen.webp', { type: 'image/webp' });
+  }
+
+  const jpeg = await encode(canvas, 'image/jpeg');
+  return jpeg ? new File([jpeg], 'screen.jpg', { type: 'image/jpeg' }) : null;
+};
 
 /**
  * Capture the current screen. Resolves to a File, or null if unsupported or
@@ -66,8 +86,7 @@ export async function captureScreen() {
       try {
         const bitmap = await new window.ImageCapture(track).grabFrame();
         const canvas = drawScaled(bitmap, bitmap.width, bitmap.height);
-        const blob = await toBlob(canvas);
-        return blob ? new File([blob], 'screen.jpg', { type: 'image/jpeg' }) : null;
+        return await toImage(canvas);
       } catch {
         // fall through to the video path
       }
@@ -83,8 +102,7 @@ export async function captureScreen() {
     video.pause();
     video.srcObject = null;
 
-    const blob = await toBlob(canvas);
-    return blob ? new File([blob], 'screen.jpg', { type: 'image/jpeg' }) : null;
+    return await toImage(canvas);
   } finally {
     stream.getTracks().forEach((t) => t.stop()); // never leave the capture running
   }

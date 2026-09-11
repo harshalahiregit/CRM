@@ -2,6 +2,7 @@
 
 namespace Sire\Services;
 
+use Sire\Contracts\SireContextProvider;
 use Sire\Models\Report;
 use Sire\Models\ReportContext;
 use Sire\Support\SireContextSchema;
@@ -17,6 +18,10 @@ use Illuminate\Support\Str;
  */
 class SireContextService
 {
+    public function __construct(private readonly SireContextProvider $screens)
+    {
+    }
+
     /**
      * @param  array  $raw  the untrusted `context` object from the request
      */
@@ -26,6 +31,8 @@ class SireContextService
         if ($clean === []) {
             return null;
         }
+
+        $clean = $this->resolveServerSide($clean);
 
         // Placement is promoted onto the report itself so the register can filter
         // and group by it. Diagnostics stay in the child row so the hot register
@@ -68,6 +75,76 @@ class SireContextService
             'failed_requests'    => $clean['failed_requests'] ?? null,
             'page_context'       => $clean['page_context'] ?? null,
         ]);
+    }
+
+    /**
+     * The server decides where the issue was filed.
+     *
+     * The browser resolves context first so the modal opens already filled in,
+     * but the client is not a trust boundary: anyone can POST /api/sire/reports
+     * with a hand-written body naming any module they like. So the submitted URL
+     * is re-resolved here, through the same SireContextProvider seam a host can
+     * replace, and the server's answer is what gets stored.
+     *
+     * ONE THING THE SERVER CANNOT REPRODUCE. A screen that declares itself via
+     * SireContext.register() knows something no route pattern does -- a wizard
+     * step held in component state, a console whose entity comes from a dropdown.
+     * The server has only the path. So a declaration is kept, and so is the
+     * client's answer where the server resolved nothing; anything the route map
+     * can describe, the server describes itself.
+     *
+     * @param  array<string, mixed>  $clean
+     * @return array<string, mixed>
+     */
+    private function resolveServerSide(array $clean): array
+    {
+        $url = $clean['url'] ?? null;
+
+        if (! is_string($url) || $url === '') {
+            return $clean;
+        }
+
+        // Two sources the server has no way to reproduce, and must not overwrite:
+        //
+        //   provider  a screen declared itself through SireContext.register()
+        //   user      the reporter corrected the context by hand in the modal
+        //
+        // Overwriting either would make the "Correct" affordance do nothing and
+        // would throw away the one thing a declaration knows that a path cannot.
+        if (in_array($clean['context_source'] ?? null, ['provider', 'user', 'declared'], true)) {
+            return $clean;
+        }
+
+        $path = parse_url($url, PHP_URL_PATH);
+
+        if (! is_string($path) || $path === '') {
+            return $clean;
+        }
+
+        try {
+            $resolved = $this->screens->resolve($path);
+        } catch (\Throwable $e) {
+            // A context that cannot be resolved must never cost someone their bug
+            // report. Keep what the client sent and carry on.
+            report($e);
+
+            return $clean;
+        }
+
+        if ($resolved->module === null) {
+            return $clean;
+        }
+
+        return array_merge($clean, array_filter([
+            'module'             => $resolved->module,
+            'section'            => $resolved->section,
+            'screen'             => $resolved->screen,
+            'route'              => $resolved->route,
+            'entity_type'        => $resolved->entityType,
+            'entity_id'          => $resolved->entityId,
+            'context_source'     => 'route',
+            'context_confidence' => $resolved->confidence,
+        ], static fn ($v) => $v !== null));
     }
 
     /** Allowlist, truncate, re-redact. Everything unlisted is dropped silently. */

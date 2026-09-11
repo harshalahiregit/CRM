@@ -9,6 +9,81 @@
 import { sireHostApi } from '../lib/sire/host';
 const api = sireHostApi();
 
+/**
+ * Map a SIRE list envelope onto the paginator shape the tables read.
+ *
+ * The API answers {data:[...], meta:{page, per_page, total, pages}}. IssueTable
+ * -- like every other table in this CRM -- reads a Laravel paginator:
+ * page.data, page.current_page, page.last_page. Nothing lined up.
+ *
+ * Screens were unwrapping with `r.data?.data ?? r.data`, which yields the bare
+ * ARRAY, so page.data came back undefined and rows was always []. Every register
+ * rendered "No issues match these filters" while the tile directly above it
+ * counted those very issues. Mapped here, once, so a screen cannot half-read it.
+ */
+/**
+ * Flatten the issue-detail envelope onto the shape the detail screen reads.
+ *
+ * The API answers {data:{report:{...}, sla, available_transitions}}, but
+ * IssueDetailPage reads issue.title, issue.report_number, issue.status and
+ * issue.context directly -- while ALSO reading issue.available_transitions from
+ * the top level. Half of it lined up, which is what made the bug so odd to look
+ * at: the transition buttons rendered correctly above a header showing "-".
+ *
+ * Spreading report up and keeping its siblings satisfies both.
+ */
+/**
+ * Map the attachment descriptors onto the field names EvidencePanel reads.
+ *
+ * Not one field lined up: the API sends {id, name, size, mime, url} and the panel
+ * reads mime_type, original_name, size_label and download_url. So a screenshot
+ * that uploaded perfectly rendered as "No screenshots or files attached".
+ *
+ * download_url is built here rather than taken from the descriptor: the disk is
+ * private, and the url it reports points at /storage/..., which has no symlink
+ * and would be an unauthorized path if it did.
+ */
+const sizeLabel = (bytes) => {
+  const n = Number(bytes) || 0;
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+export const toAttachments = (response, reportId) => {
+  const body = response?.data?.data ?? response?.data ?? [];
+  const rows = Array.isArray(body) ? body : [];
+
+  return rows.map((a) => ({
+    ...a,
+    mime_type: a.mime ?? a.mime_type ?? '',
+    original_name: a.name ?? a.original_name ?? 'attachment',
+    size_label: sizeLabel(a.size),
+    download_url: `/api/sire/reports/${reportId}/attachments/${encodeURIComponent(a.id)}`,
+  }));
+};
+
+export const toIssue = (response) => {
+  const body = response?.data?.data ?? response?.data ?? {};
+  const { report, ...rest } = body;
+
+  return { ...(report ?? {}), ...rest };
+};
+
+export const toPage = (response) => {
+  const body = response?.data ?? {};
+  const rows = Array.isArray(body?.data) ? body.data : Array.isArray(body) ? body : [];
+  const meta = body?.meta ?? {};
+
+  return {
+    data: rows,
+    current_page: meta.page ?? 1,
+    last_page: meta.pages ?? 1,
+    total: meta.total ?? rows.length,
+    per_page: meta.per_page ?? (rows.length || 25),
+  };
+};
+
 export const sireApi = {
   /**
    * Create a report. `context` is the SireContextCollector payload.
@@ -30,8 +105,25 @@ export const sireApi = {
     });
   },
 
+  /** Evidence already on an issue. Nothing fetched these before, which is the
+   *  other half of why an uploaded screenshot never appeared. */
+  listAttachments: (reportId) => api.get(`/sire/reports/${reportId}/attachments`),
+
+  /**
+   * One file, as a blob.
+   *
+   * The route is behind auth:sanctum and this app authenticates with a Bearer
+   * token, which a plain <img src> cannot send -- so the bytes come through the
+   * shared client and are shown from an object URL instead.
+   */
+  attachmentBlob: (reportId, id) =>
+    api.get(`/sire/reports/${reportId}/attachments/${encodeURIComponent(id)}`, { responseType: 'blob' }),
   // ---- register -----------------------------------------------------------
-  listReports: (params) => api.get('/sire/reports', { params }),
+  /**
+   * The register. Note this is dashboard/register, NOT `GET /sire/reports` --
+   * that route does not exist, and this method used to call it and 404.
+   */
+  listReports: (params) => api.get('/sire/dashboard/register', { params }),
   getReport: (id) => api.get(`/sire/reports/${id}`),
 
   // ---- engineering workflow ----------------------------------------------
@@ -78,11 +170,16 @@ export const sireApi = {
   createRecurrenceGroup: (payload) => api.post('/sire/recurrence-groups', payload),
   addOccurrence:    (groupId, reportId) => api.post(`/sire/recurrence-groups/${groupId}/occurrences`, { report_id: reportId }),
   removeOccurrence: (groupId, reportId) => api.delete(`/sire/recurrence-groups/${groupId}/occurrences/${reportId}`),
+  /** Recompute a group's derived statistics. Every recurrence number is derived,
+   *  never typed -- this is how you force a refresh after editing occurrences. */
+  recomputeRecurrence: (id) => api.post(`/sire/recurrence-groups/${id}/recompute`),
 
   // releases
   listReleases:  (params) => api.get('/sire/releases', { params }),
   getRelease:    (id) => api.get(`/sire/releases/${id}`),
   createRelease: (payload) => api.post('/sire/releases', payload),
+  /** Rename / re-date / re-type a release. Route existed, nothing called it. */
+  updateRelease: (id, payload) => api.patch(`/sire/releases/${id}`, payload),
   // Shipping and rollback are GOVERNED transitions — the ungated endpoints were
   // removed in Phase 3 so there is only one path to "released", and it checks gates.
   releaseTransition: (id, payload) => api.post(`/sire/releases/${id}/transitions`, payload),
@@ -99,6 +196,8 @@ export const sireApi = {
   // release notes — generate, submit, approve, publish
   generateReleaseNote:   (releaseId, audience) => api.post(`/sire/releases/${releaseId}/notes`, { audience }),
   getReleaseNote:        (id) => api.get(`/sire/release-notes/${id}`),
+  /** Edit note content before it is submitted for approval. */
+  updateReleaseNote: (id, payload) => api.patch(`/sire/release-notes/${id}`, payload),
   regenerateReleaseNote: (id) => api.post(`/sire/release-notes/${id}/regenerate`),
   submitReleaseNote:     (id) => api.post(`/sire/release-notes/${id}/submit`),
   approveReleaseNote:    (id) => api.post(`/sire/release-notes/${id}/approve`),
@@ -117,6 +216,9 @@ export const sireApi = {
   startCapa:     (id) => api.post(`/sire/capa/${id}/start`),
   completeCapa:  (id, note) => api.post(`/sire/capa/${id}/complete`, { completion_note: note }),
   verifyCapa:    (id, payload) => api.post(`/sire/capa/${id}/verify`, payload),
+  /** Cancel an action. The route existed; no method called it, so a CAPA could be
+   *  started, completed and verified but never abandoned. */
+  cancelCapa:    (id, payload) => api.post(`/sire/capa/${id}/cancel`, payload),
 
   // ---- AI foundation ------------------------------------------------------
   // Foundation only: /suggest returns `unavailable` because the only registered

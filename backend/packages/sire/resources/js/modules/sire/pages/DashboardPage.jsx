@@ -10,11 +10,12 @@
  */
 import { useCallback, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { sireApi } from '../../../services/sireApi';
+import { sireApi, toPage } from '../../../services/sireApi';
 import { toQueryParams } from '../../../lib/sire/dashboardFilters';
 import DashboardTiles from '../components/DashboardTiles';
 import IssueFilters from '../components/IssueFilters';
 import IssueTable from '../components/IssueTable';
+import SavedViews from '../components/SavedViews';
 
 const EMPTY = {};
 
@@ -40,7 +41,7 @@ export default function DashboardPage() {
     queryKey: ['sire', 'dashboard', 'register', params, scope, pageNo],
     queryFn: () => sireApi
       .dashboardRegister({ ...toQueryParams(filters, scope), page: pageNo })
-      .then((r) => r.data?.data ?? r.data),
+      .then(toPage),
     placeholderData: (previous) => previous, // no flash-to-empty while paging
   });
 
@@ -57,8 +58,8 @@ export default function DashboardPage() {
   return (
     <div className="mx-auto max-w-7xl space-y-4 p-4 sm:p-6">
       <header>
-        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-50">Issues</h1>
-        <p className="mt-0.5 text-xs text-gray-500">
+        <h1 className="text-lg font-bold" style={{ color: 'var(--text-h)', letterSpacing: '-0.02em' }}>Issues</h1>
+        <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
           Counts respect the filters below. Selecting a tile filters the table to the same set.
         </p>
       </header>
@@ -70,20 +71,42 @@ export default function DashboardPage() {
         loading={tilesQuery.isLoading}
       />
 
-      <div className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+      {/* Filters and the register sit on the app's card surface, not on a bare
+          grey outline — the same treatment every other module's list uses. */}
+      <div
+        className="rounded-2xl p-4"
+        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card)' }}
+      >
         <IssueFilters
           filters={filters}
           options={optionsQuery.data ?? {}}
           onChange={changeFilters}
           onClear={() => changeFilters(EMPTY)}
         />
+
+        {/* Saved filter sets. localStorage by design -- the CRM has no per-user
+            preference store, and the control says "this browser only" rather
+            than letting someone discover that on their laptop. */}
+        <div className="mt-3 border-t pt-3" style={{ borderColor: 'var(--border)' }}>
+          <SavedViews
+            listKey="sire.register"
+            filters={filters}
+            scope={scope}
+            onApply={(view) => { changeFilters(view?.filters ?? EMPTY); changeScope(view?.scope ?? 'all'); }}
+          />
+        </div>
       </div>
 
-      <IssueTable
-        page={registerQuery.data}
-        loading={registerQuery.isLoading}
-        onPageChange={setPageNo}
-      />
+      <div
+        className="overflow-hidden rounded-2xl"
+        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card)' }}
+      >
+        <IssueTable
+          page={registerQuery.data}
+          loading={registerQuery.isLoading}
+          onPageChange={setPageNo}
+        />
+      </div>
     </div>
   );
 }

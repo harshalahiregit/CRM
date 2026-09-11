@@ -112,7 +112,10 @@ export default function ReportIssueModal() {
         context,               // tenant_id / user_id are NOT here — server stamps them
       });
 
-      const report = data?.data ?? data;
+      // The API answers {data:{report:{...}}}. Unwrapping only one level
+      // left report.id undefined, so the screenshot was silently dropped and
+      // the toast never showed the SIR- number.
+      const report = data?.data?.report ?? data?.report ?? data?.data ?? data;
 
       if (screenshot && report?.id) {
         try {
@@ -140,7 +143,7 @@ export default function ReportIssueModal() {
   if (!modal.open) return null;
 
   return (
-    <Modal open={modal.open} onClose={closeReportIssue} title="Report an issue">
+    <Modal open={modal.open} onClose={closeReportIssue} title="Report an issue" className="sire-report-modal">
       <div className="space-y-3">
         {context && <ContextPreview context={context} onCorrect={applyCorrection} />}
 

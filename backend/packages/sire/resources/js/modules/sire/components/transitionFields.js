@@ -12,6 +12,7 @@ export { priorityToken };
 export const FIELD_SPECS = {
   severity_id:     { label: 'Severity',        type: 'severity', help: 'How bad it is when it happens.' },
   priority:        { label: 'Priority',        type: 'priority', help: 'When we are going to deal with it.' },
+  category_id:     { label: 'Category',        type: 'category', help: 'What kind of issue this is. Fills the Type column on the register.' },
   assignee_id:     { label: 'Developer',       type: 'user' },
   qa_assignee_id:  { label: 'QA engineer',     type: 'user' },
   fix_summary:     { label: 'Fix summary',     type: 'textarea', placeholder: 'What changed, and where. QA reads this first.' },

@@ -3,11 +3,55 @@
  * Never renders a storage path or disk name — those are hidden server-side and
  * downloads go through a tenant-checked, controller-streamed endpoint.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { sireApi } from '../../../services/sireApi';
 import { validateScreenshotFile } from '../../../lib/sire/screenshot';
 
 const isImage = (a) => /^image\//.test(a.mime_type || '');
+
+/**
+ * Evidence lives on a PRIVATE disk behind auth:sanctum, and this app sends a
+ * Bearer token -- which an <img src> cannot carry. So the bytes are fetched with
+ * the shared client and rendered from an object URL, which is revoked on unmount
+ * so a long QA session does not leak one blob per screenshot it looked at.
+ */
+function AuthedImage({ issueId, attachment, className }) {
+  const [src, setSrc] = useState(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let url = null;
+    let alive = true;
+
+    sireApi
+      .attachmentBlob(issueId, attachment.id)
+      .then((res) => {
+        if (!alive) return;
+        url = URL.createObjectURL(res.data);
+        setSrc(url);
+      })
+      .catch(() => alive && setFailed(true));
+
+    return () => {
+      alive = false;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [issueId, attachment.id]);
+
+  if (failed) {
+    return (
+      <span className={`${className} flex items-center justify-center px-2 text-center text-[11px] text-gray-400`}>
+        Could not load
+      </span>
+    );
+  }
+
+  if (!src) {
+    return <span className={`${className} block animate-none bg-gray-100 dark:bg-gray-800`} />;
+  }
+
+  return <img src={src} alt={attachment.original_name} className={className} />;
+}
 
 export default function EvidencePanel({ issueId, attachments = [], canUpload, onUploaded, toast }) {
   const [lightbox, setLightbox] = useState(null);
@@ -59,7 +103,7 @@ export default function EvidencePanel({ issueId, attachments = [], canUpload, on
               title={a.original_name}
             >
               {isImage(a) ? (
-                <img src={a.download_url} alt={a.original_name} className="h-24 w-32 object-cover" loading="lazy" />
+                <AuthedImage issueId={issueId} attachment={a} className="h-24 w-32 object-cover" />
               ) : (
                 <span className="flex h-24 w-32 items-center justify-center px-2 text-center text-[11px] text-gray-500">
                   {a.original_name}
@@ -74,12 +118,26 @@ export default function EvidencePanel({ issueId, attachments = [], canUpload, on
       )}
 
       {lightbox && (
-        <div
-          role="presentation"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6"
-          onClick={() => setLightbox(null)}
-        >
-          <img src={lightbox.download_url} alt={lightbox.original_name} className="max-h-full max-w-full rounded" />
+        // The full-size view went through a plain <img src>, which carries no
+        // Bearer token -- so opening a screenshot always showed a broken image.
+        // Same authorized fetch as the thumbnail.
+        //
+        // It closes on the button, not the backdrop: a stray click must not
+        // dismiss the evidence someone is reading.
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6">
+          <button
+            type="button"
+            onClick={() => setLightbox(null)}
+            aria-label="Close"
+            className="absolute right-4 top-4 rounded-full bg-white/10 px-3 py-1 text-lg leading-none text-white hover:bg-white/20"
+          >
+            &times;
+          </button>
+          <AuthedImage
+            issueId={issueId}
+            attachment={lightbox}
+            className="max-h-full max-w-full rounded object-contain"
+          />
         </div>
       )}
     </section>

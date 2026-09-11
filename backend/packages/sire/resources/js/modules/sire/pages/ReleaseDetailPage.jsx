@@ -20,10 +20,11 @@
  * SIRE stores and never interprets.
  */
 import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { sireApi } from '../../../services/sireApi';
 import ReleaseGatePanel from '../components/ReleaseGatePanel';
+import RiskBadge from '../components/RiskBadge';
 import ReleaseOverrideDialog from '../components/ReleaseOverrideDialog';
 import SireStateBoundary from '../components/SireStateBoundary';
 import { sireHostUi } from '../../../lib/sire/host';
@@ -56,6 +57,36 @@ export default function ReleaseDetailPage() {
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['sire', 'release', id] });
 
   const recheck = useMutation({ mutationFn: () => sireApi.evaluateGates(id), onSuccess: refresh });
+
+  // Release notes were built end to end -- generate, submit, approve, publish,
+  // and a whole review screen -- but nothing linked to them, so /release-notes/:id
+  // was unreachable and the feature invisible. This is the way in.
+  const navigate = useNavigate();
+
+  // Release risk is ADVISORY and explicitly not a gate: gates block, risk informs.
+  // Only fetched when the tenant has AI on.
+  const aiStatusQuery = useQuery({
+    queryKey: ['sire', 'ai', 'status'],
+    queryFn: () => sireApi.aiStatus().then((r) => r.data?.data ?? r.data),
+    staleTime: 10 * 60 * 1000,
+  });
+
+  const riskQuery = useQuery({
+    queryKey: ['sire', 'release', id, 'risk'],
+    queryFn: () => sireApi.aiReleaseInsights(id).then((r) => r.data?.data ?? r.data),
+    enabled: Boolean(aiStatusQuery.data?.enabled),
+  });
+
+  const generateNote = useMutation({
+    // sireApi already wraps this into { audience } -- passing an object here
+    // sent { audience: { audience: 'internal' } } and the endpoint answered 422.
+    mutationFn: (audience) => sireApi.generateReleaseNote(id, audience),
+    onSuccess: (res) => {
+      const noteId = res?.data?.data?.id ?? res?.data?.id;
+      refresh();
+      if (noteId) navigate(`/app/sire/release-notes/${noteId}`);
+    },
+  });
 
   const transition = useMutation({
     mutationFn: (payload) => sireApi.releaseTransition(id, payload),
@@ -157,6 +188,47 @@ export default function ReleaseDetailPage() {
         )}
       </SireStateBoundary>
 
+      {riskQuery.data && (
+        <div className="mt-4">
+          <RiskBadge
+            suggestion={riskQuery.data?.release_risk ?? riskQuery.data}
+            title="Release risk"
+            note="Advisory. Gates block a release; this only informs one."
+          />
+        </div>
+      )}
+
+      <section
+        className="mt-4 rounded-2xl p-4"
+        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card)' }}
+      >
+        <div className="mb-2 flex items-baseline justify-between gap-3">
+          <h3 className="label-caps text-[11px]">Release notes</h3>
+          <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>
+            Generate → submit → approve → publish. Security fixes are counted, never described.
+          </span>
+        </div>
+
+        {(detail?.notes ?? []).length > 0 ? (
+          <ul className="space-y-1.5">
+            {(detail.notes ?? []).map((n) => (
+              <li key={n.id} className="flex items-center justify-between gap-3 text-sm">
+                <Link to={`/app/sire/release-notes/${n.id}`} className="font-medium hover:underline" style={{ color: 'var(--text-h)' }}>
+                  {n.audience === 'user' ? 'User-facing notes' : 'Internal notes'}
+                </Link>
+                <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{n.status}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>No notes generated for this release yet.</p>
+        )}
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          <AsyncButton onClick={() => generateNote.mutateAsync('internal')}>Generate internal notes</AsyncButton>
+          <AsyncButton onClick={() => generateNote.mutateAsync('user')}>Generate user-facing notes</AsyncButton>
+        </div>
+      </section>
       {/*
         onSubmit uses mutateAsync, not mutate: the dialog closes itself on the
         resolved promise, and mutate() returns undefined — .then() on that throws

@@ -45,15 +45,30 @@ class SireAiController extends SireController
         return $this->success($this->gateway->status((int) $this->sireUser()->tenantId));
     }
 
-    /** GET /sire/ai/capabilities — the declared catalogue, implemented or not. */
+    /**
+     * GET /sire/ai/capabilities — the declared catalogue, and which of it works.
+     *
+     * `implemented` used to be a hardcoded empty array with a note saying "Phase 3
+     * is foundation only". That was true when it was written and false by the time
+     * SireLocalInsights landed, so the endpoint told every client that nothing
+     * worked while thirteen engines sat behind it. It reads the registry now, and
+     * cannot go stale again.
+     */
     public function capabilities(): JsonResponse
     {
+        $implemented = AiCapability::IMPLEMENTED_LOCALLY;
+
         return $this->success([
             'capabilities' => AiCapability::CATALOGUE,
             // Stated in the payload so a client cannot mistake a declared
             // capability for a working one.
-            'implemented'  => [],
-            'note'         => 'Phase 3 is foundation only. No capability performs analysis and no provider is integrated.',
+            'implemented'  => $implemented,
+            'note'         => sprintf(
+                '%d of %d capabilities are implemented, and every one computes locally — '
+                .'no external provider is required or integrated.',
+                count($implemented),
+                count(AiCapability::ALL),
+            ),
         ]);
     }
 
@@ -106,6 +121,11 @@ class SireAiController extends SireController
 
         return $this->success([
             'classification' => $this->local->classify($report, $actor),
+            // Severity and priority also have capabilities of their own, so a
+            // workspace can take SIRE's view on the module while keeping the
+            // clock-driving fields a human judgement.
+            'severity'       => $this->local->recommendSeverity($report, $actor),
+            'priority'       => $this->local->recommendPriority($report, $actor),
             'duplicates'     => $this->local->duplicates($report, $actor),
             // Labelled everywhere it is shown as "AI Suggested Root Cause".
             // Never written into the confirmed analysis.

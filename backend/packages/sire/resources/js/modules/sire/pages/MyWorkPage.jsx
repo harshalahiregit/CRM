@@ -23,7 +23,7 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { sireApi } from '../../../services/sireApi';
+import { sireApi, toPage } from '../../../services/sireApi';
 import IssueTable from '../components/IssueTable';
 import SireStateBoundary from '../components/SireStateBoundary';
 
@@ -55,7 +55,7 @@ export default function MyWorkPage() {
 
   const query = useQuery({
     queryKey: ['sire', 'queue', queue, params],
-    queryFn: () => config.fetch(params).then((r) => r.data?.data ?? r.data),
+    queryFn: () => config.fetch(params).then(toPage),
   });
 
   // Changing queue or filter resets paging: page 3 of one queue is meaningless

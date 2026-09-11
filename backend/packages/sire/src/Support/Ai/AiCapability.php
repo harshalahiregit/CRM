@@ -40,6 +40,29 @@ final class AiCapability
     ];
 
     /** What a suggestion is attached to. */
+    /**
+     * The capabilities a local engine actually answers, as opposed to declares.
+     *
+     * Kept beside ALL so the two are read together: a capability added to the
+     * catalogue without an engine is visible here as an absence rather than as a
+     * suggestion panel that never appears.
+     */
+    public const IMPLEMENTED_LOCALLY = [
+        self::CLASSIFICATION,
+        self::SEVERITY_RECOMMENDATION,
+        self::PRIORITY_RECOMMENDATION,
+        self::DUPLICATE_DETECTION,
+        self::ROOT_CAUSE_SUGGESTION,
+        self::DEVELOPER_TEST_CASES,
+        self::QA_TEST_CASES,
+        self::REGRESSION_RISK,
+        self::RECURRENCE_RISK,
+        self::KNOWLEDGE_RECOMMENDATION,
+        self::RELEASE_RISK,
+        self::RELEASE_NOTE_REFINEMENT,
+        self::ENGINEERING_INSIGHTS,
+    ];
+
     public const SUBJECT_REPORT           = 'report';
     public const SUBJECT_RECURRENCE_GROUP = 'recurrence_group';
     public const SUBJECT_RELEASE          = 'release';
