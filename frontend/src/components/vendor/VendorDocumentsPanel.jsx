@@ -98,29 +98,63 @@ export default function VendorDocumentsPanel({
    * catalog only supplies the label, the grouping and the required default, so
    * a type the server did not ask for shows as optional rather than as a
    * missing obligation the vendor cannot discharge.
+   *
+   * The checklist arrives in two buckets and BOTH carry real uploads. `required`
+   * is what this vendor was asked for; `extras` is everything else they have
+   * actually sent us — a standard vendor who uploaded an LOI, a temporary one
+   * who uploaded a company registration. An extra is a file that exists, has a
+   * status, and may be waiting on a reviewer.
+   *
+   * That second bucket used to be merged only when the catalog had never heard
+   * of its type, and dropped otherwise. Since every extra a vendor can upload is
+   * by definition a type the engine knows — and therefore a type in the catalog
+   * — "otherwise" was the normal case. The catalog's own placeholder then drew
+   * the row as "Not Uploaded": PV-0002's LOI/WO/PO, uploaded through the portal
+   * and approved by an admin, showed as missing on the admin tab and on the
+   * vendor's own. The document was there the whole time; the panel was reading
+   * past it.
+   *
+   * So: index both buckets, and let a catalog row take whichever holds it.
    */
   const rows = useMemo(() => {
     const backend = checklist?.required || []
-    const byType = new Map(backend.map(r => [r.type, r]))
+    const extras  = checklist?.extras   || []
+    const byType  = new Map(backend.map(r => [r.type, r]))
+    const extraByType = new Map(extras.map(r => [r.type, r]))
     const known = new Set(catalog.map(d => d.type))
 
     const merged = catalog.map((def) => {
       const hit = byType.get(def.type)
-      return hit
-        ? { ...hit, type_label: hit.type_label || def.label, required: true, category: def.category, sample: def.sample }
-        : {
-            type: def.type, type_label: def.label, required: false, category: def.category,
-            sample: def.sample, uploaded: false, status: null, original_name: null, document_id: null,
-          }
+      if (hit) {
+        return { ...hit, type_label: hit.type_label || def.label, required: true, category: def.category, sample: def.sample }
+      }
+      // Not asked for, but supplied anyway — an optional row that is filled in.
+      const extra = extraByType.get(def.type)
+      if (extra) {
+        return {
+          ...extra, type_label: extra.type_label || def.label, required: false,
+          category: def.category, sample: def.sample, uploaded: true,
+        }
+      }
+      return {
+        type: def.type, type_label: def.label, required: false, category: def.category,
+        sample: def.sample, uploaded: false, status: null, original_name: null, document_id: null,
+      }
     })
 
-    // Anything the server asks for that the catalog has never heard of, plus
-    // the vendor's own extra uploads — shown, never silently dropped.
+    // Anything either bucket holds that the catalog has never heard of — shown,
+    // never silently dropped, and never without a label.
+    const humanize = t => String(t).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+
     backend.forEach((r) => {
-      if (!known.has(r.type)) merged.push({ ...r, required: true, category: categoryOf(catalog, r.type) })
+      if (!known.has(r.type)) {
+        merged.push({ ...r, type_label: r.type_label || humanize(r.type), required: true, category: categoryOf(catalog, r.type) })
+      }
     })
-    ;(checklist?.extras || []).forEach((r) => {
-      if (!known.has(r.type)) merged.push({ ...r, required: false, uploaded: true, category: 'Other Documents' })
+    extras.forEach((r) => {
+      if (!known.has(r.type)) {
+        merged.push({ ...r, type_label: r.type_label || humanize(r.type), required: false, uploaded: true, category: 'Other Documents' })
+      }
     })
 
     return merged

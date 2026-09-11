@@ -1,10 +1,20 @@
 /**
  * What each engine calls its statutory documents.
  *
- * TPV and Purchase ask a vendor for the same paperwork under different type
- * keys — TPV says `company_pan`, `pf_no`, `udyam_certificate`; Purchase says
- * `pan`, `pf`, `udyam`. That difference is real and lives in two backends, so
- * it is described here once rather than being rediscovered by every screen.
+ * Both engines use the SAME type keys. `Vendor\VendorDocument::TYPE_LABELS` and
+ * `Purchase\PurchaseDocument::TYPE_LABELS` are the same twelve strings, so the
+ * two catalogs below differ only in wording, never in keys.
+ *
+ * This file used to claim otherwise — that TPV said `company_pan`, `pf_no`,
+ * `esic_no`, `bocw_registration`, `udyam_certificate` — and the TPV catalog was
+ * built on those five invented keys plus `other` and `subcontractor_decl`. No
+ * such type has ever existed in the TPV backend: `VendorDocumentService::
+ * allowedTypes()` rejects all seven with "Unknown document type". The effect on
+ * a standard TPV vendor's Documents tab was seven rows that could never be
+ * filled (upload threw), while the five real requirements — pan, pf, esic,
+ * bocw, udyam — arrived as types the catalog had never heard of and were
+ * appended, unlabelled, under "Other Documents". Sixteen rows for eleven
+ * documents, seven of them dead.
  *
  * The catalog is what turns a flat checklist into the grouped, filterable panel
  * the vendor actually uses: a label, a category to file it under, and whether
@@ -19,21 +29,20 @@ const OTHER      = 'Other Documents'
 
 export const DOC_CATEGORY_ORDER = [COMPANY, COMPLIANCE, FINANCIAL, OTHER]
 
-/** TPV — mirrors Vendor\VendorDocument's type keys. */
+/** TPV — mirrors Vendor\VendorDocument::TYPE_LABELS, key for key. */
 export const TPV_DOC_CATALOG = [
   { type: 'company_registration', label: 'Company Registration Certificate', required: true,  category: COMPANY },
-  { type: 'company_pan',          label: 'Company PAN Card',                 required: true,  category: COMPANY },
+  { type: 'pan',                  label: 'Company PAN Card',                 required: true,  category: COMPANY },
   { type: 'gst',                  label: 'GST Certificate',                  required: true,  category: COMPANY },
-  { type: 'udyam_certificate',    label: 'Udyam Certificate',                required: true,  category: COMPANY },
+  { type: 'udyam',                label: 'Udyam Certificate',                required: true,  category: COMPANY },
   { type: 'insurance_wcp',        label: 'Insurance [WCP]',                  required: true,  category: COMPLIANCE },
-  { type: 'pf_no',                label: 'PF Registration',                  required: true,  category: COMPLIANCE },
-  { type: 'esic_no',              label: 'ESIC Registration',                required: true,  category: COMPLIANCE },
-  { type: 'bocw_registration',    label: 'BOCW Registration',                required: true,  category: COMPLIANCE },
+  { type: 'pf',                   label: 'PF Registration',                  required: true,  category: COMPLIANCE },
+  { type: 'esic',                 label: 'ESIC Registration',                required: true,  category: COMPLIANCE },
+  { type: 'bocw',                 label: 'BOCW Registration',                required: true,  category: COMPLIANCE },
   { type: 'clr',                  label: 'CLR [Contract Labour Registration]', required: true, category: COMPLIANCE },
   { type: 'mlwf',                 label: 'MLWF [Maharashtra Labour Welfare]', required: true, category: COMPLIANCE },
   { type: 'mscb',                 label: 'MSCB Certificate',                 required: true,  category: COMPLIANCE },
-  { type: 'other',                label: 'Other Document',                   required: false, category: OTHER },
-  { type: 'subcontractor_decl',   label: 'Subcontractor Declaration',        required: false, category: OTHER, sample: 'Subcontractor_Declaration_Sample.docx' },
+  { type: 'loi_wo_po',            label: 'LOI / WO / PO',                    required: false, category: FINANCIAL },
 ]
 
 /**

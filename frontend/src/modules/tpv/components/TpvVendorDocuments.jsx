@@ -6,49 +6,32 @@ import {
 import { tpvApi } from '@/services/tpvApi'
 import { Overlay, ModalFooter, StatusBadge as StatusPill } from '@/components/ui/kit3d'
 import { docStatusCfg, DOC_STATUS } from '@/modules/tpv/constants'
+import { TPV_DOC_CATALOG, categoryOf } from '@/components/vendor/documentCatalog'
 
-const DOC_CATEGORIES = {
-  company_registration: 'Company Documents',
-  company_pan: 'Company Documents',
-  gst: 'Company Documents',
-  udyam_certificate: 'Company Documents',
-  shop_act: 'Company Documents',
-
-  insurance_wcp: 'Compliance Documents',
-  pf_no: 'Compliance Documents',
-  esic_no: 'Compliance Documents',
-  bocw_registration: 'Compliance Documents',
-  clr: 'Compliance Documents',
-  mlwf: 'Compliance Documents',
-  mscb: 'Compliance Documents',
-  labour_license: 'Compliance Documents',
-
-  loi_wo_po: 'Financial Documents',
-  bank_proof: 'Financial Documents',
-  cancelled_cheque: 'Financial Documents',
-
-  subcontractor_decl: 'Other Documents',
-  other: 'Other Documents',
-}
-
-const STANDARD_REQUIRED_DOCS = [
-  { type: 'company_registration', label: 'Company Registration Certificate', step: 'Step 3 Statutory' },
-  { type: 'company_pan', label: 'Company PAN Card', step: 'Step 3 Statutory' },
-  { type: 'insurance_wcp', label: 'Insurance [WCP]', step: 'Step 3 Statutory' },
-  { type: 'gst', label: 'GST Certificate', step: 'Step 3 Statutory' },
-  { type: 'pf_no', label: 'PF Registration', step: 'Step 3 Statutory' },
-  { type: 'esic_no', label: 'ESIC Registration', step: 'Step 3 Statutory' },
-  { type: 'bocw_registration', label: 'BOCW Registration', step: 'Step 3 Statutory' },
-  { type: 'clr', label: 'CLR [Contract Labour Registration]', step: 'Step 3 Statutory' },
-  { type: 'mlwf', label: 'MLWF [Maharashtra Labour Welfare]', step: 'Step 3 Statutory' },
-  { type: 'mscb', label: 'MSCB Certificate', step: 'Step 3 Statutory' },
-  { type: 'udyam_certificate', label: 'Udyam Certificate', step: 'Step 3 Statutory' },
-  { type: 'other', label: 'Other Document (Optional)', step: 'Step 3 Statutory' },
-  { type: 'subcontractor_decl', label: 'Subcontractor Declaration (Optional)', step: 'Step 3 Statutory' },
-]
+/*
+ * The document types come from the shared catalog, which mirrors
+ * `Vendor\VendorDocument::TYPE_LABELS` key for key.
+ *
+ * This file used to carry its own list, and that list named seven types the TPV
+ * backend has never accepted — company_pan, pf_no, esic_no, bocw_registration,
+ * udyam_certificate, other, subcontractor_decl. `VendorDocumentService::
+ * allowedTypes()` rejects every one of them. So those seven rows could only
+ * ever read "Missing", while the five requirements the server does issue (pan,
+ * pf, esic, bocw, udyam) were types this list had never heard of and fell
+ * through to the append-extras branch below, landing at the bottom of the table
+ * out of category order. Eighteen rows for eleven documents.
+ *
+ * One catalog now, shared with the portal and with the Purchase workspace, and
+ * guarded by DocumentCatalogMatchesTheEnginesTest.
+ */
+const STANDARD_REQUIRED_DOCS = TPV_DOC_CATALOG.map(d => ({
+  type: d.type,
+  label: d.required ? d.label : `${d.label} (Optional)`,
+  step: 'Step 3 Statutory',
+}))
 
 function getCategory(type) {
-  return DOC_CATEGORIES[type] || 'Company Documents'
+  return categoryOf(TPV_DOC_CATALOG, type)
 }
 
 export default function TpvVendorDocuments({ vendorId, vendor, manage, api = tpvApi, moduleName = 'Third Party Vendor' }) {
@@ -79,12 +62,24 @@ export default function TpvVendorDocuments({ vendorId, vendor, manage, api = tpv
   useEffect(() => { load() }, [load])
 
   const backendRows = checklist?.required || []
+  /*
+   * The checklist answers in two buckets and both hold real files. `required`
+   * is what this vendor was asked for; `extras` is everything else they have
+   * actually sent — a standard vendor's LOI, a temporary vendor's company
+   * registration. This component read only the first, so a document outside
+   * the vendor's own required set was uploaded, reviewed, approved, and still
+   * drew as "Missing" on the admin tab.
+   */
+  const extraRows = checklist?.extras || []
 
   // Combine backend matrix with standard required list
   const rawRowsMap = new Map(backendRows.map(r => [r.type, r]))
+  const extraRowsMap = new Map(extraRows.map(r => [r.type, r]))
   const allDocRows = STANDARD_REQUIRED_DOCS.map(def => {
-    const existing = rawRowsMap.get(def.type)
-    const isRequired = !!existing
+    const required = rawRowsMap.get(def.type)
+    // Not asked of this vendor, but supplied anyway — an optional row, filled.
+    const existing = required || extraRowsMap.get(def.type)
+    const isRequired = !!required
     return {
       type: def.type,
       type_label: def.label,
@@ -104,15 +99,15 @@ export default function TpvVendorDocuments({ vendorId, vendor, manage, api = tpv
     }
   })
 
-  // Append any extra uploaded docs outside standard list
-  backendRows.forEach(r => {
+  // Append anything either bucket holds that the catalog has never heard of.
+  ;[...backendRows, ...extraRows].forEach(r => {
     if (!STANDARD_REQUIRED_DOCS.some(d => d.type === r.type)) {
       allDocRows.push({
         type: r.type,
         type_label: r.type_label || r.type,
         step: 'Step 3 Statutory',
         category: getCategory(r.type),
-        required: true,
+        required: !!rawRowsMap.get(r.type),
         uploaded: true,
         status: r.status || 'under_review',
         original_name: r.original_name,

@@ -3,6 +3,7 @@ import { purchaseApi } from '@/services/purchaseApi'
 import { fmtDate } from '@/modules/purchase/constants'
 import { useVendorWorkspace } from './vendorWorkspaceContext'
 import { VendorScopedList } from './vendorDetailShared'
+import PurchaseVendorDocumentsReadOnly from '@/modules/purchase/components/PurchaseVendorDocumentsReadOnly'
 
 /**
  * The registers a Purchase vendor is accountable under, on the vendor itself.
@@ -43,25 +44,37 @@ const severityTone = (sv) => {
 
 /* ── Compliance group ────────────────────────────────────────────────────── */
 
+/**
+ * The vendor's statutory documents — the real panel, not a summary of it.
+ *
+ * This tab used to be a `VendorScopedList` over the checklist endpoint, and it
+ * showed "This vendor has filed no documents yet" for every vendor in the
+ * system. Three things were wrong at once and each hid the next:
+ *
+ *   1. The endpoint answers an OBJECT — { vendor_type, required, extras,
+ *      summary, complete } — and the fetcher unwrapped `r?.documents ??
+ *      r?.data ?? r`, landing on the object itself.
+ *   2. `VendorScopedList` then did `Array.isArray(r) ? r : (r?.data ?? [])`,
+ *      and there is no `data` key, so it rendered the empty state.
+ *   3. Had a row ever reached the table, the columns read `document_label`,
+ *      `document_number`, `valid_until` and `version` — none of which this
+ *      endpoint returns. Every cell would have been an em dash.
+ *
+ * Nothing threw, so no failure banner: PV-0002 had three documents uploaded
+ * through the portal and approved by an admin, and this tab said none.
+ *
+ * A checklist is not a list of rows — it is a required set, an extras set and a
+ * progress summary, with approve/reject and version history hanging off each
+ * row. `PurchaseVendorDocumentsReadOnly` is that panel and already reads the
+ * real shape; the tab is now a placement of it.
+ */
 export function VendorDocumentsTab() {
   const { vendor } = useVendorWorkspace()
 
   return (
-    <VendorScopedList
-      key={`doc-${vendor.id}`}
-      title="Documents"
-      // The per-vendor checklist endpoint, not the tenant-wide vault: this
-      // answers "what has THIS vendor filed, and what is still outstanding".
-      fetcher={(vid) => purchaseApi.documents.checklist(vid).then(r => r?.documents ?? r?.data ?? r ?? [])}
-      emptyText="This vendor has filed no documents yet"
-      statusCfg={statusTone(['Missing', 'Rejected', 'Expired'], ['Pending', 'Expiring'])}
-      columns={[
-        { header: 'Document', strong: true, cell: (r) => r.document_label || r.category_label || r.category || r.name || '—' },
-        { header: 'Number', cell: (r) => r.document_number || '—' },
-        { header: 'Valid until', cell: (r) => (r.valid_until ? fmtDate(r.valid_until) : '—') },
-        { header: 'Version', cell: (r) => r.version ?? '—' },
-      ]}
-    />
+    <div className="card-3d" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18 }}>
+      <PurchaseVendorDocumentsReadOnly key={`doc-${vendor.id}`} vendorId={vendor.id} />
+    </div>
   )
 }
 
@@ -194,23 +207,44 @@ export function VendorIncidentsTab() {
   )
 }
 
+/**
+ * The site visitor book — site-wide, not this vendor's.
+ *
+ * `site_visitors` is a shared register with no vendor column: a visitor signs
+ * in at the gate against a host and a company, not against a purchase_vendor
+ * row. `SiteRegisterController::visitors` therefore scopes by tenant and
+ * nothing else, and the `vendor_id` this tab was sending was accepted and
+ * ignored — every vendor's workspace showed the whole site's book under the
+ * heading "Visitors" and the empty state "No visitors logged for this vendor".
+ * A visitor for another vendor read as a visitor for this one.
+ *
+ * Three columns were dead on top of that: `name` and `checked_in_at` are not
+ * fields this table has (`visitor_name`, `check_in_at`), and the status pill
+ * asked for a `status` column that does not exist — so every row, including
+ * people who signed out weeks ago, drew as "On site".
+ *
+ * Until a visit can be attributed to a vendor, the honest thing is to say what
+ * this is. Scoping it for real needs a vendor column on a register TPV and
+ * Purchase share, which is a schema change on another team's table.
+ */
 export function VendorVisitorsTab() {
   const { vendor } = useVendorWorkspace()
 
   return (
     <VendorScopedList
       key={`vis-${vendor.id}`}
-      title="Visitors"
-      fetcher={(vid) => purchaseApi.visitors.list({ vendor_id: vid })}
-      emptyText="No visitors logged for this vendor"
-      statusCfg={(st) => (st === 'On_Site' || !st
-        ? { label: 'On site', color: '#10b981', bg: 'rgba(16,185,129,0.15)' }
-        : { label: 'Departed', color: '#94a3b8', bg: 'rgba(148,163,184,0.15)' })}
+      title="Visitors — site register"
+      fetcher={() => purchaseApi.visitors.list()}
+      emptyText="No visitors have signed in at the gate"
+      statusCfg={(_st, row) => (row?.check_out_at
+        ? { label: 'Departed', color: '#94a3b8', bg: 'rgba(148,163,184,0.15)' }
+        : { label: 'On site', color: '#10b981', bg: 'rgba(16,185,129,0.15)' })}
       columns={[
-        { header: 'Visitor', strong: true, cell: (r) => r.name || r.visitor_name || '—' },
+        { header: 'Visitor', strong: true, cell: (r) => r.visitor_name || '—' },
         { header: 'Company', cell: (r) => r.company || '—' },
+        { header: 'Host', cell: (r) => r.host || '—' },
         { header: 'Purpose', cell: (r) => r.purpose || '—' },
-        { header: 'In', cell: (r) => (r.checked_in_at ? fmtDate(r.checked_in_at) : '—') },
+        { header: 'In', cell: (r) => (r.check_in_at ? fmtDate(r.check_in_at) : '—') },
       ]}
     />
   )
@@ -229,8 +263,10 @@ export function VendorWorkPackagesTab() {
       emptyText="No work packages assigned to this vendor"
       statusCfg={statusTone(['Draft', 'On_Hold'], ['In_Progress'])}
       columns={[
-        { header: 'Package', strong: true, cell: (r) => r.name || r.title || `#${r.id}` },
-        { header: 'Code', cell: (r) => r.code || r.reference_no || '—' },
+        { header: 'Package', strong: true, cell: (r) => r.name || `#${r.id}` },
+        // purchase_work_packages numbers itself in `reference`; `code` and
+        // `reference_no` are not columns, so this read as an em dash always.
+        { header: 'Code', cell: (r) => r.reference || '—' },
         { header: 'Starts', cell: (r) => (r.start_date ? fmtDate(r.start_date) : '—') },
         { header: 'Ends', cell: (r) => (r.end_date ? fmtDate(r.end_date) : '—') },
       ]}
