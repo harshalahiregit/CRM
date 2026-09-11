@@ -4,25 +4,34 @@
 
 ```
 
-  app/Contracts/Sire/Sdk/           13 SDK contracts — the entire host seam
-  app/Services/Sire/Sdk/            13 shipped implementations, so SIRE runs standalone
-  app/Support/Sire/Sdk/             9 value objects + the capability vocabulary
-  app/Contracts/Sire/               TimelineContributor
-  app/Contracts/Sire/Ai/            AiProvider
-  app/Services/Sire/                core + quality + knowledge + release
-  app/Services/Sire/Ai/             the AI layer (deletable)
-  app/Http/Controllers/Api/Sire/    17 controllers
-  app/Http/Controllers/Api/Sire/Concerns/  envelope, ownership guard, identity resolution
-  app/Http/Requests/Sire/           FormRequest per write action
-  app/Models/Sire/                  21 models
-  app/Models/Sire/Concerns/         tenant scoping + audit recording traits
-  app/Console/Commands/Sire/        4 commands
-  app/Exceptions/Sire/              SireException
-  app/Providers/                    SireServiceProvider — the one file that wires it all
-  app/Support/Sire/                 constants, workflow, module map, route map
+  src/Contracts/                    13 SDK contracts — the entire host seam
+  src/Adapters/Defaults/            13 shipped implementations, so SIRE runs standalone
+  src/Dto/                          8 value objects
+  src/Support/                      constants, workflow, capability vocabulary, route map
+  src/Contracts/Extension/          TimelineContributor
+  src/Contracts/Ai/                 AiProvider
+  src/Services/                     core + quality + knowledge + release
+  src/AI/                           the AI layer (deletable)
+  src/Http/Controllers/             18 controllers
+  src/Http/Controllers/Concerns/    envelope, ownership guard, identity resolution
+  src/Http/Requests/                FormRequest per write action
+  src/Models/                       21 models
+  src/Models/Concerns/              tenant scoping + audit recording traits
+  src/Database/Factories/           9 model factories, for the test suite
+  src/Console/Commands/             11 commands
+  src/Exceptions/                   SireException
+  src/SireServiceProvider.php       the one file that wires it all
   config/sire.php                   every host assumption, in one file
-  routes/sire.php                   73 endpoints in one middleware group
+  routes/sire.php                   76 endpoints in one middleware group
 ```
+
+**Two ways to install, and the paths above are the second one.**
+
+SIRE originally shipped to be copied file-by-file into `app/`, under
+`App\Services\Sire\…`. It is now a package: the tree above is what
+`backend/packages/sire/` actually contains, and everything in it lives under the
+`Sire\` namespace. Read `App\Services\Sire\Foo` in older pages as
+`Sire\Services\Foo`.
 
 **COPY AS-IS**, all of it, except two files: `config/sire.php` (confirm the users
 and tenants table names) and `routes/sire.php` (one line — your role middleware).
@@ -66,7 +75,7 @@ $this->loadRoutesFrom(__DIR__.'/../../routes/sire.php');
 ```
 
 It is a complete, working route file, not a fragment to paste into an existing
-group. All 73 endpoints sit inside one `Route::middleware([...])` group with the
+group. All 76 endpoints sit inside one `Route::middleware([...])` group with the
 `api/sire` prefix.
 
 **The one line to change** is the role middleware:
@@ -114,7 +123,7 @@ makes a *missing* migration silent.
 
 ## Errors
 
-Throw `App\Exceptions\Sire\SireException` for every rule violation — a request
+Throw `Sire\Exceptions\SireException` for every rule violation — a request
 that is well-formed but not allowed right now. It renders itself as a 409 with a
 message written FOR THE USER and safe to display verbatim.
 

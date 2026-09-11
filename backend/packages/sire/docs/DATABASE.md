@@ -1,6 +1,6 @@
 # Database
 
-**23 migrations. 20 tables, every one prefixed `sire_`.**
+**24 migrations. 20 tables, every one prefixed `sire_`.**
 
 ## The two rules
 
@@ -73,6 +73,7 @@ to your schema. Rename `2026_MM_DD_` to real dates, keeping the order.
 | 000023 | create_sire_settings_table | creates `sire_settings` |
 | 000024 | create_sire_notes_table | creates `sire_notes` |
 | 000025 | create_sire_audit_events_table | creates `sire_audit_events` |
+| 000026 | fix_sire_release_default_status | alters `sire_releases` — the column defaulted to `planned`, which is not a release status |
 
 ## Tables
 

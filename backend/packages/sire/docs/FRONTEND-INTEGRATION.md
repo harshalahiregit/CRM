@@ -63,11 +63,14 @@ Then add SIRE's routes to `<HOST_ROUTE_REGISTRY>` and one sidebar entry.
 `lib/sire/contextRoutes.js` maps routes to module/section/screen/entity so Report
 Issue can say *"Sales / Leads / Lead Details / Lead #10452"* without asking.
 
-> **Its 70 entries are SEEDED, NOT REAL.** They were inferred from a module
-> inventory, never read from your `routes.jsx`. Expect wrong entries.
+> **The shipped entries are SEEDED, NOT REAL.** They were inferred from a module
+> inventory, never read from your `routes.jsx`. Expect wrong entries until you
+> regenerate the map against your own route tree — in this repository that has
+> been done, and the map holds 359 patterns across 27 modules read from
+> `frontend/src/app/routes.jsx`.
 
 ```bash
-node integration/sire-route-audit.mjs <path-to>/src/app/routes.jsx
+node tools/sire-route-audit.mjs <path-to>/src/app/routes.jsx
 ```
 
 It prints **MISSING** (real routes with no mapping), **RELATIVE** (nested children

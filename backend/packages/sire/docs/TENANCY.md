@@ -49,7 +49,7 @@ and a lie about the numbers.
 
 `src/Contracts/SireTenantProvider.php` is the single seam
 between SIRE and however your application resolves tenants. The shipped implementation
-in `integration/host-adapters/` reads `$request->user()->tenant_id`.
+in `examples/host-adapters/` reads `$request->user()->tenant_id`.
 
 **If that is wrong, this is the only file that changes.**
 

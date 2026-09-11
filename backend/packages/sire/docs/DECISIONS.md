@@ -1,6 +1,6 @@
 # Decision register
 
-61 decisions taken while building SIRE, with the reasoning that produced
+68 decisions taken while building SIRE, with the reasoning that produced
 them. The reasoning is the expensive part to reconstruct — a decision without its
 why gets reversed by the next person who finds it inconvenient.
 

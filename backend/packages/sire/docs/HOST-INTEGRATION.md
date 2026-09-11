@@ -523,8 +523,8 @@ Leave it empty and SIRE uses the map generated from
 Reconcile it:
 
 ```bash
-node integration/sire-route-audit.mjs <path-to>/src/app/routes.jsx
-node integration/generate-route-map.mjs      # after editing the JS map
+node tools/sire-route-audit.mjs <path-to>/src/app/routes.jsx
+node tools/generate-route-map.mjs      # after editing the JS map
 ```
 
 **The server is the authority.** The browser resolves context first so the modal

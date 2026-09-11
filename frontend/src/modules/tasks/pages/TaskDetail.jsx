@@ -114,14 +114,24 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
   const { data: staff = [] } = useQuery({ queryKey: ['task-staff'], queryFn: taskApi.staff })
   // Vendors & TPVs can own a checklist item too (all are Users) — pull them so a
   // line can be handed to anyone, and so a chip resolves whoever it is.
-  const { data: vendors = [] } = useQuery({ queryKey: ['task-vendors', 'vendor'], queryFn: () => taskApi.vendors('vendor') })
   const { data: tpvs = [] } = useQuery({ queryKey: ['task-vendors', 'tpv'], queryFn: () => taskApi.vendors('tpv') })
-  const people = useMemo(() => [...staff, ...vendors, ...tpvs], [staff, vendors, tpvs])
+  const people = useMemo(() => {
+    const live = [...staff, ...tpvs]
+    const seen = new Set(live.map(p => p.id))
+    // Somebody assigned who no longer appears in any roster — a retired
+    // `vendor` login, or anyone deactivated since. The task payload carries
+    // their name, so use it: without this a chip reads "#2" and a checklist
+    // owner reads "Unknown".
+    const departed = (task?.assignees || [])
+      .filter(a => !seen.has(a.user_id))
+      .map(a => ({ id: a.user_id, name: a.name }))
+    return [...live, ...departed]
+  }, [staff, tpvs, task])
   const peopleById = useMemo(() => Object.fromEntries(people.map(p => [p.id, p])), [people])
-  // Split one assignee list into staff / vendors / TPVs for display (they all live
-  // in the same task_assignees pivot — only their role tells them apart).
+  // Split one assignee list into staff / TPVs for display (they all live in the
+  // same task_assignees pivot — only their role tells them apart). Anyone in
+  // neither set is shown separately rather than dropped; see departedIds.
   const staffIds = useMemo(() => new Set(staff.map(s => s.id)), [staff])
-  const vendorIds = useMemo(() => new Set(vendors.map(v => v.id)), [vendors])
   const tpvIds = useMemo(() => new Set(tpvs.map(t => t.id)), [tpvs])
   const { map: statusMap, list: statusList } = useStatuses('task')
 
@@ -272,6 +282,9 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
 
   const isPublic = Boolean(task.is_public)
   const assigneeIds = assignees.map(a => a.user_id)
+  // Assigned, but in neither live roster. See the panel below for why these
+  // exist and why hiding them would be worse than showing them.
+  const departedIds = assigneeIds.filter(i => !staffIds.has(i) && !tpvIds.has(i))
 
   // ── Vendor link ──────────────────────────────────────────────────────────
   // A task relates to ONE vendor via rel_type/rel_id. Lists load only while the
@@ -747,12 +760,7 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                 onAdd={() => setPicker('assignee')}
                 onRemove={uid => syncAssign.mutate(assigneeIds.filter(i => i !== uid))} />
 
-              <p className="text-[10px] font-bold uppercase tracking-wide mt-4 mb-1.5" style={{ color: 'var(--text-muted)' }}>Vendors</p>
-              <PeopleChips ids={assigneeIds.filter(i => vendorIds.has(i))} staff={people} addLabel="Add vendor"
-                onAdd={() => setPicker('vendor')}
-                onRemove={uid => syncAssign.mutate(assigneeIds.filter(i => i !== uid))} />
-
-              <p className="text-[10px] font-bold uppercase tracking-wide mt-4 mb-1.5" style={{ color: 'var(--text-muted)' }}>Third-party vendors</p>
+              <p className="text-[10px] font-bold uppercase tracking-wide mt-4 mb-1.5" style={{ color: 'var(--text-muted)' }}>Assignees (third-party)</p>
               <PeopleChips ids={assigneeIds.filter(i => tpvIds.has(i))} staff={people} addLabel="Add TPV"
                 onAdd={() => setPicker('tpv')}
                 onRemove={uid => syncAssign.mutate(assigneeIds.filter(i => i !== uid))} />
@@ -763,16 +771,50 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
               <PeopleChips ids={followerIds} staff={people} addLabel="Follow"
                 onAdd={() => setPicker('follower')}
                 onRemove={uid => syncFollow.mutate(followerIds.filter(i => i !== uid))} />
+              {/* Assigned, but in none of the lists above.
+
+                  The `vendor` User role was retired (migration
+                  2026_12_23_000001): a purchase vendor authenticates as itself
+                  out of purchase_vendors, so every vendor-role User was a second
+                  login for the same supplier. Those rows were deactivated, not
+                  deleted — and the tasks assigned to them stayed assigned.
+
+                  Without this group those people render in no bucket at all: the
+                  task is still assigned to somebody the screen does not show, and
+                  there is no way to remove them. An empty group is hidden, so
+                  this costs nothing once the old assignments are cleared. */}
+              {departedIds.length > 0 && (
+                <>
+                  <p className="text-[10px] font-bold uppercase tracking-wide mt-4 mb-1.5" style={{ color: 'var(--text-muted)' }}>
+                    Assignees (no longer available)
+                  </p>
+                  <PeopleChips ids={departedIds} staff={people} addLabel=""
+                    onAdd={() => {}}
+                    onRemove={uid => syncAssign.mutate(assigneeIds.filter(i => i !== uid))} />
+                  <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                    Their login was retired or deactivated. They still hold this task — remove them and assign somebody who can do it.
+                  </p>
+                </>
+              )}
+
               <p className="text-[10px] mt-3" style={{ color: 'var(--text-muted)' }}>
-                Vendors &amp; third-party vendors see tasks assigned to them on their portal dashboard.
+                Third-party vendors see tasks assigned to them on their portal dashboard.
+                A purchase vendor is reached through the company link below, not by assignment.
               </p>
 
-              {/* Vendor. Shown here beside the people because that is where you look
-                  for "who is this task for" -- but it is NOT an assignee list. A
-                  Purchase Vendor has no User account and can never be assigned, so
-                  the link is the task's rel_type/rel_id, and a task carries one. */}
+              {/* The company this task is FOR. Beside the people because that is
+                  where you look for it, but it is not an assignee list: a Purchase
+                  Vendor is a company record with no User account, so it can never
+                  be assigned to. It is the task's rel_type/rel_id, and a task
+                  carries one.
+
+                  This used to be labelled "Vendor", directly beneath "Vendors".
+                  Two labels one letter apart for two different kinds of thing —
+                  one a person who does the work, one a company it is filed
+                  against — with nothing on screen saying so. The form drawer had
+                  always called it Related To; this now agrees with it. */}
               <p className="text-[10px] font-bold uppercase tracking-wide mt-4 mb-1.5" style={{ color: 'var(--text-muted)' }}>
-                <Building2 size={10} className="inline mr-1" />Vendor
+                <Building2 size={10} className="inline mr-1" />Related to (company)
               </p>
               <div className="flex flex-wrap items-center gap-1.5 rounded-xl px-2 py-2"
                 style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', minHeight: 44 }}>
@@ -789,9 +831,13 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                 )}
                 <button type="button" onClick={() => setPicker('vendor-link')} className="text-xs font-bold px-2 py-1 rounded-lg"
                   style={{ border: '1px dashed var(--border)', color: 'var(--text-muted)' }}>
-                  + {isVendorLinked ? 'Change' : 'Link vendor'}
+                  + {isVendorLinked ? 'Change' : 'Link a company'}
                 </button>
               </div>
+              <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                Which company the task is filed against — for their page and their reports.
+                Nobody is assigned by this.
+              </p>
             </Card>
 
             <RemindersCard taskId={id} staff={staff} currentUserId={user?.id} />
@@ -823,12 +869,6 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
         onPick={it => it && syncAssign.mutate([...new Set([...assigneeIds, it.id])])}
         items={staff.filter(s => !assigneeIds.includes(s.id)).map(s => ({ id: s.id, label: s.name, sublabel: s.role }))}
         title="Assign to" subtitle="They'll get a notification." emptyText="Everyone is already assigned." accent={TASK_ACCENT}
-      />
-      <SearchPicker
-        open={picker === 'vendor'} onClose={() => setPicker(null)}
-        onPick={it => it && syncAssign.mutate([...new Set([...assigneeIds, it.id])])}
-        items={vendors.filter(v => !assigneeIds.includes(v.id)).map(v => ({ id: v.id, label: v.name, sublabel: v.email }))}
-        title="Assign a vendor" subtitle="They'll see it on their vendor portal." emptyText="No vendors available." accent={TASK_ACCENT}
       />
       <SearchPicker
         open={picker === 'tpv'} onClose={() => setPicker(null)}

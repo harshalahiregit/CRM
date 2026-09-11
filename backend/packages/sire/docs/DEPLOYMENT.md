@@ -58,7 +58,7 @@ php artisan migrate --force
 php artisan sire:doctor            # read-only; writes nothing
 ```
 
-**23 migrations, 20 tables, every one prefixed `sire_`.** SIRE creates and alters
+**24 migrations, 20 tables, every one prefixed `sire_`.** SIRE creates and alters
 no table it does not own — so Helpdesk, Tasks, notifications and attachments cannot
 be affected. Verified by `tests/schema-completeness.test.mjs`.
 
@@ -93,7 +93,7 @@ php artisan sire:export-workflow
 ## 4. Cache
 
 Follow the existing deploy's cache steps. If none are documented, this is the
-minimum — and **`route:clear` is not optional**, because SIRE adds 73 routes:
+minimum — and **`route:clear` is not optional**, because SIRE adds 76 routes:
 
 ```bash
 php artisan route:clear

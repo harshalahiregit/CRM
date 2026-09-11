@@ -91,7 +91,7 @@ SIRE talks to its host through **thirteen contracts and nothing else**:
 | `SireContextProvider` | What screen is this path? | recommended |
 
 Each ships a `SireLocal*` implementation SIRE owns, so **SIRE runs before any
-integration work at all**; each has a `Host*` stub in `integration/host-adapters/`.
+integration work at all**; each has a `Host*` stub in `examples/host-adapters/`.
 The binding is one key in `config/sire.php`.
 
 Six are optional in the strong sense: SIRE has its own tables and engines for
