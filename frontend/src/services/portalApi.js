@@ -35,6 +35,20 @@ export const portalApi = {
     tasks:    () => api.get('/portal/my-work/tasks').then(r => r.data?.data ?? r.data),
     taskStatuses:    () => api.get('/portal/my-work/task-statuses').then(r => r.data?.data ?? r.data),
     updateTaskStatus:(id, status) => api.patch(`/portal/my-work/tasks/${id}/status`, { status }).then(r => r.data?.data ?? r.data),
+    // One task in full — brief, checklist, conversation, files.
+    task:        (id) => api.get(`/portal/my-work/tasks/${id}`).then(r => r.data?.data ?? r.data),
+    commentTask: (id, { body = '', files = [] } = {}) => {
+      const fd = new FormData()
+      if (body) fd.append('body', body)
+      files.forEach(f => fd.append('files[]', f))
+      return upload(`/portal/my-work/tasks/${id}/comments`, fd)
+    },
+    // Task files are private: the download is an authenticated request, so it
+    // comes back as a blob rather than a link the browser could follow on its own.
+    taskFile: async (id, fileId) => {
+      const res = await api.get(`/portal/my-work/tasks/${id}/files/${fileId}`, { responseType: 'blob' })
+      return URL.createObjectURL(res.data)
+    },
     tickets:  () => api.get('/portal/my-work/tickets').then(r => r.data?.data ?? r.data),
     raiseTicket:  (body) => api.post('/portal/my-work/tickets', body).then(r => r.data),
     ticket:       (id) => api.get(`/portal/my-work/tickets/${id}`).then(r => r.data),

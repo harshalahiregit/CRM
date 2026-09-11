@@ -327,6 +327,19 @@ export const purchasePortalApi = {
     tasks:            () => api.get('/portal/purchase/work-tasks').then(r => r.data?.data ?? r.data),
     taskStatuses:     () => api.get('/portal/purchase/task-statuses').then(r => r.data?.data ?? r.data),
     updateTaskStatus: (id, status) => api.patch(`/portal/purchase/tasks/${id}/status`, { status }).then(r => r.data?.data ?? r.data),
+    // Same three names as portalApi.myWork, so MyWork's task detail renders
+    // against either portal unchanged.
+    task:        (id) => api.get(`/portal/purchase/work-tasks/${id}`).then(r => r.data?.data ?? r.data),
+    commentTask: (id, { body = '', files = [] } = {}) => {
+      const fd = new FormData()
+      if (body) fd.append('body', body)
+      files.forEach(f => fd.append('files[]', f))
+      return upload(`/portal/purchase/work-tasks/${id}/comments`, fd)
+    },
+    taskFile: async (id, fileId) => {
+      const res = await api.get(`/portal/purchase/work-tasks/${id}/files/${fileId}`, { responseType: 'blob' })
+      return URL.createObjectURL(res.data)
+    },
     tickets:          () => api.get('/portal/purchase/work-tickets').then(r => r.data?.data ?? r.data),
     // Raise and reply, matching portalApi.myWork so MyWork renders identically
     // against either portal. Purchase had the list alone, which is why its

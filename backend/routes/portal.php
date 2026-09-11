@@ -23,6 +23,12 @@ Route::middleware(['auth:sanctum', 'role:vendor,third_party_vendor'])->prefix('p
     Route::get('/task-statuses', [VendorWorkController::class, 'taskStatuses']);
     // Vendor writes: advance an own task's status; log/list expenses on own projects.
     Route::patch('/tasks/{task}/status', [VendorWorkController::class, 'updateTaskStatus'])->where('task', '[0-9]+');
+    // One task in full — brief, checklist, conversation, files — plus the reply
+    // that makes it a conversation. Ownership is re-checked per route, never
+    // inherited from the list the vendor came from.
+    Route::get('/tasks/{task}', [VendorWorkController::class, 'task'])->where('task', '[0-9]+');
+    Route::post('/tasks/{task}/comments', [VendorWorkController::class, 'commentTask'])->where('task', '[0-9]+');
+    Route::get('/tasks/{task}/files/{file}', [VendorWorkController::class, 'downloadTaskFile'])->where(['task' => '[0-9]+', 'file' => '[0-9]+']);
     Route::get('/expenses', [VendorWorkController::class, 'expenses']);
     Route::post('/expenses', [VendorWorkController::class, 'storeExpense']);
     Route::get('/tickets',  [VendorWorkController::class, 'tickets']);
@@ -374,6 +380,11 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal', 'vendor.onboarded']
     Route::get('/work-tasks',                         [$ppar, 'tasks']);
     Route::get('/task-statuses',                      [$ppar, 'taskStatuses']);
     Route::patch('/tasks/{task}/status',              [$ppar, 'updateTaskStatus'])->where('task', '[0-9]+');
+    // Mirrors the TPV portal's task detail/reply/download, under Purchase's own
+    // prefix and its own ownership check.
+    Route::get('/work-tasks/{task}',                  [$ppar, 'task'])->where('task', '[0-9]+');
+    Route::post('/work-tasks/{task}/comments',        [$ppar, 'commentTask'])->where('task', '[0-9]+');
+    Route::get('/work-tasks/{task}/files/{file}',     [$ppar, 'downloadTaskFile'])->where(['task' => '[0-9]+', 'file' => '[0-9]+']);
     Route::get('/work-tickets',                       [$ppar, 'tickets']);
     // The vendor raises and replies to its own support tickets - the TPV portal
     // has had these since day one; Purchase had only the read above, which is

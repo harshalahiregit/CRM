@@ -160,7 +160,12 @@ class TaskNotifier
      *
      * @param  int[]  $userIds  recipients the caller already worked out
      */
-    public function activity(Task $task, array $userIds, string $type, string $title, ?string $body, int $actorId): void
+    /**
+     * $actorId is nullable because the actor is not always a User: a Purchase
+     * vendor commenting from its portal is a PurchaseVendor, and there is no user
+     * id that would honestly stand in for it. Null simply excludes nobody.
+     */
+    public function activity(Task $task, array $userIds, string $type, string $title, ?string $body, ?int $actorId): void
     {
         $userIds = array_values(array_diff(array_map('intval', $userIds), [$actorId]));
         if (! $userIds || ! $this->config->on($task->tenant_id, 'notify_activity')) {

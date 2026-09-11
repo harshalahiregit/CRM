@@ -589,11 +589,20 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                   <li key={c.id} className="group relative flex gap-2.5">
                     <span className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0"
                       style={{ background: `color-mix(in srgb, ${TASK_ACCENT} 14%, transparent)`, color: TASK_ACCENT }}>
-                      {(c.user?.name || '?').slice(0, 1).toUpperCase()}
+                      {(c.author_label || c.user?.name || '?').slice(0, 1).toUpperCase()}
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="text-xs">
-                        <span className="font-bold" style={{ color: 'var(--text-h)' }}>{c.user?.name || 'Unknown'}</span>
+                        <span className="font-bold" style={{ color: 'var(--text-h)' }}>{c.author_label || c.user?.name || 'Unknown'}</span>
+                        {/* An outside voice is marked as one. Without this a
+                            vendor's message is indistinguishable from a
+                            colleague's, and people reply accordingly. */}
+                        {c.is_vendor_author && (
+                          <span className="ml-1.5 px-1.5 py-px rounded-full text-[9px] font-black align-middle"
+                            style={{ background: `color-mix(in srgb, ${TASK_ACCENT} 16%, transparent)`, color: TASK_ACCENT }}>
+                            VENDOR
+                          </span>
+                        )}
                         <span className="ml-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
                           {new Date(c.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                         </span>

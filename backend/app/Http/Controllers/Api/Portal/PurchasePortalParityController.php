@@ -16,9 +16,12 @@ use App\Models\Vendor\VendorShipmentPackage;
 use App\Services\Helpdesk\HelpdeskService;
 use App\Services\Purchase\PurchaseVendorPerformanceService;
 use App\Services\StatusService;
+use App\Services\Task\TaskService;
 use App\Support\RichText;
+use App\Support\Task\PortalTaskView;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 /**
@@ -103,13 +106,105 @@ class PurchasePortalParityController extends Controller
     public function updateTaskStatus(Request $request, Task $task)
     {
         $v = $this->vendor($request);
-        abort_unless($task->rel_type === 'purchase_vendor' && (int) $task->rel_id === (int) $v->id && (int) $task->tenant_id === (int) $v->tenant_id, 404, 'Task not found');
+        $this->assertOwnTask($request, $task);
 
         $keys = app(StatusService::class)->keys('task', (int) $v->tenant_id);
         $data = $request->validate(['status' => ['required', Rule::in($keys)]]);
-        $task->update(['status' => $data['status']]);
+
+        /*
+         * Through the service — same reasoning as the TPV portal's version: a
+         * bare update() skipped the status workflow, left date_finished unset and
+         * told the admin side nothing.
+         *
+         * The actor is null rather than a user id, because a Purchase vendor IS
+         * NOT A USER and there is no id here that would mean the right thing.
+         * changeStatus() only uses the actor to keep somebody from being notified
+         * about their own action, and the vendor is not on the watcher list to
+         * begin with, so null costs nothing and invents nobody.
+         */
+        $task = app(TaskService::class)->changeStatus(
+            (int) $task->id, $data['status'], (int) $v->tenant_id, null,
+        );
 
         return response()->json(['data' => ['id' => $task->id, 'status' => $task->status]]);
+    }
+
+    /* ── One task, in full ───────────────────────────────────────────────────
+     * Mirrors VendorWorkController's task/commentTask/downloadTaskFile. Same
+     * payload, same thread, different identity — which is the only part that
+     * actually differs between the two portals.
+     */
+
+    public function task(Request $request, Task $task)
+    {
+        $this->assertOwnTask($request, $task);
+
+        return response()->json(['data' => PortalTaskView::detail($task)]);
+    }
+
+    public function commentTask(Request $request, Task $task)
+    {
+        $v = $this->vendor($request);
+        $this->assertOwnTask($request, $task);
+
+        $data = $request->validate([
+            'body'    => ['nullable', 'string', 'max:5000', 'required_without:files'],
+            'files'   => ['nullable', 'array', 'max:5'],
+            'files.*' => ['file', 'max:10240'],
+        ]);
+
+        /*
+         * The vendor authors as ITSELF, not as a User.
+         *
+         * There is no user id that would be honest here: purchase_vendors.user_id
+         * points at the redundant login the vendor-role retirement deactivated,
+         * and attributing the comment to it would credit a person's account for
+         * something a company wrote. addVendorComment() writes the polymorphic
+         * author columns instead — into the same task_comments thread the staff
+         * console reads, so both sides see one conversation.
+         */
+        $comment = app(TaskService::class)->addVendorComment(
+            (int) $task->id,
+            RichText::fromUntrusted($data['body'] ?? ''),
+            (int) $v->tenant_id,
+            'purchase_vendor',
+            (int) $v->id,
+            (string) ($v->company_name ?: 'Vendor'),
+            $request->file('files', []),
+        );
+
+        return response()->json(['data' => ['id' => $comment->id]], 201);
+    }
+
+    public function downloadTaskFile(Request $request, Task $task, int $file)
+    {
+        $v = $this->vendor($request);
+        $this->assertOwnTask($request, $task);
+
+        $row = app(TaskService::class)->findFile($file, (int) $task->id, (int) $v->tenant_id);
+
+        abort_unless(Storage::disk('local')->exists($row->file_path), 404, 'File missing from storage.');
+
+        return Storage::disk('local')->download($row->file_path, $row->file_name);
+    }
+
+    /**
+     * This vendor's own task, or a 404.
+     *
+     * Lifted out of updateTaskStatus, which used to carry this check inline —
+     * three more routes now depend on it, and an ownership rule written four
+     * times is an ownership rule that will eventually be written three times.
+     */
+    private function assertOwnTask(Request $request, Task $task): void
+    {
+        $v = $this->vendor($request);
+
+        abort_unless(
+            $task->rel_type === 'purchase_vendor'
+                && (int) $task->rel_id === (int) $v->id
+                && (int) $task->tenant_id === (int) $v->tenant_id,
+            404, 'Task not found'
+        );
     }
 
     /**

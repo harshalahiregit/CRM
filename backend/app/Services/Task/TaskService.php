@@ -57,6 +57,7 @@ class TaskService
         private \App\Services\StatusService $statuses,
         private TaskTreeService $tree,
         private TaskNotifier $notifier,
+        private TaskVendorLinkNotifier $vendorNotifier,
         ?CustomerServiceContract $customers = null,
     ) {
         $this->customers = $customers ?? new MockCustomerService();
@@ -347,13 +348,31 @@ class TaskService
         }
         $this->syncRelations($task->id, $relations, $tenantId);
 
+        // Filing a task against a vendor is how a Purchase vendor is reached at
+        // all — it has no User to assign — so the link itself has to announce
+        // itself. See TaskVendorLinkNotifier.
+        $this->notifyVendorLink($task, $userId);
+
         $task = $this->decorateRelation($task->fresh('creator'), $tenantId);
         $task->setAttribute('tags', $this->tags->tagsFor('task', $task->id, $tenantId));
 
         return $task;
     }
 
-    public function update(int $id, array $data, int $tenantId): Task
+    /**
+     * Ring the vendor a task is filed against, if it is filed against one.
+     *
+     * Kept in one place so create() and update() cannot drift apart — a task
+     * linked on the edit screen has to notify exactly as one linked at creation.
+     */
+    private function notifyVendorLink(Task $task, ?int $actorId): void
+    {
+        if (in_array($task->rel_type, ['tpv_vendor', 'purchase_vendor'], true) && $task->rel_id) {
+            $this->vendorNotifier->linked($task, (string) $task->rel_type, (int) $task->rel_id, $actorId);
+        }
+    }
+
+    public function update(int $id, array $data, int $tenantId, ?int $actorId = null): Task
     {
         $task = $this->find($id, $tenantId);
 
@@ -375,7 +394,17 @@ class TaskService
             $task->deadline_notified = false;
         }
 
+        // Captured BEFORE the save, because after it isDirty() is clean again.
+        // Only a genuine change announces itself: editing a description on a task
+        // that has been linked to the same vendor for a month must not tell them
+        // it is new.
+        $linkChanged = $task->isDirty('rel_type') || $task->isDirty('rel_id');
+
         $task->save();
+
+        if ($linkChanged) {
+            $this->notifyVendorLink($task, $actorId);
+        }
 
         if ($tags !== null) {
             $this->tags->sync('task', $task->id, $tags, $tenantId);
@@ -716,7 +745,19 @@ class TaskService
         return $this->find($taskId, $tenantId)->comments()->with('user:id,name', 'attachments')->get();
     }
 
-    public function addComment(int $taskId, string $content, int $tenantId, int $userId, array $files = []): TaskComment
+    /**
+     * Post a comment on a task.
+     *
+     * $userId is the author when the author is a User (staff, TPV). It is null
+     * for an author that has no User row -- a Purchase vendor writing from its
+     * portal -- and $author then carries who it actually was:
+     *
+     *     ['kind' => 'purchase_vendor', 'id' => 7, 'name' => 'Acme Ltd']
+     *
+     * The name is snapshotted rather than joined, because the shared Task module
+     * must not learn how to read a Purchase table. See TaskComment.
+     */
+    public function addComment(int $taskId, string $content, int $tenantId, ?int $userId, array $files = [], ?array $author = null): TaskComment
     {
         $task = $this->find($taskId, $tenantId);
 
@@ -728,7 +769,12 @@ class TaskService
         $content = \App\Support\HtmlSanitizer::clean($content);
 
         $comment = $task->comments()->create([
-            'tenant_id' => $tenantId, 'user_id' => $userId, 'content' => $content,
+            'tenant_id'   => $tenantId,
+            'user_id'     => $userId,
+            'content'     => $content,
+            'author_kind' => $author['kind'] ?? 'user',
+            'author_id'   => $author['id'] ?? $userId,
+            'author_name' => $author['name'] ?? null,
         ]);
 
         // Attachments dropped on the comment are stored as task files carrying this
@@ -743,10 +789,15 @@ class TaskService
                 'file_size'   => $file->getSize(),
                 'mime_type'   => $file->getClientMimeType(),
                 'uploaded_by' => $userId,
+                'author_kind' => $author['kind'] ?? 'user',
+                'author_id'   => $author['id'] ?? $userId,
+                'author_name' => $author['name'] ?? null,
             ]);
         }
 
-        $author = User::find($userId)?->name ?? 'Someone';
+        // Who the notifications will say this came from. A non-User author has
+        // only the name it supplied -- there is nothing to look up.
+        $author = $author['name'] ?? ($userId ? (User::find($userId)?->name ?? 'Someone') : 'Someone');
         $excerpt = Str::limit(trim(strip_tags($content)), 120) ?: 'shared a file';
 
         // @mentioned people are told they were named; everyone else watching gets
@@ -784,6 +835,23 @@ class TaskService
     }
 
     /**
+     * The same thread, written to by a vendor that is not a User.
+     *
+     * A thin, deliberately named front door onto addComment() so the portal
+     * controllers do not each hand-assemble an author array -- and so anyone
+     * reading the portal code can see at a glance that a vendor comment lands in
+     * the SAME task_comments thread the admin reads, not a parallel one.
+     */
+    public function addVendorComment(int $taskId, string $content, int $tenantId, string $kind, int $vendorId, string $vendorName, array $files = []): TaskComment
+    {
+        return $this->addComment($taskId, $content, $tenantId, null, $files, [
+            'kind' => $kind,
+            'id'   => $vendorId,
+            'name' => $vendorName,
+        ]);
+    }
+
+    /**
      * Resolve "@Name Surname" mentions to staff ids. Names are matched longest-first
      * so "@Anna Marie" doesn't get claimed by a user called "Anna".
      */
@@ -815,7 +883,7 @@ class TaskService
      * browser does routinely. Both are handled here, and the loose match is
      * bounded so short names stop matching the insides of ordinary words.
      */
-    private function mentionedUserIds(string $content, int $tenantId, int $actorId): array
+    private function mentionedUserIds(string $content, int $tenantId, ?int $actorId): array
     {
         $hits = [];
 
@@ -835,7 +903,9 @@ class TaskService
 
         $staff = User::where('tenant_id', $tenantId)
             ->whereNotIn('role', self::EXTERNAL_ROLES)
-            ->where('id', '!=', $actorId)
+            // Guarded: a null actor is a non-User author, and `id != NULL` is
+            // never true, which would hand back an empty roster.
+            ->when($actorId, fn ($q) => $q->where('id', '!=', $actorId))
             ->get(['id', 'name'])
             // Longest first, so "@Priya Sharma" is credited to Priya Sharma and
             // not to a colleague who happens to be called Priya.
@@ -879,7 +949,7 @@ class TaskService
      * a claim, not a fact: it is checked against the same roster the loose match
      * uses before anybody is notified.
      */
-    private function keepMentionable(array $ids, int $tenantId, int $actorId): array
+    private function keepMentionable(array $ids, int $tenantId, ?int $actorId): array
     {
         $ids = array_values(array_unique(array_filter($ids)));
         if (! $ids) {
@@ -888,7 +958,7 @@ class TaskService
 
         return User::where('tenant_id', $tenantId)
             ->whereNotIn('role', self::EXTERNAL_ROLES)
-            ->where('id', '!=', $actorId)
+            ->when($actorId, fn ($q) => $q->where('id', '!=', $actorId))
             ->whereIn('id', $ids)
             ->pluck('id')
             ->map(fn ($id) => (int) $id)
