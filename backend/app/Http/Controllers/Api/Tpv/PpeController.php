@@ -160,6 +160,31 @@ class PpeController extends Controller
         return response()->json($this->ppe->markUsed($issue, $data, $request->user()));
     }
 
+    /**
+     * Record that issued gear was actually checked.
+     *
+     * A rule may set `verification_required`, and until now that flag was
+     * settable, saved and displayed while nothing read it and nothing could
+     * satisfy it. A harness or a fall-arrest lanyard is why it exists: the item
+     * being in someone's hands is not the same as the item being fit to use.
+     */
+    public function verifyIssue(Request $request, TpvWorkerPpeIssue $issue)
+    {
+        $this->assertTenant($request, $issue);
+
+        $data = $request->validate([
+            'notes' => 'nullable|string|max:500',
+        ]);
+
+        $issue->update([
+            'verified_at'        => now(),
+            'verified_by'        => $request->user()->id,
+            'verification_notes' => $data['notes'] ?? null,
+        ]);
+
+        return response()->json($issue->fresh());
+    }
+
     /** 404 rather than 403 — the codebase hides other tenants' records. */
     private function assertTenant(Request $request, $model): void
     {

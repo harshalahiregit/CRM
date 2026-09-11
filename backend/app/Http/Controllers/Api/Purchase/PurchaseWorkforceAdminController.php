@@ -207,6 +207,35 @@ class PurchaseWorkforceAdminController extends Controller
     }
 
     /**
+     * Record that issued gear was actually checked.
+     *
+     * Mirrors the TPV endpoint. A rule may set `verification_required`, and
+     * until now that flag was settable, saved and displayed while nothing read
+     * it and nothing could satisfy it — the item being in someone's hands is
+     * not the same as the item being fit to use.
+     */
+    public function verifyPpe(Request $request, PurchaseWorkerPpeIssue $issue)
+    {
+        abort_unless(
+            (int) $issue->tenant_id === (int) $request->user()->tenant_id,
+            404,
+            'PPE issue not found'
+        );
+
+        $data = $request->validate([
+            'notes' => 'nullable|string|max:500',
+        ]);
+
+        $issue->update([
+            'verified_at'        => now(),
+            'verified_by'        => $request->user()->id,
+            'verification_notes' => $data['notes'] ?? null,
+        ]);
+
+        return response()->json($issue->fresh());
+    }
+
+    /**
      * The PPE catalogue — what kit exists to issue.
      *
      * PurchasePpeService::catalogue() has always existed and was reachable only

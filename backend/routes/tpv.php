@@ -190,6 +190,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::post('/ppe/issues/{issue}/return',             [\App\Http\Controllers\Api\Tpv\PpeController::class, 'returnIssue']);
     Route::post('/ppe/issues/{issue}/replace',            [\App\Http\Controllers\Api\Tpv\PpeController::class, 'replaceIssue']);
     Route::post('/ppe/issues/{issue}/use',                [\App\Http\Controllers\Api\Tpv\PpeController::class, 'markUsed']);
+    // Signs off that issued gear was checked, satisfying a rule that sets
+    // verification_required. Until this existed that flag could be configured
+    // but never met, so nothing read it.
+    Route::post('/ppe/issues/{issue}/verify',             [\App\Http\Controllers\Api\Tpv\PpeController::class, 'verifyIssue']);
     Route::get('/workers/stats',                          [TpvWorkerController::class, 'stats']);
     Route::get('/workers',                                [TpvWorkerController::class, 'index']);
     Route::post('/workers',                               [TpvWorkerController::class, 'store']);

@@ -760,6 +760,9 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('purchase')->group(fun
     Route::post('/workforce/workers/{worker}/reinstate',  [PurchaseWorkforceAdminController::class, 'reinstate']);
     Route::post('/workforce/workers/{worker}/terminate',  [PurchaseWorkforceAdminController::class, 'terminate']);
     Route::post('/workforce/ppe/issues/{issue}/return',   [PurchaseWorkforceAdminController::class, 'returnPpe']);
+    // Mirrors the TPV verify route — signs off that issued gear was checked,
+    // which is the only way a rule setting verification_required can be met.
+    Route::post('/workforce/ppe/issues/{issue}/verify',   [PurchaseWorkforceAdminController::class, 'verifyPpe']);
 
     // Vendor onboarding decisions — a requester must not approve their own vendor.
     Route::post('/onboarding/{onboarding}/approve',  [PurchaseOnboardingController::class, 'approve']);

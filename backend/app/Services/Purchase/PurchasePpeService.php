@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\Inventory\ConfigService;
 use App\Services\Inventory\StockService;
 use App\Services\Tpv\PpeInventoryService;
+use App\Support\Shared\PpeReplacement;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -133,7 +134,46 @@ class PurchasePpeService
     /** Product ids this worker currently holds (issued, not fully handed back). */
     private function heldProductIds(PurchaseWorker $worker): Collection
     {
-        return $this->heldBy($worker)->pluck('inventory_item_id')->filter()->unique();
+        return $this->heldIssues($worker)->keys();
+    }
+
+    /**
+     * What the worker is currently holding, newest issue per product.
+     *
+     * Mirrors PpeInventoryService::heldIssues — two of the three questions a
+     * rule can ask are about the ISSUE rather than the product: when it was
+     * handed over (has it passed its replacement interval) and whether anyone
+     * checked it (does the rule demand verification).
+     *
+     * @return Collection<int, PurchaseWorkerPpeIssue>
+     */
+    private function heldIssues(PurchaseWorker $worker): Collection
+    {
+        return $this->heldBy($worker)
+            ->filter(fn (PurchaseWorkerPpeIssue $i) => $i->inventory_item_id)
+            ->sortBy([['issued_date', 'asc'], ['id', 'asc']])
+            // Latest wins: a replacement handed over today is the one that
+            // counts, not the worn item it replaced.
+            ->keyBy('inventory_item_id');
+    }
+
+    /**
+     * Does this issue satisfy this rule, right now?
+     *
+     * Identical to the TPV engine's, through the same shared rule — a worker's
+     * gear cannot be expired on one side of the site and current on the other.
+     */
+    private function issueSatisfies(?PurchaseWorkerPpeIssue $issue, PurchasePpeRequirement $rule): bool
+    {
+        if (! $issue) {
+            return false;
+        }
+
+        if (PpeReplacement::isExpired($issue->issued_date, $rule->replacement_frequency_days)) {
+            return false;
+        }
+
+        return ! $rule->verification_required || $issue->verified_at !== null;
     }
 
     /**
@@ -144,11 +184,13 @@ class PurchasePpeService
      */
     public function missingMandatoryFor(PurchaseWorker $worker): Collection
     {
-        $held = $this->heldProductIds($worker);
+        $held = $this->heldIssues($worker);
 
         return $this->requiredFor($worker)
             ->filter(fn (PurchasePpeRequirement $r) => $r->isMandatory())
-            ->reject(fn (PurchasePpeRequirement $r) => $held->contains($r->product_id))
+            // Expired gear and unverified gear count as missing — that is the
+            // whole point of a replacement interval and of a verification flag.
+            ->reject(fn (PurchasePpeRequirement $r) => $this->issueSatisfies($held->get($r->product_id), $r))
             ->map(fn (PurchasePpeRequirement $r) => $r->product)
             ->values();
     }
@@ -170,19 +212,48 @@ class PurchasePpeService
     public function complianceFor(PurchaseWorker $worker): array
     {
         $held = $this->heldBy($worker);
-        $heldIds = $held->pluck('inventory_item_id')->filter()->unique();
+        $byProduct = $this->heldIssues($worker);
         $required = $this->requiredFor($worker);
 
-        $items = $required->map(fn (PurchasePpeRequirement $r) => [
-            'product_id' => $r->product_id,
-            'name' => $r->product->name,
-            'sku' => $r->product->sku,
-            'ppe_class' => $r->ppe_class ?? 'mandatory',
-            'condition' => $r->condition,
-            'qty' => $r->qty,
-            'mandatory' => $r->isMandatory(),
-            'held' => $heldIds->contains($r->product_id),
-        ])->values();
+        $items = $required->map(function (PurchasePpeRequirement $r) use ($byProduct) {
+            $issue = $byProduct->get($r->product_id);
+
+            // A badge refused for expired gear and one refused for gear never
+            // handed over are not the same problem, and must not read the same.
+            $expired    = $issue && PpeReplacement::isExpired($issue->issued_date, $r->replacement_frequency_days);
+            $unverified = $issue && $r->verification_required && $issue->verified_at === null;
+
+            return [
+                'product_id' => $r->product_id,
+                'name' => $r->product->name,
+                'sku' => $r->product->sku,
+                'ppe_class' => $r->ppe_class ?? 'mandatory',
+                'condition' => $r->condition,
+                'qty' => $r->qty,
+                'mandatory' => $r->isMandatory(),
+                'replacement_frequency_days' => $r->replacement_frequency_days,
+                'verification_required'      => (bool) $r->verification_required,
+                'issued_date'    => optional($issue?->issued_date)->toDateString(),
+                'replace_due_on' => optional(
+                    PpeReplacement::dueOn($issue?->issued_date, $r->replacement_frequency_days)
+                )->toDateString(),
+                'days_remaining' => $issue
+                    ? PpeReplacement::daysRemaining($issue->issued_date, $r->replacement_frequency_days)
+                    : null,
+                'expired'     => $expired,
+                'unverified'  => $unverified,
+                'verified_at' => optional($issue?->verified_at)->toIso8601String(),
+                // The single yes/no the badge reads: held, in date, and verified
+                // where the rule asks for it.
+                'held' => (bool) $issue && ! $expired && ! $unverified,
+                'reason' => match (true) {
+                    ! $issue    => 'Not issued',
+                    $expired    => 'Past replacement date',
+                    $unverified => 'Awaiting verification',
+                    default     => null,
+                },
+            ];
+        })->values();
 
         $missing = $items->where('mandatory', true)->where('held', false)->values();
 
