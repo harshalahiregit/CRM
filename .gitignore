@@ -23,3 +23,8 @@ frontend/vite.config.js.timestamp-*.mjs
 # Regenerated every deploy and specific to one machine's checkout, so it is
 # never committed. See DEPLOY-NEXFORE.md §9.
 backend/build-id.txt
+
+# Deploy backups pulled off the server by deploy.sh. Real data, and large —
+# never committed. Default location is ~/sangoe-backups, outside the repo;
+# this covers anyone who points SANGOE_BACKUP_DIR at the working tree.
+sangoe-backups/

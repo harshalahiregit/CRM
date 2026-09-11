@@ -32,25 +32,61 @@ and three staff accounts — see `database/seeders/DatabaseSeeder.php`).
 
 ## 2. Deploying an update
 
-Four commands from `CRM/` on your laptop. Roughly three minutes.
-
 ```bash
 cd ~/Desktop/sangoe_crm/CRM
-
-# 1. Build the frontend. There is no Node on the server, so this MUST happen here.
-#    `npm run build` picks up .env.production automatically → VITE_API_URL=/api,
-#    same-origin, so the bundle works on any domain with no rebuild.
-cd frontend && npm run build && cd ..
-
-# 2. Backend source. ONE LINE — see §6 on why line continuations bite.
-rsync -avz --exclude='vendor/' --exclude='node_modules/' --exclude='.git/' --exclude='.env' --exclude='storage/logs/*' --exclude='storage/app/*' --exclude='storage/framework/cache/*' --exclude='storage/framework/sessions/*' --exclude='storage/framework/views/*' --exclude='database/*.sqlite*' backend/ nexforeconsulting.co_bhmrselvhng@45.90.220.5:/var/www/vhosts/nexforeconsulting.com/crm.nexforeconsulting.com/
-
-# 3. Frontend build. ALWAYS AFTER the backend — see §6.
-rsync -avz frontend/dist/ nexforeconsulting.co_bhmrselvhng@45.90.220.5:/var/www/vhosts/nexforeconsulting.com/crm.nexforeconsulting.com/public/
-
-# 4. Server side.
-ssh nexforeconsulting.co_bhmrselvhng@45.90.220.5 "cd /var/www/vhosts/nexforeconsulting.com/crm.nexforeconsulting.com && P=/opt/plesk/php/8.3/bin/php && \$P /opt/psa/var/modules/composer/composer.phar install --no-dev --optimize-autoloader --no-interaction && \$P -d memory_limit=-1 artisan migrate --force && \$P artisan config:cache && \$P artisan route:cache && \$P artisan view:cache"
+./deploy.sh
 ```
+
+That is the whole deploy. It shows you a dry run, asks before writing anything,
+and refuses to continue if the site is unhealthy afterwards.
+
+**Do not deploy by typing rsync at the prompt.** That is how production was
+destroyed on 10 Sep 2026: the same command had run correctly six times that day,
+then `--delete-excluded` was added to it on the seventh. That flag **inverts
+every `--exclude`** — the arguments protecting `.env`, `vendor/`, the database
+and `storage/app/` became instructions to delete them, and all four went, along
+with the database backup taken sixty seconds earlier because its filename
+matched `*.sqlite*`. The site returned 500 mid-demo, and a day of data was
+unrecoverable.
+
+The script exists so those flags live in a reviewed file instead of a person's
+memory. It will refuse to run if `--delete`, `--delete-excluded` or
+`--remove-source-files` appears anywhere — passed in, or edited into the file.
+
+### What it does, in order
+
+| | |
+|---|---|
+| 1 | Checks the server is reachable |
+| 2 | **Pulls a backup onto your machine** — database and uploads in one pass |
+| 3 | Builds the frontend (no Node on the server, so it must happen locally) |
+| 4 | Stamps both halves with the same commit, for `sire:doctor`'s parity check |
+| 5 | **Dry run**, then waits for a yes |
+| 6 | Syncs backend, then frontend — in that order, see §6 |
+| 7 | composer · migrate · storage:link · caches |
+| 8 | Verifies the live site, and fails loudly if it is not healthy |
+
+### Options
+
+```bash
+./deploy.sh              # dry run, then asks
+./deploy.sh --yes        # skip the prompt
+./deploy.sh --no-backup  # skip the pull, only if you just took one
+```
+
+Backups land in `~/sangoe-backups/<timestamp>/`, or wherever
+`SANGOE_BACKUP_DIR` points.
+
+### Why the backup takes both halves together
+
+An attachment is a database row **and** a file on disk, stored apart. Restore
+Tuesday's rows over Friday's files and you get issues whose evidence 404s and
+files no issue references. Pulling them in one pass is the only way the two
+always match.
+
+And it pulls them **off the box**. A copy left on the server shares the disk
+that would lose it — which is exactly what happened to that sixty-second-old
+database backup.
 
 ### Verify
 
@@ -164,6 +200,36 @@ chmod 664 database/database.sqlite && chmod 775 database
 ---
 
 ## 6. Traps this deploy actually hit
+
+**`--delete-excluded` destroyed production.** 10 Sep 2026. The deploy rsync had
+run correctly six times that day; on the seventh this flag was added at the
+prompt, in the belief it meant "also clean up stale files" — that is `--delete`.
+What it actually does is **delete the paths you excluded**, so every `--exclude`
+guarding a server-owned file became an order to remove it:
+
+```
+--exclude='.env'                →  deleted
+--exclude='vendor/'             →  deleted
+--exclude='database/*.sqlite*'  →  deleted, INCLUDING the backup taken 60s earlier
+--exclude='storage/app/*'       →  deleted (the only copy of the SIRE evidence)
+--exclude='public/'             →  deleted (public/index.php, so the site 500'd)
+```
+
+The application code was untouched — git had all of it — and that is the point:
+the only things lost were the four categories git deliberately does not track.
+Recovery took ~20 minutes and cost a day of test data. The same command against
+real customer data would have been unrecoverable.
+
+Three things would each have prevented it, and none was in place:
+
+- **a script instead of a typed command** — now `deploy.sh`, which refuses any
+  delete flag
+- **`rsync -n` first** — one second, and it lists every deletion before it happens
+- **an off-box backup** — the one that existed was on the same server, matched an
+  excluded pattern, and died in the same pass
+
+Use `./deploy.sh`. If you ever genuinely need a delete flag, run it by hand with
+`--dry-run` first and take a backup onto a different machine before you start.
 
 **`rsync` line continuations get mangled on paste.** A multi-line command with
 trailing `\` came through with the last excludes folded into the destination
