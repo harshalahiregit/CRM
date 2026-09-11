@@ -165,7 +165,9 @@ class SireSlaService
         // accrues pause forever after closure. Both are wrong.
         $pauseEnd = $stopped ? $stoppedAt : $now;
         $pausedSince = $report->sla_paused_since ? CarbonImmutable::instance($report->sla_paused_since) : null;
-        $openPause = $pausedSince ? max(0, $pausedSince->diffInMinutes($pauseEnd, false)) : 0;
+        // (int) because Carbon 3 returns a float from diffInMinutes where Carbon 2
+        // returned an int -- without it every paused clock reported 30.0 minutes.
+        $openPause = $pausedSince ? (int) max(0, $pausedSince->diffInMinutes($pauseEnd, false)) : 0;
         $totalPaused = (int) ($report->sla_paused_minutes ?? 0) + $openPause;
 
         $elapsed = max(0, (int) $startedAt->diffInMinutes($end, false) - $totalPaused);

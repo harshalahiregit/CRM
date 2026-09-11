@@ -4,6 +4,7 @@ namespace Sire\Services;
 
 use Sire\Exceptions\SireException;
 use Sire\Models\Release;
+use Sire\Support\SireReleaseStatus;
 use Sire\Models\Report;
 use Sire\Dto\SireUserIdentity;
 use Sire\Support\SireStatus;
@@ -46,7 +47,11 @@ class SireReleaseService
                 'name'         => $data['name'] ?? null,
                 'release_type' => $data['release_type'],
                 'release_date' => $data['release_date'] ?? null,
-                'status'       => $data['status'] ?? 'planned',
+                // BLOCKED, not 'planned'. A release starts closed and the gates open
+                // it; 'planned' is not in SireReleaseStatus::ALL at all, so a release
+                // created with it matched no governed transition and could never be
+                // approved or shipped -- it simply sat there looking normal.
+                'status'       => $data['status'] ?? SireReleaseStatus::BLOCKED,
                 'owner_id'     => $data['owner_id'] ?? $actor->id,
                 'summary'      => $data['summary'] ?? null,
             ]);

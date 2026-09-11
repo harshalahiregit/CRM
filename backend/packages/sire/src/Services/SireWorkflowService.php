@@ -51,6 +51,7 @@ class SireWorkflowService
         private readonly SireNotifier $notifier,
         private readonly SireSettingsProvider $settings,
         private readonly SireAuditProvider $audit,
+        private readonly SireDuplicateService $duplicates,
     ) {
     }
 
@@ -336,9 +337,18 @@ class SireWorkflowService
         ]);
 
         foreach (array_unique($writable) as $field) {
-            if (array_key_exists($field, $payload) && filled($payload[$field])) {
-                $report->{$field} = $payload[$field];
+            if (! array_key_exists($field, $payload) || ! filled($payload[$field])) {
+                continue;
             }
+
+            // A duplicate pointer is the one payload field that cannot be taken
+            // at face value: it can name the issue itself, close a loop, or point
+            // at a duplicate rather than the canonical issue. The service owns
+            // all three rules -- refusing the first two and flattening the third
+            // -- and writing the raw value here bypassed every one of them.
+            $report->{$field} = $field === 'duplicate_of_id'
+                ? $this->duplicates->resolveTargetFor($report, (int) $payload[$field])
+                : $payload[$field];
         }
 
         foreach ($definition['clears'] ?? [] as $field) {

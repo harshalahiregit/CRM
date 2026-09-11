@@ -4,10 +4,18 @@ namespace Sire\Http\Requests;
 
 use Sire\Models\CorrectiveAction;
 use Illuminate\Foundation\Http\FormRequest;
+use Sire\Http\Requests\Concerns\ChecksBoundTenant;
 use Illuminate\Validation\Rule;
 
 class StoreCapaRequest extends FormRequest
 {
+    use ChecksBoundTenant;
+
+    public function authorize(): bool
+    {
+        return $this->assertBoundTenant('report');
+    }
+
     public function rules(): array
     {
         $tenantId = (int) $this->user()->tenant_id;

@@ -4,10 +4,18 @@ namespace Sire\Http\Requests;
 
 use Sire\Models\RootCause;
 use Illuminate\Foundation\Http\FormRequest;
+use Sire\Http\Requests\Concerns\ChecksBoundTenant;
 use Illuminate\Validation\Rule;
 
 class StoreRootCauseRequest extends FormRequest
 {
+    use ChecksBoundTenant;
+
+    public function authorize(): bool
+    {
+        return $this->assertBoundTenant('report');
+    }
+
     public function rules(): array
     {
         return [
