@@ -266,10 +266,11 @@ export function OnboardingTab() {
             : <><Rocket size={18} style={{ color: '#7C3AED' }} /><span style={{ fontSize: 14, color: 'var(--text-muted)' }}>No onboarding started for this vendor yet. Start it from the <button onClick={() => navigate('/app/purchase/onboarding')} style={{ ...linkInline }}>Vendor Onboarding</button> workspace.</span></>}
         </div>
       </div>
-      <div className="card-3d" style={card}>
-        <h3 style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-h)', margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '.03em' }}>Documents</h3>
-        <PurchaseVendorDocumentsReadOnly vendorId={vendor.id} />
-      </div>
+      {/* The documents block that used to sit here has gone. Compliance ›
+          Documents is the same list from the same endpoint, so this screen was
+          showing a second copy of it under a different heading — which is
+          exactly how somebody ends up unsure whether they are looking at one
+          set of papers or two. */}
     </div>
   )
 }
