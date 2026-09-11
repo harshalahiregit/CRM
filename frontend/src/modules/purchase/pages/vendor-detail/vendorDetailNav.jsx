@@ -5,6 +5,7 @@ import {
   Paperclip, LifeBuoy, BookOpen, Lock, BellRing,
   Gauge, Trophy, Gavel, MessageSquare, Share2,
   ClipboardCheck, ShieldCheck, HardHat, DoorOpen, AlertOctagon,
+  Boxes, RefreshCw, LogOut,
 } from 'lucide-react'
 
 /**
@@ -32,7 +33,7 @@ export const VENDOR_NAV_GROUPS = [
     items: [
       { key: 'overview',   label: 'Overview',   icon: LayoutDashboard },
       { key: 'profile',    label: 'Profile',    icon: User },
-      { key: 'contacts',   label: 'Contacts',   icon: Users },
+      { key: 'contacts',   label: 'Contact',    icon: Users },
       { key: 'customer',   label: 'Customer',   icon: Building2 },
       { key: 'onboarding', label: 'Onboarding', icon: ClipboardList },
     ],
@@ -64,16 +65,20 @@ export const VENDOR_NAV_GROUPS = [
     ],
   },
   {
-    title: 'Execution',
+    // Named Operations, as TPV names it. The two sidebars described the same
+    // group under two different words, which made them read as further apart
+    // than they were whenever anybody compared them side by side.
+    title: 'Operations',
     items: [
-      { key: 'project',     label: 'Project',     icon: FolderKanban },
+      { key: 'project',       label: 'Project',       icon: FolderKanban },
+      { key: 'work-packages', label: 'Work Packages', icon: Boxes },
       { key: 'tasks',       label: 'Tasks',       icon: ListChecks },
       { key: 'expenses',    label: 'Expenses',    icon: Coins },
       { key: 'appointment', label: 'Appointment', icon: CalendarClock },
       { key: 'meeting',     label: 'Meeting',     icon: Video },
       // No todo table exists. tasks/task_checklist_items belong to the Task
       // module and neither is vendor-scoped.
-      { key: 'todo',        label: 'Todo Item',   icon: CheckSquare },
+      { key: 'todo',        label: 'ToDo',        icon: CheckSquare },
       { key: 'notes',       label: 'Notes',       icon: StickyNote },
       // The Contract module's agreements for this vendor. Distinct from the
       // Commercial section's Contracts view (purchase_contracts), which is
@@ -94,8 +99,16 @@ export const VENDOR_NAV_GROUPS = [
     // Compliance group. Both are backed by their own Purchase tables/columns.
     title: 'Compliance',
     items: [
-      { key: 'prequalification', label: 'Prequalification', icon: ClipboardCheck },
-      { key: 'due-diligence',    label: 'Due Diligence',    icon: ShieldCheck },
+      { key: 'documents',          label: 'Documents',           icon: FileText },
+      { key: 'prequalification',   label: 'Prequalification',    icon: ClipboardCheck },
+      { key: 'compliance-register', label: 'Compliance Register', icon: ShieldCheck },
+      { key: 'due-diligence',      label: 'Due Diligence',       icon: ShieldCheck },
+      { key: 'inspections',        label: 'Inspections',         icon: ClipboardCheck },
+      { key: 'ncr',                label: 'NCR',                 icon: FileX },
+      { key: 'capa',               label: 'CAPA',                icon: CheckSquare },
+      { key: 'ptw',                label: 'PTW',                 icon: Lock },
+      { key: 'incidents',          label: 'Incidents',           icon: AlertOctagon },
+      { key: 'visitors',           label: 'Visitors',            icon: Users },
     ],
   },
   {
@@ -107,11 +120,14 @@ export const VENDOR_NAV_GROUPS = [
     // business rules to fill them, not wiring.
     title: 'Performance',
     items: [
-      { key: 'risk-score', label: 'Risk Score', icon: Gauge },
-      { key: 'award',      label: 'Award',      icon: Trophy },
-      { key: 'penalty',    label: 'Penalty',    icon: Gavel },
-      { key: 'feedback',   label: 'Feedback',   icon: MessageSquare },
-      { key: 'referral',   label: 'Referral',   icon: Share2 },
+      { key: 'risk-score',  label: 'Risk Score',     icon: Gauge },
+      { key: 'renewal',     label: 'Renewal',        icon: RefreshCw },
+      { key: 'offboarding', label: 'Offboarding',    icon: LogOut },
+      // TPV spells it "Award / Reward"; matched so the two sidebars read the same.
+      { key: 'award',       label: 'Award / Reward', icon: Trophy },
+      { key: 'penalty',     label: 'Penalty',        icon: Gavel },
+      { key: 'feedback',    label: 'Feedback',       icon: MessageSquare },
+      { key: 'referral',    label: 'Referral',       icon: Share2 },
     ],
   },
 ]

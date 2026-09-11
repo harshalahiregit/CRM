@@ -49,6 +49,11 @@ import {
 import {
   WorkforceTab, MedicalTab, TrainingTab, GateLogTab, StrikesTab,
 } from './workforceTabs'
+import {
+  VendorDocumentsTab, VendorComplianceRegisterTab, VendorInspectionsTab,
+  VendorNcrTab, VendorCapaTab, VendorPermitsTab, VendorIncidentsTab,
+  VendorVisitorsTab, VendorWorkPackagesTab, VendorRenewalTab, VendorOffboardingTab,
+} from './complianceTabs'
 import VendorTasksPanel from '@/components/vendor/VendorTasksPanel'
 import {
   fmtMoney, fmtDate,
@@ -1049,9 +1054,24 @@ export const TAB_ELEMENTS = {
   training: <TrainingTab />,
   'gate-log': <GateLogTab />,
   strikes: <StrikesTab />,
-  // Compliance — Purchase-native prequalification + due-diligence (mirror TPV)
+  // Compliance — Purchase-native prequalification + due-diligence (mirror TPV),
+  // plus the eight registers whose endpoints and vendor_id filters already
+  // existed and only lacked a tab on the vendor itself.
+  documents: <VendorDocumentsTab />,
   prequalification: <PrequalificationTab />,
+  'compliance-register': <VendorComplianceRegisterTab />,
   'due-diligence': <DueDiligenceTab />,
+  inspections: <VendorInspectionsTab />,
+  ncr: <VendorNcrTab />,
+  capa: <VendorCapaTab />,
+  ptw: <VendorPermitsTab />,
+  incidents: <VendorIncidentsTab />,
+  visitors: <VendorVisitorsTab />,
+
+  // Operations / Performance
+  'work-packages': <VendorWorkPackagesTab />,
+  renewal: <VendorRenewalTab />,
+  offboarding: <VendorOffboardingTab />,
   // Commercial — all native to purchase_vendor_id
   quotations: <QuotationsTab />,
   contracts: <ContractsTab />,

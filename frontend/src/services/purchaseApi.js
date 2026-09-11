@@ -585,6 +585,29 @@ export const purchaseApi = {
   },
 
   // ── Non-Conformance Reports (mirror of TPV §24 — purchase_ncrs) ─────────
+  /* The three registers Purchase served but had no client for. Their routes and
+     vendor_id filtering were already in place; only the JS was missing, which
+     is why the vendor workspace had no tab for any of them while TPV did. */
+  permits: {
+    list:   (params = {}) => api.get('/purchase/permits', { params }).then(r => r.data),
+    stats:  ()            => api.get('/purchase/permits/stats').then(r => r.data),
+    get:    (id)          => api.get(`/purchase/permits/${id}`).then(r => r.data),
+    create: (data)        => api.post('/purchase/permits', data).then(r => r.data),
+  },
+
+  visitors: {
+    list:     (params = {}) => api.get('/purchase/visitors', { params }).then(r => r.data),
+    create:   (data)        => api.post('/purchase/visitors', data).then(r => r.data),
+    checkout: (id)          => api.post(`/purchase/visitors/${id}/checkout`).then(r => r.data),
+  },
+
+  workPackages: {
+    list:   (params = {}) => api.get('/purchase/work-packages', { params }).then(r => r.data),
+    get:    (id)          => api.get(`/purchase/work-packages/${id}`).then(r => r.data),
+    create: (data)        => api.post('/purchase/work-packages', data).then(r => r.data),
+    update: (id, data)    => api.put(`/purchase/work-packages/${id}`, data).then(r => r.data),
+  },
+
   ncrs: {
     list:       (params = {}) => api.get('/purchase/ncrs', { params }).then(r => r.data),
     create:     (data)        => api.post('/purchase/ncrs', data).then(r => r.data),
