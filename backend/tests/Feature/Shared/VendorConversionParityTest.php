@@ -56,6 +56,54 @@ class VendorConversionParityTest extends TestCase
         );
     }
 
+    /**
+     * All four actions, not just promotion.
+     *
+     * Purchase had convert and nothing else for a while, which left an admin
+     * choosing between "permanent for ever" and "locked out on the day" when
+     * what the job needed was three more days. A lifecycle missing its middle
+     * is not a lifecycle.
+     */
+    public function test_both_modules_offer_the_whole_window_lifecycle(): void
+    {
+        foreach ([
+            'TPV' => [
+                'convert' => 'api/tpv/vendors/{vendor}/access/convert',
+                'extend'  => 'api/tpv/vendors/{vendor}/access/extend',
+                'expire'  => 'api/tpv/vendors/{vendor}/access/expire',
+            ],
+            'Purchase' => [
+                'convert' => 'api/purchase/vendors/{purchaseVendor}/convert',
+                'extend'  => 'api/purchase/vendors/{purchaseVendor}/access/extend',
+                'expire'  => 'api/purchase/vendors/{purchaseVendor}/access/expire',
+            ],
+        ] as $module => $routes) {
+            foreach ($routes as $action => $uri) {
+                $this->assertTrue($this->hasRoute('POST', $uri),
+                    "{$module} cannot {$action} a temporary vendor's access window");
+            }
+        }
+
+        // And a way to read where the window stands, for both.
+        $this->assertTrue($this->hasRoute('GET', 'api/tpv/vendors/{vendor}/access/status'));
+        $this->assertTrue($this->hasRoute('GET', 'api/purchase/vendors/{purchaseVendor}/access/status'));
+    }
+
+    public function test_both_modules_record_why_a_window_moved(): void
+    {
+        // An extension that stores only a new date cannot answer the question
+        // asked months later, which is why it moved.
+        foreach ([
+            'vendors' => 'TPV',
+            'purchase_vendors' => 'Purchase',
+        ] as $table => $module) {
+            foreach (['access_extended_at', 'access_extended_by', 'extension_reason'] as $column) {
+                $this->assertTrue(Schema::hasColumn($table, $column),
+                    "{$module} does not record {$column} — an extension leaves no trace of its reason");
+            }
+        }
+    }
+
     public function test_both_tables_record_who_converted_and_when(): void
     {
         // Without these the promotion happens and leaves no trace, which is the

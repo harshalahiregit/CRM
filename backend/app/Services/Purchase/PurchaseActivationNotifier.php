@@ -90,6 +90,45 @@ class PurchaseActivationNotifier
         });
     }
 
+    /**
+     * "Your access now runs to <date>."
+     *
+     * Sent because the vendor has been watching a countdown and may already have
+     * had warnings about it. Moving the date without saying so leaves them
+     * planning around an expiry that is no longer there.
+     */
+    public function onAccessExtended(PurchaseVendor $vendor): void
+    {
+        $id = $vendor->id;
+
+        DB::afterCommit(function () use ($id) {
+            $fresh = PurchaseVendor::find($id);
+            if (! $fresh || ! $fresh->email) {
+                return;
+            }
+
+            $until = optional($fresh->access_expires_at)->format('d M Y');
+            $ctx = $this->context($fresh, null) + ['until' => $until];
+            $plain = 'Your temporary access to the '.$ctx['companyName']
+                .' procurement portal has been extended to '.$until.'.';
+
+            $status = $this->channels->emailHtml(
+                $fresh->email,
+                'Your temporary access has been extended',
+                view('emails.purchase.access_extended', $ctx)->render(),
+                ['vendor_id' => $fresh->id, 'event' => 'access_extended'],
+                $plain,
+                $fresh->tenant_id,
+            );
+
+            if ($status !== 'sent') {
+                Log::channel('purchase')->warning('Purchase extension notice not delivered', [
+                    'purchase_vendor_id' => $fresh->id, 'status' => $status,
+                ]);
+            }
+        });
+    }
+
     /** "Your temporary access ends in N." Sent once per threshold. */
     public function onAccessExpiring(PurchaseVendor $vendor, string $threshold): void
     {

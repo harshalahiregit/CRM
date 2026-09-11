@@ -174,6 +174,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/vendors/{purchaseVendor}/tasks',    [PurchaseVendorController::class, 'tasks'])->whereNumber('purchaseVendor');
     // Workspace Overview dashboard (live per-vendor counts) + directly-linked customers.
     Route::get('/vendors/{purchaseVendor}/overview',  [PurchaseVendorController::class, 'overview'])->whereNumber('purchaseVendor');
+    // Reading where a window stands is admin+staff; moving or closing it is
+    // admin authority and lives in the role:admin group below.
+    Route::get('/vendors/{purchaseVendor}/access/status', [PurchaseVendorController::class, 'accessStatus'])->whereNumber('purchaseVendor');
     Route::get('/vendors/{purchaseVendor}/customers', [PurchaseVendorController::class, 'customers'])->whereNumber('purchaseVendor');
     Route::post('/vendors/{purchaseVendor}/customers', [PurchaseVendorController::class, 'storeCustomer'])->whereNumber('purchaseVendor');
     // Search and link, mirroring TPV. The Customer tab renders the same shared
@@ -765,6 +768,10 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('purchase')->group(fun
     // Temporary -> Permanent. Admin, because it removes an expiry somebody set
     // on purpose. TPV's counterpart is /tpv/vendors/{vendor}/access/convert.
     Route::post('/vendors/{purchaseVendor}/convert', [PurchaseVendorController::class, 'convertToPermanent'])->whereNumber('purchaseVendor');
+    // The rest of the window's lifecycle, mirroring TPV's /access/* group:
+    // extend it, close it now, or read where it stands.
+    Route::post('/vendors/{purchaseVendor}/access/extend', [PurchaseVendorController::class, 'extendAccess'])->whereNumber('purchaseVendor');
+    Route::post('/vendors/{purchaseVendor}/access/expire', [PurchaseVendorController::class, 'expireAccess'])->whereNumber('purchaseVendor');
 
     // Admin approve/reject a purchase vendor's statutory document.
     Route::post('/documents/{document}/review',      [PurchaseVendorDocumentController::class, 'review']);

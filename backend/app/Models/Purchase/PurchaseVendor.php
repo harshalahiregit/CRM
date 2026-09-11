@@ -45,6 +45,7 @@ class PurchaseVendor extends Model implements AuthenticatableContract
         // Temporary -> Permanent promotion (Purchase-owned, mirrors TPV).
         'converted_to_permanent_at', 'converted_by',
         'access_token', 'access_expires_at', 'access_status', 'access_reminders_sent',
+        'access_extended_at', 'access_extended_by', 'extension_reason', 'validity_days',
         // Portal auth (Purchase-owned)
         'password', 'portal_status', 'email_verified_at', 'email_verification_token',
         'password_reset_token', 'password_reset_expires_at', 'last_login_at', 'last_login_ip',
@@ -62,6 +63,8 @@ class PurchaseVendor extends Model implements AuthenticatableContract
         'converted_to_permanent_at' => 'datetime',
         'access_expires_at'         => 'datetime',
         'access_reminders_sent'     => 'array',
+        'access_extended_at'        => 'datetime',
+        'validity_days'             => 'integer',
         'email_verified_at'         => 'datetime',
         'password_reset_expires_at' => 'datetime',
         'last_login_at'             => 'datetime',

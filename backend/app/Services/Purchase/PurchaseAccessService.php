@@ -2,9 +2,11 @@
 
 namespace App\Services\Purchase;
 
+use App\Exceptions\BusinessException;
 use App\Models\Purchase\PurchaseVendor;
 use App\Models\User;
 use App\Support\Purchase\PurchaseAccessStatus as Access;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -75,6 +77,78 @@ class PurchaseAccessService
         }
 
         return $vendor;
+    }
+
+    /**
+     * Move the window, with a reason.
+     *
+     * Purchase could promote a temporary vendor to permanent and could let one
+     * expire, and had nothing in between — so an admin whose contractor needed
+     * three more days had to choose between "permanent for ever" and "locked out
+     * on Friday". Neither is what they meant.
+     *
+     * The reason is mandatory at the request layer, and stored. An extension
+     * recording only a new date cannot answer why the window moved, which is the
+     * question asked six months later; and a reason nobody is obliged to give is
+     * a reason nobody gives.
+     */
+    public function extend(PurchaseVendor $vendor, User $actor, array $data): PurchaseVendor
+    {
+        if (! $vendor->isTemporary()) {
+            throw new BusinessException('This vendor is permanent — there is no window to extend.', 422);
+        }
+
+        $expires = ! empty($data['access_expires_at'])
+            ? Carbon::parse($data['access_expires_at'])
+            : now()->copy()->addDays((int) ($data['validity_days'] ?? 0));
+
+        if ($expires->isPast()) {
+            throw new BusinessException('The new expiry has to be in the future.', 422);
+        }
+
+        $vendor->update([
+            'access_expires_at'  => $expires,
+            'access_status'      => Access::ACTIVE,
+            'access_extended_at' => now(),
+            'access_extended_by' => $actor->id,
+            'extension_reason'   => $data['extension_reason'],
+            'validity_days'      => $data['validity_days'] ?? $vendor->validity_days,
+            // A new window earns a new set of warnings. Without clearing these,
+            // a vendor extended past the 7-day mark is never warned again,
+            // because the sweep believes it has already told them.
+            'access_reminders_sent' => [],
+            // An extension after the window shut is how a locked-out vendor gets
+            // back in, so the suspension expire() applied has to come off.
+            'portal_status'      => $vendor->portal_status === 'suspended' ? 'active' : $vendor->portal_status,
+        ]);
+
+        $vendor->recordAudit('Temporary Access Extended', $actor, $data['extension_reason'], [
+            'access_expires_at' => $expires->toIso8601String(),
+        ]);
+        Log::channel('purchase')->info('Purchase temporary access extended', [
+            'purchase_vendor_id' => $vendor->id, 'until' => $expires->toDateString(),
+        ]);
+
+        $this->notifier->onAccessExtended($vendor->fresh());
+
+        return $vendor->fresh();
+    }
+
+    /**
+     * The admin's view of one window: the countdown, who moved it and why, and
+     * the audit trail behind it. The Purchase mirror of TpvAccessService::status.
+     */
+    public function status(PurchaseVendor $vendor): array
+    {
+        return $this->project($vendor) + [
+            'extended_at'      => optional($vendor->access_extended_at)->toIso8601String(),
+            'extended_by'      => $vendor->access_extended_by,
+            'extension_reason' => $vendor->extension_reason,
+            'converted_at'     => optional($vendor->converted_to_permanent_at)->toIso8601String(),
+            'validity_days'    => $vendor->validity_days,
+            'timeline'         => $vendor->auditLogs()->latest()->take(25)
+                ->get(['action', 'comment', 'metadata', 'actor_name', 'created_at']),
+        ];
     }
 
     /** The countdown the portal and the admin badge both read. */

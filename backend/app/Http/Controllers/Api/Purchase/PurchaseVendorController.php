@@ -24,6 +24,7 @@ use App\Services\Purchase\PurchaseVendorService;
 use App\Services\Sales\AppointmentService;
 use App\Services\Sales\ReminderService;
 use App\Services\Shared\AttachmentService;
+use App\Services\Purchase\PurchaseAccessService;
 use App\Services\Shared\NoteService;
 use App\Support\Purchase\PurchaseVendorStatus;
 use App\Support\Task\VendorTaskLink;
@@ -298,6 +299,57 @@ class PurchaseVendorController extends Controller
             'message' => 'This vendor is now permanent.',
             'vendor'  => $this->vendors->convertToPermanent($purchaseVendor, $request->user()),
         ]);
+    }
+
+    /**
+     * Move a temporary window (role:admin).
+     *
+     * The option Purchase never had. Promotion and expiry both existed and
+     * nothing sat between them, so "three more days" meant choosing between
+     * making a contractor permanent for ever and letting them be locked out on
+     * the day. TPV has had this since its temporary work landed.
+     */
+    public function extendAccess(Request $request, PurchaseVendor $purchaseVendor, PurchaseAccessService $access)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        $data = $request->validate([
+            // One or the other: an explicit date, or a number of days from now.
+            'access_expires_at' => 'nullable|date|required_without:validity_days',
+            'validity_days'     => 'nullable|integer|min:1|max:365|required_without:access_expires_at',
+            // Mandatory. An extension that records only a new date cannot answer
+            // why the window moved, which is the question asked months later.
+            'extension_reason'  => 'required|string|min:3|max:500',
+        ]);
+
+        return response()->json([
+            'message' => 'The access window has been extended.',
+            'vendor'  => $access->extend($purchaseVendor, $request->user(), $data),
+        ]);
+    }
+
+    /** Close a temporary window now (role:admin). */
+    public function expireAccess(Request $request, PurchaseVendor $purchaseVendor, PurchaseAccessService $access)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        if (! $purchaseVendor->isTemporary()) {
+            throw new \App\Exceptions\BusinessException(
+                'This vendor is permanent — there is no window to close.', 422);
+        }
+
+        return response()->json([
+            'message' => 'The access window has been closed.',
+            'vendor'  => $access->expire($purchaseVendor, $request->user()),
+        ]);
+    }
+
+    /** The countdown, who moved it and why, and the trail behind it. */
+    public function accessStatus(Request $request, PurchaseVendor $purchaseVendor, PurchaseAccessService $access)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        return response()->json($access->status($purchaseVendor));
     }
 
     public function destroy(Request $request, PurchaseVendor $purchaseVendor)

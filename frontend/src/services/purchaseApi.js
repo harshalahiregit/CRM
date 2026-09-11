@@ -176,6 +176,15 @@ export const purchaseApi = {
     // registration type, an access window, an expiry that shuts the portal —
     // and no way out of it, so a temporary vendor could only expire.
     convertToPermanent: (id) => api.post(`/purchase/vendors/${id}/convert`).then(r => r.data),
+    // The rest of the window's life, mirroring tpvApi.access. Purchase had only
+    // the promotion for a while, which left an admin choosing between
+    // "permanent for ever" and "locked out on the day" when the job needed
+    // three more days.
+    access: {
+      extend: (id, data) => api.post(`/purchase/vendors/${id}/access/extend`, data).then(r => r.data),
+      expire: (id)       => api.post(`/purchase/vendors/${id}/access/expire`).then(r => r.data),
+      status: (id)       => api.get(`/purchase/vendors/${id}/access/status`).then(r => r.data),
+    },
     delete:    (id)          => api.delete(`/purchase/vendors/${id}`).then(r => r.data),
 
     // ── Vendor detail workspace tabs ─────────────────────────────────────
