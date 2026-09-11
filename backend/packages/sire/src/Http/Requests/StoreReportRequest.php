@@ -3,6 +3,7 @@
 namespace Sire\Http\Requests;
 
 use Sire\Support\SireContextSchema;
+use Sire\Support\SirePriority;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -34,6 +35,23 @@ class StoreReportRequest extends FormRequest
                 'nullable', 'integer',
                 Rule::exists('sire_severities', 'id')->where('tenant_id', $tenantId),
             ],
+
+            // ---- set by the reporter, at Stage 1 -----------------------------
+            // The person hitting the bug is the one who knows how badly it blocks
+            // them, so urgency is theirs to state rather than something a lead
+            // guesses at later. Triage still owns the final call -- these arrive
+            // as the reporter's view of it, and the triage transition overwrites
+            // them if a lead disagrees.
+            //
+            // EVERY ONE OF THESE IS NULLABLE, AND MUST STAY THAT WAY. D45: two
+            // required fields, and tests/plug-and-play.test.mjs fails the build
+            // if a third appears. A field that blocks the form is a bug nobody
+            // reports.
+            'priority' => ['nullable', Rule::in(SirePriority::ALL)],
+
+            'steps_to_reproduce' => ['nullable', 'string', 'max:20000'],
+            'expected_result'    => ['nullable', 'string', 'max:20000'],
+            'actual_result'      => ['nullable', 'string', 'max:20000'],
 
             // ---- Report Issue context -------------------------------------
             // Loosely typed on purpose: SireContextService applies the real

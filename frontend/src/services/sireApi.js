@@ -92,6 +92,12 @@ export const sireApi = {
    */
   createReport: (payload) => api.post('/sire/reports', payload),
 
+  // Categories, severities and priorities for the Report Issue form. Its own
+  // endpoint rather than /sire/dashboard/options, which carries filter-bar
+  // rosters the form has no use for -- the button is on every screen and has to
+  // open instantly.
+  reportOptions: () => api.get('/sire/report-options'),
+
   /**
    * Attach evidence through the existing shared attachment engine. The subject
    * comes from the ROUTE, never the body, so a file cannot be retargeted by

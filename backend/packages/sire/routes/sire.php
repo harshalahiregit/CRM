@@ -63,6 +63,10 @@ Route::middleware(\Sire\Http\SireRouteMiddleware::stack())
     // MERGE NOTE says to take only store() and storeAttachment() from its slice,
     // and the slice that was meant to carry these routes never landed -- so the
     // Report Issue button posted to a 404 and the detail screen could not load.
+    // The three lists the global Report Issue form needs, and nothing else.
+    // Kept off the dashboard options endpoint: the button is on every screen
+    // for every staff member, and that payload carries filter-bar rosters.
+    Route::get('report-options', [ReportController::class, 'options']);
     Route::post('reports', [ReportController::class, 'store']);
     Route::get('reports/{report}', [ReportController::class, 'show']);
 

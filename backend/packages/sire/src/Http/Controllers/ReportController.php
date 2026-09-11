@@ -7,6 +7,9 @@ use Sire\Http\Controllers\Concerns\ResolvesSireUser;
 use Sire\Http\Controllers\Concerns\SireApiResponse;
 use Sire\Http\Requests\StoreReportRequest;
 use Sire\Models\Report;
+use Sire\Models\ReportCategory;
+use Sire\Models\ReportSeverity;
+use Sire\Support\SirePriority;
 use Sire\Contracts\SireAttachmentProvider;
 use Sire\Dto\SireAttachment;
 use Sire\Services\SireContextService;
@@ -44,6 +47,62 @@ class ReportController extends SireController
      * read from the request: StoreReportRequest strips them before validation,
      * and there is no code path here that would accept them.
      */
+    /**
+     * GET /sire/report-options — the three lists the Report Issue form needs.
+     *
+     * Deliberately NOT /sire/dashboard/options. That one carries tenants,
+     * modules and assignee rosters for the register's filter bar, and the global
+     * Report Issue button is reachable from every screen by every staff member,
+     * including people who never open the dashboard. REPORT-ISSUE.md is blunt
+     * about why this matters: an engineer who finds the button slow files a
+     * message in a chat channel instead, and that message is not tenant-scoped,
+     * not audited and not searchable.
+     *
+     * Three cheap reads, no joins, no counts.
+     */
+    public function options(Request $request): JsonResponse
+    {
+        $tenantId = (int) $this->sireUser()->tenantId;
+
+        return $this->success([
+            'categories' => ReportCategory::query()
+                ->forTenant($tenantId)
+                ->where('is_active', true)
+                ->orderBy('sort_order')
+                ->get(['id', 'name', 'code']),
+
+            'severities' => ReportSeverity::query()
+                ->forTenant($tenantId)
+                // level is the sort key, never code: a workspace may run three
+                // bands or six and call the top one anything it likes.
+                ->orderByDesc('level')
+                ->get(['id', 'name', 'code', 'level', 'color']),
+
+            'priorities' => collect(SirePriority::ALL)
+                ->map(fn (string $value) => [
+                    'value' => $value,
+                    'label' => SirePriority::LABELS[$value] ?? $value,
+                ])
+                ->values(),
+
+            // What the form should land on when the reporter says nothing. Sent
+            // by the server so a workspace that renames or reorders its bands
+            // does not need a frontend change to get a sane default.
+            'defaults' => [
+                'priority'    => SirePriority::P3,
+                // The MIDDLE of whatever scale this workspace runs, computed from
+                // the band count rather than hardcoded. A default of "High" is
+                // not a neutral starting point -- it is a claim, and one that
+                // every reporter who leaves it alone would be making by accident.
+                'severity_id' => ReportSeverity::query()
+                    ->forTenant($tenantId)
+                    ->orderByDesc('level')
+                    ->skip(intdiv(ReportSeverity::query()->forTenant($tenantId)->count(), 2))
+                    ->value('id'),
+            ],
+        ]);
+    }
+
     public function store(StoreReportRequest $request): JsonResponse
     {
         $user     = $this->sireUser();
