@@ -202,7 +202,7 @@ class BannedPatternsTest extends TestCase
             'modules/hr/pages/EmployeeOnboardingDetail.jsx' => 3,
             'modules/hr/pages/EmployeeProfile.jsx' => 3,
             'modules/hr/pages/EmployeeSurveys.jsx' => 1,
-            'modules/hr/pages/Employees.jsx' => 4,
+            'modules/hr/pages/Employees.jsx' => 3,
             'modules/hr/pages/ExitInterview.jsx' => 4,
             'modules/hr/pages/ExitManagement.jsx' => 1,
             'modules/hr/pages/ExitReports.jsx' => 1,

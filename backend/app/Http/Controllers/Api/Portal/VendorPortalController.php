@@ -18,11 +18,13 @@ use App\Models\Shared\KickoffMeeting;
 use App\Models\Tpv\TpvOnboarding;
 use App\Models\Tpv\TpvWorker;
 use App\Models\Tpv\TpvWorkerPpeIssue;
-use App\Models\Vendor\TpvContact;
+use App\Models\Tpv\TpvContact;
 use App\Models\Vendor\Vendor;
 use App\Models\Vendor\VendorDocument;
 use App\Models\Vendor\VendorDocumentVersion;
 use App\Services\Tpv\KickoffPdfService;
+use App\Repositories\Tpv\TpvContactRepository;
+use App\Services\Tpv\GateScanService;
 use App\Services\Tpv\WorkStartLetterService;
 use App\Services\Tpv\PpeInventoryService;
 use App\Services\Tpv\TpvOnboardingService;
@@ -871,15 +873,25 @@ class VendorPortalController extends Controller
 
     /* ── Contacts (own vendor only) ──────────────────────────────────────── */
 
-    public function contacts(Request $request)
+    /**
+     * The vendor's own contacts.
+     *
+     * This ordered by `name`, a column tpv_contacts does not have — it stores
+     * first_name and last_name and exposes a full_name accessor — so the query
+     * threw and the portal's Contacts tab answered 500. The page catches the
+     * failure and renders an empty list, so it read as "you have no contacts"
+     * rather than as an error.
+     *
+     * Delegated to the same repository the admin screen uses, which also fixes
+     * something the hand-rolled version missed: it was scoped by vendor_id but
+     * NOT by tenant.
+     */
+    public function contacts(Request $request, TpvContactRepository $contacts)
     {
         $vendor = $this->portalVendor($request);
 
         return response()->json(
-            TpvContact::where('vendor_id', $vendor->id)
-                ->orderByDesc('is_primary')
-                ->orderBy('name')
-                ->get()
+            $contacts->filtered($vendor->tenant_id, $vendor->id, $request->only(['status', 'search']))
         );
     }
 
@@ -1251,10 +1263,13 @@ class VendorPortalController extends Controller
 
         $days = (int) $request->query('days', 30);
 
+        // The fourth call site for the class that never existed. One worker's
+        // attendance history is days on site, so it reads the attendance table
+        // — the same rows the admin's per-worker view uses.
         return response()->json(
-            \App\Models\Tpv\TpvGateLog::where('worker_id', $worker->id)
-                ->where('scanned_at', '>=', now()->subDays($days))
-                ->orderByDesc('scanned_at')
+            \App\Models\Tpv\TpvGateAttendance::where('tpv_worker_id', $worker->id)
+                ->where('work_date', '>=', now()->subDays($days)->toDateString())
+                ->orderByDesc('work_date')
                 ->get()
         );
     }
@@ -1272,65 +1287,55 @@ class VendorPortalController extends Controller
 
     /* ── Gate / Attendance / Strikes (read-only, own vendor scoped) ──────── */
 
-    public function gateStats(Request $request)
+    public function gateStats(Request $request, GateScanService $gate)
     {
         $vendor = $this->portalVendor($request);
 
-        // Derive stats from own workers only.
-        $workerIds = TpvWorker::where('vendor_id', $vendor->id)->pluck('id');
-
-        return response()->json([
-            'on_site'   => \App\Models\Tpv\TpvGateLog::whereIn('worker_id', $workerIds)
-                               ->whereNull('check_out_at')->count(),
-            'total_today' => \App\Models\Tpv\TpvGateLog::whereIn('worker_id', $workerIds)
-                               ->whereDate('scanned_at', today())->count(),
-        ]);
+        // Same four counters the admin gets, counting only this vendor's people.
+        return response()->json($gate->gateStats($vendor->tenant_id, $vendor->id));
     }
 
-    public function gateLog(Request $request)
+    /*
+     * Gate log, attendance and the gate counters.
+     *
+     * All three hand-rolled their own queries against
+     * `App\Models\Tpv\TpvGateLog` — a class that DOES NOT EXIST. There is no
+     * such model: the real ones are TpvGateScan (a badge presented) and
+     * TpvGateAttendance (a day on site). So every one of these three answered
+     * 500, and the portal's Gate Log and Attendance tabs have been dead since
+     * they were written. The columns were wrong too — `worker_id` and
+     * `duration_minutes` against tables that spell them `tpv_worker_id` and
+     * `minutes_on_site` — which is the same mistake already recorded a few
+     * methods below on strikes().
+     *
+     * They now delegate to GateScanService, the engine the admin screens use,
+     * scoped to this vendor. That is not only less code: the portal reuses the
+     * ADMIN's TpvGateLog page component with portalApi injected, so its replies
+     * have to match the admin's shapes exactly. They did not — gateStats
+     * answered {on_site, total_today} while the component reads on_site_now,
+     * checked_in_today, scans_today and denied_today. Fixing only the 500 would
+     * have left four blank cards and looked like a different bug.
+     */
+    public function gateLog(Request $request, GateScanService $gate)
     {
-        $vendor    = $this->portalVendor($request);
-        $workerIds = TpvWorker::where('vendor_id', $vendor->id)->pluck('id');
+        $vendor = $this->portalVendor($request);
 
-        $query = \App\Models\Tpv\TpvGateLog::with('worker:id,name,worker_code,designation')
-            ->whereIn('worker_id', $workerIds)
-            ->orderByDesc('scanned_at');
-
-        if ($request->filled('date')) {
-            $query->whereDate('scanned_at', $request->date);
-        }
-        if ($request->filled('decision')) {
-            $query->where('decision', $request->decision);
-        }
-
-        return response()->json($query->get());
+        return response()->json($gate->gateLog($vendor->tenant_id, [
+            'vendor_id' => $vendor->id,
+            'date'      => $request->query('date'),
+            'decision'  => $request->query('decision'),
+        ]));
     }
 
-    public function attendance(Request $request)
+    public function attendance(Request $request, GateScanService $gate)
     {
-        $vendor    = $this->portalVendor($request);
-        $workerIds = TpvWorker::where('vendor_id', $vendor->id)->pluck('id');
+        $vendor = $this->portalVendor($request);
 
-        $date = $request->query('date', today()->toDateString());
-
-        $rows = \App\Models\Tpv\TpvGateLog::with('worker:id,name,worker_code,designation')
-            ->whereIn('worker_id', $workerIds)
-            ->whereDate('scanned_at', $date)
-            ->orderBy('check_in_at')
-            ->get();
-
-        $onSite = $rows->whereNull('check_out_at')->count();
-
-        return response()->json([
-            'date'    => $date,
-            'summary' => [
-                'total'     => $rows->count(),
-                'on_site'   => $onSite,
-                'departed'  => $rows->count() - $onSite,
-                'total_minutes' => $rows->sum('duration_minutes'),
-            ],
-            'rows' => $rows,
-        ]);
+        return response()->json($gate->roster(
+            $vendor->tenant_id,
+            $request->query('date'),
+            $vendor->id,
+        ));
     }
 
     /**
