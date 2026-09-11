@@ -54,6 +54,10 @@ import {
   VendorNcrTab, VendorCapaTab, VendorPermitsTab, VendorIncidentsTab,
   VendorVisitorsTab, VendorWorkPackagesTab, VendorRenewalTab, VendorOffboardingTab,
 } from './complianceTabs'
+import {
+  VendorRiskScoreTab, VendorPerformanceIndexTab, VendorPenaltyTab,
+  VendorFeedbackTab, VendorAwardsTab, VendorReferralsTab,
+} from './performanceTabs'
 import VendorTasksPanel from '@/components/vendor/VendorTasksPanel'
 import {
   fmtMoney, fmtDate,
@@ -1072,6 +1076,17 @@ export const TAB_ELEMENTS = {
   'work-packages': <VendorWorkPackagesTab />,
   renewal: <VendorRenewalTab />,
   offboarding: <VendorOffboardingTab />,
+
+  // Performance. Four of these had endpoints all along and only wanted a tab —
+  // risk is columns on purchase_vendors, the index is computed by
+  // PurchaseVendorPerformanceService, penalties are the violations register.
+  // Awards and referrals are the two that genuinely needed tables.
+  'risk-score': <VendorRiskScoreTab />,
+  'performance-index': <VendorPerformanceIndexTab />,
+  penalty: <VendorPenaltyTab />,
+  feedback: <VendorFeedbackTab />,
+  award: <VendorAwardsTab />,
+  referral: <VendorReferralsTab />,
   // Commercial — all native to purchase_vendor_id
   quotations: <QuotationsTab />,
   contracts: <ContractsTab />,

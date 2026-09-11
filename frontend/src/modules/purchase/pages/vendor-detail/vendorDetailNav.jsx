@@ -5,7 +5,7 @@ import {
   Paperclip, LifeBuoy, BookOpen, Lock, BellRing,
   Gauge, Trophy, Gavel, MessageSquare, Share2,
   ClipboardCheck, ShieldCheck, HardHat, DoorOpen, AlertOctagon,
-  Boxes, RefreshCw, LogOut,
+  Boxes, RefreshCw, LogOut, BarChart3,
 } from 'lucide-react'
 
 /**
@@ -21,11 +21,16 @@ import {
  * NavLinks onto a Coming-Soon placeholder. It is gone: TAB_ELEMENTS is the
  * single source of truth and cannot disagree with itself.
  *
- * 23 of the 31 below are built (incl. the Compliance group's Prequalification
- * and Due Diligence). The other 8 (todo, kb, vault, risk-score, award, penalty,
- * feedback, referral) have no backing table anywhere in the schema — they are
- * unbuilt features rather than gaps in the wiring, and they stay listed here so
- * the intended shape of the workspace is still recorded.
+ * Nearly everything below is built. The Performance group used to be described
+ * here as having no backing table at all, and that was only ever true of two of
+ * it: risk lives in columns on purchase_vendors, the performance index is
+ * computed by PurchaseVendorPerformanceService, and penalties are the violations
+ * register — three endpoints that existed and merely had no tab. Awards and
+ * referrals now have Purchase-owned tables of their own.
+ *
+ * Three remain genuinely unbuilt: todo, kb and vault. Tasks and KB articles are
+ * tenant-wide and vendor-blind, and client_vault_entries is Customer-owned.
+ * They stay listed so the intended shape of the workspace is still recorded.
  */
 export const VENDOR_NAV_GROUPS = [
   {
@@ -112,15 +117,16 @@ export const VENDOR_NAV_GROUPS = [
     ],
   },
   {
-    // None of these five has a backing table. Every score / feedback / referral
-    // table in the schema is foreign-keyed to another domain — hr_employee_scores,
-    // ticket_feedback (ticket_id), kb_article_feedback, hr_candidates.referred_by —
-    // and none is polymorphic, so none can hold a vendor. purchase_vendors itself
-    // carries no score, rating or risk column. These need new tables plus the
-    // business rules to fill them, not wiring.
+    // This once read "none of these five has a backing table", which sent
+    // whoever read it looking for schema work that was mostly already done.
+    // purchase_vendors does carry risk_level / risk_score / risk_notes; the
+    // performance index is computed; penalties are purchase_violations. Only
+    // awards and referrals needed tables, and they now have Purchase-owned ones
+    // rather than a second key on TPV's vendor_awards / vendor_referrals.
     title: 'Performance',
     items: [
-      { key: 'risk-score',  label: 'Risk Score',     icon: Gauge },
+      { key: 'risk-score',        label: 'Risk Score',        icon: Gauge },
+      { key: 'performance-index', label: 'Performance Index', icon: BarChart3 },
       { key: 'renewal',     label: 'Renewal',        icon: RefreshCw },
       { key: 'offboarding', label: 'Offboarding',    icon: LogOut },
       // TPV spells it "Award / Reward"; matched so the two sidebars read the same.

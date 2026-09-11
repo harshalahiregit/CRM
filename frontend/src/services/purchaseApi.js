@@ -185,6 +185,19 @@ export const purchaseApi = {
       expire: (id)       => api.post(`/purchase/vendors/${id}/access/expire`).then(r => r.data),
       status: (id)       => api.get(`/purchase/vendors/${id}/access/status`).then(r => r.data),
     },
+    // Performance: the index was already computed server-side and only wanted a
+    // tab; awards and referrals are new Purchase-owned tables.
+    vpi:    (id)         => api.get(`/purchase/vendors/${id}/vpi`).then(r => r.data),
+    awards: {
+      list:   (id)         => api.get(`/purchase/vendors/${id}/awards`).then(r => r.data),
+      grant:  (id, data)   => api.post(`/purchase/vendors/${id}/awards`, data).then(r => r.data),
+      remove: (id, awardId) => api.delete(`/purchase/vendors/${id}/awards/${awardId}`).then(r => r.data),
+    },
+    referrals: {
+      list:      (id)             => api.get(`/purchase/vendors/${id}/referrals`).then(r => r.data),
+      create:    (id, data)       => api.post(`/purchase/vendors/${id}/referrals`, data).then(r => r.data),
+      setStatus: (id, rid, status) => api.patch(`/purchase/vendors/${id}/referrals/${rid}/status`, { status }).then(r => r.data),
+    },
     delete:    (id)          => api.delete(`/purchase/vendors/${id}`).then(r => r.data),
 
     // ── Vendor detail workspace tabs ─────────────────────────────────────

@@ -177,6 +177,16 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     // Reading where a window stands is admin+staff; moving or closing it is
     // admin authority and lives in the role:admin group below.
     Route::get('/vendors/{purchaseVendor}/access/status', [PurchaseVendorController::class, 'accessStatus'])->whereNumber('purchaseVendor');
+
+    // Recognition — the last two Performance entries that had no backend.
+    // Purchase-owned tables; TPV's are keyed to its own vendor master.
+    Route::get('/vendors/{purchaseVendor}/awards',    [PurchaseVendorController::class, 'awards'])->whereNumber('purchaseVendor');
+    Route::post('/vendors/{purchaseVendor}/awards',   [PurchaseVendorController::class, 'grantAward'])->whereNumber('purchaseVendor');
+    Route::delete('/vendors/{purchaseVendor}/awards/{award}', [PurchaseVendorController::class, 'deleteAward'])->whereNumber('purchaseVendor')->whereNumber('award');
+
+    Route::get('/vendors/{purchaseVendor}/referrals',  [PurchaseVendorController::class, 'referrals'])->whereNumber('purchaseVendor');
+    Route::post('/vendors/{purchaseVendor}/referrals', [PurchaseVendorController::class, 'storeReferral'])->whereNumber('purchaseVendor');
+    Route::patch('/vendors/{purchaseVendor}/referrals/{referral}/status', [PurchaseVendorController::class, 'setReferralStatus'])->whereNumber('purchaseVendor')->whereNumber('referral');
     Route::get('/vendors/{purchaseVendor}/customers', [PurchaseVendorController::class, 'customers'])->whereNumber('purchaseVendor');
     Route::post('/vendors/{purchaseVendor}/customers', [PurchaseVendorController::class, 'storeCustomer'])->whereNumber('purchaseVendor');
     // Search and link, mirroring TPV. The Customer tab renders the same shared

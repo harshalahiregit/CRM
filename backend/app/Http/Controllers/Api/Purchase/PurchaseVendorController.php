@@ -24,6 +24,8 @@ use App\Services\Purchase\PurchaseVendorService;
 use App\Services\Sales\AppointmentService;
 use App\Services\Sales\ReminderService;
 use App\Services\Shared\AttachmentService;
+use App\Models\Purchase\PurchaseVendorAward;
+use App\Models\Purchase\PurchaseVendorReferral;
 use App\Services\Purchase\PurchaseAccessService;
 use App\Services\Shared\NoteService;
 use App\Support\Purchase\PurchaseVendorStatus;
@@ -350,6 +352,121 @@ class PurchaseVendorController extends Controller
         $this->assertTenant($request, $purchaseVendor);
 
         return response()->json($access->status($purchaseVendor));
+    }
+
+    /* ── Recognition ───────────────────────────────────────────────────
+     *
+     * Awards and referrals: the last two entries in this workspace's
+     * Performance group that had nothing behind them. Purchase-owned tables —
+     * TPV's vendor_awards and vendor_referrals are keyed to its own master, and
+     * hanging a second vendor id off those would put two unrelated populations
+     * in one table with half its rows null either way.
+     */
+
+    public function awards(Request $request, PurchaseVendor $purchaseVendor)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        return response()->json([
+            'data' => PurchaseVendorAward::forTenant($purchaseVendor->tenant_id)
+                ->where('purchase_vendor_id', $purchaseVendor->id)
+                ->with('grantedBy:id,name')
+                ->orderByDesc('awarded_on')
+                ->get(),
+        ]);
+    }
+
+    public function grantAward(Request $request, PurchaseVendor $purchaseVendor)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        $data = $request->validate([
+            'title'       => 'required|string|max:200',
+            'category'    => 'nullable|string|max:60',
+            'description' => 'nullable|string|max:2000',
+            'awarded_on'  => 'nullable|date',
+        ]);
+
+        $award = PurchaseVendorAward::create($data + [
+            'tenant_id'          => $purchaseVendor->tenant_id,
+            'purchase_vendor_id' => $purchaseVendor->id,
+            // Recognition is dated the day it is given unless somebody is
+            // recording one from the past.
+            'awarded_on'         => $data['awarded_on'] ?? now()->toDateString(),
+            'granted_by'         => $request->user()->id,
+        ]);
+
+        $purchaseVendor->recordAudit('Award Granted', $request->user(), null, ['title' => $award->title]);
+
+        return response()->json(['data' => $award->fresh('grantedBy')], 201);
+    }
+
+    public function deleteAward(Request $request, PurchaseVendor $purchaseVendor, int $award)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        // Scoped by vendor as well as id: an award id from another vendor must
+        // 404 rather than delete.
+        $row = PurchaseVendorAward::forTenant($purchaseVendor->tenant_id)
+            ->where('purchase_vendor_id', $purchaseVendor->id)
+            ->findOrFail($award);
+
+        $row->delete();
+        $purchaseVendor->recordAudit('Award Removed', $request->user(), null, ['title' => $row->title]);
+
+        return response()->json(['message' => 'Award removed.']);
+    }
+
+    public function referrals(Request $request, PurchaseVendor $purchaseVendor)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        return response()->json([
+            'data' => PurchaseVendorReferral::forTenant($purchaseVendor->tenant_id)
+                ->where('referred_by_purchase_vendor_id', $purchaseVendor->id)
+                ->orderByDesc('id')
+                ->get(),
+            'statuses' => PurchaseVendorReferral::STATUSES,
+        ]);
+    }
+
+    public function storeReferral(Request $request, PurchaseVendor $purchaseVendor)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        $data = $request->validate([
+            'company_name'  => 'required|string|max:200',
+            'contact_name'  => 'nullable|string|max:150',
+            'contact_email' => 'nullable|email|max:200',
+            'contact_phone' => 'nullable|string|max:40',
+            'note'          => 'nullable|string|max:2000',
+            'status'        => ['nullable', Rule::in(PurchaseVendorReferral::STATUSES)],
+        ]);
+
+        $referral = PurchaseVendorReferral::create($data + [
+            'tenant_id' => $purchaseVendor->tenant_id,
+            'referred_by_purchase_vendor_id' => $purchaseVendor->id,
+            'status'    => $data['status'] ?? 'Pending',
+        ]);
+
+        return response()->json(['data' => $referral], 201);
+    }
+
+    public function setReferralStatus(Request $request, PurchaseVendor $purchaseVendor, int $referral)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        $data = $request->validate([
+            'status' => ['required', Rule::in(PurchaseVendorReferral::STATUSES)],
+        ]);
+
+        $row = PurchaseVendorReferral::forTenant($purchaseVendor->tenant_id)
+            ->where('referred_by_purchase_vendor_id', $purchaseVendor->id)
+            ->findOrFail($referral);
+
+        $row->update(['status' => $data['status']]);
+
+        return response()->json(['data' => $row->fresh()]);
     }
 
     public function destroy(Request $request, PurchaseVendor $purchaseVendor)
