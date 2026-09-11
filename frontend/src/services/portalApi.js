@@ -90,8 +90,27 @@ export const portalApi = {
   },
 
   // ── Documents — mirrors tpvApi.documents shape ──────────────────────────
+  /*
+   * Compliance agencies a vendor can be handed off to when they do not hold a
+   * document yet. `list` returns only agencies with a lead address configured,
+   * so the panel offers nobody it cannot actually reach — the whole feature
+   * stays dark until Settings → Service Providers is filled in.
+   */
+  serviceProviders: {
+    list: () => api.get('/portal/service-providers').then(r => r.data),
+    requestCallback: (providerId, payload) =>
+      api.post(`/portal/service-providers/${providerId}/callback`, payload).then(r => r.data),
+  },
+
   documents: {
     checklist: () => api.get('/portal/documents').then(r => r.data),
+    // Nested under the namespace the panel is handed, so the same component
+    // reaches the right portal without knowing which one it is in.
+    serviceProviders: {
+      list: () => api.get('/portal/service-providers').then(r => r.data),
+      requestCallback: (providerId, payload) =>
+        api.post(`/portal/service-providers/${providerId}/callback`, payload).then(r => r.data),
+    },
     upload:    (_vendorId, type, file) => {
       const fd = new FormData()
       fd.append('type', type)

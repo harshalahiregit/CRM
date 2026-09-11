@@ -2,6 +2,7 @@
 
 namespace App\Services\Purchase;
 
+use App\Models\Purchase\PurchaseDocument;
 use App\Models\Purchase\PurchaseNotificationLog as LogEntry;
 use App\Models\Purchase\PurchaseVendor;
 use App\Services\Notifications\NotificationService;
@@ -72,6 +73,30 @@ class PurchaseActivationNotifier
             $plain = 'Your account with '.$ctx['companyName'].' is now a permanent vendor account. '
                 .'The temporary access period no longer applies, and your vendor code is '
                 .$fresh->purchase_vendor_code.'.';
+
+            /*
+             * Promotion raises the paperwork. A temporary vendor files three
+             * documents; a permanent one files eleven. The vendor passed on the
+             * three, was activated, and is then silently non-compliant on eight
+             * more that nobody has asked them for — their portal drops from
+             * complete to 18% with no explanation and no request. Naming them
+             * here is the only point at which the vendor learns.
+             */
+            $outstanding = array_map(
+                fn ($t) => PurchaseDocument::typeLabel($t),
+                PurchaseDocumentService::conversionContext(
+                    $fresh->converted_to_permanent_at,
+                    PurchaseDocument::requiredFor($fresh->vendor_type ?? 'standard'),
+                    $fresh->documents()->pluck('type')->all(),
+                )['newly_required'] ?? [],
+            );
+            $ctx['newlyRequired'] = $outstanding;
+
+            if ($outstanding !== []) {
+                $plain .= ' A permanent account is asked for more paperwork than a temporary one. '
+                    .'Please upload the following in your portal under Documents: '
+                    .implode(', ', $outstanding).'.';
+            }
 
             $status = $this->channels->emailHtml(
                 $fresh->email,

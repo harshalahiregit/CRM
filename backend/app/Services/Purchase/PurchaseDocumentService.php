@@ -92,6 +92,39 @@ class PurchaseDocumentService
                 'progress_percent' => count($required) > 0 ? (int) round($approved / count($required) * 100) : 0,
             ],
             'complete'    => $approved === count($required),
+        ] + self::conversionContext($vendor->converted_to_permanent_at, $required, $docs->keys()->all());
+    }
+
+    /**
+     * Why a vendor who was complete yesterday is at 18% today.
+     *
+     * Promotion from temporary to permanent rewrites `vendor_type`, and the
+     * required set is derived from it: three documents become eleven. The
+     * vendor submitted, passed and was activated against the temporary set, so
+     * nothing is wrong with their file — the bar moved. Without saying so, the
+     * screen reads as a vendor who was let through without paperwork.
+     *
+     * PV-0002 is the worked example: registered temporary, filed exactly the
+     * temporary set (insurance, GST, LOI), approved at 3 of 3, converted four
+     * days later, and the panel then read "2 of 11 (18%)" — it had even stopped
+     * counting the LOI, which the permanent set does not ask for.
+     *
+     * @param  string[]  $required
+     * @param  string[]  $held      types this vendor has uploaded, whatever the status
+     * @return array{converted_at?:string,newly_required?:string[]}
+     */
+    public static function conversionContext($convertedAt, array $required, array $held): array
+    {
+        if (! $convertedAt) {
+            return [];
+        }
+
+        // Asked for only because they are now permanent, and not yet supplied.
+        $newly = array_values(array_diff($required, PurchaseDocument::TEMPORARY_SET, $held));
+
+        return [
+            'converted_at'   => $convertedAt->toIso8601String(),
+            'newly_required' => $newly,
         ];
     }
 

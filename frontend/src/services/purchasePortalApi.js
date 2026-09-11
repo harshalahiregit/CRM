@@ -80,8 +80,20 @@ export const purchasePortalApi = {
   },
 
   // ── Documents — mirrors portalApi.documents shape (upload takes 3 args) ──
+  /* Parity with portalApi.serviceProviders — same contract, Purchase routes. */
+  serviceProviders: {
+    list: () => api.get('/portal/purchase/service-providers').then(r => r.data),
+    requestCallback: (providerId, payload) =>
+      api.post(`/portal/purchase/service-providers/${providerId}/callback`, payload).then(r => r.data),
+  },
+
   documents: {
     checklist: ()          => api.get('/portal/purchase/documents').then(r => r.data),
+    serviceProviders: {
+      list: () => api.get('/portal/purchase/service-providers').then(r => r.data),
+      requestCallback: (providerId, payload) =>
+        api.post(`/portal/purchase/service-providers/${providerId}/callback`, payload).then(r => r.data),
+    },
     upload:    (_vendorId, type, file) => {
       const fd = new FormData()
       fd.append('type', type)

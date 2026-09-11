@@ -8,6 +8,13 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { readFieldErrors } from '@/services/apiError'
 import { DOC_CATEGORY_ORDER, COMPLIANCE_PROVIDERS, categoryOf } from './documentCatalog'
 
+const fmtDate = (d) => (d ? new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—')
+
+/** A document type's display name, falling back to a readable form of the key. */
+const labelFor = (catalog, type) =>
+  catalog.find(d => d.type === type)?.label
+  || String(type).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+
 /**
  * The vendor document surface — one panel, both engines.
  *
@@ -68,6 +75,37 @@ export default function VendorDocumentsPanel({
   const [providerOpen, setProviderOpen] = useState({})
   const [providerSearch, setProviderSearch] = useState({})
   const [submittedRequests, setSubmittedRequests] = useState([])
+
+  /*
+   * Which agencies this tenant can actually reach.
+   *
+   * The panel used to list all three unconditionally and tell the vendor a
+   * callback was "pending" — while sending the request nowhere at all. An
+   * agency is offered only once a lead address is configured for it under
+   * Settings → Service Providers, so the feature stays dark rather than
+   * promising a call nobody has been asked to make.
+   *
+   * null while unknown, so nothing flashes into view and back out.
+   */
+  const [reachable, setReachable] = useState(null)
+
+  useEffect(() => {
+    let alive = true
+    if (!api?.serviceProviders) { setReachable([]); return undefined }
+
+    api.serviceProviders.list()
+      .then(r => { if (alive) setReachable(r?.data ?? []) })
+      .catch(() => { if (alive) setReachable([]) })
+
+    return () => { alive = false }
+  }, [api])
+
+  // The catalog supplies the look; the server decides who is real.
+  const offeredProviders = useMemo(() => {
+    if (!reachable) return []
+    const ids = new Set(reachable.map(p => p.id))
+    return providers.filter(p => ids.has(p.id))
+  }, [providers, reachable])
   const [stagedFiles, setStagedFiles] = useState({})
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [search, setSearch] = useState('')
@@ -169,6 +207,17 @@ export default function VendorDocumentsPanel({
   const totalPending = s.pending ?? rows.filter(r => r.uploaded && r.status !== 'Approved' && r.status !== 'Rejected').length
   const totalMissing = Math.max(0, totalRequired - totalUploaded)
   const pct = s.progress_percent ?? (totalRequired ? Math.round((totalApproved / totalRequired) * 100) : 0)
+  const extrasFiled = (checklist?.extras || []).length
+
+  /*
+   * A vendor promoted from temporary to permanent is asked for eleven
+   * documents where they were asked for three, and the screen has no way to
+   * say so: it simply drops from complete to 18% overnight, which reads as a
+   * vendor who was activated without paperwork. `converted_at` and
+   * `newly_required` come from the checklist for exactly this.
+   */
+  const convertedAt = checklist?.converted_at
+  const newlyRequired = checklist?.newly_required || []
 
   // While an admin is reviewing, the vendor may still be uploading. Never while
   // a dialog is open or an upload is in flight — refreshing under either would
@@ -355,6 +404,10 @@ export default function VendorDocumentsPanel({
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--text-h)' }}>Document progress</h3>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
               {totalApproved} of {totalRequired} mandatory documents approved ({pct}%)
+              {/* The count is mandatory-only, so a filed optional document is
+                  visible in the table below and absent from this line. Saying
+                  so beats letting the two disagree in silence. */}
+              {extrasFiled > 0 && ` · ${extrasFiled} optional document${extrasFiled === 1 ? '' : 's'} also filed`}
             </span>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -369,6 +422,22 @@ export default function VendorDocumentsPanel({
         <div style={{ height: 9, borderRadius: 999, background: 'var(--bg-input)', overflow: 'hidden', border: '1px solid var(--border)' }}>
           <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg,#0ea5e9,#10b981)', borderRadius: 999, transition: 'width .4s ease' }} />
         </div>
+        {convertedAt && newlyRequired.length > 0 && (
+          <div style={{
+            marginTop: 13, padding: '10px 13px', borderRadius: 10, display: 'flex', gap: 9,
+            background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.32)',
+          }}>
+            <Info size={15} color="#f59e0b" style={{ flexShrink: 0, marginTop: 1 }} />
+            <span style={{ fontSize: 12.5, color: 'var(--text-body,#cbd5e1)', lineHeight: 1.55 }}>
+              Promoted to a permanent vendor on {fmtDate(convertedAt)}. A temporary vendor is asked
+              for three documents and a permanent one for {totalRequired}, so{' '}
+              <strong style={{ color: 'var(--text-h)' }}>{newlyRequired.length}</strong>{' '}
+              {newlyRequired.length === 1 ? 'document is' : 'documents are'} newly required and have
+              not been supplied: {newlyRequired.map(t => labelFor(catalog, t)).join(', ')}. Nothing
+              is wrong with what was filed before — the requirement changed, not the file.
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Search / filter / sort */}
@@ -436,7 +505,7 @@ export default function VendorDocumentsPanel({
                     manage={manage}
                     admin={admin}
                     reviewMode={reviewMode}
-                    providers={providers}
+                    providers={offeredProviders}
                     providerOpen={!!providerOpen[row.type]}
                     providerSearch={providerSearch[row.type] || ''}
                     providerRequest={submittedRequests.find(r => r.docType === row.type)}
@@ -504,6 +573,7 @@ export default function VendorDocumentsPanel({
         <ProviderRequestModal
           provider={providerReq.provider}
           row={providerReq.row}
+          api={api}
           onboarding={onboarding}
           user={user}
           onClose={() => setProviderReq(null)}
@@ -605,7 +675,9 @@ function DocumentRow({
             </div>
           )}
 
-          {canUpload && !row.uploaded && (
+          {/* Offered only when there is an agency we can actually reach — see
+              `reachable` above. No configured address, no invitation. */}
+          {canUpload && !row.uploaded && providers.length > 0 && (
             <div style={{ marginTop: 10 }}>
               <button type="button" onClick={onToggleProviders}
                 style={{
@@ -819,11 +891,20 @@ function VersionHistoryDrawer({ documentId, api, onClose }) {
 /**
  * Hand the vendor off to somebody who can produce the document.
  *
- * Deliberately local: no request is sent anywhere yet, and the confirmation
- * says a partner "will contact you", which is what the vendor is told either
- * way. When a real referral endpoint exists this is the one place to wire it.
+ * This used to send nothing anywhere. The form pushed itself into React state,
+ * the row then read "Callback requested from X — pending", and a refresh lost
+ * it: no endpoint, no table, no mail, so no agency ever heard about a single
+ * request and no vendor was ever called. It now posts to the portal, which
+ * records the lead and e-mails the agency with Reply-To set to the vendor.
+ *
+ * After that the CRM is out of it — what the two of them agree is their own
+ * business, and we neither see it nor hold it.
+ *
+ * The consent tick is not decoration: this sends a vendor's phone number to an
+ * outside company, so it needs their say-so, and the say-so is stored with the
+ * request as evidence of when it was given.
  */
-function ProviderRequestModal({ provider, row, onboarding, user, onClose, onSubmitted }) {
+function ProviderRequestModal({ provider, row, api, onboarding, user, onClose, onSubmitted }) {
   const p = onboarding?.profile || {}
   const v = onboarding?.vendor || {}
   const u = user || {}
@@ -835,17 +916,41 @@ function ProviderRequestModal({ provider, row, onboarding, user, onClose, onSubm
     company: p.company_name || v.company_name || '',
     notes: '',
   })
+  const [consent, setConsent] = useState(false)
   const [done, setDone] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault()
-    onSubmitted({
-      providerId: provider.id, providerName: provider.name,
-      docType: row.type, docLabel: row.type_label,
-      ...form, createdAt: new Date().toISOString(), status: 'Pending',
-    })
-    setDone(true)
+    if (!consent) { setErr('Please tick the box so we may share your details.'); return }
+
+    setErr(null)
+    setBusy(true)
+    try {
+      await api.serviceProviders.requestCallback(provider.id, {
+        document_type: row.type,
+        document_label: row.type_label,
+        contact_name: form.fullName,
+        contact_email: form.email,
+        contact_mobile: form.mobile,
+        company_name: form.company,
+        notes: form.notes,
+        consent: true,
+      })
+
+      onSubmitted({
+        providerId: provider.id, providerName: provider.name,
+        docType: row.type, docLabel: row.type_label,
+        ...form, createdAt: new Date().toISOString(), status: 'Sent',
+      })
+      setDone(true)
+    } catch (ex) {
+      setErr(readFieldErrors(ex).summary || 'Could not send your request. Please try again.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -871,7 +976,8 @@ function ProviderRequestModal({ provider, row, onboarding, user, onClose, onSubm
             <CheckCircle size={32} style={{ color: '#10b981' }} />
             <h4 style={{ margin: '10px 0 6px', fontSize: 15.5, fontWeight: 800, color: 'var(--text-h)' }}>Request submitted</h4>
             <p style={{ margin: 0, fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-              <strong style={{ color: 'var(--text-h)' }}>{provider.name}</strong> will contact you about your {row.type_label}.
+              <strong style={{ color: 'var(--text-h)' }}>{provider.name}</strong> has your details and will
+              contact you about your {row.type_label}. We have emailed you a copy of exactly what was sent.
               You can still upload the document yourself at any time.
             </p>
             <button onClick={onClose}
@@ -892,9 +998,39 @@ function ProviderRequestModal({ provider, row, onboarding, user, onClose, onSubm
                 <textarea rows={3} value={form.notes} onChange={set('notes')} style={{ ...fieldStyle, resize: 'vertical', fontFamily: 'inherit' }} />
               </Labelled>
             </div>
+            {/* Their details go to an outside company, so they say so first. */}
+            <label style={{
+              display: 'flex', gap: 9, alignItems: 'flex-start', marginTop: 14, padding: '11px 13px',
+              borderRadius: 10, border: `1px solid ${consent ? 'rgba(16,185,129,0.4)' : 'var(--border)'}`,
+              background: consent ? 'rgba(16,185,129,0.07)' : 'var(--bg-input)', cursor: 'pointer',
+            }}>
+              <input type="checkbox" checked={consent} onChange={e => { setConsent(e.target.checked); setErr(null) }}
+                style={{ marginTop: 2, width: 15, height: 15, flexShrink: 0, cursor: 'pointer' }} />
+              <span style={{ fontSize: 12.5, color: 'var(--text-body,#cbd5e1)', lineHeight: 1.55 }}>
+                Share my name, company, email and mobile with{' '}
+                <strong style={{ color: 'var(--text-h)' }}>{provider.name}</strong> so they can contact me
+                about this document. They are an independent company — anything you agree is between
+                you and them.
+              </span>
+            </label>
+
+            {err && (
+              <div style={{ marginTop: 11, padding: '9px 12px', borderRadius: 9, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', color: '#ef4444', fontSize: 12.5 }}>
+                {err}
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: 10, marginTop: 18, justifyContent: 'flex-end' }}>
-              <button type="button" onClick={onClose} style={{ padding: '9px 20px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}>Cancel</button>
-              <button type="submit" style={{ padding: '9px 22px', borderRadius: 9, background: provider.logoBg, color: '#fff', border: 'none', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Request a callback</button>
+              <button type="button" onClick={onClose} disabled={busy} style={{ padding: '9px 20px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-muted)', cursor: busy ? 'default' : 'pointer', fontSize: 13 }}>Cancel</button>
+              <button type="submit" disabled={busy || !consent}
+                style={{
+                  padding: '9px 22px', borderRadius: 9, background: provider.logoBg, color: '#fff',
+                  border: 'none', fontWeight: 700, fontSize: 13,
+                  cursor: (busy || !consent) ? 'not-allowed' : 'pointer',
+                  opacity: (busy || !consent) ? 0.55 : 1,
+                }}>
+                {busy ? 'Sending…' : 'Request a callback'}
+              </button>
             </div>
           </form>
         )}

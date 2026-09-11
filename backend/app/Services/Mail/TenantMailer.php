@@ -78,6 +78,12 @@ class TenantMailer
      *
      * Unlike send(), transport errors are left to the caller to catch, because
      * NotificationService's contract is to record a status and never throw.
+     *
+     * `$replyTo` overrides the tenant's own reply address for one message. It
+     * exists for mail we send ON SOMEONE'S BEHALF: a compliance agency handed a
+     * vendor's callback request must be able to hit reply and reach the vendor,
+     * not our support inbox. Everything else leaves it null and keeps the
+     * tenant reply-to.
      */
     public function sendRawHtml(
         ?int $tenantId,
@@ -86,12 +92,13 @@ class TenantMailer
         string $html,
         ?string $text = null,
         array $attachments = [],
+        ?string $replyTo = null,
     ): void {
         $settings   = $tenantId ? $this->settingsFor($tenantId) : null;
         $mailerName = $this->configureMailer($settings);
         $from       = $this->effectiveFrom($settings);
 
-        Mail::mailer($mailerName)->send([], [], function ($m) use ($to, $subject, $html, $text, $settings, $from, $attachments) {
+        Mail::mailer($mailerName)->send([], [], function ($m) use ($to, $subject, $html, $text, $settings, $from, $attachments, $replyTo) {
             $m->to($to)->subject($subject)->html($html);
 
             if ($text !== null && $text !== '') {
@@ -107,7 +114,11 @@ class TenantMailer
             if ($from) {
                 $m->from($from['email'], $from['name']);
             }
-            if ($settings && $settings->reply_to) {
+            // A per-message reply address wins: the point of it is that the
+            // recipient should answer the person we are writing on behalf of.
+            if ($replyTo) {
+                $m->replyTo($replyTo);
+            } elseif ($settings && $settings->reply_to) {
                 $m->replyTo($settings->reply_to);
             }
         });

@@ -256,10 +256,14 @@ class MeetingAttendanceGateTest extends TestCase
             {
             }
 
-            public function sendRawHtml(?int $tenantId, string|array $to, string $subject, string $html, ?string $text = null, array $attachments = []): void
+            // Mirrors TenantMailer::sendRawHtml exactly — PHP refuses a subclass
+            // whose signature has drifted, so an argument added there must be
+            // added here or the whole suite dies at parse time.
+            public function sendRawHtml(?int $tenantId, string|array $to, string $subject, string $html, ?string $text = null, array $attachments = [], ?string $replyTo = null): void
             {
                 $this->sent[] = ['to' => is_array($to) ? implode(',', $to) : $to, 'subject' => $subject,
-                    'html' => $html, 'text' => (string) $text, 'attachments' => $attachments];
+                    'html' => $html, 'text' => (string) $text, 'attachments' => $attachments,
+                    'reply_to' => $replyTo];
             }
         });
 

@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\Portal\VendorPortalController;
 use App\Http\Controllers\Api\Portal\VendorPortalMedicalController;
 use App\Http\Controllers\Api\Portal\VendorWorkController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorAuthController;
+use App\Http\Controllers\Api\Shared\ProviderCallbackController;
 use Illuminate\Support\Facades\Route;
 
 // ── Vendor "My Work" ────────────────────────────────────────────────────
@@ -61,6 +62,14 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access', 'vendor.onboa
     // Compliance documents — the portal's write actions. Ownership on resubmit/
     // download is enforced by the controller's assertOwned() (404 if not yours).
     Route::get('/documents',                        [VendorPortalController::class, 'documents']);
+
+    // "I do not hold this document — have someone call me." Hands a lead to a
+    // compliance agency and steps out; see ProviderCallbackService. Only
+    // agencies with a configured lead address are listed, so the whole feature
+    // stays dark until Settings → Service Providers is filled in.
+    Route::get('/service-providers',                        [ProviderCallbackController::class, 'index']);
+    Route::post('/service-providers/{provider}/callback',   [ProviderCallbackController::class, 'store'])
+        ->middleware('throttle:10,1');
     Route::post('/documents',                       [VendorPortalController::class, 'uploadDocument']);
     Route::post('/documents/{document}/resubmit',   [VendorPortalController::class, 'resubmitDocument']);
     Route::get('/documents/{document}/download',    [VendorPortalController::class, 'downloadDocument']);
@@ -262,6 +271,12 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal', 'vendor.onboarded']
     // §32 "View compliance" — the vendor's own compliance register (read-only).
     Route::get('/compliance',                         [PurchasePortalController::class, 'compliance']);
     Route::get('/documents',                          [PurchasePortalController::class, 'documents']);
+
+    // Same handoff as the TPV portal, same controller — the vendor is resolved
+    // from whichever token is presented.
+    Route::get('/service-providers',                      [ProviderCallbackController::class, 'index']);
+    Route::post('/service-providers/{provider}/callback', [ProviderCallbackController::class, 'store'])
+        ->middleware('throttle:10,1');
     Route::post('/documents',                         [PurchasePortalController::class, 'uploadDocument']);
     Route::post('/documents/{document}/resubmit',     [PurchasePortalController::class, 'resubmitDocument']);
     Route::get('/documents/{document}/download',      [PurchasePortalController::class, 'downloadDocument']);

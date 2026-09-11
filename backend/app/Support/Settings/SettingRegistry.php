@@ -208,7 +208,39 @@ final class SettingRegistry
                 'push'       => ['cast' => 'bool',  'default' => false, 'rules' => ['nullable', 'boolean']],
                 'categories' => ['cast' => 'array', 'default' => self::notificationMatrix(), 'rules' => ['nullable', 'array']],
             ],
+
+            /*
+             * Where a "request a callback" from the vendor Documents screen is
+             * sent.
+             *
+             * A vendor who does not hold a registration cannot discharge the
+             * obligation, and "you are missing this" is not something they can
+             * act on — so the panel offers agencies who sell that registration.
+             * Picking one hands the agency a lead: the vendor's name, company,
+             * phone and e-mail, and which document they need.
+             *
+             * Blank by default, and blank is meaningful: a provider with no
+             * address here is not offered at all. The panel used to list all
+             * three and tell the vendor a callback was "pending" while sending
+             * nothing anywhere — no endpoint, no table, no mail — so the whole
+             * feature stays dark until a real address is entered.
+             *
+             * Keys match COMPLIANCE_PROVIDERS ids in documentCatalog.js.
+             */
+            'compliance_providers' => [
+                'business_badhega_email' => ['cast' => 'string', 'default' => null, 'rules' => ['nullable', 'email', 'max:191']],
+                'legaldesk_email'        => ['cast' => 'string', 'default' => null, 'rules' => ['nullable', 'email', 'max:191']],
+                'vakilsearch_email'      => ['cast' => 'string', 'default' => null, 'rules' => ['nullable', 'email', 'max:191']],
+                // Copied on every lead, if the tenant wants its own record.
+                'copy_to'                => ['cast' => 'string', 'default' => null, 'rules' => ['nullable', 'email', 'max:191']],
+            ],
         ];
+    }
+
+    /** Settings key holding the lead address for a provider id. */
+    public static function providerEmailKey(string $providerId): string
+    {
+        return $providerId.'_email';
     }
 
     /** Categories the notification matrix covers. */

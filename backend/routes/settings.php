@@ -34,9 +34,9 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('settings')->group(fun
     // Generic settings groups — Upload / Security / Notification preferences.
     // One controller + one registry; add a group by registering it + the constraint.
     Route::get('/group/{group}', [SettingsGroupController::class, 'show'])
-        ->where('group', 'localization|currency|numbering|upload|security|notifications');
+        ->where('group', 'localization|currency|numbering|upload|security|notifications|compliance_providers');
     Route::put('/group/{group}', [SettingsGroupController::class, 'update'])
-        ->where('group', 'localization|currency|numbering|upload|security|notifications');
+        ->where('group', 'localization|currency|numbering|upload|security|notifications|compliance_providers');
 
     // Roles & Departments — created from the UI instead of by a developer.
     // These are staff JOB roles (users.internal_role), not account types:
