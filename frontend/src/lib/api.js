@@ -2,6 +2,7 @@ import axios from 'axios'
 import { attachMediaCompression } from './mediaCompress'
 import { getToken, clearAuth } from '@/lib/authStorage'
 import { isSessionFailure } from '@/lib/sessionFailure'
+import { recordRequestFailure } from '@/lib/requestFailures'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api',
@@ -40,6 +41,12 @@ api.interceptors.response.use(
         window.location.href = '/auth/login'
       }
     }
+    // Recorded before the rejection travels on, because most callers end in
+    // `.catch(() => setRows([]))` and the failure would otherwise vanish there.
+    // Nothing about the rejection changes — pages that DO handle their errors
+    // are unaffected.
+    recordRequestFailure(error)
+
     return Promise.reject(error)
   },
 )

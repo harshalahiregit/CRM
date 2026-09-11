@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import DataFailureBanner from '@/components/ui/DataFailureBanner'
 import {
   LogOut, Building2, Sun, Moon, Bell, HelpCircle, Menu, ChevronRight, Search, X,
 } from 'lucide-react'
@@ -186,7 +187,11 @@ export default function PortalShell({
           </div>
         </header>
 
-        <main className="portal-content"><Outlet /></main>
+        {/* Above the content, and in the shell rather than per page, because
+            both portals share this file and nearly every page inside them turns
+            a failed fetch into an empty list. This is what tells the vendor
+            that an empty section might not be empty. */}
+        <main className="portal-content"><DataFailureBanner /><Outlet /></main>
       </div>
 
       {/* On-screen notification pop-ups (persistent until the vendor reacts). */}
