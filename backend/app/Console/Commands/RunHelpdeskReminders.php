@@ -71,11 +71,13 @@ class RunHelpdeskReminders extends Command
 
                     if ($owner && ! empty($owner->email)) {
                         try {
-                            // Console context: use this tenant's Settings → Email
-                            // SMTP (not .env) for the reminder mail.
-                            app(\App\Services\Mail\TenantMailConfigurator::class)
-                                ->applyForTenant((int) $reminder->tenant_id);
-                            Mail::to($owner->email)->send(
+                            // Console context: this tenant's Settings → Email
+                            // SMTP, never .env. TenantMailer resolves and applies
+                            // the transport itself, so no separate configurator
+                            // step can be forgotten or run out of order.
+                            app(\App\Services\Mail\TenantMailer::class)->send(
+                                (int) $reminder->tenant_id,
+                                $owner->email,
                                 new ReminderDueMail($reminder, $ticket, $owner->name ?: 'there')
                             );
                         } catch (\Throwable $e) {

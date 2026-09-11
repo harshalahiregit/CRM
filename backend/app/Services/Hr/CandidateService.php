@@ -63,7 +63,8 @@ class CandidateService
         }
 
         if ($candidate->email) {
-            Mail::to($candidate->email)->send(
+            // Tenant SMTP, never the global mailer.
+            app(\App\Services\Mail\TenantMailer::class)->send($candidate->tenant_id, $candidate->email,
                 new \App\Mail\ApplicationReceivedMail($candidate->load('jobPosting'))
             );
         }
@@ -301,7 +302,7 @@ class CandidateService
                         default    => '',
                     };
 
-                    Mail::to($candidate->email)->send(
+                    app(\App\Services\Mail\TenantMailer::class)->send($candidate->tenant_id, $candidate->email,
                         new \App\Mail\ApplicationStatusMail($candidate->load('jobPosting'), $stage, $statusMessage)
                     );
                 } catch (\Throwable $e) {

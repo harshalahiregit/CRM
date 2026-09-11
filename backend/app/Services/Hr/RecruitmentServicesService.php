@@ -536,9 +536,13 @@ class RecruitmentServicesService
         $status = 'skipped';
         if ($to) {
             try {
-                Mail::html(nl2br(e($tpl['body'])), function ($m) use ($to, $tpl) {
-                    $m->to($to)->subject($tpl['subject']);
-                });
+                // Tenant SMTP, never the global mailer.
+                app(\App\Services\Mail\TenantMailer::class)->sendRawHtml(
+                    (int) $request->tenant_id,
+                    $to,
+                    $tpl['subject'],
+                    nl2br(e($tpl['body'])),
+                );
                 $status = 'sent';
             } catch (\Throwable $e) {
                 $status = 'failed';

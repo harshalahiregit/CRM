@@ -8,9 +8,9 @@ use App\Mail\Task\TaskActivityMail;
 use App\Mail\Task\TaskDueMail;
 use App\Models\Task\Task;
 use App\Models\User;
+use App\Services\Mail\TenantMailer;
 use App\Services\NotificationService;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 
 /**
  * Every task alert — in-app bell and email — is decided here.
@@ -39,6 +39,7 @@ class TaskNotifier
         private NotificationService $notifications,
         private TaskConfigService $config,
         private TaskTreeService $tree,
+        private TenantMailer $mailer,
     ) {
     }
 
@@ -265,8 +266,21 @@ class TaskNotifier
             return;
         }
 
+        /*
+         * Through the TENANT's SMTP, never the global mailer.
+         *
+         * This was `Mail::to(...)->send(...)`, which resolves
+         * config('mail.default') — and that is env('MAIL_MAILER', 'log'). A
+         * deployment running `config:cache` does not read .env at all, so the
+         * literal default won: every task e-mail was written to storage/logs
+         * and the send reported success. "I assigned a task and no mail came"
+         * has one cause, and this was it.
+         *
+         * TenantMailer refuses outright when Settings → Email is not set up,
+         * which is a visible failure instead of a silent log line.
+         */
         try {
-            Mail::to($addresses)->send($make());
+            $this->mailer->send($tenantId, $addresses, $make());
         } catch (\Throwable $e) {
             Log::warning("Task mail failed ({$what}): {$e->getMessage()}");
         }
