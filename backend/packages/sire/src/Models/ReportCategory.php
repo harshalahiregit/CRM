@@ -4,6 +4,7 @@ namespace Sire\Models;
 
 use Sire\Models\Concerns\BelongsToSireTenant;
 use Sire\Support\SireReleaseClass;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -18,6 +19,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class ReportCategory extends Model
 {
+    use HasFactory;
+
+    /** The package ships its own factories; Laravel's default guess looks under App\. */
+    protected static function newFactory(): \Sire\Database\Factories\ReportCategoryFactory
+    {
+        return \Sire\Database\Factories\ReportCategoryFactory::new();
+    }
     use BelongsToSireTenant;
     use SoftDeletes;
 

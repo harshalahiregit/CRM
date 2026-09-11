@@ -57,7 +57,10 @@ class SireQualityMetricsService
         $suspect = $numerator > $denominator;
         $value = $suspect ? 1.0 : $numerator / $denominator;
 
-        $percent = $value * 100;
+        // Cast both sides. floor() always returns a float, while $percent is an
+        // int whenever the division came out exact -- so a strict comparison was
+        // false for every whole percentage and 100% rendered as "100.0%".
+        $percent = (float) $value * 100;
         $display = (floor($percent) === $percent)
             ? number_format($percent, 0).'%'
             : number_format($percent, 1).'%';

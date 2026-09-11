@@ -49,7 +49,10 @@ class SireTextAnalyzer
             $out[$normalised] = true;
         }
 
-        return array_keys($out);
+        // strval, because PHP casts a numeric array key to int: a token of "500"
+        // came back as int(500) and stopped matching the strings every other
+        // caller compares it against, the issue-token index included.
+        return array_map('strval', array_keys($out));
     }
 
     /**

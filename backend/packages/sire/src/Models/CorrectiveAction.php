@@ -4,6 +4,7 @@ namespace Sire\Models;
 
 use Sire\Models\Concerns\RecordsSireAudit;
 use Sire\Models\Concerns\BelongsToSireTenant;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -17,6 +18,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class CorrectiveAction extends Model
 {
+    use HasFactory;
+
+    /** The package ships its own factories; Laravel's default guess looks under App\. */
+    protected static function newFactory(): \Sire\Database\Factories\CorrectiveActionFactory
+    {
+        return \Sire\Database\Factories\CorrectiveActionFactory::new();
+    }
     use RecordsSireAudit;
     use BelongsToSireTenant;
     use SoftDeletes;

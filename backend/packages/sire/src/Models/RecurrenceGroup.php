@@ -4,6 +4,7 @@ namespace Sire\Models;
 
 use Sire\Models\Concerns\RecordsSireAudit;
 use Sire\Models\Concerns\BelongsToSireTenant;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -21,6 +22,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class RecurrenceGroup extends Model
 {
+    use HasFactory;
+
+    /** The package ships its own factories; Laravel's default guess looks under App\. */
+    protected static function newFactory(): \Sire\Database\Factories\RecurrenceGroupFactory
+    {
+        return \Sire\Database\Factories\RecurrenceGroupFactory::new();
+    }
     use RecordsSireAudit;
     use BelongsToSireTenant;
     use SoftDeletes;

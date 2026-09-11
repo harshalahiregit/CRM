@@ -1,0 +1,27 @@
+<?php
+
+namespace Sire\Database\Factories;
+
+use Illuminate\Database\Eloquent\Factories\Factory;
+use Sire\Models\ReportCategory;
+
+/**
+ * SIRE — factory for ReportCategory.
+ *
+ * Defaults cover only the columns the database refuses to be without. Every test
+ * states the values it actually cares about, so a default that guessed at
+ * anything else would quietly become a second source of truth for the fixture.
+ */
+class ReportCategoryFactory extends Factory
+{
+    protected $model = ReportCategory::class;
+
+    public function definition(): array
+    {
+        return [
+            'tenant_id' => 1,
+            'name'      => 'Bug',
+            'code'      => 'bug',
+        ];
+    }
+}

@@ -3,6 +3,7 @@
 namespace Sire\Models;
 
 use Sire\Models\Concerns\BelongsToSireTenant;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -21,6 +22,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class ReportSeverity extends Model
 {
+    use HasFactory;
+
+    /** The package ships its own factories; Laravel's default guess looks under App\. */
+    protected static function newFactory(): \Sire\Database\Factories\ReportSeverityFactory
+    {
+        return \Sire\Database\Factories\ReportSeverityFactory::new();
+    }
     use BelongsToSireTenant;
     use SoftDeletes;
 

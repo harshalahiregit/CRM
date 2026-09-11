@@ -7,6 +7,7 @@ use Sire\Models\Concerns\BelongsToSireTenant;
 use Sire\Support\SireReleaseClass;
 use Sire\Support\SireStatus;
 use Sire\Support\SireTrack;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -23,6 +24,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class Report extends Model
 {
+    use HasFactory;
+
+    /** The package ships its own factories; Laravel's default guess looks under App\. */
+    protected static function newFactory(): \Sire\Database\Factories\ReportFactory
+    {
+        return \Sire\Database\Factories\ReportFactory::new();
+    }
     use RecordsSireAudit;
     use BelongsToSireTenant;
     use SoftDeletes;
