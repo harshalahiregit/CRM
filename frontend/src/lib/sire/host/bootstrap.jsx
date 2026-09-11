@@ -42,8 +42,8 @@ const Button = ({ loading, variant, className = '', ...rest }) => (
  * its X or Cancel button. A stray backdrop click must never discard a
  * half-written issue report.
  */
-const Modal = ({ open, onClose, title, children }) => (
-  <HostModal open={open} onClose={onClose} closeOnBackdrop={false}>
+const Modal = ({ open, onClose, title, children, className = '' }) => (
+  <HostModal open={open} onClose={onClose} closeOnBackdrop={false} className={className}>
     {title && (
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold">{title}</h3>

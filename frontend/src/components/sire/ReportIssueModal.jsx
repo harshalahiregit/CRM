@@ -143,7 +143,7 @@ export default function ReportIssueModal() {
   if (!modal.open) return null;
 
   return (
-    <Modal open={modal.open} onClose={closeReportIssue} title="Report an issue">
+    <Modal open={modal.open} onClose={closeReportIssue} title="Report an issue" className="sire-report-modal">
       <div className="space-y-3">
         {context && <ContextPreview context={context} onCorrect={applyCorrection} />}
 

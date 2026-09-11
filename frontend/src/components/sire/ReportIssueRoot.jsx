@@ -23,14 +23,23 @@ function ReportIssueButton() {
       onClick={() => openReportIssue()}
       title="Report an issue (Alt+Shift+R)"
       data-sire-hide-in-capture
-            /*
-        z-[60], above the app's .modal-backdrop (z-50, and it blurs what is behind
-        it). At z-40 this button sat UNDER every popup: blurred, and not
-        clickable. A defect that only shows up inside a dialog -- a validation
-        message that never clears, a save that silently fails -- is exactly when
-        someone wants to report one, and that was the one moment they could not.
+      /*
+        Above EVERY overlay in the app, not just the standard modal.
+
+        z-[60] cleared .modal-backdrop (z-50) and nothing else. The rest of the
+        CRM stacks far higher -- HR dialogs at z-[9999], the Select dropdown
+        portal at z-[1500], Sales dialogs at z-[130], the command palette and
+        toasts at z-[100], confirm-close at z-[90] -- so in most modules this
+        button was still buried, blurred and unclickable the moment anything
+        opened.
+
+        A defect that only shows up inside a dialog -- a validation message that
+        never clears, a save that silently fails, a dropdown with nothing in it
+        -- is exactly when someone wants to report one, and that was the one
+        moment they could not. So this clears the highest overlay in the
+        codebase, and the report modal itself sits one above that (index.css).
       */
-      className="fixed bottom-5 right-5 z-[60] flex items-center gap-2 rounded-full bg-gray-900 px-4 py-2.5 text-sm font-medium text-white shadow-lg transition hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
+      className="fixed bottom-5 right-5 z-[10000] flex items-center gap-2 rounded-full bg-gray-900 px-4 py-2.5 text-sm font-medium text-white shadow-lg transition hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
     >
       <span aria-hidden>⚑</span>
       Report Issue
