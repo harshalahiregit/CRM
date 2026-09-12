@@ -54,6 +54,8 @@ Authority for who rules on what: the Conflict Resolution matrix in
 | D-39 | Step 9's canonical domain model omits Consignment and Container | **Critical** | Architecture | Open — needs architecture approval |
 | D-40 | `container_number` uniqueness contradicts required historical reuse | High | Architecture + Product | Open — blocks the migration |
 | D-41 | LR and DO have two candidate homes; DO is in no enum | High | Architecture | Open — blocks the migration |
+| D-42 | `CTD-009` gate/port records have no entity anywhere | Medium | Product + Architecture | Deferred — logged, P1 |
+| D-43 | `CTD-014` urgent-trip records depend on an unowned P0 | Medium | Step 12 maintainer | Deferred — logged, P1 |
 
 ---
 
@@ -892,3 +894,32 @@ Step 9's domain model and the team's "no duplicate master data" rule forbid.
 Meanwhile RTM `ORD-005`/`ORD-006` place *"Capture LR details"* and *"Capture DO details"* under the
 **Transport Order** module, suggesting they are attributes captured against the order rather than
 entities of their own.
+
+---
+
+## D-42 — `CTD-009` links the container to gate/port records that do not exist
+
+`STOS-REQ-CTD-009` ("Link container to gate/port records", P1) requires gate and port events to be
+visible on the Digital Passport. STOS-CTD §28 (Gate Pass), §29 (Port Entry) and §30 (Port Detention)
+describe them narratively, and `STOS-REQ-OPS-006/007` ("Manage gate pass", "Manage port entry slip")
+are both P1.
+
+**No entity exists** — not in Step 9's domain model, not in Step 11's DB registry, not in any
+migration. There is nothing to link to.
+
+**Deferred**, owner Product + Architecture. Block 1 provides the consignment/container anchor these
+records would attach to when someone builds them, so nothing here forecloses it.
+
+---
+
+## D-43 — `CTD-014` depends on an unowned P0
+
+`STOS-REQ-CTD-014` ("Link container to urgent-trip records", P1) requires urgent events to be visible.
+Urgency comes from `STOS-REQ-OPS-014` — "Handle urgent trips", **P0**, acceptance *"Urgent flag and
+extra cost captured"*.
+
+No ticket in Step 12's register owns `OPS-014`, and nothing has built an urgent flag. A P1 that
+depends on an unbuilt P0 cannot be delivered.
+
+**Deferred**, owner Step 12 maintainer. Noted alongside D-38: this is the second requirement found
+stranded behind a P0 that no ticket claims.
