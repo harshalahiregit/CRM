@@ -35,7 +35,7 @@ class TransportTrip extends Model
     protected $table = 'transport_trips';
 
     protected $fillable = [
-        'tenant_id', 'order_id', 'trip_number', 'status', 'approved_freight',
+        'tenant_id', 'order_id', 'consignment_id', 'trip_number', 'status', 'approved_freight',
         'currency', 'customer_id', 'route', 'created_by', 'updated_by',
         // vehicle_id and driver_id are deliberately NOT fillable. They belong to
         // SNG-TRN-009 (allocation); leaving them mass-assignable would let this
@@ -78,6 +78,18 @@ class TransportTrip extends Model
     public function order(): BelongsTo
     {
         return $this->belongsTo(TransportOrder::class, 'order_id');
+    }
+
+    /**
+     * STOS-CTD §6 "Trip ID" — the shipment this movement is carrying.
+     *
+     * Nullable: trips shipped before consignments existed and must keep
+     * working, and the container is a search anchor rather than a mandatory
+     * parent (TM-001 §4 rule 3).
+     */
+    public function consignment(): BelongsTo
+    {
+        return $this->belongsTo(TransportConsignment::class, 'consignment_id');
     }
 
     public function customer(): BelongsTo
