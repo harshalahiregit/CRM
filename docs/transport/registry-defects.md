@@ -47,6 +47,9 @@ Authority for who rules on what: the Conflict Resolution matrix in
 | D-32 | Financial/customer impact fields with no calculator | High | Product + Finance | Open |
 | D-33 | Exception→task needs another module's Task Engine | Medium | Product + Architecture | Open |
 | D-34 | SLA needs a business calendar that does not exist | High | Product | Open |
+| D-35 | Ticket 013's five registry references all point at wrong rows | High | Step 12 maintainer | Open — corrected in `ExceptionScope` |
+| D-36 | Step 9 has `arrived`; Step 11 STT-007 skips it | Medium | Architecture | Open — 014's to resolve |
+| D-37 | Exception category is a required field with no enum | Medium | Architecture | Open — OPS §88 used |
 
 ---
 
@@ -744,3 +747,56 @@ integrity a key would buy is **already guaranteed by other means**:
 
 What a key would add beyond this is response replay, which no consumer needs. A *different* resource
 on an allocated trip is still refused on its merits. Tested in `TransportAllocationApiTest`.
+
+---
+
+## D-35 — Every registry reference on ticket SNG-TRN-013 is wrong
+
+Step 12 `Ticket_Register:14` gives five cross-references. All five were checked against the document
+they name, and none resolves:
+
+| Ticket says | What that row actually is | The real row |
+|---|---|---|
+| `FRS-P0-013` | FRS `TRP-P0-013` = **Delivery / POD capture** (ticket 014's requirement) | `TRP-P0-011` Live trip control + `TRP-P0-012` Exception management |
+| `BR-012` | no such rule id in BRWM | `BR-P0-010` (Transit) + `BR-P0-011` (Exception) |
+| `DB-012` | not `trip_exceptions` | `DB-010` |
+| `API-008` | not the exception endpoint | `API-007` |
+| `EV-009` | the event registry uses `EVT-nnn` | `EVT-008` |
+
+Same fabricated sequential counter already recorded against tickets 007 and 009 (D-12, D-15): the
+register's cross-references were generated **by position, not by lookup**. The pattern now holds
+across three tickets, so **no ticket's registry references should be trusted without checking the
+target document.**
+
+Corrected in `ExceptionScope::REGISTRY_REF_CORRECTIONS`, asserted by `ExceptionScopeTest`.
+
+---
+
+## D-36 — Step 9 has an `arrived` state that Step 11 skips
+
+Step 9's Trip machine runs `… → DISPATCHED → IN_TRANSIT → **ARRIVED** → DELIVERED → …`.
+
+Step 11 `STT-007` goes straight from `in_transit` to `delivered`, and Step 11's `ENUM-001` omits
+`arrived` altogether (it also omits `pretrip_ok`, `pod_pending` and `settlement_pending` — 12 values
+against Step 9's 16).
+
+`TripStatus::ARRIVED` is declared and unreachable. SNG-TRN-013 stops at `in_transit`, so this does
+not block it — but **SNG-TRN-014 (POD) must resolve it**, because it owns `in_transit → delivered`
+and has to decide whether a trip passes through `arrived` on the way.
+
+---
+
+## D-37 — Exception category is a required field with no enum
+
+OPS §87 lists **category** among the twelve fields every exception "must contain", and OPS §88 gives
+eight of them with a one-line gloss each (Resource, Compliance, Operational, Temperature, Financial,
+Customer, Fleet, Documentation).
+
+Step 11's Enums sheet has **no category enum**: `ENUM-003` covers severity, `ENUM-004` covers status,
+and nothing covers category. So unlike severity, there is no LOCKED row to defer to.
+
+OPS §88 is used as the vocabulary — it is the only list, and it sits in the document that owns the
+exception engine. Recorded because a later ticket adding a ninth category, or a control room
+grouping by a different set, would fragment it. `ExceptionCategory::AUTOMATIC_SOURCE` maps five of
+the eight to the requirement that would raise them automatically once its ticket exists, so that
+ticket reuses the category rather than inventing one.
