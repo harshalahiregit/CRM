@@ -30,9 +30,19 @@ This is the third distinct defect class found in the register's cross-references
    but that authorisation is not a ticket, and the register should not stay silent about a
    1 900-line spec.
 2. A ruling on **`STOS-REQ-OPS-014`** ("Handle urgent trips", P0): ticket, or deferral with an owner.
-3. A sweep for **other `STOS-REQ-*` rows that no ticket references.** Three have surfaced by accident
-   while building adjacent features; a deliberate reconciliation would find the rest faster than I
-   will stumble into them.
+3. **A sweep across the WHOLE RTM** — every `STOS-REQ-*` row reconciled against the 30-ticket
+   register, not just the Transport rows.
 
-Item 3 is the one that matters most. The first two are known gaps; the third is the question of how
-many are still unknown.
+## Why item 3 matters most — this is a sampling result, not a count
+
+Three unticketed P0 requirement sets surfaced **by accident**, in one module, while building adjacent
+features. None was found by looking for them. Nobody has searched the other RTM domains —
+`FLEET`, `MNT`, `TEL`, `QC`, `FIN`, `CMP`, `DOC`, `REP`, `SEC`, `AI` — and there is no reason to
+expect Transport to be the only affected area.
+
+The first two asks are known gaps that can be closed. The third answers the question neither of them
+touches: **how many are still unknown.** A reconciliation of the full RTM against the register would
+find them in one pass; I will otherwise keep discovering them one feature at a time, each time as a
+surprise partway through a block.
+
+**Approved by the owner on 2026-09-12** as a whole-RTM sweep.

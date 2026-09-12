@@ -43,8 +43,20 @@ $subject instanceof \App\Models\Transport\TransportConsignment => TransportDocum
 public const DELIVERY_ORDER = 'delivery_order';   // RTM STOS-REQ-ORD-006
 ```
 
-Label: *"Delivery Order"*. This changes a LOCKED Step 11 enum, so it needs the same architecture
-note D-39 got — flagging that rather than assuming it is routine.
+Label: *"Delivery Order"*.
+
+> ### ✅ Architecture approval already granted — you do not need to escalate this
+>
+> `ENUM-006` is **LOCKED** in Step 11, so I raised the change rather than assuming it was routine.
+> **The owner granted approval in writing on 2026-09-12**, on the same footing as D-39. Grounds
+> recorded in `registry-defects.md` under D-41:
+>
+> - `ORD-006` is **P0** and unimplementable today — there is no value to file a DO under.
+> - A delivery order has **no other home**: no domain-model row, no table, no enum.
+> - The only alternative is a separate `transport_delivery_orders` table, which gives delivery
+>   orders a second home and is forbidden by Step 9's no-duplicate-business-objects rule.
+>
+> This arrives as an approved change, not a question.
 
 ## What this unblocks
 

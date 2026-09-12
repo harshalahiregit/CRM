@@ -56,6 +56,7 @@ Authority for who rules on what: the Conflict Resolution matrix in
 | D-41 | LR and DO have two candidate homes; DO is in no enum | High | Architecture | ✅ **RULED 2026-09-12 — LR/DO stay documents; requested from Person 3** |
 | D-42 | `CTD-009` gate/port records have no entity anywhere | Medium | Product + Architecture | Deferred — logged, P1 |
 | D-43 | `CTD-014` urgent-trip records depend on an unowned P0 | Medium | Step 12 maintainer | Deferred — logged, P1 |
+| D-44 | CTD §11 requires a consignment lifecycle engine that does not exist | High | Architecture + Product | Open — status derived at read time as a consequence |
 
 ---
 
@@ -964,3 +965,60 @@ Three changes are needed in **Person 3's** files and have been requested in writ
 3. `delivery_order` added to `ENUM-006` / `TransportDocumentType`
 
 Block 2's document panel codes against a stub until those land.
+
+### Architecture approval — `delivery_order` added to `ENUM-006`, ruled 2026-09-12
+
+`ENUM-006` is **LOCKED** in Step 11, so adding a value needs the same explicit written approval D-39
+received rather than being treated as routine. **Granted 2026-09-12.** Grounds:
+
+- `STOS-REQ-ORD-006` ("Capture DO details") is **P0** and currently unimplementable — there is no
+  value to file a delivery order under.
+- A delivery order has **no other home** in the package: no domain-model row, no table, no enum.
+- The only alternative is a separate `transport_delivery_orders` table, which would give delivery
+  orders a second home and is forbidden by Step 9's no-duplicate-business-objects rule.
+
+Person 3 therefore receives this as an approved change, not as a question to escalate.
+
+---
+
+## D-44 — CTD §11 requires a consignment lifecycle engine that does not exist
+
+STOS-CTD §11 opens:
+
+> "Status must come from the **lifecycle engine**."
+
+and then lists twenty example values: Created · Document Pending · Compliance Pending · Ready ·
+Allocated · Dispatched · In Transit · At Port · At Delivery · Delivered · Handover Completed ·
+Feedback Pending · POD Pending · Billing Blocked · Billing Ready · Invoiced · Collection Pending ·
+Closed.
+
+**No such engine exists**, and the values are not one entity's lifecycle. They span at least five:
+
+| Span | Owner |
+|---|---|
+| Created, Document Pending, Compliance Pending | Person 3 (documents, compliance) |
+| Ready, Allocated, Dispatched, In Transit, Delivered | Person 1 (trip machine) |
+| At Port, At Delivery | nobody — no gate/port entity (**D-42**) |
+| Handover Completed, Feedback Pending, POD Pending | Person 3 |
+| Billing Blocked, Billing Ready, Invoiced, Collection Pending | Person 3 (billing, collections) |
+
+**Consequence, and the decision taken:** `transport_consignments` has **no `status` column**. A stored
+status would be a roll-up of five lifecycles the table cannot see, and would be wrong the moment any
+one of them moved without the consignment being touched. Status is **derived at read time**, the same
+decision already carried by `PretripReadiness` and `ExceptionSlaState`.
+
+Affected requirement: **STOS-CTD §6** lists "Status" among the Digital Passport identity fields. It is
+satisfied by derivation, not by storage.
+
+### Known consequence, accepted deliberately
+
+A derived status **cannot be filtered, sorted or paginated in SQL.** A list page can show it, but
+"show me every Billing Blocked consignment" has to be computed in PHP across the result set.
+
+At the target scale — MSME operators running 6–50 vehicles — this is acceptable, and the owner
+accepted it explicitly on 2026-09-12 rather than overlooking it.
+
+**Trigger for revisiting:** if a list page or Container 360 needs **server-side** filtering by
+consignment status, we add a derived column **written by the lifecycle engine at that point**. We do
+not hand-maintain a status column before then — a column updated by whoever remembers is precisely
+the drift this entry exists to prevent.
