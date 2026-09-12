@@ -60,5 +60,14 @@ class TransportNumberingServiceProvider extends ServiceProvider
         DocumentTypeRegistry::register('transport_trip', [
             'Transport Trip', 'Transport', '{PREFIX}-{YYYY}-{NEXT}', 'TRP', 6, 'yearly',
         ]);
+
+        // CNM-2026-000001 — STOS-CTD §4's "Internal Consignment ID", which §4
+        // also makes a search key in its own right. Same shape as the order and
+        // the trip because it is the same kind of reference, and because a
+        // module whose three references are formatted three ways teaches the
+        // operator nothing about which is which.
+        DocumentTypeRegistry::register('transport_consignment', [
+            'Transport Consignment', 'Transport', '{PREFIX}-{YYYY}-{NEXT}', 'CNM', 6, 'yearly',
+        ]);
     }
 }
