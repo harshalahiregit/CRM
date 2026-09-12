@@ -50,6 +50,10 @@ Authority for who rules on what: the Conflict Resolution matrix in
 | D-35 | Ticket 013's five registry references all point at wrong rows | High | Step 12 maintainer | Open — corrected in `ExceptionScope` |
 | D-36 | Step 9 has `arrived`; Step 11 STT-007 skips it | Medium | Architecture | Open — 014's to resolve |
 | D-37 | Exception category is a required field with no enum | Medium | Architecture | Open — OPS §88 used |
+| D-38 | 25 P0 container/LR/DO requirements with no ticket | **Critical** | Step 12 maintainer | Open — blocks Block 1 scope |
+| D-39 | Step 9's canonical domain model omits Consignment and Container | **Critical** | Architecture | Open — needs architecture approval |
+| D-40 | `container_number` uniqueness contradicts required historical reuse | High | Architecture + Product | Open — blocks the migration |
+| D-41 | LR and DO have two candidate homes; DO is in no enum | High | Architecture | Open — blocks the migration |
 
 ---
 
@@ -800,3 +804,91 @@ exception engine. Recorded because a later ticket adding a ninth category, or a 
 grouping by a different set, would fragment it. `ExceptionCategory::AUTOMATIC_SOURCE` maps five of
 the eight to the requirement that would raise them automatically once its ticket exists, so that
 ticket reuses the category rather than inventing one.
+
+---
+
+## D-38 — Twenty-five P0 requirements for Container/LR/DO, and no ticket owns any of them
+
+The RTM carries a whole **CTD (Container Traceability)** domain:
+
+| Requirement | Priority |
+|---|---|
+| `STOS-REQ-CTD-001` … `CTD-021` — search by container number, link container to customer/order/LR/DO/vehicle/driver/compliance/temperature/incidents/CAPA/documents/POD/feedback/billing/invoice, chronological timeline | 17 × P0, 4 × P1 |
+| `STOS-REQ-MDM-008` — "Maintain container master/reference" | P0 |
+| `STOS-REQ-ORD-004` — "Link container to order" | P0 |
+| `STOS-REQ-ORD-005` — "Capture LR details" | P0 |
+| `STOS-REQ-ORD-006` — "Capture DO details" | P0 |
+
+There is also a dedicated master-baseline specification, **STOS-CTD v1.0**, 1 927 lines.
+
+Step 12's 30-ticket register contains **no Consignment, Container, LR or DO ticket**. It runs
+Customer → Vehicle → Driver → Rate Card → Order → Trip → Viability → Allocation → Pre-trip →
+Advance → Cost → Transit → POD → Billing → …
+
+Same shape as D-18 (dispatch): the REQUIREMENT is specified and P0, the TICKET does not exist. Larger,
+because this is twenty-five requirements and a whole specification document rather than one row.
+
+---
+
+## D-39 — Step 9's canonical domain model has no Consignment and no Container
+
+Step 9's `Domain_Model` sheet lists **twenty** canonical objects: Customer, Order, Rate/Quote, Trip,
+Vehicle, Driver, **LR/Bilty**, E-Way Bill, Advance, Cost Entry, POD, Invoice, Collection, Settlement,
+Exception, Risk, Policy, Notification, Document, Accounting Event.
+
+Neither *Consignment* nor *Container* is among them. LR/Bilty (#7) is described as the
+*"Consignment document"* — which reads as Step 9 folding the consignment INTO the LR.
+
+The sheet's own header states: *"Canonical entities and ownership rules; **duplicate business objects
+are prohibited without architecture approval**."*
+
+STOS-CTD §8 contradicts that folding directly and at length:
+
+> "These must not be treated as identical concepts. **Container** — the physical transport unit.
+> **Consignment** — the commercial/operational shipment being transported. A consignment may contain
+> one container; contain multiple containers; have other cargo references. The architecture must
+> therefore support Consignment ↔ Container as a controlled relationship."
+
+Step 9 outranks STOS-CTD in the authority order (Step 9 > 10 > 11 > 12 > 13 > everything else), so
+**creating Consignment and Container as entities needs the architecture approval Step 9 itself names.**
+It cannot be taken as already granted.
+
+---
+
+## D-40 — `container_number` cannot be both unique and historically reusable
+
+STOS-CTD §7 requires the container number to:
+
+> "be unique **where applicable**; follow configurable format validation; be searchable; be
+> **normalized for search**; **retain original entered value** where required; maintain historical
+> associations. Container reuse across different trips is allowed **historically** but not
+> simultaneously where business rules prohibit it."
+
+A `UNIQUE(tenant_id, container_number)` constraint makes the second sentence impossible: the same
+physical container (`ABCD1234567`) carries a different consignment every few weeks, and that history
+is the entire point of the Digital Passport.
+
+Three separable requirements are hiding in one line — a **container master** (one row per physical
+unit, where the number IS unique), a **consignment↔container association** (many over time, unique
+only while active), and a **normalized search key** alongside the original entered value. The
+"unique where applicable" wording does not say which of the three it governs.
+
+---
+
+## D-41 — LR and DO have two candidate homes, and DO has no enum value
+
+**LR is already modelled as a document, twice over.** Step 9 #7 makes LR/Bilty a canonical
+*document*; Step 11 `ENUM-006` lists `lr` among `document_type`; and this codebase already has
+`transport_documents` with `document_type='lr'`, a `document_number`, `issued_on`, validity dates,
+versioning and `IDX-010 UNIQUE(tenant, entity_type, entity_id, document_type, version)`.
+
+Creating a separate `transport_lr_records` table would give LR **two homes** — the exact thing
+Step 9's domain model and the team's "no duplicate master data" rule forbid.
+
+**DO is worse: it is in no enum at all.** `ENUM-006` reads
+`lr|ewaybill|invoice|pod|driver_doc|vehicle_doc|insurance|permit|fitness|other`. There is no
+`do`/`delivery_order`, and that enum's owner is recorded as *Product+Compliance* — not this section.
+
+Meanwhile RTM `ORD-005`/`ORD-006` place *"Capture LR details"* and *"Capture DO details"* under the
+**Transport Order** module, suggesting they are attributes captured against the order rather than
+entities of their own.
