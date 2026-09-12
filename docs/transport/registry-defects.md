@@ -51,9 +51,9 @@ Authority for who rules on what: the Conflict Resolution matrix in
 | D-36 | Step 9 has `arrived`; Step 11 STT-007 skips it | Medium | Architecture | Open — 014's to resolve |
 | D-37 | Exception category is a required field with no enum | Medium | Architecture | Open — OPS §88 used |
 | D-38 | 25 P0 container/LR/DO requirements with no ticket | **Critical** | Step 12 maintainer | Open — blocks Block 1 scope |
-| D-39 | Step 9's canonical domain model omits Consignment and Container | **Critical** | Architecture | Open — needs architecture approval |
-| D-40 | `container_number` uniqueness contradicts required historical reuse | High | Architecture + Product | Open — blocks the migration |
-| D-41 | LR and DO have two candidate homes; DO is in no enum | High | Architecture | Open — blocks the migration |
+| D-39 | Step 9's canonical domain model omits Consignment and Container | **Critical** | Architecture | ✅ **RULED 2026-09-12 — Option A1, approval granted** |
+| D-40 | `container_number` uniqueness contradicts required historical reuse | High | Architecture + Product | ✅ **RULED 2026-09-12 — Option B1, master + association** |
+| D-41 | LR and DO have two candidate homes; DO is in no enum | High | Architecture | ✅ **RULED 2026-09-12 — LR/DO stay documents; requested from Person 3** |
 | D-42 | `CTD-009` gate/port records have no entity anywhere | Medium | Product + Architecture | Deferred — logged, P1 |
 | D-43 | `CTD-014` urgent-trip records depend on an unowned P0 | Medium | Step 12 maintainer | Deferred — logged, P1 |
 
@@ -855,6 +855,21 @@ Step 9 outranks STOS-CTD in the authority order (Step 9 > 10 > 11 > 12 > 13 > ev
 **creating Consignment and Container as entities needs the architecture approval Step 9 itself names.**
 It cannot be taken as already granted.
 
+### RULED 2026-09-12 — Option A1, and this IS the approval Step 9 asks for
+
+Consignment and Container become **canonical entities**. Step 9's `Domain_Model` header requires
+*"architecture approval"* for a new business object by name; that approval is granted explicitly and
+in writing, so **Step 9 is amended, not contradicted**.
+
+Grounds recorded with the ruling:
+
+- **STOS-CTD v1.0** is a master-baseline specification written entirely about these two objects.
+- The RTM carries **17 P0** `CTD-*` requirements plus `MDM-008` and `ORD-004/005/006`.
+- **STOS-MS-001 §14** opens the 30 September demonstration with *"Search by Container Number / Open
+  Container 360"* — unbuildable without them.
+
+The omission from Step 9's twenty-object list is a gap in a summary, not a deliberate exclusion.
+
 ---
 
 ## D-40 — `container_number` cannot be both unique and historically reusable
@@ -874,6 +889,18 @@ Three separable requirements are hiding in one line — a **container master** (
 unit, where the number IS unique), a **consignment↔container association** (many over time, unique
 only while active), and a **normalized search key** alongside the original entered value. The
 "unique where applicable" wording does not say which of the three it governs.
+
+### RULED 2026-09-12 — Option B1, master + association (three tables)
+
+`UNIQUE(tenant_id, container_number)` is **rejected**: it makes the historical reuse CTD §7 requires
+impossible, and a container is a physical unit that outlives any one consignment.
+
+- Uniqueness lives on the **master**: `UNIQUE(tenant_id, container_number_normalized)`.
+- The **association** table carries `attached_at` / `detached_at` and enforces one *active*
+  attachment per container — history allowed, simultaneity refused.
+- `container_number` (the original entered value) is kept beside the normalized key, per CTD §7.
+
+The association table is built in Block 1, not deferred.
 
 ---
 
@@ -923,3 +950,17 @@ depends on an unbuilt P0 cannot be delivered.
 
 **Deferred**, owner Step 12 maintainer. Noted alongside D-38: this is the second requirement found
 stranded behind a P0 that no ticket claims.
+
+### RULED 2026-09-12 — LR and DO stay documents
+
+`transport_lr_records` and `transport_delivery_orders` are **not built**. LR and DO are documents on
+the consignment, carried by the existing `transport_documents` table.
+
+Three changes are needed in **Person 3's** files and have been requested in writing
+(`docs/transport/REQUEST-person3-document-entity.md`):
+
+1. `TransportDocumentEntity::CONSIGNMENT` added to `ALL` and `ACTIVE`
+2. a match arm for `TransportConsignment` in `TransportDocumentService::resolveEntity()`
+3. `delivery_order` added to `ENUM-006` / `TransportDocumentType`
+
+Block 2's document panel codes against a stub until those land.
