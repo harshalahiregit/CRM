@@ -1057,11 +1057,17 @@ a SCOPE_OWN grant who reaches the endpoint receives the tenant's whole list, not
 
 **The substance of this defect is not one bad grant — it is that the whole permission layer is a
 boolean gate.** `scope()` is called in exactly one place, `allows()`, and only to test the result for
-null; the scope string it returns is never used to narrow a query anywhere in the codebase, and the
-constants `SCOPE_OWN` and `SCOPE_ASSIGNED` appear in no file outside `TransportPermission.php`.
-So all **21** permission keys answer "may this role touch this area at all?" and none answers
-"which rows?". Read it as *21 permissions, none of which narrow anything*, not as *one grant is
-wrong*.
+null. **No production code path consumes either scope.** The only occurrences outside the matrix are
+in three test files — `TransportContextFoundationTest` and `TransportAssignPermissionTest`, which
+assert the matrix values themselves, and `TransportRouteExposureTest`, which names them in its
+failure text. So the scopes are already pinned by tests; what is missing is anything that *acts* on
+them.
+
+So all **21** permission keys answer "may this role touch this area at all?" and none answers "which
+rows?". Read it as *21 permissions, none of which narrow anything*, not as *one grant is wrong*.
+
+(The count is 21, not the 13 on Step 11's original Permissions sheet: the difference is the rows
+derived under D-8, D-21 and D-45 for entities that sheet never covered.)
 
 `ORDER_VIEW` and `TRIP_VIEW` both grant `ROLE_CUSTOMER => SCOPE_OWN`, and `TRIP_VIEW` also grants
 `ROLE_SUPPLIER => SCOPE_ASSIGNED`.

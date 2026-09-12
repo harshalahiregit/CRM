@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\Transport\TransportAllocationController;
 use App\Http\Controllers\Api\Transport\TransportCapabilityController;
+use App\Http\Controllers\Api\Transport\TransportConsignmentController;
 use App\Http\Controllers\Api\Transport\TransportDispatchController;
 use App\Http\Controllers\Api\Transport\TransportDriverController;
 use App\Http\Controllers\Api\Transport\TransportOrderController;
@@ -194,6 +195,42 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
     Route::middleware('transport.permission:'.TransportPermission::TRIP_DISPATCH)->group(function () {
         Route::patch('/trips/{trip}/dispatch',       [TransportDispatchController::class, 'confirm'])->whereNumber('trip');
         Route::patch('/trips/{trip}/dispatch/amend', [TransportDispatchController::class, 'amend'])->whereNumber('trip');
+    });
+
+    /* ── Consignments — STOS-CTD §8 ───────────────────────────────────
+     *
+     * NO REGISTRY ROW, AND NO TICKET. Step 11's API registry names no
+     * consignment endpoint and Step 12's register owns no consignment ticket
+     * (D-38). The entity exists by explicit architecture approval (D-39); the
+     * permission keys follow the D-8/D-21 precedent for a missing Permissions
+     * row (D-45). Paths follow the conventions this module already set.
+     *
+     * Reads and writes are separate groups, so someone who may watch a customer's
+     * shipments cannot alter them. Delete is narrower still — removing a
+     * shipment record is not an ordinary edit (mirrors VEHICLE_DELETE).
+     *
+     * Every one of these sits inside the file's role:admin,staff group. There is
+     * deliberately no customer-facing read: SCOPE_OWN narrows nothing today
+     * (D-46), so a customer reaching any of these would receive the tenant's
+     * whole list. TransportRouteExposureTest fails the build if one escapes.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::CONSIGNMENT_VIEW)->group(function () {
+        Route::get('/consignments',            [TransportConsignmentController::class, 'index']);
+        Route::get('/consignments/{id}',       [TransportConsignmentController::class, 'show'])->whereNumber('id');
+        // CTD-003 — every consignment on one order.
+        Route::get('/orders/{order}/consignments', [TransportConsignmentController::class, 'forOrder'])->whereNumber('order');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::CONSIGNMENT_CREATE)->group(function () {
+        Route::post('/consignments', [TransportConsignmentController::class, 'store']);
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::CONSIGNMENT_UPDATE)->group(function () {
+        Route::put('/consignments/{id}', [TransportConsignmentController::class, 'update'])->whereNumber('id');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::CONSIGNMENT_DELETE)->group(function () {
+        Route::delete('/consignments/{id}', [TransportConsignmentController::class, 'destroy'])->whereNumber('id');
     });
 
     /* ── Trips — write (PERM-002) ─────────────────────────────────────── */
