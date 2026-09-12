@@ -1055,6 +1055,14 @@ edit.
 So `SCOPE_OWN` and `SCOPE_ASSIGNED` are **declared in the matrix and enforced nowhere.** A holder of
 a SCOPE_OWN grant who reaches the endpoint receives the tenant's whole list, not their own rows.
 
+**The substance of this defect is not one bad grant — it is that the whole permission layer is a
+boolean gate.** `scope()` is called in exactly one place, `allows()`, and only to test the result for
+null; the scope string it returns is never used to narrow a query anywhere in the codebase, and the
+constants `SCOPE_OWN` and `SCOPE_ASSIGNED` appear in no file outside `TransportPermission.php`.
+So all **21** permission keys answer "may this role touch this area at all?" and none answers
+"which rows?". Read it as *21 permissions, none of which narrow anything*, not as *one grant is
+wrong*.
+
 `ORDER_VIEW` and `TRIP_VIEW` both grant `ROLE_CUSTOMER => SCOPE_OWN`, and `TRIP_VIEW` also grants
 `ROLE_SUPPLIER => SCOPE_ASSIGNED`.
 
@@ -1082,5 +1090,38 @@ Caught by `TransportAssignPermissionTest::test_adding_assign_did_not_widen_any_o
 which pins the exact set of grants a client holds. That test did its job: it turned an unnoticed
 widening into a decision.
 
-**Owner: Security.** The ask is either to implement the narrowing or to remove the two unenforced
-grants until the ticket that needs them exists.
+### The tripwire, and exactly what it covers
+
+`TransportRouteExposureTest` turns this from a finding into an enforcement. It reads the **live route
+collection**, not the route file, and matches on two axes:
+
+| Axis | Catches |
+|---|---|
+| URI prefix `api/transport` | a customer route under our prefix, declared in **any** file or provider |
+| Controller in `App\Http\Controllers\Api\Transport` | a **differently-prefixed** route — e.g. `api/portal/my-containers` — pointed at one of our controllers |
+
+Every matched route must be behind `role:admin,staff`, require `auth:sanctum`, and carry a
+`transport.permission` key. Both axes were verified by temporarily registering the mistake they
+guard against and confirming the suite went red.
+
+### Residual exposure — the part Person 1 cannot guard
+
+Neither axis can see **a controller outside this section querying the transport models or tables
+directly**, touching none of our routes and none of our controllers. A portal or reporting endpoint
+doing `TransportConsignment::where(...)` would bypass both guards entirely, and the unenforced
+scopes would be irrelevant to it because it never consults them.
+
+That is outside Person 1's reach by construction: we can guard our routes and our controllers, not
+everyone else's queries.
+
+**Owner: Security.** Please read the ask as three separable things, so effort is not spent on what
+is already done:
+
+1. **Already covered — no action needed.** Customer-facing routes under our prefix, and foreign
+   routes pointing at our controllers. The tripwire fails the build.
+2. **The core fix.** Either implement the `SCOPE_OWN` / `SCOPE_ASSIGNED` narrowing so a scoped grant
+   actually filters, or remove the unenforced grants until a ticket needs them. Until one of those
+   happens, the coarse `role:admin,staff` door is the only real control.
+3. **The residual exposure above.** Direct model or table access from outside Transport. This needs a
+   control we cannot write from here — a repository-level tenant/owner guard, a query-log review, or
+   a rule that transport data is reached only through Transport's services.

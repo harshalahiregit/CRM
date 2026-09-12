@@ -33,6 +33,17 @@ use Tests\TestCase;
  * grant, and reasonably assume it narrows something.
  *
  * This test fails the moment that route is registered, and says what to do.
+ *
+ * ── WHAT IT COVERS, PRECISELY ────────────────────────────────────────────
+ * It reads the LIVE ROUTE COLLECTION, not routes/transport.php, and matches on
+ * two axes: URI prefix `api/transport`, OR a controller in this section's
+ * namespace. So a customer-facing route is caught whether it is declared in our
+ * route file, in a portal provider, under our prefix, or under someone else's
+ * prefix pointing at our controllers.
+ *
+ * The one thing it cannot see is a foreign controller reading the transport
+ * models or tables directly, bypassing our routes and controllers entirely.
+ * That is the residual exposure named in D-46's ask to Security.
  */
 class TransportRouteExposureTest extends TestCase
 {
@@ -54,11 +65,42 @@ class TransportRouteExposureTest extends TestCase
         'api/transport/permissions',
     ];
 
-    /** @return array<int,\Illuminate\Routing\Route> */
+    /** Controllers that belong to this section, wherever they are routed from. */
+    private const OWNED_CONTROLLER_NAMESPACE = 'App\\Http\\Controllers\\Api\\Transport';
+
+    /**
+     * Every route this section is responsible for, matched on TWO axes.
+     *
+     * The filter reads the live route collection, NOT the route file — so a
+     * route declared in any file, by any service provider, is caught. Two axes
+     * rather than one, because each misses something the other catches:
+     *
+     *   BY URI         catches api/transport/... declared anywhere, including
+     *                  a portal provider registering into our prefix.
+     *   BY CONTROLLER  catches a differently-prefixed route — say
+     *                  api/portal/my-containers — pointed at one of OUR
+     *                  controllers, which the URI axis alone would miss.
+     *
+     * What neither axis can catch is a foreign controller that queries the
+     * transport models or tables directly, touching no route and no controller
+     * of ours. That is outside this section to guard and is recorded as the
+     * residual exposure in D-46's ask to Security.
+     *
+     * @return array<int,\Illuminate\Routing\Route>
+     */
     private function transportRoutes(): array
     {
         return collect(Route::getRoutes()->getRoutes())
-            ->filter(fn ($route) => str_starts_with($route->uri(), 'api/transport'))
+            ->filter(function ($route) {
+                if (str_starts_with($route->uri(), 'api/transport')) {
+                    return true;
+                }
+
+                $controller = $route->getAction('controller');
+
+                return is_string($controller)
+                    && str_starts_with($controller, self::OWNED_CONTROLLER_NAMESPACE.'\\');
+            })
             ->values()
             ->all();
     }
@@ -70,6 +112,24 @@ class TransportRouteExposureTest extends TestCase
         $this->assertGreaterThan(
             30, count($this->transportRoutes()),
             'the route filter matched almost nothing — this test would pass vacuously',
+        );
+    }
+
+    public function test_the_controller_axis_actually_matches_something(): void
+    {
+        // The URI axis alone would keep this test green even if the controller
+        // axis were broken, so the second axis is verified on its own.
+        $byController = collect(Route::getRoutes()->getRoutes())
+            ->filter(function ($route) {
+                $controller = $route->getAction('controller');
+
+                return is_string($controller)
+                    && str_starts_with($controller, self::OWNED_CONTROLLER_NAMESPACE.'\\');
+            });
+
+        $this->assertGreaterThan(
+            30, $byController->count(),
+            'the controller axis matched almost nothing — it would catch a re-prefixed route never',
         );
     }
 
