@@ -400,8 +400,8 @@ class DispatchTest extends TestCase
 
         $this->dispatch->confirm($trip, $this->fields(), self::TENANT_A, $this->actor);
 
-        $this->assertSame($vBefore, $vehicle->fresh()->status, 'transport_vehicles is Developer A territory');
-        $this->assertSame($dBefore, $driver->fresh()->availability, 'transport_drivers is Developer A territory');
+        $this->assertSame($vBefore, $vehicle->fresh()->status, 'transport_vehicles is Person 2 territory');
+        $this->assertSame($dBefore, $driver->fresh()->availability, 'transport_drivers is Person 2 territory');
         // Specifically: still allocated/assigned, NOT in-operation/on-trip.
         $this->assertSame(VehicleStatus::ALLOCATED, $vehicle->fresh()->status);
         $this->assertSame(DriverAvailability::ASSIGNED, $driver->fresh()->availability);
@@ -418,12 +418,12 @@ class DispatchTest extends TestCase
             ->first(fn ($e) => ($e->new_values['status'] ?? null) === TripStatus::DISPATCHED);
 
         $this->assertFalse($entry->context['fleet_state_applied']);
-        $this->assertStringContainsString('pending Developer A', $entry->context['fleet_boundary']);
+        $this->assertStringContainsString('pending Person 2', $entry->context['fleet_boundary']);
     }
 
     public function test_a_gateway_that_applies_is_recorded_as_applied(): void
     {
-        // Proves the seam works, so Developer A's real service needs no change here.
+        // Proves the seam works, so Person 2's real service needs no change here.
         $this->app->bind(FleetResourceGateway::class, fn () => new class implements FleetResourceGateway {
             public function markDispatched($trip, ?int $v, ?int $d, int $t, $a = null): bool { return true; }
         });

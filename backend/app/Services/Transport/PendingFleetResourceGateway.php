@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Log;
 /**
  * The gateway that deliberately does nothing.
  *
- * TODO(Developer A / Fleet): replace this with a real reserve/release service.
+ * TODO(Person 2 / Fleet): replace this with a real reserve/release service.
  * ---------------------------------------------------------------------------
  * BRW-050 requires a confirmed dispatch to set Vehicle = In Operation and
  * Driver = On Trip. transport_vehicles and transport_drivers belong to Fleet,
@@ -43,7 +43,7 @@ class PendingFleetResourceGateway implements FleetResourceGateway
         int $tenantId,
         ?User $actor = null,
     ): bool {
-        Log::channel('transport')->info('Fleet resource update SKIPPED — pending Developer A gateway', [
+        Log::channel('transport')->info('Fleet resource update SKIPPED — pending Person 2 gateway', [
             'rule'       => 'BRW-050',
             'intent'     => 'vehicle -> in operation, driver -> on trip',
             'trip_id'    => $trip->id,
@@ -51,7 +51,7 @@ class PendingFleetResourceGateway implements FleetResourceGateway
             'driver_id'  => $driverId,
             'tenant_id'  => $tenantId,
             'user_id'    => $actor?->id,
-            'boundary'   => 'transport_vehicles / transport_drivers are owned by Fleet (Developer A)',
+            'boundary'   => 'transport_vehicles / transport_drivers are owned by Fleet (Person 2)',
         ]);
 
         return false;

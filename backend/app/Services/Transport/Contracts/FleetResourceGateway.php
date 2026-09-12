@@ -12,7 +12,18 @@ use App\Models\User;
  * BRW-050 says that when dispatch is confirmed the system must "Update Vehicle
  * = In Operation" and "Update Driver = On Trip". Both live in
  * transport_vehicles and transport_drivers, which under the three-developer
- * split belong to Developer A (Fleet).
+ * split belong to Person 2 (Fleet).
+ *
+ * ── THE NAMING, BECAUSE IT HAS ALREADY BEEN THREE THINGS ─────────────────
+ * STOS-TM-001 is the approved baseline and it names the three developers
+ * Person 1 (Core/Commercial/Operations), Person 2 (Fleet) and Person 3
+ * (Documents/Compliance/Billing). Use those names.
+ *
+ * Earlier comments in this module said "Developer A" for Fleet, and an earlier
+ * planning note used "Dev A" for the Core role — the opposite party. Three
+ * vocabularies for three people is how a TODO addressed to someone gets read by
+ * the wrong person, so the letters are gone and TM-001's names are the only
+ * ones used from 2026-09-12 onward.
  *
  * The owner ruled on 2026-09-10: Trip side must NOT write those tables. So this
  * interface is the seam. Dispatch states its intent through it and stops; what
@@ -23,7 +34,7 @@ use App\Models\User;
  * moveVehicle() sets status to `allocated`, moveDriver() sets availability to
  * `assigned`. That predates the split and is flagged, not fixed here: rewriting
  * a shipped, tested service is not this scope, and doing it silently would be
- * worse than leaving it visible. When Developer A supplies the real gateway,
+ * worse than leaving it visible. When Person 2 supplies the real gateway,
  * allocation should move behind it too.
  *
  * ── WHAT AN IMPLEMENTATION OWES ───────────────────────────────────────────

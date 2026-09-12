@@ -34,7 +34,7 @@ class TransportNumberingServiceProvider extends ServiceProvider
     /**
      * Bind the Fleet boundary.
      *
-     * TODO(Developer A / Fleet): swap PendingFleetResourceGateway for the real
+     * TODO(Person 2 / Fleet): swap PendingFleetResourceGateway for the real
      * reserve/release service. BRW-050 needs a dispatched trip to set
      * Vehicle = In Operation and Driver = On Trip, but transport_vehicles and
      * transport_drivers belong to Fleet and the owner ruled on 2026-09-10 that

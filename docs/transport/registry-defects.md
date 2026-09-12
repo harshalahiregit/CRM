@@ -415,7 +415,7 @@ What was built, against the list above:
 | "Version history" (TRP-P0-006's audit column) | Built — `DispatchService::history()`, reconstructed from `transport_audit_logs`. No versions table; see `DispatchScope::VERSION_HISTORY`. |
 | RTM `STOS-REQ-OPS-008` "Record dispatch" | Built — `pretrip_ok → dispatched` with actor and timestamp. |
 | BRW-050's eight side effects | Dispositioned individually in `DispatchScope::BRW_050_DISPOSITION` — 2 built, 2 boundary, 2 no_ticket, 2 blocked. |
-| Vehicle → In Operation, Driver → On Trip | **Not built — boundary.** Owner's ruling of 2026-09-10: Trip side must not write `transport_vehicles` / `transport_drivers`. Routed through `FleetResourceGateway`; the shipped implementation records intent and returns false. One `bind()` in `TransportNumberingServiceProvider::register()` is the whole handover to Developer A. |
+| Vehicle → In Operation, Driver → On Trip | **Not built — boundary.** Owner's ruling of 2026-09-10: Trip side must not write `transport_vehicles` / `transport_drivers`. Routed through `FleetResourceGateway`; the shipped implementation records intent and returns false. One `bind()` in `TransportNumberingServiceProvider::register()` is the whole handover to Person 2. |
 | `STT-006` `dispatched → in_transit` | **Not built.** Transit is SNG-TRN-013, blocked on the owner's Q1/Q3 ruling. |
 | Change approval after release | **Not built.** No approval entity exists in Step 11; every approval in the package is P1. An amendment carries a reason and a version but no approver, and the API and the screen both say so rather than letting silence read as approval. |
 

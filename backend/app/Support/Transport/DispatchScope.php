@@ -40,7 +40,7 @@ namespace App\Support\Transport;
  * ── THE FLEET BOUNDARY (owner's ruling, 2026-09-10) ───────────────────────
  * BRW-050 says a confirmed dispatch must "Update Vehicle = In Operation" and
  * "Update Driver = On Trip". Under the three-developer split those are
- * Developer A's tables, and the owner ruled: do NOT write to them.
+ * Person 2's tables, and the owner ruled: do NOT write to them.
  *
  * So this module calls FleetResourceGateway and nothing else. The shipped
  * implementation deliberately does nothing but record the intent. See that
@@ -108,8 +108,8 @@ final class DispatchScope
      */
     public const BRW_050_DISPOSITION = [
         'Create/start Trip'                 => 'built',      // the state change itself
-        'Update Vehicle = In Operation'     => 'boundary',   // Developer A
-        'Update Driver = On Trip'           => 'boundary',   // Developer A
+        'Update Vehicle = In Operation'     => 'boundary',   // Person 2
+        'Update Driver = On Trip'           => 'boundary',   // Person 2
         'Start GPS monitoring'              => 'blocked',    // SNG-TRN-020, P1
         'Start reefer monitoring'           => 'no_ticket',  // no reefer/genset model exists
         'Start trip timeline'               => 'built',      // the audit trail already is one
@@ -120,7 +120,7 @@ final class DispatchScope
     /* ── Excluded, with reasons ───────────────────────────────────────── */
 
     public const EXCLUDED = [
-        'fleet resource state' => "BRW-050's Vehicle/Driver updates. Owner's ruling 2026-09-10: Trip side must not write transport_vehicles or transport_drivers. Routed through FleetResourceGateway, which records intent and does nothing until Developer A supplies a reserve/release service.",
+        'fleet resource state' => "BRW-050's Vehicle/Driver updates. Owner's ruling 2026-09-10: Trip side must not write transport_vehicles or transport_drivers. Routed through FleetResourceGateway, which records intent and does nothing until Person 2 supplies a reserve/release service.",
         'change approval'      => 'TRP-P0-006 requires "Change approval after release". No approval entity exists in Step 11, and every other approval in this package is P1 and deferred (PLN-007, CMP-007, BRW-049, BR-P0-011). An amendment therefore requires a reason and is versioned and audited, but is not gated on an approver.',
         'dispatch override'    => 'BRW-049 — "Only authorized users may override dispatch block." P1, consistent with every other override.',
         'notifications'        => 'TRP-P0-006 names customer/ops notification over WhatsApp/SMS. That is SNG-TRN-021, P1/Backlog.',

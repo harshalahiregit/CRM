@@ -41,7 +41,7 @@ import {
  *
  * ── THE FLEET BOUNDARY IS SHOWN, NOT HIDDEN ─────────────────────────────
  * BRW-050 says a dispatched trip sets Vehicle = In Operation and Driver = On
- * Trip. Those are Developer A's tables and the owner ruled Trip side must not
+ * Trip. Those are Person 2's tables and the owner ruled Trip side must not
  * write them, so the shipped gateway records the intent and does nothing.
  *
  * The panel says so. A dispatcher who is told a trip is released will reasonably
@@ -330,7 +330,7 @@ export default function DispatchPanel({ trip, canDispatch, onChanged }) {
           </div>
 
           {/* BRW-050's side effects that did not happen. Driven by the response,
-              so it disappears on its own once Developer A's gateway applies. */}
+              so it disappears on its own once Person 2's gateway applies. */}
           {latestRelease?.fleet_state_applied === false && (
             <div style={{ marginTop: 9, padding: '9px 12px', borderRadius: 9, background: 'rgba(251,191,36,0.10)', border: '1px solid rgba(251,191,36,0.28)', fontSize: 12, color: '#fbbf24', display: 'flex', gap: 8 }}>
               <Link2Off size={14} style={{ flexShrink: 0, marginTop: 1 }} />

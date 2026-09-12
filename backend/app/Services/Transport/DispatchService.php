@@ -43,7 +43,7 @@ use Illuminate\Support\Facades\Log;
  *
  * ── THE FLEET BOUNDARY ────────────────────────────────────────────────────
  * BRW-050 wants Vehicle = In Operation and Driver = On Trip. Those are
- * Developer A's tables and the owner ruled Trip side must not write them.
+ * Person 2's tables and the owner ruled Trip side must not write them.
  * Everything goes through FleetResourceGateway, whose shipped implementation
  * records intent and does nothing. A gateway that declines is NOT an error:
  * refusing a real dispatch over a bookkeeping mismatch would be worse than the
@@ -113,7 +113,7 @@ class DispatchService
                     ],
                     // BRW-050's side effects, and what actually happened to each.
                     'fleet_state_applied' => $applied,
-                    'fleet_boundary'      => $applied ? null : 'pending Developer A gateway — vehicle/driver state NOT updated',
+                    'fleet_boundary'      => $applied ? null : 'pending Person 2 gateway — vehicle/driver state NOT updated',
                     'deferred_effects'    => array_keys(array_filter(
                         DispatchScope::BRW_050_DISPOSITION,
                         fn (string $d) => $d !== 'built',
