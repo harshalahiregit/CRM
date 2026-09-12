@@ -57,6 +57,8 @@ Authority for who rules on what: the Conflict Resolution matrix in
 | D-42 | `CTD-009` gate/port records have no entity anywhere | Medium | Product + Architecture | Deferred — logged, P1 |
 | D-43 | `CTD-014` urgent-trip records depend on an unowned P0 | Medium | Step 12 maintainer | Deferred — logged, P1 |
 | D-44 | CTD §11 requires a consignment lifecycle engine that does not exist | High | Architecture + Product | Open — status derived at read time as a consequence |
+| D-45 | Consignment permissions are in no registry row | Medium | Security + Architecture | Open — mirrored from Order, precedent D-8/D-21 |
+| D-46 | `SCOPE_OWN` is granted but its narrowing is not implemented | **Critical** | Security | Open — latent, not currently reachable |
 
 ---
 
@@ -1022,3 +1024,63 @@ accepted it explicitly on 2026-09-12 rather than overlooking it.
 consignment status, we add a derived column **written by the lifecycle engine at that point**. We do
 not hand-maintain a status column before then — a column updated by whoever remembers is precisely
 the drift this entry exists to prevent.
+
+---
+
+## D-45 — Consignment permissions exist in no registry row
+
+Step 11's Permissions sheet has thirteen rows — `PERM-001..013`, covering Trip, Advance, Expense,
+POD, Collection, ControlRoom and Registry. There is **no Consignment row**, exactly as there is no
+Order row (already noted in `TransportPermission`'s docblock).
+
+Four keys were therefore created, following the precedent of D-8 (vehicle/driver) and D-21
+(pre-trip): `transport.consignment.view` / `.create` / `.update` / `.delete`.
+
+The matrix **mirrors Order**, which itself mirrors Trip (`PERM-001`/`PERM-002`) — the narrowest
+defensible reading, since a consignment is the commercial description of an order's cargo, so
+whoever may read or write the order may read or write what it is carrying. `delete` is deliberately
+narrower than `update`, following `VEHICLE_DELETE`: removing a shipment record is not an ordinary
+edit.
+
+**One deliberate divergence from Order — see D-46.**
+
+---
+
+## D-46 — `SCOPE_OWN` is granted to customers but the narrowing is unimplemented
+
+`TransportPermissionService::scope()` states plainly:
+
+> "'own' and 'assigned' narrowing arrives with the tickets that own it."
+
+So `SCOPE_OWN` and `SCOPE_ASSIGNED` are **declared in the matrix and enforced nowhere.** A holder of
+a SCOPE_OWN grant who reaches the endpoint receives the tenant's whole list, not their own rows.
+
+`ORDER_VIEW` and `TRIP_VIEW` both grant `ROLE_CUSTOMER => SCOPE_OWN`, and `TRIP_VIEW` also grants
+`ROLE_SUPPLIER => SCOPE_ASSIGNED`.
+
+### This is NOT currently exploitable, and the reason matters
+
+Every route under `/api/transport/*` sits behind `role:admin,staff` (routes/transport.php:44). A user
+with `role='client'` is refused at that coarse door before any permission is evaluated, so the grant
+can never be used today. **No live leak exists.**
+
+### Why it is logged as Critical anyway
+
+The grant is a loaded gun with the safety on. The moment anyone adds a customer-facing transport
+route — and **STOS-CTD's Digital Passport is precisely that**, a customer looking up their own
+container — the coarse door opens and the unimplemented narrowing becomes a cross-customer data leak
+*within* a tenant. Whoever adds that route will reasonably assume a declared SCOPE_OWN grant narrows
+something.
+
+### What this ticket did about it
+
+`CONSIGNMENT_VIEW` **withholds the customer grant**, the single place where Consignment does not
+mirror Order. Adding it would have created a second latent grant for the same future route. The
+grant belongs to the ticket that implements the narrowing, not to this one.
+
+Caught by `TransportAssignPermissionTest::test_adding_assign_did_not_widen_any_other_permission`,
+which pins the exact set of grants a client holds. That test did its job: it turned an unnoticed
+widening into a decision.
+
+**Owner: Security.** The ask is either to implement the narrowing or to remove the two unenforced
+grants until the ticket that needs them exists.

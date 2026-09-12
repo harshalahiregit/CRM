@@ -80,6 +80,12 @@ final class TransportPermission
     public const PRETRIP_VIEW    = 'transport.pretrip.view';
     public const PRETRIP_PERFORM = 'transport.pretrip.perform';
 
+    /* ── Consignment. NOT IN THE REGISTRY — see D-45. ───────────────────── */
+    public const CONSIGNMENT_VIEW   = 'transport.consignment.view';
+    public const CONSIGNMENT_CREATE = 'transport.consignment.create';
+    public const CONSIGNMENT_UPDATE = 'transport.consignment.update';
+    public const CONSIGNMENT_DELETE = 'transport.consignment.delete';
+
     /* ── Dispatch. NOT IN THE REGISTRY — see D-18/D-21. ─────────────────── */
     public const TRIP_DISPATCH = 'transport.trip.dispatch';
 
@@ -307,6 +313,57 @@ final class TransportPermission
         ],
 
         // Mirrors PERM-001.
+        /*
+         * Consignment mirrors Order, which mirrors Trip. Step 11's Permissions
+         * sheet has thirteen rows — Trip, Advance, Expense, POD, Collection,
+         * ControlRoom, Registry — and no Consignment row, exactly as it has no
+         * Order row (D-45). Mirroring the parent is the narrowest defensible
+         * reading: a consignment is the commercial description of an order's
+         * cargo, so whoever may read or write the order may read or write what
+         * it is carrying.
+         *
+         * DELETE is deliberately NARROWER than update, following VEHICLE_DELETE:
+         * removing a shipment record is not an ordinary edit, and the service
+         * already refuses it once a trip is carrying the consignment.
+         */
+        self::CONSIGNMENT_VIEW => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+            // NO customer grant, deliberately — and this is the one place
+            // Consignment does NOT mirror Order. ORDER_VIEW gives the customer
+            // SCOPE_OWN, but TransportPermissionService::scope() states that
+            // "'own' and 'assigned' narrowing arrives with the tickets that own
+            // it" — the narrowing is NOT implemented. That grant is harmless
+            // today only because the whole /api/transport group sits behind
+            // role:admin,staff, so no customer can reach any route to use it.
+            //
+            // Copying it here would add a second latent grant that becomes a
+            // cross-customer leak the day a customer-facing transport route is
+            // added — and STOS-CTD's Digital Passport is exactly such a route.
+            // Recorded as D-46. The grant belongs to the ticket that implements
+            // the narrowing, not to this one.
+        ],
+        self::CONSIGNMENT_CREATE => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        self::CONSIGNMENT_UPDATE => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        self::CONSIGNMENT_DELETE => [
+            self::ROLE_OWNER => self::SCOPE_ALL,
+            self::ROLE_ADMIN => self::SCOPE_ALL,
+        ],
+
         self::ORDER_VIEW => [
             self::ROLE_OWNER      => self::SCOPE_ALL,
             self::ROLE_OPERATIONS => self::SCOPE_ALL,
