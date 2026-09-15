@@ -1442,6 +1442,40 @@ expressed structurally rather than as free text, so allocation can filter on it 
 a small service-requirements master is a **Product** decision; none of the three is authorised today
 and inventing one would repeat **D-9** and **D-50**.
 
+### The same absence, already recorded twice in this codebase
+
+This is not a telemetry problem that happens to look structural. **The identical missing definition
+was written down eight days earlier, blocking a different feature**, and neither entry knew about the
+other. `AllocationScope::EXCLUDED` (ruled 2026-09-07, while building SNG-TRN-009 step 5) carries two
+of its own:
+
+> **`'vehicle type'`** — "FLEET §17. The order carries free-text `service_type` and the vehicle
+> free-text `vehicle_type`; no document specifies a mapping between them. **Any matching rule would
+> be invented and would falsely block legitimate vehicles.**"
+>
+> **`'service requirement'`** — "FLEET §17. `order.special_requirements` is free text; **no
+> structured service-capability model exists.**"
+
+So three features are blocked by one absent definition:
+
+| Feature | What it cannot do | Recorded |
+|---|---|---|
+| Allocation — vehicle eligibility | match a vehicle's capability to the order's requirement | `AllocationScope`, 2026-09-07 |
+| Allocation — service requirement | read `special_requirements` as anything but prose | `AllocationScope`, 2026-09-07 |
+| Telemetry — TM-001 §12 P0 rule | know a trip is temperature-critical | **D-52**, 2026-09-15 |
+
+Two of the three are Person 2's (allocation scoring, telemetry) and reached from opposite ends of the
+module. That is what makes this a priority rather than a request: **the same missing structural
+service requirement has now been independently rediscovered three times**, by two different tickets,
+eight days apart, and each time the honest response was to refuse to invent it.
+
+### No workaround will be built
+
+Not an enum of our own, not parsing `"Reefer"` out of free text, not a boolean bolted onto the trip.
+Each would be D-9 again, and `AllocationScope` already names the specific harm: *an invented matching
+rule would falsely block legitimate vehicles.* Guessing here does not fail loudly — it refuses real
+work in production.
+
 **Owner: Product to define, Person 2 to consume.** Raised now rather than at the demo: the rule is
 P0, it is on the 30 September script, and it currently has nothing to key on.
 

@@ -32,10 +32,12 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * offers no `status()` helper either — a method that guessed would be worse
  * than the absence, because callers would believe it.
  *
- * ── THE CONTAINER RELATION IS DEFERRED, NOT FORGOTTEN ────────────────────
- * `containers()` is not declared yet. transport_containers and the association
- * table are the next two steps of this block; declaring a relation against a
- * table that does not exist would break every test that touches this model.
+ * ── STOS-CTD §8's RELATIONSHIP ───────────────────────────────────────────
+ * `containerAttachments()` is a HasMany, not a BelongsToMany: §8 allows a
+ * consignment to carry one container, several, or none at all ("other cargo
+ * references" — break-bulk), and §7 requires each attachment's history to
+ * survive its detachment. A pivot would hide `attached_at` / `detached_at`,
+ * which are the record rather than metadata about it.
  *
  * @property int         $tenant_id
  * @property string      $consignment_number
@@ -78,6 +80,17 @@ class TransportConsignment extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Client::class, 'customer_id');
+    }
+
+    /**
+     * STOS-CTD §8 — every container attachment, current and historical.
+     *
+     * Newest first: the usual question is "what is on this consignment now?".
+     */
+    public function containerAttachments(): HasMany
+    {
+        return $this->hasMany(ConsignmentContainer::class, 'consignment_id')
+            ->orderByDesc('attached_at');
     }
 
     /**
