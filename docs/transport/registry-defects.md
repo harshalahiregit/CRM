@@ -65,6 +65,7 @@ Authority for who rules on what: the Conflict Resolution matrix in
 | D-50 | `container_type` is a required field with no vocabulary anywhere | Medium | Product | Open — free-text column, not an enum |
 | D-51 | The suite runs on sqlite; production runs MySQL | High | Architecture | Open — repository-wide, not Transport's to fix |
 | D-52 | No structural marker for a temperature-critical trip | **High** | Product + Person 2 | Open — TM-001 §12's P0 rule has nothing to key on |
+| D-53 | Two CLOSED attachment windows may overlap | Low | Person 1 | Open — latent, unreachable today |
 
 ---
 
@@ -1495,3 +1496,51 @@ hits across all thirty package documents** (the same search that produced D-50).
 to be specified and Person 3's (STOS-CMP §76), and `status`, which D-44 resolved. Recorded here
 rather than silently omitted, because a field dropped without a note is indistinguishable from a
 field forgotten — which is exactly how these two nearly went missing.
+
+---
+
+## D-53 — Two closed attachment windows may overlap in the past
+
+STOS-CTD §7: *"Container reuse across different trips is allowed historically but **not
+simultaneously**."*
+
+`transport_consignment_containers` enforces **one ACTIVE attachment** per container per tenant, via a
+generated column under a unique index (see the migration, and D-51 for why it is built that way).
+That is the live half of the rule and it holds on both engines.
+
+**The historical half does not.** Two *closed* windows may overlap. Probed directly against MySQL:
+
+```
+window A  consignment 1  2026-01-01 → 2026-01-10   inserted
+window B  consignment 2  2026-01-05 → 2026-01-08   ACCEPTED
+```
+
+Those two rows say the container was on two consignments at once between 5 and 8 January — exactly
+what §7 forbids — and nothing refuses them.
+
+### Why it is Low, not High
+
+**No code path can currently produce it.** Attachment sets `attached_at = now()`, and detachment sets
+`detached_at = now()`, so every window opens after the previous one closed. The overlap is reachable
+only by back-dating, which requires either a raw SQL write or a feature that does not exist —
+a back-dated correction, or a bulk import of historical movements.
+
+Both of those are plausible next features, which is why this is written down now rather than when one
+is being built.
+
+### Why it was not fixed in this step
+
+A database-level exclusion constraint (PostgreSQL's `EXCLUDE USING gist`) would express it exactly.
+**Neither MySQL nor sqlite has one**, so the portable options are a trigger (two dialects, the D-51
+trap again) or a service-level check.
+
+A service check is sound *here* and unsound for the live rule, and the distinction is worth stating:
+the live rule must resist two concurrent requests racing, which a check cannot do. A back-dated
+correction is a deliberate, single, human act — a check at that one entry point is adequate.
+
+**So the fix belongs to the feature that introduces back-dating, not to this one.** Building it now
+would be a guard on a door nobody can open, and the natural place to put it — a value object holding
+the window — would not have enforced anything either.
+
+**Owner: Person 1**, to implement alongside back-dated correction or historical import, whichever
+arrives first.

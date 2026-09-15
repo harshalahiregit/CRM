@@ -65,6 +65,41 @@ class TransportContainer extends Model
      * the row, not to one code path: a seeder, a console command, a test
      * factory or a future import all get it for free, and none of them can
      * produce a row whose search key disagrees with its number.
+     *
+     * ── WHY THIS IS A HOOK AND active_container_key IS A GENERATED COLUMN ──
+     * This feature derives two values two different ways, and the difference is
+     * not a preference — it is what each engine can express.
+     *
+     *   active_container_key  CASE WHEN detached_at IS NULL THEN container_id
+     *                         ELSE NULL END. Verified identical on MySQL 8.0.46
+     *                         and sqlite 3.45.1, so the DATABASE owns it.
+     *
+     *   this key              needs trim + strip-non-alphanumeric + uppercase.
+     *                         MySQL 8 has REGEXP_REPLACE; SQLITE HAS NO SUCH
+     *                         FUNCTION (verified: "no such function:
+     *                         REGEXP_REPLACE"). A generated column would need
+     *                         two different expressions, and the suite runs on
+     *                         the engine that cannot express it — the D-51 trap,
+     *                         where a constraint is real in production and
+     *                         absent from every test.
+     *
+     * So the rule that both engines agree on lives in the database, and the one
+     * they do not lives in PHP, where there is exactly one implementation.
+     *
+     * ── THE RESIDUAL, STATED PLAINLY ─────────────────────────────────────
+     * A saving() hook covers ELOQUENT WRITES ONLY. A raw DB::table() insert, a
+     * raw SQL import or a migration writing rows directly BYPASSES IT, and can
+     * produce a row whose search key disagrees with its number — a container
+     * that looks perfectly correct on screen and cannot be found by search.
+     *
+     * active_container_key has no such gap: the database computes it however
+     * the row arrives.
+     *
+     * This is acceptable today because nothing writes containers that way. It
+     * will not be acceptable for a bulk container import, which is the obvious
+     * next thing to write here. Anyone doing that must either go through this
+     * model or call normalise() themselves — and should read this before
+     * writing it, not after.
      */
     protected static function booted(): void
     {

@@ -35,6 +35,21 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * behaves identically on both — see ContainerAttachmentGuaranteeTest and
  * ContainerAttachmentMysqlTest, and D-51 for why both exist.
  *
+ * ── WHY THIS ONE IS THE DATABASE'S AND THE SEARCH KEY IS NOT ────────────
+ * TransportContainer::container_number_normalized guards the same class of
+ * invariant — a derived value that must never disagree with its source — and is
+ * derived by a model hook instead. The difference is expressibility, not taste.
+ *
+ * This expression is CASE WHEN ... THEN ... ELSE NULL END, which both engines
+ * evaluate identically. The normalisation needs trim + strip-non-alphanumeric +
+ * uppercase; MySQL 8 has REGEXP_REPLACE and sqlite has no such function, so a
+ * generated column would need two different expressions and the suite runs on
+ * the engine that cannot express it at all.
+ *
+ * The consequence is a real asymmetry worth knowing: THIS key is enforced no
+ * matter who writes the row, including a raw SQL import. That one is not — see
+ * the residual noted on TransportContainer::booted().
+ *
  * ── NO seal_number ──────────────────────────────────────────────────────
  * It was in an earlier schema proposal of mine. STOS-CMP §76/§77 specify seal
  * control and make a mismatch a Security/Quality Incident — Person 3's under
