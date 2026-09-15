@@ -62,6 +62,8 @@ Authority for who rules on what: the Conflict Resolution matrix in
 | D-47 | Two conflicting structural standards: TEAM-CONVENTIONS vs the DDD instruction | **Critical** | Architecture | Open — analysis posted, nothing moved |
 | D-48 | Two LOCKED events we produce are never emitted | High | Person 1 | ✅ **Built 2026-09-15 — EVT-001, EVT-002 emitted** |
 | D-49 | TM-001 §11 and Step 11's Event_Registry name different event sets and payloads | Medium | Architecture | Open — `consignment_id` approved 2026-09-15; read-contract question unanswered |
+| D-50 | `container_type` is a required field with no vocabulary anywhere | Medium | Product | Open — free-text column, not an enum |
+| D-51 | The suite runs on sqlite; production runs MySQL | High | Architecture | Open — repository-wide, not Transport's to fix |
 
 ---
 
@@ -1320,3 +1322,70 @@ than a mandatory parent.
 table yet and no route context to send, and *a field carrying null forever is worse than an absent
 field, because a consumer will code against it.* They are to be proposed again when the container
 table exists. A test pins their absence.
+
+---
+
+## D-50 — `container_type` is a required field and no document defines its values
+
+`STOS-CTD §6` lists **Container Type** among the Digital Passport's identity fields, so the field is
+required. **No document in the package defines what may go in it.**
+
+Searched: all thirty package documents for `20ft`, `40ft`, `20'`, `40'`, `HC`, `high cube` and
+`ISO 6346` — **zero hits in any of them**. Step 11 has no container enum, and no container DB row at
+all. `reefer` appears exactly once across the whole package, in a genset risk rule (`CTD §17`), not
+as a container type.
+
+So `container_type` ships as a **free-text `varchar(40)`, not an enum**. Inventing a vocabulary —
+`20ft | 40ft | 40HC | reefer | tank | flatrack` — would be `allocation_type` again (**D-9**): a field
+whose values no approved document authorises, which two modules then disagree about.
+
+**What is needed:** the authorised list, or a ruling that tenant-defined types are acceptable (in
+which case it needs a master table, not an enum). **Owner: Product.**
+
+Until then the column accepts what the operator types, which is honest, and a later migration can
+constrain it once the list exists.
+
+---
+
+## D-51 — The test suite runs on sqlite; production runs MySQL
+
+`phpunit.xml` sets `DB_CONNECTION=sqlite` and `DB_DATABASE=:memory:`. Production is **MySQL 8.0.46**.
+The entire repository contains **two** MySQL-aware tests.
+
+Every green suite therefore proves the schema behaves in an engine that **does not run the
+business**. For most columns the gap is harmless. For a **constraint** it is not, and the difference
+is invisible:
+
+| Mechanism | sqlite | MySQL |
+|---|---|---|
+| Partial unique index (`... WHERE x IS NULL`) | **supported** | **not supported** |
+| `VARCHAR(n)` length reported to `Schema::getColumns()` | plain `varchar`, **no length** | `varchar(n)` |
+| Generated column + unique index | supported | supported |
+
+The first row is the dangerous one: a partial index would pass every test and enforce **nothing** in
+production. The second already bit this module — a `FLD-014 VARCHAR(20)` assertion passed for the
+wrong reason until it was re-pointed at the migration source.
+
+### How this was handled for the container attachment, as a worked example
+
+STOS-CTD §7's "not simultaneously" rule needed database enforcement. Rather than assume:
+
+1. The partial index was **rejected** for the reason above.
+2. The chosen mechanism — a `STORED` generated column holding `container_id` only while
+   `detached_at IS NULL`, with a unique index over it — was **probed directly against MySQL 8.0.46
+   and sqlite 3.45.1 before the migration was written.** Five behaviours, identical on both.
+3. `ContainerAttachmentGuaranteeTest` asserts the refusal on whatever engine the suite runs.
+4. `ContainerAttachmentMysqlTest` asserts it again on MySQL, skipping otherwise.
+
+That fourth test carries a hazard worth naming, because it nearly happened: `use RefreshDatabase` is
+declared at **class** level, so a MySQL test sharing a class with sqlite tests inherits it and runs
+`migrate:fresh` **against the working database**. It is therefore a separate class with no
+`RefreshDatabase` anywhere, writing under a tenant id no workspace holds and removing its own rows in
+a `finally` block. A test that destroys the database to prove the database is safe is not a test.
+
+### The ask
+
+**Owner: Architecture.** Not urgent, not Transport's to fix, and it should not live only in a
+conversation. Options, in rough order of cost: run the existing suite against MySQL in CI as a second
+job; or add a small MySQL-only group for schema and constraint tests; or accept the gap explicitly
+and require that every constraint be probed against both engines before it ships, as was done here.
