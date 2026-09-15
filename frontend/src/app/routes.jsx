@@ -43,28 +43,28 @@ const PublicScanAccess = lazy(() => import('@/pages/public/PublicScanAccess'))
 // HR Module (lazy)
 const HRLayout = lazy(() => import('@/modules/hr/HRLayout'))
 // SangoeTrack screens — read and write track.sangoe.in, store nothing here.
-const TrackAttendance     = lazy(() => import('@/modules/hr/pages/track/TrackAttendance'))
-const TrackCorrections    = lazy(() => import('@/modules/hr/pages/track/TrackCorrections'))
-const TrackLeave          = lazy(() => import('@/modules/hr/pages/track/TrackLeave'))
+const TrackAttendance = lazy(() => import('@/modules/hr/pages/track/TrackAttendance'))
+const TrackCorrections = lazy(() => import('@/modules/hr/pages/track/TrackCorrections'))
+const TrackLeave = lazy(() => import('@/modules/hr/pages/track/TrackLeave'))
 const TrackReimbursements = lazy(() => import('@/modules/hr/pages/track/TrackReimbursements'))
 // The CRM's own expense claims — the native replacement for the track/ pair above.
-const Reimbursements   = lazy(() => import('@/modules/hr/pages/Reimbursements'))
+const Reimbursements = lazy(() => import('@/modules/hr/pages/Reimbursements'))
 const MyReimbursements = lazy(() => import('@/modules/hr/pages/MyReimbursements'))
-const Advances        = lazy(() => import('@/modules/hr/pages/Advances'))
-const MyAdvances      = lazy(() => import('@/modules/hr/pages/MyAdvances'))
+const Advances = lazy(() => import('@/modules/hr/pages/Advances'))
+const MyAdvances = lazy(() => import('@/modules/hr/pages/MyAdvances'))
 const AttendanceReports = lazy(() => import('@/modules/hr/pages/AttendanceReports'))
 const MyLeave = lazy(() => import('@/modules/hr/pages/MyLeave'))
 const MyCorrections = lazy(() => import('@/modules/hr/pages/MyCorrections'))
-const Corrections   = lazy(() => import('@/modules/hr/pages/Corrections'))
-const HrSettings    = lazy(() => import('@/modules/hr/pages/HrSettings'))
-const DemoRequests  = lazy(() => import('@/modules/hr/pages/DemoRequests'))
-const TrackAdvances       = lazy(() => import('@/modules/hr/pages/track/TrackAdvances'))
-const TrackStaff          = lazy(() => import('@/modules/hr/pages/track/TrackStaff'))
-const TrackPayroll        = lazy(() => import('@/modules/hr/pages/track/TrackPayroll'))
-const TrackDemoRequests   = lazy(() => import('@/modules/hr/pages/track/TrackDemoRequests'))
-const TrackReports        = lazy(() => import('@/modules/hr/pages/track/TrackReports'))
-const TrackHolidays       = lazy(() => import('@/modules/hr/pages/track/TrackHolidays'))
-const TrackSettings       = lazy(() => import('@/modules/hr/pages/track/TrackSettings'))
+const Corrections = lazy(() => import('@/modules/hr/pages/Corrections'))
+const HrSettings = lazy(() => import('@/modules/hr/pages/HrSettings'))
+const DemoRequests = lazy(() => import('@/modules/hr/pages/DemoRequests'))
+const TrackAdvances = lazy(() => import('@/modules/hr/pages/track/TrackAdvances'))
+const TrackStaff = lazy(() => import('@/modules/hr/pages/track/TrackStaff'))
+const TrackPayroll = lazy(() => import('@/modules/hr/pages/track/TrackPayroll'))
+const TrackDemoRequests = lazy(() => import('@/modules/hr/pages/track/TrackDemoRequests'))
+const TrackReports = lazy(() => import('@/modules/hr/pages/track/TrackReports'))
+const TrackHolidays = lazy(() => import('@/modules/hr/pages/track/TrackHolidays'))
+const TrackSettings = lazy(() => import('@/modules/hr/pages/track/TrackSettings'))
 const HRDashboard = lazy(() => import('@/modules/hr/pages/HRDashboard'))
 const ManpowerRequests = lazy(() => import('@/modules/hr/pages/ManpowerRequests'))
 const JobPostings = lazy(() => import('@/modules/hr/pages/JobPostings'))
@@ -77,7 +77,7 @@ const OfferLetters = lazy(() => import('@/modules/hr/pages/OfferLetters'))
 const Onboarding = lazy(() => import('@/modules/hr/pages/Onboarding'))
 const Employees = lazy(() => import('@/modules/hr/pages/Employees'))
 const EmployeeProfile = lazy(() => import('@/modules/hr/pages/EmployeeProfile'))
-const ExitInterview   = lazy(() => import('@/modules/hr/pages/ExitInterview'))
+const ExitInterview = lazy(() => import('@/modules/hr/pages/ExitInterview'))
 const RecruitmentServices = lazy(() => import('@/modules/hr/pages/RecruitmentServices'))
 const RecruiterWorkspace = lazy(() => import('@/modules/hr/pages/RecruiterWorkspace'))
 const CompanyApprovals = lazy(() => import('@/modules/hr/pages/CompanyApprovals'))
@@ -237,15 +237,16 @@ const InventoryManufacturing = lazy(() => import('@/modules/inventory/pages/Inve
 const PurchaseLayout = lazy(() => import('@/modules/purchase/PurchaseLayout'))
 
 // Sangoe Transport OS (STOS) — SNG-TRN-006 orders, SNG-TRN-007 trips.
-const TransportLayout      = lazy(() => import('@/modules/transport/TransportLayout'))
-const TransportOrders      = lazy(() => import('@/modules/transport/pages/TransportOrders'))
+const TransportLayout = lazy(() => import('@/modules/transport/TransportLayout'))
+const TransportOrders = lazy(() => import('@/modules/transport/pages/TransportOrders'))
 const TransportOrderDetail = lazy(() => import('@/modules/transport/pages/TransportOrderDetail'))
-const TransportTrips       = lazy(() => import('@/modules/transport/pages/TransportTrips'))
-const TransportTripDetail  = lazy(() => import('@/modules/transport/pages/TransportTripDetail'))
-const TransportVehicles    = lazy(() => import('@/modules/transport/pages/TransportVehicles'))
+const TransportTrips = lazy(() => import('@/modules/transport/pages/TransportTrips'))
+const TransportConsignments = lazy(() => import('@/modules/transport/pages/TransportConsignments'))
+const TransportTripDetail = lazy(() => import('@/modules/transport/pages/TransportTripDetail'))
+const TransportVehicles = lazy(() => import('@/modules/transport/pages/TransportVehicles'))
 const TransportVehicleDetail = lazy(() => import('@/modules/transport/pages/TransportVehicleDetail'))
-const TransportDrivers     = lazy(() => import('@/modules/transport/pages/TransportDrivers'))
-const TransportDriverDetail  = lazy(() => import('@/modules/transport/pages/TransportDriverDetail'))
+const TransportDrivers = lazy(() => import('@/modules/transport/pages/TransportDrivers'))
+const TransportDriverDetail = lazy(() => import('@/modules/transport/pages/TransportDriverDetail'))
 
 const PurchaseRequests = lazy(() => import('@/modules/purchase/pages/PurchaseRequests'))
 const PurchaseOrders = lazy(() => import('@/modules/purchase/pages/PurchaseOrders'))
@@ -573,19 +574,19 @@ export default function AppRoutes() {
           <Route path="corrections" element={<S><Corrections /></S>} />
           <Route path="settings" element={<S><HrSettings /></S>} />
           <Route path="demo-requests" element={<S><DemoRequests /></S>} />
-            {/* SangoeTrack — live from track.sangoe.in. Namespaced under track/
+          {/* SangoeTrack — live from track.sangoe.in. Namespaced under track/
                 so the CRM's own attendance page above keeps its route. */}
-            <Route path="track/attendance" element={<S><TrackAttendance /></S>} />
-            <Route path="track/corrections" element={<S><TrackCorrections /></S>} />
-            <Route path="track/leave" element={<S><TrackLeave /></S>} />
-            <Route path="track/reimbursements" element={<S><TrackReimbursements /></S>} />
-            <Route path="track/advances" element={<S><TrackAdvances /></S>} />
-            <Route path="track/staff" element={<S><TrackStaff /></S>} />
-            <Route path="track/payroll" element={<S><TrackPayroll /></S>} />
-            <Route path="track/demo-requests" element={<S><TrackDemoRequests /></S>} />
-            <Route path="track/reports" element={<S><TrackReports /></S>} />
-            <Route path="track/holidays" element={<S><TrackHolidays /></S>} />
-            <Route path="track/settings" element={<S><TrackSettings /></S>} />
+          <Route path="track/attendance" element={<S><TrackAttendance /></S>} />
+          <Route path="track/corrections" element={<S><TrackCorrections /></S>} />
+          <Route path="track/leave" element={<S><TrackLeave /></S>} />
+          <Route path="track/reimbursements" element={<S><TrackReimbursements /></S>} />
+          <Route path="track/advances" element={<S><TrackAdvances /></S>} />
+          <Route path="track/staff" element={<S><TrackStaff /></S>} />
+          <Route path="track/payroll" element={<S><TrackPayroll /></S>} />
+          <Route path="track/demo-requests" element={<S><TrackDemoRequests /></S>} />
+          <Route path="track/reports" element={<S><TrackReports /></S>} />
+          <Route path="track/holidays" element={<S><TrackHolidays /></S>} />
+          <Route path="track/settings" element={<S><TrackSettings /></S>} />
           <Route path="organization-setup" element={<S><OrganizationSetup /></S>} />
           <Route path="org-chart" element={<S><OrgChart /></S>} />
           <Route path="interview-questions" element={<S><InterviewQuestionBank /></S>} />
@@ -810,6 +811,7 @@ export default function AppRoutes() {
           <Route path="orders" element={<S><TransportOrders /></S>} />
           <Route path="orders/:id" element={<S><TransportOrderDetail /></S>} />
           <Route path="trips" element={<S><TransportTrips /></S>} />
+          <Route path="consignments" element={<S><TransportConsignments /></S>} />
           <Route path="trips/:id" element={<S><TransportTripDetail /></S>} />
           <Route path="vehicles" element={<S><TransportVehicles /></S>} />
           <Route path="vehicles/:id" element={<S><TransportVehicleDetail /></S>} />
@@ -1011,7 +1013,7 @@ export default function AppRoutes() {
         <ProtectedRoute roles={['vendor', 'third_party_vendor']}><S><VendorPortalShell /></S></ProtectedRoute>
       }>
         <Route index element={<Navigate to="dashboard" replace />} />
-        <Route path="dashboard"         element={<S><PortalDashboard /></S>} />
+        <Route path="dashboard" element={<S><PortalDashboard /></S>} />
 
         {/* Onboarding is the VENDOR's own six-step workflow, and this is now its
             ONLY mount — the admin copy under /app/tpv/onboarding/:id was removed
@@ -1022,78 +1024,78 @@ export default function AppRoutes() {
             read-only status for the vendor.
             The portal has no LIST — a vendor has exactly one onboarding, which
             PortalOnboardingEntry resolves from the token. */}
-        <Route path="registration"      element={<S><MyRegistrationStatus /></S>} />
-        <Route path="compliance"        element={<S><VendorPortalCompliance /></S>} />
-        <Route path="governance"        element={<S><VendorPortalGovernance /></S>} />
-        <Route path="support"           element={<S><PortalSupport /></S>} />
-        <Route path="onboarding"        element={<S><PortalOnboardingEntry /></S>} />
-        <Route path="onboarding/:id"    element={<S><TpvOnboardingWizard /></S>} />
+        <Route path="registration" element={<S><MyRegistrationStatus /></S>} />
+        <Route path="compliance" element={<S><VendorPortalCompliance /></S>} />
+        <Route path="governance" element={<S><VendorPortalGovernance /></S>} />
+        <Route path="support" element={<S><PortalSupport /></S>} />
+        <Route path="onboarding" element={<S><PortalOnboardingEntry /></S>} />
+        <Route path="onboarding/:id" element={<S><TpvOnboardingWizard /></S>} />
 
         {/* TPV Workforce — PortalWorkforceShell resolves vendor from token (no :vendorId in URL). */}
         <Route path="workforce" element={<S><PortalWorkforceShell /></S>}>
           <Route index element={<Navigate to="dashboard" replace />} />
-          <Route path="dashboard"   element={<S><WorkforceDashboard /></S>} />
-          <Route path="workers"     element={<S><TpvWorkers /></S>} />
+          <Route path="dashboard" element={<S><WorkforceDashboard /></S>} />
+          <Route path="workers" element={<S><TpvWorkers /></S>} />
           <Route path="workers/:id" element={<S><TpvWorkerWizard /></S>} />
-          <Route path="ppe"         element={<S><TpvPpe /></S>} />
+          <Route path="ppe" element={<S><TpvPpe /></S>} />
           {/* Gate Log is the security desk's record — admin-only. */}
-          <Route path="gate-log"    element={<Navigate to="/vendor-portal/workforce/attendance" replace />} />
-          <Route path="attendance"  element={<S><WorkforceAttendance /></S>} />
-          <Route path="strikes"     element={<S><TpvStrikes /></S>} />
+          <Route path="gate-log" element={<Navigate to="/vendor-portal/workforce/attendance" replace />} />
+          <Route path="attendance" element={<S><WorkforceAttendance /></S>} />
+          <Route path="strikes" element={<S><TpvStrikes /></S>} />
         </Route>
 
         {/* Purchase-side vendor routes (vendor role only) */}
-        <Route path="documents"         element={<S><PortalDocuments /></S>} />
-        <Route path="contacts"          element={<S><MyContacts /></S>} />
-        <Route path="overview"          element={<S><MyOverview /></S>} />
-        <Route path="customers"         element={<S><MyCustomers /></S>} />
-        <Route path="kb"                element={<S><MyKb /></S>} />
-        <Route path="projects"          element={<S><MyWork view="projects" /></S>} />
-        <Route path="tasks"             element={<S><MyWork view="tasks" /></S>} />
-        <Route path="tickets"           element={<S><MyWork view="tickets" /></S>} />
-        <Route path="expenses"          element={<S><MyWork view="expenses" /></S>} />
-        <Route path="risk-score"        element={<S><MyPerformance view="risk" /></S>} />
-        <Route path="feedback"          element={<S><MyPerformance view="feedback" /></S>} />
-        <Route path="penalty"           element={<S><MyPerformance view="penalty" /></S>} />
-        <Route path="awards"            element={<S><MyPerformance view="award" /></S>} />
-        <Route path="referrals"         element={<S><MyPerformance view="referral" /></S>} />
-        <Route path="ptw"               element={<S><MyHsse view="ptw" /></S>} />
-        <Route path="incidents"         element={<S><MyHsse view="incidents" /></S>} />
-        <Route path="pre-alert"         element={<S><MyShipments view="pre-alert" /></S>} />
-        <Route path="packages"          element={<S><MyShipments view="packages" /></S>} />
-        <Route path="shipping"          element={<S><MyShipments view="shipping" /></S>} />
-        <Route path="orders/:id"        element={<S><PortalOrderDetail /></S>} />
-        <Route path="invoices/:id"      element={<S><PortalInvoiceDetail /></S>} />
+        <Route path="documents" element={<S><PortalDocuments /></S>} />
+        <Route path="contacts" element={<S><MyContacts /></S>} />
+        <Route path="overview" element={<S><MyOverview /></S>} />
+        <Route path="customers" element={<S><MyCustomers /></S>} />
+        <Route path="kb" element={<S><MyKb /></S>} />
+        <Route path="projects" element={<S><MyWork view="projects" /></S>} />
+        <Route path="tasks" element={<S><MyWork view="tasks" /></S>} />
+        <Route path="tickets" element={<S><MyWork view="tickets" /></S>} />
+        <Route path="expenses" element={<S><MyWork view="expenses" /></S>} />
+        <Route path="risk-score" element={<S><MyPerformance view="risk" /></S>} />
+        <Route path="feedback" element={<S><MyPerformance view="feedback" /></S>} />
+        <Route path="penalty" element={<S><MyPerformance view="penalty" /></S>} />
+        <Route path="awards" element={<S><MyPerformance view="award" /></S>} />
+        <Route path="referrals" element={<S><MyPerformance view="referral" /></S>} />
+        <Route path="ptw" element={<S><MyHsse view="ptw" /></S>} />
+        <Route path="incidents" element={<S><MyHsse view="incidents" /></S>} />
+        <Route path="pre-alert" element={<S><MyShipments view="pre-alert" /></S>} />
+        <Route path="packages" element={<S><MyShipments view="packages" /></S>} />
+        <Route path="shipping" element={<S><MyShipments view="shipping" /></S>} />
+        <Route path="orders/:id" element={<S><PortalOrderDetail /></S>} />
+        <Route path="invoices/:id" element={<S><PortalInvoiceDetail /></S>} />
 
         {/* Roadmap sections not yet built — the full nav tree stays navigable. */}
-        <Route path="s/:key"            element={<S><PortalComingSoon /></S>} />
+        <Route path="s/:key" element={<S><PortalComingSoon /></S>} />
       </Route>
 
       {/* Purchase Vendor Portal — auth (public, independent PurchaseVendor login) */}
-      <Route path="/purchase-portal/login"           element={<S><PurchaseVendorLogin /></S>} />
-      <Route path="/purchase-portal/register"        element={<S><PurchaseVendorRegister /></S>} />
+      <Route path="/purchase-portal/login" element={<S><PurchaseVendorLogin /></S>} />
+      <Route path="/purchase-portal/register" element={<S><PurchaseVendorRegister /></S>} />
       <Route path="/purchase-portal/forgot-password" element={<S><PurchaseVendorForgotPassword /></S>} />
-      <Route path="/purchase-portal/reset-password"  element={<S><PurchaseVendorResetPassword /></S>} />
+      <Route path="/purchase-portal/reset-password" element={<S><PurchaseVendorResetPassword /></S>} />
 
       {/* Customer portal. Public auth screens, then everything behind the
           contact-token guard. The record screens share one table component —
           they differ only in columns, and each is refused server-side if the
           contact was never granted that section. */}
-      <Route path="/portal/login"           element={<S><ClientPortalLogin /></S>} />
+      <Route path="/portal/login" element={<S><ClientPortalLogin /></S>} />
       <Route path="/portal/forgot-password" element={<S><ClientPortalForgotPassword /></S>} />
-      <Route path="/portal/set-password"    element={<S><ClientPortalSetPassword /></S>} />
+      <Route path="/portal/set-password" element={<S><ClientPortalSetPassword /></S>} />
       <Route path="/portal" element={<S><ClientPortalGuard><ClientPortalShell /></ClientPortalGuard></S>}>
         <Route index element={<Navigate to="/portal/dashboard" replace />} />
-        <Route path="dashboard"    element={<S><ClientPortalDashboard /></S>} />
-        <Route path="statement"    element={<S><ClientPortalStatement /></S>} />
-        <Route path="profile"      element={<S><ClientPortalProfile /></S>} />
+        <Route path="dashboard" element={<S><ClientPortalDashboard /></S>} />
+        <Route path="statement" element={<S><ClientPortalStatement /></S>} />
+        <Route path="profile" element={<S><ClientPortalProfile /></S>} />
         <Route path="feedback" element={<S><ClientPortalFeedback /></S>} />
         {['invoices', 'payments', 'credit-notes', 'estimates', 'proposals',
           'contracts', 'projects', 'tickets', 'files', 'notes', 'contacts'].map(v => (
-          <Route key={v} path={v} element={<S><ClientPortalRecords view={v} /></S>} />
-        ))}
+            <Route key={v} path={v} element={<S><ClientPortalRecords view={v} /></S>} />
+          ))}
       </Route>
-      <Route path="/purchase-portal/verify-email"    element={<S><PurchaseVendorVerifyEmail /></S>} />
+      <Route path="/purchase-portal/verify-email" element={<S><PurchaseVendorVerifyEmail /></S>} />
 
       {/* Purchase Vendor Portal — authenticated (PurchaseVendor token only). Data
           scoped server-side from the token; no vendor id in any URL. Independent
@@ -1102,7 +1104,7 @@ export default function AppRoutes() {
         <PurchaseVendorPortalGuard><S><PurchasePortalShell /></S></PurchaseVendorPortalGuard>
       }>
         <Route index element={<Navigate to="dashboard" replace />} />
-        <Route path="dashboard"  element={<S><PurchasePortalDashboard /></S>} />
+        <Route path="dashboard" element={<S><PurchasePortalDashboard /></S>} />
         {/* The six onboarding steps are the VENDOR's own work — profile and final
             submission exist in no other screen, so with these redirected in place
             nothing in the product could submit a purchase onboarding at all. The
@@ -1111,49 +1113,49 @@ export default function AppRoutes() {
             PurchasePortalOnboarding resolves the record from the token via
             onboarding.self() — no id in the URL. */}
         <Route path="onboarding" element={<S><PurchasePortalOnboarding /></S>} />
-        <Route path="documents"  element={<S><PurchasePortalDocuments /></S>} />
+        <Route path="documents" element={<S><PurchasePortalDocuments /></S>} />
         <Route path="compliance" element={<S><PurchasePortalCompliance /></S>} />
         <Route path="governance" element={<S><PurchasePortalGovernance /></S>} />
-        <Route path="approval"   element={<S><PurchasePortalApproval /></S>} />
-        <Route path="kickoff"    element={<S><PurchasePortalKickoff /></S>} />
+        <Route path="approval" element={<S><PurchasePortalApproval /></S>} />
+        <Route path="kickoff" element={<S><PurchasePortalKickoff /></S>} />
         {/* My Workforce — unlocked once the vendor is Active. The 5-step worker
             lifecycle; step 5 (badge) is read-only here, activation is admin-only. */}
-        <Route path="workforce"  element={<S><PurchasePortalWorkforce /></S>} />
-        <Route path="ppe"        element={<S><PurchasePortalPpe /></S>} />
-        <Route path="profile"    element={<S><PurchasePortalProfile /></S>} />
-        <Route path="support"    element={<S><PurchasePortalSupport /></S>} />
+        <Route path="workforce" element={<S><PurchasePortalWorkforce /></S>} />
+        <Route path="ppe" element={<S><PurchasePortalPpe /></S>} />
+        <Route path="profile" element={<S><PurchasePortalProfile /></S>} />
+        <Route path="support" element={<S><PurchasePortalSupport /></S>} />
 
         {/* Commercial (read-only) — one component, driven by the view prop. */}
-        <Route path="orders"      element={<S><PurchasePortalCommercial view="orders" /></S>} />
-        <Route path="quotations"  element={<S><PurchasePortalCommercial view="quotations" /></S>} />
-        <Route path="contracts"   element={<S><PurchasePortalCommercial view="contracts" /></S>} />
-        <Route path="invoices"    element={<S><PurchasePortalCommercial view="invoices" /></S>} />
+        <Route path="orders" element={<S><PurchasePortalCommercial view="orders" /></S>} />
+        <Route path="quotations" element={<S><PurchasePortalCommercial view="quotations" /></S>} />
+        <Route path="contracts" element={<S><PurchasePortalCommercial view="contracts" /></S>} />
+        <Route path="invoices" element={<S><PurchasePortalCommercial view="invoices" /></S>} />
         <Route path="debit-notes" element={<S><PurchasePortalCommercial view="debit-notes" /></S>} />
-        <Route path="statement"   element={<S><PurchasePortalCommercial view="statement" /></S>} />
-        <Route path="payments"    element={<S><PurchasePortalCommercial view="payments" /></S>} />
-        <Route path="contacts"    element={<S><PurchaseMyContacts /></S>} />
-        <Route path="kb"          element={<S><PurchaseMyKb /></S>} />
-        <Route path="overview"    element={<S><PurchasePortalOverview /></S>} />
+        <Route path="statement" element={<S><PurchasePortalCommercial view="statement" /></S>} />
+        <Route path="payments" element={<S><PurchasePortalCommercial view="payments" /></S>} />
+        <Route path="contacts" element={<S><PurchaseMyContacts /></S>} />
+        <Route path="kb" element={<S><PurchaseMyKb /></S>} />
+        <Route path="overview" element={<S><PurchasePortalOverview /></S>} />
 
         {/* Parity with the TPV portal — same shared pages, Purchase api client. */}
-        <Route path="customers"   element={<S><MyCustomers api={PP_API} /></S>} />
-        <Route path="projects"    element={<S><MyWork view="projects" api={PP_API} caps={{ ticketWrite: false }} /></S>} />
-        <Route path="tasks"       element={<S><MyWork view="tasks" api={PP_API} /></S>} />
-        <Route path="tickets"     element={<S><MyWork view="tickets" api={PP_API} caps={{ ticketWrite: false }} /></S>} />
-        <Route path="expenses"    element={<S><MyWork view="expenses" api={PP_API} /></S>} />
-        <Route path="feedback"    element={<S><MyPerformance view="feedback" api={PP_API} /></S>} />
-        <Route path="penalty"     element={<S><MyPerformance view="penalty" api={PP_API} /></S>} />
-        <Route path="awards"      element={<S><MyPerformance view="award" api={PP_API} /></S>} />
-        <Route path="referrals"   element={<S><MyPerformance view="referral" api={PP_API} /></S>} />
-        <Route path="pre-alert"   element={<S><MyShipments view="pre-alert" api={PP_API} /></S>} />
-        <Route path="packages"    element={<S><MyShipments view="packages" api={PP_API} /></S>} />
-        <Route path="shipping"    element={<S><MyShipments view="shipping" api={PP_API} /></S>} />
-        <Route path="risk-score"  element={<S><MyPerformance view="risk" api={PP_API} /></S>} />
-        <Route path="ptw"         element={<S><MyHsse view="ptw" api={PP_API} /></S>} />
-        <Route path="incidents"   element={<S><MyHsse view="incidents" api={PP_API} /></S>} />
+        <Route path="customers" element={<S><MyCustomers api={PP_API} /></S>} />
+        <Route path="projects" element={<S><MyWork view="projects" api={PP_API} caps={{ ticketWrite: false }} /></S>} />
+        <Route path="tasks" element={<S><MyWork view="tasks" api={PP_API} /></S>} />
+        <Route path="tickets" element={<S><MyWork view="tickets" api={PP_API} caps={{ ticketWrite: false }} /></S>} />
+        <Route path="expenses" element={<S><MyWork view="expenses" api={PP_API} /></S>} />
+        <Route path="feedback" element={<S><MyPerformance view="feedback" api={PP_API} /></S>} />
+        <Route path="penalty" element={<S><MyPerformance view="penalty" api={PP_API} /></S>} />
+        <Route path="awards" element={<S><MyPerformance view="award" api={PP_API} /></S>} />
+        <Route path="referrals" element={<S><MyPerformance view="referral" api={PP_API} /></S>} />
+        <Route path="pre-alert" element={<S><MyShipments view="pre-alert" api={PP_API} /></S>} />
+        <Route path="packages" element={<S><MyShipments view="packages" api={PP_API} /></S>} />
+        <Route path="shipping" element={<S><MyShipments view="shipping" api={PP_API} /></S>} />
+        <Route path="risk-score" element={<S><MyPerformance view="risk" api={PP_API} /></S>} />
+        <Route path="ptw" element={<S><MyHsse view="ptw" api={PP_API} /></S>} />
+        <Route path="incidents" element={<S><MyHsse view="incidents" api={PP_API} /></S>} />
 
         {/* Roadmap sections not yet built — the full nav tree stays navigable. */}
-        <Route path="s/:key"     element={<S><PortalComingSoon /></S>} />
+        <Route path="s/:key" element={<S><PortalComingSoon /></S>} />
       </Route>
 
       {/* External Company Portal — company accounts only. Sprint 1: Dashboard live;

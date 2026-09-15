@@ -1,5 +1,5 @@
 import ModuleShell from '@/components/layout/ModuleShell'
-import { LayoutDashboard, Package, Truck, Users } from 'lucide-react'
+import { LayoutDashboard, Package, Truck, Users, Boxes } from 'lucide-react'
 
 /**
  * Sangoe Transport OS module shell.
@@ -16,6 +16,9 @@ const TRANSPORT_GROUPS = [
   { label: 'Operations', icon: LayoutDashboard, items: [
     { label: 'Transport Orders', path: '/app/transport/orders', icon: Package },
     { label: 'Trips',            path: '/app/transport/trips',  icon: Truck },
+    // STOS-CTD §8 — the commercial shipment. Sits with Orders and Trips
+    // because it is a step in the same workflow, not a master record.
+    { label: 'Consignments',     path: '/app/transport/consignments', icon: Boxes },
   ] },
   // Master data (SNG-TRN-003 / 004). Separate group because these are the
   // resources trips consume, not steps in a trip's own workflow.

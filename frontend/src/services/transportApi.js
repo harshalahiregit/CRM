@@ -239,6 +239,37 @@ export const transportPretripApi = {
       }),
 }
 
+/* ── Consignments (STOS-CTD §8) ───────────────────────────────────────── */
+
+/**
+ * The commercial shipment. Six endpoints, staff-only — there is deliberately no
+ * customer-facing read until D-46's scope narrowing exists.
+ *
+ * Note there is no `status` filter and no status field to render: STOS-CTD §11
+ * puts consignment status in a lifecycle engine that is not built (D-44), and
+ * the API REFUSES a status parameter rather than accepting and ignoring one.
+ */
+export const transportConsignmentApi = {
+  list: (params = {}) =>
+    api.get('/transport/consignments', { params }).then((r) => r.data?.data ?? { data: [] }).catch(handleErr),
+
+  get: (id) =>
+    api.get(`/transport/consignments/${id}`).then((r) => r.data?.data ?? null).catch(handleErr),
+
+  /** CTD-003 — every consignment on one order. */
+  forOrder: (orderId) =>
+    api.get(`/transport/orders/${orderId}/consignments`).then((r) => r.data?.data ?? []).catch(handleErr),
+
+  create: (payload) =>
+    api.post('/transport/consignments', payload).then((r) => r.data?.data ?? null).catch(handleErr),
+
+  update: (id, payload) =>
+    api.put(`/transport/consignments/${id}`, payload).then((r) => r.data?.data ?? null).catch(handleErr),
+
+  remove: (id) =>
+    api.delete(`/transport/consignments/${id}`).then((r) => r.data ?? null).catch(handleErr),
+}
+
 /* ── Dispatch (RTM STOS-REQ-OPS-008, FRS TRP-P0-006) ──────────────────── */
 
 /**
@@ -303,6 +334,7 @@ export const transportApi = {
   allocation: transportAllocationApi,
   pretrip: transportPretripApi,
   dispatch: transportDispatchApi,
+  consignments: transportConsignmentApi,
   vehicles: transportVehicleApi,
   drivers: transportDriverApi,
 }
