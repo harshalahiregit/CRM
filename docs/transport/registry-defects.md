@@ -59,6 +59,7 @@ Authority for who rules on what: the Conflict Resolution matrix in
 | D-44 | CTD §11 requires a consignment lifecycle engine that does not exist | High | Architecture + Product | Open — status derived at read time as a consequence |
 | D-45 | Consignment permissions are in no registry row | Medium | Security + Architecture | Open — mirrored from Order, precedent D-8/D-21 |
 | D-46 | `SCOPE_OWN` is granted but its narrowing is not implemented | **Critical** | Security | Open — latent, not currently reachable |
+| D-47 | Two conflicting structural standards: TEAM-CONVENTIONS vs the DDD split | **Critical** | Architecture | Open — analysis posted, nothing moved |
 
 ---
 
@@ -1131,3 +1132,49 @@ is already done:
 3. **The residual exposure above.** Direct model or table access from outside Transport. This needs a
    control we cannot write from here — a repository-level tenant/owner guard, a query-log review, or
    a rule that transport data is reached only through Transport's services.
+
+---
+
+## D-47 — Two structural standards, in direct conflict, both live
+
+A new document, **`Sangoe_Transport_OS_Three_Developer_Split.pdf`** (dated 2026-09-12), mandates a
+Domain-Driven layout that the repository does not use and that `TEAM-CONVENTIONS.md` contradicts.
+
+| | TEAM-CONVENTIONS.md §1 | Three-Developer Split PDF |
+|---|---|---|
+| Models | `app/Models/<Module>/` | `app/Domain/<Domain>/Models/` |
+| Services | `app/Services/<Module>/` | `app/Domain/<Domain>/Services/` |
+| Routes | `routes/<module>.php` | `routes/flow.php` / `resources.php` / `outcome.php` |
+| Controllers | `app/Http/Controllers/Api/<Module>/` | `app/Http/Controllers/Api/V1/Transport/` |
+| Domain names | module names (Transport, Hr, Sales…) | **Flow · Resources · Outcome** |
+| Cross-module access | "call the existing service/API" | `App\Domain\Shared\Contracts\*` only, **CI-enforced** |
+| Migration names | `YYYY_MM_DD_NNNNNN_*` | partitioned per developer: `_1NNN_`, `_2NNN_`, `_3NNN_` |
+
+**Neither is a draft.** `TEAM-CONVENTIONS.md` is what all three developers work to today and what
+every one of the repository's 30 `app/Models/` entries follows. The PDF is dated later and is
+explicit, with CI scripts written out to enforce it.
+
+### Measured state of the repository
+
+- **No `app/Domain/` or `app/Domains/` directory exists.** Not one module uses it.
+- Transport alone: **88 PHP files** under `app/`, **27 test files**, **543 occurrences** of an
+  `App\…\Transport` namespace across **106 files**, **671 passing tests**.
+- 14 frontend files reference `modules/transport` or `transportApi`.
+
+### The blocker that is not about cost
+
+`app/Models/Transport/` contains `TransportVehicle.php` and `TransportDriver.php` — **Person 2's
+models** under TM-001 §8. Any move of that folder crosses the ownership boundary. **Person 1 cannot
+execute this alone even if it is approved**, and the PDF's own CI ownership guard would fail the PR
+that tried.
+
+### Naming discrepancies found while reading
+
+The brief summarising this document described `app/Domains/Operations|Fleet|Finance`. The document
+itself says **`app/Domain/`** (singular) with domains **Flow / Resources / Outcome**, and the tree is
+addressed to "Developer 2 (You)" in the copy that reached us. Whether it binds Person 1 at all is an
+open question, not an assumption.
+
+**Owner: Architecture.** Full analysis, including the behavioural requirements found beyond folder
+naming, in `docs/transport/ANALYSIS-ddd-structure.md`. **Nothing has been moved, created or
+renamed.**
