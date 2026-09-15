@@ -64,6 +64,35 @@ suite runs on sqlite where it would silently pass.
 | **`container_type` as an enum** | **No document anywhere defines its values.** Searched all 30 package documents for `20ft`/`40ft`/`HC`/`high cube`/`ISO 6346` — zero hits — and Step 11 has no container enum and no container DB row. A free-text column, not an enum. Inventing a vocabulary is the D-9 mistake | Product |
 | `CTD-009` gate/port, `CTD-014` urgent-trip | no entity exists | D-42, D-43 |
 
+## 5a. Diffed against my own approved proposal (added 2026-09-15)
+
+The source check above did not catch two fields, because they were never in the source — they were
+in **my** proposal. Nothing had compared the two documents. This section is that comparison, and it
+is now part of the check.
+
+`SCHEMA-PROPOSAL-consignment-container.md §E` listed **six** columns for `transport_containers`.
+The migration has **three**. Every difference, resolved:
+
+| Proposed | Built? | Why |
+|---|---|---|
+| `container_number` | ✅ | CTD §7 "retain original entered value" |
+| `container_number_normalized` | ✅ | CTD §7 "normalized for search" |
+| `container_type` | ✅ | CTD §6 — free text, no vocabulary exists (**D-50**) |
+| `status` | ❌ | **D-44** — status comes from a lifecycle engine that does not exist |
+| `size_feet` | ❌ | **Invented.** §6's identity is Number and Type; no size field appears in any of the thirty documents. Attribution in my proposal was wrong |
+| `is_reefer` | ❌ | **Wrong owner and wrong level.** Temperature/genset/reefer is Person 2's (TM-001 §6); and CTD §15, CTD §19 and TM-001 §10 place the idea on the consignment, the trip and the service requirement respectively — never the container. Leaves TM-001 §12's P0 rule with nothing to key on: **D-52** |
+
+And on the association table, from the same proposal:
+
+| Proposed | Built? | Why |
+|---|---|---|
+| `seal_number` | ❌ | Specified after all — STOS-CMP §76/§77 — and **Person 3's**. Requested, not built |
+
+**Four of the seven fields I proposed were wrong**, in three distinct ways: one had no source at all,
+one was someone else's, one was at the wrong level, one was derived-not-stored. The proposal was
+written before the source was read closely enough. That is the lesson this section exists to record:
+**an approved proposal is not a source.** It is a plan made with less information than the build has.
+
 ## 6. What this step does NOT do
 
 No search endpoint (Block 2/5). No Container 360 (Block 2). No container status — the same D-44

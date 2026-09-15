@@ -49,6 +49,29 @@ use Illuminate\Support\Facades\Schema;
  * lifecycle engine that does not exist, and its values span five lifecycles
  * across two owners. Derived at read time, never stored.
  *
+ * ── NO size_feet ────────────────────────────────────────────────────────
+ * An earlier schema proposal of mine listed it, attributed to §6. That
+ * attribution was wrong: §6's container identity is Container Number and
+ * Container Type, and no form of container size appears in any of the thirty
+ * package documents. Invented, therefore not built. See the register.
+ *
+ * ── NO is_reefer ────────────────────────────────────────────────────────
+ * Also in that proposal, and also not built — but for a different reason, and
+ * the difference matters.
+ *
+ * Temperature, genset and reefer are Person 2's under TM-001 §6 ("Vehicle/
+ * trailer/genset", "GPS / Temperature / Genset / Telemetry"). More
+ * importantly, none of the three sources that discuss it is about the
+ * CONTAINER: CTD §15 says "temperature-controlled consignments", CTD §19 says
+ * "reefer trip", and TM-001 §10 calls it a "service requirement". A reefer
+ * container carrying an ambient load is not a temperature-critical trip, and a
+ * temperature-critical consignment may move in a vehicle-mounted unit with no
+ * container at all.
+ *
+ * That leaves TM-001 §12's P0 temperature rule with nothing structural to key
+ * on, which is a real gap and is logged as D-52 rather than papered over with a
+ * flag in the wrong place.
+ *
  * ── NO SEAL FIELDS ───────────────────────────────────────────────────────
  * STOS-CMP §76 requires seal number, issued by, issued date, container,
  * verified at delivery and mismatch — and §77 turns a mismatch into a
@@ -83,10 +106,14 @@ return new class extends Migration
 
             // §7's "unique where applicable", applied where it IS applicable:
             // the physical unit within one workspace.
+            //
+            // This one index serves BOTH jobs. It enforces uniqueness and it is
+            // the index CTD-001's "search complete lifecycle using container
+            // number" reads — a unique index is an index. A second plain index
+            // on the same two columns was written first and removed: MySQL would
+            // maintain it on every write for no read it could serve, and no
+            // Step 11 row names it (Step 11 has no container row at all).
             $table->unique(['tenant_id', 'container_number_normalized'], 'transport_containers_number_uniq');
-
-            // CTD-001 — "search complete lifecycle using container number".
-            $table->index(['tenant_id', 'container_number_normalized'], 'transport_containers_search_idx');
         });
     }
 

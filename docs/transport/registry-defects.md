@@ -64,6 +64,7 @@ Authority for who rules on what: the Conflict Resolution matrix in
 | D-49 | TM-001 §11 and Step 11's Event_Registry name different event sets and payloads | Medium | Architecture | Open — `consignment_id` approved 2026-09-15; read-contract question unanswered |
 | D-50 | `container_type` is a required field with no vocabulary anywhere | Medium | Product | Open — free-text column, not an enum |
 | D-51 | The suite runs on sqlite; production runs MySQL | High | Architecture | Open — repository-wide, not Transport's to fix |
+| D-52 | No structural marker for a temperature-critical trip | **High** | Product + Person 2 | Open — TM-001 §12's P0 rule has nothing to key on |
 
 ---
 
@@ -1389,3 +1390,74 @@ a `finally` block. A test that destroys the database to prove the database is sa
 conversation. Options, in rough order of cost: run the existing suite against MySQL in CI as a second
 job; or add a small MySQL-only group for schema and constraint tests; or accept the gap explicitly
 and require that every constraint be probed against both engines before it ships, as was done here.
+
+---
+
+## D-52 — Nothing structurally marks a trip as temperature-critical
+
+`STOS-TM-001 §12` is a **P0 rule**, stated in full:
+
+> "For a **temperature-critical trip**, if the vehicle is moving while the generator is OFF and
+> temperature risk is detected, STOS shall create a high-priority operational exception."
+
+`STOS-MS-001` requires it demonstrated on 30 September — *"Generator OFF + moving + temperature risk
+— high-priority exception"* (§9 scenarios) and *"Temperature risk + generator OFF + moving condition
+can create a high-priority exception"* (§8 acceptance).
+
+**Nothing in the data model says a trip is temperature-critical.**
+
+### Where the package puts the idea, and why none of them is a field
+
+| Source | Wording | Level |
+|---|---|---|
+| STOS-CTD §15 | "For **temperature-controlled consignments**" | consignment |
+| STOS-CTD §19 | "Genset OFF + **reefer trip** active + configured risk period" | trip |
+| STOS-TM-001 §10 | Allocation service fit: "**Trip/reefer/service requirement** and configured rules" | service requirement |
+
+All three describe it as a property of the *shipment or the movement*, never of the container. The
+nearest thing that exists today is `transport_consignments.service_type` — **free text**. The demo
+data reads `"Reefer Movement"`, but a P0 rule cannot key on a string an operator typed, and
+`"reefer"`, `"Reefer Movement"`, `"REEFER"` and `"Temp controlled"` are all the same intent.
+
+### Why this is not solved by a container flag
+
+An `is_reefer` column on `transport_containers` was in an earlier schema proposal of mine
+(2026-09-12) and is **not built**, for two reasons:
+
+1. **No source names it.** CTD §6's container identity is Container Number and Container Type, full
+   stop. Not one of the three sources above is about the container.
+2. **Temperature, genset and reefer are Person 2's** — TM-001 §6 gives them "Vehicle/trailer/genset"
+   and "GPS / Temperature / Genset / Telemetry", and MS-001 puts "temperature, genset integration
+   framework; device→vehicle→trip→container mapping" on their lane for 21–23 Sep.
+
+A container flag would also be the wrong shape: a reefer container carrying an ambient load is not a
+temperature-critical trip, and a temperature-critical consignment may move in a vehicle-mounted unit
+with no container at all.
+
+### What is actually needed
+
+A **service-requirement definition** — the thing TM-001 §10 already calls "service requirement" —
+expressed structurally rather than as free text, so allocation can filter on it (Person 2) and the
+§12 rule can fire on it. Whether that is an enum on `service_type`, a boolean on the consignment, or
+a small service-requirements master is a **Product** decision; none of the three is authorised today
+and inventing one would repeat **D-9** and **D-50**.
+
+**Owner: Product to define, Person 2 to consume.** Raised now rather than at the demo: the rule is
+P0, it is on the 30 September script, and it currently has nothing to key on.
+
+---
+
+## Correction — `size_feet` was never specified
+
+An earlier schema proposal of mine (2026-09-12, §E) listed `size_feet` on `transport_containers`,
+attributed to STOS-CTD §6. **That attribution was wrong.** §6's container identity is:
+
+> Container Number · Container Type
+
+There is no size field, and `container size`, `size_feet` and any `20ft`/`40ft` form return **zero
+hits across all thirty package documents** (the same search that produced D-50).
+
+**Not built.** It is the third field that proposal invented — after `seal_number`, which turned out
+to be specified and Person 3's (STOS-CMP §76), and `status`, which D-44 resolved. Recorded here
+rather than silently omitted, because a field dropped without a note is indistinguishable from a
+field forgotten — which is exactly how these two nearly went missing.
