@@ -61,7 +61,7 @@ Authority for who rules on what: the Conflict Resolution matrix in
 | D-46 | `SCOPE_OWN` is granted but its narrowing is not implemented | **Critical** | Security | Open — latent, not currently reachable |
 | D-47 | Two conflicting structural standards: TEAM-CONVENTIONS vs the DDD instruction | **Critical** | Architecture | Open — analysis posted, nothing moved |
 | D-48 | Two LOCKED events we produce are never emitted | High | Person 1 | ✅ **Built 2026-09-15 — EVT-001, EVT-002 emitted** |
-| D-49 | TM-001 §11 and Step 11's Event_Registry name different event sets and payloads | Medium | Architecture | Open — parked, nothing blocked today |
+| D-49 | TM-001 §11 and Step 11's Event_Registry name different event sets and payloads | Medium | Architecture | Open — `consignment_id` approved 2026-09-15; read-contract question unanswered |
 
 ---
 
@@ -1268,6 +1268,35 @@ Nothing is blocked today:
 2. Should `EVT-002`'s Payload Core be amended to carry `consignment_id` (and later `container_id`),
    or should Person 2 obtain those through a **read contract** instead of an event?
 
-Question 2 is the more consequential. If the answer is "a read contract", that contract does not
-exist and nobody owns it — Person 2 and Person 3 can currently read our trips only by querying
-`transport_trips` directly, which is exactly **D-46's residual exposure**.
+### The sentence this entry exists for
+
+**If Person 2 and Person 3 are meant to receive these IDs through a read contract rather than an
+event, that read contract does not exist, is not specified in any approved document, and nobody owns
+it.** Today their only route to our trip data is to query `transport_trips` directly — which is
+exactly the residual exposure **D-46** names as the thing Person 1 cannot guard, arriving through the
+front door instead of the back.
+
+Question 2 above is therefore the consequential one. Question 1 can wait for SNG-TRN-014; this cannot
+wait for anything, because the absence is already shaping how the other two developers get our data.
+
+### Approval granted 2026-09-15 — `consignment_id` added to `EVT-002`
+
+`EVT-002`'s Payload Core is **LOCKED** at `trip_id, order_id`. `consignment_id` was added as a third
+field on **explicit written approval**, by the same route `delivery_order` took into `ENUM-006`.
+Grounds recorded with the approval:
+
+- `STOS-TM-001 §11`, an approved document, names `consignment_id` among what Person 2 must receive
+  from Person 1.
+- Adding a field to an event payload is **additive and backward compatible**; no existing consumer
+  breaks.
+- Without it, Person 2's only route to the value is querying `transport_trips` directly — the
+  exposure above.
+
+It is nullable, and that is not a defect: a trip may legitimately carry no consignment, since trips
+shipped before consignments existed and TM-001 §4 rule 3 makes the container a search anchor rather
+than a mandatory parent.
+
+**`container_id` and route/geofence context were explicitly NOT approved.** There is no container
+table yet and no route context to send, and *a field carrying null forever is worse than an absent
+field, because a consumer will code against it.* They are to be proposed again when the container
+table exists. A test pins their absence.

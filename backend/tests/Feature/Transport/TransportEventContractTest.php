@@ -144,31 +144,63 @@ class TransportEventContractTest extends TestCase
         Event::assertDispatched(TripCreated::class);
     }
 
-    public function test_evt_002_payload_is_the_locked_core_and_nothing_else(): void
+    public function test_evt_002_payload_is_the_locked_core_plus_the_approved_field(): void
     {
-        // Payload Core: "trip_id, order_id". consignment_id is NOT here even
-        // though TM-001 §11 names it and the column exists — the row is LOCKED.
-        // See D-49.
+        // Payload Core is LOCKED at "trip_id, order_id". consignment_id is a
+        // third field added on explicit written approval of 2026-09-15, the same
+        // route delivery_order took into ENUM-006. See D-49.
         $order = $this->approvedOrder();
         $trip  = app(TransportTripService::class)->createFromOrder($order->id, [], self::TENANT_A, $this->actor);
 
         $payload = (new TripCreated($trip))->payload();
 
-        $this->assertSame(['trip_id', 'order_id'], array_keys($payload));
+        $this->assertSame(['trip_id', 'order_id', 'consignment_id'], array_keys($payload));
         $this->assertSame((int) $trip->id, $payload['trip_id']);
         $this->assertSame((int) $order->id, $payload['order_id']);
     }
 
-    public function test_evt_002_does_not_carry_consignment_id(): void
+    public function test_evt_002_carries_consignment_id_when_the_trip_has_one(): void
     {
-        // Pinned deliberately. Adding a field to a LOCKED payload is the same
-        // class of change as adding a value to ENUM-006, which required written
-        // approval. If this test is ever changed, that approval should exist.
         $order = $this->approvedOrder();
         $trip  = app(TransportTripService::class)->createFromOrder($order->id, [], self::TENANT_A, $this->actor);
 
-        $this->assertArrayNotHasKey('consignment_id', (new TripCreated($trip))->payload());
-        $this->assertArrayNotHasKey('container_id', (new TripCreated($trip))->payload());
+        $consignment = app(\App\Services\Transport\ConsignmentService::class)
+            ->create(['order_id' => $order->id], self::TENANT_A, $this->actor);
+
+        $trip->forceFill(['consignment_id' => $consignment->id])->save();
+
+        $this->assertSame(
+            (int) $consignment->id,
+            (new TripCreated($trip->fresh()))->payload()['consignment_id'],
+        );
+    }
+
+    public function test_evt_002_consignment_id_is_null_when_there_is_none(): void
+    {
+        // Not a defect: a trip may legitimately carry no consignment. Trips
+        // shipped before consignments existed, and TM-001 §4 rule 3 makes the
+        // container a search anchor rather than a mandatory parent.
+        $order = $this->approvedOrder();
+        $trip  = app(TransportTripService::class)->createFromOrder($order->id, [], self::TENANT_A, $this->actor);
+
+        $this->assertNull((new TripCreated($trip))->payload()['consignment_id']);
+    }
+
+    public function test_evt_002_does_not_carry_the_unapproved_fields(): void
+    {
+        // container_id and route/geofence context are named in TM-001 §11 and
+        // were explicitly NOT approved on 2026-09-15: there is no container
+        // table and no route context to send, and a field carrying null forever
+        // is worse than an absent one because a consumer codes against it.
+        // If this test is ever changed, that approval should exist first.
+        $order = $this->approvedOrder();
+        $trip  = app(TransportTripService::class)->createFromOrder($order->id, [], self::TENANT_A, $this->actor);
+
+        $payload = (new TripCreated($trip))->payload();
+
+        $this->assertArrayNotHasKey('container_id', $payload);
+        $this->assertArrayNotHasKey('route', $payload);
+        $this->assertArrayNotHasKey('geofence_context', $payload);
     }
 
     public function test_evt_002_carries_its_tenant(): void

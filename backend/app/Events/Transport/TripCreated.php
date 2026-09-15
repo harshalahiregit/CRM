@@ -27,16 +27,29 @@ use Illuminate\Queue\SerializesModels;
  * from Person 1. This event is the first mechanism by which they can, without
  * reading our tables — see D-46's residual exposure and D-48.
  *
- * ── WHAT IS DELIBERATELY NOT IN THE PAYLOAD ───────────────────────────────
- * consignment_id is NOT here, and that is a decision rather than an oversight.
- * TM-001 §11 names it among what Person 2 must receive, and transport_trips has
- * carried the column since 2026-09-15 — but EVT-002's Payload Core is LOCKED at
- * "trip_id, order_id". Adding a field to a LOCKED payload is the same class of
- * change as adding a value to ENUM-006, which required explicit written
- * approval. So it is logged, not added: see D-49.
+ * ── consignment_id IS AN APPROVED ADDITION TO A LOCKED PAYLOAD ────────────
+ * EVT-002's Payload Core is LOCKED at "trip_id, order_id". consignment_id is a
+ * THIRD field, added on explicit written approval of 2026-09-15 — the same route
+ * `delivery_order` took into ENUM-006, and for the same reason: a LOCKED row is
+ * not a developer's to widen. Grounds recorded beside D-49:
  *
- * container_id, also named in TM-001 §11, does not exist yet in any case —
- * transport_containers is the next step of this block.
+ *   - STOS-TM-001 §11, an approved document, names consignment_id among what
+ *     Person 2 must receive from Person 1.
+ *   - Adding a field to an event payload is additive and backward compatible;
+ *     no existing consumer breaks.
+ *   - Without it, Person 2's only route to the value is querying
+ *     transport_trips directly — D-46's residual exposure.
+ *
+ * It is nullable, and that is not a defect: a trip may legitimately carry no
+ * consignment (trips shipped before consignments existed, and TM-001 §4 rule 3
+ * makes the container a search anchor rather than a mandatory parent).
+ *
+ * ── WHAT IS STILL DELIBERATELY ABSENT ─────────────────────────────────────
+ * container_id and route/geofence context are ALSO named in TM-001 §11 and were
+ * explicitly NOT approved. There is no container table yet and no route context
+ * to send, and a field carrying null forever is worse than an absent one — a
+ * consumer will code against it. They are to be asked for again when the
+ * container table exists. See D-49.
  */
 class TripCreated
 {
@@ -47,12 +60,20 @@ class TripCreated
     ) {
     }
 
-    /** EVT-002 Payload Core, exactly. */
+    /**
+     * EVT-002's LOCKED Payload Core, plus the one approved addition.
+     *
+     * trip_id and order_id are the registry's. consignment_id is the approved
+     * third field — see the class docblock and D-49.
+     */
     public function payload(): array
     {
         return [
-            'trip_id'  => (int) $this->trip->id,
-            'order_id' => (int) $this->trip->order_id,
+            'trip_id'        => (int) $this->trip->id,
+            'order_id'       => (int) $this->trip->order_id,
+            'consignment_id' => $this->trip->consignment_id === null
+                ? null
+                : (int) $this->trip->consignment_id,
         ];
     }
 
