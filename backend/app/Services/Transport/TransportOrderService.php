@@ -2,6 +2,7 @@
 
 namespace App\Services\Transport;
 
+use App\Events\Transport\OrderCreated;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ResourceNotFoundException;
 use App\Models\Customer\Client;
@@ -117,6 +118,18 @@ class TransportOrderService
                 'order_id' => $order->id, 'order_number' => $order->order_number,
                 'tenant_id' => $tenantId, 'user_id' => $actor?->id,
             ]);
+
+            // EVT-001 OrderCreated (LOCKED). Dispatched inside the transaction,
+            // as EVT-005 is: Laravel holds queued listeners until commit, and a
+            // synchronous listener that ran against a rolled-back order would be
+            // acting on a row that never existed.
+            //
+            // No listener subscribes yet — TripEngine and Notifications are the
+            // registry's consumers and neither does. That is the point: the seam
+            // is published so Person 2 and Person 3 can subscribe without this
+            // service changing, instead of reading transport_orders directly
+            // (D-46's residual exposure, D-48).
+            OrderCreated::dispatch($order->fresh());
 
             return $order;
         });

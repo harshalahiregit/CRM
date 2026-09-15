@@ -2,6 +2,7 @@
 
 namespace App\Services\Transport;
 
+use App\Events\Transport\TripCreated;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ResourceNotFoundException;
 use App\Models\Transport\TransportOrder;
@@ -145,6 +146,16 @@ class TransportTripService
                 'trip_id' => $trip->id, 'trip_number' => $trip->trip_number,
                 'order_id' => $order->id, 'tenant_id' => $tenantId, 'user_id' => $actor?->id,
             ]);
+
+            // EVT-002 TripCreated (LOCKED). Inside the transaction, as EVT-001
+            // and EVT-005 are — a synchronous listener acting on a rolled-back
+            // trip would be acting on a row that never existed.
+            //
+            // Viability (SNG-TRN-008) and Notifications (SNG-TRN-021) are the
+            // registry's consumers and neither exists. Published anyway: TM-001
+            // §11 requires Person 2 to receive trip_id and transport_order_id
+            // from us, and until now there was no mechanism but our tables.
+            TripCreated::dispatch($trip->fresh());
 
             return $trip;
         });

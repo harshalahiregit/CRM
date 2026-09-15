@@ -60,7 +60,8 @@ Authority for who rules on what: the Conflict Resolution matrix in
 | D-45 | Consignment permissions are in no registry row | Medium | Security + Architecture | Open — mirrored from Order, precedent D-8/D-21 |
 | D-46 | `SCOPE_OWN` is granted but its narrowing is not implemented | **Critical** | Security | Open — latent, not currently reachable |
 | D-47 | Two conflicting structural standards: TEAM-CONVENTIONS vs the DDD instruction | **Critical** | Architecture | Open — analysis posted, nothing moved |
-| D-48 | Two LOCKED events we produce are never emitted | High | Person 1 + Architecture | Open — EVT-001, EVT-002 |
+| D-48 | Two LOCKED events we produce are never emitted | High | Person 1 | ✅ **Built 2026-09-15 — EVT-001, EVT-002 emitted** |
+| D-49 | TM-001 §11 and Step 11's Event_Registry name different event sets and payloads | Medium | Architecture | Open — parked, nothing blocked today |
 
 ---
 
@@ -1210,18 +1211,63 @@ We publish **no outbound mechanism at all** except `TripAssigned`, which has no 
 way Person 2 or Person 3 can obtain any of that today is to query our tables directly — which is
 precisely the residual exposure named in **D-46** as the thing Person 1 cannot guard.
 
-### A gap between the two approved sources, noted not resolved
+### RESOLVED 2026-09-15 — both events now emitted
 
-TM-001 §11 names **`trip.delivered`**. Step 11's registry has no such row — its nearest is
-`EVT-012 TripClosed`. Both refer to states that are unreachable today (`delivered` is STT-007,
-SNG-TRN-014), so nothing is blocked by it, but the two approved documents do not agree on the
-event set.
+`OrderCreated` and `TripCreated` follow the `TripAssigned` pattern already in the codebase: plain
+Laravel events, dispatched inside the creating transaction, payload exactly the registry's Payload
+Core column, `idempotencyKey()` and `tenantId()` alongside it.
 
-### Recommendation
+**No listeners were written.** Subscribing is Person 2's and Person 3's half of the contract; this
+section's responsibility ends at `dispatch()`. A test asserts `app/Listeners/Transport` does not
+exist and that none of the three events has a listener registered here.
 
-Emit `EVT-001` and `EVT-002` now, following the `TripAssigned` pattern already in the codebase — a
-published seam with no listeners, payload exactly the registry's Payload Core column, idempotency key
-as specified. Roughly half a day. It costs nothing to the milestone and it gives Person 2 and Person
-3 something to subscribe to instead of a reason to read our tables.
+Person 2 and Person 3 now have a mechanism to receive `transport_order_id` and `trip_id` without
+querying our tables — the front door for what D-46 flags as the back one.
 
-**Owner: Person 1 (to build), Architecture (for the TM-001 vs Step 11 event-set discrepancy).**
+The TM-001 vs Step 11 payload and event-set disagreement is **D-49**.
+
+---
+
+## D-49 — Two approved documents name different event sets and payloads
+
+`STOS-TM-001 §11` (integration matrix) and `Step 11 Event_Registry` (canonical registry) both
+describe what Person 1 must publish, and they do not agree.
+
+### The event set
+
+| TM-001 §11 says P3 must receive | Step 11 registry |
+|---|---|
+| `trip.delivered` | **no such row.** Nearest is `EVT-012 TripClosed` |
+| `trip.completed` | arguably `EVT-012 TripClosed` |
+
+### The payloads
+
+| TM-001 §11 says P2 must receive | In `EVT-002 TripCreated`'s LOCKED Payload Core? |
+|---|---|
+| `trip_id` | ✅ yes |
+| `transport_order_id` | ✅ yes (as `order_id`) |
+| `consignment_id` | ❌ **no** — and the column exists |
+| `container_id` | ❌ no — and no table exists yet |
+| active route/geofence context | ❌ no — `route` is a string; geofence has no model |
+
+### Why it is logged and parked rather than escalated
+
+Nothing is blocked today:
+
+- `delivered` and `completed` are **unreachable states**. The trip lifecycle stops at `dispatched`;
+  `in_transit` is SNG-TRN-013 and `delivered` is STT-007 / SNG-TRN-014.
+- `container_id` has no table until the next step of Block 1.
+- `consignment_id` is the one live case, and `EVT-002`'s Payload Core is **LOCKED**. Adding a field
+  to it is the same class of change as adding `delivery_order` to `ENUM-006`, which required written
+  architecture approval. It was therefore **not added**, and a test pins its absence so that if it is
+  ever added, the approval exists first.
+
+### What Architecture needs to rule, before SNG-TRN-014
+
+1. Is `trip.delivered` a new registry row, or is TM-001 §11 naming `EVT-012 TripClosed` loosely?
+2. Should `EVT-002`'s Payload Core be amended to carry `consignment_id` (and later `container_id`),
+   or should Person 2 obtain those through a **read contract** instead of an event?
+
+Question 2 is the more consequential. If the answer is "a read contract", that contract does not
+exist and nobody owns it — Person 2 and Person 3 can currently read our trips only by querying
+`transport_trips` directly, which is exactly **D-46's residual exposure**.
