@@ -36,8 +36,32 @@ detection gap, corrective action, preventive action, five whys, `confirmed_by`,
 **Human-confirmed, always.** AI may suggest; confirming is
 `SireRootCauseService::confirm()` with its own capability.
 
-**Five Whys are required for serious issues only** — derived from data the register
-already holds (critical severity, P1, a recurrence, a reopen), never a checkbox.
+**Three techniques, and the record says which was used.** 5 Whys, Fishbone
+(Ishikawa) and Fault Tree Analysis. A team that ran a fishbone and had to record
+it as five sequential whys has not recorded a fishbone — they have flattened a
+branching cause map into a chain to satisfy a validator. `method` names the
+technique and `analysis` holds its working: a free JSON bag, because the two
+shapes are genuinely different and neither is ever queried. What IS queried is
+the category and the confirmation, and those have columns.
+
+**A serious issue cannot be CLOSED without a confirmed root cause.** The `close`
+transition carries the guard `root_cause_confirmed_when_serious`. Confirmed, not
+merely written — an unsigned draft is somebody's working, and the whole point of
+the confirmation step is that a person put their name to the finding.
+
+It guards `close` alone. `reject`, `wont_fix` and `cannot_reproduce` are terminal
+too, and demanding a root cause for a defect nobody could reproduce is asking for
+fiction.
+
+**A worked analysis is required for serious issues only** — derived from data the
+register already holds (the top severity band, P1, a recurrence, a reopen), never
+a checkbox.
+
+Severity is read by POSITION, not by code. That test used to compare against the
+literal string `critical`; no workspace here uses it — the seeded bands are
+`s1`..`s4` — so the severity arm had never once fired and a critical issue could
+be signed off with one why answered. `level` is the sort key everywhere in SIRE
+for exactly this reason.
 Requiring them everywhere is how a form gets filled with "because it was broken"
 five times.
 

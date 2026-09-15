@@ -31,7 +31,7 @@ const TENANT_MODELS = [
   'Report', 'WorkCycle', 'ReportContext', 'ReportCategory', 'ReportSeverity', 'ReportApproval',
   // Phase 2 — added here the moment each model was written; a model missing from
   // this list is a blind spot, not a pass.
-  'Release', 'RootCause', 'RecurrenceGroup', 'ReportLink', 'KbLink',
+  'Release', 'RootCause', 'RecurrenceGroup', 'ReportLink', 'ReportWatcher', 'KbLink',
   'ReleaseNote', 'CorrectiveAction',
   // Phase 3 — release governance
   'ReleaseOverride',

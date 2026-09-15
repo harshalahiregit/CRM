@@ -42,13 +42,46 @@ double-sends. See [HOST-INTEGRATION](HOST-INTEGRATION.md) section 4.
 | `sire.qa.failed` | **assignee** — a failed QA run nobody is told about is a stalled issue |
 | `sire.sla.warning` | assignee, `role:lead` |
 | `sire.sla.breached` | assignee, `role:lead`, `role:admin` |
-| `sire.report.reopened` | assignee, `role:admin` |
-| `sire.report.released` | assignee, reporter |
-| `sire.report.production_validated` | reporter |
-| `sire.report.closed` | reporter, assignee |
+| `sire.report.reopened` | assignee, `role:admin`, **watchers** |
+| `sire.report.released` | assignee, reporter, **watchers** |
+| `sire.report.production_validated` | reporter, **watchers** |
+| `sire.report.closed` | reporter, assignee, **watchers** |
 | `sire.report.on_hold` | assignee, reporter |
 | `sire.release.approved` / `.released` / `.rolled_back` | `role:lead`, `role:admin` |
 | `sire.release.overridden` | `role:lead`, `role:admin`, `role:qa` — deliberately the widest audience in the module |
+
+## Watchers
+
+The reporter and the assignee are told because of the ROLE they hold on the
+issue, and that role moves — so neither is stored as a watcher. Reassigning would
+otherwise leave a stale row behind and keep mailing somebody about an issue that
+is no longer theirs.
+
+A watcher is everybody else with a reason to care and no role that says so: the
+lead of the module it broke in, the account manager whose customer filed it, the
+developer who wrote that code last quarter.
+
+```
+POST   /api/sire/reports/{report}/watchers            watch it yourself
+POST   /api/sire/reports/{report}/watchers {user_id}  add somebody else
+DELETE /api/sire/reports/{report}/watchers/{user}     stop
+GET    /api/sire/reports/{report}/watchers            who is watching
+```
+
+**Subscription, never permission.** Every one of those routes runs the same
+ownership check as the rest of SIRE, so adding a watcher can never widen what
+that person may read. If they could not open the issue before, they still cannot
+— they will simply be told about one they cannot open. That is the right failure;
+the alternative is a subscribe endpoint that quietly grants access.
+
+Adding **somebody else** needs `sire.report.triage`, because it puts mail in
+another person's inbox. Removing **yourself** needs nothing: being unable to stop
+a notification you did not ask for is how people build an inbox rule and stop
+reading any of it.
+
+Watchers ride on the **outcome** events only — closed, released, validated,
+reopened. Somebody who subscribed wants to know how it ended, not that a
+developer pressed start this morning.
 
 ## Four anti-spam rules
 

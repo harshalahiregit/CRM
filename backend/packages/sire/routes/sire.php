@@ -53,6 +53,7 @@ use Sire\Http\Controllers\SireReleaseNotesController;
 use Sire\Http\Controllers\SireRootCauseController;
 use Sire\Http\Controllers\SireTestCaseController;
 use Sire\Http\Controllers\SireTimelineController;
+use Sire\Http\Controllers\SireWatcherController;
 
 Route::middleware(\Sire\Http\SireRouteMiddleware::stack())
     ->prefix((string) config('sire.host.route_prefix', 'api/sire'))
@@ -87,6 +88,14 @@ Route::middleware(\Sire\Http\SireRouteMiddleware::stack())
 
     // ---- activity ----------------------------------------------------------
     Route::get('reports/{report}/timeline', SireTimelineController::class);
+
+    // ---- watchers ---------------------------------------------------------
+    // Who else hears about this issue. Subscription only -- these never widen
+    // what anybody may READ, which is why they sit behind the same ownership
+    // check as every other route-bound endpoint.
+    Route::get('reports/{report}/watchers', [SireWatcherController::class, 'index']);
+    Route::post('reports/{report}/watchers', [SireWatcherController::class, 'store']);
+    Route::delete('reports/{report}/watchers/{user}', [SireWatcherController::class, 'destroy']);
 
     Route::get('reports/{report}/comments',             [SireCommentController::class, 'index']);
     Route::post('reports/{report}/comments',            [SireCommentController::class, 'store']);

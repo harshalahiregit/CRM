@@ -4,6 +4,7 @@ namespace Sire\Http\Requests;
 
 use Sire\Support\SireContextSchema;
 use Sire\Support\SirePriority;
+use Sire\Support\SireText;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -86,6 +87,13 @@ class StoreReportRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
+        // Sanitise BEFORE validation, so what the rules measure is what gets
+        // stored. Running it afterwards would let a 5-character title pass its
+        // min:5 and then be trimmed to nothing.
+        $this->merge(SireText::cleanKeys($this->only([
+            'title', 'description', 'steps_to_reproduce', 'expected_result', 'actual_result',
+        ]), ['title', 'description', 'steps_to_reproduce', 'expected_result', 'actual_result']));
+
         $this->request->remove('tenant_id');
         $this->request->remove('reporter_id');
         $this->request->remove('user_id');

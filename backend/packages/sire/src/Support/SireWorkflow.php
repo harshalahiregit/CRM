@@ -157,6 +157,12 @@ final class SireWorkflow
         'close' => [
             'from' => [SireStatus::PRODUCTION_VALIDATED], 'to' => SireStatus::CLOSED,
             'label' => 'Close', 'capability' => 'sire.report.close',
+            // A serious defect does not get to be closed until somebody has said
+            // WHY it happened. Applies to close only: reject, won't fix and
+            // cannot reproduce are terminal too, and demanding a root cause for a
+            // defect nobody could reproduce is asking for fiction.
+            'guard' => 'root_cause_confirmed_when_serious',
+            'note'  => 'Critical, P1, recurring and reopened issues need a CONFIRMED root cause first.',
         ],
         'hold' => [
             'from' => [

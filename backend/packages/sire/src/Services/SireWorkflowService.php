@@ -4,6 +4,7 @@ namespace Sire\Services;
 
 use Sire\Exceptions\SireException;
 use Sire\Models\Report;
+use Sire\Models\RootCause;
 use Sire\Models\ReportApproval;
 use Sire\Models\WorkCycle;
 use Sire\Dto\SireUserIdentity;
@@ -52,6 +53,7 @@ class SireWorkflowService
         private readonly SireSettingsProvider $settings,
         private readonly SireAuditProvider $audit,
         private readonly SireDuplicateService $duplicates,
+        private readonly SireRootCauseService $rootCauses,
     ) {
     }
 
@@ -166,7 +168,7 @@ class SireWorkflowService
         $this->access->assert($user, $definition['capability'], $report);
 
         if (! $this->passesGuard($definition['guard'] ?? null, $report, $user)) {
-            throw new SireException('This issue is assigned to someone else. Ask a lead to reassign it first.');
+            throw new SireException($this->guardMessage($definition['guard'] ?? null));
         }
 
         $missing = $this->unmetRequirements($definition, $report, $payload);
@@ -295,7 +297,38 @@ class SireWorkflowService
             'actor_is_assignee'         => (int) $report->assignee_id === (int) $user->id,
             'actor_is_assignee_or_lead' => (int) $report->assignee_id === (int) $user->id
                                             || $this->access->can($user, 'sire.report.assign', $report),
+            'root_cause_confirmed_when_serious' => $this->rootCauseSatisfied($report),
             default                     => true,
+        };
+    }
+
+    /**
+     * A serious defect needs a CONFIRMED root cause before it can be closed.
+     *
+     * Confirmed, not merely written: an unsigned draft is somebody's working, and
+     * the whole point of the confirmation step is that a person put their name to
+     * the finding. An issue that is not serious closes as it always did.
+     */
+    private function rootCauseSatisfied(Report $report): bool
+    {
+        if (! $this->rootCauses->requiresStructuredAnalysis($report)) {
+            return true;
+        }
+
+        return RootCause::query()
+            ->forTenant($report->tenant_id)
+            ->where('report_id', $report->id)
+            ->whereNotNull('confirmed_at')
+            ->exists();
+    }
+
+    /** Why a guard said no, in words the person reading it can act on. */
+    private function guardMessage(?string $guard): string
+    {
+        return match ($guard) {
+            'root_cause_confirmed_when_serious' => 'This issue is serious enough to need a confirmed root '
+                .'cause before it is closed. Record the analysis and have it confirmed first.',
+            default => 'This issue is assigned to someone else. Ask a lead to reassign it first.',
         };
     }
 

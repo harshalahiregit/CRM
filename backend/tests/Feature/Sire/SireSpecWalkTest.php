@@ -11,8 +11,10 @@ use Sire\Models\Release;
 use Sire\Models\Report;
 use Sire\Models\ReportCategory;
 use Sire\Models\ReportSeverity;
+use Sire\Models\RootCause;
 use Sire\Support\SirePriority;
 use Sire\Support\SireStatus;
+use Sire\Support\SireWorkflow;
 use Tests\TestCase;
 
 /**
@@ -149,11 +151,21 @@ class SireSpecWalkTest extends TestCase
         $this->assertSame('sales', $report->module);
         $this->say('1', 'PASS', "context resolved server-side: {$report->module}/{$report->section}/{$report->screen}");
 
-        // SANITISATION — the spec says title and description pass through
-        // HtmlSanitizer. They do not: the host has one and SIRE never calls it.
-        $sanitised = ! str_contains((string) $report->description, '<script>');
-        $this->say('1', $sanitised ? 'PASS' : 'GAP',
-            $sanitised ? 'description sanitised' : 'description stored RAW — <script> survived; HtmlSanitizer is never called');
+        // Sanitised on the way in. The executable construct is gone and the rest
+        // of the sentence is untouched -- a bug report that says "the API returns
+        // <div class=x> unclosed" must survive intact, because that IS the report.
+        $this->assertStringNotContainsString('<script>', (string) $report->description);
+        $this->assertStringContainsString('spinner runs forever', (string) $report->description);
+        $this->say('1', 'PASS', 'description sanitised: <script> removed, the prose around it kept');
+
+        $markup = Report::findOrFail((int) $this->postJson('/api/sire/reports', [
+            'title'       => 'Markup in a bug report survives',
+            'description' => 'The API returns <div class=x> unclosed and <img src=x onerror=alert(1)> fires.',
+        ])->assertCreated()->json('data.report.id'));
+
+        $this->assertStringContainsString('<div class=x>', (string) $markup->description);
+        $this->assertStringNotContainsString('onerror', (string) $markup->description);
+        $this->say('1', 'PASS', 'legitimate markup preserved, the event handler stripped');
 
         // ---------------------------------------------------- 2. triage ------
         Sanctum::actingAs($this->developer);
@@ -366,7 +378,64 @@ class SireSpecWalkTest extends TestCase
         $this->assertSame(SireStatus::PRODUCTION_VALIDATED, $report->status);
         $this->say('9', 'PASS', "validated in production at {$report->production_validated_at}");
 
+        // --------------------------------------------------- side: watchers --
+        // Somebody with a reason to care and no role that says so. The QA
+        // engineer is not the reporter and not the assignee, so without this they
+        // would never hear how the issue ended.
+        Sanctum::actingAs($this->qa);
+        $this->postJson("/api/sire/reports/{$id}/watchers")->assertSuccessful();
+
+        $watchers = $this->getJson("/api/sire/reports/{$id}/watchers")->assertOk()->json('data');
+        $this->assertSame([$this->qa->id], collect($watchers)->pluck('id')->all());
+        $this->say('S5', 'PASS', "{$this->qa->name} is watching {$report->report_number}");
+
+        // Watching twice is watching once -- the unique index says so.
+        $this->postJson("/api/sire/reports/{$id}/watchers")->assertSuccessful();
+        $this->assertCount(1, $this->getJson("/api/sire/reports/{$id}/watchers")->json('data'));
+        $this->say('S5', 'PASS', 'subscribing twice is idempotent');
+
+        // Adding SOMEBODY ELSE puts mail in their inbox, so it needs authority.
+        $this->postJson("/api/sire/reports/{$id}/watchers", ['user_id' => $this->reporter->id])
+            ->assertForbidden();
+        $this->say('S5', 'PASS', 'a non-lead cannot subscribe someone else (403)');
+
+        Sanctum::actingAs($this->admin);
+        $this->postJson("/api/sire/reports/{$id}/watchers", ['user_id' => $this->reporter->id])
+            ->assertSuccessful();
+        $this->say('S5', 'PASS', 'a lead can, and it is recorded who added them');
+
+        Sanctum::actingAs($this->reporter);
+        $this->deleteJson("/api/sire/reports/{$id}/watchers/{$this->reporter->id}")->assertSuccessful();
+        $this->say('S5', 'PASS', 'anyone may unsubscribe themselves');
+
         // ------------------------------------------------------ 10. close ----
+        Sanctum::actingAs($this->admin);
+
+        // This issue is P1, so it may not close until a root cause is confirmed.
+        $this->move($id, 'close')->assertStatus(409);
+        $this->say('S3', 'PASS', 'a P1 issue is REFUSED closure with no confirmed root cause (409)');
+
+        $this->postJson("/api/sire/reports/{$id}/root-cause", [
+            'category'    => 'code',
+            'method'      => RootCause::METHOD_FISHBONE,
+            'description' => 'A null owner was reachable from the bulk-edit path.',
+            'analysis'    => [
+                'people'     => ['the bulk path was added by a different team'],
+                'process'    => ['no review covered both entry points'],
+                'technology' => ['the policy checked one caller, not the model'],
+            ],
+        ])->assertSuccessful();
+        $this->say('S3', 'PASS', 'root cause recorded using FISHBONE, with its branches stored');
+
+        $this->move($id, 'close')->assertStatus(409);
+        $this->say('S3', 'PASS', 'an UNCONFIRMED analysis is not enough — a draft is not a sign-off');
+
+        $this->postJson("/api/sire/reports/{$id}/root-cause/confirm")->assertSuccessful();
+        $rca = DB::table('sire_root_causes')->where('report_id', $id)->first();
+        $this->assertSame('fishbone', $rca->method);
+        $this->assertNotNull($rca->confirmed_at);
+        $this->say('S3', 'PASS', "confirmed; method={$rca->method} stored alongside the finding");
+
         $this->move($id, 'close')->assertOk();
         $report->refresh();
 
@@ -379,7 +448,8 @@ class SireSpecWalkTest extends TestCase
         $this->assertContains($this->reporter->id, $closedTo);
         $this->assertContains($this->developer->id, $closedTo);
         $this->say('10', 'PASS', 'sire.report.closed delivered to reporter and assignee');
-        $this->say('10', 'GAP', 'no watchers concept exists — nobody beyond reporter/assignee can subscribe');
+        $this->assertContains($this->qa->id, $closedTo, 'a watcher must hear about closure');
+        $this->say('10', 'PASS', "sire.report.closed ALSO reached the watcher {$this->qa->name}");
 
         // ------------------------------------------------- side: reopen ------
         $before = (int) $report->reopen_count;
@@ -414,13 +484,16 @@ class SireSpecWalkTest extends TestCase
 
         $rcaCols = array_map(fn ($c) => $c->name, DB::select('PRAGMA table_info(sire_root_causes)'));
         $this->assertContains('five_whys', $rcaCols);
-        $this->assertNotContains('method', $rcaCols);
-        $this->say('S3', 'GAP', 'only 5-Why is modelled — no Fishbone, no FTA, and no method column to record which was used');
+        $this->assertContains('method', $rcaCols);
+        $this->assertContains('analysis', $rcaCols);
+        $this->assertSame(['five_whys', 'fishbone', 'fta'], RootCause::METHODS);
+        $this->say('S3', 'PASS', 'all three techniques modelled: '.implode(', ', RootCause::METHODS));
 
-        $gatesRca = collect(\Sire\Support\SireWorkflow::TRANSITIONS)
-            ->filter(fn ($t) => in_array('root_cause_id', $t['requires'] ?? [], true))->keys()->all();
-        $this->assertSame([], $gatesRca);
-        $this->say('S3', 'GAP', 'RCA is not a guard on any transition — an issue can close with no root cause recorded');
+        $this->assertSame(
+            'root_cause_confirmed_when_serious',
+            SireWorkflow::TRANSITIONS['close']['guard'] ?? null,
+        );
+        $this->say('S3', 'PASS', 'close is guarded by root_cause_confirmed_when_serious');
 
         // ---------------------------------------------------- side: SLA ------
         $states = [];

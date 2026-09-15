@@ -155,7 +155,7 @@ php artisan migrate:status
 php artisan migrate --pretend
 ```
 
-24 migrations, 20 tables, every one prefixed `sire_`. All reversible, each
+26 migrations, 21 tables, every one prefixed `sire_`. All reversible, each
 dropping only its own table. **No migration alters a table SIRE does not own.**
 
 Three tables — `sire_settings`, `sire_notes`, `sire_audit_events` — are the SDK

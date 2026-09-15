@@ -182,6 +182,9 @@ export default {
                 "severity_id",
                 "priority"
             ],
+            "optional": [
+                "category_id"
+            ],
             "note": "Severity is impact, priority is scheduling. Both are set here."
         },
         {
@@ -402,7 +405,9 @@ export default {
             ],
             "to": "closed",
             "label": "Close",
-            "capability": "sire.report.close"
+            "capability": "sire.report.close",
+            "guard": "root_cause_confirmed_when_serious",
+            "note": "Critical, P1, recurring and reopened issues need a CONFIRMED root cause first."
         },
         {
             "action": "hold",

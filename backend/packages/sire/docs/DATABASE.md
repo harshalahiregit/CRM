@@ -1,6 +1,6 @@
 # Database
 
-**24 migrations. 20 tables, every one prefixed `sire_`.**
+**26 migrations. 21 tables, every one prefixed `sire_`.**
 
 ## The two rules
 
@@ -74,6 +74,8 @@ to your schema. Rename `2026_MM_DD_` to real dates, keeping the order.
 | 000024 | create_sire_notes_table | creates `sire_notes` |
 | 000025 | create_sire_audit_events_table | creates `sire_audit_events` |
 | 000026 | fix_sire_release_default_status | alters `sire_releases` — the column defaulted to `planned`, which is not a release status |
+| 000027 | create_sire_report_watchers_table | creates `sire_report_watchers` |
+| 000028 | add_method_to_sire_root_causes | alters `sire_root_causes` — which RCA technique was used, and its working |
 
 ## Tables
 
@@ -98,6 +100,7 @@ to your schema. Rename `2026_MM_DD_` to real dates, keeping the order.
 | `sire_test_cases` | Test cases against an issue. `result` is written in exactly one place, by a human. | `tenant_id` NOT NULL |
 | `sire_settings` | SDK fallback: per-tenant `sire.*` configuration. Empty when a host settings provider is bound. | `tenant_id` NOT NULL |
 | `sire_notes` | SDK fallback: comments. Empty when a host notes provider is bound. | `tenant_id` NOT NULL |
+| `sire_report_watchers` | Who else is told about an issue. Subscription only — it never widens what anybody may read. | `tenant_id` NOT NULL |
 | `sire_audit_events` | SDK fallback: the system-event trail. **Write-once — no `updated_at`, no delete path.** Empty when a host audit provider is bound. | `tenant_id` NOT NULL |
 
 ## Relationships

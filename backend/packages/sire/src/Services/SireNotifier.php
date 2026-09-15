@@ -50,6 +50,7 @@ class SireNotifier
         private readonly SireNotificationProvider $notifications,
         private readonly SireAuthorizationProvider $authorization,
         private readonly SireSettingsProvider $settings,
+        private readonly SireWatcherService $watchers,
     ) {
     }
 
@@ -162,6 +163,17 @@ class SireNotifier
         foreach (SireEvents::RECIPIENTS[$event] as $token) {
             if (str_starts_with($token, 'role:')) {
                 $roles[] = substr($token, 5);
+
+                continue;
+            }
+
+            // Watchers are a LIST, not one person, so they cannot go through the
+            // single-id match below. Everything after this point -- actor
+            // suppression, de-duplication, collapsing -- applies to them exactly
+            // as it does to the assignee, which is the point of expanding here
+            // rather than at dispatch.
+            if ($token === 'watchers') {
+                $users = array_merge($users, $this->watchers->watcherIds($report));
 
                 continue;
             }

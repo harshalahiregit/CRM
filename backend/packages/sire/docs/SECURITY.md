@@ -111,6 +111,33 @@ event, the model throws on both, and a test asserts no such route exists.
 Release approvals and emergency overrides are defended by this trail. A history
 that can be rewritten afterwards proves nothing about what happened.
 
+## Free text is sanitised on the way in
+
+Title, description and the three reproduction fields pass through
+`Support\SireText::clean()` before validation — before, so that what the rules
+measure is what gets stored, and a 5-character title cannot pass `min:5` and then
+be trimmed to nothing.
+
+It removes what can only ever be an attack: `script`, `style`, `iframe`,
+`object`, `embed` and their contents, inline `on*=` handlers, and
+`javascript:`/`vbscript:` URLs. Control characters go too — never meaningful in a
+bug report, and they corrupt CSV exports and log lines downstream.
+
+**Everything else survives byte for byte.** This is a BUG REPORT: "the API
+returns `<div class=x>` unclosed" is a perfectly good description, and a
+sanitiser that eats it has destroyed the evidence the report exists to carry.
+Stripping all markup would optimise for a threat the render path already handles,
+at the cost of the one thing the field is for.
+
+SIRE does not use the host's rich-HTML sanitiser. That one allow-lists a subset
+of HTML for content meant to BE HTML; these fields are plain text, typed into an
+input and a textarea. (SIRE also cannot import `App\Support\*` — one host
+symbol, enforced by `tests/sdk.test.mjs`.)
+
+Defence in depth, not the only line: React escapes on render and the mail path
+escapes every interpolation with `e()`. This is the line that survives somebody
+later rendering a description somewhere that forgot to.
+
 ## Attachments
 
 Tenant is in the storage path, so isolation is structural rather than a `WHERE`
