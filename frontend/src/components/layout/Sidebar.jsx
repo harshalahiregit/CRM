@@ -309,6 +309,7 @@ const TPV_VENDOR_ITEMS = [
 const TRANSPORT_SUB_ITEMS = [
   { label: 'Transport Orders', path: '/app/transport/orders',   icon: Package },
   { label: 'Trips',            path: '/app/transport/trips',    icon: Truck },
+  { label: 'Consignments',     path: '/app/transport/consignments', icon: Boxes },
   { label: 'Vehicles',         path: '/app/transport/vehicles', icon: Truck },
   { label: 'Drivers',          path: '/app/transport/drivers',  icon: Users },
 ]
