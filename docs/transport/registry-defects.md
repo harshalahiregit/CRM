@@ -1279,6 +1279,26 @@ front door instead of the back.
 Question 2 above is therefore the consequential one. Question 1 can wait for SNG-TRN-014; this cannot
 wait for anything, because the absence is already shaping how the other two developers get our data.
 
+### The same finding, reached from a second direction (2026-09-15)
+
+A pull-forward was proposed — make the Trips list searchable by vehicle registration and driver
+name — and estimated at **a day rather than the half-day it looks like**. The reason is not the
+filter. It is that **the Fleet seam is one method wide.**
+
+`App\Services\Transport\Contracts\` contains exactly one file, `FleetResourceGateway`, exposing
+exactly one method, `markDispatched()`. Meanwhile TM-001 §11 says that seam must carry:
+
+> available/eligible fleet, available drivers, vehicle status, expected return, allocation recommendation
+
+None of those five has an interface. So any cross-developer need — a lookup, a status read, a
+recommendation — currently costs a contract design before it costs a line of code, and looks
+expensive for that reason alone.
+
+**Two independent routes arrived at the same conclusion:** the event-payload question above, and a
+search feature that has nothing to do with events. The missing piece in both is the same — there is
+no read contract between Person 1 and Person 2, in either direction, beyond a single write-intent
+method. That is what makes this defect real rather than theoretical.
+
 ### Approval granted 2026-09-15 — `consignment_id` added to `EVT-002`
 
 `EVT-002`'s Payload Core is **LOCKED** at `trip_id, order_id`. `consignment_id` was added as a third

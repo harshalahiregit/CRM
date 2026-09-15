@@ -4,6 +4,26 @@ import { Package, Truck, Users, Boxes } from 'lucide-react'
 /**
  * Sangoe Transport OS module shell.
  *
+ * ── WHERE A NEW TRANSPORT SCREEN MUST BE REGISTERED ──────────────────────
+ * Four places, and missing one costs a round of "it still isn't showing".
+ * Adding Consignments took three rounds before this list existed.
+ *
+ *   1. frontend/src/app/routes.jsx            lazy import + <Route>  (SHARED)
+ *   2. THIS FILE                              the in-module rail below
+ *   3. components/layout/Sidebar.jsx          TRANSPORT_SUB_ITEMS    (SHARED)
+ *   4. — free —                               SUBMODULE_SEARCH in that same
+ *      file spreads TRANSPORT_SUB_ITEMS, so the "Search modules…" box picks
+ *      the entry up with no extra edit.
+ *
+ * NOT a registration point today: components/CommandPalette.jsx indexes
+ * helpdesk, projects, tasks and KB only — no transport record of any kind is
+ * reachable from ⌘K. That is Block 5's job (universal search), not a nav fix.
+ * modules/registry.js is decorative and gates nothing (ARCHITECTURE-PRIMER §3).
+ *
+ * Both SHARED files are append-only: add your line, read the diff BEFORE
+ * staging, and stage by explicit path — never `git add -A`. A formatter once
+ * swept 115 unrelated lines of routes.jsx into a two-line change.
+ *
  * Uses the shared ModuleShell, same as Purchase and TPV, so the nav behaves
  * identically across modules.
  *
