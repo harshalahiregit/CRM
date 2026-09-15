@@ -59,7 +59,8 @@ Authority for who rules on what: the Conflict Resolution matrix in
 | D-44 | CTD §11 requires a consignment lifecycle engine that does not exist | High | Architecture + Product | Open — status derived at read time as a consequence |
 | D-45 | Consignment permissions are in no registry row | Medium | Security + Architecture | Open — mirrored from Order, precedent D-8/D-21 |
 | D-46 | `SCOPE_OWN` is granted but its narrowing is not implemented | **Critical** | Security | Open — latent, not currently reachable |
-| D-47 | Two conflicting structural standards: TEAM-CONVENTIONS vs the DDD split | **Critical** | Architecture | Open — analysis posted, nothing moved |
+| D-47 | Two conflicting structural standards: TEAM-CONVENTIONS vs the DDD instruction | **Critical** | Architecture | Open — analysis posted, nothing moved |
+| D-48 | Two LOCKED events we produce are never emitted | High | Person 1 + Architecture | Open — EVT-001, EVT-002 |
 
 ---
 
@@ -1135,28 +1136,26 @@ is already done:
 
 ---
 
-## D-47 — Two structural standards, in direct conflict, both live
+## D-47 — Two structural standards in conflict: TEAM-CONVENTIONS vs the DDD instruction
 
-A new document, **`Sangoe_Transport_OS_Three_Developer_Split.pdf`** (dated 2026-09-12), mandates a
-Domain-Driven layout that the repository does not use and that `TEAM-CONVENTIONS.md` contradicts.
+A structural instruction has been issued mandating Domain-Driven Design under `app/Domains/`, with
+business logic kept out of controllers. It is reproduced in full in
+`docs/transport/ANALYSIS-ddd-structure.md`; it is a folder tree plus two sentences.
 
-| | TEAM-CONVENTIONS.md §1 | Three-Developer Split PDF |
+| | `TEAM-CONVENTIONS.md` §1 | The DDD instruction |
 |---|---|---|
-| Models | `app/Models/<Module>/` | `app/Domain/<Domain>/Models/` |
-| Services | `app/Services/<Module>/` | `app/Domain/<Domain>/Services/` |
-| Routes | `routes/<module>.php` | `routes/flow.php` / `resources.php` / `outcome.php` |
-| Controllers | `app/Http/Controllers/Api/<Module>/` | `app/Http/Controllers/Api/V1/Transport/` |
-| Domain names | module names (Transport, Hr, Sales…) | **Flow · Resources · Outcome** |
-| Cross-module access | "call the existing service/API" | `App\Domain\Shared\Contracts\*` only, **CI-enforced** |
-| Migration names | `YYYY_MM_DD_NNNNNN_*` | partitioned per developer: `_1NNN_`, `_2NNN_`, `_3NNN_` |
+| Models | `app/Models/<Module>/` | `app/Domains/<Domain>/Models/` |
+| Services | `app/Services/<Module>/` | `app/Domains/<Domain>/Services/` |
+| Events | `app/Events/<Module>/` | `app/Domains/<Domain>/Events/` |
+| Controllers | `app/Http/Controllers/Api/<Module>/` | `app/Http/Controllers/Api/**V1**/Transport/` |
+| Grouping | by module (Transport, Hr, Sales…) | by domain (Operations, Fleet, Integration, Finance, Document, Compliance) |
 
 **Neither is a draft.** `TEAM-CONVENTIONS.md` is what all three developers work to today and what
-every one of the repository's 30 `app/Models/` entries follows. The PDF is dated later and is
-explicit, with CI scripts written out to enforce it.
+every one of the 30 entries under `app/Models/` follows. The instruction is explicit and current.
 
 ### Measured state of the repository
 
-- **No `app/Domain/` or `app/Domains/` directory exists.** Not one module uses it.
+- **No `app/Domains/` directory exists.** Not one module uses it.
 - Transport alone: **88 PHP files** under `app/`, **27 test files**, **543 occurrences** of an
   `App\…\Transport` namespace across **106 files**, **671 passing tests**.
 - 14 frontend files reference `modules/transport` or `transportApi`.
@@ -1164,17 +1163,65 @@ explicit, with CI scripts written out to enforce it.
 ### The blocker that is not about cost
 
 `app/Models/Transport/` contains `TransportVehicle.php` and `TransportDriver.php` — **Person 2's
-models** under TM-001 §8. Any move of that folder crosses the ownership boundary. **Person 1 cannot
-execute this alone even if it is approved**, and the PDF's own CI ownership guard would fail the PR
-that tried.
+models** under TM-001 §8. The instruction's own tree puts `Vehicle` under `Domains/Fleet/` (Person 2)
+and `TransportOrder`, `Trip`, `Consignment` under `Domains/Operations/` (Person 1). Splitting
+`app/Models/Transport/` between those two domains **is** the move, and Person 1 cannot perform it
+without editing Person 2's files.
 
-### Naming discrepancies found while reading
+### What the instruction does NOT contain
 
-The brief summarising this document described `app/Domains/Operations|Fleet|Finance`. The document
-itself says **`app/Domain/`** (singular) with domains **Flow / Resources / Outcome**, and the tree is
-addressed to "Developer 2 (You)" in the copy that reached us. Whether it binds Person 1 at all is an
-open question, not an assumption.
+No interface list, no event contract, no DTO shapes, no version-prefix rationale, no CI enforcement.
+It is a layout instruction. Everything beyond folder naming — the integration contracts — comes from
+**STOS-TM-001 §11**, and is tracked separately as **D-48**.
 
-**Owner: Architecture.** Full analysis, including the behavioural requirements found beyond folder
-naming, in `docs/transport/ANALYSIS-ddd-structure.md`. **Nothing has been moved, created or
-renamed.**
+**Owner: Architecture.** Analysis and options in `docs/transport/ANALYSIS-ddd-structure.md`.
+**Nothing has been moved, created or renamed.**
+
+---
+
+## D-48 — Two LOCKED events that we produce are never emitted
+
+Step 11's `Event_Registry` defines twelve events. Person 1 is the named producer of seven of them.
+One is emitted; **two are on code paths that run today and emit nothing.**
+
+| Event | Producer | Status | Consumers | Emitted? |
+|---|---|---|---|---|
+| `EVT-001 OrderCreated` | OrderService | **LOCKED** | TripEngine, Notifications | ❌ **no** |
+| `EVT-002 TripCreated` | TripEngine | **LOCKED** | Viability, Notifications | ❌ **no** |
+| `EVT-005 TripAssigned` | AssignmentService | CONTROLLED | Dispatch, Notifications | ✅ yes |
+| `EVT-003 TripViabilityCalculated` | ViabilityEngine | LOCKED | ControlRoom, Alerts | n/a — SNG-TRN-008 not built |
+| `EVT-004 TripApproved` | ApprovalService | LOCKED | TripEngine, Notifications | n/a — no approval entity |
+| `EVT-008 TripExceptionRaised` | ExceptionEngine | LOCKED | Notifications, ControlRoom | n/a — SNG-TRN-013 in progress |
+| `EVT-012 TripClosed` | TripEngine | LOCKED | ProfitEngine, ControlRoom | n/a — closure unreachable |
+
+`EVT-001` and `EVT-002` are different from the rest: **`TransportOrderService::create()` and
+`TransportTripService::create()` both run in production today and dispatch nothing.** Verified by
+grep — `app/Events/Transport/` contains exactly one class, `TripAssigned.php`.
+
+### Why it matters, beyond registry compliance
+
+**STOS-TM-001 §11** — the approved integration matrix — specifies what the other two developers must
+receive from us:
+
+> **P2 ← P1** — trip_id, transport_order_id, consignment_id, container_id, active route/geofence context
+> **P3 ← P1** — **trip.delivered**, **trip.completed**, container_id, trip_id, billing trigger
+
+We publish **no outbound mechanism at all** except `TripAssigned`, which has no listeners. So the only
+way Person 2 or Person 3 can obtain any of that today is to query our tables directly — which is
+precisely the residual exposure named in **D-46** as the thing Person 1 cannot guard.
+
+### A gap between the two approved sources, noted not resolved
+
+TM-001 §11 names **`trip.delivered`**. Step 11's registry has no such row — its nearest is
+`EVT-012 TripClosed`. Both refer to states that are unreachable today (`delivered` is STT-007,
+SNG-TRN-014), so nothing is blocked by it, but the two approved documents do not agree on the
+event set.
+
+### Recommendation
+
+Emit `EVT-001` and `EVT-002` now, following the `TripAssigned` pattern already in the codebase — a
+published seam with no listeners, payload exactly the registry's Payload Core column, idempotency key
+as specified. Roughly half a day. It costs nothing to the milestone and it gives Person 2 and Person
+3 something to subscribe to instead of a reason to read our tables.
+
+**Owner: Person 1 (to build), Architecture (for the TM-001 vs Step 11 event-set discrepancy).**
