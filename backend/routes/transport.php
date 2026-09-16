@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\Transport\TransportAdvanceController;
 use App\Http\Controllers\Api\Transport\TransportAllocationController;
 use App\Http\Controllers\Api\Transport\TransportCapabilityController;
 use App\Http\Controllers\Api\Transport\TransportConsignmentController;
@@ -68,6 +69,30 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
         Route::get('/trips/status-counts', [TransportTripController::class, 'statusCounts']);
         Route::get('/trips',              [TransportTripController::class, 'index']);
         Route::get('/trips/{id}',         [TransportTripController::class, 'show'])->whereNumber('id');
+
+        /* Advances, read — SNG-TRN-011. Step 11 has no PERM row for viewing an
+         * advance, and inventing one would be FORBID-001. A trip's advances are
+         * part of that trip, so they sit behind PERM-001 with the trip itself. */
+        Route::get('/trips/{id}/advances', [TransportAdvanceController::class, 'index'])->whereNumber('id');
+    });
+
+    /* ── Advances — SNG-TRN-011 ───────────────────────────────────────────
+     *
+     * Two groups, not one, and the split is the control. PERM-006 lets
+     * Operations and Dispatcher ASK; PERM-007 does not let them ALLOW. Putting
+     * both verbs behind one permission would collapse the segregation that
+     * STOS-FIN §129 and BRW §75 require, and TripAdvanceService adds the
+     * narrower rule on top — nobody decides the request they raised.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::ADVANCE_REQUEST)->group(function () {
+        Route::post('/trips/{id}/advances', [TransportAdvanceController::class, 'store'])->whereNumber('id');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::ADVANCE_APPROVE)->group(function () {
+        Route::post('/trips/{id}/advances/{advanceId}/approve', [TransportAdvanceController::class, 'approve'])
+            ->whereNumber('id')->whereNumber('advanceId');
+        Route::post('/trips/{id}/advances/{advanceId}/reject', [TransportAdvanceController::class, 'reject'])
+            ->whereNumber('id')->whereNumber('advanceId');
     });
 
     /* ── What this user may do ────────────────────────────────────────
@@ -229,6 +254,19 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
 
     Route::middleware('transport.permission:'.TransportPermission::CONSIGNMENT_UPDATE)->group(function () {
         Route::put('/consignments/{id}', [TransportConsignmentController::class, 'update'])->whereNumber('id');
+
+        /* ── Documents — ORD-005, ORD-006, CTD-004, CTD-005, all P0 ───────
+         *
+         * Gated on CONSIGNMENT_UPDATE rather than a document permission of
+         * their own, for the same reason the vehicle and driver routes are:
+         * Step 11's PERM registry has thirteen rows and none of them is
+         * "file a document". Inventing a fourteenth would be FORBID-001, and
+         * filing paperwork against a shipment IS changing that shipment.
+         * Recorded as a gap in docs/transport/TEAM-CONTRACTS.md.
+         */
+        Route::post('/consignments/{id}/documents', [TransportConsignmentController::class, 'storeDocument'])->whereNumber('id');
+        Route::post('/consignments/{id}/documents/{documentId}/renew', [TransportConsignmentController::class, 'renewDocument'])
+            ->whereNumber('id')->whereNumber('documentId');
     });
 
     Route::middleware('transport.permission:'.TransportPermission::CONSIGNMENT_DELETE)->group(function () {

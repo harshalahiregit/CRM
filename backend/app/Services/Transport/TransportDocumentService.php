@@ -229,6 +229,10 @@ class TransportDocumentService
         return match (true) {
             $subject instanceof \App\Models\Transport\TransportVehicle => TransportDocumentEntity::VEHICLE,
             $subject instanceof \App\Models\Transport\TransportDriver  => TransportDocumentEntity::DRIVER,
+            // D-41: LR and DO stay documents, so the consignment is what they
+            // are filed against. Without this arm the service throws before it
+            // reaches the type check, and ORD-005/006 have nowhere to write.
+            $subject instanceof \App\Models\Transport\TransportConsignment => TransportDocumentEntity::CONSIGNMENT,
             default => throw new BusinessException('Documents cannot be filed against that record.', 422),
         };
     }

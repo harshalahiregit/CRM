@@ -66,6 +66,24 @@ final class TransportPermission
     public const TRIP_CREATE  = 'transport.trip.create';
     public const TRIP_ASSIGN  = 'transport.trip.assign';
 
+    /* ── Advances (SNG-TRN-011) ─────────────────────────────────────────
+     *
+     * ADVANCE_REQUEST is named by the registry: API-005's Permission column
+     * reads `transport.advance.request` exactly.
+     *
+     * ADVANCE_APPROVE is not. PERM-007 "Advance / approve" exists in the
+     * Permissions sheet, but the API registry has no approve endpoint to name
+     * its key — API-005 is the only advance row and it is the request. The key
+     * is therefore built from PERM-007's own Domain and Action rather than
+     * invented, the same construction D-8 records for the master-data keys.
+     *
+     * Reads are deliberately NOT given a key of their own. There is no
+     * PERM row for viewing an advance, and inventing one would be FORBID-001;
+     * a trip's advances are part of that trip, so they sit behind TRIP_VIEW.
+     */
+    public const ADVANCE_REQUEST = 'transport.advance.request';
+    public const ADVANCE_APPROVE = 'transport.advance.approve';
+
     /* ── Master data (SNG-TRN-003 / 004). NOT IN THE REGISTRY — see D-8. ── */
     public const VEHICLE_VIEW   = 'transport.vehicle.view';
     public const VEHICLE_CREATE = 'transport.vehicle.create';
@@ -117,6 +135,38 @@ final class TransportPermission
      * FLAGGED: confirm or replace.
      */
     public const MATRIX = [
+        // PERM-006 — Advance request: Owner Y, Operations Y, Dispatcher Y,
+        // Accounts Y, Driver "Own". Approver N, Customer N, Supplier N.
+        //
+        // Driver holds Own and nothing wider, which is the row working: a driver
+        // asks for their own advance and cannot see, let alone raise, anybody
+        // else's. Approver is absent on purpose — PERM-007 is where they act,
+        // and letting them raise the request they will later approve would
+        // collapse the two rungs into one person.
+        self::ADVANCE_REQUEST => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_DRIVER     => self::SCOPE_OWN,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        // PERM-007 — Advance approve: Owner Y, Accounts Y, Approver Y, Admin Y.
+        // Operations N, Dispatcher N, Driver N, Customer N, Supplier N.
+        //
+        // This row is the financial control, and the denials carry it. Operations
+        // and Dispatcher may raise an advance under PERM-006 and may not approve
+        // one here; the two rows differ in exactly that place, which is
+        // segregation of duties expressed as data rather than as a convention
+        // somebody remembers. STOS-FIN §129 and BRW §75 both ask for it, and
+        // TripAdvanceService enforces the narrower rule on top — not even an
+        // Owner approves the request they themselves raised.
+        self::ADVANCE_APPROVE => [
+            self::ROLE_OWNER    => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS => self::SCOPE_ALL,
+            self::ROLE_APPROVER => self::SCOPE_ALL,
+            self::ROLE_ADMIN    => self::SCOPE_ALL,
+        ],
         // PERM-002 — Trip create: Owner Y, Operations Y, Dispatcher Y, Admin Y.
         self::TRIP_CREATE => [
             self::ROLE_OWNER      => self::SCOPE_ALL,

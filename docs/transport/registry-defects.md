@@ -66,6 +66,11 @@ Authority for who rules on what: the Conflict Resolution matrix in
 | D-51 | The suite runs on sqlite; production runs MySQL | High | Architecture | Open — repository-wide, not Transport's to fix |
 | D-52 | No structural marker for a temperature-critical trip | **High** | Product + Person 2 | Open — TM-001 §12's P0 rule has nothing to key on |
 | D-53 | Two CLOSED attachment windows may overlap | Low | Person 1 | Open — latent, unreachable today |
+| D-57 | Step 9 and ENUM-002 describe different advance lifecycles | **High** | Product + Finance | Open — ENUM-002 stored on FLD-012's authority, four Step 9 states unrepresentable |
+
+> **D-54, D-55 and D-56 have bodies below but no row here** — they were added on 2026-09-16 and the
+> index was not extended with them. Person 1 owns those three; the rows are theirs to write, which
+> is why they are named rather than summarised by someone else.
 
 ---
 
@@ -1842,3 +1847,72 @@ migration makes Laravel treat it as new and run it again, against tables that al
 
 **If you are here because the overlap looked wrong in a diff: it is recorded, it was checked, and
 the correct action is none.**
+
+---
+
+## D-57 — Step 9 and ENUM-002 describe different advance lifecycles
+
+> **Renumbered.** This was raised as D-54 on the SNG-TRN-011 branch on 2026-09-16, the same day
+> Person 1 raised a different D-54 on master. Both numbers were taken in parallel; master's landed
+> first, so this one moved rather than theirs. **Nothing about the defect changed — only its
+> number.** `AdvanceStatus` cites D-57.
+
+`TripStatus` had an easy answer to the same shape of problem: Step 9 is the highest product
+authority, and Step 11's twelve trip states are a **strict subset** of Step 9's sixteen with no
+name conflicts, so one list satisfies both. Advances are not like that.
+
+| Source | States |
+|---|---|
+| Step 9, LOCKED state machine | `DRAFT → PENDING_APPROVAL → APPROVED → PAID → ADJUSTMENT_PENDING → ADJUSTED → CLOSED / REJECTED` (8) |
+| Step 11 `ENUM-002` | `requested \| approved \| rejected \| paid \| adjusted \| recovery` (6) |
+
+Only four overlap — `approved`, `rejected`, `paid`, `adjusted`.
+
+**Step 9 has four states ENUM-002 cannot store:** `draft`, `pending_approval`, `adjustment_pending`,
+`closed`.
+**ENUM-002 has two Step 9 does not contain:** `requested`, `recovery`.
+
+So "Step 9 wins" cannot be applied literally — the column has to hold something, and the two
+documents do not offer the same something.
+
+### Why ENUM-002 is what gets stored
+
+Step 11's own field registry settles the column, not the argument:
+
+```
+FLD-012   DB-007  trip_advances  status  VARCHAR(40)  NOT NULL  DEFAULT 'requested'  INDEX  ST-ADV
+```
+
+`requested` is an ENUM-002 value that Step 9 does not contain. The field registry naming its own
+default is the most specific statement anyone has made about this column, so `AdvanceStatus`
+reproduces ENUM-002 and treats Step 9's lifecycle as what that vocabulary *means*.
+
+### What was NOT done
+
+No mapping was invented. Deciding that Step 9's `pending_approval` "is" ENUM-002's `requested`, or
+choosing which of `draft` / `adjustment_pending` / `closed` to drop, is a product decision — and
+inventing one is FORBID-001. `AdvanceStatus` declares the six ENUM-002 values and wires only the two
+edges SNG-TRN-011 built preconditions for:
+
+```
+requested → approved     PERM-007
+requested → rejected     PERM-007
+```
+
+`paid`, `adjusted` and `recovery` are declared and unreachable. `approved → paid` is BR-P0-006's
+payment path (TRP-P0-008, not this ticket); `paid → adjusted|recovery` is SNG-TRN-017 settlement
+under DEP-008.
+
+### What it costs while open
+
+A trip advance cannot express "drafted but not yet submitted", and it cannot be closed — an advance
+that has been adjusted stays `adjusted` with no terminal state. Neither blocks SNG-TRN-011, because
+both belong to stages no ticket has built. Both will block SNG-TRN-017.
+
+### What resolving it looks like
+
+Either ENUM-002 gains the four missing values through a registry change, or Step 9's machine is
+amended to the six, or the two are formally declared to be describing different things — the
+business lifecycle and the stored column. Any of the three is a decision; none is a developer's.
+
+**Needed before:** SNG-TRN-017 (settlement), which has to move an advance out of `paid`.

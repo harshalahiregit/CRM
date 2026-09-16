@@ -6,6 +6,7 @@ use App\Models\Transport\TransportPolicy;
 use App\Models\User;
 use App\Support\Transport\DriverComplianceStatus;
 use App\Support\Transport\PretripCheckKey;
+use App\Support\Transport\TransportDocumentEntity;
 use App\Support\Transport\TransportDocumentType;
 use Illuminate\Support\Facades\Log;
 
@@ -53,6 +54,25 @@ class TransportPolicyService
         // The one value present in BOTH CMP §18 (90/60/30/15/7) and FLEET §13
         // (60/30/15/7). "Exact configuration belongs to the organization."
         'compliance.expiring_window_days' => DriverComplianceStatus::DEFAULT_EXPIRING_WINDOW_DAYS,
+
+        // ── Advance exposure — BR-P0-005 (SNG-TRN-011) ───────────────────
+        // "Advance request + outstanding balance cannot exceed configured trip
+        // exposure." Configurable with a role-based override, severity High.
+        //
+        // 30% is not invented: the Transport App general guide states the rule
+        // the owner already works to — "No trip advance above 30% of approved
+        // freight without owner approval". It is a default, not a constant; a
+        // tenant that works differently changes one row.
+        //
+        // max_amount 0 means "no absolute cap" — the percentage still applies.
+        // Both are checked, and the lower of the two wins, because a cap that
+        // could be escaped by raising the freight would not be a cap.
+        'advance.max_percent_of_freight' => 30,
+        'advance.max_amount'             => 0,
+        // Whether the cap may be overridden at all. BR-P0-005 permits it;
+        // CMP §20's principle is that whether a control blocks is the
+        // organisation's decision, not the developer's.
+        'advance.override_allowed'       => true,
 
         // ── Required document sets (CMP §24, FLEET §11) ──────────────────
         // EMPTY BY DEFAULT — CMP §10. See the class docblock.
@@ -238,10 +258,42 @@ class TransportPolicyService
             return $days;
         }
 
+        if ($key === 'advance.max_percent_of_freight') {
+            $percent = (int) $value;
+            if ($percent < 0 || $percent > 100) {
+                throw new \InvalidArgumentException('The advance limit must be between 0 and 100 percent of approved freight.');
+            }
+
+            return $percent;
+        }
+
+        if ($key === 'advance.max_amount') {
+            // Stored as a string so the comparison against DECIMAL(18,2)
+            // amounts stays exact. A negative cap is a typo, not a policy.
+            if (! is_numeric($value) || (float) $value < 0) {
+                throw new \InvalidArgumentException('The advance cap must be zero or a positive amount.');
+            }
+
+            return number_format((float) $value, 2, '.', '');
+        }
+
+        if ($key === 'advance.override_allowed') {
+            return (bool) $value;
+        }
+
         if (str_ends_with($key, 'required_documents')) {
             $value = is_array($value) ? array_values(array_unique($value)) : [];
-            $entity = str_starts_with($key, 'driver') ? 'driver' : 'vehicle';
-            $allowed = TransportDocumentType::forEntity($entity);
+
+            // The entity is the key's own prefix — 'driver.required_documents'
+            // is about drivers. Reading it as "driver, or else vehicle" was
+            // fine while those were the only two, but it would have told a
+            // consignment policy that an LR cannot be required of a vehicle.
+            // An unrecognised prefix yields no allowed types, so it refuses
+            // rather than silently validating against somebody else's list.
+            $entity  = strtok($key, '.') ?: '';
+            $allowed = TransportDocumentEntity::isValid($entity)
+                ? TransportDocumentType::forEntity($entity)
+                : [];
 
             foreach ($value as $type) {
                 if (! in_array($type, $allowed, true)) {
