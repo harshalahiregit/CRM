@@ -227,6 +227,19 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
 
     Route::middleware('transport.permission:'.TransportPermission::CONSIGNMENT_UPDATE)->group(function () {
         Route::put('/consignments/{id}', [TransportConsignmentController::class, 'update'])->whereNumber('id');
+
+        /* ── Documents — ORD-005, ORD-006, CTD-004, CTD-005, all P0 ───────
+         *
+         * Gated on CONSIGNMENT_UPDATE rather than a document permission of
+         * their own, for the same reason the vehicle and driver routes are:
+         * Step 11's PERM registry has thirteen rows and none of them is
+         * "file a document". Inventing a fourteenth would be FORBID-001, and
+         * filing paperwork against a shipment IS changing that shipment.
+         * Recorded as a gap in docs/transport/TEAM-CONTRACTS.md.
+         */
+        Route::post('/consignments/{id}/documents', [TransportConsignmentController::class, 'storeDocument'])->whereNumber('id');
+        Route::post('/consignments/{id}/documents/{documentId}/renew', [TransportConsignmentController::class, 'renewDocument'])
+            ->whereNumber('id')->whereNumber('documentId');
     });
 
     Route::middleware('transport.permission:'.TransportPermission::CONSIGNMENT_DELETE)->group(function () {

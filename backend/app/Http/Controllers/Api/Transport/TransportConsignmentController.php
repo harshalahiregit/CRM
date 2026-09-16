@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Api\Transport;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponse;
 use App\Http\Requests\Transport\StoreConsignmentRequest;
+use App\Http\Requests\Transport\StoreTransportDocumentRequest;
 use App\Http\Requests\Transport\UpdateConsignmentRequest;
 use App\Services\Transport\ConsignmentService;
 use App\Services\Transport\TransportAuditLogger;
+use App\Services\Transport\TransportDocumentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -40,6 +42,7 @@ class TransportConsignmentController extends Controller
     public function __construct(
         private ConsignmentService $consignments,
         private TransportAuditLogger $audit,
+        private TransportDocumentService $documents,
     ) {
     }
 
@@ -78,8 +81,49 @@ class TransportConsignmentController extends Controller
         return $this->success([
             'consignment' => $consignment->load(['order:id,order_number,order_status', 'customer:id,company']),
             'trips'       => $consignment->trips()->get(['id', 'trip_number', 'status']),
+            // D-41: the LR and the DO live here, so the detail payload carries
+            // them exactly as the vehicle and driver payloads carry theirs.
+            'documents'   => $consignment->documents()->orderByDesc('id')->get(),
             'audit'       => $this->audit->forSubject($consignment, $tenantId),
         ], 'Consignment retrieved');
+    }
+
+    /* ── Documents — ORD-005, ORD-006, CTD-004, CTD-005, all P0 ──────────── */
+
+    /**
+     * File a document against the shipment.
+     *
+     * Mirrors TransportVehicleController::storeDocument() deliberately, down to
+     * the FormRequest: three entities filing documents three different ways is
+     * how the validation on one of them drifts.
+     *
+     * The service refuses a type that does not belong to a consignment —
+     * insurance and fitness describe a vehicle and outlive the shipment — so
+     * there is no allow-list to repeat here.
+     */
+    public function storeDocument(StoreTransportDocumentRequest $request, int $id): JsonResponse
+    {
+        $tenantId    = $request->user()->tenant_id;
+        $consignment = $this->consignments->find($id, $tenantId);
+        $data        = $request->validated();
+
+        return $this->success(
+            $this->documents->file($consignment, $data['document_type'], $data, $tenantId, $request->user()),
+            'Document filed', 201
+        );
+    }
+
+    /** STOS-DOC §26 — a replacement is a new version, never an overwrite. */
+    public function renewDocument(StoreTransportDocumentRequest $request, int $id, int $documentId): JsonResponse
+    {
+        $tenantId = $request->user()->tenant_id;
+        $this->consignments->find($id, $tenantId);       // tenant + existence gate
+        $current  = $this->documents->find($documentId, $tenantId);
+
+        return $this->success(
+            $this->documents->renew($current, $request->validated(), $tenantId, $request->user()),
+            'Document renewed', 201
+        );
     }
 
     /** CTD-003 — every consignment on one order. */

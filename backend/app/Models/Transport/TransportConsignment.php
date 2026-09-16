@@ -6,6 +6,7 @@ use App\Models\Customer\Client;
 use App\Models\Transport\Concerns\RecordsTransportAudit;
 use App\Models\Traits\BelongsToTenant;
 use App\Support\Sql\SqlDate;
+use App\Support\Transport\TransportDocumentEntity;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -100,6 +101,21 @@ class TransportConsignment extends Model
     public function trips(): HasMany
     {
         return $this->hasMany(TransportTrip::class, 'consignment_id');
+    }
+
+    /**
+     * The shipment's own paperwork — D-41.
+     *
+     * LR and DO stay documents rather than getting tables of their own, so this
+     * is where ORD-005, ORD-006, CTD-004 and CTD-005 land. Constrained on
+     * entity_type as well as entity_id because transport_documents holds every
+     * entity's documents in one table and id 7 is a vehicle, a driver and a
+     * consignment at the same time.
+     */
+    public function documents(): HasMany
+    {
+        return $this->hasMany(TransportDocument::class, 'entity_id')
+            ->where('transport_documents.entity_type', TransportDocumentEntity::CONSIGNMENT);
     }
 
     /* ── Scopes. None filters by tenant; they compose AFTER forTenant(). ── */
