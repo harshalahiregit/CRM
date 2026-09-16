@@ -30,6 +30,7 @@
         "psr-4": {
             "App\\": "app/",
             "Sire\\": "packages/sire/src/",
+            "Transport\\": "packages/transport/src/",
             "Database\\Factories\\": "database/factories/",
             "Database\\Seeders\\": "database/seeders/"
         }

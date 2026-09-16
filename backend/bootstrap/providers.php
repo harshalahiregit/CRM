@@ -13,4 +13,5 @@ return [
     // This one line brings its config, routes, migrations, commands and
     // the 13 SDK bindings. It adds; it edits no host file.
     Sire\SireServiceProvider::class,
+    Transport\TransportServiceProvider::class,
 ];
