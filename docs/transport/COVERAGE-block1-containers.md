@@ -25,7 +25,7 @@
 |---|---|
 | "unique **where applicable**" | `UNIQUE(tenant_id, container_number_normalized)` on the **master**. Uniqueness is true of the physical unit, not of an attachment |
 | "follow configurable format validation" | **DEFERRED** — see §5. No format is specified anywhere |
-| "be searchable" | indexed; endpoint is Block 2/5 |
+| "be searchable" | indexed; **endpoint now built** — `GET /containers/lookup?number=` resolves however the number was typed, and `?search=` filters the list. Both go through the normalised key. The *lifecycle* search (CTD-001 in full) is still Block 5 |
 | "be **normalized** for search" | `container_number_normalized` — upper-cased, non-alphanumerics stripped |
 | "**retain original entered value** where required" | `container_number` stored exactly as typed, beside the normalized key |
 | "maintain historical associations" | association rows are never deleted; `detached_at` is set |
@@ -43,6 +43,46 @@ no test and one not built at all.
 | "a consignment may contain **multiple** containers" | **BUILT** — `ContainerService::attachmentsFor()`; `ContainerServiceTest::test_one_consignment_may_carry_several_containers`. *The schema always allowed it; nothing proved it until now.* The unique index runs container→consignment, never the reverse |
 | "have **other cargo references**" (non-container cargo) | **NOT BUILT** — see §5. No field, entity or example is given for what a non-container cargo reference is |
 | "Consignment ↔ Container as a **controlled** relationship" | **BUILT** — attach/detach only, through the service; no delete path, history retained |
+
+## 2b. Step 6 — the API surface (added 2026-09-16)
+
+Seven endpoints, none in Step 11's API registry and none owned by a Step 12 ticket — the same
+position as Consignment, recorded under the same precedent (D-45).
+
+| Endpoint | Requirement | Proven by |
+|---|---|---|
+| `GET /containers` | §7 searchable · D-44's no-status rule | `test_the_list_can_filter_by_attachment_and_search`, `test_filtering_by_status_is_refused_rather_than_ignored` |
+| `GET /containers/lookup?number=` | **CTD-001** anchor | `test_lookup_finds_a_container_however_the_number_was_typed` |
+| `GET /containers/{id}` | §7 historical associations | `test_a_container_can_be_attached_and_detached` |
+| `GET /consignments/{id}/containers` | **§8** one or several | `test_a_consignment_can_carry_several_containers_over_http` |
+| `POST /containers` | MDM-008 | `test_a_container_can_be_created_and_read_back` |
+| `POST /containers/{id}/attach` | §7 not simultaneously | `test_attaching_a_container_already_on_another_consignment_is_refused` |
+| `POST /containers/{id}/detach` | §7 reuse allowed historically | same test |
+
+**There is no PUT and no DELETE**, and that is a decision rather than an omission: the container
+number is the identity, and §7 requires historical associations be maintained — editing the number
+would rewrite that history and deleting the container would destroy it. Locked by
+`test_there_is_no_update_or_delete_endpoint`, which asserts 405 on both, so nobody adds them
+casually.
+
+**Permissions.** Three keys — `CONTAINER_VIEW`, `CONTAINER_CREATE`, `CONTAINER_ATTACH`. Attach and
+detach deliberately share one: they are a single authority (deciding what is on a consignment), and
+splitting them would let someone attach a container they could not then remove. No `CONTAINER_UPDATE`
+or `CONTAINER_DELETE` is declared, because a key with no operation behind it is a promise the code
+does not keep. **No customer grant on `CONTAINER_VIEW`** — the D-46 reason, which bites hardest here:
+STOS-CTD's Digital Passport is container-keyed, so this is precisely the surface a customer-facing
+route would expose while `SCOPE_OWN` still narrows nothing.
+
+### Two things the two-way check caught at this step
+
+1. `?attached=0` and the falsy-string trap. `validate()` returns the RAW value, and PHP reads the
+   string `"false"` as truthy — so a `boolean` rule plus a PHP ternary could have returned the exact
+   opposite set with a 200. **Probed rather than assumed:** Laravel's `boolean` rule refuses
+   `"true"`/`"false"` with 422 and accepts only `1`/`0`, and the repository uses `array_key_exists`
+   rather than a falsy check. Correct as built, and now locked by a test.
+2. My own assertion was too weak. `assertJsonCount(1, …)` on an attached/unattached filter passes
+   **either way if the filter is inverted**, because each side returns exactly one row. Changed to
+   assert *which* container comes back.
 
 ## 3. The one design question this step must answer
 

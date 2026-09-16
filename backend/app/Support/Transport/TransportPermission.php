@@ -86,6 +86,20 @@ final class TransportPermission
     public const CONSIGNMENT_UPDATE = 'transport.consignment.update';
     public const CONSIGNMENT_DELETE = 'transport.consignment.delete';
 
+    /* ── Container. NOT IN THE REGISTRY — see D-45, same precedent. ─────── */
+    public const CONTAINER_VIEW   = 'transport.container.view';
+    public const CONTAINER_CREATE = 'transport.container.create';
+    // Attach AND detach. They are one authority — deciding what is on a
+    // consignment — and splitting them would let someone attach a container
+    // they could not then remove.
+    public const CONTAINER_ATTACH = 'transport.container.attach';
+
+    // There is deliberately NO CONTAINER_UPDATE and NO CONTAINER_DELETE.
+    // ContainerService offers neither operation: the container number IS the
+    // identity, and editing it would silently rewrite the history that
+    // STOS-CTD §7 requires be maintained. A key with no operation behind it is
+    // a promise the code does not keep.
+
     /* ── Dispatch. NOT IN THE REGISTRY — see D-18/D-21. ─────────────────── */
     public const TRIP_DISPATCH = 'transport.trip.dispatch';
 
@@ -362,6 +376,36 @@ final class TransportPermission
         self::CONSIGNMENT_DELETE => [
             self::ROLE_OWNER => self::SCOPE_ALL,
             self::ROLE_ADMIN => self::SCOPE_ALL,
+        ],
+
+        /*
+         * Container — mirrors Consignment, including the omission.
+         *
+         * NO customer grant on CONTAINER_VIEW, for the D-46 reason recorded
+         * above: 'own' narrowing is not implemented, so the grant would become
+         * a cross-customer leak the day a customer-facing route appears — and
+         * STOS-CTD's Digital Passport, which is container-keyed, is exactly
+         * that route.
+         */
+        self::CONTAINER_VIEW => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        self::CONTAINER_CREATE => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        self::CONTAINER_ATTACH => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
         ],
 
         self::ORDER_VIEW => [
