@@ -6,12 +6,14 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { fmtDate } from '../constants'
-import { INDIAN_STATES } from '@/lib/indianStates'
 import { useVendorModule } from '../useVendorModule'
+// The add/edit form is shared with Purchase — one component, thirteen fields,
+// so the two cannot drift apart again.
+import VendorMasterForm, { validateVendorMaster } from '@/components/vendors/VendorMasterForm'
 import TpvRegistrationBadge from '../components/TpvRegistrationBadge'
 import TemporaryTpvValidityBadge from '../components/TemporaryTpvValidityBadge'
 import {
-  KIT3D_STYLE, inputStyle, labelStyle, Overlay, ModalFooter, Field, TextInput, SelectInput,
+  KIT3D_STYLE, inputStyle, labelStyle, Overlay, ModalFooter, Field, TextInput,
 } from '@/components/ui/kit3d'
 // Shared, not TPV-local: both are generic over columns/rows and the Purchase
 // vendor listing has the same shape, so it can adopt them unchanged.
@@ -135,6 +137,8 @@ export default function TpvVendors() {
     id: v.id, name: v.user?.name || '', company_name: v.company_name || '', email: v.email || '',
     phone: v.phone || '', gst_number: v.gst_number || '', status: v.status === 'Active' ? 'Active' : 'Inactive',
     vendor_type: v.vendor_type || '',   // preserved on edit, never silently reset
+    // Shown read-only by the form; it is assigned on creation and never changes.
+    vendor_code: v.vendor_code || v.purchase_vendor_code || '',
     password: '', password_confirmation: '',
     address: v.address || '', city: v.city || '', state: v.state || '', pincode: v.pincode || '',
   })
@@ -358,13 +362,10 @@ function VendorModal({ form, cfg, onClose, onDone }) {
   const set = (k) => (e) => setF(p => ({ ...p, [k]: e.target.value }))
 
   const save = async () => {
-    if (!f.company_name.trim()) { setErr('Company is required.'); return }
-    if (!f.vendor_type) { setErr('Vendor Type is required.'); return }
-    if (f.password || f.password_confirmation) {
-      if (f.password.length < 6) { setErr('Password must be at least 6 characters.'); return }
-      if (f.password !== f.password_confirmation) { setErr('Passwords do not match.'); return }
-    }
-    if (isNew && !f.email.trim()) { setErr('Email is required to create the login.'); return }
+    // The same checks Purchase runs, from the same function — these were two
+    // copies that had already drifted on which fields they bothered to check.
+    const invalid = validateVendorMaster(f, { isNew })
+    if (invalid) { setErr(invalid); return }
     setSaving(true); setErr(null)
     const payload = {
       name: f.name || null, company_name: f.company_name, email: f.email || null, phone: f.phone || null,
@@ -421,42 +422,17 @@ function VendorModal({ form, cfg, onClose, onDone }) {
         <p style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--text-muted)' }}>Vendor profile, portal login and address in one form.</p>
       </div>
       <div style={{ padding: '8px 22px', maxHeight: '64vh', overflowY: 'auto' }}>
-        <Section title={`${cfg.moduleName} Information`} />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="Vendor Name"><TextInput value={f.name} onChange={set('name')} placeholder="Contact / login name" /></Field>
-          <Field label="Company *"><TextInput value={f.company_name} onChange={set('company_name')} placeholder="Company name" /></Field>
-          <Field label="Email"><TextInput type="email" value={f.email} onChange={set('email')} placeholder="login@vendor.com" /></Field>
-          <Field label="Phone"><TextInput value={f.phone} onChange={set('phone')} placeholder="Phone" /></Field>
-          <Field label="GST No"><TextInput value={f.gst_number} onChange={set('gst_number')} placeholder="GSTIN" /></Field>
-          {/* Vendor Type is stored (vendors.vendor_type) and drives the temporary
-              access window, so it must be an explicit choice — it used to be
-              hardcoded from module config and the admin could never set it. */}
-          <Field label="Vendor Type *">
-            {/* The empty placeholder is load-bearing. vendor_type starts as '',
-                and a <select> whose value matches no <option> renders the FIRST
-                one — so without this the field showed "Permanent" while holding
-                '', and the required check rejected a form that looked filled in. */}
-            <SelectInput value={f.vendor_type} onChange={set('vendor_type')} pairs
-              options={[['', '— Select vendor type —'], ['standard', 'Permanent'], ['temporary', 'Temporary']]} />
-          </Field>
-          <Field label="Status"><SelectInput value={f.status} onChange={set('status')} pairs options={[['Active', 'Active'], ['Inactive', 'Inactive']]} /></Field>
-        </div>
-
-        <Section title="Login Credentials" />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="Password"><TextInput type="password" value={f.password} onChange={set('password')} placeholder="••••••" /></Field>
-          <Field label="Confirm Password"><TextInput type="password" value={f.password_confirmation} onChange={set('password_confirmation')} placeholder="••••••" /></Field>
-        </div>
-        <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '2px 0 0' }}>Leave password blank to keep existing password.</p>
-
-        <Section title="Address Information" />
-        <Field label="Address" full><TextInput value={f.address} onChange={set('address')} placeholder="Street address" /></Field>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-          <Field label="City"><TextInput value={f.city} onChange={set('city')} placeholder="City" /></Field>
-          <Field label="State"><SelectInput value={f.state} onChange={set('state')} pairs options={[['', 'Select State'], ...INDIAN_STATES.map(s => [s, s])]} /></Field>
-          <Field label="Pincode"><TextInput value={f.pincode} onChange={set('pincode')} placeholder="Pincode" /></Field>
-        </div>
-
+        {/* The same thirteen fields Purchase asks for, from the same
+            component — see VendorMasterForm. These were two hand-written
+            forms for one job, and they had already diverged by fifteen
+            fields. */}
+        <VendorMasterForm
+          value={f}
+          onChange={setF}
+          mode={isNew ? 'create' : 'edit'}
+          moduleName={cfg.moduleName}
+          code={cfg.codeOf(f)}
+        />
         {err && <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', borderRadius: 10, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', marginTop: 10 }}><X size={14} style={{ color: '#ef4444' }} /><span style={{ fontSize: 12.5, color: 'var(--text-h)' }}>{err}</span></div>}
       </div>
       <ModalFooter onClose={onClose} onConfirm={save} loading={saving} confirmLabel={isNew ? 'Create Vendor' : 'Save Changes'} color="#7C3AED" />
@@ -464,13 +440,6 @@ function VendorModal({ form, cfg, onClose, onDone }) {
   )
 }
 
-const Section = ({ title }) => (
-  <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 0 8px' }}>
-    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#a78bfa' }} />
-    <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#a78bfa' }}>{title}</span>
-    <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-  </div>
-)
 
 const solidBtn = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#fff', border: 'none', background: 'linear-gradient(145deg,#a78bfa,#7C3AED)', boxShadow: '0 8px 20px -6px rgba(124,58,237,.6)' }
 const ghostBtn = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 14px', borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', background: 'var(--bg-card)', border: '1px solid var(--border)' }

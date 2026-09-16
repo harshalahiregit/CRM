@@ -2,7 +2,10 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Building2, Plus, RefreshCw, Eye, CalendarDays, Pencil } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
-import PurchaseVendorForm, { validatePurchaseVendor } from '@/modules/purchase/components/PurchaseVendorForm'
+// The add/edit form is shared with TPV — one component, one set of thirteen
+// fields, so the two cannot drift again. PurchaseVendorForm still exists and is
+// still the vendor workspace's Profile tab, where the commercial fields live.
+import VendorMasterForm, { validateVendorMaster, VENDOR_MASTER_FIELDS } from '@/components/vendors/VendorMasterForm'
 import PurchaseRegistrationBadge from '@/modules/purchase/components/PurchaseRegistrationBadge'
 import TemporaryVendorValidityBadge from '@/modules/purchase/components/TemporaryVendorValidityBadge'
 import { PV_DEFAULTS } from '@/modules/purchase/components/purchaseVendorFormConstants'
@@ -61,12 +64,36 @@ export default function PurchaseVendors() {
   const isEdit = Boolean(modal?.id)
 
   const save = async () => {
-    const invalid = validatePurchaseVendor(modal)
+    const invalid = validateVendorMaster(modal, { isNew: !isEdit })
     if (invalid) { setErr(invalid); return }
     setSaving(true); setErr('')
+
+    /*
+     * Send ONLY what this form collects.
+     *
+     * The edit path seeds itself from the full record, so posting `modal`
+     * wholesale sent back every column the form no longer shows — and any one
+     * of them that was already invalid rejected the save. A vendor whose
+     * website had been stored as "dfghhoiujkhj" could not be edited at all:
+     * "The website field format is invalid", about a field not on the screen,
+     * with nothing to type into to fix it.
+     *
+     * Omitting a field is not the same as clearing it — the columns are simply
+     * not in the payload, so the model keeps them. Payment terms, bank details
+     * and the rest survive an edit here and stay editable on the Profile tab.
+     */
+    const payload = Object.fromEntries(
+      VENDOR_MASTER_FIELDS.filter(k => modal[k] !== undefined).map(k => [k, modal[k] === '' ? null : modal[k]]),
+    )
+    // Only when one was actually typed; the API mints one otherwise.
+    if (modal.password) {
+      payload.password = modal.password
+      payload.password_confirmation = modal.password_confirmation
+    }
+
     try {
-      if (isEdit) await purchaseApi.vendors.update(modal.id, modal)
-      else await purchaseApi.vendors.create(modal)
+      if (isEdit) await purchaseApi.vendors.update(modal.id, payload)
+      else await purchaseApi.vendors.create(payload)
       setModal(null); load()
     } catch (e) {
       const errors = e?.response?.data?.errors
@@ -256,7 +283,19 @@ export default function PurchaseVendors() {
               </div>
             </div>
             <div style={{ padding: 20, overflowY: 'auto' }}>
-              <PurchaseVendorForm value={modal} onChange={setModal} mode={isEdit ? 'edit' : 'create'} />
+              {/* The same thirteen fields TPV asks for, from the same
+                  component. This used to be a twenty-eight field form asking
+                  for a return policy and an opening balance before anyone had
+                  agreed to buy anything. The commercial fields are untouched
+                  and still editable on the vendor's Profile tab; an edit here
+                  carries them through rather than clearing them. */}
+              <VendorMasterForm
+                value={modal}
+                onChange={setModal}
+                mode={isEdit ? 'edit' : 'create'}
+                moduleName="Purchase Vendor"
+                code={modal.purchase_vendor_code}
+              />
             </div>
             <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
               <span style={{ color: '#ef4444', fontSize: 12 }}>{err}</span>
