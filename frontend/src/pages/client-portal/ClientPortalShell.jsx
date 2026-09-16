@@ -28,7 +28,12 @@ const SECTIONS = [
   { group: 'Commercial', items: [
     { to: '/portal/estimates', label: 'Estimates', icon: ClipboardList,  perm: 'estimate' },
     { to: '/portal/proposals', label: 'Proposals', icon: FileText,       perm: 'proposal' },
-    { to: '/portal/contracts', label: 'Contracts', icon: FileSignature,  perm: 'contract' },
+    // One entry, pointing at the Contract module. The older /portal/contracts
+    // page reads client_contracts, which is empty in every tenant here, so two
+    // entries would have meant a customer clicking "Contracts", seeing nothing,
+    // and concluding their agreement was missing. The old page and its route are
+    // both still there — only this link moved.
+    { to: '/portal/agreements', label: 'Contracts', icon: FileSignature, perm: 'contract' },
   ]},
   { group: 'Work', items: [
     { to: '/portal/projects', label: 'Projects', icon: FolderKanban, perm: 'project' },
@@ -61,7 +66,7 @@ export default function ClientPortalShell() {
 
   const signOut = async () => {
     await clientPortalApi.logout()
-    navigate('/portal/login', { replace: true })
+    navigate('/auth/login?role=client', { replace: true })
   }
 
   const link = ({ isActive }) => ({

@@ -71,8 +71,8 @@ class AttendanceShiftAwareTest extends TestCase
         $record = $this->attendance()->ensureRecord($employee, '2026-04-06');
 
         $this->assertSame('General', $record->shift);
-        $this->assertSame('09:00', $record->shift_start);
-        $this->assertSame('18:00', $record->shift_end);
+        $this->assertSame('09:30', $record->shift_start);
+        $this->assertSame('18:30', $record->shift_end);
         $this->assertSame(15, (int) $record->grace_period);
         $this->assertSame('Absent', $record->status);
     }

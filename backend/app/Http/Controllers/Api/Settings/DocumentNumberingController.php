@@ -114,7 +114,11 @@ class DocumentNumberingController extends Controller
         }
 
         $persist = collect($data)
+            // An explicit list, so a column added to the table is never persisted
+            // by accident. Which also means a NEW setting must be added here or
+            // it validates, previews, and is then quietly dropped on save.
             ->only(['format', 'prefix', 'suffix', 'minimum_digits', 'padding', 'starting_number',
+                'direction', 'step',
                 'reset_rule', 'enabled', 'locked', 'manual_override', 'decrement_on_delete'])
             ->put('updated_by', $request->user()->id)
             ->all();

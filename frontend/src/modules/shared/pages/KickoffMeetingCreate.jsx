@@ -3,18 +3,23 @@ import { useNavigate, useSearchParams, useParams } from 'react-router-dom'
 import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, Plus, Trash2,
   AlertTriangle, ChevronRight, Laptop, Building2, CheckCircle2, Send, Download,
-  FileText, History, RotateCcw, Sparkles,
+  FileText, History, RotateCcw, Sparkles, Search, LayoutTemplate,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 // Resolves per call to the meeting engine of the module in the URL — the
 // shared engine under /app/tpv, Purchase's under /app/purchase. Aliased to
 // the old name so the call sites below read unchanged.
 import { meetingEngineApi as kickoffApi, meetingBase } from '@/services/meetingEngineApi'
+import ParticipantPicker from '@/components/meetings/ParticipantPicker'
 import { meetingApi } from '@/services/meetingApi'
-import { tpvApi } from '@/services/tpvApi'
+// The VENDOR api for the module in the URL. The picker, the ?vendor= prefill
+// and the contacts list were all pinned to tpvApi, so on /app/purchase this
+// page listed TPV's companies — a different table whose ids are unrelated to
+// purchase_vendors, so nothing selected here could ever be the right vendor.
+import { useVendorModule } from '@/modules/tpv/useVendorModule'
 import { KO_MODES, actStatusCfg, issueStatusCfg } from '../kickoffConstants'
 import {
-  KIT3D_STYLE, labelStyle, inputStyle, Field, TextInput,
+  KIT3D_STYLE, labelStyle, inputStyle, Field, TextInput, Overlay,
 } from '@/components/ui/kit3d'
 // Kickoff dropdowns are searchable (same as Tickets) — this adapter keeps the
 // kit3d SelectInput API but renders the type-to-search popover Select.
@@ -25,12 +30,24 @@ import RichTextEditor from '@/components/ui/RichTextEditor'
 import MultiSearchSelect from '@/components/ui/MultiSearchSelect'
 
 // ── Platform options for online meetings ─────────────────────────────────────
+// The three services a call is actually held on. Each schedules through its
+// own API when the tenant has it configured, and otherwise hands back that
+// platform's own start-now link — meet.google.com/new, zoom.us/start — so the
+// Join button opens a real meeting either way.
+//
+// Jitsi used to head this list because it was the one option that needed no
+// account and could run inside the CRM. Both of those have gone: the call is
+// on the real service now. Meetings saved with the old value still open — the
+// server accepts it and moves them onto the default. See
+// OnlineMeetingService::ACCEPTED.
 const PLATFORM_OPTIONS = [
   ['google_meet', 'Google Meet'],
   ['zoom',        'Zoom'],
   ['teams',       'Microsoft Teams'],
-  ['stub',        'Generic Link (stub)'],
 ]
+// Kept in step with OnlineMeetingService::DEFAULT_PLATFORM.
+const DEFAULT_PLATFORM = 'google_meet'
+const PLATFORM_KEYS = PLATFORM_OPTIONS.map(([k]) => k)
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const toLocalDate = (iso) => {
@@ -47,9 +64,42 @@ const toLocalTime = (iso) => {
   const p = n => String(n).padStart(2, '0')
   return `${p(d.getHours())}:${p(d.getMinutes())}`
 }
+/**
+ * The instant a date box and a time box name, sent so the server cannot mistake it.
+ *
+ * This used to send a bare `2026-09-04T14:30:00`. A bare wall clock does not
+ * name a moment until you say in which timezone, and each end of the wire
+ * assumed a different one: the server read it as UTC and published it back as
+ * UTC, the browser localised it a second time, and a meeting entered at 09:00
+ * reappeared at 14:30. Re-saving then stored 14:30 and it slid another +05:30
+ * down the day on every edit.
+ *
+ * An ISO instant with its offset is unambiguous, so the meeting lands on the
+ * hour that was typed — and a colleague in another country reads it correctly
+ * converted to their own clock rather than shifted.
+ */
 const combineDateTime = (date, time) => {
   if (!date) return ''
-  return `${date}T${time || '09:00'}:00`
+  const at = new Date(`${date}T${time || '09:00'}:00`)
+  return Number.isNaN(at.getTime()) ? '' : at.toISOString()
+}
+/**
+ * The END instant, given the meeting's date and its start/end clock times.
+ *
+ * End was previously combined with the START date unconditionally, so a meeting
+ * running 23:00 -> 00:30 produced an end BEFORE its start. The backend rejects
+ * that (`end_at` must be `after:scheduled_at`), so a late meeting simply could
+ * not be saved and the error pointed at a field the user had filled correctly.
+ * An end at or before the start means the next day.
+ */
+const combineEndDateTime = (date, startTime, endTime) => {
+  if (!date || !endTime) return ''
+  if (!startTime || endTime > startTime) return combineDateTime(date, endTime)
+  const next = new Date(`${date}T00:00:00`)
+  next.setDate(next.getDate() + 1)
+  const pad2 = (n) => String(n).padStart(2, '0')
+  const nextDate = `${next.getFullYear()}-${pad2(next.getMonth() + 1)}-${pad2(next.getDate())}`
+  return combineDateTime(nextDate, endTime)
 }
 // Rich-text fields store HTML; the carry-forward list shows them as plain text.
 const stripHtml = (s) => (s || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
@@ -106,6 +156,12 @@ function ErrBanner({ msg }) {
 export default function KickoffMeetingCreate() {
   const navigate = useNavigate()
   const { user } = useAuth()
+  const vendorApi = useVendorModule().api
+  // The start instant as STORED, so editing an old meeting (adding its
+  // minutes, say) is not blocked by the no-past-scheduling rule. Both
+  // backends already allow an unchanged past start; the client did not, so
+  // a past meeting could not be saved at all.
+  const storedStartRef = useRef(null)
 
   // ── data sources ────────────────────────────────────────────────────────
   const [vendors, setVendors]   = useState([])
@@ -149,12 +205,12 @@ export default function KickoffMeetingCreate() {
     // Load ALL vendors for the picker, not just those tagged with the 'tpv'
     // engagement — an admin scheduling a kickoff must be able to pick any vendor
     // (a vendor added without the tpv tag was previously invisible here).
-    tpvApi.vendors.list({ engagement: '' }).then(r => {
+    vendorApi.vendors.list({ engagement: '' }).then(r => {
       const list = r?.data ?? r ?? []
       // A vendor passed via ?vendor= may not be in the (TPV-filtered) picker — fetch
       // it from the shared master and merge so it can be selected.
       if (preVendorId && !list.some(v => String(v.id) === String(preVendorId))) {
-        tpvApi.vendors.get(preVendorId)
+        vendorApi.vendors.get(preVendorId)
           .then(res => { const v = res?.data ?? res; setVendors(v?.id ? [v, ...list] : list) })
           .catch(() => setVendors(list))
       } else {
@@ -164,9 +220,9 @@ export default function KickoffMeetingCreate() {
     if (preVendorId) {
       setForm(f => ({ ...f, subject_id: preVendorId }))
       setVendorIdsRaw([String(preVendorId)])
-      tpvApi.contacts.list(preVendorId).then(r => setContacts(r?.data ?? r)).catch(() => {})
+      vendorApi.contacts.list(preVendorId).then(r => setContacts(r?.data ?? r)).catch(() => {})
     }
-  }, [preVendorId])
+  }, [preVendorId, vendorApi])
 
   // ── form state ──────────────────────────────────────────────────────────
   const [form, setForm] = useState({
@@ -194,7 +250,7 @@ export default function KickoffMeetingCreate() {
     work_package:     '',
     project_id:       '',       // soft link into the Projects module (§16)
     is_completed:     false,
-    meeting_platform: 'stub',  // used when mode = 'online'
+    meeting_platform: DEFAULT_PLATFORM,  // used when mode = 'online'
   })
   const [projects, setProjects] = useState([])   // { id, name, project_code, client_name, ... }
   // Meeting.docx §2 wants a real Customer on the meeting, and §5 wants
@@ -203,6 +259,11 @@ export default function KickoffMeetingCreate() {
   const [customers, setCustomers] = useState([])
   const [staff, setStaff] = useState([])
   const [participants, setParticipants] = useState([])  // [{ id, name, role, organisation }]
+  // Everyone selectable, grouped by category (admin / staff / manager / HR /
+  // doctor / customer / vendor). The old picker was a flat staff list the server
+  // hard-coded to admin+staff, so a manager, an HR executive and a doctor could
+  // not be put on a meeting at all.
+  const [directory, setDirectory] = useState([])
   const [momItems,     setMomItems]     = useState([])  // [{ id, description, responsible, remarks, target_date }]
   const [agendaItems,  setAgendaItems]  = useState([])  // [{ id, item, owner, duration_minutes, priority }]
   const [decisions,    setDecisions]    = useState([])  // Decision register
@@ -213,6 +274,10 @@ export default function KickoffMeetingCreate() {
   const [severities,   setSeverities]   = useState(['Low', 'Medium', 'High', 'Critical'])
   const [categories,   setCategories]   = useState([])
   const [templates,    setTemplates]    = useState({})   // per-type standard agendas
+  // Any template can be loaded, not just the selected type's — the picker below
+  // lists them all with a search box over both names and agenda lines.
+  const [templatePicker, setTemplatePicker] = useState(false)
+  const [templateQuery,  setTemplateQuery]  = useState('')
   const [mtgPriorities, setMtgPriorities] = useState(['Low', 'Medium', 'High', 'Urgent'])
   const [confLevels,    setConfLevels]    = useState(['Public', 'Internal', 'Confidential', 'Restricted'])
 
@@ -260,6 +325,7 @@ export default function KickoffMeetingCreate() {
             : (m.subject?.id ? [String(m.subject.id)] : [])
         )
 
+        storedStartRef.current = m.scheduled_at || null
         setForm({
           subject_id:       m.subject?.id ? String(m.subject.id) : '',
           meeting_type:     m.meeting_type || 'kickoff',
@@ -285,7 +351,11 @@ export default function KickoffMeetingCreate() {
           work_package:     m.work_package || '',
           project_id:       m.project_id || '',
           is_completed:     m.status === 'Completed',
-          meeting_platform: m.meeting_platform || 'stub',
+          // A meeting saved before this change holds 'jitsi' or 'stub', and
+          // neither is in the dropdown any more — left as-is the select would
+          // show blank and silently re-save nothing. Anything unrecognised
+          // falls to the default, which is what the server would pick too.
+          meeting_platform: PLATFORM_KEYS.includes(m.meeting_platform) ? m.meeting_platform : DEFAULT_PLATFORM,
         })
 
         setParticipants((m.attendees || []).map(a => ({
@@ -380,6 +450,12 @@ export default function KickoffMeetingCreate() {
     // the picker empty rather than blocking the whole form.
     kickoffApi.customers().then(d => { if (Array.isArray(d)) setCustomers(d) }).catch(() => {})
     kickoffApi.staff().then(d => { if (Array.isArray(d)) setStaff(d) }).catch(() => {})
+    // `kickoffApi` here IS the engine proxy (see the import), so this resolves to
+    // Purchase's own picker under /app/purchase — which matters, because the
+    // vendor category is the one thing that differs between the two engines.
+    kickoffApi.participants()
+      .then(d => { if (Array.isArray(d?.categories)) setDirectory(d.categories) })
+      .catch(() => {})
   }, [])
 
   // ── Fetch tenant default platform preference on mount ────────────────────
@@ -395,8 +471,51 @@ export default function KickoffMeetingCreate() {
   // ── load vendor contacts when vendor changes ─────────────────────────────
   const loadContacts = useCallback((vendorId) => {
     if (!vendorId) { setContacts([]); return }
-    tpvApi.contacts.list(vendorId).then(r => setContacts(r?.data ?? r)).catch(() => setContacts([]))
-  }, [])
+    vendorApi.contacts.list(vendorId).then(r => setContacts(r?.data ?? r)).catch(() => setContacts([]))
+  }, [vendorApi])
+
+  /**
+   * The meeting's length, derived from start and end.
+   *
+   * Computed ONCE and read by both the Duration field and the summary rail.
+   * The two used to disagree: the field computed it live, while the rail printed
+   * form.duration_minutes — seeded at 60 and never updated again once duration
+   * stopped being a manual field. An 11:10 -> 12:09 meeting therefore read
+   * "59 min" on the left and "60 min" on the right.
+   */
+  const durationLabel = useMemo(() => {
+    const st = form.meeting_time, en = form.meeting_end_time
+    if (!st || !en || st === en) return '—'
+    const [h1, m1] = st.split(':').map(Number)
+    const [h2, m2] = en.split(':').map(Number)
+    // Add a day when the end is earlier than the start, or a 23:00 -> 00:30
+    // meeting would read as minus 22.5 hours.
+    let mins = (h2 * 60 + m2) - (h1 * 60 + m1)
+    if (mins < 0) mins += 24 * 60
+    const h = Math.floor(mins / 60), m = mins % 60
+    return `${h ? `${h} hr ` : ''}${m ? `${m} min` : (h ? '' : '0 min')}`.trim()
+  }, [form.meeting_time, form.meeting_end_time])
+
+  /**
+   * Whether the chosen start has already gone by.
+   *
+   * `min` on <input type="time"> is not a real guard: browsers mark the field
+   * invalid but still let the value be picked or typed, and the attribute is
+   * computed at render so it goes stale as the clock moves — a form opened at
+   * 11:09 happily accepts 11:10 at 11:12. The submit check catches it, but only
+   * after the user has filled the whole form, so this says it immediately.
+   *
+   * An unchanged stored start is fine: editing an old meeting to write up its
+   * minutes must not be flagged as an error.
+   */
+  const startInPast = useMemo(() => {
+    if (!form.meeting_date || !form.meeting_time) return false
+    const start = new Date(`${form.meeting_date}T${form.meeting_time}`)
+    if (Number.isNaN(start.getTime())) return false
+    const stored = storedStartRef.current ? new Date(storedStartRef.current) : null
+    if (stored && Math.abs(stored.getTime() - start.getTime()) < 60 * 1000) return false
+    return start.getTime() < Date.now() - 2 * 60 * 1000
+  }, [form.meeting_date, form.meeting_time])
 
   const set = (k) => (e) => {
     const val = e.target.type === 'checkbox' ? e.target.checked : e.target.value
@@ -427,6 +546,34 @@ export default function KickoffMeetingCreate() {
       organisation: c.company_name ?? '',
       phone:        c.phone ?? c.mobile ?? '',
       side:         'external',   // vendor contacts are the external side
+    }])
+  }
+
+  /**
+   * Add anyone from the category directory.
+   *
+   * Takes the person object from the picker rather than an id: the three sets
+   * have unrelated numbering, so a bare id would make user 5 and vendor 5 the
+   * same person.
+   */
+  const addPerson = (person) => {
+    if (!person) return
+    // Already on the list: by identity where there is one, otherwise by address,
+    // so the same person picked twice does not get two roster rows. The picker
+    // greys these out, but it is re-checked here — the guard belongs with the
+    // write, not with the thing that draws the button.
+    const dup = participants.some(p =>
+      (person.user_id && String(p.user_id) === String(person.user_id)) ||
+      (person.email && p.email && p.email.toLowerCase() === person.email.toLowerCase()))
+    if (dup) return
+    setParticipants(p => [...p, {
+      ...EMPTY_PARTICIPANT(),
+      name:         person.name ?? '',
+      user_id:      person.user_id ?? null,
+      email:        person.email ?? '',
+      designation:  person.designation ?? '',
+      organisation: person.organisation ?? '',
+      side:         person.side ?? 'internal',
     }])
   }
 
@@ -487,7 +634,38 @@ export default function KickoffMeetingCreate() {
   // already present (same topic) are skipped, so loading twice is harmless and a
   // template never clobbers what the user has already typed.
   const templateForType = templates[form.meeting_type] || []
-  const loadTemplate = () => {
+
+  // Every type that actually has a standard agenda, with the numbers a person
+  // picks on — how many lines it adds and how long it runs.
+  const allTemplates = useMemo(() => (
+    Object.entries(templates || {})
+      .map(([key, items]) => ({
+        key,
+        label: meetingTypes[key] || key.replace(/_/g, ' '),
+        items: Array.isArray(items) ? items : [],
+      }))
+      .filter(t => t.items.length)
+      .map(t => ({
+        ...t,
+        minutes: t.items.reduce((sum, i) => sum + (Number(i.duration_minutes) || 0), 0),
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+  ), [templates, meetingTypes])
+
+  // Search matches the template's NAME and its agenda lines, so "audit" finds a
+  // template whose title never says audit but whose agenda does.
+  const templateMatches = useMemo(() => {
+    const q = templateQuery.trim().toLowerCase()
+    if (!q) return allTemplates
+    return allTemplates.filter(t =>
+      t.label.toLowerCase().includes(q)
+      || t.key.toLowerCase().includes(q)
+      || t.items.some(i => (i.item || '').toLowerCase().includes(q)),
+    )
+  }, [allTemplates, templateQuery])
+
+  const loadTemplate = (typeKey = form.meeting_type) => {
+    const templateForType = templates[typeKey] || []
     if (!templateForType.length) return
     setAgendaItems(prev => {
       const seen = new Set(prev.map(a => (a.item || '').trim().toLowerCase()))
@@ -508,6 +686,7 @@ export default function KickoffMeetingCreate() {
         .filter(Boolean)
       return [...prev, ...fromTemplate, ...fromStatus]
     })
+    setTemplatePicker(false)
   }
 
   // ── carry-forward from previous meetings ──────────────────────────────────
@@ -639,12 +818,19 @@ export default function KickoffMeetingCreate() {
     if (!form.meeting_date) { setErr('Meeting Date is required.'); return }
     if (!form.meeting_time) { setErr('Start Time is required.'); return }
     if (!form.meeting_end_time) { setErr('End Time is required.'); return }
-    // End must be after start (duration is derived from the two).
-    if (form.meeting_end_time <= form.meeting_time) { setErr('End Time must be after Start Time.'); return }
-    // No scheduling into the past (the backend enforces this too).
+    // Equal start and end is a zero-length meeting; an EARLIER end means the
+    // meeting runs past midnight and ends the next day (see combineEndDateTime).
+    if (form.meeting_end_time === form.meeting_time) { setErr('End Time must be after Start Time.'); return }
+    // No scheduling into the past — but only for a start the user actually
+    // MOVED. Editing an old meeting (to write up its minutes) keeps its original
+    // time, which both backends accept and the client used to refuse.
     {
       const startTs = new Date(`${form.meeting_date}T${form.meeting_time}`)
-      if (startTs.getTime() < Date.now() - 2 * 60 * 1000) { setErr('The meeting time cannot be in the past.'); return }
+      const stored = storedStartRef.current ? new Date(storedStartRef.current) : null
+      const unchanged = stored && Math.abs(stored.getTime() - startTs.getTime()) < 60 * 1000
+      if (!unchanged && startTs.getTime() < Date.now() - 2 * 60 * 1000) {
+        setErr('The meeting time cannot be in the past.'); return
+      }
     }
     // Location only required for on-site meetings
     if (form.mode !== 'online' && !form.location) { setErr('City / Location is required.'); return }
@@ -658,17 +844,23 @@ export default function KickoffMeetingCreate() {
     try {
       const scheduled_at = combineDateTime(form.meeting_date, form.meeting_time)
       const payload = {
-        subject_type:     'vendor',
-        subject_id:       form.subject_id,
+        // Only claim a subject when one was actually picked. subject_type and
+        // subject_id are a required_with PAIR server-side, so sending 'vendor'
+        // beside an empty id is a guaranteed 422 -- which is what stopped an
+        // internal meeting being scheduled at all, even though the column is
+        // nullable and the service handles a null subject the whole way down.
+        // The AI-agenda call three hundred lines up already had this right.
+        subject_type:     form.subject_id ? 'vendor' : undefined,
+        subject_id:       form.subject_id || undefined,
         // Full set. The backend keeps the first on kickoffable_* and
         // writes the rest to kickoff_meeting_subjects.
-        subject_ids:      vendorIds,
+        subject_ids:      vendorIds.length ? vendorIds : undefined,
         meeting_type:     form.meeting_type || 'kickoff',
         title:            form.title || undefined,
         scheduled_at,
         // End is mandatory; duration is derived from start→end server-side, so
         // the client no longer sends duration_minutes.
-        end_at:           combineDateTime(form.meeting_date, form.meeting_end_time),
+        end_at:           combineEndDateTime(form.meeting_date, form.meeting_time, form.meeting_end_time),
         planned_date:     form.planned_date || undefined,
         mode:             form.mode,
         // On-site and hybrid both have a physical location; online does not.
@@ -766,7 +958,11 @@ export default function KickoffMeetingCreate() {
       if (newId && (form.mode === 'online' || form.mode === 'hybrid') && !(isEdit && existingLink)) {
         setGenLink(true)
         try {
-          await meetingApi.generateLink(newId, form.meeting_platform)
+          // THROUGH THE MODULE'S API. This line used to call the shared
+          // engine's route directly, so a Purchase meeting id was looked up in
+          // kickoff_meetings and came back "No query results for model
+          // [App\Models\Shared\KickoffMeeting]" — the link was never created.
+          await kickoffApi.generateLink(newId, form.meeting_platform)
         } catch (_) {
           // Non-fatal — the detail page shows a "Generate link" button as fallback
         } finally {
@@ -1002,10 +1198,23 @@ export default function KickoffMeetingCreate() {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                   <label style={labelStyle}>Participants</label>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    {/* Quick-add from the staff directory — this is what links a
-                        participant to a Sangoe identity (Meeting.docx §5), and
-                        it fills the e-mail the invitation needs. */}
-                    {staff.length > 0 && (
+                    {/* Quick-add from the directory, grouped by category — this
+                        is what links a participant to a Sangoe identity
+                        (Meeting.docx §5) and fills the e-mail the invitation
+                        needs. optgroup rather than a second dropdown so admin,
+                        staff, manager, HR, doctor, customer and vendor are one
+                        list: picking a person should not start with deciding
+                        which menu they live in. Empty categories are dropped
+                        here rather than server-side, so a tenant with no
+                        customers yet sees no empty heading. */}
+                    <ParticipantPicker
+                      categories={directory}
+                      chosen={participants}
+                      onPick={addPerson}
+                      inputStyle={inputStyle} />
+                    {/* Fallback: the directory failed to load (it is a soft
+                        fetch), so the flat staff list is better than nothing. */}
+                    {directory.length === 0 && staff.length > 0 && (
                       <select
                         onChange={e => { addFromStaff(e.target.value); e.target.value = '' }}
                         style={{ ...inputStyle, width: 'auto', fontSize: 12, padding: '5px 10px' }}>
@@ -1118,24 +1327,28 @@ export default function KickoffMeetingCreate() {
                 <TextInput type="date" min={isEdit ? undefined : new Date().toLocaleDateString('en-CA')} value={form.meeting_date} onChange={set('meeting_date')} />
               </Field>
               <Field label="Start Time *">
-                {/* When the meeting is today, the earliest selectable time is now. */}
+                {/* `min` is advisory only — see startInPast. The message below is
+                    the part the user actually sees. */}
                 <TextInput type="time" min={form.meeting_date === new Date().toLocaleDateString('en-CA') ? new Date().toTimeString().slice(0, 5) : undefined} value={form.meeting_time} onChange={set('meeting_time')} />
+                {startInPast && (
+                  <span style={{ fontSize: 11, color: '#f87171', fontWeight: 700 }}>
+                    That time has already passed — pick a later one.
+                  </span>
+                )}
               </Field>
               <Field label="End Time *">
-                {/* End must be after start; duration is computed from the two. */}
-                <TextInput type="time" min={form.meeting_time || undefined} value={form.meeting_end_time} onChange={set('meeting_end_time')} />
+                {/* No `min`: an end EARLIER than the start is legitimate and means
+                    the meeting runs past midnight. The hint below says so, so it
+                    cannot be mistaken for a typo. */}
+                <TextInput type="time" value={form.meeting_end_time} onChange={set('meeting_end_time')} />
+                {form.meeting_time && form.meeting_end_time && form.meeting_end_time < form.meeting_time && (
+                  <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>Ends next day</span>
+                )}
               </Field>
               <Field label="Duration">
                 {/* Auto-computed from start→end — no longer a manual field. */}
                 <div style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 13.5, fontWeight: 700 }}>
-                  {(() => {
-                    if (!form.meeting_time || !form.meeting_end_time || form.meeting_end_time <= form.meeting_time) return '—'
-                    const [h1, m1] = form.meeting_time.split(':').map(Number)
-                    const [h2, m2] = form.meeting_end_time.split(':').map(Number)
-                    const mins = (h2 * 60 + m2) - (h1 * 60 + m1)
-                    const h = Math.floor(mins / 60); const m = mins % 60
-                    return `${h ? `${h} hr ` : ''}${m ? `${m} min` : (h ? '' : '0 min')}`.trim()
-                  })()}
+                  {durationLabel}
                 </div>
               </Field>
               <Field label="Planned Date (optional)">
@@ -1259,6 +1472,76 @@ export default function KickoffMeetingCreate() {
               </div>
             )}
 
+            {/* Template picker — search over every standard agenda. Closes on the
+                X or Cancel only, never on a backdrop click. */}
+            {templatePicker && (
+              <Overlay onClose={() => setTemplatePicker(false)} width={620}>
+                <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 800, color: 'var(--text-h)' }}>Load an agenda template</h3>
+                <p style={{ margin: '0 0 16px', fontSize: 12.5, color: 'var(--text-muted)' }}>
+                  Lines are appended to the agenda you already have — nothing is overwritten, and a
+                  topic already on the list is skipped. This does not change the meeting type.
+                </p>
+
+                <div style={{ position: 'relative', marginBottom: 14 }}>
+                  <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+                  <input
+                    autoFocus
+                    value={templateQuery}
+                    onChange={e => setTemplateQuery(e.target.value)}
+                    placeholder="Search templates by name or agenda line…"
+                    style={{ ...inputStyle, paddingLeft: 34 }}
+                  />
+                </div>
+
+                {templateMatches.length === 0 ? (
+                  <div style={{ padding: '24px 16px', borderRadius: 12, background: 'var(--bg-input)', border: '1px dashed var(--border)', textAlign: 'center' }}>
+                    <p style={{ margin: 0, fontSize: 12.5, color: 'var(--text-muted)' }}>
+                      No template matches “{templateQuery}”. Templates are created under
+                      Settings → Meeting Types.
+                    </p>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '46vh', overflowY: 'auto' }}>
+                    {templateMatches.map(t => (
+                      <button
+                        key={t.key}
+                        type="button"
+                        onClick={() => loadTemplate(t.key)}
+                        style={{
+                          textAlign: 'left', padding: '12px 14px', borderRadius: 10, cursor: 'pointer',
+                          border: `1px solid ${t.key === form.meeting_type ? 'rgba(124,58,237,0.45)' : 'var(--border)'}`,
+                          background: t.key === form.meeting_type ? 'rgba(124,58,237,0.08)' : 'var(--bg-input)',
+                        }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                          <strong style={{ fontSize: 13, color: 'var(--text-h)' }}>
+                            {t.label}
+                            {t.key === form.meeting_type && (
+                              <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 800, color: '#7C3AED' }}>SELECTED TYPE</span>
+                            )}
+                          </strong>
+                          <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+                            {t.items.length} item{t.items.length === 1 ? '' : 's'}
+                            {t.minutes > 0 && ` · ${t.minutes} min`}
+                          </span>
+                        </div>
+                        <div style={{ marginTop: 6, fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                          {t.items.slice(0, 4).map(i => i.item).filter(Boolean).join(' · ')}
+                          {t.items.length > 4 && ` … +${t.items.length - 4} more`}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
+                  <button type="button" onClick={() => setTemplatePicker(false)}
+                    style={{ padding: '9px 20px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}>
+                    Cancel
+                  </button>
+                </div>
+              </Overlay>
+            )}
+
             {/* Agenda builder — structured items (topic · owner · duration · priority) */}
             <div style={{ marginTop: 18 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8, flexWrap: 'wrap' }}>
@@ -1266,9 +1549,17 @@ export default function KickoffMeetingCreate() {
                 <div style={{ display: 'flex', gap: 8 }}>
                   {/* Standard agenda for the selected type — appended, never destructive. */}
                   {templateForType.length > 0 && (
-                    <button type="button" onClick={loadTemplate} style={addBtn}
+                    <button type="button" onClick={() => loadTemplate()} style={addBtn}
                       title={`Load the standard ${meetingTypes[form.meeting_type] || ''} agenda`}>
                       <FileText size={13} /> Load {meetingTypes[form.meeting_type] || 'standard'} template
+                    </button>
+                  )}
+                  {/* Any OTHER template. The one-click above only ever offered the
+                      selected type's agenda, so the rest were unreachable here. */}
+                  {allTemplates.length > 0 && (
+                    <button type="button" onClick={() => { setTemplateQuery(''); setTemplatePicker(true) }} style={addBtn}
+                      title="Search and load any agenda template">
+                      <LayoutTemplate size={13} /> Browse templates ({allTemplates.length})
                     </button>
                   )}
                   {/* §18 — AI drafts an agenda from the type, vendor status and open items. */}
@@ -1719,7 +2010,7 @@ export default function KickoffMeetingCreate() {
               )}
 
               <SummaryRow label="Duration">
-                {form.duration_minutes ? `${form.duration_minutes} min` : '—'}
+                {durationLabel}
               </SummaryRow>
 
               <SummaryRow label="Participants">
@@ -1746,13 +2037,18 @@ export default function KickoffMeetingCreate() {
                   <span style={{ fontSize: 12, color: 'var(--text-h)' }}>{err}</span>
                 </div>
               )}
-              <button onClick={save} disabled={saving || generatingLink}
+              {/* Blocked, not just warned, while the start is in the past — the
+                  submit check would reject it anyway, and refusing up front
+                  beats filling in the whole form first. */}
+              <button onClick={save} disabled={saving || generatingLink || startInPast}
+                title={startInPast ? 'The start time has already passed' : undefined}
                 style={{
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-                  padding: '11px 20px', borderRadius: 11, border: 'none', cursor: (saving || generatingLink) ? 'wait' : 'pointer',
+                  padding: '11px 20px', borderRadius: 11, border: 'none',
+                  cursor: (saving || generatingLink) ? 'wait' : (startInPast ? 'not-allowed' : 'pointer'),
                   fontSize: 13.5, fontWeight: 800, color: '#fff',
-                  background: (saving || generatingLink) ? 'rgba(124,58,237,0.5)' : 'linear-gradient(145deg,#a78bfa,#7C3AED)',
-                  boxShadow: (saving || generatingLink) ? 'none' : '0 8px 22px -6px rgba(124,58,237,.6)',
+                  background: (saving || generatingLink || startInPast) ? 'rgba(124,58,237,0.5)' : 'linear-gradient(145deg,#a78bfa,#7C3AED)',
+                  boxShadow: (saving || generatingLink || startInPast) ? 'none' : '0 8px 22px -6px rgba(124,58,237,.6)',
                 }}>
                 {generatingLink ? 'Generating link…' : saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Save as Draft')}
               </button>

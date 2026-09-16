@@ -8,7 +8,9 @@ use App\Models\Shared\KickoffMomItem;
 use App\Models\Shared\MeetingDecision;
 use App\Models\Shared\MeetingIssue;
 use App\Support\Shared\KickoffSubject;
+use App\Models\User;
 use App\Support\Shared\MeetingIssueStatus;
+use App\Support\Shared\MeetingVisibility;
 use App\Support\Shared\MomActionStatus;
 
 /**
@@ -30,10 +32,30 @@ class MeetingRegisterService
      *
      * @param  array{status?:string, project_id?:int, vendor?:string, meeting_id?:int, search?:string, from?:string, to?:string}  $filters
      */
-    public function decisions(int $tenantId, array $filters = []): array
+    /**
+     * Narrow a register to the meetings this viewer may read.
+     *
+     * The registers start from the decision / issue / action table, not from
+     * meetings, so they cannot be scoped by the meeting query itself -- without
+     * this an ordinary user would read every decision and every action item in
+     * the company through a screen that never shows the meeting they came from.
+     */
+    private function onlyVisible($q, ?User $viewer)
     {
-        $q = MeetingDecision::where('tenant_id', $tenantId)
-            ->with(['decidedBy:id,name', 'agendaItem:id,item']);
+        if (MeetingVisibility::seesEverything($viewer) || ! $viewer) {
+            return $q;
+        }
+
+        return $q->whereHas('meeting', fn ($m) => MeetingVisibility::apply($m, $viewer));
+    }
+
+    public function decisions(int $tenantId, array $filters, ?User $viewer): array
+    {
+        $q = $this->onlyVisible(
+            MeetingDecision::where('tenant_id', $tenantId)
+                ->with(['decidedBy:id,name', 'agendaItem:id,item']),
+            $viewer
+        );
 
         if (! empty($filters['status'])) {
             $q->where('status', $filters['status']);
@@ -71,9 +93,12 @@ class MeetingRegisterService
      * Issues across every meeting (Meeting.docx §10), open ones first — an issue
      * register exists to show what is still outstanding.
      */
-    public function issues(int $tenantId, array $filters = []): array
+    public function issues(int $tenantId, array $filters, ?User $viewer): array
     {
-        $q = MeetingIssue::where('tenant_id', $tenantId)->with(['owner:id,name']);
+        $q = $this->onlyVisible(
+            MeetingIssue::where('tenant_id', $tenantId)->with(['owner:id,name']),
+            $viewer
+        );
 
         if (! empty($filters['status'])) {
             $filters['status'] === 'open'
@@ -127,10 +152,13 @@ class MeetingRegisterService
      * (Meeting.docx §8). Defaults to the open backlog, which is what the nav
      * entry promises; pass status=all for the full history.
      */
-    public function actions(int $tenantId, array $filters = []): array
+    public function actions(int $tenantId, array $filters, ?User $viewer): array
     {
-        $q = KickoffMomItem::where('tenant_id', $tenantId)
-            ->with(['responsible:id,name', 'agendaItem:id,item', 'task:id,name,status']);
+        $q = $this->onlyVisible(
+            KickoffMomItem::where('tenant_id', $tenantId)
+                ->with(['responsible:id,name', 'agendaItem:id,item', 'task:id,name,status']),
+            $viewer
+        );
 
         $status = $filters['status'] ?? 'open';
         if ($status === 'open') {

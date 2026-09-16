@@ -46,10 +46,13 @@ class TpvWorkAuthorizationService
         $checks[] = $this->check('compliance', 'Compliance current', true, $complianceOk,
             ($vendor && $vendor->auto_suspended) ? 'Vendor auto-suspended for lapsed compliance' : 'OK');
 
-        // 3 — Medical fitness (valid, not expired).
-        $medOk = (bool) $worker->medical?->isCurrentlyValid();
-        $checks[] = $this->check('medical', 'Medical fitness', true, $medOk,
-            $worker->medical ? ($medOk ? 'Fit & current' : 'Unfit or expired') : 'Not recorded');
+        // 3 — Medical clearance: fit, current, AND quality-checked. Where the
+        // project has been marked medical-not-applicable the check stops being
+        // required and reports as such, rather than failing a worker for a
+        // certificate nobody asked them for.
+        $medical = app(TpvMedicalWorkflowService::class)->clearanceFor($worker);
+        $checks[] = $this->check('medical', 'Medical clearance', $medical['required'], $medical['cleared'],
+            $medical['bypassed'] ? 'Not applicable for this project' : $medical['message']);
 
         // 4 — HSSE induction passed.
         $indOk = (bool) $worker->induction?->passed;

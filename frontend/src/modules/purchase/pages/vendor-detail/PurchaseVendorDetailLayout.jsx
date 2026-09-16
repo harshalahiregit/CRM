@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, NavLink, Routes, Route, Navigate } from 'react-router-dom'
-import { ArrowLeft, Building2, CheckCircle2, CheckCircle, XCircle, PauseCircle, CornerUpLeft, ShieldCheck, ChevronDown, ChevronRight, Mail } from 'lucide-react'
+import { ArrowLeft, Building2, CheckCircle2, CheckCircle, XCircle, PauseCircle, CornerUpLeft, ShieldCheck, ChevronDown, ChevronRight, Mail, ArrowUpCircle, CalendarPlus, Ban } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
 import { Overlay, ModalFooter } from '@/components/ui/kit3d'
 import { VENDOR_NAV_GROUPS } from './vendorDetailNav'
 import { TAB_ELEMENTS } from './vendorDetailTabs'
+import { KIT3D_STYLE as GLASS_STYLE } from '@/components/ui/kit3d'
 import { VendorWorkspaceContext } from './vendorWorkspaceContext'
 import PurchaseRegistrationBadge from '@/modules/purchase/components/PurchaseRegistrationBadge'
 
@@ -65,6 +66,13 @@ export default function PurchaseVendorDetailLayout() {
   const [resending, setResending] = useState(false)
   const [notice, setNotice] = useState(null)
   const [showTimeline, setShowTimeline] = useState(false)
+  // null | 'ask' | 'busy' — the confirm step, then the in-flight state. A
+  // promotion removes an expiry somebody set deliberately, so it asks first.
+  const [converting, setConverting] = useState(null)
+  // { validity_days, extension_reason } while the extend form is open.
+  const [extending, setExtending] = useState(null)
+  const [expiring, setExpiring] = useState(false)
+  const [windowBusy, setWindowBusy] = useState(false)
 
   // Onboarding decision state (approve / reject / hold / send-back).
   const [decision, setDecision] = useState(null)
@@ -85,7 +93,23 @@ export default function PurchaseVendorDetailLayout() {
 
   useEffect(() => { load() }, [load])
 
-  const activate = async () => { try { await purchaseApi.vendors.approve(id); load() } catch { /* noop */ } }
+  /**
+   * Activation can be REFUSED — an already-active vendor, or the onboarding
+   * gate. Swallowing that left the button looking dead: nothing moved, nothing
+   * appeared, and the reason existed only in the server log. Reported through
+   * the same notice banner the resend already uses, so the page has one place
+   * that answers "what just happened".
+   */
+  const activate = async () => {
+    setNotice(null)
+    try {
+      await purchaseApi.vendors.approve(id)
+      load()
+      setNotice({ ok: true, text: 'Vendor activated.' })
+    } catch (e) {
+      setNotice({ ok: false, text: e?.response?.data?.message || 'That vendor could not be activated.' })
+    }
+  }
 
   // Runs the chosen onboarding decision. Reject / Hold / Send-Back require remarks;
   // Approve also really activates the account (portal login + activation email)
@@ -125,6 +149,50 @@ export default function PurchaseVendorDetailLayout() {
       setNotice({ ok: false, text: e?.response?.data?.message || 'Could not send the activation email.' })
     } finally { setResending(false) }
   }
+  // Temporary → Permanent. The server does the real work (clears the expiry,
+  // issues the code, re-opens a portal the window had shut, audits, emails);
+  // this only reloads so the badge and the button reflect it immediately.
+  const convertToPermanent = async () => {
+    setConverting('busy'); setNotice(null)
+    try {
+      const r = await purchaseApi.vendors.convertToPermanent(id)
+      setNotice({ ok: true, text: r?.message || 'This vendor is now permanent.' })
+      setConverting(null)
+      load()
+    } catch (e) {
+      setNotice({ ok: false, text: e?.response?.data?.message || 'Could not convert this vendor.' })
+      setConverting(null)
+    }
+  }
+
+  /** Move the window. The reason is required by the server, so it is required here. */
+  const extendAccess = async () => {
+    if (!extending.extension_reason.trim()) return
+    setWindowBusy(true); setNotice(null)
+    try {
+      const r = await purchaseApi.vendors.access.extend(id, {
+        validity_days: Number(extending.validity_days) || undefined,
+        extension_reason: extending.extension_reason.trim(),
+      })
+      setNotice({ ok: true, text: r?.message || 'The access window has been extended.' })
+      setExtending(null); load()
+    } catch (e) {
+      setNotice({ ok: false, text: e?.response?.data?.message || 'Could not extend the access window.' })
+    } finally { setWindowBusy(false) }
+  }
+
+  /** End it now — signs the vendor out and suspends the portal login. */
+  const expireAccess = async () => {
+    setWindowBusy(true); setNotice(null)
+    try {
+      const r = await purchaseApi.vendors.access.expire(id)
+      setNotice({ ok: true, text: r?.message || 'The access window has been closed.' })
+      setExpiring(false); load()
+    } catch (e) {
+      setNotice({ ok: false, text: e?.response?.data?.message || 'Could not close the access window.' })
+    } finally { setWindowBusy(false) }
+  }
+
   const toggle = (title) => setCollapsed((c) => ({ ...c, [title]: !c[title] }))
 
   if (loading) return <div style={{ padding: 24, color: 'var(--text-muted)' }}>Loading vendor…</div>
@@ -134,6 +202,14 @@ export default function PurchaseVendorDetailLayout() {
 
   return (
     <div style={{ padding: 20 }}>
+      {/* Several panels on this page are built on .pr-glass, which lives in
+          this stylesheet — and the admin shell does not inject it. Without this
+          the Prequalification and Due Diligence panels, and every card in the
+          Workforce group, render with no background at all and the page shows
+          straight through them. Injected once here so every tab is covered,
+          including ones added later. */}
+      <style>{GLASS_STYLE}</style>
+
       {/* Header */}
       <div className="card-3d" style={{ padding: 16, marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
@@ -168,6 +244,31 @@ export default function PurchaseVendorDetailLayout() {
               <button onClick={resendActivation} disabled={resending} style={actBtn} title="Send the activation email again">
                 <Mail size={14} /> {resending ? 'Sending…' : 'Resend Activation Email'}
               </button>
+            )}
+            {/* Temporary -> Permanent. Driven by validity_countdown.is_temporary,
+                which the server derives from registration_type — the same field
+                the promotion writes, so the button disappears the moment it has
+                been used and cannot be pressed twice. */}
+            {vendor.validity_countdown?.is_temporary && (
+              <>
+                <button onClick={() => setConverting('ask')} style={{ ...actBtn, color: '#10b981', borderColor: 'rgba(16,185,129,0.4)' }}
+                  title="Make this vendor permanent and remove the access expiry">
+                  <ArrowUpCircle size={14} /> Convert to Permanent
+                </button>
+                {/* The middle option. Without it "three more days" meant either
+                    promoting a contractor for ever or letting them be locked
+                    out on the day. */}
+                <button onClick={() => setExtending({ validity_days: 7, extension_reason: '' })}
+                  style={{ ...actBtn, color: '#0ea5e9', borderColor: 'rgba(14,165,233,0.4)' }}
+                  title="Give this vendor more time without making them permanent">
+                  <CalendarPlus size={14} /> Extend Access
+                </button>
+                <button onClick={() => setExpiring(true)}
+                  style={{ ...actBtn, color: '#ef4444', borderColor: 'rgba(239,68,68,0.4)' }}
+                  title="End this vendor's access now">
+                  <Ban size={14} /> Close Access
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -285,6 +386,99 @@ export default function PurchaseVendorDetailLayout() {
               disabled={['reject', 'hold', 'resubmit'].includes(decision) && !remarks.trim()}
               confirmLabel={decision === 'approve' ? 'Approve & Activate' : decision === 'hold' ? 'Confirm Hold' : decision === 'reject' ? 'Confirm Rejection' : 'Send Back'}
               color={decision === 'approve' ? '#10b981' : decision === 'hold' ? '#f59e0b' : '#ef4444'} />
+          </div>
+        </Overlay>
+      )}
+
+      {/* Convert to Permanent — it asks first, because it removes an expiry
+          somebody set deliberately and there is no undo. */}
+      {converting && (
+        <Overlay onClose={() => converting !== 'busy' && setConverting(null)} width={460} showClose={false}>
+          <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-h)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <ArrowUpCircle size={18} style={{ color: '#10b981' }} /> Convert to Permanent
+            </h3>
+            <button onClick={() => setConverting(null)} disabled={converting === 'busy'}
+              style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--text-muted)' }}>✕</button>
+          </div>
+          <div style={{ padding: 22 }}>
+            <p style={{ marginTop: 0, fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+              <strong style={{ color: 'var(--text-h)' }}>{vendor.company_name}</strong> becomes a permanent
+              vendor. The access expiry is removed, the portal login is re-opened if the window had
+              already closed, and the vendor is emailed to say the countdown no longer applies.
+            </p>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 4px' }}>
+              This is recorded against the vendor and cannot be undone from here.
+            </p>
+            <ModalFooter onClose={() => setConverting(null)} onConfirm={convertToPermanent}
+              loading={converting === 'busy'} confirmLabel="Convert to Permanent" color="#10b981" />
+          </div>
+        </Overlay>
+      )}
+
+      {/* Extend — a period and a reason. The reason is mandatory server-side,
+          so the confirm stays disabled until there is one rather than letting
+          somebody submit into a 422. */}
+      {extending && (
+        <Overlay onClose={() => !windowBusy && setExtending(null)} width={480} showClose={false}>
+          <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-h)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <CalendarPlus size={18} style={{ color: '#0ea5e9' }} /> Extend Access
+            </h3>
+            <button onClick={() => setExtending(null)} disabled={windowBusy}
+              style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--text-muted)' }}>✕</button>
+          </div>
+          <div style={{ padding: 22 }}>
+            <p style={{ marginTop: 0, fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+              Gives <strong style={{ color: 'var(--text-h)' }}>{vendor.company_name}</strong> more time
+              without making them permanent. The expiry reminders start again from the new date, and a
+              vendor already locked out is let back in.
+            </p>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-h)', marginBottom: 6 }}>
+                Extend by (days) *
+              </label>
+              <input type="number" min="1" max="365" value={extending.validity_days}
+                onChange={e => setExtending(x => ({ ...x, validity_days: e.target.value }))}
+                style={{ width: 120, padding: 9, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-h)', fontSize: 13, outline: 'none' }} />
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-h)', marginBottom: 6 }}>
+                Reason *
+              </label>
+              <textarea rows={3} value={extending.extension_reason}
+                onChange={e => setExtending(x => ({ ...x, extension_reason: e.target.value }))}
+                placeholder="e.g. Shutdown slipped a week; crew still on site."
+                style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-h)', fontSize: 12.5, outline: 'none', resize: 'vertical' }} />
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                Recorded against the vendor. Months later this is the only thing that answers why the date moved.
+              </div>
+            </div>
+            <ModalFooter onClose={() => setExtending(null)} onConfirm={extendAccess}
+              loading={windowBusy} disabled={!extending.extension_reason.trim()}
+              confirmLabel="Extend Access" color="#0ea5e9" />
+          </div>
+        </Overlay>
+      )}
+
+      {/* Close now. */}
+      {expiring && (
+        <Overlay onClose={() => !windowBusy && setExpiring(false)} width={460} showClose={false}>
+          <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-h)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Ban size={18} style={{ color: '#ef4444' }} /> Close Access
+            </h3>
+            <button onClick={() => setExpiring(false)} disabled={windowBusy}
+              style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--text-muted)' }}>✕</button>
+          </div>
+          <div style={{ padding: 22 }}>
+            <p style={{ marginTop: 0, fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+              Ends <strong style={{ color: 'var(--text-h)' }}>{vendor.company_name}</strong>&apos;s access
+              immediately. They are signed out of the portal wherever they are logged in, and cannot sign
+              back in until the window is extended or the account is made permanent.
+            </p>
+            <ModalFooter onClose={() => setExpiring(false)} onConfirm={expireAccess}
+              loading={windowBusy} confirmLabel="Close Access Now" color="#ef4444" />
           </div>
         </Overlay>
       )}

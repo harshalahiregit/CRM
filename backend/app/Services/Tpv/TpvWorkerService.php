@@ -6,11 +6,13 @@ use App\Exceptions\BusinessException;
 use App\Models\Tpv\TpvActivity;
 use App\Models\Tpv\TpvGateAttendance;
 use App\Models\Tpv\TpvWorker;
+use App\Support\Shared\WorkerImport;
 use App\Models\Tpv\TpvWorkerPpeIssue;
 use App\Models\Tpv\WorkPermit;
 use App\Models\User;
 use App\Models\Vendor\Vendor;
 use App\Repositories\Tpv\TpvWorkerRepository;
+use App\Support\Medical\MedicalWorkflow;
 use App\Support\Tpv\TpvMedicalFitness as Fitness;
 use App\Support\Tpv\TpvPpeItem as Ppe;
 use App\Support\Tpv\TpvWorkerStatus as Status;
@@ -43,12 +45,13 @@ class TpvWorkerService
     public function create(array $data, User $actor): TpvWorker
     {
         $tenantId = $actor->tenant_id;
+        $data     = $this->normaliseIdentity($data);
         $this->assertVendor($data['vendor_id'], $tenantId);
         $this->assertWorkPackage($data['work_package_id'] ?? null, $tenantId, $data['vendor_id'] ?? null);
         $this->assertActivity($data['activity_id'] ?? null, $tenantId, $data['work_package_id'] ?? null);
         $this->assertAadharUnique($data['aadhar_number'] ?? null, $tenantId);
 
-        $worker = TpvWorker::create([
+        $worker = $this->insertWithFreshCode([
             ...$data,
             'tenant_id'    => $tenantId,
             'created_by'   => $actor->id,
@@ -79,6 +82,7 @@ class TpvWorkerService
         if (array_key_exists('activity_id', $data)) {
             $this->assertActivity($data['activity_id'], $worker->tenant_id, $data['work_package_id'] ?? $worker->work_package_id);
         }
+        $data = $this->normaliseIdentity($data);
         $this->assertAadharUnique($data['aadhar_number'] ?? null, $worker->tenant_id, $worker->id);
 
         $worker->update($data);
@@ -99,74 +103,19 @@ class TpvWorkerService
             throw new BusinessException('This worker is no longer editable.');
         }
 
-        // Band the screening score server-side — the scoring rule is ours, not
-        // the client's.
-        $data['screening_band'] = Fitness::bandForScore($data['screening_score'] ?? null);
-
-        // External-doctor exam: persist the uploaded prescription/report so an
-        // external medical is never recorded with its evidence thrown away. Stored
-        // on the private disk; the path is kept in document_path.
-        if (isset($data['report_file']) && $data['report_file'] instanceof \Illuminate\Http\UploadedFile) {
-            $data['document_path'] = $data['report_file']->store(
-                'tpv/medical/'.$worker->tenant_id.'/'.$worker->id, 'local'
-            );
-        }
-        unset($data['report_file']);
-
-        // The examiner's signature arrives as a base64 PNG data URL; decode it to a
-        // stored file and keep only the path. Same convention as the legacy path.
-        if (! empty($data['signature_data']) && str_contains($data['signature_data'], 'base64,')) {
-            $binary = base64_decode(explode('base64,', $data['signature_data'])[1]);
-            $path   = 'workers/signatures/sig_'.uniqid().'.png';
-            \Illuminate\Support\Facades\Storage::disk('public')->put($path, $binary);
-            $data['signature_path'] = $path;
-        }
-        unset($data['signature_data']);
-
-        // §16 legal capture — the examiner's/scene photo (base64 → stored file).
-        // system_ip and geo_location are plain columns and pass straight through.
-        if (! empty($data['capture_photo']) && str_contains($data['capture_photo'], 'base64,')) {
-            $binary = base64_decode(explode('base64,', $data['capture_photo'])[1]);
-            $path   = 'workers/medical/photos/photo_'.uniqid().'.png';
-            \Illuminate\Support\Facades\Storage::disk('public')->put($path, $binary);
-            $data['capture_photo_path'] = $path;
-        }
-        unset($data['capture_photo']);
-
-        // Each medical is a DATED record. Default to today so periodic re-tests
-        // accumulate as history; re-saving the same day's exam updates it in place
-        // (composite unique worker+exam_date), a new date is a new history row.
-        if (empty($data['exam_date'])) {
-            $data['exam_date'] = now()->toDateString();
-        }
-
-        // A medical certificate is conventionally current for one year. If the
-        // examiner did not stamp an explicit expiry, derive it from the exam date
-        // so the currency window is always enforceable at the gate and at badge
-        // activation.
-        if (empty($data['valid_until'])) {
-            $data['valid_until'] = \Illuminate\Support\Carbon::parse($data['exam_date'])->copy()->addYear()->toDateString();
-        }
-
-        // Upsert keyed on (worker, exam_date). Match on the DATE part only
-        // (exam_date is stored as a datetime, so a raw string match would miss and
-        // then collide on the unique index). Uses medicalHistory() (a plain
-        // hasMany) rather than medical(), which now carries a latest-of-many
-        // constraint and must not be written through.
-        $values = [...$data, 'tenant_id' => $worker->tenant_id, 'recorded_by' => $actor->id];
-        $existing = $worker->medicalHistory()->whereDate('exam_date', $data['exam_date'])->first();
-        if ($existing) {
-            $existing->update($values);
-        } else {
-            $worker->medicalHistory()->create($values);
-        }
-        $worker->update(['current_step' => max($worker->current_step, 2)]);
-
-        $worker->recordAudit('Medical Recorded', $actor, null, ['fitness' => $data['fitness_status'] ?? null]);
-
-        Log::channel('tpv')->info('TPV worker medical recorded', [
-            'worker_id' => $worker->id, 'tenant_id' => $worker->tenant_id,
-        ]);
+        // The wizard's medical step is the Medical module's `record`, entered
+        // from the admin side. Keeping ONE path means a certificate keyed in
+        // here gets the same certificate number, health score, quality-check
+        // queue and timeline as one filed by a doctor — rather than a second,
+        // quieter way of creating a medical that skips all of it.
+        app(TpvMedicalWorkflowService::class)->record(
+            $worker,
+            $data,
+            $actor,
+            $actor->role === 'third_party_vendor'
+                ? MedicalWorkflow::ORIGIN_VENDOR_UPLOAD
+                : MedicalWorkflow::ORIGIN_ADMIN,
+        );
 
         return $worker->fresh(['medical']);
     }
@@ -179,21 +128,17 @@ class TpvWorkerService
             throw new BusinessException('This worker is no longer editable.');
         }
 
-        // §8 — "No Medical, No Training". The trainer must see a passed, current
-        // medical before recording induction. Skipped where the site doesn't
-        // require it (medical_status = 2); otherwise a Fit + non-expired medical
-        // is mandatory. Mirrors the badge blockers() so the two agree.
-        if ((int) ($worker->medical_status ?? 0) !== 2) {
-            $medical = $worker->medical;
-            if (! $medical) {
-                throw new BusinessException('Training cannot be recorded until the worker has completed a medical examination (or medical is skipped for this site).');
-            }
-            if (! $medical->isPassing()) {
-                throw new BusinessException('Training is blocked — the medical outcome is not Fit. Resolve the medical before recording training.');
-            }
-            if ($medical->isExpired()) {
-                throw new BusinessException('Training is blocked — the medical certificate has expired. Record a current medical first.');
-            }
+        // §8 — "No Medical, No Training", now the Medical module's prerequisite
+        // block. ONE verdict answers it (clearanceFor), so the refusal here and
+        // the "Medical Report is Pending" banner on the dashboards can never
+        // disagree: both read the same clearance, including the project bypass
+        // and the quality-check state. A doctor's signature alone is no longer
+        // enough — the quality team has to have accepted it.
+        $medicalWorkflow = app(TpvMedicalWorkflowService::class);
+        $clearance = $medicalWorkflow->clearanceFor($worker);
+        if ($clearance['required'] && ! $clearance['cleared']
+            && ($medicalWorkflow->config($worker->tenant_id)['block_induction'] ?? true)) {
+            throw new BusinessException('Safety induction is blocked — '.$clearance['message']);
         }
 
         // Accept the legacy field names the wizard sends and map them onto the
@@ -427,14 +372,12 @@ class TpvWorkerService
             $b[] = "Worker is {$worker->age} — must be at least 18.";
         }
 
-        // 3. Medical — Unfit is a hard stop; so is a lapsed certificate (§8).
-        $medical = $worker->medical;
-        if (! $medical) {
-            $b[] = 'Medical examination not recorded.';
-        } elseif (! $medical->isPassing()) {
-            $b[] = 'Medical outcome is Unfit.';
-        } elseif ($medical->isExpired()) {
-            $b[] = 'Medical certificate expired on '.$medical->valid_until->format('d M Y').' — a fresh examination is required.';
+        // 3. Medical — the module's clearance verdict, which covers an Unfit
+        // outcome, a lapsed certificate, a quality check still outstanding, and
+        // the project bypass that makes the whole question moot.
+        $clearance = app(TpvMedicalWorkflowService::class)->clearanceFor($worker);
+        if ($clearance['required'] && ! $clearance['cleared']) {
+            $b[] = $clearance['message'];
         }
 
         // 4. HSSE induction.
@@ -507,6 +450,8 @@ class TpvWorkerService
         $required   = count($compliance['items']);
         $missing    = count($compliance['missing']);
 
+        $medicalClearance = app(TpvMedicalWorkflowService::class)->clearanceFor($worker);
+
         $profileDone = ! empty($worker->name) && $worker->dob && ! empty($worker->designation)
             && ! empty($worker->mobile) && ! empty($worker->aadhar_number)
             && $worker->age !== null && $worker->age >= 18;
@@ -514,16 +459,27 @@ class TpvWorkerService
         return [
             'current_step' => $worker->current_step,
             'blockers'     => $this->blockers($worker),
+            // The prerequisite state, so a dashboard can show "Medical Report is
+            // Pending" without re-deriving it from the steps.
+            'medical_clearance' => $medicalClearance,
             'can_activate' => $worker->status === Status::DRAFT && $this->blockers($worker) === [],
             'steps' => [
                 ['step' => 1, 'key' => 'profile',   'label' => 'Profile',   'complete' => $profileDone,
                  'detail' => $profileDone ? 'Complete' : 'Incomplete'],
-                ['step' => 2, 'key' => 'medical',   'label' => 'Medical',   'complete' => (bool) $medical?->isCurrentlyValid(),
-                 'detail' => $medical
-                     ? ($medical->isExpired()
-                         ? 'Expired '.$medical->valid_until->format('d M Y')
-                         : Fitness::label($medical->fitness_status).($medical->valid_until ? ' · valid to '.$medical->valid_until->format('d M Y') : ''))
-                     : 'Not recorded'],
+                // The step reports the CLEARANCE, not just the examination: a
+                // signed certificate the quality team has not accepted yet is
+                // not a completed step, and the detail says which of the two is
+                // outstanding.
+                ['step' => 2, 'key' => 'medical',   'label' => 'Medical',
+                 'complete' => $medicalClearance['cleared'],
+                 'detail' => $medicalClearance['bypassed']
+                     ? 'Not applicable for this project'
+                     : ($medical
+                         ? ($medicalClearance['status'] === 'approved'
+                             ? Fitness::label($medical->fitness_status).($medical->valid_until ? ' · valid to '.$medical->valid_until->format('d M Y') : '')
+                             : $medicalClearance['message'])
+                         : 'Not recorded'),
+                 'qc_status' => $medical?->qc_status],
                 ['step' => 3, 'key' => 'induction', 'label' => 'Induction', 'complete' => (bool) $induction?->passed,
                  'detail' => $induction ? ($induction->passed ? 'Passed' : 'Not passed') : 'Not recorded'],
                 ['step' => 4, 'key' => 'ppe',       'label' => 'PPE',       'complete' => $missing === 0 && count($issued) > 0,
@@ -601,213 +557,108 @@ class TpvWorkerService
 
     /* ── Bulk Upload Workers ────────────────────────────────────────── */
 
+    /**
+     * Register many workers from one sheet.
+     *
+     * The READING moved to WorkerImport when Purchase gained the same feature —
+     * the BOM Excel writes into cell A1, four date formats, the Aadhaar it
+     * rewrites as scientific notation, ZIP photos, and the honest summary are
+     * all knowledge neither engine should hold a private copy of. What stays
+     * here is the writing: tpv_workers, this engine's columns, its own duplicate
+     * rule and its own worker-code sequence.
+     *
+     * Column order (unchanged, and shared with Purchase so one template serves
+     * both): name · gender · dob · mobile · blood · designation · skill ·
+     * aadhaar · photo filename.
+     */
     public function bulkUpload(mixed $file, int $vendorId, int $tenantId, User $actor): array
     {
         $this->assertVendor($vendorId, $tenantId);
 
-        $path = $file->getRealPath();
-        $ext  = strtolower($file->getClientOriginalExtension());
-
-        $tempExtractPath = null;
-        $photosMap = []; // filename => full path
-        $dataFile = null;
-        $dataExt  = $ext;
-
-        if ($ext === 'zip') {
-            $zip = new \ZipArchive();
-            if ($zip->open($path) === true) {
-                $tempExtractPath = storage_path('app/temp_bulk_'.uniqid());
-                $zip->extractTo($tempExtractPath);
-                $zip->close();
-
-                // Find data file inside extracted directory
-                $allFiles = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($tempExtractPath));
-                foreach ($allFiles as $f) {
-                    if ($f->isDir()) continue;
-                    $fExt = strtolower($f->getExtension());
-                    $fName = $f->getFilename();
-
-                    if (in_array($fExt, ['csv', 'xls', 'xlsx']) && !$dataFile) {
-                        $dataFile = $f->getRealPath();
-                        $dataExt  = $fExt;
-                    } elseif (in_array($fExt, ['jpg', 'jpeg', 'png', 'webp'])) {
-                        $photosMap[strtolower($fName)] = $f->getRealPath();
-                        $photosMap[pathinfo($fName, PATHINFO_FILENAME)] = $f->getRealPath();
-                    }
-                }
-
-                if (!$dataFile) {
-                    if ($tempExtractPath && file_exists($tempExtractPath)) {
-                        \File::deleteDirectory($tempExtractPath);
-                    }
-                    throw new BusinessException('ZIP archive must contain a CSV or Excel file (workers.csv / workers.xlsx).');
-                }
-            } else {
-                throw new BusinessException('Failed to open uploaded ZIP file.');
-            }
-        } else {
-            $dataFile = $path;
-        }
-
-        $rows = [];
-        if ($dataExt === 'csv' || $dataExt === 'txt') {
-            if (($handle = fopen($dataFile, 'r')) !== false) {
-                $isHeader = true;
-                while (($row = fgetcsv($handle, 2000, ',')) !== false) {
-                    // Remove UTF-8 BOM if present on first cell
-                    if (isset($row[0])) {
-                        $row[0] = preg_replace('/\x{EF}\x{BB}\x{BF}/u', '', $row[0]);
-                    }
-                    if ($isHeader) { $isHeader = false; continue; }
-                    $rows[] = array_map('trim', $row);
-                }
-                fclose($handle);
-            }
-        } elseif (in_array($dataExt, ['xls', 'xlsx'])) {
-            if (class_exists('\PhpOffice\PhpSpreadsheet\IOFactory')) {
-                $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($dataFile);
-                $sheet       = $spreadsheet->getActiveSheet();
-                $rowIterator = $sheet->getRowIterator();
-                $isHeader    = true;
-                foreach ($rowIterator as $row) {
-                    if ($isHeader) { $isHeader = false; continue; }
-                    $cellIterator = $row->getCellIterator();
-                    $cellIterator->setIterateOnlyExistingCells(false);
-                    $rowData = [];
-                    foreach ($cellIterator as $cell) {
-                        $rowData[] = trim((string) $cell->getFormattedValue());
-                    }
-                    if (implode('', $rowData) === '') continue;
-                    $rows[] = $rowData;
-                }
-            } else {
-                if ($tempExtractPath && file_exists($tempExtractPath)) {
-                    \File::deleteDirectory($tempExtractPath);
-                }
-                throw new BusinessException('Excel parsing requires PhpSpreadsheet library. Please use CSV format instead.');
-            }
-        } else {
-            if ($tempExtractPath && file_exists($tempExtractPath)) {
-                \File::deleteDirectory($tempExtractPath);
-            }
-            throw new BusinessException("Unsupported file format: {$ext}");
-        }
+        ['rows' => $rows, 'photos' => $photos, 'cleanup' => $cleanup] = WorkerImport::read($file);
 
         $inserted = 0;
-        $skipped  = 0;
-        $errors   = [];
+        $skipped = 0;
+        $errors = [];
+        $duplicates = [];
 
-        foreach ($rows as $index => $row) {
-            $name = trim($row[0] ?? '');
-            if (empty($name)) continue;
-
-            $gender    = ucfirst(strtolower(trim($row[1] ?? 'Male')));
-            $dobRaw    = trim($row[2] ?? '');
-            $mobile    = preg_replace('/\D/', '', trim($row[3] ?? ''));
-            $blood     = trim($row[4] ?? '');
-            $desig     = trim($row[5] ?? 'Worker');
-            $skill     = trim($row[6] ?? 'Unskilled');
-            $aadhar    = trim($row[7] ?? '');
-            $photoRef  = trim($row[8] ?? ''); // Column 9: optional Photo Filename
-
-            if ($aadhar && !preg_match('/^\d{12}$/', $aadhar)) {
-                $errors[] = 'Row '.($index + 2).': Invalid Aadhaar "'.$aadhar.'" — 12 digits required.';
-                $skipped++;
-                continue;
-            }
-
-            // Duplicate check
-            $query = TpvWorker::where('tenant_id', $tenantId)->where('vendor_id', $vendorId);
-            if (!empty($aadhar)) {
-                $query->where('aadhar_number', $aadhar);
-            } else {
-                $query->where('name', $name);
-                if ($mobile) $query->where('mobile', $mobile);
-            }
-
-            if ($query->exists()) {
-                $skipped++;
-                continue;
-            }
-
-            $dob = null;
-            if ($dobRaw) {
-                foreach (['Y-m-d', 'd/m/Y', 'd-m-Y', 'm/d/Y'] as $fmt) {
-                    $dt = \DateTime::createFromFormat($fmt, $dobRaw);
-                    if ($dt) { $dob = $dt->format('Y-m-d'); break; }
+        try {
+            foreach ($rows as $index => $row) {
+                $rowNo = $index + 2;                  // +1 header, +1 for 1-based
+                $name = trim($row[0] ?? '');
+                if ($name === '') {
+                    continue;
                 }
-                if (!$dob) {
-                    $ts = strtotime($dobRaw);
-                    if ($ts) $dob = date('Y-m-d', $ts);
+
+                $gender = ucfirst(strtolower(trim($row[1] ?? 'Male')));
+                $dob = WorkerImport::parseDate($row[2] ?? null);
+                $mobile = preg_replace('/\D/', '', trim($row[3] ?? ''));
+                $blood = trim($row[4] ?? '');
+                $desig = trim($row[5] ?? 'Worker');
+                $skill = trim($row[6] ?? 'Unskilled');
+                $aadhar = trim($row[7] ?? '');
+                $photoRef = trim($row[8] ?? '');
+
+                if ($problem = WorkerImport::aadhaarProblem($aadhar, $rowNo)) {
+                    $errors[] = $problem;
+                    $skipped++;
+
+                    continue;
                 }
-            }
 
-            $ageData = self::calcAge($dob);
+                // Identify by Aadhaar where there is one; otherwise name AND
+                // mobile together, because a name alone would refuse namesakes.
+                $exists = TpvWorker::where('tenant_id', $tenantId)
+                    ->where('vendor_id', $vendorId)
+                    ->when($aadhar !== '', fn ($q) => $q->where('aadhar_number', $aadhar))
+                    ->when($aadhar === '', function ($q) use ($name, $mobile) {
+                        $q->where('name', $name);
+                        if ($mobile) {
+                            $q->where('mobile', $mobile);
+                        }
+                    })
+                    ->exists();
 
-            $count = TpvWorker::withTrashed()->where('tenant_id', $tenantId)->count() + 1;
-            $workerCode = 'W-'.str_pad((string) $count, 5, '0', STR_PAD_LEFT);
+                if ($exists) {
+                    // Name them. "3 duplicate/skipped" on its own is impossible
+                    // to tell apart from an import that silently failed.
+                    $duplicates[] = "Row {$rowNo}: {$name} is already registered under this vendor.";
+                    $skipped++;
 
-            // Handle Profile Photo if matched in ZIP or provided
-            $photoPath = null;
-            $photoCandidateKeys = array_filter([
-                strtolower($photoRef),
-                pathinfo(strtolower($photoRef), PATHINFO_FILENAME),
-                strtolower($aadhar),
-                strtolower($mobile),
-                strtolower(str_replace(' ', '_', $name)),
-                strtolower($name)
-            ]);
-
-            foreach ($photoCandidateKeys as $key) {
-                if (isset($photosMap[$key]) && file_exists($photosMap[$key])) {
-                    $sourceImg = $photosMap[$key];
-                    $imgExt = pathinfo($sourceImg, PATHINFO_EXTENSION);
-                    $destFilename = 'workers/photos/bulk_'.uniqid().'.'.$imgExt;
-                    \Storage::disk('public')->put($destFilename, file_get_contents($sourceImg));
-                    $photoPath = $destFilename;
-                    break;
+                    continue;
                 }
+
+                $ageData = self::calcAge($dob);
+                $count = TpvWorker::withTrashed()->where('tenant_id', $tenantId)->count() + 1;
+
+                TpvWorker::create([
+                    'tenant_id' => $tenantId,
+                    'vendor_id' => $vendorId,
+                    'created_by' => $actor->id,
+                    'worker_code' => 'W-'.str_pad((string) $count, 5, '0', STR_PAD_LEFT),
+                    'name' => $name,
+                    'gender' => $gender,
+                    'dob' => $dob,
+                    'age' => $ageData['age'],
+                    'age_reason' => $ageData['age_reason'],
+                    'mobile' => $mobile,
+                    'blood_group' => $blood,
+                    'designation' => $desig,
+                    'skill_category' => $skill,
+                    'aadhar_number' => $aadhar ?: null,
+                    'photo_path' => WorkerImport::storePhoto($photos, [$photoRef, $aadhar, $mobile, str_replace(' ', '_', $name), $name]),
+                    'is_active' => true,
+                    'current_step' => 1,
+                    'status' => Status::DRAFT,
+                ]);
+
+                $inserted++;
             }
-
-            TpvWorker::create([
-                'tenant_id'      => $tenantId,
-                'vendor_id'      => $vendorId,
-                'created_by'     => $actor->id,
-                'worker_code'    => $workerCode,
-                'name'           => $name,
-                'gender'         => $gender,
-                'dob'            => $dob,
-                'age'            => $ageData['age'],
-                'age_reason'     => $ageData['age_reason'],
-                'mobile'         => $mobile,
-                'blood_group'    => $blood,
-                'designation'    => $desig,
-                'skill_category' => $skill,
-                'aadhar_number'  => $aadhar ?: null,
-                'photo_path'     => $photoPath,
-                'is_active'      => true,
-                'current_step'   => 1,
-                'status'         => Status::DRAFT,
-            ]);
-
-            $inserted++;
+        } finally {
+            $cleanup();
         }
 
-        if ($tempExtractPath && file_exists($tempExtractPath)) {
-            \File::deleteDirectory($tempExtractPath);
-        }
-
-        $msg = "{$inserted} worker(s) imported successfully.";
-        if ($skipped > 0)    $msg .= " {$skipped} duplicate/skipped.";
-        if (!empty($errors)) $msg .= " ".count($errors)." error(s).";
-
-        return [
-            'status'   => 'success',
-            'message'  => $msg,
-            'inserted' => $inserted,
-            'skipped'  => $skipped,
-            'errors'   => $errors,
-        ];
+        return WorkerImport::summarise($inserted, $skipped, $duplicates, $errors);
     }
 
     /* ── Entry card ─────────────────────────────────────────────────── */
@@ -1039,6 +890,44 @@ class TpvWorkerService
         }
         if ($workPackageId && (int) $activity->work_package_id !== (int) $workPackageId) {
             throw new BusinessException('That activity belongs to a different work package.');
+        }
+    }
+
+    /**
+     * A blank Aadhar has to reach the column as NULL, never ''.
+     *
+     * The table carries unique(tenant_id, aadhar_number): NULLs never collide,
+     * but two workers both saved with an empty string do — so a form left blank
+     * on the second worker would be rejected as a duplicate of the first.
+     */
+    private function normaliseIdentity(array $data): array
+    {
+        if (array_key_exists('aadhar_number', $data)) {
+            $aadhar = trim((string) $data['aadhar_number']);
+            $data['aadhar_number'] = $aadhar === '' ? null : $aadhar;
+        }
+
+        return $data;
+    }
+
+    /**
+     * Create the worker, re-deriving worker_code if another request took the
+     * number first. The unique index is the arbiter; this just tries again with
+     * the next free code instead of surfacing a raw duplicate-key error.
+     */
+    private function insertWithFreshCode(array $attributes): TpvWorker
+    {
+        for ($attempt = 0; ; $attempt++) {
+            try {
+                return TpvWorker::create($attributes);
+            } catch (\Illuminate\Database\QueryException $e) {
+                $duplicateCode = str_contains($e->getMessage(), 'worker_code')
+                    && (str_contains($e->getMessage(), 'Duplicate entry') || str_contains($e->getMessage(), 'UNIQUE constraint failed'));
+
+                if (! $duplicateCode || $attempt >= 4 || ! empty($attributes['worker_code'])) {
+                    throw $e;
+                }
+            }
         }
     }
 

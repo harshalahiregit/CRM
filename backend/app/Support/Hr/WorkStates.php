@@ -59,6 +59,76 @@ final class WorkStates
     ];
 
     /**
+     * The states and UTs that actually levy Professional Tax.
+     *
+     * PT is a STATE levy and roughly a third of the country does not impose it
+     * at all. The rule screen offered all 36 regardless, so Delhi sat in the
+     * dropdown next to Maharashtra with nothing to say it collects no PT — which
+     * was picked up on screen during the 3 Sep review: "यहां पे ये स्टेट नहीं
+     * दिखना चाहिए... दिल्ली में एप्लीकेबल ही नहीं है".
+     *
+     * Offering a state that levies nothing invites somebody to configure a slab
+     * for it, and a configured slab deducts. The absent ones are the point of
+     * this list: Delhi, Haryana, Himachal Pradesh, Uttar Pradesh, Uttarakhand,
+     * Rajasthan, Goa, Arunachal Pradesh, Jammu and Kashmir, Ladakh, Chandigarh,
+     * Andaman and Nicobar, Dadra and Nagar Haveli, and Lakshadweep.
+     *
+     * KEEP THIS REVIEWED. A state can begin or repeal the levy in a budget, and
+     * a stale list here silently stops a real deduction. It is a starting
+     * position for the dropdown, not a statement of law: a state already
+     * carrying a configured rule is still offered (see selectable()) so a
+     * workspace is never locked out of a jurisdiction this list has not caught
+     * up with.
+     */
+    public const PT_APPLICABLE = [
+        'AP', 'AS', 'BR', 'CG', 'GJ', 'JH', 'KA', 'KL', 'MP', 'MH',
+        'MN', 'ML', 'MZ', 'NL', 'OD', 'PB', 'SK', 'TN', 'TS', 'TR', 'WB', 'PY',
+    ];
+
+    /**
+     * [['code' => 'MH', 'name' => 'Maharashtra'], …] for a given list of codes.
+     *
+     * @param  array<string>|null  $codes  null falls back to the seeded default
+     */
+    public static function ptOptions(?array $codes = null): array
+    {
+        $codes = $codes ?: self::PT_APPLICABLE;
+
+        return array_values(array_map(
+            fn ($code) => ['code' => $code, 'name' => self::ALL[$code]],
+            array_filter($codes, fn ($code) => is_string($code) && isset(self::ALL[$code]))
+        ));
+    }
+
+    /**
+     * The configured PT states, plus any this workspace already has a rule for.
+     *
+     * The escape hatch for the paragraph above: if a state starts levying PT
+     * before anybody updates the setting, a workspace that has configured it
+     * keeps seeing it rather than losing the rule it is already applying.
+     *
+     * @param  array<string>       $codes             configured PT state codes
+     * @param  array<string>       $configuredStates  canonical names already in use
+     */
+    public static function ptSelectable(array $codes = [], array $configuredStates = []): array
+    {
+        $options = self::ptOptions($codes ?: null);
+        $have = array_column($options, 'name');
+
+        foreach ($configuredStates as $name) {
+            $canonical = self::normalize($name);
+            if ($canonical && ! in_array($canonical, $have, true)) {
+                $options[] = ['code' => array_search($canonical, self::ALL, true) ?: null, 'name' => $canonical];
+                $have[] = $canonical;
+            }
+        }
+
+        usort($options, fn ($a, $b) => strcmp($a['name'], $b['name']));
+
+        return $options;
+    }
+
+    /**
      * Historic and colloquial spellings that must resolve to a current name, so a
      * record entered years ago (or imported from another HRM) still matches a rule.
      *

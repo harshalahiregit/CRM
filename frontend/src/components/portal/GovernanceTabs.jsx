@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Send, Upload, Calendar, ChevronDown, ChevronRight, FileCheck, Video } from 'lucide-react'
+import { Send, Upload, Calendar, ChevronDown, ChevronRight, FileCheck, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import MeetingJoinGate from '@/components/portal/MeetingJoinGate'
+import RichText from '@/components/ui/RichText'
 
 /**
  * §32 governance tabs shared by both vendor portals (TPV + Purchase). Purely
@@ -13,18 +15,60 @@ const dt = (v) => (v ? new Date(v).toLocaleString() : '—')
 const d = (v) => (v ? new Date(v).toLocaleDateString() : '—')
 const STATUS_TONE = { Open: '#d97706', In_Progress: '#0891b2', Closed: '#16a34a', Verified: '#16a34a', Pending: '#64748b' }
 
+/* ── Meeting timing ────────────────────────────────────────────────────────
+ *
+ * `status` is what people decided about the meeting; `timing_state` is where it
+ * sits against the clock, and the backend derives it (App\Support\Shared\
+ * MeetingTiming) so the portal, the dashboards and the admin screens cannot
+ * disagree about whether a meeting has passed. Both are shown, because
+ * "Scheduled · Expired" is the honest description of a meeting nobody closed.
+ */
+const TIMING_TONE = { upcoming: '#0891b2', live: '#16a34a', ended: '#475569', expired: '#dc2626', closed: '#64748b', draft: '#64748b' }
+
+/** "2:30 PM – 3:30 PM" from a start and an end on the same day. */
+const timeRange = (start, end) => {
+  if (!start) return '—'
+  const from = new Date(start)
+  const opts = { hour: 'numeric', minute: '2-digit' }
+  if (!end) return from.toLocaleString()
+  const to = new Date(end)
+  const sameDay = from.toDateString() === to.toDateString()
+  return sameDay
+    ? `${from.toLocaleDateString()}, ${from.toLocaleTimeString([], opts)} – ${to.toLocaleTimeString([], opts)}`
+    : `${from.toLocaleString()} – ${to.toLocaleString()}`
+}
+
+const durationText = (mins) => {
+  const n = Number(mins)
+  if (!Number.isFinite(n) || n <= 0) return null
+  return n >= 60 ? `${Math.floor(n / 60)}h${n % 60 ? ` ${n % 60}m` : ''}` : `${n} min`
+}
+
 /* ── Meetings & MOM ───────────────────────────────────────────────────── */
 export function MeetingsTab({ gov }) {
   const [rows, setRows] = useState(null)
   const [open, setOpen] = useState(null)     // meeting id whose MOM is expanded
   const [mom, setMom] = useState({})         // id → loaded MOM detail
+  const [momErr, setMomErr] = useState({})   // id → why it could not be shown
 
   useEffect(() => { gov.meetings().then(r => setRows(r?.data ?? [])).catch(() => setRows([])) }, [])
 
   const toggle = (id) => {
     if (open === id) { setOpen(null); return }
     setOpen(id)
-    if (!mom[id]) gov.meetingMom(id).then(m => setMom(s => ({ ...s, [id]: m }))).catch(() => {})
+    if (mom[id] || momErr[id]) return
+
+    gov.meetingMom(id)
+      .then(m => setMom(s => ({ ...s, [id]: m })))
+      // Minutes that are not yet approved and distributed answer 403, which is
+      // an ANSWER, not a failure. Swallowing it left the row spinning on
+      // "Loading minutes…" indefinitely with nothing to explain why.
+      .catch(e => setMomErr(s => ({
+        ...s,
+        [id]: e?.response?.status === 403
+          ? 'The minutes for this meeting have not been shared yet. They appear here once they are approved and issued.'
+          : 'The minutes could not be loaded. Please try again in a moment.',
+      })))
   }
 
   if (rows === null) return <Loading />
@@ -40,74 +84,254 @@ export function MeetingsTab({ gov }) {
             <span style={{ flex: 1 }} />
             <Pill text={label(m.meeting_type)} tone="#64748b" />
             <Pill text={label(m.status)} tone={STATUS_TONE[m.status]} />
+            {/* Where it sits against the clock, beside what was decided. */}
+            {m.timing_state && m.timing_state !== 'closed' && (
+              <Pill text={m.timing_label || m.timing_state} tone={TIMING_TONE[m.timing_state]} />
+            )}
           </button>
           <div style={{ fontSize: 12, color: 'var(--text-muted)', margin: '6px 0 0', paddingLeft: 26 }}>
-            {dt(m.scheduled_at)} · {label(m.mode)}{m.location ? ` · ${m.location}` : ''}
+            {/* The full slot, not just the start — a start time alone never said
+                when the meeting was over, so nothing on this screen could tell
+                you whether it had. */}
+            {timeRange(m.scheduled_at, m.ends_at)}
+            {durationText(m.duration_minutes) ? ` · ${durationText(m.duration_minutes)}` : ''}
+            {' · '}{label(m.mode)}{m.location ? ` · ${m.location}` : ''}
           </div>
-          {/* Join the online meeting straight from the portal (point 11). */}
-          {m.meeting_link && m.mode !== 'onsite' && m.status !== 'Completed' && m.status !== 'Cancelled' && (
-            <div style={{ paddingLeft: 26, marginTop: 8 }}>
-              <a href={m.meeting_link} target="_blank" rel="noopener noreferrer"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 9, fontSize: 12.5, fontWeight: 800, textDecoration: 'none', color: '#fff', background: 'linear-gradient(145deg,#22c55e,#16a34a)' }}>
-                <Video size={14} /> Join meeting
-              </a>
+
+          {/* Expired: the slot passed and nobody completed or cancelled it. Said
+              plainly, because the vendor's question is "is this still happening?" */}
+          {/* A meeting that was actually held and has finished. Different news
+              from an expired one, and the vendor was in it — telling them it
+              "expired" would contradict what they just sat through. */}
+          {m.timing_state === 'ended' && (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, margin: '8px 0 0 26px', padding: '8px 11px', borderRadius: 9, background: 'rgba(100,116,139,0.10)', border: '1px solid rgba(100,116,139,0.25)' }}>
+              <CheckCircle2 size={14} style={{ color: '#475569', flexShrink: 0, marginTop: 1 }} />
+              <span style={{ fontSize: 12, color: '#475569', fontWeight: 600 }}>
+                This meeting has ended{m.actual_start_at ? ` — held ${timeRange(m.actual_start_at, m.actual_end_at)}` : ''}
+                {m.held_minutes ? ` (${m.held_minutes} min)` : ''}. The minutes will be shared with you once they are approved.
+              </span>
             </div>
           )}
-          {open === m.id && <MomDetail data={mom[m.id]} gov={gov} meetingId={m.id} />}
+
+          {m.timing_state === 'expired' && (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, margin: '8px 0 0 26px', padding: '8px 11px', borderRadius: 9, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.25)' }}>
+              <AlertTriangle size={14} style={{ color: '#dc2626', flexShrink: 0, marginTop: 1 }} />
+              <span style={{ fontSize: 12, color: '#b91c1c', fontWeight: 600 }}>
+                This meeting has expired — its time passed on {dt(m.ends_at)} and it was never
+                marked complete. The join link is no longer available. The organiser has been notified.
+              </span>
+            </div>
+          )}
+
+          {/* The agenda — the reason the meeting page is worth opening at all,
+              and what is offered in place of a link in the e-mail. Shown for
+              every meeting, gated or not; the MINUTES are separate and stay
+              behind approval + distribution. */}
+          {(m.agenda || (m.agenda_items?.length > 0)) && (
+            <div style={{ paddingLeft: 26, marginTop: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 5 }}>
+                Agenda
+              </div>
+              {m.agenda && (
+                <div style={{ fontSize: 12.5, color: 'var(--text-h)', whiteSpace: 'pre-wrap', marginBottom: m.agenda_items?.length ? 7 : 0 }}>
+                  {m.agenda}
+                </div>
+              )}
+              {m.agenda_items?.length > 0 && (
+                <ol style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 3 }}>
+                  {m.agenda_items.map(a => (
+                    <li key={a.id} style={{ fontSize: 12.5, color: 'var(--text-h)' }}>
+                      {a.item}
+                      {a.owner_names ? <span style={{ color: 'var(--text-muted)' }}> · {a.owner_names}</span> : null}
+                      {a.duration_minutes ? <span style={{ color: 'var(--text-muted)' }}> · {durationText(a.duration_minutes)}</span> : null}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          )}
+
+          {/* Who is in the meeting — both sides of it.
+              A vendor sat in this call and saw these people; hiding our own
+              side afterwards protects nothing, and when the minutes say
+              "Anjali to confirm the payment date" they need to know who Anjali
+              is. Both engines answer under `attendees` so this renders once —
+              Purchase's own column is `participants`, normalised server-side.
+              See MeetingVisibilityByRoleTest, which holds this as a decision. */}
+          {m.attendees?.length > 0 && (
+            <div style={{ paddingLeft: 26, marginTop: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 5 }}>
+                Participants · {m.attendees.length}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {m.attendees.map(a => (
+                  <span key={a.id} style={{ fontSize: 11.5, padding: '3px 9px', borderRadius: 999, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }}>
+                    {a.name}{a.role ? <span style={{ color: 'var(--text-muted)' }}> · {a.role}</span> : null}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* The joining link, and what it costs — MeetingJoinGate, the same
+              component the Purchase kickoff, onboarding and dashboard cards
+              use. Four hand-rolled copies of this is how those screens drifted
+              apart in the first place. */}
+          <div style={{ paddingLeft: 26, marginTop: 8 }}>
+            <MeetingJoinGate meeting={m} onMark={gov.markAttendance} />
+            {m.meeting_link && !m.is_live && Number.isFinite(Number(m.minutes_until_start)) && Number(m.minutes_until_start) > 0 && (
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 5 }}>
+                starts in {durationText(m.minutes_until_start)}
+              </div>
+            )}
+          </div>
+          {open === m.id && <MomDetail data={mom[m.id]} error={momErr[m.id]} gov={gov} meetingId={m.id} />}
         </div>
       ))}
     </div>
   )
 }
 
-function MomDetail({ data, gov, meetingId }) {
+/**
+ * The distributed minutes, as the vendor reads them.
+ *
+ * This used to read `mom_items` and `decisions` off whatever the portal sent.
+ * Those are the SHARED engine's names; Purchase sends `action_items` and
+ * `mom_decisions`, so a Purchase vendor opened their minutes and found only the
+ * agenda — every action and every decision was in the response, under names
+ * this screen was not looking for, and dropped without a word. Issues were
+ * dropped for both, and so was the minutes text itself.
+ *
+ * Both portals now answer in one agreed shape (VendorMomView on the server), so
+ * this reads one set of names and the next thing added cannot go missing from
+ * one portal only.
+ */
+function MomDetail({ data, error, gov, meetingId }) {
+  const [downloading, setDownloading] = useState(false)
+
+  // Not available is not the same as not loaded. Minutes that have not been
+  // approved and distributed return 403, and swallowing that left the row
+  // spinning on "Loading minutes…" for ever with no reason given.
+  if (error) {
+    return (
+      <div style={{ padding: '10px 26px', color: 'var(--text-muted)', fontSize: 12.5, lineHeight: 1.5 }}>
+        {error}
+      </div>
+    )
+  }
   if (!data) return <div style={{ padding: '10px 26px', color: 'var(--text-muted)', fontSize: 12.5 }}>Loading minutes…</div>
-  const agenda = data.agenda_items ?? data.agendaItems ?? []
-  const items = data.mom_items ?? data.momItems ?? []
+
+  const agenda = data.agenda ?? []
+  const actions = data.actions ?? []
   const decisions = data.decisions ?? []
+  const issues = data.issues ?? []
   const documents = data.documents ?? []
+  const minutes = data.minutes
+
+  const save = (blob, filename) => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = filename
+    document.body.appendChild(a); a.click(); a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
+  }
 
   // Download a supporting document. The minutes are shown as structured info
   // (never a raw embedded PDF); the file is offered as an explicit download.
   const download = async (doc) => {
     if (!gov?.meetingDocument) return
-    try {
-      const blob = await gov.meetingDocument(meetingId, doc.id)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url; a.download = doc.original_name || doc.label
-      document.body.appendChild(a); a.click(); a.remove()
-      setTimeout(() => URL.revokeObjectURL(url), 60000)
-    } catch { /* swallow — a failed download must not break the view */ }
+    try { save(await gov.meetingDocument(meetingId, doc.id), doc.original_name || doc.label) }
+    catch { /* swallow — a failed download must not break the view */ }
   }
+
+  // The minutes document. The point of approving and distributing minutes is
+  // that the vendor can read them; until now the only route that served this
+  // file was behind an admin role, so they never could.
+  const downloadMom = async () => {
+    if (!gov?.meetingMomFile) return
+    setDownloading(true)
+    try { save(await gov.meetingMomFile(meetingId), `Minutes-${data.meeting?.meeting_no || meetingId}.pdf`) }
+    catch { /* the button stays; nothing else on the page should break */ }
+    finally { setDownloading(false) }
+  }
+
+  const empty = agenda.length + actions.length + decisions.length + issues.length === 0 && !minutes
 
   return (
     <div style={{ paddingLeft: 26, marginTop: 10, display: 'grid', gap: 12 }}>
+      {data.mom_document_available && gov?.meetingMomFile && (
+        <button onClick={downloadMom} disabled={downloading}
+          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '9px 14px', borderRadius: 9, cursor: downloading ? 'wait' : 'pointer', fontSize: 12.5, fontWeight: 800, color: '#fff', border: 'none', background: 'linear-gradient(145deg,#38bdf8,#0284c7)', justifySelf: 'start' }}>
+          <FileCheck size={15} /> {downloading ? 'Opening…' : 'Download the minutes (PDF)'}
+        </button>
+      )}
+
+      {minutes && (
+        <div>
+          <div style={sectionHead}>Minutes</div>
+          <p style={{ margin: 0, fontSize: 12.5, color: 'var(--text-h)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{minutes}</p>
+        </div>
+      )}
+
       {agenda.length > 0 && (
         <Section title="Agenda">
-          {agenda.map((a, i) => <li key={i} style={li}>{a.title || a.description}</li>)}
+          {agenda.map((a, i) => (
+            <li key={i} style={li}>
+              <RichText html={a.description_html} text={a.item || a.description} />
+              {/* What was said and settled under each point — captured in the
+                  meeting room and, until now, never shown to the vendor. */}
+              {a.discussion && <div style={subLine}>Discussed: {a.discussion}</div>}
+              {a.decision && <div style={subLine}>Decided: {a.decision}</div>}
+            </li>
+          ))}
         </Section>
       )}
-      {items.length > 0 && (
+
+      {actions.length > 0 && (
         <Section title="Action items (MOM)">
-          {items.map((it) => (
-            <li key={it.id} style={li}>
-              <b>{it.action_ref ? `${it.action_ref} · ` : ''}</b>{it.description}
+          {actions.map((it, i) => (
+            <li key={i} style={li}>
+              <b>{it.ref ? `${it.ref} · ` : ''}</b>
+              <RichText html={it.description_html} text={it.description} />
               <span style={{ color: 'var(--text-muted)' }}>
-                {' '}— {it.responsible?.name || it.responsible_names || 'Unassigned'} · due {d(it.target_date)} · {label(it.status)}
+                {' '}— {it.owner || 'Unassigned'} · due {d(it.target_date)} · {label(it.status)}
               </span>
             </li>
           ))}
         </Section>
       )}
+
       {decisions.length > 0 && (
         <Section title="Decisions">
-          {decisions.map((x, i) => <li key={i} style={li}>{x.description || x.decision}</li>)}
+          {decisions.map((x, i) => (
+            <li key={i} style={li}>
+              <b>{x.ref ? `${x.ref} · ` : ''}</b>{x.decision}
+              {x.decided_by && <span style={{ color: 'var(--text-muted)' }}> — {x.decided_by}</span>}
+            </li>
+          ))}
         </Section>
       )}
+
+      {/* Issues were fetched, serialised and then never rendered — the one part
+          of the minutes a vendor most needs to see about their own work. */}
+      {issues.length > 0 && (
+        <Section title="Issues raised">
+          {issues.map((x, i) => (
+            <li key={i} style={li}>
+              <b>{x.ref ? `${x.ref} · ` : ''}</b>{x.title}
+              <span style={{ color: 'var(--text-muted)' }}>
+                {x.severity ? ` — ${label(x.severity)}` : ''}{x.owner ? ` · ${x.owner}` : ''}
+                {x.due_date ? ` · due ${d(x.due_date)}` : ''} · {label(x.status)}
+              </span>
+              {x.description && <RichText html={x.description_html} text={x.description} style={subLine} />}
+            </li>
+          ))}
+        </Section>
+      )}
+
       {documents.length > 0 && gov?.meetingDocument && (
         <div>
-          <div style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6 }}>Documents</div>
+          <div style={sectionHead}>Documents</div>
           <div style={{ display: 'grid', gap: 6 }}>
             {documents.map((doc) => (
               <button key={doc.id} onClick={() => download(doc)}
@@ -120,11 +344,14 @@ function MomDetail({ data, gov, meetingId }) {
           </div>
         </div>
       )}
-      {agenda.length + items.length + decisions.length === 0 &&
-        <div style={{ color: 'var(--text-muted)', fontSize: 12.5 }}>No minutes captured for this meeting.</div>}
+
+      {empty && <div style={{ color: 'var(--text-muted)', fontSize: 12.5 }}>No minutes captured for this meeting.</div>}
     </div>
   )
 }
+
+const sectionHead = { fontSize: 11.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6 }
+const subLine = { fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.45 }
 
 /* ── Action items — vendor adds progress ──────────────────────────────── */
 export function ActionsTab({ gov }) {
@@ -145,8 +372,14 @@ export function ActionsTab({ gov }) {
       {rows.map(a => (
         <div key={a.id} style={card}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-            <div style={{ fontWeight: 700, color: 'var(--text-h)' }}>
-              {a.action_ref ? `${a.action_ref} · ` : ''}{a.description}
+            {/* The ref stays a heading; the instruction itself is rich text and
+                is rendered as such. Concatenated into one text node it produced
+                a heading made of `<span style=...>` and a base64 image src — the
+                vendor could not read what they had been asked to do. */}
+            <div style={{ minWidth: 0, flex: 1 }}>
+              {a.action_ref && <div style={{ fontWeight: 700, color: 'var(--text-h)' }}>{a.action_ref}</div>}
+              <RichText html={a.description_html} text={a.description}
+                style={{ fontWeight: 700, color: 'var(--text-h)' }} />
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               {a.priority && <Pill text={label(a.priority)} tone="#64748b" />}
@@ -156,7 +389,12 @@ export function ActionsTab({ gov }) {
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
             {a.responsible?.name || a.responsible_names || 'Unassigned'} · due {d(a.target_date)}
           </div>
-          {a.remark && <div style={{ marginTop: 8, fontSize: 12.5, color: 'var(--text-muted)', whiteSpace: 'pre-line' }}><b>Progress:</b> {a.remark}</div>}
+          {a.remark && (
+            <div style={{ marginTop: 8, fontSize: 12.5, color: 'var(--text-muted)' }}>
+              <b>Progress:</b>
+              <RichText html={a.remark_html} text={a.remark} />
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
             <input value={draft[a.id] || ''} onChange={e => setDraft(s => ({ ...s, [a.id]: e.target.value }))}
               placeholder="Add a progress update…" style={input} />

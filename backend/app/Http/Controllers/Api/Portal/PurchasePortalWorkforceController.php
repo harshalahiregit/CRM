@@ -8,6 +8,7 @@ use App\Http\Requests\Purchase\UpdatePurchaseWorkerRequest;
 use App\Models\Purchase\PurchaseVendor;
 use App\Models\Purchase\PurchaseWorker;
 use App\Models\Purchase\PurchaseWorkerPpeIssue;
+use App\Services\Purchase\PurchaseGateService;
 use App\Services\Purchase\PurchasePpeService;
 use App\Services\Purchase\PurchaseWorkforceService;
 use Illuminate\Http\Request;
@@ -135,6 +136,137 @@ class PurchasePortalWorkforceController extends Controller
     }
 
     /* ── scoping ─────────────────────────────────────────────────────────── */
+
+    /* ── Site gate — the vendor's own people, read-only ──────────────────── */
+
+    /**
+     * Attendance, the gate log and the on-site roster, for this vendor only.
+     *
+     * TPV's portal has shown these since it existed; Purchase built the whole
+     * gate engine — two tables, a service, seven admin routes — and never exposed
+     * any of it to the vendor, so the one party who needs to know whether their
+     * own people got in could not see it.
+     *
+     * READ-ONLY on purpose. Recording a crossing is the security desk's act
+     * (`PurchaseGateController@storeEvent`, admin-gated) and stays there: a
+     * vendor that could write its own gate scans could manufacture attendance.
+     *
+     * The vendor id comes from the token, never the request, so these can only
+     * ever narrow to the caller's own workers.
+     */
+    /**
+     * Every training record across this vendor's own workers.
+     *
+     * The portal could WRITE a training (saveTraining, below) and had no way to
+     * read one back, so a vendor could file a certificate and never see it
+     * again — the same hole the admin side had on its vendor tab.
+     */
+    public function trainings(Request $request)
+    {
+        $vendor = $this->vendor($request);
+
+        $rows = \App\Models\Purchase\PurchaseWorkerTraining::forTenant($vendor->tenant_id)
+            ->whereIn('purchase_worker_id', $this->ownWorkerIds($vendor))
+            ->with('worker:id,full_name,worker_code')
+            ->orderByDesc('id')->limit(500)->get();
+
+        return response()->json(['data' => $rows]);
+    }
+
+    /**
+     * Safety strikes against this vendor's own workers — read-only.
+     *
+     * A vendor cannot issue or void one: three of them terminate a worker's site
+     * access, so the authority to hand them out belongs with the site, not with
+     * the company being struck. Seeing them is the point — a vendor who cannot
+     * see a strike cannot act on it before the third one lands.
+     */
+    public function strikes(Request $request)
+    {
+        $vendor = $this->vendor($request);
+
+        $query = \App\Models\Purchase\PurchaseSafetyStrike::forTenant($vendor->tenant_id)
+            ->whereIn('purchase_worker_id', $this->ownWorkerIds($vendor))
+            ->with(['worker:id,full_name,worker_code', 'issuer:id,name'])
+            ->orderByDesc('occurred_at');
+
+        if ($request->filled('severity')) {
+            $query->where('severity', $request->query('severity'));
+        }
+
+        if ($request->boolean('active')) {
+            $query->whereNull('voided_at');
+        }
+
+        return response()->json($query->get());
+    }
+
+    /** The ids this vendor owns — the scope everything above is narrowed to. */
+    private function ownWorkerIds($vendor)
+    {
+        return \App\Models\Purchase\PurchaseWorker::forTenant($vendor->tenant_id)
+            ->where('purchase_vendor_id', $vendor->id)->select('id');
+    }
+
+    public function gateStats(Request $request, PurchaseGateService $gate)
+    {
+        $vendor = $this->vendor($request);
+
+        return response()->json(
+            $gate->stats((int) $vendor->tenant_id, $request->query('date'), (int) $vendor->id)
+        );
+    }
+
+    public function gateLog(Request $request, PurchaseGateService $gate)
+    {
+        $vendor = $this->vendor($request);
+
+        return response()->json([
+            'data' => $gate->log((int) $vendor->tenant_id, [
+                // A supplied vendor_id is ignored — this one wins.
+                'vendor_id' => $vendor->id,
+                'worker_id' => $request->query('worker_id'),
+                'decision' => $request->query('decision'),
+                'from' => $request->query('from'),
+                'to' => $request->query('to'),
+                'limit' => $request->query('limit'),
+            ]),
+        ]);
+    }
+
+    public function onSite(Request $request, PurchaseGateService $gate)
+    {
+        $vendor = $this->vendor($request);
+
+        return response()->json([
+            'data' => $gate->onSite((int) $vendor->tenant_id, $request->query('date'), (int) $vendor->id),
+        ]);
+    }
+
+    /** One of the vendor's own workers, day by day, with hours on site. */
+    public function workerAttendance(Request $request, int $worker, PurchaseGateService $gate)
+    {
+        return response()->json(
+            $gate->workerAttendance($this->owned($request, $worker), $request->only(['from', 'to']))
+        );
+    }
+
+    /**
+     * The vendor's own bulk import.
+     *
+     * No vendor_id is accepted: it comes from the token, so an import cannot be
+     * aimed at somebody else's books.
+     */
+    public function uploadWorkers(Request $request)
+    {
+        $request->validate([
+            'worker_file' => 'required|file|mimes:csv,xls,xlsx,txt,zip|max:20480',
+        ]);
+
+        return response()->json(
+            $this->service->bulkUpload($request->file('worker_file'), $this->vendor($request))
+        );
+    }
 
     private function vendor(Request $request): PurchaseVendor
     {

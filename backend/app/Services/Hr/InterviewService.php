@@ -117,7 +117,7 @@ class InterviewService
         // Email is best-effort — a mail failure must never break scheduling.
         if ($candidate->email) {
             try {
-                Mail::to($candidate->email)->send(new \App\Mail\InterviewScheduledMail($round, 'candidate'));
+                app(\App\Services\Mail\TenantMailer::class)->send($candidate->tenant_id, $candidate->email, new \App\Mail\InterviewScheduledMail($round, 'candidate'));
                 $round->update(['email_sent_candidate' => true]);
             } catch (\Throwable $e) {
                 Log::channel('hr')->error('Interview schedule email failed', ['interview_round_id' => $round->id, 'error' => $e->getMessage()]);
@@ -418,16 +418,17 @@ class InterviewService
     /** Send the interview email — edited content if provided, else the default template. */
     private function sendEmail(string $to, HrInterviewRound $round, string $recipient, ?array $override): void
     {
+        // Tenant SMTP on both legs, never the global mailer.
+        $tenantId = (int) optional($round->candidate)->tenant_id;
+
         if (! empty($override['body'])) {
             $subject = $override['subject'] ?? ('Interview Scheduled - '.$round->round_name);
-            Mail::html($override['body'], function ($m) use ($to, $subject) {
-                $m->to($to)->subject($subject);
-            });
+            app(\App\Services\Mail\TenantMailer::class)->sendRawHtml($tenantId, $to, $subject, $override['body']);
 
             return;
         }
 
-        Mail::to($to)->send(new \App\Mail\InterviewScheduledMail($round, $recipient));
+        app(\App\Services\Mail\TenantMailer::class)->send($tenantId, $to, new \App\Mail\InterviewScheduledMail($round, $recipient));
     }
 
     public function destroy(HrInterviewRound $interviewRound): void

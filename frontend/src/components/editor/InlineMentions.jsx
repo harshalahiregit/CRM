@@ -4,6 +4,7 @@
 // controlled <textarea> (via textareaRef + value/onChange). Rendered by
 // EditorActionBar wherever a `people` list exists, so every editor gets it.
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { insertMentionIntoQuill } from './mentionMarker'
 
 // The @-token immediately before the caret: "@", "@jo", "@jane.doe"…
 const TOKEN_RE = /(^|\s)@([\p{L}\d._-]*)$/u
@@ -36,8 +37,7 @@ export default function InlineMentions({ quillRef, textareaRef, value, onChange,
     const quill = quillRef?.current?.getEditor?.()
     if (quill && !textareaRef) {
       quill.deleteText(at, q.length + 1, 'user')     // remove "@query"
-      quill.insertText(at, `@${name} `, 'user')
-      quill.setSelection(at + name.length + 2, 0, 'user')
+      insertMentionIntoQuill(quill, at, person, name)
       quill.focus()
     } else if (textareaRef?.current) {
       const el = textareaRef.current

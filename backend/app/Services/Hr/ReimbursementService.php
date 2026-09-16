@@ -23,7 +23,12 @@ use Illuminate\Support\Facades\DB;
  */
 class ReimbursementService
 {
-    public function __construct(private RequestThreadService $thread)
+    public function __construct(
+        private RequestThreadService $thread,
+        // This flow told the employee nothing: they submitted a claim and heard
+        // nothing, it was approved and they heard nothing.
+        private RequestNotifier $notifier,
+    )
     {
     }
 
@@ -50,6 +55,10 @@ class ReimbursementService
                 $actor,
                 ['amount_claimed' => (float) $claim->amount_claimed]
             );
+
+            $this->notifier->tell($employee, 'Expense Claim', 'submitted',
+                'Your claim for '.$this->money((float) $claim->amount_claimed)
+                .' is with your approver.', $actor);
 
             return $claim;
         });
@@ -134,6 +143,7 @@ class ReimbursementService
      */
     public function approve(HrReimbursement $claim, User $actor, ?float $amount = null, ?string $reason = null): HrReimbursement
     {
+        $this->assertNotOwnClaim($claim, $actor);
         $this->assertOpen($claim);
 
         // Compared against what is currently in force, not the original claim.
@@ -182,12 +192,16 @@ class ReimbursementService
                 ['amount' => $final]
             );
 
+            $this->notifier->tell($claim->employee, 'Expense Claim', 'approved',
+                'Your claim was approved for '.$this->money($final).'.', $actor);
+
             return $claim->fresh();
         });
     }
 
     public function decline(HrReimbursement $claim, User $actor, string $reason): HrReimbursement
     {
+        $this->assertNotOwnClaim($claim, $actor);
         $this->assertOpen($claim);
 
         if (trim($reason) === '') {
@@ -205,6 +219,9 @@ class ReimbursementService
 
             $this->thread->event($claim, 'declined', 'Claim declined. Reason: ' . trim($reason), $actor, ['reason' => trim($reason)]);
 
+            $this->notifier->tell($claim->employee, 'Expense Claim', 'declined',
+                'Your expense claim was declined. '.trim($reason), $actor);
+
             return $claim->fresh();
         });
     }
@@ -219,6 +236,7 @@ class ReimbursementService
      */
     public function hold(HrReimbursement $claim, User $actor, string $reason, ?float $proposedAmount = null): HrReimbursement
     {
+        $this->assertNotOwnClaim($claim, $actor);
         $this->assertOpen($claim);
 
         if (trim($reason) === '') {
@@ -258,6 +276,26 @@ class ReimbursementService
     public function note(HrReimbursement $claim, User $actor, string $body): void
     {
         $this->thread->note($claim, $actor, $body);
+    }
+
+    /**
+     * Nobody decides their own claim.
+     *
+     * Advances have refused this from the start; expense claims did not, so an
+     * admin could submit and approve their own money with no warning and the
+     * amount then flowed straight into the payroll report. The asymmetry was not
+     * a decision anybody made.
+     *
+     * Applies to everyone, however senior — the same rule the advance ladder
+     * uses, and the one with no exception there either.
+     */
+    private function assertNotOwnClaim(HrReimbursement $claim, User $actor): void
+    {
+        $employee = $claim->relationLoaded('employee') ? $claim->employee : $claim->employee()->first();
+
+        if ($employee && $employee->user_id !== null && (int) $employee->user_id === (int) $actor->id) {
+            throw new BusinessException('You cannot decide your own expense claim.', 403);
+        }
     }
 
     private function assertOpen(HrReimbursement $claim): void

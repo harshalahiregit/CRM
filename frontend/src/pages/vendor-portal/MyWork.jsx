@@ -1,12 +1,17 @@
 import { useEffect, useState } from 'react'
-import { Loader2, Plus, X, Send } from 'lucide-react'
+import { Loader2, Plus, X, Send, Paperclip, Download, CheckSquare, Square, MessageSquare } from 'lucide-react'
+import RichText from '@/components/ui/RichText'
 import { portalApi } from '@/services/portalApi'
 
 /**
  * TPV portal — "My Work": Projects, Tasks, Tickets and Expenses. Projects are
- * read-only; Tasks let the vendor advance status; Tickets can be raised and
- * replied to; Expenses can be logged against the vendor's own projects. Data
+ * read-only; Tasks can be opened, answered and advanced; Tickets can be raised
+ * and replied to; Expenses can be logged against the vendor's own projects. Data
  * comes from the role-gated my-work endpoints.
+ *
+ * Mounted by BOTH portals — the TPV one with portalApi, the Purchase one with
+ * purchasePortalApi — so everything here reads through the `api` prop and never
+ * imports a portal-specific client directly.
  */
 export default function MyWork({ view, api = portalApi, caps = { ticketWrite: true } }) {
   switch (view) {
@@ -18,6 +23,8 @@ export default function MyWork({ view, api = portalApi, caps = { ticketWrite: tr
 }
 
 const date = v => (v ? String(v).slice(0, 10) : '—')
+const when = v => { if (!v) return ''; const d = new Date(v); return Number.isNaN(d.getTime()) ? '' : d.toLocaleString() }
+const size = b => { const n = Number(b || 0); return n < 1024 ? n + ' B' : n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB' }
 const TONE = { completed: 'ok', done: 'ok', closed: 'muted', resolved: 'ok', active: 'info', in_progress: 'info', open: 'warn', pending: 'warn', not_started: 'muted', on_hold: 'warn', overdue: 'bad', cancelled: 'bad' }
 function Pill({ value }) {
   const tone = TONE[String(value ?? '').toLowerCase()] || 'muted'
@@ -49,10 +56,12 @@ function Projects({ api }) {
 function Tasks({ api }) {
   const [rows, setRows] = useState(null)
   const [statuses, setStatuses] = useState({})
+  const [openId, setOpenId] = useState(null)
+  const load = () => api.myWork.tasks().then(d => setRows(d || [])).catch(() => setRows([]))
   useEffect(() => {
-    api.myWork.tasks().then(d => setRows(d || [])).catch(() => setRows([]))
+    load()
     api.myWork.taskStatuses().then(s => setStatuses(s || {})).catch(() => setStatuses({}))
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const change = async (id, status) => {
     setRows(rs => rs.map(r => r.id === id ? { ...r, status, _saving: true } : r))
     try { await api.myWork.updateTaskStatus(id, status) } catch { /* keep optimistic */ }
@@ -66,9 +75,11 @@ function Tasks({ api }) {
       {rows === null ? <Center /> : rows.length === 0 ? <Empty /> : (
         <Table head={['Task', 'Project', 'Priority', 'Due', 'Status']}>
           {rows.map(r => (
-            <tr key={r.id}>
+            /* The row opens the task. The status cell stops the click, because a
+               dropdown that also navigated would fuse two separate actions. */
+            <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => setOpenId(r.id)}>
               <td className="mw-strong">{r.name}</td><td>{r.project || '—'}</td><td>{r.priority || '—'}</td><td>{date(r.due_date)}</td>
-              <td>
+              <td onClick={e => e.stopPropagation()}>
                 {keys.length
                   ? <select className="mw-input" style={{ padding: '4px 8px', width: 'auto' }} value={r.status} disabled={r._saving} onChange={e => change(r.id, e.target.value)}>
                       {keys.map(k => <option key={k} value={k}>{statuses[k]}</option>)}
@@ -79,7 +90,167 @@ function Tasks({ api }) {
           ))}
         </Table>
       )}
+      {openId != null && <TaskModal api={api} id={openId} onClose={() => { setOpenId(null); load() }} />}
     </Wrap>
+  )
+}
+
+/**
+ * One task, opened.
+ *
+ * Before this the portal showed five columns and a status dropdown: a vendor
+ * could see that work existed and could not read what it was, ask about it, or
+ * send anything back. The brief, the checklist and the files answer the first
+ * half; the composer answers the second — and it writes into the SAME comment
+ * thread the staff console reads, not a parallel one.
+ */
+function TaskModal({ api, id, onClose }) {
+  const [t, setT] = useState(null)
+  const [body, setBody] = useState('')
+  const [files, setFiles] = useState([])
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState('')
+
+  const load = () => api.myWork.task(id).then(setT).catch(() => setT(null))
+  useEffect(() => { load() }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const send = async () => {
+    if (!body.trim() && files.length === 0) return
+    setSending(true); setError('')
+    try {
+      await api.myWork.commentTask(id, { body, files })
+      setBody(''); setFiles([])
+      await load()
+    } catch (e) {
+      setError(e?.response?.data?.message || 'Could not post that. Please try again.')
+    } finally { setSending(false) }
+  }
+
+  // Task files are private, so the download is an authenticated request: the
+  // bytes come back as a blob and are handed to the browser from memory, rather
+  // than through a URL that would work for anyone who had it.
+  const openFile = async (fileId, name) => {
+    try {
+      const url = await api.myWork.taskFile(id, fileId)
+      const a = document.createElement('a')
+      a.href = url; a.download = name || 'file'
+      document.body.appendChild(a); a.click(); a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 10000)
+    } catch { setError('That file could not be downloaded.') }
+  }
+
+  return (
+    <Modal title={t?.name || 'Task'} onClose={onClose}>
+      {!t ? <Center /> : (
+        <>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+            <Pill value={t.status} />
+            <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Priority: {t.priority || '—'}</span>
+            <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Due: {date(t.due_date)}</span>
+          </div>
+
+          <RichText html={t.description_html} text={t.description}
+            style={{ fontSize: 13.5, color: 'var(--text-body,#cbd5e1)', paddingBottom: 12, borderBottom: '1px solid var(--border,rgba(255,255,255,0.08))' }} />
+
+          {/* Read-only on purpose: the checklist says what "done" means, and
+              ticking it is the job of whoever is doing the work internally. */}
+          {t.checklist?.length > 0 && (
+            <Section title="Checklist">
+              {t.checklist.map(c => (
+                <div key={c.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 13, color: 'var(--text-body,#cbd5e1)', padding: '3px 0' }}>
+                  {c.finished
+                    ? <CheckSquare size={14} style={{ color: '#22c55e', flexShrink: 0, marginTop: 2 }} />
+                    : <Square size={14} style={{ color: 'var(--text-muted)', flexShrink: 0, marginTop: 2 }} />}
+                  <span style={{ textDecoration: c.finished ? 'line-through' : 'none', opacity: c.finished ? 0.65 : 1 }}>{c.description}</span>
+                </div>
+              ))}
+            </Section>
+          )}
+
+          {t.files?.length > 0 && (
+            <Section title="Files">
+              {t.files.map(f => <FileRow key={f.id} file={f} onOpen={openFile} />)}
+            </Section>
+          )}
+
+          <Section title={'Conversation' + (t.comments?.length ? ' (' + t.comments.length + ')' : '')}>
+            {(t.comments || []).length === 0 && (
+              <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '2px 0 0' }}>
+                Nothing said yet. Ask a question or report progress below — everyone on this task is notified.
+              </p>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {(t.comments || []).map(c => (
+                <div key={c.id} style={{ background: 'var(--bg-input,rgba(255,255,255,0.05))', borderRadius: 10, padding: '9px 12px' }}>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 3, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-h)' }}>{c.author}</span>
+                    {c.is_vendor && <span style={{ fontSize: 9.5, fontWeight: 800, padding: '1px 6px', borderRadius: 999, background: 'rgba(124,58,237,0.18)', color: '#a78bfa' }}>VENDOR</span>}
+                    <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>{when(c.created_at)}</span>
+                  </div>
+                  <RichText html={c.body_html} text={c.body} style={{ fontSize: 13, color: 'var(--text-body,#cbd5e1)' }} />
+                  {c.attachments?.length > 0 && (
+                    <div style={{ marginTop: 6 }}>
+                      {c.attachments.map(f => <FileRow key={f.id} file={f} onOpen={openFile} compact />)}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Section>
+
+          {t.can_write !== false && (
+            <div style={{ marginTop: 14, borderTop: '1px solid var(--border,rgba(255,255,255,0.08))', paddingTop: 14 }}>
+              <textarea className="mw-input" rows={3} placeholder="Reply, ask a question, or report progress—"
+                value={body} onChange={e => setBody(e.target.value)} style={{ resize: 'vertical' }} />
+              {files.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                  {files.map((f, i) => (
+                    <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, padding: '3px 8px', borderRadius: 999, background: 'var(--bg-input,rgba(255,255,255,0.06))', color: 'var(--text-body,#cbd5e1)' }}>
+                      <Paperclip size={11} />{f.name}
+                      <button className="mw-iconbtn" style={{ padding: 0 }} onClick={() => setFiles(fs => fs.filter((_, j) => j !== i))}><X size={11} /></button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 10 }}>
+                <label className="mw-btn" style={{ cursor: 'pointer' }}>
+                  <Paperclip size={14} /> Attach
+                  <input type="file" multiple hidden onChange={e => { setFiles(fs => [...fs, ...Array.from(e.target.files || [])].slice(0, 5)); e.target.value = '' }} />
+                </label>
+                <button className="mw-btn mw-btn-primary" disabled={sending || (!body.trim() && files.length === 0)} onClick={send}>
+                  {sending ? <Loader2 className="mw-spin" size={14} /> : <MessageSquare size={14} />} Post
+                </button>
+              </div>
+              <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '8px 0 0' }}>
+                Up to 5 files, 10 MB each. Everyone assigned to this task is notified.
+              </p>
+            </div>
+          )}
+
+          {error && <div style={{ marginTop: 10, color: '#ef4444', fontSize: 12.5 }}>{error}</div>}
+        </>
+      )}
+    </Modal>
+  )
+}
+
+function Section({ title, children }) {
+  return (
+    <div style={{ marginTop: 14 }}>
+      <p style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--text-muted)', margin: '0 0 7px' }}>{title}</p>
+      {children}
+    </div>
+  )
+}
+
+function FileRow({ file, onOpen, compact }) {
+  return (
+    <button onClick={() => onOpen(file.id, file.name)}
+      style={{ display: 'flex', alignItems: 'center', gap: 7, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', cursor: 'pointer', padding: compact ? '3px 0' : '5px 0', color: 'var(--text-body,#cbd5e1)', fontSize: compact ? 12 : 12.5 }}>
+      <Download size={compact ? 11 : 13} style={{ color: 'var(--portal-purple,#7c3aed)', flexShrink: 0 }} />
+      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+      <span style={{ fontSize: 10.5, color: 'var(--text-muted)', flexShrink: 0 }}>{size(file.size)}</span>
+    </button>
   )
 }
 
@@ -137,12 +308,13 @@ function TicketModal({ api, id, onClose }) {
       {!t ? <Center /> : (
         <>
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}><Pill value={t.status} /><span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Priority: {t.priority}</span></div>
-          <div style={{ fontSize: 13.5, color: 'var(--text-body,#cbd5e1)', whiteSpace: 'pre-wrap', paddingBottom: 12, borderBottom: '1px solid var(--border,rgba(255,255,255,0.08))' }}>{t.description}</div>
+          <RichText html={t.description_html} text={t.description}
+            style={{ fontSize: 13.5, color: 'var(--text-body,#cbd5e1)', paddingBottom: 12, borderBottom: '1px solid var(--border,rgba(255,255,255,0.08))' }} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '12px 0' }}>
             {(t.replies || []).map(r => (
               <div key={r.id} style={{ alignSelf: r.mine ? 'flex-end' : 'flex-start', maxWidth: '80%', background: r.mine ? 'rgba(124,58,237,0.15)' : 'var(--bg-input,rgba(255,255,255,0.05))', borderRadius: 10, padding: '8px 12px' }}>
                 <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginBottom: 2 }}>{r.author}</div>
-                <div style={{ fontSize: 13, color: 'var(--text-h)', whiteSpace: 'pre-wrap' }}>{r.message}</div>
+                <RichText html={r.message_html} text={r.message} style={{ fontSize: 13, color: 'var(--text-h)' }} />
               </div>
             ))}
           </div>

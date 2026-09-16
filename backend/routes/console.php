@@ -135,6 +135,15 @@ Schedule::command('tpv:temporary-access-reminders')
     ->withoutOverlapping()
     ->runInBackground();
 
+// The same for Purchase, which had no sweep at all — its temporary vendors were
+// never warned and never actually expired. Offset to :15 rather than sharing the
+// hour with the TPV sweep: both send mail through the tenant's own SMTP, and a
+// complete send against a real server was measured at ~11 seconds.
+Schedule::command('purchase:temporary-access-reminders')
+    ->hourlyAt(15)
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // Onboarding approval SLA escalations — hourly.
 Schedule::command('tpv:approval-escalations')
     ->hourly()
@@ -142,6 +151,14 @@ Schedule::command('tpv:approval-escalations')
     ->runInBackground();
 
 // Central Notification Engine — generate HR reminders + escalations (daily).
+// Hourly, because the point is to catch somebody before they leave for the day
+// with the shift still open. The command itself sends at most one per person per
+// day, so the frequency here cannot turn into nagging.
+Schedule::command('hr:clock-out-reminders')
+    ->hourly()
+    ->withoutOverlapping()
+    ->runInBackground();
+
 Schedule::command('notifications:remind')
     ->dailyAt('07:00')
     ->withoutOverlapping()

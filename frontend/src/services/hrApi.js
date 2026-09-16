@@ -4,6 +4,7 @@
  */
 
 import axios from 'axios'
+import { attachMediaCompression } from '@/lib/mediaCompress'
 import { getToken, clearAuth } from '@/lib/authStorage'
 import { isSessionFailure } from '@/lib/sessionFailure'
 
@@ -11,6 +12,10 @@ const BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'
 
 // Create axios instance with auth token
 const api = axios.create({ baseURL: BASE })
+
+// Uploads are shrunk on the way out — see src/lib/mediaCompress.js. Hooked
+// here rather than at the ~50 upload sites, so every one is covered.
+attachMediaCompression(api)
 
 /**
  * Fields plus files as multipart.
@@ -56,6 +61,10 @@ api.interceptors.response.use(
 // logged-in bearer token or hard-redirect to /auth/login on 401, so the portals
 // can show their own friendly errors and behave as a real anonymous client.
 const publicApi = axios.create({ baseURL: BASE })
+
+// Uploads are shrunk on the way out — see src/lib/mediaCompress.js. Hooked
+// here rather than at the ~50 upload sites, so every one is covered.
+attachMediaCompression(publicApi)
 
 // ── Dashboard ─────────────────────────────────────────────────────────
 export const hrApi = {
@@ -248,6 +257,27 @@ export const hrApi = {
     list:   (params = {}) => api.get('/hr/employees', { params }).then(r => Array.isArray(r.data) ? r.data : (r.data?.data ?? [])),
     listPaged: (params = {}) => api.get('/hr/employees', { params }).then(r => r.data),
     stats:  ()            => api.get('/hr/employees/stats').then(r => r.data),
+
+    /*
+     | Entry-to-exit letters. `letters()` asks the server which can be issued
+     | and WHY NOT for the rest — "not yet" and "never" look the same on a
+     | disabled button, and HR needs to know whether they are waiting on
+     | clearance or looking at the wrong person.
+     */
+    letters: (employeeId) => api.get(`/hr/employees/${employeeId}/letters`).then(r => r.data?.data ?? []),
+    // Blob, not JSON: this is the PDF itself.
+    letterPdf: (employeeId, type) =>
+      api.get(`/hr/employees/${employeeId}/letters/${type}`, { responseType: 'blob' }).then(r => r.data),
+
+    // Where the staff and employee directories disagree.
+    reconciliation: () => api.get('/hr/directory/reconciliation').then(r => r.data?.data ?? {}),
+    linkLogin: (employeeId, userId) =>
+      api.post(`/hr/employees/${employeeId}/link-login`, { user_id: userId }).then(r => r.data),
+    // The extended record — personal, address, education, emergency contact,
+    // bank, identity, statutory. Always returns every key (null where unset) so
+    // the form renders without special-casing a person nobody has filled in yet.
+    detail:     (id)       => api.get(`/hr/employees/${id}/detail`).then(r => r.data?.data ?? {}),
+    saveDetail: (id, data) => api.put(`/hr/employees/${id}/detail`, data).then(r => r.data?.data ?? {}),
     // Work-state vocabulary for the statutory jurisdiction field. Served by the
     // backend so the options offered and the states PT rules are keyed by are one list.
     workStates: ()        => api.get('/hr/employees/work-states').then(r => r.data?.data ?? []),
@@ -354,6 +384,29 @@ export const hrApi = {
       generatePayslips: (id)   => api.post(`/hr/payroll/runs/${id}/generate-payslips`).then(r => r.data),
       // Frozen component + statutory breakdown behind one processed record.
       recordLines: (recordId)  => api.get(`/hr/payroll/records/${recordId}/lines`).then(r => r.data?.data ?? []),
+
+      /*
+       | The stepped run: Pre-check → Inputs → Calculate → Approve → Disburse.
+       |
+       | These sit beside `process` rather than replacing it. `process` is still
+       | what does the arithmetic; these add who chose the employees and who
+       | agreed to the amounts.
+       */
+      precheck:        (id)               => api.get(`/hr/payroll/runs/${id}/precheck`).then(r => r.data?.data ?? {}),
+      selectEmployees: (id, employeeIds)  => api.post(`/hr/payroll/runs/${id}/employees`, { employee_ids: employeeIds }).then(r => r.data?.data ?? {}),
+      confirmInputs:   (id)               => api.post(`/hr/payroll/runs/${id}/confirm-inputs`).then(r => r.data),
+
+      adjustments:     (id)               => api.get(`/hr/payroll/runs/${id}/adjustments`).then(r => r.data?.data ?? []),
+      addAdjustment:   (recordId, body)   => api.post(`/hr/payroll/records/${recordId}/adjustments`, body).then(r => r.data?.data ?? {}),
+      removeAdjustment:(adjustmentId)     => api.delete(`/hr/payroll/adjustments/${adjustmentId}`).then(r => r.data),
+
+      approve:         (id, note)         => api.post(`/hr/payroll/runs/${id}/approve`, { note }).then(r => r.data),
+      reject:          (id, note)         => api.post(`/hr/payroll/runs/${id}/reject`, { note }).then(r => r.data),
+
+      markPayment:     (recordId, payment_status, note) => api.post(`/hr/payroll/records/${recordId}/payment`, { payment_status, note }).then(r => r.data),
+      markAllPayments: (id, payment_status)            => api.post(`/hr/payroll/runs/${id}/payments`, { payment_status }).then(r => r.data),
+      releasePayslips: (id, visible)                   => api.post(`/hr/payroll/runs/${id}/release-payslips`, { visible }).then(r => r.data),
+      setPayslipVisible: (recordId, visible)           => api.post(`/hr/payroll/records/${recordId}/payslip-visibility`, { visible }).then(r => r.data),
     },
     // Statutory rule book — every rate, ceiling and slab is configured here.
     // Nothing statutory is hardcoded in the app, so an empty rule book means
@@ -393,6 +446,22 @@ export const hrApi = {
       departments: (params = {})  => api.get('/hr/payroll/reports/departments', { params }).then(r => r.data),
       components:  (params = {})  => api.get('/hr/payroll/reports/components', { params }).then(r => r.data),
       trends:      (params = {})  => api.get('/hr/payroll/reports/trends', { params }).then(r => r.data),
+    },
+    // The statutory registers — the documents a month is FILED with, keyed by
+    // payroll run so they show what was actually paid rather than a fresh
+    // calculation that could disagree with the payslips already issued.
+    registers: {
+      pf:   (runId) => api.get(`/hr/payroll/runs/${runId}/registers/pf`).then(r => r.data?.data),
+      esic: (runId) => api.get(`/hr/payroll/runs/${runId}/registers/esic`).then(r => r.data?.data),
+      pt:   (runId) => api.get(`/hr/payroll/runs/${runId}/registers/pt`).then(r => r.data?.data),
+      lwf:  (runId) => api.get(`/hr/payroll/runs/${runId}/registers/lwf`).then(r => r.data?.data),
+    },
+    // The salary transfer advice. Anybody who cannot be paid by transfer comes
+    // back WITH the reason, so the screen can say "42 paid, 3 not" rather than a
+    // total nobody can reconcile against headcount.
+    bank: {
+      advice: (runId) => api.get(`/hr/payroll/runs/${runId}/bank-advice`).then(r => r.data?.data),
+      csvUrl: (runId) => `/hr/payroll/runs/${runId}/bank-advice.csv`,
       // CSV (Excel) or PDF export → triggers a browser download.
       export: (report, format, params = {}) => api.get('/hr/payroll/reports/export', { params: { ...params, report, format }, responseType: 'blob' }).then(r => {
         const url = URL.createObjectURL(r.data)
@@ -484,6 +553,8 @@ export const hrApi = {
       list:       (params = {})  => api.get('/hr/leave/balances', { params }).then(r => r.data),
       forEmployee:(employeeId)   => api.get(`/hr/leave/balances/${employeeId}`).then(r => r.data),
       assign:     (data)         => api.post('/hr/leave/balances/assign', data).then(r => r.data),
+      // One policy, a whole group. scope: all | department | designation | grade | employees
+      assignBulk: (data)         => api.post('/hr/leave/balances/assign-bulk', data).then(r => r.data),
       allocate:   (data)         => api.post('/hr/leave/balances/allocate', data).then(r => r.data),
       adjust:     (data)         => api.post('/hr/leave/balances/adjust', data).then(r => r.data),
       history:    (balanceId)    => api.get(`/hr/leave/balances/history/${balanceId}`).then(r => r.data),
@@ -526,6 +597,16 @@ export const hrApi = {
       create:    (data)        => api.post('/hr/leave/holidays', data).then(r => r.data),
       update:    (id, data)    => api.put(`/hr/leave/holidays/${id}`, data).then(r => r.data),
       setStatus: (id, active)  => api.patch(`/hr/leave/holidays/${id}/status`, { is_active: active }).then(r => r.data),
+    },
+    // Company events — something happening, not a day off. Separate from
+    // holidays because the attendance app keeps two lists and draws them
+    // differently on its calendar.
+    events: {
+      list:      (params = {}) => api.get('/hr/leave/events', { params }).then(r => r.data),
+      get:       (id)          => api.get(`/hr/leave/events/${id}`).then(r => r.data),
+      create:    (data)        => api.post('/hr/leave/events', data).then(r => r.data),
+      update:    (id, data)    => api.put(`/hr/leave/events/${id}`, data).then(r => r.data),
+      setStatus: (id, active)  => api.patch(`/hr/leave/events/${id}/status`, { is_active: active }).then(r => r.data),
     },
     // Leave Reports & Analytics (final phase) — read-only.
     reports: {
@@ -968,6 +1049,12 @@ export const hrApi = {
     markAllRead: ()            => api.post('/hr/notifications/mark-all-read').then(r => r.data),
     forEmployee: (employeeId)  => api.get(`/hr/notifications/employee/${employeeId}`).then(r => r.data),
     resend:      (id)          => api.post(`/hr/notifications/${id}/resend`).then(r => r.data),
+    // Announcements composed by hand. Multipart, because one can carry a PDF.
+    announcements: {
+      audience: ()     => api.get('/hr/notifications/announcements/audience').then(r => r.data),
+      send:     (form) => api.post('/hr/notifications/announcements', form,
+                          { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data),
+    },
     // Templates
     templates: {
       list:      (params = {}) => api.get('/hr/notifications/templates', { params }).then(r => r.data),

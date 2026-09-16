@@ -9,7 +9,7 @@ import { useToast } from '@/hooks/useToast'
  * and placeholder list all come FROM THE SERVER (registry-driven), so a new
  * document type or placeholder appears here with no frontend change.
  */
-const EDITABLE = ['format', 'prefix', 'suffix', 'minimum_digits', 'padding', 'starting_number', 'reset_rule', 'enabled', 'locked', 'manual_override', 'decrement_on_delete']
+const EDITABLE = ['format', 'prefix', 'suffix', 'minimum_digits', 'padding', 'starting_number', 'direction', 'step', 'reset_rule', 'enabled', 'locked', 'manual_override', 'decrement_on_delete']
 
 const pick = (cfg) => EDITABLE.reduce((a, k) => ({ ...a, [k]: cfg?.[k] ?? '' }), {})
 
@@ -182,6 +182,29 @@ export default function DocumentNumberingSettings() {
               onChange={e => sf('starting_number', e.target.value === '' ? '' : Number(e.target.value))}
               style={err('starting_number') ? { borderColor: '#ef4444' } : undefined} />
             {err('starting_number') && <div className="text-[11px] mt-1 font-semibold" style={{ color: '#ef4444' }}>{err('starting_number')}</div>}</div>
+
+          {/* The baseline says WHERE a series starts; these two say which way it
+              runs from there and by how much. Not to be confused with
+              "Decrement on delete" below, which releases a number when a
+              document is deleted and says nothing about the direction. */}
+          <div><label className="label">Counting Direction</label>
+            <select className="input-3d text-sm" value={form.direction || 'up'} onChange={e => sf('direction', e.target.value)}>
+              <option value="up">Increasing — 1, 2, 3…</option>
+              <option value="down">Decreasing — 5000, 4999, 4998…</option>
+            </select>
+            {form.direction === 'down' && (
+              <div className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                A decreasing series stops when it reaches 1 — set the starting number high enough for the run.
+              </div>
+            )}</div>
+
+          <div><label className="label">Step (gap between numbers)</label>
+            <input type="number" min="1" max="1000" className="input-3d text-sm" value={form.step ?? 1}
+              onChange={e => sf('step', e.target.value === '' ? '' : Number(e.target.value))}
+              style={err('step') ? { borderColor: '#ef4444' } : undefined} />
+            {err('step')
+              ? <div className="text-[11px] mt-1 font-semibold" style={{ color: '#ef4444' }}>{err('step')}</div>
+              : <div className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>1 = every number. 10 = 100, 110, 120…</div>}</div>
         </div>
 
         {/* Live preview + derived runtime state */}

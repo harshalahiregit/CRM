@@ -12,7 +12,10 @@ use App\Services\Purchase\PurchaseKickoffContentService;
 use App\Services\Purchase\PurchaseKickoffService;
 use App\Services\Purchase\PurchaseMeetingRegisterService;
 use App\Services\Purchase\PurchaseVendorLiveStatusService;
+use App\Services\Shared\OnlineMeetingService;
 use App\Support\Purchase\PurchaseKickoffStatus;
+use App\Services\Shared\MeetingPresence;
+use App\Services\Shared\MeetingRoomNotes;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -41,13 +44,37 @@ class PurchaseKickoffController extends Controller
 
     /**
      * The configurable meeting-type catalogue (Sangoe TPV §9 / §39) — powers the
-     * "Meeting Type" picker on the New Meeting form. Kickoff is one type here.
+     * "Meeting Type" picker, and every option list the meeting form reads.
+     *
+     * This used to return only `types` and `default`. The form also asks for
+     * `templates`, `priorities`, `confidentiality`, `issue_severities` and
+     * `issue_categories` — so on Purchase the agenda TEMPLATES never arrived and
+     * the "Load template" button, which only renders when its type has one,
+     * simply never appeared. config/purchase_meetings.php has had all of it the
+     * whole time; nothing was returning it.
+     *
+     * Types and templates come through the shared catalog with Purchase's own
+     * config as the baseline, so a type added on Purchase's Meeting Types
+     * settings page (the shared controller is mounted there) shows up here too.
      */
-    public function meetingTypes(Request $request)
+    public function meetingTypes(Request $request, \App\Support\Shared\MeetingTypeCatalog $catalog)
     {
+        $tenantId = (int) $request->user()->tenant_id;
+        $base = 'purchase_meetings';
+
         return response()->json([
-            'types'    => \App\Support\Purchase\PurchaseMeetingTypeCatalog::types(),
-            'default'  => \App\Support\Purchase\PurchaseMeetingTypeCatalog::DEFAULT,
+            'types'             => $catalog->types($tenantId, $base),
+            'templates'         => $catalog->templates($tenantId, $base),
+            // `default` kept alongside `default_type` — the shared engine emits
+            // the latter, and this endpoint has always emitted the former.
+            'default'           => \App\Support\Purchase\PurchaseMeetingTypeCatalog::DEFAULT,
+            'default_type'      => config($base.'.default_type', 'kickoff'),
+            'priorities'        => config($base.'.priorities', ['Low', 'Medium', 'High']),
+            'meeting_priorities' => config($base.'.meeting_priorities', ['Low', 'Medium', 'High', 'Urgent']),
+            'confidentiality'   => config($base.'.confidentiality', ['Public', 'Internal', 'Confidential', 'Restricted']),
+            'issue_severities'  => config($base.'.issue_severities', ['Low', 'Medium', 'High', 'Critical']),
+            'issue_categories'  => config($base.'.issue_categories', []),
+            'decision_statuses' => config($base.'.decision_statuses', ['Active', 'Superseded', 'Rescinded']),
         ]);
     }
 
@@ -76,7 +103,131 @@ class PurchaseKickoffController extends Controller
     {
         $this->assertTenant($request, $kickoff);
 
-        return response()->json($this->service->find($kickoff->id, $request->user()->tenant_id));
+        $meeting = $this->service->find($kickoff->id, $request->user()->tenant_id);
+
+        // The join link is overlaid by the gate rather than left as the model
+        // wrote it: a staff attendee who is not the organiser marks attendance
+        // like anybody else, and a link sitting in this payload would make that
+        // optional. The organiser and an admin see it unchanged — see
+        // MeetingAttendanceGate.
+        return response()->json(array_merge(
+            $meeting->toArray(),
+            app(\App\Services\Shared\MeetingAttendanceGate::class)->stateFor($meeting, $request->user()),
+        ));
+    }
+
+    /**
+     * Generate (or regenerate) the online meeting link.
+     *
+     * Purchase meetings live in their own table, so they need their own route:
+     * posting a Purchase meeting id to the shared engine's endpoint is what
+     * produced "No query results for model [App\Models\Shared\KickoffMeeting]".
+     */
+    public function generateLink(Request $request, PurchaseKickoffMeeting $kickoff, OnlineMeetingService $meetings)
+    {
+        $this->assertTenant($request, $kickoff);
+
+        $data = $request->validate([
+            'platform' => ['nullable', 'string', Rule::in(OnlineMeetingService::ACCEPTED)],
+        ]);
+
+        $link = $meetings->createMeeting($kickoff, $data['platform'] ?? null);
+
+        return response()->json([
+            'meeting' => $kickoff->fresh(),
+            'link'    => $link,
+        ]);
+    }
+
+    /** The stored link, if this meeting has one. */
+    public function link(Request $request, PurchaseKickoffMeeting $kickoff, OnlineMeetingService $meetings,
+        \App\Services\Shared\MeetingAttendanceGate $gate)
+    {
+        $this->assertTenant($request, $kickoff);
+
+        $data = $meetings->getLinkData($kickoff);
+        if (! $data) {
+            return response()->json(null);
+        }
+
+        // Same gate as the meeting payload. This endpoint is the other way into
+        // the link, and leaving it open would have made the first one decorative.
+        return response()->json(array_merge($data, $gate->stateFor($kickoff, $request->user())));
+    }
+
+    /**
+     * Mark attendance, and get the link in return.
+     *
+     * The staff half of what the portal already does. Without it an internal
+     * attendee could never be recorded as present — the register would carry the
+     * vendors who marked attendance in the portal and nobody from our side,
+     * which reads as a meeting the vendor attended alone.
+     */
+    public function markAttendance(Request $request, PurchaseKickoffMeeting $kickoff,
+        \App\Services\Shared\MeetingAttendanceGate $gate)
+    {
+        $this->assertTenant($request, $kickoff);
+
+        $user = $request->user();
+
+        // Staff are not always on the roster either — the organiser adds the
+        // people they expect to speak, not everyone who attends. The identity is
+        // the authenticated account, so nothing is guessed.
+        return response()->json($gate->mark($kickoff, $user, $request, [
+            'name' => $user->name,
+            'email' => $user->email,
+            'side' => 'internal',
+        ]));
+    }
+
+    /**
+     * The organiser's verdict on who actually attended.
+     *
+     * Marking attendance in the CRM is a claim — it is also how the person got
+     * the joining link at all — and the CRM cannot see a call held on Google
+     * Meet, Zoom or Teams. So the organiser decides, and the decision is stored
+     * BESIDE the claim rather than over it: "punched CRM attendance but did not
+     * join the call" is only writable if both halves survive.
+     *
+     * Body: rows[] of { id, verdict, verdict_from?, verdict_to?, verdict_note? }
+     * Verdict is one of Fully_Present | Partial_Absent | Complete_Absent, or
+     * null to take a decision back to unreviewed. Partial requires the window.
+     *
+     * Authority is the organiser's or an admin's — enforced in the service, not
+     * here, because both engines route to it.
+     */
+    public function attendanceReview(Request $request, PurchaseKickoffMeeting $kickoff,
+        \App\Services\Shared\MeetingAttendanceReview $review)
+    {
+        $this->assertTenant($request, $kickoff);
+
+        $data = $request->validate([
+            'rows' => 'required|array|min:1',
+            'rows.*.id' => 'required|integer',
+            'rows.*.verdict' => 'nullable|string|in:'.implode(',', \App\Support\Shared\AttendanceVerdict::ALL),
+            'rows.*.verdict_from' => 'nullable|date',
+            'rows.*.verdict_to' => 'nullable|date',
+            'rows.*.verdict_note' => 'nullable|string|max:2000',
+        ]);
+
+        $counts = $review->review($kickoff, $data['rows'], $request->user());
+
+        return response()->json([
+            'counts' => $counts,
+            'register' => $review->register($kickoff->fresh()),
+        ]);
+    }
+
+    /** The register as the review screen reads it: the claim and the verdict, side by side. */
+    public function attendanceRegister(Request $request, PurchaseKickoffMeeting $kickoff,
+        \App\Services\Shared\MeetingAttendanceReview $review)
+    {
+        $this->assertTenant($request, $kickoff);
+
+        return response()->json([
+            'register' => $review->register($kickoff),
+            'may_review' => $review->mayReview($kickoff, $request->user()),
+        ]);
     }
 
     public function update(UpdatePurchaseKickoffRequest $request, PurchaseKickoffMeeting $kickoff,
@@ -108,6 +259,67 @@ class PurchaseKickoffController extends Controller
         ]);
 
         return response()->json($this->service->transition($kickoff, $data['status'], $data, $request->user()));
+    }
+
+
+    /**
+     * Notes typed in the live meeting room (agenda notes + minutes).
+     *
+     * The room shows the video and this meeting record on one screen, so the
+     * agenda and the roster are in front of the note-taker instead of in
+     * another tab. It autosaves, which is why this is separate from `update`:
+     * update is a form submission with its own validation and side effects
+     * (re-notifying the roster, re-deriving the duration), and none of that
+     * should fire every few seconds while people are talking.
+     */
+    public function saveRoomNotes(Request $request, PurchaseKickoffMeeting $kickoff, MeetingRoomNotes $notes)
+    {
+        $this->assertTenant($request, $kickoff);
+
+        $request->validate([
+            'minutes'             => 'nullable|string|max:20000',
+            'agenda'              => 'nullable|array',
+            'agenda.*.id'         => 'required|integer',
+            'agenda.*.discussion' => 'nullable|string|max:5000',
+            'agenda.*.decision'   => 'nullable|string|max:5000',
+        ]);
+
+        return response()->json($notes->save(
+            $kickoff,
+            $request->input('minutes'),
+            $request->input('agenda', []),
+            $request->has('minutes'),
+        ));
+    }
+
+    /**
+     * Who is in the call right now.
+     *
+     * The room posts this every few seconds while the meeting runs. It is a
+     * snapshot of the whole room rather than one arrival or departure at a
+     * time, which is what makes it safe to repeat: see MeetingPresence for why
+     * events were the wrong shape here.
+     *
+     * `ended` closes the record off — the chair left, or the call finished.
+     */
+    public function roomPresence(Request $request, PurchaseKickoffMeeting $kickoff, MeetingPresence $presence)
+    {
+        $this->assertTenant($request, $kickoff);
+
+        $data = $request->validate([
+            'in_call' => 'present|array|max:200',
+            'in_call.*.key' => 'nullable|string|max:191',
+            'in_call.*.name' => 'nullable|string|max:191',
+            'in_call.*.self' => 'nullable|boolean',
+            'ended' => 'nullable|boolean',
+        ]);
+
+        return response()->json($presence->reconcile(
+            $kickoff,
+            $data['in_call'] ?? [],
+            (bool) ($data['ended'] ?? false),
+            $request->user(),
+        ));
     }
 
     public function attendance(Request $request, PurchaseKickoffMeeting $kickoff)
@@ -214,7 +426,11 @@ class PurchaseKickoffController extends Controller
         $file = $this->service->currentMomFile($kickoff);
         abort_unless($file, 404, 'MOM not available yet.');
 
-        $this->service->markMomViewed($kickoff);
+        // Deliberately NOT marked viewed here. This is the administrator's own
+        // download, and mom_viewed_at is shown on the meeting as "Viewed by
+        // vendor" — stamping it from this route made the tracker assert the
+        // vendor had read minutes that only the sender had opened. The stamp is
+        // set where the vendor actually reads them, in the portal.
 
         return response()->download($file['path'], $file['filename'], [
             'Content-Type'        => $file['mime'],
@@ -329,11 +545,31 @@ class PurchaseKickoffController extends Controller
      */
 
     /** Internal staff who can chair, coordinate or attend. */
+    /**
+     * Everyone selectable for a Purchase meeting, grouped by category.
+     *
+     * Same directory as the shared engine -- only the `vendor` category differs,
+     * because a Purchase meeting's vendors live in purchase_vendors. Sharing the
+     * class is the point: this picker carried the identical ['admin','staff']
+     * hard-code, so a manager, an HR executive and a doctor could not be invited
+     * to a Purchase meeting either.
+     */
+    public function participants(Request $request, \App\Services\Shared\MeetingParticipantDirectory $directory)
+    {
+        return response()->json([
+            'categories' => $directory->all(
+                (int) $request->user()->tenant_id,
+                \App\Services\Shared\MeetingParticipantDirectory::PURCHASE,
+            ),
+        ]);
+    }
+
     public function staff(Request $request)
     {
         return response()->json(
             \App\Models\User::where('tenant_id', $request->user()->tenant_id)
-                ->whereIn('role', ['admin', 'staff'])
+                // Was ['admin','staff'] -- the same gap the shared engine had.
+                ->whereIn('role', \App\Support\Shared\MeetingVisibility::INTERNAL_ROLES)
                 ->orderBy('name')
                 ->get(['id', 'name', 'email', 'designation'])
         );
@@ -422,9 +658,21 @@ class PurchaseKickoffController extends Controller
         return response()->json([]);
     }
 
-    public function customers(Request $request)
+    /**
+     * Customers for the meeting form's client picker.
+     *
+     * This returned a hardcoded empty array, so the dropdown read "No customers
+     * found" on every Purchase meeting no matter how many customers existed —
+     * a stub that was never finished and looked, from the screen, exactly like a
+     * tenant with no customers.
+     *
+     * Served through the Customer module's contract, the same way the shared
+     * engine does it, so this module still never queries the customers table
+     * itself.
+     */
+    public function customers(Request $request, \App\Services\Helpdesk\Contracts\CustomerServiceContract $customers)
     {
-        return response()->json([]);
+        return response()->json($customers->listCustomers($request->user()->tenant_id));
     }
 
     /**

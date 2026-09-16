@@ -12,9 +12,13 @@ use App\Models\Tpv\TpvWorkerTraining;
 use App\Models\Shared\KickoffMeeting;
 use App\Models\Shared\KickoffMomItem;
 use App\Models\Vendor\Vendor;
+use App\Services\Shared\KickoffMeetingService;
+use App\Services\Shared\MeetingAttendanceGate;
 use App\Services\Tpv\TpvApprovalService;
 use App\Support\Shared\KickoffStatus;
 use App\Support\Shared\MomApprovalStatus;
+use App\Support\Shared\VendorMomView;
+use App\Support\RichText;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -29,8 +33,12 @@ class VendorPortalGovernanceController extends Controller
 {
     use ResolvesPortalVendor;
 
-    public function __construct(private TpvApprovalService $approvals)
-    {
+    public function __construct(
+        private TpvApprovalService $approvals,
+        // Required, not nullable-with-a-default: the container silently skips a
+        // parameter that has one, and every call through it would be a no-op.
+        private KickoffMeetingService $kickoffService,
+    ) {
     }
 
     /* ── NCRs — view + respond (§32) ────────────────────────────────────── */
@@ -159,22 +167,47 @@ class VendorPortalGovernanceController extends Controller
     {
         $vendor = $this->portalVendor($request);
 
+        // kickoffable_type stores the MODEL CLASS (App\Models\Vendor\Vendor), not
+        // the short subject key. Comparing it to 'vendor' matched no row ever, so
+        // this tab showed the vendor an empty list however many meetings they
+        // had — and assertMeetingOwned below refused every one of them.
         $meetings = KickoffMeeting::where('tenant_id', $vendor->tenant_id)
-            ->where('kickoffable_type', 'vendor')->where('kickoffable_id', $vendor->id)
+            ->where('kickoffable_type', Vendor::class)->where('kickoffable_id', $vendor->id)
             // Never expose unpublished drafts to the vendor.
             ->where('status', '!=', KickoffStatus::DRAFT)
             ->with('attendees:id,kickoff_meeting_id,name,role')
+            // The agenda, so the meeting page is worth opening — that is the
+            // whole trade being offered in place of a link in the e-mail. Only
+            // the agenda columns: `discussion` and `decision` on the same table
+            // are the MINUTES, which the vendor may not see until they are
+            // approved and distributed.
+            ->with(['agendaItems' => fn ($q) => $q->select(
+                'id', 'kickoff_meeting_id', 'item', 'description', 'owner_names', 'duration_minutes', 'sort_order',
+            )])
             ->latest('scheduled_at')
-            ->get(['id', 'reference', 'title', 'meeting_type', 'status', 'scheduled_at', 'mode', 'location', 'meeting_platform', 'meeting_link', 'mom_status', 'mom_path', 'kickoffable_type', 'kickoffable_id']);
+            // tenant_id, end_at and duration_minutes are not shown as fields —
+            // they are what the appended timing attributes are derived FROM.
+            // Without them every meeting reached the portal with no end and no
+            // tenant clock, so none could ever read as expired.
+            ->get(['id', 'tenant_id', 'reference', 'title', 'meeting_type', 'status', 'scheduled_at', 'end_at', 'duration_minutes', 'mode', 'location', 'meeting_platform', 'meeting_link', 'agenda', 'mom_status', 'mom_path', 'kickoffable_type', 'kickoffable_id']);
 
         // The minutes are only the vendor's to see once approved+distributed. Add
         // a flag the portal reads, and hide mom_path until then so the "download"
         // control can't reach an unapproved document.
-        $meetings->each(function ($m) {
+        $gate = app(MeetingAttendanceGate::class);
+
+        $meetings->each(function ($m) use ($gate, $vendor) {
             $available = MomApprovalStatus::isDistributable($m->mom_status);
             $m->setAttribute('mom_available', $available);
             if (! $available) {
                 $m->setAttribute('mom_path', null);
+            }
+            // The join link is not in this payload until the vendor has marked
+            // attendance — see MeetingAttendanceGate. Withheld here rather than
+            // hidden in the page, because a link sitting in the JSON is readable
+            // whatever the page chooses to draw.
+            foreach ($gate->stateFor($m, $vendor) as $field => $value) {
+                $m->setAttribute($field, $value);
             }
         });
 
@@ -193,11 +226,89 @@ class VendorPortalGovernanceController extends Controller
             'These minutes are not yet available.'
         );
 
-        return response()->json($kickoffMeeting->load([
-            'agendaItems', 'momItems.responsible:id,name', 'decisions', 'issues',
-            // Labelled supporting documents the vendor can download.
-            'documents',
+        // Stamped HERE rather than where an administrator opens the document.
+        // "Viewed" on the distribution tracker is a claim about the recipient,
+        // and this is the only place the recipient is the one reading.
+        $this->kickoffService->markMomViewed($kickoffMeeting);
+
+        // One agreed shape for both portals — see VendorMomView for what the
+        // two engines each used to send instead, and what got lost on the way.
+        return response()->json(VendorMomView::for(
+            $kickoffMeeting,
+            (bool) $kickoffMeeting->mom_path,
+        ));
+    }
+
+
+    /**
+     * Mark attendance, and get the link in return.
+     *
+     * The meeting itself runs on Google Meet, Zoom or Teams — somewhere this
+     * system cannot see — so nothing here can tell who sat through it. What we
+     * CAN see is this account saying "I am attending", and that is the moment
+     * the link is handed over. Before it, the link is not in any response the
+     * vendor can read.
+     *
+     * It records what it can honestly claim: this account opened this meeting,
+     * at this time, from this device. Whether they actually stayed is the
+     * organiser's to judge, from this same log.
+     */
+    public function markAttendance(Request $request, KickoffMeeting $kickoffMeeting, MeetingAttendanceGate $gate)
+    {
+        $this->assertMeetingOwned($request, $kickoffMeeting);
+
+        $vendor = $this->portalVendor($request);
+
+        /*
+         * A meeting scheduled FOR a vendor commonly has no roster row for that
+         * vendor — the invitation code adds them separately for exactly this
+         * reason. Without a row there is nowhere for the attendance to land, and
+         * the vendor would be locked out of their own meeting for ever. The
+         * identity is not guessed: it is the vendor record this request already
+         * authenticated as.
+         */
+        return response()->json($gate->mark($kickoffMeeting, $vendor, $request, [
+            'name' => $vendor->company_name ?: $vendor->name,
+            'email' => $vendor->email,
+            'organisation' => $vendor->company_name ?: $vendor->name,
+            'side' => 'external',
         ]));
+    }
+
+    /**
+     * The minutes document itself.
+     *
+     * The whole approve-then-distribute workflow exists to put this file in the
+     * vendor's hands, and there was no way for them to open it: the only route
+     * that served it sat behind role:admin,staff. The vendor was told their
+     * minutes had been distributed and given no means to read them.
+     *
+     * Same gate as the minutes content — approved and distributed, and their
+     * own meeting.
+     */
+    public function meetingMomFile(Request $request, KickoffMeeting $kickoffMeeting)
+    {
+        $this->assertMeetingOwned($request, $kickoffMeeting);
+
+        abort_unless(
+            MomApprovalStatus::isDistributable($kickoffMeeting->mom_status),
+            403,
+            'These minutes are not yet available.'
+        );
+        abort_unless(
+            $kickoffMeeting->mom_path && Storage::disk('kickoff_docs')->exists($kickoffMeeting->mom_path),
+            404,
+            'No minutes document has been issued for this meeting.'
+        );
+
+        $this->kickoffService->markMomViewed($kickoffMeeting);
+
+        return Storage::disk('kickoff_docs')->response(
+            $kickoffMeeting->mom_path,
+            'Minutes-'.($kickoffMeeting->meeting_no ?: $kickoffMeeting->id).'.pdf',
+            ['Content-Type' => 'application/pdf'],
+            $request->boolean('download') ? 'attachment' : 'inline',
+        );
     }
 
     /**
@@ -233,14 +344,23 @@ class VendorPortalGovernanceController extends Controller
         $vendor = $this->portalVendor($request);
 
         $meetingIds = KickoffMeeting::where('tenant_id', $vendor->tenant_id)
-            ->where('kickoffable_type', 'vendor')->where('kickoffable_id', $vendor->id)->pluck('id');
+            ->where('kickoffable_type', Vendor::class)->where('kickoffable_id', $vendor->id)->pluck('id');
 
         $actions = KickoffMomItem::where('tenant_id', $vendor->tenant_id)
             ->whereIn('kickoff_meeting_id', $meetingIds)
             ->with('responsible:id,name')
             ->latest('id')->get();
 
-        return response()->json(['data' => $actions]);
+        // An action item's description is written in a rich editor, so it is
+        // HTML. Handing the model straight to the portal sent that HTML to a
+        // screen that renders text, and the vendor read a wall of `<span
+        // style=...>` and a base64 <img> src instead of the instruction. The
+        // `*_html` twin is what the portal renders; the plain one is the text.
+        return response()->json(['data' => $actions->map(fn ($a) => array_merge($a->toArray(), [
+            'description'      => RichText::toText($a->description),
+            'description_html' => RichText::display($a->description),
+            'remark_html'      => RichText::display($a->remark),
+        ]))]);
     }
 
     public function respondAction(Request $request, KickoffMomItem $momItem)
@@ -328,7 +448,7 @@ class VendorPortalGovernanceController extends Controller
         $vendor = $this->portalVendor($request);
         abort_unless(
             (int) $m->tenant_id === (int) $vendor->tenant_id
-                && $m->kickoffable_type === 'vendor' && (int) $m->kickoffable_id === (int) $vendor->id,
+                && $m->kickoffable_type === Vendor::class && (int) $m->kickoffable_id === (int) $vendor->id,
             404, 'Meeting not found'
         );
     }
@@ -338,7 +458,7 @@ class VendorPortalGovernanceController extends Controller
         $vendor = $this->portalVendor($request);
         $ok = KickoffMeeting::where('id', $item->kickoff_meeting_id)
             ->where('tenant_id', $vendor->tenant_id)
-            ->where('kickoffable_type', 'vendor')->where('kickoffable_id', $vendor->id)->exists();
+            ->where('kickoffable_type', Vendor::class)->where('kickoffable_id', $vendor->id)->exists();
         abort_unless($ok, 404, 'Action not found');
     }
 }

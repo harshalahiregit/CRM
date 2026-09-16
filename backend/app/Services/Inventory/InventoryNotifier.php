@@ -15,9 +15,9 @@ use App\Models\Inventory\Product;
 use App\Models\Inventory\Voucher;
 use App\Models\Inventory\Warehouse;
 use App\Models\User;
+use App\Services\Mail\TenantMailer;
 use App\Services\NotificationService;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 
 /**
  * Every inventory alert — in-app bell and email — is decided here.
@@ -44,6 +44,7 @@ class InventoryNotifier
     public function __construct(
         private NotificationService $notifications,
         private ConfigService $config,
+        private TenantMailer $mailer,
     ) {
     }
 
@@ -950,8 +951,11 @@ class InventoryNotifier
             return;
         }
 
+        // Tenant SMTP, never the global mailer — see TaskNotifier::mail for why
+        // `Mail::to(...)` silently wrote every message to storage/logs on any
+        // deployment running `config:cache`.
         try {
-            Mail::to($addresses)->send($make());
+            $this->mailer->send($tenantId, $addresses, $make());
         } catch (\Throwable $e) {
             Log::warning("Inventory mail failed ({$what}): {$e->getMessage()}");
         }

@@ -87,7 +87,7 @@ class PurchaseMeetingsExtendedFlowTest extends TestCase
         $this->assertGreaterThan(1, count($afterTemplate));
 
         // a second meeting for the same vendor can copy the previous agenda
-        $m2 = $this->postJson('/api/purchase/kickoff', ['purchase_vendor_id' => $vendorId, 'title' => 'New', 'meeting_type' => 'kickoff', 'scheduled_at' => now()->addDays(2)->toDateTimeString(), 'end_at' => now()->addDays(2)->addHour()->toDateTimeString()])->json();
+        $m2 = $this->postJson('/api/purchase/kickoff', ['purchase_vendor_id' => $vendorId, 'title' => 'New', 'meeting_type' => 'progress_review', 'scheduled_at' => now()->addDays(2)->toDateTimeString(), 'end_at' => now()->addDays(2)->addHour()->toDateTimeString()])->json();
         $copied = $this->postJson("/api/purchase/kickoff/{$m2['id']}/agenda/copy-previous")->assertOk()->json();
         $this->assertSame(count($afterTemplate), count($copied));
     }
@@ -100,7 +100,7 @@ class PurchaseMeetingsExtendedFlowTest extends TestCase
         $this->postJson("/api/purchase/kickoff/{$m1['id']}/actions", ['description' => 'Fix', 'responsible_names' => 'A'])->assertCreated();
         $this->postJson("/api/purchase/kickoff/{$m1['id']}/issues", ['title' => 'Gap', 'severity' => 'High'])->assertCreated();
 
-        $m2 = $this->postJson('/api/purchase/kickoff', ['purchase_vendor_id' => $vendorId, 'title' => 'N', 'meeting_type' => 'kickoff', 'scheduled_at' => now()->addDays(2)->toDateTimeString(), 'end_at' => now()->addDays(2)->addHour()->toDateTimeString()])->json();
+        $m2 = $this->postJson('/api/purchase/kickoff', ['purchase_vendor_id' => $vendorId, 'title' => 'N', 'meeting_type' => 'progress_review', 'scheduled_at' => now()->addDays(2)->toDateTimeString(), 'end_at' => now()->addDays(2)->addHour()->toDateTimeString()])->json();
 
         $this->getJson("/api/purchase/kickoff/{$m2['id']}/previous-summary")
             ->assertOk()->assertJsonPath('actions.open', 1)->assertJsonPath('issues.open', 1);

@@ -135,6 +135,18 @@ class User extends Authenticatable
     }
 
     /* ── Scopes ─────────────────────────────── */
+    /**
+     * A doctor login's practising identity (licence, council, signature). Only
+     * ever set for role=doctor; null everywhere else, which is what stops a
+     * non-doctor from signing a certificate.
+     */
+    public function doctorProfile()
+    {
+        return $this->hasOne(\App\Models\Medical\MedicalDoctorProfile::class, 'user_id');
+    }
+
+    public function isDoctor(): bool { return $this->role === 'doctor'; }
+
     public function scopeActive($query)        { return $query->where('status', 'active'); }
     public function scopePending($query)       { return $query->where('status', 'pending'); }
     public function scopeOfTenant($q, $tid)    { return $q->where('tenant_id', $tid); }

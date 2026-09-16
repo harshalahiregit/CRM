@@ -61,9 +61,21 @@ class PurchaseOnboardingController extends Controller
     {
         $this->assertTenant($request, $onboarding);
 
-        return response()->json(
-            $this->service->saveProfile($onboarding, $request->validated()['profile'], $request->user())
-        );
+        $profile = $request->validated()['profile'] ?? [];
+
+        // A draft can legitimately sift down to nothing — everything touched so
+        // far was half-typed. Writing an empty merge would only add an audit row
+        // saying a profile was saved when none was.
+        $saved = $profile === []
+            ? $onboarding->fresh()
+            : $this->service->saveProfile($onboarding, $profile, $request->user());
+
+        // Fields set aside as unfinished, named so the wizard can say which box
+        // still needs work. The admin surface uses the same wizard and the same
+        // request class, so it gets the same answer.
+        return response()->json(array_merge($saved->toArray(), [
+            'skipped' => $request->skippedFields(),
+        ]));
     }
 
     public function setStep(Request $request, PurchaseOnboarding $onboarding)

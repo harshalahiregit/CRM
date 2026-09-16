@@ -11,6 +11,7 @@ use App\Http\Requests\Purchase\UploadPurchaseDocumentRequest;
 use App\Models\Purchase\PurchaseContract;
 use App\Models\Purchase\PurchaseDebitNote;
 use App\Models\Purchase\PurchaseDocument;
+use App\Models\Purchase\PurchaseDocumentVersion;
 use App\Models\Purchase\PurchaseInvoice;
 use App\Models\Purchase\PurchaseInvoicePayment;
 use App\Models\Purchase\PurchaseKickoffMeeting;
@@ -18,7 +19,9 @@ use App\Models\Purchase\PurchaseOnboarding;
 use App\Models\Purchase\PurchaseOrder;
 use App\Models\Purchase\PurchaseQuotation;
 use App\Models\Purchase\PurchaseVendor;
+use App\Models\User;
 use App\Services\Purchase\PurchaseDocumentService;
+use App\Services\Purchase\PurchaseDocumentVersionService;
 use App\Services\Purchase\PurchaseKickoffService;
 use App\Services\Purchase\PurchaseOnboardingService;
 use App\Services\Purchase\PurchaseWorkforceService;
@@ -293,9 +296,22 @@ class PurchasePortalController extends Controller
     {
         $this->assertOwnedByVendor($request, $onboarding, 'Onboarding');
 
-        return response()->json(
-            $this->onboardingService->saveProfile($onboarding, $request->validated()['profile'], $request->user())
-        );
+        $profile = $request->validated()['profile'] ?? [];
+
+        // A draft can legitimately sift down to nothing — everything the vendor
+        // had touched so far was half-typed. Writing an empty merge would only
+        // add an audit row saying a profile was saved when none was.
+        $saved = $profile === []
+            ? $onboarding->fresh()
+            : $this->onboardingService->saveProfile($onboarding, $profile, $request->user());
+
+        // A draft keeps every field that stands on its own; anything half-finished
+        // is set aside rather than failing the save, and is named here so the
+        // wizard can say which box still needs work. Merged onto the model so the
+        // response shape every caller already reads is unchanged.
+        return response()->json(array_merge($saved->toArray(), [
+            'skipped' => $request->skippedFields(),
+        ]));
     }
 
     public function setStep(Request $request, PurchaseOnboarding $onboarding)
@@ -316,6 +332,40 @@ class PurchasePortalController extends Controller
     /* ── Onboarding kickoff (Step 1 — own onboarding only) ──────────────── */
 
     /** Stream the kickoff MOM PDF for the caller's own onboarding. */
+    /**
+     * The vendor's own work-start letter — proof they are cleared to start.
+     *
+     * The letter has existed on the Purchase ADMIN side all along, and TPV has
+     * offered it in the portal since the portal existed. Purchase simply never
+     * got the portal route, so the one party the letter is actually for — the
+     * vendor — had no way to reach their own copy.
+     */
+    public function workStartLetter(Request $request, PurchaseOnboarding $onboarding,
+        \App\Services\Purchase\PurchaseWorkStartLetterService $letters)
+    {
+        $this->assertOwnedByVendor($request, $onboarding, 'Onboarding');
+
+        return $letters->stream($onboarding);
+    }
+
+    /**
+     * The minutes as data, resolved exactly as the PDF resolves them.
+     *
+     * Same resolver as onboardingKickoffPdf below — see the TPV twin for why
+     * two resolvers is the bug this avoids.
+     */
+    public function onboardingKickoffData(Request $request, PurchaseOnboarding $onboarding)
+    {
+        $this->assertOwnedByVendor($request, $onboarding, 'Onboarding');
+
+        $meeting = $this->onboardingService->resolveKickoffMeeting($onboarding);
+        if (! $meeting) {
+            return response()->json(['meeting' => null]);
+        }
+
+        return response()->json(\App\Support\Shared\VendorMomView::for($meeting, (bool) $meeting->mom_path));
+    }
+
     public function onboardingKickoffPdf(Request $request, PurchaseOnboarding $onboarding)
     {
         $this->assertOwnedByVendor($request, $onboarding, 'Onboarding');
@@ -323,16 +373,25 @@ class PurchasePortalController extends Controller
         $meeting = $this->onboardingService->resolveKickoffMeeting($onboarding);
         abort_unless($meeting, 404, 'Kickoff MOM not available yet.');
 
+        /*
+         * The document as it stands. Deliberately NOT generated on demand here.
+         *
+         * This used to try, and could not: generateMom() takes a User and the
+         * caller on this route is a PurchaseVendor, so every attempt raised a
+         * TypeError that the catch below turned into "not available yet". The
+         * vendor was told the minutes did not exist while the real reason was a
+         * type mismatch nobody could see.
+         *
+         * Removing it is also the right behaviour. Issuing minutes is the
+         * procurement team's act — a vendor pressing View must not mint the
+         * document they are being asked to accept.
+         */
         $file = $this->kickoffService->currentMomFile($meeting);
-        if (! $file) {
-            try {
-                $meeting = $this->kickoffService->generateMom($meeting, $request->user());
-                $file = $this->kickoffService->currentMomFile($meeting);
-            } catch (\Throwable $e) {
-                abort(404, 'Kickoff MOM not available yet.');
-            }
-        }
-        abort_unless($file, 404, 'Kickoff MOM not available yet.');
+        abort_unless(
+            $file && \App\Support\Purchase\PurchaseMomApprovalStatus::isDistributable($meeting->mom_status),
+            404,
+            'The minutes for this meeting have not been issued yet.'
+        );
 
         return response()->download($file['path'], 'kickoff-mom.pdf', [
             'Content-Type'        => 'application/pdf',
@@ -399,6 +458,57 @@ class PurchasePortalController extends Controller
         ]);
     }
 
+    /**
+     * Remove a document the vendor uploaded by mistake.
+     *
+     * The vendor owns what it has not yet had approved: a wrong scan sat there
+     * with no way to take it back, because delete existed only on the admin
+     * route. The service refuses an approved document, and assertOwnedByVendor
+     * refuses anybody else's, so the vendor can only ever undo its own pending
+     * work.
+     */
+    public function deleteDocument(Request $request, PurchaseDocument $document)
+    {
+        $this->assertOwnedByVendor($request, $document, 'Document');
+
+        $this->documentService->destroy($document);
+
+        return response()->json(['message' => 'Deleted']);
+    }
+
+    /**
+     * The document's own version history.
+     *
+     * Every replacement archives the file it displaced, and the vendor is the
+     * one who replaced it - so the vendor is exactly who needs to see what was
+     * sent before. The admin surface has had this since Phase 3; the portal
+     * showed a History button wired to a stub that always answered "empty".
+     */
+    public function documentVersions(Request $request, PurchaseDocument $document)
+    {
+        $this->assertOwnedByVendor($request, $document, 'Document');
+
+        return response()->json($document->versions()->orderByDesc('version_no')->get());
+    }
+
+    public function downloadDocumentVersion(Request $request, PurchaseDocument $document, PurchaseDocumentVersion $version)
+    {
+        $this->assertOwnedByVendor($request, $document, 'Document');
+        abort_unless((int) $version->purchase_document_id === (int) $document->id, 404, 'Version not found');
+
+        // The portal authenticates as a PurchaseVendor, and resolveDownload's
+        // audit actor is typed `?User` - handing it the vendor would be the same
+        // TypeError that once broke portal upload. The download is still audited;
+        // it simply records no User, which is the truth here.
+        $actor = $request->user() instanceof User ? $request->user() : null;
+        $file  = app(PurchaseDocumentVersionService::class)->resolveDownload($version, $actor);
+
+        return response()->download($file['path'], $file['filename'], [
+            'Content-Type'        => $file['mime'],
+            'Content-Disposition' => 'inline; filename="'.$file['filename'].'"',
+        ]);
+    }
+
     /* ── Kickoff (own vendor's meeting only) ────────────────────────────── */
 
     /** The caller's own kickoff meeting summary (resolved from the vendor subject). */
@@ -422,20 +532,124 @@ class PurchasePortalController extends Controller
             'scheduled_at'    => optional($meeting->scheduled_at)->toIso8601String(),
             'mode'            => $meeting->mode,
             'location'        => $meeting->location,
-            'meeting_link'    => $meeting->meeting_link,
+            // The join link is not here until the vendor marks attendance on
+            // the meeting — see MeetingAttendanceGate, which also keeps the old
+            // rule that a link is only offered while the meeting is still going
+            // to happen (a CANCELLED meeting is not "expired", and used to keep
+            // handing out a working link for a meeting nobody would attend).
+            // Spread rather than named one by one, so this payload gains
+            // attendance_marked and can_mark_attendance with the same shape the
+            // two governance lists use.
+            ...app(\App\Services\Shared\MeetingAttendanceGate::class)
+                ->stateFor($meeting, $this->purchaseVendor($request)),
             'mom_available'   => $momAvailable,
+            // This payload is hand-built, so the model's appended timing does
+            // NOT ride along — it has to be named here. Without it the dashboard
+            // read is_expired as undefined, and `!undefined` is true, so the
+            // join popup offered a meeting that had already ended.
+            'ends_at'         => optional($meeting->ends_at)->toIso8601String(),
+            'duration_minutes' => $meeting->duration_minutes,
+            'timing_state'    => $meeting->timing_state,
+            'timing_label'    => $meeting->timing_label,
+            'is_expired'      => $meeting->is_expired,
+            'is_live'         => $meeting->is_live,
+            // The record of the call itself. The dashboard card re-derives the
+            // state from the clock between fetches, and without these it would
+            // go on deriving "In progress" from the booked hour for a meeting
+            // everyone had already left.
+            'actual_start_at' => optional($meeting->actual_start_at)->toIso8601String(),
+            'actual_end_at'   => optional($meeting->actual_end_at)->toIso8601String(),
+            'held_minutes'    => $meeting->held_minutes,
+            // The last heartbeat, so the card can tell a call that has gone
+            // quiet from one still running — same rule as the server's.
+            'presence_seen_at' => optional($meeting->presence_seen_at)->toIso8601String(),
         ]]);
     }
 
-    /** Resolve the Purchase kickoff meeting attached to the caller's own vendor (no URL id). */
+    /**
+     * The one kickoff meeting worth showing the caller's own vendor.
+     *
+     * Two things were wrong with taking `latest()`:
+     *
+     *  - it ordered by CREATION, so a meeting booked later for an earlier date
+     *    won over the one actually coming up;
+     *  - it included DRAFTS, which are deliberately invisible to a vendor
+     *    everywhere else — this endpoint showed them one anyway.
+     *
+     * What a vendor wants is the meeting that needs them: the one happening now,
+     * else the next one due. Only when neither exists does the most recent past
+     * meeting stand in, so the tab still has something to show.
+     */
+    /**
+     * Accept the kickoff, from the standalone Kickoff tab.
+     *
+     * That tab resolves the meeting from the token and shows no ids, so its
+     * Accept button had nowhere to post: the client called
+     * /portal/purchase/kickoff/accept and no route served it. The button
+     * existed, the client method existed, and every press 404'd.
+     *
+     * Resolves the vendor's own onboarding the way the rest of this controller
+     * does, then hands off to the SAME service the id-carrying onboarding route
+     * uses. Two ways to accept a kickoff that behave differently is a defect
+     * this module has already been bitten by once -- see ownKickoff() below.
+     */
+    public function acceptKickoff(Request $request)
+    {
+        $vendor = $this->purchaseVendor($request);
+
+        $onboarding = PurchaseOnboarding::forTenant($vendor->tenant_id)
+            ->where('purchase_vendor_id', $vendor->id)
+            ->latest('id')
+            ->first();
+
+        abort_unless($onboarding, 404, 'No onboarding found for this vendor.');
+
+        $ua = \App\Support\UserAgentInfo::parse($request->userAgent());
+
+        return response()->json($this->onboardingService->acknowledgeKickoff(
+            $onboarding, $request->user(), [
+                'ip' => $request->ip(), 'browser' => $ua['browser'], 'device' => $ua['device'],
+            ],
+        ));
+    }
+
     private function ownKickoff(Request $request): ?PurchaseKickoffMeeting
     {
         $vendor = $this->purchaseVendor($request);
 
-        return PurchaseKickoffMeeting::forTenant($vendor->tenant_id)
+        /*
+         * The onboarding's answer, when there is an onboarding.
+         *
+         * This method and PurchaseOnboardingService::resolveKickoffMeeting both
+         * decided "the vendor's kickoff meeting", by different rules — and they
+         * disagreed. Step 1 drew its card from this one and fetched its document
+         * through the other, so the screen showed the minutes of a completed
+         * meeting while every download asked for a cancelled one and came back
+         * "not available yet". Two answers to one question is the defect; the
+         * onboarding's is the one Step 1 is about.
+         */
+        $onboarding = PurchaseOnboarding::forTenant($vendor->tenant_id)
             ->where('purchase_vendor_id', $vendor->id)
-            ->latest()
-            ->first();
+            ->latest('id')->first();
+
+        if ($onboarding) {
+            $resolved = app(PurchaseOnboardingService::class)->resolveKickoffMeeting($onboarding);
+            if ($resolved) {
+                return $resolved;
+            }
+        }
+
+        // No onboarding (or no kickoff on it): fall back to the vendor's own
+        // meetings — what is happening now, then what is next, then the last one.
+        $meetings = PurchaseKickoffMeeting::forTenant($vendor->tenant_id)
+            ->where('purchase_vendor_id', $vendor->id)
+            ->where('status', '!=', \App\Support\Purchase\PurchaseKickoffStatus::DRAFT)
+            ->orderBy('scheduled_at')
+            ->get();
+
+        return $meetings->firstWhere('is_live', true)
+            ?? $meetings->firstWhere('timing_state', 'upcoming')
+            ?? $meetings->last();
     }
 
     /* ── Purchase-owned portal resolution (independent of the shared vendor

@@ -1,0 +1,66 @@
+{
+  "_comment": [
+    "EXECUTABLE SPECIFICATION for SIRE recurrence risk.",
+    "Consumed by tests/quality.test.mjs (JS reference) and",
+    "backend/tests/Unit/Sire/SireRecurrenceRiskTest.php (the implementation).",
+    "",
+    "Deterministic scoring, no AI, no fuzzy matching. Every input is a fact the",
+    "register already knows; the output is explainable to the person it pages."
+  ],
+  "scoring": {
+    "occurrence_count": { "2": 1, "3-4": 2, "5-9": 3, "10+": 4 },
+    "average_interval_days": { "<7": 3, "<30": 2, "<90": 1, ">=90": 0 },
+    "permanent_fix_status": { "none": 2, "planned": 1, "in_progress": 1, "shipped": 0, "verified": -1 },
+    "recent_occurrence_within_30_days": 1,
+    "thresholds": { "critical": 7, "high": 5, "medium": 3 }
+  },
+  "cases": [
+    { "name": "twice, months apart, fix shipped — background noise",
+      "group": { "occurrence_count": 2, "average_interval_days": 120, "permanent_fix_status": "shipped", "latest_occurrence_at": "2026-01-01T00:00:00Z" },
+      "now": "2026-06-01T00:00:00Z", "expect": { "score": 1, "risk": "low" } },
+
+    { "name": "twice recently, nothing done — medium",
+      "group": { "occurrence_count": 2, "average_interval_days": 20, "permanent_fix_status": "none", "latest_occurrence_at": "2026-05-20T00:00:00Z" },
+      "now": "2026-06-01T00:00:00Z", "expect": { "score": 6, "risk": "high" } },
+
+    { "name": "five times, weekly, no fix — critical",
+      "group": { "occurrence_count": 5, "average_interval_days": 6, "permanent_fix_status": "none", "latest_occurrence_at": "2026-05-28T00:00:00Z" },
+      "now": "2026-06-01T00:00:00Z", "expect": { "score": 9, "risk": "critical" } },
+
+    { "name": "ten times but verified and quiet since — forced low",
+      "group": { "occurrence_count": 12, "average_interval_days": 5, "permanent_fix_status": "verified", "latest_occurrence_at": "2026-01-01T00:00:00Z" },
+      "now": "2026-06-01T00:00:00Z", "expect": { "risk": "low", "forced_low": true } },
+
+    { "name": "verified but it happened AGAIN after the fix — the override must not apply",
+      "group": { "occurrence_count": 12, "average_interval_days": 5, "permanent_fix_status": "verified", "latest_occurrence_at": "2026-05-30T00:00:00Z" },
+      "now": "2026-06-01T00:00:00Z", "expect": { "score": 7, "risk": "critical", "forced_low": false } },
+
+    { "name": "fix in progress, frequent, recent — high",
+      "group": { "occurrence_count": 4, "average_interval_days": 10, "permanent_fix_status": "in_progress", "latest_occurrence_at": "2026-05-25T00:00:00Z" },
+      "now": "2026-06-01T00:00:00Z", "expect": { "score": 6, "risk": "high" } },
+
+    { "name": "a single occurrence is not a recurrence at all",
+      "group": { "occurrence_count": 1, "average_interval_days": null, "permanent_fix_status": "none", "latest_occurrence_at": "2026-05-30T00:00:00Z" },
+      "now": "2026-06-01T00:00:00Z", "expect": { "risk": "low", "score": 0, "not_recurring": true } },
+
+    { "name": "no interval yet (one gap unknown) does not crash or inflate",
+      "group": { "occurrence_count": 3, "average_interval_days": null, "permanent_fix_status": "planned", "latest_occurrence_at": "2026-05-30T00:00:00Z" },
+      "now": "2026-06-01T00:00:00Z", "expect": { "score": 4, "risk": "medium" } },
+
+    { "name": "exactly at the medium threshold",
+      "group": { "occurrence_count": 2, "average_interval_days": 200, "permanent_fix_status": "none", "latest_occurrence_at": "2026-05-30T00:00:00Z" },
+      "now": "2026-06-01T00:00:00Z", "expect": { "score": 4, "risk": "medium" } },
+
+    { "name": "exactly at the critical threshold",
+      "group": { "occurrence_count": 5, "average_interval_days": 25, "permanent_fix_status": "none", "latest_occurrence_at": "2026-05-30T00:00:00Z" },
+      "now": "2026-06-01T00:00:00Z", "expect": { "score": 8, "risk": "critical" } },
+
+    { "name": "old and dormant with no fix is still worth medium, not forgotten",
+      "group": { "occurrence_count": 4, "average_interval_days": 150, "permanent_fix_status": "none", "latest_occurrence_at": "2025-06-01T00:00:00Z" },
+      "now": "2026-06-01T00:00:00Z", "expect": { "score": 4, "risk": "medium" } },
+
+    { "name": "a missing latest_occurrence_at is treated as not recent",
+      "group": { "occurrence_count": 3, "average_interval_days": 40, "permanent_fix_status": "none", "latest_occurrence_at": null },
+      "now": "2026-06-01T00:00:00Z", "expect": { "score": 5, "risk": "high" } }
+  ]
+}

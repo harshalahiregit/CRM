@@ -11,8 +11,8 @@ use App\Models\Helpdesk\TicketReply;
 use App\Models\User;
 use App\Services\Helpdesk\Contracts\CustomerServiceContract;
 use App\Services\Helpdesk\Mocks\MockCustomerService;
+use App\Services\Mail\TenantMailer;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 
 /**
  * Sends the customer-facing helpdesk emails (acknowledge on create, deliver
@@ -28,9 +28,12 @@ class HelpdeskMailService
 {
     private CustomerServiceContract $customers;
 
-    public function __construct(?CustomerServiceContract $customers = null)
+    private TenantMailer $mailer;
+
+    public function __construct(?CustomerServiceContract $customers = null, ?TenantMailer $mailer = null)
     {
         $this->customers = $customers ?? new MockCustomerService();
+        $this->mailer = $mailer ?? app(TenantMailer::class);
     }
 
     /** The requester's own address wins; fall back to the linked customer record. */
@@ -57,7 +60,7 @@ class HelpdeskMailService
             return; // internal ticket with no external requester — nothing to ack
         }
 
-        $this->safely(fn () => Mail::to($to['email'])->send(new TicketReceivedMail($ticket, $to['name'])),
+        $this->safely(fn () => $this->mailer->send($ticket->tenant_id, $to['email'], new TicketReceivedMail($ticket, $to['name'])),
             "acknowledgement for ticket #{$ticket->id}");
     }
 
@@ -81,11 +84,12 @@ class HelpdeskMailService
             ->all();
 
         $this->safely(function () use ($to, $cc, $ticket, $reply, $agentName) {
-            $mailer = Mail::to($to['email']);
-            if (! empty($cc)) {
-                $mailer->cc($cc);
-            }
-            $mailer->send(new TicketReplyMail($ticket, $reply, $to['name'], $agentName));
+            $this->mailer->send(
+                $ticket->tenant_id,
+                $to['email'],
+                new TicketReplyMail($ticket, $reply, $to['name'], $agentName),
+                $cc,
+            );
         }, "reply email for ticket #{$ticket->id}");
     }
 
@@ -96,7 +100,7 @@ class HelpdeskMailService
             return;
         }
 
-        $this->safely(fn () => Mail::to($to['email'])->send(new TicketStatusUpdateMail($ticket, $to['name'], $oldStatus, $newStatus)),
+        $this->safely(fn () => $this->mailer->send($ticket->tenant_id, $to['email'], new TicketStatusUpdateMail($ticket, $to['name'], $oldStatus, $newStatus)),
             "status-update email for ticket #{$ticket->id}");
     }
 
@@ -111,7 +115,7 @@ class HelpdeskMailService
             return;
         }
 
-        $this->safely(fn () => Mail::to($user->email)->send(new TicketAssignedMail($ticket, $user->name ?: 'there')),
+        $this->safely(fn () => $this->mailer->send($ticket->tenant_id, $user->email, new TicketAssignedMail($ticket, $user->name ?: 'there')),
             "assignment email for ticket #{$ticket->id}");
     }
 

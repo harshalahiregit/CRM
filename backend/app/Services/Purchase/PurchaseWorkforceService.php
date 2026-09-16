@@ -11,10 +11,10 @@ use App\Models\Purchase\PurchaseWorkerMedical;
 use App\Models\Purchase\PurchaseWorkerTraining;
 use App\Models\User;
 use App\Repositories\Purchase\PurchaseWorkerRepository;
-use App\Support\Purchase\PurchaseMedicalFitness;
+use App\Support\Medical\MedicalWorkflow;
+use App\Support\Shared\WorkerImport;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 /**
@@ -27,9 +27,7 @@ class PurchaseWorkforceService
 {
     private const DISK = 'purchase_docs';
 
-    public function __construct(private PurchaseWorkerRepository $workers)
-    {
-    }
+    public function __construct(private PurchaseWorkerRepository $workers) {}
 
     /* ── Workers ─────────────────────────────────────────────────────────── */
 
@@ -47,15 +45,116 @@ class PurchaseWorkforceService
     public function create(PurchaseVendor $vendor, array $data): PurchaseWorker
     {
         $worker = PurchaseWorker::create(array_merge($this->cleanWorker($data), [
-            'tenant_id'          => $vendor->tenant_id,
+            'tenant_id' => $vendor->tenant_id,
             'purchase_vendor_id' => $vendor->id,
-            'status'             => $data['status'] ?? 'Pending',
+            'status' => $data['status'] ?? 'Pending',
         ]));
 
         $worker->update(['worker_code' => $this->makeCode($vendor, $worker->id)]);
         Log::channel('purchase')->info('Purchase worker created', ['worker_id' => $worker->id, 'vendor_id' => $vendor->id]);
 
         return $worker->fresh(['documents', 'medicals', 'trainings', 'inductions', 'latestMedical', 'latestInduction']);
+    }
+
+    /**
+     * Register many workers from one sheet — TPV's importer, for Purchase.
+     *
+     * A vendor arriving with forty people had to register them one at a time,
+     * because Purchase never had this at all. The column order is TPV's, so the
+     * same template works for both engines and nobody has to keep two.
+     *
+     *   name · gender · dob · mobile · blood group · designation · skill · id · photo
+     *
+     * Reading the file is shared (see WorkerImport, which knows about Excel's
+     * BOM, its scientific-notation Aadhaar, four date formats and ZIP photos);
+     * the writing is Purchase's own, against purchase_workers.
+     *
+     * Every skipped row is NAMED. A bare count is indistinguishable from an
+     * import that quietly failed, which is how a vendor ends up believing forty
+     * people are registered when none are.
+     */
+    public function bulkUpload(mixed $file, PurchaseVendor $vendor): array
+    {
+        ['rows' => $rows, 'photos' => $photos, 'cleanup' => $cleanup] = WorkerImport::read($file);
+
+        $inserted = 0;
+        $skipped = 0;
+        $errors = [];
+        $duplicates = [];
+
+        try {
+            foreach ($rows as $i => $row) {
+                $rowNo = $i + 2;                       // +1 for the header, +1 for 1-based
+                $name = trim($row[0] ?? '');
+                if ($name === '') {
+                    continue;                          // a blank line is not a failure
+                }
+
+                $gender = ucfirst(strtolower(trim($row[1] ?? 'Male')));
+                $dob = WorkerImport::parseDate($row[2] ?? null);
+                $phone = preg_replace('/\D/', '', trim($row[3] ?? ''));
+                $blood = trim($row[4] ?? '');
+                $designation = trim($row[5] ?? 'Worker');
+                $skill = trim($row[6] ?? 'Unskilled');
+                $idNumber = trim($row[7] ?? '');
+                $photoRef = trim($row[8] ?? '');
+
+                if ($problem = WorkerImport::aadhaarProblem($idNumber, $rowNo)) {
+                    $errors[] = $problem;
+                    $skipped++;
+
+                    continue;
+                }
+
+                // Already on this vendor's books? Identify by the id number when
+                // there is one, otherwise by name and mobile together — a name
+                // alone would refuse two genuine namesakes.
+                $existing = PurchaseWorker::where('tenant_id', $vendor->tenant_id)
+                    ->where('purchase_vendor_id', $vendor->id)
+                    ->when($idNumber !== '', fn ($q) => $q->where('id_proof_number', $idNumber))
+                    ->when($idNumber === '', function ($q) use ($name, $phone) {
+                        $q->where('full_name', $name);
+                        if ($phone !== '') {
+                            $q->where('phone', $phone);
+                        }
+                    })
+                    ->exists();
+
+                if ($existing) {
+                    $duplicates[] = "Row {$rowNo}: {$name} is already registered under this vendor.";
+                    $skipped++;
+
+                    continue;
+                }
+
+                $worker = PurchaseWorker::create([
+                    'tenant_id' => $vendor->tenant_id,
+                    'purchase_vendor_id' => $vendor->id,
+                    'full_name' => $name,
+                    'gender' => $gender,
+                    'dob' => $dob,
+                    'phone' => $phone ?: null,
+                    'blood_group' => $blood ?: null,
+                    'designation' => $designation,
+                    'skill_category' => $skill,
+                    'id_proof_number' => $idNumber ?: null,
+                    'photo_path' => WorkerImport::storePhoto($photos, [$photoRef, $idNumber, $phone, str_replace(' ', '_', $name), $name]),
+                    'status' => 'Pending',
+                    'current_step' => 1,
+                ]);
+                $worker->update(['worker_code' => $this->makeCode($vendor, $worker->id)]);
+
+                $inserted++;
+            }
+        } finally {
+            $cleanup();
+        }
+
+        Log::channel('purchase')->info('Purchase workers bulk imported', [
+            'vendor_id' => $vendor->id, 'inserted' => $inserted, 'skipped' => $skipped,
+        ]);
+
+        return WorkerImport::summarise($inserted, $skipped, $duplicates, $errors);
     }
 
     public function update(PurchaseWorker $worker, array $data): PurchaseWorker
@@ -81,58 +180,37 @@ class PurchaseWorkforceService
         );
 
         return PurchaseWorkerDocument::create([
-            'tenant_id'          => $worker->tenant_id,
+            'tenant_id' => $worker->tenant_id,
             'purchase_vendor_id' => $worker->purchase_vendor_id,
             'purchase_worker_id' => $worker->id,
-            'type'               => $type,
-            'original_name'      => $file->getClientOriginalName(),
-            'file_path'          => $path,
-            'status'             => 'uploaded',
+            'type' => $type,
+            'original_name' => $file->getClientOriginalName(),
+            'file_path' => $path,
+            'status' => 'uploaded',
         ]);
     }
 
-    public function saveMedical(PurchaseWorker $worker, array $data): PurchaseWorkerMedical
+    /**
+     * Step 2 — medical.
+     *
+     * Delegated to the Medical module so a certificate keyed in here is the same
+     * kind of thing as one a doctor filed: it gets a certificate number, a
+     * health score, a place in the quality-check queue and a timeline. Having a
+     * second, quieter way to create a medical would mean a worker could be
+     * cleared without anyone reviewing the certificate.
+     */
+    public function saveMedical(PurchaseWorker $worker, array $data, User|PurchaseVendor|null $actor = null): PurchaseWorkerMedical
     {
-        $medical = PurchaseWorkerMedical::create(array_merge($this->tenantKeys($worker), [
-            'exam_date'        => $data['exam_date'] ?? null,
-            'expiry_date'      => $data['expiry_date'] ?? null,
-            'fitness_status'   => $data['fitness_status'] ?? 'Pending',
-            'blood_group'      => $data['blood_group'] ?? null,
-            'remarks'          => $data['remarks'] ?? null,
-            // Depth (TPV §16 parity).
-            'restrictions'     => $data['restrictions'] ?? null,
-            'examiner_name'    => $data['examiner_name'] ?? null,
-            'approved_by'      => $data['approved_by'] ?? null,
-            'approved_at'      => ! empty($data['approved_by']) ? now() : null,
-            'certificate_path' => $data['certificate_path'] ?? null,
-            'document_path'    => $data['document_path'] ?? null,
-            // Examination depth (TPV parity). valid_until mirrors expiry_date —
-            // expiry_date stays the column the fitness gate reads, so the two can
-            // never disagree about when a medical lapses.
-            'recorded_by'         => $data['recorded_by'] ?? null,
-            'exam_type'           => $data['exam_type'] ?? null,
-            'clinic_name'         => $data['clinic_name'] ?? null,
-            'valid_until'         => $data['valid_until'] ?? ($data['expiry_date'] ?? null),
-            'height_cm'           => $data['height_cm'] ?? null,
-            'weight_kg'           => $data['weight_kg'] ?? null,
-            'bp_systolic'         => $data['bp_systolic'] ?? null,
-            'bp_diastolic'        => $data['bp_diastolic'] ?? null,
-            'vision'              => $data['vision'] ?? null,
-            'screening_responses' => $data['screening_responses'] ?? null,
-            'screening_score'     => $data['screening_score'] ?? null,
-            'screening_band'      => $data['screening_band'] ?? null,
-            'signature_path'      => $data['signature_path'] ?? null,
-            'capture_photo_path'  => $data['capture_photo_path'] ?? null,
-            'system_ip'           => $data['system_ip'] ?? null,
-            'geo_location'        => $data['geo_location'] ?? null,
-        ]));
+        $actor ??= request()?->user();
 
-        // Step 2 clears on a PASSING result (Fit OR Fit-with-restrictions).
-        // Recording an Unfit examination is a valid thing to do — it just is not
-        // progress, and the pointer must not claim it is.
-        $this->advanceTo($worker, 2, $this->readiness($worker->fresh())['medical_ok']);
-
-        return $medical;
+        return app(PurchaseMedicalWorkflowService::class)->record(
+            $worker,
+            $data,
+            $actor,
+            $actor instanceof PurchaseVendor
+                ? MedicalWorkflow::ORIGIN_VENDOR_UPLOAD
+                : MedicalWorkflow::ORIGIN_ADMIN,
+        );
     }
 
     public function saveTraining(PurchaseWorker $worker, array $data): PurchaseWorkerTraining
@@ -146,16 +224,16 @@ class PurchaseWorkforceService
         }
 
         $training = PurchaseWorkerTraining::create(array_merge($this->tenantKeys($worker), [
-            'title'         => $data['title'] ?? ($type ? str_replace('_', ' ', $type) : null),
+            'title' => $data['title'] ?? ($type ? str_replace('_', ' ', $type) : null),
             'training_type' => $type,
-            'provider'      => $data['provider'] ?? null,
+            'provider' => $data['provider'] ?? null,
             'training_date' => $data['training_date'] ?? null,
-            'expiry_date'   => $data['expiry_date'] ?? null,
+            'expiry_date' => $data['expiry_date'] ?? null,
             // TPV-parity currency window; falls back to expiry_date when absent.
-            'valid_until'   => $data['valid_until'] ?? ($data['expiry_date'] ?? null),
-            'status'        => $data['status'] ?? 'Pending',
-            'score'         => $data['score'] ?? null,
-            'remarks'       => $data['remarks'] ?? null,
+            'valid_until' => $data['valid_until'] ?? ($data['expiry_date'] ?? null),
+            'status' => $data['status'] ?? 'Pending',
+            'score' => $data['score'] ?? null,
+            'remarks' => $data['remarks'] ?? null,
         ]));
 
         $this->advanceTo($worker, 3, $this->stepThreeCleared($worker->fresh()));
@@ -165,25 +243,36 @@ class PurchaseWorkforceService
 
     public function saveInduction(PurchaseWorker $worker, array $data): PurchaseWorkerInduction
     {
+        // The Medical module's prerequisite block, mirroring TPV: no safety
+        // induction until medical clearance exists. One verdict answers it, so
+        // this refusal and the "Medical Report is Pending" banner always say the
+        // same thing — including where the project bypass makes it moot.
+        $medicalWorkflow = app(PurchaseMedicalWorkflowService::class);
+        $clearance = $medicalWorkflow->clearanceFor($worker);
+        if ($clearance['required'] && ! $clearance['cleared']
+            && ($medicalWorkflow->config($worker->tenant_id)['block_induction'] ?? true)) {
+            throw new BusinessException('Safety induction is blocked — '.$clearance['message']);
+        }
+
         $induction = PurchaseWorkerInduction::create(array_merge($this->tenantKeys($worker), [
             'induction_date' => $data['induction_date'] ?? null,
-            'status'         => $data['status'] ?? 'Pending',
-            'conducted_by'   => $data['conducted_by'] ?? null,
-            'remarks'        => $data['remarks'] ?? null,
+            'status' => $data['status'] ?? 'Pending',
+            'conducted_by' => $data['conducted_by'] ?? null,
+            'remarks' => $data['remarks'] ?? null,
             // Session depth (TPV parity). training_date falls back to the
             // induction date: a session recorded on the day it ran is the common
             // case, and leaving it null would lose when it was actually delivered.
-            'recorded_by'      => $data['recorded_by'] ?? null,
-            'trainer_name'     => $data['trainer_name'] ?? null,
-            'training_date'    => $data['training_date'] ?? ($data['induction_date'] ?? null),
-            'valid_until'      => $data['valid_until'] ?? null,
+            'recorded_by' => $data['recorded_by'] ?? null,
+            'trainer_name' => $data['trainer_name'] ?? null,
+            'training_date' => $data['training_date'] ?? ($data['induction_date'] ?? null),
+            'valid_until' => $data['valid_until'] ?? null,
             'duration_minutes' => $data['duration_minutes'] ?? null,
-            'topics'           => $data['topics'] ?? null,
-            'score'            => $data['score'] ?? null,
-            'passed'           => $data['passed'] ?? null,
-            'photo_path'       => $data['photo_path'] ?? null,
-            'signature_path'   => $data['signature_path'] ?? null,
-            'thumbprint_path'  => $data['thumbprint_path'] ?? null,
+            'topics' => $data['topics'] ?? null,
+            'score' => $data['score'] ?? null,
+            'passed' => $data['passed'] ?? null,
+            'photo_path' => $data['photo_path'] ?? null,
+            'signature_path' => $data['signature_path'] ?? null,
+            'thumbprint_path' => $data['thumbprint_path'] ?? null,
         ]));
 
         $this->advanceTo($worker, 3, $this->stepThreeCleared($worker->fresh()));
@@ -214,6 +303,19 @@ class PurchaseWorkforceService
      * The wizard resumes from this column, so a later save must never drag a
      * worker backwards, and a failed medical or induction must not advance it.
      */
+    /**
+     * Step 2 clears on medical CLEARANCE, never merely on a medical existing:
+     * recording an Unfit — or an unreviewed — examination is a valid thing to
+     * do, it just is not progress, and the pointer must not claim it is.
+     *
+     * Public because the Medical module records examinations of its own (the
+     * doctor portal), and both routes must move the pointer by the same rule.
+     */
+    public function syncMedicalStep(PurchaseWorker $worker): void
+    {
+        $this->advanceTo($worker, 2, $this->readiness($worker)['medical_ok']);
+    }
+
     private function advanceTo(PurchaseWorker $worker, int $step, bool $cleared): void
     {
         if (! $cleared) {
@@ -246,7 +348,7 @@ class PurchaseWorkforceService
         if (! $r['ready']) {
             $missing = collect([
                 'documents' => $r['documents_ok'], 'medical' => $r['medical_ok'],
-                'training'  => $r['training_ok'],  'induction' => $r['induction_ok'],
+                'training' => $r['training_ok'],  'induction' => $r['induction_ok'],
                 'competency' => $r['competency_ok'],
             ])->reject(fn ($ok) => $ok)->keys()->implode(', ');
 
@@ -263,14 +365,26 @@ class PurchaseWorkforceService
             throw new BusinessException('PPE must be issued before a badge can be activated.', 422);
         }
 
+        // Reaching step 4 says PPE was ISSUED; it does not say the right PPE was
+        // issued. With a requirement matrix configured, the badge refusal names
+        // the mandatory items still outstanding — the same rule TPV applies, and
+        // the reason this table was added: one pair of gloves used to satisfy a
+        // check that should have demanded a helmet and boots by name.
+        $missingPpe = app(PurchasePpeService::class)->missingMandatoryFor($worker);
+        if ($missingPpe->isNotEmpty()) {
+            throw new BusinessException(
+                'Mandatory PPE not issued: '.$missingPpe->pluck('name')->implode(', ').'.', 422
+            );
+        }
+
         $worker->forceFill([
-            'status'            => 'Active',
-            'current_step'      => 5,
-            'badge_number'      => $this->makeBadgeNumber($worker),
+            'status' => 'Active',
+            'current_step' => 5,
+            'badge_number' => $this->makeBadgeNumber($worker),
             // The gate scans this, so it must be unguessable and unique.
-            'qr_token'          => Str::random(48),
-            'badge_issued_at'   => now(),
-            'badge_issued_by'   => $actor->id,
+            'qr_token' => Str::random(48),
+            'badge_issued_at' => now(),
+            'badge_issued_by' => $actor->id,
             'badge_valid_until' => $data['valid_until'] ?? null,
         ])->save();
 
@@ -314,9 +428,9 @@ class PurchaseWorkforceService
         // Null the QR token so a retained physical badge stops resolving at the
         // gate — a terminated worker must not scan back in (parity with TPV).
         $worker->forceFill([
-            'status'   => 'Terminated',
+            'status' => 'Terminated',
             'qr_token' => null,
-            'notes'    => $this->appendNote($worker, "Terminated: {$reason}"),
+            'notes' => $this->appendNote($worker, "Terminated: {$reason}"),
         ])->save();
         Log::channel('purchase')->warning('Purchase worker terminated', ['worker_id' => $worker->id, 'actor_id' => $actor->id, 'reason' => $reason]);
 
@@ -366,17 +480,25 @@ class PurchaseWorkforceService
             : config('purchase.gate.ppe_enforcement', 'warn');
         if ($mode !== 'off') {
             try {
-                $heldNone = app(PurchasePpeService::class)->heldBy($worker)->isEmpty();
-                if ($heldNone) {
+                // With a requirement matrix configured this names the MISSING
+                // items; without one it falls back to "anything at all", so a
+                // tenant that has not filled the matrix in sees no change.
+                $ppe = app(PurchasePpeService::class);
+                $missing = $ppe->missingMandatoryFor($worker);
+                $shortfall = $missing->isNotEmpty()
+                    ? 'Mandatory PPE not issued: '.$missing->pluck('name')->implode(', ').'.'
+                    : ($ppe->heldBy($worker)->isEmpty() ? 'No PPE has been issued to this worker.' : null);
+
+                if ($shortfall) {
                     if ($mode === 'deny') {
-                        return ['admit' => false, 'reason' => 'No PPE has been issued to this worker.'];
+                        return ['admit' => false, 'reason' => $shortfall];
                     }
 
                     return ['admit' => true, 'reason' => null, 'badge_number' => $worker->badge_number,
-                        'warning' => 'No PPE has been issued to this worker.'];
+                        'warning' => $shortfall];
                 }
             } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::channel('purchase')->warning('Gate PPE check skipped', [
+                Log::channel('purchase')->warning('Gate PPE check skipped', [
                     'worker_id' => $worker->id, 'error' => $e->getMessage(),
                 ]);
             }
@@ -397,21 +519,19 @@ class PurchaseWorkforceService
     {
         $today = now()->startOfDay();
 
-        $med = $worker->relationLoaded('latestMedical') ? $worker->latestMedical : $worker->latestMedical()->first();
         $ind = $worker->relationLoaded('latestInduction') ? $worker->latestInduction : $worker->latestInduction()->first();
 
         $documentsOk = ($worker->documents_count ?? $worker->documents()->count()) > 0;
-        // Medical clears on any PASSING verdict (Fit OR Fit-with-restrictions) that
-        // is still within its currency window — TPV parity. A "Fit with
-        // Restrictions" worker is fit subject to the recorded restrictions, so it
-        // must not fail readiness the way the old exact-'Fit' match did.
-        $medicalOk   = $med
-            && PurchaseMedicalFitness::isPassing($med->fitness_status)
-            && (! $med->expiry_date || $med->expiry_date->gte($today));
+        // Medical clears on the module's clearance verdict — a passing, current
+        // certificate that the quality team has ACCEPTED, or a project where
+        // medical does not apply at all. A signed-but-unreviewed certificate is
+        // deliberately not readiness.
+        $medicalClearance = app(PurchaseMedicalWorkflowService::class)->clearanceFor($worker);
+        $medicalOk = $medicalClearance['cleared'];
         // Training clears when a Completed, unexpired record exists — honouring the
         // TPV-parity valid_until window and the legacy expiry_date alike. Typed or
         // free-text titles both count.
-        $trainingOk  = $worker->trainings()
+        $trainingOk = $worker->trainings()
             ->where('status', 'Completed')
             ->where(function ($q) use ($today) {
                 $q->where(function ($q) use ($today) {
@@ -429,21 +549,27 @@ class PurchaseWorkforceService
         // empty collection when nothing is required, so competency_ok defaults true
         // and the gate degrades gracefully — it only bites once a tenant configures
         // a requirement.
-        $missingComp  = app(PurchaseCompetencyService::class)->missingFor($worker);
+        $missingComp = app(PurchaseCompetencyService::class)->missingFor($worker);
         $competencyOk = $missingComp->isEmpty();
 
         $checks = [$documentsOk, $medicalOk, $trainingOk, $inductionOk, $competencyOk];
         $passed = count(array_filter($checks));
 
         return [
-            'documents_ok'         => $documentsOk,
-            'medical_ok'           => $medicalOk,
-            'training_ok'          => $trainingOk,
-            'induction_ok'         => $inductionOk,
-            'competency_ok'        => $competencyOk,
+            'documents_ok' => $documentsOk,
+            'medical_ok' => $medicalOk,
+            // The reason, for the dashboard banner.
+            'medical_clearance' => $medicalClearance,
+            'training_ok' => $trainingOk,
+            'induction_ok' => $inductionOk,
+            'competency_ok' => $competencyOk,
             'missing_competencies' => $missingComp->all(),
-            'ready'                => $passed === count($checks),
-            'readiness_pct'        => (int) round(($passed / count($checks)) * 100),
+            // The full PPE checklist, so a blocked badge can say WHICH items are
+            // missing rather than "PPE". `configured` tells "fully equipped"
+            // apart from "no matrix has been set up yet".
+            'ppe_compliance' => app(PurchasePpeService::class)->complianceFor($worker),
+            'ready' => $passed === count($checks),
+            'readiness_pct' => (int) round(($passed / count($checks)) * 100),
         ];
     }
 
@@ -461,22 +587,22 @@ class PurchaseWorkforceService
         $readinessSum = 0;
         foreach ($workers as $w) {
             $r = $this->readiness($w);
-            $medical   += $r['medical_ok'] ? 1 : 0;
-            $training  += $r['training_ok'] ? 1 : 0;
+            $medical += $r['medical_ok'] ? 1 : 0;
+            $training += $r['training_ok'] ? 1 : 0;
             $induction += $r['induction_ok'] ? 1 : 0;
-            $ready     += $r['ready'] ? 1 : 0;
+            $ready += $r['ready'] ? 1 : 0;
             $readinessSum += $r['readiness_pct'];
         }
         $pct = fn ($n) => (int) round(($n / $count) * 100);
 
         return [
-            'worker_count'  => $count,
-            'ready_count'   => $ready,
-            'medical_pct'   => $pct($medical),
-            'training_pct'  => $pct($training),
+            'worker_count' => $count,
+            'ready_count' => $ready,
+            'medical_pct' => $pct($medical),
+            'training_pct' => $pct($training),
             'induction_pct' => $pct($induction),
             'readiness_pct' => (int) round($readinessSum / $count),
-            'ready'         => $ready === $count,
+            'ready' => $ready === $count,
         ];
     }
 
@@ -491,7 +617,7 @@ class PurchaseWorkforceService
     private function tenantKeys(PurchaseWorker $worker): array
     {
         return [
-            'tenant_id'          => $worker->tenant_id,
+            'tenant_id' => $worker->tenant_id,
             'purchase_vendor_id' => $worker->purchase_vendor_id,
             'purchase_worker_id' => $worker->id,
         ];

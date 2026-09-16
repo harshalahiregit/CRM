@@ -28,13 +28,21 @@ class StatutoryEngine
         private TdsCalculator $tds,
         private TdsEngine $tdsEngine,
         private PremiumCalculator $premium,
+        private LwfCalculator $lwf,
     ) {
     }
 
     /**
      * @param  array  $lines  component lines: ['code','name','type','computed_amount',
      *                        'taxable','pf_applicable','esic_applicable']
-     * @param  array  $ctx    ['state' => ?string, 'date' => ?Carbon, 'tds_paid_so_far' => float]
+     * @param  array  $ctx    ['state' => ?string, 'date' => ?Carbon, 'tds_paid_so_far' => float,
+     *                        'gender' => ?string, 'age_years' => ?int]
+     *
+     * `gender` and `age_years` are not decoration. Maharashtra's PT thresholds
+     * differ by gender, and EPS membership ends at 58 — both are visible in the
+     * company's own filed registers. Without them here the calculators fall back
+     * to the gender-neutral slabs and a pension contribution for somebody who can
+     * no longer be a member, and the register is quietly wrong for those people.
      */
     public function forSalary(array $lines, int $tenantId, array $ctx = []): array
     {
@@ -57,12 +65,34 @@ class StatutoryEngine
         $esicWages = $sum($earnings, 'esic_applicable');
         $taxable   = $sum($earnings, 'taxable');
 
-        $pf   = $this->pf->calculate($pfWages, $this->rules->resolve('pf', $tenantId, $date));
+        $ageYears = $ctx['age_years'] ?? null;
+        $gender   = $ctx['gender'] ?? null;
+
+        $pf   = $this->pf->calculate($pfWages, $this->rules->resolve('pf', $tenantId, $date), $ageYears);
+
+        // Voluntary PF — the employee choosing to contribute above the statutory
+        // 12%. The PF register has a column for it and nothing computed it, so it
+        // printed zero however much somebody had opted to save.
+        //
+        // A flat amount wins over a percentage when both are set: "deduct 2000" is
+        // the less surprising reading of the two.
+        $vpf = 0.0;
+
+        if ($pf['applicable']) {
+            $vpf = (float) ($ctx['vpf_amount'] ?? 0) > 0
+                ? (float) $ctx['vpf_amount']
+                : round($pf['wages'] * (float) ($ctx['vpf_percent'] ?? 0) / 100);
+        }
         $esic = $this->esic->calculate($gross, $esicWages, $this->rules->resolve('esic', $tenantId, $date));
         // strictState: no work state → no rule lookup at all. PT is levied BY a
         // state, so guessing one would deduct the wrong state's tax.
         $ptRule = $state ? $this->rules->resolve('pt', $tenantId, $date, $state, strictState: true) : null;
-        $pt     = $this->pt->calculate($gross, $ptRule, (int) $date->format('n'), $state);
+        $pt     = $this->pt->calculate($gross, $ptRule, (int) $date->format('n'), $state, $gender);
+
+        // LWF is levied BY a state like PT, and is half-yearly — the calculator
+        // decides whether this month is a deduction month.
+        $lwfRule = $state ? $this->rules->resolve('lwf', $tenantId, $date, $state, strictState: true) : null;
+        $lwf     = $this->lwf->calculate($lwfRule, (int) $date->format('n'));
         $bon  = $this->bonus->calculate($gross, $pfWages, $this->rules->resolve('bonus', $tenantId, $date));
         $grat = $this->gratuity->provision($pfWages, $this->rules->resolve('gratuity', $tenantId, $date));
 
@@ -80,7 +110,7 @@ class StatutoryEngine
         // shares deliberately do not.
         $statutoryDeductions = round(
             $pf['employee'] + $esic['employee'] + $pt['amount'] + $tds['monthly_tds']
-            + $wcp['employee'] + $medi['employee'], 2
+            + $wcp['employee'] + $medi['employee'] + $lwf['employee'] + $vpf, 2
         );
 
         return [
@@ -92,6 +122,9 @@ class StatutoryEngine
             'esic_employee'        => $esic['employee'],
             'esic_employer'        => $esic['employer'],
             'pt_amount'            => $pt['amount'],
+            'vpf_amount'           => $vpf,
+            'lwf_employee'         => $lwf['employee'],
+            'lwf_employer'         => $lwf['employer'],
             'tds_amount'           => $tds['monthly_tds'],
             'bonus_amount'         => $bon['amount'],
             'gratuity_amount'      => $grat['amount'],
@@ -198,6 +231,11 @@ class StatutoryEngine
             ['code' => 'PF_EE',  'name' => 'Provident Fund (Employee)', 'amount' => $s['pf_employee']],
             ['code' => 'ESIC_EE','name' => 'ESIC (Employee)',           'amount' => $s['esic_employee']],
             ['code' => 'PT',     'name' => 'Professional Tax',          'amount' => $s['pt_amount']],
+            // Both were being SUBTRACTED from net pay with no line to explain
+            // them — an employee seeing 100 rupees vanish in June with nothing
+            // named is a support call, and a fair one.
+            ['code' => 'LWF',    'name' => 'Labour Welfare Fund',       'amount' => $s['lwf_employee'] ?? 0],
+            ['code' => 'VPF',    'name' => 'Voluntary Provident Fund',  'amount' => $s['vpf_amount'] ?? 0],
             ['code' => 'TDS',    'name' => 'TDS / Income Tax',          'amount' => $s['tds_amount']],
             // #30 — employee shares only. The employer share is a company cost
             // and appears on the cost report, never as a line on someone's payslip.

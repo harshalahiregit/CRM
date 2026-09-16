@@ -1,0 +1,132 @@
+{
+  "_comment": [
+    "EXECUTABLE SPECIFICATION for SIRE release gates.",
+    "",
+    "Run by tests/releaseGates.test.mjs (JS reference) and",
+    "backend/tests/Unit/Sire/SireReleaseGateTest.php (the implementation).",
+    "",
+    "A gate engine is worth this treatment because its failure mode is silent and",
+    "expensive: a gate that quietly passes lets a broken release ship, and nobody",
+    "finds out from the dashboard — it says READY."
+  ],
+
+  "default_gates": [
+    { "key": "no_open_critical",            "enabled": true, "blocking": true, "config": { "severities": ["critical"] } },
+    { "key": "qa_failures_resolved",        "enabled": true, "blocking": true },
+    { "key": "approvals_complete",          "enabled": true, "blocking": true },
+    { "key": "regression_testing_complete", "enabled": true, "blocking": true }
+  ],
+
+  "cases": [
+    {
+      "name": "a clean release with everything satisfied is READY",
+      "gates": null,
+      "snapshot": { "total_issues": 12, "open_critical": 0, "qa_failed": 0, "pending_approvals": 0, "regression_required": 3, "regression_tested": 3 },
+      "expect": { "status": "ready", "blocking_failures": 0, "gate_status": { "no_open_critical": "pass", "qa_failures_resolved": "pass", "approvals_complete": "pass", "regression_testing_complete": "pass" } }
+    },
+    {
+      "name": "an empty release passes every gate — there is nothing to be wrong",
+      "gates": null,
+      "snapshot": { "total_issues": 0, "open_critical": 0, "qa_failed": 0, "pending_approvals": 0, "regression_required": 0, "regression_tested": 0 },
+      "expect": { "status": "ready", "blocking_failures": 0, "empty": true }
+    },
+    {
+      "name": "one open critical issue blocks the release",
+      "gates": null,
+      "snapshot": { "total_issues": 8, "open_critical": 1, "qa_failed": 0, "pending_approvals": 0, "regression_required": 0, "regression_tested": 0 },
+      "expect": { "status": "blocked", "blocking_failures": 1, "gate_status": { "no_open_critical": "fail" } }
+    },
+    {
+      "name": "an unresolved QA failure blocks the release",
+      "gates": null,
+      "snapshot": { "total_issues": 8, "open_critical": 0, "qa_failed": 2, "pending_approvals": 0, "regression_required": 0, "regression_tested": 0 },
+      "expect": { "status": "blocked", "blocking_failures": 1, "gate_status": { "qa_failures_resolved": "fail" } }
+    },
+    {
+      "name": "a pending approval blocks the release",
+      "gates": null,
+      "snapshot": { "total_issues": 5, "open_critical": 0, "qa_failed": 0, "pending_approvals": 1, "regression_required": 0, "regression_tested": 0 },
+      "expect": { "status": "blocked", "blocking_failures": 1, "gate_status": { "approvals_complete": "fail" } }
+    },
+    {
+      "name": "untested regressions block the release",
+      "gates": null,
+      "snapshot": { "total_issues": 6, "open_critical": 0, "qa_failed": 0, "pending_approvals": 0, "regression_required": 4, "regression_tested": 1 },
+      "expect": { "status": "blocked", "blocking_failures": 1, "gate_status": { "regression_testing_complete": "fail" } }
+    },
+    {
+      "name": "several failures are all reported, not just the first",
+      "gates": null,
+      "snapshot": { "total_issues": 20, "open_critical": 2, "qa_failed": 3, "pending_approvals": 1, "regression_required": 5, "regression_tested": 0 },
+      "expect": { "status": "blocked", "blocking_failures": 4 }
+    },
+    {
+      "name": "a disabled gate is skipped and cannot block",
+      "gates": [
+        { "key": "no_open_critical", "enabled": false, "blocking": true },
+        { "key": "qa_failures_resolved", "enabled": true, "blocking": true }
+      ],
+      "snapshot": { "total_issues": 4, "open_critical": 9, "qa_failed": 0, "pending_approvals": 0, "regression_required": 0, "regression_tested": 0 },
+      "expect": { "status": "ready", "blocking_failures": 0, "gate_status": { "no_open_critical": "skipped" } }
+    },
+    {
+      "name": "an advisory gate reports a failure but does not block",
+      "gates": [
+        { "key": "no_open_critical", "enabled": true, "blocking": false },
+        { "key": "qa_failures_resolved", "enabled": true, "blocking": true }
+      ],
+      "snapshot": { "total_issues": 4, "open_critical": 3, "qa_failed": 0, "pending_approvals": 0, "regression_required": 0, "regression_tested": 0 },
+      "expect": { "status": "ready", "blocking_failures": 0, "advisory_failures": 1, "gate_status": { "no_open_critical": "fail" } }
+    },
+    {
+      "name": "the critical gate honours a configured severity list",
+      "gates": [
+        { "key": "no_open_critical", "enabled": true, "blocking": true, "config": { "severities": ["critical", "major"] } }
+      ],
+      "snapshot": { "total_issues": 4, "open_critical": 0, "open_by_severity": { "critical": 0, "major": 2 }, "qa_failed": 0, "pending_approvals": 0, "regression_required": 0, "regression_tested": 0 },
+      "expect": { "status": "blocked", "blocking_failures": 1 }
+    },
+    {
+      "name": "an override clears the gates it names and only those",
+      "gates": null,
+      "snapshot": { "total_issues": 9, "open_critical": 1, "qa_failed": 2, "pending_approvals": 0, "regression_required": 0, "regression_tested": 0 },
+      "override": { "gates": ["no_open_critical"] },
+      "expect": { "status": "blocked", "blocking_failures": 1, "gate_status": { "no_open_critical": "overridden", "qa_failures_resolved": "fail" } }
+    },
+    {
+      "name": "an override covering every failing gate makes the release READY",
+      "gates": null,
+      "snapshot": { "total_issues": 9, "open_critical": 1, "qa_failed": 2, "pending_approvals": 0, "regression_required": 0, "regression_tested": 0 },
+      "override": { "gates": ["no_open_critical", "qa_failures_resolved"] },
+      "expect": { "status": "ready", "blocking_failures": 0, "override_active": true }
+    },
+    {
+      "name": "an override naming a gate that is passing is recorded but changes nothing",
+      "gates": null,
+      "snapshot": { "total_issues": 3, "open_critical": 0, "qa_failed": 0, "pending_approvals": 0, "regression_required": 0, "regression_tested": 0 },
+      "override": { "gates": ["no_open_critical"] },
+      "expect": { "status": "ready", "blocking_failures": 0, "override_active": false, "gate_status": { "no_open_critical": "pass" } }
+    },
+    {
+      "name": "an unknown gate key in configuration is reported, never silently ignored",
+      "gates": [
+        { "key": "no_such_gate", "enabled": true, "blocking": true },
+        { "key": "qa_failures_resolved", "enabled": true, "blocking": true }
+      ],
+      "snapshot": { "total_issues": 2, "open_critical": 0, "qa_failed": 0, "pending_approvals": 0, "regression_required": 0, "regression_tested": 0 },
+      "expect": { "status": "blocked", "blocking_failures": 1, "gate_status": { "no_such_gate": "unknown" } }
+    },
+    {
+      "name": "an empty gate list means no governance, and says so rather than passing quietly",
+      "gates": [],
+      "snapshot": { "total_issues": 5, "open_critical": 3, "qa_failed": 4, "pending_approvals": 2, "regression_required": 2, "regression_tested": 0 },
+      "expect": { "status": "ready", "blocking_failures": 0, "ungoverned": true }
+    },
+    {
+      "name": "regression testing with nothing to test passes rather than dividing by zero",
+      "gates": null,
+      "snapshot": { "total_issues": 7, "open_critical": 0, "qa_failed": 0, "pending_approvals": 0, "regression_required": 0, "regression_tested": 0 },
+      "expect": { "gate_status": { "regression_testing_complete": "pass" }, "status": "ready" }
+    }
+  ]
+}

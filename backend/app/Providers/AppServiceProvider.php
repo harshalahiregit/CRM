@@ -12,6 +12,7 @@ use App\Services\Customer\TicketIntakeUnavailable;
 use App\Services\Helpdesk\Contracts\CustomerServiceContract;
 use App\Services\Helpdesk\HelpdeskTicketIntakeService;
 use App\Services\Helpdesk\SlaService;
+use App\Services\Hr\Attendance\CrmAttendanceProvider;
 use App\Services\Hr\Attendance\PlaceholderAttendanceProvider;
 use App\Services\Integration\ProjectDirectoryService;
 use App\Services\Numbering\DatabaseDocumentNumberService;
@@ -100,12 +101,19 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(ResetStrategyRegistry::class);
         $this->app->singleton(MergeFieldRegistry::class);
 
-        // Payroll attendance boundary — placeholder until SangoeTrack integration.
-        // Swap this binding for a SangoeTrackAttendanceProvider to go live; payroll
-        // logic depends only on the AttendanceProvider interface.
+        // Payroll attendance boundary.
+        //
+        // Was the placeholder, which reported every day of the month as payable —
+        // so somebody absent for a week was paid for it. That was right while
+        // attendance lived in another system; the app now clocks in and out
+        // against hr_attendance, so the CRM's own records are the source.
+        //
+        // PlaceholderAttendanceProvider is kept, not deleted: a workspace that has
+        // not started using attendance yet would otherwise have every employee
+        // read as absent all month and be paid nothing at all.
         $this->app->bind(
             AttendanceProvider::class,
-            PlaceholderAttendanceProvider::class
+            CrmAttendanceProvider::class
         );
     }
 

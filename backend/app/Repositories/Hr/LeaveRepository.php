@@ -43,7 +43,7 @@ class LeaveRepository
     public function policies(int $tenantId, array $f): Collection
     {
         return HrLeavePolicy::where('tenant_id', $tenantId)
-            ->with(['policyTypes.leaveType:id,name,code,category', 'grade:id,name', 'designation:id,name'])
+            ->with(['policyTypes.leaveType:id,name,code,category', 'grade:id,name', 'designation:id,name', 'department:id,name'])
             ->when(isset($f['status']) && $f['status'] !== '' && $f['status'] !== 'All', fn ($q) => $q->where('is_active', $f['status'] === 'Active'))
             ->when(! empty($f['search']), fn ($q) => $q->where('name', 'like', '%'.$f['search'].'%'))
             ->orderBy('name')->get();
@@ -52,7 +52,7 @@ class LeaveRepository
     public function findPolicy(int $id, int $tenantId): ?HrLeavePolicy
     {
         return HrLeavePolicy::where('tenant_id', $tenantId)
-            ->with(['policyTypes.leaveType:id,name,code,category', 'grade:id,name', 'designation:id,name'])
+            ->with(['policyTypes.leaveType:id,name,code,category', 'grade:id,name', 'designation:id,name', 'department:id,name'])
             ->find($id);
     }
 }

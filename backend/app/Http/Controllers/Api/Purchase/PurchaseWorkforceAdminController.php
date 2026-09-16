@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Purchase;
 
 use App\Http\Controllers\Controller;
+use App\Models\Purchase\PurchaseVendor;
 use App\Models\Purchase\PurchaseWorker;
 use App\Models\Purchase\PurchaseWorkerMedical;
 use App\Models\Purchase\PurchaseWorkerPpeIssue;
@@ -59,6 +60,31 @@ class PurchaseWorkforceAdminController extends Controller
      * soft-deletes the worker and these child tables carry no FK, so orphaned
      * medicals would otherwise keep appearing on the tab.
      */
+
+    /**
+     * Bulk-register workers from a sheet, against the vendor the operator picked.
+     *
+     * The vendor is taken from `vendor_id` and nothing else. TPV learned this the
+     * hard way: it once fell back through the caller's own vendor link, then any
+     * vendor whose e-mail matched, then the first vendor in the tenant — so an
+     * import could land under a company nobody chose, which reads to everyone as
+     * "the upload said it worked and the workers vanished". A missing vendor is
+     * an error, not a guess.
+     */
+    public function uploadWorkers(Request $request)
+    {
+        $data = $request->validate([
+            'worker_file' => 'required|file|mimes:csv,xls,xlsx,txt,zip|max:20480',
+            'vendor_id' => 'required|integer',
+        ], [
+            'vendor_id.required' => 'Choose the vendor these workers belong to.',
+        ]);
+
+        $vendor = PurchaseVendor::forTenant($request->user()->tenant_id)->find($data['vendor_id']);
+        abort_unless($vendor, 404, 'Vendor not found.');
+
+        return response()->json($this->service->bulkUpload($request->file('worker_file'), $vendor));
+    }
 
     public function medicals(Request $request)
     {
@@ -178,6 +204,35 @@ class PurchaseWorkforceAdminController extends Controller
         ]);
 
         return response()->json($ppe->returnIssue($issue, $data, $request->user()));
+    }
+
+    /**
+     * Record that issued gear was actually checked.
+     *
+     * Mirrors the TPV endpoint. A rule may set `verification_required`, and
+     * until now that flag was settable, saved and displayed while nothing read
+     * it and nothing could satisfy it — the item being in someone's hands is
+     * not the same as the item being fit to use.
+     */
+    public function verifyPpe(Request $request, PurchaseWorkerPpeIssue $issue)
+    {
+        abort_unless(
+            (int) $issue->tenant_id === (int) $request->user()->tenant_id,
+            404,
+            'PPE issue not found'
+        );
+
+        $data = $request->validate([
+            'notes' => 'nullable|string|max:500',
+        ]);
+
+        $issue->update([
+            'verified_at'        => now(),
+            'verified_by'        => $request->user()->id,
+            'verification_notes' => $data['notes'] ?? null,
+        ]);
+
+        return response()->json($issue->fresh());
     }
 
     /**
@@ -396,10 +451,23 @@ class PurchaseWorkforceAdminController extends Controller
             'screening_responses' => 'nullable|array',
             'screening_score'     => 'nullable|integer|min:0',
             'screening_band'      => 'nullable|string|max:20',
-            'signature_path'      => 'nullable|string|max:255',
-            'capture_photo_path'  => 'nullable|string|max:255',
+            // Signature and scene photo arrive as base64 data URLs and are decoded
+            // to stored files by the service. The *_path columns are deliberately
+            // NOT accepted from the client — a caller must not get to name a
+            // storage path or point the record at someone else's file.
+            'signature_data'      => 'nullable|string',
+            'capture_photo'       => 'nullable|string',
             'geo_location'        => 'nullable|string|max:120',
+            // The certificate the examination produced. A fitness verdict with
+            // no document behind it is an assertion, and the vendor portal has
+            // always been able to attach one — the admin form could not.
+            'certificate_file'    => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:10240',
         ]);
+
+        if ($file = $request->file('certificate_file')) {
+            $data['file_path'] = $file->store("purchase/workforce/{$worker->id}/medical", 'local');
+        }
+        unset($data['certificate_file']);
 
         $data['expiry_date']   ??= $data['valid_until'] ?? null;
         $data['examiner_name'] ??= $data['provider'] ?? null;
@@ -432,7 +500,13 @@ class PurchaseWorkforceAdminController extends Controller
             'status'        => 'nullable|string|max:40',
             'score'         => 'nullable|numeric',
             'remarks'       => 'nullable|string|max:5000',
+            'certificate_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:10240',
         ]);
+
+        if ($file = $request->file('certificate_file')) {
+            $data['file_path'] = $file->store("purchase/workforce/{$worker->id}/training", 'local');
+        }
+        unset($data['certificate_file']);
 
         return response()->json($this->service->saveTraining($worker, $data));
     }

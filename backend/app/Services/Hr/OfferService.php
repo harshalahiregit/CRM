@@ -153,7 +153,7 @@ class OfferService
 
         if ($candidate && $candidate->email) {
             try {
-                Mail::to($candidate->email)->send(new \App\Mail\OfferLetterMail($offer, $link));
+                app(\App\Services\Mail\TenantMailer::class)->send($candidate->tenant_id, $candidate->email, new \App\Mail\OfferLetterMail($offer, $link));
             } catch (\Throwable $e) {
                 Log::channel('hr')->error('Offer email failed', ['offer_id' => $offer->id, 'error' => $e->getMessage()]);
             }

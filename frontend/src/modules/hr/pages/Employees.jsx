@@ -1,11 +1,13 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { GRAD } from '@/components/ui/brand'
 import { useTheme } from '@/context/ThemeContext'
 import { Search, Building2, Plus, X, LayoutGrid, List, Eye, Pencil } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { useMasterData, withInactive } from '@/modules/hr/useMasterData'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import Modal from '@/components/ui/Modal'
+import DirectoryGapPanel from '@/modules/hr/components/DirectoryGapPanel'
 
 const DEPT_COLORS = { Engineering:'#3b82f6', Sales:'#10b981', HR:'#7C3AED', Operations:'#f59e0b', Product:'#ec4899', Marketing:'#f97316', Finance:'#6366f1' }
 const STATUS_S = s => s==='Active'?{c:'#10b981',bg:'rgba(16,185,129,0.12)'}:s==='On Leave'?{c:'#f59e0b',bg:'rgba(245,158,11,0.12)'}:{c:'#f87171',bg:'rgba(239,68,68,0.1)'}
@@ -141,7 +143,6 @@ export default function Employees() {
   const departments = useMemo(()=>['All', ...new Set(optionsList.map(e=>e.department).filter(Boolean))], [optionsList])
   const designations = useMemo(()=>['All', ...new Set(optionsList.map(e=>e.designation).filter(Boolean))], [optionsList])
 
-  const openCreate = () => { setEditingId(null); setForm(EMPTY_FORM); setShowModal(true) }
   const openEdit = (emp) => {
     setEditingId(emp.id)
     // #29 — the two org-chart keys fall back to the EMPTY_FORM defaults rather
@@ -218,7 +219,22 @@ export default function Employees() {
               </button>
             ))}
           </div>
-          <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)', boxShadow:'0 4px 14px rgba(124,58,237,0.4)' }}><Plus size={15}/> Add Employee</button>
+          {/* People are created in Staff Management, never here.
+              A person is one thing: a login and an employment record, made
+              together. Creating from this screen produced only the second half
+              — somebody on the payroll who could not sign in — and creating the
+              same person in both places produced two of them, which is what
+              happened the first time it was tried: a second "Kavita Dekhmukh"
+              that payroll had no way to tell from the first.
+              Staff Management already writes both in one transaction, so it is
+              the one door in. This screen owns everything after that. */}
+          <button
+            onClick={() => navigate('/app/admin/staff')}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white"
+            style={{ background: GRAD, boxShadow: '0 4px 14px rgba(124,58,237,0.4)' }}
+            title="Employees are created in Staff Management, so the login and the employment record are made together">
+            <Plus size={15}/> Add Employee
+          </button>
         </div>
       </div>
 
@@ -227,6 +243,12 @@ export default function Employees() {
           <div key={k.l} className="kpi-3d"><p className="text-3xl font-black" style={{ color:k.c }}>{k.v}</p><p className="text-sm font-medium mt-1" style={{ color:'var(--text-muted)' }}>{k.l}</p></div>
         ))}
       </div>
+
+      {/* Where this list and the staff directory disagree. Somebody added in
+          one place and missing from the other is only discovered when they are
+          left off a payroll run — so it is surfaced here, next to the list it
+          is about. Silent when the two agree. */}
+      <DirectoryGapPanel showToast={showToast} />
 
       {/* Search & Filters */}
       <div className="card-3d" style={{ padding:'16px' }}>
@@ -386,7 +408,7 @@ export default function Employees() {
           off-screen on a scrolled list. */}
       <Modal open={showModal} onClose={()=>setShowModal(false)} className="max-w-lg" style={{ maxHeight:'90vh', overflowY:'auto' }}>
           <div>
-            <div className="flex items-center justify-between mb-5"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{editingId?'Edit Employee':'Add Employee'}</h2><button onClick={()=>setShowModal(false)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
+            <div className="flex items-center justify-between mb-5"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Edit Employee</h2><button onClick={()=>setShowModal(false)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
             <div className="space-y-3">
               <div><label className="label">Full Name *</label><input className="input-3d text-sm" placeholder="Arjun Sharma" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></div>
               <div className="grid grid-cols-2 gap-3">
@@ -453,12 +475,29 @@ export default function Employees() {
                   {!form.skip_probation ? (
                     <>
                       <select className="input-3d text-sm" value={form.probation_policy_id||''} onChange={e=>setForm({...form,probation_policy_id:e.target.value})}>
-                        <option value="">Choose a probation policy…</option>
+                        <option value="">{probationPolicies.length ? 'Choose a probation policy…' : 'No probation policies defined yet'}</option>
                         {probationPolicies.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
-                      <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
-                        The probation record is created with the employee. If it cannot be created, the employee is not created either.
-                      </p>
+                      {/* Same treatment as Department above. A fresh workspace has no
+                          policies, so this required dropdown was empty with nothing to
+                          pick and nothing said why — the form simply could not be
+                          completed. Say where policies come from, offer the way there,
+                          and point at the exemption for a hire that genuinely has none. */}
+                      {!probationPolicies.length ? (
+                        <>
+                          <button type="button" onClick={()=>navigate('/app/hr/probation-management')}
+                            className="text-[10px] mt-1 underline block" style={{ color:'#a78bfa' }}>
+                            Create one in Probation Management
+                          </button>
+                          <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+                            Or tick “exempt” below if this hire has no probation.
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+                          The probation record is created with the employee. If it cannot be created, the employee is not created either.
+                        </p>
+                      )}
                     </>
                   ) : (
                     <input className="input-3d text-sm" placeholder="Why is this hire exempt from probation?"

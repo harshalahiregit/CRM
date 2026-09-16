@@ -120,7 +120,17 @@ return new class extends Migration {
             $table->boolean('segregation_overridden')->default(false);
 
             $table->timestamps();
-            $table->index(['tenant_id', 'compliance_checklist_id', 'tier']);
+            // Named explicitly. Laravel's generated name would be
+            // `compliance_signatures_tenant_id_compliance_checklist_id_tier_index`
+            // — 66 characters, and MySQL caps identifiers at 64, so this
+            // migration failed on every MySQL deploy with "Identifier name is
+            // too long". It passed locally because SQLite has no such limit,
+            // which is exactly the kind of difference that only shows up on a
+            // server.
+            $table->index(
+                ['tenant_id', 'compliance_checklist_id', 'tier'],
+                'compliance_sig_tenant_checklist_tier_idx'
+            );
         });
     }
 

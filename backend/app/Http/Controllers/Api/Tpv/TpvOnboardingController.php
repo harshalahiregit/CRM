@@ -112,9 +112,35 @@ class TpvOnboardingController extends Controller
     {
         $this->assertTenant($request, $onboarding);
 
-        return response()->json(
-            $this->tpvOnboardingService->saveProfile($onboarding, $request->validated()['profile'], $request->user())
-        );
+        $profile = $request->validated()['profile'] ?? [];
+
+        // A draft can legitimately sift down to nothing — everything the vendor
+        // had touched so far was half-typed. Writing an empty merge would only
+        // add an audit row saying a profile was saved when none was.
+        $saved = $profile === []
+            ? $onboarding->fresh()
+            : $this->tpvOnboardingService->saveProfile($onboarding, $profile, $request->user());
+
+        // A draft keeps every field that stands on its own; anything half-finished
+        // is set aside rather than failing the save, and is named here so the
+        // wizard can say which box still needs work. Merged onto the model so the
+        // response shape every caller already reads is unchanged.
+        return response()->json(array_merge($saved->toArray(), [
+            'skipped' => $request->skippedFields(),
+        ]));
+    }
+
+    /** The minutes as data, resolved exactly as the PDF resolves them. */
+    public function kickoffData(Request $request, TpvOnboarding $onboarding)
+    {
+        $this->assertTenant($request, $onboarding);
+
+        $meeting = app(\App\Services\Tpv\KickoffPdfService::class)->findKickoffMeeting($onboarding);
+        if (! $meeting) {
+            return response()->json(['meeting' => null]);
+        }
+
+        return response()->json(\App\Support\Shared\VendorMomView::for($meeting, (bool) $meeting->mom_path));
     }
 
     public function setStep(Request $request, TpvOnboarding $onboarding)

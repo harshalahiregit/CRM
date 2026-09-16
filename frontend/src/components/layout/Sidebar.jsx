@@ -1,17 +1,10 @@
 import {
-  LayoutDashboard, Users, Briefcase, CheckSquare, FolderOpen, Receipt, Truck, LifeBuoy,
-  BarChart2, Settings, ChevronLeft, ChevronRight, LogOut, User, Zap,
-  Package, UserCheck, CalendarDays, FileText, Rocket, Building2, ClipboardList,
-  ChevronDown, Shield, UserCog, IndianRupee, Banknote, CalendarCheck, FileSignature, CreditCard, FileX, ShoppingBag,
-  UserPlus, Link2, RefreshCw, LayoutTemplate, Globe, TrendingUp, Landmark, BookText, Scale,
-  ArrowLeftRight, BookOpen, Boxes, PackagePlus, PackageMinus, Warehouse, History, Network, FileQuestion,
-  BarChart3, Activity, Layers3, ScanLine, ClipboardCheck, ShoppingCart, Hourglass, Wrench,
-  CalendarRange, Handshake, Factory, Undo2, Wallet, Award, GraduationCap, ShieldCheck, Bell, Search, X,
-  Settings2, Clock, PenLine, CalendarOff, Contact, MessageSquare, PartyPopper
+  Activity, ArrowLeftRight, Award, Banknote, BarChart2, BarChart3, Bell, BookOpen, BookText, Boxes, Briefcase, Bug, Building2, CalendarCheck, CalendarClock, CalendarDays, CalendarOff, CalendarRange, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList, Clock, Contact, CreditCard, Factory, FileCheck2, FileQuestion, FileSignature, FileText, FileX, FolderOpen, Globe, GraduationCap, Handshake, HelpCircle, History, Hourglass, IndianRupee, Landmark, Layers3, LayoutDashboard, LayoutTemplate, LifeBuoy, Link2, LogOut, MessageSquare, Network, Package, PackageMinus, PackagePlus, PartyPopper, PenLine, Receipt, RefreshCw, Rocket, Scale, ScanLine, Search, Settings, Settings2, Shield, ShieldCheck, ShoppingBag, ShoppingCart, SlidersHorizontal, Stethoscope, TrendingUp, Truck, Undo2, User, UserCheck, UserCog, UserPlus, UserRound, Users, Wallet, Warehouse, Wrench, X, Zap,
 } from 'lucide-react'
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/context/AuthContext'
+import { canUseSire } from '@/lib/sire/access'
 import { useTheme } from '@/context/ThemeContext'
 import { helpdeskApi } from '@/services/helpdeskApi'
 import sangoeIcon from '@/assets/sangoe-icon.png'
@@ -29,6 +22,15 @@ const NAV_ITEMS = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/app/dashboard' },
   { label: 'Tasks', icon: CheckSquare, path: '/app/tasks' },
   { label: 'Projects', icon: FolderOpen, path: '/app/projects' },
+  // Meetings sits here, not under TPV, because it is now company-wide: every
+  // internal role can call one and sees their own. It stayed invisible to
+  // everyone who never opens TPV or Purchase while living only in those two
+  // sidebars. EXTERNAL_ROLES never see this list, so no gate is needed.
+  { label: 'Meetings', icon: CalendarDays, path: '/app/meetings' },
+  // Contracts is its own module, not part of Sales: an agreement is signed with
+  // customers AND vendors, so burying it under one of them hides it from the
+  // other. Top-level, which places it above the Purchase module block below.
+  { label: 'Contracts', icon: FileSignature, path: '/app/contracts' },
   { label: 'Settings', icon: Settings, path: '/app/settings' },
 ]
 
@@ -39,6 +41,8 @@ const MODULE_SEARCH = [
   { label: 'Dashboard',  path: '/app/dashboard',        icon: LayoutDashboard, kw: 'home' },
   { label: 'Tasks',      path: '/app/tasks',            icon: CheckSquare,     kw: 'todo' },
   { label: 'Projects',   path: '/app/projects',         icon: FolderOpen,      kw: '' },
+  { label: 'Meetings',   path: '/app/meetings',         icon: CalendarDays,    kw: 'meeting mom minutes agenda kickoff' },
+  { label: 'Contracts',  path: '/app/contracts',        icon: FileSignature,   kw: 'agreement sign signature renewal nda' },
   { label: 'Helpdesk',   path: '/app/helpdesk/tickets', icon: LifeBuoy,        kw: 'tickets support' },
   { label: 'Inventory',  path: '/app/inventory',        icon: Boxes,           kw: 'stock warehouse items' },
   { label: 'Sales',      path: '/app/sales/dashboard',  icon: TrendingUp,      kw: 'revenue leads' },
@@ -65,94 +69,88 @@ const HR_DASHBOARD = { label: 'Dashboard', path: '/app/hr/dashboard', icon: Layo
 const HR_EMPLOYEES = { label: 'Employees', path: '/app/hr/employees', icon: Building2 }
 
 const HR_RECRUITMENT_ITEMS = [
-  { label: 'Manpower Requests', path: '/app/hr/manpower-requests', icon: ClipboardList },
-  { label: 'Job Postings', path: '/app/hr/jobs', icon: Briefcase },
-  { label: 'Candidates', path: '/app/hr/candidates', icon: Users },
-  { label: 'Interviews', path: '/app/hr/interviews', icon: CalendarDays },
-  { label: 'Offer Letters', path: '/app/hr/offers', icon: FileText },
-  { label: 'Onboarding', path: '/app/hr/onboarding', icon: Rocket },
+  { label: 'Manpower Requests',  path: '/app/hr/manpower-requests',   icon: ClipboardList },
+  { label: 'Job Postings',       path: '/app/hr/jobs',                icon: Briefcase },
+  { label: 'Candidates',         path: '/app/hr/candidates',          icon: Users },
+  { label: 'Interviews',         path: '/app/hr/interviews',          icon: CalendarClock },
+  // Belongs with interviews, not adrift in a general list.
+  { label: 'Interview Questions', path: '/app/hr/interview-questions', icon: HelpCircle },
+  { label: 'Offer Letters',      path: '/app/hr/offers',              icon: FileSignature },
+  { label: 'Onboarding',         path: '/app/hr/onboarding',          icon: UserPlus },
 ]
 
-const HR_RECORDS_ITEMS = [
-  { label: 'Organization Setup', path: '/app/hr/organization-setup', icon: Boxes },
-  { label: 'Organization Chart', path: '/app/hr/org-chart', icon: Network },
-  { label: 'Interview Questions', path: '/app/hr/interview-questions', icon: FileQuestion },
-  { label: 'HR Operations', path: '/app/hr/operations', icon: Settings2 },
-  { label: 'Employee Surveys', path: '/app/hr/surveys', icon: ClipboardList },
-  { label: 'Payroll', path: '/app/hr/payroll', icon: Wallet },
-  { label: 'Performance', path: '/app/hr/performance', icon: Award },
+// ── HR, grouped by what somebody came to do ───────────────────────────────────
+//
+// These were one flat list of twenty entries under 'HR Records', which is a list
+// you scan rather than read. Grouped by task instead: attendance things together,
+// requests together, the employee lifecycle together. Each group is small enough
+// to take in at a glance, and the rail collapses to a handful of rows.
+
+const HR_ATTENDANCE_ITEMS = [
+  { label: 'Attendance Register', path: '/app/hr/attendance',          icon: CalendarCheck },
+  { label: 'Correction Requests', path: '/app/hr/corrections',         icon: PenLine },
+  { label: 'Attendance Reports',  path: '/app/hr/attendance-reports',  icon: BarChart3 },
+  { label: 'Holidays & Events',   path: '/app/hr/holidays',            icon: PartyPopper },
+]
+
+// Expense and Advance live here rather than as groups of their own — they are
+// two more things an employee asks for, alongside leave.
+const HR_REQUEST_ITEMS = [
   { label: 'Leave Management', path: '/app/hr/leave-management', icon: CalendarDays },
-  { label: 'Learning & Development', path: '/app/hr/learning-development', icon: GraduationCap },
-  { label: 'Probation Management', path: '/app/hr/probation-management', icon: ShieldCheck },
-  { label: 'Exit Management', path: '/app/hr/exit-management', icon: LogOut },
-  { label: 'Notifications', path: '/app/hr/settings/notifications', icon: Bell },
-  // The CRM's own expense claims — not SangoeTrack's, which are still listed
-  // separately below under 'Reimbursements' until track.sangoe.in is retired.
-  // Deliberately NOT called Reimbursements: two identical labels in one nav is
-  // how somebody ends up deciding on the wrong screen, the same reason 'Staff
-  // Directory' and 'Salaries' are named as they are.
-  { label: 'Expense Claims', path: '/app/hr/expense-claims', icon: Receipt },
-  { label: 'My Expenses', path: '/app/hr/my-expenses', icon: IndianRupee },
-  // Native advances. SangoeTrack's 'Advances' is still listed below until
-  // track.sangoe.in is retired, so these carry distinct labels for the same
-  // reason Expense Claims does.
-  { label: 'Advance Requests', path: '/app/hr/advances', icon: Banknote },
-  { label: 'My Advances', path: '/app/hr/my-advances', icon: Banknote },
-  // 'Attendance Reports', not 'Reports' — SangoeTrack already has a Reports
-  // entry, and this one is specifically the payroll-facing view.
-  { label: 'Attendance Reports', path: '/app/hr/attendance-reports', icon: BarChart3 },
-  // The CRM's OWN attendance register — every employee, every day, editable.
-  // It has existed at /app/hr/attendance all along with no way to reach it from
-  // the nav: the only 'Attendance' entry points at SangoeTrack's copy below, so
-  // the native one was unreachable and looked missing.
-  { label: 'Attendance Register', path: '/app/hr/attendance', icon: CalendarCheck },
-  // 'My Leave', beside My Expenses and My Advances — the self-service set. HR's
-  // own Leave Management sits above; SangoeTrack's 'Leave' is below.
-  { label: 'My Leave', path: '/app/hr/my-leave', icon: CalendarOff },
-  // Named apart from SangoeTrack's 'Corrections' below, for the same reason as
-  // Expense Claims and Attendance Register.
-  { label: 'Correction Requests', path: '/app/hr/corrections', icon: PenLine },
-  { label: 'My Corrections', path: '/app/hr/my-corrections', icon: PenLine },
-  { label: 'Demo Requests', path: '/app/hr/demo-requests', icon: MessageSquare },
-  // 'HR Settings', not 'Settings' — SangoeTrack has its own Settings entry below.
-  { label: 'HR Settings', path: '/app/hr/settings', icon: Settings2 },
+  { label: 'Expense Claims',   path: '/app/hr/expense-claims',   icon: Receipt },
+  { label: 'Advances',         path: '/app/hr/advances',         icon: Wallet },
+]
+
+const HR_LIFECYCLE_ITEMS = [
+  { label: 'Probation Management',   path: '/app/hr/probation-management',  icon: ShieldCheck },
+  { label: 'Performance',            path: '/app/hr/performance',           icon: Award },
+  { label: 'Learning & Development', path: '/app/hr/learning-development',  icon: GraduationCap },
+  { label: 'Employee Surveys',       path: '/app/hr/surveys',               icon: ClipboardList },
+  { label: 'Exit Management',        path: '/app/hr/exit-management',       icon: LogOut },
+  // Occupational-health records for people who belong to no vendor: internal
+  // staff, client contacts and site visitors. The doctor portal has been filing
+  // these since it was built and nothing could read them back.
+  { label: 'Medical Records',        path: '/app/medical/general',          icon: Stethoscope },
+]
+
+const HR_ORG_ITEMS = [
+  { label: 'Organization Setup', path: '/app/hr/organization-setup', icon: FolderOpen },
+  { label: 'Organization Chart', path: '/app/hr/org-chart',          icon: Network },
+  { label: 'HR Operations',      path: '/app/hr/operations',         icon: Settings2 },
+]
+
+// Left at the top level because they are opened often and on their own.
+const HR_TOP_LEVEL = [
+  { label: 'Payroll',        path: '/app/hr/payroll',                icon: IndianRupee },
+  { label: 'Notifications',  path: '/app/hr/settings/notifications', icon: Bell },
+  { label: 'Demo Requests',  path: '/app/hr/demo-requests',          icon: MessageSquare },
+  { label: 'HR Settings',    path: '/app/hr/settings',               icon: Settings2 },
+]
+
+// ── A person's own requests ───────────────────────────────────────────────────
+//
+// NOT duplicates of the screens above, though they look like it. The API has two
+// surfaces on purpose: /hr/me/* is auth-only and returns your own, while
+// /hr/advances and /hr/corrections require hr.advances and hr.manage. Somebody
+// without those permissions opening the management screen gets a 403, so these
+// are the only way they can see what they asked for.
+//
+// Hidden from anyone who can already see the management screens, which is what
+// makes an admin's rail free of the pair. When per-permission menus arrive this
+// condition is the thing to replace.
+const HR_MINE_ITEMS = [
+  { label: 'My Leave',       path: '/app/hr/my-leave',        icon: CalendarOff },
+  { label: 'My Expenses',    path: '/app/hr/my-expenses',     icon: IndianRupee },
+  { label: 'My Advances',    path: '/app/hr/my-advances',     icon: Banknote },
+  { label: 'My Corrections', path: '/app/hr/my-corrections',  icon: PenLine },
 ]
 
 // Flat list of every HR leaf — used only for the collapsed icon rail.
-// ── SangoeTrack ────────────────────────────────────────────────────────────
-//
-// Live from track.sangoe.in — the app people actually clock into. These read and
-// write THEIR data; the CRM stores none of it, so nothing here can drift out of
-// step with what an employee sees on their phone.
-//
-// Flat, under their own names, rather than behind a collapsible group: they are
-// things HR does daily, not a sub-system to go hunting for.
-//
-// Two labels differ from the obvious choice, because HR already owns the word:
-//
-//   'Staff Directory'  not Employees — /app/hr/employees is the recruitment-side
-//                      record. These are the people who punch in, a different
-//                      list, and two identical labels is how somebody ends up
-//                      trusting the wrong screen.
-//   'Salaries'         not Payroll — HR Records already has Payroll, and this
-//                      screen only sets a monthly figure. SangoeTrack has no API
-//                      for payslips or components, so 'Salaries' is also the
-//                      more honest name for what it does.
-const HR_TRACK_ITEMS = [
-  { label: 'Attendance',      path: '/app/hr/track/attendance',     icon: Clock },
-  { label: 'Corrections',     path: '/app/hr/track/corrections',    icon: PenLine },
-  { label: 'Leave',           path: '/app/hr/track/leave',          icon: CalendarOff },
-  { label: 'Reimbursements',  path: '/app/hr/track/reimbursements', icon: Receipt },
-  { label: 'Advances',        path: '/app/hr/track/advances',       icon: Wallet },
-  { label: 'Salaries',        path: '/app/hr/track/payroll',        icon: IndianRupee },
-  { label: 'Staff Directory', path: '/app/hr/track/staff',          icon: Contact },
-  { label: 'Demo Requests',   path: '/app/hr/track/demo-requests',  icon: MessageSquare },
-  { label: 'Reports',         path: '/app/hr/track/reports',        icon: BarChart3 },
-  { label: 'Holidays',        path: '/app/hr/track/holidays',       icon: PartyPopper },
-  { label: 'Settings',        path: '/app/hr/track/settings',       icon: Settings2 },
+const HR_ALL_LEAVES = [
+  HR_DASHBOARD, HR_EMPLOYEES,
+  ...HR_RECRUITMENT_ITEMS, ...HR_ATTENDANCE_ITEMS, ...HR_REQUEST_ITEMS,
+  ...HR_LIFECYCLE_ITEMS, ...HR_ORG_ITEMS, ...HR_TOP_LEVEL, ...HR_MINE_ITEMS,
 ]
-
-const HR_ALL_LEAVES = [HR_DASHBOARD, ...HR_RECRUITMENT_ITEMS, HR_EMPLOYEES, ...HR_RECORDS_ITEMS, ...HR_TRACK_ITEMS]
 
 // Grouped so the ~17 sales micro-modules stay scannable instead of rendering
 // as one long flat list. A muted mini-header is emitted whenever `group`
@@ -193,6 +191,17 @@ const ACCOUNTS_SUB_ITEMS = [
   { label: 'Budgets',         path: '/app/accounts/budgets',         icon: BarChart2 },
   { label: 'Reports',         path: '/app/accounts/reports',         icon: Scale },
   { label: 'Settings',        path: '/app/accounts/settings',        icon: Settings },
+]
+
+// SIRE - the engineering defect track. Deliberately its own section and NOT
+// under Helpdesk: a ticket closes when the requester is happy, a SIRE case when
+// the fix ships verified. Same word "issue", different object.
+const SIRE_SUB_ITEMS = [
+  { label: 'Dashboard',     path: '/app/sire/dashboard',     icon: LayoutDashboard },
+  { label: 'My Work',       path: '/app/sire/my-work',       icon: CheckSquare },
+  { label: 'Releases',      path: '/app/sire/releases',      icon: Rocket },
+  { label: 'Quality',       path: '/app/sire/quality',       icon: ShieldCheck },
+  { label: 'Insights',      path: '/app/sire/insights',      icon: BarChart3 },
 ]
 
 const HELPDESK_SUB_ITEMS = [
@@ -290,9 +299,31 @@ const PURCHASE_SUB_ITEMS = [
 ]
 
 // Internal staff view of the TPV module.
+/**
+ * The ten SECTIONS of TPV — deliberately not its 46 pages.
+ *
+ * TPVLayout already groups every page into these ten and renders them as the
+ * strip across the top, so the sidebar names the section and the strip handles
+ * what is inside it. Listing all 46 here would duplicate that grouping in a
+ * second place, and the two would drift the first time somebody added a page.
+ *
+ * Labels, order and landing pages are taken from TPVLayout's own groups so the
+ * two navigations cannot disagree about what a section is called.
+ *
+ * Until now this held only Dashboard and Meetings, which is why eight sections
+ * of a built module were reachable only by already being somewhere inside them.
+ */
 const TPV_ADMIN_ITEMS = [
-  { label: 'Dashboard',       path: '/app/tpv/dashboard', icon: LayoutDashboard },
-  { label: 'Meetings',        path: '/app/tpv/kickoff',   icon: CalendarDays },
+  { label: 'Dashboard',     path: '/app/tpv/dashboard',          icon: LayoutDashboard },
+  { label: 'Vendors',       path: '/app/tpv/vendors',            icon: Building2 },
+  { label: 'Meetings',      path: '/app/tpv/kickoff',            icon: CalendarDays },
+  { label: 'Mobilisation',  path: '/app/tpv/onboarding',         icon: Rocket },
+  { label: 'Workforce',     path: '/app/tpv/workforce',          icon: UserCheck },
+  { label: 'Work Control',  path: '/app/tpv/work-authorization', icon: FileCheck2 },
+  { label: 'Compliance',    path: '/app/tpv/compliance',         icon: CheckSquare },
+  { label: 'Performance',   path: '/app/tpv/performance',        icon: TrendingUp },
+  { label: 'Intelligence',  path: '/app/tpv/reports',            icon: Landmark },
+  { label: 'Configuration', path: '/app/tpv/settings',           icon: SlidersHorizontal },
 ]
 // TPV (vendor) login view — only their onboarding + their workforce.
 const TPV_VENDOR_ITEMS = [
@@ -317,8 +348,12 @@ const TRANSPORT_SUB_ITEMS = [
 const SUBMODULE_SEARCH = [
   ...HR_RECRUITMENT_ITEMS.map(i => ({ ...i, module: 'HR' })),
   { ...HR_EMPLOYEES, module: 'HR' },
-  ...HR_RECORDS_ITEMS.map(i => ({ ...i, module: 'HR' })),
-  ...HR_TRACK_ITEMS.map(i => ({ ...i, module: 'HR' })),
+  ...HR_ATTENDANCE_ITEMS.map(i => ({ ...i, module: 'HR' })),
+  ...HR_REQUEST_ITEMS.map(i => ({ ...i, module: 'HR' })),
+  ...HR_LIFECYCLE_ITEMS.map(i => ({ ...i, module: 'HR' })),
+  ...HR_ORG_ITEMS.map(i => ({ ...i, module: 'HR' })),
+  ...HR_TOP_LEVEL.map(i => ({ ...i, module: 'HR' })),
+  ...HR_MINE_ITEMS.map(i => ({ ...i, module: 'HR' })),
   ...SALES_SUB_ITEMS.map(i => ({ ...i, module: 'Sales' })),
   ...ACCOUNTS_SUB_ITEMS.map(i => ({ ...i, module: 'Accounts' })),
   ...HELPDESK_SUB_ITEMS.map(i => ({ ...i, module: 'Helpdesk' })),
@@ -329,7 +364,14 @@ const SUBMODULE_SEARCH = [
 ]
 
 export default function Sidebar({ collapsed, onToggle, openSection, toggleSection, isGroupOpen, toggleGroup }) {
-  const { user, tenant, logout } = useAuth()
+  const { user, tenant, logout, canSee, scopeOf } = useAuth()
+
+  // Whether this person runs HR for the company, or only has their own record
+  // here. Answered by the server through the permission grid — the sidebar used
+  // to guess from `user.role`, so every management item rendered for everybody
+  // and each one 403'd on click, and a team lead who genuinely could approve
+  // things was shown the same menu as somebody who could not.
+  const managesHr = canSee('hr_attendance')
   const { isDark } = useTheme()
   const navigate = useNavigate()
   /**
@@ -399,7 +441,8 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
   // click — and independently of each other, unlike the module accordion above.
   // State is owned by AppShell so the two mounted Sidebars agree, and persisted
   // so a refresh does not undo the click. See sidebarSection.js.
-  // Admin/staff see Dashboard + Kickoff; a TPV (vendor) login sees Onboarding + Workforce.
+  // Admin/staff see the ten TPV sections; a TPV (vendor) login sees only their
+  // own Onboarding + Workforce.
   const tpvItems = ['third_party_vendor', 'vendor'].includes(user?.role)
     ? TPV_VENDOR_ITEMS
     : TPV_ADMIN_ITEMS
@@ -673,15 +716,42 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
                   {/* Employees (top-level) */}
                   <HrLeaf item={HR_EMPLOYEES} />
 
-                  {/* HR Records group */}
-                  <HrGroupHeader label="HR Records" icon={FolderOpen} expanded={isGroupOpen('hr-records')} onToggle={() => toggleGroup('hr-records')} />
-                  {isGroupOpen('hr-records') && HR_RECORDS_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
+                  {/* Attendance and Requests are the HR QUEUES — everybody's
+                      records, not your own. Shown only to somebody the server
+                      will actually let in, so the menu stops offering doors that
+                      are locked. */}
+                  {managesHr && (
+                    <>
+                      <HrGroupHeader label="Attendance" icon={CalendarCheck} expanded={isGroupOpen('hr-attendance')} onToggle={() => toggleGroup('hr-attendance')} />
+                      {isGroupOpen('hr-attendance') && HR_ATTENDANCE_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
 
-                  {/* SangoeTrack — flat, no group header, by request. A rule
-                      above the set separates it from HR's own records without
-                      making it something to expand before it can be seen. */}
-                  <div className="mx-5 my-2" style={{ height: 1, background: 'var(--border)' }} aria-hidden="true" />
-                  {HR_TRACK_ITEMS.map(item => <HrLeaf key={item.path} item={item} />)}
+                      <HrGroupHeader label="Requests" icon={Receipt} expanded={isGroupOpen('hr-requests')} onToggle={() => toggleGroup('hr-requests')} />
+                      {isGroupOpen('hr-requests') && HR_REQUEST_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
+                    </>
+                  )}
+
+                  {/* Employee lifecycle */}
+                  <HrGroupHeader label="Employee Lifecycle" icon={Award} expanded={isGroupOpen('hr-lifecycle')} onToggle={() => toggleGroup('hr-lifecycle')} />
+                  {isGroupOpen('hr-lifecycle') && HR_LIFECYCLE_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
+
+                  {/* Organization */}
+                  <HrGroupHeader label="Organization" icon={FolderOpen} expanded={isGroupOpen('hr-org')} onToggle={() => toggleGroup('hr-org')} />
+                  {isGroupOpen('hr-org') && HR_ORG_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
+
+                  {/* Opened often enough to stay at the top level */}
+                  {HR_TOP_LEVEL.map(item => <HrLeaf key={item.path} item={item} />)}
+
+                  {/* A person's own requests — for somebody who cannot open the
+                      management screens above. Now an actual answer rather than
+                      "is this person an admin", which was wrong for everybody in
+                      between: an accounts user saw both sets, a team lead neither
+                      of the right ones. */}
+                  {!managesHr && (
+                    <>
+                      <HrGroupHeader label="My Requests" icon={UserRound} expanded={isGroupOpen('hr-mine')} onToggle={() => toggleGroup('hr-mine')} />
+                      {isGroupOpen('hr-mine') && HR_MINE_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
+                    </>
+                  )}
                 </>
               )}
           </div>
@@ -977,6 +1047,39 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
             </NavLink>
           ))}
         </div>
+
+        {/* -- SIRE Module sub-nav -- internal engineering only, so a customer
+            is not shown a section that answers 403 behind every link. -- */}
+        {canUseSire(user) && (
+        <div data-section-block className={clsx('mt-2')}>
+          {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#fb7185' }}>Issues & Quality</p>}
+          <button
+            onClick={() => toggleSection('sire')}
+            data-section="sire"
+            title={collapsed ? 'Issues & Quality' : ''}
+            className="nav-3d mb-0.5 w-full"
+            style={{ justifyContent: collapsed ? 'center' : undefined, color: '#fb7185' }}
+          >
+            <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(244,63,94,0.15)' }}>
+              <Bug size={13} style={{ color: '#fb7185' }} />
+            </div>
+            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Issues & Quality</span><ChevronDown size={13} className={clsx('transition-transform duration-200', openSection === 'sire' && 'rotate-180')} /></>}
+          </button>
+          {(openSection === 'sire' || collapsed) && SIRE_SUB_ITEMS.map(({ label, path, icon: Icon }) => (
+            <NavLink key={path} to={path}>
+              {({ isActive }) => (
+                <div title={collapsed ? label : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined, paddingLeft: collapsed ? undefined : '28px' }}>
+                  <div className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(244,63,94,0.06)' }}>
+                    <Icon size={12} />
+                  </div>
+                  {!collapsed && <span className="truncate text-xs">{label}</span>}
+                  {isActive && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#fda4af' }} />}
+                </div>
+              )}
+            </NavLink>
+          ))}
+        </div>
+        )}
       </nav>
 
       {/* ── Bottom Controls ────────────────────────────────── */}

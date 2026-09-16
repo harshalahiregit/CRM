@@ -41,3 +41,13 @@ Route::middleware('auth:sanctum')->prefix('hr/notifications')->group(function ()
     Route::post('/queue/process',     [NotificationQueueController::class, 'process']);
     Route::post('/queue/{id}/retry',  [NotificationQueueController::class, 'retry'])->whereNumber('id');
 });
+
+// Announcements composed by hand in the Notification Center. They run through
+// the same engine, queue and channels as every automatic notification, so there
+// is one place to look when something did not arrive.
+Route::middleware('auth:sanctum')->prefix('hr/notifications')->group(function () {
+    Route::get('/announcements/audience', [\App\Http\Controllers\Api\Notifications\AnnouncementController::class, 'audience']);
+    Route::post('/announcements', [\App\Http\Controllers\Api\Notifications\AnnouncementController::class, 'send']);
+    Route::get('/announcements/file/{path}', [\App\Http\Controllers\Api\Notifications\AnnouncementController::class, 'file'])
+        ->name('hr.announcement.file');
+});

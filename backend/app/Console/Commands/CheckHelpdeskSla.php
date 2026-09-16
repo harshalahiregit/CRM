@@ -184,7 +184,12 @@ class CheckHelpdeskSla extends Command
             }
 
             try {
-                Mail::to($user->email)->send(
+                // Tenant SMTP, never the global mailer. A scheduled command runs
+                // with config:cache in force on live, where config('mail.default')
+                // resolves env('MAIL_MAILER', 'log') to the literal 'log'.
+                app(\App\Services\Mail\TenantMailer::class)->send(
+                    (int) $ticket->tenant_id,
+                    $user->email,
                     new SlaBreachWarningMail($ticket, $user->name ?: 'there', $breaches)
                 );
             } catch (\Throwable $e) {

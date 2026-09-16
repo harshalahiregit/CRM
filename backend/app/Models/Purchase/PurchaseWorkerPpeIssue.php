@@ -28,6 +28,8 @@ class PurchaseWorkerPpeIssue extends Model
         'tenant_id', 'purchase_worker_id', 'issued_by', 'inventory_item_id',
         'item', 'qty', 'size', 'issued_date', 'notes', 'status',
         'returned_qty', 'returned_at', 'returned_by', 'return_notes',
+        // §18 — a rule may demand the gear be checked, not merely handed over.
+        'verified_at', 'verified_by', 'verification_notes',
     ];
 
     protected $casts = [
@@ -35,6 +37,7 @@ class PurchaseWorkerPpeIssue extends Model
         'returned_qty' => 'float',
         'issued_date'  => 'date',
         'returned_at'  => 'datetime',
+        'verified_at'  => 'datetime',
     ];
 
     public function worker()

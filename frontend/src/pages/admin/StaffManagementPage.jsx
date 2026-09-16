@@ -44,6 +44,7 @@ export default function StaffManagementPage() {
   // Meta dropdowns
   const [designations, setDesignations] = useState([])
   const [departments,  setDepartments]  = useState([])
+  const [jobTitles,    setJobTitles]    = useState([])
 
   // Toast
   const [toast, setToast] = useState(null)
@@ -67,10 +68,21 @@ export default function StaffManagementPage() {
     } catch {}
   }, [])
 
+  // Departments and job titles are RECORDS now, maintained under HR ->
+  // Organization Setup. They used to be a hardcoded list merged with whatever
+  // anyone had typed, which is why the same department existed three times and
+  // could not be renamed. Both arrive as {id, name}.
   const fetchDepartments = useCallback(async () => {
     try {
       const res = await api.get('/admin/staff/departments')
       if (res.data?.data) setDepartments(res.data.data)
+    } catch {}
+  }, [])
+
+  const fetchJobTitles = useCallback(async () => {
+    try {
+      const res = await api.get('/admin/staff/job-titles')
+      if (res.data?.data) setJobTitles(res.data.data)
     } catch {}
   }, [])
 
@@ -98,7 +110,7 @@ export default function StaffManagementPage() {
   useEffect(() => {
     if (!user) return
     if (user?.role !== 'admin') { window.location.href = '/app/dashboard'; return }
-    fetchStats(); fetchDesignations(); fetchDepartments()
+    fetchStats(); fetchDesignations(); fetchDepartments(); fetchJobTitles()
   }, [user])
 
   useEffect(() => {
@@ -260,7 +272,7 @@ export default function StaffManagementPage() {
           <table className="w-full">
             <thead style={{ background: 'rgba(124,58,237,0.04)', borderBottom: '1px solid var(--border)' }}>
               <tr>
-                {['Staff Member','Role / Designation','Departments','Profile Group','Status','Last Active','Actions'].map(h => (
+                {['Staff Member','Role / Designation','Departments','Status','Last Active','Actions'].map(h => (
                   <th key={h} className="px-5 py-3.5 text-left text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
                     {h}
                   </th>
@@ -356,13 +368,6 @@ export default function StaffManagementPage() {
                           </span>
                         )}
                       </div>
-                    </td>
-
-                    {/* Profile Group */}
-                    <td className="px-5 py-4">
-                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                        {meta.profile_group || member.department || '—'}
-                      </span>
                     </td>
 
                     {/* Status */}
@@ -473,6 +478,7 @@ export default function StaffManagementPage() {
         <StaffModal
           staff={selectedStaff}
           departments={departments}
+          jobTitles={jobTitles}
           onClose={() => { setShowStaffModal(false); setSelectedStaff(null) }}
           onSuccess={() => {
             fetchStaff(); fetchStats(); invalidateDirectory()

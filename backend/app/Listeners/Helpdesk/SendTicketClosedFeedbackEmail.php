@@ -53,6 +53,10 @@ class SendTicketClosedFeedbackEmail
             return;
         }
 
-        Mail::to($recipient['email'])->send(new TicketClosedFeedbackMail($ticket, $recipient));
+        // Tenant SMTP, never the global mailer: config('mail.default') is
+        // env('MAIL_MAILER', 'log'), so on a config:cache'd deployment this
+        // wrote to storage/logs and reported success.
+        app(\App\Services\Mail\TenantMailer::class)
+            ->send($ticket->tenant_id, $recipient['email'], new TicketClosedFeedbackMail($ticket, $recipient));
     }
 }

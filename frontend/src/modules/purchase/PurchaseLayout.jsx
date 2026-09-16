@@ -3,7 +3,7 @@ import {
   Truck, Receipt, FileX, Package, Building2, CalendarDays, HardHat,
   ShieldCheck, FileWarning, ClipboardCheck, TrendingUp, FolderLock, Megaphone,
   AlertOctagon, Gauge, RefreshCcw, LogOut, Siren, Award, Rocket, Boxes,
-  CheckSquare, ShieldAlert, FileCheck2, UserCheck, HeartPulse, ScanLine, Eye,
+  CheckSquare, ShieldAlert, FileCheck2, UserCheck, HeartPulse, Stethoscope, BarChart3, ScanLine, Eye,
   Landmark, SlidersHorizontal, RotateCcw,
 } from 'lucide-react'
 import ModuleShell from '@/components/layout/ModuleShell'
@@ -60,6 +60,8 @@ const PURCHASE_GROUPS = [
     { label: 'Workforce',       path: '/app/purchase/workforce',  icon: UserCheck },
     { label: 'Workers',         path: '/app/purchase/workers',    icon: HardHat },
     { label: 'Medical Fitness', path: '/app/purchase/medical',    icon: HeartPulse },
+    { label: 'Doctors',         path: '/app/purchase/medical/doctors', icon: Stethoscope },
+    { label: 'Medical Report',  path: '/app/purchase/medical/report',  icon: BarChart3 },
     { label: 'Competency',      path: '/app/purchase/competency', icon: Award },
     { label: 'PPE Matrix',      path: '/app/purchase/ppe/matrix', icon: ClipboardList },
     { label: 'Attendance',      path: '/app/purchase/attendance', icon: ClipboardCheck },

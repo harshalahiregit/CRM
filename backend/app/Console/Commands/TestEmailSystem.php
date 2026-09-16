@@ -75,7 +75,12 @@ class TestEmailSystem extends Command
         ]);
 
         try {
-            Mail::to($candidate->email)->send(
+            // Tenant SMTP, never the global mailer — this command sends REAL
+            // mail to a real address, so it must go out the same way production
+            // mail does or it proves nothing about production.
+            app(\App\Services\Mail\TenantMailer::class)->send(
+                (int) $candidate->tenant_id,
+                $candidate->email,
                 new \App\Mail\ApplicationReceivedMail($candidate->load('jobPosting'))
             );
             $this->line('   ✓ ApplicationReceivedMail sent to: ' . $candidate->email);
@@ -97,7 +102,7 @@ class TestEmailSystem extends Command
                 'Screening',
                 'Your application is now under review by our hiring team.'
             );
-            Mail::to($candidate->email)->send($mail);
+            app(\App\Services\Mail\TenantMailer::class)->send((int) $candidate->tenant_id, $candidate->email, $mail);
             $this->line('   ✓ ApplicationStatusMail sent');
         } catch (\Exception $e) {
             $this->error('   ✗ Failed: ' . $e->getMessage());
@@ -125,13 +130,17 @@ class TestEmailSystem extends Command
         $interview->load('candidate');
 
         try {
-            Mail::to($candidate->email)->send(
+            app(\App\Services\Mail\TenantMailer::class)->send(
+                (int) $candidate->tenant_id,
+                $candidate->email,
                 new \App\Mail\InterviewScheduledMail($interview, 'candidate')
             );
             $this->line('   ✓ InterviewScheduledMail sent to candidate');
             
             if ($interview->interviewer_email) {
-                Mail::to($interview->interviewer_email)->send(
+                app(\App\Services\Mail\TenantMailer::class)->send(
+                    (int) $candidate->tenant_id,
+                    $interview->interviewer_email,
                     new \App\Mail\InterviewScheduledMail($interview, 'interviewer')
                 );
                 $this->line('   ✓ InterviewScheduledMail sent to interviewer');

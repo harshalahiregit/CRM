@@ -1,0 +1,174 @@
+# Transport OS — Team Contracts
+
+Three of us, two weeks. This file exists so nobody builds the same thing twice.
+It was written after that had already happened once: SNG-TRN-028 got built on two
+branches in parallel because I looked for transport code in my own working tree,
+found none, and did not run `git log --all`. Both registered the middleware alias
+`transport.permission` with different arities, which would have thrown
+`ArgumentCountError` on every gated route the moment they met in master.
+
+**Before starting anything: `git log --all --oneline -- 'backend/**/Transport/*'`.**
+
+**Update this by PR, in the same change as the work.** A WhatsApp message is not a
+record.
+
+| | Owner | Code lives in |
+|---|---|---|
+| P1 | Raza — Commercial, Orders, Consignment, Container, Operations, Dispatch, Trip | `backend/app/**/Transport/` |
+| P2 | Shivam — Fleet, Vehicles, Drivers, Assets, Telemetry | — |
+| P3 | Zafar — Documents, Billing Readiness, Finance, Compliance, Quality/CAPA, Intelligence | `backend/app/**/Transport/` |
+
+Structure follows what P1 already built: `app/Models/Transport`,
+`app/Services/Transport`, `app/Http/Controllers/Api/Transport`,
+`app/Support/Transport`. Not a package. One structure, not two.
+
+## Defect numbering
+
+**P1's `docs/transport/registry-defects.md` is the list.** It runs to D-54 and
+predates anything here. New findings get a D-number there, not a new scheme in
+this file. Where the two overlapped, the D-number wins.
+
+---
+
+## 1. Who owns what
+
+Owner = the only person who writes migrations, models or endpoints for it.
+Everyone else reads through a service or an event. Table ownership is the Owner
+column of Step 11's DB_Registry, read from the XLSX.
+
+| ID | Table | Step 11 owner | Dev |
+|---|---|---|---|
+| DB-001 | `transport_orders` | Transport Product | P1 |
+| DB-002 | `transport_trips` | Transport Product | P1 |
+| DB-003 | `trip_assignments` | Transport Product | P1 |
+| DB-017 | `transport_customers` | CRM/Transport | P1 |
+| — | `transport_consignments`, `transport_containers`, `consignment_containers` | ruled in, see D-39/D-40 | P1 |
+| DB-004 | `vehicles` | Fleet | P2 |
+| DB-005 | `drivers` | Fleet | P2 |
+| DB-006 | `trip_costs` | Finance Control | P3 |
+| DB-007 | `trip_advances` | Finance Control | P3 |
+| DB-008 | `trip_expenses` | Finance Control | P3 |
+| DB-009 | `trip_documents` | Document | P3 |
+| DB-019 | `transport_documents` | Document | P3 |
+| DB-010 | `trip_exceptions` | **Control** | P1 — see §2 |
+| DB-011 | `trip_risks` | Risk | P3 |
+| DB-013 | `trip_collections` | Collections | P3 |
+| DB-014 | `trip_settlements` | Finance Control | P3 |
+| DB-015 | `trip_profit_snapshots` | Intelligence | P3 |
+| DB-020 | `transport_policies` | Governance | P3 |
+| DB-012 | `trip_bills` | **Accounts** | read only, all of us |
+| DB-016 | `transport_rates` | Commercial | unassigned |
+| DB-018 | `transport_suppliers` | Supplier | unassigned |
+
+Endpoints and events follow the same rule — Step 11's API_Registry and
+Event_Registry, resolved **by name**, never by the number a ticket prints.
+
+---
+
+## 2. Settled
+
+| Ticket | Owner | State |
+|---|---|---|
+| 001, 003, 004, 006, 007, 009, 010 | P1 | built — `3fb9337d` |
+| 013 Transit & Exceptions | **P1** | `2a9883c3`, vocabulary + schema. Step 11 gives DB-010 to *Control*, and "Execution" is OPS. It is his. |
+| 028 Permission Matrix | **P1** | built — `App\Http\Middleware\EnsureTransportPermission`, `transport.permission:<key>` |
+| 027 Immutable Audit | **P1** | `TransportAuditLog` + `RecordsTransportAudit` exist |
+| Consignment / Container | P1 | **RULED 12 Sep** — D-39 canonical entities, D-40 container master + association, D-41 LR/DO stay documents |
+
+CAPA has no SNG-TRN ticket at all. Quality is P3, so the corrective-action half
+of the exception lifecycle is mine — but it needs a ticket before it can be
+built. Goes in P1's `REQUEST-step12-missing-tickets.md`.
+
+---
+
+## 3. What we owe each other
+
+| # | From | To | What | Status |
+|---|---|---|---|---|
+| C-01 | P3 | P1 | `ComplianceStatus` — object with blocking reasons, **not a boolean** | signature agreed, implementation pending |
+| C-02 | P3 | P1 | `TransportDocumentEntity::CONSIGNMENT` in `ALL` and `ACTIVE` | pending |
+| C-03 | P3 | P1 | `TransportDocumentService::entityTypeFor()` — a `TransportConsignment` arm | pending |
+| C-04 | P3 | — | `delivery_order` into ENUM-006 (approval attached to `REQUEST-person3-document-entity.md`) | pending |
+| C-05 | P2 | P3 | fuel, urea, tyre, maintenance, FASTag costs → `trip_costs` | not started |
+| C-06 | P1 | P3 | EVT-012 `TripClosed` | needed for 018, **not** for 011/012 |
+
+**Correction on C-06.** DEP-003 and DEP-004 require only that a trip *exists*
+(SNG-TRN-007, built). 011 Advances and 012 Costs are therefore **not blocked** —
+an earlier version of this file said they were, and that was wrong. Closure
+matters at 018 Profitability, which is after 015 and 017.
+
+### C-01, the shape
+
+Returning true/false forces the caller to invent the reason, and the reason is
+what the screen has to show. BRWM §70 asks a blocked action to say what is
+blocked, why, and who can resolve it.
+
+```php
+interface ComplianceGate
+{
+    public function statusFor(int $tenantId, int $vehicleId, int $driverId): ComplianceStatus;
+}
+
+final class ComplianceStatus
+{
+    public bool $compliant;
+    /** @var ComplianceBlock[] each: subject, requirement, state, expired_on, owner */
+    public array $blocks;
+    public bool $overridable;   // false where policy forbids it outright
+}
+```
+
+So dispatch can render "Vehicle fitness expired 14 Aug — Fleet" without knowing
+anything about how compliance works.
+
+---
+
+## 4. Open, and who is waiting
+
+Cross-referenced to `registry-defects.md` where a D-number already exists.
+
+| Problem | Blocks | Escalation |
+|---|---|---|
+| **Step 11 still has zero occurrences of container or consignment** across all 14 sheets, though D-39/D-40 ruled the entities in. The ruling was an architecture approval; the canonical registry has not been written back. | traceability (DOD-014) | registry CHG |
+| **No mapping from a CRM account to Step 11's nine roles** (CEO/Owner, Operations, Dispatcher, Accounts, Approver, Driver, Customer, Supplier, Admin). `users.role` is an account type, `users.internal_role` is a `staff_roles` slug, neither is that list. **This decides who may approve advances and expenses.** | every gated action | `CLARIFICATION_REQUIRED` |
+| **PERM-013 marks Admin `Y*`**, footnote not in the package | registry modification | `CLARIFICATION_REQUIRED` |
+| **PERM has 13 rows and no dispatch, pre-trip, override, waiver or document-verify row.** Deny-by-default means refused, not unspecified. | 009, 010, waivers | `SECURITY_REVIEW_REQUIRED` |
+| **A grant is not a boolean.** PERM-001 gives Driver `Own` and Supplier `Assigned`. A gate answering true, with the caller then querying every row, hands one driver the whole tenant. | any list endpoint | design fix in P1's gate |
+| **My domain's states are unregistered** — STOS-DOC 18 document statuses, STOS-FIN 14 invoice, STOS-QC 14 + 11 CAPA, STOS-CMP 10 + 6. Step 11 registers none. CLA-005 is "blocker if missing: YES". | 013 CAPA, 014, 015, 016 | `CLARIFICATION_REQUIRED` |
+| **Step 12 cites IDs that do not exist** — `FRS-P0-*` (real: `TRP-P0-*`), `BR-001…029` (real: `BR-P0-001…020`). Its Traceability sheet is placeholder text. The Authority Register carries this as an unclosed OPEN ITEM: *"replace placeholder/legacy IDs with canonical Step 11/12 IDs before handing the package to developers."* | DOD-014 | `CLARIFICATION_REQUIRED` |
+
+### Confirmed against the XLSX, not the PDF
+
+P1 asked whether two of his findings were PDF-truncation artifacts. Both stand —
+checked across all fourteen sheets of Step 11:
+
+- **D-50, `container_type` vocabulary** — zero hits for `container_type`, `20ft`,
+  `40ft`, `ISO 6346`, "high cube". Zero hits for "ISO 6346" anywhere in the
+  extracted package.
+- **D-52, temperature-critical marker** — zero hits for reefer, temperature or
+  genset in Step 11.
+- **ENUM-006 verbatim**: `lr|ewaybill|invoice|pod|driver_doc|vehicle_doc|insurance|permit|fitness|other`. Ten values, `delivery_order` absent. Confirms C-04.
+
+The PDF warning was about registry *tables* column-wrapping and truncating enum
+value lists — it does not manufacture content that is absent from the XLSX. Where
+the XLSX says nothing, nothing is there.
+
+---
+
+## 5. Rules
+
+1. **Step 9 > Step 10 > Step 11 > Step 12 > Step 13 > everything else.** The
+   STOS-* suite and Folder_06 are reference. STOS-AIC §3 gives a different
+   hierarchy — ignore it; `00_READ_ME_FIRST` governs.
+2. **Read the XLSX in `Folder_00_READ_FIRST`, not the PDFs.**
+3. **Resolve registry references by name, never by the number a ticket prints.**
+   SNG-TRN-011 cites `DB-010`, which is `trip_exceptions`; advances are `DB-007`.
+4. **No new table, field, API, state, event or permission without a Step 11 entry
+   or a recorded ruling.** If you need one, it goes in `registry-defects.md`.
+5. **Transport never writes ledger lines.** Emit the accounting event.
+6. **Money is `DECIMAL(18,2)` with bcmath.**
+7. **Every branch, PR and commit names its SNG-TRN ticket.**
+8. **Don't hand Claude the whole package** — STOS-AIC §103. Per ticket: Step 9 +
+   Step 10 + the Step 11 XLSX + the one ticket + the one module spec.
+9. **Audit against the package, not yourself.** Step 12's Acceptance_Criteria and
+   Step 13's DOD-001…015 are the checklist.

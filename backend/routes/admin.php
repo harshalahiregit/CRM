@@ -32,6 +32,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(functi
     Route::get('/staff/stats',              [StaffManagementController::class, 'stats'])->middleware('permission:staff_mgmt,view_global');
     Route::get('/staff',                    [StaffManagementController::class, 'index'])->middleware('permission:staff_mgmt,view_global');
     Route::get('/staff/designations',       [StaffManagementController::class, 'designations'])->middleware('permission:staff_mgmt,view_global');
+    Route::get('/staff/job-titles',         [StaffManagementController::class, 'jobTitles'])->middleware('permission:staff_mgmt,view_global');
     Route::get('/staff/departments',        [StaffManagementController::class, 'departments'])->middleware('permission:staff_mgmt,view_global');
     Route::get('/staff/{id}',               [StaffManagementController::class, 'show'])->middleware('permission:staff_mgmt,view_global');
     Route::post('/staff',                   [StaffManagementController::class, 'store'])->middleware('permission:staff_mgmt,create');

@@ -144,6 +144,43 @@ class ReimbursementHoldTest extends TestCase
         $this->assertSame(ReimbursementStatus::APPROVED, $approved->status);
     }
 
+    /**
+     * Nobody decides their own claim — the rule advances always had and expense
+     * claims did not. An admin could submit and approve their own money with no
+     * warning, and the amount then flowed into the payroll report.
+     */
+    public function test_nobody_decides_their_own_claim_even_an_admin(): void
+    {
+        $adminUser = $this->user('boss@example.test', 'admin');
+        $employee  = $this->employee();
+        $employee->update(['user_id' => $adminUser->id]);
+
+        $claim = $this->svc->submit($employee->fresh(), [
+            'title' => 'My own dinner', 'expense_date' => now()->toDateString(), 'amount_claimed' => 5000,
+        ], $adminUser);
+
+        $this->expectException(BusinessException::class);
+        $this->expectExceptionMessage('cannot decide your own expense claim');
+
+        $this->svc->approve($claim, $adminUser);
+    }
+
+    public function test_somebody_else_can_still_decide_it(): void
+    {
+        $adminUser = $this->user('boss@example.test', 'admin');
+        $ownerUser = $this->user('priya2@example.test', 'staff');
+        $employee  = $this->employee();
+        $employee->update(['user_id' => $ownerUser->id]);
+
+        $claim = $this->svc->submit($employee->fresh(), [
+            'title' => 'Dinner', 'expense_date' => now()->toDateString(), 'amount_claimed' => 5000,
+        ], $ownerUser);
+
+        $approved = $this->svc->approve($claim, $adminUser);
+
+        $this->assertSame(ReimbursementStatus::APPROVED, $approved->status);
+    }
+
     /* ── the rules ───────────────────────────────────────────────────── */
 
     public function test_a_hold_without_a_reason_is_refused(): void

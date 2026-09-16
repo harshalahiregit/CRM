@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
   SlidersHorizontal, ShieldAlert, Gauge, ShieldCheck, Landmark, ListChecks, ScanLine,
-  HardHat, CalendarDays, Plus, Trash2, RotateCcw, Save, ExternalLink, CheckCircle2, TrendingUp,
+  HardHat, CalendarDays, Plus, Trash2, RotateCcw, Save, ExternalLink, CheckCircle2, TrendingUp, HeartPulse,
 } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
 
@@ -26,6 +26,7 @@ const TABS = [
   { key: 'approval_types',    label: 'Approval Types',    icon: ListChecks },
   { key: 'gate',              label: 'Gate (PPE)',        icon: ScanLine },
   { key: 'violation_ladder',  label: 'Violation Ladder',  icon: TrendingUp },
+  { key: 'medical',           label: 'Medical',           icon: HeartPulse },
 ]
 
 export default function TpvSettings() {
@@ -75,6 +76,7 @@ export default function TpvSettings() {
           {tab === 'approval_types'    && <TypesEditor     grp={bundle.approval_types}    onSaved={reload} />}
           {tab === 'gate'              && <GateEditor      grp={bundle.gate}              onSaved={reload} />}
           {tab === 'violation_ladder'  && <ViolationLadderEditor grp={bundle.violation_ladder} onSaved={reload} />}
+          {tab === 'medical'           && <MedicalEditor  grp={bundle.medical}           onSaved={reload} />}
         </div>
       )}
 
@@ -476,5 +478,131 @@ function RelatedEditors() {
         ))}
       </div>
     </div>
+  )
+}
+
+
+/* ── 8 · Medical module ──────────────────────────────────────────────────── */
+
+/**
+ * The knobs the Medical module actually turns: how long a certificate stays
+ * current, whether an internal examination still faces a reviewer, how long the
+ * back-and-forth may run, and whether medical is a prerequisite at all.
+ *
+ * The reason catalogue is edited as one reason per line ("code | label | applies
+ * to") rather than a grid of inputs — it is a short list a site writes once, and
+ * three fields per row would be more chrome than content.
+ */
+function MedicalEditor({ grp, onSaved }) {
+  const ctl = useGroupSave('medical', onSaved)
+  const [f, setF] = useState(grp.effective)
+  const [reasons, setReasons] = useState('')
+
+  useEffect(() => {
+    setF(grp.effective)
+    setReasons((grp.effective.reasons || [])
+      .map(r => r.value + ' | ' + r.label + ' | ' + (r.applies_to || []).join(','))
+      .join('\n'))
+  }, [grp])
+
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }))
+
+  const payload = () => ({
+    validity_months: Number(f.validity_months) || 12,
+    auto_approve_internal: !!f.auto_approve_internal,
+    max_iterations: Number(f.max_iterations) || 10,
+    block_induction: !!f.block_induction,
+    pending_message: f.pending_message || 'Medical Report is Pending',
+    not_applicable_default: !!f.not_applicable_default,
+    qc_approver_ids: String(f.qc_approver_ids ?? '')
+      .split(',')
+      .map(x => parseInt(x.trim(), 10))
+      .filter(Number.isFinite),
+    reasons: reasons.split('\n').map(line => {
+      const [value, label, applies] = line.split('|').map(x => (x || '').trim())
+      if (!value) return null
+      return {
+        value,
+        label: label || value,
+        applies_to: applies ? applies.split(',').map(x => x.trim()).filter(Boolean) : ['Rejected', 'Hold'],
+      }
+    }).filter(Boolean),
+  })
+
+  return (
+    <>
+      <Card title="Certificate" hint="How long a medical stays current when the examiner does not stamp an expiry.">
+        <label style={lbl}>Validity (months)</label>
+        <input type="number" min={1} max={60} value={f.validity_months ?? 12}
+               onChange={e => set('validity_months', e.target.value)} style={{ ...inp, maxWidth: 160 }} />
+      </Card>
+
+      <Card
+        title="Quality check"
+        hint="A certificate becomes clearance only when the quality team accepts it. Naming reviewers narrows who may rule; leaving it empty means every admin can."
+      >
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+          <div>
+            <label style={lbl}>Maximum exchanges</label>
+            <input type="number" min={1} max={20} value={f.max_iterations ?? 10}
+                   onChange={e => set('max_iterations', e.target.value)} style={inp} />
+            <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--text-muted)' }}>
+              After this many rounds a certificate can no longer be sent back — it has to be approved or rejected as it stands.
+            </p>
+          </div>
+          <div>
+            <label style={lbl}>Reviewer user IDs</label>
+            <input value={Array.isArray(f.qc_approver_ids) ? f.qc_approver_ids.join(', ') : (f.qc_approver_ids ?? '')}
+                   onChange={e => set('qc_approver_ids', e.target.value)}
+                   placeholder="e.g. 4, 11" style={inp} />
+            <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--text-muted)' }}>Empty = every admin reviews.</p>
+          </div>
+        </div>
+
+        <label className="flex items-start gap-2.5" style={{ marginTop: 12, padding: '11px 13px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', cursor: 'pointer' }}>
+          <input type="checkbox" checked={!!f.auto_approve_internal} onChange={e => set('auto_approve_internal', e.target.checked)} style={{ marginTop: 3 }} />
+          <span>
+            <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--text-h)' }}>Auto-approve our own doctors</span>
+            <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)' }}>
+              An examination filed in the doctor portal clears immediately. External certificates always face a reviewer regardless.
+            </span>
+          </span>
+        </label>
+
+        <div style={{ marginTop: 12 }}>
+          <label style={lbl}>Rejection / hold reasons — one per line: code | label | applies to</label>
+          <textarea value={reasons} onChange={e => setReasons(e.target.value)} rows={8}
+                    style={{ ...inp, fontFamily: 'monospace', fontSize: 12, resize: 'vertical' }} />
+        </div>
+      </Card>
+
+      <Card
+        title="Prerequisite"
+        hint="Safety induction waits on medical clearance. Turn the block off, or mark medical not applicable by default, where a site does not require it."
+      >
+        <label className="flex items-start gap-2.5" style={{ padding: '11px 13px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', cursor: 'pointer', marginBottom: 10 }}>
+          <input type="checkbox" checked={!!f.block_induction} onChange={e => set('block_induction', e.target.checked)} style={{ marginTop: 3 }} />
+          <span>
+            <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--text-h)' }}>Block safety induction until medical clears</span>
+            <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)' }}>Recommended. Off means an induction can be recorded with the medical still outstanding.</span>
+          </span>
+        </label>
+
+        <label className="flex items-start gap-2.5" style={{ padding: '11px 13px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', cursor: 'pointer', marginBottom: 12 }}>
+          <input type="checkbox" checked={!!f.not_applicable_default} onChange={e => set('not_applicable_default', e.target.checked)} style={{ marginTop: 3 }} />
+          <span>
+            <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--text-h)' }}>Medical not applicable by default</span>
+            <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)' }}>
+              The tenant-wide default. A work package that sets its own flag overrides this either way.
+            </span>
+          </span>
+        </label>
+
+        <label style={lbl}>Message shown while medical is outstanding</label>
+        <input value={f.pending_message ?? ''} onChange={e => set('pending_message', e.target.value)} style={inp} />
+      </Card>
+
+      <SaveBar ctl={ctl} isCustom={grp.custom != null} onSave={() => ctl.save.mutate(payload())} />
+    </>
   )
 }

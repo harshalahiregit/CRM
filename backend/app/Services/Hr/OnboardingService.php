@@ -27,6 +27,7 @@ class OnboardingService
     public function __construct(
         private EmployeeService $employeeService,
         private CandidateService $candidateService,
+        private EmployeeDetailService $employeeDetails,
     ) {
     }
 
@@ -90,7 +91,7 @@ class OnboardingService
         // Congratulations Email (best-effort).
         if ($candidate->email) {
             try {
-                Mail::to($candidate->email)->send(new \App\Mail\OnboardingWelcomeMail($onboarding, $link));
+                app(\App\Services\Mail\TenantMailer::class)->send($candidate->tenant_id, $candidate->email, new \App\Mail\OnboardingWelcomeMail($onboarding, $link));
             } catch (\Throwable $e) {
                 Log::channel('hr')->error('Onboarding congrats email failed', ['onboarding_id' => $onboarding->id, 'error' => $e->getMessage()]);
             }
@@ -521,6 +522,16 @@ class OnboardingService
             ], $onboarding->tenant_id);
         }
 
+        // Carry across what the joiner already filled in themselves — bank
+        // account, UAN, emergency contact, permanent address. It was collected
+        // on the onboarding form and then left there: HR re-typed all of it from
+        // a document the person had already completed. Only fills blanks, so a
+        // correction made after conversion is never overwritten.
+        $this->employeeDetails->carryFromOnboarding(
+            $employee,
+            \App\Models\Hr\HrEmployeeOnboarding::where('onboarding_id', $onboarding->id)->first()?->profile,
+        );
+
         // Auto-complete every remaining onboarding step — no manual ticking.
         $onboarding->update([
             'status'                  => 'Completed',
@@ -584,7 +595,9 @@ class OnboardingService
         $record = HrOnboarding::create([...$data, 'status' => 'Pending']);
 
         if ($candidate && $candidate->email) {
-            Mail::to($candidate->email)->send(
+            app(\App\Services\Mail\TenantMailer::class)->send(
+                $candidate->tenant_id,
+                $candidate->email,
                 new \App\Mail\OnboardingWelcomeMail($record)
             );
         }

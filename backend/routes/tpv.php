@@ -75,6 +75,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     // Step 1 — Kickoff PDF: stream, acknowledge, and log view/download/print.
     Route::get('/onboarding/{onboarding}/kickoff',         [TpvOnboardingController::class, 'kickoffPdf']);
     Route::get('/onboarding/{onboarding}/work-start-letter', [TpvOnboardingController::class, 'workStartLetter']);
+    Route::get('/onboarding/{onboarding}/kickoff-data', [TpvOnboardingController::class, 'kickoffData']);
     Route::post('/onboarding/{onboarding}/kickoff/accept', [TpvOnboardingController::class, 'acceptKickoff']);
     Route::post('/onboarding/{onboarding}/kickoff/log',    [TpvOnboardingController::class, 'logKickoffEvent']);
     Route::post('/onboarding/{onboarding}/profile',   [TpvOnboardingController::class, 'saveProfile']);
@@ -189,6 +190,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::post('/ppe/issues/{issue}/return',             [\App\Http\Controllers\Api\Tpv\PpeController::class, 'returnIssue']);
     Route::post('/ppe/issues/{issue}/replace',            [\App\Http\Controllers\Api\Tpv\PpeController::class, 'replaceIssue']);
     Route::post('/ppe/issues/{issue}/use',                [\App\Http\Controllers\Api\Tpv\PpeController::class, 'markUsed']);
+    // Signs off that issued gear was checked, satisfying a rule that sets
+    // verification_required. Until this existed that flag could be configured
+    // but never met, so nothing read it.
+    Route::post('/ppe/issues/{issue}/verify',             [\App\Http\Controllers\Api\Tpv\PpeController::class, 'verifyIssue']);
     Route::get('/workers/stats',                          [TpvWorkerController::class, 'stats']);
     Route::get('/workers',                                [TpvWorkerController::class, 'index']);
     Route::post('/workers',                               [TpvWorkerController::class, 'store']);
@@ -273,6 +278,25 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     // Competency & Training + Skill Matrix (Sangoe TPV §15).
     // §3/§16 Medical Fitness register — cross-workforce medical view.
     Route::get('/medical',                                [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'index']);
+    // Medical module — the quality check, the timeline and the external intake.
+    Route::get('/medical/template',                       [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'template']);
+    // The Medical report. Declared BEFORE /medical/{medical} so "report" is
+    // never swallowed as an id.
+    Route::get('/medical/report',                         [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'report']);
+    Route::get('/medical/report/export',                  [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'reportExport']);
+    Route::get('/medical/batches',                        [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'batches']);
+    Route::post('/medical/bulk',                          [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'bulkUpload']);
+    Route::get('/medical/{medical}',                      [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'show'])->whereNumber('medical');
+    Route::post('/medical/{medical}/decide',              [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'decide'])->whereNumber('medical');
+    Route::post('/medical/{medical}/comment',             [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'comment'])->whereNumber('medical');
+    Route::get('/medical/{medical}/certificate',          [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'certificate'])->whereNumber('medical');
+    Route::get('/medical/{medical}/document',             [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'document'])->whereNumber('medical');
+    // The examination's signature and camera photo. Off the public disk
+    // now — they are the proof of presence, not decoration.
+    Route::get('/medical/{medical}/evidence/{kind}', [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'evidence'])
+        ->whereNumber('medical')->whereIn('kind', ['signature', 'capture']);
+    Route::post('/workers/{worker}/medical/external',     [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'storeExternal'])->whereNumber('worker');
+    Route::get('/workers/{worker}/medical-history',       [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'workerHistory'])->whereNumber('worker');
     Route::get('/competency',                             [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'index']);
     Route::get('/workers/{worker}/competency',            [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'worker'])->where('worker', '[0-9]+');
     Route::post('/workers/{worker}/competencies',         [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'addCompetency'])->where('worker', '[0-9]+');

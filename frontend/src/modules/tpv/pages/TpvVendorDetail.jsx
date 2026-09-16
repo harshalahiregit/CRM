@@ -1,3 +1,5 @@
+import PartyContractList from '@/modules/contract/components/PartyContractList'
+import { contractsForParty } from '@/services/contractModuleApi'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
@@ -435,6 +437,9 @@ export default function TpvVendorDetail() {
 
 /** Routes the active section to live data or the shared placeholder. */
 function SectionContent({ tab, v, isActive, manage, api, moduleName, onDecision, onReload }) {
+  // Rendered as <SectionContent />, so a hook here is legal. Needed by the
+  // Agreements tab, which links through to the Contract module.
+  const navigate = useNavigate()
   switch (tab) {
     case 'Overview':
       return <VendorOverview vendor={v} api={api} isActive={isActive} />
@@ -492,8 +497,30 @@ function SectionContent({ tab, v, isActive, manage, api, moduleName, onDecision,
     // `notes` (notable_*) — so neither introduces a vendor-specific store.
     // Commercial — all seven read the Purchase module through the optional
     // vendors.purchase_vendor_id link. One component; the tab picks the document.
-    case 'Quotation':
+    // Contracts shows BOTH sources under one tab.
+    //
+    // The Contract module's agreements sit on top, because that is where a
+    // contract is written now. Below them is the original Purchase-linked view
+    // (VendorCommercial reads purchase_contracts through
+    // vendors.purchase_vendor_id) -- kept, not replaced: it is a working feature
+    // and would show rows the moment a TPV vendor is linked to a purchase
+    // vendor that has any.
+    //
+    // Two separate tabs was the alternative, and it is what caused somebody to
+    // open "Contracts", see nothing, and reasonably conclude their contract had
+    // not saved.
     case 'Contracts':
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <PartyContractList
+            fetcher={() => contractsForParty('vendor', v.id)}
+            onOpen={(r) => navigate(`/app/contracts/${r.id}`)}
+            title="Agreements"
+            emptyText="No agreements with this vendor yet - create one from the Contracts module." />
+          <VendorCommercial tab={tab} vendorId={v.id} vendorName={v.company_name} manage={manage} />
+        </div>
+      )
+    case 'Quotation':
     case 'Purchase Order':
     case 'Purchase Invoice':
     case 'Debit Note':

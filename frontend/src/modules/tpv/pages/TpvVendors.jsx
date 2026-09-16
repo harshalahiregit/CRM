@@ -17,6 +17,7 @@ import {
 // vendor listing has the same shape, so it can adopt them unchanged.
 import TableToolbar from '@/components/ui/TableToolbar'
 import TablePagination from '@/components/ui/TablePagination'
+import ToggleSwitch from '@/components/ui/ToggleSwitch'
 
 const EMPTY_FORM = {
   name: '', company_name: '', email: '', phone: '', gst_number: '', status: 'Active', vendor_type: '',
@@ -340,18 +341,6 @@ function Counter({ label, value, icon: Icon, color }) {
       <div style={{ fontSize: 24, fontWeight: 900, color: 'var(--text-h)', marginTop: 11, lineHeight: 1 }}>{value ?? 0}</div>
       <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginTop: 4 }}>{label}</div>
     </div>
-  )
-}
-
-function ToggleSwitch({ on, disabled, onChange }) {
-  return (
-    <button onClick={disabled ? undefined : onChange} title={on ? 'Active — click to deactivate' : 'Inactive — click to activate'}
-      style={{ display: 'inline-flex', alignItems: 'center', gap: 7, cursor: disabled ? 'default' : 'pointer', background: 'none', border: 'none', padding: 0 }}>
-      <span style={{ width: 34, height: 19, borderRadius: 999, background: on ? '#10b981' : 'var(--border)', position: 'relative', transition: 'background .18s', flexShrink: 0 }}>
-        <span style={{ position: 'absolute', top: 2, left: on ? 17 : 2, width: 15, height: 15, borderRadius: '50%', background: '#fff', transition: 'left .18s', boxShadow: '0 1px 3px rgba(0,0,0,.3)' }} />
-      </span>
-      <span style={{ fontSize: 11.5, fontWeight: 800, color: on ? '#10b981' : 'var(--text-muted)' }}>{on ? 'Active' : 'Inactive'}</span>
-    </button>
   )
 }
 

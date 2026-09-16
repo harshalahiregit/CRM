@@ -30,9 +30,11 @@ use App\Http\Controllers\Api\Purchase\PurchaseApprovalController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorItemController;
 use App\Http\Controllers\Api\Purchase\PurchaseCompetencyController;
+use App\Http\Controllers\Api\Purchase\PurchasePpeRequirementController;
 use App\Http\Controllers\Api\Purchase\PurchaseWorkforceAdminController;
 use App\Http\Controllers\Api\Purchase\PurchaseOrderReturnController;
 use App\Http\Controllers\Api\Purchase\PurchaseReportController;
+use App\Http\Controllers\Api\Purchase\PurchaseSafetyStrikeController;
 use App\Http\Controllers\Api\Purchase\PurchaseSettingController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorCategoryController;
 use Illuminate\Support\Facades\Route;
@@ -172,8 +174,28 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/vendors/{purchaseVendor}/tasks',    [PurchaseVendorController::class, 'tasks'])->whereNumber('purchaseVendor');
     // Workspace Overview dashboard (live per-vendor counts) + directly-linked customers.
     Route::get('/vendors/{purchaseVendor}/overview',  [PurchaseVendorController::class, 'overview'])->whereNumber('purchaseVendor');
+    // Reading where a window stands is admin+staff; moving or closing it is
+    // admin authority and lives in the role:admin group below.
+    Route::get('/vendors/{purchaseVendor}/access/status', [PurchaseVendorController::class, 'accessStatus'])->whereNumber('purchaseVendor');
+
+    // Recognition — the last two Performance entries that had no backend.
+    // Purchase-owned tables; TPV's are keyed to its own vendor master.
+    Route::get('/vendors/{purchaseVendor}/awards',    [PurchaseVendorController::class, 'awards'])->whereNumber('purchaseVendor');
+    Route::post('/vendors/{purchaseVendor}/awards',   [PurchaseVendorController::class, 'grantAward'])->whereNumber('purchaseVendor');
+    Route::delete('/vendors/{purchaseVendor}/awards/{award}', [PurchaseVendorController::class, 'deleteAward'])->whereNumber('purchaseVendor')->whereNumber('award');
+
+    Route::get('/vendors/{purchaseVendor}/referrals',  [PurchaseVendorController::class, 'referrals'])->whereNumber('purchaseVendor');
+    Route::post('/vendors/{purchaseVendor}/referrals', [PurchaseVendorController::class, 'storeReferral'])->whereNumber('purchaseVendor');
+    Route::patch('/vendors/{purchaseVendor}/referrals/{referral}/status', [PurchaseVendorController::class, 'setReferralStatus'])->whereNumber('purchaseVendor')->whereNumber('referral');
     Route::get('/vendors/{purchaseVendor}/customers', [PurchaseVendorController::class, 'customers'])->whereNumber('purchaseVendor');
     Route::post('/vendors/{purchaseVendor}/customers', [PurchaseVendorController::class, 'storeCustomer'])->whereNumber('purchaseVendor');
+    // Search and link, mirroring TPV. The Customer tab renders the same shared
+    // panel for both modules and calls all four; Purchase had only two, so the
+    // panel hung on "Searching...". Declared BEFORE nothing else needs it, but
+    // note /customers/search must not be swallowed by a numeric-only wildcard --
+    // whereNumber above keeps that safe.
+    Route::get('/vendors/{purchaseVendor}/customers/search', [PurchaseVendorController::class, 'searchCustomers'])->whereNumber('purchaseVendor');
+    Route::post('/vendors/{purchaseVendor}/customers/link', [PurchaseVendorController::class, 'linkCustomer'])->whereNumber('purchaseVendor');
     Route::put('/vendors/{purchaseVendor}',          [PurchaseVendorController::class, 'update'])->whereNumber('purchaseVendor');
     Route::patch('/vendors/{purchaseVendor}/status', [PurchaseVendorController::class, 'updateStatus'])->whereNumber('purchaseVendor');
     Route::delete('/vendors/{purchaseVendor}',       [PurchaseVendorController::class, 'destroy'])->whereNumber('purchaseVendor');
@@ -281,6 +303,16 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     // below, so staff can review but not decide who may enter the site.
     // /stats is declared BEFORE the {worker} wildcard — a static segment would
     // otherwise be swallowed as a worker id and 404 on model binding.
+    // ── PPE requirement matrix (role -> required PPE). Reads are open to
+    // staff; writes are admin-only inside the controller, because changing what
+    // PPE is legally required is not a clerical act.
+    Route::get('/ppe/requirements',                   [PurchasePpeRequirementController::class, 'index']);
+    Route::post('/ppe/requirements',                  [PurchasePpeRequirementController::class, 'store']);
+    Route::put('/ppe/requirements/{requirement}',     [PurchasePpeRequirementController::class, 'update']);
+    Route::delete('/ppe/requirements/{requirement}',  [PurchasePpeRequirementController::class, 'destroy']);
+    Route::get('/ppe/compliance/workers/{worker}',    [PurchasePpeRequirementController::class, 'worker']);
+
+    Route::post('/workforce/workers/upload',          [PurchaseWorkforceAdminController::class, 'uploadWorkers']);
     Route::get('/workforce/workers/stats',            [PurchaseWorkforceAdminController::class, 'stats']);
     Route::get('/workforce/workers',                  [PurchaseWorkforceAdminController::class, 'index']);
     Route::get('/workforce/workers/{worker}',         [PurchaseWorkforceAdminController::class, 'show']);
@@ -303,6 +335,37 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     // strict about it — declared before the {worker} wildcard above would ever
     // be consulted, since these are static segments.
     Route::get('/workforce/medicals',                 [PurchaseWorkforceAdminController::class, 'medicals']);
+
+    // ── Safety strikes (mirror of TPV's) ───────────────────────────────────
+    // Purchase had no strikes engine at all, so a repeat offender on a Purchase
+    // crew could be sent home with nothing recording it. Reads are staff-wide;
+    // issuing and voiding are admin authority, in the role:admin group below,
+    // because the third strike ends somebody's site access.
+    // Static segments first, so "stats" is never read as a worker id.
+    Route::get('/strikes/stats',                      [PurchaseSafetyStrikeController::class, 'stats']);
+    Route::get('/strikes',                            [PurchaseSafetyStrikeController::class, 'index']);
+    Route::get('/workforce/workers/{worker}/strikes', [PurchaseSafetyStrikeController::class, 'forWorker'])->whereNumber('worker');
+
+    // Medical module — the register, the quality check, the timeline and the
+    // external intake. Mirrors the TPV side route for route.
+    Route::get('/medical',                            [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'index']);
+    Route::get('/medical/template',                   [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'template']);
+    // Declared BEFORE /medical/{medical} so "report" is never read as an id.
+    Route::get('/medical/report',                     [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'report']);
+    Route::get('/medical/report/export',              [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'reportExport']);
+    Route::get('/medical/batches',                    [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'batches']);
+    Route::post('/medical/bulk',                      [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'bulkUpload']);
+    Route::get('/medical/{medical}',                  [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'show'])->whereNumber('medical');
+    Route::post('/medical/{medical}/decide',          [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'decide'])->whereNumber('medical');
+    Route::post('/medical/{medical}/comment',         [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'comment'])->whereNumber('medical');
+    Route::get('/medical/{medical}/certificate',      [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'certificate'])->whereNumber('medical');
+    Route::get('/medical/{medical}/document',         [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'document'])->whereNumber('medical');
+    // The examination's signature and camera photo. Off the public disk
+    // now — they are the proof of presence, not decoration.
+    Route::get('/medical/{medical}/evidence/{kind}', [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'evidence'])
+        ->whereNumber('medical')->whereIn('kind', ['signature', 'capture']);
+    Route::post('/workforce/workers/{worker}/medical/external', [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'storeExternal'])->whereNumber('worker');
+    Route::get('/workforce/workers/{worker}/medical-history',   [\App\Http\Controllers\Api\Purchase\PurchaseMedicalController::class, 'workerHistory'])->whereNumber('worker');
     Route::get('/workforce/trainings',                [PurchaseWorkforceAdminController::class, 'trainings']);
 
     // ── Cross-vendor registers ─────────────────────────────────────────────
@@ -518,10 +581,24 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/kickoff/registers/decisions',     [PurchaseKickoffController::class, 'decisionRegister']);
     Route::get('/kickoff/registers/issues',        [PurchaseKickoffController::class, 'issueRegister']);
     Route::get('/kickoff/registers/actions',       [PurchaseKickoffController::class, 'actionRegister']);
+    Route::get('/kickoff/participants',            [PurchaseKickoffController::class, 'participants']);
     Route::get('/kickoff/staff',                   [PurchaseKickoffController::class, 'staff']);
     Route::get('/kickoff/vendors',                 [PurchaseKickoffController::class, 'vendors']);
     Route::get('/kickoff/vendor-status',           [PurchaseKickoffController::class, 'vendorStatus']);
     Route::get('/kickoff/history',                 [PurchaseKickoffController::class, 'history']);
+    // The online meeting link. Purchase meetings are their own records, so they
+    // mint and read their link here rather than through the shared engine.
+    Route::post('/kickoff/{kickoff}/generate-link', [PurchaseKickoffController::class, 'generateLink'])->whereNumber('kickoff');
+    Route::get('/kickoff/{kickoff}/link',          [PurchaseKickoffController::class, 'link'])->whereNumber('kickoff');
+    // Marking attendance is what releases the join link to a staff attendee
+    // who did not organise the meeting. The organiser and an admin already
+    // hold it — see MeetingAttendanceGate.
+    Route::post('/kickoff/{kickoff}/attendance',   [PurchaseKickoffController::class, 'markAttendance'])->whereNumber('kickoff');
+    // The organiser's verdict on who actually attended — the three slabs, kept
+    // BESIDE each person's own attendance mark rather than over it. See
+    // MeetingAttendanceReview; authority is the organiser's or an admin's.
+    Route::get('/kickoff/{kickoff}/attendance/register', [PurchaseKickoffController::class, 'attendanceRegister'])->whereNumber('kickoff');
+    Route::post('/kickoff/{kickoff}/attendance/review',  [PurchaseKickoffController::class, 'attendanceReview'])->whereNumber('kickoff');
     // Read-only PREVIEW of carryable items, for the meeting form. The writing
     // half lives at POST /kickoff/{kickoff}/carry-forward and is unrelated.
     Route::get('/kickoff/carry-forward',           [PurchaseKickoffController::class, 'carryForwardPreview']);
@@ -547,6 +624,13 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::put('/kickoff/{kickoff}',               [PurchaseKickoffController::class, 'update']);
     Route::post('/kickoff/{kickoff}/transition',   [PurchaseKickoffController::class, 'transition']);
     Route::patch('/kickoff/{kickoff}/attendance',  [PurchaseKickoffController::class, 'attendance']);
+    // The live meeting room autosaves what is typed beside the video: the
+    // discussion and decision per agenda point, and the minutes. Separate from
+    // the meeting's own PUT, which re-notifies the roster on every save.
+    Route::post('/kickoff/{kickoff}/room/notes',   [PurchaseKickoffController::class, 'saveRoomNotes'])->whereNumber('kickoff');
+    // Who is in the call right now, reported every few seconds while it runs.
+    // A snapshot rather than join/leave events — see MeetingPresence.
+    Route::post('/kickoff/{kickoff}/room/presence', [PurchaseKickoffController::class, 'roomPresence'])->whereNumber('kickoff');
     Route::post('/kickoff/{kickoff}/remind',       [PurchaseKickoffController::class, 'remind']);
     Route::post('/kickoff/{kickoff}/mom',          [PurchaseKickoffController::class, 'uploadMom']);
     Route::post('/kickoff/{kickoff}/mom/generate', [PurchaseKickoffController::class, 'generateMom']);
@@ -618,6 +702,11 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
 // Approval authority is admin-only — a requester must not approve their own PR.
 Route::middleware(['auth:sanctum', 'role:admin'])->prefix('purchase')->group(function () {
 
+    // Safety strikes are admin authority: the third strike (or one Critical)
+    // terminates site access, and an appeal decides whether it stands.
+    Route::post('/workforce/workers/{worker}/strikes', [PurchaseSafetyStrikeController::class, 'store'])->whereNumber('worker');
+    Route::post('/strikes/{strike}/void',              [PurchaseSafetyStrikeController::class, 'void'])->whereNumber('strike');
+
     // ── Settings writes — module configuration is an admin concern ─────────
     Route::put('/settings', [PurchaseSettingController::class, 'update']);
     Route::post('/vendor-categories',                    [PurchaseVendorCategoryController::class, 'store']);
@@ -671,6 +760,9 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('purchase')->group(fun
     Route::post('/workforce/workers/{worker}/reinstate',  [PurchaseWorkforceAdminController::class, 'reinstate']);
     Route::post('/workforce/workers/{worker}/terminate',  [PurchaseWorkforceAdminController::class, 'terminate']);
     Route::post('/workforce/ppe/issues/{issue}/return',   [PurchaseWorkforceAdminController::class, 'returnPpe']);
+    // Mirrors the TPV verify route — signs off that issued gear was checked,
+    // which is the only way a rule setting verification_required can be met.
+    Route::post('/workforce/ppe/issues/{issue}/verify',   [PurchaseWorkforceAdminController::class, 'verifyPpe']);
 
     // Vendor onboarding decisions — a requester must not approve their own vendor.
     Route::post('/onboarding/{onboarding}/approve',  [PurchaseOnboardingController::class, 'approve']);
@@ -686,6 +778,13 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('purchase')->group(fun
     Route::post('/vendors/{purchaseVendor}/approve', [PurchaseVendorController::class, 'approve'])->whereNumber('purchaseVendor');
     // Manual resend of the activation e-mail (admin authority, like activation).
     Route::post('/vendors/{purchaseVendor}/resend-activation', [PurchaseVendorController::class, 'resendActivation'])->whereNumber('purchaseVendor');
+    // Temporary -> Permanent. Admin, because it removes an expiry somebody set
+    // on purpose. TPV's counterpart is /tpv/vendors/{vendor}/access/convert.
+    Route::post('/vendors/{purchaseVendor}/convert', [PurchaseVendorController::class, 'convertToPermanent'])->whereNumber('purchaseVendor');
+    // The rest of the window's lifecycle, mirroring TPV's /access/* group:
+    // extend it, close it now, or read where it stands.
+    Route::post('/vendors/{purchaseVendor}/access/extend', [PurchaseVendorController::class, 'extendAccess'])->whereNumber('purchaseVendor');
+    Route::post('/vendors/{purchaseVendor}/access/expire', [PurchaseVendorController::class, 'expireAccess'])->whereNumber('purchaseVendor');
 
     // Admin approve/reject a purchase vendor's statutory document.
     Route::post('/documents/{document}/review',      [PurchaseVendorDocumentController::class, 'review']);

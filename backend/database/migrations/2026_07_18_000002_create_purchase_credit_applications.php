@@ -32,7 +32,8 @@ return new class extends Migration {
             $table->string('notes')->nullable();
 
             $table->timestamps();
-            $table->index(['tenant_id', 'purchase_debit_note_id']);
+            // Named: the generated name exceeds MySQL's 64-character identifier limit.
+            $table->index(['tenant_id', 'purchase_debit_note_id'], 'pur_credit_apps_tenant_debit_note_idx');
             $table->index(['tenant_id', 'purchase_invoice_id']);
         });
 

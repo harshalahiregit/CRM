@@ -3,6 +3,7 @@ import { ArrowLeft, Loader2, Check, ShieldCheck, ShieldAlert, AlertTriangle, Doo
 import { purchaseApi } from '@/services/purchaseApi'
 import { useAuth } from '@/context/AuthContext'
 import { canApprovePR } from '../constants'
+import WorkerHealthPanel from '@/components/medical/WorkerHealthPanel'
 
 const STEPS = [
   { step: 1, key: 'profile',   label: 'Profile' },
@@ -155,7 +156,14 @@ export default function PurchaseWorkerDetail({ workerId, onBack }) {
 
       {tab === 2 && (
         <Panel title="Step 2 — Medical">
-          <Check2 ok={r.medical_ok} label="Fit and unexpired medical on file" />
+          {/* Clearance is the check, not merely a medical existing: a signed but
+              unreviewed certificate does not clear the step. */}
+          <Check2 ok={r.medical_ok} label="Medical clearance (fit, current, quality-checked)" />
+          {/* The worker profile's health history — every report, the score and
+              which way it is moving. */}
+          <div style={{ margin: "12px 0" }}>
+            <WorkerHealthPanel module="purchase" workerId={workerId} />
+          </div>
           <RecordTable
             rows={w.medicals || []}
             cols={[

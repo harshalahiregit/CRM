@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { purchaseVendorAuthApi } from '@/services/purchaseVendorAuthApi'
-import { AuthShell, primaryBtn, linkStyle, errStyle } from './PurchaseVendorLogin'
+import { AuthShell, primaryBtn, linkStyle, errStyle } from './portalAuthChrome'
 
 /**
  * Where the registration verification link lands.
@@ -36,7 +36,7 @@ export default function PurchaseVendorVerifyEmail() {
         <p style={{ fontSize: 13.5, color: 'var(--text-muted)', margin: '0 0 14px' }}>
           Your email is confirmed. You can sign in once an administrator activates your account.
         </p>
-        <Link to="/purchase-portal/login" style={{ ...primaryBtn, display: 'block', textAlign: 'center', textDecoration: 'none' }}>
+        <Link to="/auth/login?role=purchase_vendor" style={{ ...primaryBtn, display: 'block', textAlign: 'center', textDecoration: 'none' }}>
           Go to Sign In
         </Link>
       </>
@@ -45,7 +45,7 @@ export default function PurchaseVendorVerifyEmail() {
       <>
         <div style={errStyle}>{err}</div>
         <div style={{ textAlign: 'center', fontSize: 12.5, marginTop: 12 }}>
-          <Link to="/purchase-portal/login" style={linkStyle}>Back to Sign In</Link>
+          <Link to="/auth/login?role=purchase_vendor" style={linkStyle}>Back to Sign In</Link>
         </div>
       </>
     ),
@@ -53,7 +53,7 @@ export default function PurchaseVendorVerifyEmail() {
       <>
         <div style={errStyle}>This link is missing its verification token. Open the link from your email exactly as sent.</div>
         <div style={{ textAlign: 'center', fontSize: 12.5, marginTop: 12 }}>
-          <Link to="/purchase-portal/login" style={linkStyle}>Back to Sign In</Link>
+          <Link to="/auth/login?role=purchase_vendor" style={linkStyle}>Back to Sign In</Link>
         </div>
       </>
     ),

@@ -241,7 +241,10 @@ class VoucherController extends Controller
         $subject = $data['subject'] ?: "{$voucher->type_label} {$voucher->code}";
 
         foreach ($data['to'] as $address) {
-            \Illuminate\Support\Facades\Mail::to($address)->send(
+            // Tenant SMTP, never the global mailer.
+            app(\App\Services\Mail\TenantMailer::class)->send(
+                $request->user()->tenant_id,
+                $address,
                 new \App\Mail\Inventory\VoucherNoteMail($voucher, $subject, $data['body'] ?? '')
             );
         }

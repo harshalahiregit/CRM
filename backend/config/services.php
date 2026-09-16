@@ -35,4 +35,17 @@ return [
         ],
     ],
 
+
+    /*
+     * Firebase Cloud Messaging (HTTP v1).
+     *
+     * The credentials path points at a service account key kept OUTSIDE the
+     * repo — it grants send rights on the whole Firebase project. Absent on a
+     * machine that does not send push, which is a supported state, not an error.
+     */
+    'fcm' => [
+        'credentials' => env('FCM_CREDENTIALS'),
+        'project_id'  => env('FCM_PROJECT_ID'),
+    ],
+
 ];

@@ -2,17 +2,36 @@ import { useEffect, useState } from 'react'
 import { Plus, X, Loader2, Star, Pencil } from 'lucide-react'
 
 /**
- * Shared "My Contacts" page for BOTH vendor portals. The two backends differ in
- * their field shape (TPV uses a single `name`; Purchase uses first/last name +
- * more), so each portal passes a `fields` descriptor and a `nameOf` accessor.
- * The API surface is identical across portals (contacts.list/create/update/
- * setStatus), so one component serves both via the `api` prop.
+ * Shared "My Contacts" page for BOTH vendor portals. Each portal passes a
+ * `fields` descriptor and a `nameOf` accessor, because the two backends present
+ * a contact slightly differently; the API surface is identical
+ * (contacts.list/create/update/setStatus), so one component serves both.
+ *
+ * This used to say "TPV uses a single `name`". It does not — tpv_contacts
+ * stores first_name and last_name and exposes a full_name accessor — and that
+ * sentence is why the portal's contact query ordered by a column that has never
+ * existed, which made this page answer 500 for as long as it has been here.
  */
 export default function PortalContacts({ api, fields, nameOf }) {
   const [rows, setRows] = useState(null)
   const [editing, setEditing] = useState(null)   // contact | {} (new) | null
+  const [failed, setFailed] = useState(false)
 
-  const reload = () => api.contacts.list(null).then(d => setRows(Array.isArray(d) ? d : (d?.data || []))).catch(() => setRows([]))
+  /**
+   * A failure is shown, not swallowed.
+   *
+   * This used to `.catch(() => setRows([]))`, so a 500 rendered as the empty
+   * state — the page said "no contacts yet" to a vendor who had several, and
+   * nobody could tell a working empty account from a broken endpoint. That is
+   * exactly how the fault above survived: it looked like an ordinary empty list.
+   */
+  const reload = () => {
+    setFailed(false)
+
+    return api.contacts.list(null)
+      .then(d => setRows(Array.isArray(d) ? d : (d?.data || [])))
+      .catch(() => { setRows([]); setFailed(true) })
+  }
   useEffect(() => { reload() }, [])
 
   const toggleStatus = async (c) => {
@@ -30,6 +49,7 @@ export default function PortalContacts({ api, fields, nameOf }) {
       </div>
 
       {rows === null ? <Center><Loader2 className="pc-spin" size={22} /></Center>
+        : failed ? <Failed onRetry={reload} />
         : rows.length === 0 ? <Empty />
         : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 12 }}>
@@ -119,6 +139,19 @@ function ContactForm({ api, fields, contact, onClose, onSaved }) {
 
 function Center({ children }) { return <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>{children}</div> }
 function Empty() { return <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 48, fontSize: 14 }}>No contacts yet. Add your first one.</div> }
+
+/** Distinguishable from Empty on sight — that is the entire point of it. */
+function Failed({ onRetry }) {
+  return (
+    <div style={{ textAlign: 'center', padding: 44, fontSize: 14 }}>
+      <div style={{ color: '#ef4444', fontWeight: 700, marginBottom: 6 }}>Your contacts could not be loaded.</div>
+      <div style={{ color: 'var(--text-muted)', fontSize: 12.5, marginBottom: 14 }}>
+        This is a fault on our side, not an empty list — your contacts are still there.
+      </div>
+      <button className="pc-btn" onClick={onRetry}>Try again</button>
+    </div>
+  )
+}
 
 const CSS = `
 .pc-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; gap: 12px; flex-wrap: wrap; }

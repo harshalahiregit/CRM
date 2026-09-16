@@ -5,6 +5,7 @@ namespace App\Services\Purchase;
 use App\Exceptions\BusinessException;
 use App\Models\Purchase\PurchaseVendor;
 use App\Models\User;
+use Illuminate\Support\Facades\Hash;
 use App\Repositories\Purchase\PurchaseVendorRepository;
 use App\Support\Purchase\PurchaseRegistrationType as RegistrationType;
 use App\Support\Purchase\PurchaseVendorStatus as Status;
@@ -51,6 +52,14 @@ class PurchaseVendorService
     {
         $tenantId = $actor->tenant_id;
 
+        // Lifted out before the spread below. `password` is fillable and the
+        // model has no hashing cast, so leaving it in $data would write the
+        // admin's typed password into the column in plain text — and every
+        // later login, which hashes what it is given before comparing, would
+        // then fail against it.
+        $chosenPassword = $data['password'] ?? null;
+        unset($data['password']);
+
         $vendor = PurchaseVendor::create([
             ...$data,
             'tenant_id'            => $tenantId,
@@ -70,8 +79,22 @@ class PurchaseVendorService
 
         // Welcome the vendor immediately with login credentials so they can sign
         // in and complete onboarding — not only at activation (mirrors TPV).
-        if (! empty($vendor->email) && ! $vendor->password) {
-            $plain = $this->portalAuth->provision($vendor->fresh(), $actor);
+        //
+        // The admin may have typed a first password or left it blank. Blank means
+        // provision() mints one and hands it back; typed means we set it here and
+        // provision() finds a password already in place and returns null. Either
+        // way the SAME mail goes out carrying whichever one applies, because an
+        // account whose password is never disclosed is an account nobody can use
+        // — and nothing on any screen can reveal it later, since only the hash
+        // is kept.
+        if ($chosenPassword) {
+            $vendor->forceFill(['password' => Hash::make($chosenPassword)])->save();
+        }
+
+        if (! empty($vendor->email)) {
+            $generated = $this->portalAuth->provision($vendor->fresh(), $actor);
+            $plain = $chosenPassword ?: $generated;
+
             if ($plain) {
                 $this->notifier->onCredentialsIssued($vendor->fresh(), $plain);
             }
@@ -85,8 +108,89 @@ class PurchaseVendorService
         // The code is immutable once assigned; status changes go through updateStatus/approve.
         unset($data['purchase_vendor_code'], $data['status']);
 
+        // The edit form offers Standard/Temporary in a dropdown labelled
+        // Permanent/Temporary, and it used to write vendor_type and stop there.
+        // isTemporary() reads registration_type FIRST, so the row stayed
+        // temporary, kept its expiry and was still locked out when the window
+        // shut -- while the screen said Permanent and the save returned 200.
+        //
+        // Refusing is the honest answer rather than quietly doing the
+        // conversion here: a promotion issues a code, re-opens the portal,
+        // writes an audit entry and tells the vendor. None of that belongs in a
+        // profile save, and none of it should happen because somebody changed a
+        // dropdown while editing an address.
+        if (array_key_exists('vendor_type', $data)) {
+            $wouldBeTemporary = $data['vendor_type'] === 'temporary';
+
+            if ($wouldBeTemporary !== $vendor->isTemporary()) {
+                throw new BusinessException($wouldBeTemporary
+                    ? 'A permanent vendor cannot be made temporary. Create a temporary vendor instead.'
+                    : 'Use "Convert to Permanent" to promote this vendor — changing the type here '
+                      .'would leave the access expiry in place.', 422);
+            }
+
+            unset($data['vendor_type']);
+        }
+
         $vendor->update($data);
         $vendor->recordAudit('Purchase Vendor Updated', $actor, null, ['company_name' => $vendor->company_name]);
+
+        return $vendor->fresh();
+    }
+
+    /**
+     * Promote a temporary vendor to permanent.
+     *
+     * The counterpart of TpvAccessService::convert, and Purchase had no
+     * equivalent at all: the temporary side was complete — a registration type,
+     * an access window, an expiry that shuts the portal — with no way out of it.
+     *
+     * registration_type is what actually decides, because isTemporary() reads it
+     * first and only falls back to the legacy vendor_type when it is null. Both
+     * are written here so the two can never disagree; the edit form used to move
+     * vendor_type alone, which changed the label on screen and nothing else.
+     *
+     * Everything the window imposed is lifted at once: the expiry is cleared so
+     * EnsureTemporaryAccessNotExpired stops matching, the portal login is
+     * re-opened if the window had already shut it, and a vendor code is issued
+     * if this account somehow never got one. Clearing the expiry without
+     * re-opening the login would leave a permanent vendor who still cannot sign
+     * in, which is the same complaint one step further along.
+     */
+    public function convertToPermanent(PurchaseVendor $vendor, User $actor): PurchaseVendor
+    {
+        if (! $vendor->isTemporary()) {
+            throw new BusinessException('This vendor is already permanent.', 422);
+        }
+
+        $code = $vendor->purchase_vendor_code ?: $this->generateCode($vendor->tenant_id);
+
+        $vendor->update([
+            'registration_type'         => RegistrationType::STANDARD,
+            'vendor_type'               => 'standard',
+            'access_expires_at'         => null,
+            // Converted, not merely cleared. The hourly sweep skips this state
+            // explicitly, and it keeps the row honest about how the window
+            // ended — promoted, rather than never having had one.
+            'access_status'             => \App\Support\Purchase\PurchaseAccessStatus::CONVERTED,
+            'converted_to_permanent_at' => now(),
+            'converted_by'              => $actor->id,
+            'purchase_vendor_code'      => $code,
+            // A window that had already run out left the portal suspended. The
+            // reason for that suspension is gone, so the suspension goes too.
+            'portal_status'             => $vendor->portal_status === 'suspended'
+                ? 'active'
+                : $vendor->portal_status,
+        ]);
+
+        $vendor->recordAudit('Purchase Vendor Converted to Permanent', $actor, null, [
+            'purchase_vendor_code' => $code,
+        ]);
+        Log::channel('purchase')->info('Purchase vendor converted to permanent', [
+            'purchase_vendor_id' => $vendor->id, 'actor_id' => $actor->id,
+        ]);
+
+        $this->notifier->onConvertedToPermanent($vendor->fresh());
 
         return $vendor->fresh();
     }
@@ -222,16 +326,22 @@ class PurchaseVendorService
 
         $from = $vendor->status;
 
-        // Rule 1 — "No Approval, No Activation" (parity with VendorService). Block a
-        // raw status flip to Active unless the onboarding has been approved; the
-        // sanctioned path (PurchaseOnboardingService::approve) sets it Approved first.
-        if ($status === Status::ACTIVE && $from !== Status::ACTIVE) {
-            $obStatus = $vendor->onboarding()->value('status');
-            if ($obStatus !== \App\Support\Purchase\PurchaseOnboardingStatus::APPROVED) {
-                throw new BusinessException('Purchase vendor cannot be activated until its onboarding is approved — "No Approval, No Activation".');
-            }
-        }
-
+        // "No Approval, No Activation" is deliberately NOT enforced here any more.
+        //
+        // It assumed onboarding happens before activation. In this business it is
+        // the other way round: a vendor registers, an admin activates them, and
+        // only then do they sign in and work through the onboarding wizard. The
+        // rule made the sanctioned order impossible from the one screen an admin
+        // actually uses, and the two activation paths disagreed about it — the
+        // Activate button never checked, so the same decision succeeded or failed
+        // depending on which control was clicked.
+        //
+        // What still protects a site is unchanged and lives where it belongs:
+        // EnsureVendorOnboardingComplete refuses every operational WRITE — workers,
+        // permits, medicals, badges — until the vendor is Active. Activation is the
+        // admin saying "you may begin"; it was never the thing that let them log in
+        // (portal_status does that), and it is not the thing that clears their
+        // people for site.
         $vendor->update(['status' => $status, 'notes' => $remarks ?? $vendor->notes]);
         $vendor->recordAudit('Purchase Vendor Status Changed', $actor, $remarks, ['from' => $from, 'to' => $status]);
 

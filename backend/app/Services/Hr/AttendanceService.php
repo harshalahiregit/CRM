@@ -2,6 +2,7 @@
 
 namespace App\Services\Hr;
 
+use App\Support\Hr\TenantTime;
 use App\Exceptions\BusinessException;
 use App\Models\Hr\HrAttendance;
 use App\Models\Hr\HrEmployee;
@@ -25,7 +26,34 @@ class AttendanceService
     public function __construct(
         private AttendanceRepository $attendanceRepository,
         private ShiftService $shifts,
+        private \App\Services\Settings\SettingsService $settings,
     ) {
+    }
+
+    /**
+     * The workspace's own working day.
+     *
+     * These were constants, and the HR settings screen offered start time, end
+     * time, grace period and full-day hours that NOTHING read — it saved, it
+     * persisted, and every attendance record was still stamped 09:00/18:00/15
+     * with overtime past 8 hours. A control that claims to do something and does
+     * not is worse than no control.
+     *
+     * The constants remain the fallback, so a workspace that has never touched
+     * settings behaves exactly as before.
+     */
+    private function dayRules(int $tenantId): array
+    {
+        $s = $this->settings->getGroup($tenantId, \App\Support\Hr\HrSetting::GROUP);
+
+        [$start, $end, $grace] = HrAttendance::SHIFTS['General'];
+
+        return [
+            'start'          => $s['company_start_time'] ?: $start,
+            'end'            => $s['company_end_time'] ?: $end,
+            'grace'          => (int) ($s['late_grace_minutes'] ?? $grace),
+            'standard_hours' => (float) ($s['standard_day_hours'] ?: HrAttendance::STANDARD_HOURS),
+        ];
     }
 
     /* ─────────────── Listing & dashboard ─────────────── */
@@ -371,8 +399,8 @@ class AttendanceService
                 'Designation'   => $r->employee?->designation,
                 'Shift'         => $r->shift,
                 'Date'          => optional($r->date)->toDateString(),
-                'Check In'      => optional($r->check_in)->format('H:i'),
-                'Check Out'     => optional($r->check_out)->format('H:i'),
+                'Check In'      => TenantTime::hm($r->check_in, $r->tenant_id),
+                'Check Out'     => TenantTime::hm($r->check_out, $r->tenant_id),
                 'Break'         => $this->breakLabel($r),
                 'Working Hours' => $r->working_hours,
                 'Overtime'      => $r->overtime_hours,
@@ -391,10 +419,25 @@ class AttendanceService
             'date'          => optional($r->date)->toDateString(),
             'status'        => $r->status,
             'shift'         => $r->shift,
-            'check_in'      => optional($r->check_in)->format('H:i'),
-            'check_out'     => optional($r->check_out)->format('H:i'),
-            'break_start'   => optional($r->break_start)->format('H:i'),
-            'break_end'     => optional($r->break_end)->format('H:i'),
+            // Stored UTC, read on the workspace's clock. Without this a 2:11pm
+            // arrival showed as 08:41 on every attendance screen and export.
+            'check_in'      => TenantTime::hm($r->check_in, $r->tenant_id),
+            'check_out'     => TenantTime::hm($r->check_out, $r->tenant_id),
+            'break_start'   => TenantTime::hm($r->break_start, $r->tenant_id),
+            'break_end'     => TenantTime::hm($r->break_end, $r->tenant_id),
+            // Punch evidence. The app collects all of this on every punch and
+            // refuses to clock in without the photo, so the register showing only
+            // a time was hiding the part that proves the time.
+            'check_in_latitude'   => $r->check_in_latitude,
+            'check_in_longitude'  => $r->check_in_longitude,
+            'check_in_address'    => $r->check_in_address,
+            'check_in_ip'         => $r->check_in_ip,
+            'check_in_selfie_url' => $r->check_in_selfie_url,
+            'check_out_latitude'   => $r->check_out_latitude,
+            'check_out_longitude'  => $r->check_out_longitude,
+            'check_out_address'    => $r->check_out_address,
+            'check_out_ip'         => $r->check_out_ip,
+            'check_out_selfie_url' => $r->check_out_selfie_url,
             'working_hours' => $r->working_hours,
             'overtime_hours'=> $r->overtime_hours,
             'remarks'       => $r->remarks,
@@ -404,7 +447,7 @@ class AttendanceService
     private function breakLabel(HrAttendance $r): ?string
     {
         if ($r->break_start && $r->break_end) {
-            return $r->break_start->format('H:i').'–'.$r->break_end->format('H:i');
+            return TenantTime::hm($r->break_start, $r->tenant_id).'–'.TenantTime::hm($r->break_end, $r->tenant_id);
         }
 
         return null;
@@ -412,11 +455,25 @@ class AttendanceService
 
     private function applyShift(HrAttendance $record, string $shift): void
     {
-        $preset = HrAttendance::SHIFTS[$shift] ?? HrAttendance::SHIFTS['General'];
         $record->shift = $shift;
-        if ($shift !== 'Custom') {
-            [$record->shift_start, $record->shift_end, $record->grace_period] = $preset;
+
+        if ($shift === 'Custom') {
+            return;
         }
+
+        // 'General' IS the company's working day, so it comes from settings.
+        // The other presets are named shifts with their own hours and are left
+        // alone — somebody on Night shift is not working the office day.
+        if ($shift === 'General') {
+            $rules = $this->dayRules((int) $record->tenant_id);
+            $record->shift_start   = $rules['start'];
+            $record->shift_end     = $rules['end'];
+            $record->grace_period  = $rules['grace'];
+
+            return;
+        }
+
+        [$record->shift_start, $record->shift_end, $record->grace_period] = HrAttendance::SHIFTS[$shift];
     }
 
     /** Apply editable fields from a manual/correction payload. */
@@ -468,6 +525,15 @@ class AttendanceService
      */
     public function restampAndSave(HrAttendance $a): HrAttendance
     {
+        // A record created outside the normal clock-in flow — from the app, or
+        // from an approved correction — arrives with no shift at all, so the
+        // late/grace rules had nothing to work from and grace_period stayed 0.
+        // Only filled when absent, so a Custom shift or a deliberately chosen one
+        // is never overwritten.
+        if (! $a->shift_start) {
+            $this->applyShift($a, $a->shift ?: 'General');
+        }
+
         $this->applyStatusFromCheckIn($a);
         $this->recompute($a);
         $a->save();
@@ -485,7 +551,10 @@ class AttendanceService
                 ? abs($a->break_start->diffInMinutes($a->break_end)) : 0;
             $net = max(0, $gross - $break);
             $a->working_hours  = round($net / 60, 2);
-            $a->overtime_hours = round(max(0, ($net / 60) - HrAttendance::STANDARD_HOURS), 2);
+            // The workspace's full day, not a constant — otherwise overtime
+            // starts accruing at 8 hours while the settings screen says 9.
+            $standard = $this->dayRules((int) $a->tenant_id)['standard_hours'];
+            $a->overtime_hours = round(max(0, ($net / 60) - $standard), 2);
         } else {
             $a->working_hours  = $a->working_hours ?? null;
             $a->overtime_hours = $a->overtime_hours ?? null;

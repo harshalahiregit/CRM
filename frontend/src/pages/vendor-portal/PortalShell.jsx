@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import DataFailureBanner from '@/components/ui/DataFailureBanner'
 import {
-  LogOut, Building2, Sun, Moon, Bell, HelpCircle, Menu, ChevronRight,
+  LogOut, Building2, Sun, Moon, Bell, HelpCircle, Menu, ChevronRight, Search, X,
 } from 'lucide-react'
 import { KIT3D_STYLE } from '@/components/ui/kit3d'
 import { resolveNav } from './portalSections'
@@ -31,8 +32,10 @@ export default function PortalShell({
   notificationsApi,     // optional { list, markRead, markAllRead } — powers the bell
 }) {
   const location = useLocation()
+  const navigate = useNavigate()
   // One shared notification feed for the bell + the on-screen toaster.
   const feed = useNotificationFeed(notificationsApi)
+  const [navQuery, setNavQuery] = useState('')
   const [vendor, setVendor] = useState(null)
   const [theme, setTheme] = useState(() => localStorage.getItem('crm_theme') || 'dark')
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -42,7 +45,7 @@ export default function PortalShell({
     document.documentElement.classList.toggle('light', theme === 'light')
     localStorage.setItem('crm_theme', theme)
   }, [theme])
-  useEffect(() => { setSidebarOpen(false) }, [location.pathname])
+  useEffect(() => { setSidebarOpen(false); setNavQuery('') }, [location.pathname])
 
   // Canonical tree resolved for this portal, then any portal-specific extras.
   const groups = [
@@ -54,6 +57,28 @@ export default function PortalShell({
         .map(it => ({ ...it, built: true, to: it.to.startsWith('/') ? it.to : `${base}/${it.to}` })),
     })),
   ]
+
+  /*
+   * Sidebar search — the same affordance the admin sidebar has.
+   *
+   * A vendor portal sidebar runs to thirty-odd entries across six groups, and
+   * the section a vendor wants ("Debit Notes", "PTW") is rarely the one they
+   * can see without scrolling. Filtering by label keeps the grouping intact, so
+   * the result still says WHERE the page lives rather than flattening the tree
+   * into an anonymous list. The group name matches too — typing "commercial"
+   * shows that whole group.
+   */
+  const q = navQuery.trim().toLowerCase()
+  const shownGroups = !q ? groups : groups
+    .map(g => ({
+      group: g.group,
+      items: g.group.toLowerCase().includes(q)
+        ? g.items
+        : g.items.filter(it => it.label.toLowerCase().includes(q)),
+    }))
+    .filter(g => g.items.length > 0)
+
+  const firstMatch = shownGroups.flatMap(g => g.items).find(it => it.built)
 
   // Active-page title: the longest matching built route wins.
   const flat = groups.flatMap(g => g.items)
@@ -83,8 +108,32 @@ export default function PortalShell({
           </div>
         </div>
 
+        {/* Above the scrolling nav, so it stays reachable however far down the
+            vendor has scrolled. */}
+        <div className="portal-nav-search">
+          <Search size={13} className="portal-nav-search-icon" />
+          <input
+            value={navQuery}
+            onChange={e => setNavQuery(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && firstMatch) navigate(firstMatch.to)
+              if (e.key === 'Escape') setNavQuery('')
+            }}
+            placeholder="Search sections…"
+            aria-label="Search portal sections"
+          />
+          {navQuery && (
+            <button type="button" onClick={() => setNavQuery('')} aria-label="Clear search" className="portal-nav-search-clear">
+              <X size={13} />
+            </button>
+          )}
+        </div>
+
         <nav className="portal-nav">
-          {groups.map(({ group, items }) => items.length === 0 ? null : (
+          {q && shownGroups.length === 0 && (
+            <p className="portal-nav-empty">Nothing matches “{navQuery}”.</p>
+          )}
+          {shownGroups.map(({ group, items }) => items.length === 0 ? null : (
             <div key={group}>
               <div className="portal-nav-section">{group}</div>
               {items.map(({ key, label, icon: Icon, to, built }) => (
@@ -138,7 +187,11 @@ export default function PortalShell({
           </div>
         </header>
 
-        <main className="portal-content"><Outlet /></main>
+        {/* Above the content, and in the shell rather than per page, because
+            both portals share this file and nearly every page inside them turns
+            a failed fetch into an empty list. This is what tells the vendor
+            that an empty section might not be empty. */}
+        <main className="portal-content"><DataFailureBanner /><Outlet /></main>
       </div>
 
       {/* On-screen notification pop-ups (persistent until the vendor reacts). */}

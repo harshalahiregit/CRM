@@ -26,6 +26,10 @@ export const kickoffApi = {
   // Customers + staff for the meeting pickers (Meeting.docx §2 / §5). Both are
   // read through the owning module's contract, never its tables.
   customers: ()        => api.get('/kickoff/customers').then(r => r.data),
+  // Everyone selectable, grouped by category (admin / staff / manager / HR /
+  // doctor / customer / vendor). `staff` above stays -- it is the flat internal
+  // list three other screens already read; this is the richer picker beside it.
+  participants: ()     => api.get('/kickoff/participants').then(r => r.data),
   staff: ()            => api.get('/kickoff/staff').then(r => r.data),
 
   // Cross-meeting registers (Meeting.docx §8 / §9 / §10) — the searchable
@@ -40,6 +44,26 @@ export const kickoffApi = {
   // §1 Send Invitation — also fired automatically when a dated meeting is
   // scheduled. Returns { sent, skipped, failed, in_app, recipients }.
   invite: (id) => api.post(`/kickoff/meetings/${id}/invite`).then(r => r.data),
+
+  // The online meeting link. Both engines expose these two under the same
+  // names, so a page reaches them through useMeetingModule().api and never
+  // hardcodes an engine's path — which is what sent Purchase meeting ids to the
+  // shared route and produced "No query results for model [KickoffMeeting]".
+  generateLink: (id, platform = null) =>
+    api.post(`/kickoff/meetings/${id}/generate-link`, { platform }).then(r => r.data),
+  getLink: (id) => api.get(`/kickoff/meetings/${id}/link`).then(r => r.data),
+  // Mark MYSELF present, which is what releases the joining link to a staff
+  // attendee who did not organise the meeting. Distinct from markAttendance
+  // below, which is the organiser ticking other people's rows afterwards —
+  // same URL, different verb and different authority. See
+  // MeetingAttendanceGate.
+  markOwnAttendance: (id) => api.post(`/kickoff/meetings/${id}/attendance`).then(r => r.data),
+  // The organiser's verdict on who actually attended — the three slabs, stored
+  // BESIDE each person's own attendance mark rather than over it, so "punched
+  // CRM attendance but did not join the call" stays writable. Authority is the
+  // organiser's or an admin's; the register is readable by any staff.
+  attendanceRegister: (id) => api.get(`/kickoff/meetings/${id}/attendance/register`).then(r => r.data),
+  reviewAttendance: (id, rows) => api.post(`/kickoff/meetings/${id}/attendance/review`, { rows }).then(r => r.data),
 
   // §13 per-recipient Sent / Viewed / Acknowledged tracker.
   distribution: (id) => api.get(`/kickoff/meetings/${id}/distribution`).then(r => r.data),
@@ -73,6 +97,13 @@ export const kickoffApi = {
 
   // Post-meeting attendance edit — [{ id, attended }]. Audit-logged server-side.
   markAttendance: (id, attendance) => api.patch(`/kickoff/meetings/${id}/attendance`, { attendance }).then(r => r.data),
+  // Notes typed in the live meeting room, autosaved beside the video: the
+  // discussion/decision per agenda point, plus the meeting minutes. Kept off
+  // `update`, whose save re-notifies the whole roster.
+  roomNotes: (id, payload) => api.post(`/kickoff/meetings/${id}/room/notes`, payload).then(r => r.data),
+  // Who is in the call right now — a snapshot of the whole room, posted
+  // repeatedly while the meeting runs. See the backend's MeetingPresence.
+  roomPresence: (id, payload) => api.post(`/kickoff/meetings/${id}/room/presence`, payload).then(r => r.data),
 
   // Manual reminder. Returns { email:{sent,skipped,failed}, whatsapp, sms, recipients }.
   // Email is a real send; whatsapp/sms are queued stubs — never implied as delivered.
@@ -88,6 +119,8 @@ export const kickoffApi = {
   },
   generateMom: (id) => api.post(`/kickoff/meetings/${id}/mom/generate`).then(r => r.data),
   momBlob: (id) => api.get(`/kickoff/meetings/${id}/mom`, { responseType: 'blob' }).then(r => r.data),
+  // The same minutes as DATA (VendorMomView) — one shape, both surfaces.
+  momData: (id) => api.get(`/kickoff/meetings/${id}/mom-data`).then(r => r.data),
 
   // MOM approval workflow — submit for approval, approve/return, reopen to revise.
   // Distribution is `publish` below (now gated on approval server-side).

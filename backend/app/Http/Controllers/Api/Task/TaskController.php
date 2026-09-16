@@ -73,7 +73,7 @@ class TaskController extends Controller
     public function update(UpdateTaskRequest $request, int $task)
     {
         $this->guard($request, $task);
-        return $this->success($this->tasks->update($task, $request->validated(), $request->user()->tenant_id), 'Task updated');
+        return $this->success($this->tasks->update($task, $request->validated(), $request->user()->tenant_id, $request->user()->id), 'Task updated');
     }
 
     public function destroy(Request $request, int $task)

@@ -43,7 +43,7 @@ class TenantMailConfigurator
                 'username'     => $s->username,
                 'password'     => $s->password,   // decrypted by the model cast
                 'encryption'   => $s->encryption === 'none' ? null : $s->encryption,
-                'timeout'      => 15,
+                'timeout'      => (int) config('mail.tenant_timeout', 30),
                 // Panel-managed (Plesk/cPanel) self-signed certs: keep encryption,
                 // skip the peer/hostname check when the admin unticked "Verify TLS".
                 'verify_peer'  => (bool) ($s->verify_peer ?? true),

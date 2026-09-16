@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Shared;
 
+use App\Support\Shared\BusinessTime;
 use App\Support\Shared\KickoffSubject;
 use App\Support\Shared\MeetingTypeCatalog;
 use Illuminate\Foundation\Http\FormRequest;
@@ -35,7 +36,10 @@ class StoreKickoffMeetingRequest extends FormRequest
             // two). A meeting can never be scheduled into the past; a small grace
             // absorbs client/server clock skew.
             'scheduled_at' => ['required', 'date', function ($attr, $value, $fail) {
-                if (\Illuminate\Support\Carbon::parse($value)->lt(now()->subMinutes(2))) {
+                // Read in the tenant's timezone, because that is what the
+                // form's clock means. Parsed as UTC it drifted by the offset,
+                // so an afternoon meeting today read as still hours away.
+                if (BusinessTime::parse($value, $this->user()?->tenant_id)->lt(now()->subMinutes(2))) {
                     $fail('The meeting start time cannot be in the past.');
                 }
             }],

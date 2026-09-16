@@ -36,7 +36,7 @@ class AuthService
         // their own account by guessing at them from elsewhere.
         $throttleKey = 'login:'.strtolower($data['email']).'|'.request()->ip();
 
-        $user = $this->findUserForLogin($data['email'], $data['role']);
+        $user = $this->findUserForLogin($data['email'], $data['role'] ?? null);
         [$maxAttempts, $decayMinutes] = $this->lockoutPolicy($user);
 
         if ($maxAttempts > 0 && RateLimiter::tooManyAttempts($throttleKey, $maxAttempts)) {
@@ -140,69 +140,39 @@ class AuthService
      * exactly like the TPV flow. Purchase owns purchase_vendors; no shared
      * Vendor row and no staging table is involved.
      */
-    public function registerVendor(array $data): User
-    {
-        return DB::transaction(fn () => $this->createVendorAccount($data));
-    }
-
-    private function createVendorAccount(array $data): User
-    {
-        $user = User::create([
-            'name'              => trim($data['first_name'].' '.$data['last_name']),
-            'email'             => $data['email'],
-            'password'          => Hash::make($data['password']),
-            'role'              => 'vendor',
-            'status'            => 'pending',
-            'vendor_type'       => $data['vendor_type'],
-            'access_expires_at' => $data['vendor_type'] === 'temporary' ? now()->addDays(5)->toDateString() : null,
-            'phone'             => $data['phone'] ?? null,
-            'company'           => $data['company_name'],
-            'designation'       => $data['designation'] ?? null,
-            'meta'              => [
-                'category'      => $data['category'] ?? null,
-                'website'       => $data['website'] ?? null,
-                'address'       => $data['address'] ?? null,
-                'city'          => $data['city'] ?? null,
-                'state'         => $data['state'] ?? null,
-                'country'       => $data['country'] ?? null,
-                'pincode'       => $data['pincode'] ?? null,
-                'company_phone' => $data['company_phone'] ?? null,
-                'manpower'      => $data['manpower'] ?? null,
-                'msme'          => $data['msme'] ?? null,
-            ],
-        ]);
-
-        $this->createPurchaseVendorFor($user, $data);
-
-        Log::channel('auth')->info('Vendor registered, pending approval', ['user_id' => $user->id]);
-
-        return $user;
-    }
-
     /**
-     * Mirror the registration into the Purchase module's own vendor master so
-     * the record shows up in Purchase → Vendors straight away — the same way a
-     * TPV registration lands in the TPV list.
+     * Self-registration for a Purchase vendor.
      *
-     * Purchase-owned end to end: purchase_vendors only, the Purchase code
-     * generator, the Purchase registration-type enum. No shared Vendor row, no
-     * staging/pending table, and nothing from TPV.
+     * Creates ONE record: the Purchase vendor. It used to create two — a vendor
+     * AND a `users` row with role `vendor`, status `pending` and no tenant,
+     * which existed only to hold the contact fields purchase_vendors had no
+     * columns for. That row appeared on no screen (Staff Management lists only
+     * staff and admins), belonged to no workspace, and could not sign in
+     * anywhere. Three had accumulated on the live workspace unseen.
+     *
+     * It also broke password resets: the reset searched logins first, found the
+     * pending row, refused it as inactive, and never reached the vendor account
+     * that could have sent a link. The supplier was told to check an inbox that
+     * would receive nothing.
+     *
+     * The vendor signs in through the Purchase Vendor option with this same
+     * e-mail and password — it is stored on the vendor record — once an admin
+     * has activated them.
      */
-    private function createPurchaseVendorFor(User $user, array $data): void
+    public function registerVendor(array $data): PurchaseVendor
+    {
+        return DB::transaction(fn () => $this->createPurchaseVendorFrom($data));
+    }
+
+    private function createPurchaseVendorFrom(array $data): PurchaseVendor
     {
         $tenantId = AgencyContext::tenantId();
 
-        // Idempotent: never mint a second record for the same tenant + email.
-        if (PurchaseVendor::withTrashed()->where('tenant_id', $tenantId)->where('email', $user->email)->exists()) {
-            return;
-        }
-
         $vendor = PurchaseVendor::create([
             'tenant_id'            => $tenantId,
-            'user_id'              => $user->id,
             'purchase_vendor_code' => app(PurchaseVendorService::class)->nextVendorCode($tenantId),
             'company_name'         => $data['company_name'],
-            'email'                => $user->email,
+            'email'                => $data['email'],
             'phone'                => $data['phone'] ?? null,
             'website'              => $data['website'] ?? null,
             'category'             => $data['category'] ?? null,
@@ -211,6 +181,14 @@ class AuthService
             'state'                => $data['state'] ?? null,
             'country'              => $data['country'] ?? null,
             'pincode'              => $data['pincode'] ?? null,
+
+            // Previously carried on the hidden user row and its meta bag.
+            'contact_person'       => trim($data['first_name'].' '.$data['last_name']),
+            'contact_designation'  => $data['designation'] ?? null,
+            'company_phone'        => $data['company_phone'] ?? null,
+            'manpower'             => $data['manpower'] ?? null,
+            'msme'                 => $data['msme'] ?? null,
+
             'vendor_type'          => $data['vendor_type'] === 'temporary' ? 'temporary' : 'standard',
             // The chooser's selection, stored verbatim — never inferred later.
             'registration_type'    => PurchaseRegistrationType::normalize($data['vendor_type'] ?? null),
@@ -220,15 +198,15 @@ class AuthService
             // Registered, but the portal stays shut until an admin activates —
             // provision() flips this to 'active' on approval.
             'portal_status'        => 'Registered',
-            // Same credentials, so after activation they sign into the Purchase
-            // portal as this very PurchaseVendor (no second account).
             'password'             => Hash::make($data['password']),
         ]);
 
         Log::channel('purchase')->info('Purchase vendor created from self-registration', [
-            'purchase_vendor_id' => $vendor->id, 'user_id' => $user->id,
+            'purchase_vendor_id' => $vendor->id,
             'registration_type'  => $vendor->registration_type,
         ]);
+
+        return $vendor;
     }
 
     public function registerTPV(array $data): User
@@ -423,8 +401,15 @@ class AuthService
         return [max(0, $max), max(1, $decay)];
     }
 
-    private function findUserForLogin(string $email, string $role): ?User
+    private function findUserForLogin(string $email, ?string $role): ?User
     {
+        // No role given — the shape the app posts. users.email is unique, so the
+        // address alone identifies the account; the role only ever narrowed a
+        // search that could not return two rows anyway.
+        if ($role === null || $role === '') {
+            return User::with('tenant')->where('email', $email)->first();
+        }
+
         if ($role === 'staff') {
             return User::with('tenant')
                 ->where('email', $email)
@@ -469,13 +454,24 @@ class AuthService
             throw new BusinessException('Your account has been suspended. Contact support.', 403);
         }
 
+        // 'inactive' means access was REVOKED, and it was not checked here at
+        // all — so deactivating an account did not actually close it. Every
+        // caller that sets this status means to shut the door: deactivating a
+        // doctor (MedicalDoctorController::destroy), deactivating a vendor
+        // (VendorService), revoking TPV access. Only the TPV path was safe,
+        // and only by accident — it also sets access_expires_at, which IS
+        // checked below. The others left a working login behind.
+        // Named before the allowlist below catches it, so somebody who was
+        // deactivated is told that, rather than the generic "not active" --
+        // they need to know it was a decision, not a data problem.
+        if ($user->status === 'inactive') {
+            throw new BusinessException('Your account has been deactivated. Contact your administrator.', 403);
+        }
+
         if ($user->status === 'rejected') {
             throw new BusinessException('Your registration was rejected. Contact support.', 403);
         }
 
-        if ($user->status === 'inactive') {
-            throw new BusinessException('Your account has been deactivated. Contact your administrator.', 403);
-        }
 
         // Anything that is not one of the five known values — including null on a
         // row written before the column had a default — is refused rather than

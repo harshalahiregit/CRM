@@ -64,7 +64,10 @@ class PurchaseKickoffNestedPayloadTest extends TestCase
         return [
             'purchase_vendor_id' => $vendorId,
             'title' => 'Quarterly HSSE review',
-            'meeting_type' => 'kickoff',
+            // Was 'kickoff', which never matched the title and now cannot repeat
+            // — two of these tests deliberately create two meetings for one
+            // vendor. A quarterly review is exactly the recurring kind.
+            'meeting_type' => 'hse',
             'scheduled_at' => now()->addDay()->toDateTimeString(),
             'end_at' => now()->addDay()->addHour()->toDateTimeString(),
             'mode' => 'onsite',

@@ -12,6 +12,8 @@ import { useAuth } from '@/context/AuthContext'
 import { obStatusCfg, poStatusCfg, invStatusCfg, fmtMoney, fmtDate } from './portalConstants'
 import { KIT3D_STYLE } from '@/components/ui/kit3d'
 import './portal.css'
+import MedicalPendingBanner from '@/components/medical/MedicalPendingBanner'
+import MeetingScheduleCard from '@/components/portal/MeetingScheduleCard'
 
 /**
  * Vendor portal landing — professional SaaS dashboard.
@@ -188,6 +190,9 @@ export default function PortalDashboard() {
     <div>
       <style>{KIT3D_STYLE}</style>
 
+      {/* The medical prerequisite, said before a trainer has to say it. */}
+      <MedicalPendingBanner base="/portal" to="/vendor-portal/medical" />
+
       {/* ── Hero Welcome Card ─────────────────────────────────────────── */}
       <div className="portal-hero">
         <div style={{ position: 'relative', zIndex: 1 }}>
@@ -233,6 +238,14 @@ export default function PortalDashboard() {
       {vendorStatus !== 'Active' && (
         <GettingStartedGuide vendorName={vendorName} onGo={(to) => navigate(to)} />
       )}
+
+      {/* ── Meetings ──────────────────────────────────────────────────────
+          The dashboard showed no meetings at all, so a vendor could have one
+          booked for this afternoon and see nothing about it until they went
+          looking under Governance. Same component as the Purchase portal. */}
+      <div style={{ marginBottom: 18 }}>
+        <MeetingScheduleCard load={portalApi.governance.meetings} to="/vendor-portal/governance" />
+      </div>
 
       {/* ── Stat Cards ────────────────────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${statCards.length},1fr)`, gap: 14, marginBottom: 24 }}>
