@@ -472,3 +472,43 @@ export const dispatchVersionCfg = (type, version) =>
   type === 'release'
     ? { label: 'Dispatched', color: '#34d399', bg: 'rgba(52,211,153,0.14)' }
     : { label: `Change ${version}`, color: '#fbbf24', bg: 'rgba(251,191,36,0.16)' }
+
+/* ── Advances (SNG-TRN-011) ───────────────────────────────────────────── */
+
+/**
+ * ENUM-002's six values. All six are coloured even though only `requested`,
+ * `approved` and `rejected` are reachable today — `paid`, `adjusted` and
+ * `recovery` belong to TRP-P0-008 and SNG-TRN-017. A status arriving with no
+ * colour renders as a bare string, which is how a new state reaches production
+ * looking broken.
+ */
+export const advanceStatusCfg = (s) => ({
+  requested: { label: 'Requested', color: '#fbbf24', bg: 'rgba(251,191,36,0.16)' },
+  approved: { label: 'Approved', color: '#34d399', bg: 'rgba(52,211,153,0.14)' },
+  rejected: { label: 'Rejected', color: '#f87171', bg: 'rgba(248,113,113,0.14)' },
+  paid: { label: 'Paid', color: '#34d399', bg: 'rgba(52,211,153,0.14)' },
+  adjusted: { label: 'Adjusted', color: '#38bdf8', bg: 'rgba(56,189,248,0.14)' },
+  recovery: { label: 'Recovery', color: '#fb923c', bg: 'rgba(251,146,60,0.16)' },
+}[s] ?? { label: s || '—', color: '#94a3b8', bg: 'rgba(148,163,184,0.14)' })
+
+/* ── Trip documents and POD (SNG-TRN-014) ─────────────────────────────── */
+
+export const tripDocStatusCfg = (s) => ({
+  received: { label: 'Awaiting check', color: '#fbbf24', bg: 'rgba(251,191,36,0.16)' },
+  verified: { label: 'Verified', color: '#34d399', bg: 'rgba(52,211,153,0.14)' },
+  rejected: { label: 'Rejected', color: '#f87171', bg: 'rgba(248,113,113,0.14)' },
+}[s] ?? { label: s || '—', color: '#94a3b8', bg: 'rgba(148,163,184,0.14)' })
+
+/** ENUM-006's ten values, for the document-type picker and for display. */
+export const DOC_TYPE_LABEL = {
+  lr: 'Lorry receipt', ewaybill: 'E-way bill', invoice: 'Invoice', pod: 'Proof of delivery',
+  delivery_order: 'Delivery order', driver_doc: 'Driver document', vehicle_doc: 'Vehicle document',
+  insurance: 'Insurance', permit: 'Permit', fitness: 'Fitness certificate', other: 'Other',
+}
+
+/** Bytes → a size somebody can read. */
+export const fmtBytes = (n) => {
+  if (n == null) return '—'
+  const kb = Number(n) / 1024
+  return kb < 1024 ? `${Math.round(kb)} KB` : `${(kb / 1024).toFixed(1)} MB`
+}

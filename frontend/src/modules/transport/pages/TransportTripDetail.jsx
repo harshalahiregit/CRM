@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Truck, Building2, Package, History, Route as RouteIcon,
   AlertTriangle, Loader2, Gauge, Pencil, ClipboardCheck, Send, Boxes,
+  Wallet, IndianRupee, FileCheck2,
 } from 'lucide-react'
 import { transportTripApi, transportCapabilityApi } from '@/services/transportApi'
 import { useToast } from '@/components/ui/Toast'
@@ -12,6 +13,11 @@ import AllocationPanel from '../components/AllocationPanel'
 import PretripPanel from '../components/PretripPanel'
 import DispatchPanel from '../components/DispatchPanel'
 import TripProgress from '../components/TripProgress'
+// Steps 4-6 — P3's tickets. Self-contained panels, same shape as the three
+// above, so the seam into this page stays three imports and three blocks.
+import AdvancesPanel from '../components/AdvancesPanel'
+import CostsPanel from '../components/CostsPanel'
+import TripDocumentsPanel from '../components/TripDocumentsPanel'
 import { tripStatusCfg, orderStatusCfg, fmtMoney, fmtDate } from '../constants'
 
 /**
@@ -243,6 +249,66 @@ export default function TransportTripDetail() {
               <DispatchPanel
                 trip={trip}
                 canDispatch={!!grants['transport.trip.dispatch']}
+                onChanged={load}
+              />
+            )}
+          </Panel>
+
+          {/* Step 4. SNG-TRN-011. Money advanced against a trip before it has
+              earned any, so the panel appears from `approved` — the first state
+              where there is a trip worth funding. BR-P0-005's exposure figures
+              come from the server; the panel never adds them up itself. */}
+          <Panel icon={Wallet} step={4} title="Advances"
+            subtitle="Money paid out before the trip earns anything. The limit comes from your workspace policy, and requesting is separate from approving.">
+            {['draft', 'viability_pending'].includes(trip.status) ? (
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 0' }}>
+                Advances can be requested once the trip has been approved.
+              </p>
+            ) : (
+              <AdvancesPanel
+                trip={trip}
+                canRequest={!!grants['transport.advance.request']}
+                canApprove={!!grants['transport.advance.approve']}
+                onChanged={load}
+              />
+            )}
+          </Panel>
+
+          {/* Step 5. SNG-TRN-012. Costs accumulate from dispatch onward, but the
+              panel is shown from `approved` too: a cost recorded early is still
+              a cost, and hiding the total until the trip moves would leave the
+              margin half-visible for most of its life. */}
+          <Panel icon={IndianRupee} step={5} title="Trip costs"
+            subtitle="What this trip actually cost — fuel, tolls, and anything else. These are subtracted from the freight to give the margin.">
+            {['draft', 'viability_pending'].includes(trip.status) ? (
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 0' }}>
+                Costs can be recorded once the trip has been approved.
+              </p>
+            ) : (
+              <CostsPanel
+                trip={trip}
+                canRecord={!!grants['transport.cost.record']}
+                canRetract={!!grants['transport.cost.retract']}
+                onChanged={load}
+              />
+            )}
+          </Panel>
+
+          {/* Step 6. SNG-TRN-014. Shown from dispatch onward — paperwork follows
+              the load out of the yard, and an LR is filed long before anyone
+              signs for delivery. The billing verdict sits at the top of the
+              panel because it is the answer somebody came for. */}
+          <Panel icon={FileCheck2} step={6} title="Paperwork and proof of delivery"
+            subtitle="The LR, e-way bill and signed POD. A trip cannot be billed until its POD has been verified, unless an exception waives it.">
+            {['draft', 'viability_pending', 'approved'].includes(trip.status) ? (
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 0' }}>
+                Paperwork can be filed once the trip has been dispatched.
+              </p>
+            ) : (
+              <TripDocumentsPanel
+                trip={trip}
+                canSubmit={!!grants['transport.pod.submit']}
+                canVerify={!!grants['transport.pod.verify']}
                 onChanged={load}
               />
             )}
