@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use RuntimeException;
 
@@ -95,6 +96,18 @@ class TransportTrip extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Client::class, 'customer_id');
+    }
+
+    /**
+     * Money advanced against this trip before it has earned any — DB-007.
+     *
+     * hasMany, because BR-P0-005 is a rule about the SUM: a trip may carry
+     * several advances and the control is whether they add up past the
+     * configured exposure. A hasOne would make the rule unexpressible.
+     */
+    public function advances(): HasMany
+    {
+        return $this->hasMany(TripAdvance::class, 'trip_id');
     }
 
     /* ── Scopes. Composed AFTER forTenant(), never instead of it. ────── */

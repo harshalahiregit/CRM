@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\Transport\TransportAdvanceController;
 use App\Http\Controllers\Api\Transport\TransportAllocationController;
 use App\Http\Controllers\Api\Transport\TransportCapabilityController;
 use App\Http\Controllers\Api\Transport\TransportConsignmentController;
@@ -66,6 +67,30 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
         Route::get('/trips/status-counts', [TransportTripController::class, 'statusCounts']);
         Route::get('/trips',              [TransportTripController::class, 'index']);
         Route::get('/trips/{id}',         [TransportTripController::class, 'show'])->whereNumber('id');
+
+        /* Advances, read — SNG-TRN-011. Step 11 has no PERM row for viewing an
+         * advance, and inventing one would be FORBID-001. A trip's advances are
+         * part of that trip, so they sit behind PERM-001 with the trip itself. */
+        Route::get('/trips/{id}/advances', [TransportAdvanceController::class, 'index'])->whereNumber('id');
+    });
+
+    /* ── Advances — SNG-TRN-011 ───────────────────────────────────────────
+     *
+     * Two groups, not one, and the split is the control. PERM-006 lets
+     * Operations and Dispatcher ASK; PERM-007 does not let them ALLOW. Putting
+     * both verbs behind one permission would collapse the segregation that
+     * STOS-FIN §129 and BRW §75 require, and TripAdvanceService adds the
+     * narrower rule on top — nobody decides the request they raised.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::ADVANCE_REQUEST)->group(function () {
+        Route::post('/trips/{id}/advances', [TransportAdvanceController::class, 'store'])->whereNumber('id');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::ADVANCE_APPROVE)->group(function () {
+        Route::post('/trips/{id}/advances/{advanceId}/approve', [TransportAdvanceController::class, 'approve'])
+            ->whereNumber('id')->whereNumber('advanceId');
+        Route::post('/trips/{id}/advances/{advanceId}/reject', [TransportAdvanceController::class, 'reject'])
+            ->whereNumber('id')->whereNumber('advanceId');
     });
 
     /* ── What this user may do ────────────────────────────────────────
