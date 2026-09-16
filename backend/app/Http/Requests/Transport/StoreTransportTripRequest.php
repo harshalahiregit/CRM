@@ -32,6 +32,17 @@ class StoreTransportTripRequest extends FormRequest
                 'required', 'integer',
                 Rule::exists('transport_orders', 'id')->where('tenant_id', $tenantId)->whereNull('deleted_at'),
             ],
+            // CTD-003 — which shipment this trip moves. Optional: a trip may be
+            // raised before anyone has described the cargo. Tenant-scoped, so a
+            // bare id from another workspace fails here rather than leaking.
+            // That it belongs to THIS order is a business rule and is checked in
+            // TransportTripService, where it applies however a trip arrives.
+            'consignment_id' => [
+                'nullable', 'integer',
+                Rule::exists('transport_consignments', 'id')
+                    ->where('tenant_id', $tenantId)
+                    ->whereNull('deleted_at'),
+            ],
             'approved_freight' => ['nullable', 'numeric', 'min:0', 'max:9999999999999999'],
             'currency'         => ['nullable', 'string', 'size:3'],
             'route'            => ['nullable', 'string', 'max:190'],
@@ -43,6 +54,7 @@ class StoreTransportTripRequest extends FormRequest
         return [
             'order_id.required' => 'A trip must be created from an order.',
             'order_id.exists'   => 'That order does not exist in this workspace.',
+            'consignment_id.exists' => 'That consignment does not exist in this workspace.',
         ];
     }
 }

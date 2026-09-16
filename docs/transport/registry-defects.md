@@ -1741,3 +1741,54 @@ space than the 9,000 that made Transport flaky. Owner: whoever holds HR / Sangoe
 A guard test asserting that no fixture draws a unique-column identifier randomly would stop this
 returning. It is not included, because the ruling's second condition was a **pure fixture change**:
 one line per file and nothing else. Proposed for a separate decision rather than folded in quietly.
+
+---
+
+## D-55 — A trip could not be linked to its consignment through the application
+
+**Raised:** 2026-09-16, while building the demo. **Owner: Person 1. Status: CLOSED in the same
+commit** — both sides are mine, so raising it and leaving it would have been theatre.
+
+`transport_trips.consignment_id` was added by migration `000015` and was `$fillable` on the model.
+**Nothing wrote it.** No service, no FormRequest, no endpoint. The column existed, the relation
+existed, and the only rows that ever carried a value were written directly by a seeder.
+
+So the chain the whole module is organised around —
+
+```
+order  ->  consignment  ->  trip
+```
+
+— could not be completed through the application at any point. It was invisible because nothing
+asked for it: the trip screen showed an order and a vehicle, and the gap between them looked like a
+design choice rather than a missing write.
+
+### How it surfaced
+
+Not by review. The demo seeder is required to build every row through a real service, precisely so it
+cannot contain a row the application could not produce — and the test asserting *"the chain reads end
+to end"* failed. The constraint found the defect; reading the code had not.
+
+### Closed by
+
+`TransportTripService::createFromOrder()` now accepts `consignment_id`, with two DIFFERENT refusals,
+because they are different situations:
+
+| Case | Response | Why |
+|---|---|---|
+| Another tenant's consignment | **404** | never "not yours" — that confirms the row exists |
+| A consignment on a *different order* | **422**, naming it | it exists and the caller can see it; they picked the wrong one, and saying so is the useful answer |
+
+Without the second check a trip could carry a consignment from an unrelated order, and every screen
+reading order → consignment → trip would show a chain that does not hold.
+
+Proven by `TripConsignmentLinkTest` (6 tests, including that a refused link creates no trip at all,
+and that the link is audited). `StoreTransportTripRequest` accepts it tenant-scoped; the trip detail
+endpoint loads it column-limited.
+
+### The general point, which is the reason this entry exists
+
+**A column with no writer is not a feature, and reviewing the schema will not tell you.** Migration
+`000015`, the model relation and the `$fillable` entry were all present and all correct. Everything
+looked built. The only thing that distinguished it from a working feature was that no code path
+reached it.

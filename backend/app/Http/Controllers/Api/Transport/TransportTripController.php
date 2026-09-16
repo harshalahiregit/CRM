@@ -60,7 +60,15 @@ class TransportTripController extends Controller
         $trip     = $this->trips->find($id, $tenantId);
 
         return $this->success([
-            'trip'  => $trip->load('customer:id,company', 'order:id,order_number,service_type,priority,order_status,required_at'),
+            // CTD-003 — the consignment is loaded with the trip so the screen can
+            // show order -> consignment -> trip without a second request. Column
+            // limited, like the others: a trip read must not become a full
+            // shipment read.
+            'trip'  => $trip->load(
+                'customer:id,company',
+                'order:id,order_number,service_type,priority,order_status,required_at',
+                'consignment:id,consignment_number,customer_reference,cargo_description,package_count,gross_weight_kg',
+            ),
             // Who is crewing this trip. Part of the trip, not a separate lookup:
             // the detail screen would otherwise need transport.trip.assign just
             // to display a vehicle registration, which would hide it from
