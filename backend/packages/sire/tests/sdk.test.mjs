@@ -48,10 +48,19 @@ const methodsOf = (file) =>
 /** SireTenantProvider -> SireLocalTenantProvider */
 const localFor = (contract) => contract.replace(/^Sire/, 'SireLocal');
 
+/**
+ * 14 since SireCustomerProvider joined them: "which customers are hitting this"
+ * is the question that turns a backlog into a priority order, and SIRE had no
+ * seam to ask it through.
+ *
+ * The number is asserted rather than counted from the directory on purpose --
+ * this test exists to fail when a contract is ADDED without a shipped
+ * implementation, a host stub and a binding, which is exactly what it caught.
+ */
 test('the SDK exists and the scan found it (guards against a vacuous check)', () => {
-  assert.equal(contracts.length, 13, `expected 13 contracts, found ${contracts.length}`);
-  assert.equal(impls.length, 13, `expected 13 implementations, found ${impls.length}`);
-  assert.ok(dtos.length >= 8, `expected the value objects, found ${dtos.length}`);
+  assert.equal(contracts.length, 14, `expected 14 contracts, found ${contracts.length}`);
+  assert.equal(impls.length, 14, `expected 14 implementations, found ${impls.length}`);
+  assert.ok(dtos.length >= 9, `expected the value objects, found ${dtos.length}`);
 });
 
 test('every contract has a shipped implementation, so SIRE runs standalone', () => {
@@ -117,7 +126,7 @@ test('config names an implementation for every binding the provider expects', ()
   const keys = [...read(PROVIDER).matchAll(/Contract\\\w+::class\s*=>\s*'(\w+)'/g)].map((m) => m[1]);
   const config = read(CONFIG);
 
-  assert.equal(keys.length, 13, `parsed ${keys.length} binding keys from the provider`);
+  assert.equal(keys.length, 14, `parsed ${keys.length} binding keys from the provider`);
 
   const missing = keys.filter((key) => !new RegExp(`'${key}'\\s*=>`).test(config));
   assert.deepEqual(missing, [], `config/sire.php has no entry for: ${missing.join(', ')}`);

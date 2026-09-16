@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\Schema;
 use Sire\Contracts\SireTenantProvider;
 use Sire\Contracts\SireUserProvider;
 use Sire\Dto\SireUserIdentity;
+use Sire\Dto\SireDirectoryEntry;
+use Sire\Support\SireLoginType;
 
 /**
  * The shipped user provider: reads the host's users table through config.
@@ -134,6 +136,105 @@ class SireLocalUserProvider implements SireUserProvider
         }
 
         return $found;
+    }
+
+    /**
+     * Everyone in this tenant who may be given engineering work.
+     *
+     * The role filter comes from config('sire.login_types'), NOT from a literal
+     * list of role names. That distinction is the whole reason this is safe to
+     * ship: the installer discovers those names from the host and a human
+     * confirms them, so this asks "who can reach SIRE at all" rather than
+     * guessing that a host calls its people 'admin' and 'staff'.
+     *
+     * Deleted users are excluded where the table soft-deletes; leavers should not
+     * appear in an assignment picker. History is untouched -- a person who left
+     * still did what the timeline says they did.
+     */
+    public function directory(int $tenantId, ?string $search = null, int $limit = 200): array
+    {
+        if (! $this->tableExists()) {
+            return [];
+        }
+
+        $c = config('sire.user');
+
+        // Role names come from config('sire.login_types'), NOT from a literal
+        // list. The installer discovers them from the host and a human confirms
+        // them, so this asks "who does this application know about" rather than
+        // guessing that everyone calls their people 'admin' and 'staff'.
+        $kinds = [
+            SireDirectoryEntry::KIND_STAFF => SireLoginType::ENGINEERING,
+            // Customer contacts are offered too, under their own heading. An
+            // issue can belong to the client who raised it, and a dropdown that
+            // MIXES them is how a production defect gets assigned to a customer
+            // by mistake -- which is why kind exists rather than one flat list.
+            SireDirectoryEntry::KIND_CUSTOMER => [SireLoginType::CUSTOMER],
+        ];
+
+        $roleToKind = [];
+        foreach ($kinds as $kind => $types) {
+            foreach ($types as $type) {
+                foreach ((array) config("sire.login_types.{$type}", []) as $role) {
+                    $roleToKind[mb_strtolower((string) $role)] = $kind;
+                }
+            }
+        }
+
+        if ($roleToKind === []) {
+            // Nothing declared means nothing can be said about who works here.
+            // The caller falls back to the rosters, which is the behaviour this
+            // extends rather than replaces.
+            return [];
+        }
+
+        // Staff Management columns, used only when the host actually has them.
+        $table = (string) $c['table'];
+        $extra = array_values(array_filter(
+            ['department', 'designation'],
+            fn (string $column) => Schema::hasColumn($table, $column),
+        ));
+
+        try {
+            $query = DB::table($table)->whereIn($c['role_field'], array_keys($roleToKind));
+
+            if ($column = $this->tenantColumn()) {
+                $query->where($column, $tenantId);
+            }
+
+            if (Schema::hasColumn($table, 'deleted_at')) {
+                $query->whereNull('deleted_at');
+            }
+
+            if ($search !== null && trim($search) !== '') {
+                $query->where($c['name_field'], 'like', '%'.trim($search).'%');
+            }
+
+            $rows = $query
+                ->orderBy($c['name_field'])
+                ->limit(max(1, min($limit, 500)))
+                ->get(array_merge([$c['id_field'], $c['name_field'], $c['role_field']], $extra));
+        } catch (\Throwable $e) {
+            // An assignment picker that cannot load is a nuisance; one that takes
+            // the issue page down with it is an outage.
+            report($e);
+
+            return [];
+        }
+
+        return $rows->map(function ($row) use ($c, $roleToKind) {
+            $role = $row->{$c['role_field']} ?? null;
+
+            return new SireDirectoryEntry(
+                id: (int) $row->{$c['id_field']},
+                displayName: (string) ($row->{$c['name_field']} ?? ''),
+                kind: $roleToKind[mb_strtolower((string) $role)] ?? SireDirectoryEntry::KIND_STAFF,
+                role: $role,
+                department: $row->department ?? null,
+                designation: $row->designation ?? null,
+                company: $row->company ?? null,
+            );
+        })->all();
     }
 
     public function isActive(int $tenantId, int $userId): bool

@@ -44,11 +44,11 @@ item would be indefensible.
 php artisan sire:uninstall --purge
 ```
 
-Drops SIRE's 21 tables. Then asks you to type a phrase:
+Drops SIRE's 22 tables. Then asks you to type a phrase:
 
 ```
 PURGE will permanently delete all SIRE data.
-21 table(s) will be dropped. This cannot be undone.
+22 table(s) will be dropped. This cannot be undone.
 
 Type DELETE SIRE DATA to confirm:
 ```
@@ -61,7 +61,7 @@ history.
 
 It cannot drop, alter or empty a table SIRE does not own.
 
-The purge list is a **hardcoded set of 21 `sire_`-prefixed names** — not a
+The purge list is a **hardcoded set of 22 `sire_`-prefixed names** — not a
 pattern match, not a "tables SIRE thinks it created" heuristic — and the drop
 loop re-checks the `sire_` prefix at runtime even so. A test asserts that the
 list and the migrations name exactly the same tables in both directions.
@@ -88,7 +88,7 @@ sire_report_links        sire_kb_links          sire_release_notes
 sire_actions             sire_release_overrides sire_ai_suggestions
 sire_issue_tokens        sire_test_cases        sire_settings
 sire_notes               sire_audit_events
-sire_report_watchers
+sire_report_watchers     sire_report_assignees
 ```
 
 Three of those — `sire_settings`, `sire_notes`, `sire_audit_events` — are the

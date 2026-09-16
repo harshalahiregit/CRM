@@ -52,6 +52,7 @@ use Sire\Http\Controllers\SireReleaseGovernanceController;
 use Sire\Http\Controllers\SireReleaseNotesController;
 use Sire\Http\Controllers\SireRootCauseController;
 use Sire\Http\Controllers\SireTestCaseController;
+use Sire\Http\Controllers\SireCustomerController;
 use Sire\Http\Controllers\SireTimelineController;
 use Sire\Http\Controllers\SireWatcherController;
 
@@ -93,6 +94,13 @@ Route::middleware(\Sire\Http\SireRouteMiddleware::stack())
     // Who else hears about this issue. Subscription only -- these never widen
     // what anybody may READ, which is why they sit behind the same ownership
     // check as every other route-bound endpoint.
+    // ---- affected customer -------------------------------------------------
+    // Read-only against the host's own directory, through SireCustomerProvider.
+    // SIRE names a customer on a defect so the register can answer "which
+    // customers are hitting this"; it never writes to a customer record.
+    Route::get('customers', [SireCustomerController::class, 'index']);
+    Route::put('reports/{report}/customer', [SireCustomerController::class, 'update']);
+
     Route::get('reports/{report}/watchers', [SireWatcherController::class, 'index']);
     Route::post('reports/{report}/watchers', [SireWatcherController::class, 'store']);
     Route::delete('reports/{report}/watchers/{user}', [SireWatcherController::class, 'destroy']);

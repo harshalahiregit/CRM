@@ -4,6 +4,7 @@ namespace Sire\Services;
 
 use Sire\Exceptions\SireException;
 use Sire\Models\Report;
+use Sire\Models\ReportAssignee;
 use Sire\Models\RootCause;
 use Sire\Models\ReportApproval;
 use Sire\Models\WorkCycle;
@@ -196,6 +197,7 @@ class SireWorkflowService
             $report->status = $to;
             $report->save();
 
+            $this->syncCoAssignees($report, $payload, $user);
             $this->closeAndOpenCycles($report, $action, $user, $payload);
             $this->maintainApprovals($report, $action, $user, $payload);
 
@@ -283,6 +285,54 @@ class SireWorkflowService
         }
 
         return $report->fresh();
+    }
+
+    /**
+     * The people working an issue alongside whoever owns it.
+     *
+     * Only touched when the caller SENT the key. An absent `co_assignee_ids` means
+     * "I am not changing the team", not "clear it" -- otherwise every ordinary
+     * transition, every triage and every hold would quietly empty the list.
+     * Sending [] clears it, which is how you say so deliberately.
+     *
+     * The owner is never stored here. They are already on the issue through
+     * assignee_id, and holding them twice means every list has to remember to
+     * de-duplicate.
+     */
+    private function syncCoAssignees(Report $report, array $payload, SireUserIdentity $user): void
+    {
+        if (! array_key_exists('co_assignee_ids', $payload)) {
+            return;
+        }
+
+        $wanted = collect((array) $payload['co_assignee_ids'])
+            ->map(fn ($id) => (int) $id)
+            ->reject(fn (int $id) => $id === (int) $report->assignee_id)
+            ->unique()
+            ->values();
+
+        $existing = ReportAssignee::query()
+            ->forTenant($report->tenant_id)
+            ->where('report_id', $report->id)
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id);
+
+        ReportAssignee::query()
+            ->forTenant($report->tenant_id)
+            ->where('report_id', $report->id)
+            ->whereNotIn('user_id', $wanted->all() ?: [0])
+            ->delete();
+
+        foreach ($wanted->diff($existing) as $id) {
+            ReportAssignee::query()->forTenant($report->tenant_id)->firstOrCreate(
+                [
+                    'tenant_id' => (int) $report->tenant_id,
+                    'report_id' => (int) $report->id,
+                    'user_id'   => $id,
+                ],
+                ['added_by' => (int) $user->id],
+            );
+        }
     }
 
     // ------------------------------------------------------------------ guards

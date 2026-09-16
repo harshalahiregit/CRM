@@ -27,7 +27,7 @@ Two load-bearing consequences fall out of the shape:
   cannot reach upward, so a provider never depends on the workflow it serves.
 
 `integration` is not an escape hatch that legitimises any dependency. It holds
-the thirteen contracts, their thirteen implementations, the value objects they
+the fourteen contracts, their fourteen implementations, the value objects they
 exchange and the SIRE-owned traits — every one listed by name in
 `SireModule::CLASS_MODULE`. A service trying to hide there has to be added to
 that map by hand, in the one file whose purpose is being read during review.
@@ -72,7 +72,7 @@ that it does.
 
 ## The Integration SDK
 
-SIRE talks to its host through **thirteen contracts and nothing else**:
+SIRE talks to its host through **fourteen contracts and nothing else**:
 
 | Contract | Answers | Optional? |
 |---|---|---|
@@ -89,6 +89,7 @@ SIRE talks to its host through **thirteen contracts and nothing else**:
 | `SireKnowledgeProvider` | Find, search and draft knowledge articles | optional |
 | `SireVersionProvider` | What version is deployed? | optional |
 | `SireContextProvider` | What screen is this path? | recommended |
+| `SireCustomerProvider` | Which customer does this issue affect? | optional |
 
 Each ships a `SireLocal*` implementation SIRE owns, so **SIRE runs before any
 integration work at all**; each has a `Host*` stub in `examples/host-adapters/`.

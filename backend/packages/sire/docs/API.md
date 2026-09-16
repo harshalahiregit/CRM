@@ -4,7 +4,7 @@
      Do not edit the endpoint tables by hand; edit the routes and re-run.
      The narrative below comes from tools/api-narrative.md. -->
 
-**80 endpoints**, all inside one route group:
+**82 endpoints**, all inside one route group:
 
 ```php
 Route::middleware([])->prefix('api/sire')->group(function () {
@@ -43,10 +43,12 @@ SIRE is for internal engineering staff. Customer-facing roles must not reach it.
 |---|---|---|
 | GET | `/api/sire/reports/{report}/timeline` | SireTimelineController::__invoke |
 
-### watchers
+### affected customer
 
 | Method | Endpoint | Handler |
 |---|---|---|
+| GET | `/api/sire/customers` | SireCustomerController::index |
+| PUT | `/api/sire/reports/{report}/customer` | SireCustomerController::update |
 | GET | `/api/sire/reports/{report}/watchers` | SireWatcherController::index |
 | POST | `/api/sire/reports/{report}/watchers` | SireWatcherController::store |
 | DELETE | `/api/sire/reports/{report}/watchers/{user}` | SireWatcherController::destroy |

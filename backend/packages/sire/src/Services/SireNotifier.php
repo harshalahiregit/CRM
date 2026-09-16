@@ -178,6 +178,18 @@ class SireNotifier
                 continue;
             }
 
+            // Everyone working the issue besides its owner. They are doing the
+            // work; being the second name on it should not mean hearing about it
+            // second-hand.
+            if ($token === 'assignee') {
+                $users = array_merge($users, \Sire\Models\ReportAssignee::query()
+                    ->forTenant($report->tenant_id)
+                    ->where('report_id', $report->id)
+                    ->pluck('user_id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all());
+            }
+
             $id = match ($token) {
                 'assignee'          => $report->assignee_id,
                 'qa_assignee'       => $report->qa_assignee_id,

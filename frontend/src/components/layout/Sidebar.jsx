@@ -50,8 +50,16 @@ const MODULE_SEARCH = [
   { label: 'HR',         path: '/app/hr/dashboard',     icon: Users,           kw: 'recruitment employees payroll' },
   { label: 'Purchase',   path: '/app/purchase/dashboard', icon: ShoppingCart,  kw: 'procurement orders' },
   { label: 'TPV',        path: '/app/tpv/dashboard',    icon: UserCheck,       kw: 'third party vendor workforce' },
-  { label: 'Customers',  path: '/app/customers',        icon: Building2,       kw: 'clients' },
+  { label: 'Customers',  path: '/app/customers',        icon: Building2,       kw: 'clients directory accounts' },
   { label: 'Compliance', path: '/app/tpv/compliance',   icon: ShieldCheck,     kw: 'hsse checklists' },
+
+  // Added to the nav but never to this list, so they were unreachable by search
+  // while sitting in plain sight in the sidebar. `when` gates a result the same
+  // way the nav gates the section it belongs to -- offering somebody a
+  // destination that answers 403 is worse than not offering it.
+  { label: 'SIRE',       path: '/app/sire/dashboard',   icon: Bug,             kw: 'issues defects bugs engineering quality releases', when: canUseSire },
+  { label: 'Settings',   path: '/app/settings',         icon: Settings,        kw: 'preferences configuration company profile' },
+  { label: 'Staff Management', path: '/app/admin/staff', icon: UserCog,        kw: 'users team roles permissions staff admin', when: (u) => u?.role === 'admin' },
 ]
 
 // NOTE: PINNED_MODULES was removed with the pinned-header block it fed. The
@@ -348,6 +356,10 @@ const SUBMODULE_SEARCH = [
   ...INVENTORY_SUB_ITEMS.map(i => ({ ...i, module: 'Inventory' })),
   ...PURCHASE_SUB_ITEMS.map(i => ({ ...i, module: 'Purchase' })),
   ...TPV_ADMIN_ITEMS.map(i => ({ ...i, module: 'TPV' })),
+
+  // Same omission one level down: "My Work" and "Releases" are real screens
+  // somebody will search for by name.
+  ...SIRE_SUB_ITEMS.map(i => ({ ...i, module: 'SIRE', when: canUseSire })),
 ]
 
 export default function Sidebar({ collapsed, onToggle, openSection, toggleSection, isGroupOpen, toggleGroup }) {
@@ -438,9 +450,23 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
   const { pathname } = useLocation()
   const q = moduleQuery.trim().toLowerCase()
   // Modules first, then any sub-page whose name matches — one combined list.
+  // `when` is optional: an entry without one is open to anybody who can see the
+  // sidebar at all. With one, the search hides what the nav would hide -- the two
+  // disagreeing is how a search result becomes a 403.
+  const allowed = (entry) => !entry.when || entry.when(user)
+
   const moduleResults = q ? [
-    ...MODULE_SEARCH.filter(m => (m.label + ' ' + m.kw).toLowerCase().includes(q)).map(m => ({ ...m, sub: false })),
-    ...SUBMODULE_SEARCH.filter(s => s.label.toLowerCase().includes(q)).map(s => ({ ...s, sub: true })),
+    ...MODULE_SEARCH
+      .filter(allowed)
+      .filter(m => (m.label + ' ' + m.kw).toLowerCase().includes(q))
+      .map(m => ({ ...m, sub: false })),
+    ...SUBMODULE_SEARCH
+      .filter(allowed)
+      // Match the module name too, so "sire" finds My Work and "hr" finds
+      // Payroll -- searching a module name and expecting its pages is the whole
+      // reason somebody types one into a box labelled Search modules.
+      .filter(s => (s.label + ' ' + (s.module || '')).toLowerCase().includes(q))
+      .map(s => ({ ...s, sub: true })),
   ].slice(0, 40) : []
   const goModule = (path) => { setModuleQuery(''); navigate(path) }
 

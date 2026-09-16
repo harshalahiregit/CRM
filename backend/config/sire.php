@@ -74,6 +74,7 @@ $sireDefaults = [
         'knowledge'     => \Sire\Adapters\Defaults\SireLocalKnowledgeProvider::class,
         'version'       => \Sire\Adapters\Defaults\SireLocalVersionProvider::class,
         'context'       => \Sire\Adapters\Defaults\SireLocalContextProvider::class,
+        'customer'      => \Sire\Adapters\Defaults\SireLocalCustomerProvider::class,
     ],
 
     /*

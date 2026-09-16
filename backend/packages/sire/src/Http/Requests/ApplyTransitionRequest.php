@@ -22,6 +22,14 @@ class ApplyTransitionRequest extends FormRequest
             'action' => ['required', 'string', Rule::in(array_keys(SireWorkflow::TRANSITIONS))],
 
             'assignee_id'     => ['nullable', 'integer', Rule::exists('users', 'id')->where('tenant_id', $tenantId)],
+
+            // More than one person can work an issue, but exactly one OWNS it.
+            // assignee_id is the owner -- every workflow guard is written against
+            // it -- and these are the others, who see it on their queue and hear
+            // about it. Capped: a defect assigned to twelve people is assigned to
+            // nobody, and the cap is the honest way to say so.
+            'co_assignee_ids'   => ['nullable', 'array', 'max:10'],
+            'co_assignee_ids.*' => ['integer', Rule::exists('users', 'id')->where('tenant_id', $tenantId)],
             'qa_assignee_id'  => ['nullable', 'integer', Rule::exists('users', 'id')->where('tenant_id', $tenantId)],
             'severity_id'     => ['nullable', 'integer', Rule::exists('sire_severities', 'id')->where('tenant_id', $tenantId)],
             // Category was only settable at CREATION, and Report Issue deliberately

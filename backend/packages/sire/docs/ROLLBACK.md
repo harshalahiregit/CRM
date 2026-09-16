@@ -10,7 +10,7 @@
 
 **Do not roll the migrations back.**
 
-SIRE's 21 tables are additive, prefixed, and referenced by nothing outside SIRE.
+SIRE's 22 tables are additive, prefixed, and referenced by nothing outside SIRE.
 Left in place they occupy about a megabyte and affect nothing — no CRM module reads
 them, no CRM query joins them, and no foreign key points at them.
 

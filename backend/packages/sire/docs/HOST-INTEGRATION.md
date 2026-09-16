@@ -2,7 +2,7 @@
 
 **SIRE runs before you integrate anything.** Copy the code, register one service
 provider, migrate, and you have a working issue tracker — every one of the
-thirteen SDK contracts ships with an implementation SIRE owns.
+fourteen SDK contracts ships with an implementation SIRE owns.
 
 Integration is then a series of small, independent, reversible steps: point one
 config key at one class, and that subsystem starts using your application's
@@ -19,7 +19,7 @@ instead of SIRE's. Nothing else changes. You can stop after one, or never start.
         SIRE core — workflow, SLA, QA, releases, quality, AI
 ```
 
-Outside those thirteen, SIRE reaches exactly **one** class in your codebase: the
+Outside those fourteen, SIRE reaches exactly **one** class in your codebase: the
 framework's base `Controller`, to extend. That is enforced —
 `tests/sdk.test.mjs` fails the build if a SIRE file imports anything else of
 yours.
@@ -75,7 +75,7 @@ in — a stub that returned an empty array would look finished and render as
 php artisan sire:doctor
 ```
 
-Prints which implementation is behind each of the thirteen, which tables exist,
+Prints which implementation is behind each of the fourteen, which tables exist,
 and what is still on SIRE's own. Read it before believing the integration is
 done.
 

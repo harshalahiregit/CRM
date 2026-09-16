@@ -404,9 +404,11 @@ export default function ReportIssueModal() {
           </ul>
         )}
 
-        <div className="flex items-center justify-between border-t border-gray-200 pt-3 dark:border-gray-700">
-          <span className="text-[11px] text-gray-400">{shortcutHint} opens this from anywhere</span>
-          <div className="flex gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-200 pt-3 dark:border-gray-700">
+          {/* Hidden on phones: there is no keyboard to press it with, and at 400px
+              it was pushing the buttons onto a line of their own. */}
+          <span className="hidden text-[11px] text-gray-400 sm:inline">{shortcutHint} opens this from anywhere</span>
+          <div className="ml-auto flex gap-2">
             <button type="button" className="px-3 py-2 text-sm text-gray-500" onClick={closeReportIssue}>
               Cancel
             </button>

@@ -255,7 +255,7 @@ phrase. Your CRM's own tables are never touched by any path.
 
 ## The five things worth knowing
 
-1. **SIRE runs before you integrate anything.** Every one of the thirteen
+1. **SIRE runs before you integrate anything.** Every one of the fourteen
    contracts ships with a working implementation, so you can click through the
    whole workflow on day one.
 2. **Six integrations are permanently optional** — audit, notes, settings,

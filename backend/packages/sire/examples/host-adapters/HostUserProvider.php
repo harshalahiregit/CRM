@@ -64,6 +64,26 @@ class HostUserProvider implements SireUserProvider
         );
     }
 
+    /**
+     * Everyone who may be given engineering work.
+     *
+     * Return [] if your application cannot enumerate users and SIRE falls back
+     * to the rosters in `sire.roles.*`. TENANT-SCOPE IT: an unscoped directory
+     * turns the assignment picker into a way to read another tenant's staff
+     * list.
+     *
+     * @return array<int, SireUserIdentity>
+     */
+    public function directory(int $tenantId, ?string $search = null, int $limit = 200): array
+    {
+        // <PLACEHOLDER: call your application here, and map the result to the
+        //              shape documented in docs/HOST-INTEGRATION.md>
+        throw new RuntimeException(
+            'HostUserProvider::directory() is not implemented. Either finish it, or point '
+            ."config('sire.providers.user') back at SIRE's own provider."
+        );
+    }
+
     public function isActive(int $tenantId, int $userId): bool
     {
         // <PLACEHOLDER: call your application here, and map the result to the
