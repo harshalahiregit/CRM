@@ -84,6 +84,29 @@ final class TransportPermission
     public const ADVANCE_REQUEST = 'transport.advance.request';
     public const ADVANCE_APPROVE = 'transport.advance.approve';
 
+    /* ── Costs (SNG-TRN-012). NOT IN THE REGISTRY — see D-58. ────────────
+     *
+     * The Permissions sheet has thirteen rows and covers Trip, Advance,
+     * Expense, POD, Collection, ControlRoom and Registry. There is NO Cost
+     * domain, and no API row names a cost key either — the API-007 the ticket
+     * cites is `POST .../exceptions`. So these are constructed from the domain
+     * and action, the same precedent D-8, D-21 and D-45 record.
+     *
+     * COST_RECORD is modelled on PERM-008 `Expense/submit` rather than on a
+     * trip row, because submitting what a trip cost is the nearest act the
+     * registry actually grants — and because the one thing that should not
+     * happen is a cost key that is WIDER than the expense key covering the
+     * same money.
+     *
+     * There is deliberately no COST_APPROVE. Approval is PERM-009 and it
+     * belongs to `trip_expenses`, a separate LOCKED table this ticket does not
+     * build. A key with no operation behind it is a promise the code does not
+     * keep.
+     */
+    public const COST_VIEW    = 'transport.cost.view';
+    public const COST_RECORD  = 'transport.cost.record';
+    public const COST_RETRACT = 'transport.cost.retract';
+
     /* ── Master data (SNG-TRN-003 / 004). NOT IN THE REGISTRY — see D-8. ── */
     public const VEHICLE_VIEW   = 'transport.vehicle.view';
     public const VEHICLE_CREATE = 'transport.vehicle.create';
@@ -165,6 +188,42 @@ final class TransportPermission
             self::ROLE_OWNER    => self::SCOPE_ALL,
             self::ROLE_ACCOUNTS => self::SCOPE_ALL,
             self::ROLE_APPROVER => self::SCOPE_ALL,
+            self::ROLE_ADMIN    => self::SCOPE_ALL,
+        ],
+        // CONSTRUCTED — no Cost row exists in Step 11. See D-58.
+        //
+        // Viewing follows PERM-001 `Trip/view`, because a trip's costs are part
+        // of that trip. Customer and Supplier are dropped from it deliberately:
+        // PERM-001 shows them a trip, and what a haul cost us is not something
+        // the counterparty on that haul gets to read.
+        self::COST_VIEW => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        // CONSTRUCTED, mirroring PERM-008 `Expense/submit` exactly: Owner Y,
+        // Operations Y, Dispatcher Y, Accounts Y, Driver Own, Admin Y.
+        // Approver N — approving is a different act from reporting a spend, and
+        // PERM-009 is where that lives.
+        self::COST_RECORD => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_DRIVER     => self::SCOPE_OWN,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        // CONSTRUCTED, and narrower than recording on purpose. Taking a cost
+        // back out of the margin changes a reported figure, so it sits with the
+        // roles that answer for the figure — Owner, Accounts, Admin. A driver
+        // who mis-keyed their own fuel asks Accounts; they do not silently
+        // rewrite the trip's profitability themselves.
+        self::COST_RETRACT => [
+            self::ROLE_OWNER    => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS => self::SCOPE_ALL,
             self::ROLE_ADMIN    => self::SCOPE_ALL,
         ],
         // PERM-002 — Trip create: Owner Y, Operations Y, Dispatcher Y, Admin Y.
