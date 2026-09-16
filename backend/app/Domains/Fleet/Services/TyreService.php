@@ -1,0 +1,193 @@
+<?php
+
+namespace App\Domains\Fleet\Services;
+
+use App\Domains\Fleet\Models\TyreFitment;
+use App\Domains\Fleet\Models\Vehicle;
+use App\Exceptions\BusinessException;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
+/**
+ * STOS-MAINT — the tyre lifecycle: stock → fitted → inspected → rotated →
+ * retreaded → scrapped.
+ *
+ * A tyre is an asset that moves between vehicles and outlives several of them,
+ * so fitments form a CHAIN: fitting opens a row, removing closes it, refitting
+ * opens the next. That is what makes cost-per-kilometre answerable for a
+ * casing rather than just for a truck.
+ */
+class TyreService
+{
+    /** Fit a tyre to a position, closing whatever was there. */
+    public function fit(int $companyId, array $data, int $userId): TyreFitment
+    {
+        $vehicle = $this->vehicle((int) $data['vehicle_id'], $companyId);
+        $tyreId = strtoupper(trim((string) $data['tyre_id']));
+
+        // A tyre cannot be in two places. If this casing is fitted elsewhere,
+        // it has physically been moved — close that fitment rather than letting
+        // the register claim it is on two axles at once.
+        $existing = TyreFitment::forCompany($companyId)
+            ->where('tyre_id', $tyreId)
+            ->whereIn('status', TyreFitment::ON_VEHICLE)
+            ->first();
+
+        return DB::transaction(function () use ($existing, $vehicle, $companyId, $data, $tyreId, $userId) {
+            if ($existing) {
+                $this->closeFitment($existing, $data['odometer_at_fitment'] ?? null, 'removed', 'Moved to '.$vehicle->registration_number);
+            }
+
+            // Whatever currently occupies the target position comes off too.
+            $occupant = TyreFitment::forCompany($companyId)
+                ->where('vehicle_id', $vehicle->id)
+                ->where('position', $data['position'])
+                ->whereIn('status', TyreFitment::ON_VEHICLE)
+                ->first();
+
+            if ($occupant && $occupant->tyre_id !== $tyreId) {
+                $this->closeFitment($occupant, $data['odometer_at_fitment'] ?? null, 'removed', 'Replaced by '.$tyreId);
+            }
+
+            $fitment = TyreFitment::create([
+                'company_id'          => $companyId,
+                'tyre_id'             => $tyreId,
+                'vehicle_id'          => $vehicle->id,
+                'position'            => $data['position'],
+                'status'              => 'fitted',
+                'tread_depth'         => $data['tread_depth'] ?? null,
+                'odometer_at_fitment' => $data['odometer_at_fitment'] ?? null,
+                'fitted_on'           => $data['fitted_on'] ?? now()->toDateString(),
+                'note'                => $data['note'] ?? null,
+            ]);
+
+            Log::channel('stos')->info('Tyre fitted', [
+                'company_id' => $companyId, 'user_id' => $userId,
+                'vehicle_id' => $vehicle->id, 'tyre_id' => $tyreId, 'position' => $fitment->position,
+            ]);
+
+            return $fitment;
+        });
+    }
+
+    /** Record a tread-depth inspection against the current fitment. */
+    public function inspect(int $fitmentId, int $companyId, array $data, int $userId): TyreFitment
+    {
+        $fitment = $this->fitment($fitmentId, $companyId);
+
+        $depth = (float) $data['tread_depth'];
+
+        // Tread only ever goes down. A deeper reading than last time is a
+        // mis-keyed measurement or the wrong tyre, and accepting it makes the
+        // wear rate — and every replacement forecast built on it — nonsense.
+        if ($fitment->tread_depth !== null && $depth > (float) $fitment->tread_depth) {
+            throw new BusinessException(
+                'Tread depth cannot increase: last reading was '.(float) $fitment->tread_depth.' mm. Check the measurement.'
+            );
+        }
+
+        $fitment->fill([
+            'tread_depth'  => $depth,
+            'inspected_on' => $data['inspected_on'] ?? now()->toDateString(),
+            'note'         => $data['note'] ?? $fitment->note,
+        ])->save();
+
+        if ($fitment->isWornOut()) {
+            Log::channel('stos')->warning('Tyre at or below the legal limit', [
+                'company_id' => $companyId, 'user_id' => $userId,
+                'vehicle_id' => $fitment->vehicle_id, 'tyre_id' => $fitment->tyre_id,
+                'tread_depth' => $depth, 'limit' => TyreFitment::MIN_TREAD_MM,
+            ]);
+        }
+
+        return $fitment->fresh();
+    }
+
+    /** Take a tyre off: to stock, to a retreader, or to scrap. */
+    public function remove(int $fitmentId, int $companyId, array $data, int $userId): TyreFitment
+    {
+        $fitment = $this->fitment($fitmentId, $companyId);
+
+        if (! in_array($fitment->status, TyreFitment::ON_VEHICLE, true)) {
+            throw new BusinessException('That tyre is not currently fitted.');
+        }
+
+        $outcome = $data['status'] ?? 'removed';
+
+        if (! in_array($outcome, ['removed', 'retreaded', 'scrapped', 'in_stock'], true)) {
+            throw new BusinessException('A removed tyre goes to stock, to a retread, or to scrap.');
+        }
+
+        $this->closeFitment($fitment, $data['odometer_at_removal'] ?? null, $outcome, $data['note'] ?? null);
+
+        Log::channel('stos')->info('Tyre removed', [
+            'company_id' => $companyId, 'user_id' => $userId,
+            'tyre_id' => $fitment->tyre_id, 'outcome' => $outcome,
+            'km_run' => $fitment->fresh()->kilometresRun(),
+        ]);
+
+        return $fitment->fresh();
+    }
+
+    /** What is on this vehicle now, plus what has come off it. */
+    public function forVehicle(int $vehicleId, int $companyId): array
+    {
+        $rows = TyreFitment::forCompany($companyId)
+            ->where('vehicle_id', $vehicleId)
+            ->orderByDesc('id')->limit(100)->get();
+
+        $fitted = $rows->whereIn('status', TyreFitment::ON_VEHICLE)->values();
+
+        return [
+            'fitted'  => $fitted->map(fn (TyreFitment $t) => $this->present($t))->all(),
+            'history' => $rows->whereNotIn('status', TyreFitment::ON_VEHICLE)->values()
+                ->map(fn (TyreFitment $t) => $this->present($t))->all(),
+            'due_replacement' => $fitted->filter(fn (TyreFitment $t) => $t->isWornOut())->count(),
+            'min_tread_mm'    => TyreFitment::MIN_TREAD_MM,
+            'positions'       => TyreFitment::POSITIONS,
+        ];
+    }
+
+    /* ── helpers ────────────────────────────────────────────────── */
+
+    private function present(TyreFitment $t): array
+    {
+        return [
+            ...$t->toArray(),
+            'km_run'    => $t->kilometresRun(),
+            'worn_out'  => $t->isWornOut(),
+        ];
+    }
+
+    private function closeFitment(TyreFitment $fitment, $odometer, string $status, ?string $note): void
+    {
+        $fitment->fill([
+            'status'              => $status,
+            'odometer_at_removal' => $odometer ?? $fitment->odometer_at_removal,
+            'removed_on'          => now()->toDateString(),
+            'note'                => $note ?? $fitment->note,
+        ])->save();
+    }
+
+    private function vehicle(int $id, int $companyId): Vehicle
+    {
+        $vehicle = Vehicle::forCompany($companyId)->find($id);
+
+        if (! $vehicle) {
+            throw new BusinessException('That vehicle is not in your fleet.', 404);
+        }
+
+        return $vehicle;
+    }
+
+    private function fitment(int $id, int $companyId): TyreFitment
+    {
+        $fitment = TyreFitment::forCompany($companyId)->find($id);
+
+        if (! $fitment) {
+            throw new BusinessException('That tyre record does not exist.', 404);
+        }
+
+        return $fitment;
+    }
+}
