@@ -1392,6 +1392,26 @@ conversation. Options, in rough order of cost: run the existing suite against My
 job; or add a small MySQL-only group for schema and constraint tests; or accept the gap explicitly
 and require that every constraint be probed against both engines before it ships, as was done here.
 
+### The working rule this produced, for every derived value in this module
+
+The engine split forces a choice each time a value must be derived and must never disagree with its
+source. The rule that came out of the container work, stated once so it need not be re-derived:
+
+> **Put the derivation in the DATABASE when both engines express it identically. Put it in PHP when
+> they do not — and then say so, next to the code, along with what the PHP version cannot cover.**
+
+Applied to the two in `transport_containers`:
+
+| Derived value | Expression | Where | Why |
+|---|---|---|---|
+| `active_container_key` | `CASE WHEN detached_at IS NULL THEN container_id ELSE NULL END` | **database** | Both engines evaluate it identically — verified by running it |
+| `container_number_normalized` | trim + strip non-alphanumerics + uppercase | **PHP** (`saving()` hook) | MySQL 8 has `REGEXP_REPLACE`; sqlite returns *"no such function: REGEXP_REPLACE"*. A generated column would need two dialects, and the suite runs on the engine that cannot express it — this defect, exactly |
+
+The cost of the PHP side is stated where it is paid: a `saving()` hook covers Eloquent writes only,
+so a raw insert bypasses it. The database-side one has no such gap. **Never assert which engine can
+express something — run it.** Both facts above were established by executing the expression on MySQL
+8.0.46 and sqlite 3.45.1, not by reading documentation.
+
 ---
 
 ## D-52 — Nothing structurally marks a trip as temperature-critical
@@ -1542,5 +1562,29 @@ correction is a deliberate, single, human act — a check at that one entry poin
 would be a guard on a door nobody can open, and the natural place to put it — a value object holding
 the window — would not have enforced anything either.
 
+### A SECOND latent defect waits on the same trigger — read both together
+
+`TransportContainer::booted()` carries a residual with the identical shape, and whoever builds the
+triggering feature will plausibly find one and miss the other:
+
+> **The normalisation residual.** `container_number_normalized` is derived by a model `saving()`
+> hook, which covers **Eloquent writes only**. A raw `DB::table()` insert, a raw SQL import or a
+> migration writing rows directly bypasses it, producing a container that looks perfectly correct on
+> screen and **cannot be found by search**. `active_container_key` has no such gap — the database
+> computes it however the row arrives.
+
+**Both are unreachable today and both become reachable on the same trigger:**
+
+> **BULK CONTAINER IMPORT, OR ANY BACK-DATED CORRECTION.**
+
+The ticket that builds either one inherits **two** requirements, not one:
+
+1. **Overlap** (this defect) — reject a window that overlaps an existing one for the same container,
+   at the single entry point where back-dating happens.
+2. **Normalisation** (the residual) — every imported row must go through
+   `TransportContainer::normalise()`, whether by writing through the model or by calling it directly.
+   A row that skips it is invisible to `CTD-001` search.
+
 **Owner: Person 1**, to implement alongside back-dated correction or historical import, whichever
-arrives first.
+arrives first — and to implement **both**, because they arrive together.
+
