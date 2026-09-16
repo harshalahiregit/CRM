@@ -4,15 +4,20 @@ namespace App\Http\Controllers\Api\Hr;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Hr\StoreEmployeeRequest;
+use App\Http\Requests\Hr\UpdateEmployeeDetailRequest;
 use App\Models\Hr\HrEmployee;
 use App\Rules\Hr\ValidWorkState;
+use App\Services\Hr\EmployeeDetailService;
 use App\Services\Hr\EmployeeService;
 use App\Support\Hr\WorkStates;
 use Illuminate\Http\Request;
 
 class EmployeeController extends Controller
 {
-    public function __construct(private EmployeeService $employeeService)
+    public function __construct(
+        private EmployeeService $employeeService,
+        private EmployeeDetailService $details,
+    )
     {
     }
 
@@ -35,6 +40,36 @@ class EmployeeController extends Controller
         $this->assertTenant($request, $employee);
 
         return response()->json($employee);
+    }
+
+    /**
+     * The extended record: personal, address, education, emergency contact,
+     * bank, identity and statutory.
+     *
+     * Always returns every field, null where unset, so the form renders without
+     * having to special-case a person who has none of it filled in yet.
+     */
+    public function detail(Request $request, HrEmployee $employee)
+    {
+        $this->assertTenant($request, $employee);
+
+        return response()->json([
+            'status' => 'success',
+            'data'   => $this->details->get($employee),
+        ]);
+    }
+
+    public function updateDetail(UpdateEmployeeDetailRequest $request, HrEmployee $employee)
+    {
+        $this->assertTenant($request, $employee);
+
+        $this->details->save($employee, $request->validated(), $request->user());
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Employee details saved',
+            'data'    => $this->details->get($employee->fresh()),
+        ]);
     }
 
     /** Full enterprise profile — recruitment + onboarding + offer + documents + timeline. */

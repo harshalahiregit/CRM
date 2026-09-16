@@ -44,7 +44,8 @@ return new class extends Migration {
             $table->unsignedBigInteger('updated_by')->nullable();
             $table->timestamps();
 
-            $table->unique(['tenant_id', 'employee_probation_id', 'review_no']);
+            // Named: the generated name exceeds MySQL's 64-character identifier limit.
+            $table->unique(['tenant_id', 'employee_probation_id', 'review_no'], 'hr_prob_reviews_tenant_prob_no_uq');
         });
     }
 

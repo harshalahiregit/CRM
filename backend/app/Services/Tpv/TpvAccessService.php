@@ -5,6 +5,7 @@ namespace App\Services\Tpv;
 use App\Exceptions\BusinessException;
 use App\Models\User;
 use App\Models\Vendor\Vendor;
+use App\Models\Vendor\VendorDocument;
 use App\Services\Notifications\NotificationService;
 use App\Support\Tpv\TpvAccessStatus as Access;
 use App\Support\Vendor\VendorStatus;
@@ -279,7 +280,27 @@ class TpvAccessService
         $vendor->recordAudit('Temporary TPV Converted to Permanent', $actor, null, [
             'registration_number' => $registrationNumber,
         ]);
-        $this->notify($vendor, 'You are now a Permanent Vendor', "You are now a Permanent Vendor. Registration Number: {$registrationNumber}.");
+        /*
+         * Promotion raises the paperwork. A temporary TPV files three documents;
+         * a permanent one files eleven. Saying only "you are now permanent"
+         * leaves the vendor compliant one day and 18% the next, against
+         * requirements nobody has asked them for. Name them.
+         */
+        $newly = \App\Services\Vendor\VendorDocumentService::conversionContext(
+            $vendor->fresh()->converted_to_permanent_at,
+            VendorDocument::requiredFor('standard'),
+            $vendor->documents()->pluck('type')->all(),
+        )['newly_required'] ?? [];
+
+        $body = "You are now a Permanent Vendor. Registration Number: {$registrationNumber}.";
+        if ($newly !== []) {
+            $labels = array_map(fn ($t) => VendorDocument::typeLabel($t), $newly);
+            $body .= ' A permanent account is asked for more paperwork than a temporary one. '
+                .'Please upload the following in your portal under Documents: '
+                .implode(', ', $labels).'. Nothing you filed before needs redoing.';
+        }
+
+        $this->notify($vendor, 'You are now a Permanent Vendor', $body);
 
         return $vendor->fresh();
     }

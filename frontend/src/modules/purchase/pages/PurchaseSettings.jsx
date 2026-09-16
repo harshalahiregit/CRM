@@ -17,6 +17,7 @@ const TABS = [
   { key: 'general',    label: 'General Settings' },
   { key: 'options',    label: 'Purchase Options' },
   { key: 'governance', label: 'Governance' },
+  { key: 'medical',    label: 'Medical' },
   { key: 'categories', label: 'Vendor category' },
   { key: 'return',     label: 'Order Return' },
   // Managed elsewhere — pointers, not duplicates.
@@ -106,6 +107,7 @@ export default function PurchaseSettings() {
               : tab === 'general' ? <GeneralTab s={settings} set={set} save={save} msg={msg} canEdit={isAdmin} />
                 : tab === 'options' ? <OptionsTab s={settings} set={set} save={save} msg={msg} canEdit={isAdmin} />
                   : tab === 'governance' ? <GovernanceTab s={settings} set={set} save={save} msg={msg} canEdit={isAdmin} />
+                    : tab === 'medical' ? <MedicalTab s={settings} set={set} save={save} msg={msg} canEdit={isAdmin} />
                     : tab === 'return' ? <ReturnTab s={settings} set={set} save={save} msg={msg} canEdit={isAdmin} />
                       : <CategoriesTab canEdit={isAdmin} />}
         </div>
@@ -237,6 +239,91 @@ function GovernanceTab({ s, set, save, msg, canEdit }) {
         <TextInput type="number" min="1" value={s.temporary_vendor_validity_days ?? 5} onChange={set('temporary_vendor_validity_days')} disabled={!canEdit} />
       </Field>
       <p style={hintStyle}>Counted from the moment an admin activates the vendor, never from registration. Standard vendors never expire.</p>
+
+      <SaveBar msg={msg} canEdit={canEdit} onSave={() => save(keys)} />
+    </>
+  )
+}
+
+/* ── Medical module ──────────────────────────────────────────────────────── */
+
+/**
+ * The Purchase side's medical knobs — the same set the TPV settings screen
+ * exposes as its `medical` group, kept in step so both registers behave the
+ * same way for the same reasons.
+ *
+ * Reviewers are entered as user IDs rather than picked from a list: this store
+ * is flat key/value strings, and a picker would need a user directory this
+ * screen does not otherwise load.
+ */
+function MedicalTab({ s, set, save, msg, canEdit }) {
+  const keys = [
+    'medical_validity_months', 'medical_auto_approve_internal', 'medical_max_iterations',
+    'medical_block_induction', 'medical_pending_message', 'medical_not_applicable_default',
+    'medical_qc_approver_ids',
+  ]
+
+  return (
+    <>
+      <Section title="Certificate" />
+      <Field label="Validity (months) when the examiner stamps no expiry">
+        <TextInput type="number" min="1" max="60" value={s.medical_validity_months ?? 12}
+                   onChange={set('medical_validity_months')} disabled={!canEdit} />
+      </Field>
+
+      <div style={{ height: 16 }} />
+      <Section title="Quality check" />
+      <div style={grid2}>
+        <Field label="Maximum exchanges with the vendor">
+          <TextInput type="number" min="1" max="20" value={s.medical_max_iterations ?? 10}
+                     onChange={set('medical_max_iterations')} disabled={!canEdit} />
+        </Field>
+        <Field label="Reviewer user IDs (comma separated)">
+          <TextInput value={s.medical_qc_approver_ids ?? ''} onChange={set('medical_qc_approver_ids')}
+                     disabled={!canEdit} placeholder="e.g. 4, 11" />
+        </Field>
+      </div>
+      <p style={hintStyle}>
+        After the maximum number of rounds a certificate can no longer be sent back — it has to be approved or rejected as it stands.
+        An empty reviewer list means every admin can rule on a certificate.
+      </p>
+
+      <label style={{ display: 'flex', gap: 11, alignItems: 'flex-start', padding: '12px 4px', borderBottom: '1px solid var(--border)', cursor: canEdit ? 'pointer' : 'default' }}>
+        <input type="checkbox" checked={!!s.medical_auto_approve_internal} onChange={set('medical_auto_approve_internal')} disabled={!canEdit} style={{ width: 16, height: 16, marginTop: 2 }} />
+        <span>
+          <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--text-h)' }}>Auto-approve our own doctors</span>
+          <span style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+            An examination filed in the doctor portal clears immediately. Certificates uploaded by a vendor always face a reviewer regardless.
+          </span>
+        </span>
+      </label>
+
+      <div style={{ height: 16 }} />
+      <Section title="Prerequisite" />
+      <label style={{ display: 'flex', gap: 11, alignItems: 'flex-start', padding: '12px 4px', borderBottom: '1px solid var(--border)', cursor: canEdit ? 'pointer' : 'default' }}>
+        <input type="checkbox" checked={!!s.medical_block_induction} onChange={set('medical_block_induction')} disabled={!canEdit} style={{ width: 16, height: 16, marginTop: 2 }} />
+        <span>
+          <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--text-h)' }}>Block safety induction until medical clears</span>
+          <span style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+            Recommended. Off means an induction can be recorded while the medical is still outstanding.
+          </span>
+        </span>
+      </label>
+
+      <label style={{ display: 'flex', gap: 11, alignItems: 'flex-start', padding: '12px 4px', borderBottom: '1px solid var(--border)', cursor: canEdit ? 'pointer' : 'default' }}>
+        <input type="checkbox" checked={!!s.medical_not_applicable_default} onChange={set('medical_not_applicable_default')} disabled={!canEdit} style={{ width: 16, height: 16, marginTop: 2 }} />
+        <span>
+          <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--text-h)' }}>Medical not applicable by default</span>
+          <span style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+            The site-wide default. A work package that sets its own medical requirement overrides this either way.
+          </span>
+        </span>
+      </label>
+
+      <div style={{ height: 12 }} />
+      <Field label="Message shown while a medical is outstanding" full>
+        <TextInput value={s.medical_pending_message ?? 'Medical Report is Pending'} onChange={set('medical_pending_message')} disabled={!canEdit} />
+      </Field>
 
       <SaveBar msg={msg} canEdit={canEdit} onSave={() => save(keys)} />
     </>

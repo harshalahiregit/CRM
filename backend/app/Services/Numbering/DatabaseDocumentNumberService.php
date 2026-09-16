@@ -91,8 +91,8 @@ class DatabaseDocumentNumberService implements DocumentNumberServiceInterface
             ->value('current_sequence');
 
         $next = $current === null
-            ? max(1, (int) $config['starting_number'])
-            : ((int) $current) + 1;
+            ? $this->firstNumber($config)
+            : $this->advance((int) $current, $config);
 
         return $this->render($ctx->withSequence($next));
     }
@@ -117,7 +117,7 @@ class DatabaseDocumentNumberService implements DocumentNumberServiceInterface
 
         BeforeGenerate::dispatch($tenantId, $documentType, ['period_key' => $periodKey, 'config' => $config]);
 
-        $sequence = $this->nextSequence($tenantId, $documentType, $periodKey, (int) $config['starting_number']);
+        $sequence = $this->nextSequence($tenantId, $documentType, $periodKey, (int) $config['starting_number'], $config);
         $number = $this->render($ctx->withSequence($sequence));
 
         $result = [
@@ -136,22 +136,29 @@ class DatabaseDocumentNumberService implements DocumentNumberServiceInterface
      * Atomic allocation. Safe to call inside an outer transaction — Laravel nests
      * this as a savepoint, and the row lock is held to the outermost commit.
      */
-    public function nextSequence(int $tenantId, string $documentType, string $periodKey, int $startingNumber = 1): int
+    public function nextSequence(int $tenantId, string $documentType, string $periodKey, int $startingNumber = 1, array $config = []): int
     {
-        $start = max(1, $startingNumber);
+        // $config carries direction and step. It is optional so the older
+        // four-argument call sites keep working and simply count up in ones.
+        $config = $config + ['starting_number' => $startingNumber, 'direction' => 'up', 'step' => 1];
+        $start = $this->firstNumber($config);
+        $step = $this->stepOf($config);
+        $down = $this->countsDown($config);
 
         // 3 attempts: on MySQL two concurrent allocators can deadlock upgrading the
         // INSERT IGNORE's shared lock to the SELECT ... FOR UPDATE exclusive lock
         // (error 1213). Laravel retries the whole closure on a concurrency error.
-        return DB::transaction(function () use ($tenantId, $documentType, $periodKey, $start) {
+        return DB::transaction(function () use ($tenantId, $documentType, $periodKey, $start, $step, $down, $config) {
             // Materialise the counter row without racing a concurrent insert. The
             // unique index makes the loser of that race a silent no-op.
             DB::table('document_number_sequences')->insertOrIgnore([
                 'tenant_id'        => $tenantId,
                 'document_type'    => $documentType,
                 'period_key'       => $periodKey,
-                // First allocation in a period must yield exactly starting_number.
-                'current_sequence' => $start - 1,
+                // First allocation in a period must yield exactly starting_number,
+                // so the seed sits one STEP behind it — on the side the series
+                // is coming from.
+                'current_sequence' => $down ? $start + $step : $start - $step,
                 'created_at'       => now(),
                 'updated_at'       => now(),
             ]);
@@ -169,7 +176,18 @@ class DatabaseDocumentNumberService implements DocumentNumberServiceInterface
                 throw new BusinessException('Could not allocate a document number, please retry.', 409);
             }
 
-            $next = ((int) $row->current_sequence) + 1;
+            $next = $this->advance((int) $row->current_sequence, $config);
+
+            // A descending series has a floor: 3, 2, 1 and then there is nowhere
+            // left to go. Refusing here is far better than handing out 0 and -1
+            // as document numbers, or silently reusing 1 forever.
+            if ($next < 1) {
+                throw new BusinessException(
+                    "The numbering series for '{$documentType}' has counted down to its end. "
+                    .'Raise the starting number or switch the direction in Settings.',
+                    422,
+                );
+            }
 
             DB::table('document_number_sequences')
                 ->where('id', $row->id)
@@ -177,6 +195,42 @@ class DatabaseDocumentNumberService implements DocumentNumberServiceInterface
 
             return $next;
         }, 3);
+    }
+
+    /* ── Direction and step ──────────────────────────────────────────────
+     |
+     | A series may be told to count UP (the default, and what the engine always
+     | did) or DOWN, in steps of any size. "Down" is a real requirement, not a
+     | curiosity: some registers are issued in reverse from an agreed ceiling.
+     |
+     | These three helpers are the only place that arithmetic lives, so preview
+     | and allocation can never disagree about what the next number is.
+     */
+
+    /** Does this series count downwards? */
+    private function countsDown(array $config): bool
+    {
+        return strtolower((string) ($config['direction'] ?? 'up')) === 'down';
+    }
+
+    /** The gap between consecutive numbers. Never zero — that would never move. */
+    private function stepOf(array $config): int
+    {
+        return max(1, (int) ($config['step'] ?? 1));
+    }
+
+    /** The very first number a period issues. */
+    private function firstNumber(array $config): int
+    {
+        return max(1, (int) ($config['starting_number'] ?? 1));
+    }
+
+    /** The number after this one, in whichever direction the series runs. */
+    private function advance(int $current, array $config): int
+    {
+        $step = $this->stepOf($config);
+
+        return $this->countsDown($config) ? $current - $step : $current + $step;
     }
 
     public function reset(int $tenantId, string $documentType, ?int $startingNumber = null): DocumentNumberConfig

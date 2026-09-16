@@ -544,6 +544,18 @@ html.light .header-3d {
     background: rgba(26,21,53,0.3);
     backdrop-filter: blur(12px);
   }
+  /*
+   * Report Issue must clear every overlay in the app, including the one it was
+   * opened from. The button sits at z-[10000] -- above HR dialogs (9999), the
+   * Select portal (1500), Sales dialogs (130), the palette and toasts (100) --
+   * so its own modal has to come out above that, or clicking the button opens
+   * a form behind the popup you were trying to report.
+   *
+   * :has() rather than a prop because .modal-backdrop is created inside ui/Modal
+   * and portalled to <body>; nothing outside can reach it to set a z-index.
+   */
+  .modal-backdrop:has(.sire-report-modal) { z-index: 10001; }
+
   .modal-box {
     @apply rounded-2xl p-5 w-full max-w-md mx-4 animate-scale-in;
     background: var(--bg-card);

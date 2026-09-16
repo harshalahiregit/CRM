@@ -8,6 +8,7 @@ use App\Models\Purchase\PurchaseVendor;
 use App\Models\Tenant;
 use App\Models\Tpv\TpvOnboarding;
 use App\Models\Traits\Auditable;
+use App\Models\Concerns\GeneratesSequentialCode;
 use App\Models\Traits\BelongsToTenant;
 use App\Models\User;
 use App\Support\Tpv\TpvAccessStatus;
@@ -24,7 +25,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class Vendor extends Model
 {
-    use Auditable, BelongsToTenant, SoftDeletes;
+    use Auditable, BelongsToTenant, GeneratesSequentialCode, SoftDeletes;
 
     protected $table = 'vendors';
 
@@ -91,12 +92,13 @@ class Vendor extends Model
     {
         static::creating(function (Vendor $vendor) {
             if (empty($vendor->vendor_code)) {
-                $year = date('Y');
-                $count = static::withTrashed()
-                    ->where('tenant_id', $vendor->tenant_id)
-                    ->whereYear('created_at', $year)
-                    ->count() + 1;
-                $vendor->vendor_code = 'VEN-'.$year.'-'.str_pad((string) $count, 3, '0', STR_PAD_LEFT);
+                // Derived from the highest code issued, NOT from a row count —
+                // see GeneratesSequentialCode. A count goes stale the moment any
+                // vendor is hard-deleted, and vendor_code is unique per tenant,
+                // so the next create failed outright rather than duplicating.
+                $vendor->vendor_code = static::nextSequentialCode(
+                    'vendor_code', 'VEN-'.date('Y').'-', (int) $vendor->tenant_id,
+                );
             }
         });
     }

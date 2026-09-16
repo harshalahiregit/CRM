@@ -43,16 +43,23 @@ use App\Http\Controllers\Api\Hr\OrgChartController;
 use App\Http\Controllers\Api\Hr\EmployeeScoreController;
 use App\Http\Controllers\Api\Hr\ExitQuestionnaireController;
 use App\Http\Controllers\Api\Hr\VariableEarningController;
+use App\Http\Controllers\Api\Hr\DirectoryController;
+use App\Http\Controllers\Api\Hr\LetterController;
 use App\Http\Controllers\Api\Hr\PayrollRunController;
+use App\Http\Controllers\Api\Hr\PayrollWorkflowController;
 use App\Http\Controllers\Api\Hr\PayslipController;
 use App\Http\Controllers\Api\Hr\PayrollReportController;
+use App\Http\Controllers\Api\Hr\StatutoryRegisterController;
 use Illuminate\Support\Facades\Route;
 
 // ── HR Module Routes (Sanctum) ──────────────────────────────────────────
 Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
 
-    // Dashboard
-    Route::get('/dashboard', [HRDashboardController::class, 'index']);
+    // Dashboard — company-wide headcount, attrition and attendance figures.
+    // Sat in this auth-only group with no check inside the controller either, so
+    // any signed-in account could read them.
+    Route::get('/dashboard', [HRDashboardController::class, 'index'])
+        ->middleware('permission:hr_attendance,view_global');
 
     // Manpower Requests — L1/L2 Approval Workflow → HR Queue → JD → Job Posting
     Route::get('/manpower-requests',                            [ManpowerRequestController::class, 'index']);
@@ -249,6 +256,40 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/employees',                [EmployeeController::class, 'index']);
     Route::post('/employees',               [EmployeeController::class, 'store']);
     Route::get('/employees/{employee}/profile', [EmployeeController::class, 'profile']);
+    // The extended record. Declared beside /profile so both sit under the same
+    // tenant assertion the controller makes.
+    Route::get('/employees/{employee}/detail',  [EmployeeController::class, 'detail']);
+    Route::put('/employees/{employee}/detail',  [EmployeeController::class, 'updateDetail']);
+
+    /*
+    | Entry-to-exit letters.
+    |
+    | The offer, appointment and confirmation ends of the list were built; the
+    | exit end was not, so the one document a departing person actually needs —
+    | the thing their next employer asks for — was typed by hand.
+    |
+    | Each refuses to issue early, because of what it ASSERTS: a relieving
+    | letter states that dues are settled, and issuing one before clearance
+    | means certifying that in writing to a third party who will rely on it.
+    */
+    /*
+    | Where the staff and employee directories disagree.
+    |
+    | The instruction was one directory, not two. They are not merged, because
+    | they are not duplicates: `users` is a login account and `hr_employees` is
+    | an employment record, neither contains the other, and Tasks, Helpdesk and
+    | ticket threads all resolve their assignable-people lists from the staff
+    | side. The complaint was that somebody is added in one place and missing
+    | from the other — which is a reconciliation problem, solved by showing the
+    | gap rather than by a migration across four other modules.
+    */
+    Route::get('/directory/reconciliation', [DirectoryController::class, 'reconciliation']);
+    Route::post('/employees/{employee}/link-login', [DirectoryController::class, 'link'])->whereNumber('employee');
+
+    Route::get('/employees/{employee}/letters', [LetterController::class, 'available'])->whereNumber('employee');
+    Route::get('/employees/{employee}/letters/{type}', [LetterController::class, 'download'])
+        ->whereNumber('employee')
+        ->whereIn('type', \App\Services\Hr\LetterService::TYPES);
 
     // Exit Interview (SPK-1) — internal form, reuses the employee record for prefill.
     Route::get('/exit-interviews',                        [ExitInterviewController::class, 'index']);
@@ -275,9 +316,16 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/employees/{employee}/attendance', [AttendanceController::class, 'employeeAttendance']);
 
     // Assets — read-only views onto the Inventory register. HRMS owns no asset data.
-    Route::get('/employees/{employee}/assets/summary', [EmployeeAssetController::class, 'summary']);
-    Route::get('/employees/{employee}/assets/{asset}', [EmployeeAssetController::class, 'show'])->where('asset', '[0-9]+');
-    Route::get('/employees/{employee}/assets',         [EmployeeAssetController::class, 'index']);
+    //
+    // Gated: this is the serial number of the laptop and phone issued to a named
+    // colleague. The controller makes no check of its own, so until now any
+    // signed-in account could walk the employee ids and read the lot.
+    Route::get('/employees/{employee}/assets/summary', [EmployeeAssetController::class, 'summary'])
+        ->middleware('permission:hr_attendance,view_global');
+    Route::get('/employees/{employee}/assets/{asset}', [EmployeeAssetController::class, 'show'])
+        ->where('asset', '[0-9]+')->middleware('permission:hr_attendance,view_global');
+    Route::get('/employees/{employee}/assets',         [EmployeeAssetController::class, 'index'])
+        ->middleware('permission:hr_attendance,view_global');
 
     Route::get('/employees/{employee}',     [EmployeeController::class, 'show']);
     Route::put('/employees/{employee}',     [EmployeeController::class, 'update']);
@@ -343,6 +391,30 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/payroll/runs/{id}/records',    [PayrollRunController::class, 'records']);
     Route::get('/payroll/records/{id}/lines',   [PayrollRunController::class, 'recordLines'])->whereNumber('id');
     Route::patch('/payroll/runs/{id}/status',   [PayrollRunController::class, 'updateStatus']);
+
+    /*
+    | The stepped run: Pre-check → Inputs → Calculate → Approve → Disburse.
+    |
+    | These sit BESIDE /process rather than replacing it. `process` still does
+    | the arithmetic and is still what a plain one-click month calls; these add
+    | the question of who chose the employees and who agreed to the amounts.
+    | A run that never touches them behaves exactly as it did before.
+    */
+    Route::get('/payroll/runs/{id}/precheck',      [PayrollWorkflowController::class, 'precheck'])->whereNumber('id');
+    Route::post('/payroll/runs/{id}/employees',    [PayrollWorkflowController::class, 'selectEmployees'])->whereNumber('id');
+    Route::post('/payroll/runs/{id}/confirm-inputs', [PayrollWorkflowController::class, 'confirmInputs'])->whereNumber('id');
+
+    Route::get('/payroll/runs/{id}/adjustments',   [PayrollWorkflowController::class, 'adjustments'])->whereNumber('id');
+    Route::post('/payroll/records/{id}/adjustments', [PayrollWorkflowController::class, 'addAdjustment'])->whereNumber('id');
+    Route::delete('/payroll/adjustments/{id}',     [PayrollWorkflowController::class, 'removeAdjustment'])->whereNumber('id');
+
+    Route::post('/payroll/runs/{id}/approve',      [PayrollWorkflowController::class, 'approve'])->whereNumber('id');
+    Route::post('/payroll/runs/{id}/reject',       [PayrollWorkflowController::class, 'reject'])->whereNumber('id');
+
+    Route::post('/payroll/records/{id}/payment',   [PayrollWorkflowController::class, 'markPayment'])->whereNumber('id');
+    Route::post('/payroll/runs/{id}/payments',     [PayrollWorkflowController::class, 'markAllPayments'])->whereNumber('id');
+    Route::post('/payroll/runs/{id}/release-payslips', [PayrollWorkflowController::class, 'releasePayslips'])->whereNumber('id');
+    Route::post('/payroll/records/{id}/payslip-visibility', [PayrollWorkflowController::class, 'setPayslipVisibility'])->whereNumber('id');
 
     // Payroll → Payslips (Phase 5). Generated from a completed run; PDF via dompdf.
     Route::get('/payroll/payslips',                    [PayslipController::class, 'index']);
@@ -448,6 +520,19 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/payroll/reports/departments', [PayrollReportController::class, 'departments']);
     Route::get('/payroll/reports/components',  [PayrollReportController::class, 'components']);
     Route::get('/payroll/reports/trends',      [PayrollReportController::class, 'trends']);
+
+    // Statutory registers — the documents a month is FILED with, as opposed to
+    // the reports above, which are for reading. Keyed by payroll run because a
+    // register must reflect what was actually paid, not a fresh calculation.
+    Route::get('/payroll/runs/{run}/registers/pf',   [StatutoryRegisterController::class, 'pf'])->whereNumber('run');
+    Route::get('/payroll/runs/{run}/registers/esic', [StatutoryRegisterController::class, 'esic'])->whereNumber('run');
+    Route::get('/payroll/runs/{run}/registers/pt',   [StatutoryRegisterController::class, 'pt'])->whereNumber('run');
+    Route::get('/payroll/runs/{run}/registers/lwf',  [StatutoryRegisterController::class, 'lwf'])->whereNumber('run');
+
+    // The salary transfer advice. Separate from the registers because it moves
+    // money rather than reporting on it.
+    Route::get('/payroll/runs/{run}/bank-advice',     [StatutoryRegisterController::class, 'bankAdvice'])->whereNumber('run');
+    Route::get('/payroll/runs/{run}/bank-advice.csv', [StatutoryRegisterController::class, 'bankAdviceCsv'])->whereNumber('run');
     Route::get('/payroll/reports/export',      [PayrollReportController::class, 'export']);
 
     // Enterprise Salary Reports (Phase 2) — read-only over structures/snapshots/revisions.
@@ -543,7 +628,17 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
 // Gated on the GROUP rather than inside each method: a method that forgets the
 // check is how a list-everything endpoint ends up open, which is exactly what
 // happened in the first draft of ReimbursementController.
-Route::middleware(['auth:sanctum', 'hr.manage'])->prefix('hr')->group(function () {
+//
+// `permission:hr_attendance,view_global` REPLACES the old `hr.manage` gate. That
+// gate was a hardcoded list of role strings, so changing who may run HR meant
+// editing PHP and deploying. This reads the permission grid an admin ticks in
+// Staff Management, which is the whole point of the grid existing.
+//
+// Nobody loses access in the swap: `permissions:sync` grants hr_attendance to
+// exactly the roles canManageHrQueue() admitted (hr_executive, hr_recruiter),
+// and admins bypass the grid entirely. `permissions:audit` proves it per user
+// by running both rules side by side.
+Route::middleware(['auth:sanctum', 'permission:hr_attendance,view_global'])->prefix('hr')->group(function () {
     // ── Demo requests ───────────────────────────────────────────────────
     // Inbound enquiries. Unclaimed ones (tenant_id null) are visible to every
     // workspace until somebody starts working on one.
@@ -605,3 +700,11 @@ Route::middleware(['auth:sanctum', 'hr.advances'])->prefix('hr')->group(function
     Route::post('/advances/{id}/note',                     [AdvanceController::class, 'note']);
     Route::get('/advances/{id}/attachments/{attachmentId}', [AdvanceController::class, 'attachment']);
 });
+
+// A punch selfie. Signed, not authenticated: the attendance register renders
+// these in an <img>, which sends no Authorization header. See the controller.
+Route::get('/hr/attendance/{attendance}/selfie/{which}',
+    [\App\Http\Controllers\Api\Hr\AttendanceSelfieController::class, 'show'])
+    ->whereIn('which', ['in', 'out'])
+    ->name('hr.attendance.selfie')
+    ->middleware('signed');

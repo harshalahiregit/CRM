@@ -4,16 +4,20 @@ import { useTheme } from '@/context/ThemeContext'
 import {
   Bell, LayoutGrid, FileText, AlarmClock, Send, History as HistoryIcon,
   Search, X, Eye, CheckCheck, Check, ExternalLink, RefreshCw, Power, Pencil, Plus,
-  Mail, MessageSquare, Sparkles, Clock, ShieldAlert,
+  Mail, MessageSquare, Sparkles, Clock, ShieldAlert, Megaphone,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import { GRAD, priorityStyle, statusStyle, TYPE_LABEL, CHANNELS, timeAgo } from './ui'
+import ComposeTab from './ComposeTab'
 
 const fmtDate = (d) => d ? new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
 
 const TABS = [
   { key: 'center',    label: 'Notification Center', icon: LayoutGrid },
+  // Composing lives here rather than on a page of its own: a second
+  // announcements screen is how the same notice goes out twice from two places.
+  { key: 'compose',   label: 'Send Announcement',   icon: Megaphone },
   { key: 'templates', label: 'Templates',           icon: FileText },
   { key: 'rules',     label: 'Reminder Rules',       icon: AlarmClock },
   { key: 'queue',     label: 'Queue Monitor',        icon: Send },
@@ -55,6 +59,7 @@ export default function NotificationCenter() {
       </div>
 
       {tab === 'center' && <CenterTab catalog={catalog} showToast={showToast} />}
+      {tab === 'compose' && <ComposeTab showToast={showToast} />}
       {tab === 'templates' && <TemplatesTab catalog={catalog} showToast={showToast} />}
       {tab === 'rules' && <RulesTab catalog={catalog} showToast={showToast} />}
       {tab === 'queue' && <QueueTab showToast={showToast} />}

@@ -14,6 +14,8 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Repositories\Purchase\PurchaseKickoffRepository;
 use App\Services\Notifications\NotificationService;
+use App\Services\Purchase\PurchaseVendorNotificationService;
+use App\Services\Shared\OnlineMeetingService;
 use App\Models\Purchase\PurchaseMomActionItem;
 use App\Models\Purchase\PurchaseMomDecision;
 use App\Models\Purchase\PurchaseMomIssue;
@@ -21,6 +23,7 @@ use App\Support\Purchase\PurchaseKickoffStatus as Status;
 use App\Support\Purchase\PurchaseMomApprovalStatus as MomStatus;
 use App\Support\Purchase\PurchaseMomActionStatus;
 use App\Support\Purchase\PurchaseMomIssueStatus;
+use App\Support\Shared\BusinessTime;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
@@ -42,6 +45,15 @@ class PurchaseKickoffService
     public function __construct(
         private PurchaseKickoffRepository $repo,
         private NotificationService $notifications,
+        // The vendor's OWN bell (purchase_vendor_notifications). Its store had
+        // exactly two writers — documents and onboarding — so nothing a meeting
+        // ever did reached the vendor in-app.
+        //
+        // Required, NOT `?Foo $bell = null`: the container prefers the default
+        // for a parameter that has one, so a nullable dependency is silently
+        // never injected and every write here becomes a no-op. Nothing
+        // constructs this service by hand, so there is nothing to be lenient for.
+        private PurchaseVendorNotificationService $vendorBell,
     ) {
     }
 
@@ -91,10 +103,14 @@ class PurchaseKickoffService
                 'count' => $g->count(),
             ])->sortByDesc('count')->values()->all();
 
+        $businessNow = BusinessTime::now($tenantId);
+
         return [
             'total'         => $m()->count(),
-            'today'         => $m()->whereDate('scheduled_at', now()->toDateString())->count(),
-            'upcoming'      => $m()->open()->whereNotNull('scheduled_at')->where('scheduled_at', '>=', now())->count(),
+            // Measured on the tenant's own clock: scheduled_at is a wall clock
+            // in that zone, so a UTC now() pushed evening meetings into tomorrow.
+            'today'         => $m()->whereDate('scheduled_at', $businessNow->toDateString())->count(),
+            'upcoming'      => $m()->open()->whereNotNull('scheduled_at')->where('scheduled_at', '>=', $businessNow)->count(),
             'scheduled'     => $m()->where('status', Status::SCHEDULED)->count(),
             'delayed'       => $m()->where('status', Status::DELAYED)->count(),
             'completed'     => $m()->where('status', Status::COMPLETED)->count(),
@@ -131,9 +147,38 @@ class PurchaseKickoffService
     }
 
     /** Schedule a kickoff against a Purchase vendor. */
+    /**
+     * A kick-off happens once per vendor — see KickoffOnce, the same rule and
+     * the same message the shared engine uses.
+     *
+     * The default meeting type IS kickoff, so the common way to break this is
+     * leaving the picker alone on a meeting meant to be a progress review.
+     */
+    private function assertKickoffIsTheFirst(?string $type, int $vendorId, int $tenantId, ?int $excludeId = null): void
+    {
+        if (! \App\Support\Shared\KickoffOnce::applies($type)) {
+            return;
+        }
+
+        $existing = PurchaseKickoffMeeting::where('tenant_id', $tenantId)
+            ->where('purchase_vendor_id', $vendorId)
+            ->where('meeting_type', \App\Support\Shared\KickoffOnce::TYPE)
+            ->whereNotIn('status', \App\Support\Shared\KickoffOnce::IGNORED_STATUSES)
+            ->when($excludeId, fn ($q) => $q->whereKeyNot($excludeId))
+            ->orderBy('id')
+            ->first();
+
+        if ($existing) {
+            throw new BusinessException(\App\Support\Shared\KickoffOnce::message($existing), 422);
+        }
+    }
+
     public function schedule(array $data, User $actor): PurchaseKickoffMeeting
     {
         $vendor = $this->resolveVendor($data['purchase_vendor_id'], $actor->tenant_id);
+
+        $type = $data['meeting_type'] ?? \App\Support\Purchase\PurchaseMeetingTypeCatalog::DEFAULT;
+        $this->assertKickoffIsTheFirst($type, $vendor->id, $actor->tenant_id);
 
         $meeting = PurchaseKickoffMeeting::create([
             'tenant_id'              => $actor->tenant_id,
@@ -141,7 +186,7 @@ class PurchaseKickoffService
             'purchase_vendor_id'     => $vendor->id,
             'purchase_onboarding_id' => $data['purchase_onboarding_id'] ?? $this->onboardingIdFor($vendor),
             'title'                  => $data['title'] ?? $this->defaultTitle($vendor),
-            'meeting_type'           => $data['meeting_type'] ?? \App\Support\Purchase\PurchaseMeetingTypeCatalog::DEFAULT,
+            'meeting_type'           => $type,
             'reference'              => $data['reference'] ?? null,
             'agenda'                 => $data['agenda'] ?? null,
             // Born a draft — saving records the meeting but tells nobody. Going
@@ -166,6 +211,25 @@ class PurchaseKickoffService
             'meeting_passcode'       => $data['meeting_passcode'] ?? null,
             'meeting_host_link'      => $data['meeting_host_link'] ?? null,
         ]);
+
+        // Mint the join link now, while the meeting is being scheduled.
+        //
+        // It used to be a separate button the scheduler had to remember to press
+        // — and on the Purchase side that button posted to the shared engine's
+        // route, so it never worked at all. An online meeting with no link is
+        // not a meeting anyone can attend, so this happens as part of creating
+        // one. In-person meetings are left alone.
+        if (empty($meeting->meeting_link) && app(OnlineMeetingService::class)->wantsLink($meeting)) {
+            try {
+                app(OnlineMeetingService::class)->createMeeting($meeting, $data['meeting_platform'] ?? null);
+                $meeting->refresh();
+            } catch (\Throwable $e) {
+                // A link that cannot be minted must not lose the meeting.
+                Log::channel('purchase')->warning('Kickoff link generation failed', [
+                    'meeting_id' => $meeting->id, 'error' => $e->getMessage(),
+                ]);
+            }
+        }
 
         $this->syncOnboardingPointer($meeting);
 
@@ -198,7 +262,18 @@ class PurchaseKickoffService
             'location' => $meeting->location,
         ];
         $effStart = $data['scheduled_at'] ?? $meeting->scheduled_at;
-        $effEnd = $data['end_at'] ?? $meeting->end_at;
+        // Not simply the old end: moving the start moves the end with it, so a
+        // reschedule keeps the meeting's length instead of stretching it.
+        $effEnd = $this->rescheduledEnd($data, $meeting->scheduled_at, $meeting->end_at, $meeting->tenant_id);
+
+        // Changing an existing meeting's type INTO a kick-off is the other way
+        // to end up with two. Excludes itself, so re-saving the only kick-off
+        // does not refuse its own existence.
+        if (array_key_exists('meeting_type', $data)) {
+            $this->assertKickoffIsTheFirst(
+                $data['meeting_type'], (int) $meeting->purchase_vendor_id, (int) $meeting->tenant_id, $meeting->id,
+            );
+        }
 
         $meeting->update(array_filter([
             'title'             => $data['title'] ?? null,
@@ -213,7 +288,7 @@ class PurchaseKickoffService
             'department'        => $data['department'] ?? null,
             'client_name'       => $data['client_name'] ?? null,
             'scheduled_at'      => $data['scheduled_at'] ?? null,
-            'end_at'            => $data['end_at'] ?? null,
+            'end_at'            => $effEnd,
             // Always derived from the effective start+end — never client-sent.
             'duration_minutes'  => $this->computeDuration($effStart, $effEnd),
             'mode'              => $data['mode'] ?? null,
@@ -239,6 +314,15 @@ class PurchaseKickoffService
             'mode' => $meeting->mode,
             'location' => $meeting->location,
         ];
+        // Moving the meeting must re-arm its reminders. reminders_sent records
+        // which windows have fired; leaving it as-is meant a meeting whose 24h
+        // reminder had already gone out could be moved a week later and never
+        // remind anyone again.
+        if ($before['scheduled_at'] !== optional($meeting->scheduled_at)->toDateTimeString()) {
+            $meeting->reminders_sent = [];
+            $meeting->saveQuietly();
+        }
+
         if ($wasPublished && $meeting->scheduled_at && ($scheduleChanged || array_key_exists('participants', $data))) {
             $this->notifyParticipants($meeting->fresh('participants'), true);
         }
@@ -308,14 +392,87 @@ class PurchaseKickoffService
      * Derive the meeting duration (minutes) from start+end. Returns null when
      * either bound is missing or the window is non-positive.
      */
+    /**
+     * The end a reschedule implies.
+     *
+     * Moving a meeting moved only its start: the end stayed on the old absolute
+     * time, so dragging a 09:00-10:00 meeting to 17:06 left it ending at 10:00
+     * THE NEXT DAY, and the derived duration went from 60 minutes to 1014. The
+     * row then read as a "60 minute" meeting that the clock said was still in
+     * progress seventeen hours later.
+     *
+     * A person moving a meeting is moving the appointment, not stretching it,
+     * so the end travels with the start and the length is preserved. An
+     * explicit end always wins — that is someone deliberately changing the
+     * length, which is a different intent.
+     */
+    private function rescheduledEnd(array $data, $currentStart, $currentEnd, ?int $tenantId)
+    {
+        if (array_key_exists('end_at', $data) && ! empty($data['end_at'])) {
+            return $data['end_at'];
+        }
+        if (empty($data['scheduled_at']) || empty($currentStart) || empty($currentEnd)) {
+            return $currentEnd;
+        }
+
+        $oldStart = BusinessTime::parse($currentStart, $tenantId);
+        $newStart = BusinessTime::parse($data['scheduled_at'], $tenantId);
+        $oldEnd   = BusinessTime::parse($currentEnd, $tenantId);
+        if (! $oldStart || ! $newStart || ! $oldEnd || $oldStart->equalTo($newStart)) {
+            return $currentEnd;
+        }
+
+        // Keep the length the meeting actually had, not the stale duration column.
+        $minutes = $oldStart->diffInMinutes($oldEnd, false);
+        if ($minutes <= 0) {
+            return $currentEnd;
+        }
+
+        return $newStart->copy()->addMinutes((int) $minutes);
+    }
+
+    /**
+     * Drop a row in the vendor's own bell.
+     *
+     * Separate from notifyParticipants(), which e-mails the roster: a
+     * participant is a named person with an address, while the bell belongs to
+     * the vendor ACCOUNT and is what they see when they next open the portal.
+     * A vendor who does not read the e-mail had no other way to learn a meeting
+     * had been booked, moved, or had expired.
+     *
+     * Never allowed to break the operation it reports on — a bell that cannot
+     * be written is not a reason to fail scheduling a meeting.
+     */
+    private function tellVendor(PurchaseKickoffMeeting $meeting, string $type, string $title, ?string $message = null): void
+    {
+        try {
+            $this->vendorBell->notify(
+                $meeting->purchase_vendor_id,
+                (int) $meeting->tenant_id,
+                $type,
+                $title,
+                $message,
+                '/purchase-portal/kickoff',
+            );
+        } catch (\Throwable $e) {
+            Log::channel('purchase')->warning('Vendor bell write failed', [
+                'meeting_id' => $meeting->id, 'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     private function computeDuration($scheduledAt, $endAt): ?int
     {
         if (empty($scheduledAt) || empty($endAt)) {
             return null;
         }
         try {
-            $minutes = \Illuminate\Support\Carbon::parse($scheduledAt)
-                ->diffInMinutes(\Illuminate\Support\Carbon::parse($endAt), false);
+            // Through BusinessTime so a bare wall clock and an offset-bearing
+            // instant are read on the same clock. Parsed by two different rules
+            // the pair would differ by the tenant's offset and the duration
+            // would come out hours wrong.
+            $minutes = BusinessTime::parse($scheduledAt)
+                ->diffInMinutes(BusinessTime::parse($endAt), false);
         } catch (\Throwable) {
             return null;
         }
@@ -329,29 +486,94 @@ class PurchaseKickoffService
      */
     private function notifyParticipants(PurchaseKickoffMeeting $meeting, bool $isUpdate): void
     {
+        // The same news, in the vendor's bell. E-mail reaches named people; this
+        // reaches the account, which is what the portal shows.
+        $when = $meeting->scheduled_at ? $meeting->scheduled_at->format('d M Y, g:i A') : 'a date to be confirmed';
+        $this->tellVendor(
+            $meeting,
+            $isUpdate ? 'meeting.updated' : 'meeting.scheduled',
+            $isUpdate ? 'Meeting updated: '.$meeting->title : 'Meeting scheduled: '.$meeting->title,
+            ($isUpdate ? 'The details changed. It is now on ' : 'Scheduled for ').$when.'.',
+        );
+
         $meeting->loadMissing('participants', 'vendor');
 
         $vendorName = $meeting->vendor?->company_name;
-        $when = $meeting->scheduled_at ? $meeting->scheduled_at->format('d M Y, g:i A') : 'a date to be confirmed';
-        $where = $meeting->mode === 'online'
-            ? ($meeting->meeting_link ? " Join link: {$meeting->meeting_link}" : '')
-            : ($meeting->location ? " at {$meeting->location}" : '');
+        $when = $meeting->scheduled_at ? $meeting->scheduled_at->format('d M Y, g:i A T') : 'a date to be confirmed';
+
+        // Say BOTH where it is and how to join, whenever both are known.
+        //
+        // This used to read `mode === 'online'`, which meant a hybrid meeting —
+        // or one whose mode was capitalised, or not set — carried no join link
+        // at all, however carefully the link had been generated. An invitation
+        // to an online meeting without its link is an invitation to nothing.
+        $where = '';
+        if ($meeting->location) {
+            $where .= " Location: {$meeting->location}.";
+        }
+        if ($meeting->meeting_link) {
+            // Not the link itself. It is released when the participant marks
+            // attendance in the portal, which is the only evidence there is of
+            // who turned up to a call held on Google Meet, Zoom or Teams — see
+            // MeetingAttendanceGate. Putting it here put the meeting one click
+            // from the inbox and left the register empty.
+            $where .= ' This meeting is online. Open it in the portal and mark your attendance to get the joining link: '
+                .\App\Support\FrontendUrl::to('/purchase-portal/governance');
+        }
+
         $subject = ($isUpdate ? 'Updated: ' : 'Invitation: ')."{$meeting->title}";
         $body = ($isUpdate ? 'The details of this meeting have changed. ' : '')
             ."You are invited to the kickoff meeting \"{$meeting->title}\""
             .($vendorName ? " with {$vendorName}" : '')
             .", scheduled for {$when}.{$where}";
 
-        foreach ($meeting->participants as $participant) {
-            if (! $participant->email) {
-                continue;
+        /*
+         * The vendor's own account address, and the person who called the
+         * meeting.
+         *
+         * This used to e-mail the typed participant roster and nobody else, so a
+         * meeting scheduled for a vendor without anybody hand-adding a
+         * participant row invited no one at all, and the organiser never got a
+         * copy of what they had sent. The vendor and the organiser are the two
+         * people certainly involved, and neither had to be on the roster.
+         *
+         * De-duplicated by address, so somebody already listed is not written to
+         * twice.
+         */
+        $sent = [];
+        $send = function (?string $to) use (&$sent, $subject, $body, $meeting) {
+            $key = strtolower(trim((string) $to));
+            if ($key === '' || isset($sent[$key])) {
+                return;
             }
+            $sent[$key] = true;
             $this->notifications->email(
-                $participant->email, $subject, $body,
+                $to, $subject, $body,
                 ['category' => 'Purchase', 'purchase_kickoff_meeting_id' => $meeting->id],
                 $meeting->tenant_id,
             );
+        };
+
+        foreach ($meeting->participants as $participant) {
+            $send($participant->email);
+
+            // And in the bell, for participants who have a login. E-mail alone
+            // means a meeting invitation lives only in an inbox somebody may
+            // never open; the in-app notice carries the same join link.
+            if ($participant->user_id) {
+                app(\App\Services\NotificationService::class)->notify(
+                    (int) $participant->user_id,
+                    (int) $meeting->tenant_id,
+                    'purchase_kickoff_invite',
+                    $subject,
+                    $body,
+                    '/app/purchase/kickoff/'.$meeting->id,
+                );
+            }
         }
+
+        $send($meeting->vendor?->email);
+        $send($meeting->creator?->email);
     }
 
     /** The vendor's most recent earlier meeting (for continuity — Meeting.docx §11). */
@@ -670,10 +892,13 @@ class PurchaseKickoffService
             $status = $row['attendance_status'] ?? null;
             if ($status && in_array($status, PurchaseKickoffParticipant::ATTENDANCE, true)) {
                 $attended = in_array($status, PurchaseKickoffParticipant::ATTENDING, true);
-                $participant->update(['attendance_status' => $status, 'attended' => $attended]);
+                // A tick made by hand outranks anything observed — see MeetingJoinRecorder.
+                $participant->update(['attendance_status' => $status, 'attended' => $attended,
+                    'attendance_source' => \App\Services\Shared\MeetingJoinRecorder::SOURCE_MANUAL]);
             } else {
                 $attended = ! empty($row['attended']);
-                $participant->update(['attended' => $attended, 'attendance_status' => $attended ? 'Present' : 'Absent']);
+                $participant->update(['attended' => $attended, 'attendance_status' => $attended ? 'Present' : 'Absent',
+                    'attendance_source' => \App\Services\Shared\MeetingJoinRecorder::SOURCE_MANUAL]);
             }
             $attended ? $present++ : $absent++;
         }
@@ -692,7 +917,7 @@ class PurchaseKickoffService
         $meeting->loadMissing('participants', 'vendor');
 
         $vendorName = $meeting->vendor?->company_name;
-        $when    = $meeting->scheduled_at ? $meeting->scheduled_at->format('d M Y, g:i A') : 'a date to be confirmed';
+        $when = $meeting->scheduled_at ? $meeting->scheduled_at->format('d M Y, g:i A T') : 'a date to be confirmed';
         $where   = $meeting->location ? " at {$meeting->location}" : '';
         $subject = "Reminder: {$meeting->title}";
         $body    = "This is a reminder for the kickoff meeting \"{$meeting->title}\""
@@ -735,10 +960,15 @@ class PurchaseKickoffService
         }
 
         $now = now();
+        // A stored wall clock needs a wall clock to compare against, and this
+        // sweep crosses tenants whose zones may differ — so the WHERE is only a
+        // coarse filter, padded by the widest spread of real UTC offsets. The
+        // exact call happens per meeting below, on true instants.
+        $window = BusinessTime::now();
         $meetings = PurchaseKickoffMeeting::whereIn('status', [Status::SCHEDULED, Status::DELAYED])
             ->whereNotNull('scheduled_at')
-            ->where('scheduled_at', '>', $now)
-            ->where('scheduled_at', '<=', (clone $now)->addMinutes($offsets->max()))
+            ->where('scheduled_at', '>', (clone $window)->subHours(14))
+            ->where('scheduled_at', '<=', (clone $window)->addMinutes($offsets->max())->addHours(14))
             ->with('participants', 'vendor')
             ->get();
 
@@ -746,6 +976,10 @@ class PurchaseKickoffService
         foreach ($meetings as $meeting) {
             $already = collect($meeting->reminders_sent ?? [])->map(fn ($k) => (string) $k);
             $minutesUntil = (int) round($now->diffInMinutes($meeting->scheduled_at, false));
+            // Already under way — the padded window lets a few of these through.
+            if ($minutesUntil < 0) {
+                continue;
+            }
             $due = $offsets->filter(fn ($o) => ! $already->contains((string) $o) && $minutesUntil <= $o)->values();
             if ($due->isEmpty()) {
                 continue;
@@ -759,15 +993,214 @@ class PurchaseKickoffService
         return $sent;
     }
 
+    /**
+     * Follow-ups AFTER a meeting has happened.
+     *
+     * The reminder runner only ever looked forward (`scheduled_at > now`), so
+     * once a meeting started nothing else was sent — the minutes could sit
+     * unwritten indefinitely with no nudge to anyone.
+     *
+     * Tracked in the same reminders_sent list but under an `after:` key, so a
+     * 60-minute BEFORE reminder and a 60-minute AFTER follow-up cannot be
+     * mistaken for each other and cancel one another out.
+     */
+    public function runDueFollowUps(): int
+    {
+        $offsets = collect(config('meetings.followup_offsets_minutes', []))
+            ->map(fn ($m) => (int) $m)->filter(fn ($m) => $m > 0)->unique()->sort()->values();
+        if ($offsets->isEmpty()) {
+            return 0;
+        }
+
+        $now = now();
+        // Coarse, wall-clock, tenant-zone-padded — as in runDueReminders.
+        $window = BusinessTime::now();
+        $meetings = PurchaseKickoffMeeting::whereIn('status', [Status::SCHEDULED, Status::DELAYED, Status::COMPLETED])
+            ->whereNotNull('scheduled_at')
+            ->where('scheduled_at', '<=', (clone $window)->addHours(14))
+            ->where('scheduled_at', '>=', (clone $window)->subMinutes($offsets->max() + 1440)->subHours(14))
+            ->with('participants', 'vendor')
+            ->get();
+
+        $sent = 0;
+        foreach ($meetings as $meeting) {
+            // Once the minutes are out, the follow-up has no purpose.
+            if (MomStatus::isDistributable($meeting->mom_status)) {
+                continue;
+            }
+            $already = collect($meeting->reminders_sent ?? [])->map(fn ($k) => (string) $k);
+            $minutesSince = (int) round($meeting->scheduled_at->diffInMinutes($now, false));
+            // Has not happened yet — the padded window can reach past now.
+            if ($minutesSince < 0) {
+                continue;
+            }
+            $due = $offsets->filter(fn ($o) => ! $already->contains("after:{$o}") && $minutesSince >= $o)->values();
+            if ($due->isEmpty()) {
+                continue;
+            }
+            $this->dispatchFollowUp($meeting, (int) $due->max());
+            $meeting->reminders_sent = $already->merge($due->map(fn ($o) => "after:{$o}"))->unique()->values()->all();
+            $meeting->saveQuietly();
+            $sent++;
+        }
+
+        return $sent;
+    }
+
+    /**
+     * Tell people when a meeting has expired — it ended while still open, and
+     * nobody completed or cancelled it.
+     *
+     * Reminders look forward and follow-ups chase the minutes; neither says the
+     * plain thing, which is that the meeting's slot has passed and the record is
+     * still sitting open. The vendor portal was still offering a Join button for
+     * it. One notice per meeting, recorded in the same reminders_sent ledger
+     * under an `expired` key so a re-run cannot repeat it.
+     *
+     * Bounded by a lookback window so switching this on does not mail the roster
+     * of every meeting anyone ever left open. A meeting that expired last March
+     * is not news.
+     *
+     * @return int number of meetings a notice was sent for
+     */
+    public function runDueExpiryNotices(): int
+    {
+        $lookbackHours = (int) config('meetings.expiry_notice_lookback_hours', 48);
+        if ($lookbackHours <= 0) {
+            return 0;
+        }
+
+        // Coarse, wall-clock, tenant-zone-padded — as in runDueReminders. The
+        // exact call is made per meeting, on that tenant's own clock.
+        $window = BusinessTime::now();
+        $meetings = PurchaseKickoffMeeting::whereIn('status', [Status::SCHEDULED, Status::DELAYED])
+            ->whereNotNull('scheduled_at')
+            ->where('scheduled_at', '<=', (clone $window)->addHours(14))
+            ->where('scheduled_at', '>=', (clone $window)->subHours($lookbackHours + 38))
+            ->with('participants', 'vendor')
+            ->get();
+
+        $sent = 0;
+        foreach ($meetings as $meeting) {
+            // is_expired is the same derivation the screens use, so a meeting
+            // can never be shown as expired without being notified, or the
+            // reverse.
+            if (! $meeting->is_expired) {
+                continue;
+            }
+
+            $endedAt = $meeting->ends_at;
+            if (! $endedAt || $endedAt->diffInHours(BusinessTime::now($meeting->tenant_id), false) > $lookbackHours) {
+                continue;
+            }
+
+            $already = collect($meeting->reminders_sent ?? [])->map(fn ($k) => (string) $k);
+            if ($already->contains('expired')) {
+                continue;
+            }
+
+            $this->dispatchExpiryNotice($meeting);
+            $meeting->reminders_sent = $already->push('expired')->unique()->values()->all();
+            $meeting->saveQuietly();
+            $sent++;
+        }
+
+        return $sent;
+    }
+
+    /** One "this meeting has expired" e-mail to every participant with an address. */
+    private function dispatchExpiryNotice(PurchaseKickoffMeeting $meeting): void
+    {
+        $vendorName = $meeting->vendor?->company_name;
+        $when = $meeting->scheduled_at ? $meeting->scheduled_at->format('d M Y, g:i A') : 'its scheduled time';
+        $subject = "Expired: {$meeting->title}";
+        $body = "The meeting \"{$meeting->title}\""
+            .($vendorName ? " with {$vendorName}" : '')
+            ." was scheduled for {$when} and that time has now passed"
+            .' without the meeting being marked complete or cancelled.'
+            .' Its join link is no longer offered.'
+            .' Please close it off, or reschedule it if it still needs to happen.';
+
+        foreach ($meeting->participants as $participant) {
+            if ($participant->email) {
+                $this->notifications->email(
+                    $participant->email, $subject, $body,
+                    ['category' => 'System', 'purchase_kickoff_meeting_id' => $meeting->id],
+                    $meeting->tenant_id,
+                );
+            }
+
+            // And in the bell, as the invitation already does. This notice went
+            // out by e-mail only, so a participant with a login and no address
+            // was never told the meeting had lapsed — and one with both heard
+            // about it only in a mailbox they may never open.
+            if ($participant->user_id) {
+                try {
+                    app(\App\Services\NotificationService::class)->notify(
+                        (int) $participant->user_id,
+                        (int) $meeting->tenant_id,
+                        'purchase_kickoff_expired',
+                        $subject,
+                        $body,
+                        '/app/purchase/kickoff/'.$meeting->id,
+                    );
+                } catch (\Throwable $e) {
+                    Log::channel('purchase')->warning('Participant expiry bell failed', [
+                        'meeting_id' => $meeting->id, 'user_id' => $participant->user_id, 'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+
+        $this->tellVendor(
+            $meeting,
+            'meeting.expired',
+            'Meeting expired: '.$meeting->title,
+            'Its scheduled time passed without the meeting being completed or cancelled.',
+        );
+
+        Log::channel('purchase')->info('Purchase kickoff expiry notice sent', [
+            'meeting_id' => $meeting->id, 'tenant_id' => $meeting->tenant_id,
+        ]);
+    }
+
+    private function dispatchFollowUp(PurchaseKickoffMeeting $meeting, int $offsetMinutes): void
+    {
+        $vendorName = $meeting->vendor?->company_name;
+        $when = $meeting->scheduled_at ? $meeting->scheduled_at->format('d M Y, g:i A T') : 'recently';
+        $subject = "Follow-up: {$meeting->title}";
+        $body = "The meeting \"{$meeting->title}\""
+            .($vendorName ? " with {$vendorName}" : '')
+            ." was held on {$when}. The minutes have not been published yet —"
+            .' they will be shared here as soon as they are approved.';
+
+        foreach ($meeting->participants as $participant) {
+            if (! $participant->email) {
+                continue;
+            }
+            $this->notifications->email(
+                $participant->email, $subject, $body,
+                ['category' => 'Purchase', 'purchase_kickoff_meeting_id' => $meeting->id],
+                $meeting->tenant_id,
+            );
+        }
+        Log::channel('purchase')->info('Purchase kickoff follow-up sent', [
+            'meeting_id' => $meeting->id, 'offset_minutes' => $offsetMinutes,
+        ]);
+    }
+
     private function dispatchAutoReminder(PurchaseKickoffMeeting $meeting, int $offsetMinutes): void
     {
         $vendorName = $meeting->vendor?->company_name;
-        $when = $meeting->scheduled_at ? $meeting->scheduled_at->format('d M Y, g:i A') : 'a date to be confirmed';
+        $when = $meeting->scheduled_at ? $meeting->scheduled_at->format('d M Y, g:i A T') : 'a date to be confirmed';
         $lead = $offsetMinutes >= 1440 ? (intdiv($offsetMinutes, 1440).' day(s)')
             : ($offsetMinutes >= 60 ? (intdiv($offsetMinutes, 60).' hour(s)') : $offsetMinutes.' minutes');
-        $where = $meeting->mode === 'online'
-            ? ($meeting->meeting_link ? " Join link: {$meeting->meeting_link}" : '')
-            : ($meeting->location ? " at {$meeting->location}" : '');
+        $online = $meeting->mode === 'online' && $meeting->meeting_link;
+        // A reminder carries the way IN to the meeting, not the way past it —
+        // see MeetingAttendanceGate. Staff go to the console, everyone else to
+        // the portal; one URL for both sends half of them to a login screen
+        // they have no account for.
+        $where = $online ? '' : ($meeting->location ? " at {$meeting->location}" : '');
         $subject = "Reminder: {$meeting->title} in {$lead}";
         $body = "This is a reminder that the meeting \"{$meeting->title}\""
             .($vendorName ? " with {$vendorName}" : '')
@@ -777,8 +1210,13 @@ class PurchaseKickoffService
             if (! $participant->email) {
                 continue;
             }
+            $go = $online
+                ? ' Mark your attendance to get the joining link: '.($participant->user_id
+                    ? \App\Support\FrontendUrl::to('/app/purchase/kickoff/'.$meeting->id)
+                    : \App\Support\FrontendUrl::to('/purchase-portal/governance'))
+                : '';
             $this->notifications->email(
-                $participant->email, $subject, $body,
+                $participant->email, $subject, $body.$go,
                 ['category' => 'Purchase', 'purchase_kickoff_meeting_id' => $meeting->id],
                 $meeting->tenant_id,
             );
@@ -791,7 +1229,7 @@ class PurchaseKickoffService
     /* ── Labelled supporting documents (multiple upload) ────────────────── */
 
     /**
-     * @param  array<int, \Illuminate\Http\UploadedFile|null>  $files
+     * @param  array<int, UploadedFile|null>  $files
      * @param  array<int, string|null>  $labels
      */
     public function uploadDocuments(PurchaseKickoffMeeting $meeting, array $files, array $labels, User $actor, ?int $actionItemId = null)

@@ -95,11 +95,17 @@ class TransportContainer extends Model
      * active_container_key has no such gap: the database computes it however
      * the row arrives.
      *
-     * This is acceptable today because nothing writes containers that way. It
-     * will not be acceptable for a bulk container import, which is the obvious
-     * next thing to write here. Anyone doing that must either go through this
-     * model or call normalise() themselves — and should read this before
-     * writing it, not after.
+     * This is acceptable today because nothing writes containers that way.
+     *
+     * IT STOPS BEING ACCEPTABLE ON ONE TRIGGER: **a bulk container import, or
+     * any back-dated correction.** Anyone building either must write through
+     * this model or call normalise() directly; a row that skips it is invisible
+     * to CTD-001 search while looking perfectly correct on screen.
+     *
+     * AND THAT SAME TRIGGER ACTIVATES A SECOND LATENT DEFECT — **D-53**, where
+     * two CLOSED attachment windows may overlap because the database enforces
+     * only the ACTIVE one. The two are unrelated in mechanism and identical in
+     * timing. Read both before writing the import: this residual and D-53.
      */
     protected static function booted(): void
     {

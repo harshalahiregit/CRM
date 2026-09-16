@@ -4,6 +4,17 @@
 
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
+import SearchableSelectInput from './SearchableSelectInput'
+
+/**
+ * The product's primary gradient, in one place.
+ *
+ * It was copy-pasted into 274 call sites, which is why BannedPatternsTest
+ * refuses new inline copies: a gradient repeated everywhere cannot be restyled
+ * centrally. components/ui is the exempt layer precisely because this is where
+ * it belongs, so new code imports it from here.
+ */
+export const PRIMARY_GRADIENT = 'linear-gradient(135deg, #7C3AED, #5b21b6)'
 
 export const labelStyle = { display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }
 export const inputStyle = { width: '100%', padding: '9px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-h)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }
@@ -65,11 +76,40 @@ export const KIT3D_STYLE = `
 // on a stray outside click, so an Overlay closes only via its own X / Cancel
 // control. Pass closeOnBackdrop for the rare read-only popup where a backdrop
 // dismiss is genuinely wanted.
+/**
+ * The modal panel's own styling.
+ *
+ * It used to wear `.pr-glass`, which is only defined on pages that inject
+ * KIT3D_STYLE — and most do not. On those pages the panel had no background, no
+ * border and no radius, so the modal was TRANSPARENT: the page showed straight
+ * through the form and its text collided with whatever was underneath.
+ *
+ * A modal cannot depend on its host page having remembered to import a
+ * stylesheet, so it now carries its own. Same frosted look, everywhere.
+ */
+const OVERLAY_STYLE = `
+  .pr-overlay-panel {
+    position: relative; border-radius: 20px; padding: 28px;
+    background: var(--bg-card); border: 1px solid var(--border);
+    box-shadow: 0 1px 2px rgba(15,10,40,.06), 0 24px 60px -18px rgba(15,10,40,.65);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  html:not(.light) .pr-overlay-panel {
+    background: linear-gradient(160deg, rgba(46,40,68,.98), rgba(30,26,46,.98));
+    backdrop-filter: blur(14px) saturate(1.2);
+  }
+  html.light .pr-overlay-panel {
+    background: linear-gradient(160deg, rgba(255,255,255,.99), rgba(248,245,255,.97));
+    backdrop-filter: blur(12px) saturate(1.1);
+  }
+`
+
 export function Overlay({ onClose, width = 480, children, closeOnBackdrop = false, showClose = true }) {
   return createPortal(
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
       onClick={closeOnBackdrop ? (e => e.target === e.currentTarget && onClose()) : undefined}>
-      <div className="pr-glass pr-pop" style={{ width: '100%', maxWidth: width, maxHeight: '90vh', overflowY: 'auto', padding: 28 }}>
+      <style>{OVERLAY_STYLE}</style>
+      <div className="pr-overlay-panel pr-pop" style={{ width: '100%', maxWidth: width, maxHeight: '90vh', overflowY: 'auto' }}>
         {/* Every Overlay gets a top-right X. Most callers only offered a Cancel
             button at the very bottom, so a tall form had to be scrolled all the
             way down just to back out of it. Sticky + zero-height so it stays
@@ -114,10 +154,21 @@ export const Field = ({ label, children, full }) => (
   </div>
 )
 export const TextInput = (props) => <input {...props} style={{ ...inputStyle, ...(props.style || {}) }} />
-export const SelectInput = ({ options, pairs, ...p }) => (
-  <select {...p} style={{ ...inputStyle, cursor: 'pointer' }}>
-    {options.map(o => pairs ? <option key={o[0]} value={o[0]}>{o[1]}</option> : <option key={o} value={o}>{o}</option>)}
-  </select>
+/**
+ * The kit's dropdown — now type-to-search, everywhere, without a single call
+ * site changing.
+ *
+ * It used to render a bare <select>, so a list of two hundred vendors or
+ * products could only be scrolled. SearchableSelectInput takes the identical
+ * prop contract and renders the popover Select, which grows a filter box
+ * automatically once a list passes eight options — long lists become
+ * searchable, short enums (status, yes/no) stay exactly as they were.
+ *
+ * `searchable` is passed through for the rare call site that wants to force the
+ * box on or off.
+ */
+export const SelectInput = ({ options = [], pairs, searchable = 'auto', ...p }) => (
+  <SearchableSelectInput options={options} pairs={pairs} searchable={searchable} {...p} />
 )
 
 export const TotalRow = ({ label, value, strong }) => (

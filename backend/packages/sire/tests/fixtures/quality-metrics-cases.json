@@ -1,0 +1,58 @@
+{
+  "_comment": [
+    "EXECUTABLE SPECIFICATION for SIRE quality rates.",
+    "",
+    "Rates are where dashboards lie. Every one of these has a denominator that can",
+    "be zero, and 0/0 must render as 'no data' — not 0%, which reads as 'perfect',",
+    "and not NaN, which reads as broken. That distinction is the point of this file."
+  ],
+  "cases": [
+    { "name": "reopen rate: three of twelve resolved were reopened",
+      "input": { "resolved": 12, "reopened": 3 }, "metric": "reopen_rate",
+      "expect": { "value": 0.25, "display": "25%", "sample": 12 } },
+
+    { "name": "reopen rate: nothing resolved yet is NO DATA, not zero",
+      "input": { "resolved": 0, "reopened": 0 }, "metric": "reopen_rate",
+      "expect": { "value": null, "display": "—", "sample": 0 } },
+
+    { "name": "reopen rate: reopened without any resolved is still no data",
+      "input": { "resolved": 0, "reopened": 4 }, "metric": "reopen_rate",
+      "expect": { "value": null, "display": "—" } },
+
+    { "name": "qa rejection rate counts CYCLES, not issues",
+      "input": { "qa_cycles": 20, "qa_failed_cycles": 7 }, "metric": "qa_rejection_rate",
+      "expect": { "value": 0.35, "display": "35%", "sample": 20 } },
+
+    { "name": "qa rejection rate: no QA run in the window is no data",
+      "input": { "qa_cycles": 0, "qa_failed_cycles": 0 }, "metric": "qa_rejection_rate",
+      "expect": { "value": null, "display": "—" } },
+
+    { "name": "regression rate over issues created in the window",
+      "input": { "created": 40, "regressions": 6 }, "metric": "regression_rate",
+      "expect": { "value": 0.15, "display": "15%", "sample": 40 } },
+
+    { "name": "recurrence rate over issues created in the window",
+      "input": { "created": 40, "recurring": 10 }, "metric": "recurrence_rate",
+      "expect": { "value": 0.25, "display": "25%", "sample": 40 } },
+
+    { "name": "a rate of exactly zero with real data is 0%, NOT no data",
+      "input": { "created": 40, "regressions": 0 }, "metric": "regression_rate",
+      "expect": { "value": 0, "display": "0%", "sample": 40 } },
+
+    { "name": "a rate of one hundred percent",
+      "input": { "created": 5, "regressions": 5 }, "metric": "regression_rate",
+      "expect": { "value": 1, "display": "100%" } },
+
+    { "name": "rounding is to one decimal, not to the nearest whole percent",
+      "input": { "created": 7, "regressions": 1 }, "metric": "regression_rate",
+      "expect": { "display": "14.3%" } },
+
+    { "name": "a numerator larger than the denominator is clamped and flagged",
+      "input": { "resolved": 5, "reopened": 8 }, "metric": "reopen_rate",
+      "expect": { "value": 1, "display": "100%", "suspect": true } },
+
+    { "name": "a small sample is flagged so nobody reads 100% off three issues",
+      "input": { "created": 3, "regressions": 3 }, "metric": "regression_rate",
+      "expect": { "value": 1, "display": "100%", "low_confidence": true } }
+  ]
+}

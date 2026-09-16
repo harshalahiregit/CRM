@@ -28,7 +28,8 @@ return new class extends Migration {
             $table->unsignedBigInteger('restored_from_version_id')->nullable();
             $table->timestamps();
 
-            $table->unique(['purchase_document_id', 'version_no']);
+            // Named: the generated name exceeds MySQL's 64-character identifier limit.
+            $table->unique(['purchase_document_id', 'version_no'], 'pur_doc_versions_doc_version_uq');
         });
     }
 

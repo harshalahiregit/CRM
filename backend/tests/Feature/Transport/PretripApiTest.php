@@ -103,14 +103,14 @@ class PretripApiTest extends TestCase
         $trip->forceFill(['status' => TripStatus::APPROVED])->save();
 
         $v = $this->vehicleSvc->create([
-            'registration_number' => 'MH12AB'.random_int(1000, 9999),
+            'registration_number' => 'MH12AB'.self::uniqueSeq(4),
             'vehicle_type' => 'Trailer 40ft', 'capacity_tonnes' => 30,
         ], $tenantId, $actor);
         $v = $this->vehicleSvc->transitionTo($v, VehicleStatus::AVAILABLE, $tenantId, $actor);
 
         $d = $this->driverSvc->create([
             'name' => 'Ramesh '.Str::random(4),
-            'licence_number' => 'RJ14'.random_int(100000, 999999),
+            'licence_number' => 'RJ14'.self::uniqueSeq(6),
             'licence_class' => 'HMV',
             'licence_valid_until' => now()->addYears(2)->toDateString(),
         ], $tenantId, $actor);

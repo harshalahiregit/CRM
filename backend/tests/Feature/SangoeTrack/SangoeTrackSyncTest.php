@@ -60,7 +60,7 @@ class SangoeTrackSyncTest extends TestCase
     private function fakeRemote(array $rows): void
     {
         Http::fake([
-            'track.test/api/login' => Http::response(['token' => 'jwt-abc'], 200),
+            'track.test/api/Hrm/login' => Http::response(['token' => 'jwt-abc'], 200),
             'track.test/api/Hrm/attendence-history' => Http::response(['data' => $rows], 200),
         ]);
     }
@@ -80,7 +80,7 @@ class SangoeTrackSyncTest extends TestCase
         }
 
         Http::fake([
-            'track.test/api/login' => Http::response(['token' => 'jwt-abc'], 200),
+            'track.test/api/Hrm/login' => Http::response(['token' => 'jwt-abc'], 200),
             'track.test/api/Hrm/attendence-history' => $sequence,
         ]);
     }
@@ -160,10 +160,10 @@ class SangoeTrackSyncTest extends TestCase
 
     public function test_status_is_derived_by_the_crm_not_the_payload(): void
     {
-        $employee = $this->employee();               // General shift: 09:00 +15m grace
+        $employee = $this->employee();               // General shift: 09:30 +15m grace
         $this->fakeRemote([
-            ['date' => '2026-09-07', 'check_in' => '09:05', 'check_out' => '18:00'],  // within grace
-            ['date' => '2026-09-08', 'check_in' => '09:45', 'check_out' => '18:00'],  // beyond grace
+            ['date' => '2026-09-07', 'check_in' => '09:40', 'check_out' => '18:30'],  // within grace
+            ['date' => '2026-09-08', 'check_in' => '10:00', 'check_out' => '18:30'],  // beyond grace
         ]);
 
         $this->sync()->syncEmployee($employee, '9', '2026');
@@ -184,7 +184,7 @@ class SangoeTrackSyncTest extends TestCase
 
         $row = HrAttendance::where('employee_id', $employee->id)->firstOrFail();
         $this->assertSame('10.50', (string) $row->working_hours);
-        $this->assertSame('2.50', (string) $row->overtime_hours);   // STANDARD_HOURS = 8
+        $this->assertSame('1.50', (string) $row->overtime_hours);   // STANDARD_HOURS = 9
     }
 
     /** An explicit remote status wins and is not overwritten by the punch. */
@@ -303,7 +303,7 @@ class SangoeTrackSyncTest extends TestCase
 
     public function test_a_login_without_a_token_fails_loudly(): void
     {
-        Http::fake(['track.test/api/login' => Http::response(['message' => 'ok'], 200)]);
+        Http::fake(['track.test/api/Hrm/login' => Http::response(['message' => 'ok'], 200)]);
 
         $this->expectException(SangoeTrackException::class);
         app(SangoeTrackClient::class)->login(true);
@@ -312,7 +312,7 @@ class SangoeTrackSyncTest extends TestCase
     public function test_an_upstream_error_is_a_sangoetrack_exception(): void
     {
         Http::fake([
-            'track.test/api/login' => Http::response(['token' => 'jwt-abc'], 200),
+            'track.test/api/Hrm/login' => Http::response(['token' => 'jwt-abc'], 200),
             'track.test/api/Hrm/attendence-history' => Http::response(['message' => 'boom'], 500),
         ]);
 

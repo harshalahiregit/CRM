@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   Truck, UserRound, Plus, X, ShieldCheck, ShieldAlert, AlertTriangle,
-  Loader2, RefreshCw, Info,
+  Loader2, RefreshCw, Info, Search, CalendarClock,
 } from 'lucide-react'
 import Modal from '@/components/ui/Modal'
 import { useToast } from '@/components/ui/Toast'
-import { transportAllocationApi } from '@/services/transportApi'
+import { transportAllocationApi, transportResourceCommitmentApi } from '@/services/transportApi'
 import { Chip } from './MasterFormFields'
 import { vehicleStatusCfg, driverAvailabilityCfg } from '../constants'
 
@@ -69,11 +69,29 @@ function CheckLine({ check }) {
 }
 
 /** A selectable candidate. Ineligible rows stay visible but cannot be chosen. */
-function CandidateRow({ row, kind, onPick, picking }) {
+function CandidateRow({ row, kind, onPick, picking, commitment }) {
   const [open, setOpen] = useState(false)
   const s = row.subject
   const eligible = row.eligible
   const statusChip = kind === 'vehicle' ? vehicleStatusCfg(s.status) : driverAvailabilityCfg(s.availability)
+
+  /*
+   * When one of OUR trips is holding this resource, the eligibility service
+   * also reports it — as "Already assigned to trip #12 — release that
+   * assignment first." That is the same fact as the sentence above, told with
+   * a raw database id, and showing both makes the panel read like a debug log.
+   *
+   * So that ONE blocker is dropped when a commitment sentence is present.
+   * Everything else the verdict says still shows: UX §35 requires the reason,
+   * and this drops a duplicate, not a reason.
+   *
+   * Keyed on the check's `key`, never on its wording — Person 2 owns that text
+   * and may reword it at any time without telling us.
+   */
+  const assignmentDetail = (row.checks || []).find((c) => c.key === 'assignment' && !c.passed)?.detail
+  const visibleBlockers = (row.blockers || []).filter(
+    (b) => !(commitment && assignmentDetail && b === assignmentDetail),
+  )
 
   return (
     <div style={{
@@ -110,10 +128,29 @@ function CandidateRow({ row, kind, onPick, picking }) {
         )}
       </div>
 
+      {/* WHY IT IS BUSY, AND WHEN IT COMES FREE.
+          This sentence comes from OUR OWN trips (trip_assignments +
+          transport_trips), not from the eligibility verdict. It is shown above
+          the blockers because it is the one a dispatcher can act on: it names a
+          date. Absence of a commitment does NOT mean the resource is free —
+          only that no trip of ours is holding it, in which case the blockers
+          below are all we honestly know. */}
+      {commitment && (
+        <div style={{
+          marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)',
+          display: 'flex', gap: 6, alignItems: 'flex-start',
+        }}>
+          <CalendarClock size={12} style={{ marginTop: 2, flexShrink: 0, color: 'var(--text-muted)' }} />
+          <p style={{ margin: 0, fontSize: 12, color: 'var(--text-p)', fontWeight: 600 }}>
+            {commitment.sentence}
+          </p>
+        </div>
+      )}
+
       {/* UX §35 — the blocker is inline and specific, never a bare label. */}
-      {!eligible && (
-        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
-          {(row.blockers || []).map((b, i) => (
+      {!eligible && (visibleBlockers.length > 0 || open) && (
+        <div style={{ marginTop: 8, paddingTop: commitment ? 0 : 8, borderTop: commitment ? 'none' : '1px solid var(--border)' }}>
+          {visibleBlockers.map((b, i) => (
             <p key={i} style={{ margin: '0 0 4px', fontSize: 11.5, color: '#f87171', display: 'flex', gap: 6, alignItems: 'flex-start' }}>
               <AlertTriangle size={12} style={{ marginTop: 1, flexShrink: 0 }} /> {b}
             </p>
@@ -148,11 +185,21 @@ export default function AllocationPanel({ trip, assignment, canAssign, onChanged
   const [picking, setPicking] = useState(false)
   const [refusal, setRefusal] = useState(null)
   const [releasing, setReleasing] = useState(false)
+  const [search, setSearch] = useState('')
+  const [commitments, setCommitments] = useState({ vehicles: {}, drivers: {} })
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      setCandidates(await transportAllocationApi.candidates(trip.id, showIneligible))
+      // Two calls, on purpose. Candidates come from the eligibility services
+      // (Person 2's); commitments come from our own trips. Merging here rather
+      // than server-side keeps us out of somebody else's contract.
+      const [rows, held] = await Promise.all([
+        transportAllocationApi.candidates(trip.id, showIneligible),
+        transportResourceCommitmentApi.all(),
+      ])
+      setCandidates(rows)
+      setCommitments(held)
     } catch (e) {
       toast.error(e?.message || 'Could not load candidates.')
     } finally {
@@ -161,6 +208,10 @@ export default function AllocationPanel({ trip, assignment, canAssign, onChanged
   }, [trip.id, showIneligible])
 
   useEffect(() => { if (picker) load() }, [picker, load])
+
+  // Clear the box each time the picker opens, so it never opens pre-filtered
+  // with a term the user typed for the other resource.
+  useEffect(() => { setSearch('') }, [picker])
 
   const pick = async (id) => {
     setPicking(true); setRefusal(null)
@@ -201,8 +252,42 @@ export default function AllocationPanel({ trip, assignment, canAssign, onChanged
   const hasVehicle = !!assignment?.vehicle_id
   const hasDriver = !!assignment?.driver_id
   const anything = hasVehicle || hasDriver
-  const rows = picker === 'vehicle' ? candidates.vehicles : candidates.drivers
-  const eligibleCount = (rows || []).filter((r) => r.eligible).length
+  const allRows = (picker === 'vehicle' ? candidates.vehicles : candidates.drivers) || []
+  const heldBy = picker === 'vehicle' ? commitments.vehicles : commitments.drivers
+
+  /*
+   * THE SEARCH BOX — a client-side filter over the list already fetched.
+   *
+   * Deliberately not a server query: the candidates endpoint belongs to the
+   * eligibility services and adding a search parameter would be a contract
+   * change to somebody else's surface. Everything matched on is already in the
+   * payload, so no extra data is needed.
+   *
+   * A dispatcher types a registration or a name, not a code, so matching is
+   * case-insensitive and ignores spaces and punctuation in BOTH the term and
+   * the value — "mh12" and "MH 12" find the same truck, which is the whole
+   * point when registrations are written four different ways.
+   */
+  const normalise = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  const term = normalise(search)
+
+  const rows = term
+    ? allRows.filter((r) => {
+        const s = r.subject
+        const haystack = picker === 'vehicle'
+          ? [s.registration_number, s.vehicle_type]
+          : [s.name, s.driver_code, s.licence_class]
+        return haystack.some((v) => normalise(v).includes(term))
+      })
+    : allRows
+
+  const eligibleCount = rows.filter((r) => r.eligible).length
+
+  // Grouped rather than one flat list: "who can I pick" and "who cannot I pick,
+  // and why" are two different questions, and interleaving them made the reader
+  // scan chips to tell them apart.
+  const readyRows = rows.filter((r) => r.eligible)
+  const blockedRows = rows.filter((r) => !r.eligible)
 
   return (
     <>
@@ -245,13 +330,48 @@ export default function AllocationPanel({ trip, assignment, canAssign, onChanged
       <Modal open={!!picker} onClose={() => setPicker(null)}
         title={picker === 'vehicle' ? 'Choose a vehicle' : 'Choose a driver'} size="lg">
         <div style={{ display: 'grid', gap: 12 }}>
+          {/* Search first, because with fifty vehicles it is the only thing
+              on this screen anyone uses. */}
+          <div style={{ position: 'relative' }}>
+            <Search size={14} style={{
+              position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)',
+              color: 'var(--text-muted)', pointerEvents: 'none',
+            }} />
+            <input
+              autoFocus
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={picker === 'vehicle' ? 'Search by vehicle number…' : 'Search by driver name…'}
+              style={{
+                width: '100%', padding: '9px 32px 9px 32px', borderRadius: 9, fontSize: 13,
+                border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-p)',
+              }}
+            />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                aria-label="Clear search"
+                style={{
+                  position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                  border: 'none', background: 'transparent', cursor: 'pointer',
+                  color: 'var(--text-muted)', display: 'flex', padding: 3,
+                }}
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)', flex: 1, minWidth: 200 }}>
-              {eligibleCount} eligible for {trip.trip_number}. A resource must be free, compliant and meet the order's requirements.
+            <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)', flex: 1, minWidth: 180 }}>
+              {eligibleCount === 0
+                ? `None ready for ${trip.trip_number}`
+                : `${eligibleCount} ready for ${trip.trip_number}`}
+              {search && ` · filtered from ${allRows.length}`}
             </p>
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-p)', cursor: 'pointer' }}>
               <input type="checkbox" checked={showIneligible} onChange={(e) => setShowIneligible(e.target.checked)} />
-              Show ineligible
+              Show the ones that cannot be used
             </label>
             <button onClick={load} disabled={loading} style={{ ...btn.base, padding: '6px 11px' }}>
               <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> Refresh
@@ -266,30 +386,62 @@ export default function AllocationPanel({ trip, assignment, canAssign, onChanged
 
           {loading && <div style={{ padding: 24, textAlign: 'center' }}><Loader2 size={18} className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div>}
 
-          {!loading && (rows || []).length === 0 && (
+          {!loading && rows.length === 0 && (
             <div style={{ padding: 26, textAlign: 'center' }}>
               <ShieldAlert size={22} style={{ color: 'var(--text-muted)', margin: '0 auto 8px' }} />
               <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-h)', margin: 0 }}>
-                No {picker === 'vehicle' ? 'vehicles' : 'drivers'} to show
+                {search
+                  ? `Nothing matches “${search}”`
+                  : `No ${picker === 'vehicle' ? 'vehicles' : 'drivers'} to show`}
               </p>
               <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '4px 0 0' }}>
-                {showIneligible
-                  ? `Add a ${picker} first, or check the master list.`
-                  : 'Tick “Show ineligible” to see which ones exist and why they cannot be used.'}
+                {search
+                  ? 'Check the spelling, or clear the search to see everything.'
+                  : showIneligible
+                    ? `Add a ${picker} first, or check the master list.`
+                    : 'Tick the box above to see which ones exist and why they cannot be used.'}
               </p>
             </div>
           )}
 
-          {!loading && (rows || []).length > 0 && (
-            <div style={{ display: 'grid', gap: 8, maxHeight: 420, overflowY: 'auto' }}>
-              {rows.map((r) => (
-                <CandidateRow key={r.subject.id} row={r} kind={picker} onPick={pick} picking={picking} />
-              ))}
+          {!loading && rows.length > 0 && (
+            <div style={{ display: 'grid', gap: 14, maxHeight: 420, overflowY: 'auto' }}>
+              {readyRows.length > 0 && (
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <GroupLabel text="Ready to assign" count={readyRows.length} />
+                  {readyRows.map((r) => (
+                    <CandidateRow key={r.subject.id} row={r} kind={picker} onPick={pick}
+                      picking={picking} commitment={heldBy?.[r.subject.id]} />
+                  ))}
+                </div>
+              )}
+
+              {blockedRows.length > 0 && (
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <GroupLabel text="Cannot be used right now" count={blockedRows.length} />
+                  {blockedRows.map((r) => (
+                    <CandidateRow key={r.subject.id} row={r} kind={picker} onPick={pick}
+                      picking={picking} commitment={heldBy?.[r.subject.id]} />
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
       </Modal>
     </>
+  )
+}
+
+/** A plain heading between the two groups — no chip, no colour, just a label. */
+function GroupLabel({ text, count }) {
+  return (
+    <p style={{
+      margin: 0, fontSize: 10.5, fontWeight: 800, letterSpacing: '.06em',
+      textTransform: 'uppercase', color: 'var(--text-muted)',
+    }}>
+      {text} · {count}
+    </p>
   )
 }
 

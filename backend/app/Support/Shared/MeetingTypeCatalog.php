@@ -19,53 +19,68 @@ use App\Models\Shared\MeetingType;
  */
 class MeetingTypeCatalog
 {
-    /** @var array<int, array{types: array<string,string>, templates: array<string,array>}> */
+    /** @var array<string, array{types: array<string,string>, templates: array<string,array>}> keyed "<configBase>:<tenantId>" */
     private array $cache = [];
 
+    /*
+     * $base names the CONFIG BASELINE to merge the tenant's rows over —
+     * 'meetings' for the shared engine, 'purchase_meetings' for Purchase. The
+     * meeting_types table is tenant-scoped and carries nothing module-specific,
+     * so both engines share those rows; only the built-in list underneath
+     * differs. Defaulting to 'meetings' leaves every existing caller unchanged.
+     */
+
     /** Effective key → label map for the tenant (built-ins + active DB rows). */
-    public function types(int $tenantId): array
+    public function types(int $tenantId, string $base = 'meetings'): array
     {
-        return $this->resolve($tenantId)['types'];
+        return $this->resolve($tenantId, $base)['types'];
     }
 
     /** Effective key → agenda-template map for the tenant. */
-    public function templates(int $tenantId): array
+    public function templates(int $tenantId, string $base = 'meetings'): array
     {
-        return $this->resolve($tenantId)['templates'];
+        return $this->resolve($tenantId, $base)['templates'];
     }
 
     /** Valid type keys for the tenant — for the meeting_type validation rule. */
-    public function keys(int $tenantId): array
+    public function keys(int $tenantId, string $base = 'meetings'): array
     {
-        return array_keys($this->types($tenantId));
+        return array_keys($this->types($tenantId, $base));
     }
 
     /** Label for one key, falling back to a humanised key. */
-    public function label(int $tenantId, ?string $key): string
+    public function label(int $tenantId, ?string $key, string $base = 'meetings'): string
     {
-        $key = $key ?: config('meetings.default_type', 'kickoff');
+        $key = $key ?: config($base.'.default_type', 'kickoff');
 
-        return $this->types($tenantId)[$key]
+        return $this->types($tenantId, $base)[$key]
             ?? ucfirst(str_replace('_', ' ', (string) $key));
     }
 
     /** Drop a tenant's memoised merge (call after a settings write). */
     public function forget(int $tenantId): void
     {
-        unset($this->cache[$tenantId]);
+        // Every baseline for this tenant — a settings write changes the rows
+        // both engines read, so clearing only one would leave the other stale.
+        foreach (array_keys($this->cache) as $k) {
+            if (str_ends_with((string) $k, ':'.$tenantId)) {
+                unset($this->cache[$k]);
+            }
+        }
     }
 
     /**
      * @return array{types: array<string,string>, templates: array<string,array>}
      */
-    private function resolve(int $tenantId): array
+    private function resolve(int $tenantId, string $base = 'meetings'): array
     {
-        if (isset($this->cache[$tenantId])) {
-            return $this->cache[$tenantId];
+        $cacheKey = $base.':'.$tenantId;
+        if (isset($this->cache[$cacheKey])) {
+            return $this->cache[$cacheKey];
         }
 
-        $types = config('meetings.types', []);
-        $templates = config('meetings.templates', []);
+        $types = config($base.'.types', []);
+        $templates = config($base.'.templates', []);
 
         $rows = MeetingType::query()
             ->where('tenant_id', $tenantId)
@@ -85,6 +100,6 @@ class MeetingTypeCatalog
             }
         }
 
-        return $this->cache[$tenantId] = ['types' => $types, 'templates' => $templates];
+        return $this->cache[$cacheKey] = ['types' => $types, 'templates' => $templates];
     }
 }

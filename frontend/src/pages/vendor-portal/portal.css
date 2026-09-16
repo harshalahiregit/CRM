@@ -688,3 +688,42 @@
   .portal-hero-illus { display: none; }
   .portal-content { padding: 16px; }
 }
+
+
+/* ── Sidebar search ──────────────────────────────────────────────────────────
+   Matches the admin sidebar's affordance: filter the nav rather than scroll it.
+   Sits outside .portal-nav so it does not scroll away with the list. */
+.portal-nav-search {
+  position: relative;
+  margin: 8px 12px;
+  flex-shrink: 0;
+}
+.portal-nav-search input {
+  width: 100%;
+  padding: 8px 26px 8px 30px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-h);
+  font-size: 13px;
+  outline: none;
+}
+.portal-nav-search input:focus {
+  border-color: var(--border-purple, rgba(124,58,237,0.45));
+}
+.portal-nav-search input::placeholder { color: var(--text-muted); }
+.portal-nav-search-icon {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  color: var(--text-muted); pointer-events: none;
+}
+.portal-nav-search-clear {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  border: none; background: none; cursor: pointer; color: var(--text-muted);
+  display: flex; align-items: center; padding: 0;
+}
+.portal-nav-empty {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  padding: 10px 16px;
+  margin: 0;
+}

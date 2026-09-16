@@ -99,6 +99,7 @@ class PurchaseWorkforceAdminApiTest extends TestCase
         $w = $wf->create($v, ['full_name' => 'Worker '.Str::random(4), 'dob' => '1990-01-01', 'designation' => 'Fitter']);
         $wf->addDocument($w, 'id_proof', UploadedFile::fake()->create('id.pdf', 5));
         $wf->saveMedical($w, ['fitness_status' => 'Fit', 'exam_date' => now()->toDateString()]);
+        $this->approveMedical($w);
         $wf->saveTraining($w, ['title' => 'Safety', 'status' => 'Completed']);
         $wf->saveInduction($w, ['status' => 'Completed']);
 
@@ -237,5 +238,22 @@ class PurchaseWorkforceAdminApiTest extends TestCase
 
         $this->postJson("/api/purchase/workforce/workers/{$w->id}/activate")->assertStatus(422);
         $this->assertNull($w->fresh()->badge_number);
+    }
+
+    /**
+     * Clear the medical's quality check.
+     *
+     * Since the Medical module, a certificate is not clearance until the quality
+     * team accepts it — so a fixture that needs a worker PAST the medical step
+     * has to say so. Set directly rather than through the workflow service:
+     * what these tests are about is what happens after clearance, not how it is
+     * granted (MedicalGatesTrainingTest covers that).
+     */
+    private function approveMedical(PurchaseWorker $w): void
+    {
+        $w->fresh()->latestMedical?->forceFill([
+            'qc_status' => \App\Support\Medical\MedicalQcStatus::APPROVED,
+            'qc_at'     => now(),
+        ])->save();
     }
 }

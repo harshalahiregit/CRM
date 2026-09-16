@@ -36,10 +36,36 @@ class StatutoryRuleController extends Controller
      */
     public function meta(Request $request)
     {
+        $tenantId = $this->tenant($request);
+
+        // States already carrying a PT rule here, so a jurisdiction this
+        // workspace is genuinely using never disappears from its own screen
+        // because the canonical list has not caught up with a budget.
+        $configured = HrStatutoryRule::where('tenant_id', $tenantId)
+            ->whereNotNull('state')
+            ->distinct()
+            ->pluck('state')
+            ->all();
+
         return response()->json([
             'rule_types'  => HrStatutoryRule::TYPES,
+            // Every state, for the rules that are not state-levied.
             'work_states' => WorkStates::options(),
-            'defaults'    => $this->service->defaults($this->tenant($request)),
+            // PT alone. Roughly a third of the country does not levy it, and
+            // offering those invites a slab that would then deduct — Delhi sat
+            // in this list with nothing to say it collects nothing. The list is
+            // a SETTING, seeded from WorkStates::PT_APPLICABLE, because a state
+            // can begin or repeal the levy in a budget and the people who would
+            // notice are the ones running payroll.
+            'pt_states'   => WorkStates::ptSelectable(
+                (array) app(\App\Services\Settings\SettingsService::class)
+                    ->get($tenantId, 'payroll', 'pt_states', WorkStates::PT_APPLICABLE),
+                $configured
+            ),
+            // Offered so the settings screen can present the full vocabulary to
+            // choose from, rather than the UI holding its own copy.
+            'all_states'  => WorkStates::options(),
+            'defaults'    => $this->service->defaults($tenantId),
         ]);
     }
 
@@ -79,6 +105,19 @@ class StatutoryRuleController extends Controller
             'loan_emi_warn_percent'    => 'nullable|numeric|min:0|max:100',
             'loan_emi_max_percent'     => 'nullable|numeric|min:0|max:100',
             'loan_enforce_eligibility' => 'nullable|boolean',
+            // Which states offer PT. Codes, validated against the vocabulary so
+            // a typo cannot put a state in the list that no rule can match.
+            'pt_states'                => 'nullable|array',
+            'pt_states.*'              => ['string', Rule::in(array_keys(WorkStates::ALL))],
+            // What holds up a run, who may approve it, whether probation gates
+            // leave — judgements about the business, so they belong here rather
+            // than in PHP.
+            'require_bank_for_payroll'       => 'nullable|boolean',
+            'require_pan_for_payroll'        => 'nullable|boolean',
+            'require_aadhaar_for_payroll'    => 'nullable|boolean',
+            'require_work_state_for_payroll' => 'nullable|boolean',
+            'require_separate_approver'      => 'nullable|boolean',
+            'probation_blocks_leave'         => 'nullable|boolean',
         ]);
 
         return response()->json($this->service->saveDefaults($data, $this->tenant($request)));

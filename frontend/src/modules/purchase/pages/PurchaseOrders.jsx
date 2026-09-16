@@ -474,6 +474,10 @@ function OrderFormModal({ editing, setEditing, saving, admin, onClose, onSave })
         <Field label="Order Date"><TextInput type="date" value={f.order_date} onChange={set('order_date')} /></Field>
         <Field label="Expected Delivery"><TextInput type="date" min={today} value={f.expected_delivery_date} onChange={set('expected_delivery_date')} /></Field>
         <Field label="Terms & Conditions" full><textarea value={f.terms} onChange={set('terms')} rows={2} placeholder="Payment terms, delivery terms…" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
+        {/* `notes` was in the form state, the edit seed and the submit payload,
+            with no control anywhere to type into — so the column the backend
+            accepts could never be anything but empty. */}
+        <Field label="Internal Notes" full><textarea value={f.notes} onChange={set('notes')} rows={2} placeholder="For your team — not shown to the vendor" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
@@ -793,6 +797,7 @@ function DetailModal({ order, manage, admin, onClose, onReceive, onAction }) {
         </div>
       )}
 
+      {order.notes && (<><label style={labelStyle}>Internal Notes</label><p style={{ color: 'var(--text-h)', fontSize: 13, margin: '0 0 14px', whiteSpace: 'pre-wrap' }}>{order.notes}</p></>)}
       {order.terms && (<><label style={labelStyle}>Terms</label><p style={{ color: 'var(--text-h)', fontSize: 13, margin: '0 0 14px', whiteSpace: 'pre-wrap' }}>{order.terms}</p></>)}
 
       <label style={labelStyle}>Audit Trail</label>

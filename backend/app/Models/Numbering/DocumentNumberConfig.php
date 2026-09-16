@@ -23,7 +23,7 @@ class DocumentNumberConfig extends Model
     protected $fillable = [
         'tenant_id', 'document_type',
         'format', 'prefix', 'suffix', 'minimum_digits', 'padding',
-        'starting_number', 'reset_rule', 'epoch',
+        'starting_number', 'direction', 'step', 'reset_rule', 'epoch',
         'enabled', 'locked', 'manual_override', 'decrement_on_delete',
         'updated_by',
     ];
@@ -31,6 +31,7 @@ class DocumentNumberConfig extends Model
     protected $casts = [
         'minimum_digits'      => 'integer',
         'starting_number'     => 'integer',
+        'step'                => 'integer',
         'epoch'               => 'integer',
         'enabled'             => 'boolean',
         'locked'              => 'boolean',

@@ -106,7 +106,10 @@ class HelpdeskSettingsService
                 actorId: $actorId,
             );
             if ($user->email) {
-                \Illuminate\Support\Facades\Mail::to($user->email)->send(
+                // Tenant SMTP, never the global mailer.
+                app(\App\Services\Mail\TenantMailer::class)->send(
+                    $user->tenant_id,
+                    $user->email,
                     new \App\Mail\Helpdesk\TicketManagerAppointmentMail($user->name ?: 'there', $scopeLabel, $appointed)
                 );
             }

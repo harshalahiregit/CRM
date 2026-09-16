@@ -15,7 +15,16 @@ class PurchaseVendorRepository extends BaseRepository
     /** Tenant-scoped, filtered + searchable listing. */
     public function filtered(int $tenantId, array $filters): Collection
     {
-        $query = PurchaseVendor::forTenant($tenantId)->with('accountManager:id,name');
+        // The onboarding comes along so the list can say how far each vendor has
+        // got. Activation no longer waits on it, which makes "has this vendor
+        // actually submitted anything?" a question the admin has to be able to
+        // answer while looking at the row they are about to activate.
+        //
+        // purchase_vendor_id is listed explicitly: a column-limited eager load
+        // that omits the foreign key cannot be matched back to its parent, and
+        // Eloquent quietly hands back null for every one of them.
+        $query = PurchaseVendor::forTenant($tenantId)
+            ->with(['accountManager:id,name', 'onboarding:id,purchase_vendor_id,status']);
 
         if (! empty($filters['status']) && $filters['status'] !== 'All') {
             $query->where('status', $filters['status']);

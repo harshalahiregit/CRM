@@ -1,0 +1,99 @@
+{
+  "_comment": [
+    "EXECUTABLE SPECIFICATION for SIRE duplicate scoring.",
+    "Run by tests/similarity.test.mjs and",
+    "backend/tests/Unit/Sire/SireSimilarityTest.php.",
+    "",
+    "Scores are asserted to 4 decimal places where the token sets are small enough",
+    "to verify by hand, and as ranges or orderings where they are not. A scorer",
+    "whose numbers nobody can reproduce is a scorer nobody should trust."
+  ],
+
+  "tokenize_cases": [
+    { "name": "punctuation splits identifiers so stack-trace terms survive",
+      "input": "Null deref in LeadPolicy::view()", "expect": ["null", "deref", "leadpolicy", "view"] },
+    { "name": "stopwords and short tokens are dropped",
+      "input": "It is on the page and in a tab", "expect": ["page", "tab"] },
+    { "name": "trailing plural is normalised, double-s is left alone",
+      "input": "leads errors address process", "expect": ["lead", "error", "address", "process"] },
+    { "name": "numbers of three or more digits are kept as signal",
+      "input": "returns 500 after 20 seconds", "expect": ["return", "500", "second"] },
+    { "name": "empty and nullish input yields nothing",
+      "input": "", "expect": [] },
+    { "name": "duplicate terms collapse to a set",
+      "input": "lead lead lead save", "expect": ["lead", "save"] }
+  ],
+
+  "score_cases": [
+    {
+      "name": "an identical issue scores 1.0 and is very likely",
+      "query":     { "title": "lead save fail", "description": "spinner then nothing", "module": "sales", "section": "leads", "screen": "lead-details", "category": "bug" },
+      "candidate": { "title": "lead save fail", "description": "spinner then nothing", "module": "sales", "section": "leads", "screen": "lead-details", "category": "bug" },
+      "expect": { "score": 1, "label": "very_likely", "title_similarity": 1, "structural_score": 1 }
+    },
+    {
+      "name": "nothing in common scores zero and is filtered out",
+      "query":     { "title": "lead save fail", "description": "spinner", "module": "sales" },
+      "candidate": { "title": "payroll export crash", "description": "csv", "module": "hr" },
+      "expect": { "score": 0, "label": "below_threshold" }
+    },
+    {
+      "name": "same words, different place — text alone cannot carry a duplicate",
+      "query":     { "title": "export fail", "description": "", "module": "sales", "section": "leads", "screen": "lead-list" },
+      "candidate": { "title": "export fail", "description": "", "module": "hr", "section": "payroll", "screen": "payroll-list" },
+      "expect": { "score": 0.5, "label": "possible", "title_similarity": 1, "structural_score": 0 }
+    },
+    {
+      "name": "same place, different words — structure alone cannot either",
+      "query":     { "title": "export fail", "description": "", "module": "sales", "section": "leads", "screen": "lead-list", "category": "bug" },
+      "candidate": { "title": "column sort wrong", "description": "", "module": "sales", "section": "leads", "screen": "lead-list", "category": "bug" },
+      "expect": { "score": 0.3, "label": "below_threshold", "title_similarity": 0, "structural_score": 1 }
+    },
+    {
+      "name": "a missing structural field scores zero rather than being excluded",
+      "query":     { "title": "export fail", "description": "", "module": "sales", "section": null, "screen": null },
+      "candidate": { "title": "export fail", "description": "", "module": "sales", "section": "leads", "screen": "lead-list" },
+      "expect": { "structural_score": 0.4, "structural_matched": ["module"] }
+    },
+    {
+      "name": "a rare shared term adds a bounded boost",
+      "query":     { "title": "leadpolicy deref", "description": "", "module": "sales" },
+      "candidate": { "title": "leadpolicy deref", "description": "", "module": "sales" },
+      "rare_tokens": ["leadpolicy"],
+      "expect": { "score": 0.72, "rare_terms": ["leadpolicy"], "_working": "0.5*1 title + 0.2*0 body + 0.3*0.4 module-only structural = 0.62, +0.10 rare boost" }
+    },
+    {
+      "name": "a candidate that is itself a duplicate is discounted",
+      "query":     { "title": "lead save fail", "description": "", "module": "sales", "section": "leads", "screen": "lead-details", "category": "bug" },
+      "candidate": { "title": "lead save fail", "description": "", "module": "sales", "section": "leads", "screen": "lead-details", "category": "bug", "is_duplicate": true },
+      "expect": { "score": 0.64, "label": "likely" }
+    },
+    {
+      "name": "an issue closed over a year ago is discounted, not excluded",
+      "query":     { "title": "lead save fail", "description": "", "module": "sales", "section": "leads", "screen": "lead-details", "category": "bug" },
+      "candidate": { "title": "lead save fail", "description": "", "module": "sales", "section": "leads", "screen": "lead-details", "category": "bug", "closed_at": "2024-01-01T00:00:00Z" },
+      "now": "2026-06-01T00:00:00Z",
+      "expect": { "score": 0.72, "label": "likely" }
+    },
+    {
+      "name": "an empty title on either side cannot produce a title match",
+      "query":     { "title": "", "description": "spinner then nothing", "module": "sales" },
+      "candidate": { "title": "lead save fail", "description": "spinner then nothing", "module": "sales" },
+      "expect": { "title_similarity": 0 }
+    }
+  ],
+
+  "ranking_cases": [
+    {
+      "name": "candidates come back best-first, thresholded and capped at five",
+      "query": { "title": "lead save fail", "description": "spinner", "module": "sales", "section": "leads", "screen": "lead-details", "category": "bug" },
+      "candidates": [
+        { "id": 1, "title": "lead save fail", "description": "spinner", "module": "sales", "section": "leads", "screen": "lead-details", "category": "bug" },
+        { "id": 2, "title": "lead save slow", "description": "", "module": "sales", "section": "leads", "screen": "lead-details", "category": "bug" },
+        { "id": 3, "title": "payroll crash", "description": "", "module": "hr" },
+        { "id": 4, "title": "lead save fail", "description": "", "module": "sales", "section": "leads", "screen": "lead-details", "category": "bug" }
+      ],
+      "expect": { "returned_ids": [1, 4, 2], "excluded_ids": [3], "descending": true }
+    }
+  ]
+}

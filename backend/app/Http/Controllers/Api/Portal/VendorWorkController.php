@@ -3,13 +3,17 @@
 namespace App\Http\Controllers\Api\Portal;
 
 use App\Http\Controllers\Controller;
+use App\Support\RichText;
 use App\Http\Controllers\Traits\ApiResponse;
 use App\Models\Helpdesk\Ticket;
 use App\Models\Project\Project;
 use App\Models\Project\ProjectExpense;
 use App\Models\Task\Task;
 use App\Services\StatusService;
+use App\Services\Task\TaskService;
+use App\Support\Task\PortalTaskView;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 /**
@@ -166,7 +170,9 @@ class VendorWorkController extends Controller
 
         $ticket = $helpdesk->createTicket([
             'subject'         => $data['subject'],
-            'description'     => $data['body'],
+            // Normalised at the boundary: this text is rendered as HTML in the
+            // agent console, and it arrives from an account anyone can register.
+            'description'     => RichText::fromUntrusted($data['body']),
             'created_by'      => $user->id,
             'requester_name'  => $user->name,
             'requester_email' => $user->email,
@@ -183,18 +189,24 @@ class VendorWorkController extends Controller
     {
         $this->assertOwnTicket($request, $ticket);
 
+        // `*_html` is what the portal renders; the plain-text twin stays for
+        // anything that wants a preview. An agent's reply is HTML, so sending
+        // only the raw string is what showed the vendor `<p>hii</p>` verbatim.
         $replies = $ticket->replies()->orderBy('id')->get(['id', 'sender_type', 'message', 'created_at'])
             ->map(fn ($r) => [
-                'id'      => $r->id,
-                'mine'    => $r->sender_type === 'client',
-                'author'  => $r->sender_type === 'client' ? 'You' : 'Support',
-                'message' => $r->message,
-                'at'      => optional($r->created_at)->toIso8601String(),
+                'id'           => $r->id,
+                'mine'         => $r->sender_type === 'client',
+                'author'       => $r->sender_type === 'client' ? 'You' : 'Support',
+                'message'      => RichText::toText($r->message),
+                'message_html' => RichText::display($r->message),
+                'at'           => optional($r->created_at)->toIso8601String(),
             ]);
 
         return response()->json([
             'id' => $ticket->id, 'subject' => $ticket->subject, 'status' => $ticket->status,
-            'priority' => $ticket->priority, 'description' => $ticket->description,
+            'priority' => $ticket->priority,
+            'description'      => RichText::toText($ticket->description),
+            'description_html' => RichText::display($ticket->description),
             'replies' => $replies,
         ]);
     }
@@ -208,7 +220,7 @@ class VendorWorkController extends Controller
         $helpdesk->addReply($ticket->id, [
             'sender_type' => 'client',   // external requester (shown as the vendor)
             'sender_id'   => null,
-            'message'     => $data['message'],
+            'message'     => RichText::fromUntrusted($data['message']),
         ], (int) $request->user()->tenant_id);
 
         return response()->json(['message' => 'Reply sent'], 201);
@@ -237,9 +249,79 @@ class VendorWorkController extends Controller
         $keys = app(StatusService::class)->keys('task', (int) $request->user()->tenant_id);
         $data = $request->validate(['status' => ['required', Rule::in($keys)]]);
 
-        $task->update(['status' => $data['status']]);
+        /*
+         * Through the service, not a bare $task->update().
+         *
+         * A bare update wrote the column and stopped there: no configured status
+         * workflow was consulted, date_finished was never stamped, and — the one
+         * that mattered — nobody on the admin side was told. A vendor could move
+         * a task to Complete and the only way to find out was to go and look.
+         *
+         * changeStatus() does all three, and treats the vendor as the actor so
+         * they are not notified about their own click.
+         */
+        $task = app(TaskService::class)->changeStatus(
+            (int) $task->id, $data['status'], (int) $request->user()->tenant_id, (int) $request->user()->id,
+        );
 
         return $this->success(['id' => $task->id, 'status' => $task->status], 'Task updated');
+    }
+
+    /* ── One task, in full ───────────────────────────────────────────────────
+     * The list is a list; this is the task itself — the brief, the checklist,
+     * the conversation and the files. Until it existed a vendor could see that
+     * work had been filed against them and had no way to read it or answer it.
+     */
+
+    public function task(Request $request, Task $task)
+    {
+        $this->assertOwnTask($request, $task);
+
+        return $this->success(PortalTaskView::detail($task), 'Task retrieved');
+    }
+
+    /** The vendor answers on the task. Same thread the staff console reads. */
+    public function commentTask(Request $request, Task $task)
+    {
+        $this->assertOwnTask($request, $task);
+
+        $data = $request->validate([
+            // Either a message or a file — an empty post is not a contribution.
+            'body'    => ['nullable', 'string', 'max:5000', 'required_without:files'],
+            'files'   => ['nullable', 'array', 'max:5'],
+            'files.*' => ['file', 'max:10240'],   // 10 MB each, the task-module ceiling
+        ]);
+
+        $user = $request->user();
+
+        // A TPV IS a User, so it authors as itself — the polymorphic author
+        // columns are only needed by Purchase, which has no User row.
+        $comment = app(TaskService::class)->addComment(
+            (int) $task->id,
+            RichText::fromUntrusted($data['body'] ?? ''),
+            (int) $user->tenant_id,
+            (int) $user->id,
+            $request->file('files', []),
+        );
+
+        return $this->success(['id' => $comment->id], 'Comment posted', 201);
+    }
+
+    /**
+     * Download a file on one of the vendor's own tasks.
+     *
+     * The path never reaches the client — TaskFile hides it — so this route is
+     * the only way to the bytes, and it re-checks ownership first.
+     */
+    public function downloadTaskFile(Request $request, Task $task, int $file)
+    {
+        $this->assertOwnTask($request, $task);
+
+        $row = app(TaskService::class)->findFile($file, (int) $task->id, (int) $request->user()->tenant_id);
+
+        abort_unless(Storage::disk('local')->exists($row->file_path), 404, 'File missing from storage.');
+
+        return Storage::disk('local')->download($row->file_path, $row->file_name);
     }
 
     /** A flat list of expenses logged against the vendor's own projects. */

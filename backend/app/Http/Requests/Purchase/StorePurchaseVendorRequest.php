@@ -26,6 +26,14 @@ class StorePurchaseVendorRequest extends FormRequest
             // Format-validated optional fields (§8)
             'phone'               => ['nullable', 'string', 'max:30', 'regex:/^[0-9+\-()\s]{6,30}$/'],
             'website'             => ['nullable', 'string', 'max:200', 'regex:~^(https?://)?([\w-]+\.)+[\w-]{2,}(/\S*)?$~i'],
+            // The person we deal with, and the company details self-registration
+            // collects. Free text for manpower and MSME — suppliers answer
+            // "50-100" and "Yes" as readily as a number or a code.
+            'contact_person'      => 'nullable|string|max:150',
+            'contact_designation' => 'nullable|string|max:120',
+            'company_phone'       => ['nullable', 'string', 'max:30', 'regex:/^[0-9+\-()\s]{6,30}$/'],
+            'manpower'            => 'nullable|string|max:60',
+            'msme'                => 'nullable|string|max:120',
             'gst_number'          => ['nullable', 'string', 'max:20', 'regex:/^[0-9A-Za-z]{1,20}$/'],
             // Required per §8: Company, Vendor Category, Currency
             'category'            => 'required|string|max:120',
@@ -46,6 +54,11 @@ class StorePurchaseVendorRequest extends FormRequest
             'pincode'             => 'nullable|string|max:20',
             'account_manager_id'  => 'nullable|integer',
             'status'              => ['nullable', Rule::in(PurchaseVendorStatus::ALL)],
+            // The first portal password. Optional: left blank, the system
+            // generates one. Either way the vendor is e-mailed what it is,
+            // because that message is the only place it exists in readable form
+            // — nothing on the admin screen can show it afterwards.
+            'password'            => 'nullable|string|min:8|max:100',
         ];
     }
 }

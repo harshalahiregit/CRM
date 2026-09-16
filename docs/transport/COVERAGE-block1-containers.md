@@ -25,11 +25,98 @@
 |---|---|
 | "unique **where applicable**" | `UNIQUE(tenant_id, container_number_normalized)` on the **master**. Uniqueness is true of the physical unit, not of an attachment |
 | "follow configurable format validation" | **DEFERRED** — see §5. No format is specified anywhere |
-| "be searchable" | indexed; endpoint is Block 2/5 |
+| "be searchable" | indexed; **endpoint now built** — `GET /containers/lookup?number=` resolves however the number was typed, and `?search=` filters the list. Both go through the normalised key. The *lifecycle* search (CTD-001 in full) is still Block 5 |
 | "be **normalized** for search" | `container_number_normalized` — upper-cased, non-alphanumerics stripped |
 | "**retain original entered value** where required" | `container_number` stored exactly as typed, beside the normalized key |
 | "maintain historical associations" | association rows are never deleted; `detached_at` is set |
 | "reuse … not simultaneously" | one **active** attachment per container, enforced in the database — see §3 |
+
+## 2a. STOS-CTD §8's clauses (added 2026-09-16, step 5)
+
+§8 was cited in §1 as one line. It is four clauses, and the step-5 check found one of them with
+no test and one not built at all.
+
+| Clause | State |
+|---|---|
+| "must not be treated as identical concepts" | **BUILT** — two tables, two models; a container has no status, dates or customer of its own |
+| "a consignment may contain **one** container" | **BUILT** — `ContainerServiceTest::test_detaching_keeps_the_row_as_history` and the attach path |
+| "a consignment may contain **multiple** containers" | **BUILT** — `ContainerService::attachmentsFor()`; `ContainerServiceTest::test_one_consignment_may_carry_several_containers`. *The schema always allowed it; nothing proved it until now.* The unique index runs container→consignment, never the reverse |
+| "have **other cargo references**" (non-container cargo) | **NOT BUILT** — see §5. No field, entity or example is given for what a non-container cargo reference is |
+| "Consignment ↔ Container as a **controlled** relationship" | **BUILT** — attach/detach only, through the service; no delete path, history retained |
+
+## 2b. Step 6 — the API surface (added 2026-09-16)
+
+Seven endpoints, none in Step 11's API registry and none owned by a Step 12 ticket — the same
+position as Consignment, recorded under the same precedent (D-45).
+
+| Endpoint | Requirement | Proven by |
+|---|---|---|
+| `GET /containers` | §7 searchable · D-44's no-status rule | `test_the_list_can_filter_by_attachment_and_search`, `test_filtering_by_status_is_refused_rather_than_ignored` |
+| `GET /containers/lookup?number=` | **CTD-001** anchor | `test_lookup_finds_a_container_however_the_number_was_typed` |
+| `GET /containers/{id}` | §7 historical associations | `test_a_container_can_be_attached_and_detached` |
+| `GET /consignments/{id}/containers` | **§8** one or several | `test_a_consignment_can_carry_several_containers_over_http` |
+| `POST /containers` | MDM-008 | `test_a_container_can_be_created_and_read_back` |
+| `POST /containers/{id}/attach` | §7 not simultaneously | `test_attaching_a_container_already_on_another_consignment_is_refused` |
+| `POST /containers/{id}/detach` | §7 reuse allowed historically | same test |
+
+**There is no PUT and no DELETE**, and that is a decision rather than an omission: the container
+number is the identity, and §7 requires historical associations be maintained — editing the number
+would rewrite that history and deleting the container would destroy it. Locked by
+`test_there_is_no_update_or_delete_endpoint`, which asserts 405 on both, so nobody adds them
+casually.
+
+**Permissions.** Three keys — `CONTAINER_VIEW`, `CONTAINER_CREATE`, `CONTAINER_ATTACH`. Attach and
+detach deliberately share one: they are a single authority (deciding what is on a consignment), and
+splitting them would let someone attach a container they could not then remove. No `CONTAINER_UPDATE`
+or `CONTAINER_DELETE` is declared, because a key with no operation behind it is a promise the code
+does not keep. **No customer grant on `CONTAINER_VIEW`** — the D-46 reason, which bites hardest here:
+STOS-CTD's Digital Passport is container-keyed, so this is precisely the surface a customer-facing
+route would expose while `SCOPE_OWN` still narrows nothing.
+
+### Two things the two-way check caught at this step
+
+1. `?attached=0` and the falsy-string trap. `validate()` returns the RAW value, and PHP reads the
+   string `"false"` as truthy — so a `boolean` rule plus a PHP ternary could have returned the exact
+   opposite set with a 200. **Probed rather than assumed:** Laravel's `boolean` rule refuses
+   `"true"`/`"false"` with 422 and accepts only `1`/`0`, and the repository uses `array_key_exists`
+   rather than a falsy check. Correct as built, and now locked by a test.
+2. My own assertion was too weak. `assertJsonCount(1, …)` on an attached/unattached filter passes
+   **either way if the filter is inverted**, because each side returns exactly one row. Changed to
+   assert *which* container comes back.
+
+## 2c. Step 7 — the screen (added 2026-09-16)
+
+`/app/transport/containers`, registered in `routes.jsx`, `TransportLayout.jsx` and `Sidebar.jsx`.
+
+| Clause | How the screen carries it |
+|---|---|
+| §7 "retain original entered value" | the number is listed exactly as typed, with **"matched as SGOE4022159"** beneath it — and only when the two differ, otherwise it is the same string twice |
+| §7 "normalized for search" | one search box; spacing, case and punctuation ignored on both sides |
+| §7 "unique where applicable" | the duplicate refusal is shown in full, because it has to explain why two visibly different strings clash: *"already exists in this workspace. It was entered as "ABCD 1234 567", which is the same number."* |
+| §7 "maintain historical associations" | the history drawer — every consignment the container has been on, newest first, the current one marked **ON IT NOW** |
+| §7 "not simultaneously" | one row shows either **Attach** or **Detach**, never both. The state comes from `active_attachments_count`, not from a guess |
+| §8 "multiple containers" | **the consignment detail drawer**, added in this step — see the gap below |
+
+**No edit, no delete, no status filter** — the API offers none of them, so the screen offers none.
+Buttons for operations the server refuses would be a lie with a spinner. The one filter present
+(*On a consignment* / *Free*) is the only question the data can answer honestly.
+
+### The gap the two-way check found this time
+
+The page was built container-first, and it covers §7 completely. **§8 was not on screen at all.**
+"A consignment may contain one container; contain multiple containers" is a statement about the
+*consignment*, and nothing in the UI read the relationship from that side — the Containers screen
+shows container → consignment, which is the other direction. The endpoint
+(`GET /consignments/{id}/containers`) had existed since step 6 with no caller.
+
+Closed by a **Containers panel on the consignment detail drawer**, showing current and historical
+attachments with `detached_at` distinguishing them. Verified in the browser against real data:
+`CONTAINERS (1) · sgoe-402215-9 · 40ft Reefer · On it now`, and the honest empty state on the
+consignment that has none.
+
+*Checking the API against the source would not have found this.* Both the endpoint and the
+requirement existed; nothing connected them, and the checklist row for §8 was already ticked from
+step 6 because the endpoint was built. The row now names the screen, not only the route.
 
 ## 3. The one design question this step must answer
 
@@ -62,6 +149,7 @@ suite runs on sqlite where it would silently pass.
 |---|---|---|
 | **Container-number format validation** (CTD §7 "configurable format validation") | No format is specified in any document. ISO 6346 is the industry standard but **the package never names it**, and the check digit would reject legitimate non-ISO numbers. Inventing a regex would be Hard Rule 1 | Product |
 | **`container_type` as an enum** | **No document anywhere defines its values.** Searched all 30 package documents for `20ft`/`40ft`/`HC`/`high cube`/`ISO 6346` — zero hits — and Step 11 has no container enum and no container DB row. A free-text column, not an enum. Inventing a vocabulary is the D-9 mistake | Product |
+| **Other cargo references** (CTD §8 "have other cargo references") | The package names the concept once and never again — no field, no entity, no example, and no requirement ID in the RTM. Consignment↔Container is specified; consignment↔*anything else* is not. Building a generic "cargo reference" column would be inventing the business rule | Product |
 | `CTD-009` gate/port, `CTD-014` urgent-trip | no entity exists | D-42, D-43 |
 
 ## 5a. Diffed against my own approved proposal (added 2026-09-15)

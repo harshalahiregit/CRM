@@ -3,12 +3,15 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Building2, ClipboardList, FileText, ShieldCheck, CalendarDays, ChevronRight,
-  Hash, Tag, Activity, FileWarning, CalendarClock, Clock,
+  Hash, Tag, Activity, FileWarning, CalendarClock, Clock, Video, X,
 } from 'lucide-react'
 import { purchasePortalApi } from '@/services/purchasePortalApi'
+import MeetingJoinGate from '@/components/portal/MeetingJoinGate'
 import { KIT3D_STYLE, StatusBadge as StatusPill } from '@/components/ui/kit3d'
 import PurchaseRegistrationBadge from '@/modules/purchase/components/PurchaseRegistrationBadge'
 import TemporaryVendorValidityBadge from '@/modules/purchase/components/TemporaryVendorValidityBadge'
+import MedicalPendingBanner from '@/components/medical/MedicalPendingBanner'
+import MeetingScheduleCard from '@/components/portal/MeetingScheduleCard'
 
 const onbCfg = (s) => ({
   In_Progress:  { label: 'In Progress',  color: '#0ea5e9', bg: 'rgba(14,165,233,0.15)' },
@@ -29,6 +32,9 @@ export default function PurchasePortalDashboard() {
   const [checklist, setChecklist] = useState(null)
   const [kickoff, setKickoff] = useState(null)
   const [showWelcome, setShowWelcome] = useState(false)
+  // The join-link popup. Dismissal is remembered PER MEETING id, so a new
+  // meeting pops again but the same one does not nag on every page load.
+  const [linkDismissed, setLinkDismissed] = useState(false)
   const [dismissing, setDismissing] = useState(false)
 
   // Hide immediately, then persist. If the call fails the banner returns on the
@@ -93,9 +99,86 @@ export default function PurchasePortalDashboard() {
     ]
   }, [onb, vendor])
 
+  // Offered while the meeting has not yet ENDED — not only while it is still in
+  // the future. The original test compared the start against the browser clock,
+  // so the popup vanished at the very moment the meeting began and the vendor
+  // lost the link exactly when they needed it.
+  //
+  // Written to fail CLOSED. Asking `!kickoff.is_expired` looks equivalent and is
+  // not: on an endpoint that does not send that field it reads as undefined,
+  // `!undefined` is true, and the popup cheerfully offered a meeting that ended
+  // two days ago. So the meeting must PROVE it is still open — either the server
+  // says which state it is in, or its own end time is still ahead of us.
+  const joinKey = kickoff?.id ? `pv-join-dismissed-${kickoff.id}` : null
+  const meetingOpen = (() => {
+    if (!kickoff?.scheduled_at) return false
+    if (kickoff.timing_state) return kickoff.timing_state === 'upcoming' || kickoff.timing_state === 'live'
+    // No timing from the server: fall back to the meeting's own clock rather
+    // than assuming it is fine.
+    const end = new Date(kickoff.ends_at || kickoff.scheduled_at).getTime()
+    return Number.isFinite(end) && Date.now() < end
+  })()
+  // has_meeting_link, not meeting_link: the link is withheld until attendance
+  // is marked (see MeetingAttendanceGate), so keying the popup on the link
+  // itself would mean it never appeared for the people who most need telling.
+  const showJoin = Boolean(kickoff?.has_meeting_link) && meetingOpen && !linkDismissed
+  useEffect(() => {
+    if (!joinKey) return
+    // localStorage can throw in a private window; a popup is not worth an error.
+    try { if (localStorage.getItem(joinKey)) setLinkDismissed(true) } catch { /* show it */ }
+  }, [joinKey])
+  const dismissJoin = () => {
+    setLinkDismissed(true)
+    try { if (joinKey) localStorage.setItem(joinKey, '1') } catch { /* fine */ }
+  }
+
   return (
     <div style={{ padding: 24 }}>
       <style>{KIT3D_STYLE}</style>
+
+      {/* The medical prerequisite, said before a trainer has to say it. */}
+      <MedicalPendingBanner base="/portal/purchase" to="/purchase-portal/medical" />
+
+      {/* The meeting popup. The e-mail no longer carries a joining link — it
+          points here — so for a vendor already logged in this is the fastest
+          route to marking attendance and getting in. */}
+      {showJoin && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 80, padding: 16 }}>
+          <div className="pr-glass" style={{ padding: 22, width: 420, maxWidth: '95vw', position: 'relative' }}>
+            {/* Closes on the X only — never on a backdrop click. */}
+            <button onClick={dismissJoin} aria-label="Close"
+              style={{ position: 'absolute', top: 10, right: 10, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}>
+              <X size={16} />
+            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(145deg,#7C3AED,#5b21b6)' }}>
+                <Video size={17} color="#fff" />
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-h)' }}>
+              {kickoff.is_live ? 'Your meeting is starting now' : 'Your meeting is online'}
+            </div>
+            </div>
+            <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '0 0 4px', lineHeight: 1.5 }}>
+              {kickoff.title || 'Kickoff meeting'}
+            </p>
+            <p style={{ fontSize: 12.5, color: 'var(--text-h)', fontWeight: 700, margin: '0 0 16px' }}>
+              {fmtDateTime(kickoff.scheduled_at)}
+              {kickoff.is_live && <span style={{ color: '#16a34a', marginLeft: 8 }}>● In progress</span>}
+            </p>
+            <MeetingJoinGate meeting={kickoff} onMark={purchasePortalApi.governance.markAttendance} compact />
+            <button onClick={dismissJoin}
+              style={{ width: '100%', marginTop: 8, padding: '9px 14px', borderRadius: 10, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700 }}>
+              Not now
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* The schedule, with anything that has expired called out. Same component
+          as the TPV portal so both vendors are told the same thing. */}
+      <div style={{ marginBottom: 18 }}>
+        <MeetingScheduleCard load={purchasePortalApi.governance.meetings} to="/purchase-portal/governance" />
+      </div>
 
       {/* Vendor header */}
       <div className="pr-glass" style={{ padding: '20px 22px', borderRadius: 16, marginBottom: 18, display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>

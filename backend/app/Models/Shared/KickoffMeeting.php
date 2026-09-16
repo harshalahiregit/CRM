@@ -2,10 +2,14 @@
 
 namespace App\Models\Shared;
 
+use App\Casts\BusinessDateTime;
 use App\Models\Traits\Auditable;
+use App\Models\Concerns\GeneratesSequentialCode;
 use App\Models\Traits\BelongsToTenant;
+use App\Models\Traits\NormalisesBusinessTimes;
 use App\Models\User;
 use App\Support\Shared\KickoffStatus as Status;
+use App\Support\Shared\MeetingTiming;
 use App\Support\Shared\KickoffSubject;
 use App\Support\Shared\MeetingTypeCatalog;
 use App\Support\Shared\MomApprovalStatus;
@@ -20,7 +24,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  */
 class KickoffMeeting extends Model
 {
-    use Auditable, BelongsToTenant, SoftDeletes;
+    use Auditable, BelongsToTenant, GeneratesSequentialCode, NormalisesBusinessTimes, SoftDeletes;
 
     protected $table = 'kickoff_meetings';
 
@@ -37,6 +41,9 @@ class KickoffMeeting extends Model
         'scheduled_at', 'duration_minutes', 'mode', 'location',
         'original_scheduled_at', 'delay_reason',
         'mom_path', 'minutes', 'completed_at',
+        // When the call itself ran, written by MeetingPresence as people
+        // arrive and leave. The slot above is the plan; this is the record.
+        'actual_start_at', 'actual_end_at', 'presence_seen_at',
         // MOM approval workflow (Meeting.docx). Distribution = the vendor send.
         'mom_status', 'mom_submitted_at', 'mom_submitted_by', 'mom_approved_at',
         'mom_approved_by', 'mom_approval_note', 'mom_distributed_at', 'mom_distributed_by',
@@ -60,9 +67,20 @@ class KickoffMeeting extends Model
     ];
 
     protected $casts = [
-        'scheduled_at' => 'datetime',
-        'end_at' => 'datetime',
-        'original_scheduled_at' => 'datetime',
+        // Person-entered wall clocks in the tenant's timezone, NOT UTC instants —
+        // see App\Casts\BusinessDateTime. The plain 'datetime' cast used to
+        // publish these as UTC, so a 09:00 meeting came back as 14:30 and
+        // walked another +05:30 down the day on every re-save.
+        'scheduled_at' => BusinessDateTime::class,
+        'end_at' => BusinessDateTime::class,
+        // Machine timestamps, NOT wall clocks: nobody types these, they are
+        // stamped as the call happens. UTC like every other `now()` on the
+        // model — BusinessDateTime is for times a person entered, and using
+        // it here would shift them by the tenant's offset.
+        'actual_start_at' => 'datetime',
+        'actual_end_at' => 'datetime',
+        'presence_seen_at' => 'datetime',
+        'original_scheduled_at' => BusinessDateTime::class,
         'completed_at' => 'datetime',
         'acknowledged_at' => 'datetime',
         'duration_minutes' => 'integer',
@@ -99,12 +117,12 @@ class KickoffMeeting extends Model
     {
         static::creating(function (KickoffMeeting $m) {
             if (empty($m->meeting_no)) {
-                $year = date('Y');
-                $n = static::withTrashed()
-                    ->where('tenant_id', $m->tenant_id)
-                    ->whereYear('created_at', $year)
-                    ->count() + 1;
-                $m->meeting_no = sprintf('MTG-%s-%04d', $year, $n);
+                // Highest issued + 1, not count + 1 — see GeneratesSequentialCode.
+                // Deleting a meeting used to make the NEXT one collide on
+                // meeting_no, which is unique per tenant.
+                $m->meeting_no = static::nextSequentialCode(
+                    'meeting_no', 'MTG-'.date('Y').'-', (int) $m->tenant_id, 4,
+                );
             }
         });
     }
@@ -115,7 +133,29 @@ class KickoffMeeting extends Model
         'status_label', 'is_acknowledged', 'subject', 'subject_list',
         'acknowledgement_open', 'acknowledgement_expired', 'can_complete',
         'meeting_type_label', 'mom_status_label',
+        // Clock-derived; see the Timing block below.
+        'ends_at', 'timing_state', 'timing_label', 'is_expired', 'is_live', 'minutes_until_start',
+        // The record of the call itself, not the slot it was booked into.
+        'has_ended', 'held_minutes',
+        // Whether a minutes DOCUMENT exists — asked the same way of both
+        // engines, which store it in entirely different places.
+        'has_mom_document',
     ];
+
+    /**
+     * Is there a minutes document to open?
+     *
+     * The one admin screen drives both engines, and it asked `mom_path` — a
+     * column only this engine has. On Purchase that read undefined however many
+     * documents existed, so View and Download never appeared and the button
+     * always said "Generate PDF": people pressed it again and again, which is
+     * why some Purchase meetings carry three generated copies of the same
+     * minutes. One question, answered the same way by both engines.
+     */
+    public function getHasMomDocumentAttribute(): bool
+    {
+        return (bool) $this->mom_path;
+    }
 
     /** Human label for the MOM approval state. Defaults to Draft. */
     public function getMomStatusLabelAttribute(): string
@@ -264,6 +304,95 @@ class KickoffMeeting extends Model
     public function getCanCompleteAttribute(): bool
     {
         return $this->scheduled_at === null || $this->scheduled_at->isPast();
+    }
+
+    /* ── Timing ───────────────────────────────────────────────────────────
+     *
+     * Where the meeting sits against the clock, as opposed to what people
+     * decided about it (that is `status`). Derived on every read, so a meeting
+     * becomes Expired the moment its end passes without a job having to run.
+     * Appended, so every payload that carries a meeting carries this too —
+     * the list, the detail, the portal and both dashboards read the same
+     * answer instead of each re-deriving it from scheduled_at.
+     */
+
+    /** When the meeting actually ends: the stored end, else start + duration. */
+    public function getEndsAtAttribute(): ?\Illuminate\Support\Carbon
+    {
+        return MeetingTiming::endsAt(
+            $this->scheduled_at, $this->end_at, $this->duration_minutes, $this->tenant_id,
+        );
+    }
+
+    /** draft | upcoming | live | ended | expired | closed */
+    public function getTimingStateAttribute(): string
+    {
+        return MeetingTiming::state(
+            $this->scheduled_at,
+            $this->end_at,
+            $this->duration_minutes,
+            $this->status === Status::DRAFT,
+            Status::isClosed($this->status),
+            $this->tenant_id,
+            // What the call actually did, which outranks what was booked: a
+            // meeting everyone left after seven minutes is over, however much
+            // of its hour is left.
+            $this->actual_start_at,
+            $this->actual_end_at,
+            // The last heartbeat. A call whose browser was closed without
+            // hanging up reports no end at all, and this is what stops the
+            // meeting reading "In progress" for ever afterwards.
+            $this->presence_seen_at,
+        );
+    }
+
+    public function getTimingLabelAttribute(): string
+    {
+        return MeetingTiming::label($this->timing_state);
+    }
+
+    /**
+     * Ended while still open — nobody completed or cancelled it.
+     *
+     * This is what every "this meeting has expired" message keys off, and what
+     * withholds the join link: a link to a meeting that finished yesterday is
+     * worse than no link, because it looks like it should work.
+     */
+    public function getIsExpiredAttribute(): bool
+    {
+        // Both finished states: a call that was held and ended cannot be joined
+        // either, and every consumer of this asks the same question.
+        return in_array($this->timing_state, MeetingTiming::FINISHED, true);
+    }
+
+    /** The call was held and has finished — as opposed to never having happened. */
+    public function getHasEndedAttribute(): bool
+    {
+        return $this->timing_state === MeetingTiming::ENDED;
+    }
+
+    /**
+     * How long the meeting actually ran, in minutes. Null until it has ended.
+     *
+     * The booked length is `duration_minutes`; this is what really happened,
+     * and the two are shown side by side so a meeting that took twenty minutes
+     * of its booked hour reads as exactly that.
+     */
+    public function getHeldMinutesAttribute(): ?int
+    {
+        return MeetingTiming::heldMinutes($this->actual_start_at, $this->actual_end_at ?: $this->presence_seen_at);
+    }
+
+    /** Running right now — started, not yet ended, not closed. */
+    public function getIsLiveAttribute(): bool
+    {
+        return $this->timing_state === MeetingTiming::LIVE;
+    }
+
+    /** Negative once the meeting has begun; null when it has no date. */
+    public function getMinutesUntilStartAttribute(): ?int
+    {
+        return MeetingTiming::minutesUntilStart($this->scheduled_at, $this->tenant_id);
     }
 
     public function getStatusLabelAttribute(): string

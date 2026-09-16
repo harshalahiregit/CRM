@@ -23,11 +23,11 @@ use Illuminate\Http\Request;
  * instead, which left index() — the method that lists every claim in the tenant —
  * open to any authenticated user, because it does not go through that helper.
  *
- * Gated on canManageHrQueue, consistent with the rest of the HR module. When the
- * permission grid starts being enforced these move to
- * `permission:hr_attendance,edit` or a reimbursement module of its own — the
- * grid is read but not yet consulted, and switching one module across at a time
- * is the point of introducing it that way.
+ * Gated on `permission:hr_attendance,view_global` — the permission grid an admin
+ * ticks in Staff Management, not a role string in PHP. It was canManageHrQueue
+ * until the grid started being enforced; a finer split (a reimbursement module of
+ * its own, or `edit` for the approve routes) is a later refinement of the same
+ * mechanism rather than a different one.
  */
 class ReimbursementController extends Controller
 {

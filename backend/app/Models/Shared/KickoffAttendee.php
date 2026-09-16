@@ -39,10 +39,28 @@ class KickoffAttendee extends Model
         'tenant_id','kickoff_meeting_id','vendor_contact_id','user_id',
         'name','email','phone','organisation','role','designation','side','attended',
         'attendance_status','remark',
+        // Written by the live room, not typed by anyone: when this person
+        // arrived, when they were last seen, how long they were in the call,
+        // and the call's own id for them. See MeetingPresence.
+        'joined_at', 'left_at', 'seconds_in_call', 'participant_key', 'is_guest',
+        // Whether this was observed in the call, recorded when they pressed
+        // Join, or ticked by hand. See MeetingJoinRecorder.
+        'attendance_source',
+        // The ORGANISER's decision, kept beside the claim above rather than on
+        // top of it — see MeetingAttendanceReview. NULL verdict means nobody has
+        // reviewed this person yet, which is not the same as absent.
+        'verdict', 'verdict_from', 'verdict_to', 'verdict_note', 'verdict_by', 'verdict_at',
     ];
 
     protected $casts = [
         'attended' => 'boolean',
+        'joined_at' => 'datetime',
+        'left_at' => 'datetime',
+        'seconds_in_call' => 'integer',
+        'is_guest' => 'boolean',
+        'verdict_from' => 'datetime',
+        'verdict_to' => 'datetime',
+        'verdict_at' => 'datetime',
     ];
 
     public function meeting()

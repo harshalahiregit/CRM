@@ -76,12 +76,30 @@ class PurchaseCompetencyGateTest extends TestCase
         ]);
     }
 
+    /**
+     * Clear the medical's quality check.
+     *
+     * Since the Medical module, a certificate is not clearance until the quality
+     * team accepts it — so a fixture that needs a worker PAST the medical step
+     * has to say so. Set directly rather than through the workflow service:
+     * what these tests are about is what happens after clearance, not how it is
+     * granted (MedicalGatesTrainingTest covers that).
+     */
+    private function approveMedical(PurchaseWorker $w): void
+    {
+        $w->fresh()->latestMedical?->forceFill([
+            'qc_status' => \App\Support\Medical\MedicalQcStatus::APPROVED,
+            'qc_at'     => now(),
+        ])->save();
+    }
+
     /** Docs + Fit medical + completed training + completed induction — all four base checks pass. */
     private function baseReadyWorker(PurchaseVendor $v): PurchaseWorker
     {
         $w = $this->worker($v);
         $this->wf->addDocument($w, 'id_proof', UploadedFile::fake()->create('id.pdf', 5));
         $this->wf->saveMedical($w, ['fitness_status' => 'Fit', 'exam_date' => now()->toDateString()]);
+        $this->approveMedical($w);
         $this->wf->saveTraining($w, ['title' => 'Safety', 'status' => 'Completed']);
         $this->wf->saveInduction($w, ['status' => 'Completed']);
 

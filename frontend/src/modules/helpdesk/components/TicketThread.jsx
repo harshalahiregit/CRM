@@ -889,9 +889,18 @@ export default function TicketThread() {
                       >
                         {/* The synthetic "original request" bubble is the ticket
                             description (plain text) — keep it plain. Real replies
-                            are HTML, sanitized server-side on store (see
-                            HtmlSanitizer + TicketReplyController), so rendering
-                            the stored string as HTML here is safe. */}
+                            are HTML, sanitized server-side on store, so rendering
+                            the stored string as HTML here is safe.
+
+                            That claim used to name TicketReplyController alone,
+                            and it was only true of replies an AGENT wrote. The
+                            three portals (TPV vendor, Purchase vendor, customer)
+                            call HelpdeskService::addReply directly and never
+                            reached that controller, so their text was stored raw
+                            and executed here — a stored XSS from any account a
+                            stranger can register. Every portal write path now
+                            goes through App\Support\Helpdesk\TicketBody, which
+                            is what makes this line safe for all authors. */}
                         {msg._original
                           ? <p style={{ whiteSpace: 'pre-wrap' }}>{msg.message}</p>
                           : <div className="reply-html" dangerouslySetInnerHTML={{ __html: msg.message || '' }} />}

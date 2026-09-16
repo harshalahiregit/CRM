@@ -13,7 +13,13 @@ return [
     |
     */
 
-    'name' => env('APP_NAME', 'Laravel'),
+    // Sangoe OS, not Laravel. This string is printed on every PDF the system
+    // issues and in the header of every e-mail it sends, so the framework's own
+    // default was appearing on contracts, minutes and offer letters going to
+    // customers and vendors. The default matters as much as the .env value:
+    // .env is gitignored, so a fresh checkout or a deploy without it would put
+    // "Laravel" back on the paperwork.
+    'name' => env('APP_NAME', 'Sangoe OS'),
 
     /*
     |--------------------------------------------------------------------------
@@ -56,6 +62,26 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Frontend URL
+    |--------------------------------------------------------------------------
+    |
+    | Where the React SPA is served. Read through App\Support\FrontendUrl, never
+    | directly -- and defined HERE rather than read with env() at the call site,
+    | because `php artisan config:cache` stops loading .env altogether. Every
+    | env('FRONTEND_URL', 'http://localhost:5173') in a controller therefore
+    | resolves to the literal localhost default on a cached production box, no
+    | matter what the .env says: signing links, verification QR codes and portal
+    | links all point at a machine the recipient does not have.
+    |
+    | No default on purpose. Unset means "fall through to APP_URL", which on a
+    | single-origin deployment is already the right answer.
+    |
+    */
+
+    'frontend_url' => env('FRONTEND_URL'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |
@@ -65,7 +91,11 @@ return [
     |
     */
 
-    'timezone' => 'UTC',
+    // Storage stays UTC. Presentation converts per tenant — see
+    // SettingsFormatter and the 'localization.timezone' setting, which the
+    // numbering engine and every localised screen already rely on. Changing this
+    // to Asia/Kolkata "to fix" attendance times broke both of those instead.
+    'timezone' => env('APP_TIMEZONE', 'UTC'),
 
     /*
     |--------------------------------------------------------------------------

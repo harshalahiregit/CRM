@@ -84,7 +84,7 @@ class TransportAllocationRefusalAuditTest extends TestCase
     private function vehicle(?float $capacity = 30, bool $available = true): TransportVehicle
     {
         $v = $this->vehicleSvc->create([
-            'registration_number' => 'MH12'.Str::upper(Str::random(2)).random_int(1000, 9999),
+            'registration_number' => 'MH12'.Str::upper(Str::random(2)).self::uniqueSeq(4),
             'capacity_tonnes' => $capacity,
         ], self::A, $this->actor);
 
@@ -95,7 +95,7 @@ class TransportAllocationRefusalAuditTest extends TestCase
     {
         return $this->driverSvc->create(array_merge([
             'name' => 'Driver '.Str::random(4),
-            'licence_number' => 'RJ14'.random_int(100000, 999999),
+            'licence_number' => 'RJ14'.self::uniqueSeq(6),
             'licence_valid_until' => now()->addYears(2)->toDateString(),
         ], $o), self::A, $this->actor);
     }

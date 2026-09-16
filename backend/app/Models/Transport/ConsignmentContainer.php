@@ -50,6 +50,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * matter who writes the row, including a raw SQL import. That one is not — see
  * the residual noted on TransportContainer::booted().
  *
+ * ── WHAT THIS KEY DOES NOT COVER (D-53) ─────────────────────────────────
+ * It enforces one ACTIVE attachment. It does NOT prevent two CLOSED windows
+ * from overlapping — Jan 1-10 and Jan 5-8 for the same container are both
+ * accepted, which would say it was on two consignments at once. Unreachable
+ * today because attach and detach both stamp now().
+ *
+ * It becomes reachable on one trigger: **a bulk container import, or any
+ * back-dated correction.** That same trigger also activates the normalisation
+ * residual above. Whoever builds either feature inherits BOTH — see D-53.
+ *
  * ── NO seal_number ──────────────────────────────────────────────────────
  * It was in an earlier schema proposal of mine. STOS-CMP §76/§77 specify seal
  * control and make a mismatch a Security/Quality Incident — Person 3's under

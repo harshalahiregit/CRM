@@ -25,6 +25,21 @@ const inr = n =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 })
     .format(Number(n) || 0)
 
+
+/**
+ * A date somebody can read.
+ *
+ * These fields arrive as full ISO timestamps — "2026-09-03T00:00:00.000000Z" —
+ * and were interpolated bare, so the cards showed the timestamp while the audit
+ * lines right below them were formatted properly.
+ */
+const day = v => {
+  if (!v) return ''
+  const d = new Date(v)
+  return Number.isNaN(d.getTime())
+    ? String(v).slice(0, 10)
+    : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
 const STATUS = {
   pending:  { fg: '#fbbf24', bg: 'rgba(251,191,36,0.12)', label: 'Waiting on a decision' },
   on_hold:  { fg: '#60a5fa', bg: 'rgba(96,165,250,0.12)', label: 'Needs your reply' },
@@ -291,7 +306,7 @@ export default function MyReimbursements() {
               <div className="flex-1 min-w-[180px]">
                 <p className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>{r.title}</p>
                 <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                  spent {r.expense_date}
+                  spent {day(r.expense_date)}
                   {!!r.attachments_count && ` · ${r.attachments_count} file${r.attachments_count === 1 ? '' : 's'}`}
                 </p>
               </div>
@@ -319,7 +334,7 @@ export default function MyReimbursements() {
                       <h2 className="text-base font-bold" style={{ color: 'var(--text-h)' }}>{claim.title}</h2>
                       <Pill status={claim.status} />
                     </div>
-                    <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>spent {claim.expense_date}</p>
+                    <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>spent {day(claim.expense_date)}</p>
                     {/* Everything the claim carries, said back. A form that asks for a
                         field and never shows it again teaches people not to fill it in. */}
                     <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>

@@ -83,6 +83,62 @@ final class SettingRegistry
                 // on purpose: a tenant may number documents on one cycle and be taxed on another.
                 'fy_start_month'     => ['cast' => 'int', 'default' => 4, 'rules' => ['nullable', 'integer', 'min:1', 'max:12']],
 
+                // Segregation of duties on the payroll approval chain: the person
+                // who processed a run may not also approve it.
+                //
+                // FALSE by default, which is the weaker control and the right
+                // default. Requiring a second signature is correct wherever there
+                // are two people to give it, and where there are not it stops the
+                // tenant from paying anybody at all — a control nobody can satisfy
+                // gets worked around, usually by sharing a login, which is worse
+                // than not having it. So it is offered rather than assumed.
+                'require_separate_approver' => ['cast' => 'bool', 'default' => false, 'rules' => ['nullable', 'boolean']],
+
+                /*
+                | Which states the Professional Tax rule screen offers.
+                |
+                | PT is a state levy and roughly a third of the country does not
+                | impose it, but the screen offered all 36 — so Delhi sat next to
+                | Maharashtra with nothing to say it collects nothing, and a slab
+                | configured against it would have deducted.
+                |
+                | A SETTING rather than a constant because the list is not ours to
+                | fix: a state can begin or repeal the levy in a budget, and the
+                | people who would notice are the ones running payroll, not the
+                | ones shipping releases. WorkStates::PT_APPLICABLE seeds it; from
+                | there it is theirs.
+                */
+                'pt_states' => [
+                    'cast' => 'array',
+                    'default' => \App\Support\Hr\WorkStates::PT_APPLICABLE,
+                    'rules' => ['nullable', 'array'],
+                ],
+
+                /*
+                | What the payroll pre-check REFUSES to pay over, as against what
+                | it merely warns about.
+                |
+                | The split is a judgement about the business, not about the code:
+                | a missing IFSC stops the money moving and a missing Aadhaar
+                | spoils a filing, and which of those is allowed to hold up a
+                | month is HR's call. Hard-coding it means a workspace either
+                | tolerates bad filings or cannot pay anybody, with no way to
+                | choose — and a control nobody can satisfy gets worked around.
+                */
+                'require_bank_for_payroll'   => ['cast' => 'bool', 'default' => true,  'rules' => ['nullable', 'boolean']],
+                'require_pan_for_payroll'    => ['cast' => 'bool', 'default' => true,  'rules' => ['nullable', 'boolean']],
+                'require_aadhaar_for_payroll'=> ['cast' => 'bool', 'default' => false, 'rules' => ['nullable', 'boolean']],
+                'require_work_state_for_payroll' => ['cast' => 'bool', 'default' => false, 'rules' => ['nullable', 'boolean']],
+
+                /*
+                | Leave only after probation.
+                |
+                | HR set this out on 5 Sep. The per-policy `probation_allowed`
+                | flag already existed and still wins where it is set — this is
+                | the workspace-wide default for the policies that say nothing.
+                */
+                'probation_blocks_leave' => ['cast' => 'bool', 'default' => true, 'rules' => ['nullable', 'boolean']],
+
                 // Loan affordability, as a % of the employee's monthly NET salary.
                 // These are company policy, not law, so they carry real defaults
                 // rather than the "unconfigured = do nothing" rule the statutory
@@ -114,6 +170,17 @@ final class SettingRegistry
 
             // ── Increment D: Security (settings only — no auth changes) ───
             'security' => [
+                /*
+                 * Where an IP address is, for the document access trail.
+                 *
+                 * Empty — the default — means addresses are never sent anywhere:
+                 * the trail still records the address, the device and the
+                 * browser, which answers most questions. A URL with {ip} in it
+                 * switches the lookup on, and naming the service here makes it a
+                 * decision somebody took rather than a dependency nobody agreed
+                 * to. See App\Support\IpLocation.
+                 */
+                'ip_location_endpoint'               => ['cast' => 'string', 'default' => null,  'rules' => ['nullable', 'string', 'max:255']],
                 'password_min_length'                => ['cast' => 'int',    'default' => 8,     'rules' => ['nullable', 'integer', 'min:6', 'max:128']],
                 'require_uppercase'                  => ['cast' => 'bool',   'default' => true,  'rules' => ['nullable', 'boolean']],
                 'require_lowercase'                  => ['cast' => 'bool',   'default' => true,  'rules' => ['nullable', 'boolean']],
@@ -141,7 +208,39 @@ final class SettingRegistry
                 'push'       => ['cast' => 'bool',  'default' => false, 'rules' => ['nullable', 'boolean']],
                 'categories' => ['cast' => 'array', 'default' => self::notificationMatrix(), 'rules' => ['nullable', 'array']],
             ],
+
+            /*
+             * Where a "request a callback" from the vendor Documents screen is
+             * sent.
+             *
+             * A vendor who does not hold a registration cannot discharge the
+             * obligation, and "you are missing this" is not something they can
+             * act on — so the panel offers agencies who sell that registration.
+             * Picking one hands the agency a lead: the vendor's name, company,
+             * phone and e-mail, and which document they need.
+             *
+             * Blank by default, and blank is meaningful: a provider with no
+             * address here is not offered at all. The panel used to list all
+             * three and tell the vendor a callback was "pending" while sending
+             * nothing anywhere — no endpoint, no table, no mail — so the whole
+             * feature stays dark until a real address is entered.
+             *
+             * Keys match COMPLIANCE_PROVIDERS ids in documentCatalog.js.
+             */
+            'compliance_providers' => [
+                'business_badhega_email' => ['cast' => 'string', 'default' => null, 'rules' => ['nullable', 'email', 'max:191']],
+                'legaldesk_email'        => ['cast' => 'string', 'default' => null, 'rules' => ['nullable', 'email', 'max:191']],
+                'vakilsearch_email'      => ['cast' => 'string', 'default' => null, 'rules' => ['nullable', 'email', 'max:191']],
+                // Copied on every lead, if the tenant wants its own record.
+                'copy_to'                => ['cast' => 'string', 'default' => null, 'rules' => ['nullable', 'email', 'max:191']],
+            ],
         ];
+    }
+
+    /** Settings key holding the lead address for a provider id. */
+    public static function providerEmailKey(string $providerId): string
+    {
+        return $providerId.'_email';
     }
 
     /** Categories the notification matrix covers. */

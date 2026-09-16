@@ -81,6 +81,30 @@ class PurchaseSettingService
         // default) means the gate does not bite — it degrades gracefully and only
         // enforces once a tenant configures a requirement here.
         'workforce_required_competencies' => '',
+
+        // ── Medical module ───────────────────────────────────────────────
+        // The same knobs the TPV side exposes as its `medical` settings group.
+        // Flat keys here because this store is flat; the workflow service
+        // assembles them into the same shape both sides read.
+        'medical_validity_months'        => 12,
+        'medical_auto_approve_internal'  => false,
+        'medical_max_iterations'         => 10,
+        'medical_block_induction'        => true,
+        'medical_pending_message'        => 'Medical Report is Pending',
+        'medical_not_applicable_default' => false,
+        // Comma-separated user ids. Empty means every admin reviews.
+        'medical_qc_approver_ids'        => '',
+        // JSON array of {value,label,applies_to}. Empty falls back to the
+        // shipped catalogue in MedicalQcStatus.
+        'medical_reasons'                => '',
+
+        // ── Safety strikes ───────────────────────────────────────────────
+        // The same knobs TPV exposes as its `strike_rules` group. Thresholds
+        // are configurable because what counts as three chances differs by
+        // site, and a policy hard-coded in PHP is one nobody can change.
+        'strike_limit'                       => 3,
+        'strike_warn_at'                     => 2,
+        'strike_critical_terminates'         => true,
     ];
 
     /** Keys whose values are booleans (so the API round-trips real bools). */
@@ -89,11 +113,16 @@ class PurchaseSettingService
         'allow_vendors_to_register', 'show_purchase_tax_column',
         'send_email_welcome_for_new_contact', 'reset_purchase_order_number_every_month',
         'communications_auto_dispatch',
+        'medical_auto_approve_internal', 'medical_block_induction',
+        'medical_not_applicable_default',
+        'strike_critical_terminates',
     ];
 
     private const INT_KEYS = [
         'next_po_number', 'next_pr_number', 'pur_invoice_auto_operations_hour',
         'next_pur_order_return_number', 'temporary_vendor_validity_days',
+        'medical_validity_months', 'medical_max_iterations',
+        'strike_limit', 'strike_warn_at',
     ];
 
     /** Every setting for a tenant: stored values layered over the defaults. */

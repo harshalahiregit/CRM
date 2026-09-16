@@ -1,18 +1,37 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Building2, Plus, RefreshCw, CheckCircle2, Eye, CalendarDays, Pencil } from 'lucide-react'
+import { Building2, Plus, RefreshCw, Eye, CalendarDays, Pencil } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
 import PurchaseVendorForm, { validatePurchaseVendor } from '@/modules/purchase/components/PurchaseVendorForm'
 import PurchaseRegistrationBadge from '@/modules/purchase/components/PurchaseRegistrationBadge'
 import TemporaryVendorValidityBadge from '@/modules/purchase/components/TemporaryVendorValidityBadge'
 import { PV_DEFAULTS } from '@/modules/purchase/components/purchaseVendorFormConstants'
 import TableToolbar from '@/components/ui/TableToolbar'
+import { useToast } from '@/components/ui/Toast'
+import ToggleSwitch from '@/components/ui/ToggleSwitch'
 
 /**
  * Purchase Vendors — the admin master list for the Purchase-owned vendor entity
  * (/api/purchase/vendors). Independent of the shared Vendor and of TPV.
  */
-const STATUS_COLORS = { Active: '#10b981', Pending_Approval: '#f59e0b', Draft: '#6b7280', On_Hold: '#f59e0b', Rejected: '#ef4444', Blacklisted: '#991b1b', Inactive: '#6b7280' }
+/**
+ * How far this vendor has got with onboarding.
+ *
+ * A vendor with no onboarding row reads "Not started" rather than an empty
+ * cell: blank is indistinguishable from a column that failed to load, and this
+ * one exists precisely so an admin can tell the difference before activating.
+ */
+const ONBOARDING_COLORS = {
+  Approved: '#10b981', Submitted: '#0ea5e9', In_Progress: '#f59e0b',
+  Draft: '#6b7280', Rejected: '#ef4444', On_Hold: '#f59e0b', Resubmit: '#f59e0b',
+}
+
+function onboardingBadge(status) {
+  const label = status ? String(status).replace(/_/g, ' ') : 'Not started'
+  const colour = status ? (ONBOARDING_COLORS[status] || '#6b7280') : '#9ca3af'
+
+  return <span style={{ fontSize: 11, fontWeight: 700, color: colour }}>{label}</span>
+}
 
 export default function PurchaseVendors() {
   const navigate = useNavigate()
@@ -23,6 +42,7 @@ export default function PurchaseVendors() {
   const [modal, setModal] = useState(null)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+  const toast = useToast()
   const [editLoadingId, setEditLoadingId] = useState(null)
 
   const load = useCallback(() => {
@@ -55,7 +75,34 @@ export default function PurchaseVendors() {
     } finally { setSaving(false) }
   }
 
-  const activate = async (id) => { try { await purchaseApi.vendors.approve(id); load() } catch { /* noop */ } }
+
+  /**
+   * Portal access on and off, the same control TPV has.
+   *
+   * The list previously showed the status as text with a one-way Activate
+   * button beside it, so switching a vendor OFF was not possible from the
+   * screen that displays whether they are on — it needed the edit form, which
+   * is not where anybody looks for a state they can already see.
+   *
+   * `busyId` keeps the row's switch inert while the server answers. Without it
+   * a second click during the round trip sends the opposite instruction, and
+   * the two land in whichever order the network chooses.
+   */
+  const [busyId, setBusyId] = useState(null)
+
+  const toggleStatus = async (v) => {
+    const next = v.status === 'Active' ? 'Inactive' : 'Active'
+    setBusyId(v.id)
+    try {
+      await purchaseApi.vendors.setStatus(v.id, next)
+      load()
+      toast.success(next === 'Active' ? 'Portal access enabled' : 'Portal access disabled')
+    } catch (e) {
+      toast.error(e?.response?.data?.message || 'That status could not be changed.')
+    } finally {
+      setBusyId(null)
+    }
+  }
 
   /**
    * Open the edit form on the FULL record, not the list row.
@@ -93,6 +140,7 @@ export default function PurchaseVendors() {
     { key: 'email',                label: 'Email' },
     { key: 'registration_type',    label: 'Type',     export: v => v.registration_type_label || v.registration_type || '' },
     { key: 'validity',             label: 'Remaining Validity', export: v => v.validity_countdown?.label || '' },
+    { key: 'onboarding',           label: 'Onboarding', export: v => (v.onboarding?.status || 'Not started').replace(/_/g, ' ') },
     { key: 'status',               label: 'Status',   export: v => v.status_label || v.status || '' },
     // Not on screen — the table has no room — but the single most useful
     // column in a spreadsheet, so the export carries it.
@@ -142,12 +190,12 @@ export default function PurchaseVendors() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ background: 'var(--bg-input)' }}>
-              {['Code', 'Company', 'Email', 'Type', 'Remaining Validity', 'Status', ''].map((h) => <th key={h} style={th}>{h}</th>)}
+              {['Code', 'Company', 'Email', 'Type', 'Remaining Validity', 'Onboarding', 'Status', ''].map((h) => <th key={h} style={th}>{h}</th>)}
             </tr>
           </thead>
           <tbody>
-            {loading ? <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</td></tr>
-              : rows.length === 0 ? <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>No purchase vendors yet.</td></tr>
+            {loading ? <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</td></tr>
+              : rows.length === 0 ? <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>No purchase vendors yet.</td></tr>
               : rows.map((v) => (
                 <tr key={v.id} style={{ borderTop: '1px solid var(--border)' }}>
                   <td style={td}>{v.purchase_vendor_code}</td>
@@ -155,9 +203,22 @@ export default function PurchaseVendors() {
                   <td style={td}>{v.email || '—'}</td>
                   <td style={td}><PurchaseRegistrationBadge type={v.registration_type} label={v.registration_type_label} /></td>
                   <td style={td}><TemporaryVendorValidityBadge countdown={v.validity_countdown} compact /></td>
-                  <td style={td}><span style={{ fontSize: 11, fontWeight: 700, color: STATUS_COLORS[v.status] || '#6b7280' }}>{v.status_label || v.status}</span></td>
+                  {/* Activation no longer waits for onboarding, so this is how an
+                      admin sees what they are about to approve — "Not started" is
+                      a real answer, not a blank. */}
+                  <td style={td}>{onboardingBadge(v.onboarding?.status)}</td>
+                  <td style={td}>
+                    <ToggleSwitch
+                      on={v.status === 'Active'}
+                      busy={busyId === v.id}
+                      onChange={() => toggleStatus(v)} />
+                  </td>
                   <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    {v.status !== 'Active' && <button onClick={() => activate(v.id)} style={{ ...miniBtn, color: '#10b981' }}><CheckCircle2 size={13} /> Activate</button>}
+                    {/* The one-way Activate button is gone — the Status switch
+                        does the same thing and undoes it too. Both ran the full
+                        activation (portal login, access window, activation
+                        e-mail), so keeping both meant two controls for one
+                        decision, only one of which could reverse it. */}
                     <button onClick={() => openEdit(v)} disabled={editLoadingId === v.id} style={miniBtn}>
                       <Pencil size={13} /> {editLoadingId === v.id ? 'Opening…' : 'Edit'}
                     </button>

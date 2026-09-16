@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Portal;
 
 use App\Http\Controllers\Controller;
+use App\Models\Helpdesk\Ticket;
 use App\Models\Project\Project;
 use App\Models\Project\ProjectExpense;
 use App\Models\Purchase\PurchaseVendor;
@@ -12,10 +13,15 @@ use App\Models\Vendor\VendorAward;
 use App\Models\Vendor\VendorReferral;
 use App\Models\Vendor\VendorShipment;
 use App\Models\Vendor\VendorShipmentPackage;
+use App\Services\Helpdesk\HelpdeskService;
 use App\Services\Purchase\PurchaseVendorPerformanceService;
 use App\Services\StatusService;
+use App\Services\Task\TaskService;
+use App\Support\RichText;
+use App\Support\Task\PortalTaskView;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 /**
@@ -100,27 +106,261 @@ class PurchasePortalParityController extends Controller
     public function updateTaskStatus(Request $request, Task $task)
     {
         $v = $this->vendor($request);
-        abort_unless($task->rel_type === 'purchase_vendor' && (int) $task->rel_id === (int) $v->id && (int) $task->tenant_id === (int) $v->tenant_id, 404, 'Task not found');
+        $this->assertOwnTask($request, $task);
 
         $keys = app(StatusService::class)->keys('task', (int) $v->tenant_id);
         $data = $request->validate(['status' => ['required', Rule::in($keys)]]);
-        $task->update(['status' => $data['status']]);
+
+        /*
+         * Through the service — same reasoning as the TPV portal's version: a
+         * bare update() skipped the status workflow, left date_finished unset and
+         * told the admin side nothing.
+         *
+         * The actor is null rather than a user id, because a Purchase vendor IS
+         * NOT A USER and there is no id here that would mean the right thing.
+         * changeStatus() only uses the actor to keep somebody from being notified
+         * about their own action, and the vendor is not on the watcher list to
+         * begin with, so null costs nothing and invents nobody.
+         */
+        $task = app(TaskService::class)->changeStatus(
+            (int) $task->id, $data['status'], (int) $v->tenant_id, null,
+        );
 
         return response()->json(['data' => ['id' => $task->id, 'status' => $task->status]]);
     }
 
-    /** Tickets raised against the vendor's projects (read-only for Purchase). */
+    /* ── One task, in full ───────────────────────────────────────────────────
+     * Mirrors VendorWorkController's task/commentTask/downloadTaskFile. Same
+     * payload, same thread, different identity — which is the only part that
+     * actually differs between the two portals.
+     */
+
+    public function task(Request $request, Task $task)
+    {
+        $this->assertOwnTask($request, $task);
+
+        return response()->json(['data' => PortalTaskView::detail($task)]);
+    }
+
+    public function commentTask(Request $request, Task $task)
+    {
+        $v = $this->vendor($request);
+        $this->assertOwnTask($request, $task);
+
+        $data = $request->validate([
+            'body'    => ['nullable', 'string', 'max:5000', 'required_without:files'],
+            'files'   => ['nullable', 'array', 'max:5'],
+            'files.*' => ['file', 'max:10240'],
+        ]);
+
+        /*
+         * The vendor authors as ITSELF, not as a User.
+         *
+         * There is no user id that would be honest here: purchase_vendors.user_id
+         * points at the redundant login the vendor-role retirement deactivated,
+         * and attributing the comment to it would credit a person's account for
+         * something a company wrote. addVendorComment() writes the polymorphic
+         * author columns instead — into the same task_comments thread the staff
+         * console reads, so both sides see one conversation.
+         */
+        $comment = app(TaskService::class)->addVendorComment(
+            (int) $task->id,
+            RichText::fromUntrusted($data['body'] ?? ''),
+            (int) $v->tenant_id,
+            'purchase_vendor',
+            (int) $v->id,
+            (string) ($v->company_name ?: 'Vendor'),
+            $request->file('files', []),
+        );
+
+        return response()->json(['data' => ['id' => $comment->id]], 201);
+    }
+
+    public function downloadTaskFile(Request $request, Task $task, int $file)
+    {
+        $v = $this->vendor($request);
+        $this->assertOwnTask($request, $task);
+
+        $row = app(TaskService::class)->findFile($file, (int) $task->id, (int) $v->tenant_id);
+
+        abort_unless(Storage::disk('local')->exists($row->file_path), 404, 'File missing from storage.');
+
+        return Storage::disk('local')->download($row->file_path, $row->file_name);
+    }
+
+    /**
+     * This vendor's own task, or a 404.
+     *
+     * Lifted out of updateTaskStatus, which used to carry this check inline —
+     * three more routes now depend on it, and an ownership rule written four
+     * times is an ownership rule that will eventually be written three times.
+     */
+    private function assertOwnTask(Request $request, Task $task): void
+    {
+        $v = $this->vendor($request);
+
+        abort_unless(
+            $task->rel_type === 'purchase_vendor'
+                && (int) $task->rel_id === (int) $v->id
+                && (int) $task->tenant_id === (int) $v->tenant_id,
+            404, 'Task not found'
+        );
+    }
+
+    /**
+     * The vendor's tickets: raised BY them, or opened against their projects.
+     *
+     * This used to list only tickets tied to one of the vendor's projects. That
+     * was the whole story while the portal had no way to raise one - but a
+     * vendor asking for help is not asking about a project, so a ticket they
+     * raised themselves would have been invisible to them the moment it was
+     * created. Both sources are now included, which is what the TPV portal has
+     * always done.
+     */
     public function tickets(Request $request)
     {
         $v = $this->vendor($request);
-        $ids = $this->projectIds($v);
-        $rows = \App\Models\Helpdesk\Ticket::forTenant($v->tenant_id)
-            ->whereIn('project_id', $ids ?: [0])
+
+        $rows = Ticket::forTenant($v->tenant_id)
+            ->where(fn ($q) => $this->scopeOwnTickets($q, $v))
             ->orderByDesc('id')
             ->get(['id', 'subject', 'status', 'priority'])
-            ->map(fn ($t) => ['id' => $t->id, 'subject' => $t->subject, 'status' => $t->status, 'priority' => $t->priority]);
+            ->map(fn (Ticket $t) => ['id' => $t->id, 'subject' => $t->subject, 'status' => $t->status, 'priority' => $t->priority]);
 
         return response()->json(['data' => $rows]);
+    }
+
+    /**
+     * The vendor raises a support ticket from the portal.
+     *
+     * The Purchase portal had no such endpoint, and its Tickets screen was
+     * mounted with `ticketWrite: false` - so the Raise Ticket button was never
+     * drawn and the rows could not be opened. A Purchase vendor could see
+     * tickets about their projects and had no way to ask for anything.
+     *
+     * The identity is the wrinkle. A TPV vendor signs in as a User, so its
+     * ticket carries `created_by`. A PurchaseVendor is its own model and may
+     * have no User at all, so `created_by` is set only when one exists and the
+     * vendor's email is always recorded as the requester - which is both what
+     * ownership is checked against and where Support's reply goes.
+     */
+    public function raiseTicket(Request $request, HelpdeskService $helpdesk)
+    {
+        $v = $this->vendor($request);
+        $data = $request->validate([
+            'subject'  => 'required|string|max:191',
+            'body'     => 'required|string|max:10000',
+            'priority' => 'nullable|in:low,medium,high',
+        ]);
+
+        abort_if(
+            blank($v->email) && ! $v->user_id,
+            422,
+            'Your account has no email address on file, so Support would have no way to reply. Add one on your profile first.'
+        );
+
+        $ticket = $helpdesk->createTicket([
+            'subject'         => $data['subject'],
+            // Normalised at the boundary - see RichText.
+            'description'     => RichText::fromUntrusted($data['body']),
+            'created_by'      => $v->user_id,
+            'requester_name'  => $v->company_name,
+            'requester_email' => $v->email ?: $v->user?->email,
+            'source'          => 'portal',
+            'assigned_to'     => null,
+            'priority'        => $data['priority'] ?? 'medium',
+        ], (int) $v->tenant_id);
+
+        return response()->json(['id' => $ticket->id, 'message' => 'Your ticket has been raised.'], 201);
+    }
+
+    /** One of the vendor's own tickets, with its reply thread. */
+    public function ticket(Request $request, Ticket $ticket)
+    {
+        $this->assertOwnTicket($request, $ticket);
+
+        $replies = $ticket->replies()->orderBy('id')->get(['id', 'sender_type', 'message', 'created_at'])
+            ->map(fn ($r) => [
+                'id'           => $r->id,
+                'mine'         => $r->sender_type === 'client',
+                'author'       => $r->sender_type === 'client' ? 'You' : 'Support',
+                'message'      => RichText::toText($r->message),
+                'message_html' => RichText::display($r->message),
+                'at'           => optional($r->created_at)->toIso8601String(),
+            ]);
+
+        return response()->json([
+            'id' => $ticket->id, 'subject' => $ticket->subject, 'status' => $ticket->status,
+            'priority' => $ticket->priority,
+            'description'      => RichText::toText($ticket->description),
+            'description_html' => RichText::display($ticket->description),
+            'replies' => $replies,
+        ]);
+    }
+
+    /** The vendor posts a reply on its own ticket. */
+    public function replyTicket(Request $request, Ticket $ticket, HelpdeskService $helpdesk)
+    {
+        $this->assertOwnTicket($request, $ticket);
+        $data = $request->validate(['message' => 'required|string|max:10000']);
+
+        $helpdesk->addReply($ticket->id, [
+            'sender_type' => 'client',   // the external requester - shown as the vendor
+            'sender_id'   => null,
+            'message'     => RichText::fromUntrusted($data['message']),
+        ], (int) $ticket->tenant_id);
+
+        return response()->json(['message' => 'Reply sent'], 201);
+    }
+
+    /**
+     * 404, not 403, on someone else's ticket - a vendor should not learn that
+     * another vendor's ticket exists.
+     */
+    private function assertOwnTicket(Request $request, Ticket $ticket): void
+    {
+        $v = $this->vendor($request);
+
+        abort_unless(
+            Ticket::forTenant($v->tenant_id)
+                ->whereKey($ticket->id)
+                ->where(fn ($q) => $this->scopeOwnTickets($q, $v))
+                ->exists(),
+            404,
+            'Ticket not found'
+        );
+    }
+
+    /**
+     * What counts as this vendor's ticket: one raised by them (their User, or
+     * their email as requester), or one on a project linked to them.
+     *
+     * A vendor with neither a User nor an email owns nothing - which must
+     * resolve to no rows, never to every row, so the empty case is stated
+     * rather than left to an empty where-group.
+     */
+    private function scopeOwnTickets($query, PurchaseVendor $v)
+    {
+        $ids = $this->projectIds($v);
+        $matched = false;
+
+        if ($ids) {
+            $query->whereIn('project_id', $ids);
+            $matched = true;
+        }
+        if ($v->user_id) {
+            $query->orWhere('created_by', $v->user_id);
+            $matched = true;
+        }
+        if (filled($v->email)) {
+            $query->orWhere('requester_email', $v->email);
+            $matched = true;
+        }
+        if (! $matched) {
+            $query->whereRaw('1 = 0');
+        }
+
+        return $query;
     }
 
     public function expenses(Request $request)

@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Shared;
 
+use App\Support\Shared\BusinessTime;
 use App\Support\Shared\MeetingTypeCatalog;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -155,10 +156,13 @@ class UpdateKickoffMeetingRequest extends FormRequest
             if (! $this->filled('scheduled_at')) {
                 return;
             }
-            $new = \Illuminate\Support\Carbon::parse($this->input('scheduled_at'));
+            $tenantId = $this->user()?->tenant_id;
+            // Both sides as real instants in the tenant's zone, so "unchanged"
+            // is judged on the same clock the form showed.
+            $new = BusinessTime::parse($this->input('scheduled_at'), $tenantId);
             $meeting = $this->route('kickoffMeeting');
             $stored = $meeting && $meeting->scheduled_at
-                ? \Illuminate\Support\Carbon::parse($meeting->scheduled_at)
+                ? BusinessTime::parse($meeting->scheduled_at, $meeting->tenant_id ?? $tenantId)
                 : null;
 
             $isMoved = ! $stored || ! $new->equalTo($stored);

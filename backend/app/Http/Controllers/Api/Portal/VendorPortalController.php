@@ -18,16 +18,20 @@ use App\Models\Shared\KickoffMeeting;
 use App\Models\Tpv\TpvOnboarding;
 use App\Models\Tpv\TpvWorker;
 use App\Models\Tpv\TpvWorkerPpeIssue;
-use App\Models\Vendor\TpvContact;
+use App\Models\Tpv\TpvContact;
 use App\Models\Vendor\Vendor;
 use App\Models\Vendor\VendorDocument;
+use App\Models\Vendor\VendorDocumentVersion;
 use App\Services\Tpv\KickoffPdfService;
+use App\Repositories\Tpv\TpvContactRepository;
+use App\Services\Tpv\GateScanService;
 use App\Services\Tpv\WorkStartLetterService;
 use App\Services\Tpv\PpeInventoryService;
 use App\Services\Tpv\TpvOnboardingService;
 use App\Services\Tpv\TpvWorkerService;
 use App\Services\Tpv\TpvWorkPackageService;
 use App\Services\Vendor\VendorDocumentService;
+use App\Services\Vendor\VendorDocumentVersionService;
 use App\Support\Purchase\PurchaseInvoiceStatus as InvStatus;
 use App\Support\Purchase\PurchaseOrderStatus as PoStatus;
 use App\Support\UserAgentInfo;
@@ -618,6 +622,27 @@ class VendorPortalController extends Controller
         return $this->kickoffPdfService->stream($onboarding);
     }
 
+    /**
+     * The same minutes the PDF prints, as data.
+     *
+     * Resolved through the SAME resolver the PDF uses. The screen previously
+     * picked its own meeting out of the governance list while the PDF used
+     * findKickoffMeeting(), so the two could describe different meetings — the
+     * reader saw a populated document beside empty sections and concluded the
+     * screen was broken. One resolver, one meeting, or they will disagree again.
+     */
+    public function kickoffData(Request $request, TpvOnboarding $onboarding)
+    {
+        $this->assertOwned($request, $onboarding, 'Onboarding');
+
+        $meeting = $this->kickoffPdfService->findKickoffMeeting($onboarding);
+        if (! $meeting) {
+            return response()->json(['meeting' => null]);
+        }
+
+        return response()->json(\App\Support\Shared\VendorMomView::for($meeting, (bool) $meeting->mom_path));
+    }
+
     /** Stream this vendor's own HSSE Work Start Letter (issued on approval). */
     public function workStartLetter(Request $request, TpvOnboarding $onboarding)
     {
@@ -710,9 +735,22 @@ class VendorPortalController extends Controller
     {
         $this->assertOwned($request, $onboarding, 'Onboarding');
 
-        return response()->json(
-            $this->onboardingService->saveProfile($onboarding, $request->validated()['profile'], $request->user())
-        );
+        $profile = $request->validated()['profile'] ?? [];
+
+        // A draft can legitimately sift down to nothing — everything the vendor
+        // had touched so far was half-typed. Writing an empty merge would only
+        // add an audit row saying a profile was saved when none was.
+        $saved = $profile === []
+            ? $onboarding->fresh()
+            : $this->onboardingService->saveProfile($onboarding, $profile, $request->user());
+
+        // A draft keeps every field that stands on its own; anything half-finished
+        // is set aside rather than failing the save, and is named here so the
+        // wizard can say which box still needs work. Merged onto the model so the
+        // response shape every caller already reads is unchanged.
+        return response()->json(array_merge($saved->toArray(), [
+            'skipped' => $request->skippedFields(),
+        ]));
     }
 
     /** Move the wizard to a different step (persists the navigation pointer). */
@@ -788,17 +826,72 @@ class VendorPortalController extends Controller
         return response()->download($file['path'], $file['filename'], ['Content-Type' => $file['mime']]);
     }
 
+    /**
+     * Remove a document the vendor uploaded by mistake.
+     *
+     * The onboarding wizard has always drawn a Delete button on the portal, but
+     * portalApi.documents.delete was a stub that rejected with "Admin only" - so
+     * the button was there and answered an error. The service refuses an
+     * approved document; assertOwned refuses anybody else's.
+     */
+    public function deleteDocument(Request $request, VendorDocument $document)
+    {
+        $this->assertOwned($request, $document, 'Document');
+
+        $this->documentService->destroy($document);
+
+        return response()->json(['message' => 'Deleted']);
+    }
+
+    /**
+     * The document's own version history.
+     *
+     * Same story as delete: the wizard drew a History button on the portal and
+     * portalApi.documents.versions resolved to a hardcoded empty array, so the
+     * drawer always said "No previous version history recorded" no matter how
+     * many times the vendor had replaced the file.
+     */
+    public function documentVersions(Request $request, VendorDocument $document)
+    {
+        $this->assertOwned($request, $document, 'Document');
+
+        return response()->json($document->versions()->orderByDesc('version_no')->get());
+    }
+
+    public function downloadDocumentVersion(Request $request, VendorDocument $document, VendorDocumentVersion $version)
+    {
+        $this->assertOwned($request, $document, 'Document');
+        abort_unless((int) $version->vendor_document_id === (int) $document->id, 404, 'Version not found');
+
+        $file = app(VendorDocumentVersionService::class)->resolveDownload($version, $request->user());
+
+        return response()->download($file['path'], $file['filename'], [
+            'Content-Type'        => $file['mime'],
+            'Content-Disposition' => 'inline; filename="'.$file['filename'].'"',
+        ]);
+    }
+
     /* ── Contacts (own vendor only) ──────────────────────────────────────── */
 
-    public function contacts(Request $request)
+    /**
+     * The vendor's own contacts.
+     *
+     * This ordered by `name`, a column tpv_contacts does not have — it stores
+     * first_name and last_name and exposes a full_name accessor — so the query
+     * threw and the portal's Contacts tab answered 500. The page catches the
+     * failure and renders an empty list, so it read as "you have no contacts"
+     * rather than as an error.
+     *
+     * Delegated to the same repository the admin screen uses, which also fixes
+     * something the hand-rolled version missed: it was scoped by vendor_id but
+     * NOT by tenant.
+     */
+    public function contacts(Request $request, TpvContactRepository $contacts)
     {
         $vendor = $this->portalVendor($request);
 
         return response()->json(
-            TpvContact::where('vendor_id', $vendor->id)
-                ->orderByDesc('is_primary')
-                ->orderBy('name')
-                ->get()
+            $contacts->filtered($vendor->tenant_id, $vendor->id, $request->only(['status', 'search']))
         );
     }
 
@@ -865,6 +958,31 @@ class VendorPortalController extends Controller
                 array_merge($request->only(['status', 'skill_category', 'search']), ['vendor_id' => $vendor->id])
             )
         );
+    }
+
+    /**
+     * Bulk worker import, vendor side.
+     *
+     * The portal used to post this one action to the ADMIN route, so a vendor
+     * uploading their own roster was told "Unauthorized. Required role: admin or
+     * staff" — the same trap the punch and card-status actions were pulled out
+     * of. Same service, ownership taken from the token: a vendor_id in the body
+     * is ignored, so this cannot be pointed at somebody else's workforce.
+     */
+    public function uploadWorkers(Request $request)
+    {
+        $request->validate([
+            'worker_file' => 'required|file|mimes:csv,xls,xlsx,txt,zip|max:20480',
+        ]);
+
+        $vendor = $this->portalVendor($request);
+
+        return response()->json($this->workerService->bulkUpload(
+            $request->file('worker_file'),
+            $vendor->id,
+            $vendor->tenant_id,
+            $request->user(),
+        ));
     }
 
     /** Worker stats derived from the vendor's own workers only. */
@@ -943,6 +1061,60 @@ class VendorPortalController extends Controller
         $this->assertWorkerOwned($request, $worker);
 
         return response()->json($this->workerService->update($worker, $updateRequest->validated(), $request->user()));
+    }
+
+    /**
+     * Every training record across this vendor's own workers.
+     *
+     * The portal could record an INDUCTION and nothing else: the typed training
+     * catalogue (§15) had no portal endpoint at all, so a vendor could not file
+     * a Work-at-Height certificate for their own worker, nor see one that had
+     * been filed for them. The Purchase portal grew both; this is the mirror.
+     */
+    public function trainings(Request $request)
+    {
+        $vendor = $this->portalVendor($request);
+
+        $rows = \App\Models\Tpv\TpvWorkerTraining::forTenant($vendor->tenant_id)
+            ->whereIn('tpv_worker_id', TpvWorker::forTenant($vendor->tenant_id)
+                ->where('vendor_id', $vendor->id)->select('id'))
+            ->with('worker:id,name,worker_code')
+            ->orderByDesc('id')->limit(500)->get();
+
+        return response()->json(['data' => $rows]);
+    }
+
+    /** Record a training against one of the caller's own workers. */
+    public function saveTraining(Request $request, TpvWorker $worker)
+    {
+        $this->assertWorkerOwned($request, $worker);
+
+        $data = $request->validate([
+            // Required, and from the catalogue. TPV's table has no free-text
+            // title column, so accepting one would mean taking a field, saying
+            // it was saved, and throwing it away.
+            'training_type'    => ['required', \Illuminate\Validation\Rule::in(\App\Models\Tpv\TpvWorkerTraining::TYPES)],
+            'provider'         => 'nullable|string|max:150',
+            'completed_date'   => 'nullable|date',
+            'valid_until'      => 'nullable|date',
+            'passed'           => 'nullable|boolean',
+            'score'            => 'nullable|integer|min:0|max:100',
+            'notes'            => 'nullable|string|max:2000',
+            'certificate_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:10240',
+        ]);
+
+        if ($file = $request->file('certificate_file')) {
+            $data['certificate_path'] = $file->store("tpv/workforce/{$worker->id}/training", 'local');
+        }
+        unset($data['certificate_file']);
+
+        $row = \App\Models\Tpv\TpvWorkerTraining::create([
+            ...$data,
+            'tenant_id'     => $worker->tenant_id,
+            'tpv_worker_id' => $worker->id,
+        ]);
+
+        return response()->json($row->fresh(), 201);
     }
 
     public function saveMedical(SaveWorkerMedicalRequest $request, TpvWorker $worker)
@@ -1091,10 +1263,13 @@ class VendorPortalController extends Controller
 
         $days = (int) $request->query('days', 30);
 
+        // The fourth call site for the class that never existed. One worker's
+        // attendance history is days on site, so it reads the attendance table
+        // — the same rows the admin's per-worker view uses.
         return response()->json(
-            \App\Models\Tpv\TpvGateLog::where('worker_id', $worker->id)
-                ->where('scanned_at', '>=', now()->subDays($days))
-                ->orderByDesc('scanned_at')
+            \App\Models\Tpv\TpvGateAttendance::where('tpv_worker_id', $worker->id)
+                ->where('work_date', '>=', now()->subDays($days)->toDateString())
+                ->orderByDesc('work_date')
                 ->get()
         );
     }
@@ -1103,82 +1278,83 @@ class VendorPortalController extends Controller
     {
         $this->assertWorkerOwned($request, $worker);
 
-        return response()->json(
-            $worker->strikes()->orderByDesc('issued_at')->get()
-        );
+        // The relation already orders by occurred_at. It used to be re-ordered
+        // here by `issued_at`, which is not a column on tpv_safety_strikes — so
+        // this endpoint threw rather than returning anything, and the portal's
+        // Strikes view has never once rendered.
+        return response()->json($worker->strikes()->with('issuer:id,name')->get());
     }
 
     /* ── Gate / Attendance / Strikes (read-only, own vendor scoped) ──────── */
 
-    public function gateStats(Request $request)
+    public function gateStats(Request $request, GateScanService $gate)
     {
         $vendor = $this->portalVendor($request);
 
-        // Derive stats from own workers only.
-        $workerIds = TpvWorker::where('vendor_id', $vendor->id)->pluck('id');
-
-        return response()->json([
-            'on_site'   => \App\Models\Tpv\TpvGateLog::whereIn('worker_id', $workerIds)
-                               ->whereNull('check_out_at')->count(),
-            'total_today' => \App\Models\Tpv\TpvGateLog::whereIn('worker_id', $workerIds)
-                               ->whereDate('scanned_at', today())->count(),
-        ]);
+        // Same four counters the admin gets, counting only this vendor's people.
+        return response()->json($gate->gateStats($vendor->tenant_id, $vendor->id));
     }
 
-    public function gateLog(Request $request)
+    /*
+     * Gate log, attendance and the gate counters.
+     *
+     * All three hand-rolled their own queries against
+     * `App\Models\Tpv\TpvGateLog` — a class that DOES NOT EXIST. There is no
+     * such model: the real ones are TpvGateScan (a badge presented) and
+     * TpvGateAttendance (a day on site). So every one of these three answered
+     * 500, and the portal's Gate Log and Attendance tabs have been dead since
+     * they were written. The columns were wrong too — `worker_id` and
+     * `duration_minutes` against tables that spell them `tpv_worker_id` and
+     * `minutes_on_site` — which is the same mistake already recorded a few
+     * methods below on strikes().
+     *
+     * They now delegate to GateScanService, the engine the admin screens use,
+     * scoped to this vendor. That is not only less code: the portal reuses the
+     * ADMIN's TpvGateLog page component with portalApi injected, so its replies
+     * have to match the admin's shapes exactly. They did not — gateStats
+     * answered {on_site, total_today} while the component reads on_site_now,
+     * checked_in_today, scans_today and denied_today. Fixing only the 500 would
+     * have left four blank cards and looked like a different bug.
+     */
+    public function gateLog(Request $request, GateScanService $gate)
     {
-        $vendor    = $this->portalVendor($request);
-        $workerIds = TpvWorker::where('vendor_id', $vendor->id)->pluck('id');
+        $vendor = $this->portalVendor($request);
 
-        $query = \App\Models\Tpv\TpvGateLog::with('worker:id,name,worker_code,designation')
-            ->whereIn('worker_id', $workerIds)
-            ->orderByDesc('scanned_at');
-
-        if ($request->filled('date')) {
-            $query->whereDate('scanned_at', $request->date);
-        }
-        if ($request->filled('decision')) {
-            $query->where('decision', $request->decision);
-        }
-
-        return response()->json($query->get());
+        return response()->json($gate->gateLog($vendor->tenant_id, [
+            'vendor_id' => $vendor->id,
+            'date'      => $request->query('date'),
+            'decision'  => $request->query('decision'),
+        ]));
     }
 
-    public function attendance(Request $request)
+    public function attendance(Request $request, GateScanService $gate)
     {
-        $vendor    = $this->portalVendor($request);
-        $workerIds = TpvWorker::where('vendor_id', $vendor->id)->pluck('id');
+        $vendor = $this->portalVendor($request);
 
-        $date = $request->query('date', today()->toDateString());
-
-        $rows = \App\Models\Tpv\TpvGateLog::with('worker:id,name,worker_code,designation')
-            ->whereIn('worker_id', $workerIds)
-            ->whereDate('scanned_at', $date)
-            ->orderBy('check_in_at')
-            ->get();
-
-        $onSite = $rows->whereNull('check_out_at')->count();
-
-        return response()->json([
-            'date'    => $date,
-            'summary' => [
-                'total'     => $rows->count(),
-                'on_site'   => $onSite,
-                'departed'  => $rows->count() - $onSite,
-                'total_minutes' => $rows->sum('duration_minutes'),
-            ],
-            'rows' => $rows,
-        ]);
+        return response()->json($gate->roster(
+            $vendor->tenant_id,
+            $request->query('date'),
+            $vendor->id,
+        ));
     }
 
+    /**
+     * Every strike across this vendor's own workers, read-only.
+     *
+     * Two of the three columns this named did not exist — `worker_id` and
+     * `issued_at`, against a table whose columns are `tpv_worker_id` and
+     * `occurred_at` — so the query threw and the vendor's Strikes screen has
+     * been dead since it was written. A strike is the one record a vendor most
+     * needs to see, since three of them end a worker's site access.
+     */
     public function strikes(Request $request)
     {
         $vendor    = $this->portalVendor($request);
         $workerIds = TpvWorker::where('vendor_id', $vendor->id)->pluck('id');
 
-        $query = \App\Models\Tpv\TpvSafetyStrike::with('worker:id,name,worker_code')
-            ->whereIn('worker_id', $workerIds)
-            ->orderByDesc('issued_at');
+        $query = \App\Models\Tpv\TpvSafetyStrike::with(['worker:id,name,worker_code', 'issuer:id,name'])
+            ->whereIn('tpv_worker_id', $workerIds)
+            ->orderByDesc('occurred_at');
 
         if ($request->filled('severity')) {
             $query->where('severity', $request->severity);

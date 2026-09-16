@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { clientPortalApi } from '@/lib/clientPortalApi'
-import { AuthShell, lbl, inp, primaryBtn, linkStyle, errStyle } from './ClientPortalLogin'
+import { AuthShell, lbl, inp, primaryBtn, linkStyle, errStyle } from './portalAuthChrome'
 
 /**
  * Where a set-password or reset invitation lands.
@@ -28,7 +28,7 @@ export default function ClientPortalSetPassword() {
     setBusy(true); setErr('')
     try {
       await clientPortalApi.setPassword({ token, ...form })
-      navigate('/portal/login', { replace: true })
+      navigate('/auth/login?role=client', { replace: true })
     } catch (e) {
       setErr(e?.response?.data?.message || 'This link is not valid or has expired.')
     } finally {
@@ -41,7 +41,7 @@ export default function ClientPortalSetPassword() {
       <AuthShell title="Something is missing" subtitle="This link has no token">
         <div style={errStyle}>Open the link exactly as it appears in your email.</div>
         <div style={{ textAlign: 'center', fontSize: 12.5, marginTop: 14 }}>
-          <Link to="/portal/login" style={linkStyle}>Back to sign in</Link>
+          <Link to="/auth/login?role=client" style={linkStyle}>Back to sign in</Link>
         </div>
       </AuthShell>
     )

@@ -8,9 +8,14 @@
  * here — a redirect would strand them on a login screen they can never pass.
  */
 import axios from 'axios'
+import { attachMediaCompression } from '@/lib/mediaCompress'
 
 const BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'
 const api = axios.create({ baseURL: BASE })
+
+// Uploads are shrunk on the way out — see src/lib/mediaCompress.js. Hooked
+// here rather than at the ~50 upload sites, so every one is covered.
+attachMediaCompression(api)
 
 export const checklistFillApi = {
   // Read-only — renders the form, never mutates.

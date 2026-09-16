@@ -93,6 +93,9 @@ class TpvWorkPackageController extends Controller
             'end_date' => 'nullable|date|after_or_equal:start_date',
             'status' => ['nullable', Rule::in(TpvWorkPackage::STATUSES)],
             'notes' => 'nullable|string',
+            // "Not Applicable for the Project" — turning this on lifts the
+            // medical prerequisite for every worker on this package.
+            'medical_not_applicable' => 'nullable|boolean',
         ]);
     }
 

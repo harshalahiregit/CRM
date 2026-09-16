@@ -38,7 +38,12 @@ class HtmlSanitizer
         'div'    => ['style'],
         'h2'     => ['style'],
         'h3'     => ['style'],
-        'span'   => ['style'],
+        // data-mention carries the @mentioned person's id, written by the
+        // mention picker and read back by TaskService::mentionedUserIds. Without
+        // it here the marker was stripped on the way in and every mention fell
+        // back to guessing the person from their name. `class` rides along so the
+        // chip can be styled where it is rendered.
+        'span'   => ['style', 'class', 'data-mention'],
         'figure' => ['style'],
         'audio'  => ['controls', 'src'],
         'video'  => ['controls', 'width', 'height', 'src', 'poster', 'style'],

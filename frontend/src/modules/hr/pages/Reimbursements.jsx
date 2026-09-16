@@ -13,8 +13,11 @@
  * requirement is visible before the request rather than after it.
  */
 
+import { useNavigate } from 'react-router-dom'
+import { GRAD } from '@/components/ui/brand'
+import { useAuth } from '@/context/AuthContext'
 import { useState, useEffect, useCallback } from 'react'
-import { Receipt, Check, X, PauseCircle, Lock, RefreshCw } from 'lucide-react'
+import { Receipt, Check, X, PauseCircle, Lock, RefreshCw, Plus } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import { useToast } from '@/components/ui/Toast'
@@ -25,6 +28,21 @@ const inr = n =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 })
     .format(Number(n) || 0)
 
+
+/**
+ * A date somebody can read.
+ *
+ * These fields arrive as full ISO timestamps — "2026-09-03T00:00:00.000000Z" —
+ * and were interpolated bare, so the cards showed the timestamp while the audit
+ * lines right below them were formatted properly.
+ */
+const day = v => {
+  if (!v) return ''
+  const d = new Date(v)
+  return Number.isNaN(d.getTime())
+    ? String(v).slice(0, 10)
+    : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
 const STATUS = {
   pending:   { fg: '#fbbf24', bg: 'rgba(251,191,36,0.12)', label: 'Pending' },
   on_hold:   { fg: '#60a5fa', bg: 'rgba(96,165,250,0.12)', label: 'On hold' },
@@ -48,6 +66,8 @@ function Pill({ status }) {
 }
 
 export default function Reimbursements() {
+  const navigate = useNavigate()
+  const { can: mayDo } = useAuth()
   const toast = useToast()
 
   const [tab,      setTab]      = useState('open')
@@ -150,11 +170,25 @@ export default function Reimbursements() {
             Expense claims from employees, with the conversation on each one.
           </p>
         </div>
+        {/* my-own-button — this page lists everybody's; somebody still needs to
+            raise their own, and the form for it already exists on the personal
+            page. Navigating there rather than duplicating the form keeps one
+            place where a request is created, and keeps that page reachable now
+            that it is out of the admin's menu. */}
+        <div className="flex items-center gap-2">
+        {mayDo('self', 'create') && (
+        <button onClick={() => navigate('/app/hr/my-expenses')} title="Raise your own expense claim"
+          className="rounded-lg text-xs font-bold flex items-center gap-1.5 text-white"
+          style={{ padding: '7px 12px', background: GRAD }}>
+          <Plus size={13} /> New Claim
+        </button>
+        )}
         <button onClick={load} disabled={loading}
           className="rounded-lg text-xs font-semibold flex items-center gap-1.5"
           style={{ padding: '7px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-p)' }}>
           <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> Refresh
         </button>
+        </div>
       </div>
 
       <div className="flex gap-1.5 flex-wrap">
@@ -219,7 +253,7 @@ export default function Reimbursements() {
                       <Pill status={claim.status} />
                     </div>
                     <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                      {claim.employee?.name} · {claim.employee?.department || '—'} · spent {claim.expense_date}
+                      {claim.employee?.name} · {claim.employee?.department || '—'} · spent {day(claim.expense_date)}
                       {claim.category ? ` · ${claim.category}` : ''}
                       {claim.employee?.employee_code ? ` · ${claim.employee.employee_code}` : ''}
                     </p>

@@ -52,7 +52,7 @@ class TransportMasterDataTest extends TestCase
     {
         return TransportVehicle::create(array_merge([
             'tenant_id' => $tenantId,
-            'registration_number' => 'MH12AB'.random_int(1000, 9999),
+            'registration_number' => 'MH12AB'.self::uniqueSeq(4),
         ], $attributes));
     }
 

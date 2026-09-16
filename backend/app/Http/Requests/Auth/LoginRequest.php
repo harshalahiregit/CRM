@@ -21,7 +21,21 @@ class LoginRequest extends FormRequest
             // holds a token whose tokenable is purchase_vendors. Issuing a User token
             // here could never satisfy EnsurePurchaseVendorPortalAccess, so this door
             // is closed server-side and not merely hidden in the role selector.
-            'role'     => 'required|in:admin,staff,third_party_vendor,client,company',
+            // OPTIONAL, so the web takes exactly what the app takes: an email
+            // and a password. It was required, and picking the wrong entry in
+            // the dropdown failed a login whose credentials were perfectly
+            // correct — the app has no such selector, so the same person could
+            // sign in on their phone and not on the website.
+            //
+            // Safe to omit because users.email is globally unique: an address
+            // resolves to exactly one account, so the role adds no precision. It
+            // is still honoured when sent, which keeps every existing caller and
+            // the role-scoped portal doors working unchanged.
+            //
+            // 'doctor' is a real User with its own portal (routes/medical.php),
+            // so it belongs on this list. It was missing, which meant a doctor
+            // login could be created but never used.
+            'role'     => 'nullable|in:admin,staff,doctor,third_party_vendor,client,company',
             'remember' => 'nullable|boolean',
         ];
     }

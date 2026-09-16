@@ -24,6 +24,9 @@ use App\Services\Purchase\PurchaseVendorService;
 use App\Services\Sales\AppointmentService;
 use App\Services\Sales\ReminderService;
 use App\Services\Shared\AttachmentService;
+use App\Models\Purchase\PurchaseVendorAward;
+use App\Models\Purchase\PurchaseVendorReferral;
+use App\Services\Purchase\PurchaseAccessService;
 use App\Services\Shared\NoteService;
 use App\Support\Purchase\PurchaseVendorStatus;
 use App\Support\Task\VendorTaskLink;
@@ -145,6 +148,81 @@ class PurchaseVendorController extends Controller
         );
     }
 
+    /**
+     * Existing customers this vendor could be linked to.
+     *
+     * The Customer tab renders the shared VendorCustomersPanel, which calls
+     * customers.search() before it can offer anything. Purchase's client had no
+     * such method and no endpoint behind it, so the panel threw inside its
+     * promise chain and sat on "Searching..." for ever -- no toast, nothing in
+     * the network tab, just a spinner. TPV had both, which is why it worked
+     * there and not here.
+     *
+     * Offers unlinked customers, plus ones already on THIS vendor so the search
+     * is idempotent and does not hide what is already attached.
+     */
+    public function searchCustomers(Request $request, PurchaseVendor $purchaseVendor)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        $data = $request->validate(['q' => 'nullable|string|max:120']);
+        $q = trim((string) ($data['q'] ?? ''));
+
+        $rows = \App\Models\Customer\Client::query()
+            ->where('tenant_id', (int) $request->user()->tenant_id)
+            ->where(function ($w) use ($purchaseVendor) {
+                $w->whereNull('purchase_vendor_id')
+                    ->orWhere('purchase_vendor_id', $purchaseVendor->id);
+            })
+            ->when($q !== '', function ($query) use ($q) {
+                $query->where(function ($w) use ($q) {
+                    $w->where('company', 'like', "%{$q}%")
+                        ->orWhere('phone', 'like', "%{$q}%")
+                        ->orWhere('gst_number', 'like', "%{$q}%");
+                });
+            })
+            ->orderBy('company')
+            ->limit(20)
+            ->get(['id', 'company', 'phone', 'gst_number', 'city', 'state', 'country', 'purchase_vendor_id']);
+
+        return response()->json($rows);
+    }
+
+    /**
+     * Link an existing customer to this vendor.
+     *
+     * Idempotent when it is already this vendor's, and refuses to take one that
+     * belongs to another -- a customer silently moving between vendors is worse
+     * than being told to unlink it first.
+     *
+     * Note this sets purchase_vendor_id, not vendor_id: a customer may be linked
+     * to a TPV vendor and a Purchase vendor at once, and they are different
+     * relationships on different columns.
+     */
+    public function linkCustomer(Request $request, PurchaseVendor $purchaseVendor)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        $data = $request->validate(['client_id' => 'required|integer']);
+
+        $client = \App\Models\Customer\Client::query()
+            ->where('tenant_id', (int) $request->user()->tenant_id)
+            ->find($data['client_id']);
+
+        abort_unless($client, 404, 'Customer not found.');
+
+        if ($client->purchase_vendor_id
+            && (int) $client->purchase_vendor_id !== (int) $purchaseVendor->id) {
+            abort(422, 'That customer is already linked to another purchase vendor.');
+        }
+
+        if ((int) $client->purchase_vendor_id !== (int) $purchaseVendor->id) {
+            $client->update(['purchase_vendor_id' => $purchaseVendor->id]);
+        }
+
+        return response()->json($client->fresh() ?? $client, 200);
+    }
+
     public function storeCustomer(Request $request, PurchaseVendor $purchaseVendor)
     {
         $this->assertTenant($request, $purchaseVendor);
@@ -206,6 +284,189 @@ class PurchaseVendorController extends Controller
         $this->assertTenant($request, $purchaseVendor);
 
         return response()->json($this->vendors->approve($purchaseVendor, $request->user()));
+    }
+
+    /**
+     * Promote a temporary vendor to permanent (role:admin).
+     *
+     * Admin authority for the same reason approve() is: it removes an expiry
+     * somebody deliberately set, and after this the account transacts with no
+     * end date. The counterpart of TPV's /vendors/{vendor}/access/convert.
+     */
+    public function convertToPermanent(Request $request, PurchaseVendor $purchaseVendor)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        return response()->json([
+            'message' => 'This vendor is now permanent.',
+            'vendor'  => $this->vendors->convertToPermanent($purchaseVendor, $request->user()),
+        ]);
+    }
+
+    /**
+     * Move a temporary window (role:admin).
+     *
+     * The option Purchase never had. Promotion and expiry both existed and
+     * nothing sat between them, so "three more days" meant choosing between
+     * making a contractor permanent for ever and letting them be locked out on
+     * the day. TPV has had this since its temporary work landed.
+     */
+    public function extendAccess(Request $request, PurchaseVendor $purchaseVendor, PurchaseAccessService $access)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        $data = $request->validate([
+            // One or the other: an explicit date, or a number of days from now.
+            'access_expires_at' => 'nullable|date|required_without:validity_days',
+            'validity_days'     => 'nullable|integer|min:1|max:365|required_without:access_expires_at',
+            // Mandatory. An extension that records only a new date cannot answer
+            // why the window moved, which is the question asked months later.
+            'extension_reason'  => 'required|string|min:3|max:500',
+        ]);
+
+        return response()->json([
+            'message' => 'The access window has been extended.',
+            'vendor'  => $access->extend($purchaseVendor, $request->user(), $data),
+        ]);
+    }
+
+    /** Close a temporary window now (role:admin). */
+    public function expireAccess(Request $request, PurchaseVendor $purchaseVendor, PurchaseAccessService $access)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        if (! $purchaseVendor->isTemporary()) {
+            throw new \App\Exceptions\BusinessException(
+                'This vendor is permanent — there is no window to close.', 422);
+        }
+
+        return response()->json([
+            'message' => 'The access window has been closed.',
+            'vendor'  => $access->expire($purchaseVendor, $request->user()),
+        ]);
+    }
+
+    /** The countdown, who moved it and why, and the trail behind it. */
+    public function accessStatus(Request $request, PurchaseVendor $purchaseVendor, PurchaseAccessService $access)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        return response()->json($access->status($purchaseVendor));
+    }
+
+    /* ── Recognition ───────────────────────────────────────────────────
+     *
+     * Awards and referrals: the last two entries in this workspace's
+     * Performance group that had nothing behind them. Purchase-owned tables —
+     * TPV's vendor_awards and vendor_referrals are keyed to its own master, and
+     * hanging a second vendor id off those would put two unrelated populations
+     * in one table with half its rows null either way.
+     */
+
+    public function awards(Request $request, PurchaseVendor $purchaseVendor)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        return response()->json([
+            'data' => PurchaseVendorAward::forTenant($purchaseVendor->tenant_id)
+                ->where('purchase_vendor_id', $purchaseVendor->id)
+                ->with('grantedBy:id,name')
+                ->orderByDesc('awarded_on')
+                ->get(),
+        ]);
+    }
+
+    public function grantAward(Request $request, PurchaseVendor $purchaseVendor)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        $data = $request->validate([
+            'title'       => 'required|string|max:200',
+            'category'    => 'nullable|string|max:60',
+            'description' => 'nullable|string|max:2000',
+            'awarded_on'  => 'nullable|date',
+        ]);
+
+        $award = PurchaseVendorAward::create($data + [
+            'tenant_id'          => $purchaseVendor->tenant_id,
+            'purchase_vendor_id' => $purchaseVendor->id,
+            // Recognition is dated the day it is given unless somebody is
+            // recording one from the past.
+            'awarded_on'         => $data['awarded_on'] ?? now()->toDateString(),
+            'granted_by'         => $request->user()->id,
+        ]);
+
+        $purchaseVendor->recordAudit('Award Granted', $request->user(), null, ['title' => $award->title]);
+
+        return response()->json(['data' => $award->fresh('grantedBy')], 201);
+    }
+
+    public function deleteAward(Request $request, PurchaseVendor $purchaseVendor, int $award)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        // Scoped by vendor as well as id: an award id from another vendor must
+        // 404 rather than delete.
+        $row = PurchaseVendorAward::forTenant($purchaseVendor->tenant_id)
+            ->where('purchase_vendor_id', $purchaseVendor->id)
+            ->findOrFail($award);
+
+        $row->delete();
+        $purchaseVendor->recordAudit('Award Removed', $request->user(), null, ['title' => $row->title]);
+
+        return response()->json(['message' => 'Award removed.']);
+    }
+
+    public function referrals(Request $request, PurchaseVendor $purchaseVendor)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        return response()->json([
+            'data' => PurchaseVendorReferral::forTenant($purchaseVendor->tenant_id)
+                ->where('referred_by_purchase_vendor_id', $purchaseVendor->id)
+                ->orderByDesc('id')
+                ->get(),
+            'statuses' => PurchaseVendorReferral::STATUSES,
+        ]);
+    }
+
+    public function storeReferral(Request $request, PurchaseVendor $purchaseVendor)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        $data = $request->validate([
+            'company_name'  => 'required|string|max:200',
+            'contact_name'  => 'nullable|string|max:150',
+            'contact_email' => 'nullable|email|max:200',
+            'contact_phone' => 'nullable|string|max:40',
+            'note'          => 'nullable|string|max:2000',
+            'status'        => ['nullable', Rule::in(PurchaseVendorReferral::STATUSES)],
+        ]);
+
+        $referral = PurchaseVendorReferral::create($data + [
+            'tenant_id' => $purchaseVendor->tenant_id,
+            'referred_by_purchase_vendor_id' => $purchaseVendor->id,
+            'status'    => $data['status'] ?? 'Pending',
+        ]);
+
+        return response()->json(['data' => $referral], 201);
+    }
+
+    public function setReferralStatus(Request $request, PurchaseVendor $purchaseVendor, int $referral)
+    {
+        $this->assertTenant($request, $purchaseVendor);
+
+        $data = $request->validate([
+            'status' => ['required', Rule::in(PurchaseVendorReferral::STATUSES)],
+        ]);
+
+        $row = PurchaseVendorReferral::forTenant($purchaseVendor->tenant_id)
+            ->where('referred_by_purchase_vendor_id', $purchaseVendor->id)
+            ->findOrFail($referral);
+
+        $row->update(['status' => $data['status']]);
+
+        return response()->json(['data' => $row->fresh()]);
     }
 
     public function destroy(Request $request, PurchaseVendor $purchaseVendor)

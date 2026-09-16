@@ -346,7 +346,7 @@ export default function VendorRegisterPage() {
               </label>
               <p className="text-xs text-slate-500 pl-6.5">
                 Already have an account?{' '}
-                <Link to="/purchase-portal/login" className="text-blue-400 hover:underline">Login</Link>
+                <Link to="/auth/login?role=purchase_vendor" className="text-blue-400 hover:underline">Login</Link>
               </p>
             </div>
 

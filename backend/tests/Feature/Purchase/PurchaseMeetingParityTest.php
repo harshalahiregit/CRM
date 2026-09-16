@@ -379,4 +379,88 @@ class PurchaseMeetingParityTest extends TestCase
         // Each row says where it came from, or it cannot be traced back.
         $this->assertSame($first->id, $body['actions'][0]['origin']['meeting_id']);
     }
+
+    /**
+     * The meeting form's option lists.
+     *
+     * This endpoint returned only `types` and `default`. The form also reads
+     * `templates` — and the "Load template" button renders ONLY when the chosen
+     * type has one — so on Purchase the agenda templates never arrived and the
+     * button never appeared, even though config/purchase_meetings.php had
+     * defined them all along.
+     */
+    public function test_meeting_types_endpoint_carries_templates_and_option_lists(): void
+    {
+        Sanctum::actingAs($this->admin());
+
+        $body = $this->getJson('/api/purchase/meeting-types')->assertOk()->json();
+
+        foreach (['types', 'templates', 'priorities', 'meeting_priorities',
+                  'confidentiality', 'issue_severities', 'issue_categories'] as $key) {
+            $this->assertArrayHasKey($key, $body, "meeting-types is missing '{$key}'");
+        }
+
+        $this->assertNotEmpty($body['types']);
+        // At least one type must ship a non-empty agenda, or the button that
+        // depends on it can never show.
+        $withAgenda = collect($body['templates'])->filter(fn ($t) => is_array($t) && count($t));
+        $this->assertNotEmpty($withAgenda, 'no meeting type has an agenda template');
+        $this->assertArrayHasKey('kickoff', $body['templates']);
+    }
+
+    /**
+     * A type added on the Meeting Types settings page shows up in the picker.
+     * The settings controller is shared and writes tenant-scoped rows; Purchase
+     * merges them over its OWN config baseline, not the shared engine's.
+     */
+    public function test_a_custom_meeting_type_reaches_the_purchase_picker(): void
+    {
+        Sanctum::actingAs($this->admin());
+
+        $this->postJson('/api/purchase/meeting-type-settings', [
+            'key' => 'site_walk', 'label' => 'Site Walk',
+            'templates' => [['item' => 'Walk the perimeter', 'duration_minutes' => 20]],
+        ])->assertCreated();
+
+        $body = $this->getJson('/api/purchase/meeting-types')->assertOk()->json();
+
+        $this->assertArrayHasKey('site_walk', $body['types']);
+        $this->assertSame('Site Walk', $body['types']['site_walk']);
+        $this->assertSame('Walk the perimeter', $body['templates']['site_walk'][0]['item'] ?? null);
+        // Purchase's own baseline is still underneath it.
+        $this->assertArrayHasKey('kickoff', $body['types']);
+    }
+
+    /**
+     * Every Purchase meeting type ships an agenda, as TPV's do.
+     *
+     * All 24 types were declared but only five carried a template, so the other
+     * nineteen offered nothing to load — and now that the schedule form can pick
+     * ANY template, a type with none is a visibly empty row in the picker.
+     */
+    public function test_every_purchase_meeting_type_has_an_agenda_template(): void
+    {
+        Sanctum::actingAs($this->admin());
+
+        $body = $this->getJson('/api/purchase/meeting-types')->assertOk()->json();
+
+        $missing = array_values(array_diff(
+            array_keys($body['types']),
+            array_keys(array_filter($body['templates'], fn ($t) => is_array($t) && count($t))),
+        ));
+
+        $this->assertSame([], $missing, 'these types have no agenda template: '.implode(', ', $missing));
+    }
+
+    /** The two modules offer the same set of templated types. */
+    public function test_purchase_offers_the_same_templated_types_as_tpv(): void
+    {
+        $templated = function (string $base) {
+            return collect(config($base.'.templates', []))
+                ->filter(fn ($t) => is_array($t) && count($t))
+                ->keys()->sort()->values()->all();
+        };
+
+        $this->assertSame($templated('meetings'), $templated('purchase_meetings'));
+    }
 }

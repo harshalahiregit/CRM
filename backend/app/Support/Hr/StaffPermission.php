@@ -91,9 +91,16 @@ final class StaffPermission
                 fn ($c) => is_string($c) && self::isCapability($c)
             )));
 
-            if ($kept !== []) {
-                $clean[$module] = $kept;
-            }
+            // An EMPTY list is kept, and means "this person may do nothing here".
+            // effectiveGrants() overrides the role at module level, so an empty
+            // list is the only way to express "they hold the HR role but not this
+            // part of it". Dropping it made un-ticking every box for a module a
+            // no-op: the admin saved, the role's grant quietly won, and the
+            // person kept access nobody thought they still had.
+            //
+            // A module NOT mentioned at all is different, and still means "no
+            // opinion — use the role". Only a module the grid names is a decision.
+            $clean[$module] = $kept;
         }
 
         return $clean;

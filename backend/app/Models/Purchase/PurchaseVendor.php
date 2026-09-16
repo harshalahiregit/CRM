@@ -34,12 +34,18 @@ class PurchaseVendor extends Model implements AuthenticatableContract
         'purchase_vendor_code', 'company_name', 'legal_name', 'vendor_type', 'registration_type',
         'email', 'phone', 'website', 'category',
         'registration_number', 'gst_number', 'pan_number',
+        // The person we deal with, and the company details self-registration
+        // collects. These used to live on a hidden second `users` row.
+        'contact_person', 'contact_designation', 'company_phone', 'manpower', 'msme',
         // Vendor-master profile/financial fields (Purchase-owned)
         'balance', 'balance_as_of', 'currency', 'language',
         'bank_details', 'payment_terms', 'return_policy',
         'address', 'city', 'state', 'country', 'pincode',
         'status', 'approved_at', 'approved_by', 'notes',
-        'access_token', 'access_expires_at',
+        // Temporary -> Permanent promotion (Purchase-owned, mirrors TPV).
+        'converted_to_permanent_at', 'converted_by',
+        'access_token', 'access_expires_at', 'access_status', 'access_reminders_sent',
+        'access_extended_at', 'access_extended_by', 'extension_reason', 'validity_days',
         // Portal auth (Purchase-owned)
         'password', 'portal_status', 'email_verified_at', 'email_verification_token',
         'password_reset_token', 'password_reset_expires_at', 'last_login_at', 'last_login_ip',
@@ -54,7 +60,11 @@ class PurchaseVendor extends Model implements AuthenticatableContract
         'balance'                   => 'decimal:2',
         'balance_as_of'             => 'date',
         'approved_at'               => 'datetime',
+        'converted_to_permanent_at' => 'datetime',
         'access_expires_at'         => 'datetime',
+        'access_reminders_sent'     => 'array',
+        'access_extended_at'        => 'datetime',
+        'validity_days'             => 'integer',
         'email_verified_at'         => 'datetime',
         'password_reset_expires_at' => 'datetime',
         'last_login_at'             => 'datetime',
@@ -202,6 +212,23 @@ class PurchaseVendor extends Model implements AuthenticatableContract
         }
 
         return $this->access_expires_at->getTimestamp() <= now()->getTimestamp();
+    }
+
+    /**
+     * Seconds left on the window, never negative. Purchase's own answer.
+     *
+     * A permanent vendor and a temporary one whose window has not been given an
+     * end date both read as PHP_INT_MAX rather than 0: zero means "expired", and
+     * a vendor with no expiry has not expired — it has no clock. Returning 0
+     * there would expire every vendor the moment a sweep looked at them.
+     */
+    public function accessSecondsRemaining(): int
+    {
+        if (! $this->isTemporary() || ! $this->access_expires_at) {
+            return PHP_INT_MAX;
+        }
+
+        return max(0, $this->access_expires_at->getTimestamp() - now()->getTimestamp());
     }
 
     /**

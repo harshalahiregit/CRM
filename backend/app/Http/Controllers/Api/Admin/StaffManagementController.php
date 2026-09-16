@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Hr\HrDepartment;
+use App\Models\Hr\HrDesignation;
+use App\Models\Hr\HrEmployee;
 use App\Models\Shared\Note;
 use App\Services\Shared\NoteService;
 use App\Models\StaffRole;
@@ -685,54 +688,80 @@ class StaffManagementController extends Controller
     }
 
     /**
-     * Get available departments
+     * The departments this workspace has, as records.
+     *
+     * This used to merge a hardcoded list of eight names with
+     * `DISTINCT users.department` — free text, so "Operations", "operations" and
+     * "Ops" were three departments, none of them renameable, and the org chart
+     * (which reads `hr_employees.department_id`) saw almost nobody. The records
+     * and the screen that manages them already existed under HR ->
+     * Organization Setup; nothing pointed at them.
+     *
+     * Reading them here means there is ONE list, maintained in ONE place, and an
+     * admin adding a department gets it everywhere without a developer.
+     *
+     * Inactive departments are still returned when somebody is already in one,
+     * so retiring a department does not blank the field on the people who were
+     * in it — their record would otherwise silently lose its department the next
+     * time anybody pressed Save.
      */
     public function departments(Request $request): JsonResponse
     {
-        try {
-            \Log::info('Departments endpoint called');
-            
-            $tenantId = $request->user()->tenant_id;
+        $tenantId = (int) $request->user()->tenant_id;
 
-            // Get unique departments from existing staff
-            $existingDepts = $this->manageable($tenantId)
-                ->whereNotNull('department')
-                ->distinct()
-                ->pluck('department')
-                ->toArray();
+        $inUse = HrEmployee::where('tenant_id', $tenantId)
+            ->whereNotNull('department_id')
+            ->distinct()
+            ->pluck('department_id');
 
-            // Predefined departments
-            $predefinedDepts = [
-                'HR',
-                'Engineering',
-                'Sales',
-                'Marketing',
-                'Finance',
-                'Operations',
-                'Product',
-                'Customer Support',
-            ];
+        $departments = HrDepartment::where('tenant_id', $tenantId)
+            ->where(fn ($q) => $q->where('is_active', true)->orWhereIn('id', $inUse))
+            ->orderBy('name')
+            ->get(['id', 'name', 'code', 'is_active']);
 
-            // Merge and remove duplicates
-            $allDepts = array_unique(array_merge($predefinedDepts, $existingDepts));
-            sort($allDepts);
+        return response()->json([
+            'status' => 'success',
+            'data'   => $departments->map(fn (HrDepartment $d) => [
+                'id'        => $d->id,
+                'name'      => $d->name,
+                'code'      => $d->code,
+                'is_active' => (bool) $d->is_active,
+            ])->values(),
+        ]);
+    }
 
-            \Log::info('Departments fetched', ['count' => count($allDepts)]);
+    /**
+     * The job titles this workspace has, as records.
+     *
+     * Separate from designations() above, which — despite the name — returns
+     * staff ROLES (the permission templates). A person's job title and their
+     * permission role are different things: two people can both be "Senior
+     * Engineer" while only one of them may approve an expense. Conflating them
+     * is why the staff form had a free-text "Job Title" box next to a "Role"
+     * dropdown and neither knew about the other.
+     */
+    public function jobTitles(Request $request): JsonResponse
+    {
+        $tenantId = (int) $request->user()->tenant_id;
 
-            return response()->json([
-                'status' => 'success',
-                'data' => $allDepts,
-            ]);
-        } catch (\Exception $e) {
-            \Log::error('Departments endpoint error', [
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            
-            return response()->json([
-                'status' => 'error',
-                'message' => $e->getMessage(),
-            ], 500);
-        }
+        $inUse = HrEmployee::where('tenant_id', $tenantId)
+            ->whereNotNull('designation_id')
+            ->distinct()
+            ->pluck('designation_id');
+
+        $designations = HrDesignation::where('tenant_id', $tenantId)
+            ->where(fn ($q) => $q->where('is_active', true)->orWhereIn('id', $inUse))
+            ->orderBy('name')
+            ->get(['id', 'name', 'code', 'is_active']);
+
+        return response()->json([
+            'status' => 'success',
+            'data'   => $designations->map(fn (HrDesignation $d) => [
+                'id'        => $d->id,
+                'name'      => $d->name,
+                'code'      => $d->code,
+                'is_active' => (bool) $d->is_active,
+            ])->values(),
+        ]);
     }
 }

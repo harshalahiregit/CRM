@@ -6,49 +6,32 @@ import {
 import { tpvApi } from '@/services/tpvApi'
 import { Overlay, ModalFooter, StatusBadge as StatusPill } from '@/components/ui/kit3d'
 import { docStatusCfg, DOC_STATUS } from '@/modules/tpv/constants'
+import { TPV_DOC_CATALOG, categoryOf } from '@/components/vendor/documentCatalog'
 
-const DOC_CATEGORIES = {
-  company_registration: 'Company Documents',
-  company_pan: 'Company Documents',
-  gst: 'Company Documents',
-  udyam_certificate: 'Company Documents',
-  shop_act: 'Company Documents',
-
-  insurance_wcp: 'Compliance Documents',
-  pf_no: 'Compliance Documents',
-  esic_no: 'Compliance Documents',
-  bocw_registration: 'Compliance Documents',
-  clr: 'Compliance Documents',
-  mlwf: 'Compliance Documents',
-  mscb: 'Compliance Documents',
-  labour_license: 'Compliance Documents',
-
-  loi_wo_po: 'Financial Documents',
-  bank_proof: 'Financial Documents',
-  cancelled_cheque: 'Financial Documents',
-
-  subcontractor_decl: 'Other Documents',
-  other: 'Other Documents',
-}
-
-const STANDARD_REQUIRED_DOCS = [
-  { type: 'company_registration', label: 'Company Registration Certificate', step: 'Step 3 Statutory' },
-  { type: 'company_pan', label: 'Company PAN Card', step: 'Step 3 Statutory' },
-  { type: 'insurance_wcp', label: 'Insurance [WCP]', step: 'Step 3 Statutory' },
-  { type: 'gst', label: 'GST Certificate', step: 'Step 3 Statutory' },
-  { type: 'pf_no', label: 'PF Registration', step: 'Step 3 Statutory' },
-  { type: 'esic_no', label: 'ESIC Registration', step: 'Step 3 Statutory' },
-  { type: 'bocw_registration', label: 'BOCW Registration', step: 'Step 3 Statutory' },
-  { type: 'clr', label: 'CLR [Contract Labour Registration]', step: 'Step 3 Statutory' },
-  { type: 'mlwf', label: 'MLWF [Maharashtra Labour Welfare]', step: 'Step 3 Statutory' },
-  { type: 'mscb', label: 'MSCB Certificate', step: 'Step 3 Statutory' },
-  { type: 'udyam_certificate', label: 'Udyam Certificate', step: 'Step 3 Statutory' },
-  { type: 'other', label: 'Other Document (Optional)', step: 'Step 3 Statutory' },
-  { type: 'subcontractor_decl', label: 'Subcontractor Declaration (Optional)', step: 'Step 3 Statutory' },
-]
+/*
+ * The document types come from the shared catalog, which mirrors
+ * `Vendor\VendorDocument::TYPE_LABELS` key for key.
+ *
+ * This file used to carry its own list, and that list named seven types the TPV
+ * backend has never accepted — company_pan, pf_no, esic_no, bocw_registration,
+ * udyam_certificate, other, subcontractor_decl. `VendorDocumentService::
+ * allowedTypes()` rejects every one of them. So those seven rows could only
+ * ever read "Missing", while the five requirements the server does issue (pan,
+ * pf, esic, bocw, udyam) were types this list had never heard of and fell
+ * through to the append-extras branch below, landing at the bottom of the table
+ * out of category order. Eighteen rows for eleven documents.
+ *
+ * One catalog now, shared with the portal and with the Purchase workspace, and
+ * guarded by DocumentCatalogMatchesTheEnginesTest.
+ */
+const STANDARD_REQUIRED_DOCS = TPV_DOC_CATALOG.map(d => ({
+  type: d.type,
+  label: d.required ? d.label : `${d.label} (Optional)`,
+  step: 'Step 3 Statutory',
+}))
 
 function getCategory(type) {
-  return DOC_CATEGORIES[type] || 'Company Documents'
+  return categoryOf(TPV_DOC_CATALOG, type)
 }
 
 export default function TpvVendorDocuments({ vendorId, vendor, manage, api = tpvApi, moduleName = 'Third Party Vendor' }) {
@@ -79,12 +62,24 @@ export default function TpvVendorDocuments({ vendorId, vendor, manage, api = tpv
   useEffect(() => { load() }, [load])
 
   const backendRows = checklist?.required || []
+  /*
+   * The checklist answers in two buckets and both hold real files. `required`
+   * is what this vendor was asked for; `extras` is everything else they have
+   * actually sent — a standard vendor's LOI, a temporary vendor's company
+   * registration. This component read only the first, so a document outside
+   * the vendor's own required set was uploaded, reviewed, approved, and still
+   * drew as "Missing" on the admin tab.
+   */
+  const extraRows = checklist?.extras || []
 
   // Combine backend matrix with standard required list
   const rawRowsMap = new Map(backendRows.map(r => [r.type, r]))
+  const extraRowsMap = new Map(extraRows.map(r => [r.type, r]))
   const allDocRows = STANDARD_REQUIRED_DOCS.map(def => {
-    const existing = rawRowsMap.get(def.type)
-    const isRequired = !!existing
+    const required = rawRowsMap.get(def.type)
+    // Not asked of this vendor, but supplied anyway — an optional row, filled.
+    const existing = required || extraRowsMap.get(def.type)
+    const isRequired = !!required
     return {
       type: def.type,
       type_label: def.label,
@@ -104,15 +99,15 @@ export default function TpvVendorDocuments({ vendorId, vendor, manage, api = tpv
     }
   })
 
-  // Append any extra uploaded docs outside standard list
-  backendRows.forEach(r => {
+  // Append anything either bucket holds that the catalog has never heard of.
+  ;[...backendRows, ...extraRows].forEach(r => {
     if (!STANDARD_REQUIRED_DOCS.some(d => d.type === r.type)) {
       allDocRows.push({
         type: r.type,
         type_label: r.type_label || r.type,
         step: 'Step 3 Statutory',
         category: getCategory(r.type),
-        required: true,
+        required: !!rawRowsMap.get(r.type),
         uploaded: true,
         status: r.status || 'under_review',
         original_name: r.original_name,
@@ -199,17 +194,17 @@ export default function TpvVendorDocuments({ vendorId, vendor, manage, api = tpv
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {actionSuccess && (
-        <div style={{ padding: '12px 16px', borderRadius: 10, background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ padding: '12px 16px', borderRadius: 10, background: 'rgba(16,185,129,0.10)', border: '1px solid rgba(16,185,129,0.34)', color: 'var(--text-h)', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
           <CheckCircle size={16} /> {actionSuccess}
         </div>
       )}
 
       {/* Top Metrics Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
-        <MetricCard label="Pending Documents" value={metrics.pending} color="#f59e0b" icon={Clock} bg="#fffbeb" border="#fde68a" />
-        <MetricCard label="Approved Documents" value={metrics.approved} color="#10b981" icon={CheckCircle} bg="#f0fdf4" border="#bbf7d0" />
-        <MetricCard label="Rejected Documents" value={metrics.rejected} color="#ef4444" icon={XCircle} bg="#fef2f2" border="#fca5a5" />
-        <MetricCard label="Missing / Optional" value={metrics.missing} color="#6b7280" icon={AlertCircle} bg="#f8fafc" border="#e2e8f0" />
+        <MetricCard label="Pending Documents" value={metrics.pending} color="#f59e0b" icon={Clock} tone="245,158,11" />
+        <MetricCard label="Approved Documents" value={metrics.approved} color="#10b981" icon={CheckCircle} tone="16,185,129" />
+        <MetricCard label="Rejected Documents" value={metrics.rejected} color="#ef4444" icon={XCircle} tone="239,68,68" />
+        <MetricCard label="Missing / Optional" value={metrics.missing} color="var(--text-muted)" icon={AlertCircle} tone="148,163,184" />
       </div>
 
       {/* Main Container Card */}
@@ -298,7 +293,7 @@ export default function TpvVendorDocuments({ vendorId, vendor, manage, api = tpv
                   const cfg        = docStatusCfg(row.status)
 
                   return (
-                    <tr key={row.type} style={{ borderBottom: '1px solid var(--border)', background: isRejected ? '#fff5f5' : isApproved ? '#f8fafc' : 'transparent' }}>
+                    <tr key={row.type} style={{ borderBottom: '1px solid var(--border)', background: isRejected ? 'rgba(239,68,68,0.07)' : isApproved ? 'rgba(16,185,129,0.06)' : 'transparent' }}>
                       <td style={tdStyle}>
                         <div style={{ fontWeight: 800, color: 'var(--text-h)' }}>
                           {row.type_label} {row.required && <span style={{ color: '#ef4444' }}>*</span>}
@@ -335,7 +330,7 @@ export default function TpvVendorDocuments({ vendorId, vendor, manage, api = tpv
                       <td style={tdStyle}>
                         <StatusPill cfg={cfg} />
                         {isRejected && row.remarks && (
-                          <div style={{ fontSize: 11, color: '#dc2626', marginTop: 3, maxWidth: 160, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={row.remarks}>
+                          <div style={{ fontSize: 11, color: '#f87171', marginTop: 3, maxWidth: 160, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={row.remarks}>
                             Rationale: {row.remarks}
                           </div>
                         )}
@@ -423,7 +418,7 @@ export default function TpvVendorDocuments({ vendorId, vendor, manage, api = tpv
         <Overlay onClose={() => setPreviewDoc(null)} width={previewDoc.type === 'image' ? 680 : 850} showClose={false}>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--text-h)' }}>{previewDoc.name}</h3>
-            <button onClick={() => setPreviewDoc(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 18 }}>✕</button>
+            <button onClick={() => setPreviewDoc(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--text-muted)' }}>✕</button>
           </div>
           <div style={{ padding: 20, textAlign: 'center', maxHeight: 600, overflowY: 'auto' }}>
             {previewDoc.type === 'image' ? (
@@ -441,11 +436,19 @@ export default function TpvVendorDocuments({ vendorId, vendor, manage, api = tpv
   )
 }
 
-function MetricCard({ label, value, color, icon: Icon, bg, border }) {
+/**
+ * A metric card that reads in both themes.
+ *
+ * These four were opaque pastel fills (#fffbeb, #f0fdf4, #fef2f2, #f8fafc) with
+ * a hardcoded slate label, so in dark mode they were four bright white cards
+ * punched into the page. `tone` is now an "r,g,b" triple washed over whatever
+ * surface is behind it, and the label wears a theme token.
+ */
+function MetricCard({ label, value, color, icon: Icon, tone }) {
   return (
-    <div style={{ padding: '14px 16px', borderRadius: 12, background: bg, border: `1px solid ${border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <div style={{ padding: '14px 16px', borderRadius: 12, background: `rgba(${tone},0.10)`, border: `1px solid rgba(${tone},0.34)`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <div>
-        <div style={{ fontSize: 11.5, fontWeight: 700, color: '#475569' }}>{label}</div>
+        <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)' }}>{label}</div>
         <div style={{ fontSize: 22, fontWeight: 900, color, marginTop: 2 }}>{value}</div>
       </div>
       <Icon size={22} style={{ color }} />
@@ -475,7 +478,7 @@ function ReviewModal({ reviewing, onClose, onConfirm }) {
           {isApprove ? <CheckCircle size={18} style={{ color: '#10b981' }} /> : <XCircle size={18} style={{ color: '#ef4444' }} />}
           {isApprove ? 'Approve Compliance Document' : 'Reject Compliance Document'}
         </h3>
-        <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 18 }}>✕</button>
+        <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--text-muted)' }}>✕</button>
       </div>
 
       <form onSubmit={handleSubmit} style={{ padding: 22 }}>
@@ -552,7 +555,7 @@ function VersionHistoryDrawer({ documentId, onClose, onRestored, api = tpvApi })
         <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-h)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <History size={18} style={{ color: '#7C3AED' }} /> Document Version &amp; Audit History
         </h3>
-        <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 18 }}>✕</button>
+        <button onClick={onClose} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--text-muted)' }}>✕</button>
       </div>
 
       <div style={{ padding: 22, maxHeight: 520, overflowY: 'auto' }}>
@@ -580,7 +583,7 @@ function VersionHistoryDrawer({ documentId, onClose, onRestored, api = tpvApi })
                   </button>
                 </div>
                 {v.remarks && (
-                  <div style={{ marginTop: 6, padding: 8, borderRadius: 6, background: '#fef2f2', border: '1px solid #fca5a5', fontSize: 11.5, color: '#991b1b' }}>
+                  <div style={{ marginTop: 6, padding: 8, borderRadius: 6, background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.34)', fontSize: 11.5, color: 'var(--text-h)' }}>
                     <strong>Remarks:</strong> {v.remarks}
                   </div>
                 )}

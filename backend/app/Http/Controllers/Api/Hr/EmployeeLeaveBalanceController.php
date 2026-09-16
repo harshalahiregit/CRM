@@ -39,6 +39,24 @@ class EmployeeLeaveBalanceController extends Controller
         return response()->json($this->service->assignPolicy($data, $this->tenant($request), $request->user()), 201);
     }
 
+    /** One policy, a whole department (or designation, grade, list, or everyone). */
+    public function assignBulk(Request $request)
+    {
+        $this->can($request);
+        $data = $request->validate([
+            'leave_policy_id' => 'required|integer',
+            'scope'           => 'required|string|in:all,department,designation,grade,employees',
+            'department_id'   => 'nullable|integer',
+            'designation_id'  => 'nullable|integer',
+            'grade_id'        => 'nullable|integer',
+            'employee_ids'    => 'nullable|array',
+            'employee_ids.*'  => 'integer',
+            'effective_from'  => 'nullable|date',
+        ]);
+
+        return response()->json($this->service->assignPolicyToMany($data, $this->tenant($request), $request->user()), 201);
+    }
+
     public function allocate(Request $request)
     {
         $this->can($request);

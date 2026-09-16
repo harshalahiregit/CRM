@@ -1,5 +1,6 @@
 import ModuleShell from '@/components/layout/ModuleShell'
-import { Package, Truck, Users, Boxes } from 'lucide-react'
+import { Package, Truck, Users, Boxes, Container,
+} from 'lucide-react'
 
 /**
  * Sangoe Transport OS module shell.
@@ -46,6 +47,7 @@ const TRANSPORT_ITEMS = [
   { label: 'Trips',            path: '/app/transport/trips',        icon: Truck },
   // STOS-CTD §8 — the commercial shipment, distinct from the container.
   { label: 'Consignments',     path: '/app/transport/consignments', icon: Boxes },
+  { label: 'Containers',       path: '/app/transport/containers',   icon: Container },
   // Master data (SNG-TRN-003 / 004). The pages are Person 2's domain under
   // TM-001 §8; this is only their nav entry, which belongs to the module shell.
   { label: 'Vehicles',         path: '/app/transport/vehicles',     icon: Truck },

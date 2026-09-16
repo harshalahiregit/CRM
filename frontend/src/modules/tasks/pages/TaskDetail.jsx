@@ -85,6 +85,11 @@ const COMMENT_EDITOR_CSS = `
   .task-comment-html pre{background:var(--bg-global);border:1px solid var(--border);border-radius:8px;padding:.5rem .7rem;overflow-x:auto;white-space:pre-wrap}
   .task-comment-html blockquote{border-left:3px solid var(--color-primary-500);margin:.4rem 0;padding:.2rem .8rem;opacity:.9}
   .task-comment-html img{max-width:100%;height:auto;border-radius:8px;margin:.3rem 0}
+  /* An @mention, both while it is being written and once it is stored. It has to
+     read as one thing rather than as loose text, or nobody can tell whether the
+     person will actually be notified. */
+  .mention-chip{background:color-mix(in srgb,var(--color-primary-500) 16%,transparent);color:var(--color-primary-500);border-radius:5px;padding:.05rem .3rem;font-weight:700;white-space:nowrap}
+  .task-comment-editor .ql-editor .mention-chip{cursor:default}
   .task-comment-html h2{font-size:1.15rem;font-weight:800;margin:.5rem 0 .3rem}
   .task-comment-html h3{font-size:1.02rem;font-weight:700;margin:.4rem 0 .3rem}
 `
@@ -109,14 +114,24 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
   const { data: staff = [] } = useQuery({ queryKey: ['task-staff'], queryFn: taskApi.staff })
   // Vendors & TPVs can own a checklist item too (all are Users) — pull them so a
   // line can be handed to anyone, and so a chip resolves whoever it is.
-  const { data: vendors = [] } = useQuery({ queryKey: ['task-vendors', 'vendor'], queryFn: () => taskApi.vendors('vendor') })
   const { data: tpvs = [] } = useQuery({ queryKey: ['task-vendors', 'tpv'], queryFn: () => taskApi.vendors('tpv') })
-  const people = useMemo(() => [...staff, ...vendors, ...tpvs], [staff, vendors, tpvs])
+  const people = useMemo(() => {
+    const live = [...staff, ...tpvs]
+    const seen = new Set(live.map(p => p.id))
+    // Somebody assigned who no longer appears in any roster — a retired
+    // `vendor` login, or anyone deactivated since. The task payload carries
+    // their name, so use it: without this a chip reads "#2" and a checklist
+    // owner reads "Unknown".
+    const departed = (task?.assignees || [])
+      .filter(a => !seen.has(a.user_id))
+      .map(a => ({ id: a.user_id, name: a.name }))
+    return [...live, ...departed]
+  }, [staff, tpvs, task])
   const peopleById = useMemo(() => Object.fromEntries(people.map(p => [p.id, p])), [people])
-  // Split one assignee list into staff / vendors / TPVs for display (they all live
-  // in the same task_assignees pivot — only their role tells them apart).
+  // Split one assignee list into staff / TPVs for display (they all live in the
+  // same task_assignees pivot — only their role tells them apart). Anyone in
+  // neither set is shown separately rather than dropped; see departedIds.
   const staffIds = useMemo(() => new Set(staff.map(s => s.id)), [staff])
-  const vendorIds = useMemo(() => new Set(vendors.map(v => v.id)), [vendors])
   const tpvIds = useMemo(() => new Set(tpvs.map(t => t.id)), [tpvs])
   const { map: statusMap, list: statusList } = useStatuses('task')
 
@@ -132,6 +147,8 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
   const [commentFiles, setCommentFiles] = useState([])
   const commentFileInput = useRef(null)
   const commentQuillRef = useRef(null)
+  // The comment image being viewed full size, if any.
+  const [lightbox, setLightbox] = useState(null)
   const descQuillRef = useRef(null)
   const [pollOpen, setPollOpen] = useState(false)
   const [quickTaskOpen, setQuickTaskOpen] = useState(false)
@@ -265,6 +282,9 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
 
   const isPublic = Boolean(task.is_public)
   const assigneeIds = assignees.map(a => a.user_id)
+  // Assigned, but in neither live roster. See the panel below for why these
+  // exist and why hiding them would be worse than showing them.
+  const departedIds = assigneeIds.filter(i => !staffIds.has(i) && !tpvIds.has(i))
 
   // ── Vendor link ──────────────────────────────────────────────────────────
   // A task relates to ONE vendor via rel_type/rel_id. Lists load only while the
@@ -276,9 +296,14 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
     const html = comment
     // A comment can be text, files, or both.
     if (isCommentEmpty(html) && commentFiles.length === 0) return
-    addComment.mutate({ html, files: commentFiles })
-    setComment('')
-    setCommentFiles([])
+
+    // Cleared on SUCCESS, not on send. It used to empty the box the moment the
+    // button was pressed, so a post that failed — which every comment with an
+    // image did — wiped what had just been written and put nothing in the
+    // thread. From the writer's side the button simply did nothing.
+    addComment.mutate({ html, files: commentFiles }, {
+      onSuccess: () => { setComment(''); setCommentFiles([]) },
+    })
   }
   const stageCommentFiles = (list) => {
     const picked = Array.from(list || [])
@@ -564,11 +589,20 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                   <li key={c.id} className="group relative flex gap-2.5">
                     <span className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0"
                       style={{ background: `color-mix(in srgb, ${TASK_ACCENT} 14%, transparent)`, color: TASK_ACCENT }}>
-                      {(c.user?.name || '?').slice(0, 1).toUpperCase()}
+                      {(c.author_label || c.user?.name || '?').slice(0, 1).toUpperCase()}
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="text-xs">
-                        <span className="font-bold" style={{ color: 'var(--text-h)' }}>{c.user?.name || 'Unknown'}</span>
+                        <span className="font-bold" style={{ color: 'var(--text-h)' }}>{c.author_label || c.user?.name || 'Unknown'}</span>
+                        {/* An outside voice is marked as one. Without this a
+                            vendor's message is indistinguishable from a
+                            colleague's, and people reply accordingly. */}
+                        {c.is_vendor_author && (
+                          <span className="ml-1.5 px-1.5 py-px rounded-full text-[9px] font-black align-middle"
+                            style={{ background: `color-mix(in srgb, ${TASK_ACCENT} 16%, transparent)`, color: TASK_ACCENT }}>
+                            VENDOR
+                          </span>
+                        )}
                         <span className="ml-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
                           {new Date(c.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                         </span>
@@ -577,7 +611,11 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                           HtmlSanitizer::clean) before it is stored, so rendering the
                           stored string as HTML here is safe. */}
                       {c.content && (
+                        // An image in a comment is capped to the column width,
+                        // which for a screenshot of a form or a log is unreadable.
+                        // Clicking one opens it full size.
                         <div className="task-comment-html text-xs mt-0.5" style={{ color: 'var(--text-body)' }}
+                          onClick={(e) => { if (e.target?.tagName === 'IMG') setLightbox(e.target.getAttribute('src')) }}
                           dangerouslySetInnerHTML={{ __html: c.content }} />
                       )}
                       {(c.attachments || []).length > 0 && (
@@ -609,9 +647,18 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                   formats={COMMENT_FORMATS}
                   value={comment}
                   onChange={setComment}
-                  placeholder="Write a comment… use @name to notify someone"
+                  placeholder="Write a comment…"
                 />
               </div>
+
+              {/* The reason a post failed, where the person who wrote it is
+                  looking. The page-level banner sits far above the thread. */}
+              {addComment.isError && (
+                <p className="text-[11px] mt-2 px-3 py-2 rounded-lg"
+                  style={{ background: 'color-mix(in srgb, var(--color-danger-500) 12%, transparent)', color: 'var(--color-danger-500)' }}>
+                  {addComment.error?.message || 'The comment could not be posted.'} Your text is still here — try again.
+                </p>
+              )}
               {/* Staged attachments for the comment being written */}
               {commentFiles.length > 0 && (
                 <ul className="flex flex-wrap gap-1.5 mt-2">
@@ -635,7 +682,7 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                   <EditorActionBar quillRef={commentQuillRef} people={people} accent={TASK_ACCENT} onPoll={() => setPollOpen(true)} meeting
                     quickCreate={[{ label: 'Subtask', icon: GitBranch, onClick: () => setQuickTaskOpen(true) }]} />
                   <span className="text-[11px]" style={{ color: 'var(--text-muted)', opacity: 0.8 }}>
-                    <span className="font-semibold">@name</span> to notify · ⌘/Ctrl+↵ to post
+                    ⌘/Ctrl+↵ to post
                   </span>
                 </div>
                 <button onClick={submitComment} disabled={(isCommentEmpty(comment) && commentFiles.length === 0) || addComment.isPending}
@@ -649,6 +696,21 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
             <Card title="Polls" icon={BarChart3}>
               <PollList contextType="task" contextId={id} accent={TASK_ACCENT} onNew={() => setPollOpen(true)} />
             </Card>
+
+            {/* Full-size view of a comment image. Closes on the backdrop as well
+                as the button — this is a viewer, not a form with unsaved work in
+                it, so a stray click costs nothing. */}
+            {lightbox && (
+              <div onClick={() => setLightbox(null)}
+                style={{ position: 'fixed', inset: 0, zIndex: 1300, background: 'rgba(0,0,0,0.82)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, cursor: 'zoom-out' }}>
+                <button onClick={() => setLightbox(null)} aria-label="Close image"
+                  style={{ position: 'absolute', top: 16, right: 18, width: 34, height: 34, borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.25)', color: '#fff' }}>
+                  <X size={17} />
+                </button>
+                <img src={lightbox} alt="" onClick={(e) => e.stopPropagation()}
+                  style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 10, cursor: 'default' }} />
+              </div>
+            )}
           </div>
 
           {/* RIGHT (narrower) */}
@@ -707,12 +769,7 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                 onAdd={() => setPicker('assignee')}
                 onRemove={uid => syncAssign.mutate(assigneeIds.filter(i => i !== uid))} />
 
-              <p className="text-[10px] font-bold uppercase tracking-wide mt-4 mb-1.5" style={{ color: 'var(--text-muted)' }}>Vendors</p>
-              <PeopleChips ids={assigneeIds.filter(i => vendorIds.has(i))} staff={people} addLabel="Add vendor"
-                onAdd={() => setPicker('vendor')}
-                onRemove={uid => syncAssign.mutate(assigneeIds.filter(i => i !== uid))} />
-
-              <p className="text-[10px] font-bold uppercase tracking-wide mt-4 mb-1.5" style={{ color: 'var(--text-muted)' }}>Third-party vendors</p>
+              <p className="text-[10px] font-bold uppercase tracking-wide mt-4 mb-1.5" style={{ color: 'var(--text-muted)' }}>Assignees (third-party)</p>
               <PeopleChips ids={assigneeIds.filter(i => tpvIds.has(i))} staff={people} addLabel="Add TPV"
                 onAdd={() => setPicker('tpv')}
                 onRemove={uid => syncAssign.mutate(assigneeIds.filter(i => i !== uid))} />
@@ -723,16 +780,50 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
               <PeopleChips ids={followerIds} staff={people} addLabel="Follow"
                 onAdd={() => setPicker('follower')}
                 onRemove={uid => syncFollow.mutate(followerIds.filter(i => i !== uid))} />
+              {/* Assigned, but in none of the lists above.
+
+                  The `vendor` User role was retired (migration
+                  2026_12_23_000001): a purchase vendor authenticates as itself
+                  out of purchase_vendors, so every vendor-role User was a second
+                  login for the same supplier. Those rows were deactivated, not
+                  deleted — and the tasks assigned to them stayed assigned.
+
+                  Without this group those people render in no bucket at all: the
+                  task is still assigned to somebody the screen does not show, and
+                  there is no way to remove them. An empty group is hidden, so
+                  this costs nothing once the old assignments are cleared. */}
+              {departedIds.length > 0 && (
+                <>
+                  <p className="text-[10px] font-bold uppercase tracking-wide mt-4 mb-1.5" style={{ color: 'var(--text-muted)' }}>
+                    Assignees (no longer available)
+                  </p>
+                  <PeopleChips ids={departedIds} staff={people} addLabel=""
+                    onAdd={() => {}}
+                    onRemove={uid => syncAssign.mutate(assigneeIds.filter(i => i !== uid))} />
+                  <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                    Their login was retired or deactivated. They still hold this task — remove them and assign somebody who can do it.
+                  </p>
+                </>
+              )}
+
               <p className="text-[10px] mt-3" style={{ color: 'var(--text-muted)' }}>
-                Vendors &amp; third-party vendors see tasks assigned to them on their portal dashboard.
+                Third-party vendors see tasks assigned to them on their portal dashboard.
+                A purchase vendor is reached through the company link below, not by assignment.
               </p>
 
-              {/* Vendor. Shown here beside the people because that is where you look
-                  for "who is this task for" -- but it is NOT an assignee list. A
-                  Purchase Vendor has no User account and can never be assigned, so
-                  the link is the task's rel_type/rel_id, and a task carries one. */}
+              {/* The company this task is FOR. Beside the people because that is
+                  where you look for it, but it is not an assignee list: a Purchase
+                  Vendor is a company record with no User account, so it can never
+                  be assigned to. It is the task's rel_type/rel_id, and a task
+                  carries one.
+
+                  This used to be labelled "Vendor", directly beneath "Vendors".
+                  Two labels one letter apart for two different kinds of thing —
+                  one a person who does the work, one a company it is filed
+                  against — with nothing on screen saying so. The form drawer had
+                  always called it Related To; this now agrees with it. */}
               <p className="text-[10px] font-bold uppercase tracking-wide mt-4 mb-1.5" style={{ color: 'var(--text-muted)' }}>
-                <Building2 size={10} className="inline mr-1" />Vendor
+                <Building2 size={10} className="inline mr-1" />Related to (company)
               </p>
               <div className="flex flex-wrap items-center gap-1.5 rounded-xl px-2 py-2"
                 style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', minHeight: 44 }}>
@@ -749,9 +840,13 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                 )}
                 <button type="button" onClick={() => setPicker('vendor-link')} className="text-xs font-bold px-2 py-1 rounded-lg"
                   style={{ border: '1px dashed var(--border)', color: 'var(--text-muted)' }}>
-                  + {isVendorLinked ? 'Change' : 'Link vendor'}
+                  + {isVendorLinked ? 'Change' : 'Link a company'}
                 </button>
               </div>
+              <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                Which company the task is filed against — for their page and their reports.
+                Nobody is assigned by this.
+              </p>
             </Card>
 
             <RemindersCard taskId={id} staff={staff} currentUserId={user?.id} />
@@ -783,12 +878,6 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
         onPick={it => it && syncAssign.mutate([...new Set([...assigneeIds, it.id])])}
         items={staff.filter(s => !assigneeIds.includes(s.id)).map(s => ({ id: s.id, label: s.name, sublabel: s.role }))}
         title="Assign to" subtitle="They'll get a notification." emptyText="Everyone is already assigned." accent={TASK_ACCENT}
-      />
-      <SearchPicker
-        open={picker === 'vendor'} onClose={() => setPicker(null)}
-        onPick={it => it && syncAssign.mutate([...new Set([...assigneeIds, it.id])])}
-        items={vendors.filter(v => !assigneeIds.includes(v.id)).map(v => ({ id: v.id, label: v.name, sublabel: v.email }))}
-        title="Assign a vendor" subtitle="They'll see it on their vendor portal." emptyText="No vendors available." accent={TASK_ACCENT}
       />
       <SearchPicker
         open={picker === 'tpv'} onClose={() => setPicker(null)}

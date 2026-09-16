@@ -16,6 +16,12 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 /**
  * The Vehicle master — SNG-TRN-003, table DB-004.
  *
+ * ── PLACEHOLDER. THIS FILE IS SCHEDULED FOR DELETION. ────────────────────
+ * Held by Person 1 only so the Trip and Order demo has something to allocate.
+ * The domain is Person 2's under TM-001 §8; when their Fleet module merges,
+ * this is REMOVED, not merged with. Do not add features or refactor it — see
+ * TEAM-CONTRACTS.md §1a for the file list and the seam that survives.
+ *
  * Fleet's half of the OPS↔FLEET contract (STOS-FLEET §4):
  *   OPS asks   "Which vehicle can execute this trip?"
  *   FLEET says "Which vehicles are eligible, available, compliant, maintained

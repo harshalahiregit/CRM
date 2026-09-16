@@ -57,6 +57,7 @@ class LeavePolicyController extends Controller
             'applies_to'               => 'nullable|string|max:40',
             'grade_id'                 => 'nullable|integer',
             'designation_id'           => 'nullable|integer',
+            'department_id'            => 'nullable|integer',
             'probation_allowed'        => 'boolean',
             'notice_period_allowed'    => 'boolean',
             'weekends_count'           => 'boolean',

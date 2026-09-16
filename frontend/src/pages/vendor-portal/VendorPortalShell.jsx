@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { HardHat, Gavel, HelpCircle } from 'lucide-react'
+import { HardHat, Gavel, HelpCircle, FileSignature, ShieldCheck } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { portalApi } from '@/services/portalApi'
 import TemporaryAccessBanner from '@/modules/tpv/components/TemporaryAccessBanner'
@@ -34,6 +34,9 @@ export default function VendorPortalShell() {
         overview:   'overview',
         profile:    'registration',   // "My Company"
         contact:    'contacts',
+        // External Medical Flow — upload certificates, answer the quality team.
+        medical:    'medical',
+        training:   'training',
         customer:   'customers',
         comply:     'compliance',
         documents:  'documents',      // statutory documents / files
@@ -63,7 +66,20 @@ export default function VendorPortalShell() {
           items: [
             { key: 'workforce',  label: 'My Workforce', icon: HardHat, to: 'workforce', gate: v => v?.status === 'Active' },
             { key: 'governance', label: 'Governance',   icon: Gavel,   to: 'governance' },
-            { key: 'support',    label: 'Support',      icon: HelpCircle, to: 'support' },
+            // Agreements the vendor is a party to. No gate: reading one they
+            // have been sent is often exactly what a vendor still awaiting
+            // approval needs to do.
+            //
+            // Labelled "Agreements", matching the Purchase portal and the route.
+            // The two portals called one screen by two names, so a supplier
+            // working under both engines saw the same feature twice over with
+            // different words on it.
+            { key: 'agreements', label: 'Agreements',      icon: FileSignature, to: 'agreements' },
+            // Where their registration stands. The page existed and was only
+            // reachable from a link inside Support, while the Purchase portal
+            // had it in the nav — same information, two levels apart.
+            { key: 'registration', label: 'Approval Status', icon: ShieldCheck, to: 'registration' },
+            { key: 'support',    label: 'Support',         icon: HelpCircle, to: 'support' },
           ],
         },
       ]}

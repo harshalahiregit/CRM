@@ -4,10 +4,12 @@ use App\Http\Controllers\Api\Transport\TransportAdvanceController;
 use App\Http\Controllers\Api\Transport\TransportAllocationController;
 use App\Http\Controllers\Api\Transport\TransportCapabilityController;
 use App\Http\Controllers\Api\Transport\TransportConsignmentController;
+use App\Http\Controllers\Api\Transport\TransportContainerController;
 use App\Http\Controllers\Api\Transport\TransportDispatchController;
 use App\Http\Controllers\Api\Transport\TransportDriverController;
 use App\Http\Controllers\Api\Transport\TransportOrderController;
 use App\Http\Controllers\Api\Transport\TransportPretripController;
+use App\Http\Controllers\Api\Transport\TransportResourceCommitmentController;
 use App\Http\Controllers\Api\Transport\TransportTripController;
 use App\Http\Controllers\Api\Transport\TransportVehicleController;
 use App\Support\Transport\TransportPermission;
@@ -269,6 +271,64 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
 
     Route::middleware('transport.permission:'.TransportPermission::CONSIGNMENT_DELETE)->group(function () {
         Route::delete('/consignments/{id}', [TransportConsignmentController::class, 'destroy'])->whereNumber('id');
+    });
+
+    /* ── What my trips say about a vehicle or driver ──────────────────
+     *
+     * UX §35 — "never merely show Blocked, show why". Reads trip_assignments
+     * and transport_trips only. It reports a COMMITMENT, never an availability
+     * verdict: deciding whether a resource may be used is Person 2's allocation
+     * scoring (TM-001 §9) and must not migrate here.
+     *
+     * TRIP_VIEW, not a key of its own — everything it returns is a fact about a
+     * trip, and whoever may read trips may read this.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::TRIP_VIEW)->group(function () {
+        Route::get('/resource-commitments', [TransportResourceCommitmentController::class, 'index']);
+    });
+
+    /* ── Containers — STOS-CTD §7, §8 ─────────────────────────────────
+     *
+     * NO REGISTRY ROW, AND NO TICKET — the same position as Consignment, and
+     * recorded the same way (D-45 for the permission keys, D-38 for the absent
+     * ticket). Step 11 was searched for `container` and has no row of any kind.
+     *
+     * THERE IS NO PUT AND NO DELETE, deliberately. The container number is the
+     * identity, and STOS-CTD §7 requires historical associations be maintained;
+     * editing the number would rewrite that history and deleting the container
+     * would destroy it. A container leaves a consignment by DETACH, which keeps
+     * the row.
+     *
+     * attach and detach share one permission. They are one authority — deciding
+     * what is on a consignment — and splitting them would let someone attach a
+     * container they could not then remove.
+     *
+     * Every one of these sits inside the file's role:admin,staff group. There is
+     * deliberately no customer-facing read, and it matters more here than
+     * anywhere else: STOS-CTD's Digital Passport is container-keyed, so this is
+     * exactly the surface a customer route would expose while SCOPE_OWN still
+     * narrows nothing (D-46). TransportRouteExposureTest fails the build if one
+     * escapes.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::CONTAINER_VIEW)->group(function () {
+        Route::get('/containers', [TransportContainerController::class, 'index']);
+        // CTD-001 — before /containers/{id}, though whereNumber already keeps
+        // them apart. Ordering it defensively costs nothing and survives
+        // somebody removing the constraint.
+        Route::get('/containers/lookup', [TransportContainerController::class, 'lookup']);
+        Route::get('/containers/{id}',   [TransportContainerController::class, 'show'])->whereNumber('id');
+        // STOS-CTD §8 — a consignment may carry one container or several.
+        Route::get('/consignments/{consignment}/containers', [TransportContainerController::class, 'forConsignment'])
+            ->whereNumber('consignment');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::CONTAINER_CREATE)->group(function () {
+        Route::post('/containers', [TransportContainerController::class, 'store']);
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::CONTAINER_ATTACH)->group(function () {
+        Route::post('/containers/{id}/attach', [TransportContainerController::class, 'attach'])->whereNumber('id');
+        Route::post('/containers/{id}/detach', [TransportContainerController::class, 'detach'])->whereNumber('id');
     });
 
     /* ── Trips — write (PERM-002) ─────────────────────────────────────── */

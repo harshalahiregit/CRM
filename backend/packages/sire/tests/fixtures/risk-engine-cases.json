@@ -1,0 +1,101 @@
+{
+  "_comment": [
+    "EXECUTABLE SPECIFICATION for SIRE's three risk engines.",
+    "Run by tests/riskEngines.test.mjs and",
+    "backend/tests/Unit/Sire/SireRiskEngineTest.php.",
+    "",
+    "All three share one banding scale (>=6 high, >=3 medium) so that a HIGH means",
+    "a comparable weight of evidence wherever it appears. Scores are asserted",
+    "exactly, because a risk band nobody can reproduce is a risk band nobody acts on."
+  ],
+  "thresholds": { "high": 6, "medium": 3 },
+
+  "regression_cases": [
+    {
+      "name": "a clean issue in a healthy module scores nothing and says so",
+      "input": { "module": "sales", "module_regression_rate": 0, "module_issue_count": 20, "severity_code": "minor", "active_test_count": 3 },
+      "expect": { "score": 0, "level": "low", "factor_count": 0, "unevidenced": true }
+    },
+    {
+      "name": "a module with a regression habit plus no tests is HIGH",
+      "input": { "module": "sales", "module_regression_rate": 0.25, "module_issue_count": 14, "reopen_count": 1, "severity_code": "major", "root_cause_category": "code", "active_test_count": 0 },
+      "expect": { "score": 8, "level": "high", "top_factor": "module_regression_history" }
+    },
+    {
+      "name": "module history is suppressed below five issues — two is not a track record",
+      "input": { "module": "new-module", "module_regression_rate": 1, "module_issue_count": 2, "severity_code": "minor", "active_test_count": 2 },
+      "expect": { "score": 0, "level": "low", "excludes_factor": "module_regression_history" }
+    },
+    {
+      "name": "an issue that is itself a regression, critical and twice reopened",
+      "input": { "is_regression": true, "reopen_count": 2, "severity_code": "critical", "active_test_count": 4, "module_issue_count": 0 },
+      "expect": { "score": 6, "level": "high", "includes_factors": ["already_a_regression", "reopened", "severity"] }
+    },
+    {
+      "name": "a data root cause does not add blast radius",
+      "input": { "root_cause_category": "data", "severity_code": "minor", "active_test_count": 1, "module_issue_count": 0 },
+      "expect": { "score": 0, "excludes_factor": "root_cause_class" }
+    },
+    {
+      "name": "an outstanding regression test is called out on its own",
+      "input": { "regression_test_required": true, "regression_test_done": false, "active_test_count": 2, "severity_code": "minor", "module_issue_count": 0 },
+      "expect": { "score": 1, "level": "low", "includes_factors": ["regression_test_outstanding"] }
+    }
+  ],
+
+  "recurrence_cases": [
+    {
+      "name": "a one-off with nothing behind it is LOW",
+      "input": { "occurrence_count": 1, "reopen_count": 0, "same_root_cause_count": 0, "distinct_fix_versions": 0 },
+      "expect": { "score": 0, "level": "low", "unevidenced": true }
+    },
+    {
+      "name": "five occurrences, reopened, fixed three times is HIGH",
+      "input": { "occurrence_count": 5, "reopen_count": 2, "distinct_fix_versions": 3, "same_root_cause_count": 2, "permanent_fix_status": "none" },
+      "expect": { "score": 9, "level": "high", "includes_factors": ["occurrences", "repeated_fixes", "no_permanent_fix"] }
+    },
+    {
+      "name": "workaround language is treated as strong evidence",
+      "input": { "occurrence_count": 2, "workaround_signals": ["workaround", "temporary"], "distinct_fix_versions": 1 },
+      "expect": { "score": 3, "level": "medium", "includes_factors": ["workaround_language"] }
+    },
+    {
+      "name": "a verified permanent fix pulls the score DOWN",
+      "input": { "occurrence_count": 3, "reopen_count": 1, "permanent_fix_status": "verified", "distinct_fix_versions": 1 },
+      "expect": { "score": 1, "level": "low", "includes_factors": ["permanent_fix_verified"] }
+    },
+    {
+      "name": "a verified fix cannot drag the score below zero into nonsense",
+      "input": { "occurrence_count": 0, "permanent_fix_status": "verified" },
+      "expect": { "score": -2, "level": "low" }
+    }
+  ],
+
+  "release_cases": [
+    {
+      "name": "a clean release scores nothing and is reported as unevidenced",
+      "input": { "open_critical": 0, "qa_failed": 0, "regression_count": 0, "recurring_count": 0, "qa_pass_rate": 1, "total_issues": 8, "prior_releases_caused_regressions": 0 },
+      "expect": { "score": 0, "level": "low", "unevidenced": true }
+    },
+    {
+      "name": "one open critical alone is enough for MEDIUM",
+      "input": { "open_critical": 1, "qa_failed": 0, "regression_count": 0, "recurring_count": 0, "qa_pass_rate": 1, "total_issues": 5, "prior_releases_caused_regressions": 0 },
+      "expect": { "score": 3, "level": "medium", "top_factor": "open_critical" }
+    },
+    {
+      "name": "an unknown QA pass rate scores zero — absence of evidence is not a clean bill of health",
+      "input": { "open_critical": 0, "qa_failed": 0, "regression_count": 0, "recurring_count": 0, "qa_pass_rate": null, "total_issues": 5, "prior_releases_caused_regressions": 0 },
+      "expect": { "score": 0, "excludes_factor": "qa_pass_rate" }
+    },
+    {
+      "name": "a large release with a poor QA record and a bad history is HIGH",
+      "input": { "open_critical": 0, "qa_failed": 2, "regression_count": 4, "recurring_count": 3, "qa_pass_rate": 0.6, "total_issues": 60, "prior_releases_caused_regressions": 2 },
+      "expect": { "score": 11, "level": "high" }
+    },
+    {
+      "name": "size alone can reach MEDIUM — a big release is a risk in itself",
+      "input": { "open_critical": 0, "qa_failed": 0, "regression_count": 1, "recurring_count": 0, "qa_pass_rate": 0.9, "total_issues": 55, "prior_releases_caused_regressions": 0 },
+      "expect": { "score": 3, "level": "medium", "includes_factors": ["size", "regressions"] }
+    }
+  ]
+}

@@ -92,14 +92,80 @@ class PurchaseDocumentService
                 'progress_percent' => count($required) > 0 ? (int) round($approved / count($required) * 100) : 0,
             ],
             'complete'    => $approved === count($required),
+        ] + self::conversionContext($vendor->converted_to_permanent_at, $required, $docs->keys()->all());
+    }
+
+    /**
+     * Why a vendor who was complete yesterday is at 18% today.
+     *
+     * Promotion from temporary to permanent rewrites `vendor_type`, and the
+     * required set is derived from it: three documents become eleven. The
+     * vendor submitted, passed and was activated against the temporary set, so
+     * nothing is wrong with their file — the bar moved. Without saying so, the
+     * screen reads as a vendor who was let through without paperwork.
+     *
+     * PV-0002 is the worked example: registered temporary, filed exactly the
+     * temporary set (insurance, GST, LOI), approved at 3 of 3, converted four
+     * days later, and the panel then read "2 of 11 (18%)" — it had even stopped
+     * counting the LOI, which the permanent set does not ask for.
+     *
+     * @param  string[]  $required
+     * @param  string[]  $held      types this vendor has uploaded, whatever the status
+     * @return array{converted_at?:string,newly_required?:string[]}
+     */
+    public static function conversionContext($convertedAt, array $required, array $held): array
+    {
+        if (! $convertedAt) {
+            return [];
+        }
+
+        // Asked for only because they are now permanent, and not yet supplied.
+        $newly = array_values(array_diff($required, PurchaseDocument::TEMPORARY_SET, $held));
+
+        return [
+            'converted_at'   => $convertedAt->toIso8601String(),
+            'newly_required' => $newly,
         ];
+    }
+
+    /**
+     * Who is acting, when it may be either kind of account.
+     *
+     * The Purchase portal authenticates as a PurchaseVendor — its own model with
+     * its own token — not as a User. Typing these two methods `User` meant the
+     * vendor's own upload could never run: `purchaseVendor()` asserts the caller
+     * IS a PurchaseVendor, and the next line handed that same object to a `User`
+     * parameter, so every upload from the portal was a TypeError and a 500. The
+     * vendor was told "something went wrong on our side" and step 3 of onboarding
+     * could not be completed at all.
+     *
+     * `review()` and `destroy()` stay typed `User` deliberately — a vendor may
+     * never approve or delete its own document, and the type is the guard.
+     */
+    private function actorUser(User|PurchaseVendor|null $actor): ?User
+    {
+        return $actor instanceof User ? $actor : null;
+    }
+
+    /**
+     * Display name for the audit trail. Null for a User — AuditLogService already
+     * snapshots `$actor->name` in that case and the label must not override it.
+     * A PurchaseVendor signs as its company, since it has no `name` column.
+     */
+    private function actorLabel(User|PurchaseVendor|null $actor): ?string
+    {
+        if (! $actor instanceof PurchaseVendor) {
+            return null;
+        }
+
+        return trim(($actor->company_name ?: 'Vendor').' (Vendor Portal)');
     }
 
     /**
      * Upload (or replace) a document of a given type. Replacing removes the old
      * file and resets the review state so it's re-reviewed.
      */
-    public function upload(PurchaseVendor $vendor, string $type, UploadedFile $file, User $actor): PurchaseDocument
+    public function upload(PurchaseVendor $vendor, string $type, UploadedFile $file, User|PurchaseVendor $actor): PurchaseDocument
     {
         $this->assertType($type);
 
@@ -132,7 +198,7 @@ class PurchaseDocumentService
             $doc = PurchaseDocument::create($data);
         }
 
-        $doc->recordAudit('Document Uploaded', $actor, null, ['type' => $type]);
+        $doc->recordAudit('Document Uploaded', $this->actorUser($actor), null, ['type' => $type], $this->actorLabel($actor));
 
         Log::channel('purchase')->info('Purchase document uploaded', [
             'document_id' => $doc->id, 'purchase_vendor_id' => $vendor->id, 'tenant_id' => $vendor->tenant_id, 'type' => $type,
@@ -189,7 +255,7 @@ class PurchaseDocumentService
     }
 
     /** Replace a rejected document's file, returning it to review. */
-    public function resubmit(PurchaseDocument $doc, UploadedFile $file, User $actor): PurchaseDocument
+    public function resubmit(PurchaseDocument $doc, UploadedFile $file, User|PurchaseVendor $actor): PurchaseDocument
     {
         if ($doc->isApproved()) {
             throw new BusinessException('An approved document cannot be resubmitted.');
@@ -210,7 +276,7 @@ class PurchaseDocumentService
             'reviewed_at'   => null,
         ]);
 
-        $doc->recordAudit('Document Resubmitted', $actor, null, ['type' => $doc->type]);
+        $doc->recordAudit('Document Resubmitted', $this->actorUser($actor), null, ['type' => $doc->type], $this->actorLabel($actor));
 
         Log::channel('purchase')->info('Purchase document resubmitted', [
             'document_id' => $doc->id, 'tenant_id' => $doc->tenant_id,

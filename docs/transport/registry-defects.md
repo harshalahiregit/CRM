@@ -66,7 +66,11 @@ Authority for who rules on what: the Conflict Resolution matrix in
 | D-51 | The suite runs on sqlite; production runs MySQL | High | Architecture | Open — repository-wide, not Transport's to fix |
 | D-52 | No structural marker for a temperature-critical trip | **High** | Product + Person 2 | Open — TM-001 §12's P0 rule has nothing to key on |
 | D-53 | Two CLOSED attachment windows may overlap | Low | Person 1 | Open — latent, unreachable today |
-| D-54 | Step 9 and ENUM-002 describe different advance lifecycles | **High** | Product + Finance | Open — ENUM-002 stored on FLD-012's authority, four Step 9 states unrepresentable |
+| D-57 | Step 9 and ENUM-002 describe different advance lifecycles | **High** | Product + Finance | Open — ENUM-002 stored on FLD-012's authority, four Step 9 states unrepresentable |
+
+> **D-54, D-55 and D-56 have bodies below but no row here** — they were added on 2026-09-16 and the
+> index was not extended with them. Person 1 owns those three; the rows are theirs to write, which
+> is why they are named rather than summarised by someone else.
 
 ---
 
@@ -1393,6 +1397,26 @@ conversation. Options, in rough order of cost: run the existing suite against My
 job; or add a small MySQL-only group for schema and constraint tests; or accept the gap explicitly
 and require that every constraint be probed against both engines before it ships, as was done here.
 
+### The working rule this produced, for every derived value in this module
+
+The engine split forces a choice each time a value must be derived and must never disagree with its
+source. The rule that came out of the container work, stated once so it need not be re-derived:
+
+> **Put the derivation in the DATABASE when both engines express it identically. Put it in PHP when
+> they do not — and then say so, next to the code, along with what the PHP version cannot cover.**
+
+Applied to the two in `transport_containers`:
+
+| Derived value | Expression | Where | Why |
+|---|---|---|---|
+| `active_container_key` | `CASE WHEN detached_at IS NULL THEN container_id ELSE NULL END` | **database** | Both engines evaluate it identically — verified by running it |
+| `container_number_normalized` | trim + strip non-alphanumerics + uppercase | **PHP** (`saving()` hook) | MySQL 8 has `REGEXP_REPLACE`; sqlite returns *"no such function: REGEXP_REPLACE"*. A generated column would need two dialects, and the suite runs on the engine that cannot express it — this defect, exactly |
+
+The cost of the PHP side is stated where it is paid: a `saving()` hook covers Eloquent writes only,
+so a raw insert bypasses it. The database-side one has no such gap. **Never assert which engine can
+express something — run it.** Both facts above were established by executing the expression on MySQL
+8.0.46 and sqlite 3.45.1, not by reading documentation.
+
 ---
 
 ## D-52 — Nothing structurally marks a trip as temperature-critical
@@ -1543,12 +1567,295 @@ correction is a deliberate, single, human act — a check at that one entry poin
 would be a guard on a door nobody can open, and the natural place to put it — a value object holding
 the window — would not have enforced anything either.
 
+### A SECOND latent defect waits on the same trigger — read both together
+
+`TransportContainer::booted()` carries a residual with the identical shape, and whoever builds the
+triggering feature will plausibly find one and miss the other:
+
+> **The normalisation residual.** `container_number_normalized` is derived by a model `saving()`
+> hook, which covers **Eloquent writes only**. A raw `DB::table()` insert, a raw SQL import or a
+> migration writing rows directly bypasses it, producing a container that looks perfectly correct on
+> screen and **cannot be found by search**. `active_container_key` has no such gap — the database
+> computes it however the row arrives.
+
+**Both are unreachable today and both become reachable on the same trigger:**
+
+> **BULK CONTAINER IMPORT, OR ANY BACK-DATED CORRECTION.**
+
+The ticket that builds either one inherits **two** requirements, not one:
+
+1. **Overlap** (this defect) — reject a window that overlaps an existing one for the same container,
+   at the single entry point where back-dating happens.
+2. **Normalisation** (the residual) — every imported row must go through
+   `TransportContainer::normalise()`, whether by writing through the model or by calling it directly.
+   A row that skips it is invisible to `CTD-001` search.
+
 **Owner: Person 1**, to implement alongside back-dated correction or historical import, whichever
-arrives first.
+arrives first — and to implement **both**, because they arrive together.
 
 ---
 
-## D-54 — Step 9 and ENUM-002 describe different advance lifecycles
+## D-54 — The Transport suite is intermittently red: random test fixtures collide
+
+**Raised:** 2026-09-16, during the Block 1 step-5 verification run. **Owner: Person 1 (fixtures),
+with a decision needed on Person 2's files.** **Severity: high — it attacks the thing every other
+defect here is verified with.**
+
+### What happened
+
+The full Transport suite failed once, then passed three consecutive times with no code change:
+
+```
+run 1   1 failed, 3 skipped, 736 passed (2785 assertions)
+        24  app/Services/Transport/TransportVehicleService.php:72
+runs 2-4   3 skipped, 737 passed (2791 assertions)
+```
+
+A suite that is green four times out of five is not green. It is a suite that will be re-run until
+it agrees, which is the same as having no suite at all.
+
+### The mechanism, proven rather than assumed
+
+Fourteen test files build vehicle fixtures as:
+
+```php
+'registration_number' => 'MH12AB'.random_int(1000, 9999),   // 9,000 possible values
+```
+
+`transport_vehicles` carries `UNIQUE(tenant_id, registration_normalized)` (migration line 113).
+Two draws of the same number inside one test method therefore violate it.
+
+Probed directly — a throwaway test creating the same registration twice through
+`TransportVehicleService::create()`:
+
+```
+EXCEPTION: Illuminate\Database\UniqueConstraintViolationException
+FRAME:     TransportVehicleService.php:74      ← TransportVehicle::create(...)
+```
+
+Line **74** is the `create()` inside the closure; line **72** is the `DB::transaction(...)` that
+wraps it. Both frames are on one call path, and line 72 is exactly what the failing run printed.
+The mechanism is confirmed, not inferred.
+
+`RefreshDatabase` rolls back between test methods, so the collision window is **within a single test
+method** — which is why it is rare, and why it will never reproduce on demand.
+
+### Why it is worth fixing rather than re-running
+
+- Every ruling in this register is backed by "the test passes". A suite with a background failure
+  rate degrades that evidence for **all 54 entries**.
+- The failure surfaces in `TransportVehicleService` — Person 2's file — while the cause is in test
+  fixtures. The next person to see it will debug the wrong file.
+- It gets worse, not better: the collision probability rises with every vehicle fixture added.
+
+### The fix
+
+Replace the random draw with a per-test counter, which cannot collide:
+
+```php
+private static int $seq = 0;
+'registration_number' => sprintf('MH12AB%04d', ++self::$seq),
+```
+
+Driver fixtures use `'RJ14'.random_int(100000, 999999)` — a 900,000-value space, 100× safer, but the
+same class of defect and worth the same treatment.
+
+### Not done, and why — scope
+
+The fourteen files split across two owners:
+
+| Files | Owner |
+|---|---|
+| `DispatchTest`, `DispatchApiTest`, `Pretrip*Test` (4), `TripAssignmentTest` | **Person 1** — mine |
+| `TransportMaster*Test` (4), `TransportAllocation*Test` (3), `TransportEligibilityTest` | **Person 2** — fleet master and allocation scoring |
+
+Fixing only my seven leaves the suite flaky and leaves two contradictory fixture patterns in one
+directory. Fixing all fourteen crosses into Person 2's section, which is a standing hard rule.
+**Raised for a ruling rather than guessed** — Hard Rule 1. Git shows a single author across all
+fourteen files, so there is no concurrent work to collide with today.
+
+### RULED AND FIXED — 2026-09-16
+
+**Owner's ruling: fix all of them, including Person 2's files.** Reasoning recorded because it is
+the part worth reusing: every ruling in this register is backed by *"the test passes"*, so an
+intermittently red suite devalues the whole register; git shows a single author across all the
+affected files, so there was no concurrent work to collide with; and fixing half would leave two
+contradictory fixture patterns side by side, which is worse than either.
+
+**Correction to this entry as first written: it is 15 files, not 14.** The miscount came from
+working off an exact-string search for `'MH12AB'.random_int(1000, 9999)`. Three variants do not
+match that string and were missed:
+
+| Variant | File |
+|---|---|
+| `'MH 12 AB '.random_int(...)` — spaces, normalises to the same key | `TransportMasterApiTest` |
+| `'MH12'.Str::upper(Str::random(2)).random_int(...)` | `TransportMasterAllocationAuditTest`, `TransportAllocationRefusalAuditTest` |
+| `'RJ14 '.random_int(...)` — trailing space, licence | `TransportMasterApiTest` |
+
+A fourth was found only by sweeping rather than listing: `TransportMasterAllocationAuditTest:277`
+used `'MH99'.random_int(1000, 9999)` for a **licence** — a second 9,000-value space on a unique
+column that no vehicle-shaped search would have turned up.
+
+**The lesson is the general one:** a search for the pattern you remember writing finds the instances
+you remember writing. Sweep for the *mechanism* — here, every `random_int` in the suite, cross-cut
+against every `unique()` in the migrations — and the variants come out on their own.
+
+**The fix.** `TestCase::uniqueSeq(int $width)`, a monotonic per-process counter. Chosen over widening
+the range from 9,000 to 90,000, which buys time and keeps the bug: **collision had to become
+impossible, not rarer.** A rare failure is worse than a frequent one because it gets re-run until it
+agrees instead of fixed. `$width` preserves the shape and length of the draw it replaced, so no test
+sees an identifier of a different form. Diff: 29 insertions, 29 deletions, 15 files, every line a
+fixture line — no assertion, no production file, no logic.
+
+Every test asserting a literal registration or licence passes it as an explicit override, so none of
+them ever used the random default. Checked before editing, not after.
+
+**What the evidence does and does not prove.** Six consecutive green Transport runs (739 passed,
+3 skipped, identical assertion counts). That is *consistent with* the fix but is not proof: at the
+observed ~1-in-5 failure rate, six green runs happen by luck about a quarter of the time. The proof
+is structural, and was probed directly: 20,000 draws produced 20,000 distinct values, and the
+counter does **not** reset between test methods. A full Transport run makes **585 draws**, so the
+4-digit shape holds with 17x headroom and `str_pad` grows rather than wrapping in any case.
+
+**Full-suite check.** The whole suite shows 32 failures in SangoeTrack, Tpv and Unit/Frontend. These
+are **pre-existing and unrelated** — verified by stashing this change and running those suites on a
+clean tree, which produced the identical 32. `tests/TestCase.php` is shared with those modules, so
+this was checked rather than assumed. Transport itself: zero failures.
+
+**Written to Person 2** as required: `docs/transport/NOTE-person2-test-fixtures.md` — which files,
+why, what changed, and an explicit statement that no assertion or behaviour was altered, with the
+list of things to verify independently.
+
+### Same defect class outside Transport — NOT MINE
+
+Found by the sweep, reported rather than fixed (different module, no authorisation):
+
+```
+tests/Feature/SangoeTrack/SangoeTrackLeaveSyncTest.php:62
+  'code' => strtoupper(substr($name, 0, 2)).random_int(10, 99),   // 90 values
+tests/Feature/SangoeTrack/SangoeTrackLeaveSyncTest.php:71
+  'name' => 'Standard '.random_int(100, 999),                     // 900 values
+```
+
+against `unique(['tenant_id','code'])` and `unique(['tenant_id','name'])` in
+`2026_08_03_000000_create_hr_leave_tables.php` (lines 37-38, 60). **Ninety** values is a far smaller
+space than the 9,000 that made Transport flaky. Owner: whoever holds HR / SangoeTrack.
+
+### Not done — offered, not assumed
+
+A guard test asserting that no fixture draws a unique-column identifier randomly would stop this
+returning. It is not included, because the ruling's second condition was a **pure fixture change**:
+one line per file and nothing else. Proposed for a separate decision rather than folded in quietly.
+
+---
+
+## D-55 — A trip could not be linked to its consignment through the application
+
+**Raised:** 2026-09-16, while building the demo. **Owner: Person 1. Status: CLOSED in the same
+commit** — both sides are mine, so raising it and leaving it would have been theatre.
+
+`transport_trips.consignment_id` was added by migration `000015` and was `$fillable` on the model.
+**Nothing wrote it.** No service, no FormRequest, no endpoint. The column existed, the relation
+existed, and the only rows that ever carried a value were written directly by a seeder.
+
+So the chain the whole module is organised around —
+
+```
+order  ->  consignment  ->  trip
+```
+
+— could not be completed through the application at any point. It was invisible because nothing
+asked for it: the trip screen showed an order and a vehicle, and the gap between them looked like a
+design choice rather than a missing write.
+
+### How it surfaced
+
+Not by review. The demo seeder is required to build every row through a real service, precisely so it
+cannot contain a row the application could not produce — and the test asserting *"the chain reads end
+to end"* failed. The constraint found the defect; reading the code had not.
+
+### Closed by
+
+`TransportTripService::createFromOrder()` now accepts `consignment_id`, with two DIFFERENT refusals,
+because they are different situations:
+
+| Case | Response | Why |
+|---|---|---|
+| Another tenant's consignment | **404** | never "not yours" — that confirms the row exists |
+| A consignment on a *different order* | **422**, naming it | it exists and the caller can see it; they picked the wrong one, and saying so is the useful answer |
+
+Without the second check a trip could carry a consignment from an unrelated order, and every screen
+reading order → consignment → trip would show a chain that does not hold.
+
+Proven by `TripConsignmentLinkTest` (6 tests, including that a refused link creates no trip at all,
+and that the link is audited). `StoreTransportTripRequest` accepts it tenant-scoped; the trip detail
+endpoint loads it column-limited.
+
+### The general point, which is the reason this entry exists
+
+**A column with no writer is not a feature, and reviewing the schema will not tell you.** Migration
+`000015`, the model relation and the `$fillable` entry were all present and all correct. Everything
+looked built. The only thing that distinguished it from a working feature was that no code path
+reached it.
+
+---
+
+## D-56 — Transport migration timestamps overlap TPV/purchase ones. LEAVE THEM.
+
+**Raised and closed:** 2026-09-16, during the first merge of this work into master.
+**Status: ACCEPTED, no action. This entry exists to stop a later "tidy-up".**
+
+Five Transport migrations share a filename timestamp with TPV/purchase medical-workflow
+migrations that arrived from master:
+
+```
+2026_12_16_000002_add_medical_workflow_to_tpv_worker_medicals.php
+2026_12_16_000002_create_transport_orders_table.php
+2026_12_16_000003_add_medical_workflow_to_purchase_worker_medicals.php
+2026_12_16_000003_create_transport_trips_table.php
+2026_12_16_000004_create_tpv_medical_workflow_tables.php
+2026_12_16_000004_create_transport_vehicles_table.php
+2026_12_16_000005_create_purchase_medical_workflow_tables.php
+2026_12_16_000005_create_transport_documents_table.php
+2026_12_16_000006_add_medical_bypass_to_work_packages.php
+2026_12_16_000006_create_transport_drivers_table.php
+```
+
+Two developers hand-numbered migrations on the same nominal date. It looks alarming in a merge
+diff. **It is not a defect, and renaming them would create one.**
+
+### Why it is safe
+
+1. **No duplicate table names.** Checked across every migration on the merged tree — zero
+   collisions. The files touch entirely different tables.
+2. **Filename sort is deterministic.** Laravel orders migrations by full filename, so a shared
+   timestamp falls back to the rest of the string: `..._000002_add_medical...` runs before
+   `..._000002_create_transport_orders...`. The order is stable and reproducible, not arbitrary.
+3. **Relative order within each module is preserved.** Transport's own files run `000001` →
+   `000017` in sequence regardless of what interleaves, so `transport_orders` still precedes
+   `transport_trips`. The interleaved medical migrations depend on nothing of ours, and ours
+   depend on nothing of theirs.
+4. **Every test run proves it.** `RefreshDatabase` runs `migrate:fresh`, so all 4,263 tests
+   execute against a database built from these files in this order. A broken order would not be a
+   subtle risk; the suite would not boot.
+
+### Why renaming would be worse
+
+**These migrations are already applied** — on the dev database and on master. Renaming an applied
+migration makes Laravel treat it as new and run it again, against tables that already exist. The
+"tidy" version of this change is the one that breaks.
+
+**If you are here because the overlap looked wrong in a diff: it is recorded, it was checked, and
+the correct action is none.**
+
+---
+
+## D-57 — Step 9 and ENUM-002 describe different advance lifecycles
+
+> **Renumbered.** This was raised as D-54 on the SNG-TRN-011 branch on 2026-09-16, the same day
+> Person 1 raised a different D-54 on master. Both numbers were taken in parallel; master's landed
+> first, so this one moved rather than theirs. **Nothing about the defect changed — only its
+> number.** `AdvanceStatus` cites D-57.
 
 `TripStatus` had an easy answer to the same shape of problem: Step 9 is the highest product
 authority, and Step 11's twelve trip states are a **strict subset** of Step 9's sixteen with no

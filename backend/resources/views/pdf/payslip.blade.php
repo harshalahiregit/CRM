@@ -10,7 +10,10 @@
 
     $company  = $tenant->name ?? config('app.name');
     $brand    = $tenant->branding_color ?? '#7C3AED';
-    $logo     = $tenant->logo_url ?? null;
+    $logo     = $tenant->logo_url
+        // A tenant that has not uploaded its own mark still gets a
+        // document with a mark on it, rather than a blank header.
+        ?? \App\Support\Brand::logoDataUri();
     $period   = \Illuminate\Support\Carbon::create($payslip->payslip_year, $payslip->payslip_month, 1)->format('F Y');
     $money    = fn ($v) => '₹' . number_format((float) $v, 2);
 

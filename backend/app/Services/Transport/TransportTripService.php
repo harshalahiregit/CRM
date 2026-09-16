@@ -5,6 +5,7 @@ namespace App\Services\Transport;
 use App\Events\Transport\TripCreated;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ResourceNotFoundException;
+use App\Models\Transport\TransportConsignment;
 use App\Models\Transport\TransportOrder;
 use App\Models\Transport\TransportTrip;
 use App\Models\User;
@@ -117,6 +118,9 @@ class TransportTripService
                 // OPS §37 — a trip links its customer and route. Carried from the
                 // order so a trip is readable on its own.
                 'customer_id'      => $order->customer_id,
+                // CTD-003 — which shipment this trip is moving. Optional: a trip
+                // may be raised before the consignment is described.
+                'consignment_id'   => $this->resolveConsignmentId($data, $order, $tenantId),
                 'route'            => $data['route'] ?? $order->route,
                 'created_by'       => $actor?->id,
                 'updated_by'       => $actor?->id,
@@ -128,6 +132,7 @@ class TransportTripService
                 'trip_number'      => $trip->trip_number,
                 'order_id'         => $order->id,
                 'order_number'     => $order->order_number,
+                'consignment_id'   => $trip->consignment_id,
                 'customer_id'      => $trip->customer_id,
                 'status'           => $trip->status,
                 'approved_freight' => $trip->approved_freight,
@@ -234,6 +239,50 @@ class TransportTripService
         $trip->audit('transport.trip.updated', $actor, old: $before, new: $trip->only(array_keys($before)));
 
         return $trip->fresh();
+    }
+
+    /**
+     * The consignment this trip is moving — STOS-CTD §8, CTD-003.
+     *
+     * Optional, because a trip can legitimately be raised from an approved
+     * order before anyone has described what is being moved.
+     *
+     * TWO REFUSALS, AND THEY ARE DIFFERENT:
+     *   - another tenant's consignment reads as "no such consignment" (404),
+     *     never "not yours", which would confirm the row exists;
+     *   - a consignment belonging to a DIFFERENT order is a 422, because it
+     *     exists and is visible — the caller has simply picked the wrong one,
+     *     and telling them so is the useful answer.
+     *
+     * Without this check a trip could carry a consignment from an unrelated
+     * order, and every screen that reads order -> consignment -> trip would
+     * show a chain that does not hold.
+     *
+     * @param  array<string,mixed>  $data
+     */
+    private function resolveConsignmentId(array $data, TransportOrder $order, int $tenantId): ?int
+    {
+        $consignmentId = $data['consignment_id'] ?? null;
+
+        if ($consignmentId === null) {
+            return null;
+        }
+
+        $consignment = TransportConsignment::forTenant($tenantId)->find((int) $consignmentId);
+
+        if (! $consignment) {
+            throw new ResourceNotFoundException('Consignment');
+        }
+
+        if ((int) $consignment->order_id !== (int) $order->id) {
+            throw new BusinessException(
+                'Consignment '.$consignment->consignment_number.' is on a different order '
+                .'and cannot be carried by this trip.',
+                422,
+            );
+        }
+
+        return (int) $consignment->id;
     }
 
     /** The order this trip came from, tenant-checked. */

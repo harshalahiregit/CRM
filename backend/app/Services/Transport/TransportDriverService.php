@@ -16,6 +16,12 @@ use Illuminate\Support\Facades\Log;
 /**
  * Driver master business logic — SNG-TRN-004.
  *
+ * ── PLACEHOLDER. THIS FILE IS SCHEDULED FOR DELETION. ────────────────────
+ * Held by Person 1 only so the Trip and Order demo has something to allocate.
+ * The domain is Person 2's under TM-001 §8; when their Fleet module merges,
+ * this is REMOVED, not merged with. Do not add features or refactor it — see
+ * TEAM-CONTRACTS.md §1a for the file list and the seam that survives.
+ *
  * Closes gap G-1 for drivers: the model carried the audit trait and nothing
  * called it, leaving ticket 004's acceptance — "Required fields, validity dates,
  * AUDIT" — unmet. Same shape as TransportVehicleService and, before it,

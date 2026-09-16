@@ -31,7 +31,13 @@ class NotificationEngine
      */
     public function dispatch(int $tenantId, string $module, string $event, array $opts = [], ?User $actor = null): array
     {
-        $def = config("hr_notifications.modules.{$module}.{$event}");
+        // A module may register '*' as a catch-all for events it raises with
+        // free wording ('approved', 'part-approved', 'paid out'). Without it the
+        // engine skipped those silently and the caller had no way to find out —
+        // every My Services notification was dropped this way. Still opt-in per
+        // module, so an unregistered module notifies nobody by accident.
+        $def = config("hr_notifications.modules.{$module}.{$event}")
+            ?? config("hr_notifications.modules.{$module}.*");
         $template = HrNotificationTemplate::where('tenant_id', $tenantId)
             ->where('module', $module)->where('event', $event)->where('is_active', true)->first();
 
@@ -45,7 +51,11 @@ class NotificationEngine
         $bodyTpl = $template->body ?? ($def['body'] ?? '');
         $rendered = $this->renderer->renderTemplate($subjectTpl, $bodyTpl, $context);
 
-        $channels = $template ? $template->enabledChannels() : ['in_app', 'email'];
+        // A caller may name the channels. The Notification Center's composer does:
+        // an announcement chooses in-app and push, and must not inherit an
+        // email default that would mail the whole company without being asked.
+        $channels = $opts['channels']
+            ?? ($template ? $template->enabledChannels() : ($def['channels'] ?? ['in_app', 'email']));
         $priority = $opts['priority'] ?? ($def['priority'] ?? 'Info');
 
         $recipients = [];
@@ -81,6 +91,7 @@ class NotificationEngine
                 'action_url' => $opts['action_url'] ?? null,
                 'action_label' => $opts['action_label'] ?? null,
                 'expires_at' => ! empty($opts['expires_at']) ? Carbon::parse($opts['expires_at']) : null,
+                            'attachments' => $opts['attachments'] ?? null,
             ]);
             $notification->recordAudit('Notification Created', $actor, null, ['module' => $module, 'event' => $event, 'type' => $notification->notification_type]);
 
@@ -96,8 +107,11 @@ class NotificationEngine
     {
         $rows = [];
         foreach ($channels as $channel) {
-            if ($channel === 'email' && ! $hasUser) {
-                continue; // role-targeted notifications deliver in-app; no single email address
+            // Role-targeted notifications deliver in-app: there is no single
+            // address or handset behind "whoever is on the HR queue", and
+            // enqueuing one only produces a queue item that can never succeed.
+            if (in_array($channel, ['email', 'whatsapp'], true) && ! $hasUser) {
+                continue;
             }
             $rows[] = [
                 'tenant_id' => $notification->tenant_id,

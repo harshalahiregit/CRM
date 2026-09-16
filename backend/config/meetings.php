@@ -32,6 +32,7 @@ return [
         'capa_review'         => 'CAPA Review',
         'technical'           => 'Technical Meeting',
         'commercial'          => 'Commercial Meeting',
+        'financial'           => 'Financial Meeting',
         'procurement'         => 'Procurement Meeting',
         'workforce_review'    => 'Workforce Review',
         'client'              => 'Client Meeting',
@@ -167,6 +168,13 @@ return [
             ['item' => 'Claims & disputes',                    'duration_minutes' => 15, 'priority' => 'Medium'],
             ['item' => 'Commercial actions & owners',          'duration_minutes' => 10, 'priority' => 'Medium'],
         ],
+        'financial' => [
+            ['item' => 'Budget position & forecast',            'duration_minutes' => 20, 'priority' => 'High'],
+            ['item' => 'Cash flow, invoicing & receivables',    'duration_minutes' => 15, 'priority' => 'High'],
+            ['item' => 'Cost variances & recovery plan',        'duration_minutes' => 15, 'priority' => 'High'],
+            ['item' => 'Financial risks & provisions',          'duration_minutes' => 10, 'priority' => 'Medium'],
+            ['item' => 'Financial actions & owners',            'duration_minutes' => 10, 'priority' => 'Medium'],
+        ],
         'procurement' => [
             ['item' => 'Requisitions & purchase-order status', 'duration_minutes' => 15, 'priority' => 'High'],
             ['item' => 'Delivery schedule & shortages',        'duration_minutes' => 15, 'priority' => 'High'],
@@ -273,5 +281,31 @@ return [
     |
     */
     'reminder_offsets_minutes' => [1440, 60],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Automatic follow-up windows (minutes AFTER the meeting start)
+    |--------------------------------------------------------------------------
+    |
+    | Sent to every participant once the meeting has happened, nudging whoever
+    | owns the minutes to publish them and telling attendees what to expect.
+    | Read by BOTH engines (the Purchase service reads this same key), so one
+    | list governs the whole product. Set to [] to disable.
+    |
+    | Default: 2 hours after the start, then 24 hours after.
+    |
+    */
+    'followup_offsets_minutes' => [120, 1440],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Expiry notice
+    |--------------------------------------------------------------------------
+    | How far back the expiry sweep looks. A meeting that ended while still open
+    | is notified once; anything that expired longer ago than this is left
+    | alone, so switching the sweep on does not mail the roster of every meeting
+    | anyone ever forgot to close. Set to 0 to disable expiry notices entirely.
+    */
+    'expiry_notice_lookback_hours' => 48,
 
 ];

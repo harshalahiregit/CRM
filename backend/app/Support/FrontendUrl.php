@@ -14,15 +14,22 @@ namespace App\Support;
  * project never set FRONTEND_URL.
  *
  * Resolution order, most explicit first:
- *   1. FRONTEND_URL          — what an operator sets, and what .env.example documents
- *   2. config('app.url')     — the real domain in production, where API and SPA
- *                              usually share an origin
- *   3. http://localhost:5173 — the Vite dev port, and ONLY reachable when neither
- *                              of the above is set, i.e. on a developer machine
+ *   1. config('app.frontend_url') — FRONTEND_URL, read where config:cache can see it
+ *   2. env('FRONTEND_URL')        — the same value on a box with no cached config
+ *   3. config('app.url')          — the real domain in production, where API and
+ *                                   SPA usually share an origin
+ *   4. http://localhost:5173      — the Vite dev port, and ONLY reachable when
+ *                                   none of the above is set, i.e. on a developer
+ *                                   machine
  *
- * `config('app.frontend_url')` is deliberately NOT consulted: its framework
- * default is a hard-coded localhost:3000 that silently wins over APP_URL in
- * production, which is the bug this class exists to remove.
+ * Step 1 is the whole point, and it is why `env()` must not be called at a call
+ * site. `php artisan config:cache` stops loading .env at all, so `env('X')`
+ * returns null in production and every `env('FRONTEND_URL', 'http://localhost:5173')`
+ * quietly resolves to localhost — which is how signing links and QR codes went
+ * out pointing at a machine the recipient does not have. `app.frontend_url` is
+ * defined in config/app.php with NO default, so an unset value falls through to
+ * APP_URL instead of pinning localhost the way the framework's own
+ * `env('FRONTEND_URL', 'http://localhost:3000')` idiom would.
  */
 class FrontendUrl
 {
@@ -31,9 +38,12 @@ class FrontendUrl
     /** The SPA origin, without a trailing slash. */
     public static function base(): string
     {
-        $base = env('FRONTEND_URL') ?: config('app.url') ?: self::DEV_FALLBACK;
+        $base = config('app.frontend_url')
+            ?: env('FRONTEND_URL')
+            ?: config('app.url')
+            ?: self::DEV_FALLBACK;
 
-        return rtrim($base, '/');
+        return rtrim((string) $base, '/');
     }
 
     /**

@@ -18,7 +18,13 @@ class SendPurchaseKickoffReminders extends Command
     public function handle(PurchaseKickoffService $service): int
     {
         $sent = $service->runDueReminders();
-        $this->info("Purchase kickoff: reminder(s) fired for {$sent} meeting(s).");
+        // Before-meeting reminders and after-meeting follow-ups in one command,
+        // so scheduling one always schedules the other.
+        $followed = $service->runDueFollowUps();
+        // ...and the third direction: a meeting whose slot passed while it
+        // was still open. Neither a reminder nor a follow-up says that.
+        $expired  = $service->runDueExpiryNotices();
+        $this->info("Purchase kickoff: reminder(s) fired for {$sent} meeting(s), follow-up(s) for {$followed}, expiry notice(s) for {$expired}.");
 
         return self::SUCCESS;
     }

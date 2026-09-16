@@ -26,7 +26,7 @@ namespace App\Support\Transport;
  *
  * So the stored vocabulary is ENUM-002, on the strength of the field registry
  * naming its own default, and Step 9's lifecycle is what that vocabulary is
- * understood to mean. Recorded as D-54 rather than reconciled here, because
+ * understood to mean. Recorded as D-57 rather than reconciled here, because
  * choosing which of the four unmapped Step 9 states to drop is a product
  * decision and inventing one is FORBID-001.
  *

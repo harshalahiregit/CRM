@@ -7,7 +7,11 @@ namespace App\Services\Hr\Statutory;
  * work state before it reaches here.
  *
  * Config keys:
- *   slabs             [{ from, to (null = open-ended), amount }]
+ *   slabs             [{ from, to (null = open-ended), amount, gender? }]
+ *                     `gender` is optional and, where present, narrows the slab to
+ *                     'M' or 'F'. Maharashtra needs it: a man pays from 7,501 and a
+ *                     woman only above 25,000, so one slab list without gender
+ *                     charges every woman earning 8,000 a tax she does not owe.
  *   month_overrides   { "2": 300 }  — e.g. Maharashtra's different February amount,
  *                     keyed by month number. Applied only when the slab matched.
  *
@@ -17,7 +21,7 @@ namespace App\Services\Hr\Statutory;
  */
 class PtCalculator
 {
-    public function calculate(float $monthlyGross, ?array $config, ?int $month = null, ?string $state = null): array
+    public function calculate(float $monthlyGross, ?array $config, ?int $month = null, ?string $state = null, ?string $gender = null): array
     {
         if ($state === null || $state === '') {
             return $this->zero('Work state not set for this employee — PT not applied');
@@ -28,7 +32,17 @@ class PtCalculator
             return $this->zero("PT not configured for {$state}");
         }
 
+        $sex = $this->normaliseGender($gender);
+
         foreach ($slabs as $slab) {
+            // A slab that names a gender applies only to that gender. One with no
+            // gender applies to everybody, so a state with flat slabs needs no
+            // change and keeps working exactly as before.
+            $slabGender = $this->normaliseGender($slab['gender'] ?? null);
+            if ($slabGender !== null && $slabGender !== $sex) {
+                continue;
+            }
+
             $from = (float) ($slab['from'] ?? 0);
             $to   = array_key_exists('to', $slab) && $slab['to'] !== null ? (float) $slab['to'] : INF;
 
@@ -50,5 +64,19 @@ class PtCalculator
     private function zero(string $reason): array
     {
         return ['applicable' => false, 'amount' => 0.0, 'reason' => $reason];
+    }
+
+    /** 'Male'/'m'/'MALE' → 'M'. Anything unrecognised stays null: an unknown
+     *  gender must not silently pick the cheaper slab. */
+    private function normaliseGender(?string $value): ?string
+    {
+        $v = strtoupper(trim((string) $value));
+
+        return match (true) {
+            $v === '' => null,
+            str_starts_with($v, 'M') => 'M',
+            str_starts_with($v, 'F') => 'F',
+            default => null,
+        };
     }
 }

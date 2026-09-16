@@ -8,7 +8,10 @@
      */
     $company  = $tenant->name ?? config('app.name');
     $brand    = $tenant->branding_color ?? '#7C3AED';
-    $logo     = $tenant->logo_url ?? null;
+    $logo     = $tenant->logo_url
+        // A tenant that has not uploaded its own mark still gets a
+        // document with a mark on it, rather than a blank header.
+        ?? \App\Support\Brand::logoDataUri();
     /**
      * The meeting's real reference (MTG-YYYY-NNNN), which is what the app shows
      * everywhere else. The old KO-0001 was a third, PDF-only identifier for the
@@ -37,6 +40,24 @@
         'Present' => 'present', 'Late' => 'late', 'Absent' => 'absent',
         'Excused' => 'excused', 'Online' => 'online', 'Offline' => 'offline',
     ];
+    /**
+     * The ORGANISER's verdict — a separate record from the attendance mark above,
+     * and deliberately so. See MeetingAttendanceReview.
+     */
+    $verdictLabel = fn ($v) => \App\Support\Shared\AttendanceVerdict::label($v);
+    $verdictPill  = [
+        \App\Support\Shared\AttendanceVerdict::FULLY_PRESENT => 'present',
+        \App\Support\Shared\AttendanceVerdict::PARTIAL_ABSENT => 'late',
+        \App\Support\Shared\AttendanceVerdict::COMPLETE_ABSENT => 'absent',
+    ];
+    $window = function ($a) {
+        $mins = \App\Support\Shared\AttendanceVerdict::minutes($a->verdict_from, $a->verdict_to);
+
+        return $a->verdict_from->format('H:i').'–'.$a->verdict_to->format('H:i').($mins ? " ({$mins} min)" : '');
+    };
+    $contradicts = fn ($a) => \App\Support\Shared\AttendanceVerdict::contradictsClaim((bool) $a->attended, $a->verdict);
+    $reviewed = $attendees->filter(fn ($a) => $a->verdict !== null)->count();
+
 
     $present = $attendees->filter(fn ($a) => $a->attended)->count();
 
@@ -148,14 +169,14 @@
     @endif
 </table>
 
-<h2>Participants &amp; Attendance ({{ $present }}/{{ $attendees->count() }} attended)</h2>
+<h2>Participants &amp; Attendance ({{ $present }}/{{ $attendees->count() }} attended@if ($reviewed), {{ $reviewed }} reviewed by the organiser@endif)</h2>
 @if ($attendees->count())
     @if (count($breakdown))
         <p class="sub" style="margin:0 0 6px;">{{ implode(' · ', $breakdown) }}</p>
     @endif
     <table class="att">
         <thead>
-            <tr><th style="width:26%">Name</th><th style="width:16%">Role</th><th style="width:20%">Organisation</th><th style="width:14%">Attendance</th><th style="width:24%">Remark</th></tr>
+            <tr><th style="width:22%">Name</th><th style="width:13%">Role</th><th style="width:16%">Organisation</th><th style="width:12%">Marked</th><th style="width:17%">Organiser's verdict</th><th style="width:20%">Remark</th></tr>
         </thead>
         <tbody>
             @foreach ($attendees as $a)
@@ -172,6 +193,23 @@
                             <span class="pill {{ $pillOf[$st] ?? 'unmarked' }}">{{ $st }}</span>
                         @else
                             <span class="pill unmarked">Not marked</span>
+                        @endif
+                    </td>
+                    {{-- The organiser's decision, printed BESIDE the mark rather
+                         than instead of it. Where the two disagree the document
+                         has to show both, or "punched CRM attendance but did not
+                         join the call" becomes an accusation with no evidence. --}}
+                    <td>
+                        @if ($a->verdict)
+                            <span class="pill {{ $verdictPill[$a->verdict] ?? 'unmarked' }}">{{ $verdictLabel($a->verdict) }}</span>
+                            @if ($a->verdict_from && $a->verdict_to)
+                                <div class="sub">{{ $window($a) }}</div>
+                            @endif
+                            @if ($contradicts($a))
+                                <div class="sub" style="font-weight:700">Marked attendance in the CRM</div>
+                            @endif
+                        @else
+                            <span class="pill unmarked">Not reviewed</span>
                         @endif
                     </td>
                     <td>{{ $a->remark ?: '—' }}</td>

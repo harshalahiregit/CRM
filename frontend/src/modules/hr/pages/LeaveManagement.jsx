@@ -3,7 +3,7 @@ import { useTheme } from '@/context/ThemeContext'
 import {
   CalendarDays, Tag, FileText, Wallet, CalendarCheck, CheckSquare, CalendarRange,
   Lock, Plus, Pencil, X, Power, Search, UserPlus, SlidersHorizontal, History,
-  Check, Ban, Eye, Paperclip, Send, LayoutGrid, List, ChevronLeft, ChevronRight, BarChart3,
+  Check, Ban, Eye, Paperclip, Send, LayoutGrid, List, ChevronLeft, ChevronRight, BarChart3, Users,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { openAuthedFile } from '@/lib/openAuthedFile'
@@ -171,7 +171,7 @@ function LeaveTypes({ showToast }) {
 function LeavePolicies({ showToast }) {
   const [rows, setRows] = useState([]); const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState(''); const [statusF, setStatusF] = useState('All')
-  const [types, setTypes] = useState([]); const [opts, setOpts] = useState({ grades:[], designations:[] })
+  const [types, setTypes] = useState([]); const [opts, setOpts] = useState({ grades:[], designations:[], departments:[] })
   const [modal, setModal] = useState(null); const [saving, setSaving] = useState(false)
 
   const load = useCallback(() => {
@@ -185,12 +185,12 @@ function LeavePolicies({ showToast }) {
   useEffect(() => { load() }, [load])
   useEffect(() => {
     hrApi.leave.types.list({ status:'Active' }).then(r=>setTypes(r.data||[])).catch(()=>{})
-    hrApi.organization.options().then(o=>setOpts({ grades:o.grades||[], designations:o.designations||[] })).catch(()=>{})
+    hrApi.organization.options().then(o=>setOpts({ grades:o.grades||[], designations:o.designations||[], departments:o.departments||[] })).catch(()=>{})
   }, [])
 
-  const EMPTY = { name:'', applies_to:'All', grade_id:'', designation_id:'', probation_allowed:false, notice_period_allowed:false, weekends_count:false, holidays_count:false, half_day_allowed:true, negative_balance_allowed:false, description:'', is_active:true, leave_types:[] }
+  const EMPTY = { name:'', applies_to:'All', grade_id:'', designation_id:'', department_id:'', probation_allowed:false, notice_period_allowed:false, weekends_count:false, holidays_count:false, half_day_allowed:true, negative_balance_allowed:false, description:'', is_active:true, leave_types:[] }
   const openEdit = async (row) => {
-    try { const full = await hrApi.leave.policies.get(row.id); setModal({ editing:full.id, form:{ ...EMPTY, ...full, grade_id:full.grade_id||'', designation_id:full.designation_id||'', leave_types: full.leave_types.map(t=>({ leave_type_id:t.leave_type_id, yearly_allocation:t.yearly_allocation, carry_forward_limit:t.carry_forward_limit })) } }) }
+    try { const full = await hrApi.leave.policies.get(row.id); setModal({ editing:full.id, form:{ ...EMPTY, ...full, grade_id:full.grade_id||'', designation_id:full.designation_id||'', department_id:full.department_id||'', leave_types: full.leave_types.map(t=>({ leave_type_id:t.leave_type_id, yearly_allocation:t.yearly_allocation, carry_forward_limit:t.carry_forward_limit })) } }) }
     catch { showToast('Failed to load policy','error') }
   }
   const toggleType = (tid) => setModal(m => {
@@ -244,9 +244,10 @@ function LeavePolicies({ showToast }) {
           <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>{modal.editing?'Edit Leave Policy':'Add Leave Policy'}</h2><button onClick={()=>setModal(null)} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
             <div className="col-span-2"><label className="label">Policy Name *</label><input className="input-3d text-sm" value={modal.form.name} onChange={e=>setModal(m=>({...m,form:{...m.form,name:e.target.value}}))}/></div>
-            <div><label className="label">Applies To</label><select className="input-3d text-sm" value={modal.form.applies_to} onChange={e=>setModal(m=>({...m,form:{...m.form,applies_to:e.target.value}}))}>{['All','Grade','Designation'].map(a=><option key={a}>{a}</option>)}</select></div>
+            <div><label className="label">Applies To</label><select className="input-3d text-sm" value={modal.form.applies_to} onChange={e=>setModal(m=>({...m,form:{...m.form,applies_to:e.target.value}}))}>{['All','Grade','Designation','Department'].map(a=><option key={a}>{a}</option>)}</select></div>
             <div><label className="label">Grade</label><select className="input-3d text-sm" value={modal.form.grade_id} onChange={e=>setModal(m=>({...m,form:{...m.form,grade_id:e.target.value}}))}><option value="">—</option>{opts.grades.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
             <div><label className="label">Designation</label><select className="input-3d text-sm" value={modal.form.designation_id} onChange={e=>setModal(m=>({...m,form:{...m.form,designation_id:e.target.value}}))}><option value="">—</option>{opts.designations.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
+            <div><label className="label">Department</label><select className="input-3d text-sm" value={modal.form.department_id} onChange={e=>setModal(m=>({...m,form:{...m.form,department_id:e.target.value}}))}><option value="">—</option>{opts.departments.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
             {[['probation_allowed','Probation Allowed'],['notice_period_allowed','Notice Period Allowed'],['half_day_allowed','Half Day Allowed'],['weekends_count','Weekends Count'],['holidays_count','Holidays Count'],['negative_balance_allowed','Negative Balance']].map(([k,l])=>(
@@ -285,11 +286,13 @@ function LeaveBalance({ showToast }) {
     hrApi.leave.balances.list().then(res => { setRows(res.data || []); setStats(res.stats || stats) }).catch(()=>showToast('Failed to load balances','error')).finally(()=>setLoading(false))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  const [org, setOrg] = useState({ departments:[], designations:[], grades:[] })
   useEffect(() => { load() }, [load])
   useEffect(() => {
     hrApi.employees.list({ per_page:200 }).then(r=>setEmployees(Array.isArray(r)?r:(r?.data??[]))).catch(()=>{})
     hrApi.leave.policies.list({ status:'Active' }).then(r=>setPolicies(r||[])).catch(()=>{})
     hrApi.leave.types.list({ status:'Active' }).then(r=>setTypes(r.data||[])).catch(()=>{})
+    hrApi.organization.options().then(o=>setOrg({ departments:o.departments||[], designations:o.designations||[], grades:o.grades||[] })).catch(()=>{})
   }, [])
 
   const KPIS = [
@@ -307,6 +310,7 @@ function LeaveBalance({ showToast }) {
 
       <div className="flex gap-2 justify-end flex-wrap">
         <button onClick={()=>setModal({ kind:'allocate', employee_id:'', leave_type_id:'', quantity:'', remarks:'' })} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}><Plus size={15}/> Allocate Leave</button>
+        <button onClick={()=>setModal({ kind:'assignBulk', leave_policy_id:'', scope:'department', department_id:'', designation_id:'', grade_id:'', effective_from:'' })} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}><Users size={15}/> Assign to a Group</button>
         <button onClick={()=>setModal({ kind:'assign', employee_id:'', leave_policy_id:'', effective_from:'' })} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:GRAD }}><UserPlus size={15}/> Assign Policy</button>
       </div>
 
@@ -333,6 +337,7 @@ function LeaveBalance({ showToast }) {
           </div>}
 
       {modal?.kind==='assign' && <AssignModal modal={modal} setModal={setModal} employees={employees} policies={policies} onDone={()=>{ setModal(null); load() }} showToast={showToast} />}
+      {modal?.kind==='assignBulk' && <BulkAssignModal modal={modal} setModal={setModal} policies={policies} org={org} onDone={()=>{ setModal(null); load() }} showToast={showToast} />}
       {modal?.kind==='allocate' && <AllocateModal modal={modal} setModal={setModal} employees={employees} types={types} onDone={()=>{ setModal(null); load() }} showToast={showToast} />}
       {modal?.kind==='adjust' && <AdjustModal modal={modal} setModal={setModal} onDone={()=>{ setModal(null); load() }} showToast={showToast} />}
       {modal?.kind==='history' && <HistoryModal balance={modal.balance} onClose={()=>setModal(null)} showToast={showToast} />}
@@ -358,6 +363,83 @@ function AssignModal({ modal, setModal, employees, policies, onDone, showToast }
         <p className="text-[11px]" style={{ color:'var(--text-muted)' }}>Creates a balance for every mapped leave type. Any existing active policy is archived (history preserved) and eligible balances carry forward.</p>
       </div>
       <div className="flex gap-3 pt-4"><button onClick={()=>setModal(null)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>Cancel</button><button onClick={submit} disabled={busy} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:GRAD, opacity:busy?0.7:1 }}>{busy?'Assigning…':'Assign & Allocate'}</button></div>
+    </div></div>
+  )
+}
+
+/**
+ * One policy, a whole group.
+ *
+ * Assigning ran one employee at a time, so rolling a policy out to a department
+ * of forty meant forty trips through the same modal -- and the Department scope
+ * on a policy described who it was for without anything acting on it. Each
+ * person still goes through the single-employee path underneath, so carry
+ * forward, the ledger and the audit trail are identical.
+ *
+ * Anyone it could not be applied to comes back by NAME. A bare "38 of 40" would
+ * leave HR to work out which two were missed.
+ */
+function BulkAssignModal({ modal, setModal, policies, org, onDone, showToast }) {
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState(null)
+
+  const SCOPES = [
+    { k:'department',  l:'A department' },
+    { k:'designation', l:'A designation' },
+    { k:'grade',       l:'A grade' },
+    { k:'all',         l:'Every active employee' },
+  ]
+  const listFor = { department:org.departments, designation:org.designations, grade:org.grades }[modal.scope] || []
+  const idKey   = { department:'department_id', designation:'designation_id', grade:'grade_id' }[modal.scope]
+
+  const submit = async () => {
+    if (!modal.leave_policy_id) return showToast('Choose a leave policy','error')
+    if (idKey && !modal[idKey]) return showToast('Choose who it applies to','error')
+    setBusy(true)
+    try {
+      const r = await hrApi.leave.balances.assignBulk({
+        leave_policy_id: Number(modal.leave_policy_id),
+        scope: modal.scope,
+        ...(idKey ? { [idKey]: Number(modal[idKey]) } : {}),
+        effective_from: modal.effective_from || undefined,
+      })
+      setResult(r)
+      showToast(`Assigned to ${r.assigned} of ${r.matched}`, r.failed?.length ? 'error' : 'success')
+    } catch (e) { showToast(e.response?.data?.message || 'Failed', 'error') }
+    setBusy(false)
+  }
+
+  return (
+    <div className="modal-backdrop"><div className="modal-box max-w-md" onClick={e=>e.stopPropagation()}>
+      <div className="flex items-center justify-between mb-4"><h2 className="font-black text-lg" style={{ color:'var(--text-h)' }}>Assign Policy to a Group</h2><button onClick={()=>{ setModal(null); if (result) onDone() }} style={{ color:'var(--text-muted)' }}><X size={18}/></button></div>
+
+      {result ? (
+        <div className="space-y-3">
+          <p className="text-sm" style={{ color:'var(--text-h)' }}><b>{result.policy?.name}</b> assigned to <b style={{ color:'#10b981' }}>{result.assigned}</b> of {result.matched} employees.</p>
+          {result.failed?.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="label-caps" style={{ color:'#f87171' }}>Not applied</p>
+              {result.failed.map(f => (
+                <div key={f.employee_id} className="px-3 py-2 rounded-xl text-[11px]" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>
+                  <b style={{ color:'var(--text-h)' }}>{f.name}</b> — {f.reason}
+                </div>
+              ))}
+            </div>
+          )}
+          <button onClick={()=>{ setModal(null); onDone() }} className="w-full py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:GRAD }}>Done</button>
+        </div>
+      ) : (
+        <>
+          <div className="space-y-3">
+            <div><label className="label">Leave Policy</label><select className="input-3d text-sm" value={modal.leave_policy_id} onChange={e=>setModal(m=>({...m,leave_policy_id:e.target.value}))}><option value="">Select…</option>{policies.map(p=><option key={p.id} value={p.id}>{p.name} ({p.leave_types.length} types)</option>)}</select></div>
+            <div><label className="label">Apply To</label><select className="input-3d text-sm" value={modal.scope} onChange={e=>setModal(m=>({...m,scope:e.target.value}))}>{SCOPES.map(sc=><option key={sc.k} value={sc.k}>{sc.l}</option>)}</select></div>
+            {idKey && <div><label className="label">Which one</label><select className="input-3d text-sm" value={modal[idKey]} onChange={e=>setModal(m=>({...m,[idKey]:e.target.value}))}><option value="">Select…</option>{listFor.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></div>}
+            <div><label className="label">Effective From</label><input type="date" className="input-3d text-sm" value={modal.effective_from} onChange={e=>setModal(m=>({...m,effective_from:e.target.value}))}/></div>
+            <p className="text-[11px]" style={{ color:'var(--text-muted)' }}>Only <b>active</b> employees are included. Each one gets a balance for every mapped leave type; their current policy is archived (history preserved) and eligible balances carry forward.</p>
+          </div>
+          <div className="flex gap-3 pt-4"><button onClick={()=>setModal(null)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>Cancel</button><button onClick={submit} disabled={busy} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:GRAD, opacity:busy?0.7:1 }}>{busy?'Assigning…':'Assign to Group'}</button></div>
+        </>
+      )}
     </div></div>
   )
 }

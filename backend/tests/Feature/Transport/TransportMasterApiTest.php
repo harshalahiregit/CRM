@@ -67,7 +67,7 @@ class TransportMasterApiTest extends TestCase
     private function vehiclePayload(array $o = []): array
     {
         return array_merge([
-            'registration_number' => 'MH 12 AB '.random_int(1000, 9999),
+            'registration_number' => 'MH 12 AB '.self::uniqueSeq(4),
             'vehicle_type' => 'Trailer 40ft', 'capacity_tonnes' => 25,
             'ownership_type' => 'owned',
         ], $o);
@@ -77,7 +77,7 @@ class TransportMasterApiTest extends TestCase
     {
         return array_merge([
             'name' => 'Ramesh Kumar', 'mobile' => '9876543210',
-            'licence_number' => 'RJ14 '.random_int(100000, 999999),
+            'licence_number' => 'RJ14 '.self::uniqueSeq(6),
             'licence_class' => 'HMV',
             'licence_valid_until' => now()->addYear()->toDateString(),
         ], $o);

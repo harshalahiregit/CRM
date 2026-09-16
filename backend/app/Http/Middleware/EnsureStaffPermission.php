@@ -27,6 +27,14 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class EnsureStaffPermission
 {
+    /**
+     * The only `users.role` values a staff permission gate may admit.
+     *
+     * Everything else — client, vendor, third_party_vendor, company — is a
+     * portal identity that reaches the CRM through its own endpoints.
+     */
+    private const STAFF_ROLES = ['admin', 'staff'];
+
     public function __construct(private StaffPermissionService $permissions)
     {
     }
@@ -41,7 +49,13 @@ class EnsureStaffPermission
 
         // Same reasoning as EnsureUserHasRole: other authenticatable models carry
         // their own columns, and a portal identity must never satisfy a staff gate.
-        if (! $user instanceof User) {
+        //
+        // The instanceof check alone is NOT enough. Clients, vendors and TPVs are
+        // rows in `users` too — same model, different `role` — so a portal
+        // account whose grid happened to name a staff module passed straight
+        // through this and reached HR. An allow-list rather than a deny-list, so
+        // a role added later is shut out until somebody decides otherwise.
+        if (! $user instanceof User || ! in_array($user->role, self::STAFF_ROLES, true)) {
             return response()->json([
                 'status'  => 'error',
                 'message' => 'This endpoint is not available to portal accounts.',

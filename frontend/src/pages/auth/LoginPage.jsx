@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { Eye, EyeOff, ChevronDown, Shield, Zap, Globe, Lock, CheckCircle, User, Star } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { purchaseVendorAuthApi } from '@/services/purchaseVendorAuthApi'
+import { clientPortalApi } from '@/lib/clientPortalApi'
 import sangoeFull from '@/assets/sangoe-full.png'
 
 /**
@@ -18,14 +19,36 @@ import sangoeFull from '@/assets/sangoe-full.png'
 const ROLES = [
   { value: 'admin',               label: 'Admin',                icon: '🛡️' },
   { value: 'staff',               label: 'Staff / Employee',     icon: '👔' },
+  // Examining doctors sign in here too — they are ordinary Users with their own
+  // portal, not a separate identity like a Purchase Vendor.
+  { value: 'doctor',              label: 'Doctor',               icon: '🩺' },
   { value: 'purchase_vendor',     label: 'Purchase Vendor',      icon: '📦', purchaseVendor: true },
   { value: 'third_party_vendor',  label: 'Third-Party Vendor',   icon: '🤝' },
-  { value: 'client',              label: 'Client / Customer',    icon: '👤' },
+  /*
+   * There is deliberately no "Vendor" option.
+   *
+   * It was listed briefly, on the reasoning that `vendor` and
+   * `third_party_vendor` were two spellings of one thing because both routed to
+   * /vendor-portal. That was read off the ROUTING and the routing was the broken
+   * half: the accounts holding `vendor` attach to purchase_vendors, not to
+   * `vendors`, so the option sent purchase suppliers to the TPV portal.
+   *
+   * A purchase vendor is not a User at all — it signs in below as Purchase
+   * Vendor, against its own table and its own password. The leftover `vendor`
+   * Users were second accounts for suppliers who already had that login, and
+   * they have been retired.
+   */
+  { value: 'client',              label: 'Client / Customer',    icon: '👤', clientPortal: true },
   { value: 'company',             label: 'Company',              icon: '🏢' },
 ]
 
 const schema = z.object({
-  role:     z.string().min(1, 'Please select a role'),
+  // Optional, so signing in here takes exactly what the app takes: an email and
+  // a password. Choosing the wrong entry used to fail a login whose credentials
+  // were correct, and the app has no such selector — so the same person could
+  // sign in on their phone and not on the website. The picker stays, because it
+  // decides which home screen you land on; it just no longer gates the form.
+  role:     z.string().optional(),
   email:    z.string().email('Enter a valid email'),
   password: z.string().min(1, 'Password is required'),
   remember: z.boolean().optional(),
@@ -34,7 +57,16 @@ const schema = z.object({
 // Post-login home when the user came to /login directly (no email deep-link).
 const roleHome = (role) =>
   role === 'company' ? '/company-portal/dashboard'
-  : role === 'third_party_vendor' ? '/vendor-portal/dashboard'
+  // Both vendor spellings reach the same portal, which admits both. Without the
+  // second one a `vendor` was sent to /app, which blocks that role and bounces
+  // it back here — an infinite redirect rather than a wrong page.
+  : (role === 'third_party_vendor' || role === 'vendor') ? '/vendor-portal/dashboard'
+  // The two identities that carry their own token rather than a User session.
+  : role === 'purchase_vendor' ? '/purchase-portal/dashboard'
+  : role === 'client' ? '/portal/dashboard'
+  // A doctor has no access to the /app shell at all, so sending them there
+  // first would only make the route guard bounce them.
+  : role === 'doctor' ? '/doctor-portal/dashboard'
   : '/app/dashboard'
 
 // ── Left Panel Features ───────────────────────────────────────────────
@@ -88,15 +120,41 @@ export default function LoginPage() {
   const selectedRoleObj = ROLES.find(r => r.value === watchedRole)
   const isPurchaseVendor = Boolean(selectedRoleObj?.purchaseVendor)
 
+  /**
+   * ONE reset page, for every identity.
+   *
+   * There were three, chosen by the dropdown — and the dropdown is optional, so
+   * anybody who clicked "Forgot password" without touching it landed on the one
+   * that only resets staff accounts. A supplier or a customer contact was then
+   * told "if that email is registered, a reset link has been sent" and received
+   * nothing, with no way to discover they had used the wrong door.
+   *
+   * The role still travels, as a hint: given one, the server searches only that
+   * store; given none, it searches all three and sends a link per account it
+   * finds. Nobody has to know which table they live in.
+   */
+  const forgotPath = watchedRole
+    ? `/auth/forgot-password?role=${encodeURIComponent(watchedRole)}`
+    : '/auth/forgot-password'
+
   const onSubmit = async (values) => {
     setApiError('')
 
-    // Purchase Vendors authenticate against their own endpoint and carry a
-    // PurchaseVendor token, so they never touch the shared User login.
-    if (selectedRoleObj?.purchaseVendor) {
+    // Two identities do not authenticate as a shared User: a Purchase vendor and
+    // a customer contact each hit their own endpoint and hold their own token.
+    // They used to have login pages of their own, which is why a vendor could
+    // land on a second sign-in screen and think they were in the wrong place.
+    // Handled here so /auth/login is the ONLY way into the product.
+    const portalLogin = selectedRoleObj?.purchaseVendor
+      ? purchaseVendorAuthApi.login
+      : selectedRoleObj?.clientPortal
+        ? clientPortalApi.login
+        : null
+
+    if (portalLogin) {
       try {
-        await purchaseVendorAuthApi.login(values.email, values.password)
-        navigate(safeFrom || '/purchase-portal/dashboard', { replace: true })
+        await portalLogin(values.email, values.password)
+        navigate(safeFrom || roleHome(values.role), { replace: true })
       } catch (e) {
         setApiError(e?.response?.data?.message || 'Invalid credentials.')
       }
@@ -237,7 +295,7 @@ export default function LoginPage() {
                   {selectedRoleObj ? selectedRoleObj.icon : <User size={13} style={{ color: '#8b85a8' }} />}
                 </span>
                 <span className="flex-1 text-sm" style={{ color: selectedRoleObj ? '#edeaf8' : '#8b85a8' }}>
-                  {selectedRoleObj ? selectedRoleObj.label : 'Choose your access role...'}
+                  {selectedRoleObj ? selectedRoleObj.label : 'Access role (optional)'}
                 </span>
                 <ChevronDown size={15} className={`transition-transform duration-200 ${roleOpen ? 'rotate-180' : ''}`} style={{ color: '#8b85a8' }} />
               </button>
@@ -316,16 +374,25 @@ export default function LoginPage() {
         <div className="flex items-center justify-between mt-4">
           {/* A Purchase Vendor registers and resets against its own portal —
               the shared pages create a User, which is the wrong identity. */}
-          <Link to={isPurchaseVendor ? '/purchase-portal/forgot-password' : '/auth/forgot-password'}
+          <Link to={forgotPath}
             className="flex items-center gap-1.5 text-xs transition-colors" style={{ color: '#8b85a8' }}
             onMouseEnter={e=>e.currentTarget.style.color='#edeaf8'} onMouseLeave={e=>e.currentTarget.style.color='#8b85a8'}>
             <Lock size={12} /> Forgot Password?
           </Link>
-          <Link to={isPurchaseVendor ? '/purchase-portal/register' : '/auth/register'}
-            className="flex items-center gap-1.5 text-xs font-semibold transition-colors" style={{ color: '#a78bfa' }}
-            onMouseEnter={e=>e.currentTarget.style.color='#c4b5fd'} onMouseLeave={e=>e.currentTarget.style.color='#a78bfa'}>
-            <Star size={12} /> Register here →
-          </Link>
+          {/* A customer contact never self-registers — access begins with a
+              staff member inviting a real contact of a real customer — so the
+              link is simply not offered for that identity. */}
+          {/* One registration form for every identity. The Purchase portal had a
+              second one of its own, collecting four fields where the main form
+              collects fifteen, so which door a vendor came through decided how
+              much of their company we ever knew. */}
+          {!selectedRoleObj?.clientPortal && (
+            <Link to="/auth/register"
+              className="flex items-center gap-1.5 text-xs font-semibold transition-colors" style={{ color: '#a78bfa' }}
+              onMouseEnter={e=>e.currentTarget.style.color='#c4b5fd'} onMouseLeave={e=>e.currentTarget.style.color='#a78bfa'}>
+              <Star size={12} /> Register here →
+            </Link>
+          )}
         </div>
 
         {/* Last login bar */}
