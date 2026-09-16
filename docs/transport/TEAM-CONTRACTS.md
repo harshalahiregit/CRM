@@ -65,6 +65,61 @@ Event_Registry, resolved **by name**, never by the number a ticket prints.
 
 ---
 
+### 1a. Vehicles and Drivers are P1's PLACEHOLDER, not P1's property
+
+`transport_vehicles` and `transport_drivers` are **DB-004 and DB-005 — Fleet, owned by P2** under
+TM-001 §8. The table above is unchanged and remains correct.
+
+What is live on master today is a **temporary P1 implementation**, held deliberately and with an
+agreed end. It is recorded here so it is not mistaken for ownership by anyone reading the code.
+
+**Why it exists.** Trip and Transport Order cannot be demonstrated without vehicles and drivers.
+A trip with nothing to allocate proves nothing — no allocation panel, no eligibility refusal, no
+dispatch gate, no "back in 2 days" sentence. Until P2 ships Fleet, this is what keeps the demo
+chain walkable end to end.
+
+**When it ends.** When P2's Fleet module merges. P1's version is then **removed, not merged with
+and not reconciled.** P2 builds their own; they do not extend ours, and they do not need our
+permission or a migration plan to replace it. Agreed in advance, so it is not a negotiation at
+merge time.
+
+**Who removes it.** P1 — in the same PR that brings P2's Fleet in, or immediately after.
+
+**The rule that goes with it:** no further investment. No new features, no refactors, no design
+polish on those four screens. They are fixed only if they break the demo. Hours spent on code
+scheduled for deletion are hours taken from Container 360.
+
+#### What comes out, exactly
+
+| | Files |
+|---|---|
+| Migrations | `2026_12_16_000004_create_transport_vehicles_table.php`, `2026_12_16_000006_create_transport_drivers_table.php` |
+| Models | `TransportVehicle.php`, `TransportDriver.php` |
+| Services | `TransportVehicleService.php`, `TransportDriverService.php` |
+| Controllers | `TransportVehicleController.php`, `TransportDriverController.php` |
+| FormRequests | `Store`/`Update`/`Transition` × `TransportVehicleRequest`, `TransportDriverRequest` (6) |
+| Enums | `VehicleStatus`, `VehicleOwnership`, `DriverStatus`, `DriverAvailability`, `DriverComplianceStatus` |
+| Routes | the `/vehicles` and `/drivers` groups in `routes/transport.php`, and their `TransportPermission` keys |
+| Pages | `TransportVehicles.jsx`, `TransportVehicleDetail.jsx`, `TransportDrivers.jsx`, `TransportDriverDetail.jsx` |
+| Components | `VehicleForm.jsx`, `DriverForm.jsx` |
+| Nav | the Vehicles and Drivers entries in `TransportLayout.jsx` and `Sidebar.jsx`, and their routes in `app/routes.jsx` |
+
+#### What does NOT come out — the seam
+
+These reference a vehicle or a driver and are **P1's or P3's**, so they are rewired to P2's Fleet
+rather than deleted. Anyone doing the removal must read this row before starting:
+
+| File | Why it stays |
+|---|---|
+| `frontend/.../components/MasterFormFields.jsx` | **shared** — also imported by `PretripPanel`, `AllocationPanel`, `DispatchPanel`, `DocumentsPanel`. Deleting it with the forms breaks four panels that have nothing to do with Fleet |
+| `TripAssignment.php` | P1. `vehicle_id` / `driver_id` are P1 columns and stay |
+| `transport_trips.vehicle_id` / `.driver_id` | P1 columns. Nullable, no FK, by the team convention for a shared entity that does not exist yet |
+| `AllocationService`, `VehicleEligibilityService`, `DriverEligibilityService` | allocation scoring is TM-001 §9 — **P2's domain**, currently built by P1. Handled as its own handover, not as part of this one |
+| `ResourceCommitmentService` | P1. Reads `trip_assignments` + `transport_trips` only — no Fleet table — so it survives the swap untouched |
+| `TransportDocumentService` | P3 |
+
+---
+
 ## 2. Settled
 
 | Ticket | Owner | State |

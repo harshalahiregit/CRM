@@ -1792,3 +1792,53 @@ endpoint loads it column-limited.
 `000015`, the model relation and the `$fillable` entry were all present and all correct. Everything
 looked built. The only thing that distinguished it from a working feature was that no code path
 reached it.
+
+---
+
+## D-56 — Transport migration timestamps overlap TPV/purchase ones. LEAVE THEM.
+
+**Raised and closed:** 2026-09-16, during the first merge of this work into master.
+**Status: ACCEPTED, no action. This entry exists to stop a later "tidy-up".**
+
+Five Transport migrations share a filename timestamp with TPV/purchase medical-workflow
+migrations that arrived from master:
+
+```
+2026_12_16_000002_add_medical_workflow_to_tpv_worker_medicals.php
+2026_12_16_000002_create_transport_orders_table.php
+2026_12_16_000003_add_medical_workflow_to_purchase_worker_medicals.php
+2026_12_16_000003_create_transport_trips_table.php
+2026_12_16_000004_create_tpv_medical_workflow_tables.php
+2026_12_16_000004_create_transport_vehicles_table.php
+2026_12_16_000005_create_purchase_medical_workflow_tables.php
+2026_12_16_000005_create_transport_documents_table.php
+2026_12_16_000006_add_medical_bypass_to_work_packages.php
+2026_12_16_000006_create_transport_drivers_table.php
+```
+
+Two developers hand-numbered migrations on the same nominal date. It looks alarming in a merge
+diff. **It is not a defect, and renaming them would create one.**
+
+### Why it is safe
+
+1. **No duplicate table names.** Checked across every migration on the merged tree — zero
+   collisions. The files touch entirely different tables.
+2. **Filename sort is deterministic.** Laravel orders migrations by full filename, so a shared
+   timestamp falls back to the rest of the string: `..._000002_add_medical...` runs before
+   `..._000002_create_transport_orders...`. The order is stable and reproducible, not arbitrary.
+3. **Relative order within each module is preserved.** Transport's own files run `000001` →
+   `000017` in sequence regardless of what interleaves, so `transport_orders` still precedes
+   `transport_trips`. The interleaved medical migrations depend on nothing of ours, and ours
+   depend on nothing of theirs.
+4. **Every test run proves it.** `RefreshDatabase` runs `migrate:fresh`, so all 4,263 tests
+   execute against a database built from these files in this order. A broken order would not be a
+   subtle risk; the suite would not boot.
+
+### Why renaming would be worse
+
+**These migrations are already applied** — on the dev database and on master. Renaming an applied
+migration makes Laravel treat it as new and run it again, against tables that already exist. The
+"tidy" version of this change is the one that breaks.
+
+**If you are here because the overlap looked wrong in a diff: it is recorded, it was checked, and
+the correct action is none.**
