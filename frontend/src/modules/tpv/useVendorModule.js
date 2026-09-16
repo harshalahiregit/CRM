@@ -54,6 +54,11 @@ export function useVendorModule() {
       listPath: '/app/purchase/vendors',
       viewPath: (id) => `/app/purchase/vendors/${id}`,
       onboardingPath: (id) => `/app/purchase/onboarding/${id}`,
+      access: {
+        convert: (id) => purchaseApi.vendors.convertToPermanent(id),
+        extend: (id, data) => purchaseApi.vendors.access.extend(id, data),
+        expire: (id) => purchaseApi.vendors.access.expire(id),
+      },
     })
   }
   // Default — TPV admin (unchanged behaviour).
@@ -63,6 +68,11 @@ export function useVendorModule() {
     listPath: '/app/tpv/vendors',
     viewPath: (id) => `/app/tpv/view/${id}`,
     onboardingPath: (id) => `/app/tpv/onboarding/${id}`,
+    access: {
+      convert: (id) => tpvApi.access.convert(id),
+      extend: (id, data) => tpvApi.access.extend(id, data),
+      expire: (id) => tpvApi.access.expire(id),
+    },
   })
 }
 
@@ -88,6 +98,18 @@ function cfg(c) {
     // `purchase_vendor_id`. A shared form posting either name blindly gets a 422
     // from the other module, so the key is part of the module config.
     vendorIdKey: c.engagement === 'purchase' ? 'purchase_vendor_id' : 'vendor_id',
+    /*
+     * The temporary-access window: convert to permanent, extend, close now.
+     *
+     * Both engines have all three endpoints, and they are nested differently —
+     * tpvApi keeps them at `access.*`, purchaseApi at `vendors.access.*` with
+     * the promotion as `vendors.convertToPermanent`. That is exactly the kind
+     * of difference `codeOf` and `vendorIdKey` above exist to absorb, so a
+     * component shared by both reads this rather than either client directly.
+     *
+     * null in a portal: a vendor does not extend its own access window.
+     */
+    access: c.access ?? null,
     // Kickoff create is the shared page; pre-scope it to the vendor.
     // Keyed on the MODULE, not hardcoded to TPV: these were fixed strings, so a
     // Purchase vendor's "Kickoff Meeting" button navigated into the TPV module
