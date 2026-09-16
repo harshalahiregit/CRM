@@ -145,7 +145,7 @@ built. Goes in P1's `REQUEST-step12-missing-tickets.md`.
 | C-03 | P3 | P1 | `TransportDocumentService::entityTypeFor()` — a `TransportConsignment` arm | **done** — same commit |
 | C-04 | P3 | — | `delivery_order` into ENUM-006 (approval in `REQUEST-person3-document-entity.md`) | **done** — same commit |
 | C-05 | **P2** | P1 | `FleetResourceGateway::markDispatched()` — see below, this was mis-routed to P3 | not started |
-| C-06 | P2 | P3 | fuel, urea, tyre, maintenance, FASTag costs → `trip_costs` | not started |
+| C-06 | P2 | P3 | fuel, urea, tyre, maintenance, FASTag costs → `trip_costs` | **P3 side ready** — see below. Waiting on P2. |
 | C-07 | P1 | P3 | EVT-012 `TripClosed` | needed for 018, **not** for 011/012 |
 
 ### C-01 — do not build a second one
@@ -168,6 +168,44 @@ and has since expired" are distinguishable.
 
 Nothing to add. A new `ComplianceGate` would have been the second duplicate in
 two days.
+
+### C-06 — `trip_costs` is live; here is how to write to it
+
+**P2: nothing is blocking you.** `trip_costs` (DB-006) shipped with SNG-TRN-012 and takes
+telemetry costs today. Call the service, not the model:
+
+```php
+app(TripCostService::class)->record($trip, [
+    'cost_type'   => 'fuel',          // free text, normalised for you
+    'amount'      => '4820.00',       // string, never a float
+    'source'      => CostSource::TELEMETRY,
+    'source_ref'  => $yourTransactionId,   // REQUIRED for telemetry
+    'incurred_on' => '2026-09-16',
+], $tenantId, actor: null);           // null actor = the system itself
+```
+
+Three things worth knowing before you wire it up:
+
+**`source_ref` is mandatory for you and it is what makes retries safe.** There is a unique
+index on `(tenant_id, source, source_ref, cost_type)`. Send the same row twice and the
+second call returns the first row rather than erroring — so a re-delivered webhook or a
+re-run import cannot double the trip's cost. Without a `source_ref` that protection does
+not exist and the call is refused outright.
+
+**Pass `actor: null`.** A request carrying a real user is treated as hand-entered and may
+only claim `manual` or `import`. That is deliberate: a person must not be able to post a
+row wearing telemetry's identity, because the deduplication trusts it.
+
+**One transaction may carry several cost types.** `cost_type` is in the unique key, so a
+single fuel bill can produce a `fuel` row and a `service_charge` row against the same
+`source_ref`. It cannot produce two `fuel` rows.
+
+`cost_type` is free text on purpose — its registry vocabulary `CST-001` is a dangling
+pointer (**D-58**). `CostType::KNOWN` lists the spellings we suggest, including all five
+from this contract, but nothing is rejected. Case and spacing are folded on write, so
+`Fuel`, `FUEL` and `fuel` are one group in the margin.
+
+---
 
 ### C-05 — the stub is P2's, not P3's
 

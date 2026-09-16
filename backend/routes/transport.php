@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\Transport\TransportAllocationController;
 use App\Http\Controllers\Api\Transport\TransportCapabilityController;
 use App\Http\Controllers\Api\Transport\TransportConsignmentController;
 use App\Http\Controllers\Api\Transport\TransportContainerController;
+use App\Http\Controllers\Api\Transport\TransportCostController;
 use App\Http\Controllers\Api\Transport\TransportDispatchController;
 use App\Http\Controllers\Api\Transport\TransportDriverController;
 use App\Http\Controllers\Api\Transport\TransportOrderController;
@@ -93,6 +94,31 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
             ->whereNumber('id')->whereNumber('advanceId');
         Route::post('/trips/{id}/advances/{advanceId}/reject', [TransportAdvanceController::class, 'reject'])
             ->whereNumber('id')->whereNumber('advanceId');
+    });
+
+    /* ── Trip costs — SNG-TRN-012 ─────────────────────────────────────────
+     *
+     * Three groups, not one, and the widths are the control. Step 11 has no
+     * Cost permission row at all (D-58), so these keys are constructed — which
+     * is exactly why they are applied narrowly rather than folded into the trip
+     * gate. Recording mirrors PERM-008 `Expense/submit`; retracting is narrower
+     * than recording, because taking a cost back out changes a reported margin.
+     *
+     * Reading is separate from TRIP_VIEW on purpose. PERM-001 shows a Customer
+     * and a Supplier the trip they are party to; what that haul cost us is not
+     * theirs to read, and COST_VIEW omits both.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::COST_VIEW)->group(function () {
+        Route::get('/trips/{id}/costs', [TransportCostController::class, 'index'])->whereNumber('id');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::COST_RECORD)->group(function () {
+        Route::post('/trips/{id}/costs', [TransportCostController::class, 'store'])->whereNumber('id');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::COST_RETRACT)->group(function () {
+        Route::delete('/trips/{id}/costs/{costId}', [TransportCostController::class, 'destroy'])
+            ->whereNumber('id')->whereNumber('costId');
     });
 
     /* ── What this user may do ────────────────────────────────────────

@@ -110,6 +110,19 @@ class TransportTrip extends Model
         return $this->hasMany(TripAdvance::class, 'trip_id');
     }
 
+    /**
+     * What this trip cost — DB-006, SNG-TRN-012.
+     *
+     * hasMany because a trip accumulates costs from several sources over its
+     * life, and SNG-TRN-018's margin is the sum. Soft-deleted rows are excluded
+     * by the model's own scope, so a retracted cost leaves the total without
+     * leaving the audit trail.
+     */
+    public function costs(): HasMany
+    {
+        return $this->hasMany(TripCost::class, 'trip_id');
+    }
+
     /* ── Scopes. Composed AFTER forTenant(), never instead of it. ────── */
 
     public function scopeWithStatus(Builder $query, string $status): Builder

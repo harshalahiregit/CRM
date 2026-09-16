@@ -67,6 +67,7 @@ Authority for who rules on what: the Conflict Resolution matrix in
 | D-52 | No structural marker for a temperature-critical trip | **High** | Product + Person 2 | Open — TM-001 §12's P0 rule has nothing to key on |
 | D-53 | Two CLOSED attachment windows may overlap | Low | Person 1 | Open — latent, unreachable today |
 | D-57 | Step 9 and ENUM-002 describe different advance lifecycles | **High** | Product + Finance | Open — ENUM-002 stored on FLD-012's authority, four Step 9 states unrepresentable |
+| D-58 | SNG-TRN-012's three refs point at the exception domain; `cost_type` and `amount` both dangle; cost/expense boundary undefined | **High** | Product + Finance + Architecture | Open — blocks 012, and via DEP-008 also 017 and 018 |
 
 > **D-54, D-55 and D-56 have bodies below but no row here** — they were added on 2026-09-16 and the
 > index was not extended with them. Person 1 owns those three; the rows are theirs to write, which
@@ -1916,3 +1917,90 @@ amended to the six, or the two are formally declared to be describing different 
 business lifecycle and the stored column. Any of the three is a decision; none is a developer's.
 
 **Needed before:** SNG-TRN-017 (settlement), which has to move an advance out of `paid`.
+
+---
+
+## D-58 — SNG-TRN-012 cites three references that all belong to another domain, and `cost_type` has no vocabulary
+
+**Raised:** 2026-09-16, building the Context Pack for SNG-TRN-012. **Owner: Product +
+Finance.** **Severity: high — it decides a LOCKED table's shape.**
+
+### The cited references resolve to the exception domain
+
+Step 12's `DB/API/State/Event Refs` column for SNG-TRN-012 reads `DB-011;API-007;EV-008`.
+Resolved by NAME against Step 11:
+
+| Ticket cites | What Step 11 actually says it is | Correct reference |
+|---|---|---|
+| `DB-011` | `trip_risks` — "Trip-linked risk exposure", Risk | **DB-006 `trip_costs`** |
+| `API-007` | `POST /api/v1/transport/trips/{trip}/exceptions` — Raise exception | **none exists** |
+| `EV-008` | `TripExceptionRaised` | **none exists** |
+
+All three land on *exceptions*, not cost. This is the placeholder-numbering defect the
+Authority Register carries as an unclosed OPEN ITEM, so the numbers are not evidence of
+anything. **There is no API row and no event for recording a cost anywhere in Step 11.**
+
+### Two dangling pointers in the field registry
+
+```
+FLD-010   DB-006  trip_costs  cost_type  VARCHAR(40)  INDEX   -> CST-001
+FLD-011   DB-006  trip_costs  amount     DECIMAL(18,2)        -> MON-002
+```
+
+Searched all fourteen sheets: **`CST-001` occurs exactly once** — in FLD-010's own
+reference column. **`MON-002` likewise occurs exactly once**, in FLD-011's. Neither is
+defined. The Enums sheet holds exactly eight enums, ENUM-001..008, and none is a cost
+type.
+
+This is D-50 (`container_type`) repeating, but worse. `container_type` was a search
+anchor; `cost_type` is **INDEXED and is the grouping key for SNG-TRN-018's profitability**
+(IDX-005 `company_id, trip_id, cost_type`, LOCKED, reason "profitability calculations").
+Free text means `fuel`, `Fuel`, `FUEL` and `diesel` become four categories and 018's
+acceptance — "revenue, cost and margin reconcile to source transactions" — cannot hold.
+
+### The larger question: what separates a cost from an expense?
+
+Two LOCKED tables, same owner, same source reference:
+
+```
+DB-006  trip_costs     "Canonical trip cost facts"        LOCKED  Finance Control  FRS-CST
+DB-008  trip_expenses  "Trip-linked operating expenses"   LOCKED  Finance Control  FRS-CST
+```
+
+The registry is markedly richer on *expense* than on *cost*: PERM-008 `Expense/submit`
+and PERM-009 `Expense/approve` exist, ENUM-005 `expense_approval_status` exists, and
+FLD-013 gives `trip_expenses.approval_status` a `pending` default. **For cost there is
+no permission row at all** — the Permissions sheet's thirteen rows cover Trip, Advance,
+Expense, POD, Collection, ControlRoom and Registry, and no Cost.
+
+Meanwhile SNG-TRN-012 is the only ticket that mentions expense (its Module is
+"Fuel/Toll/Expense"), and QA-005 files it under Area = **Expense**. So one ticket appears
+to straddle both tables while naming only one.
+
+**The coherent reading** — and it is a reading, not a finding — is that an expense is a
+human *claim* that goes through submit/approve, and a cost is the canonical *fact* used
+for margin; an approved expense becomes a cost row. That would also explain the otherwise
+undefined word "source" in the acceptance criterion "Every cost is linked to trip and
+**source**", for which no field exists.
+
+**This is not a developer's call.** Guessing it wrong produces one of two failures:
+a single table that later collides with the other LOCKED entity (FORBID-005, exactly the
+SNG-TRN-028 duplicate), or two tables that double-count and break 018's reconciliation.
+
+### What is NOT blocked
+
+DEP-004 (`Costs require trip`) is satisfied — SNG-TRN-007 is built. `trip_costs` can be
+built to its LOCKED spec (`VARCHAR(40)` is what the registry specifies, so storing free
+text obeys it rather than guessing) the moment the boundary and the `source` field are
+settled.
+
+### What resolving it looks like
+
+1. A `cost_type` vocabulary registered as an ENUM, or an explicit ruling that it is free
+   text and 018 groups on something else.
+2. A definition of `source`, and a field for it.
+3. A ruling on the `trip_costs` / `trip_expenses` boundary, and which of them
+   SNG-TRN-012 actually builds.
+
+**Escalation:** `CLARIFICATION_REQUIRED` for 1 and 2, `ARCHITECTURE_REVIEW_REQUIRED` for 3.
+**Blocks:** SNG-TRN-012, and through DEP-008 both SNG-TRN-017 and SNG-TRN-018.
