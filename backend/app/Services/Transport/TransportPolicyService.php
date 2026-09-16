@@ -6,6 +6,7 @@ use App\Models\Transport\TransportPolicy;
 use App\Models\User;
 use App\Support\Transport\DriverComplianceStatus;
 use App\Support\Transport\PretripCheckKey;
+use App\Support\Transport\TransportDocumentEntity;
 use App\Support\Transport\TransportDocumentType;
 use Illuminate\Support\Facades\Log;
 
@@ -240,8 +241,17 @@ class TransportPolicyService
 
         if (str_ends_with($key, 'required_documents')) {
             $value = is_array($value) ? array_values(array_unique($value)) : [];
-            $entity = str_starts_with($key, 'driver') ? 'driver' : 'vehicle';
-            $allowed = TransportDocumentType::forEntity($entity);
+
+            // The entity is the key's own prefix — 'driver.required_documents'
+            // is about drivers. Reading it as "driver, or else vehicle" was
+            // fine while those were the only two, but it would have told a
+            // consignment policy that an LR cannot be required of a vehicle.
+            // An unrecognised prefix yields no allowed types, so it refuses
+            // rather than silently validating against somebody else's list.
+            $entity  = strtok($key, '.') ?: '';
+            $allowed = TransportDocumentEntity::isValid($entity)
+                ? TransportDocumentType::forEntity($entity)
+                : [];
 
             foreach ($value as $type) {
                 if (! in_array($type, $allowed, true)) {
