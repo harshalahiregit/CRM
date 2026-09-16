@@ -1,5 +1,5 @@
 import {
-  Activity, ArrowLeftRight, Award, Banknote, BarChart2, BarChart3, Bell, BookOpen, BookText, Boxes, Briefcase, Bug, Building2, CalendarCheck, CalendarClock, CalendarDays, CalendarOff, CalendarRange, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList, Clock, Contact, CreditCard, Factory, FileCheck2, FileQuestion, FileSignature, FileText, FileX, FolderOpen, Globe, GraduationCap, Handshake, HelpCircle, History, Hourglass, IndianRupee, Landmark, Layers3, LayoutDashboard, LayoutTemplate, LifeBuoy, Link2, LogOut, MessageSquare, Network, Package, PackageMinus, PackagePlus, PartyPopper, PenLine, Receipt, RefreshCw, Rocket, Scale, ScanLine, Search, Settings, Settings2, Shield, ShieldCheck, ShoppingBag, ShoppingCart, SlidersHorizontal, Stethoscope, TrendingUp, Truck, Undo2, User, UserCheck, UserCog, UserPlus, UserRound, Users, Wallet, Warehouse, Wrench, X, Zap,
+  Activity, ArrowLeftRight, Award, Banknote, BarChart2, BarChart3, Bell, BookOpen, BookText, Boxes, Briefcase, Bug, Building2, CalendarCheck, CalendarClock, CalendarDays, CalendarOff, CalendarRange, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList, Clock, Contact, CreditCard, Factory, FileCheck2, FileQuestion, FileSignature, FileText, FileX, FolderOpen, Globe, GraduationCap, Handshake, HelpCircle, History, Hourglass, IndianRupee, Landmark, Layers3, LayoutDashboard, LayoutTemplate, LifeBuoy, Link2, LogOut, MessageSquare, Network, Package, PackageMinus, PackagePlus, PartyPopper, PenLine, Receipt, RefreshCw, Rocket, Scale, ScanLine, Search, Settings, Settings2, Shield, ShieldCheck, ShoppingBag, ShoppingCart, SlidersHorizontal, Stethoscope, TrendingUp, Truck, Undo2, User, UserCheck, UserCog, UserPlus, UserRound, Users, Wallet, Warehouse, Wrench, X, Zap, Container,
 } from 'lucide-react'
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -52,6 +52,7 @@ const MODULE_SEARCH = [
   { label: 'TPV',        path: '/app/tpv/dashboard',    icon: UserCheck,       kw: 'third party vendor workforce' },
   { label: 'Customers',  path: '/app/customers',        icon: Building2,       kw: 'clients directory accounts' },
   { label: 'Compliance', path: '/app/tpv/compliance',   icon: ShieldCheck,     kw: 'hsse checklists' },
+  { label: 'Transport',  path: '/app/transport/orders', icon: Truck,          kw: 'stos trips orders logistics haulage' },
 
   // Added to the nav but never to this list, so they were unreachable by search
   // while sitting in plain sight in the sidebar. `when` gates a result the same
@@ -341,6 +342,18 @@ const TPV_VENDOR_ITEMS = [
 // Every sub-page across the modules, tagged with its parent — so the sidebar
 // search finds e.g. "Payroll", "Cheques" or "Debit Notes", not just top-level
 // module names. Built from the same lists the nav renders, so it never drifts.
+// Transport OS (STOS) sub-nav. Only the two screens SNG-TRN-006/007 built —
+// a nav entry that 404s is worse than a missing one, so later clusters arrive
+// with the tickets that build them.
+const TRANSPORT_SUB_ITEMS = [
+  { label: 'Transport Orders', path: '/app/transport/orders',   icon: Package },
+  { label: 'Trips',            path: '/app/transport/trips',    icon: Truck },
+  { label: 'Consignments',     path: '/app/transport/consignments', icon: Boxes },
+  { label: 'Containers',       path: '/app/transport/containers', icon: Container },
+  { label: 'Vehicles',         path: '/app/transport/vehicles', icon: Truck },
+  { label: 'Drivers',          path: '/app/transport/drivers',  icon: Users },
+]
+
 const SUBMODULE_SEARCH = [
   ...HR_RECRUITMENT_ITEMS.map(i => ({ ...i, module: 'HR' })),
   { ...HR_EMPLOYEES, module: 'HR' },
@@ -356,6 +369,7 @@ const SUBMODULE_SEARCH = [
   ...INVENTORY_SUB_ITEMS.map(i => ({ ...i, module: 'Inventory' })),
   ...PURCHASE_SUB_ITEMS.map(i => ({ ...i, module: 'Purchase' })),
   ...TPV_ADMIN_ITEMS.map(i => ({ ...i, module: 'TPV' })),
+  ...TRANSPORT_SUB_ITEMS.map(i => ({ ...i, module: 'Transport' })),
 
   // Same omission one level down: "My Work" and "Releases" are real screens
   // somebody will search for by name.
@@ -1017,6 +1031,36 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
             {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Thirdparty Vendor</span><ChevronDown size={13} className={clsx('transition-transform duration-200', openSection === 'tpv' && 'rotate-180')} /></>}
           </button>
           {(openSection === 'tpv' || collapsed) && tpvItems.map(({ label, path, icon: Icon }) => (
+            <NavLink key={path} to={path}>
+              {({ isActive }) => (
+                <div title={collapsed ? label : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined, paddingLeft: collapsed ? undefined : '28px' }}>
+                  <div className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(124,58,237,0.06)' }}>
+                    <Icon size={12} />
+                  </div>
+                  {!collapsed && <span className="truncate text-xs">{label}</span>}
+                  {isActive && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#c4b5fd' }} />}
+                </div>
+              )}
+            </NavLink>
+          ))}
+        </div>
+
+        {/* ── Transport Module sub-nav ── */}
+        <div data-section-block className={clsx('mt-2')}>
+          {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#a78bfa' }}>Transport</p>}
+          <button
+            onClick={() => toggleSection('transport')}
+            data-section="transport"
+            title={collapsed ? 'Transport' : ''}
+            className="nav-3d mb-0.5 w-full"
+            style={{ justifyContent: collapsed ? 'center' : undefined, color: '#a78bfa' }}
+          >
+            <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.15)' }}>
+              <Truck size={13} style={{ color: '#a78bfa' }} />
+            </div>
+            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Transport OS</span><ChevronDown size={13} className={clsx('transition-transform duration-200', openSection === 'transport' && 'rotate-180')} /></>}
+          </button>
+          {(openSection === 'transport' || collapsed) && TRANSPORT_SUB_ITEMS.map(({ label, path, icon: Icon }) => (
             <NavLink key={path} to={path}>
               {({ isActive }) => (
                 <div title={collapsed ? label : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined, paddingLeft: collapsed ? undefined : '28px' }}>

@@ -73,6 +73,9 @@ return Application::configure(basePath: dirname(__DIR__))
             // Advances have their own door: the approvers are a line manager,
             // accounts and a director, none of whom satisfy hr.manage.
             'hr.advances' => \App\Http\Middleware\EnsureCanAccessAdvances::class,
+            // Transport OS permission gate — 'transport.permission:<key>'.
+            // Applied to route groups so a new route is covered by default.
+            'transport.permission' => \App\Http\Middleware\EnsureTransportPermission::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

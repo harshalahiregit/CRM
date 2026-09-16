@@ -39,6 +39,16 @@ use App\Models\User;
 class DirectoryReconciliationService
 {
     /**
+     * Roles that SHOULD have an employment record.
+     *
+     * Everyone else — a customer contact, a third-party contractor, a purchase
+     * supplier, a doctor, a company portal login — holds a login precisely
+     * because they are NOT an employee, so their absence from HR is the correct
+     * state rather than a gap to close.
+     */
+    private const INTERNAL_ROLES = ['staff', 'admin'];
+
+    /**
      * The three groups that matter, with the counts a screen leads on.
      */
     public function report(int $tenantId): array
@@ -47,8 +57,21 @@ class DirectoryReconciliationService
             ->whereIn('status', ['Active', 'On Probation'])
             ->get(['id', 'name', 'employee_code', 'department', 'designation', 'user_id', 'status']);
 
+        // INTERNAL roles only.
+        //
+        // This panel exists to find people who fell between the two directories.
+        // It used to read every active login, so a customer contact and a
+        // third-party contractor were reported as "missing an employee record" —
+        // which they are, correctly and permanently: a customer is not on your
+        // payroll and never will be. Seven were listed where three were real,
+        // and a count that is mostly false alarms is one nobody reads.
+        //
+        // The same list the backfill command uses (hr:reconcile-logins, which
+        // filters to staff and admin), so the screen and the fix cannot disagree
+        // about who is supposed to have a record.
         $users = User::where('tenant_id', $tenantId)
             ->where('status', 'active')
+            ->whereIn('role', self::INTERNAL_ROLES)
             ->get(['id', 'name', 'email', 'role', 'status']);
 
         $linkedUserIds = $employees->pluck('user_id')->filter()->unique();

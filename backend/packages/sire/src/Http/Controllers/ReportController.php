@@ -197,14 +197,26 @@ class ReportController extends SireController
     {
         $this->assertTenantOwnership($report); // 404, not 403
 
-        $id = urldecode($attachment);
+        $requested = urldecode($attachment);
 
         // Membership, not string surgery: the file must be one this report
         // actually owns, which also makes traversal unexpressible.
+        //
+        // A bare FILENAME resolves as well as the full stored path. An id is a
+        // path here, and a path in a URL segment encodes its slashes as %2F,
+        // which the production web server (Plesk, Apache behind nginx) answers
+        // with its own 404 before the request ever reaches Laravel -- so
+        // evidence that had uploaded perfectly read "Could not load" on live
+        // while local dev, which passes %2F straight through, looked healthy.
+        // The directory comes from the route-bound report regardless, so the
+        // filename is all the URL ever needed to carry. Full-path ids still
+        // match, so any link already in flight keeps working.
         $match = null;
 
         foreach ($this->attachments->listFor($report) as $candidate) {
-            if ((string) $candidate->id === $id) {
+            $id = (string) $candidate->id;
+
+            if ($id === $requested || basename($id) === $requested) {
                 $match = $candidate;
                 break;
             }
@@ -212,11 +224,16 @@ class ReportController extends SireController
 
         abort_if($match === null, 404);
 
+        // Read the PROVIDER's path, never the request's. The matched descriptor
+        // is the only thing that reaches Storage, so no request string is ever
+        // used as a disk path.
+        $path = (string) $match->id;
+
         $disk = Storage::disk((string) config('sire.attachments.disk'));
 
-        abort_unless($disk->exists($id), 404);
+        abort_unless($disk->exists($path), 404);
 
-        return $disk->response($id, $match->name, [
+        return $disk->response($path, $match->name, [
             'Content-Type'        => $match->mime ?: 'application/octet-stream',
             'Content-Disposition' => 'inline; filename="'.addslashes($match->name).'"',
         ]);

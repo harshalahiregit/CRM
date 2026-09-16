@@ -75,8 +75,11 @@ Route::middleware(\Sire\Http\SireRouteMiddleware::stack())
     Route::get('reports/{report}/attachments',  [ReportController::class, 'indexAttachments']);
     Route::post('reports/{report}/attachments', [ReportController::class, 'storeAttachment']);
     // The disk is private, so evidence is streamed through here rather than
-    // linked. {attachment} is a stored path, so it is matched against the
-    // report's own listing rather than read from the disk directly.
+    // linked. {attachment} is the stored FILENAME -- matched against the
+    // report's own listing rather than read from the disk directly. A full
+    // stored path still resolves, which is why the pattern still allows
+    // slashes, but nothing builds one: a path in a URL segment encodes them as
+    // %2F, and the production web server 404s that before Laravel sees it.
     Route::get('reports/{report}/attachments/{attachment}', [ReportController::class, 'downloadAttachment'])
         ->where('attachment', '.*');
 

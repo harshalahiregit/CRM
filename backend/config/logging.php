@@ -145,6 +145,16 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // Transport OS (STOS). Module-scoped like every other domain channel, so a
+        // trip/allocation/policy failure is findable without grepping laravel.log.
+        'transport' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/transport.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => env('LOG_DAILY_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
         'errors' => [
             'driver' => 'daily',
             'path' => storage_path('logs/errors.log'),

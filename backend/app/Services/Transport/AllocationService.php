@@ -1,0 +1,563 @@
+<?php
+
+namespace App\Services\Transport;
+
+use App\Events\Transport\TripAssigned;
+use App\Exceptions\BusinessException;
+use App\Exceptions\ResourceNotFoundException;
+use App\Models\Transport\TransportDocument;
+use App\Models\Transport\TransportDriver;
+use App\Models\Transport\TransportTrip;
+use App\Models\Transport\TransportVehicle;
+use App\Models\Transport\TripAssignment;
+use App\Models\User;
+use App\Support\Transport\AllocationScope;
+use App\Support\Transport\DriverAvailability;
+use App\Support\Transport\TripStatus;
+use App\Support\Transport\VehicleStatus;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
+/**
+ * The allocation act — SNG-TRN-009 step 6. STT-004.
+ *
+ * Registry row, verbatim:
+ *   STT-004 | SM-TRP | approved → allocated | trigger "Assign eligible resources"
+ *           | actor AssignmentService | precondition "Vehicle/driver valid"
+ *           | side effect "Create assignment" | Audit Yes | LOCKED
+ *
+ * ── WHY THIS IS A SEPARATE CLASS FROM TransportTripService ────────────────
+ * STT-001 names TripEngine as its actor; STT-004 names AssignmentService. The
+ * registry treats them as different actors, so they are different classes. A trip
+ * service that also allocated would make "who may move this state" a matter of
+ * which method you happened to call.
+ *
+ * ── THE ORDER OF OPERATIONS IS THE WHOLE DESIGN ──────────────────────────
+ *   1. eligibility   — VehicleEligibilityService / DriverEligibilityService.
+ *                      Refuse on ANY failed required check. STT-004's
+ *                      precondition is "Vehicle/driver valid", and OPS §194 is
+ *                      blunt: "No vehicle is allocated without required
+ *                      eligibility. No driver is allocated without required
+ *                      eligibility."
+ *   2. assignment    — TripAssignmentService, which owns the row, the row lock
+ *                      and the double-booking indexes (BR-P0-003).
+ *   3. trip state    — approved → allocated, but ONLY once both resources are
+ *                      set. SM-TRP's entry gate for `allocated` is
+ *                      "Vehicle+driver eligible". Ruled 2026-09-08.
+ *   4. resource state— vehicle → allocated, driver → assigned, so the masters
+ *                      stop advertising a resource that is out on a trip.
+ *   5. audit         — against the assignment AND the trip, carrying the full
+ *                      eligibility verdict.
+ *   6. event         — EVT-005, once, when the trip actually becomes crewed.
+ *
+ * Eligibility runs BEFORE the assignment row is touched so a refusal leaves
+ * nothing behind: the trip stays approved, no row exists, no resource moves.
+ *
+ * ── WHY THE VERDICT IS WRITTEN INTO THE AUDIT ────────────────────────────
+ * Step 9's product philosophy exists to make favour-based allocation reviewable,
+ * and STOS-DB §48 says to record the objective facts rather than label anyone.
+ * SEC §103 lists "vehicle assignment history" and "driver allocation history"
+ * among its fraud controls. A row saying "assigned" proves nothing; a row saying
+ * "assigned, and here are the eight checks that passed at that moment" is what
+ * makes a later review possible.
+ *
+ * ── NOT HERE, DELIBERATELY ───────────────────────────────────────────────
+ * No score, no ranking, no weights (PLN-008, P1). No override path (PLN-007,
+ * P1) — a blocked allocation is refused, full stop. No location, no cost. All
+ * recorded in AllocationScope::EXCLUDED.
+ */
+class AllocationService
+{
+    public function __construct(
+        private TripAssignmentService $assignments,
+        private VehicleEligibilityService $vehicleEligibility,
+        private DriverEligibilityService $driverEligibility,
+        private TransportPolicyService $policies,
+        private PretripService $pretrip,
+    ) {
+    }
+
+    /**
+     * Assign a vehicle and/or driver to an approved trip.
+     *
+     * Sequential or combined, inherited from step 4: one call may set either or
+     * both, and a later call folds into the same assignment row.
+     *
+     * @param  array{reason?:string,allocation_type?:string,approved_by?:int}  $meta
+     * @return array{trip:TransportTrip,assignment:TripAssignment,eligibility:array}
+     */
+    public function assign(
+        TransportTrip $trip,
+        ?int $vehicleId,
+        ?int $driverId,
+        int $tenantId,
+        ?User $actor = null,
+        array $meta = [],
+    ): array {
+        $this->assertTenant($trip, $tenantId);
+
+        if ($vehicleId === null && $driverId === null) {
+            throw new BusinessException('An allocation needs a vehicle, a driver, or both.', 422);
+        }
+
+        // ── Double-submit, handled without an Idempotency-Key header ─────
+        //
+        // API-004 marks idempotency Required; the standing Q6 ruling waives the
+        // header for R1 because the integrity it buys is already guaranteed by a
+        // row lock and three unique indexes. That covers CORRECTNESS but not
+        // COURTESY: once the first call allocates the trip, a second identical
+        // one would hit the from-state guard below and answer 422, which is a
+        // confusing reply to a dispatcher who simply double-clicked.
+        //
+        // So an EXACTLY matching re-request returns the existing state and
+        // writes nothing — no audit row, no event, no state change. Anything
+        // that differs still falls through and is refused on its merits.
+        $active = $this->assignments->activeForTrip($trip->id, $tenantId);
+        if ($active !== null
+            && ($vehicleId === null || (int) $active->vehicle_id === $vehicleId)
+            && ($driverId === null || (int) $active->driver_id === $driverId)
+            && ($vehicleId !== null || $driverId !== null)) {
+            return [
+                'trip'        => $trip->fresh(),
+                'assignment'  => $active,
+                'eligibility' => [],
+                'repeated'    => true,
+            ];
+        }
+
+        // STT-004's from-state. A trip that has not been approved has no business
+        // being crewed, and one already dispatched must not be re-crewed here.
+        if ($trip->status !== TripStatus::APPROVED) {
+            throw new BusinessException(
+                'Only an approved trip can be allocated. This trip is '.$trip->statusLabel().'.',
+                422
+            );
+        }
+
+        $policy   = $this->policies->all($tenantId);
+        $verdicts = [];
+
+        /* ── 1. Eligibility. Refuse before anything is written. ─────────── */
+        $vehicle = $vehicleId === null ? null : $this->findVehicle($vehicleId, $tenantId);
+        $driver  = $driverId === null ? null : $this->findDriver($driverId, $tenantId);
+
+        if ($vehicle) {
+            $verdicts['vehicle'] = $this->vehicleEligibility->evaluate($vehicle, $trip, $tenantId, $policy);
+            $this->assertEligible($verdicts['vehicle'], 'vehicle', $vehicle, $trip, $tenantId, $actor);
+        }
+        if ($driver) {
+            $verdicts['driver'] = $this->driverEligibility->evaluate($driver, $trip, $tenantId, $policy);
+            $this->assertEligible($verdicts['driver'], 'driver', $driver, $trip, $tenantId, $actor);
+        }
+
+        return DB::transaction(function () use ($trip, $vehicle, $driver, $vehicleId, $driverId, $tenantId, $actor, $meta, $verdicts) {
+            /* ── 2. The assignment row. Owns the lock and BR-P0-003. ───── */
+            $assignment = $this->assignments->assign($trip, $vehicleId, $driverId, $tenantId, $actor, $meta);
+
+            /* ── 4. Resource states, so the masters stop advertising them. ─ */
+            if ($vehicle && $vehicle->status === VehicleStatus::AVAILABLE) {
+                $this->moveVehicle($vehicle, VehicleStatus::ALLOCATED, $actor, 'Allocated to trip '.$trip->trip_number);
+            }
+            if ($driver && $driver->availability === DriverAvailability::AVAILABLE) {
+                $this->moveDriver($driver, DriverAvailability::ASSIGNED, $actor, 'Assigned to trip '.$trip->trip_number);
+            }
+
+            /* ── 5. Audit, carrying the evidence. ───────────────────────── */
+            $evidence = $this->evidence($verdicts);
+
+            $assignment->audit('transport.allocation.performed', $actor, new: [
+                'trip_id'    => $trip->id,
+                'vehicle_id' => $assignment->vehicle_id,
+                'driver_id'  => $assignment->driver_id,
+                'complete'   => $assignment->isComplete(),
+            ], context: $evidence);
+
+            /* ── 3. Trip state — only when genuinely crewed. ────────────── */
+            $becameAllocated = false;
+            if ($assignment->isComplete() && $trip->status === TripStatus::APPROVED) {
+                $from = $trip->status;
+                $trip->forceFill(['status' => TripStatus::ALLOCATED, 'updated_by' => $actor?->id])->save();
+
+                $trip->auditTransition(
+                    'transport.trip.status_changed',
+                    $from,
+                    TripStatus::ALLOCATED,
+                    $actor,
+                    array_merge($evidence, [
+                        'transition'    => 'STT-004',
+                        'assignment_id' => $assignment->id,
+                    ]),
+                );
+                $becameAllocated = true;
+            } else {
+                // A partial allocation is a real, recorded act — it is just not
+                // a state change. Saying so on the trip keeps its history
+                // readable without having to open the assignment.
+                $trip->audit('transport.trip.partially_allocated', $actor, new: [
+                    'assignment_id' => $assignment->id,
+                    'vehicle_id'    => $assignment->vehicle_id,
+                    'driver_id'     => $assignment->driver_id,
+                    'awaiting'      => $assignment->hasVehicle() ? 'driver' : 'vehicle',
+                ], context: $evidence);
+            }
+
+            /* ── 6. EVT-005, once, when the trip becomes crewed. ────────── */
+            if ($becameAllocated) {
+                TripAssigned::dispatch($trip->fresh(), $assignment->fresh(), $evidence);
+            }
+
+            Log::channel('transport')->info('Allocation performed', [
+                'trip_id' => $trip->id, 'assignment_id' => $assignment->id,
+                'vehicle_id' => $assignment->vehicle_id, 'driver_id' => $assignment->driver_id,
+                'became_allocated' => $becameAllocated,
+                'tenant_id' => $tenantId, 'user_id' => $actor?->id,
+            ]);
+
+            return [
+                'trip'        => $trip->fresh(),
+                'assignment'  => $assignment->fresh(),
+                'eligibility' => $verdicts,
+            ];
+        });
+    }
+
+    /**
+     * Release an allocation and free everything it held.
+     *
+     * The trip reverts to approved, from `allocated` or from `pretrip_ok`. Both
+     * transitions are INFERRED, not registry rows — see
+     * TripStatus::INFERRED_TRANSITIONS for why leaving the trip in either state
+     * after its crew has gone would state something false.
+     *
+     * The trip's pre-trip checklist is invalidated at the same time (SNG-TRN-010):
+     * it certified a crew that no longer holds the trip, so every confirmation on
+     * it has to be earned again.
+     */
+    public function release(TripAssignment $assignment, int $tenantId, ?User $actor = null, ?string $reason = null): TripAssignment
+    {
+        if ((int) $assignment->tenant_id !== $tenantId) {
+            throw new ResourceNotFoundException('Assignment');
+        }
+
+        return DB::transaction(function () use ($assignment, $tenantId, $actor, $reason) {
+            $vehicleId = $assignment->vehicle_id;
+            $driverId  = $assignment->driver_id;
+            $tripId    = $assignment->trip_id;
+
+            $released = $this->assignments->release($assignment, $tenantId, $actor, $reason);
+
+            // Free the resources. Guarded on their current state so a vehicle
+            // that broke down while allocated is not quietly marked Available.
+            if ($vehicleId) {
+                $vehicle = TransportVehicle::forTenant($tenantId)->find($vehicleId);
+                if ($vehicle && $vehicle->status === VehicleStatus::ALLOCATED) {
+                    $this->moveVehicle($vehicle, VehicleStatus::AVAILABLE, $actor, $reason ?? 'Assignment released');
+                }
+            }
+            if ($driverId) {
+                $driver = TransportDriver::forTenant($tenantId)->find($driverId);
+                if ($driver && $driver->availability === DriverAvailability::ASSIGNED) {
+                    $this->moveDriver($driver, DriverAvailability::AVAILABLE, $actor, $reason ?? 'Assignment released');
+                }
+            }
+
+            $trip = TransportTrip::forTenant($tenantId)->find($tripId);
+
+            // SNG-TRN-010. Both states revert to `approved`, because release
+            // removes BOTH resources and neither `allocated` ("Vehicle+driver
+            // eligible") nor `pretrip_ok` ("All checks passed") still holds.
+            //
+            // pretrip_ok is included rather than refused. OPS §27: when a vehicle
+            // becomes unavailable Sangoe "shall identify active/future trips;
+            // identify replacement vehicle" — and BRWM's automatic-action matrix
+            // answers "Vehicle unavailable" with "Reallocation". Refusing release
+            // here would strand a trip with a vehicle it cannot use.
+            $revertsOnRelease = [TripStatus::ALLOCATED, TripStatus::PRETRIP_OK];
+
+            if ($trip && in_array($trip->status, $revertsOnRelease, true)) {
+                $from = $trip->status;
+                $trip->forceFill(['status' => TripStatus::APPROVED, 'updated_by' => $actor?->id])->save();
+                $trip->auditTransition(
+                    'transport.trip.status_changed',
+                    $from,
+                    TripStatus::APPROVED,
+                    $actor,
+                    array_filter([
+                        'reason'     => $reason,
+                        'transition' => 'inferred (no registry row) — assignment released',
+                    ]),
+                );
+            }
+
+            // The checklist certified THIS crew. Once the crew is gone, every
+            // confirmation on it vouches for a configuration that no longer
+            // exists, so the run is invalidated and regeneration is required
+            // before the trip can pass pre-trip again. See
+            // PretripService::invalidate() for why the rows are reset rather
+            // than deleted.
+            if ($trip) {
+                $this->pretrip->invalidate(
+                    $trip,
+                    $tenantId,
+                    $actor,
+                    'The vehicle and driver were released'.($reason ? ': '.$reason : '.'),
+                );
+            }
+
+            Log::channel('transport')->info('Allocation released', [
+                'assignment_id' => $released->id, 'trip_id' => $tripId,
+                'tenant_id' => $tenantId, 'user_id' => $actor?->id,
+            ]);
+
+            return $released;
+        });
+    }
+
+    /** The candidates a dispatcher may choose from — PLN-002/003. */
+    public function candidates(TransportTrip $trip, int $tenantId, bool $includeIneligible = false): array
+    {
+        $this->assertTenant($trip, $tenantId);
+
+        return [
+            'vehicles' => $this->vehicleEligibility->candidatesFor($trip, $tenantId, $includeIneligible)->all(),
+            'drivers'  => $this->driverEligibility->candidatesFor($trip, $tenantId, $includeIneligible)->all(),
+        ];
+    }
+
+    /* ── Internals ──────────────────────────────────────────────────── */
+
+    /**
+     * OPS §194 — "No vehicle is allocated without required eligibility."
+     *
+     * The message carries every failed check, because QA-003 requires a block to
+     * be "actionable" and BRWM §70 shows the expected tone: "Upload valid licence
+     * or assign another eligible driver."
+     *
+     * ── THE REFUSAL IS AUDITED BEFORE IT IS THROWN ───────────────────────
+     * Two hard rules name an audit artefact in their Audit Evidence column, and
+     * blocking correctly only satisfies half of each:
+     *
+     *   BR-P0-003 (Critical)  "Allocation conflict log"
+     *   BR-P0-004 (Critical)  "Document status + override"
+     *
+     * An audit found neither existed — a refused allocation left no trace at
+     * all, so someone reviewing a delayed trip could see it was unallocated but
+     * not that three attempts had been refused, nor why.
+     *
+     * PLACEMENT IS LOad-BEARING. This runs before DB::transaction() opens in
+     * assign(), so the row SURVIVES the exception. Written inside the
+     * transaction it would roll back with the refusal it exists to record —
+     * the precise opposite of the requirement.
+     *
+     * The subject is the TRIP, because on a refusal there is no assignment row
+     * to attach to, and the question this answers ("why is this trip still not
+     * crewed?") is asked of the trip.
+     *
+     * Ruled 2026-09-09: EVERY eligibility refusal is logged, not only the two
+     * the rules mandate. The verdict is already computed so it costs nothing,
+     * and a trail that records a document refusal but silently drops a capacity
+     * refusal is worse than either — a reviewer would see gaps without knowing
+     * they were gaps. Precondition and validation failures (wrong trip state, no
+     * resource supplied) stay unlogged: they are not allocation conflicts, and
+     * logging them would turn the trail into a click log.
+     */
+    private function assertEligible(
+        array $verdict,
+        string $kind,
+        TransportVehicle|TransportDriver $resource,
+        TransportTrip $trip,
+        int $tenantId,
+        ?User $actor,
+    ): void {
+        if ($verdict['eligible']) {
+            return;
+        }
+
+        $failed = array_values(array_filter($verdict['checks'], fn ($c) => $c['required'] && ! $c['passed']));
+        $keys   = array_column($failed, 'key');
+
+        $trip->audit('transport.allocation.refused', $actor, context: [
+            // The rule whose Audit Evidence column this row satisfies, or null
+            // where the refusal is governed by something that is not a BR-P0
+            // rule. `sources` keeps that traceable either way.
+            'rule'    => $this->ruleFor($kind, $keys),
+            'sources' => $this->sourcesFor($kind, $keys),
+
+            'kind'          => $kind,
+            'resource_id'   => (int) $resource->id,
+            'resource_name' => $resource->displayName(),
+            'trip_number'   => $trip->trip_number,
+
+            'blockers' => $verdict['blockers'],
+            'checks'   => array_map(fn ($c) => [
+                'key' => $c['key'], 'required' => $c['required'],
+                'passed' => $c['passed'], 'detail' => $c['detail'],
+            ], $verdict['checks']),
+
+            // BR-P0-004's "Document status" half, as structured data rather than
+            // a sentence — which document, valid until when, still valid or not.
+            'document_status' => $this->documentStatus($kind, $resource, $tenantId, $keys),
+
+            // BR-P0-004's "+ override" half. PLN-007 is P1 and AllocationScope
+            // defers it, so no override can exist yet. The key is present and
+            // null so the shape is already right when that ticket lands, and so
+            // this row never reads as "no override was used" when the real
+            // answer is "overrides do not exist".
+            'override' => null,
+        ]);
+
+        Log::channel('transport')->info('Allocation refused', [
+            'trip_id' => $trip->id, 'kind' => $kind, 'resource_id' => $resource->id,
+            'failed' => $keys, 'tenant_id' => $tenantId, 'user_id' => $actor?->id,
+        ]);
+
+        throw new BusinessException(
+            'That '.$kind.' cannot be allocated. '.$resource->displayName().': '.implode(' ', $verdict['blockers']),
+            422
+        );
+    }
+
+    /** The BR-P0 rule this refusal is evidence for, where one exists. */
+    private function ruleFor(string $kind, array $failedKeys): ?string
+    {
+        if ($kind === 'vehicle' && in_array('assignment', $failedKeys, true)) {
+            return AllocationScope::BR_VEHICLE_OVERLAP;   // BR-P0-003
+        }
+
+        if ($kind === 'driver' && array_intersect(['availability', 'lifecycle', 'licence', 'documents'], $failedKeys)) {
+            return AllocationScope::BR_DRIVER_BLOCKED;    // BR-P0-004
+        }
+
+        return null;
+    }
+
+    /**
+     * What governs each refusal, including the ones with no BR-P0 rule behind
+     * them — so a null `rule` never means "unaccounted for".
+     *
+     * @return string[]
+     */
+    private function sourcesFor(string $kind, array $failedKeys): array
+    {
+        $map = $kind === 'vehicle' ? [
+            'status'     => 'STOS-FLEET §7/§8; BRW-044',
+            'assignment' => 'BR-P0-003; STOS-DB §198; RTM PLN-006',
+            'documents'  => 'QA-003; STOS-FLEET §14; STOS-CMP §21; RTM PLN-005',
+            'capacity'   => 'RTM PLN-001; FRS TRP-P0-003 ("payload")',
+        ] : [
+            'lifecycle'    => 'Step 2 BO-009; RTM PLN-004',
+            'availability' => 'BR-P0-004; BRW-028; STOS-DB §44',
+            'assignment'   => 'STOS-DB §199; RTM PLN-006',
+            'licence'      => 'BR-P0-004; STOS-CMP §22; BRM BR-048',
+            'documents'    => 'BR-P0-004; BRW-029; STOS-CMP §24',
+        ];
+
+        return array_values(array_intersect_key($map, array_flip($failedKeys)));
+    }
+
+    /**
+     * BR-P0-004's "Document status" — the papers as they stood at the moment of
+     * refusal, so the evidence does not depend on them still looking that way.
+     *
+     * Only gathered when a document or licence check actually failed; a capacity
+     * refusal has no document story to tell.
+     */
+    private function documentStatus(string $kind, TransportVehicle|TransportDriver $resource, int $tenantId, array $failedKeys): ?array
+    {
+        if (! array_intersect(['documents', 'licence'], $failedKeys)) {
+            return null;
+        }
+
+        $status = [];
+
+        if ($kind === 'driver' && $resource instanceof TransportDriver) {
+            $status['licence'] = [
+                'number'      => $resource->licence_number,
+                'class'       => $resource->licence_class,
+                'valid_until' => $resource->licence_valid_until?->toDateString(),
+                'valid'       => $resource->licenceIsValid(),
+            ];
+        }
+
+        $status['documents'] = $resource->documents()
+            ->where('status', TransportDocument::STATUS_ACTIVE)
+            ->get()
+            ->map(fn (TransportDocument $d) => [
+                'type'        => $d->document_type,
+                'number'      => $d->document_number,
+                'valid_until' => $d->valid_until?->toDateString(),
+                'valid'       => $d->isCurrentlyValid(),
+            ])->values()->all();
+
+        return $status;
+    }
+
+    /**
+     * The verdict, reduced to what belongs in an audit row.
+     *
+     * Every check with its outcome — not just the failures — because a review
+     * needs to know what was VERIFIED, not only what went wrong.
+     *
+     * @param array<string,array<string,mixed>> $verdicts
+     */
+    private function evidence(array $verdicts): array
+    {
+        $out = ['rule' => AllocationScope::BR_VEHICLE_OVERLAP, 'checks' => []];
+
+        foreach ($verdicts as $kind => $verdict) {
+            $out['checks'][$kind] = array_map(fn ($c) => [
+                'key' => $c['key'], 'required' => $c['required'], 'passed' => $c['passed'], 'detail' => $c['detail'],
+            ], $verdict['checks']);
+
+            if (! empty($verdict['warnings'])) {
+                $out['warnings'][$kind] = $verdict['warnings'];
+            }
+            if (isset($verdict['compliance_status'])) {
+                $out['compliance_status'][$kind] = $verdict['compliance_status'];
+            }
+        }
+
+        return $out;
+    }
+
+    private function moveVehicle(TransportVehicle $vehicle, string $to, ?User $actor, string $reason): void
+    {
+        $from = $vehicle->status;
+        $vehicle->forceFill(['status' => $to, 'updated_by' => $actor?->id])->save();
+        $vehicle->auditTransition('transport.vehicle.status_changed', $from, $to, $actor, ['reason' => $reason]);
+    }
+
+    private function moveDriver(TransportDriver $driver, string $to, ?User $actor, string $reason): void
+    {
+        $from = $driver->availability;
+        $driver->forceFill(['availability' => $to, 'updated_by' => $actor?->id])->save();
+        $driver->auditTransition('transport.driver.availability_changed', $from, $to, $actor, ['reason' => $reason]);
+    }
+
+    private function findVehicle(int $id, int $tenantId): TransportVehicle
+    {
+        $vehicle = TransportVehicle::forTenant($tenantId)->find($id);
+        if (! $vehicle) {
+            throw new ResourceNotFoundException('Vehicle');
+        }
+
+        return $vehicle;
+    }
+
+    private function findDriver(int $id, int $tenantId): TransportDriver
+    {
+        $driver = TransportDriver::forTenant($tenantId)->find($id);
+        if (! $driver) {
+            throw new ResourceNotFoundException('Driver');
+        }
+
+        return $driver;
+    }
+
+    private function assertTenant(TransportTrip $trip, int $tenantId): void
+    {
+        if ((int) $trip->tenant_id !== $tenantId) {
+            throw new ResourceNotFoundException('Trip');
+        }
+    }
+}

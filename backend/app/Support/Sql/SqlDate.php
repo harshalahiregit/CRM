@@ -35,6 +35,23 @@ final class SqlDate
         };
     }
 
+    /**
+     * Integer cast.
+     *
+     * MySQL spells this SIGNED and rejects INTEGER outright with a 1064 syntax
+     * error — so `CAST(x AS INTEGER)`, which is what SQLite wants, takes down
+     * the whole statement on production. Reference-number generators in HR and
+     * Sales each carried that literal, meaning employee, proposal and estimate
+     * creation could never have worked on MySQL.
+     */
+    public static function intCast(string $expr): string
+    {
+        return match (self::driver()) {
+            'mysql', 'mariadb' => "CAST({$expr} AS SIGNED)",
+            default            => "CAST({$expr} AS INTEGER)",
+        };
+    }
+
     /** Four-digit year as an integer. */
     public static function year(string $col): string
     {

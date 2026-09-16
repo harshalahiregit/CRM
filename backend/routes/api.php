@@ -55,3 +55,6 @@ require __DIR__.'/contract.php';
 require __DIR__.'/medical.php';
 require __DIR__.'/portal.php';
 require __DIR__.'/company_portal.php';
+
+// Sangoe Transport OS (STOS) — order/trip operations and financial control.
+require __DIR__.'/transport.php';

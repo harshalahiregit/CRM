@@ -50,6 +50,20 @@ const sizeLabel = (bytes) => {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 };
 
+/**
+ * How an attachment is named in a URL: the FILENAME only, never the id.
+ *
+ * An id here is a storage path (sire/{tenant}/Report/{id}/file.jpg). Put one in
+ * a URL segment and each slash encodes as %2F, which the production web server
+ * (Plesk, Apache behind nginx) answers with its own 404 before the request
+ * reaches Laravel -- so evidence that had uploaded perfectly showed
+ * "Could not load" on live, while local dev passes %2F through and looked fine.
+ *
+ * The endpoint resolves the name against the report's own attachment listing,
+ * so the directory comes from the route and nothing is lost by dropping it.
+ */
+const attachmentRef = (id) => encodeURIComponent(String(id ?? '').split('/').pop());
+
 export const toAttachments = (response, reportId) => {
   const body = response?.data?.data ?? response?.data ?? [];
   const rows = Array.isArray(body) ? body : [];
@@ -59,7 +73,7 @@ export const toAttachments = (response, reportId) => {
     mime_type: a.mime ?? a.mime_type ?? '',
     original_name: a.name ?? a.original_name ?? 'attachment',
     size_label: sizeLabel(a.size),
-    download_url: `/api/sire/reports/${reportId}/attachments/${encodeURIComponent(a.id)}`,
+    download_url: `/api/sire/reports/${reportId}/attachments/${attachmentRef(a.id)}`,
   }));
 };
 
@@ -130,7 +144,7 @@ export const sireApi = {
    * shared client and are shown from an object URL instead.
    */
   attachmentBlob: (reportId, id) =>
-    api.get(`/sire/reports/${reportId}/attachments/${encodeURIComponent(id)}`, { responseType: 'blob' }),
+    api.get(`/sire/reports/${reportId}/attachments/${attachmentRef(id)}`, { responseType: 'blob' }),
   // ---- register -----------------------------------------------------------
   /**
    * The register. Note this is dashboard/register, NOT `GET /sire/reports` --
