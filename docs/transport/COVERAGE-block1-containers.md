@@ -84,6 +84,40 @@ route would expose while `SCOPE_OWN` still narrows nothing.
    **either way if the filter is inverted**, because each side returns exactly one row. Changed to
    assert *which* container comes back.
 
+## 2c. Step 7 — the screen (added 2026-09-16)
+
+`/app/transport/containers`, registered in `routes.jsx`, `TransportLayout.jsx` and `Sidebar.jsx`.
+
+| Clause | How the screen carries it |
+|---|---|
+| §7 "retain original entered value" | the number is listed exactly as typed, with **"matched as SGOE4022159"** beneath it — and only when the two differ, otherwise it is the same string twice |
+| §7 "normalized for search" | one search box; spacing, case and punctuation ignored on both sides |
+| §7 "unique where applicable" | the duplicate refusal is shown in full, because it has to explain why two visibly different strings clash: *"already exists in this workspace. It was entered as "ABCD 1234 567", which is the same number."* |
+| §7 "maintain historical associations" | the history drawer — every consignment the container has been on, newest first, the current one marked **ON IT NOW** |
+| §7 "not simultaneously" | one row shows either **Attach** or **Detach**, never both. The state comes from `active_attachments_count`, not from a guess |
+| §8 "multiple containers" | **the consignment detail drawer**, added in this step — see the gap below |
+
+**No edit, no delete, no status filter** — the API offers none of them, so the screen offers none.
+Buttons for operations the server refuses would be a lie with a spinner. The one filter present
+(*On a consignment* / *Free*) is the only question the data can answer honestly.
+
+### The gap the two-way check found this time
+
+The page was built container-first, and it covers §7 completely. **§8 was not on screen at all.**
+"A consignment may contain one container; contain multiple containers" is a statement about the
+*consignment*, and nothing in the UI read the relationship from that side — the Containers screen
+shows container → consignment, which is the other direction. The endpoint
+(`GET /consignments/{id}/containers`) had existed since step 6 with no caller.
+
+Closed by a **Containers panel on the consignment detail drawer**, showing current and historical
+attachments with `detached_at` distinguishing them. Verified in the browser against real data:
+`CONTAINERS (1) · sgoe-402215-9 · 40ft Reefer · On it now`, and the honest empty state on the
+consignment that has none.
+
+*Checking the API against the source would not have found this.* Both the endpoint and the
+requirement existed; nothing connected them, and the checklist row for §8 was already ticked from
+step 6 because the endpoint was built. The row now names the screen, not only the route.
+
 ## 3. The one design question this step must answer
 
 "Not simultaneously" needs enforcement, not a service check — two concurrent requests both pass a

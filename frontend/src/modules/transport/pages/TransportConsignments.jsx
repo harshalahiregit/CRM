@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Boxes, Loader2, Package, Trash2, Eye, Weight, Layers } from 'lucide-react'
-import { transportConsignmentApi, transportOrderApi } from '@/services/transportApi'
+import { transportConsignmentApi, transportOrderApi, transportContainerApi } from '@/services/transportApi'
 import { useToast } from '@/components/ui/Toast'
 import DataTable from '@/components/ui/DataTable'
 import PagerBar from '@/components/ui/PagerBar'
@@ -434,8 +434,11 @@ function ConsignmentDetail({ id }) {
           ))}
       </Section>
 
-      {/* No container panel yet: transport_containers is the next step of this
-          block. An empty "Containers" section would imply the feature exists. */}
+      {/* STOS-CTD §8 — "a consignment may contain one container; contain
+          multiple containers". Read from the consignment side, which is the
+          only place that clause is visible: the Containers screen shows the
+          relationship the other way round. */}
+      <ConsignmentContainers id={id} />
 
       <Section title="History">
         {audit.length === 0
@@ -452,6 +455,56 @@ function ConsignmentDetail({ id }) {
           ))}
       </Section>
     </div>
+  )
+}
+
+/**
+ * The containers on this consignment — STOS-CTD §8, current and historical.
+ *
+ * `detached_at` is what separates "on it now" from "was on it", so both are
+ * shown rather than filtering the history away: a consignment that has had a
+ * container swapped is a real situation, and hiding the swap would make the
+ * remaining row look like the only one there has ever been.
+ */
+function ConsignmentContainers({ id }) {
+  const { data: rows, isLoading } = useQuery({
+    queryKey: ['transport', 'consignments', id, 'containers'],
+    queryFn: () => transportContainerApi.forConsignment(id),
+  })
+
+  const list = rows ?? []
+  const current = list.filter((r) => !r.detached_at)
+
+  return (
+    <Section title={`Containers (${current.length})`}>
+      {isLoading ? (
+        <Loader2 className="animate-spin my-2" style={{ color: 'var(--text-muted)' }} />
+      ) : list.length === 0 ? (
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+          No container on this consignment. Loose cargo does not need one.
+        </p>
+      ) : (
+        list.map((r) => (
+          <div key={r.id} className="flex items-center justify-between py-1.5 border-b last:border-0"
+            style={{ borderColor: 'var(--border)' }}>
+            <div>
+              <span className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>
+                {r.container?.container_number ?? `#${r.container_id}`}
+              </span>
+              {r.container?.container_type && (
+                <span className="text-xs ml-2" style={{ color: 'var(--text-muted)' }}>
+                  {r.container.container_type}
+                </span>
+              )}
+            </div>
+            <span className="text-[11px] font-bold"
+              style={{ color: r.detached_at ? 'var(--text-muted)' : 'var(--color-success-500)' }}>
+              {r.detached_at ? `until ${fmtDateTime(r.detached_at)}` : 'On it now'}
+            </span>
+          </div>
+        ))
+      )}
+    </Section>
   )
 }
 

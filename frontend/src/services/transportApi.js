@@ -288,6 +288,48 @@ export const transportConsignmentApi = {
     api.delete(`/transport/consignments/${id}`).then((r) => r.data ?? null).catch(handleErr),
 }
 
+/* ── Containers (MDM-008, STOS-CTD §7 and §8) ─────────────────────────── */
+
+/**
+ * The physical transport unit, as distinct from the consignment it is on.
+ *
+ * There is no update and no delete, and that is the API's design rather than an
+ * omission here: the container number IS the identity, and §7 requires the
+ * association history be maintained. A container leaves a consignment by being
+ * DETACHED, which keeps the row and stamps `detached_at`.
+ */
+export const transportContainerApi = {
+  list: (params = {}) =>
+    api.get('/transport/containers', { params }).then((r) => r.data?.data ?? { data: [] }).catch(handleErr),
+
+  get: (id) =>
+    api.get(`/transport/containers/${id}`).then((r) => r.data?.data ?? null).catch(handleErr),
+
+  /**
+   * CTD-001 — resolve a container by number, however it was typed. The server
+   * normalises before looking up, so `abcd-123456-7` finds `ABCD1234567`.
+   */
+  lookup: (number) =>
+    api.get('/transport/containers/lookup', { params: { number } })
+      .then((r) => r.data?.data ?? null).catch(handleErr),
+
+  /** STOS-CTD §8 — every container on one consignment, current and historical. */
+  forConsignment: (consignmentId, activeOnly = false) =>
+    api.get(`/transport/consignments/${consignmentId}/containers`, {
+      params: activeOnly ? { active_only: 1 } : {},
+    }).then((r) => r.data?.data ?? []).catch(handleErr),
+
+  create: (payload) =>
+    api.post('/transport/containers', payload).then((r) => r.data?.data ?? null).catch(handleErr),
+
+  attach: (id, consignmentId) =>
+    api.post(`/transport/containers/${id}/attach`, { consignment_id: consignmentId })
+      .then((r) => r.data?.data ?? null).catch(handleErr),
+
+  detach: (id) =>
+    api.post(`/transport/containers/${id}/detach`).then((r) => r.data?.data ?? null).catch(handleErr),
+}
+
 /* ── Dispatch (RTM STOS-REQ-OPS-008, FRS TRP-P0-006) ──────────────────── */
 
 /**
@@ -354,6 +396,7 @@ export const transportApi = {
   pretrip: transportPretripApi,
   dispatch: transportDispatchApi,
   consignments: transportConsignmentApi,
+  containers: transportContainerApi,
   vehicles: transportVehicleApi,
   drivers: transportDriverApi,
 }

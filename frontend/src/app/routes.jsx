@@ -254,6 +254,7 @@ const TransportOrders      = lazy(() => import('@/modules/transport/pages/Transp
 const TransportOrderDetail = lazy(() => import('@/modules/transport/pages/TransportOrderDetail'))
 const TransportTrips       = lazy(() => import('@/modules/transport/pages/TransportTrips'))
 const TransportConsignments = lazy(() => import('@/modules/transport/pages/TransportConsignments'))
+const TransportContainers = lazy(() => import('@/modules/transport/pages/TransportContainers'))
 const TransportTripDetail  = lazy(() => import('@/modules/transport/pages/TransportTripDetail'))
 const TransportVehicles    = lazy(() => import('@/modules/transport/pages/TransportVehicles'))
 const TransportVehicleDetail = lazy(() => import('@/modules/transport/pages/TransportVehicleDetail'))
@@ -907,6 +908,7 @@ export default function AppRoutes() {
           <Route path="orders/:id" element={<S><TransportOrderDetail /></S>} />
           <Route path="trips" element={<S><TransportTrips /></S>} />
           <Route path="consignments" element={<S><TransportConsignments /></S>} />
+          <Route path="containers" element={<S><TransportContainers /></S>} />
           <Route path="trips/:id" element={<S><TransportTripDetail /></S>} />
           <Route path="vehicles" element={<S><TransportVehicles /></S>} />
           <Route path="vehicles/:id" element={<S><TransportVehicleDetail /></S>} />
