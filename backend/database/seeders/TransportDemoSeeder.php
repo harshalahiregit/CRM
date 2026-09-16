@@ -3,13 +3,16 @@
 namespace Database\Seeders;
 
 use App\Models\Tenant;
+use App\Models\Transport\ConsignmentContainer;
 use App\Models\Transport\TransportConsignment;
+use App\Models\Transport\TransportContainer;
 use App\Models\Transport\TransportDriver;
 use App\Models\Transport\TransportOrder;
 use App\Models\Transport\TransportTrip;
 use App\Models\Transport\TransportVehicle;
 use App\Models\User;
 use App\Services\Transport\ConsignmentService;
+use App\Services\Transport\ContainerService;
 use App\Services\Transport\TransportDriverService;
 use App\Services\Transport\TransportOrderService;
 use App\Services\Transport\TransportTripService;
@@ -103,6 +106,12 @@ class TransportDemoSeeder extends Seeder
         $moving  = $this->buildMovingTrip($tenantId, $actor, $customerId, $vehicles[0], $drivers[0]);
         $waiting = $this->buildWaitingTrip($tenantId, $actor, $customerId);
 
+        // One container on the moving trip's consignment, so the Containers
+        // screen and the §7 history have something real to show. Entered with
+        // dashes deliberately: it demonstrates that the stored value is what was
+        // typed while the match is on the normalised key.
+        $this->attachDemoContainer($tenantId, $actor, (int) $moving->consignment_id);
+
         $this->report($tenantId, $cleared, $moving, $waiting);
     }
 
@@ -136,8 +145,23 @@ class TransportDemoSeeder extends Seeder
                 ->delete();
         }
 
+        // The SAME hazard one table across, and it bites harder. An attachment
+        // row is never deleted — it IS the §7 history — so a live one pointing
+        // at a soft-deleted consignment leaves the container permanently busy:
+        // the unique index over active_container_key then refuses to attach it
+        // anywhere else, and nothing on screen says why. Detach rather than
+        // delete, so the history stays truthful.
+        $detached = 0;
+        foreach ($consignments as $consignment) {
+            $detached += ConsignmentContainer::forTenant($tenantId)
+                ->where('consignment_id', $consignment->id)
+                ->whereNull('detached_at')
+                ->update(['detached_at' => now()]);
+        }
+
         $counts = [
             'assignments'  => $released,
+            'containers'   => $detached,
             'trips'        => $trips->count(),
             'consignments' => $consignments->count(),
             'orders'       => $orders->count(),
@@ -283,6 +307,53 @@ class TransportDemoSeeder extends Seeder
         return $trip->fresh();
     }
 
+    /**
+     * MDM-008 + STOS-CTD §7 — one container, attached through the real service.
+     *
+     * Idempotent on the normalised number, which is unique per tenant, so a
+     * re-run finds the existing container and re-attaches it rather than
+     * colliding with it.
+     */
+    private function attachDemoContainer(int $tenantId, ?User $actor, ?int $consignmentId): void
+    {
+        if (! $consignmentId) {
+            return;
+        }
+
+        $service = app(ContainerService::class);
+
+        // TWO containers, in the two states the screen has to distinguish: one
+        // on a consignment and one free. With only the attached one, the "Free"
+        // filter and the empty half of the list could not be demonstrated — and
+        // an unused filter is the kind of thing nobody notices is broken.
+        $onConsignment = $this->ensureContainer($service, $tenantId, $actor, 'sgoe-402215-9', '40ft Reefer');
+        $this->ensureContainer($service, $tenantId, $actor, 'sgoe-771040-2', '20ft Standard');
+
+        $consignment = TransportConsignment::forTenant($tenantId)->find($consignmentId);
+
+        if ($consignment && ! $onConsignment->fresh()->isAttached()) {
+            $service->attach($onConsignment->fresh(), $consignment, $tenantId, $actor);
+        }
+    }
+
+    /** Idempotent on the normalised number, which is unique per tenant. */
+    private function ensureContainer(
+        ContainerService $service,
+        int $tenantId,
+        ?User $actor,
+        string $entered,
+        string $type,
+    ): TransportContainer {
+        $existing = TransportContainer::forTenant($tenantId)
+            ->where('container_number_normalized', TransportContainer::normalise($entered))
+            ->first();
+
+        return $existing ?: $service->create([
+            'container_number' => $entered,
+            'container_type'   => $type,
+        ], $tenantId, $actor);
+    }
+
     /** @param array<string,string> $spec */
     private function order(int $tenantId, ?User $actor, int $customerId, array $spec): TransportOrder
     {
@@ -314,8 +385,10 @@ class TransportDemoSeeder extends Seeder
         $c = $this->command;
 
         $c?->info(sprintf(
-            'Cleared (soft, reversible): %d order(s), %d consignment(s), %d trip(s), %d assignment(s).',
-            $cleared['orders'], $cleared['consignments'], $cleared['trips'], $cleared['assignments'],
+            'Cleared (soft, reversible): %d order(s), %d consignment(s), %d trip(s), '
+            .'%d assignment(s), %d container attachment(s).',
+            $cleared['orders'], $cleared['consignments'], $cleared['trips'],
+            $cleared['assignments'], $cleared['containers'],
         ));
 
         $c?->info('Demo ready for tenant #'.$tenantId.':');

@@ -4,7 +4,9 @@ namespace Tests\Feature\Transport;
 
 use App\Models\Customer\Client;
 use App\Models\Tenant;
+use App\Models\Transport\ConsignmentContainer;
 use App\Models\Transport\TransportConsignment;
+use App\Models\Transport\TransportContainer;
 use App\Models\Transport\TransportDriver;
 use App\Models\Transport\TransportOrder;
 use App\Models\Transport\TransportTrip;
@@ -158,6 +160,51 @@ class TransportDemoSeederTest extends TestCase
             $this->assertNull(TransportTrip::forTenant(1)->find($tripId)?->deleted_at);
             $this->assertNotNull(TransportTrip::forTenant(1)->find($tripId), 'assignment points at a live trip');
         }
+    }
+
+    public function test_it_seeds_a_container_on_the_moving_trips_consignment(): void
+    {
+        $this->runDemoSeeder();
+
+        // Two: one on a consignment, one free — the two states the screen
+        // distinguishes, so the "Free" filter has something to show.
+        $this->assertSame(2, TransportContainer::forTenant(1)->count());
+        $attached = TransportContainer::forTenant(1)->get()->filter->isAttached();
+        $this->assertCount(1, $attached, 'exactly one demo container is on a consignment');
+
+        $container = $attached->sole();
+        // §7 — stored as typed, matched on the normalised key.
+        $this->assertSame('sgoe-402215-9', $container->container_number);
+        $this->assertSame('SGOE4022159', $container->container_number_normalized);
+    }
+
+    public function test_re_running_never_leaves_a_container_stuck_on_a_deleted_consignment(): void
+    {
+        // The hazard: an attachment row is never deleted — it IS the §7 history
+        // — so a live one pointing at a soft-deleted consignment would leave the
+        // container permanently busy. The unique index over active_container_key
+        // would then refuse to attach it anywhere else, with nothing on screen
+        // saying why. Found by driving the real UI, not by review.
+        $this->runDemoSeeder();
+        $firstConsignments = TransportConsignment::forTenant(1)->pluck('id');
+
+        $this->runDemoSeeder();
+
+        foreach (ConsignmentContainer::forTenant(1)->whereNull('detached_at')->get() as $active) {
+            $this->assertNotContains(
+                $active->consignment_id,
+                $firstConsignments,
+                'an ACTIVE attachment still points at a consignment from the previous run',
+            );
+            $this->assertNotNull(
+                TransportConsignment::forTenant(1)->find($active->consignment_id),
+                'an ACTIVE attachment points at a consignment that is no longer live',
+            );
+        }
+
+        // And the container is usable again, not stuck.
+        $this->assertSame(2, TransportContainer::forTenant(1)->count(), 'reused, not duplicated');
+        $this->assertCount(1, TransportContainer::forTenant(1)->get()->filter->isAttached());
     }
 
     public function test_it_never_touches_another_tenant(): void
