@@ -147,6 +147,8 @@ built. Goes in P1's `REQUEST-step12-missing-tickets.md`.
 | C-05 | **P2** | P1 | `FleetResourceGateway::markDispatched()` — see below, this was mis-routed to P3 | not started |
 | C-06 | P2 | P3 | fuel, urea, tyre, maintenance, FASTag costs → `trip_costs` | **P3 side ready** — see below. Waiting on P2. |
 | C-07 | P1 | P3 | EVT-012 `TripClosed` | needed for 018, **not** for 011/012 |
+| C-08 | P1 | P3 | a way to ask "does this trip have a waived exception?" | **P3 is reading `trip_exceptions` directly meanwhile** — see below |
+| C-09 | P1 | P3 | STT-006 `dispatched → in_transit`, then STT-007 → `delivered` | **blocks nothing today, but POD verification cannot fire without it** |
 
 ### C-01 — do not build a second one
 
@@ -168,6 +170,52 @@ and has since expired" are distinguishable.
 
 Nothing to add. A new `ComplianceGate` would have been the second duplicate in
 two days.
+
+### C-08 — P3 is reading `trip_exceptions` directly, and would rather not
+
+SNG-TRN-014's acceptance criterion is *"POD required before billable state **unless
+approved exception**"*. That second arm needs to know whether a trip carries a waived
+exception. `trip_exceptions` is DB-010 and **P1 owns it**, and there is no
+`TripException` model — SNG-TRN-013 built the schema and the vocabulary, not the model.
+
+Rather than create a model for a table P3 does not own (§1: *"Owner = the only person
+who writes migrations, models or endpoints for it"*), `TripDocumentService` asks one
+narrow read-only question:
+
+```php
+DB::table('trip_exceptions')
+    ->where('tenant_id', $tenantId)->where('trip_id', $tripId)
+    ->where('status', ExceptionStatus::WAIVED)->exists();
+```
+
+It reads no other column, so when P1 exposes an `ExceptionService` this is one line to
+replace. **P1: if you would prefer that seam closed now, a single `hasWaivedException()`
+on your service is all P3 needs.**
+
+Two things worth knowing: the table has **no `deleted_at`** — its own migration records
+why, *"it must never disappear from the system"* — so a soft-delete filter there is a
+SQL error, not a safety net. And the arm cannot fire in production yet regardless:
+`ExceptionStatus::WAIVED` is declared-but-unreachable because a waiver needs an
+authorising role, and **BLK-10** means no CRM account maps to one.
+
+---
+
+### C-09 — POD verification is built but cannot fire until Transit is wired
+
+`TripStatus::TRANSITIONS` still has no edge out of `dispatched`. STT-006
+(`dispatched → in_transit`) is the Transit half of SNG-TRN-013 and is recorded in the
+code as deferred; STT-007 (`in_transit → delivered`) follows it. **Nothing writes
+`delivered`.**
+
+STT-008 (`delivered → pod_verified`) is now implemented on P3's side and is wired into
+`TripDocumentService::verify()`. It is deliberately **conditional**: verifying a POD on
+a trip that is not `delivered` records the document and leaves the trip's status alone,
+rather than throwing over a gap that is not the verifier's fault.
+
+**P1: the moment you wire STT-006 and STT-007, the POD edge starts firing with no change
+on P3's side.** Nothing needs coordinating beyond you landing those two edges.
+
+---
 
 ### C-06 — `trip_costs` is live; here is how to write to it
 

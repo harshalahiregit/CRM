@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\Transport\TransportCostController;
 use App\Http\Controllers\Api\Transport\TransportDispatchController;
 use App\Http\Controllers\Api\Transport\TransportDriverController;
 use App\Http\Controllers\Api\Transport\TransportOrderController;
+use App\Http\Controllers\Api\Transport\TransportPodController;
 use App\Http\Controllers\Api\Transport\TransportPretripController;
 use App\Http\Controllers\Api\Transport\TransportResourceCommitmentController;
 use App\Http\Controllers\Api\Transport\TransportTripController;
@@ -119,6 +120,37 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
     Route::middleware('transport.permission:'.TransportPermission::COST_RETRACT)->group(function () {
         Route::delete('/trips/{id}/costs/{costId}', [TransportCostController::class, 'destroy'])
             ->whereNumber('id')->whereNumber('costId');
+    });
+
+    /* ── POD and trip documents — SNG-TRN-014, API-008 ────────────────────
+     *
+     * Three groups, and the split between submitting and verifying is the
+     * control rather than tidiness. PERM-010 lets a Driver submit their own POD
+     * and a Supplier submit against trips assigned to them; POD_VERIFY does not
+     * let either of them decide it is valid. Whoever hands in the evidence does
+     * not certify it — STT-008's effect is "Unlock billing", and that is money.
+     *
+     * Reading sits behind TRIP_VIEW: a trip's paperwork is part of that trip,
+     * and Step 11 has no POD-view row to name a narrower key with. Inventing
+     * one would be FORBID-001.
+     *
+     * API-008's path is `/trips/{trip}/pod`, and that is kept even though DB-009
+     * indexes LR and e-way bills too — the registry named this endpoint and
+     * `document_type` carries the rest.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::TRIP_VIEW)->group(function () {
+        Route::get('/trips/{id}/documents', [TransportPodController::class, 'index'])->whereNumber('id');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::POD_SUBMIT)->group(function () {
+        Route::post('/trips/{id}/pod', [TransportPodController::class, 'store'])->whereNumber('id');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::POD_VERIFY)->group(function () {
+        Route::post('/trips/{id}/pod/{documentId}/verify', [TransportPodController::class, 'verify'])
+            ->whereNumber('id')->whereNumber('documentId');
+        Route::post('/trips/{id}/pod/{documentId}/reject', [TransportPodController::class, 'reject'])
+            ->whereNumber('id')->whereNumber('documentId');
     });
 
     /* ── What this user may do ────────────────────────────────────────

@@ -68,6 +68,7 @@ Authority for who rules on what: the Conflict Resolution matrix in
 | D-53 | Two CLOSED attachment windows may overlap | Low | Person 1 | Open — latent, unreachable today |
 | D-57 | Step 9 and ENUM-002 describe different advance lifecycles | **High** | Product + Finance | Open — ENUM-002 stored on FLD-012's authority, four Step 9 states unrepresentable |
 | D-58 | SNG-TRN-012's three refs point at the exception domain; `cost_type` and `amount` both dangle; cost/expense boundary undefined | **High** | Product + Finance + Architecture | Open — blocks 012, and via DEP-008 also 017 and 018 |
+| D-59 | STT-008 requires a "POD valid" guard, but no document lifecycle is registered anywhere; DB-009 has no field or index rows | **High** | Product + Compliance | Open — status vocabulary and MIME/size limits constructed for 014 |
 
 > **D-54, D-55 and D-56 have bodies below but no row here** — they were added on 2026-09-16 and the
 > index was not extended with them. Person 1 owns those three; the rows are theirs to write, which
@@ -2004,3 +2005,74 @@ settled.
 
 **Escalation:** `CLARIFICATION_REQUIRED` for 1 and 2, `ARCHITECTURE_REVIEW_REQUIRED` for 3.
 **Blocks:** SNG-TRN-012, and through DEP-008 both SNG-TRN-017 and SNG-TRN-018.
+
+---
+
+## D-59 — STT-008 asks for a "POD valid" guard the registry never defines
+
+**Raised:** 2026-09-16, building SNG-TRN-014. **Owner: Product + Compliance.**
+**Severity: high — a LOCKED transition depends on it.**
+
+### The transition is LOCKED and its guard is unanswerable
+
+```
+STT-008 | SM-TRP | delivered -> pod_verified | Verify POD | DocumentEngine
+        | guard "POD valid" | effect "Unlock billing" | audited | LOCKED
+```
+
+"POD valid" is a question about a document's **status**. Step 11 registers:
+
+- **eight enums**, ENUM-001..008 — trip_status, advance_status, exception_severity,
+  exception_status, expense_approval_status, document_type, risk_rating, viability_decision
+- **four state machines** — SM-ADV, SM-EXC, SM-ORD, SM-TRP
+
+**Not one describes a document lifecycle.** ENUM-006 is document_*type* —
+`lr|ewaybill|invoice|pod|...` — which says what a document IS, never whether anyone
+has checked it. So a LOCKED transition guards on a property the canonical registry
+gives no vocabulary for.
+
+`TripDocumentStatus` is therefore constructed with exactly three states —
+`received`, `verified`, `rejected` — no more than STT-008 needs. STOS-DOC describes
+eighteen document statuses; those are **not** reproduced, because choosing three of
+eighteen is a product decision and naming only what this transition requires is an
+implementation one.
+
+### DB-009 has no field registry at all
+
+```
+DB-009 | trip_documents | LR/POD/EWB/attachments index | Tenant | id | company_id | LOCKED | Document | FRS-DOC
+```
+
+That row is the whole specification. `DB_Fields` has **zero** rows for DB-009 and
+`Indexes_Constraints` has zero. Every column and both indexes are named against the
+requirement that asks for them — the same discipline `trip_advances` used where
+FLD-012 gave it one column.
+
+### CTR-012 specifies a limit it does not state
+
+```
+CTR-012 | API-008 | pod_file | multipart | FILE | required | "allowed MIME/size" | signed upload | Immutable after verification
+```
+
+"allowed MIME/size" names neither the MIME list nor the size. Constructed as PDF plus
+common image types, 10 MB — a phone photograph of a signed sheet, and nothing that
+executes. `TripDocumentService::ALLOWED_MIME` and `MAX_BYTES` are the single place to
+correct them.
+
+### And no document-verify permission exists
+
+The Permissions sheet has thirteen rows. PERM-010 covers `POD / submit`; **nothing
+covers verifying one**, though STT-008 requires somebody to do it. `POD_VERIFY` is
+constructed from that transition's own domain and action, modelled on PERM-005
+`Trip / close` rather than on PERM-010 — because "Unlock billing" is a financial act.
+Already recorded as an open item in TEAM-CONTRACTS §4.
+
+### What resolving it looks like
+
+1. A document lifecycle registered as an ENUM or a state machine (SM-DOC).
+2. Field and index rows for DB-009.
+3. Concrete MIME and size limits on CTR-012.
+4. A `Document / verify` row in the Permissions sheet.
+
+**Escalation:** `CLARIFICATION_REQUIRED` for 1–3, `SECURITY_REVIEW_REQUIRED` for 4.
+**Does not block:** SNG-TRN-014 shipped against constructed values, all flagged here.

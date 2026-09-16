@@ -123,6 +123,19 @@ class TransportTrip extends Model
         return $this->hasMany(TripCost::class, 'trip_id');
     }
 
+    /**
+     * The paperwork this trip produced — DB-009, SNG-TRN-014.
+     *
+     * Distinct from `transport_documents` (DB-019), which indexes what master
+     * data carries. A POD belongs to a journey; a fitness certificate belongs
+     * to a vehicle. The registry keeps them in separate LOCKED tables and so
+     * does this.
+     */
+    public function documents(): HasMany
+    {
+        return $this->hasMany(TripDocument::class, 'trip_id');
+    }
+
     /* ── Scopes. Composed AFTER forTenant(), never instead of it. ────── */
 
     public function scopeWithStatus(Builder $query, string $status): Builder
