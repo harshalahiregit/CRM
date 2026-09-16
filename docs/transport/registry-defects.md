@@ -1588,3 +1588,83 @@ The ticket that builds either one inherits **two** requirements, not one:
 **Owner: Person 1**, to implement alongside back-dated correction or historical import, whichever
 arrives first — and to implement **both**, because they arrive together.
 
+---
+
+## D-54 — The Transport suite is intermittently red: random test fixtures collide
+
+**Raised:** 2026-09-16, during the Block 1 step-5 verification run. **Owner: Person 1 (fixtures),
+with a decision needed on Person 2's files.** **Severity: high — it attacks the thing every other
+defect here is verified with.**
+
+### What happened
+
+The full Transport suite failed once, then passed three consecutive times with no code change:
+
+```
+run 1   1 failed, 3 skipped, 736 passed (2785 assertions)
+        24  app/Services/Transport/TransportVehicleService.php:72
+runs 2-4   3 skipped, 737 passed (2791 assertions)
+```
+
+A suite that is green four times out of five is not green. It is a suite that will be re-run until
+it agrees, which is the same as having no suite at all.
+
+### The mechanism, proven rather than assumed
+
+Fourteen test files build vehicle fixtures as:
+
+```php
+'registration_number' => 'MH12AB'.random_int(1000, 9999),   // 9,000 possible values
+```
+
+`transport_vehicles` carries `UNIQUE(tenant_id, registration_normalized)` (migration line 113).
+Two draws of the same number inside one test method therefore violate it.
+
+Probed directly — a throwaway test creating the same registration twice through
+`TransportVehicleService::create()`:
+
+```
+EXCEPTION: Illuminate\Database\UniqueConstraintViolationException
+FRAME:     TransportVehicleService.php:74      ← TransportVehicle::create(...)
+```
+
+Line **74** is the `create()` inside the closure; line **72** is the `DB::transaction(...)` that
+wraps it. Both frames are on one call path, and line 72 is exactly what the failing run printed.
+The mechanism is confirmed, not inferred.
+
+`RefreshDatabase` rolls back between test methods, so the collision window is **within a single test
+method** — which is why it is rare, and why it will never reproduce on demand.
+
+### Why it is worth fixing rather than re-running
+
+- Every ruling in this register is backed by "the test passes". A suite with a background failure
+  rate degrades that evidence for **all 54 entries**.
+- The failure surfaces in `TransportVehicleService` — Person 2's file — while the cause is in test
+  fixtures. The next person to see it will debug the wrong file.
+- It gets worse, not better: the collision probability rises with every vehicle fixture added.
+
+### The fix
+
+Replace the random draw with a per-test counter, which cannot collide:
+
+```php
+private static int $seq = 0;
+'registration_number' => sprintf('MH12AB%04d', ++self::$seq),
+```
+
+Driver fixtures use `'RJ14'.random_int(100000, 999999)` — a 900,000-value space, 100× safer, but the
+same class of defect and worth the same treatment.
+
+### Not done, and why — scope
+
+The fourteen files split across two owners:
+
+| Files | Owner |
+|---|---|
+| `DispatchTest`, `DispatchApiTest`, `Pretrip*Test` (4), `TripAssignmentTest` | **Person 1** — mine |
+| `TransportMaster*Test` (4), `TransportAllocation*Test` (3), `TransportEligibilityTest` | **Person 2** — fleet master and allocation scoring |
+
+Fixing only my seven leaves the suite flaky and leaves two contradictory fixture patterns in one
+directory. Fixing all fourteen crosses into Person 2's section, which is a standing hard rule.
+**Raised for a ruling rather than guessed** — Hard Rule 1. Git shows a single author across all
+fourteen files, so there is no concurrent work to collide with today.
