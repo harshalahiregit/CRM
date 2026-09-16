@@ -112,7 +112,9 @@ conflict matrix marks most of these **Critical**. Raise, don't guess.
 | BLK-05 | **My whole domain's states are unregistered.** STOS-DOC defines 18 document statuses, STOS-FIN 14 invoice statuses, STOS-QC 14 + 11 CAPA, STOS-CMP 10 + 6 — about 73 values, and Step 11 registers none of them. CLA-005 is "blocker if missing: YES". | 013, 014, 015, 016 | `CLARIFICATION_REQUIRED` | open |
 | BLK-06 | **Lane / Route.** Exists as `BO-004` in Step 2 only. Not in Step 9's domain model, not in Step 11. But `transport_rates` is lane-keyed and viability needs distance. | 005 rate card, 008 viability | `ARCHITECTURE_REVIEW_REQUIRED` | open |
 | BLK-07 | **Step 12's own references point at IDs that don't exist.** Tickets cite `FRS-P0-001…022`; the real FRS IDs are `TRP-P0-001…022`. Tickets cite `BR-001…029`; the real rules are `BR-P0-001…020`. The Traceability sheet is unfilled placeholder text. The Authority Register lists this as an OPEN ITEM "to replace before handing the package to developers" — it wasn't. | traceability, which is a mandatory DoD gate (DOD-014) | `CLARIFICATION_REQUIRED` | open |
-| BLK-08 | **Permission matrix has 13 rows and no dispatch, override, pre-trip or document rows.** Deny-by-default means those actions are *refused*, not merely unspecified. | 028, and every gated action after it | `SECURITY_REVIEW_REQUIRED` | open |
+| BLK-08 | **Permission matrix has 13 rows and no dispatch, override, pre-trip or document rows.** Deny-by-default means those actions are *refused*, not merely unspecified. The gate now names each hole when it refuses — see `PermissionRegistry::UNREGISTERED`. | dispatch (009), pre-trip (010), waivers, document verification | `SECURITY_REVIEW_REQUIRED` | open |
+| BLK-10 | **Nothing says how a CRM account becomes one of Step 11's nine roles.** The sheet is keyed on CEO/Owner, Operations, Dispatcher, Accounts, Approver, Driver, Customer, Supplier, Admin. The CRM has `users.role` (account type) and `users.internal_role` (a `staff_roles` slug) and neither is that list. The map ships **empty**, so today only `role=admin` can do anything. Run `php artisan transport:roles <tenant>` to see who is locked out. **This decides who may approve advances and expenses** — it needs sign-off, not a guess. | everything, for everyone but an admin | `CLARIFICATION_REQUIRED` | open — **needs a decision this week** |
+| BLK-11 | **PERM-013 marks Admin `Y*`** and the footnote is not in the package. Refused until somebody produces it. | registry modification | `CLARIFICATION_REQUIRED` | open |
 | BLK-09 | **Two API registries.** Step 4 and Step 11 both number API-001…015 with different paths, offset from 003 onward. Step 11 governs. | any endpoint work | noted — follow Step 11 | resolved by rule |
 
 ---
@@ -141,12 +143,32 @@ conflict matrix marks most of these **Critical**. Raise, don't guess.
 
 ## 5. What is actually startable today
 
-| Ticket | Sprint | Status | Owner | Why it can start |
+| Ticket | Sprint | Status | Owner | Where it is |
 |---|---|---|---|---|
-| SNG-TRN-028 Permission Matrix | S1 | Ready | shared | Depends only on Foundation. Needs no container, no enum, no dual-mode ruling. CLA-006 makes every later ticket depend on it. |
-| SNG-TRN-027 Immutable Audit | S1 | Ready | shared | Same. CLA-011 makes every later ticket depend on it. |
+| SNG-TRN-028 Permission Matrix | S1 | Ready | P3 | **Gate built** — `packages/transport/src/Access`, middleware `transport.permission:domain,action`, 10 tests. Waiting on **BLK-10** before anyone but an admin can be granted anything. |
+| SNG-TRN-027 Immutable Audit | S1 | Ready | P3 | **Next.** The host already has a polymorphic, tenant-scoped, actor-snapshotting trail (`AuditLogService`, `Auditable`), and nothing in the codebase mutates an audit row. The delta is enforcing that — STOS-SEC §109 wants append-only, and today nothing stops an update or a delete. |
 
 Everything else in my chain waits on C-01 or C-02.
+
+### How to use the gate
+
+```php
+Route::post('/trips/{trip}/pod', [PodController::class, 'store'])
+    ->middleware('transport.permission:pod,submit');
+```
+
+The middleware puts the resolved scope on the request. **Use it** — passing the
+gate is not the same as being allowed to see everything:
+
+```php
+$scope = $request->attributes->get('transport_scope'); // full | own | assigned
+
+$trips = match ($scope) {
+    'full'     => Trip::forTenant($tenantId),
+    'own'      => Trip::forTenant($tenantId)->where('driver_id', $user->id),
+    'assigned' => Trip::forTenant($tenantId)->where('supplier_id', $user->supplier_id),
+};
+```
 
 Note: SNG-TRN-019, 022, 023, 024, 025 are status **Backlog**, not Ready — they are not
 approved for implementation yet, whatever the milestone slide shows.
