@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\Transport\TransportDispatchController;
 use App\Http\Controllers\Api\Transport\TransportDriverController;
 use App\Http\Controllers\Api\Transport\TransportOrderController;
 use App\Http\Controllers\Api\Transport\TransportPretripController;
+use App\Http\Controllers\Api\Transport\TransportResourceCommitmentController;
 use App\Http\Controllers\Api\Transport\TransportTripController;
 use App\Http\Controllers\Api\Transport\TransportVehicleController;
 use App\Support\Transport\TransportPermission;
@@ -232,6 +233,20 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
 
     Route::middleware('transport.permission:'.TransportPermission::CONSIGNMENT_DELETE)->group(function () {
         Route::delete('/consignments/{id}', [TransportConsignmentController::class, 'destroy'])->whereNumber('id');
+    });
+
+    /* ── What my trips say about a vehicle or driver ──────────────────
+     *
+     * UX §35 — "never merely show Blocked, show why". Reads trip_assignments
+     * and transport_trips only. It reports a COMMITMENT, never an availability
+     * verdict: deciding whether a resource may be used is Person 2's allocation
+     * scoring (TM-001 §9) and must not migrate here.
+     *
+     * TRIP_VIEW, not a key of its own — everything it returns is a fact about a
+     * trip, and whoever may read trips may read this.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::TRIP_VIEW)->group(function () {
+        Route::get('/resource-commitments', [TransportResourceCommitmentController::class, 'index']);
     });
 
     /* ── Containers — STOS-CTD §7, §8 ─────────────────────────────────
