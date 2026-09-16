@@ -1668,3 +1668,76 @@ Fixing only my seven leaves the suite flaky and leaves two contradictory fixture
 directory. Fixing all fourteen crosses into Person 2's section, which is a standing hard rule.
 **Raised for a ruling rather than guessed** — Hard Rule 1. Git shows a single author across all
 fourteen files, so there is no concurrent work to collide with today.
+
+### RULED AND FIXED — 2026-09-16
+
+**Owner's ruling: fix all of them, including Person 2's files.** Reasoning recorded because it is
+the part worth reusing: every ruling in this register is backed by *"the test passes"*, so an
+intermittently red suite devalues the whole register; git shows a single author across all the
+affected files, so there was no concurrent work to collide with; and fixing half would leave two
+contradictory fixture patterns side by side, which is worse than either.
+
+**Correction to this entry as first written: it is 15 files, not 14.** The miscount came from
+working off an exact-string search for `'MH12AB'.random_int(1000, 9999)`. Three variants do not
+match that string and were missed:
+
+| Variant | File |
+|---|---|
+| `'MH 12 AB '.random_int(...)` — spaces, normalises to the same key | `TransportMasterApiTest` |
+| `'MH12'.Str::upper(Str::random(2)).random_int(...)` | `TransportMasterAllocationAuditTest`, `TransportAllocationRefusalAuditTest` |
+| `'RJ14 '.random_int(...)` — trailing space, licence | `TransportMasterApiTest` |
+
+A fourth was found only by sweeping rather than listing: `TransportMasterAllocationAuditTest:277`
+used `'MH99'.random_int(1000, 9999)` for a **licence** — a second 9,000-value space on a unique
+column that no vehicle-shaped search would have turned up.
+
+**The lesson is the general one:** a search for the pattern you remember writing finds the instances
+you remember writing. Sweep for the *mechanism* — here, every `random_int` in the suite, cross-cut
+against every `unique()` in the migrations — and the variants come out on their own.
+
+**The fix.** `TestCase::uniqueSeq(int $width)`, a monotonic per-process counter. Chosen over widening
+the range from 9,000 to 90,000, which buys time and keeps the bug: **collision had to become
+impossible, not rarer.** A rare failure is worse than a frequent one because it gets re-run until it
+agrees instead of fixed. `$width` preserves the shape and length of the draw it replaced, so no test
+sees an identifier of a different form. Diff: 29 insertions, 29 deletions, 15 files, every line a
+fixture line — no assertion, no production file, no logic.
+
+Every test asserting a literal registration or licence passes it as an explicit override, so none of
+them ever used the random default. Checked before editing, not after.
+
+**What the evidence does and does not prove.** Six consecutive green Transport runs (739 passed,
+3 skipped, identical assertion counts). That is *consistent with* the fix but is not proof: at the
+observed ~1-in-5 failure rate, six green runs happen by luck about a quarter of the time. The proof
+is structural, and was probed directly: 20,000 draws produced 20,000 distinct values, and the
+counter does **not** reset between test methods. A full Transport run makes **585 draws**, so the
+4-digit shape holds with 17x headroom and `str_pad` grows rather than wrapping in any case.
+
+**Full-suite check.** The whole suite shows 32 failures in SangoeTrack, Tpv and Unit/Frontend. These
+are **pre-existing and unrelated** — verified by stashing this change and running those suites on a
+clean tree, which produced the identical 32. `tests/TestCase.php` is shared with those modules, so
+this was checked rather than assumed. Transport itself: zero failures.
+
+**Written to Person 2** as required: `docs/transport/NOTE-person2-test-fixtures.md` — which files,
+why, what changed, and an explicit statement that no assertion or behaviour was altered, with the
+list of things to verify independently.
+
+### Same defect class outside Transport — NOT MINE
+
+Found by the sweep, reported rather than fixed (different module, no authorisation):
+
+```
+tests/Feature/SangoeTrack/SangoeTrackLeaveSyncTest.php:62
+  'code' => strtoupper(substr($name, 0, 2)).random_int(10, 99),   // 90 values
+tests/Feature/SangoeTrack/SangoeTrackLeaveSyncTest.php:71
+  'name' => 'Standard '.random_int(100, 999),                     // 900 values
+```
+
+against `unique(['tenant_id','code'])` and `unique(['tenant_id','name'])` in
+`2026_08_03_000000_create_hr_leave_tables.php` (lines 37-38, 60). **Ninety** values is a far smaller
+space than the 9,000 that made Transport flaky. Owner: whoever holds HR / SangoeTrack.
+
+### Not done — offered, not assumed
+
+A guard test asserting that no fixture draws a unique-column identifier randomly would stop this
+returning. It is not included, because the ruling's second condition was a **pure fixture change**:
+one line per file and nothing else. Proposed for a separate decision rather than folded in quietly.

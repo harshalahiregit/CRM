@@ -75,7 +75,7 @@ class TripAssignmentTest extends TestCase
     private function vehicle(int $tenantId = self::TENANT_A): TransportVehicle
     {
         return TransportVehicle::create([
-            'tenant_id' => $tenantId, 'registration_number' => 'MH12AB'.random_int(1000, 9999),
+            'tenant_id' => $tenantId, 'registration_number' => 'MH12AB'.self::uniqueSeq(4),
         ]);
     }
 

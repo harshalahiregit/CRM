@@ -71,7 +71,7 @@ class TransportMasterAuditTest extends TestCase
     private function makeVehicle(array $attributes = []): TransportVehicle
     {
         return $this->vehicles->create(array_merge([
-            'registration_number' => 'MH12AB'.random_int(1000, 9999),
+            'registration_number' => 'MH12AB'.self::uniqueSeq(4),
             'vehicle_type' => 'Trailer 40ft',
         ], $attributes), self::TENANT_A, $this->actor);
     }

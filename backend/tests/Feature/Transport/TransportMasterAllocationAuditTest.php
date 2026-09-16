@@ -87,14 +87,14 @@ class TransportMasterAllocationAuditTest extends TestCase
 
     private function vehiclePayload(): array
     {
-        return ['registration_number' => 'MH12'.Str::upper(Str::random(2)).random_int(1000, 9999), 'capacity_tonnes' => 30];
+        return ['registration_number' => 'MH12'.Str::upper(Str::random(2)).self::uniqueSeq(4), 'capacity_tonnes' => 30];
     }
 
     private function driverPayload(): array
     {
         return [
             'name' => 'Driver '.Str::random(4),
-            'licence_number' => 'RJ14'.random_int(100000, 999999),
+            'licence_number' => 'RJ14'.self::uniqueSeq(6),
             'licence_valid_until' => now()->addYears(2)->toDateString(),
         ];
     }
@@ -102,7 +102,7 @@ class TransportMasterAllocationAuditTest extends TestCase
     private function seedVehicle(int $tenant = self::A, ?float $capacity = 30): TransportVehicle
     {
         $svc = app(TransportVehicleService::class);
-        $v = $svc->create(['registration_number' => 'MH12'.Str::upper(Str::random(2)).random_int(1000, 9999), 'capacity_tonnes' => $capacity], $tenant, null);
+        $v = $svc->create(['registration_number' => 'MH12'.Str::upper(Str::random(2)).self::uniqueSeq(4), 'capacity_tonnes' => $capacity], $tenant, null);
 
         return $svc->transitionTo($v, VehicleStatus::AVAILABLE, $tenant, null);
     }
@@ -274,7 +274,7 @@ class TransportMasterAllocationAuditTest extends TestCase
         $this->actAs('admin');
         $trip = $this->approvedTrip();
         $d = app(TransportDriverService::class)->create([
-            'name' => 'Lapsed', 'licence_number' => 'MH99'.random_int(1000, 9999),
+            'name' => 'Lapsed', 'licence_number' => 'MH99'.self::uniqueSeq(4),
             'licence_valid_until' => now()->subDay()->toDateString(),
         ], self::A, null);
 
