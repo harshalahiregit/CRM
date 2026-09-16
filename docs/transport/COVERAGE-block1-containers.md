@@ -31,6 +31,19 @@
 | "maintain historical associations" | association rows are never deleted; `detached_at` is set |
 | "reuse … not simultaneously" | one **active** attachment per container, enforced in the database — see §3 |
 
+## 2a. STOS-CTD §8's clauses (added 2026-09-16, step 5)
+
+§8 was cited in §1 as one line. It is four clauses, and the step-5 check found one of them with
+no test and one not built at all.
+
+| Clause | State |
+|---|---|
+| "must not be treated as identical concepts" | **BUILT** — two tables, two models; a container has no status, dates or customer of its own |
+| "a consignment may contain **one** container" | **BUILT** — `ContainerServiceTest::test_detaching_keeps_the_row_as_history` and the attach path |
+| "a consignment may contain **multiple** containers" | **BUILT** — `ContainerService::attachmentsFor()`; `ContainerServiceTest::test_one_consignment_may_carry_several_containers`. *The schema always allowed it; nothing proved it until now.* The unique index runs container→consignment, never the reverse |
+| "have **other cargo references**" (non-container cargo) | **NOT BUILT** — see §5. No field, entity or example is given for what a non-container cargo reference is |
+| "Consignment ↔ Container as a **controlled** relationship" | **BUILT** — attach/detach only, through the service; no delete path, history retained |
+
 ## 3. The one design question this step must answer
 
 "Not simultaneously" needs enforcement, not a service check — two concurrent requests both pass a
@@ -62,6 +75,7 @@ suite runs on sqlite where it would silently pass.
 |---|---|---|
 | **Container-number format validation** (CTD §7 "configurable format validation") | No format is specified in any document. ISO 6346 is the industry standard but **the package never names it**, and the check digit would reject legitimate non-ISO numbers. Inventing a regex would be Hard Rule 1 | Product |
 | **`container_type` as an enum** | **No document anywhere defines its values.** Searched all 30 package documents for `20ft`/`40ft`/`HC`/`high cube`/`ISO 6346` — zero hits — and Step 11 has no container enum and no container DB row. A free-text column, not an enum. Inventing a vocabulary is the D-9 mistake | Product |
+| **Other cargo references** (CTD §8 "have other cargo references") | The package names the concept once and never again — no field, no entity, no example, and no requirement ID in the RTM. Consignment↔Container is specified; consignment↔*anything else* is not. Building a generic "cargo reference" column would be inventing the business rule | Product |
 | `CTD-009` gate/port, `CTD-014` urgent-trip | no entity exists | D-42, D-43 |
 
 ## 5a. Diffed against my own approved proposal (added 2026-09-15)
