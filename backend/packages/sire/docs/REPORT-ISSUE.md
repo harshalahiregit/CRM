@@ -12,7 +12,7 @@ SIRE ALREADY KNOWS
     recent failed requests (metadata only)
     ↓
 USER TYPES A TITLE AND WHAT HAPPENED     ← the only required fields
-    ↓  optional: expected result, screenshot, priority
+    ↓  optional: category · how severe · how urgent · images · expected result
 SUBMIT
     ↓
 SIR-000412
@@ -126,13 +126,57 @@ exception. Failed API requests are recorded as they happen, because a failure
 that has already occurred cannot be collected retroactively. That is
 event-driven, never polled, capped at five, and metadata only.
 
+## The reporter triages
+
+Category, severity and urgency are set by the **person hitting the bug**, in the
+form, at the moment they file it. They are the one it is happening to; a lead
+working down a queue a day later is guessing at how badly it blocked them.
+
+The three controls are pre-filled with the **middle** of each scale, computed
+from the band count rather than hardcoded — a workspace running three severity
+bands and one running six both get a neutral starting point. A default of
+"High" is not neutral. It is a claim, and one every reporter who left it alone
+would be making by accident.
+
+Triage still owns the final call. What the reporter chose arrives as their view
+of it, and the `triage` transition overwrites it if a lead disagrees.
+
+**None of it is required, and none of it may become required.** That is D45, and
+`tests/plug-and-play.test.mjs` fails the build if a third `required` rule appears
+on the server or if the client's submit gate mentions any of these fields. The
+lists come from `GET /api/sire/report-options` — its own endpoint, not the
+dashboard's, because the button is on every screen for every staff member and
+that payload carries filter-bar rosters the form has no use for. If the request
+fails the selects simply do not render and the form still files the issue.
+
 ## Screenshots
 
 `navigator.mediaDevices.getDisplayMedia` — the browser's own picker. No
 dependency, and its safety property is that the **user** chooses what is shared.
 
 The modal closes for the capture and reopens with the draft preserved, so the
-screenshot is of the problem rather than of the report form.
+screenshot is of the problem rather than of the report form. The draft includes
+the triage fields and every image already attached.
+
+**Capture a part of the screen, or the whole thing.** After the frame is grabbed,
+segment capture puts the still image full-screen and the user drags a rectangle
+over the part that is wrong. A whole-screen grab of a dense CRM page is mostly
+chrome the developer does not need, and it carries whatever else happened to be
+visible — another customer's row in the list behind the dialog, a name in the
+sidebar. Cropping is a clearer report *and* less incidental data.
+
+The selection overlay is built with DOM calls rather than as a React component,
+deliberately: it runs while the report modal is closed, so at the moment it needs
+to render there is no SIRE tree to render into. Escape, or a click rather than a
+drag, keeps the whole frame — declining is a normal answer, not a failure, and
+never costs the capture.
+
+**Several images, not one.** A bug is often three screens: the form, the error,
+and the record it landed on. Asking for one means the other two arrive in a chat
+message nobody can find later. Up to six, each uploaded separately after the
+issue exists, with a thumbnail strip so the reporter can see they captured the
+right thing. A failed upload says so and never reads as though the report itself
+was lost.
 
 Optional. Always optional.
 

@@ -20,6 +20,7 @@ import DeveloperPanel from '../components/DeveloperPanel';
 import QaPanel from '../components/QaPanel';
 import TimelinePanel from '../components/TimelinePanel';
 import IssueMetaSidebar from '../components/IssueMetaSidebar';
+import CustomerPanel from '../components/CustomerPanel';
 import RootCausePanel from '../components/RootCausePanel';
 import TestCasePanel from '../components/TestCasePanel';
 import RelationsPanel from '../components/RelationsPanel';
@@ -353,7 +354,16 @@ export default function IssueDetailPage() {
           />
         </main>
 
-        <IssueMetaSidebar issue={issue} sla={issue.sla} />
+        <div className="space-y-3">
+          {/* Whose problem is this? The answer drives priority, so it sits at
+              the top of the sidebar rather than buried under the metadata. */}
+          <CustomerPanel
+            reportId={id}
+            customer={issue.customer}
+            canEdit={Boolean(issue.can_set_customer)}
+          />
+          <IssueMetaSidebar issue={issue} sla={issue.sla} />
+        </div>
       </div>
 
       {/* Authoring a test case. TestCasePanel calls onAdd with NO arguments -- it

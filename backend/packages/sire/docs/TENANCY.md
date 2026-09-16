@@ -19,7 +19,7 @@ SIRE does not attempt to fix that. It is defensive within its own boundary.
 
 ## What SIRE does
 
-**1. `tenant_id NOT NULL` on all 20 tables.** The auto-stamp does nothing in a
+**1. `tenant_id NOT NULL` on all 22 tables.** The auto-stamp does nothing in a
 command, a job or a token-resolved route, so the database refuses the mistake
 rather than absorbing it.
 

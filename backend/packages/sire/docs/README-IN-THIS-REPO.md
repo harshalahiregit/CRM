@@ -1,7 +1,7 @@
 # These docs describe the package. The code beside them is what runs.
 
 Moved here from the original `SIRE-v1.1-PLUG-AND-PLAY/` distributable when that
-folder was deleted. The architecture, the tenancy strategies, the thirteen SDK
+folder was deleted. The architecture, the tenancy strategies, the fourteen SDK
 seams, the compatibility matrix and the deployment rules are unchanged.
 
 **What changed is the code.** Installing SIRE into this CRM was the first time it

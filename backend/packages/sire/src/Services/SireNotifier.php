@@ -50,6 +50,7 @@ class SireNotifier
         private readonly SireNotificationProvider $notifications,
         private readonly SireAuthorizationProvider $authorization,
         private readonly SireSettingsProvider $settings,
+        private readonly SireWatcherService $watchers,
     ) {
     }
 
@@ -164,6 +165,29 @@ class SireNotifier
                 $roles[] = substr($token, 5);
 
                 continue;
+            }
+
+            // Watchers are a LIST, not one person, so they cannot go through the
+            // single-id match below. Everything after this point -- actor
+            // suppression, de-duplication, collapsing -- applies to them exactly
+            // as it does to the assignee, which is the point of expanding here
+            // rather than at dispatch.
+            if ($token === 'watchers') {
+                $users = array_merge($users, $this->watchers->watcherIds($report));
+
+                continue;
+            }
+
+            // Everyone working the issue besides its owner. They are doing the
+            // work; being the second name on it should not mean hearing about it
+            // second-hand.
+            if ($token === 'assignee') {
+                $users = array_merge($users, \Sire\Models\ReportAssignee::query()
+                    ->forTenant($report->tenant_id)
+                    ->where('report_id', $report->id)
+                    ->pluck('user_id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all());
             }
 
             $id = match ($token) {

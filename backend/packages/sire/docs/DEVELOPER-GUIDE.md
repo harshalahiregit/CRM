@@ -53,7 +53,7 @@ Earlier drafts of this document listed eleven assumed host signatures —
 nobody could open.
 
 **Those assumptions were removed rather than documented better.** SIRE defines
-thirteen contracts and ships an implementation of each. There is no signature to
+fourteen contracts and ships an implementation of each. There is no signature to
 guess, because SIRE owns every signature it calls.
 
 The list then shrank again. `App\Models\User` was the last host MODEL in SIRE's

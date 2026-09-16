@@ -3,6 +3,8 @@
 namespace Sire\Http\Requests;
 
 use Sire\Support\SireContextSchema;
+use Sire\Support\SirePriority;
+use Sire\Support\SireText;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -34,6 +36,23 @@ class StoreReportRequest extends FormRequest
                 'nullable', 'integer',
                 Rule::exists('sire_severities', 'id')->where('tenant_id', $tenantId),
             ],
+
+            // ---- set by the reporter, at Stage 1 -----------------------------
+            // The person hitting the bug is the one who knows how badly it blocks
+            // them, so urgency is theirs to state rather than something a lead
+            // guesses at later. Triage still owns the final call -- these arrive
+            // as the reporter's view of it, and the triage transition overwrites
+            // them if a lead disagrees.
+            //
+            // EVERY ONE OF THESE IS NULLABLE, AND MUST STAY THAT WAY. D45: two
+            // required fields, and tests/plug-and-play.test.mjs fails the build
+            // if a third appears. A field that blocks the form is a bug nobody
+            // reports.
+            'priority' => ['nullable', Rule::in(SirePriority::ALL)],
+
+            'steps_to_reproduce' => ['nullable', 'string', 'max:20000'],
+            'expected_result'    => ['nullable', 'string', 'max:20000'],
+            'actual_result'      => ['nullable', 'string', 'max:20000'],
 
             // ---- Report Issue context -------------------------------------
             // Loosely typed on purpose: SireContextService applies the real
@@ -68,6 +87,13 @@ class StoreReportRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
+        // Sanitise BEFORE validation, so what the rules measure is what gets
+        // stored. Running it afterwards would let a 5-character title pass its
+        // min:5 and then be trimmed to nothing.
+        $this->merge(SireText::cleanKeys($this->only([
+            'title', 'description', 'steps_to_reproduce', 'expected_result', 'actual_result',
+        ]), ['title', 'description', 'steps_to_reproduce', 'expected_result', 'actual_result']));
+
         $this->request->remove('tenant_id');
         $this->request->remove('reporter_id');
         $this->request->remove('user_id');

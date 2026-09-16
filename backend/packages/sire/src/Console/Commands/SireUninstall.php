@@ -49,7 +49,8 @@ class SireUninstall extends Command
         'sire_release_overrides', 'sire_actions', 'sire_release_notes',
         'sire_kb_links', 'sire_report_links', 'sire_recurrence_groups',
         'sire_root_causes', 'sire_releases', 'sire_work_cycles',
-        'sire_report_contexts', 'sire_approvals', 'sire_reports',
+        'sire_report_contexts', 'sire_approvals', 'sire_report_watchers',
+        'sire_report_assignees', 'sire_reports',
         'sire_severities', 'sire_report_categories',
     ];
 

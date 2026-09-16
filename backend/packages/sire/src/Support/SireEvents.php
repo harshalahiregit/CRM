@@ -53,11 +53,16 @@ final class SireEvents
         self::QA_FAILED            => ['assignee'],
         self::SLA_WARNING          => ['assignee', 'role:lead'],
         self::SLA_BREACHED         => ['assignee', 'role:lead', 'role:admin'],
-        self::REPORT_REOPENED      => ['assignee', 'role:admin'],
-        self::RELEASED             => ['assignee', 'reporter'],
-        self::PRODUCTION_VALIDATED => ['reporter'],
-        self::REPORT_CLOSED        => ['reporter', 'assignee'],
+        self::REPORT_REOPENED      => ['assignee', 'role:admin', 'watchers'],
+        self::RELEASED             => ['assignee', 'reporter', 'watchers'],
+        self::PRODUCTION_VALIDATED => ['reporter', 'watchers'],
+        self::REPORT_CLOSED        => ['reporter', 'assignee', 'watchers'],
         self::REPORT_ON_HOLD       => ['assignee', 'reporter'],
+
+        // `watchers` rides on the OUTCOME events only -- closed, released,
+        // validated, reopened. Somebody who subscribed to an issue wants to know
+        // how it ended, not that a developer pressed start this morning; putting
+        // them on the churn is how a subscription becomes a mail rule.
 
         self::RELEASE_APPROVED     => ['role:lead', 'role:admin'],
         self::RELEASE_RELEASED     => ['role:lead', 'role:admin'],

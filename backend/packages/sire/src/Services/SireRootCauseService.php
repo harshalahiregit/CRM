@@ -47,6 +47,8 @@ class SireRootCauseService
                 'corrective_action'    => $data['corrective_action'] ?? null,
                 'preventive_action'    => $data['preventive_action'] ?? null,
                 'five_whys'            => $this->cleanList($data['five_whys'] ?? [], self::REQUIRED_WHYS),
+                'method'               => $data['method'] ?? RootCause::METHOD_FIVE_WHYS,
+                'analysis'             => $data['analysis'] ?? null,
             ];
 
             if ($rca) {
@@ -96,13 +98,26 @@ class SireRootCauseService
             throw new SireException('The analysis needs a description before it can be confirmed.');
         }
 
-        if ($this->requiresFiveWhys($report)) {
-            $whys = array_filter($rca->five_whys ?? [], fn ($w) => trim((string) $w) !== '');
-            if (count($whys) < self::REQUIRED_WHYS) {
+        // A serious issue needs its analysis actually WORKED, and what that means
+        // depends on the technique. Demanding five whys from a team that ran a
+        // fishbone would push them to flatten a branching cause map into a chain
+        // to satisfy a validator, which is worse than not asking.
+        if ($this->requiresStructuredAnalysis($report)) {
+            $method = $rca->method ?: RootCause::METHOD_FIVE_WHYS;
+
+            if ($method === RootCause::METHOD_FIVE_WHYS) {
+                $whys = array_filter($rca->five_whys ?? [], fn ($w) => trim((string) $w) !== '');
+                if (count($whys) < self::REQUIRED_WHYS) {
+                    throw new SireException(sprintf(
+                        'This issue is serious enough to need all %d "why" answers before sign-off (%d completed).',
+                        self::REQUIRED_WHYS,
+                        count($whys),
+                    ));
+                }
+            } elseif (empty($rca->analysis)) {
                 throw new SireException(sprintf(
-                    'This issue is serious enough to need all %d "why" answers before sign-off (%d completed).',
-                    self::REQUIRED_WHYS,
-                    count($whys),
+                    'This issue is serious enough to need the %s worked through before sign-off.',
+                    RootCause::METHOD_LABELS[$method] ?? $method,
                 ));
             }
         }
@@ -115,15 +130,43 @@ class SireRootCauseService
     }
 
     /**
-     * Serious enough to warrant Five Whys — derived, never a checkbox:
-     *   critical severity, or P1, or it has happened before.
+     * Serious enough to warrant a worked analysis — derived, never a checkbox:
+     * the top severity band, or P1, or it has happened before.
+     *
+     * Severity is read by POSITION, not by code. This used to test for the
+     * literal string 'critical' and no workspace here uses it -- the seeded bands
+     * are s1..s4 -- so the severity arm of this test had never once fired, and a
+     * critical issue could be signed off with one why answered. `level` is the
+     * sort key everywhere else in SIRE for exactly this reason: a workspace may
+     * call its top band Critical, Sev 1 or Blocker and may run three bands or six.
      */
-    public function requiresFiveWhys(Report $report): bool
+    public function requiresStructuredAnalysis(Report $report): bool
     {
-        return $report->severity?->code === 'critical'
+        return $this->isTopSeverity($report)
             || $report->priority === 'p1'
             || $report->recurrence_group_id !== null
             || (int) $report->reopen_count > 0;
+    }
+
+    /** Kept as the old name so existing callers and tests keep working. */
+    public function requiresFiveWhys(Report $report): bool
+    {
+        return $this->requiresStructuredAnalysis($report);
+    }
+
+    private function isTopSeverity(Report $report): bool
+    {
+        $severity = $report->severity;
+
+        if ($severity === null) {
+            return false;
+        }
+
+        $top = \Sire\Models\ReportSeverity::query()
+            ->forTenant($report->tenant_id)
+            ->max('level');
+
+        return $top !== null && (int) $severity->level === (int) $top;
     }
 
     /** Trim, drop blanks, cap length. Ordered lists stay ordered. */

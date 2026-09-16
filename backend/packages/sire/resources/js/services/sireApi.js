@@ -92,6 +92,19 @@ export const sireApi = {
    */
   createReport: (payload) => api.post('/sire/reports', payload),
 
+  // Categories, severities and priorities for the Report Issue form. Its own
+  // endpoint rather than /sire/dashboard/options, which carries filter-bar
+  // rosters the form has no use for -- the button is on every screen and has to
+  // open instantly.
+  reportOptions: () => api.get('/sire/report-options'),
+
+  // The host's own Customer Directory, read through SireCustomerProvider. SIRE
+  // never writes to a customer record -- it names one on a defect so the
+  // register can answer "which customers are hitting this".
+  searchCustomers: (q = '') => api.get('/sire/customers', { params: { q } }),
+  setCustomer:     (reportId, customerId) =>
+    api.put(`/sire/reports/${reportId}/customer`, { customer_id: customerId }),
+
   /**
    * Attach evidence through the existing shared attachment engine. The subject
    * comes from the ROUTE, never the body, so a file cannot be retargeted by

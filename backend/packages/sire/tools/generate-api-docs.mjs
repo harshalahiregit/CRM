@@ -26,12 +26,23 @@ const src = readFileSync(ROUTES, 'utf8');
 
 const prefix = (src.match(/->prefix\('([^']+)'\)/) || [, 'api/sire'])[1];
 
-/** Walk the file in order so routes stay under the section comment above them. */
+/**
+ * Walk the file in order so routes stay under the section comment above them.
+ *
+ * Lines are stripped of a trailing  first. On Windows a checkout with
+ * core.autocrlf=true hands this file CRLF endings, and the section pattern ends
+ * in `-+$` -- which a carriage return defeats. The failure is silent and total:
+ * every route falls into one nameless section and the reference still generates.
+ */
 const sections = [];
 let current = null;
 
 for (const line of src.split('\n')) {
-  const section = line.match(/^\s*\/\/ ---- (.+?) -+$/) || line.match(/^\s*\/\/ ={2,} (.+?) ={2,}$/);
+  // \s*$ rather than $: on Windows a checkout with core.autocrlf=true hands this
+  // file CRLF endings, and a trailing \r defeats an anchor that expects the line
+  // to end in dashes. The failure was silent and total -- every route fell into
+  // one nameless section and the reference generated anyway.
+  const section = line.match(/^\s*\/\/ ---- (.+?) -+\s*$/) || line.match(/^\s*\/\/ ={2,} (.+?) ={2,}\s*$/);
   if (section) {
     current = { title: section[1].trim(), routes: [] };
     sections.push(current);

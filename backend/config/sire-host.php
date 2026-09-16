@@ -39,6 +39,10 @@ return [
     */
     'providers' => [
         'notification' => \App\Sire\Host\HostNotificationProvider::class,
+        // The Customer Directory at /app/customers. Read-only: SIRE names a
+        // client on a defect so "which customers are hitting this" has an
+        // answer, and never writes to one.
+        'customer'     => \App\Sire\Host\HostCustomerProvider::class,
     ],
     'tenant' => [
         'model' => 'App\\Models\\Tenant',

@@ -62,6 +62,7 @@ class SireServiceProvider extends ServiceProvider
         Contract\SireKnowledgeProvider::class     => 'knowledge',
         Contract\SireVersionProvider::class       => 'version',
         Contract\SireContextProvider::class       => 'context',
+        Contract\SireCustomerProvider::class      => 'customer',
     ];
 
     private const COMMANDS = [

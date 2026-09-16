@@ -20,6 +20,17 @@ class StoreRootCauseRequest extends FormRequest
     {
         return [
             'category'    => ['required', Rule::in(RootCause::CATEGORIES)],
+
+            // WHICH technique was used. Defaults to five_whys because that is
+            // what every analysis written before this column existed was.
+            'method'      => ['nullable', Rule::in(RootCause::METHODS)],
+
+            // The working of a fishbone or a fault tree. A free JSON bag on
+            // purpose: the two shapes are genuinely different -- branches of
+            // contributing causes versus a boolean graph -- and neither is ever
+            // queried. What IS queried is the category and the confirmation, and
+            // those have columns of their own.
+            'analysis'    => ['nullable', 'array'],
             'description' => ['required', 'string', 'max:20000'],
 
             'contributing_factors'   => ['nullable', 'array', 'max:20'],
