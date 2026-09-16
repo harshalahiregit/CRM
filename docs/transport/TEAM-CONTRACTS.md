@@ -85,12 +85,55 @@ built. Goes in P1's `REQUEST-step12-missing-tickets.md`.
 
 | # | From | To | What | Status |
 |---|---|---|---|---|
-| C-01 | P3 | P1 | `ComplianceStatus` — object with blocking reasons, **not a boolean** | signature agreed, implementation pending |
-| C-02 | P3 | P1 | `TransportDocumentEntity::CONSIGNMENT` in `ALL` and `ACTIVE` | pending |
-| C-03 | P3 | P1 | `TransportDocumentService::entityTypeFor()` — a `TransportConsignment` arm | pending |
-| C-04 | P3 | — | `delivery_order` into ENUM-006 (approval attached to `REQUEST-person3-document-entity.md`) | pending |
-| C-05 | P2 | P3 | fuel, urea, tyre, maintenance, FASTag costs → `trip_costs` | not started |
-| C-06 | P1 | P3 | EVT-012 `TripClosed` | needed for 018, **not** for 011/012 |
+| C-01 | P3 | P1 | an object with blocking reasons, not a boolean | **already exists — see below** |
+| C-02 | P3 | P1 | `TransportDocumentEntity::CONSIGNMENT` in `ALL` and `ACTIVE` | **done** — `cdb3d0ad`, branch `zafar/transport-p3` |
+| C-03 | P3 | P1 | `TransportDocumentService::entityTypeFor()` — a `TransportConsignment` arm | **done** — same commit |
+| C-04 | P3 | — | `delivery_order` into ENUM-006 (approval in `REQUEST-person3-document-entity.md`) | **done** — same commit |
+| C-05 | **P2** | P1 | `FleetResourceGateway::markDispatched()` — see below, this was mis-routed to P3 | not started |
+| C-06 | P2 | P3 | fuel, urea, tyre, maintenance, FASTag costs → `trip_costs` | not started |
+| C-07 | P1 | P3 | EVT-012 `TripClosed` | needed for 018, **not** for 011/012 |
+
+### C-01 — do not build a second one
+
+The object-with-reasons shape P1 asked for is already in the codebase and
+already wired:
+
+```php
+DriverEligibilityService::evaluate($driver, $trip, $tenantId)   // and Vehicle…
+// → { subject, eligible, checks: [{key,label,required,passed,detail}], blockers, warnings }
+```
+
+`EligibilityVerdict::make()` builds it, `compliance_status` is one of the checks,
+and each check carries its own `required` flag read from policy — so CMP §20's
+"blocking must be configurable" is a settings change, not a deploy. Compliance is
+also already **re-derived at dispatch**, not read from the stored pre-trip row:
+`DispatchService::assertDispatchable()` → `PretripService::revalidate()`, which
+reports `lapsed` separately from `blockers` so "it never passed" and "it passed
+and has since expired" are distinguishable.
+
+Nothing to add. A new `ComplianceGate` would have been the second duplicate in
+two days.
+
+### C-05 — the stub is P2's, not P3's
+
+`PendingFleetResourceGateway` is what dispatch currently runs on, and its own
+TODO reads `TODO(Person 2 / Fleet)`. It is about **writing** vehicle and driver
+status when a trip departs (BRW-050: vehicle → In Operation, driver → On Trip),
+and those tables are DB-004 and DB-005 — Fleet. Shivam implements
+`markDispatched()`. It is not a compliance interface and not P3's.
+
+Also flagged there: `AllocationService` (SNG-TRN-009, already merged) writes both
+tables directly, predating the split. Known, not fixed, and should move behind
+the same gateway when P2 supplies it.
+
+### P1's branch already conflicts with master
+
+`origin/feat/p1-consignment-container` vs `origin/master` conflicts in three
+files — `frontend/src/components/layout/Sidebar.jsx`,
+`frontend/src/components/layout/sidebarSection.js`,
+`backend/bootstrap/providers.php` — because SIRE, the vendor screens, the medical
+portal and the HR rail regrouping have all landed in master's navigation since
+that branch forked. His to resolve, and better resolved before the branch grows.
 
 **Correction on C-06.** DEP-003 and DEP-004 require only that a trip *exists*
 (SNG-TRN-007, built). 011 Advances and 012 Costs are therefore **not blocked** —
