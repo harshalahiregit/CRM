@@ -213,6 +213,15 @@ const SireQuality = lazy(() => import('@/modules/sire/pages/QualityDashboardPage
 const SireInsights = lazy(() => import('@/modules/sire/pages/EngineeringInsightsPage'))
 const SireRecurrenceDetail = lazy(() => import('@/modules/sire/pages/RecurrenceDetailPage'))
 
+// STOS Module (lazy) -- Sangoe Transport OS. This shell is the FLEET & ASSET
+// control tower (Developer 2); the CEO / Operations / Driver towers read trip
+// and invoice data owned by other developers and are not stubbed here.
+const StosLayout = lazy(() => import('@/modules/stos/StosLayout'))
+const StosFleetOverview = lazy(() => import('@/modules/stos/pages/FleetOverview'))
+const StosVehiclePassport = lazy(() => import('@/modules/stos/pages/VehiclePassportView'))
+const StosWorkshop = lazy(() => import('@/modules/stos/pages/MaintenanceBoard'))
+const StosDrivers = lazy(() => import('@/modules/stos/pages/DriversBoard'))
+
 // Projects Module (lazy)
 const ProjectList = lazy(() => import('@/modules/projects/pages/ProjectList'))
 const ProjectDetail = lazy(() => import('@/modules/projects/pages/ProjectDetail'))
@@ -782,6 +791,15 @@ export default function AppRoutes() {
           <Route path="quality" element={<S><SireQuality /></S>} />
           <Route path="insights" element={<S><SireInsights /></S>} />
           <Route path="recurring/:id" element={<S><SireRecurrenceDetail /></S>} />
+        </Route>
+
+        {/* STOS MODULE (transport: fleet, telemetry, workshop, cost) */}
+        <Route path="stos" element={<ProtectedRoute blockRoles={['client', 'third_party_vendor', 'vendor', 'company', 'doctor']}><S><StosLayout /></S></ProtectedRoute>}>
+          <Route index element={<Navigate to="fleet" replace />} />
+          <Route path="fleet" element={<S><StosFleetOverview /></S>} />
+          <Route path="fleet/vehicles/:id" element={<S><StosVehiclePassport /></S>} />
+          <Route path="drivers" element={<S><StosDrivers /></S>} />
+          <Route path="workshop" element={<S><StosWorkshop /></S>} />
         </Route>
 
         {/* PURCHASE MODULE (procure-to-pay) */}
