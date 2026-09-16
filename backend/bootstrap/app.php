@@ -68,12 +68,6 @@ return Application::configure(basePath: dirname(__DIR__))
             'vendor.onboarded' => \App\Http\Middleware\EnsureVendorOnboardingComplete::class,
             // Staff permission grid — 'permission:module,capability'.
             'permission' => \App\Http\Middleware\EnsureStaffPermission::class,
-            // Transport's own grid — 'transport.permission:domain,action'.
-            // Separate from the staff grid because Step 11 grants business
-            // actions (approve, assign, close) that five CRUD verbs cannot
-            // express, and because it deliberately admits portal accounts:
-            // a driver submits POD, a customer sees their own trips.
-            'transport.permission' => \Transport\Http\Middleware\EnsureTransportPermission::class,
             // The HR queue gate, so a route group carries it rather than each method.
             'hr.manage' => \App\Http\Middleware\EnsureCanManageHrQueue::class,
             // Advances have their own door: the approvers are a line manager,
