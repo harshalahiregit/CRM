@@ -66,6 +66,9 @@ return Application::configure(basePath: dirname(__DIR__))
             // operational portal. Must run AFTER a portal gate, which is what
             // resolves the vendor onto the request.
             'vendor.onboarded' => \App\Http\Middleware\EnsureVendorOnboardingComplete::class,
+            // STOS telemetry ingest: hardware presents a shared secret, not a
+            // session. Fails closed when no token is configured.
+            'stos.device' => \App\Http\Middleware\EnsureTelemetryDeviceToken::class,
             // Staff permission grid — 'permission:module,capability'.
             'permission' => \App\Http\Middleware\EnsureStaffPermission::class,
             // The HR queue gate, so a route group carries it rather than each method.
