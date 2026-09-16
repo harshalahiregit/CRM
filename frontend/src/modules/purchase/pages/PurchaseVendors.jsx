@@ -155,7 +155,9 @@ export default function PurchaseVendors() {
           <Building2 size={22} style={{ color: '#7C3AED' }} />
           <h1 style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-h)', margin: 0 }}>Purchase Vendors</h1>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        {/* Three buttons at ~150px each need 450px; on a phone they pushed the
+            page sideways rather than stacking. */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button onClick={load} style={{ ...btn }}><RefreshCw size={14} /> Refresh</button>
           <button onClick={() => navigate('/app/purchase/kickoff')} style={{ ...btn }}><CalendarDays size={14} /> Kickoff Meetings</button>
           <button onClick={() => { setErr(''); setModal({ company_name: '', email: '', ...PV_DEFAULTS }) }} style={{ ...btn, background: '#7C3AED', color: '#fff', border: 'none' }}><Plus size={14} /> New Vendor</button>
@@ -186,8 +188,18 @@ export default function PurchaseVendors() {
         title="Purchase Vendors"
       />
 
-      <div className="card-3d" style={{ overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+      {/* The table is eight columns and does not fit a narrow window.
+          `overflow: hidden` meant it was CLIPPED rather than scrolled: at 768px
+          the container is 418px against a 1029px table, so 611px of every row —
+          Status, Edit and View — was simply not on the screen and there was no
+          way to reach it. Nothing looked broken, which is why it survived.
+
+          overflowX:auto lets the table scroll inside its own card instead, and
+          minWidth stops the browser crushing eight columns into an unreadable
+          concertina on the way. overflowY stays hidden so the rounded corners
+          still clip the rows. */}
+      <div className="card-3d" style={{ overflowX: 'auto', overflowY: 'hidden' }}>
+        <table style={{ width: '100%', minWidth: 880, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ background: 'var(--bg-input)' }}>
               {['Code', 'Company', 'Email', 'Type', 'Remaining Validity', 'Onboarding', 'Status', ''].map((h) => <th key={h} style={th}>{h}</th>)}
