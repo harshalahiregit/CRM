@@ -86,6 +86,14 @@ class MeetingJoinRecorder
             }
         }
 
+        // The evidence, in columns. This used to exist only as the sentence
+        // above, only on the shared engine, and in the same field somebody
+        // types "joined late" into — so it could not be read back, and Purchase
+        // recorded nothing at all. It is written on EVERY join, including one
+        // that follows an observed call, because where a person joined from is
+        // a separate fact from how long they stayed.
+        $changes += $this->evidence($request, $ua, $row->getTable());
+
         $row->forceFill(array_filter($changes, fn ($v) => $v !== null))->save();
 
         return ['link' => $link, 'recorded' => true, 'attendee_id' => (int) $row->id];
@@ -143,6 +151,46 @@ class MeetingJoinRecorder
      * person reading the register is asking "how do we know?" right there — and
      * an answer they have to go and look for somewhere else does not get read.
      */
+    /**
+     * The columns recording where this join came from.
+     *
+     * Coordinates arrive from the browser and only if the person allowed it —
+     * the same arrangement contract_signatures already uses. Nothing here asks
+     * a geo-IP service where an address is: that would put a third party's
+     * guess into an attendance record and present it as fact. An IP and a
+     * device are what this server can actually observe, and a missing location
+     * says "not shared", which is true, rather than a city nobody confirmed.
+     *
+     * Columns are checked before they are written so a database that has not
+     * run the migration yet degrades to recording nothing, rather than throwing
+     * on somebody pressing Join.
+     *
+     * @param  array{browser:string,device:string}  $ua
+     * @return array<string,mixed>
+     */
+    private function evidence(Request $request, array $ua, string $table): array
+    {
+        $lat = $request->input('latitude');
+        $lng = $request->input('longitude');
+
+        $candidate = [
+            'join_ip' => $request->ip(),
+            'join_user_agent' => $request->userAgent() ? mb_substr($request->userAgent(), 0, 255) : null,
+            'join_device' => trim($ua['device'].' · '.$ua['browser']),
+            'join_latitude' => is_numeric($lat) ? (float) $lat : null,
+            'join_longitude' => is_numeric($lng) ? (float) $lng : null,
+            'join_location_label' => $request->filled('location_label')
+                ? mb_substr((string) $request->input('location_label'), 0, 160)
+                : null,
+        ];
+
+        return array_filter(
+            $candidate,
+            fn ($v, $k) => $v !== null && Schema::hasColumn($table, $k),
+            ARRAY_FILTER_USE_BOTH,
+        );
+    }
+
     private function stamp(Carbon $at, array $ua, ?string $ip): string
     {
         return sprintf(

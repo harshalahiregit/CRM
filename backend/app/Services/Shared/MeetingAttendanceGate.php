@@ -187,6 +187,13 @@ class MeetingAttendanceGate
             'organisation' => $identity['organisation'] ?? null,
             'role' => $identity['role'] ?? null,
             'side' => $identity['side'] ?? null,
+            // Which column of the attendance sheet to seat them in. Staff mark
+            // their own attendance and the caller says 'internal', so they
+            // belong under Organiser rather than in the grid's "not yet placed"
+            // row — which is where every self-marked staff member landed
+            // otherwise, on a sheet they had just added themselves to.
+            'party' => $identity['party']
+                ?? (($identity['side'] ?? null) === 'internal' ? 'organiser' : null),
         ], fn ($v) => $v !== null && $v !== ''));
     }
 }

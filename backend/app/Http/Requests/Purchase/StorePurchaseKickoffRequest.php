@@ -54,6 +54,10 @@ class StorePurchaseKickoffRequest extends FormRequest
             'participants.*.designation'         => 'nullable|string|max:120',
             'participants.*.phone'               => 'nullable|string|max:40',
             'participants.*.side'                => 'nullable|in:internal,external',
+            // Which column of the four-column attendance sheet this person sits
+            // in, and the opaque origin of the pick. See MeetingPartyDirectory.
+            'participants.*.party'               => 'nullable|in:organiser,client,vendor,tpv',
+            'participants.*.party_ref'           => 'nullable|string|max:64',
             'participants.*.role'                => 'nullable|string|max:100',
             'participants.*.attended'            => 'nullable|boolean',
         ];

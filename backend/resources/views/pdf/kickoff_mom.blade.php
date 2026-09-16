@@ -221,6 +221,8 @@
     <p class="muted">No participants recorded.</p>
 @endif
 
+@include('pdf.partials.join_evidence', ['attendees' => $attendees])
+
 <h2>Agenda</h2>
 @if ($agendaItems->count())
     <table class="att">

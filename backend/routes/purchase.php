@@ -582,6 +582,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::get('/kickoff/registers/issues',        [PurchaseKickoffController::class, 'issueRegister']);
     Route::get('/kickoff/registers/actions',       [PurchaseKickoffController::class, 'actionRegister']);
     Route::get('/kickoff/participants',            [PurchaseKickoffController::class, 'participants']);
+    // The four-column attendance grid — same two endpoints as the shared engine.
+    Route::get('/kickoff/parties',                 [PurchaseKickoffController::class, 'parties']);
+    Route::get('/kickoff/party-people',            [PurchaseKickoffController::class, 'partyPeople']);
     Route::get('/kickoff/staff',                   [PurchaseKickoffController::class, 'staff']);
     Route::get('/kickoff/vendors',                 [PurchaseKickoffController::class, 'vendors']);
     Route::get('/kickoff/vendor-status',           [PurchaseKickoffController::class, 'vendorStatus']);
