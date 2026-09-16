@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Truck, Building2, Package, History, Route as RouteIcon,
-  AlertTriangle, Loader2, Gauge, Pencil, ClipboardCheck, Send,
+  AlertTriangle, Loader2, Gauge, Pencil, ClipboardCheck, Send, Boxes,
 } from 'lucide-react'
 import { transportTripApi, transportCapabilityApi } from '@/services/transportApi'
 import { useToast } from '@/components/ui/Toast'
@@ -12,7 +12,7 @@ import AllocationPanel from '../components/AllocationPanel'
 import PretripPanel from '../components/PretripPanel'
 import DispatchPanel from '../components/DispatchPanel'
 import TripProgress from '../components/TripProgress'
-import { tripStatusCfg, orderStatusCfg, fmtMoney, fmtDateTime, fmtDate } from '../constants'
+import { tripStatusCfg, orderStatusCfg, fmtMoney, fmtDate } from '../constants'
 
 /**
  * Trip detail (SNG-TRN-007).
@@ -259,8 +259,38 @@ export default function TransportTripDetail() {
               <KV label="Trip number" value={trip.trip_number} />
               <KV label="Route" value={trip.route} />
               <KV label="Agreed price" value={fmtMoney(trip.approved_freight, trip.currency)} />
-              <KV label="Created" value={fmtDateTime(trip.created_at)} />
             </div>
+          </Panel>
+
+          {/* What is actually being moved. Without this the page showed an
+              order and a vehicle with nothing in between, and the chain the
+              walkthrough is meant to demonstrate was invisible. */}
+          <Panel icon={Boxes} title="What is being moved">
+            {trip.consignment ? (
+              <div style={{ marginTop: 12 }}>
+                <button onClick={() => navigate(`/app/transport/consignments/${trip.consignment.id}`)}
+                  style={{ textAlign: 'left', width: '100%', padding: '11px 12px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', cursor: 'pointer' }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 800, color: '#a78bfa' }}>
+                    {trip.consignment.consignment_number}
+                  </span>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 5 }}>
+                    {trip.consignment.cargo_description || 'Not described yet'}
+                  </div>
+                </button>
+                <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+                  <KV label="Customer reference" value={trip.consignment.customer_reference} />
+                  <KV label="Packages" value={trip.consignment.package_count} />
+                  <KV label="Weight"
+                    value={trip.consignment.gross_weight_kg
+                      ? `${Number(trip.consignment.gross_weight_kg).toLocaleString('en-IN')} kg`
+                      : null} />
+                </div>
+              </div>
+            ) : (
+              <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '12px 0 0' }}>
+                No consignment is linked to this trip yet.
+              </p>
+            )}
           </Panel>
 
           <Panel icon={Package} title="Source order">

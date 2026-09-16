@@ -72,6 +72,24 @@ export const transportTripApi = {
 
 /* ── Allocation (SNG-TRN-009) ─────────────────────────────────────────── */
 
+/**
+ * What THIS module's trips say about a vehicle or driver.
+ *
+ * Deliberately a SEPARATE call from `candidates`, not a field inside it:
+ * candidates are built by the eligibility services, which belong to Person 2's
+ * allocation scoring, and adding a field there would be a contract change to
+ * somebody else's surface. The panel merges the two by resource id.
+ *
+ * It reports a COMMITMENT, never availability. A resource missing from the
+ * result means "no trip of mine is holding it" — NOT "it is free".
+ */
+export const transportResourceCommitmentApi = {
+  all: () =>
+    api.get('/transport/resource-commitments')
+      .then((r) => r.data?.data ?? { vehicles: {}, drivers: {} })
+      .catch(handleErr),
+}
+
 export const transportAllocationApi = {
   /**
    * PLN-002/003 — eligible vehicles and drivers for a trip, in one call.
@@ -332,6 +350,7 @@ export const transportApi = {
   orders: transportOrderApi,
   trips: transportTripApi,
   allocation: transportAllocationApi,
+  resourceCommitments: transportResourceCommitmentApi,
   pretrip: transportPretripApi,
   dispatch: transportDispatchApi,
   consignments: transportConsignmentApi,
