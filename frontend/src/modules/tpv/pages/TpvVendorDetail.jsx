@@ -6,8 +6,10 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, Building2, User, Phone, Loader2, ShieldCheck, CheckCircle, XCircle, PauseCircle, CornerUpLeft, Clock, AlertTriangle,
   Briefcase, IndianRupee, ClipboardCheck, BarChart3, ChevronDown, ChevronRight, Mail, HardHat, Ban,
-  Users, FileText, Paperclip, StickyNote,
+  Users, FileText, Paperclip, StickyNote, Lock,
 } from 'lucide-react'
+import { isWorkspaceUnlocked, lockNav, lockNotice } from '@/lib/vendors/workspaceLock'
+import VendorAccessControls from '@/components/vendors/VendorAccessControls'
 
 const NOTIF_COLORS = { sent: '#10b981', failed: '#ef4444', skipped: '#94a3b8', queued: '#0ea5e9' }
 
@@ -140,28 +142,19 @@ export default function TpvVendorDetail() {
     } finally { setResending(false) }
   }
 
-  // Compliance suspension (admin). The nightly sweep does this automatically on
-  // expired statutory docs; these are the manual overrides.
-  const suspendVendor = async () => {
-    const reason = window.prompt('Reason for suspending this vendor (required):')
-    if (reason == null) return
-    if (!reason.trim()) { alert('A reason is required to suspend.'); return }
-    try { await cfg.api.vendors.suspend(id, reason.trim()); load() }
-    catch (e) { alert(e?.response?.data?.message || 'Could not suspend the vendor.') }
-  }
-  const reinstateVendor = async () => {
-    if (!confirm('Reinstate this vendor to Active? Their login and site access are restored.')) return
-    try { await cfg.api.vendors.reinstate(id); load() }
-    catch (e) { alert(e?.response?.data?.message || 'Could not reinstate the vendor.') }
-  }
-  const offboardVendor = async () => {
-    if (!confirm('Offboard this vendor? This ENDS the engagement: the login is locked and every on-site worker is terminated. This is not auto-reversible.')) return
-    const reason = window.prompt('Reason for offboarding (required):')
-    if (reason == null) return
-    if (!reason.trim()) { alert('A reason is required to offboard.'); return }
-    try { await cfg.api.vendors.offboard(id, reason.trim()); load() }
-    catch (e) { alert(e?.response?.data?.message || 'Could not offboard the vendor.') }
-  }
+  /*
+   * Suspend / Reinstate / Offboard used to be three buttons in the header,
+   * driven from here. They are gone from the header, replaced by the three
+   * access-window controls this workspace actually needed — see the note beside
+   * VendorAccessControls below.
+   *
+   * None of the three capabilities is lost. The nightly compliance sweep still
+   * suspends a vendor whose statutory documents have lapsed, and reinstates on
+   * its own terms; Offboarding is a screen of its own in the Performance group
+   * of this workspace, where the checklist, the reason and the worker
+   * terminations belong — rather than behind a window.confirm that summarised
+   * all of that in one sentence and then did it.
+   */
 
   const load = useCallback(() => {
     setLoad(true)
@@ -178,6 +171,22 @@ export default function TpvVendorDetail() {
     || (v.onboardings && v.onboardings[0]) || null
   const obStatus = activeOnboarding?.status || 'Draft'
   const obCfg = obStatusCfg(obStatus)
+
+  /*
+   * Until this vendor is onboarded the workspace shows the four sections that
+   * step actually needs — Overview, Profile, Contact, Documents — and not the
+   * other forty, which would every one of them open an empty screen for a
+   * company there is nothing to show for yet. The same rule and the same four
+   * on the Purchase side; see lib/vendors/workspaceLock.
+   *
+   * The tab itself stays reachable by ?tab= — the lock is about what the screen
+   * puts in front of somebody, not about who is allowed where.
+   */
+  const unlocked = isWorkspaceUnlocked(v, activeOnboarding)
+  // Items here are plain label strings, so lockNav's default key reader — the
+  // item itself — is the right one; Purchase passes it.key instead.
+  const { groups: navGroups, hidden } = lockNav(NAV_GROUPS, unlocked)
+  const lockedNotice = lockNotice(v, activeOnboarding, hidden)
 
   const handleAdminDecision = async () => {
     if ((decisionModal === 'reject' || decisionModal === 'hold' || decisionModal === 'resubmit') && !remarks.trim()) {
@@ -257,28 +266,29 @@ export default function TpvVendorDetail() {
                   <Mail size={13} /> {resending ? 'Sending…' : 'Resend Activation Email'}
                 </button>
               )}
-              {manage && isActive && (
-                <button onClick={suspendVendor}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--bg-card)', border: '1px solid rgba(249,115,22,0.4)', color: '#f97316', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                  <Ban size={13} /> Suspend
-                </button>
-              )}
-              {manage && v.status === 'Suspended' && (
-                <button onClick={reinstateVendor}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--bg-card)', border: '1px solid rgba(16,185,129,0.4)', color: '#10b981', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                  <ShieldCheck size={13} /> Reinstate
-                </button>
-              )}
-              {manage && !['Offboarded', 'Draft', 'Pending_Approval'].includes(v.status) && (
-                <button onClick={offboardVendor}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--bg-card)', border: '1px solid rgba(100,116,139,0.4)', color: '#64748b', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                  <XCircle size={13} /> Offboard
-                </button>
-              )}
-              {v.status === 'Suspended' && v.suspension_reason && (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: '#f97316', fontWeight: 600 }}>
-                  <AlertTriangle size={12} /> {v.suspension_reason}
-                </span>
+              {/* Convert to Permanent / Extend Access / Close Access — the three
+                  a temporary vendor's window actually needs, and the same
+                  component Purchase runs.
+
+                  Suspend and Offboard used to sit here instead. Both are much
+                  blunter: Suspend pauses a vendor, Offboard ends the engagement,
+                  locks the login and terminates every on-site worker, and is not
+                  reversible. Neither answers "the shutdown slipped by a week",
+                  so that got done by editing dates in the database. The three
+                  endpoints below existed on TPV the whole time with no button in
+                  the app pointing at any of them.
+
+                  Offboarding is not lost — it is its own screen, in the
+                  Performance group of this workspace, where the checklist and
+                  the reason belong. */}
+              {manage && cfg.access && (
+                <VendorAccessControls
+                  vendor={v}
+                  onConvert={() => cfg.access.convert(v.id)}
+                  onExtend={(data) => cfg.access.extend(v.id, data)}
+                  onExpire={() => cfg.access.expire(v.id)}
+                  onDone={(text, ok) => { setNotice({ ok, text }); if (ok) load() }}
+                />
               )}
               {notice && <span style={{ fontSize: 12, fontWeight: 700, color: notice.ok ? '#10b981' : '#ef4444' }}>{notice.text}</span>}
               {v.last_notification && (
@@ -338,7 +348,7 @@ export default function TpvVendorDetail() {
           maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', overscrollBehavior: 'contain',
           scrollbarGutter: 'stable', paddingRight: 2,
         }}>
-          {NAV_GROUPS.map(({ group, icon: GIcon, items }) => {
+          {navGroups.map(({ group, icon: GIcon, items }) => {
             const open = !collapsed[group]
             return (
               <div key={group} style={{ marginBottom: 6 }}>
@@ -384,6 +394,19 @@ export default function TpvVendorDetail() {
               </div>
             )
           })}
+
+          {/* Where the other forty went. A workspace that silently drops most
+              of its nav is as confusing as one that shows forty empty screens —
+              this names the reason and what ends it. */}
+          {lockedNotice && (
+            <div style={lockNote}>
+              <Lock size={12} style={{ color: '#f59e0b', flexShrink: 0, marginTop: 1 }} />
+              <span>
+                <strong style={{ color: 'var(--text-h)' }}>{lockedNotice.unlocks}</strong>
+                <span style={{ display: 'block', marginTop: 2 }}>{lockedNotice.reason}</span>
+              </span>
+            </div>
+          )}
         </nav>
 
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -1082,3 +1105,4 @@ function Grid({ rows }) {
 const wrap = { padding: 24, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-global)' }
 const backBtn = { width: 38, height: 38, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)', flexShrink: 0 }
 const groupBtn = { display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 10px', cursor: 'pointer', background: 'none', border: 'none', color: 'var(--text-h)', fontSize: 11.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em' }
+const lockNote = { display: 'flex', alignItems: 'flex-start', gap: 7, margin: '8px 4px 2px', padding: '9px 10px', borderRadius: 9, background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.22)', fontSize: 11, lineHeight: 1.45, color: 'var(--text-muted)' }

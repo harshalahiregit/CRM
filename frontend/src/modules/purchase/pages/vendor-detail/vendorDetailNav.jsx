@@ -34,6 +34,11 @@ import {
  * onboarding from the decision panel at the top of this workspace and from the
  * Vendor Onboarding screen, due diligence from the Compliance register, and
  * agreements from the Contract module.
+ *
+ * NOT every entry here is shown at once. Until a vendor is onboarded the layout
+ * narrows this list to the four sections that step needs — see
+ * lib/vendors/workspaceLock. Everything below is still routed and still
+ * reachable by URL; the lock decides what the sidebar offers, not what exists.
  */
 export const VENDOR_NAV_GROUPS = [
   {

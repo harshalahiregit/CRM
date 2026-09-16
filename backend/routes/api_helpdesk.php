@@ -107,6 +107,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('helpdesk')->gro
     // Static segment, so declared before the numeric /tickets/{ticket} routes.
     Route::post('/tickets/bulk',              [TicketController::class, 'bulk']);
     Route::post('/tickets',                   [TicketController::class, 'store']);
+    // People a ticket can be raised for — fills the Contact field on the create
+    // form, and with it the requester's name and address.
+    Route::get('/contacts',                   [TicketController::class, 'contacts']);
     Route::get('/tickets/{ticket}',           [TicketController::class, 'show'])->whereNumber('ticket');
     Route::put('/tickets/{ticket}',           [TicketController::class, 'update']);
     Route::delete('/tickets/{ticket}',        [TicketController::class, 'destroy']);

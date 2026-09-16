@@ -90,7 +90,11 @@ class BannedPatternsTest extends TestCase
             'modules/tpv/pages/TpvOnboardingWizard.jsx' => 7,
             'modules/tpv/pages/TpvOnboardings.jsx' => 3,
             'modules/tpv/pages/TpvStrikes.jsx' => 3,
-            'modules/tpv/pages/TpvVendorDetail.jsx' => 7,
+            // Was 7. Suspend / Reinstate / Offboard were three window.prompt +
+            // alert() handlers in the header; they are gone, replaced by the
+            // access-window controls, which report through the page's notice
+            // banner instead. The ratchet only ever goes down.
+            'modules/tpv/pages/TpvVendorDetail.jsx' => 2,
             'modules/tpv/pages/TpvVendors.jsx' => 2,
             'modules/tpv/pages/TpvViolations.jsx' => 1,
             'modules/tpv/pages/TpvWorkerWizard.jsx' => 28,

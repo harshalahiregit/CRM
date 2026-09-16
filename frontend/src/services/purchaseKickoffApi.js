@@ -119,7 +119,7 @@ export const purchaseKickoffApi = {
   // Marking MYSELF present, which is what releases the joining link — a
   // different action, a different verb, and deliberately a different name from
   // the one above. See MeetingAttendanceGate.
-  markOwnAttendance: (id) => k.markOwnAttendance(id),
+  markOwnAttendance: (id, where) => k.markOwnAttendance(id, where),
   // The organiser's verdict on who actually attended: the three slabs, kept
   // beside each person's own mark rather than over it. See
   // MeetingAttendanceReview.
@@ -199,6 +199,9 @@ export const purchaseKickoffApi = {
   // Purchase's own category picker -- same shape, its own vendor set. Missing
   // this is the "api.<name> is not a function" the parity guard exists to catch.
   participants: k.participants,
+  // The four-column attendance sheet, same shape both sides.
+  parties:      k.parties,
+  partyPeople:  (party, entityId) => k.partyPeople(party, entityId),
   staff:        k.staff,
   vendors:      k.vendors,
   vendorStatus: (vendorId, excludeMeetingId) => k.vendorStatus(vendorId, excludeMeetingId),

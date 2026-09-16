@@ -42,4 +42,10 @@ final class TenantRules
     {
         return Rule::exists('ticket_services', 'id')->where('tenant_id', $tenantId);
     }
+
+    /** A tag belonging to THIS tenant. */
+    public static function ticketTag(int $tenantId): Exists
+    {
+        return Rule::exists('ticket_tags', 'id')->where('tenant_id', $tenantId);
+    }
 }

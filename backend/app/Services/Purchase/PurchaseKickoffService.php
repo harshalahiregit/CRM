@@ -3,6 +3,7 @@
 namespace App\Services\Purchase;
 
 use App\Exceptions\BusinessException;
+use App\Support\Shared\MomGate;
 use App\Models\Purchase\PurchaseContact;
 use App\Models\Purchase\PurchaseKickoffDocument;
 use App\Models\Purchase\PurchaseKickoffMeeting;
@@ -24,6 +25,7 @@ use App\Support\Purchase\PurchaseMomApprovalStatus as MomStatus;
 use App\Support\Purchase\PurchaseMomActionStatus;
 use App\Support\Purchase\PurchaseMomIssueStatus;
 use App\Support\Shared\BusinessTime;
+use App\Services\Shared\MeetingPartyDirectory;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
@@ -666,6 +668,8 @@ class PurchaseKickoffService
     /** Attach an uploaded Minutes-of-Meeting document as the current MOM. */
     public function uploadMom(PurchaseKickoffMeeting $meeting, UploadedFile $file, User $actor): PurchaseKickoffMeeting
     {
+        MomGate::assertCompleted($meeting->status, 'upload');
+
         $name = 'mom-'.Str::random(12).'.'.$file->getClientOriginalExtension();
         $path = $file->storeAs("tenant-{$meeting->tenant_id}/meeting-{$meeting->id}", $name, self::DISK);
 
@@ -681,6 +685,9 @@ class PurchaseKickoffService
      */
     public function generateMom(PurchaseKickoffMeeting $meeting, User $actor): PurchaseKickoffMeeting
     {
+        // Minutes describe a meeting that happened — see MomGate.
+        MomGate::assertCompleted($meeting->status, 'generate');
+
         // The structured registers are loaded too — the MOM prints them, and a
         // lazy-load inside the Blade would be a query per row.
         $meeting->loadMissing(
@@ -1588,6 +1595,10 @@ class PurchaseKickoffService
                 'designation'                 => $p['designation'] ?? null,
                 'role'                        => $p['role'] ?? null,
                 'side'                        => $p['side'] ?? null,
+                // Which of the four attendance-sheet columns, and where the
+                // person was picked from — see the shared engine's twin of this.
+                'party'                       => MeetingPartyDirectory::isParty($p['party'] ?? null) ? $p['party'] : null,
+                'party_ref'                   => isset($p['party_ref']) ? substr((string) $p['party_ref'], 0, 64) : null,
                 'attended'                    => ! empty($p['attended']),
             ]);
         }

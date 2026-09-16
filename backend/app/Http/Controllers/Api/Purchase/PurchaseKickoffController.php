@@ -28,6 +28,8 @@ use Illuminate\Validation\Rule;
  */
 class PurchaseKickoffController extends Controller
 {
+    use \App\Http\Controllers\Concerns\ListsMeetingParties;
+
     public function __construct(private PurchaseKickoffService $service)
     {
     }

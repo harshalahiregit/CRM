@@ -4,6 +4,7 @@ namespace App\Services\Shared;
 
 use App\Contracts\ProjectDirectoryContract;
 use App\Exceptions\BusinessException;
+use App\Support\Shared\MomGate;
 use App\Support\Shared\KickoffOnce;
 use App\Models\Shared\KickoffAttendee;
 use App\Models\Shared\KickoffMeeting;
@@ -43,6 +44,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use App\Services\Shared\MeetingJoinRecorder;
+use App\Services\Shared\MeetingPartyDirectory;
 
 class KickoffMeetingService
 {
@@ -600,6 +602,8 @@ class KickoffMeetingService
     /** Attach an uploaded Minutes-of-Meeting document (not generated — see migration). */
     public function uploadMom(KickoffMeeting $meeting, UploadedFile $file, User $actor): KickoffMeeting
     {
+        MomGate::assertCompleted($meeting->status, 'upload');
+
         // Replace the old file rather than orphan it on disk.
         if ($meeting->mom_path && Storage::disk(self::DISK)->exists($meeting->mom_path)) {
             Storage::disk(self::DISK)->delete($meeting->mom_path);
@@ -1820,6 +1824,9 @@ class KickoffMeetingService
      */
     public function generateMom(KickoffMeeting $meeting, User $actor): KickoffMeeting
     {
+        // Minutes describe a meeting that happened — see MomGate.
+        MomGate::assertCompleted($meeting->status, 'generate');
+
         // The structured registers are loaded too — the MOM prints them, and a
         // lazy-load inside the Blade would be a query per row.
         $meeting->loadMissing(
@@ -3114,6 +3121,12 @@ class KickoffMeetingService
                 'designation' => $contact?->designation ?? ($a['designation'] ?? null),
                 // internal (own org) vs external (vendor/contractor) — Meeting.docx §5.
                 'side' => in_array($a['side'] ?? null, ['internal', 'external'], true) ? $a['side'] : null,
+                // Which of the four attendance-sheet columns, and where the
+                // person was picked from. Anything that is not one of the four
+                // is dropped rather than stored, so the grid never has to cope
+                // with a party it does not have a column for.
+                'party' => MeetingPartyDirectory::isParty($a['party'] ?? null) ? $a['party'] : null,
+                'party_ref' => isset($a['party_ref']) ? substr((string) $a['party_ref'], 0, 64) : null,
                 'attended' => ! empty($a['attended']),
             ]);
         }

@@ -13,9 +13,17 @@ import { ChevronRight, ArrowLeft } from 'lucide-react'
 //   items  — [{ label, path, icon }], ordered to follow the business workflow
 //            (the flat rail — used by HR / Purchase)
 //   groups — optional [{ label, icon, items:[{label,path,icon}] }]. When present,
-//            a TWO-LEVEL nav renders instead: a top row of clusters, and a second
-//            row with the active cluster's sub-items. `items` is ignored. Adopted
-//            by TPV for the doc's 9-cluster navigation; leaves flat modules alone.
+//            NO tab rail renders here at all: the sidebar owns that tree and
+//            this shell shows only a breadcrumb naming the cluster and page you
+//            are on. `items` is ignored.
+//
+// Grouped modules (Purchase, TPV) used to render the tree twice: the sidebar
+// listed the clusters, and this shell repeated those same clusters in a pill
+// rail across the top, with a second rail underneath for the active one. Three
+// rows of navigation, two of them saying the same words, above every page. The
+// tree now lives in one place — purchaseNav.js / tpvNav.js — and is rendered
+// once, in the sidebar. A breadcrumb is not a second navigation: it tells you
+// where you are, and only walks back up.
 export default function ModuleShell({ label, badge, items, groups }) {
   const { isDark } = useTheme()
   const navigate = useNavigate()
@@ -23,11 +31,13 @@ export default function ModuleShell({ label, badge, items, groups }) {
 
   // Which cluster owns the current route? The group with the longest matching
   // sub-item path wins, so nested routes resolve to the right cluster.
-  const activeGroup = groups
-    ? (groups.find(g => g.items.some(it => pathname.startsWith(it.path)))
-        ?? groups.find(g => g.items.some(it => pathname === it.path))
-        ?? groups[0])
+  const activeItem = groups
+    ? groups.flatMap(g => g.items.map(it => ({ ...it, group: g })))
+        .filter(it => pathname === it.path || pathname.startsWith(it.path + '/'))
+        .sort((a, b) => b.path.length - a.path.length)[0]
     : null
+  const activeGroup = activeItem?.group
+    ?? (groups ? groups.find(g => g.items.some(it => pathname.startsWith(it.path))) : null)
 
   return (
     <div className="space-y-0 -m-4 md:-m-6">
@@ -60,6 +70,25 @@ export default function ModuleShell({ label, badge, items, groups }) {
             </div>
             <span className="text-xs font-bold" style={{ color: '#a78bfa' }}>{label}</span>
           </div>
+
+          {/* Where you are inside the module. This replaces the two tab rails,
+              so it has to carry the orientation they used to give. */}
+          {activeGroup && (
+            <>
+              <ChevronRight size={12} style={{ color: 'var(--text-muted)' }} />
+              <span className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+                {activeGroup.label}
+              </span>
+            </>
+          )}
+          {activeItem && activeItem.label !== activeGroup?.label && (
+            <>
+              <ChevronRight size={12} style={{ color: 'var(--text-muted)' }} />
+              <span className="text-xs font-bold" style={{ color: 'var(--text-h)' }}>
+                {activeItem.label}
+              </span>
+            </>
+          )}
         </div>
 
         <style>{`
@@ -106,48 +135,10 @@ export default function ModuleShell({ label, badge, items, groups }) {
           .modnav-sub { padding: 6px; }
           .modnav-sub .modnav-tab { padding: 6px 13px; font-size: 11.5px; }
         `}</style>
-        {groups ? (
-          <>
-            {/* Cluster row — clicking a cluster jumps to its first sub-item. */}
-            <nav className="modnav-plate" style={{ marginBottom: 8 }}>
-              <div className="modnav-rail">
-                {groups.map((g, i) => {
-                  const GIcon = g.icon
-                  const on = g === activeGroup
-                  return (
-                    <Fragment key={g.label}>
-                      {i > 0 && <span className="modnav-tick" aria-hidden="true" />}
-                      <button
-                        onClick={() => navigate(g.items[0].path)}
-                        className={`modnav-tab${on ? ' on' : ''}`}
-                        style={{ border: 'none', background: on ? undefined : 'transparent' }}
-                      >
-                        {GIcon && <GIcon size={13} className="modnav-ico" />}
-                        {g.label}
-                      </button>
-                    </Fragment>
-                  )
-                })}
-              </div>
-            </nav>
-            {/* Sub-item row for the active cluster. */}
-            {activeGroup && activeGroup.items.length > 0 && (
-              <nav className="modnav-plate modnav-sub">
-                <div className="modnav-rail">
-                  {activeGroup.items.map(({ label: tabLabel, path, icon: Icon }, i) => (
-                    <Fragment key={path}>
-                      {i > 0 && <span className="modnav-tick" aria-hidden="true" />}
-                      <NavLink to={path} className={({ isActive }) => `modnav-tab${isActive ? ' on' : ''}`}>
-                        {Icon && <Icon size={13} className="modnav-ico" />}
-                        {tabLabel}
-                      </NavLink>
-                    </Fragment>
-                  ))}
-                </div>
-              </nav>
-            )}
-          </>
-        ) : (
+        {/* Grouped modules render no rail here: the sidebar is the navigation.
+            Flat modules (HR and friends) keep their single rail — they have no
+            sidebar tree to duplicate. */}
+        {groups ? null : (
           <nav className="modnav-plate">
             <div className="modnav-rail">
               {items.map(({ label: tabLabel, path, icon: Icon }, i) => (

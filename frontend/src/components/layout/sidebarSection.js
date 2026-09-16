@@ -62,22 +62,31 @@ export function sectionForPath(pathname) {
 }
 
 /**
- * HR's inner groups — Recruitment and HR Records.
+ * The inner groups of a module — HR's Recruitment, Purchase's Procurement, and
+ * so on.
  *
  * These are NOT an accordion. The module level allows one open section because
  * the whole point there is to keep the sidebar short; inside a single open
- * module both groups can be open at once, and clicking one must leave the other
- * exactly as it was. Hence a set of ids rather than a single id.
+ * module several groups can be open at once, and clicking one must leave the
+ * others exactly as they were. Hence a set of ids rather than a single id.
  */
 export const SIDEBAR_GROUPS_KEY = 'sangoe_sidebar_groups'
-export const GROUP_IDS = ['recruitment', 'hr-records']
+
+// An id is a slug the sidebar builds from a group's own label, so the set is
+// open-ended and cannot be enumerated here. It used to be: a fixed list of two,
+// which quietly dropped every group added since — `hr-attendance`,
+// `hr-lifecycle`, `hr-org`, `hr-mine` were all filtered out on load, so those
+// four re-closed themselves on every refresh while Recruitment remembered. The
+// check that matters is the shape, not the membership: these ids are only ever
+// used as lookup keys, so anything that looks like a slug is safe to keep.
+const GROUP_ID = /^[a-z0-9][a-z0-9-]{0,47}$/
 
 export function readStoredGroups() {
   try {
     const raw = JSON.parse(localStorage.getItem(SIDEBAR_GROUPS_KEY) || '[]')
     // Whatever comes back is untrusted: hand-edited, left over from an older
-    // build, or not an array at all. Keep only ids that still name a group.
-    return Array.isArray(raw) ? raw.filter(id => GROUP_IDS.includes(id)) : []
+    // build, or not an array at all.
+    return Array.isArray(raw) ? raw.filter(id => typeof id === 'string' && GROUP_ID.test(id)) : []
   } catch {
     return []
   }
