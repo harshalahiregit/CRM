@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import { Plus, Boxes, Loader2, Package, Trash2, Eye, Weight, Layers } from 'lucide-react'
 import { transportConsignmentApi, transportOrderApi, transportContainerApi } from '@/services/transportApi'
 import { useToast } from '@/components/ui/Toast'
@@ -39,6 +40,20 @@ export default function TransportConsignments() {
   // Narrowing the list must return to page 1, or you sit past the new end.
   const setSearch = (v) => { setSearchRaw(v); setPageNo(1) }
 
+  /*
+   * DEEP LINK — /app/transport/consignments?open=<id>
+   *
+   * A consignment has no detail ROUTE: its detail is this drawer. The trip page
+   * still needs to link to one, so it links here and names the id. Adding a
+   * consignments/:id route for that one button would give consignments two
+   * different detail experiences depending on how you arrived.
+   *
+   * The parameter is consumed and cleared, so a refresh or a back-navigation
+   * does not reopen a drawer the user has deliberately closed.
+   */
+  const [params, setParams] = useSearchParams()
+  const openId = params.get('open')
+
   const [drawer, setDrawer] = useState(false)
   const [editing, setEditing] = useState(null)      // row being edited
   const [viewing, setViewing] = useState(null)      // detail slide-over
@@ -59,6 +74,42 @@ export default function TransportConsignments() {
     queryFn: () => transportOrderApi.list({ per_page: 200 }),
   })
   const orders = orderPage?.data ?? []
+
+  useEffect(() => {
+    if (!openId) return
+
+    // CLEARED FIRST, DELIBERATELY, AND THIS IS LOAD-BEARING.
+    //
+    // It does two jobs at once: a refresh or a back-navigation will not reopen
+    // a drawer the user has closed, AND the parameter is the guard — once it is
+    // gone `openId` is null and this effect cannot run again.
+    //
+    // The obvious version of this — a ref that remembers the id, plus a
+    // `cancelled` flag in the cleanup — is WRONG HERE, and silently so.
+    // main.jsx renders under StrictMode, so in development React mounts,
+    // unmounts and remounts: the first effect's cleanup sets `cancelled`, the
+    // in-flight response is discarded, and the remount is refused by the ref.
+    // The request is made, nothing happens, and nothing errors. That was the
+    // first version of this fix, and the network panel is what found it.
+    setParams({}, { replace: true })
+
+    transportConsignmentApi.get(openId)
+      // Open on the real record, so the drawer title is the consignment number
+      // rather than a blank header over a spinner.
+      .then((d) => {
+        if (d?.consignment) setViewing(d.consignment)
+        else toast.error('That consignment could not be found.')
+      })
+      // A missing id, another workspace's id, or one the user may not see all
+      // arrive here. Land on the list with its own honest empty state rather
+      // than a drawer onto nothing.
+      .catch((e) => toast.error(e?.message || 'That consignment could not be opened.'))
+
+    // `openId` alone: `toast` is a new object every render (Toast.jsx builds its
+    // context value as a plain literal) and `setParams` is not guaranteed
+    // stable either, so listing them would re-run this on unrelated renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openId])
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['transport', 'consignments'] })
   const sf = (k, v) => setForm((p) => ({ ...p, [k]: v }))

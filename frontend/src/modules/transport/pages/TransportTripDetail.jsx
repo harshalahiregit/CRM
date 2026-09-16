@@ -268,7 +268,12 @@ export default function TransportTripDetail() {
           <Panel icon={Boxes} title="What is being moved">
             {trip.consignment ? (
               <div style={{ marginTop: 12 }}>
-                <button onClick={() => navigate(`/app/transport/consignments/${trip.consignment.id}`)}
+                {/* Consignments have NO detail route by design — the detail is a
+                    Drawer on the list. So this deep-links into the list and asks
+                    it to open that drawer. Adding a consignments/:id route just
+                    for this button would give consignments two different detail
+                    experiences depending on how you arrived. */}
+                <button onClick={() => navigate(`/app/transport/consignments?open=${trip.consignment.id}`)}
                   style={{ textAlign: 'left', width: '100%', padding: '11px 12px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', cursor: 'pointer' }}>
                   <span style={{ fontSize: 12.5, fontWeight: 800, color: '#a78bfa' }}>
                     {trip.consignment.consignment_number}
