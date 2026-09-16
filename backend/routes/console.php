@@ -201,3 +201,11 @@ Schedule::command('inventory:cycle-counts')
     ->weeklyOn(1, '08:00')
     ->withoutOverlapping()
     ->runInBackground();
+
+// STOS-CMP — recompute compliance verdicts from document expiry dates.
+// Early, before the yard starts allocating: a certificate that lapsed at
+// midnight must block dispatch the same morning, with nobody having touched
+// the record.
+Schedule::command('stos:refresh-compliance')
+    ->dailyAt('03:30')
+    ->withoutOverlapping();

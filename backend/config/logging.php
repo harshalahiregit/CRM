@@ -137,6 +137,15 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // STOS (Sangoe Transport OS) — fleet, telemetry ingestion, cost, workshop.
+        'stos' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/stos.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => env('LOG_DAILY_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
         'purchase' => [
             'driver' => 'daily',
             'path' => storage_path('logs/purchase.log'),
