@@ -66,6 +66,21 @@ use Illuminate\Database\Seeder;
  * Re-running is a reset, not a duplication: it clears first, then rebuilds, so
  * the walkthrough is identical every time.
  *
+ * ── IT DOES NOT, IN TWO PLACES. READ D-58 BEFORE TRUSTING THIS DEMO. ─────
+ * The two `forceFill(['status' => ...])` calls below — TripStatus::ALLOCATED
+ * and TripStatus::APPROVED — BYPASS TripStatus::TRANSITIONS. They are there
+ * because `viability_pending` has NO OUTGOING EDGE: no route, no service method
+ * and no state-machine entry approves a trip, so the application itself cannot
+ * produce an approved trip at all.
+ *
+ * THIS SEEDER IS THEREFORE NOT EVIDENCE THAT THE DISPATCH CHAIN WORKS. The
+ * allocation panel, pre-trip gate and dispatch screens are reachable in the demo
+ * only because these two lines put the trip into a state a real user cannot
+ * reach. SNG-TRN-008 (Trip Viability) was never built. See D-58.
+ *
+ * Both calls are to be deleted as soon as a real approval path exists, and the
+ * demo trips rebuilt by walking the same transitions a user walks.
+ *
  * ── EVERY ROW GOES THROUGH A REAL SERVICE ────────────────────────────────
  * Numbering, audit rows and refusals are the real ones. A seeder that wrote
  * models directly could produce a row the application itself could not, and
@@ -264,6 +279,8 @@ class TransportDemoSeeder extends Seeder
         // The dates are what item 4 renders. Set before the assignment so the
         // commitment sentence is complete the moment the vehicle is held.
         $trip->forceFill([
+            // BYPASSES THE STATE MACHINE — see D-58. Delete once a real
+            // approval path exists.
             'status'               => TripStatus::ALLOCATED,
             'planned_departure_at' => now()->subDay(),
             'planned_arrival_at'   => now()->addDays(2)->setTime(16, 0),
@@ -299,6 +316,8 @@ class TransportDemoSeeder extends Seeder
         ], $tenantId, $actor);
 
         $trip->forceFill([
+            // BYPASSES THE STATE MACHINE — see D-58. Delete once a real
+            // approval path exists.
             'status'               => TripStatus::APPROVED,
             'planned_departure_at' => now()->addDays(1)->setTime(6, 0),
             'planned_arrival_at'   => now()->addDays(3)->setTime(18, 0),

@@ -1916,3 +1916,184 @@ amended to the six, or the two are formally declared to be describing different 
 business lifecycle and the stored column. Any of the three is a decision; none is a developer's.
 
 **Needed before:** SNG-TRN-017 (settlement), which has to move an advance out of `paid`.
+
+---
+
+## D-58 — CRITICAL: no trip can ever be approved. The chain is unreachable, and the demo hides it.
+
+**Raised:** 2026-09-16, by the owner, from the trip page. **Severity: CRITICAL — this is the gap
+that makes the 30 September vertical slice unachievable as things stand.** MS-001 §8 requires
+*"Trip can progress through controlled dispatch states"*. Today it cannot progress past the second
+one.
+
+### The dead end, verified in the code
+
+```
+TripStatus::TRANSITIONS
+    DRAFT     => [VIABILITY_PENDING]      STT-001, wired by SNG-TRN-007
+    APPROVED  => [ALLOCATED]              STT-004, wired by SNG-TRN-009
+    ...
+    VIABILITY_PENDING => nothing at all
+```
+
+`viability_pending` has **no outgoing edge**. A trip submitted for viability is stuck there
+permanently.
+
+Checked, not assumed:
+
+| Claim | Result |
+|---|---|
+| A route approves a trip | **No.** 24 trip routes. The only `approve` is `trips/{id}/advances/{advanceId}/approve` — Person 3's *cash advance* approval, an unrelated feature |
+| `TransportTripService` has an approve method | **No.** Zero matches. The only `approve()` in the service layer is `TripAdvanceService::approve()` |
+| Anything follows `submit-viability` | **No.** It is the last step that exists |
+
+**Consequence.** No trip created through the application can reach `approved`. Therefore it can
+never be allocated (STT-004 starts at `approved`), never pass pre-trip, never dispatch, never
+deliver. **Everything after trip creation is unreachable by a real user.** Allocation, pre-trip and
+dispatch are all built, all tested, and all currently unreachable except from data that bypassed
+the state machine.
+
+### THE PART THAT MATTERS MOST: the demo demonstrates a capability the application does not have
+
+`TransportDemoSeeder` writes the status column directly, twice:
+
+```
+line 267   $trip->forceFill(['status' => TripStatus::ALLOCATED, ...])->save();
+line 302   $trip->forceFill(['status' => TripStatus::APPROVED,  ...])->save();
+```
+
+`forceFill` bypasses `TripStatus::TRANSITIONS` entirely. **That is the only reason the walkthrough
+works.** Every screen downstream of trip creation — the allocation panel, the search box, the
+"back in 2 days" sentence, the pre-trip gate, the dispatch panel — is reachable in the demo *only*
+because the seeder put the trip into a state the application cannot produce.
+
+The owner's standing instruction is that everything shown must be real: not one thing on screen and
+another underneath. **This violates it.** The demo is showing a working dispatch chain on top of an
+application that cannot start one.
+
+This is also a failure of my own stated rule for that seeder. Its docblock claims every row goes
+through a real service *"so the demo exercises the real numbering, the real audit trail and the
+real refusals — a seeder that wrote rows directly could produce data the application itself could
+not"*. Two `forceFill` calls do exactly the thing the docblock forbids, and I wrote both.
+
+### Why it was missing, and why nobody noticed
+
+The register places viability with **SNG-TRN-008 (Trip Viability)**. The tickets built are 001,
+003, 004, 006, 007, 009, 010 — **008 was never built.** It is not an error by any developer; it is
+a gap that the seeder concealed. Allocation was built against `approved` trips that the seeder
+supplied, so it tested green and demonstrated green while the door into that state did not exist.
+
+**The general lesson, which is the reason this entry is long:** a seeder that bypasses a state
+machine does not just create convenient data — it removes the pressure that would have exposed the
+missing transition. Demo data built through the real services is a *test of reachability*. The
+moment it force-fills, it stops being evidence of anything.
+
+### Not yet resolved — what happens next
+
+1. Read what **Step 9 and Step 11** actually say about `viability_pending → approved` (STT-002),
+   and whether **SNG-TRN-008** has a ticket: its trigger, precondition, actor and side effects.
+   **The open question is whether approval is a HUMAN DECISION or the output of a VIABILITY
+   CALCULATION.** Those are different features, and guessing wrong is a rebuild.
+2. If the source defines it: build the edge, service method, permission, endpoint, refusal tests
+   and the button.
+3. If the source does NOT define it: **stop and get a ruling.** Do not invent an approve button —
+   the D-39/D-40 route.
+4. **Either way, the seeder stops writing statuses directly once a real path exists**, and creates
+   its trips by walking the same transitions a user walks. If it cannot, that is itself the
+   finding.
+
+Cross-referenced from `TransportDemoSeeder`'s docblock, so nobody reads the seeder as evidence that
+the flow works.
+
+### What the source actually says — read 2026-09-16, before any code
+
+**STT-002 EXISTS AND IS LOCKED.** From Step 11 `State_Transitions`, quoted verbatim:
+
+```
+STT-002 | SM-TRP | viability_pending | approved | Approve viable trip
+        | ApprovalService | Margin policy passed | Emit TripApproved | Yes | LOCKED
+```
+
+And its sibling, also LOCKED and also unbuilt:
+
+```
+STT-003 | SM-TRP | viability_pending | draft | Reject for correction
+        | Operations | Rejection reason | Return to edit | Yes | LOCKED
+```
+
+**Is approval a human decision or a calculation? IT IS BOTH, AND THEY ARE TWO SEPARATE FEATURES.**
+
+*Approval is a human decision:*
+
+- `EVT-004 TripApproved` payload is `trip_id, **approved_by**` — a calculation has no `approved_by`.
+- `PERM-003 | Trip | approve` grants it to Owner, Operations, Accounts, Approver, Admin and
+  **explicitly denies Dispatcher, Driver, Customer, Supplier.** A permission matrix that has to say
+  no to the dispatcher is describing a decision, not a computation.
+- EVT-004's idempotency key is `trip_id+**approval_id**` — approvals are records.
+
+*Gated by a calculation, which is a DIFFERENT feature:*
+
+- Precondition is **"Margin policy passed"**.
+- `API-003 | POST /transport/trips/{trip}/viability | Calculate trip viability | LOCKED`, body
+  `freight` (CTR-005, "Backend authoritative") and `target_margin_pct` (CTR-006, "Policy
+  constrained").
+- `EVT-003 TripViabilityCalculated | ViabilityEngine | trip_id, revenue, cost, margin`.
+- `ENUM-008 viability_decision = accept|negotiate|reject|review`.
+- `SNG-TRN-008 | Trip Viability | P0 | S4 | Type: Algorithm | Complexity: XL`, user story *"As
+  owner, I can evaluate accept/negotiate/reject before commitment"*, acceptance *"Cost assumptions
+  and target margin are explainable and deterministic"*, DoD *"Golden dataset reconciliation"*,
+  QA-002 *"Low-margin trip → System recommends NEGOTIATE/REJECT with explanation"* (Critical).
+
+So: **a human clicks approve, and the system refuses unless margin policy passes.**
+
+### Why STT-002 still cannot simply be built
+
+| What is needed | State |
+|---|---|
+| The transition itself | **Defined, LOCKED.** Buildable |
+| Permission | **Defined, LOCKED** — PERM-003 |
+| Event | **Defined, LOCKED** — EVT-004 |
+| An API endpoint | **MISSING.** `API_Registry` contains NO approve row for a trip. Same class as D-38/D-45 |
+| A ticket owning it | **MISSING.** The Trip epic holds only SNG-TRN-007 (Trip Creation, built) and SNG-TRN-008 (Viability). **No ticket owns the approval transition** |
+| A table for `approval_id` | **MISSING.** `DB_Registry` has no approvals table, though EVT-004's idempotency key names one |
+| "Margin policy passed" | **NOT BUILDABLE TODAY** — see the chain below |
+
+**The precondition's dependency chain, every link verified:**
+
+```
+STT-002 approve
+  └─ precondition "Margin policy passed"
+       └─ SNG-TRN-008  Trip Viability      P0, XL, Algorithm   NOT BUILT
+            ├─ depends on SNG-TRN-005  Commercial Rate Card    P0, L    NOT BUILT
+            │    └─ transport_rates (DB-016) — TEAM-CONTRACTS lists the owner as UNASSIGNED
+            └─ needs `cost` for EVT-003's payload
+                 └─ trip_costs (DB-006) — Person 3's, NOT BUILT
+```
+
+Confirmed in the codebase: **zero migrations exist for either `trip_costs` or `transport_rates`.**
+
+Corroborating D-12/D-15/D-35 once more: SNG-TRN-008's `DB/API/State/Event Refs` column reads
+`DB-008;API-005;EV-004`. The real rows are API-003 and EVT-003. The positional counter is fabricated
+again.
+
+### The decision this needs — NOT taken, and not to be guessed
+
+The source defines the EDGE but not a buildable GATE, and no ticket owns the work. Per the standing
+rule this stops here for a ruling, the D-39/D-40 route. Options as I see them:
+
+- **A. Build STT-002 now with the margin precondition explicitly DEFERRED.** Human decision,
+  permission-gated (PERM-003), audited, emitting TripApproved — but with **no margin check**, stated
+  on screen and recorded here. Unblocks allocation, pre-trip and dispatch, which are built and
+  currently unreachable. The cost: an approval step that does not yet enforce the rule it exists to
+  enforce. That must be labelled, not hidden.
+- **B. Build SNG-TRN-008 first.** Honest, and not achievable by 30 September: XL, type Algorithm,
+  DoD "golden dataset reconciliation", and it depends on an unbuilt L-sized rate card whose owner is
+  unassigned plus Person 3's unbuilt cost table.
+- **C. Build STT-003 as well or instead** — *Reject for correction*, viability_pending → draft. Also
+  LOCKED, and its precondition is only *"Rejection reason"*, which IS buildable today. It does not
+  unblock dispatch, but it removes the dead end: a trip could at least return to draft instead of
+  being stuck forever.
+
+**Recommendation: A plus C.** A is the only option that makes the 30 September slice reachable, and
+C costs almost nothing and fixes the trap door. Both are reversible; the margin gate slots into A's
+precondition when SNG-TRN-008 lands.
