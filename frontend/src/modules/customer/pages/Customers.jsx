@@ -64,6 +64,8 @@ export default function Customers() {
   const [fieldsMgr, setFieldsMgr] = useState(false)
 
   const [confirmDel, setConfirmDel] = useState(null)
+  // Second stage of the delete confirmation — see the dialogs at the bottom.
+  const [confirmDelFinal, setConfirmDelFinal] = useState(false)
   const [importPreview, setImportPreview] = useState(null)  // { file, preview } awaiting confirmation
   const [exportOpen, setExportOpen] = useState(false)
   const [sampleOpen, setSampleOpen] = useState(false)
@@ -125,8 +127,12 @@ export default function Customers() {
       setCompletedSteps(new Set()); setQuickField(false)
       const cfMap = {}
       ;(full.custom_fields ?? []).forEach(f => { cfMap[f.id] = f.value ?? '' })
+      // `...full` would otherwise overwrite EMPTY's '' defaults with the API's
+      // nulls, which is how a null reached .trim() and how <select value={null}>
+      // gets its React warning. Drop the nulls and let EMPTY supply the default.
+      const present = Object.fromEntries(Object.entries(full).filter(([, v]) => v !== null))
       setForm({
-        ...EMPTY, ...full,
+        ...EMPTY, ...present,
         social_links: { ...EMPTY.social_links, ...(full.social_links || {}) },
         contacts: full.contacts?.length ? full.contacts : EMPTY.contacts,
         group_ids: (full.groups ?? []).map(g => g.id),
@@ -165,8 +171,13 @@ export default function Customers() {
 
   /* ── Stepper validation (create mode) — meeting 1.1 mandatory steps ── */
   const stepError = (stepKey) => {
-    if (stepKey === 'Details' && !form.company.trim()) return 'Company name is required'
-    if (stepKey === 'Billing & Shipping' && !(form.billing_street.trim() && form.billing_city.trim() && form.billing_state.trim()))
+    // The API sends null for an unset column, and null survives the `...full`
+    // spread in openEdit. Calling .trim() on it threw inside this validator,
+    // which runs before save()'s try block — so the rejection was swallowed and
+    // Save Changes did nothing at all, with no error anywhere.
+    const t = (v) => (v ?? '').trim()
+    if (stepKey === 'Details' && !t(form.company)) return 'Company name is required'
+    if (stepKey === 'Billing & Shipping' && !(t(form.billing_street) && t(form.billing_city) && t(form.billing_state)))
       return 'Billing address (street, city & state) is required — invoicing depends on it'
     if (stepKey === 'Customer Admins' && adminOrder.length === 0)
       return 'Assign at least one account handler'
@@ -193,15 +204,20 @@ export default function Customers() {
   const removeContact = (i) => setForm(p => ({ ...p, contacts: p.contacts.filter((_, idx) => idx !== i) }))
 
   const save = async () => {
-    // Re-validate every mandatory step (guards against direct Save via edit tabs)
-    for (const s of STEPS) {
-      if (s.optional) continue
-      if (editing && s.key === 'Customer Admins') continue // edit syncs admins live
-      const err = stepError(s.key)
-      if (err) { setTab(s.key); return toast.error(err) }
-    }
     setSaving(true)
     try {
+      // Re-validate every mandatory step (guards against direct Save via edit tabs).
+      //
+      // This loop lives INSIDE the try deliberately. It used to sit above it, so
+      // anything it threw escaped as an unhandled rejection that React discards
+      // silently — the button appeared to do nothing and there was no error to
+      // find. Inside, any future mistake here surfaces as a toast instead.
+      for (const s of STEPS) {
+        if (s.optional) continue
+        if (editing && s.key === 'Customer Admins') continue // edit syncs admins live
+        const err = stepError(s.key)
+        if (err) { setTab(s.key); toast.error(err); return }
+      }
       // Drop the seeded/blank contact rows — the backend rule
       // `contacts.*.first_name => required_with:contacts` would otherwise
       // reject a customer created with only a company name.
@@ -226,7 +242,7 @@ export default function Customers() {
 
   const doDelete = async () => {
     try { await customerApi.remove(confirmDel.id); toast.success('Customer deleted'); load(); loadStats() }
-    catch (e) { toast.error(e.message) } finally { setConfirmDel(null) }
+    catch (e) { toast.error(e.message) } finally { setConfirmDel(null); setConfirmDelFinal(false) }
   }
 
   // One-click active/inactive toggle (same as the old CRM's customer switch).
@@ -454,7 +470,7 @@ export default function Customers() {
                       <div className="flex gap-1">
                         <button onClick={() => nav(`/app/customers/${c.id}`)} className="p-1.5 rounded-lg hover:bg-[rgba(124,58,237,0.08)] transition-colors" title="View profile"><Eye size={12} style={{ color: 'var(--text-muted)' }} /></button>
                         <button onClick={() => openEdit(c)} className="p-1.5 rounded-lg hover:bg-[rgba(124,58,237,0.08)] transition-colors" title="Edit"><Edit2 size={12} style={{ color: 'var(--text-muted)' }} /></button>
-                        <button onClick={() => setConfirmDel(c)} className="p-1.5 rounded-lg hover:bg-[rgba(239,68,68,0.08)] transition-colors" title="Delete"><Trash2 size={12} style={{ color: '#f87171' }} /></button>
+                        <button onClick={() => { setConfirmDelFinal(false); setConfirmDel(c) }} className="p-1.5 rounded-lg hover:bg-[rgba(239,68,68,0.08)] transition-colors" title="Delete"><Trash2 size={12} style={{ color: '#f87171' }} /></button>
                       </div>
                     </td>
                   </tr>
@@ -755,13 +771,27 @@ export default function Customers() {
         </>
       )}
 
-      {confirmDel && (
+      {/* Deleting a customer is asked twice, deliberately.
+          The first dialog says what will happen; the second is the last chance,
+          and it names the customer again so a misaimed click on the wrong row
+          cannot get through on muscle memory. */}
+      {confirmDel && !confirmDelFinal && (
         <ConfirmDialog
           title="Delete customer?"
-          message={`This will remove “${confirmDel.company}” and its contacts. Linked invoices/tickets are not deleted.`}
-          confirmLabel="Delete"
+          message={`This will remove “${confirmDel.company}” and its contacts. Linked invoices, estimates and tickets are kept, and they keep naming this customer.`}
+          confirmLabel="Continue"
+          onConfirm={() => setConfirmDelFinal(true)}
+          onCancel={() => { setConfirmDelFinal(false); setConfirmDel(null) }}
+        />
+      )}
+
+      {confirmDel && confirmDelFinal && (
+        <ConfirmDialog
+          title="Are you sure?"
+          message={`Last check — “${confirmDel.company}” will be deleted and will disappear from the customer list. Anyone at this company loses portal access. Delete it?`}
+          confirmLabel="Yes, delete"
           onConfirm={doDelete}
-          onCancel={() => setConfirmDel(null)}
+          onCancel={() => { setConfirmDelFinal(false); setConfirmDel(null) }}
         />
       )}
 
