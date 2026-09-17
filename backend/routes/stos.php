@@ -35,6 +35,10 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1/telemetry')->middleware('stos.device')->group(function () {
     Route::post('/ingest', [TelemetryIngestionController::class, 'ingest']);
+
+    // T-13 — the same door, for a unit posting a buffered run rather than a
+    // single ping. Same auth, same validation per reading.
+    Route::post('/ingest/batch', [TelemetryIngestionController::class, 'ingestBatch']);
 });
 
 Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('v1/fleet')->group(function () {

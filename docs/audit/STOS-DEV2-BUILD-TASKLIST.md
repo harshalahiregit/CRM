@@ -147,9 +147,9 @@ answer — T-07.
 - [x] **T-10** Excursion rule — genset OFF ∧ speed > 0 ∧ temp > −18 °C → `telemetry.temperature_excursion.detected`
 - [x] **T-11** `GET /v1/fleet/vehicles/{id}/live-status` with three-state GPS health (`active` / `degraded` / `offline`)
 - [ ] **T-06** Align `generator_status` values with the spec, or document the mapping in `STOS-API`
-- [ ] **T-07** Per-device tokens (rotatable, one per unit) replacing the single fleet-wide secret
-- [ ] **T-12** Ingest idempotency: a device re-sending the same `(device_id, recorded_at)` currently appends twice. Decide dedupe vs. keep-all-and-dedupe-on-read
-- [ ] **T-13** Batch ingest (`POST` an array) — a unit with an hour of buffered pings currently needs one request per ping
+- [ ] **T-07** Per-device tokens (rotatable, one per unit) replacing the single fleet-wide secret. **Not cosmetic:** `gps_device_id` is unique per *company*, so two companies can claim the same id, and with one shared secret ingestion cannot tell which is calling — it refuses with 409 rather than guess and write another company's truck. Those vehicles cannot receive telemetry at all until this lands · *asserted today in TelemetryIdempotencyAndBatchTest*
+- [x] **T-12** Ingest is idempotent. **Decision taken: dedupe on write**, enforced by a unique index on `(company_id, device_id, recorded_at)` — one device has one clock, so the same instant is the same reading. Keep-all-and-dedupe-on-read was rejected because it makes every future consumer of the trail responsible for de-duplicating forever, and the first one that forgets double-counts a journey. A retry is answered 201 with `duplicate: true`, never 409: a device told 409 by a retry it could not avoid either retries forever or drops its buffer · *TelemetryIdempotencyAndBatchTest*
+- [x] **T-13** Batch ingest — `POST /v1/telemetry/ingest/batch`, up to 500 readings. Sorted by the device's own clock before writing, because the live row only moves forward; and one bad reading is rejected on its own line rather than failing the batch, because a device cannot resend just the good ones · *TelemetryIdempotencyAndBatchTest*
 
 > ⚠️ **Known trade in the excursion rule.** `speed > 0` silences a reefer parked with its
 > genset deliberately off — and *also* silences a **loaded trailer standing in a yard with a

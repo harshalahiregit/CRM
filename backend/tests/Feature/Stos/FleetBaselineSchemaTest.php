@@ -87,7 +87,11 @@ class FleetBaselineSchemaTest extends TestCase
         $vehicle = $this->vehicle();
 
         // Tier 1 — overwritten in place. Two pings, still one row.
-        foreach ([['22.30', 5], ['22.40', 41]] as [$lat, $speed]) {
+        //
+        // The two pings carry distinct clock readings: since T-12 a device may
+        // hold one reading per instant, because one device has one clock and a
+        // second copy of the same moment is a replay, not a new fact.
+        foreach ([['22.30', 5, 10], ['22.40', 41, 5]] as [$lat, $speed, $minutesAgo]) {
             VehicleLiveStatus::updateOrCreate(
                 ['vehicle_id' => $vehicle->id],
                 [
@@ -95,7 +99,7 @@ class FleetBaselineSchemaTest extends TestCase
                     'latitude' => $lat, 'longitude' => '70.80000000',
                     'speed' => $speed, 'ignition' => true,
                     'generator_status' => 'on', 'temperature' => '-18.50',
-                    'last_ping_at' => now(),
+                    'last_ping_at' => now()->subMinutes($minutesAgo),
                 ]
             );
 
@@ -107,7 +111,7 @@ class FleetBaselineSchemaTest extends TestCase
                 'latitude'   => $lat, 'longitude' => '70.80000000',
                 'speed'      => $speed, 'ignition' => true,
                 'generator_status' => 'on', 'temperature' => '-18.50',
-                'recorded_at' => now(),
+                'recorded_at' => now()->subMinutes($minutesAgo),
             ]);
         }
 
