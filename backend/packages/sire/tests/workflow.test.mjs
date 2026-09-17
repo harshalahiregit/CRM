@@ -210,7 +210,12 @@ test('rail marks main-path states in place and side states as off-rail', () => {
 test('client mirror agrees with the JSON on legality', () => {
   assert.equal(canTransition('qa_in_progress', 'qa_fail'), true);
   assert.equal(canTransition('new', 'release'), false);
-  assert.deepEqual(transitionsFrom('qa_in_progress').sort(), ['cannot_reproduce', 'qa_fail', 'qa_pass']);
+  assert.deepEqual(
+    transitionsFrom('qa_in_progress').sort(),
+    // close_directly is offered from every live state except production_validated,
+    // which keeps the root-cause-guarded `close`. See docs/WORKFLOW.md.
+    ['cannot_reproduce', 'close_directly', 'qa_fail', 'qa_pass'],
+  );
 });
 
 test('labels and terminality are exposed for the UI', () => {

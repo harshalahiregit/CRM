@@ -39,6 +39,10 @@ class SireWorkflowService
         'release'             => SireEvents::RELEASED,
         'validate_production' => SireEvents::PRODUCTION_VALIDATED,
         'close'               => SireEvents::REPORT_CLOSED,
+        // The direct close matters MORE to the reporter than the ordinary one:
+        // their issue never went past QA, so this notification is the only thing
+        // that tells them it was dealt with.
+        'close_directly'      => SireEvents::REPORT_CLOSED,
         'reopen'              => SireEvents::REPORT_REOPENED,
         'hold'                => SireEvents::REPORT_ON_HOLD,
         // wont_fix / rejected / duplicate / cannot_reproduce also end an issue.

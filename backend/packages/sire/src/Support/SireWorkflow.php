@@ -164,6 +164,40 @@ final class SireWorkflow
             'guard' => 'root_cause_confirmed_when_serious',
             'note'  => 'Critical, P1, recurring and reopened issues need a CONFIRMED root cause first.',
         ],
+        'close_directly' => [
+            // Everything live except PRODUCTION_VALIDATED, which keeps the
+            // guarded `close` above. If this appeared there too, the root-cause
+            // requirement would be one button-click away from optional on the
+            // single path that enforces it.
+            'from' => [
+                SireStatus::NEW, SireStatus::TRIAGED, SireStatus::ASSIGNED,
+                SireStatus::IN_DEVELOPMENT, SireStatus::READY_FOR_QA,
+                SireStatus::QA_IN_PROGRESS, SireStatus::QA_FAILED, SireStatus::QA_PASSED,
+                SireStatus::READY_FOR_RELEASE, SireStatus::RELEASED,
+                SireStatus::REOPENED, SireStatus::ON_HOLD,
+            ],
+            'to' => SireStatus::CLOSED,
+            'label' => 'Close', 'capability' => 'sire.report.close',
+            // Most defects are small. Walking a typo through assign → develop →
+            // QA → release → validate to reach `closed` is five clicks of
+            // ceremony for a one-line fix, and the cost of that ceremony is that
+            // people stop closing things at all -- the backlog fills with work
+            // that is actually done.
+            //
+            // So: one button, for anybody who could already have ended the issue
+            // with `wont_fix`. This grants NO new power. `wont_fix` has always
+            // taken the same capability from most of these same states; the only
+            // difference is that the issue lands in `closed`, which is the honest
+            // label when the thing was in fact fixed.
+            //
+            // The note is the whole price. An issue that leaves the backlog
+            // without a word is one nobody can audit later, and "why is this
+            // closed?" is the question a register exists to answer.
+            'requires' => ['resolution_note'],
+            'note' => 'Deliberately NOT guarded by root cause: a hidden button reads as a broken '
+                .'one, since a failing guard removes the action rather than refusing it. Serious '
+                .'issues keep their RCA requirement on the production_validated path.',
+        ],
         'hold' => [
             'from' => [
                 SireStatus::TRIAGED, SireStatus::ASSIGNED, SireStatus::IN_DEVELOPMENT,

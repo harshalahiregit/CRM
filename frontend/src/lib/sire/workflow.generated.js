@@ -410,6 +410,30 @@ export default {
             "note": "Critical, P1, recurring and reopened issues need a CONFIRMED root cause first."
         },
         {
+            "action": "close_directly",
+            "from": [
+                "new",
+                "triaged",
+                "assigned",
+                "in_development",
+                "ready_for_qa",
+                "qa_in_progress",
+                "qa_failed",
+                "qa_passed",
+                "ready_for_release",
+                "released",
+                "reopened",
+                "on_hold"
+            ],
+            "to": "closed",
+            "label": "Close",
+            "capability": "sire.report.close",
+            "requires": [
+                "resolution_note"
+            ],
+            "note": "Deliberately NOT guarded by root cause: a hidden button reads as a broken one, since a failing guard removes the action rather than refusing it. Serious issues keep their RCA requirement on the production_validated path."
+        },
+        {
             "action": "hold",
             "from": [
                 "triaged",
