@@ -207,6 +207,42 @@ class TransportDemoSeederTest extends TestCase
         $this->assertCount(1, TransportContainer::forTenant(1)->get()->filter->isAttached());
     }
 
+    public function test_the_seeder_never_writes_a_trip_status_directly(): void
+    {
+        // D-58. This seeder used to forceFill status to APPROVED and ALLOCATED,
+        // and that single shortcut meant the demo showed a chain the product
+        // could not perform — nobody noticed STT-002 was missing because the
+        // seeder covered for it.
+        //
+        // Reading the source is the point: a behavioural test cannot tell a
+        // status that was walked to from one that was written.
+        $source = file_get_contents(database_path('seeders/TransportDemoSeeder.php'));
+        $source = preg_replace('#//.*$#m', '', $source);   // code only, not the story
+
+        $this->assertStringNotContainsString(
+            'TripStatus::',
+            $source,
+            'TransportDemoSeeder references a trip status in code again. Demo trips must reach '
+            .'their state by walking the real transitions (see approvedTrip()). If they cannot, '
+            .'that is a finding to report — not something to route around. See D-58.',
+        );
+    }
+
+    public function test_the_demo_trips_reached_their_state_through_the_state_machine(): void
+    {
+        $this->runDemoSeeder();
+
+        // Every seeded trip carries an approver, which only STT-002 sets. A
+        // force-filled status would leave these null.
+        foreach (TransportTrip::forTenant(1)->get() as $trip) {
+            $this->assertNotNull(
+                $trip->approved_at,
+                $trip->trip_number.' has no approved_at — it did not pass through STT-002',
+            );
+            $this->assertNotNull($trip->approved_by, 'EVT-004 needs an approver');
+        }
+    }
+
     public function test_it_never_touches_another_tenant(): void
     {
         (new Tenant())->forceFill([

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Truck, Building2, Package, History, Route as RouteIcon,
-  AlertTriangle, Loader2, Gauge, Pencil, ClipboardCheck, Send, Boxes,
+  AlertTriangle, Loader2, Gauge, Pencil, ClipboardCheck, Send, Boxes, CheckCircle2,
 } from 'lucide-react'
 import { transportTripApi, transportCapabilityApi } from '@/services/transportApi'
 import { useToast } from '@/components/ui/Toast'
@@ -57,6 +57,7 @@ export default function TransportTripDetail() {
   const [error, setError] = useState(null)
 
   const [editOpen, setEditOpen] = useState(false)
+  const [approveOpen, setApproveOpen] = useState(false)
   const [form, setForm] = useState({ approved_freight: '', currency: 'INR', route: '' })
 
   const load = useCallback(async () => {
@@ -85,6 +86,20 @@ export default function TransportTripDetail() {
       load()
     } catch (e) {
       toast.error(e?.message || 'That change was refused.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const approve = async () => {
+    setBusy(true)
+    try {
+      await transportTripApi.approve(id)
+      toast.success('Trip approved. It can now be given a vehicle and driver.')
+      setApproveOpen(false)
+      load()
+    } catch (e) {
+      toast.error(e?.message || 'That trip could not be approved.')
     } finally {
       setBusy(false)
     }
@@ -132,6 +147,10 @@ export default function TransportTripDetail() {
 
   const st = tripStatusCfg(trip.status)
   const isDraft = trip.status === 'draft'
+  // STT-002. The button appears only in the one state it applies to, and only
+  // for a role PERM-003 grants — which deliberately excludes the Dispatcher.
+  const awaitingApproval = trip.status === 'viability_pending'
+  const canApprove = !!grants['transport.trip.approve']
 
   return (
     <Wrap>
@@ -166,6 +185,18 @@ export default function TransportTripDetail() {
             <button disabled={busy} onClick={submitViability} style={btn('#f59e0b', true)}>
               {busy ? <Loader2 size={13} className="animate-spin" /> : <Gauge size={14} />} Submit for viability
             </button>
+          )}
+          {/* STT-002. Until this shipped, a trip reaching viability_pending was
+              stuck there forever and nothing downstream could be reached. */}
+          {awaitingApproval && canApprove && (
+            <button disabled={busy} onClick={() => setApproveOpen(true)} style={btn('#10b981', true)}>
+              <CheckCircle2 size={14} /> Approve trip
+            </button>
+          )}
+          {awaitingApproval && !canApprove && (
+            <span style={{ fontSize: 11.5, color: 'var(--text-muted)', alignSelf: 'center', maxWidth: 260, textAlign: 'right' }}>
+              This trip is waiting for approval. Your role cannot approve trips.
+            </span>
           )}
         </div>
       </div>
@@ -332,6 +363,49 @@ export default function TransportTripDetail() {
           <AuditList entries={audit} />
         </Panel>
       </div>
+
+      {/* STT-002. The dialog states what the system did NOT check, because a
+          user approving a trip should know. D-59. */}
+      <Modal open={approveOpen} onClose={() => !busy && setApproveOpen(false)} style={{ maxWidth: 460, width: '92vw' }}>
+        <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)' }}>
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: 'var(--text-h)' }}>Approve this trip?</h2>
+          <p style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--text-muted)' }}>
+            {trip.trip_number} — {trip.customer?.company || 'this customer'}
+          </p>
+        </div>
+        <div style={{ padding: '18px 22px', display: 'grid', gap: 14 }}>
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--text-p)' }}>
+            Approving records that you accepted this trip. It can then be given a vehicle and a driver.
+          </p>
+
+          {/* The honest part. Not buried, not a tooltip. */}
+          <div style={{
+            padding: '11px 13px', borderRadius: 10,
+            background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.32)',
+          }}>
+            <p style={{ margin: 0, fontSize: 12.5, fontWeight: 800, color: '#f59e0b' }}>
+              The profit check is not running yet
+            </p>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-p)', lineHeight: 1.5 }}>
+              The system has checked that this trip is at the right stage and that you are allowed to
+              approve it. It has <strong>not</strong> checked whether the price covers the cost — that
+              calculation has not been built. Approve only if you are satisfied with the commercials
+              yourself.
+            </p>
+          </div>
+
+          <div style={{ display: 'grid', gap: 10 }}>
+            <KV label="Agreed price" value={fmtMoney(trip.approved_freight, trip.currency)} />
+            <KV label="Route" value={trip.route} />
+          </div>
+        </div>
+        <div style={{ padding: '14px 22px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button disabled={busy} onClick={() => setApproveOpen(false)} style={btn('#94a3b8')}>Cancel</button>
+          <button disabled={busy} onClick={approve} style={btn('#10b981', true)}>
+            {busy ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={14} />} Approve trip
+          </button>
+        </div>
+      </Modal>
 
       <Modal open={editOpen} onClose={() => !busy && setEditOpen(false)} style={{ maxWidth: 460, width: '92vw' }}>
         <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)' }}>

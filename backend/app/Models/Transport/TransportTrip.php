@@ -56,6 +56,10 @@ class TransportTrip extends Model
         'planned_arrival_at'   => 'datetime',
         'dispatched_at'        => 'datetime',
         'dispatched_by'        => 'integer',
+        // STT-002's approval record. Not fillable: status and its stamps move
+        // through TransportTripService::approve(), never through an update.
+        'approved_at'          => 'datetime',
+        'approved_by'          => 'integer',
         'dispatch_version'     => 'integer',
     ];
 

@@ -104,6 +104,12 @@ final class TransportPermission
     public const CONSIGNMENT_UPDATE = 'transport.consignment.update';
     public const CONSIGNMENT_DELETE = 'transport.consignment.delete';
 
+    /* ── Trip approval — PERM-003, DERIVED KEY (D-8/D-45 precedent). ────── */
+    // PERM-003 exists in Step 11's Permissions registry and names the roles
+    // exactly; it does NOT name a key string. The key below follows this
+    // module's own convention, like TRIP_DISPATCH before it.
+    public const TRIP_APPROVE = 'transport.trip.approve';
+
     /* ── Container. NOT IN THE REGISTRY — see D-45, same precedent. ─────── */
     public const CONTAINER_VIEW   = 'transport.container.view';
     public const CONTAINER_CREATE = 'transport.container.create';
@@ -456,6 +462,32 @@ final class TransportPermission
             self::ROLE_OPERATIONS => self::SCOPE_ALL,
             self::ROLE_DISPATCHER => self::SCOPE_ALL,
             self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+
+        /*
+         * PERM-003 | Trip | approve, copied ROW FOR ROW from Step 11:
+         *
+         *   CEO/Owner Y · Operations Y · Dispatcher N · Accounts Y
+         *   Approver  Y · Driver     N · Customer   N · Supplier N · Admin Y
+         *
+         * THE DISPATCHER DENIAL IS THE POINT, NOT AN OVERSIGHT. Dispatcher holds
+         * TRIP_CREATE, TRIP_ASSIGN and TRIP_DISPATCH — they run the trip. They
+         * may not approve it. That single N is the clearest statement in the
+         * whole registry that approval is a controlled commercial decision and
+         * not an operational step, and it is the reason D-58 concluded this is a
+         * human decision rather than a calculation.
+         *
+         * It is NOT softened because it makes a demo awkward: the demo signs in
+         * as admin, which PERM-003 grants. TripApprovalTest asserts the denial,
+         * not only the grants.
+         */
+        self::TRIP_APPROVE => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+            // ROLE_DISPATCHER is deliberately absent — PERM-003 says N.
         ],
 
         self::ORDER_VIEW => [

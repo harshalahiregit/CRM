@@ -68,6 +68,16 @@ export const transportTripApi = {
   /** STT-001 — the only transition this ticket owns. */
   submitForViability: (id) =>
     api.patch(`/transport/trips/${id}/submit-viability`).then((r) => r.data?.data).catch(handleErr),
+
+  /**
+   * STT-002 — approve a trip awaiting viability.
+   *
+   * No API_Registry row exists for this path; it mirrors submit-viability by
+   * this module's own convention (D-12). The margin precondition is NOT
+   * enforced yet — see D-59 — which is why the screen says so before asking.
+   */
+  approve: (id) =>
+    api.patch(`/transport/trips/${id}/approve`).then((r) => r.data?.data).catch(handleErr),
 }
 
 /* ── Allocation (SNG-TRN-009) ─────────────────────────────────────────── */

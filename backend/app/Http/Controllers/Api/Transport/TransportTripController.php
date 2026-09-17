@@ -124,4 +124,30 @@ class TransportTripController extends Controller
             'Trip submitted for viability'
         );
     }
+
+    /**
+     * STT-002 — approve a trip awaiting viability.
+     *
+     * NO API REGISTRY ROW EXISTS for approving a trip: Step 11 defines STT-002,
+     * PERM-003 and EVT-004, but names no endpoint. The path follows this
+     * module's shipped convention rather than being invented freely — it mirrors
+     * `submit-viability`, which sits beside it. Logged against D-12.
+     *
+     * Gated by TRIP_APPROVE at the route, which mirrors PERM-003 exactly,
+     * INCLUDING its denial of the Dispatcher.
+     *
+     * The margin precondition is NOT enforced — see the service docblock and
+     * D-59. The response message says so, because a user who approves a trip
+     * should know what the system did and did not check.
+     */
+    public function approve(Request $request, int $id): JsonResponse
+    {
+        $tenantId = $request->user()->tenant_id;
+        $trip     = $this->trips->find($id, $tenantId);
+
+        return $this->success(
+            $this->trips->approve($trip, $tenantId, $request->user()),
+            'Trip approved. The margin check is not yet enforced.'
+        );
+    }
 }

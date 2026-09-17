@@ -313,6 +313,29 @@ Covered by 14 tests in `TransportAllocationRefusalAuditTest`.
 
 ---
 
+### Fourth sighting, and the missing approve row — added 2026-09-16
+
+`API_Registry` also contains **no row for approving a trip**, though STT-002 and PERM-003 both
+exist and are LOCKED. The path is therefore ours, chosen by the shipped convention rather than
+invented freely: `PATCH /api/transport/trips/{id}/approve`, mirroring the `submit-viability` route
+that already ships beside it. Logged here with D-12's other missing endpoints.
+
+And a fourth instance of the fabricated positional counter (with D-15 and D-35): **SNG-TRN-008**'s
+`DB/API/State/Event Refs` column reads
+
+```
+DB-008;API-005;EV-004
+```
+
+The real rows for trip viability are **API-003** (`POST /transport/trips/{trip}/viability`) and
+**EVT-003** (`TripViabilityCalculated`). `DB-008` is `trip_expenses`. Not one of the three points
+at the right place, and the numbers again run in step with the ticket's own position in the
+register.
+
+**Four sightings is not a suspicion.** The refs column of the ticket pack should be treated as
+having no evidential value at all: resolve every reference **by name** against Step 11, never by
+the number a ticket prints. That is now the rule, not a caution.
+
 ## D-15 — Ticket SNG-TRN-010's registry references are a counter, not pointers
 
 `SNG-TRN-010` cites `FRS-P0-010`, `BR-009`, `DB-009`, `API-006`, `EV-006`. Every one misresolves:
@@ -2097,3 +2120,73 @@ rule this stops here for a ruling, the D-39/D-40 route. Options as I see them:
 **Recommendation: A plus C.** A is the only option that makes the 30 September slice reachable, and
 C costs almost nothing and fixes the trap door. Both are reversible; the margin gate slots into A's
 precondition when SNG-TRN-008 lands.
+
+---
+
+## D-59 — Trip approval ships WITHOUT its LOCKED precondition, "Margin policy passed"
+
+**Raised:** 2026-09-16, as a condition of the owner's ruling on D-58. **Owner: whoever lands
+SNG-TRN-008.** **Status: DEFERRED, deliberately, with a failing-on-purpose test holding the place.**
+
+STT-002 is LOCKED and its precondition is **"Margin policy passed"**. The approve transition is
+being built now, by ruling, **without that check**, because the check is not reachable:
+
+```
+STT-002  approve
+  └─ "Margin policy passed"
+       └─ SNG-TRN-008  Trip Viability        P0, XL, Algorithm   NOT BUILT
+            ├─ SNG-TRN-005  Commercial Rate Card   P0, L         NOT BUILT
+            │     └─ transport_rates (DB-016) — **OWNER UNASSIGNED**
+            └─ trip_costs (DB-006) — Person 3's — NOT BUILT
+```
+
+**THE BLOCKING FACT IS THE UNASSIGNED OWNER.** SNG-TRN-005 has no developer against it in
+TEAM-CONTRACTS, and `transport_rates` is listed as unassigned. Viability cannot start until
+somebody owns the rate card; approval cannot be gated until viability exists. That is the item a
+person has to fix, and no amount of Transport work removes it.
+
+### What shipping without it means, stated plainly
+
+A user can approve a trip that would lose money, and the system will not stop them. Approval today
+checks **the state and the permission, and nothing about the commercials.** That is a real
+reduction against the LOCKED registry row and it is not hidden:
+
+- `TransportTripService::approve()` says so in its docblock;
+- the approval dialog says so on screen, so a user knows what the system did and did not check;
+- and a test pins the absence.
+
+### The test that cannot be forgotten
+
+`TripApprovalTest::test_the_margin_gate_is_still_deferred` asserts that no margin or viability
+check exists on the approve path — the same technique used to pin `container_id` out of EVT-002's
+payload. **It is written to fail the moment SNG-TRN-008 lands.** Whoever builds viability will see
+it go red and must add the gate to make it pass. A deferred precondition with a failing test cannot
+be forgotten; one with a comment can.
+
+---
+
+## D-60 — EVT-004's idempotency key names an `approval_id` that has no table
+
+**Raised:** 2026-09-16. **Owner: Architecture / Step 11.** **Severity: low today, real later.**
+
+```
+EVT-004 | TripApproved | ApprovalService | trip_id, approved_by
+        | idempotency: trip_id+approval_id | TripEngine, Notifications | LOCKED
+```
+
+`DB_Registry` contains **no approvals table**, and no field registry entry defines `approval_id`.
+The key cannot be honoured as specified because the entity it keys on does not exist.
+
+**Resolved by precedent, not by invention.** The approval is recorded on the trip itself —
+`approved_by` and `approved_at` — exactly as `dispatched_by` / `dispatched_at` already ship on
+`transport_trips`. The event is emitted with what actually exists: `trip_id` and `approved_by`.
+
+**What was deliberately NOT done:** no `approval_id` was substituted. Not the audit-log row id, not
+a generated uuid, not the trip id doubled up. **A fabricated identifier is worse than an absent
+one** — it would satisfy a consumer's de-duplication logic while keying on something the registry
+never meant, and the failure would appear as a silently dropped event long after anyone remembers
+this decision. The absence is honest and visible; a fake would be neither.
+
+**Consequence, recorded:** a consumer that de-duplicates strictly on `trip_id+approval_id` cannot do
+so. Today there are no consumers — EVT-004 is emit-only, like EVT-001 and EVT-002 — so nothing is
+broken. Whoever builds the first consumer, or an approvals table, inherits this.

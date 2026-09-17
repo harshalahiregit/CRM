@@ -338,4 +338,19 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
         // STT-001 — the only transition this ticket owns.
         Route::patch('/trips/{id}/submit-viability', [TransportTripController::class, 'submitForViability'])->whereNumber('id');
     });
+
+    /* ── STT-002 — approve a trip ──────────────────────────────────────
+     *
+     * ITS OWN PERMISSION GROUP, AND THAT IS THE WHOLE POINT. PERM-003 grants
+     * approve to Owner, Operations, Accounts, Approver and Admin, and DENIES
+     * the Dispatcher — who holds TRIP_CREATE, TRIP_ASSIGN and TRIP_DISPATCH.
+     * Putting approve in the TRIP_CREATE group would hand it to exactly the
+     * role the registry refuses it to.
+     *
+     * No API_Registry row exists for this path; it mirrors submit-viability by
+     * convention. Logged against D-12.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::TRIP_APPROVE)->group(function () {
+        Route::patch('/trips/{id}/approve', [TransportTripController::class, 'approve'])->whereNumber('id');
+    });
 });

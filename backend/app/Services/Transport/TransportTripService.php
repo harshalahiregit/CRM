@@ -2,6 +2,7 @@
 
 namespace App\Services\Transport;
 
+use App\Events\Transport\TripApproved;
 use App\Events\Transport\TripCreated;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ResourceNotFoundException;
@@ -207,6 +208,89 @@ class TransportTripService
         ]);
 
         return $trip->fresh();
+    }
+
+    /**
+     * STT-002 — `viability_pending → approved`, "Approve viable trip".
+     *
+     *   STT-002  | ApprovalService | precondition "Margin policy passed"
+     *            | side effect "Emit TripApproved" | audited | LOCKED
+     *
+     * ── WHAT THIS CHECKS, AND WHAT IT DOES NOT ───────────────────────────
+     * It checks the STATE and, at the route, the PERMISSION (PERM-003, which
+     * denies the Dispatcher). **It checks NOTHING about the commercials.**
+     *
+     * STT-002's LOCKED precondition is "Margin policy passed" and it is NOT
+     * enforced here. That is a ruling, not an oversight: the margin verdict
+     * belongs to SNG-TRN-008 (Trip Viability), which is not built and is blocked
+     * on SNG-TRN-005's rate card — a P0 ticket with NO ASSIGNED OWNER — and on
+     * Person 3's unbuilt `trip_costs`. Without it the entire chain after trip
+     * creation was unreachable by any real user: allocation, pre-trip and
+     * dispatch were all built and all dead. See D-58 for that gap and D-59 for
+     * this deferral.
+     *
+     * SO: A USER CAN APPROVE A TRIP THAT WOULD LOSE MONEY. The approval dialog
+     * says so on screen, and TripApprovalTest pins the absence with a test
+     * written to fail the day viability lands. When SNG-TRN-008 arrives, the
+     * margin gate goes HERE, in front of the transition.
+     *
+     * ── WHY THE APPROVER IS RECORDED ON THE TRIP ─────────────────────────
+     * EVT-004's payload needs `approved_by`, and its idempotency key names an
+     * `approval_id` for which no table exists (D-60). Recorded on the trip, like
+     * `dispatched_by` before it, rather than inventing an entity to satisfy a
+     * key.
+     */
+    public function approve(TransportTrip $trip, int $tenantId, ?User $actor = null): TransportTrip
+    {
+        $this->assertTenant($trip, $tenantId);
+
+        $from = $trip->status;
+        $to   = TripStatus::APPROVED;
+
+        if (! TripStatus::canTransition($from, $to)) {
+            throw new BusinessException(
+                'Only a trip awaiting viability can be approved. This trip is '.$trip->statusLabel().'.',
+                422
+            );
+        }
+
+        // Carried from STT-001: a trip with no agreed freight could not have
+        // been assessed, so approving one would be approving nothing. This is
+        // NOT the margin gate — it is the same field check that let the trip
+        // into viability_pending in the first place.
+        if ($trip->approved_freight === null) {
+            throw new BusinessException(
+                'This trip has no approved freight, so there is nothing to approve.',
+                422
+            );
+        }
+
+        $approved = DB::transaction(function () use ($trip, $from, $to, $actor) {
+            $trip->forceFill([
+                'status'      => $to,
+                'approved_at' => now(),
+                'approved_by' => $actor?->id,
+                'updated_by'  => $actor?->id,
+            ])->save();
+
+            $trip->auditTransition('transport.trip.status_changed', $from, $to, $actor);
+
+            return $trip->fresh();
+        });
+
+        // STT-002's side effect. Emitted AFTER the transaction commits, so no
+        // listener can ever see an approval that was rolled back.
+        TripApproved::dispatch($approved);
+
+        Log::channel('transport')->info('Trip approved', [
+            'trip_id' => $approved->id, 'from' => $from, 'to' => $to,
+            'tenant_id' => $tenantId, 'user_id' => $actor?->id,
+            // Recorded on every approval so the deferral is visible in the logs
+            // as well as the code — see D-59.
+            'margin_policy_checked' => false,
+        ]);
+
+        return $approved;
     }
 
     /**

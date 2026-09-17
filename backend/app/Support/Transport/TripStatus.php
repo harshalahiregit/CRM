@@ -25,6 +25,9 @@ namespace App\Support\Transport;
  *
  * Wired so far, and by whom:
  *   SNG-TRN-007   draft → viability_pending                    (STT-001)
+ *   (no ticket)   viability_pending → approved                 (STT-002)
+ *                 No ticket owns it; ruled by the owner 2026-09-16 because the
+ *                 whole chain after trip creation was unreachable. D-58/D-59.
  *   SNG-TRN-009   approved → allocated, and back on release    (STT-004)
  *   SNG-TRN-010   allocated → pretrip_ok, and back on release  (STT-005, part)
  *   (no ticket)   pretrip_ok → dispatched                      (STT-005 dest.)
@@ -80,6 +83,18 @@ final class TripStatus
         // STT-001 | draft → viability_pending | trigger "Submit viability"
         //         | precondition "Required fields present" | audited | LOCKED
         self::DRAFT => [self::VIABILITY_PENDING],
+
+        // STT-002 | viability_pending → approved | trigger "Approve viable trip"
+        //         | actor ApprovalService | precondition "Margin policy passed"
+        //         | side effect "Emit TripApproved" | audited | LOCKED
+        //
+        // SHIPPED WITHOUT ITS PRECONDITION, BY RULING. "Margin policy passed"
+        // needs SNG-TRN-008 (Trip Viability), which is not built and is blocked
+        // on SNG-TRN-005's rate card — a P0 ticket with NO ASSIGNED OWNER — and
+        // on Person 3's unbuilt trip_costs. Approval today checks the state and
+        // the permission and nothing about the commercials. See D-59, which
+        // carries a test written to fail the day viability lands.
+        self::VIABILITY_PENDING => [self::APPROVED],
 
         // STT-004 | approved → allocated | trigger "Assign eligible resources"
         //         | actor AssignmentService | precondition "Vehicle/driver valid"

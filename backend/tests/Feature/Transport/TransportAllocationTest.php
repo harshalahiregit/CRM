@@ -459,12 +459,26 @@ class TransportAllocationTest extends TestCase
     public function test_allocation_never_wired_a_transition_past_its_own(): void
     {
         // Updated 2026-09-09: SNG-TRN-010 added allocated → pretrip_ok and its
-        // release reverse. What this test guards is unchanged and is the part
-        // that matters — ALLOCATION itself must never reach past `allocated`,
-        // and `dispatched` must stay unreachable from anywhere, because dispatch
-        // confirmation belongs to no ticket in the register (D-18).
+        // release reverse. Updated 2026-09-16: STT-002 added
+        // viability_pending → approved, by the owner's ruling on D-58 — until
+        // then a trip could reach viability_pending and stop there forever, and
+        // everything this test is about was unreachable by any real user.
+        //
+        // What this test guards is unchanged and is the part that matters —
+        // ALLOCATION itself must never reach past `allocated`, and `dispatched`
+        // must stay unreachable from anywhere, because dispatch confirmation
+        // belongs to no ticket in the register (D-18).
+        //
+        // It fired correctly when STT-002 landed. That is the behaviour wanted:
+        // a new edge in this machine should have to be declared here on purpose.
         $this->assertSame(
-            [TripStatus::DRAFT, TripStatus::APPROVED, TripStatus::ALLOCATED, TripStatus::PRETRIP_OK],
+            [
+                TripStatus::DRAFT,
+                TripStatus::VIABILITY_PENDING,
+                TripStatus::APPROVED,
+                TripStatus::ALLOCATED,
+                TripStatus::PRETRIP_OK,
+            ],
             array_keys(TripStatus::TRANSITIONS)
         );
 
