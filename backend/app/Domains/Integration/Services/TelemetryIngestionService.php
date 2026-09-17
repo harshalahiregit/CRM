@@ -27,9 +27,14 @@ use Illuminate\Support\Facades\DB;
  */
 class TelemetryIngestionService
 {
-    public function ingest(array $payload): array
+    /**
+     * @param  int|null  $companyId  from the device's own credential (T-07), never
+     *                               from the payload — a box does not get to say
+     *                               which company's truck it is reporting for.
+     */
+    public function ingest(array $payload, ?int $companyId = null): array
     {
-        $vehicle = $this->resolveVehicle((string) $payload['device_id']);
+        $vehicle = $this->resolveVehicle((string) $payload['device_id'], $companyId);
         $recordedAt = Carbon::parse($payload['recorded_at']);
 
         $reading = [
@@ -135,7 +140,7 @@ class TelemetryIngestionService
      * on a single dead-probe row would throw away fifty-nine good positions,
      * and the device has no way to resend just the good ones.
      */
-    public function ingestBatch(array $readings): array
+    public function ingestBatch(array $readings, ?int $companyId = null): array
     {
         // The device's own clock decides the order, not the order it happened
         // to serialise them in.
@@ -150,7 +155,7 @@ class TelemetryIngestionService
 
         foreach ($readings as $index => $reading) {
             try {
-                $result = $this->ingest($reading);
+                $result = $this->ingest($reading, $companyId);
 
                 if (! empty($result['duplicate'])) {
                     $duplicates++;
@@ -201,21 +206,29 @@ class TelemetryIngestionService
      * A device knows its own id and nothing else — it cannot tell us which
      * company it belongs to, so the vehicle row is what resolves tenancy.
      */
-    private function resolveVehicle(string $deviceId): Vehicle
+    private function resolveVehicle(string $deviceId, ?int $companyId = null): Vehicle
     {
-        $matches = Vehicle::where('gps_device_id', $deviceId)->get();
+        // T-07 — a per-device token says which company is calling, so the
+        // lookup is scoped and the ambiguity below cannot arise. This is the
+        // whole practical reason those tokens exist.
+        $matches = Vehicle::query()
+            ->when($companyId, fn ($q) => $q->where('company_id', $companyId))
+            ->where('gps_device_id', $deviceId)
+            ->get();
 
         if ($matches->isEmpty()) {
             throw new BusinessException('No vehicle is registered to this device.', 404);
         }
 
-        // gps_device_id is unique per COMPANY, so two workspaces can both claim
-        // one device id. With a fleet-wide shared secret there is no way to tell
-        // which one is calling, and guessing would write another company's
-        // truck. Refuse, loudly — it needs per-device credentials to resolve.
+        // Only reachable on the legacy fleet-wide secret. gps_device_id is
+        // unique per COMPANY, so two workspaces can both claim one device id,
+        // and a shared secret says nothing about which is calling. Guessing
+        // would write a position and a temperature onto another company's
+        // truck, so it refuses — and says what fixes it.
         if ($matches->count() > 1) {
             throw new BusinessException(
-                'This device id is registered in more than one company and cannot be resolved.',
+                'This device id is registered in more than one company and cannot be resolved '
+                .'from a shared secret. Issue this unit its own device token.',
                 409
             );
         }

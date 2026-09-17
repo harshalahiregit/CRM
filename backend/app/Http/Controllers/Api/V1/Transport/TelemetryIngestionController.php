@@ -27,7 +27,7 @@ class TelemetryIngestionController extends Controller
     public function ingest(IngestTelemetryRequest $request): JsonResponse
     {
         return $this->success(
-            $this->ingestion->ingest($request->validated()),
+            $this->ingestion->ingest($request->validated(), $this->deviceCompany($request)),
             'Telemetry recorded',
             201
         );
@@ -44,9 +44,24 @@ class TelemetryIngestionController extends Controller
     public function ingestBatch(IngestTelemetryBatchRequest $request): JsonResponse
     {
         return $this->success(
-            $this->ingestion->ingestBatch($request->validated()['readings']),
+            $this->ingestion->ingestBatch($request->validated()['readings'], $this->deviceCompany($request)),
             'Telemetry batch processed',
             201
         );
+    }
+
+    /**
+     * Which company this unit's credential belongs to, if it has its own.
+     *
+     * Read from the request attribute the device-token middleware set, NEVER
+     * from the payload: a GPS box does not get to nominate which company's
+     * truck it is reporting for. Null means the caller used the legacy
+     * fleet-wide secret, and resolution falls back to searching every company.
+     */
+    private function deviceCompany(\Illuminate\Http\Request $request): ?int
+    {
+        $companyId = $request->attributes->get('stos_device_company_id');
+
+        return $companyId === null ? null : (int) $companyId;
     }
 }

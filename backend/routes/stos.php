@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\Transport\DeviceTokenController;
 use App\Http\Controllers\Api\V1\Transport\DriverController;
 use App\Http\Controllers\Api\V1\Transport\FleetController;
 use App\Http\Controllers\Api\V1\Transport\FuelController;
@@ -67,6 +68,14 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('v1/fleet')->gro
     // ── Drivers (STOS-FLEET) ────────────────────────────────────────────
     // Read LIVE from the CRM's customer/vendor directories — there is no
     // "create driver" here, because STOS does not own people.
+    // ── Device credentials (T-07) ───────────────────────────────────────
+    // PEOPLE manage these; the hardware door is /v1/telemetry. Issuing from
+    // behind the credential check would let any unit mint more.
+    Route::get('/devices/tokens', [DeviceTokenController::class, 'index']);
+    Route::post('/devices/tokens', [DeviceTokenController::class, 'store']);
+    Route::post('/devices/tokens/{token}/rotate', [DeviceTokenController::class, 'rotate'])->where('token', '[0-9]+');
+    Route::delete('/devices/tokens/{token}', [DeviceTokenController::class, 'revoke'])->where('token', '[0-9]+');
+
     Route::get('/drivers', [DriverController::class, 'index']);
     // The crew half of allocation. Same response shape as eligible vehicles,
     // because a dispatch board shows them side by side.
