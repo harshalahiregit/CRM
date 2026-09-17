@@ -1,0 +1,172 @@
+<?php
+
+namespace App\Domains\Integration\Services;
+
+use App\Domains\Fleet\Models\TelemetryRecord;
+use App\Domains\Fleet\Models\Vehicle;
+use App\Domains\Fleet\Models\VehicleLiveStatus;
+use App\Domains\Integration\Events\TelemetryExcursionDetected;
+use App\Exceptions\BusinessException;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * STOS-INT — one ping in, both telemetry tiers updated (golden rule 3).
+ *
+ * The whole ingestion rule set lives here; the controller only hands over
+ * validated data (golden rule 4).
+ *
+ * Two writes, and they are not symmetrical:
+ *   • telemetry_records — ALWAYS appended. History is the source of truth and
+ *     nothing is allowed to drop a reading.
+ *   • vehicle_live_status — updated ONLY when this ping is the newest we hold.
+ *     A unit that buffered through a tunnel replays an hour of old positions in
+ *     seconds; letting those overwrite the live row would march the truck
+ *     backwards across the map and end with the live position an hour stale.
+ */
+class TelemetryIngestionService
+{
+    public function ingest(array $payload): array
+    {
+        $vehicle = $this->resolveVehicle((string) $payload['device_id']);
+        $recordedAt = Carbon::parse($payload['recorded_at']);
+
+        $reading = [
+            'latitude'         => $payload['latitude']  ?? null,
+            'longitude'        => $payload['longitude'] ?? null,
+            'speed'            => $payload['speed']     ?? null,
+            'ignition'         => array_key_exists('ignition', $payload) ? (bool) $payload['ignition'] : null,
+            'generator_status' => $payload['generator_status'] ?? null,
+            'temperature'      => $payload['temperature'] ?? null,
+        ];
+
+        // One transaction: a ping is either fully recorded or not at all. A
+        // history row without its live update would leave the map lying.
+        [$record, $liveUpdated] = DB::transaction(function () use ($vehicle, $payload, $recordedAt, $reading) {
+            $record = TelemetryRecord::create([
+                ...$reading,
+                'company_id'  => $vehicle->company_id,
+                'vehicle_id'  => $vehicle->id,
+                'device_id'   => (string) $payload['device_id'],
+                'recorded_at' => $recordedAt,
+            ]);
+
+            $liveUpdated = $this->refreshLiveStatus($vehicle, $recordedAt, $reading);
+
+            return [$record, $liveUpdated];
+        });
+
+        $excursion = $this->checkExcursion($vehicle, $reading, $recordedAt, $liveUpdated, $record->id);
+
+        return [
+            'vehicle_id'          => $vehicle->id,
+            'registration_number' => $vehicle->registration_number,
+            'telemetry_record_id' => $record->id,
+            // false means this ping was older than the live row — recorded in
+            // history, deliberately not promoted to "now".
+            'live_status_updated' => $liveUpdated,
+            'excursion_detected'  => $excursion,
+        ];
+    }
+
+    /**
+     * A device knows its own id and nothing else — it cannot tell us which
+     * company it belongs to, so the vehicle row is what resolves tenancy.
+     */
+    private function resolveVehicle(string $deviceId): Vehicle
+    {
+        $matches = Vehicle::where('gps_device_id', $deviceId)->get();
+
+        if ($matches->isEmpty()) {
+            throw new BusinessException('No vehicle is registered to this device.', 404);
+        }
+
+        // gps_device_id is unique per COMPANY, so two workspaces can both claim
+        // one device id. With a fleet-wide shared secret there is no way to tell
+        // which one is calling, and guessing would write another company's
+        // truck. Refuse, loudly — it needs per-device credentials to resolve.
+        if ($matches->count() > 1) {
+            throw new BusinessException(
+                'This device id is registered in more than one company and cannot be resolved.',
+                409
+            );
+        }
+
+        return $matches->first();
+    }
+
+    /** Tier 1: one row per vehicle, and never dragged backwards in time. */
+    private function refreshLiveStatus(Vehicle $vehicle, Carbon $recordedAt, array $reading): bool
+    {
+        $live = VehicleLiveStatus::find($vehicle->id);
+
+        if (
+            $live
+            && config('stos.ingest.reject_stale_live_updates', true)
+            && $live->last_ping_at
+            && $recordedAt->lt($live->last_ping_at)
+        ) {
+            return false;
+        }
+
+        VehicleLiveStatus::updateOrCreate(
+            ['vehicle_id' => $vehicle->id],
+            [...$reading, 'company_id' => $vehicle->company_id, 'last_ping_at' => $recordedAt]
+        );
+
+        return true;
+    }
+
+    /**
+     * Genset off while the body is warmer than the limit — the load is warming
+     * with nothing cooling it.
+     *
+     * Raised on the READING, so a buffered replay still reports the excursion
+     * that happened; the event carries `wasLive` so a listener can tell a
+     * live breach from history.
+     */
+    private function checkExcursion(Vehicle $vehicle, array $reading, Carbon $recordedAt, bool $wasLive, int $recordId): bool
+    {
+        $temperature = $reading['temperature'];
+        $generator = $reading['generator_status'];
+        $offState = (string) config('stos.telemetry.excursion_generator_off', 'off');
+        $threshold = (float) config('stos.telemetry.excursion_temperature', -18.0);
+
+        // A silent probe is not a cold load. Never infer an excursion from a
+        // missing reading — and never from a missing generator state either.
+        if ($temperature === null || $generator === null) {
+            return false;
+        }
+
+        if ($generator !== $offState || (float) $temperature <= $threshold) {
+            return false;
+        }
+
+        // M2 adds motion to the rule: genset OFF, warm, AND moving.
+        //
+        // This deliberately silences a reefer parked with its genset off, which
+        // is the common false alarm. It also silences a LOADED trailer standing
+        // in a yard with a dead genset, which is a real spoilage the fleet would
+        // now hear nothing about. That gap closes when Dispatch can tell us a
+        // vehicle is loaded; the switch is config, not code, so it can be turned
+        // off the day that becomes the wrong trade. See config/stos.php.
+        if (config('stos.telemetry.excursion_requires_motion', true)) {
+            $speed = $reading['speed'];
+            if ($speed === null || (float) $speed <= 0) {
+                return false;
+            }
+        }
+
+        TelemetryExcursionDetected::dispatch(
+            $vehicle,
+            (float) $temperature,
+            $threshold,
+            $generator,
+            $recordedAt->toDateTimeString(),
+            $wasLive,
+            $recordId,
+        );
+
+        return true;
+    }
+}

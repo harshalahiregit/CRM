@@ -94,6 +94,26 @@ const OVERLAY_STYLE = `
     box-shadow: 0 1px 2px rgba(15,10,40,.06), 0 24px 60px -18px rgba(15,10,40,.65);
     display: flex; flex-direction: column; min-height: 0;
   }
+  /*
+   * A tall form must SCROLL, not squash.
+   *
+   * The panel is a flex column capped at 90vh with overflowY:auto. A flex item
+   * defaults to flex-shrink:1, so once the content is taller than the cap the
+   * browser shrinks the children to fit instead of scrolling — and it takes the
+   * height out of whichever child can give it, which is the one whose height
+   * comes from its content rather than from a fixed input.
+   *
+   * On the Purchase Request and Purchase Order forms that child is the line-item
+   * table. Squashed to a sliver, and clipped to nothing by .pr-glass's
+   * overflow:hidden, it left a form with a "Line Items" heading, a catalog
+   * search reading "type your items in the table below", and no table — on a
+   * short window only, which is why it looked fine to whoever built it. Adding a
+   * line still worked; the new row was simply inside the collapsed box.
+   *
+   * flex-shrink:0 on every child restores the intended behaviour: the panel
+   * scrolls, and nothing is silently cut away.
+   */
+  .pr-overlay-panel > * { flex-shrink: 0; }
   html:not(.light) .pr-overlay-panel {
     background: linear-gradient(160deg, rgba(46,40,68,.98), rgba(30,26,46,.98));
     backdrop-filter: blur(14px) saturate(1.2);

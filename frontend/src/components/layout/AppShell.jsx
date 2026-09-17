@@ -73,7 +73,7 @@ export default function AppShell() {
         )}
         style={{ filter: isDark ? 'none' : 'drop-shadow(4px 0 24px rgba(124,58,237,0.12))' }}
       >
-        <Sidebar collapsed={false} onToggle={() => {}} openSection={openSection} toggleSection={toggleSection} isGroupOpen={isGroupOpen} toggleGroup={toggleGroup} />
+        <Sidebar inDrawer collapsed={false} onToggle={() => {}} openSection={openSection} toggleSection={toggleSection} isGroupOpen={isGroupOpen} toggleGroup={toggleGroup} />
       </div>
 
       {/* Desktop sidebar */}
@@ -96,8 +96,10 @@ export default function AppShell() {
 
       {/* Main content */}
       <main
-        className="transition-all duration-300 pt-16 pb-20 md:pb-6 min-h-screen"
-        style={{ paddingLeft: `${sidebarW}px` }}
+        className="app-shifted transition-all duration-300 pt-16 pb-20 md:pb-6 min-h-screen"
+        // The offset itself is a variable; the breakpoint lives in CSS, because
+        // an inline style cannot have one. See .app-shifted in index.css.
+        style={{ '--sidebar-w': `${sidebarW}px` }}
       >
         <div className={clsx('p-4 md:p-6', !fullBleed && 'max-w-[1440px] mx-auto')}>
           <Outlet />

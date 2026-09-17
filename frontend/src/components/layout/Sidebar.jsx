@@ -5,12 +5,18 @@ import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/context/AuthContext'
 import { canUseSire } from '@/lib/sire/access'
+import { canUseStos } from '@/lib/stos/access'
 import { useTheme } from '@/context/ThemeContext'
 import { helpdeskApi } from '@/services/helpdeskApi'
 import sangoeIcon from '@/assets/sangoe-icon.png'
-import { useState, useEffect, useRef } from 'react'
+import { Fragment, useState, useEffect, useRef } from 'react'
 import clsx from 'clsx'
 import { leadApi } from '@/services/leadApi'
+// The Purchase and TPV trees, imported rather than restated. Both used to be
+// written out again below in a different shape, so the sidebar and the module
+// page disagreed about what the sections were called and what was in them.
+import { PURCHASE_GROUPS } from '@/modules/purchase/purchaseNav'
+import { TPV_GROUPS } from '@/modules/tpv/tpvNav'
 
 // NOTE: 'Contacts' and 'Deals' were removed — both were dead "Coming Soon"
 // links. Contacts are the existing Customer module's contacts, and there is no
@@ -54,11 +60,12 @@ const MODULE_SEARCH = [
   { label: 'Compliance', path: '/app/tpv/compliance',   icon: ShieldCheck,     kw: 'hsse checklists' },
   { label: 'Transport',  path: '/app/transport/orders', icon: Truck,          kw: 'stos trips orders logistics haulage' },
 
-  // Added to the nav but never to this list, so they were unreachable by search
-  // while sitting in plain sight in the sidebar. `when` gates a result the same
-  // way the nav gates the section it belongs to -- offering somebody a
+  // Added to the nav but never to this list, so they were unreachable by
+  // search while sitting in plain sight in the sidebar. `when` gates a result
+  // the same way the nav gates the section it belongs to -- offering somebody a
   // destination that answers 403 is worse than not offering it.
   { label: 'SIRE',       path: '/app/sire/dashboard',   icon: Bug,             kw: 'issues defects bugs engineering quality releases', when: canUseSire },
+  { label: 'Transport',  path: '/app/stos/fleet',       icon: Truck,           kw: 'stos fleet vehicles drivers workshop telematics', when: canUseStos },
   { label: 'Settings',   path: '/app/settings',         icon: Settings,        kw: 'preferences configuration company profile' },
   { label: 'Staff Management', path: '/app/admin/staff', icon: UserCog,        kw: 'users team roles permissions staff admin', when: (u) => u?.role === 'admin' },
 ]
@@ -212,6 +219,15 @@ const SIRE_SUB_ITEMS = [
   { label: 'Insights',      path: '/app/sire/insights',      icon: BarChart3 },
 ]
 
+// STOS (Sangoe Transport OS) - the FLEET & ASSET control tower. Its own section
+// rather than a child of Inventory: a vehicle is not stock, it is an operating
+// asset with papers, a device and a workshop history.
+const STOS_SUB_ITEMS = [
+  { label: 'Vehicle Status', path: '/app/stos/fleet',    icon: Truck },
+  { label: 'Drivers',        path: '/app/stos/drivers',  icon: UserRound },
+  { label: 'Workshop',       path: '/app/stos/workshop', icon: Wrench },
+]
+
 const HELPDESK_SUB_ITEMS = [
   { label: 'Analytics', path: '/app/helpdesk/analytics', icon: BarChart2 },
   { label: 'Tickets', path: '/app/helpdesk/tickets', icon: LifeBuoy },
@@ -251,92 +267,25 @@ const INVENTORY_SUB_ITEMS = [
   { label: 'Settings', path: '/app/inventory/settings', icon: Settings },
 ]
 
-const PURCHASE_SUB_ITEMS = [
-  { label: 'Dashboard',        path: '/app/purchase/dashboard',     icon: LayoutDashboard },
-  { label: 'Items',            path: '/app/purchase/catalog',       icon: Package },
-  { label: 'Vendors',          path: '/app/purchase/vendors',       icon: Truck },
-  // Vendor lifecycle. Every one of these was fully built and routed with NO nav
-  // entry, so the pages existed and nobody could reach them — which is why the
-  // module read as half-finished when most of it was already there.
-  { label: 'Onboarding',       path: '/app/purchase/onboarding',    icon: Rocket },
-  { label: 'Prequalification', path: '/app/purchase/prequalification', icon: ClipboardCheck },
-  { label: 'Risk & Diligence', path: '/app/purchase/risk',          icon: Scale },
-  { label: 'Renewals',         path: '/app/purchase/renewals',      icon: RefreshCw },
-  { label: 'Offboarding',      path: '/app/purchase/offboarding',   icon: LogOut },
-  { label: 'Vendor Performance', path: '/app/purchase/vpi',         icon: Award },
-  { label: 'Communications',   path: '/app/purchase/communications', icon: MessageSquare },
-  { label: 'Document Vault',   path: '/app/purchase/document-vault', icon: FolderOpen },
-  // Workforce mirrors TPV's worker register — the list plus the 5-step wizard.
-  // Competency was built server-side and had no nav entry, so it was unreachable.
-  { label: 'Workforce',        path: '/app/purchase/workers',       icon: UserCheck },
-  { label: 'Workforce Review', path: '/app/purchase/workforce',     icon: Users },
-  { label: 'Medical Fitness',  path: '/app/purchase/medical',       icon: ShieldCheck },
-  { label: 'PPE Matrix',       path: '/app/purchase/ppe/matrix',    icon: Shield },
-  { label: 'Work Packages',    path: '/app/purchase/work-packages', icon: Layers3 },
-  { label: 'Work Authorization', path: '/app/purchase/work-authorization', icon: ClipboardCheck },
-  { label: 'Permit To Work',   path: '/app/purchase/permits',       icon: FileSignature },
-  { label: 'Governance',       path: '/app/purchase/governance',    icon: BarChart2 },
-  { label: 'Safety',           path: '/app/purchase/safety',        icon: ShieldCheck },
-  { label: 'Evidence Locker',  path: '/app/purchase/evidence',      icon: FolderOpen },
-  { label: 'Site Registers',   path: '/app/purchase/site-registers', icon: ClipboardList },
-  { label: 'Gate Log',         path: '/app/purchase/gate-log',      icon: ScanLine },
-  { label: 'Attendance',       path: '/app/purchase/attendance',    icon: Clock },
-  { label: 'Competency',       path: '/app/purchase/competency',    icon: GraduationCap },
-  // HSSE case management — also built, also unreachable until now.
-  { label: 'Incidents',        path: '/app/purchase/incidents',     icon: Activity },
-  { label: 'NCR',              path: '/app/purchase/ncr',           icon: FileX },
-  { label: 'CAPA',             path: '/app/purchase/capa',          icon: Wrench },
-  { label: 'Inspections',      path: '/app/purchase/inspections',   icon: ClipboardCheck },
-  { label: 'Violations',       path: '/app/purchase/violations',    icon: Scale },
-  { label: 'Compliance',       path: '/app/purchase/compliance-register', icon: BookText },
-  { label: 'Approvals',        path: '/app/purchase/approval-requests', icon: BookOpen },
-  { label: 'Authority Matrix', path: '/app/purchase/authority-matrix', icon: Network },
-  { label: 'Meetings',         path: '/app/purchase/kickoff',       icon: CalendarDays },
-  { label: 'Vendor-Items',     path: '/app/purchase/vendor-items',  icon: Boxes },
-  { label: 'Purchase request', path: '/app/purchase/requests',      icon: ClipboardList },
-  { label: 'Quotations',       path: '/app/purchase/quotations',    icon: FileSignature },
-  { label: 'Purchase order',   path: '/app/purchase/orders',        icon: ShoppingBag },
-  { label: 'Goods Received',   path: '/app/purchase/goods-received', icon: PackagePlus },
-  { label: 'Order Returns',    path: '/app/purchase/order-returns', icon: Undo2 },
-  { label: 'Contracts',        path: '/app/purchase/contracts',     icon: FileText },
-  { label: 'Debit Notes',      path: '/app/purchase/debit-notes',   icon: FileX },
-  { label: 'Invoices',         path: '/app/purchase/invoices',      icon: Receipt },
-  { label: 'Analytics',        path: '/app/purchase/analytics',     icon: BarChart3 },
-  { label: 'Reports',          path: '/app/purchase/reports',       icon: BarChart2 },
-  { label: 'Setting',          path: '/app/purchase/settings',      icon: Settings },
-]
+// Purchase and TPV: the flat page lists that used to live here are gone.
+//
+// The sidebar kept its own copy of each module tree while the module page kept
+// another. Purchase was the worse of the two — fifty pages in one undifferentiated
+// column here, the same pages sorted into ten clusters up there, with labels that
+// had already drifted apart ("Workforce" meant two different screens depending on
+// which list you read). Both now render purchaseNav.js / tpvNav.js, so there is one
+// tree and one set of names.
+//
+// Flattened views, for the collapsed icon rail and the search box — derived, so a
+// page added to a cluster is reachable and findable without a second edit here.
+const flatten = (groups) => groups.flatMap(g => g.items)
+const PURCHASE_SUB_ITEMS = flatten(PURCHASE_GROUPS)
+const TPV_ADMIN_ITEMS = flatten(TPV_GROUPS)
 
-// Internal staff view of the TPV module.
-/**
- * The ten SECTIONS of TPV — deliberately not its 46 pages.
- *
- * TPVLayout already groups every page into these ten and renders them as the
- * strip across the top, so the sidebar names the section and the strip handles
- * what is inside it. Listing all 46 here would duplicate that grouping in a
- * second place, and the two would drift the first time somebody added a page.
- *
- * Labels, order and landing pages are taken from TPVLayout's own groups so the
- * two navigations cannot disagree about what a section is called.
- *
- * Until now this held only Dashboard and Meetings, which is why eight sections
- * of a built module were reachable only by already being somewhere inside them.
- */
-const TPV_ADMIN_ITEMS = [
-  { label: 'Dashboard',     path: '/app/tpv/dashboard',          icon: LayoutDashboard },
-  { label: 'Vendors',       path: '/app/tpv/vendors',            icon: Building2 },
-  { label: 'Meetings',      path: '/app/tpv/kickoff',            icon: CalendarDays },
-  { label: 'Mobilisation',  path: '/app/tpv/onboarding',         icon: Rocket },
-  { label: 'Workforce',     path: '/app/tpv/workforce',          icon: UserCheck },
-  { label: 'Work Control',  path: '/app/tpv/work-authorization', icon: FileCheck2 },
-  { label: 'Compliance',    path: '/app/tpv/compliance',         icon: CheckSquare },
-  { label: 'Performance',   path: '/app/tpv/performance',        icon: TrendingUp },
-  { label: 'Intelligence',  path: '/app/tpv/reports',            icon: Landmark },
-  { label: 'Configuration', path: '/app/tpv/settings',           icon: SlidersHorizontal },
-]
 // TPV (vendor) login view — only their onboarding + their workforce.
 const TPV_VENDOR_ITEMS = [
-  { label: 'Onboarding', path: '/app/tpv/onboarding', icon: Rocket },
-  { label: 'Workforce',  path: '/app/tpv/workforce',  icon: UserCheck },
+  { label: "Onboarding", path: "/app/tpv/onboarding", icon: Rocket },
+  { label: "Workforce",  path: "/app/tpv/workforce",  icon: UserCheck },
 ]
 
 // Every sub-page across the modules, tagged with its parent — so the sidebar
@@ -371,12 +320,21 @@ const SUBMODULE_SEARCH = [
   ...TPV_ADMIN_ITEMS.map(i => ({ ...i, module: 'TPV' })),
   ...TRANSPORT_SUB_ITEMS.map(i => ({ ...i, module: 'Transport' })),
 
-  // Same omission one level down: "My Work" and "Releases" are real screens
-  // somebody will search for by name.
+  // Same omission one level down: "My Work", "Releases" and "Workshop" are real
+  // screens somebody will search for by name.
   ...SIRE_SUB_ITEMS.map(i => ({ ...i, module: 'SIRE', when: canUseSire })),
+  ...STOS_SUB_ITEMS.map(i => ({ ...i, module: 'Transport', when: canUseStos })),
 ]
 
-export default function Sidebar({ collapsed, onToggle, openSection, toggleSection, isGroupOpen, toggleGroup }) {
+/**
+ * @param inDrawer  this instance IS the mobile drawer's contents, so it must
+ *                  render below 768px — where the standalone desktop copy is
+ *                  deliberately hidden. Two instances are mounted (see
+ *                  AppShell) and exactly one is on screen at any width; without
+ *                  this flag the same `hidden md:flex` hid both, and a phone got
+ *                  a hamburger that opened an empty drawer.
+ */
+export default function Sidebar({ collapsed, onToggle, openSection, toggleSection, isGroupOpen, toggleGroup, inDrawer = false }) {
   const { user, tenant, logout, canSee, scopeOf } = useAuth()
 
   // Whether this person runs HR for the company, or only has their own record
@@ -456,17 +414,16 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
   // so a refresh does not undo the click. See sidebarSection.js.
   // Admin/staff see the ten TPV sections; a TPV (vendor) login sees only their
   // own Onboarding + Workforce.
-  const tpvItems = ['third_party_vendor', 'vendor'].includes(user?.role)
-    ? TPV_VENDOR_ITEMS
-    : TPV_ADMIN_ITEMS
+  const isVendorLogin = ['third_party_vendor', 'vendor'].includes(user?.role)
+  const tpvItems = isVendorLogin ? TPV_VENDOR_ITEMS : TPV_ADMIN_ITEMS
   const [activeLeadsCount, setActiveLeadsCount] = useState(null)
   const [moduleQuery, setModuleQuery] = useState('')
   const { pathname } = useLocation()
   const q = moduleQuery.trim().toLowerCase()
   // Modules first, then any sub-page whose name matches — one combined list.
   // `when` is optional: an entry without one is open to anybody who can see the
-  // sidebar at all. With one, the search hides what the nav would hide -- the two
-  // disagreeing is how a search result becomes a 403.
+  // sidebar at all. With one, the search hides what the nav would hide -- the
+  // two disagreeing is how a search result becomes a 403.
   const allowed = (entry) => !entry.when || entry.when(user)
 
   const moduleResults = q ? [
@@ -477,8 +434,8 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
     ...SUBMODULE_SEARCH
       .filter(allowed)
       // Match the module name too, so "sire" finds My Work and "hr" finds
-      // Payroll -- searching a module name and expecting its pages is the whole
-      // reason somebody types one into a box labelled Search modules.
+      // Payroll -- searching for a module and expecting its pages is the whole
+      // reason somebody types a module name into a box labelled Search modules.
       .filter(s => (s.label + ' ' + (s.module || '')).toLowerCase().includes(q))
       .map(s => ({ ...s, sub: true })),
   ].slice(0, 40) : []
@@ -514,10 +471,11 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
 
   const handleLogout = async () => { await logout(); navigate('/auth/login') }
 
-  // ── HR nav render helpers (leaf link + collapsible sub-group header) ──
-  // Kept local so the three-level HRMS tree stays DRY without touching the
-  // Sales / Purchase / TPV blocks, which keep their existing two-level markup.
-  const HrLeaf = ({ item, indent = '28px' }) => (
+  // ── Nav render helpers (leaf link + collapsible sub-group header) ──
+  // Written for HR's three-level tree; Purchase and TPV use them too now that
+  // their clusters live in the sidebar rather than in a strip along the top of
+  // the page.
+  const NavLeaf = ({ item, indent = '28px' }) => (
     <NavLink to={item.path}>
       {({ isActive }) => {
         const Icon = item.icon
@@ -534,7 +492,7 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
     </NavLink>
   )
 
-  const HrGroupHeader = ({ label, icon: Icon, expanded, onToggle }) => (
+  const NavGroupHeader = ({ label, icon: Icon, expanded, onToggle }) => (
     <button onClick={onToggle} className="nav-3d mb-0.5 w-full" style={{ justifyContent: 'flex-start', paddingLeft: '28px' }}>
       <div className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: 'rgba(124,58,237,0.1)' }}>
         <Icon size={12} />
@@ -544,10 +502,53 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
     </button>
   )
 
+  /**
+   * A module's clusters, rendered as collapsible folders.
+   *
+   * Purchase and TPV define one tree each (purchaseNav.js / tpvNav.js) and it is
+   * drawn HERE, once. It used to be drawn twice: this sidebar named the sections
+   * and the module page repeated the same names in a pill rail across the top,
+   * with a second rail under it for whichever section was open — so "Vendors"
+   * and "Vendor Master" both appeared twice on one screen, in two different
+   * shapes, and neither copy told you the other existed.
+   *
+   * A cluster holding a single page is drawn as that page rather than as a
+   * folder you have to open to find one thing.
+   */
+  const ClusterTree = ({ groups, prefix }) => (
+    <>
+      {groups.map(g => {
+        if (g.items.length === 1) {
+          return <NavLeaf key={g.items[0].path} item={{ ...g.items[0], label: g.label }} />
+        }
+        const id = `${prefix}-${g.label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`
+        // The cluster you are standing in is always open. You cannot be asked to
+        // go looking for the page already on screen.
+        const here = g.items.some(it => pathname === it.path || pathname.startsWith(it.path + '/'))
+        const expanded = here || isGroupOpen(id)
+        return (
+          <Fragment key={id}>
+            <NavGroupHeader label={g.label} icon={g.icon} expanded={expanded} onToggle={() => toggleGroup(id)} />
+            {expanded && g.items.map(it => <NavLeaf key={it.path} item={it} indent="44px" />)}
+          </Fragment>
+        )
+      })}
+    </>
+  )
+
   return (
     <aside
-      className={clsx('hidden md:flex flex-col sidebar-3d', collapsed && 'sidebar-collapsed')}
-      style={{ width: collapsed ? 72 : 260 }}
+      className={clsx(
+        'flex-col sidebar-3d',
+        // The drawer's copy is shown by the drawer itself (which is md:hidden);
+        // the standalone copy is the desktop one and stays off a phone.
+        inDrawer ? 'flex' : 'hidden md:flex',
+        collapsed && 'sidebar-collapsed',
+      )}
+      // Inside the drawer the wrapper owns the width, and `position: fixed`
+      // from .sidebar-3d would otherwise pin this to the viewport rather than
+      // to the panel sliding in.
+      style={{ width: collapsed ? 72 : 260, ...(inDrawer ? { position: 'relative' } : null) }}
     >
       {/* ── Logo ──────────────────────────────────────────── */}
       <div
@@ -730,18 +731,18 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
 
             {/* Collapsed rail: flatten every leaf to an icon (all pages reachable). */}
             {collapsed
-              ? HR_ALL_LEAVES.map(item => <HrLeaf key={item.path} item={item} />)
+              ? HR_ALL_LEAVES.map(item => <NavLeaf key={item.path} item={item} />)
               : openSection === 'hr' && (
                 <>
                   {/* Dashboard */}
-                  <HrLeaf item={HR_DASHBOARD} />
+                  <NavLeaf item={HR_DASHBOARD} />
 
                   {/* Recruitment group */}
-                  <HrGroupHeader label="Recruitment" icon={Briefcase} expanded={isGroupOpen('recruitment')} onToggle={() => toggleGroup('recruitment')} />
-                  {isGroupOpen('recruitment') && HR_RECRUITMENT_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
+                  <NavGroupHeader label="Recruitment" icon={Briefcase} expanded={isGroupOpen('recruitment')} onToggle={() => toggleGroup('recruitment')} />
+                  {isGroupOpen('recruitment') && HR_RECRUITMENT_ITEMS.map(item => <NavLeaf key={item.path} item={item} indent="44px" />)}
 
                   {/* Employees (top-level) */}
-                  <HrLeaf item={HR_EMPLOYEES} />
+                  <NavLeaf item={HR_EMPLOYEES} />
 
                   {/* Attendance and Requests are the HR QUEUES — everybody's
                       records, not your own. Shown only to somebody the server
@@ -749,24 +750,24 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
                       are locked. */}
                   {managesHr && (
                     <>
-                      <HrGroupHeader label="Attendance" icon={CalendarCheck} expanded={isGroupOpen('hr-attendance')} onToggle={() => toggleGroup('hr-attendance')} />
-                      {isGroupOpen('hr-attendance') && HR_ATTENDANCE_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
+                      <NavGroupHeader label="Attendance" icon={CalendarCheck} expanded={isGroupOpen('hr-attendance')} onToggle={() => toggleGroup('hr-attendance')} />
+                      {isGroupOpen('hr-attendance') && HR_ATTENDANCE_ITEMS.map(item => <NavLeaf key={item.path} item={item} indent="44px" />)}
 
-                      <HrGroupHeader label="Requests" icon={Receipt} expanded={isGroupOpen('hr-requests')} onToggle={() => toggleGroup('hr-requests')} />
-                      {isGroupOpen('hr-requests') && HR_REQUEST_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
+                      <NavGroupHeader label="Requests" icon={Receipt} expanded={isGroupOpen('hr-requests')} onToggle={() => toggleGroup('hr-requests')} />
+                      {isGroupOpen('hr-requests') && HR_REQUEST_ITEMS.map(item => <NavLeaf key={item.path} item={item} indent="44px" />)}
                     </>
                   )}
 
                   {/* Employee lifecycle */}
-                  <HrGroupHeader label="Employee Lifecycle" icon={Award} expanded={isGroupOpen('hr-lifecycle')} onToggle={() => toggleGroup('hr-lifecycle')} />
-                  {isGroupOpen('hr-lifecycle') && HR_LIFECYCLE_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
+                  <NavGroupHeader label="Employee Lifecycle" icon={Award} expanded={isGroupOpen('hr-lifecycle')} onToggle={() => toggleGroup('hr-lifecycle')} />
+                  {isGroupOpen('hr-lifecycle') && HR_LIFECYCLE_ITEMS.map(item => <NavLeaf key={item.path} item={item} indent="44px" />)}
 
                   {/* Organization */}
-                  <HrGroupHeader label="Organization" icon={FolderOpen} expanded={isGroupOpen('hr-org')} onToggle={() => toggleGroup('hr-org')} />
-                  {isGroupOpen('hr-org') && HR_ORG_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
+                  <NavGroupHeader label="Organization" icon={FolderOpen} expanded={isGroupOpen('hr-org')} onToggle={() => toggleGroup('hr-org')} />
+                  {isGroupOpen('hr-org') && HR_ORG_ITEMS.map(item => <NavLeaf key={item.path} item={item} indent="44px" />)}
 
                   {/* Opened often enough to stay at the top level */}
-                  {HR_TOP_LEVEL.map(item => <HrLeaf key={item.path} item={item} />)}
+                  {HR_TOP_LEVEL.map(item => <NavLeaf key={item.path} item={item} />)}
 
                   {/* A person's own requests — for somebody who cannot open the
                       management screens above. Now an actual answer rather than
@@ -775,8 +776,8 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
                       of the right ones. */}
                   {!managesHr && (
                     <>
-                      <HrGroupHeader label="My Requests" icon={UserRound} expanded={isGroupOpen('hr-mine')} onToggle={() => toggleGroup('hr-mine')} />
-                      {isGroupOpen('hr-mine') && HR_MINE_ITEMS.map(item => <HrLeaf key={item.path} item={item} indent="44px" />)}
+                      <NavGroupHeader label="My Requests" icon={UserRound} expanded={isGroupOpen('hr-mine')} onToggle={() => toggleGroup('hr-mine')} />
+                      {isGroupOpen('hr-mine') && HR_MINE_ITEMS.map(item => <NavLeaf key={item.path} item={item} indent="44px" />)}
                     </>
                   )}
                 </>
@@ -1000,19 +1001,10 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
             </div>
             {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Purchase</span><ChevronDown size={13} className={clsx('transition-transform duration-200', openSection === 'purchase' && 'rotate-180')} /></>}
           </button>
-          {(openSection === 'purchase' || collapsed) && PURCHASE_SUB_ITEMS.map(({ label, path, icon: Icon }) => (
-            <NavLink key={path} to={path}>
-              {({ isActive }) => (
-                <div title={collapsed ? label : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined, paddingLeft: collapsed ? undefined : '28px' }}>
-                  <div className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(124,58,237,0.06)' }}>
-                    <Icon size={12} />
-                  </div>
-                  {!collapsed && <span className="truncate text-xs">{label}</span>}
-                  {isActive && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#c4b5fd' }} />}
-                </div>
-              )}
-            </NavLink>
-          ))}
+          {/* Collapsed rail: every page as an icon. Expanded: the clusters. */}
+          {collapsed
+            ? PURCHASE_SUB_ITEMS.map(item => <NavLeaf key={item.path} item={item} />)
+            : openSection === 'purchase' && <ClusterTree groups={PURCHASE_GROUPS} prefix="pu" />}
         </div>
 
         {/* ── TPV Module sub-nav ── */}
@@ -1030,19 +1022,12 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
             </div>
             {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Thirdparty Vendor</span><ChevronDown size={13} className={clsx('transition-transform duration-200', openSection === 'tpv' && 'rotate-180')} /></>}
           </button>
-          {(openSection === 'tpv' || collapsed) && tpvItems.map(({ label, path, icon: Icon }) => (
-            <NavLink key={path} to={path}>
-              {({ isActive }) => (
-                <div title={collapsed ? label : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined, paddingLeft: collapsed ? undefined : '28px' }}>
-                  <div className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(124,58,237,0.06)' }}>
-                    <Icon size={12} />
-                  </div>
-                  {!collapsed && <span className="truncate text-xs">{label}</span>}
-                  {isActive && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#c4b5fd' }} />}
-                </div>
-              )}
-            </NavLink>
-          ))}
+          {/* A vendor login gets its own two rows, not the governance tree. */}
+          {collapsed
+            ? tpvItems.map(item => <NavLeaf key={item.path} item={item} />)
+            : openSection === 'tpv' && (isVendorLogin
+                ? tpvItems.map(item => <NavLeaf key={item.path} item={item} />)
+                : <ClusterTree groups={TPV_GROUPS} prefix="tpv" />)}
         </div>
 
         {/* ── Transport Module sub-nav ── */}
@@ -1101,6 +1086,39 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
                   </div>
                   {!collapsed && <span className="truncate text-xs">{label}</span>}
                   {isActive && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#fda4af' }} />}
+                </div>
+              )}
+            </NavLink>
+          ))}
+        </div>
+        )}
+
+        {/* -- STOS (Transport) sub-nav -- internal operations only, so a
+            customer is not shown a fleet board that answers 403. -- */}
+        {canUseStos(user) && (
+        <div data-section-block className={clsx('mt-2')}>
+          {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#22d3ee' }}>Transport</p>}
+          <button
+            onClick={() => toggleSection('stos')}
+            data-section="stos"
+            title={collapsed ? 'Transport (STOS)' : ''}
+            className="nav-3d mb-0.5 w-full"
+            style={{ justifyContent: collapsed ? 'center' : undefined, color: '#22d3ee' }}
+          >
+            <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(6,182,212,0.15)' }}>
+              <Truck size={13} style={{ color: '#22d3ee' }} />
+            </div>
+            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Transport (STOS)</span><ChevronDown size={13} className={clsx('transition-transform duration-200', openSection === 'stos' && 'rotate-180')} /></>}
+          </button>
+          {(openSection === 'stos' || collapsed) && STOS_SUB_ITEMS.map(({ label, path, icon: Icon }) => (
+            <NavLink key={path} to={path}>
+              {({ isActive }) => (
+                <div title={collapsed ? label : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined, paddingLeft: collapsed ? undefined : '28px' }}>
+                  <div className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(6,182,212,0.06)' }}>
+                    <Icon size={12} />
+                  </div>
+                  {!collapsed && <span className="truncate text-xs">{label}</span>}
+                  {isActive && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#67e8f9' }} />}
                 </div>
               )}
             </NavLink>

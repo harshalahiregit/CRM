@@ -29,6 +29,10 @@ const EMPTY_FORM = {
  * Payload mapping, shared by this page's save and by NewOrderModal below, so a
  * PO raised from a vendor screen is built exactly like one raised here.
  */
+/* The Add-blank-line button under the line table — the free-text route, for
+   anything the catalog does not carry. */
+const addLineBtn = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 11px', borderRadius: 8, border: '1px dashed var(--border-purple)', background: 'rgba(124,58,237,0.06)', color: '#a78bfa', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, flexShrink: 0 }
+
 const orderLines = (f) => (f.items || []).filter(it => it.description?.trim() || it.catalog_item_id)
 
 const orderPayload = (f) => ({
@@ -430,8 +434,36 @@ function OrderFormModal({ editing, setEditing, saving, admin, onClose, onSave })
     items[i] = ln
     return { ...p, items }
   })
-  const addItem = () => setEditing(p => ({ ...p, items: [...p.items, { ...EMPTY_ITEM }] }))
-  const removeItem = (i) => setEditing(p => ({ ...p, items: p.items.filter((_, idx) => idx !== i) }))
+  // Guarded for the same reason as the request form: the table is the only way
+  // to type a line by hand, so it must never be the thing that throws.
+  const lineItems = Array.isArray(f.items) ? f.items : []
+
+  const addItem = () => setEditing(p => ({ ...p, items: [...(Array.isArray(p.items) ? p.items : []), { ...EMPTY_ITEM }] }))
+  const removeItem = (i) => setEditing(p => ({ ...p, items: (p.items || []).filter((_, idx) => idx !== i) }))
+  /*
+   * Whatever was typed becomes a line.
+   *
+   * The box used to be `disabled` whenever the catalog was empty, so on a fresh
+   * tenant it would not accept a single character — and the only other way in
+   * was a button below a table that a flex-shrink bug had collapsed to nothing.
+   * Between them there was no way at all to put a line on a purchase.
+   *
+   * Now it always accepts typing: a catalog match brings its SKU, unit, rate and
+   * any contract rate, and anything else becomes a free-text line with the words
+   * already in it.
+   */
+  const addTypedLine = () => {
+    const text = catQ.trim()
+    if (!text) return
+    const line = { ...EMPTY_ITEM, description: text }
+    setEditing(p => {
+      const items = Array.isArray(p.items) ? p.items : []
+      const onlyBlank = items.length === 1 && !items[0].description?.trim() && !items[0].catalog_item_id
+      return { ...p, items: onlyBlank ? [line] : [...items, line] }
+    })
+    setCatQ(''); setCatOpen(false)
+  }
+
   const addFromCatalog = (c) => {
     const line = recompute({ ...EMPTY_ITEM, catalog_item_id: c.id, sku: c.sku, description: c.name, unit: c.uom || '', rate: Number(c.default_rate), tax: Number(c.default_tax), qty: 1 })
     setEditing(p => {
@@ -491,10 +523,16 @@ function OrderFormModal({ editing, setEditing, saving, admin, onClose, onSave })
         <div style={{ position: 'relative' }}>
           <Search size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: '#a78bfa' }} />
           <input value={catQ} onChange={e => { setCatQ(e.target.value); setCatOpen(true) }} onFocus={() => setCatOpen(true)} onBlur={() => setTimeout(() => setCatOpen(false), 150)}
-            placeholder={catalog.length ? (f.vendor_id ? 'Pick from catalog — contract rates auto-apply for this vendor…' : 'Pick from catalog — select a vendor first to pull contract rates…') : 'No active catalog items yet'}
-            disabled={!catalog.length} style={{ ...inputStyle, paddingLeft: 32, borderColor: '#7C3AED55' }} />
+            placeholder={catalog.length ? (f.vendor_id ? 'Pick from catalog — contract rates auto-apply for this vendor…' : 'Pick from catalog — select a vendor first to pull contract rates…') : 'Search the catalog, or type an item and add it as a line…'}
+            style={{ ...inputStyle, paddingLeft: 32, borderColor: '#7C3AED55' }} />
         </div>
-        {catOpen && catMatches.length > 0 && (
+        {!catalog.length && (
+          <p style={{ fontSize: 11.5, color: 'var(--text-muted)', margin: '6px 0 0' }}>
+            No catalog items yet — use <strong>Add blank line</strong> to type one by hand, or set items up
+            under <strong>Purchase → Catalog</strong> to get a SKU and automatic contract rates.
+          </p>
+        )}
+        {catOpen && (catMatches.length > 0 || catQ.trim()) && (
           <div className="pr-glass" style={{ position: 'absolute', zIndex: 30, left: 0, right: 0, marginTop: 4, borderRadius: 12, padding: 6, maxHeight: 240, overflowY: 'auto', boxShadow: '0 20px 40px -12px rgba(0,0,0,.5)' }}>
             {catMatches.map(c => {
               const hasContract = !!(rateMap[c.id] || []).length
@@ -511,6 +549,28 @@ function OrderFormModal({ editing, setEditing, saving, admin, onClose, onSave })
                 </button>
               )
             })}
+
+            {/* Nothing in the catalog matches what was typed — so offer the words
+                themselves as a line, rather than a dead dropdown. This is the
+                whole point of leaving the box enabled on an empty catalog. */}
+            {catQ.trim() && catMatches.length === 0 && (
+              <button type="button" onMouseDown={addTypedLine}
+                style={{ display: 'flex', width: '100%', alignItems: 'center', gap: 10, padding: '10px', borderRadius: 9, cursor: 'pointer', background: 'transparent', border: 'none', textAlign: 'left' }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(124,58,237,0.12)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                <Plus size={15} style={{ color: '#a78bfa', flexShrink: 0 }} />
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--text-h)' }}>
+                    Add &ldquo;{catQ.trim()}&rdquo; as a line
+                  </span>
+                  <span style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)' }}>
+                    {catalog.length
+                      ? 'Not in the catalog — added as free text, so no SKU or contract rate'
+                      : 'Catalog is empty — add items under Purchase → Catalog to get SKUs and contract rates'}
+                  </span>
+                </span>
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -521,7 +581,12 @@ function OrderFormModal({ editing, setEditing, saving, admin, onClose, onSave })
             <th key={h + i} style={{ textAlign: i === 0 ? 'left' : i === 6 ? 'center' : 'right', padding: '9px 10px', fontSize: 10, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', borderBottom: '1px solid var(--border)' }}>{h}</th>
           ))}</tr></thead>
           <tbody>
-            {f.items.map((it, i) => (
+            {lineItems.length === 0 && (
+              <tr><td colSpan={7} style={{ padding: '14px 12px', fontSize: 12.5, color: 'var(--text-muted)', textAlign: 'center' }}>
+                No lines yet — pick one from the catalog above, or use Add blank line below.
+              </td></tr>
+            )}
+            {lineItems.map((it, i) => (
               <tr key={i} className="pr-li-row">
                 <td style={{ padding: '6px 8px' }}>
                   <input value={it.description} onChange={e => setItem(i, 'description', e.target.value)} placeholder="Item description" style={{ ...inputStyle, padding: '7px 9px' }} />
@@ -542,14 +607,14 @@ function OrderFormModal({ editing, setEditing, saving, admin, onClose, onSave })
                 <td style={{ padding: '6px 8px', width: 72 }}><input type="number" min="0" max="100" step="any" value={it.tax} disabled={it.contract_rate_applied} onChange={e => setItem(i, 'tax', e.target.value)} style={{ ...inputStyle, padding: '7px 9px', textAlign: 'right', ...(it.contract_rate_applied ? { cursor: 'not-allowed', opacity: 0.8 } : {}) }} /></td>
                 <td style={{ padding: '6px 10px', width: 110, textAlign: 'right', fontWeight: 700, color: 'var(--text-h)', fontSize: 12.5, whiteSpace: 'nowrap' }}>{fmtMoney(lineAmount(it), f.currency)}</td>
                 <td style={{ padding: '6px 8px', width: 36, textAlign: 'center' }}>
-                  <button onClick={() => removeItem(i)} disabled={f.items.length === 1} title="Remove" style={{ background: 'none', border: 'none', cursor: f.items.length === 1 ? 'not-allowed' : 'pointer', color: '#f87171', opacity: f.items.length === 1 ? 0.3 : 1, padding: 4 }}><Trash size={14} /></button>
+                  <button onClick={() => removeItem(i)} disabled={lineItems.length === 1} title="Remove" style={{ background: 'none', border: 'none', cursor: lineItems.length === 1 ? 'not-allowed' : 'pointer', color: '#f87171', opacity: lineItems.length === 1 ? 0.3 : 1, padding: 4 }}><Trash size={14} /></button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
         <div style={{ padding: '8px 12px', borderTop: '1px solid var(--border)' }}>
-          <button onClick={addItem} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, border: '1px dashed var(--border-purple)', background: 'rgba(124,58,237,0.06)', color: '#a78bfa', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}><Plus size={13} /> Add blank line</button>
+          <button type="button" onClick={addItem} style={addLineBtn}><Plus size={13} /> Add blank line</button>
         </div>
       </div>
 

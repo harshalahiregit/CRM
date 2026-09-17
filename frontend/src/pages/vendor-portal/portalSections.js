@@ -19,6 +19,7 @@ import {
   BellRing, ShieldCheck, HardHat, AlertTriangle, BellDot, Package, Truck,
   Award, Gavel, MessageSquare, Share2, AppWindow, LayoutGrid, Store, Boxes,
 } from 'lucide-react'
+import { isWorkspaceUnlocked, isPortalSectionUnlocked } from '@/lib/vendors/workspaceLock'
 
 /**
  * The full nav tree, in display order. Groups map 1:1 to the sections the user
@@ -137,10 +138,23 @@ export function resolveNav({ base, builtRoutes = {}, vendor }) {
   // under two names, so the first one wins and the later duplicate is dropped.
   const seen = new Set()
 
+  /*
+   * Until this vendor is onboarded, the portal is Dashboard + Onboarding.
+   *
+   * Everything else is a screen that cannot contain anything yet — there is no
+   * purchase order to a company that has not been approved, no permit for
+   * workers who have not been registered — so a vendor's first sight of the
+   * system was thirty empty sections around the two they were meant to use.
+   * The same rule the admin vendor workspace applies from the other side of the
+   * glass; see lib/vendors/workspaceLock.
+   */
+  const unlocked = isWorkspaceUnlocked(vendor, vendor?.onboarding)
+
   return PORTAL_NAV
     .map(({ group, items }) => ({
       group,
       items: items
+        .filter(it => isPortalSectionUnlocked(it.key, unlocked))
         .filter(it => !it.gate || it.gate(vendor))
         .map(it => ({ ...it, seg: builtRoutes[it.key] }))
         .filter(it => {

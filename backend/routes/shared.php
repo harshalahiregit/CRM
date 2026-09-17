@@ -45,6 +45,10 @@ Route::middleware(['auth:sanctum', $internal])->prefix('kickoff')->group(functio
     Route::get('/customers', [KickoffMeetingController::class, 'customers']);
     // Staff for the participant picker (§5 identity linking).
     Route::get('/participants', [KickoffMeetingController::class, 'participants']);
+    // The four-column attendance grid: the columns and their companies, then
+    // one company's registered people.
+    Route::get('/parties', [KickoffMeetingController::class, 'parties']);
+    Route::get('/party-people', [KickoffMeetingController::class, 'partyPeople']);
     Route::get('/staff', [KickoffMeetingController::class, 'staff']);
     // Cross-meeting registers (Meeting.docx §8 / §9 / §10). Declared before the
     // /meetings/{kickoffMeeting} wildcard so it cannot swallow them.

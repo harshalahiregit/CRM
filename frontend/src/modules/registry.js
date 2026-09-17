@@ -204,6 +204,25 @@ export const ALL_MODULES = [
       { label: 'Insights',      path: '/app/sire/insights',      icon: '📈' },
     ],
   },
+  {
+    id: 'stos',
+    name: 'Transport (STOS)',
+    description: 'Sangoe Transport OS — fleet and asset control: vehicle status, live telemetry, workshop job cards and running cost.',
+    version: '1.0.0',
+    author: 'Sangoe Team',
+    icon: '🚚',
+    color: 'linear-gradient(135deg,#0891b2,#0e7490)',
+    shadowColor: '#06b6d4',
+    category: 'Operations',
+    features: ['Vehicle Status Grid','Allocation & Readiness','Live Telemetry & Reefer Gauge','Digital Vehicle Passport','Workshop Job Cards','Fuel, Emergency Diesel & FASTag','Telemetry Ingestion API'],
+    basePath: '/app/stos',
+    launchPath: '/app/stos/fleet',
+    navItems: [
+      { label: 'Vehicle Status', path: '/app/stos/fleet',    icon: '🚚' },
+      { label: 'Drivers',        path: '/app/stos/drivers',  icon: '🧑‍✈️' },
+      { label: 'Workshop',       path: '/app/stos/workshop', icon: '🔧' },
+    ],
+  },
 ]
 
 // Persist installed modules in localStorage
