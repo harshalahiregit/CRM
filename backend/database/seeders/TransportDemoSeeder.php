@@ -173,6 +173,11 @@ class TransportDemoSeeder extends Seeder
         $this->attachDemoContainer($tenantId, $actor, (int) $moving->consignment_id, 'sgoe-402215-9', '40ft Reefer');
         $this->attachDemoContainer($tenantId, $actor, (int) $waiting->consignment_id, 'sgoe-771040-2', '20ft Standard');
 
+        // ── PROVE THE DEMO IS WHAT IT CLAIMS, BEFORE ANYONE OPENS IT ────────
+        // If the build drifts from its intent, fail HERE, loudly, rather than
+        // leave a walkthrough that looks broken to whoever opens it next. D-104.
+        $this->assertDemoIsWhatItClaims($tenantId, $moving, $waiting, $vehicles[0], $drivers[0]);
+
         $this->report($tenantId, $cleared, $moving, $waiting);
     }
 
@@ -191,6 +196,27 @@ class TransportDemoSeeder extends Seeder
      * @return array<string,int>
      */
     private function clearPreviousDemo(int $tenantId): array
+    {
+        // ── ALL OR NOTHING, AND THIS IS THE BUG THAT MADE IT SO ─────────────
+        // The clear releases assignments FIRST and deletes the trips LAST.
+        // Without a transaction, anything that stops it in between -- a throw, a
+        // Ctrl-C -- commits the releases and not the deletes, and
+        // AllocationService::release() reverts ALLOCATED -> APPROVED and clears
+        // the vehicle and driver.
+        //
+        // The result is a demo trip sitting at "approved, no vehicle" that
+        // LOOKS like the seeder built it wrong. It was seen once on 2026-09-17,
+        // could not be reproduced by re-running, and was found by simulating
+        // the release half alone: it produces that state exactly. See D-104.
+        //
+        // A demo that fails intermittently in front of a client is the worst
+        // kind of failure, so the reset is now atomic: it either completes or
+        // leaves the previous demo untouched.
+        return DB::transaction(fn () => $this->clearPreviousDemoWithin($tenantId));
+    }
+
+    /** @return array<string,int> */
+    private function clearPreviousDemoWithin(int $tenantId): array
     {
         $trips        = TransportTrip::forTenant($tenantId)->get();
         $consignments = TransportConsignment::forTenant($tenantId)->get();
@@ -417,6 +443,70 @@ class TransportDemoSeeder extends Seeder
         $this->passPretrip($trip->fresh(), $tenantId, $actor);
 
         return $trip->fresh();
+    }
+
+    /**
+     * The seeder checks its own work.
+     *
+     * Everything here is something the demo SAYS is true — the report line
+     * printed at the end claims one trip is "crewed and moving" and the other
+     * "approved, needs a vehicle and a driver". This asserts the database
+     * agrees before that claim is printed.
+     *
+     * It exists because a trip was once found at "approved, no vehicle" when it
+     * should have been crewed, and nothing anywhere said so: the seeder reported
+     * success, the screen reported the truth, and the two disagreed silently.
+     * An intermittent demo failure nobody can reproduce is the worst kind to
+     * meet in front of a client. See D-104.
+     */
+    private function assertDemoIsWhatItClaims(
+        int $tenantId,
+        TransportTrip $moving,
+        TransportTrip $waiting,
+        TransportVehicle $vehicle,
+        TransportDriver $driver,
+    ): void {
+        $moving  = $moving->fresh();
+        $waiting = $waiting->fresh();
+        $problems = [];
+
+        if ($moving->status !== TripStatus::PRETRIP_OK) {
+            $problems[] = "{$moving->trip_number} should be ready to dispatch but is '{$moving->status}'";
+        }
+
+        if ((int) $moving->vehicle_id !== (int) $vehicle->id) {
+            $problems[] = "{$moving->trip_number} should carry vehicle #{$vehicle->id} but carries "
+                .var_export($moving->vehicle_id, true);
+        }
+
+        if ((int) $moving->driver_id !== (int) $driver->id) {
+            $problems[] = "{$moving->trip_number} should carry driver #{$driver->id} but carries "
+                .var_export($moving->driver_id, true);
+        }
+
+        if ($waiting->status !== TripStatus::APPROVED) {
+            $problems[] = "{$waiting->trip_number} should be approved but is '{$waiting->status}'";
+        }
+
+        if ($waiting->vehicle_id !== null || $waiting->driver_id !== null) {
+            $problems[] = "{$waiting->trip_number} should have nothing assigned — it is the trip the "
+                .'demo allocates — but already has one';
+        }
+
+        foreach ([$moving, $waiting] as $trip) {
+            if ($trip->consignment_id === null) {
+                $problems[] = "{$trip->trip_number} has no consignment, so the chain does not read end to end";
+            }
+        }
+
+        if ($problems !== []) {
+            throw new \RuntimeException(
+                "The demo did not come out the way it claims, so it has NOT been published:\n  - "
+                .implode("\n  - ", $problems)
+                ."\n\nRe-run the seeder. If it happens again, something outside the seeder is "
+                .'changing these trips — see D-104.'
+            );
+        }
     }
 
     /**

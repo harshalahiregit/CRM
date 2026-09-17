@@ -2787,3 +2787,67 @@ say which snapshots matter or what a rule version is.
 
 Deferred rather than built: a table whose contents nobody can specify is the D-9 mistake in a
 different shape. **Owner: Product**, to specify what a snapshot is for before one is stored.
+
+---
+
+## D-104 — The demo reset was not atomic, and a half-finished one looks like a broken build
+
+**Raised:** 2026-09-17, chasing a state seen once and not reproducible by re-running.
+**Found by simulation.** **Fixed.**
+
+### What was seen
+
+A demo trip reporting **"approved, no vehicle"** when the seeder had just claimed it was "crewed
+and moving". Re-running produced the correct state twice, so it could not be reproduced, and no
+guess was offered at the time.
+
+### What it actually was
+
+`clearPreviousDemo()` releases assignments FIRST and soft-deletes the trips LAST:
+
+```
+1. AllocationService::release()   ← reverts ALLOCATED → APPROVED, clears vehicle + driver
+2. delete assignment rows
+3. detach containers
+4. delete pre-trip checks, exceptions
+5. delete vehicles, drivers, containers
+6. soft-delete trips, consignments, orders   ← the trip finally goes
+```
+
+**None of it was in a transaction.** Anything stopping it between 1 and 6 — a throw, a Ctrl-C —
+commits the release and never reaches the delete. What survives is a trip that has been reverted
+to `approved` with its vehicle and driver cleared, and never removed.
+
+**That is exactly the observed state**, and this session did interrupt seeder runs.
+
+Proved rather than argued: running only the release half against a clean demo produces
+
+```
+clean run          TRP-…-000001 pretrip_ok  v=1     TRP-…-000002 approved v=-
+release half only  TRP-…-000001 approved    v=-     TRP-…-000002 approved v=-
+```
+
+The first line is what the seeder claims; the second is what was seen.
+
+### Fixed two ways
+
+1. **The reset is atomic.** `clearPreviousDemo()` now runs inside one transaction: it completes,
+   or the previous demo is left untouched. A half-cleared demo is no longer reachable.
+2. **The seeder checks its own work.** `assertDemoIsWhatItClaims()` runs before the success line
+   is printed and throws if either trip is not in the state, or carrying the resources, the report
+   is about to claim. Proven to fire: skipping the pre-trip step produces
+   *"TRP-…-000001 should be ready to dispatch but is 'allocated'"*.
+
+**The second matters more than the first.** An intermittent demo failure that nobody can reproduce
+is the worst kind to meet in front of a client. The seeder now fails loudly at build time instead
+of leaving a walkthrough that looks broken to whoever opens it next.
+
+### And a guard that had to learn a distinction
+
+The D-63 guard banned the string `TripStatus::` from the seeder outright. The new self-check
+legitimately COMPARES against it — checking your own work is the opposite of forcing a state — so
+the guard fired on the fix the day it was written. It now matches the WRITE (`'status' => …`)
+rather than the mention, and is proven to still catch a real assignment.
+
+**A guard that cannot tell a read from a write trains people to weaken it**, which is worse than
+not having one.

@@ -222,13 +222,23 @@ class TransportDemoSeederTest extends TestCase
         $source = file_get_contents(database_path('seeders/TransportDemoSeeder.php'));
         $source = preg_replace('#//.*$#m', '', $source);   // code only, not the story
 
-        $this->assertStringNotContainsString(
-            'TripStatus::',
-            $source,
-            'TransportDemoSeeder references a trip status in code again. Demo trips must reach '
-            .'their state by walking the real transitions (see approvedTrip()). If they cannot, '
-            .'that is a finding to report — not something to route around. See D-63.',
-        );
+        // WRITES, not mentions. The seeder legitimately COMPARES against
+        // TripStatus in assertDemoIsWhatItClaims() — checking its own work is
+        // the opposite of forcing a state. What must never come back is
+        // ASSIGNING one, which is exactly what D-63 was about.
+        //
+        // The first version of this guard banned the string outright and fired
+        // on the self-check the day it was added. A guard that cannot tell a
+        // read from a write trains people to weaken it.
+        preg_match_all("/'status'\\s*=>\\s*[^,\\]\\)]+/", $source, $writes);
+
+        $this->assertSame([], $writes[0], sprintf(
+            "TransportDemoSeeder ASSIGNS a trip status in code again:\n  %s\n\n"
+            ."Demo trips must reach their state by walking the real transitions (see "
+            ."approvedTrip()). If they cannot, that is a finding to report — not something to "
+            .'route around. See D-63.',
+            implode("\n  ", $writes[0]),
+        ));
     }
 
     public function test_the_demo_trips_reached_their_state_through_the_state_machine(): void
