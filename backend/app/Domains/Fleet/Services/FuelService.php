@@ -3,6 +3,7 @@
 namespace App\Domains\Fleet\Services;
 
 use App\Domains\Fleet\Events\EmergencyFuelIssued;
+use App\Domains\Fleet\Integration\TripCostPublisher;
 use App\Domains\Fleet\Models\FuelTransaction;
 use App\Domains\Fleet\Models\Vehicle;
 use App\Exceptions\BusinessException;
@@ -69,6 +70,10 @@ class FuelService
                 'variance_note'   => $consumption['note'],
             ]);
         });
+
+        // C-06 — the trip's P&L hears about this fill. Never breaks the entry:
+        // a driver's diesel is a fact whether or not Finance heard about it yet.
+        app(TripCostPublisher::class)->publishFuel($companyId, $row);
 
         if ($isEmergency) {
             EmergencyFuelIssued::dispatch($vehicle, $row->id, (float) $row->amount, $recoverable, $row->emergency_reason);

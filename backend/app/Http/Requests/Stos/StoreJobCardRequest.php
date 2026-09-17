@@ -17,6 +17,8 @@ class StoreJobCardRequest extends FormRequest
     {
         return [
             'vehicle_id'      => 'required|integer|min:1',
+            // Dispatch owns trips — indexed, no FK, no existence check here.
+            'trip_id'         => 'nullable|integer|min:1',
             // Blank is allowed: the service generates JC-YYYY-NNNN so nobody
             // has to invent a numbering scheme at the counter.
             'job_card_number' => 'nullable|string|max:40',

@@ -229,16 +229,9 @@ const SIRE_SUB_ITEMS = [
 // operations, one for fleet — and nothing on screen told them apart. They are
 // now one section; see TRANSPORT_SUB_ITEMS.
 //
-// Kept as a named list rather than inlined so the fleet screens stay visibly a
-// group, and so `canUseStos` is applied in one place instead of three.
-const STOS_SUB_ITEMS = [
-  // Renamed from 'Vehicle Status' and 'Drivers'. Both collided with the
-  // operations screens once the two menus merged, and two identical labels in
-  // one menu is worse than the two identical sections were.
-  { label: 'Fleet Status',     path: '/app/stos/fleet',    icon: Truck,     when: canUseStos },
-  { label: 'Driver Directory', path: '/app/stos/drivers',  icon: UserRound, when: canUseStos },
-  { label: 'Workshop',         path: '/app/stos/workshop', icon: Wrench,    when: canUseStos },
-]
+// As of 2026-09-17 the DATA is merged too (D-62): one `vehicles` master, one
+// driver directory. The fleet screens live in TRANSPORT_SUB_ITEMS below, each
+// carrying its own `canUseStos` gate.
 
 const HELPDESK_SUB_ITEMS = [
   { label: 'Analytics', path: '/app/helpdesk/analytics', icon: BarChart2 },
@@ -311,19 +304,13 @@ const TRANSPORT_SUB_ITEMS = [
   { label: 'Trips',            path: '/app/transport/trips',    icon: Truck },
   { label: 'Consignments',     path: '/app/transport/consignments', icon: Boxes },
   { label: 'Containers',       path: '/app/transport/containers', icon: Container },
-  { label: 'Vehicles',         path: '/app/transport/vehicles', icon: Truck },
-  { label: 'Drivers',          path: '/app/transport/drivers',  icon: Users },
-  // The fleet screens, folded in so Transport is ONE entry in the sidebar.
-  // Each carries its own `when`, so a customer still never sees a fleet board
-  // that would answer 403 — the gate moved from the section to the items and
-  // did not weaken.
-  //
-  // NOTE for whoever reconciles this: `Vehicles`/`Drivers` above read
-  // transport_vehicles/transport_drivers, which allocation and pre-trip checks
-  // depend on; `Fleet Status`/`Driver Directory` read the newer fleet tables.
-  // Two systems, both live. Merging the MENUS does not merge the DATA, and that
-  // decision is still open.
-  ...STOS_SUB_ITEMS,
+  // Fleet's screens (Person 2), merged into this one rail on 2026-09-17 — D-62.
+  // They replaced P1's `Vehicles`/`Drivers` placeholders at the same position,
+  // and the data behind them is now one master, not two. Each keeps its own
+  // `when`, so a customer never sees a fleet board that would answer 403.
+  { label: 'Fleet',            path: '/app/transport/fleet',    icon: Truck,      when: canUseStos },
+  { label: 'Drivers',          path: '/app/transport/drivers',  icon: UserRound,  when: canUseStos },
+  { label: 'Workshop',         path: '/app/transport/workshop', icon: Wrench,     when: canUseStos },
 ]
 
 const SUBMODULE_SEARCH = [
@@ -346,7 +333,7 @@ const SUBMODULE_SEARCH = [
   // Same omission one level down: "My Work", "Releases" and "Workshop" are real
   // screens somebody will search for by name.
   ...SIRE_SUB_ITEMS.map(i => ({ ...i, module: 'SIRE', when: canUseSire })),
-  // STOS_SUB_ITEMS is NOT spread again here — TRANSPORT_SUB_ITEMS above now
+  // The fleet screens are already part of TRANSPORT_SUB_ITEMS above, which
   // contains it, and listing it twice would show every fleet screen twice in
   // search results. Each item carries its own `when: canUseStos`, which the
   // spread preserves.

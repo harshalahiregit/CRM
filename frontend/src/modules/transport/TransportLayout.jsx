@@ -1,5 +1,5 @@
 import ModuleShell from '@/components/layout/ModuleShell'
-import { Package, Truck, Users, Boxes, Container,
+import { Package, Truck, Users, Boxes, Container, Wrench,
 } from 'lucide-react'
 
 /**
@@ -48,10 +48,13 @@ const TRANSPORT_ITEMS = [
   // STOS-CTD §8 — the commercial shipment, distinct from the container.
   { label: 'Consignments',     path: '/app/transport/consignments', icon: Boxes },
   { label: 'Containers',       path: '/app/transport/containers',   icon: Container },
-  // Master data (SNG-TRN-003 / 004). The pages are Person 2's domain under
-  // TM-001 §8; this is only their nav entry, which belongs to the module shell.
-  { label: 'Vehicles',         path: '/app/transport/vehicles',     icon: Truck },
+  // Master data — Person 2's Fleet, merged in 2026-09-17 (D-62). These were
+  // `/transport/vehicles` and `/transport/drivers`, P1's placeholders under
+  // TEAM-CONTRACTS §1a; Fleet's screens replace them at the same rail position
+  // so the nav a user learned does not move under them.
+  { label: 'Fleet',            path: '/app/transport/fleet',        icon: Truck },
   { label: 'Drivers',          path: '/app/transport/drivers',      icon: Users },
+  { label: 'Workshop',         path: '/app/transport/workshop',     icon: Wrench },
 ]
 
 export default function TransportLayout() {
