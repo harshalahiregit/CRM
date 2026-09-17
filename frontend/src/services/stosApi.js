@@ -154,6 +154,21 @@ export const TYRE_POSITIONS = [
 
 export const TYRE_POSITION_LABEL = (p) => String(p || '').replace(/_/g, ' ')
 
+/**
+ * T-01 — mirrors `Vehicle::FUEL_TYPES`. The blank first option is deliberate:
+ * fuel type is nullable, and forcing "diesel" on a vehicle nobody recorded
+ * would be a guess written into the register as a fact.
+ */
+export const FUEL_TYPES = [
+  { value: '',         label: 'Not recorded' },
+  { value: 'diesel',   label: 'Diesel' },
+  { value: 'petrol',   label: 'Petrol' },
+  { value: 'cng',      label: 'CNG' },
+  { value: 'lng',      label: 'LNG' },
+  { value: 'electric', label: 'Electric' },
+  { value: 'hybrid',   label: 'Hybrid' },
+]
+
 export const JOB_STATUSES = [
   { value: 'open',           label: 'Open',           open: true },
   { value: 'in_progress',    label: 'In progress',    open: true },

@@ -147,7 +147,27 @@ export default function VehiclePassportView() {
               <Fact label="Engine" value={vehicle.engine_number} />
               <Fact label="GPS device" value={vehicle.gps_device_id} />
               <Fact label="Ownership" value={vehicle.ownership_type} />
+              {/* T-01 — came over with the D-62 union and had nowhere to show. */}
+              <Fact label="Fleet no." value={vehicle.fleet_number} />
+              <Fact label="Make / model"
+                value={[vehicle.manufacturer, vehicle.model, vehicle.variant].filter(Boolean).join(' ')} />
+              <Fact label="Year" value={vehicle.manufacturing_year} />
+              <Fact label="Fuel" value={vehicle.fuel_type} />
+              <Fact label="Payload"
+                value={vehicle.capacity_tonnes == null ? null : `${Number(vehicle.capacity_tonnes).toFixed(2)} t`} />
+              <Fact label="Branch" value={vehicle.branch} />
+              <Fact label="Purchased" value={vehicle.purchase_date?.slice(0, 10)} />
             </div>
+
+            {/* Not cosmetic: Operations matches an order's required capacity
+                against this, so a blank one is a vehicle allocation cannot see. */}
+            {vehicle.capacity_tonnes == null && (
+              <p className="text-[10px] mt-2 flex items-start gap-1.5" style={{ color: 'var(--color-warning-500, #f59e0b)' }}>
+                <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+                No payload recorded — allocation cannot match this vehicle to an order that
+                specifies a required capacity.
+              </p>
+            )}
             {/* Driver comes from Dispatch, which owns trips and crew. Saying so
                 beats an empty field labelled "Current driver". */}
             <p className="text-[10px] mt-2" style={{ color: 'var(--text-muted)' }}>

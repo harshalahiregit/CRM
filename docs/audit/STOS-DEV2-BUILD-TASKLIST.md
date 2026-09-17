@@ -101,7 +101,7 @@ when Dispatch does. `MAINTENANCE_DUE` and `BREAKDOWN` are ours and are missing. 
 - [x] **T-00** `vehicles` table, soft deletes, unique plate per company · *VehicleOnboardingTest*
 - [x] **T-00b** Onboarding creates the vehicle **and** initialises its `vehicle_live_status` row in one transaction, so ingestion is a pure primary-key update for the asset's life
 - [x] **T-00c** Retire = soft delete, blocked while job cards are open, frees the genset, keeps fuel/job history
-- [ ] **T-01** Add `capacity_tons DECIMAL(8,2)` to `vehicles`; add to the onboarding form, the request rules and the passport identity block
+- [x] **T-01** Payload and identity are reachable. The D-62 union put `capacity_tonnes`, make/model/variant, year, purchase date, fuel type, branch and fleet number on `vehicles`; none were fillable, so every vehicle onboarded through Fleet came out blank — and a blank `capacity_tonnes` is invisible to Operations' capacity matching. Now in the model, the request rules, the onboarding form and the passport, with the passport saying so when payload is missing · *VehicleIdentityTest*
 - [ ] **T-02** ⚠️ Vehicle-type vocabulary. Decide: adopt the spec's four uppercase values, or keep the seven lowercase ones. Adopting means a migration, a data map (`truck→CONTAINER_BODY`?), and touching the seeder, fuel benchmarks, tests and UI. **Blocked on a team answer — Devs 1 and 3 send these strings across the boundary.**
 - [ ] **T-03** Add `FINANCED` and `CONTRACTED` ownership values; decide whether `market` folds into `CONTRACTED`
 - [ ] **T-04** Add `MAINTENANCE_DUE` and `BREAKDOWN` vehicle states, with the rules that set them (service interval due; a breakdown job card raised on the road)

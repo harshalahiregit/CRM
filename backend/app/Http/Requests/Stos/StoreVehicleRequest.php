@@ -64,6 +64,22 @@ class StoreVehicleRequest extends FormRequest
             ],
             'engine_number' => 'nullable|string|max:50',
 
+            // T-01 — identity and payload. `capacity_tonnes` is the one that
+            // matters beyond the passport: Operations' eligibility engine
+            // matches it against an order's required payload, so a blank one
+            // makes the vehicle invisible to capacity-based allocation.
+            'fleet_number'       => 'nullable|string|max:40',
+            'manufacturer'       => 'nullable|string|max:100',
+            'model'              => 'nullable|string|max:100',
+            'variant'            => 'nullable|string|max:100',
+            // Bounded rather than free: a year outside this is a typo, and a
+            // typo here silently ages the fleet in every report that uses it.
+            'manufacturing_year' => 'nullable|integer|min:1950|max:'.(date('Y') + 1),
+            'purchase_date'      => 'nullable|date|before_or_equal:today',
+            'fuel_type'          => ['nullable', Rule::in(Vehicle::FUEL_TYPES)],
+            'branch'             => 'nullable|string|max:100',
+            'capacity_tonnes'    => 'nullable|numeric|min:0|max:999999',
+
             'gps_device_id' => [
                 'nullable', 'string', 'max:64',
                 Rule::unique('vehicles', 'gps_device_id')
