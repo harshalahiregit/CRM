@@ -176,6 +176,23 @@ class SireServiceProvider extends ServiceProvider
             }
 
             $event->withoutOverlapping()->runInBackground();
+
+            // The duplicate index. Without it, duplicate detection and
+            // classification have no neighbours to reason about and abstain on
+            // every issue -- which looks exactly like "nothing similar exists"
+            // and is the difference between a backlog of forty and a backlog of
+            // forty that is really twelve.
+            //
+            // Hourly, not every fifteen minutes: it is a rebuild of derived
+            // rows, nobody is waiting on it, and it reads every open issue.
+            // Skipped entirely when AI is off for every tenant, so a workspace
+            // that never enables it pays nothing.
+            if (config('sire.schedule.index_issues', true)) {
+                $schedule->command('sire:index-issues')
+                    ->hourly()
+                    ->withoutOverlapping()
+                    ->runInBackground();
+            }
         });
     }
 }

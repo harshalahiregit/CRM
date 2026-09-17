@@ -16,6 +16,7 @@ import DashboardTiles from '../components/DashboardTiles';
 import IssueFilters from '../components/IssueFilters';
 import IssueTable from '../components/IssueTable';
 import SavedViews from '../components/SavedViews';
+import DeveloperExport from '../components/DeveloperExport';
 
 const EMPTY = {};
 
@@ -95,6 +96,10 @@ export default function DashboardPage() {
             onApply={(view) => { changeFilters(view?.filters ?? EMPTY); changeScope(view?.scope ?? 'all'); }}
           />
         </div>
+
+        {/* Take the whole filtered backlog out as one brief. Sits with the
+            filters because what it exports IS what the filters are showing. */}
+        <DeveloperExport modules={optionsQuery.data?.modules ?? []} scope={scope} />
       </div>
 
       <div

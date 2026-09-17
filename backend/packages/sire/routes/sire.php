@@ -53,6 +53,7 @@ use Sire\Http\Controllers\SireReleaseNotesController;
 use Sire\Http\Controllers\SireRootCauseController;
 use Sire\Http\Controllers\SireTestCaseController;
 use Sire\Http\Controllers\SireCustomerController;
+use Sire\Http\Controllers\SireExportController;
 use Sire\Http\Controllers\SireTimelineController;
 use Sire\Http\Controllers\SireWatcherController;
 
@@ -68,6 +69,13 @@ Route::middleware(\Sire\Http\SireRouteMiddleware::stack())
     // The three lists the global Report Issue form needs, and nothing else.
     // Kept off the dashboard options endpoint: the button is on every screen
     // for every staff member, and that payload carries filter-bar rosters.
+    // ---- developer export ---------------------------------------------------
+    // The backlog as one markdown brief, and the fixes back in one call. Both
+    // exist to remove the round trip: forty issues is eighty page loads, and the
+    // fixing was never the slow part. `sire.export` is finally enforced here.
+    Route::get('export', [SireExportController::class, 'markdown']);
+    Route::post('reports/transitions', [SireExportController::class, 'transitions']);
+
     Route::get('report-options', [ReportController::class, 'options']);
     Route::post('reports', [ReportController::class, 'store']);
     Route::get('reports/{report}', [ReportController::class, 'show']);

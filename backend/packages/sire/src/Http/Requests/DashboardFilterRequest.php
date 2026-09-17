@@ -27,7 +27,20 @@ class DashboardFilterRequest extends FormRequest
             // See the note in SireDashboardService::applyFilters().
             'tenant_id' => ['nullable', 'integer'],
 
-            'module'      => ['nullable', 'string', 'max:64'],
+            // One module or several. The register filters to one at a time; the
+            // export is usually "give me Sales and Inventory", because that is
+            // how somebody decides what to spend an afternoon on.
+            'module'      => ['nullable'],
+            'module.*'    => ['string', 'max:64'],
+
+            // Export only. The register pages; a brief does not, so it needs a
+            // ceiling of its own or one call can try to render the whole history.
+            'limit'       => ['nullable', 'integer', 'min:1', 'max:500'],
+
+            // Export only. Screenshots ride inside the brief as data URIs so it
+            // survives being pasted anywhere; images=0 gives links instead.
+            'images'      => ['nullable', 'boolean'],
+            'download'    => ['nullable', 'boolean'],
             'type'        => ['nullable', 'string', 'max:48'],
             'severity_id' => ['nullable', 'integer', Rule::exists('sire_severities', 'id')->where('tenant_id', $tenantId)],
             'assignee_id' => ['nullable', 'integer', Rule::exists('users', 'id')->where('tenant_id', $tenantId)],
