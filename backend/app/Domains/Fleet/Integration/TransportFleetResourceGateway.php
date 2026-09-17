@@ -48,7 +48,10 @@ class TransportFleetResourceGateway implements FleetResourceGateway
      * workshop has not released it — the release gate is the only thing that
      * puts that vehicle back on the road, and it checks compliance and QC first.
      */
-    private const IMMOVABLE = ['in_maintenance', 'retired'];
+    // `breakdown` joins these: a truck on the hard shoulder is not dispatchable
+    // however confident the trip board is, and only a workshop release — which
+    // checks QC and compliance — puts it back.
+    private const IMMOVABLE = ['in_maintenance', 'breakdown', 'retired'];
 
     public function markDispatched(
         TransportTrip $trip,

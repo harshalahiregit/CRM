@@ -88,7 +88,7 @@ class VehicleHealthEvaluator
             return 'compliance_blocked';
         }
 
-        if ($vehicle->status === 'in_maintenance' || $openJobs > 0) {
+        if (in_array($vehicle->status, ['in_maintenance', 'breakdown'], true) || $openJobs > 0) {
             return 'maintenance';
         }
 
@@ -174,7 +174,7 @@ class VehicleHealthEvaluator
 
     private function workshopIssue(Vehicle $vehicle, int $openJobs): ?array
     {
-        if ($openJobs < 1 && $vehicle->status !== 'in_maintenance') {
+        if ($openJobs < 1 && ! in_array($vehicle->status, ['in_maintenance', 'breakdown'], true)) {
             return null;
         }
 

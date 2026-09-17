@@ -51,7 +51,14 @@ class MaintenanceService
 
             // The vehicle comes off the road with the card. Doing this here and
             // not in the controller is what keeps the two in step.
-            $vehicle->update(['status' => 'in_maintenance']);
+            //
+            // T-04 — a card that names a TRIP is a breakdown on the road, not a
+            // booked workshop slot. A planner reading "in the workshop" assumes
+            // a return time; a breakdown means a load is stranded somewhere and
+            // somebody is arranging recovery. Same card, different fact.
+            $vehicle->update([
+                'status' => $job->trip_id ? Vehicle::STATUS_BREAKDOWN : 'in_maintenance',
+            ]);
 
             Log::channel('stos')->info('Job card opened', [
                 'company_id' => $companyId, 'user_id' => $userId,

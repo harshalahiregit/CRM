@@ -80,6 +80,15 @@ class StoreVehicleRequest extends FormRequest
             'branch'             => 'nullable|string|max:100',
             'capacity_tonnes'    => 'nullable|numeric|min:0|max:999999',
 
+            // T-04 — the service schedule. Either clock, neither or both:
+            // trucks are serviced on distance, trailers often on time, and some
+            // fleets use both and take whichever comes first. No defaults —
+            // inventing a schedule nobody set would flag the whole fleet.
+            'service_interval_km'   => 'nullable|integer|min:100|max:1000000',
+            'service_interval_days' => 'nullable|integer|min:1|max:3650',
+            'last_service_odometer' => 'nullable|numeric|min:0|max:9999999',
+            'last_service_on'       => 'nullable|date|before_or_equal:today',
+
             'gps_device_id' => [
                 'nullable', 'string', 'max:64',
                 Rule::unique('vehicles', 'gps_device_id')

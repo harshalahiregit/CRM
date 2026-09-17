@@ -44,7 +44,24 @@ class Vehicle extends Model
      */
     public const STATUS_IN_OPERATION = 'in_operation';
 
-    public const STATUSES   = ['active', 'in_operation', 'in_maintenance', 'idle', 'retired'];
+    /**
+     * T-04 — `breakdown` is a state, `service due` deliberately is not.
+     *
+     * A truck stopped on the hard shoulder is not the same as one in a workshop
+     * bay: the first means a load is stranded and somebody is arranging
+     * recovery. Operations needs to tell them apart.
+     *
+     * Service-due is NOT here. A truck past its interval is still roadworthy,
+     * and writing that into `status` would drop it out of allocation — a missed
+     * oil change silently taking a truck off the road. It is derived by
+     * ServiceScheduleEvaluator and warns instead.
+     */
+    public const STATUS_BREAKDOWN = 'breakdown';
+
+    public const STATUSES   = ['active', 'in_operation', 'in_maintenance', 'breakdown', 'idle', 'retired'];
+
+    /** States in which the vehicle is off the road and cannot be dispatched. */
+    public const OFF_ROAD_STATES = ['in_maintenance', 'breakdown', 'retired'];
     public const COMPLIANCE = ['compliant', 'expiring', 'expired', 'blocked'];
 
     protected $fillable = [
@@ -64,6 +81,10 @@ class Vehicle extends Model
         'fuel_type',
         'branch',
         'capacity_tonnes',
+        'service_interval_km',
+        'service_interval_days',
+        'last_service_odometer',
+        'last_service_on',
         'vehicle_type',
         'ownership_type',
         'chassis_number',
@@ -85,6 +106,10 @@ class Vehicle extends Model
         'manufacturing_year' => 'integer',
         'purchase_date'      => 'date',
         'capacity_tonnes'    => 'decimal:2',
+        'service_interval_km'   => 'integer',
+        'service_interval_days' => 'integer',
+        'last_service_odometer' => 'decimal:1',
+        'last_service_on'       => 'date',
         'registration_expiry' => 'date',
         'insurance_expiry'    => 'date',
         'fitness_expiry'      => 'date',

@@ -28,6 +28,7 @@ const EMPTY = {
   fleet_number: '', manufacturer: '', model: '', variant: '',
   manufacturing_year: '', purchase_date: '', fuel_type: '', branch: '',
   capacity_tonnes: '', genset_serial: '',
+  service_interval_km: '', service_interval_days: '', last_service_odometer: '', last_service_on: '',
   registration_expiry: '', insurance_expiry: '', fitness_expiry: '', permit_expiry: '', puc_expiry: '',
   compliance_hold: false, compliance_hold_reason: '',
 }
@@ -59,6 +60,10 @@ export default function VehicleFormModal({ open, onClose, vehicle = null, onSave
           fuel_type: vehicle.fuel_type || '',
           branch: vehicle.branch || '',
           capacity_tonnes: vehicle.capacity_tonnes ?? '',
+          service_interval_km: vehicle.service_interval_km ?? '',
+          service_interval_days: vehicle.service_interval_days ?? '',
+          last_service_odometer: vehicle.last_service_odometer ?? '',
+          last_service_on: vehicle.last_service_on?.slice(0, 10) || '',
           registration_expiry: vehicle.registration_expiry?.slice(0, 10) || '',
           insurance_expiry: vehicle.insurance_expiry?.slice(0, 10) || '',
           fitness_expiry: vehicle.fitness_expiry?.slice(0, 10) || '',
@@ -90,9 +95,10 @@ export default function VehicleFormModal({ open, onClose, vehicle = null, onSave
       // eligibility engine will never match to an order.
       ;['fleet_number', 'manufacturer', 'model', 'variant', 'fuel_type', 'branch']
         .forEach((k) => { payload[k] = form[k]?.trim() || null })
-      ;['manufacturing_year', 'capacity_tonnes']
+      ;['manufacturing_year', 'capacity_tonnes', 'service_interval_km', 'service_interval_days', 'last_service_odometer']
         .forEach((k) => { payload[k] = form[k] === '' || form[k] == null ? null : Number(form[k]) })
       payload.purchase_date = form.purchase_date || null
+      payload.last_service_on = form.last_service_on || null
       // An empty date is "not recorded", not an empty string the API must parse.
       EXPIRY_DOCUMENTS.forEach(({ field }) => { payload[field] = form[field] || null })
       // Not a column on `vehicles` — a genset is its own asset. Stripped from
@@ -261,6 +267,37 @@ export default function VehicleFormModal({ open, onClose, vehicle = null, onSave
             <Field label="Purchased" error={fieldErrors.purchase_date}>
               <input type="date" value={form.purchase_date}
                 onChange={(e) => set('purchase_date', e.target.value)}
+                className={inputClass} style={inputStyle} />
+            </Field>
+          </div>
+
+          {/* T-04 — the service schedule. Either clock, neither or both: trucks
+              are serviced on distance, trailers often on time. Blank means no
+              schedule, and the passport reports that as "unknown" rather than
+              pretending the truck is freshly serviced. */}
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Service every (km)" error={fieldErrors.service_interval_km}>
+              <input type="number" step="100" inputMode="numeric" value={form.service_interval_km}
+                onChange={(e) => set('service_interval_km', e.target.value)}
+                placeholder="10000" className={inputClass} style={inputStyle} />
+            </Field>
+            <Field label="or every (days)" error={fieldErrors.service_interval_days}>
+              <input type="number" step="1" inputMode="numeric" value={form.service_interval_days}
+                onChange={(e) => set('service_interval_days', e.target.value)}
+                placeholder="180" className={inputClass} style={inputStyle} />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Odometer at last service" error={fieldErrors.last_service_odometer}
+              hint="Without this there is nothing to measure the interval from">
+              <input type="number" step="0.1" inputMode="decimal" value={form.last_service_odometer}
+                onChange={(e) => set('last_service_odometer', e.target.value)}
+                placeholder="100000" className={inputClass} style={inputStyle} />
+            </Field>
+            <Field label="Last serviced on" error={fieldErrors.last_service_on}>
+              <input type="date" value={form.last_service_on}
+                onChange={(e) => set('last_service_on', e.target.value)}
                 className={inputClass} style={inputStyle} />
             </Field>
           </div>

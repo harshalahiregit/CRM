@@ -22,8 +22,10 @@ use Illuminate\Support\Collection;
  */
 class VehicleAllocationService
 {
-    public function __construct(private DriverService $drivers)
-    {
+    public function __construct(
+        private DriverService $drivers,
+        private ServiceScheduleEvaluator $schedule,
+    ) {
     }
 
     /**
@@ -51,6 +53,15 @@ class VehicleAllocationService
         // verdict already computed by DriverService — one definition of
         // "expired", shared with the drivers board and the passport.
         $assignedDrivers = $this->drivers->forVehicles($vehicles->pluck('id')->all(), $companyId);
+
+        // T-04 — loaded in bulk. The evaluator can find a vehicle's odometer on
+        // its own, but doing that inside the loop would be one query per truck
+        // on the busiest read in the module.
+        $odometers = FuelTransaction::forCompany($companyId)
+            ->whereIn('vehicle_id', $vehicles->pluck('id'))
+            ->whereNotNull('odometer')
+            ->selectRaw('vehicle_id, MAX(odometer) as reading')
+            ->groupBy('vehicle_id')->pluck('reading', 'vehicle_id');
 
         $pickupLat = isset($filters['pickup_lat']) ? (float) $filters['pickup_lat'] : null;
         $pickupLng = isset($filters['pickup_lng']) ? (float) $filters['pickup_lng'] : null;
@@ -81,7 +92,18 @@ class VehicleAllocationService
             $recentKm = (float) ($utilisation[$vehicle->id] ?? 0);
 
             $driver = $assignedDrivers[$vehicle->id] ?? null;
-            $driverFlags = $this->driverFlags($driver);
+
+            // A service verdict WARNS; it never excludes. A truck past its
+            // interval is still roadworthy, and taking it off the road over an
+            // oil change is the wrong trade — see ServiceScheduleEvaluator.
+            $odometer = isset($odometers[$vehicle->id]) ? (float) $odometers[$vehicle->id] : null;
+            $service = $this->schedule->evaluate($vehicle, $odometer);
+
+            $flags = $this->driverFlags($driver);
+
+            if ($serviceFlag = $this->schedule->flag($vehicle, $odometer)) {
+                $flags[] = $serviceFlag;
+            }
 
             $scores = [
                 'proximity'   => $this->proximityScore($distanceKm),
@@ -115,7 +137,8 @@ class VehicleAllocationService
                 // Driver compliance travels beside vehicle compliance, so a
                 // planner sees both halves of "can this go out today".
                 'driver'          => $driver,
-                'flags'           => $driverFlags,
+                'flags'           => $flags,
+                'service'         => $service,
             ];
         }
 
@@ -172,6 +195,18 @@ class VehicleAllocationService
 
         if ($vehicle->status === 'in_maintenance') {
             $blockers[] = $this->blocker('in_maintenance', 'Currently in the workshop.', 'The vehicle is marked under maintenance.', 'Workshop supervisor');
+        }
+
+        // T-04 — kept separate from in_maintenance on purpose. A planner
+        // reading "in the workshop" assumes a slot and a return time; a
+        // breakdown means the truck is somewhere on a road with a load on it.
+        if ($vehicle->status === Vehicle::STATUS_BREAKDOWN) {
+            $blockers[] = $this->blocker(
+                'broken_down',
+                'Broken down on the road.',
+                'A breakdown job card is open against this vehicle.',
+                'Operations control tower'
+            );
         }
 
         // PLN-006 — prevent double allocation. A vehicle that departed on

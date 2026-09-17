@@ -72,7 +72,7 @@ export default function VehiclePassportView() {
     )
   }
 
-  const { vehicle, health, live, signal, gensets = [], telemetry = [], fuel, tolls, workshop, compliance, urea, tyres, driver } = data
+  const { vehicle, health, live, signal, gensets = [], telemetry = [], fuel, tolls, workshop, compliance, urea, tyres, driver, service } = data
 
   return (
     <div className="max-w-5xl space-y-4">
@@ -159,6 +159,18 @@ export default function VehiclePassportView() {
               <Fact label="Branch" value={vehicle.branch} />
               <Fact label="Purchased" value={vehicle.purchase_date?.slice(0, 10)} />
             </div>
+
+            {/* T-04 — a warning, never a block. The truck stays allocatable; it
+                just wants a slot booked before somebody discovers it. */}
+            {service && service.state !== 'ok' && (
+              <p className="text-[10px] mt-2 flex items-start gap-1.5"
+                style={{ color: service.state === 'overdue' ? 'var(--color-danger-500)' : 'var(--text-muted)' }}>
+                <Wrench size={11} className="mt-0.5 shrink-0" />
+                {service.state === 'unknown'
+                  ? service.message
+                  : `Service ${service.state === 'overdue' ? 'overdue' : 'due soon'} — ${service.message}`}
+              </p>
+            )}
 
             {/* Not cosmetic: Operations matches an order's required capacity
                 against this, so a blank one is a vehicle allocation cannot see. */}
