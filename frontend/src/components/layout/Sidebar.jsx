@@ -58,14 +58,16 @@ const MODULE_SEARCH = [
   { label: 'TPV',        path: '/app/tpv/dashboard',    icon: UserCheck,       kw: 'third party vendor workforce' },
   { label: 'Customers',  path: '/app/customers',        icon: Building2,       kw: 'clients directory accounts' },
   { label: 'Compliance', path: '/app/tpv/compliance',   icon: ShieldCheck,     kw: 'hsse checklists' },
-  { label: 'Transport',  path: '/app/transport/orders', icon: Truck,          kw: 'stos trips orders logistics haulage' },
+  { label: 'Transport',  path: '/app/transport/orders', icon: Truck,          kw: 'stos trips orders logistics haulage fleet vehicles drivers workshop telematics' },
 
   // Added to the nav but never to this list, so they were unreachable by
   // search while sitting in plain sight in the sidebar. `when` gates a result
   // the same way the nav gates the section it belongs to -- offering somebody a
   // destination that answers 403 is worse than not offering it.
   { label: 'SIRE',       path: '/app/sire/dashboard',   icon: Bug,             kw: 'issues defects bugs engineering quality releases', when: canUseSire },
-  { label: 'Transport',  path: '/app/stos/fleet',       icon: Truck,           kw: 'stos fleet vehicles drivers workshop telematics', when: canUseStos },
+  // The second 'Transport' entry that used to sit here pointed at /app/stos/fleet
+  // and was indistinguishable from the one above — same label, same Truck icon.
+  // Its keywords moved up so a search for "fleet" or "telematics" still lands.
   { label: 'Settings',   path: '/app/settings',         icon: Settings,        kw: 'preferences configuration company profile' },
   { label: 'Staff Management', path: '/app/admin/staff', icon: UserCog,        kw: 'users team roles permissions staff admin', when: (u) => u?.role === 'admin' },
 ]
@@ -219,13 +221,23 @@ const SIRE_SUB_ITEMS = [
   { label: 'Insights',      path: '/app/sire/insights',      icon: BarChart3 },
 ]
 
-// STOS (Sangoe Transport OS) - the FLEET & ASSET control tower. Its own section
-// rather than a child of Inventory: a vehicle is not stock, it is an operating
-// asset with papers, a device and a workshop history.
+// STOS (Sangoe Transport OS) - the FLEET & ASSET control tower. A vehicle is not
+// stock, it is an operating asset with papers, a device and a workshop history.
+//
+// These are no longer a section of their own. There used to be TWO top-level
+// entries both labelled "Transport" with the same Truck icon — one for
+// operations, one for fleet — and nothing on screen told them apart. They are
+// now one section; see TRANSPORT_SUB_ITEMS.
+//
+// Kept as a named list rather than inlined so the fleet screens stay visibly a
+// group, and so `canUseStos` is applied in one place instead of three.
 const STOS_SUB_ITEMS = [
-  { label: 'Vehicle Status', path: '/app/stos/fleet',    icon: Truck },
-  { label: 'Drivers',        path: '/app/stos/drivers',  icon: UserRound },
-  { label: 'Workshop',       path: '/app/stos/workshop', icon: Wrench },
+  // Renamed from 'Vehicle Status' and 'Drivers'. Both collided with the
+  // operations screens once the two menus merged, and two identical labels in
+  // one menu is worse than the two identical sections were.
+  { label: 'Fleet Status',     path: '/app/stos/fleet',    icon: Truck,     when: canUseStos },
+  { label: 'Driver Directory', path: '/app/stos/drivers',  icon: UserRound, when: canUseStos },
+  { label: 'Workshop',         path: '/app/stos/workshop', icon: Wrench,    when: canUseStos },
 ]
 
 const HELPDESK_SUB_ITEMS = [
@@ -301,6 +313,17 @@ const TRANSPORT_SUB_ITEMS = [
   { label: 'Containers',       path: '/app/transport/containers', icon: Container },
   { label: 'Vehicles',         path: '/app/transport/vehicles', icon: Truck },
   { label: 'Drivers',          path: '/app/transport/drivers',  icon: Users },
+  // The fleet screens, folded in so Transport is ONE entry in the sidebar.
+  // Each carries its own `when`, so a customer still never sees a fleet board
+  // that would answer 403 — the gate moved from the section to the items and
+  // did not weaken.
+  //
+  // NOTE for whoever reconciles this: `Vehicles`/`Drivers` above read
+  // transport_vehicles/transport_drivers, which allocation and pre-trip checks
+  // depend on; `Fleet Status`/`Driver Directory` read the newer fleet tables.
+  // Two systems, both live. Merging the MENUS does not merge the DATA, and that
+  // decision is still open.
+  ...STOS_SUB_ITEMS,
 ]
 
 const SUBMODULE_SEARCH = [
@@ -323,7 +346,10 @@ const SUBMODULE_SEARCH = [
   // Same omission one level down: "My Work", "Releases" and "Workshop" are real
   // screens somebody will search for by name.
   ...SIRE_SUB_ITEMS.map(i => ({ ...i, module: 'SIRE', when: canUseSire })),
-  ...STOS_SUB_ITEMS.map(i => ({ ...i, module: 'Transport', when: canUseStos })),
+  // STOS_SUB_ITEMS is NOT spread again here — TRANSPORT_SUB_ITEMS above now
+  // contains it, and listing it twice would show every fleet screen twice in
+  // search results. Each item carries its own `when: canUseStos`, which the
+  // spread preserves.
 ]
 
 /**
@@ -1045,7 +1071,11 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
             </div>
             {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Transport OS</span><ChevronDown size={13} className={clsx('transition-transform duration-200', openSection === 'transport' && 'rotate-180')} /></>}
           </button>
-          {(openSection === 'transport' || collapsed) && TRANSPORT_SUB_ITEMS.map(({ label, path, icon: Icon }) => (
+          {/* `when` is honoured per item, not per section: the fleet screens
+              were gated by canUseStos when they had a section of their own, and
+              folding them in here must not quietly widen who sees them. */}
+          {(openSection === 'transport' || collapsed)
+            && TRANSPORT_SUB_ITEMS.filter(({ when }) => !when || when(user)).map(({ label, path, icon: Icon }) => (
             <NavLink key={path} to={path}>
               {({ isActive }) => (
                 <div title={collapsed ? label : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined, paddingLeft: collapsed ? undefined : '28px' }}>
@@ -1093,38 +1123,11 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
         </div>
         )}
 
-        {/* -- STOS (Transport) sub-nav -- internal operations only, so a
-            customer is not shown a fleet board that answers 403. -- */}
-        {canUseStos(user) && (
-        <div data-section-block className={clsx('mt-2')}>
-          {!collapsed && <p className="label-caps px-5 mb-1 mt-3" style={{ color: '#22d3ee' }}>Transport</p>}
-          <button
-            onClick={() => toggleSection('stos')}
-            data-section="stos"
-            title={collapsed ? 'Transport (STOS)' : ''}
-            className="nav-3d mb-0.5 w-full"
-            style={{ justifyContent: collapsed ? 'center' : undefined, color: '#22d3ee' }}
-          >
-            <div className="flex-shrink-0 w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: 'rgba(6,182,212,0.15)' }}>
-              <Truck size={13} style={{ color: '#22d3ee' }} />
-            </div>
-            {!collapsed && <><span className="truncate text-sm font-semibold flex-1 text-left">Transport (STOS)</span><ChevronDown size={13} className={clsx('transition-transform duration-200', openSection === 'stos' && 'rotate-180')} /></>}
-          </button>
-          {(openSection === 'stos' || collapsed) && STOS_SUB_ITEMS.map(({ label, path, icon: Icon }) => (
-            <NavLink key={path} to={path}>
-              {({ isActive }) => (
-                <div title={collapsed ? label : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined, paddingLeft: collapsed ? undefined : '28px' }}>
-                  <div className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(6,182,212,0.06)' }}>
-                    <Icon size={12} />
-                  </div>
-                  {!collapsed && <span className="truncate text-xs">{label}</span>}
-                  {isActive && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: '#67e8f9' }} />}
-                </div>
-              )}
-            </NavLink>
-          ))}
-        </div>
-        )}
+        {/* The STOS fleet sub-nav used to be a SECOND top-level section here,
+            labelled "Transport" with the same Truck icon as the one above it.
+            Its three screens now live in TRANSPORT_SUB_ITEMS, each carrying its
+            own `when: canUseStos`, so the gate is unchanged and the sidebar has
+            one Transport entry instead of two indistinguishable ones. */}
       </nav>
 
       {/* ── Bottom Controls ────────────────────────────────── */}

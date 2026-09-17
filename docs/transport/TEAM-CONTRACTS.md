@@ -147,6 +147,11 @@ built. Goes in P1's `REQUEST-step12-missing-tickets.md`.
 | C-05 | **P2** | P1 | `FleetResourceGateway::markDispatched()` — see below, this was mis-routed to P3 | not started |
 | C-06 | P2 | P3 | fuel, urea, tyre, maintenance, FASTag costs → `trip_costs` | **P3 side ready** — see below. Waiting on P2. |
 | C-07 | P1 | P3 | EVT-012 `TripClosed` | needed for 018, **not** for 011/012 |
+| C-08 | P1 | P3 | a way to ask "does this trip have a waived exception?" | **P3 is reading `trip_exceptions` directly meanwhile** — see below |
+| C-09 | P1 | P3 | STT-006 `dispatched → in_transit`, then STT-007 → `delivered` | **blocks nothing today, but POD verification cannot fire without it** |
+| C-10 | **Accounts** | P3 | fill `trip_bills.invoice_id` and emit EVT-010 `InvoicePosted` | **P3 side complete** — the queue and the door are built, see below |
+| C-11 | **Accounts** | P3 | post the receipt behind `CollectionRecorded`, and own `receipt_id` / `posting_id` | **P3 side complete** — tracking works, posting is yours (D-61) |
+| C-12 | P1 | P3 | STT-012 `collection_pending → closed`, whose effect is the profit snapshot | not started — and **blocked on D-58** anyway |
 
 ### C-01 — do not build a second one
 
@@ -168,6 +173,128 @@ and has since expired" are distinguishable.
 
 Nothing to add. A new `ComplianceGate` would have been the second duplicate in
 two days.
+
+### C-11 — Accounts: collections track here, the money posts with you
+
+SNG-TRN-016 records what a customer owes on a trip, when it is due, why it is stuck and
+who chased it. It does **not** post money. When a receipt is recorded, Transport moves a
+tracked balance and fires `CollectionRecorded`; CTR-014's own note on API-011 is
+*"Posting event generated"*, and the posting is yours.
+
+**One thing needs your decision (D-61).** EVT-011's registry payload is
+`receipt_id, invoice_id, amount`, keyed on `receipt_id+posting_id`. Transport creates
+neither a receipt nor a posting, so it cannot fill those. The event currently carries:
+
+```php
+['receipt_id' => null,              // yours — we never fabricate one
+ 'invoice_id' => $bill->invoice_id, // known only after you call markInvoiced()
+ 'amount'     => '2500.00',         // this receipt, not the running total
+ 'collection_id' => 12, 'trip_id' => 7]   // added so you have a join key
+```
+
+**Either** confirm this two-act reading and consume the event as a trigger, **or** take
+the event over entirely and we emit nothing. Both are one deletion on our side — tell us
+which before you build against it.
+
+**What you can read:** `TripCollection` carries `amount_due`, `amount_received`,
+`outstanding`, `status` (`pending` / `part_paid` / `settled`, derived from the
+arithmetic, never set by hand), `due_date`, `days_overdue`, `blocker_reason` and the
+follow-up stamps. `TripCollectionService::ageing($tenantId)` returns the standard
+0/30/60/90 buckets as decimal strings.
+
+Overpayment is refused here on purpose — a negative balance would make the ageing total
+meaningless, and a refund or credit note is your decision, not a tracking one.
+
+---
+
+### C-10 — Accounts: the billing handover is built and waiting for you
+
+SNG-TRN-015 is a **trigger**, not an invoice. Step 11 is explicit about the division
+and we have implemented exactly our side of it:
+
+```
+EVT-010 | InvoicePosted      | Producer: Accounts     <- yours
+EVT-011 | CollectionRecorded | Producer: Accounts     <- yours
+DB-012  | trip_bills         | Owner: Accounts        <- linkage, we write the trip half
+```
+
+Transport writes **no ledger entry, ever** (FORBID-002, LOCK-004). What it now does is
+mark a trip billable once its POD is verified, freeze what the trip is worth, and stop.
+
+**The queue to read:**
+
+```php
+TripBill::forTenant($tenantId)->awaitingInvoice()->get();
+// status = 'prepared' AND invoice_id IS NULL
+```
+
+Each row carries `trip_id`, `billable_amount` (a decimal string, frozen at the moment
+billing was prepared so a later trip amendment cannot restate an invoice you have
+already raised), `currency`, and `basis` — `verified_pod` or `exception_waiver`, so you
+can see which arm of the rule let it through.
+
+**The one door back:**
+
+```php
+$bill->markInvoiced($invoiceId, $actorId);   // sets invoice_id, status = 'invoiced'
+```
+
+`invoice_id` is deliberately **not fillable** — the one column belonging to your module
+is the one a Transport caller cannot set by posting a field. `markInvoiced()` is the
+only way it is ever written, and it records who did it.
+
+**Also available:** the `BillingPrepared` event fires on every prepare, carrying
+`{bill_id, trip_id, amount, currency}`. Nothing subscribes yet. Note it is a
+**constructed** event — API-010 promises it but the Event_Registry never defines it
+(**D-60**), so if you want a different payload, say so before you build against it.
+
+---
+
+### C-08 — P3 is reading `trip_exceptions` directly, and would rather not
+
+SNG-TRN-014's acceptance criterion is *"POD required before billable state **unless
+approved exception**"*. That second arm needs to know whether a trip carries a waived
+exception. `trip_exceptions` is DB-010 and **P1 owns it**, and there is no
+`TripException` model — SNG-TRN-013 built the schema and the vocabulary, not the model.
+
+Rather than create a model for a table P3 does not own (§1: *"Owner = the only person
+who writes migrations, models or endpoints for it"*), `TripDocumentService` asks one
+narrow read-only question:
+
+```php
+DB::table('trip_exceptions')
+    ->where('tenant_id', $tenantId)->where('trip_id', $tripId)
+    ->where('status', ExceptionStatus::WAIVED)->exists();
+```
+
+It reads no other column, so when P1 exposes an `ExceptionService` this is one line to
+replace. **P1: if you would prefer that seam closed now, a single `hasWaivedException()`
+on your service is all P3 needs.**
+
+Two things worth knowing: the table has **no `deleted_at`** — its own migration records
+why, *"it must never disappear from the system"* — so a soft-delete filter there is a
+SQL error, not a safety net. And the arm cannot fire in production yet regardless:
+`ExceptionStatus::WAIVED` is declared-but-unreachable because a waiver needs an
+authorising role, and **BLK-10** means no CRM account maps to one.
+
+---
+
+### C-09 — POD verification is built but cannot fire until Transit is wired
+
+`TripStatus::TRANSITIONS` still has no edge out of `dispatched`. STT-006
+(`dispatched → in_transit`) is the Transit half of SNG-TRN-013 and is recorded in the
+code as deferred; STT-007 (`in_transit → delivered`) follows it. **Nothing writes
+`delivered`.**
+
+STT-008 (`delivered → pod_verified`) is now implemented on P3's side and is wired into
+`TripDocumentService::verify()`. It is deliberately **conditional**: verifying a POD on
+a trip that is not `delivered` records the document and leaves the trip's status alone,
+rather than throwing over a gap that is not the verifier's fault.
+
+**P1: the moment you wire STT-006 and STT-007, the POD edge starts firing with no change
+on P3's side.** Nothing needs coordinating beyond you landing those two edges.
+
+---
 
 ### C-06 — `trip_costs` is live; here is how to write to it
 

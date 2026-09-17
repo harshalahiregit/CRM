@@ -13,11 +13,28 @@ import { handleErr } from '@/services/apiError'
  * { status, message, data } envelope, so each method hands the component the
  * shape it actually needs.
  *
- * Only the endpoints SNG-TRN-006, 007 and the master data of 003/004 expose.
- * Nothing for viability, allocation, POD, billing or the control room — those are
- * later tickets and a client method with no server behind it is a promise the UI
- * cannot keep.
+ * Only endpoints with a server behind them. A client method with nothing
+ * answering it is a promise the UI cannot keep — so there is still nothing here
+ * for viability, billing, collections, settlement or the control room.
  */
+
+/**
+ * A 422 from this module is a business refusal carrying a readable message —
+ * an advance over its limit, a duplicate cost, a POD already decided. The panel
+ * should show that sentence in place rather than treat it as a crash, so these
+ * resolve `{ ok: false, message }` instead of throwing. Anything else still
+ * throws, because a 500 is not something a user can act on.
+ */
+const err422 = (e) => {
+  const body = e?.response?.data
+  if (body && e?.response?.status === 422) {
+    return { ok: false, message: body.message, ...(body.data ?? {}) }
+  }
+  throw e
+}
+
+const post422 = (url, body) =>
+  api.post(url, body).then((r) => ({ ok: true, ...(r.data?.data ?? {}) })).catch(err422)
 
 /* ── Orders (SNG-TRN-006) ─────────────────────────────────────────────── */
 
@@ -379,6 +396,149 @@ export const transportDispatchApi = {
 }
 
 /**
+ * Trip advances — SNG-TRN-011.
+ *
+ * `list` returns the rows AND the exposure figures (limit, committed,
+ * remaining). The panel never adds those up itself: BR-P0-005 is the server's
+ * rule, and a screen computing its own remaining balance would eventually
+ * disagree with the refusal the server gives.
+ *
+ * A refusal here is a 422 carrying a readable message, so request/approve/reject
+ * resolve `{ ok: false, message }` rather than throwing — the panel shows the
+ * reason in place, the same shape dispatch uses.
+ */
+export const transportAdvanceApi = {
+  list: (tripId) =>
+    api.get(`/transport/trips/${tripId}/advances`)
+      .then((r) => r.data?.data ?? { advances: [], exposure: null }).catch(handleErr),
+
+  request: (tripId, body) => post422(`/transport/trips/${tripId}/advances`, body),
+
+  approve: (tripId, advanceId, body) =>
+    post422(`/transport/trips/${tripId}/advances/${advanceId}/approve`, body),
+
+  reject: (tripId, advanceId, reason) =>
+    post422(`/transport/trips/${tripId}/advances/${advanceId}/reject`, { decision_reason: reason }),
+}
+
+/**
+ * Trip costs — SNG-TRN-012.
+ *
+ * `total` and `breakdown` come from the server, computed with bcmath over a
+ * DECIMAL column. A screen adding JavaScript numbers would drift from the figure
+ * SNG-TRN-018 reports as margin, so the panel displays these and never sums.
+ *
+ * `known_types` is a suggestion list, not a permitted-values list — `cost_type`
+ * has no registered vocabulary (D-58), so the picker offers these and still
+ * accepts anything typed.
+ */
+export const transportCostApi = {
+  list: (tripId) =>
+    api.get(`/transport/trips/${tripId}/costs`)
+      .then((r) => r.data?.data ?? { costs: [], total: '0.00', breakdown: {}, known_types: [] })
+      .catch(handleErr),
+
+  record: (tripId, body) => post422(`/transport/trips/${tripId}/costs`, body),
+
+  /** A soft delete with a mandatory reason — the row survives for audit. */
+  retract: (tripId, costId, reason) =>
+    api.delete(`/transport/trips/${tripId}/costs/${costId}`, { data: { reason } })
+      .then((r) => ({ ok: true, ...(r.data?.data ?? {}) }))
+      .catch(err422),
+}
+
+/**
+ * Trip documents and POD — SNG-TRN-014, API-008.
+ *
+ * `list` returns the documents AND the billing verdict, because the rule is
+ * "POD required before billable unless approved exception" and the waiver arm is
+ * not visible from the document rows at all. A screen inferring billability from
+ * the list would get the waiver case wrong every time.
+ *
+ * `submit` posts multipart — CTR-012's `pod_file` is a real upload, so no
+ * JSON content type is set and the browser supplies the boundary.
+ */
+export const transportPodApi = {
+  list: (tripId) =>
+    api.get(`/transport/trips/${tripId}/documents`)
+      .then((r) => r.data?.data ?? { documents: [], billing: null }).catch(handleErr),
+
+  submit: (tripId, file, fields = {}) => {
+    const form = new FormData()
+    form.append('file', file)
+    Object.entries(fields).forEach(([k, v]) => {
+      if (v !== null && v !== undefined && v !== '') form.append(k, v)
+    })
+
+    return api.post(`/transport/trips/${tripId}/pod`, form)
+      .then((r) => ({ ok: true, ...(r.data?.data ?? {}) }))
+      .catch(err422)
+  },
+
+  verify: (tripId, documentId) => post422(`/transport/trips/${tripId}/pod/${documentId}/verify`, {}),
+
+  reject: (tripId, documentId, reason) =>
+    post422(`/transport/trips/${tripId}/pod/${documentId}/reject`, { reason }),
+}
+
+/**
+ * Billing trigger — SNG-TRN-015, API-010.
+ *
+ * `get` is a pure read that returns WHY a trip may or may not be billed, using
+ * the same sentence the refusal would carry — so what the screen says before
+ * the button is pressed matches what it would say after.
+ *
+ * `prepare` does NOT raise an invoice. Transport declares the trip billable and
+ * hands off; Accounts posts the invoice and emits InvoicePosted. The button is
+ * labelled accordingly, because "Bill this trip" would promise something this
+ * module is forbidden to do.
+ */
+export const transportBillingApi = {
+  get: (tripId) =>
+    api.get(`/transport/trips/${tripId}/bill`)
+      .then((r) => r.data?.data ?? { readiness: null, bill: null }).catch(handleErr),
+
+  prepare: (tripId) => post422(`/transport/trips/${tripId}/bill`, {}),
+}
+
+/**
+ * Receivable tracking — SNG-TRN-016, API-011.
+ *
+ * Recording a receipt moves a TRACKED balance; it does not post money. Accounts
+ * turns the event into a posting (CTR-014, "Posting event generated"), so the
+ * UI says "record a receipt", never "take payment".
+ *
+ * `ageing` and `followUps` are tenant-wide — nobody chases one receivable at a
+ * time, and "what is 60 days overdue" is the question the table is indexed for.
+ */
+export const transportCollectionApi = {
+  get: (tripId) =>
+    api.get(`/transport/trips/${tripId}/collection`)
+      .then((r) => r.data?.data?.collection ?? null).catch(handleErr),
+
+  open: (tripId, dueDate) =>
+    post422(`/transport/trips/${tripId}/collection/open`, { due_date: dueDate || null }),
+
+  record: (tripId, amount, reference) =>
+    post422(`/transport/trips/${tripId}/collection`, {
+      amount_received: amount, reference: reference || null,
+    }),
+
+  /** Blockers and follow-up. Sending blocker_reason: null CLEARS the blocker. */
+  update: (tripId, fields) =>
+    api.patch(`/transport/trips/${tripId}/collection`, fields)
+      .then((r) => ({ ok: true, ...(r.data?.data ?? {}) })).catch(err422),
+
+  ageing: (asOf) =>
+    api.get('/transport/collections/ageing', { params: asOf ? { as_of: asOf } : {} })
+      .then((r) => r.data?.data ?? { buckets: {}, total: '0.00', rows: [] }).catch(handleErr),
+
+  followUps: (asOf) =>
+    api.get('/transport/collections/follow-ups', { params: asOf ? { as_of: asOf } : {} })
+      .then((r) => r.data?.data?.collections ?? []).catch(handleErr),
+}
+
+/**
  * What the signed-in user may do — so a screen can hide an action the API would
  * refuse rather than show a button that 403s.
  */
@@ -389,6 +549,9 @@ export const transportCapabilityApi = {
 
 export const transportApi = {
   capabilities: transportCapabilityApi,
+  advances: transportAdvanceApi,
+  costs: transportCostApi,
+  pod: transportPodApi,
   orders: transportOrderApi,
   trips: transportTripApi,
   allocation: transportAllocationApi,

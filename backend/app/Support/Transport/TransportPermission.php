@@ -107,6 +107,55 @@ final class TransportPermission
     public const COST_RECORD  = 'transport.cost.record';
     public const COST_RETRACT = 'transport.cost.retract';
 
+    /* ── POD (SNG-TRN-014) ───────────────────────────────────────────────
+     *
+     * POD_SUBMIT is SPECIFIED. API-008's Permission column reads
+     * `transport.pod.submit` exactly, and PERM-010 `POD / submit` gives the
+     * matrix row. Nothing here is constructed.
+     *
+     * POD_VERIFY is NOT. The Permissions sheet has thirteen rows and no
+     * document-verify row anywhere — an open item already recorded in
+     * TEAM-CONTRACTS §4. STT-008 nevertheless requires somebody to perform
+     * "Verify POD", so the key is built from that transition's own domain and
+     * action, the same construction D-8, D-21 and D-45 record.
+     *
+     * Submitting and verifying are deliberately separate keys, and that
+     * separation is the control: PERM-010 lets a Driver submit their own POD
+     * and a Supplier submit against trips assigned to them. Neither may then
+     * decide that it is valid and unlock billing on it.
+     */
+    public const POD_SUBMIT = 'transport.pod.submit';
+    public const POD_VERIFY = 'transport.pod.verify';
+
+    /* ── Billing trigger (SNG-TRN-015) ───────────────────────────────────
+     *
+     * SPECIFIED. API-010's Permission column reads `transport.billing.prepare`
+     * exactly. The MATRIX row is not — the Permissions sheet has no Billing
+     * domain at all, which is D-60.
+     *
+     * "Prepare billing" is not "raise an invoice". Transport declares a trip
+     * billable; Accounts posts the invoice and emits EVT-010. So the row below
+     * is modelled on PERM-005 `Trip / close` — the nearest act of comparable
+     * consequence that the registry does grant — and NOT on anything wider.
+     */
+    public const BILLING_PREPARE = 'transport.billing.prepare';
+
+    /* ── Collections (SNG-TRN-016) ───────────────────────────────────────
+     *
+     * COLLECTION_RECORD is SPECIFIED twice over, which is rare in this package:
+     * API-011's Permission column reads `transport.collection.record` exactly,
+     * AND PERM-011 `Collection / record` gives the matrix row. Nothing here is
+     * constructed.
+     *
+     * COLLECTION_VIEW is not. There is no Collection view row, and the ageing
+     * report is tenant-wide rather than hanging off one trip — so it cannot sit
+     * behind TRIP_VIEW the way a trip's own paperwork does. Constructed from the
+     * domain, and deliberately no wider than PERM-011 plus Operations, who chase
+     * what they dispatched.
+     */
+    public const COLLECTION_VIEW   = 'transport.collection.view';
+    public const COLLECTION_RECORD = 'transport.collection.record';
+
     /* ── Master data (SNG-TRN-003 / 004). NOT IN THE REGISTRY — see D-8. ── */
     public const VEHICLE_VIEW   = 'transport.vehicle.view';
     public const VEHICLE_CREATE = 'transport.vehicle.create';
@@ -225,6 +274,81 @@ final class TransportPermission
             self::ROLE_OWNER    => self::SCOPE_ALL,
             self::ROLE_ACCOUNTS => self::SCOPE_ALL,
             self::ROLE_ADMIN    => self::SCOPE_ALL,
+        ],
+        // PERM-010 — POD submit: Owner Y, Operations Y, Dispatcher Y,
+        // Driver Own, Supplier Assigned, Admin Y. Accounts N, Approver N,
+        // Customer N. Reproduced verbatim; nothing inferred.
+        //
+        // Driver "Own" and Supplier "Assigned" are the row working as intended —
+        // the people physically at the delivery are the ones holding the signed
+        // sheet. Accounts is absent here and present on POD_VERIFY below, which
+        // is the segregation: whoever hands in the proof does not get to rule on
+        // it.
+        self::POD_SUBMIT => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_DRIVER     => self::SCOPE_OWN,
+            self::ROLE_SUPPLIER   => self::SCOPE_ASSIGNED,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        // CONSTRUCTED — no document-verify row exists in Step 11.
+        //
+        // Modelled on PERM-005 `Trip / close` rather than on PERM-010, because
+        // verifying a POD is what STT-008 calls "Unlock billing" and that is a
+        // financial act, not a clerical one. Owner, Operations, Accounts,
+        // Approver, Admin — exactly PERM-005's set.
+        //
+        // Driver and Supplier are absent, and that is the whole point of
+        // splitting this from POD_SUBMIT. The party that produced the evidence
+        // does not get to certify it.
+        self::POD_VERIFY => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        // Key SPECIFIED by API-010; matrix row CONSTRUCTED — no Billing domain
+        // exists in the Permissions sheet (D-60). Mirrors PERM-005
+        // `Trip / close`: Owner, Operations, Accounts, Approver, Admin.
+        //
+        // Dispatcher is absent though PERM-005 also omits them, and that reads
+        // correctly here — deciding a customer may be charged is not a
+        // dispatcher's call. Driver, Customer and Supplier obviously not.
+        self::BILLING_PREPARE => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        // PERM-011 — Collection record: Owner Y, Accounts Y, Approver Y,
+        // Admin Y. Operations N, Dispatcher N, Driver N, Customer N,
+        // Supplier N. Reproduced verbatim; nothing inferred.
+        //
+        // Operations being absent is the row working: recording that money
+        // arrived is a finance act, and the person who ran the trip is not the
+        // person who should be able to say it was paid for.
+        self::COLLECTION_RECORD => [
+            self::ROLE_OWNER    => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS => self::SCOPE_ALL,
+            self::ROLE_APPROVER => self::SCOPE_ALL,
+            self::ROLE_ADMIN    => self::SCOPE_ALL,
+        ],
+        // CONSTRUCTED — no Collection view row exists (D-61).
+        //
+        // PERM-011's set, plus Operations. Reading the ageing report is not
+        // recording a receipt, and somebody has to be able to see that the trip
+        // they dispatched has not been paid for — a blocker only finance can
+        // read is a blocker nobody chases. Deliberately no wider: Customer and
+        // Supplier must never see the tenant's receivables book.
+        self::COLLECTION_VIEW => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
         ],
         // PERM-002 — Trip create: Owner Y, Operations Y, Dispatcher Y, Admin Y.
         self::TRIP_CREATE => [
