@@ -4,16 +4,19 @@ namespace Database\Seeders;
 
 use App\Models\Tenant;
 use App\Models\Transport\ConsignmentContainer;
+use App\Models\Transport\TransportAuditLog;
 use App\Models\Transport\TransportConsignment;
 use App\Models\Transport\TransportContainer;
 use App\Models\Transport\TransportDriver;
 use App\Models\Transport\TransportOrder;
 use App\Models\Transport\TransportTrip;
 use App\Models\Transport\TransportVehicle;
+use App\Models\Transport\TripPretripCheck;
 use App\Models\User;
 use App\Services\Transport\AllocationService;
 use App\Services\Transport\ConsignmentService;
 use App\Services\Transport\ContainerService;
+use App\Services\Transport\PretripService;
 use App\Services\Transport\TransportDriverService;
 use App\Services\Transport\TransportOrderService;
 use App\Services\Transport\TransportTripService;
@@ -23,9 +26,27 @@ use App\Support\Transport\OrderStatus;
 use App\Support\Transport\TripStatus;
 use App\Support\Transport\VehicleStatus;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 
 /**
  * THE walkthrough: 2 drivers, 2 vehicles, 2 trips. Nothing else.
+ *
+ * ── NEVER RUN migrate:fresh OR migrate:refresh ON THE DEV DATABASE ──────
+ * Not for cleanup, not for testing, not "just this once". Those commands drop
+ * EVERY table in the application — HR, Purchase, Sales, Helpdesk, TPV,
+ * Inventory, users, everything — not just Transport's. The dev database is the
+ * owner's working copy and five other modules live in it.
+ *
+ * It has happened once, on 2026-09-17, from a cleanup instruction that meant
+ * "remove the demo data" and was carried out as "reset the database". The owner
+ * could not log in. It was recovered only because a mysqldump had been taken
+ * minutes earlier.
+ *
+ * Tests run on their own in-memory sqlite and are unaffected — that is where
+ * migrate:fresh belongs and the only place it belongs.
+ *
+ * To clear the demo, call clearPreviousDemo() below. It is scoped to ONE tenant
+ * and to Transport's own tables, and a test asserts it touches nothing else.
  *
  * ── DEMO ONLY. NEVER PART OF A RELEASE. DELETE THIS FILE TO REMOVE IT. ───
  * This exists so the team can see the work while it is being built. It does
@@ -146,11 +167,11 @@ class TransportDemoSeeder extends Seeder
         $moving  = $this->buildMovingTrip($tenantId, $actor, $customerId, $vehicles[0], $drivers[0]);
         $waiting = $this->buildWaitingTrip($tenantId, $actor, $customerId);
 
-        // One container on the moving trip's consignment, so the Containers
-        // screen and the §7 history have something real to show. Entered with
-        // dashes deliberately: it demonstrates that the stored value is what was
-        // typed while the match is on the normalised key.
-        $this->attachDemoContainer($tenantId, $actor, (int) $moving->consignment_id);
+        // One container per trip, entered with dashes deliberately: it
+        // demonstrates that the stored value is what was TYPED while the match
+        // is on the normalised key.
+        $this->attachDemoContainer($tenantId, $actor, (int) $moving->consignment_id, 'sgoe-402215-9', '40ft Reefer');
+        $this->attachDemoContainer($tenantId, $actor, (int) $waiting->consignment_id, 'sgoe-771040-2', '20ft Standard');
 
         $this->report($tenantId, $cleared, $moving, $waiting);
     }
@@ -226,9 +247,58 @@ class TransportDemoSeeder extends Seeder
             'orders'       => $orders->count(),
         ];
 
+        // Children before parents, so nothing is orphaned mid-delete. These are
+        // HARD deletes: pre-trip checks and exceptions belong to a trip that is
+        // going away, and leaving them behind them makes the next run's
+        // readiness maths wrong.
+        $tripIds = $trips->pluck('id');
+
+        $counts['pretrip_checks'] = TripPretripCheck::forTenant($tenantId)
+            ->whereIn('trip_id', $tripIds)->delete();
+
+        // trip_exceptions has a table (migration 000012) but no model — the
+        // exception engine was never completed, so nothing writes to it today.
+        // Cleared through the query builder anyway, tenant-scoped, so the reset
+        // does not quietly stop covering it the day something does.
+        $counts['exceptions'] = DB::table('trip_exceptions')
+            ->where('tenant_id', $tenantId)->whereIn('trip_id', $tripIds)->delete();
+
         $trips->each->delete();
         $consignments->each->delete();
         $orders->each->delete();
+
+        // EVERY vehicle, driver and container in TRANSPORT'S OWN tables for this
+        // tenant — not only the ones this file created.
+        //
+        // The target is "exactly two of each, and nothing else". Clearing only
+        // the seeder's own rows leaves whatever earlier walkthroughs and manual
+        // testing put there, and the demo drifts back up to five within a day.
+        //
+        // These are P1's placeholder tables (TEAM-CONTRACTS §1a), so this stays
+        // inside P1's section. It does NOT touch P2's fleet tables — `vehicles`
+        // and the driver directory are untouched, and nothing is ever copied
+        // into them.
+        $counts['vehicles'] = TransportVehicle::withTrashed()->forTenant($tenantId)->forceDelete();
+        $counts['drivers']  = TransportDriver::withTrashed()->forTenant($tenantId)->forceDelete();
+
+        // Containers and their attachment history, same reasoning as above.
+        $containerIds = TransportContainer::withTrashed()->forTenant($tenantId)->pluck('id');
+
+        $counts['attachments'] = ConsignmentContainer::forTenant($tenantId)
+            ->whereIn('container_id', $containerIds)->delete();
+
+        // forceDelete, NOT delete. TransportContainer soft-deletes, and
+        // UNIQUE(tenant_id, container_number_normalized) does NOT exclude
+        // trashed rows — so a soft-deleted container keeps its number reserved
+        // and the next run is refused with a constraint violation on its own
+        // demo data. See D-101.
+        $counts['containers_removed'] = TransportContainer::withTrashed()->forTenant($tenantId)
+            ->whereIn('id', $containerIds)->forceDelete();
+
+        // The audit trail for everything above. It describes rows that no longer
+        // exist, and a demo reset that left it behind would grow it without
+        // bound across runs.
+        $counts['audit'] = TransportAuditLog::forTenant($tenantId)->delete();
 
         return $counts;
     }
@@ -340,7 +410,37 @@ class TransportDemoSeeder extends Seeder
         app(AllocationService::class)
             ->assign($trip->fresh(), $vehicle->id, $driver->id, $tenantId, $actor);
 
+        // STT-005 — pre-trip, walked the same way a dispatcher walks it:
+        // generate the checklist, confirm each check, then pass the gate. The
+        // trip lands in `pretrip_ok`, ready to dispatch, which is what makes
+        // this trip DIFFERENT from the other one rather than a second copy.
+        $this->passPretrip($trip->fresh(), $tenantId, $actor);
+
         return $trip->fresh();
+    }
+
+    /**
+     * Take a crewed trip through pre-trip to `pretrip_ok` — the real sequence.
+     *
+     * generate() evaluates the checks, complete() confirms each one, and
+     * passPretrip() moves the trip. Nothing here writes a status.
+     *
+     * If a check cannot be confirmed — an expired document, a missing driver —
+     * passPretrip() REFUSES and the seeder fails loudly. That is correct: a
+     * demo trip that could not really pass its own pre-trip is a finding, not
+     * something to force past.
+     */
+    private function passPretrip(TransportTrip $trip, int $tenantId, ?User $actor): void
+    {
+        $pretrip = app(PretripService::class);
+
+        $checks = $pretrip->generate($trip, $tenantId, $actor);
+
+        foreach ($checks as $check) {
+            $pretrip->complete($check, $tenantId, $actor, 'Confirmed for the demo walkthrough.');
+        }
+
+        $pretrip->passPretrip($trip->fresh(), $tenantId, $actor);
     }
 
     /** Trip 2 — approved, and waiting for someone to crew it. */
@@ -383,25 +483,28 @@ class TransportDemoSeeder extends Seeder
      * re-run finds the existing container and re-attaches it rather than
      * colliding with it.
      */
-    private function attachDemoContainer(int $tenantId, ?User $actor, ?int $consignmentId): void
+    /**
+     * One container on each consignment, so the chain reads end to end from
+     * EITHER trip: trip → consignment → container, both ways round.
+     *
+     * A previous version left the second container free so the "Free" filter
+     * had something to show. Wiring both is the owner's call and the better
+     * demo: a filter with nothing behind it is a smaller loss than a chain that
+     * only completes from one of the two trips.
+     */
+    private function attachDemoContainer(int $tenantId, ?User $actor, ?int $consignmentId, string $entered, string $type): void
     {
         if (! $consignmentId) {
             return;
         }
 
-        $service = app(ContainerService::class);
-
-        // TWO containers, in the two states the screen has to distinguish: one
-        // on a consignment and one free. With only the attached one, the "Free"
-        // filter and the empty half of the list could not be demonstrated — and
-        // an unused filter is the kind of thing nobody notices is broken.
-        $onConsignment = $this->ensureContainer($service, $tenantId, $actor, 'sgoe-402215-9', '40ft Reefer');
-        $this->ensureContainer($service, $tenantId, $actor, 'sgoe-771040-2', '20ft Standard');
+        $service   = app(ContainerService::class);
+        $container = $this->ensureContainer($service, $tenantId, $actor, $entered, $type);
 
         $consignment = TransportConsignment::forTenant($tenantId)->find($consignmentId);
 
-        if ($consignment && ! $onConsignment->fresh()->isAttached()) {
-            $service->attach($onConsignment->fresh(), $consignment, $tenantId, $actor);
+        if ($consignment && ! $container->fresh()->isAttached()) {
+            $service->attach($container->fresh(), $consignment, $tenantId, $actor);
         }
     }
 

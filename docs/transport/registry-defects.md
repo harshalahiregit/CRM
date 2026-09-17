@@ -2719,3 +2719,27 @@ route. **Adding methods to that interface is P2's call, not P1's.**
 
 **Steps 1–4 are not P1's.** Asked of P2 in `NOTE-team-approve-path-is-on-master.md`'s follow-up.
 Container 360 (Block 2) is unblocked and starts now instead.
+
+---
+
+## D-101 — A soft-deleted container reserves its number forever
+
+**Raised:** 2026-09-17, by a constraint violation during a demo reset.
+
+`transport_containers` uses `SoftDeletes`, and `UNIQUE(tenant_id, container_number_normalized)`
+**does not exclude trashed rows**. So deleting a container keeps its number permanently reserved:
+re-creating the same number fails with an integrity violation naming a row the user cannot see.
+
+Found when the demo reset soft-deleted its own containers and the next run was refused inserting
+`sgoe-402215-9` — its own data, blocked by its own tombstone.
+
+**Not reachable by a user today:** there is deliberately no delete path for containers (the number
+is the identity and §7 requires the association history survive). Only a seeder or a manual query
+can create the tombstone. **The seeder now uses `forceDelete()`.**
+
+**It becomes reachable the moment anyone adds a delete or archive action for containers**, and the
+symptom will be baffling: "that number already exists" for a container nobody can find. Whoever
+adds one inherits this — either force-delete, or make the unique index ignore soft-deleted rows.
+
+Same shape as D-53's latent overlap: correct today because a path does not exist, wrong the day it
+does.

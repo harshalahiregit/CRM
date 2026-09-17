@@ -22,6 +22,27 @@ Structure follows what P1 already built: `app/Models/Transport`,
 `app/Services/Transport`, `app/Http/Controllers/Api/Transport`,
 `app/Support/Transport`. Not a package. One structure, not two.
 
+## Never run `migrate:fresh` on the dev database
+
+**Not for cleanup, not for testing, not "just this once".** `migrate:fresh` and `migrate:refresh`
+drop every table in the application — HR, Purchase, Sales, Helpdesk, TPV, Inventory, Customers,
+Projects, Tasks, users — not only the module you are working in. The dev database is the owner's
+working copy and all three of our modules plus six others live in it.
+
+This happened on **2026-09-17**. A cleanup instruction meaning "remove the Transport demo data" was
+carried out as `migrate:fresh --seed`. Every table was dropped and the owner could not log in. It
+was recovered in full only because a `mysqldump` had been taken minutes earlier — that was luck,
+not a process.
+
+**The rule:** clearing data is scoped to your own module's tables and to one tenant, and you assert
+that it touches nothing outside them. Tests run on their own in-memory sqlite, which is the only
+place `migrate:fresh` belongs.
+
+**And the judgement behind it:** if a cleanup instruction — including one from a lead — would
+destroy anything outside your own section, stop and say so before running it.
+
+---
+
 ## Defect numbering
 
 **P1's `docs/transport/registry-defects.md` is the list.** New findings get a

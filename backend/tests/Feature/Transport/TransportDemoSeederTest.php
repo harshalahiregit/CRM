@@ -69,10 +69,13 @@ class TransportDemoSeederTest extends TestCase
 
         $trips = TransportTrip::forTenant(1)->orderBy('id')->get();
 
-        $moving  = $trips->firstWhere('status', TripStatus::ALLOCATED);
+        // The further-along one has walked pre-trip as well, so it sits in
+        // pretrip_ok and is ready to dispatch. That is what makes the two trips
+        // teach different things rather than showing the same screen twice.
+        $moving  = $trips->firstWhere('status', TripStatus::PRETRIP_OK);
         $waiting = $trips->firstWhere('status', TripStatus::APPROVED);
 
-        $this->assertNotNull($moving, 'one trip must be crewed — it is what makes "back in N days" visible');
+        $this->assertNotNull($moving, 'one trip must be crewed and pre-tripped — it is what makes "back in N days" visible');
         $this->assertNotNull($waiting, 'one trip must be uncrewed — it is the one you allocate in the demo');
 
         // The crewed one holds a vehicle AND a driver, through a real assignment.
@@ -89,7 +92,7 @@ class TransportDemoSeederTest extends TestCase
     {
         $this->runDemoSeeder();
 
-        $moving = TransportTrip::forTenant(1)->where('status', TripStatus::ALLOCATED)->sole();
+        $moving = TransportTrip::forTenant(1)->where('status', TripStatus::PRETRIP_OK)->sole();
 
         $this->assertNotNull($moving->planned_arrival_at);
         $this->assertTrue($moving->planned_arrival_at->isFuture());
@@ -166,13 +169,13 @@ class TransportDemoSeederTest extends TestCase
     {
         $this->runDemoSeeder();
 
-        // Two: one on a consignment, one free — the two states the screen
-        // distinguishes, so the "Free" filter has something to show.
+        // Two containers, ONE PER TRIP, so the chain reads end to end from
+        // either one: trip → consignment → container.
         $this->assertSame(2, TransportContainer::forTenant(1)->count());
         $attached = TransportContainer::forTenant(1)->get()->filter->isAttached();
-        $this->assertCount(1, $attached, 'exactly one demo container is on a consignment');
+        $this->assertCount(2, $attached, 'both demo containers are on a consignment');
 
-        $container = $attached->sole();
+        $container = $attached->firstWhere('container_number', 'sgoe-402215-9');
         // §7 — stored as typed, matched on the normalised key.
         $this->assertSame('sgoe-402215-9', $container->container_number);
         $this->assertSame('SGOE4022159', $container->container_number_normalized);
@@ -204,7 +207,7 @@ class TransportDemoSeederTest extends TestCase
 
         // And the container is usable again, not stuck.
         $this->assertSame(2, TransportContainer::forTenant(1)->count(), 'reused, not duplicated');
-        $this->assertCount(1, TransportContainer::forTenant(1)->get()->filter->isAttached());
+        $this->assertCount(2, TransportContainer::forTenant(1)->get()->filter->isAttached());
     }
 
     public function test_the_seeder_never_writes_a_trip_status_directly(): void
