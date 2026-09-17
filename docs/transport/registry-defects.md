@@ -2656,3 +2656,66 @@ works today. Repointing onto Fleet is the remaining half and is now in progress.
 **Also expected, not a fault:** Fleet, Drivers and Workshop read zero rows, because the demo
 vehicles are in P1's tables and `2027_01_02_000002` is deliberately unrun. Not to be worked around
 by seeding copies.
+
+---
+
+## D-100 — Allocation cannot be repointed at Fleet yet. Three blockers, in order.
+
+**Raised:** 2026-09-17, starting the repoint. **First use of P1's new D-100 band.**
+**Owner: P1 + P2.** **Status: NOT STARTED — deliberately, and here is why.**
+
+The instruction was to repoint allocation, pre-trip and dispatch onto
+`FleetService::getEligibleVehicles`. It exists, it is explicitly *"Consumed by Developer 1
+(Operations) during dispatch planning"*, and its payload is good — id, registration, type,
+compliance, live position, scores, reasons, and each vehicle's regular driver with a licence
+verdict. A driver equivalent exists too: `DriverService::list($companyId, ['ready_only' => true])`
+returns licence-valid, available people.
+
+**Doing it today would break the working dispatch chain within the hour.** Three blockers:
+
+### 1. Fleet's `vehicles` table is EMPTY — measured, not assumed
+
+```
+Fleet  vehicles            (company 1):  0 rows
+P1     transport_vehicles  (tenant 1) :  5 rows
+P1     transport_drivers   (tenant 1) :  5 rows
+```
+
+The demo fleet is still in P1's tables because `2027_01_02_000002` is deliberately unrun — the
+owner held it, since `stos:reconcile-fleet` does not exist. **Repointing before that migration runs
+hands a dispatcher an empty candidate list**, and allocation, pre-trip and dispatch all stop
+working. The order is therefore fixed: **migration first, repoint second.**
+
+### 2. Driver identity does not fit `trip_assignments.driver_id`
+
+Fleet identifies a driver by a directory reference — `source` + `source_id` — not by a single
+integer. `trip_assignments.driver_id` is an `unsignedBigInteger` pointing at
+`transport_drivers.id`. **What should it point at after the repoint?** `DriverProfile.id`? The
+directory person? A composite? That is P2's contract to state; guessing produces assignment rows
+that point at nothing.
+
+Vehicles are simpler — `vehicles.id` is an integer — but the same question applies: the ids in
+existing `trip_assignments` rows are P1's, and the migration must map them or they dangle.
+
+### 3. Calling `FleetService` directly would bypass the seam we just built
+
+`FleetResourceGateway` is the agreed door between Trip side and Fleet, and it currently has exactly
+one method: `markDispatched()`. Reaching from `AllocationService` into
+`App\Domains\Fleet\Services\FleetService` would defeat the interface both sides just agreed —
+the same mistake in the opposite direction from the one the gateway was created to stop.
+
+**The gateway needs two more methods** — something like `eligibleVehicles()` and
+`eligibleDrivers()` — or P2's explicit agreement that direct `FleetService` calls are the intended
+route. **Adding methods to that interface is P2's call, not P1's.**
+
+### The order that would work
+
+1. `stos:reconcile-fleet` exists, or the owner accepts the migration without it.
+2. `2027_01_02_000002` runs; Fleet's tables hold the vehicles and drivers.
+3. P2 states the driver identity that `trip_assignments.driver_id` should carry.
+4. P2 extends `FleetResourceGateway`, or rules that direct calls are fine.
+5. P1 repoints `AllocationService`, `VehicleEligibilityService`, `DriverEligibilityService`,
+   `PretripService` and `DispatchService`, and maps existing assignment rows.
+
+**Steps 1–4 are not P1's.** Asked of P2 in `NOTE-team-approve-path-is-on-master.md`'s follow-up.
+Container 360 (Block 2) is unblocked and starts now instead.
