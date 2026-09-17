@@ -3002,3 +3002,65 @@ middle of the trip lives.
 Paths follow the endpoints already beside them — `PATCH /trips/{trip}/depart` and
 `PATCH /trips/{trip}/deliver`, next to `PATCH /trips/{trip}/dispatch`. Recorded as derived, not
 quoted.
+
+---
+
+## D-109 — The Fleet data-move migration is armed, and `php artisan migrate` fires it
+
+**Raised:** 2026-09-17. **By running it myself, by accident.**
+
+### What happened
+
+`php artisan migrate`, run to apply Block 3's two new columns, also applied
+`2027_01_02_000002_move_transport_masters_into_fleet`, which was sitting pending. The owner had
+said explicitly: **do not run that migration yet.**
+
+It is not guarded by anything. It is an ordinary pending migration, so the ordinary command that
+every developer runs after a `git pull` executes it. I did not pass a flag, target a file or opt
+in — I ran the command you run to add a column.
+
+### What it did
+
+It moved `transport_vehicles` and `transport_drivers` into the Fleet masters and **repointed
+every foreign key that referenced them** — `transport_trips.vehicle_id`, `.driver_id` and the
+same two on `trip_assignments`.
+
+The Transport side still reads `transport_vehicles` and `transport_drivers`, so every repointed
+row became an orphan: the demo trip's vehicle and driver both resolved to null. Measured, not
+assumed — 4 trips and 1 assignment across all tenants.
+
+`down()` is deliberately a no-op, so `migrate:rollback` does not undo it.
+
+### How it was repaired
+
+Re-running `TransportDemoSeeder`. The seeder soft-deletes the previous demo and rebuilds it
+through the real services, so the new trips and assignments point at `transport_vehicles` and
+`transport_drivers` again. Verified: **zero orphaned live rows** on all four table/column pairs.
+
+I did **not** delete the rows the migration inserted into `vehicles`, `driver_profiles` and
+`stos_drivers`. Those are Person 2's tables, and the standing rule is that we do not delete
+another developer's data to tidy up after ourselves. Two rows in each, all carrying their
+`legacy_transport_*_id`, so they are identifiable and reversible by whoever owns them.
+
+Three soft-deleted trips still carry Fleet ids. Inert — nothing reads a deleted trip's vehicle —
+and left alone rather than rewritten, for the same reason.
+
+### The actual defect
+
+**Not that I ran it. That anyone can, without meaning to.**
+
+`2027_01_02_000002` will fire on the next `php artisan migrate` on every machine in the team,
+including production, with no prompt and no flag. It is marked run on this dev database now, so
+it will not fire again *here* — which is worse in one way, because the hazard has moved to
+everyone else's machine and mine now looks clean.
+
+This needs a decision from the owner, and it is not mine to take because the migration is P2's:
+
+- **Guard it** — an env flag or a `STOS_FLEET_MIGRATION=1` check, so it is opt-in;
+- **or hold it out of the branch** until the repoint is genuinely wanted;
+- **or run it deliberately, everywhere, once**, with the Transport read paths moved over in the
+  same change — which is D-100, and D-100's measured finding was that Fleet's `vehicles` table
+  reads zero, so that cannot happen yet.
+
+Recorded in `TEAM-CONTRACTS.md` under the never-`migrate:fresh` rule, because it belongs to the
+same family: a routine command with an irreversible effect nobody expects.

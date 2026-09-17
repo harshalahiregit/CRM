@@ -43,6 +43,32 @@ destroy anything outside your own section, stop and say so before running it.
 
 ---
 
+## `php artisan migrate` currently moves the Fleet masters — D-109
+
+**Added 2026-09-17, after I triggered it by accident.**
+
+`2027_01_02_000002_move_transport_masters_into_fleet` is a pending migration with no guard on
+it. **The ordinary `php artisan migrate` runs it**, and it repoints
+`transport_trips.vehicle_id`, `.driver_id` and the same two columns on `trip_assignments` from
+the Transport masters to the Fleet ones.
+
+Transport still reads `transport_vehicles` and `transport_drivers`, so every repointed row
+becomes an orphan and trips lose their vehicle and driver on screen. `down()` is a deliberate
+no-op, so `migrate:rollback` will not undo it.
+
+**Until it is guarded or withdrawn:**
+
+- check `php artisan migrate --pretend` before running `migrate` on any database you care about;
+- if it has already run on yours, re-running `TransportDemoSeeder` repairs the Transport side
+  (the Fleet rows it inserted are P2's and are left alone);
+- do not delete the rows it created in `vehicles`, `driver_profiles` or `stos_drivers` — they
+  carry `legacy_transport_*_id` and are P2's to reverse.
+
+Same family as the rule above: a routine command with an irreversible effect nobody expects.
+The decision on guarding it belongs to the owner and P2, and is open in D-109.
+
+---
+
 ## Which document wins when the state machines disagree
 
 **Ruled by the owner, 2026-09-17. Standing rule — applies to every state machine in
