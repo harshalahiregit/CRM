@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Truck, Building2, Package, History, Route as RouteIcon,
   AlertTriangle, Loader2, Gauge, Pencil, ClipboardCheck, Send, Boxes,
-  Wallet, IndianRupee, FileCheck2,
+  Wallet, IndianRupee, FileCheck2, Receipt,
 } from 'lucide-react'
 import { transportTripApi, transportCapabilityApi } from '@/services/transportApi'
 import { useToast } from '@/components/ui/Toast'
@@ -18,6 +18,7 @@ import TripProgress from '../components/TripProgress'
 import AdvancesPanel from '../components/AdvancesPanel'
 import CostsPanel from '../components/CostsPanel'
 import TripDocumentsPanel from '../components/TripDocumentsPanel'
+import BillingPanel from '../components/BillingPanel'
 import { tripStatusCfg, orderStatusCfg, fmtMoney, fmtDate } from '../constants'
 
 /**
@@ -309,6 +310,26 @@ export default function TransportTripDetail() {
                 trip={trip}
                 canSubmit={!!grants['transport.pod.submit']}
                 canVerify={!!grants['transport.pod.verify']}
+                onChanged={load}
+              />
+            )}
+          </Panel>
+
+          {/* Step 7. SNG-TRN-015. Shown from dispatch onward rather than only
+              once the POD is verified, because the blocker is the useful part:
+              somebody needs to see WHY a trip is not yet invoiceable while
+              there is still time to fix it. Transport marks it ready; Accounts
+              raises the invoice — EVT-010's producer, not this module. */}
+          <Panel icon={Receipt} step={7} title="Billing"
+            subtitle="Hand the trip to Accounts once its proof of delivery is in. Transport marks it ready to invoice; it does not raise the invoice.">
+            {['draft', 'viability_pending', 'approved'].includes(trip.status) ? (
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 0' }}>
+                Billing becomes relevant once the trip has been dispatched.
+              </p>
+            ) : (
+              <BillingPanel
+                trip={trip}
+                canPrepare={!!grants['transport.billing.prepare']}
                 onChanged={load}
               />
             )}

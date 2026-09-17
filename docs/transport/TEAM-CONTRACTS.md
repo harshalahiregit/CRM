@@ -149,6 +149,7 @@ built. Goes in P1's `REQUEST-step12-missing-tickets.md`.
 | C-07 | P1 | P3 | EVT-012 `TripClosed` | needed for 018, **not** for 011/012 |
 | C-08 | P1 | P3 | a way to ask "does this trip have a waived exception?" | **P3 is reading `trip_exceptions` directly meanwhile** — see below |
 | C-09 | P1 | P3 | STT-006 `dispatched → in_transit`, then STT-007 → `delivered` | **blocks nothing today, but POD verification cannot fire without it** |
+| C-10 | **Accounts** | P3 | fill `trip_bills.invoice_id` and emit EVT-010 `InvoicePosted` | **P3 side complete** — the queue and the door are built, see below |
 
 ### C-01 — do not build a second one
 
@@ -170,6 +171,49 @@ and has since expired" are distinguishable.
 
 Nothing to add. A new `ComplianceGate` would have been the second duplicate in
 two days.
+
+### C-10 — Accounts: the billing handover is built and waiting for you
+
+SNG-TRN-015 is a **trigger**, not an invoice. Step 11 is explicit about the division
+and we have implemented exactly our side of it:
+
+```
+EVT-010 | InvoicePosted      | Producer: Accounts     <- yours
+EVT-011 | CollectionRecorded | Producer: Accounts     <- yours
+DB-012  | trip_bills         | Owner: Accounts        <- linkage, we write the trip half
+```
+
+Transport writes **no ledger entry, ever** (FORBID-002, LOCK-004). What it now does is
+mark a trip billable once its POD is verified, freeze what the trip is worth, and stop.
+
+**The queue to read:**
+
+```php
+TripBill::forTenant($tenantId)->awaitingInvoice()->get();
+// status = 'prepared' AND invoice_id IS NULL
+```
+
+Each row carries `trip_id`, `billable_amount` (a decimal string, frozen at the moment
+billing was prepared so a later trip amendment cannot restate an invoice you have
+already raised), `currency`, and `basis` — `verified_pod` or `exception_waiver`, so you
+can see which arm of the rule let it through.
+
+**The one door back:**
+
+```php
+$bill->markInvoiced($invoiceId, $actorId);   // sets invoice_id, status = 'invoiced'
+```
+
+`invoice_id` is deliberately **not fillable** — the one column belonging to your module
+is the one a Transport caller cannot set by posting a field. `markInvoiced()` is the
+only way it is ever written, and it records who did it.
+
+**Also available:** the `BillingPrepared` event fires on every prepare, carrying
+`{bill_id, trip_id, amount, currency}`. Nothing subscribes yet. Note it is a
+**constructed** event — API-010 promises it but the Event_Registry never defines it
+(**D-60**), so if you want a different payload, say so before you build against it.
+
+---
 
 ### C-08 — P3 is reading `trip_exceptions` directly, and would rather not
 

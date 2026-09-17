@@ -68,6 +68,7 @@ Authority for who rules on what: the Conflict Resolution matrix in
 | D-53 | Two CLOSED attachment windows may overlap | Low | Person 1 | Open — latent, unreachable today |
 | D-57 | Step 9 and ENUM-002 describe different advance lifecycles | **High** | Product + Finance | Open — ENUM-002 stored on FLD-012's authority, four Step 9 states unrepresentable |
 | D-58 | SNG-TRN-012's three refs point at the exception domain; `cost_type` and `amount` both dangle; cost/expense boundary undefined | **High** | Product + Finance + Architecture | Open — blocks 012, and via DEP-008 also 017 and 018 |
+| D-60 | API-010 promises a `BillingPrepared` event the Event_Registry never defines; no Billing permission domain; DB-012 has one field row | **High** | Product + Accounts | Open — event payload, permission row and bill vocabulary all constructed for 015 |
 | D-59 | STT-008 requires a "POD valid" guard, but no document lifecycle is registered anywhere; DB-009 has no field or index rows | **High** | Product + Compliance | Open — status vocabulary and MIME/size limits constructed for 014 |
 
 > **D-54, D-55 and D-56 have bodies below but no row here** — they were added on 2026-09-16 and the
@@ -2076,3 +2077,69 @@ Already recorded as an open item in TEAM-CONTRACTS §4.
 
 **Escalation:** `CLARIFICATION_REQUIRED` for 1–3, `SECURITY_REVIEW_REQUIRED` for 4.
 **Does not block:** SNG-TRN-014 shipped against constructed values, all flagged here.
+
+---
+
+## D-60 — API-010 promises an event the Event_Registry never defines
+
+**Raised:** 2026-09-17, building SNG-TRN-015. **Owner: Product + Accounts.**
+**Severity: high — it is the handover point between two modules.**
+
+### The event does not exist
+
+```
+API-010 | POST /api/v1/transport/trips/{trip}/bill | Prepare customer billing
+        | transport.billing.prepare | emits BillingPrepared | CONTROLLED
+```
+
+The Event_Registry has twelve rows, `EVT-001..012`. **`BillingPrepared` is not one
+of them.** So the API registry names an event with no producer, no payload, no
+idempotency key and no consumer list — and it is precisely the event by which
+Transport hands a trip to Accounts.
+
+The payload is constructed (`bill_id`, `trip_id`, `amount`, `currency`), mirroring
+the registered events either side of it, with `bill_id` as the idempotency key by the
+same reasoning EVT-009 applies to `attachment_id`.
+
+### What the registry IS clear about, and it shapes the whole ticket
+
+```
+EVT-010 | InvoicePosted      | Producer: Accounts
+EVT-011 | CollectionRecorded | Producer: Accounts/Collections
+DB-012  | trip_bills         | Owner: Accounts
+```
+
+Transport does not post invoices and does not take money — consistent with FORBID-002
+and LOCK-004, which bar this module from writing any ledger entry. SNG-TRN-015 is
+therefore a **trigger**, exactly as its name says, and `trip_bills` is a linkage row
+rather than an invoice.
+
+`FLD-016` is the table's only field row, and it is the seam: `invoice_id BIGINT`,
+**nullable**, FK+INDEX. A nullable foreign key to an invoice only makes sense if the
+row can exist before the invoice does. Transport writes the row with `invoice_id` NULL;
+Accounts fills it in. Every other column on the table is constructed.
+
+### No Billing permission domain
+
+The Permissions sheet has thirteen rows and covers Trip, Advance, Expense, POD,
+Collection, ControlRoom and Registry. **There is no Billing domain**, though API-010
+names the key `transport.billing.prepare` exactly. The key is specified; its matrix row
+is constructed, modelled on PERM-005 `Trip / close`.
+
+### And no bill vocabulary
+
+None of the eight registered enums describes a bill. `TripBillStatus` declares two
+states — `prepared` and `invoiced` — and Transport can reach only the first.
+`invoiced` is declared-not-wired so Accounts has somewhere to land.
+
+### What resolving it looks like
+
+1. An `EVT-0xx BillingPrepared` row with a real payload and consumer list.
+2. A `Billing` domain in the Permissions sheet.
+3. Field rows for DB-012 beyond `invoice_id`.
+4. Confirmation that Transport writing the `trip_bills` row (invoice_id NULL) is the
+   intended division, since Step 11 marks the table's owner as Accounts.
+
+**Escalation:** `CLARIFICATION_REQUIRED` for 1–3, `ARCHITECTURE_REVIEW_REQUIRED` for 4.
+**Does not block:** SNG-TRN-015 shipped against constructed values, all flagged here,
+and the module writes nothing to any ledger.

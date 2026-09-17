@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\Transport\TransportAdvanceController;
 use App\Http\Controllers\Api\Transport\TransportAllocationController;
+use App\Http\Controllers\Api\Transport\TransportBillingController;
 use App\Http\Controllers\Api\Transport\TransportCapabilityController;
 use App\Http\Controllers\Api\Transport\TransportConsignmentController;
 use App\Http\Controllers\Api\Transport\TransportContainerController;
@@ -151,6 +152,23 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
             ->whereNumber('id')->whereNumber('documentId');
         Route::post('/trips/{id}/pod/{documentId}/reject', [TransportPodController::class, 'reject'])
             ->whereNumber('id')->whereNumber('documentId');
+    });
+
+    /* ── Billing trigger — SNG-TRN-015, API-010 ───────────────────────────
+     *
+     * Reading readiness sits behind TRIP_VIEW: asking whether a trip may be
+     * billed, and why not, is something anyone who can see the trip should be
+     * able to do — a blocker nobody can read is a blocker nobody fixes.
+     *
+     * Preparing sits behind the narrower BILLING_PREPARE, which API-010 names.
+     * Neither route raises an invoice; Accounts does that and emits EVT-010.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::TRIP_VIEW)->group(function () {
+        Route::get('/trips/{id}/bill', [TransportBillingController::class, 'show'])->whereNumber('id');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::BILLING_PREPARE)->group(function () {
+        Route::post('/trips/{id}/bill', [TransportBillingController::class, 'store'])->whereNumber('id');
     });
 
     /* ── What this user may do ────────────────────────────────────────

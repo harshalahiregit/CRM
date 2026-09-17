@@ -127,6 +127,19 @@ final class TransportPermission
     public const POD_SUBMIT = 'transport.pod.submit';
     public const POD_VERIFY = 'transport.pod.verify';
 
+    /* ── Billing trigger (SNG-TRN-015) ───────────────────────────────────
+     *
+     * SPECIFIED. API-010's Permission column reads `transport.billing.prepare`
+     * exactly. The MATRIX row is not — the Permissions sheet has no Billing
+     * domain at all, which is D-60.
+     *
+     * "Prepare billing" is not "raise an invoice". Transport declares a trip
+     * billable; Accounts posts the invoice and emits EVT-010. So the row below
+     * is modelled on PERM-005 `Trip / close` — the nearest act of comparable
+     * consequence that the registry does grant — and NOT on anything wider.
+     */
+    public const BILLING_PREPARE = 'transport.billing.prepare';
+
     /* ── Master data (SNG-TRN-003 / 004). NOT IN THE REGISTRY — see D-8. ── */
     public const VEHICLE_VIEW   = 'transport.vehicle.view';
     public const VEHICLE_CREATE = 'transport.vehicle.create';
@@ -274,6 +287,20 @@ final class TransportPermission
         // splitting this from POD_SUBMIT. The party that produced the evidence
         // does not get to certify it.
         self::POD_VERIFY => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        // Key SPECIFIED by API-010; matrix row CONSTRUCTED — no Billing domain
+        // exists in the Permissions sheet (D-60). Mirrors PERM-005
+        // `Trip / close`: Owner, Operations, Accounts, Approver, Admin.
+        //
+        // Dispatcher is absent though PERM-005 also omits them, and that reads
+        // correctly here — deciding a customer may be charged is not a
+        // dispatcher's call. Driver, Customer and Supplier obviously not.
+        self::BILLING_PREPARE => [
             self::ROLE_OWNER      => self::SCOPE_ALL,
             self::ROLE_OPERATIONS => self::SCOPE_ALL,
             self::ROLE_ACCOUNTS   => self::SCOPE_ALL,

@@ -482,6 +482,26 @@ export const transportPodApi = {
 }
 
 /**
+ * Billing trigger — SNG-TRN-015, API-010.
+ *
+ * `get` is a pure read that returns WHY a trip may or may not be billed, using
+ * the same sentence the refusal would carry — so what the screen says before
+ * the button is pressed matches what it would say after.
+ *
+ * `prepare` does NOT raise an invoice. Transport declares the trip billable and
+ * hands off; Accounts posts the invoice and emits InvoicePosted. The button is
+ * labelled accordingly, because "Bill this trip" would promise something this
+ * module is forbidden to do.
+ */
+export const transportBillingApi = {
+  get: (tripId) =>
+    api.get(`/transport/trips/${tripId}/bill`)
+      .then((r) => r.data?.data ?? { readiness: null, bill: null }).catch(handleErr),
+
+  prepare: (tripId) => post422(`/transport/trips/${tripId}/bill`, {}),
+}
+
+/**
  * What the signed-in user may do — so a screen can hide an action the API would
  * refuse rather than show a button that 403s.
  */

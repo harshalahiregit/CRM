@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use RuntimeException;
 
@@ -134,6 +135,18 @@ class TransportTrip extends Model
     public function documents(): HasMany
     {
         return $this->hasMany(TripDocument::class, 'trip_id');
+    }
+
+    /**
+     * The billing linkage — DB-012, SNG-TRN-015.
+     *
+     * hasOne, because a trip is billed once: `trip_bills` is unique on
+     * (tenant_id, trip_id). Part-billing is in no ticket, and a hasMany would
+     * make that look like an option somebody could take.
+     */
+    public function bill(): HasOne
+    {
+        return $this->hasOne(TripBill::class, 'trip_id');
     }
 
     /* ── Scopes. Composed AFTER forTenant(), never instead of it. ────── */

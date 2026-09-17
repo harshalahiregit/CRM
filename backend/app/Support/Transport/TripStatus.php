@@ -129,6 +129,32 @@ final class TripStatus
         // STT-006 (dispatched → in_transit) is the Transit half of
         // SNG-TRN-013, blocked on the owner's Q1/Q3 ruling. Nothing writes
         // `in_transit`. DispatchScope::STATE_EDGE_DEFERRED names it as data.
+        //
+        // STT-007 (in_transit → delivered) follows it and is equally unwired,
+        // for the same reason — there is no `in_transit` to leave.
+
+        // STT-008 | delivered → pod_verified | trigger "Verify POD"
+        //         | actor DocumentEngine | guard "POD valid"
+        //         | side effect "Unlock billing" | audited | LOCKED
+        //
+        // SNG-TRN-014. Declared here rather than only inside
+        // TripDocumentService, so the edge is checkable by the same
+        // canTransition() every other edge answers to.
+        //
+        // UNREACHABLE TODAY, and honestly so: nothing writes `delivered`
+        // because STT-006 and STT-007 above are P1's and not yet built. The
+        // service therefore moves the trip only when it is actually standing
+        // in `delivered`, and records the document either way. Raised as C-09.
+        self::DELIVERED => [self::POD_VERIFIED],
+
+        // STT-009 | pod_verified → billable | trigger "Billing validation"
+        //         | actor BillingEngine | guard "No blockers"
+        //         | side effect "Create billing draft" | audited | LOCKED
+        //
+        // SNG-TRN-015. The guard is TripDocumentService::billingReadiness() —
+        // a verified POD, or an approved exception waiving one — which is
+        // 014's acceptance criterion doing the work 015 depends on.
+        self::POD_VERIFIED => [self::BILLABLE],
 
         // ── INFERRED, NOT A REGISTRY TRANSITION ──────────────────────────
         // pretrip_ok → approved, when an assignment is released.
