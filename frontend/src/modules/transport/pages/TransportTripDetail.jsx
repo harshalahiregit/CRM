@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Truck, Building2, Package, History, Route as RouteIcon,
-  AlertTriangle, Loader2, Gauge, Pencil, ClipboardCheck, Send, Boxes, CheckCircle2,
+  AlertTriangle, Loader2, Gauge, Pencil, ClipboardCheck, Send, Boxes, CheckCircle2, Undo2,
 } from 'lucide-react'
 import { transportTripApi, transportCapabilityApi } from '@/services/transportApi'
 import { useToast } from '@/components/ui/Toast'
@@ -58,6 +58,8 @@ export default function TransportTripDetail() {
 
   const [editOpen, setEditOpen] = useState(false)
   const [approveOpen, setApproveOpen] = useState(false)
+  const [rejectOpen, setRejectOpen] = useState(false)
+  const [rejectReason, setRejectReason] = useState('')
   const [form, setForm] = useState({ approved_freight: '', currency: 'INR', route: '' })
 
   const load = useCallback(async () => {
@@ -100,6 +102,20 @@ export default function TransportTripDetail() {
       load()
     } catch (e) {
       toast.error(e?.message || 'That trip could not be approved.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const reject = async () => {
+    setBusy(true)
+    try {
+      await transportTripApi.reject(id, rejectReason)
+      toast.success('Trip sent back for correction.')
+      setRejectOpen(false); setRejectReason('')
+      load()
+    } catch (e) {
+      toast.error(e?.message || 'That trip could not be sent back.')
     } finally {
       setBusy(false)
     }
@@ -188,6 +204,13 @@ export default function TransportTripDetail() {
           )}
           {/* STT-002. Until this shipped, a trip reaching viability_pending was
               stuck there forever and nothing downstream could be reached. */}
+          {/* STT-003. Beside Approve, because they are the two answers to one
+              question and a reviewer who can only say yes is not reviewing. */}
+          {awaitingApproval && canApprove && (
+            <button disabled={busy} onClick={() => { setRejectReason(''); setRejectOpen(true) }} style={btn('#94a3b8')}>
+              <Undo2 size={14} /> Send back
+            </button>
+          )}
           {awaitingApproval && canApprove && (
             <button disabled={busy} onClick={() => setApproveOpen(true)} style={btn('#10b981', true)}>
               <CheckCircle2 size={14} /> Approve trip
@@ -200,6 +223,26 @@ export default function TransportTripDetail() {
           )}
         </div>
       </div>
+
+      {/* STT-003's "Return to edit": the objection is on the page the person
+          has to act on, not only in the history. */}
+      {trip.rejection_reason && (
+        <div style={{
+          display: 'flex', gap: 10, alignItems: 'flex-start', padding: '12px 14px', borderRadius: 10,
+          background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.32)', marginBottom: 14,
+        }}>
+          <Undo2 size={15} style={{ color: '#f59e0b', flexShrink: 0, marginTop: 1 }} />
+          <div>
+            <p style={{ margin: 0, fontSize: 12.5, fontWeight: 800, color: '#f59e0b' }}>
+              Sent back for correction
+            </p>
+            <p style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--text-p)' }}>{trip.rejection_reason}</p>
+            <p style={{ margin: '4px 0 0', fontSize: 11.5, color: 'var(--text-muted)' }}>
+              Fix it, then submit for viability again.
+            </p>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 14px', borderRadius: 10, background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.30)', color: '#f87171', fontSize: 13, marginBottom: 14 }}>
@@ -363,6 +406,42 @@ export default function TransportTripDetail() {
           <AuditList entries={audit} />
         </Panel>
       </div>
+
+      {/* STT-003. The reason is the precondition, so the button stays disabled
+          until there is one — the person correcting the trip has to know what
+          to change. */}
+      <Modal open={rejectOpen} onClose={() => !busy && setRejectOpen(false)} style={{ maxWidth: 460, width: '92vw' }}>
+        <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)' }}>
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: 'var(--text-h)' }}>Send this trip back?</h2>
+          <p style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--text-muted)' }}>
+            It returns to draft so it can be corrected and submitted again.
+          </p>
+        </div>
+        <div style={{ padding: '18px 22px', display: 'grid', gap: 10 }}>
+          <label style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.05em', color: 'var(--text-muted)' }}>
+            WHAT NEEDS CHANGING?
+          </label>
+          <textarea
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            rows={4}
+            placeholder="e.g. The agreed price is below the rate for this route."
+            style={{
+              width: '100%', padding: '10px 12px', borderRadius: 10, fontSize: 13, resize: 'vertical',
+              border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-p)',
+            }}
+          />
+          <p style={{ margin: 0, fontSize: 11.5, color: 'var(--text-muted)' }}>
+            Whoever picks this trip up will see this, so say what to change rather than only that it is wrong.
+          </p>
+        </div>
+        <div style={{ padding: '14px 22px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button disabled={busy} onClick={() => setRejectOpen(false)} style={btn('#94a3b8')}>Cancel</button>
+          <button disabled={busy || rejectReason.trim().length < 3} onClick={reject} style={btn('#f59e0b', true)}>
+            {busy ? <Loader2 size={13} className="animate-spin" /> : <Undo2 size={14} />} Send back
+          </button>
+        </div>
+      </Modal>
 
       {/* STT-002. The dialog states what the system did NOT check, because a
           user approving a trip should know. D-59. */}

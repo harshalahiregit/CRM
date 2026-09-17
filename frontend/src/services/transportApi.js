@@ -78,6 +78,10 @@ export const transportTripApi = {
    */
   approve: (id) =>
     api.patch(`/transport/trips/${id}/approve`).then((r) => r.data?.data).catch(handleErr),
+
+  /** STT-003 — send a trip back for correction. The reason is the precondition. */
+  reject: (id, reason) =>
+    api.patch(`/transport/trips/${id}/reject`, { reason }).then((r) => r.data?.data).catch(handleErr),
 }
 
 /* ── Allocation (SNG-TRN-009) ─────────────────────────────────────────── */

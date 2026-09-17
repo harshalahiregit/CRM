@@ -60,6 +60,9 @@ class TransportTrip extends Model
         // through TransportTripService::approve(), never through an update.
         'approved_at'          => 'datetime',
         'approved_by'          => 'integer',
+        // STT-003's outstanding objection. Not fillable: set by reject() and
+        // cleared by submitForViability(), never by a general update.
+        'rejection_reason'     => 'string',
         'dispatch_version'     => 'integer',
     ];
 

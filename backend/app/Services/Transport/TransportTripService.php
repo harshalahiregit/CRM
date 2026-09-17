@@ -198,7 +198,16 @@ class TransportTripService
             );
         }
 
-        $trip->forceFill(['status' => $to, 'updated_by' => $actor?->id])->save();
+        $trip->forceFill([
+            'status'     => $to,
+            'updated_by' => $actor?->id,
+            // STT-003's reason is the OUTSTANDING objection, not a permanent
+            // mark. Resubmitting answers it, so it is cleared here — otherwise a
+            // trip that went round the loop and was approved would still display
+            // the objection it had already satisfied. The audit keeps the
+            // history.
+            'rejection_reason' => null,
+        ])->save();
 
         $trip->auditTransition('transport.trip.status_changed', $from, $to, $actor);
 
@@ -291,6 +300,91 @@ class TransportTripService
         ]);
 
         return $approved;
+    }
+
+    /**
+     * STT-003 — `viability_pending → draft`, "Reject for correction".
+     *
+     *   STT-003  | actor Operations | precondition "Rejection reason"
+     *            | side effect "Return to edit" | audited | LOCKED
+     *
+     * The other half of the review. A reviewer who can only say yes is not
+     * reviewing, and before this a trip that should not be approved had nowhere
+     * to go but forward.
+     *
+     * ── THE REASON IS THE PRECONDITION, SO IT IS MANDATORY ───────────────
+     * STT-003 names "Rejection reason" as its precondition, so an empty one is
+     * refused rather than defaulted. A trip that returns to draft with no
+     * recorded objection is its own kind of trap door: the person who has to fix
+     * it cannot know what to fix, and the next reviewer cannot see it was ever
+     * questioned.
+     *
+     * ── THE LOOP MUST CLOSE ──────────────────────────────────────────────
+     * "Return to edit" means edit and RESUBMIT. A rejected trip goes back to
+     * draft, where update() accepts changes again, and submitForViability()
+     * moves it forward once more — clearing this reason as it goes. The trip can
+     * go round as many times as it takes.
+     *
+     * ── PERMISSION: TRIP_APPROVE, REUSED DELIBERATELY ────────────────────
+     * Step 11 has NO permission row for rejecting a trip. Rather than invent a
+     * second grant matrix, this reuses PERM-003's — approve and reject are the
+     * two answers to one question, and sending a trip back is strictly less
+     * powerful than approving it. Inventing a matrix nobody specified would be
+     * the larger step. Recorded in D-12 with the other derived rows.
+     */
+    public function reject(TransportTrip $trip, ?string $reason, int $tenantId, ?User $actor = null): TransportTrip
+    {
+        $this->assertTenant($trip, $tenantId);
+
+        $from = $trip->status;
+        $to   = TripStatus::DRAFT;
+
+        if (! TripStatus::canTransition($from, $to)) {
+            throw new BusinessException(
+                'Only a trip awaiting viability can be sent back. This trip is '.$trip->statusLabel().'.',
+                422
+            );
+        }
+
+        $reason = trim((string) $reason);
+
+        if ($reason === '') {
+            throw new BusinessException(
+                'Give a reason for sending this trip back, so whoever corrects it knows what to change.',
+                422
+            );
+        }
+
+        $rejected = DB::transaction(function () use ($trip, $from, $to, $actor, $reason) {
+            $trip->forceFill([
+                'status'           => $to,
+                'rejection_reason' => $reason,
+                'updated_by'       => $actor?->id,
+                // A rejected trip has never been approved. Clearing these keeps
+                // the two records from contradicting each other if a trip is
+                // approved, and it cannot be while it sits in draft.
+                'approved_at'      => null,
+                'approved_by'      => null,
+            ])->save();
+
+            // The reason travels in the audit row as well as the column: the
+            // column holds the OUTSTANDING objection and is cleared on resubmit,
+            // so without this the history of a trip rejected twice would show
+            // that it happened but not what was said either time.
+            $trip->audit('transport.trip.rejected', $actor, old: ['status' => $from], new: [
+                'status' => $to,
+                'reason' => $reason,
+            ]);
+
+            return $trip->fresh();
+        });
+
+        Log::channel('transport')->info('Trip sent back for correction', [
+            'trip_id' => $rejected->id, 'from' => $from, 'to' => $to,
+            'tenant_id' => $tenantId, 'user_id' => $actor?->id,
+        ]);
+
+        return $rejected;
     }
 
     /**

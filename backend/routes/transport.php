@@ -352,5 +352,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
      */
     Route::middleware('transport.permission:'.TransportPermission::TRIP_APPROVE)->group(function () {
         Route::patch('/trips/{id}/approve', [TransportTripController::class, 'approve'])->whereNumber('id');
+        // STT-003, same gate: approve and reject are one decision with two
+        // answers, and there is no separate permission row for rejecting.
+        Route::patch('/trips/{id}/reject', [TransportTripController::class, 'reject'])->whereNumber('id');
     });
 });

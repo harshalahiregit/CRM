@@ -283,6 +283,160 @@ class TripApprovalTest extends TestCase
         $this->patchJson('/api/transport/trips/'.$trip->id.'/approve')->assertForbidden();
     }
 
+    /* ══════════ STT-003 — reject for correction ══════════ */
+
+    public function test_a_trip_can_be_sent_back_for_correction(): void
+    {
+        $trip = $this->pendingTrip();
+
+        $rejected = $this->trips->reject($trip, 'Freight is below the agreed rate card.', self::TENANT_A, $this->user());
+
+        $this->assertSame(TripStatus::DRAFT, $rejected->status);
+        $this->assertSame('Freight is below the agreed rate card.', $rejected->rejection_reason);
+    }
+
+    public function test_a_rejection_without_a_reason_is_refused(): void
+    {
+        // "Rejection reason" IS STT-003's precondition. A trip returning to
+        // draft with no recorded objection cannot be corrected by whoever
+        // receives it.
+        $trip = $this->pendingTrip();
+
+        $this->expectException(BusinessException::class);
+        $this->expectExceptionMessage('Give a reason');
+
+        $this->trips->reject($trip, '   ', self::TENANT_A, $this->user());
+    }
+
+    public function test_a_refused_rejection_writes_nothing(): void
+    {
+        $trip = $this->pendingTrip();
+
+        try {
+            $this->trips->reject($trip, '', self::TENANT_A, $this->user());
+        } catch (BusinessException) {
+            // expected
+        }
+
+        $fresh = $trip->fresh();
+        $this->assertSame(TripStatus::VIABILITY_PENDING, $fresh->status);
+        $this->assertNull($fresh->rejection_reason);
+    }
+
+    public function test_only_a_trip_awaiting_viability_can_be_sent_back(): void
+    {
+        $trip     = $this->pendingTrip();
+        $approved = $this->trips->approve($trip, self::TENANT_A, $this->user());
+
+        $this->expectException(BusinessException::class);
+        $this->expectExceptionMessage('Only a trip awaiting viability can be sent back');
+
+        $this->trips->reject($approved, 'Too late.', self::TENANT_A, $this->user());
+    }
+
+    public function test_the_rejection_is_audited_with_its_reason(): void
+    {
+        $trip = $this->pendingTrip();
+
+        $this->trips->reject($trip, 'Vehicle type does not match the cargo.', self::TENANT_A, $this->user());
+
+        $entry = TransportAuditLog::forTenant(self::TENANT_A)
+            ->forSubject(TransportTrip::class, $trip->id)
+            ->where('action', 'transport.trip.rejected')->sole();
+
+        // The column is cleared on resubmit, so the audit is the only lasting
+        // record of WHAT was said.
+        $this->assertSame('Vehicle type does not match the cargo.', $entry->new_values['reason']);
+    }
+
+    public function test_a_rejected_trip_goes_round_the_loop_again(): void
+    {
+        // THE POINT OF STT-003. "Return to edit" means edit AND resubmit. A
+        // trip that could be sent back but not sent forward again would be a
+        // second dead end, one state earlier.
+        $trip = $this->pendingTrip();
+
+        $rejected = $this->trips->reject($trip, 'Freight too low.', self::TENANT_A, $this->user());
+        $this->assertSame(TripStatus::DRAFT, $rejected->status);
+
+        // Draft is editable again.
+        $edited = $this->trips->update($rejected, ['approved_freight' => 61000], self::TENANT_A, $this->user());
+        $this->assertSame('61000.00', (string) $edited->approved_freight);
+
+        $resubmitted = $this->trips->submitForViability($edited, self::TENANT_A, $this->user());
+        $this->assertSame(TripStatus::VIABILITY_PENDING, $resubmitted->status);
+
+        // The objection has been answered, so it no longer hangs on the trip.
+        $this->assertNull($resubmitted->rejection_reason, 'a resubmitted trip must not still show the old objection');
+
+        $approved = $this->trips->approve($resubmitted, self::TENANT_A, $this->user());
+        $this->assertSame(TripStatus::APPROVED, $approved->status);
+        $this->assertNull($approved->rejection_reason);
+    }
+
+    public function test_it_can_go_round_more_than_once(): void
+    {
+        $trip = $this->pendingTrip();
+
+        for ($i = 1; $i <= 3; $i++) {
+            $trip = $this->trips->reject($trip, "Round {$i}: still not right.", self::TENANT_A, $this->user());
+            $this->assertSame(TripStatus::DRAFT, $trip->status);
+            $trip = $this->trips->submitForViability($trip, self::TENANT_A, $this->user());
+        }
+
+        $this->assertSame(TripStatus::APPROVED, $this->trips->approve($trip, self::TENANT_A, $this->user())->status);
+
+        // Every round is in the history, even though only the last reason was
+        // ever on the trip at one time.
+        $this->assertSame(3, TransportAuditLog::forTenant(self::TENANT_A)
+            ->forSubject(TransportTrip::class, $trip->id)
+            ->where('action', 'transport.trip.rejected')->count());
+    }
+
+    public function test_rejecting_clears_any_earlier_approval_stamp(): void
+    {
+        // Belt and braces: a trip in draft has not been approved, and the two
+        // records must never contradict each other.
+        $trip = $this->pendingTrip();
+        $trip->forceFill(['approved_at' => now(), 'approved_by' => $this->user()->id])->save();
+
+        $rejected = $this->trips->reject($trip->fresh(), 'Sent back.', self::TENANT_A, $this->user());
+
+        $this->assertNull($rejected->approved_at);
+        $this->assertNull($rejected->approved_by);
+    }
+
+    public function test_a_dispatcher_cannot_reject_a_trip_over_http(): void
+    {
+        $trip = $this->pendingTrip();
+        Sanctum::actingAs($this->user(self::TENANT_A, 'staff', 'transport_dispatcher'));
+
+        $this->patchJson('/api/transport/trips/'.$trip->id.'/reject', ['reason' => 'No.'])->assertForbidden();
+
+        $this->assertSame(TripStatus::VIABILITY_PENDING, $trip->fresh()->status);
+    }
+
+    public function test_the_reject_endpoint_requires_a_reason(): void
+    {
+        $trip = $this->pendingTrip();
+        Sanctum::actingAs($this->user(self::TENANT_A, 'admin'));
+
+        $this->patchJson('/api/transport/trips/'.$trip->id.'/reject', [])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('reason');
+    }
+
+    public function test_an_admin_can_reject_over_http(): void
+    {
+        $trip = $this->pendingTrip();
+        Sanctum::actingAs($this->user(self::TENANT_A, 'admin'));
+
+        $this->patchJson('/api/transport/trips/'.$trip->id.'/reject', ['reason' => 'Price needs renegotiating.'])
+            ->assertOk()
+            ->assertJsonPath('data.status', TripStatus::DRAFT)
+            ->assertJsonPath('data.rejection_reason', 'Price needs renegotiating.');
+    }
+
     /* ══════════ D-59 — the pinned absence ══════════ */
 
     /**

@@ -2190,3 +2190,36 @@ this decision. The absence is honest and visible; a fake would be neither.
 **Consequence, recorded:** a consumer that de-duplicates strictly on `trip_id+approval_id` cannot do
 so. Today there are no consumers — EVT-004 is emit-only, like EVT-001 and EVT-002 — so nothing is
 broken. Whoever builds the first consumer, or an approvals table, inherits this.
+
+---
+
+## D-61 — STT-003 has no permission row; TRIP_APPROVE is reused rather than a matrix invented
+
+**Raised and resolved:** 2026-09-17, building STT-003.
+
+```
+STT-003 | SM-TRP | viability_pending | draft | Reject for correction
+        | Operations | Rejection reason | Return to edit | Yes | LOCKED
+```
+
+The transition is LOCKED and fully specified. What does not exist anywhere: **no Permissions row
+for rejecting a trip, no Event_Registry row, no API_Registry path.** PERM-003 covers `Trip ·
+approve` only.
+
+**Decided without a ruling, and here is the reasoning.** `TRIP_APPROVE` is reused for reject rather
+than deriving a second grant matrix:
+
+- approve and reject are the two answers to **one** question, asked at one moment by one person;
+- sending a trip back is **strictly less powerful** than approving it, so reusing the narrower-
+  purpose key grants nothing that key did not already imply;
+- inventing a second matrix — deciding for ourselves which of the nine roles may reject — would be
+  a larger and less reversible step than reusing one the registry already fixed.
+
+STT-003's actor column reads "Operations", which is already inside PERM-003's grants. The Dispatcher
+denial carries over unchanged, and is tested.
+
+The path follows the shipped convention: `PATCH /trips/{id}/reject`, beside `approve`. Logged with
+D-12's other missing endpoint rows.
+
+**If Step 11 later adds a `Trip · reject` row that differs from PERM-003, this is the decision to
+revisit.**
