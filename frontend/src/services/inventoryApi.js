@@ -352,6 +352,10 @@ export const inventoryApi = {
     all:    () => api.get('/inventory/settings').then(unwrap).catch(handleErr),
     list:   (kind, params = {}) => api.get(`/inventory/settings/${kind}`, { params }).then(unwrap).catch(handleErr),
     create: (kind, data) => api.post(`/inventory/settings/${kind}`, data).then(unwrap).catch(handleErr),
+    // Many rows in ONE request. Forty round trips to add forty colours is the
+    // difference between an import and a coffee break — and on a single-threaded
+    // server every other request queues behind them.
+    bulk:   (kind, rows) => api.post(`/inventory/settings/${kind}/bulk`, { rows }).then(unwrap).catch(handleErr),
     update: (kind, id, data) => api.put(`/inventory/settings/${kind}/${id}`, data).then(unwrap).catch(handleErr),
     remove: (kind, id) => api.delete(`/inventory/settings/${kind}/${id}`).then(unwrap).catch(handleErr),
     subgroups: (groupId) => api.get(`/inventory/settings/groups/${groupId}/subgroups`).then(unwrap).catch(handleErr),

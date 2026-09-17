@@ -90,6 +90,75 @@ class SettingsService
         return $model::create([...$data, 'tenant_id' => $tenantId]);
     }
 
+    /**
+     * Add a list of rows in one go.
+     *
+     * Master data arrives in lists — a page of commodity types off a supplier's
+     * catalogue, forty colours off a swatch card — and typing them one at a time
+     * into a single-line form is the whole of the complaint. Nothing here is new
+     * behaviour: each row goes through the same create() as the form, so the
+     * same shape rules and the same tenant scoping apply.
+     *
+     * A name that already exists is SKIPPED, not an error. Somebody pasting a
+     * list they pasted last week should end up with the list they wanted, not a
+     * refusal half way down — and the count that comes back says exactly what
+     * happened, so nothing is silently ignored either.
+     *
+     * One transaction: a bad row twenty lines in must not leave nineteen
+     * committed and the rest lost.
+     *
+     * @param  array<int,array<string,mixed>>  $rows
+     * @return array{created:int, skipped:int, failed:array<int,string>}
+     */
+    public function bulkCreate(string $kind, array $rows, int $tenantId): array
+    {
+        $model = $this->model($kind);
+        $created = 0;
+        $skipped = 0;
+        $failed = [];
+
+        DB::transaction(function () use ($kind, $rows, $tenantId, $model, &$created, &$skipped, &$failed) {
+            foreach ($rows as $row) {
+                $name = trim((string) ($row['name'] ?? ''));
+                if ($name === '') {
+                    continue;
+                }
+
+                $existing = $model::forTenant($tenantId)->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
+                // An attribute's name is only unique within its own kind — "Red"
+                // is a colour and could equally be a style.
+                if (! empty($row['kind'])) {
+                    $existing->where('kind', $row['kind']);
+                }
+                if (! empty($row['group_id'])) {
+                    $existing->where('group_id', $row['group_id']);
+                }
+
+                if ($existing->exists()) {
+                    $skipped++;
+                    continue;
+                }
+
+                try {
+                    $this->create($kind, [...$row, 'name' => $name], $tenantId);
+                    $created++;
+                } catch (\Throwable $e) {
+                    $failed[] = $name.' — '.$e->getMessage();
+                }
+            }
+
+            if ($failed) {
+                throw new BusinessException(
+                    'Nothing was imported. '.count($failed).' of '.count($rows).' rows could not be added: '
+                    .implode('; ', array_slice($failed, 0, 3)),
+                    422,
+                );
+            }
+        });
+
+        return ['created' => $created, 'skipped' => $skipped, 'failed' => $failed];
+    }
+
     public function update(string $kind, int $id, array $data, int $tenantId)
     {
         $model = $this->model($kind);
