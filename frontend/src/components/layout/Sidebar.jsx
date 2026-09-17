@@ -311,18 +311,35 @@ const TRANSPORT_SUB_ITEMS = [
   { label: 'Trips',            path: '/app/transport/trips',    icon: Truck },
   { label: 'Consignments',     path: '/app/transport/consignments', icon: Boxes },
   { label: 'Containers',       path: '/app/transport/containers', icon: Container },
-  { label: 'Vehicles',         path: '/app/transport/vehicles', icon: Truck },
-  { label: 'Drivers',          path: '/app/transport/drivers',  icon: Users },
+  // ── VEHICLES AND DRIVERS ARE HIDDEN, NOT REMOVED — D-62, owner's ruling ─
+  // Hidden because Person 2's Fleet module is now the visible one; removed
+  // entirely only when allocation has been repointed at it.
+  //
+  //   { label: 'Vehicles', path: '/app/transport/vehicles', icon: Truck },
+  //   { label: 'Drivers',  path: '/app/transport/drivers',  icon: Users },
+  //
+  // The pages, routes, API, models and services all still exist and still work
+  // by URL. Allocation, pre-trip checks and dispatch read `transport_vehicles`
+  // and `transport_drivers` TODAY, so deleting them breaks the dispatch chain.
+  // Do not uncomment to "fix" a missing screen, and do not delete the code
+  // behind them, until D-62 is closed and allocation reads Fleet.
+
   // The fleet screens, folded in so Transport is ONE entry in the sidebar.
   // Each carries its own `when`, so a customer still never sees a fleet board
   // that would answer 403 — the gate moved from the section to the items and
   // did not weaken.
   //
-  // NOTE for whoever reconciles this: `Vehicles`/`Drivers` above read
-  // transport_vehicles/transport_drivers, which allocation and pre-trip checks
-  // depend on; `Fleet Status`/`Driver Directory` read the newer fleet tables.
-  // Two systems, both live. Merging the MENUS does not merge the DATA, and that
-  // decision is still open.
+  // NOTE for whoever reconciles this: the hidden `Vehicles`/`Drivers` entries
+  // above read transport_vehicles/transport_drivers, which allocation and
+  // pre-trip checks depend on; `Fleet Status`/`Driver Directory` read the newer
+  // fleet tables. Two systems, both live. Hiding one MENU does not merge the
+  // DATA — the join is still open and is D-62's remaining half.
+  //
+  // A known and accepted consequence: the demo trucks live in
+  // transport_vehicles, so Fleet Status reads "No vehicles yet". That is
+  // honest. Do NOT seed copies into the fleet tables to populate it — two sets
+  // of the same trucks in two tables is the duplicate-master-data failure this
+  // whole arrangement exists to prevent.
   ...STOS_SUB_ITEMS,
 ]
 

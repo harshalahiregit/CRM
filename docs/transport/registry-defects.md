@@ -2606,3 +2606,25 @@ D-12's other missing endpoint rows.
 
 **If Step 11 later adds a `Trip · reject` row that differs from PERM-003, this is the decision to
 revisit.**
+
+### D-62 — P1's half done, 2026-09-17: menu hidden, data join still open
+
+**Owner's ruling:** P2's Fleet is the visible fleet. P1's *Vehicles* and *Drivers* entries are
+**hidden from both navigations** — `TransportLayout.jsx` and `Sidebar.jsx`'s `TRANSPORT_SUB_ITEMS`.
+
+**HIDDEN, NOT DELETED.** Pages, routes, API, models and services all remain and still resolve by
+URL — verified after the change: `/app/transport/vehicles` and `/app/transport/drivers` both load
+with 5 rows each. They must remain, because **allocation, pre-trip checks and dispatch read
+`transport_vehicles` and `transport_drivers` today.** The reason is written at both commented-out
+entries so nobody un-hides them by accident or deletes them too early.
+
+**Accepted consequence, recorded so it is not "fixed" quietly:** the demo trucks are in
+`transport_vehicles`, so P2's Fleet Status reads *"No vehicles yet."* That is honest and it stays.
+**Copies were deliberately NOT seeded into the fleet tables** — two sets of the same trucks in two
+tables is the duplicate-master-data failure this arrangement exists to prevent, and those are P2's
+tables, not P1's.
+
+**What is still open — the half that matters.** Hiding a menu does not join the data. The question
+has gone to P2 as `docs/transport/REQUEST-person2-fleet-join.md`: migrate our rows into their
+tables, expose a contract we read, or something else they prefer. **No option was proposed as
+agreed and none has been started.** Their module, their call.
