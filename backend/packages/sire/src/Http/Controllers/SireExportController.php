@@ -64,6 +64,13 @@ class SireExportController
             (string) ($request->validated('scope') ?? SireExportService::defaultScope()),
             $request->filters(),
             (int) ($request->validated('limit') ?? 200),
+            // Pictures by default. A screenshot is the most useful thing on a bug
+            // report, and `images=0` exists for the reader who wants a small file
+            // to skim rather than a document to work from.
+            ! $request->has('images') || $request->boolean('images'),
+            // Absolute, so the "full size" links still resolve once the brief has
+            // been pasted somewhere that is not the app.
+            rtrim((string) config('app.frontend_url', config('app.url')), '/'),
         );
 
         $headers = ['Content-Type' => 'text/markdown; charset=utf-8'];

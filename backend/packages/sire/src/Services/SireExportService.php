@@ -40,8 +40,10 @@ class SireExportService
     /** Severity order within a screen: worst first, then oldest. */
     private const SEVERITY_ORDER = 'COALESCE((SELECT level FROM sire_severities WHERE sire_severities.id = sire_reports.severity_id), 0) DESC';
 
-    public function __construct(private readonly SireDashboardService $dashboard)
-    {
+    public function __construct(
+        private readonly SireDashboardService $dashboard,
+        private readonly SireExportImages $images,
+    ) {
     }
 
     /**
@@ -49,8 +51,15 @@ class SireExportService
      *
      * @param  array<string, mixed>  $filters  the same shape the register takes
      */
-    public function markdown(int $tenantId, SireUserIdentity $user, string $scope, array $filters, int $limit = 200): string
-    {
+    public function markdown(
+        int $tenantId,
+        SireUserIdentity $user,
+        string $scope,
+        array $filters,
+        int $limit = 200,
+        bool $embedImages = true,
+        ?string $baseUrl = null,
+    ): string {
         $reports = $this->reports($tenantId, $user, $scope, $filters, $limit);
 
         $lines = $this->header($reports, $scope, $limit);
@@ -73,13 +82,20 @@ class SireExportService
                 : count($group).' issues on this screen — likely one fix, or a few in one file.';
 
             foreach ($group as $report) {
-                $lines = array_merge($lines, $this->issue($report));
+                $lines = array_merge($lines, $this->issue($report, $embedImages, $baseUrl));
             }
         }
 
         $lines[] = '';
         $lines[] = '---';
         $lines[] = '';
+
+        if ($this->images->exhausted()) {
+            $lines[] = '> **Some screenshots are links rather than pictures.** The brief hit its';
+            $lines[] = '> image budget; narrow the modules to get the rest inline.';
+            $lines[] = '';
+        }
+
         $lines = array_merge($lines, $this->footer($reports));
 
         return implode("\n", $lines)."\n";
@@ -180,7 +196,7 @@ class SireExportService
     }
 
     /** @return array<int, string> */
-    private function issue(Report $report): array
+    private function issue(Report $report, bool $embedImages, ?string $baseUrl): array
     {
         $out = [
             '',
@@ -223,6 +239,7 @@ class SireExportService
         }
 
         $out = array_merge($out, $this->diagnostics($report));
+        $out = array_merge($out, $this->images->blockFor($report, $embedImages, $baseUrl));
 
         if (filled($report->investigation_notes)) {
             $out[] = '';
