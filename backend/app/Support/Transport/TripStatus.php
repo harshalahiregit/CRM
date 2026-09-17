@@ -33,8 +33,34 @@ namespace App\Support\Transport;
  *   (no ticket)   pretrip_ok → dispatched                      (STT-005 dest.)
  *                 Authorised directly by the owner 2026-09-10; see DispatchScope.
  *
- * Still dead: in_transit onward. STT-006 is SNG-TRN-013's Transit half, blocked
- * on the owner's Q1/Q3 ruling; billable onward belongs to 015-018.
+ *   (no ticket)   dispatched → in_transit                      (STT-006)
+ *   (no ticket)   in_transit → delivered                       (STT-007)
+ *                 Block 3. STT-006 was authorised by the owner's Q3 ruling on
+ *                 2026-09-10 and then sat unbuilt for a week behind comments
+ *                 that called it blocked — D-105. See TransitScope.
+ *   SNG-TRN-014   delivered → pod_verified                     (STT-008, P3)
+ *   SNG-TRN-015   pod_verified → billable                      (STT-009, P3)
+ *   (Accounts)    billable → billed                            (STT-010, P3)
+ *   SNG-TRN-016   billed → collection_pending                  (STT-011, P3)
+ *   (no ticket)   collection_pending → closed                  (STT-012)
+ *                 Block 3. PLUMBED, NOT REACHABLE — see ClosureScope and D-106.
+ *
+ * ── THE STANDING RULE ON STEP 9 versus STEP 11 ───────────────────────────
+ * Ruled by the owner 2026-09-17, recorded in TEAM-CONTRACTS.md:
+ *
+ *   VOCABULARY FROM STEP 9. EDGES FROM STEP 11. A Step 9 state becomes
+ *   reachable only when some document defines something that can gate it.
+ *
+ * Four times Step 9 puts a state where Step 11 draws one edge straight past it.
+ * `pretrip_ok` is wired because STT-005's precondition and OPS-007's checklist
+ * gate it. `arrived`, `pod_pending` and `settlement_pending` have no entry gate
+ * in any document and no requirement that records them — the RTM runs OPS-008
+ * dispatch → OPS-009 track → OPS-010 delivery with nothing in between — and
+ * settlement has no table. All three stay DECLARED and stay UNREACHABLE. That
+ * closes D-36, which had left `arrived` to SNG-TRN-014, which shipped without
+ * deciding it.
+ *
+ * Still dead, on purpose: `arrived`, `pod_pending`, `settlement_pending`.
  *
  * Transport-owned. Stored on transport_trips.status as a plain string.
  */
@@ -147,13 +173,43 @@ final class TripStatus
         // allocated → pretrip_ok; its destination lands here.
         self::PRETRIP_OK => [self::APPROVED, self::DISPATCHED],
 
-        // ── STILL NOT WIRED ──────────────────────────────────────────────
-        // STT-006 (dispatched → in_transit) is the Transit half of
-        // SNG-TRN-013, blocked on the owner's Q1/Q3 ruling. Nothing writes
-        // `in_transit`. DispatchScope::STATE_EDGE_DEFERRED names it as data.
+        // STT-006 | dispatched → in_transit | trigger "Dispatch vehicle"
+        //         | actor TripEngine | precondition "Dispatch confirmed"
+        //         | side effect "Start monitoring" | audited | LOCKED
         //
-        // STT-007 (in_transit → delivered) follows it and is equally unwired,
-        // for the same reason — there is no `in_transit` to leave.
+        // ── AUTHORISED 2026-09-10, BUILT 2026-09-17, AND THE GAP IS D-105 ─
+        // The owner's Q3 ruling, verbatim: "wire dispatched → in_transit as a
+        // manual 'Record departure' action (departed_at, departed_by columns
+        // only). Nothing beyond that." The columns and their index shipped the
+        // same day. Nothing ever wrote them, and four documents — including the
+        // docblock at the top of this file — went on calling the edge blocked.
+        //
+        // MANUAL, because BR-P0-010's trigger is a GPS event and there is no
+        // GPS (SNG-TRN-020, P1). SM-TRP's entry gate for `in_transit` is
+        // "Departure recorded", which a person can do, and FRS TRP-P0-011's own
+        // rule line grants a "manual update fallback". See TransitScope.
+        //
+        // "Start monitoring" starts nothing: trip_exceptions has a schema and a
+        // vocabulary but no model, and no telemetry exists. Recorded, not faked.
+        self::DISPATCHED => [self::IN_TRANSIT],
+
+        // STT-007 | in_transit → delivered | trigger "Delivery confirmation"
+        //         | actor TripEngine | precondition "Destination event"
+        //         | side effect "Request POD" | audited | LOCKED
+        //
+        // RTM STOS-REQ-OPS-010 "Record delivery", P0, acceptance "Delivery
+        // confirmed". Manual for the same reason as STT-006.
+        //
+        // NOT VIA `arrived`. Step 9 places ARRIVED on this edge; nothing gates
+        // it and no requirement records an arrival distinct from a delivery, so
+        // under the standing rule it stays declared and unreachable. D-36 closed.
+        //
+        // "Request POD" resolves to a sentence, not a record. Reaching
+        // `delivered` IS what unlocks P3's verify step — TripDocumentService
+        // already declines to move a trip that is not standing here — and
+        // billingReadiness() already computes what is outstanding. Inventing a
+        // pod_requests table to satisfy a two-word side effect would be D-9.
+        self::IN_TRANSIT => [self::DELIVERED],
 
         // STT-008 | delivered → pod_verified | trigger "Verify POD"
         //         | actor DocumentEngine | guard "POD valid"
@@ -198,11 +254,29 @@ final class TripStatus
         // Transport has frozen an amount.
         self::BILLED => [self::COLLECTION_PENDING],
 
-        // ── STT-012 IS NOT WIRED, AND IS NOT P3'S ────────────────────────
-        // collection_pending → closed | actor TripEngine | guard
-        // "Settlement/POD/billing controls pass" | effect "Snapshot profit".
-        // TripEngine is P1's, and the snapshot it triggers is SNG-TRN-018,
-        // which is blocked on D-63. Left unwired deliberately.
+        // STT-012 | collection_pending → closed | trigger "Close trip"
+        //         | actor TripEngine | precondition "Settlement/POD/billing
+        //           controls pass" | side effect "Snapshot profit" | LOCKED
+        //
+        // ── PLUMBED, NOT REACHABLE — D-106 ───────────────────────────────
+        // `collection_pending` is the only state this leaves from, and no user
+        // can reach it: billable → billed runs through TripBill::markInvoiced(),
+        // which has no caller and no route. That is P3's surface, raised and not
+        // fixed here. Every guard, refusal and test behind this edge is real;
+        // the state they guard is currently unoccupiable.
+        //
+        // `closed` is TERMINAL, which is also this edge's idempotency. EVT-012
+        // keys on `trip_id+close_version`; no close_version exists (D-107, the
+        // same shape as D-65), so a second close is refused by the machine
+        // rather than by a counter nobody defined.
+        //
+        // "Snapshot profit" cannot run — trip_profit_snapshots is not a table
+        // (SNG-TRN-018). The event is still emitted, because the event is
+        // specified and its consumer's absence is not licence to drop it.
+        //
+        // NOT via `settlement_pending`: Step 9 puts it here, nothing gates it,
+        // and trip_settlements does not exist. Standing rule, as above.
+        self::COLLECTION_PENDING => [self::CLOSED],
 
         // ── INFERRED, NOT A REGISTRY TRANSITION ──────────────────────────
         // pretrip_ok → approved, when an assignment is released.

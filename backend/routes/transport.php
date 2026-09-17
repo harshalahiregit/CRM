@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\Transport\TransportAllocationController;
 use App\Http\Controllers\Api\Transport\TransportBillingController;
 use App\Http\Controllers\Api\Transport\TransportCapabilityController;
 use App\Http\Controllers\Api\Transport\TransportCollectionController;
+use App\Http\Controllers\Api\Transport\TransportClosureController;
 use App\Http\Controllers\Api\Transport\TransportConsignmentController;
 use App\Http\Controllers\Api\Transport\TransportContainerController;
 use App\Http\Controllers\Api\Transport\TransportCostController;
@@ -326,6 +327,63 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
     Route::middleware('transport.permission:'.TransportPermission::TRIP_DISPATCH)->group(function () {
         Route::patch('/trips/{trip}/dispatch',       [TransportDispatchController::class, 'confirm'])->whereNumber('trip');
         Route::patch('/trips/{trip}/dispatch/amend', [TransportDispatchController::class, 'amend'])->whereNumber('trip');
+
+        /* ── STT-006, `dispatched → in_transit` ──────────────────────────
+         *
+         * NO API_REGISTRY ROW — D-108. STT-006 and STT-007 are the only trip
+         * transitions Step 11 does not give an endpoint; even STT-012 gets
+         * API-009. The path follows the convention already beside it.
+         *
+         * AUTHORISED 2026-09-10 by the owner's Q3 ruling — "wire it as a manual
+         * Record departure action, departed_at and departed_by columns only" —
+         * and unbuilt for a week behind comments that called it blocked (D-105).
+         *
+         * Same permission as dispatch, deliberately. Releasing the trip and
+         * recording that it rolled are one dispatcher's one job.
+         */
+        Route::patch('/trips/{trip}/depart', [TransportDispatchController::class, 'depart'])->whereNumber('trip');
+    });
+
+    /* ── STT-007, `in_transit → delivered` — RTM STOS-REQ-OPS-010, P0 ────
+     *
+     * NO API_REGISTRY ROW either — D-108, same as departure.
+     *
+     * transport.trip.deliver is DERIVED and mirrors PERM-004, NOT PERM-010.
+     * FRS TRP-P0-013 names a driver, but that row is POD capture — P3's, where
+     * the Driver already holds `own`. Confirming a trip is delivered unlocks
+     * billing for everyone downstream; submitting the proof does not.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::TRIP_DELIVER)->group(function () {
+        Route::patch('/trips/{id}/deliver', [TransportTripController::class, 'deliver'])->whereNumber('id');
+    });
+
+    /* ── STT-012, `collection_pending → closed` ──────────────────────────
+     *
+     * API-009 VERBATIM — path, method and permission key are all quoted, which
+     * is true of no other endpoint in this module.
+     *
+     *   API-009 | POST | /api/v1/transport/trips/{trip}/close | Close trip
+     *           | JWT | transport.trip.close | TripClosed | LOCKED
+     *
+     * PERM-005 gives the matrix row and DENIES the Dispatcher, which is tested
+     * as a refusal exactly as PERM-003's denial is.
+     *
+     * ── PLUMBED, NOT REACHABLE — D-106 ───────────────────────────────────
+     * Nothing can reach `collection_pending`: TripBill::markInvoiced() has no
+     * caller and no route, and that is P3's surface. The endpoint is built,
+     * routed and tested; the state it requires is currently unoccupiable. Every
+     * response says so rather than leaving a client to infer it from a 422.
+     *
+     * The GET sits on TRIP_VIEW, not TRIP_CLOSE — reading why a trip is blocked
+     * is not closing it, and TRP-P0-014's acceptance is that a user SEES the
+     * blockers before acting.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::TRIP_VIEW)->group(function () {
+        Route::get('/trips/{trip}/closure', [TransportClosureController::class, 'show'])->whereNumber('trip');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::TRIP_CLOSE)->group(function () {
+        Route::post('/trips/{trip}/close', [TransportClosureController::class, 'close'])->whereNumber('trip');
     });
 
     /* ── Consignments — STOS-CTD §8 ───────────────────────────────────

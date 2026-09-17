@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Services\Transport\AllocationService;
 use App\Services\Transport\ConsignmentService;
 use App\Services\Transport\ContainerService;
+use App\Services\Transport\DispatchService;
 use App\Services\Transport\PretripService;
 use App\Services\Transport\TransportDriverService;
 use App\Services\Transport\TransportOrderService;
@@ -420,8 +421,18 @@ class TransportDemoSeeder extends Seeder
         // Dates only — NOT status. These are ordinary data a dispatcher types,
         // and they are set before the assignment so the "back in N days"
         // sentence is complete the moment the vehicle is held.
+        // ── THESE DATES USED TO CONTRADICT THE TRIP ──────────────────────
+        // The planned departure was yesterday, which was harmless while the
+        // furthest a trip could reach was `pretrip_ok`. Now that the demo trip
+        // actually departs, it is not: DispatchService refuses a departure
+        // earlier than the release, and the release is always "now" for a trip
+        // the seeder just built. The guard caught it the first time this ran.
+        //
+        // So the demo now says what is true — released today, left today, due
+        // back in two days — instead of describing a journey that started
+        // before the trip existed.
         $trip->forceFill([
-            'planned_departure_at' => now()->subDay(),
+            'planned_departure_at' => now(),
             'planned_arrival_at'   => now()->addDays(2)->setTime(16, 0),
         ])->save();
 
@@ -441,6 +452,30 @@ class TransportDemoSeeder extends Seeder
         // trip lands in `pretrip_ok`, ready to dispatch, which is what makes
         // this trip DIFFERENT from the other one rather than a second copy.
         $this->passPretrip($trip->fresh(), $tenantId, $actor);
+
+        // STT-005's destination, then STT-006 — released, then actually rolling.
+        //
+        // ── WHY THIS TRIP NOW GOES TWO STATES FURTHER ────────────────────
+        // The report line has always called this trip "crewed and moving", and
+        // until 2026-09-17 it was not moving: the furthest any trip could reach
+        // was `pretrip_ok`, and `in_transit` had never been occupied by
+        // anything. The demo said one thing and the data said another, which is
+        // the same class of problem as the seeder writing statuses directly.
+        //
+        // Both edges are walked through the real services, as everything here
+        // is. Departure is backdated to the planned departure, so the trip has
+        // a believable history rather than having left the instant it was seeded.
+        $dispatch = app(DispatchService::class);
+
+        $trip = $dispatch->confirm($trip->fresh(), [
+            'pickup_contact'        => 'Suresh Nair · 98200 11223',
+            'dispatch_destination'  => 'Bhiwandi Warehouse, Gate 3',
+            'dispatch_instructions' => 'Report to security first. Seal number is on the LR.',
+        ], $tenantId, $actor);
+
+        // No explicit time: it left when it was released, which is what the
+        // planned departure now says too.
+        $dispatch->recordDeparture($trip->fresh(), [], $tenantId, $actor);
 
         return $trip->fresh();
     }
@@ -470,8 +505,13 @@ class TransportDemoSeeder extends Seeder
         $waiting = $waiting->fresh();
         $problems = [];
 
-        if ($moving->status !== TripStatus::PRETRIP_OK) {
-            $problems[] = "{$moving->trip_number} should be ready to dispatch but is '{$moving->status}'";
+        if ($moving->status !== TripStatus::IN_TRANSIT) {
+            $problems[] = "{$moving->trip_number} should be on the road but is '{$moving->status}'";
+        }
+
+        // The claim is "moving", and a trip with no recorded departure is not.
+        if ($moving->departed_at === null) {
+            $problems[] = "{$moving->trip_number} is described as moving but has no recorded departure";
         }
 
         if ((int) $moving->vehicle_id !== (int) $vehicle->id) {

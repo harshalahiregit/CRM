@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Truck, Building2, Package, History, Route as RouteIcon,
   AlertTriangle, Loader2, Gauge, Pencil, ClipboardCheck, Send, Boxes, CheckCircle2, Undo2,
-  Wallet, IndianRupee, FileCheck2, Receipt, Banknote,
+  Wallet, IndianRupee, FileCheck2, Receipt, Banknote, MapPin, Lock,
 } from 'lucide-react'
 import { transportTripApi, transportCapabilityApi } from '@/services/transportApi'
 import { useToast } from '@/components/ui/Toast'
@@ -13,6 +13,10 @@ import AllocationPanel from '../components/AllocationPanel'
 import PretripPanel from '../components/PretripPanel'
 import DispatchPanel from '../components/DispatchPanel'
 import TripProgress from '../components/TripProgress'
+// Steps 4 and 9 — Block 3. Transit and delivery are P1's (STT-006/007);
+// closure is P1's too (STT-012) and is built but unreachable — see D-106.
+import JourneyPanel from '../components/JourneyPanel'
+import ClosurePanel from '../components/ClosurePanel'
 // Steps 4-6 — P3's tickets. Self-contained panels, same shape as the three
 // above, so the seam into this page stays three imports and three blocks.
 import AdvancesPanel from '../components/AdvancesPanel'
@@ -30,6 +34,7 @@ import { tripStatusCfg, orderStatusCfg, fmtMoney, fmtDate } from '../constants'
  * and they only make sense in order. So the left column runs
  *
  *     tracker  →  1 Vehicle & driver  →  2 Pre-trip checks  →  3 Dispatch
+ *              →  4 On the road  →  … →  9 Close the trip
  *
  * with the tracker at the top naming the same steps. Someone being walked
  * through the page for the first time can follow it top to bottom and never
@@ -330,11 +335,35 @@ export default function TransportTripDetail() {
             )}
           </Panel>
 
+          {/* Step 4. STT-006 and STT-007, RTM STOS-REQ-OPS-009 and OPS-010.
+
+              This is the step the page did not have until 2026-09-17, and its
+              absence was doing real damage: a trip stopped at Dispatch, so a
+              released trip and a trip halfway to Bhiwandi looked identical on
+              screen. Released is not moving.
+
+              STT-006 was authorised by the owner on 2026-09-10 and sat unbuilt
+              for a week behind comments that called it blocked — D-105.
+
+              Two permissions, not one: departure is the dispatcher's
+              (transport.trip.dispatch, the same grant that released the trip)
+              and delivery is Operations' (transport.trip.deliver, mirroring
+              PERM-004). The panel asks for both and shows only what it may do. */}
+          <Panel icon={MapPin} step={4} title="On the road"
+            subtitle="Record when the vehicle actually leaves and when it arrives. These are typed in by hand — there is no live tracking yet.">
+            <JourneyPanel
+              trip={trip}
+              canDepart={!!grants['transport.trip.dispatch']}
+              canDeliver={!!grants['transport.trip.deliver']}
+              onChanged={load}
+            />
+          </Panel>
+
           {/* Step 4. SNG-TRN-011. Money advanced against a trip before it has
               earned any, so the panel appears from `approved` — the first state
               where there is a trip worth funding. BR-P0-005's exposure figures
               come from the server; the panel never adds them up itself. */}
-          <Panel icon={Wallet} step={4} title="Advances"
+          <Panel icon={Wallet} step={5} title="Advances"
             subtitle="Money paid out before the trip earns anything. The limit comes from your workspace policy, and requesting is separate from approving.">
             {['draft', 'viability_pending'].includes(trip.status) ? (
               <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 0' }}>
@@ -354,7 +383,7 @@ export default function TransportTripDetail() {
               panel is shown from `approved` too: a cost recorded early is still
               a cost, and hiding the total until the trip moves would leave the
               margin half-visible for most of its life. */}
-          <Panel icon={IndianRupee} step={5} title="Trip costs"
+          <Panel icon={IndianRupee} step={6} title="Trip costs"
             subtitle="What this trip actually cost — fuel, tolls, and anything else. These are subtracted from the freight to give the margin.">
             {['draft', 'viability_pending'].includes(trip.status) ? (
               <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 0' }}>
@@ -374,7 +403,7 @@ export default function TransportTripDetail() {
               the load out of the yard, and an LR is filed long before anyone
               signs for delivery. The billing verdict sits at the top of the
               panel because it is the answer somebody came for. */}
-          <Panel icon={FileCheck2} step={6} title="Paperwork and proof of delivery"
+          <Panel icon={FileCheck2} step={7} title="Paperwork and proof of delivery"
             subtitle="The LR, e-way bill and signed POD. A trip cannot be billed until its POD has been verified, unless an exception waives it.">
             {['draft', 'viability_pending', 'approved'].includes(trip.status) ? (
               <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 0' }}>
@@ -395,7 +424,7 @@ export default function TransportTripDetail() {
               somebody needs to see WHY a trip is not yet invoiceable while
               there is still time to fix it. Transport marks it ready; Accounts
               raises the invoice — EVT-010's producer, not this module. */}
-          <Panel icon={Receipt} step={7} title="Billing"
+          <Panel icon={Receipt} step={8} title="Billing"
             subtitle="Hand the trip to Accounts once its proof of delivery is in. Transport marks it ready to invoice; it does not raise the invoice.">
             {['draft', 'viability_pending', 'approved'].includes(trip.status) ? (
               <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 0' }}>
@@ -414,7 +443,7 @@ export default function TransportTripDetail() {
               the invoice, so the panel appears from dispatch and explains
               itself until then. Recording a receipt here is TRACKING — Accounts
               posts the money (EVT-011), and the panel says so. */}
-          <Panel icon={Banknote} step={8} title="Getting paid"
+          <Panel icon={Banknote} step={9} title="Getting paid"
             subtitle="What the customer still owes, when it is due, and why it is stuck. Recording a receipt here tracks it; Accounts posts the money.">
             {['draft', 'viability_pending', 'approved'].includes(trip.status) ? (
               <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 0' }}>
@@ -424,6 +453,31 @@ export default function TransportTripDetail() {
               <CollectionPanel
                 trip={trip}
                 canRecord={!!grants['transport.collection.record']}
+                onChanged={load}
+              />
+            )}
+          </Panel>
+
+          {/* Step 9. STT-012, API-009, BR-P0-017, FRS TRP-P0-014.
+
+              BUILT AND UNREACHABLE, and the panel says so in plain words
+              rather than hiding itself or offering a dead button. Nothing can
+              move a trip into `collection_pending` because posting an invoice
+              has no route yet — that is Person 3's, and it is D-106.
+
+              It is shown from `delivered` onward rather than only at the door,
+              because the controls ARE the content: a user needs to see what is
+              still outstanding long before the trip is closable. */}
+          <Panel icon={Lock} step={10} title="Close the trip"
+            subtitle="What is still outstanding before this trip can be settled and closed for good.">
+            {['draft', 'viability_pending', 'approved', 'allocated', 'pretrip_ok', 'dispatched', 'in_transit'].includes(trip.status) ? (
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 0' }}>
+                A trip can be closed once it has been delivered, invoiced and paid for.
+              </p>
+            ) : (
+              <ClosurePanel
+                trip={trip}
+                canClose={!!grants['transport.trip.close']}
                 onChanged={load}
               />
             )}

@@ -833,6 +833,30 @@ against Step 9's 16).
 not block it — but **SNG-TRN-014 (POD) must resolve it**, because it owns `in_transit → delivered`
 and has to decide whether a trip passes through `arrived` on the way.
 
+### CLOSED 2026-09-17 by the standing ruling below
+
+SNG-TRN-014 shipped `delivered → pod_verified` without deciding it, so the question fell to
+Block 3, which owns `in_transit → delivered`. The owner ruled on the general case rather than
+this one state:
+
+> **Vocabulary from Step 9. Edges from Step 11. A Step 9 state becomes reachable only when
+> some document defines something that can gate it.**
+
+`arrived` has no entry gate in any document, no requirement that records an arrival distinct
+from a delivery — the RTM runs OPS-008 dispatch → OPS-009 track → OPS-010 delivery with nothing
+between — and no data model. So it stays in the vocabulary and stays unreachable, and the same
+answer settles the two states nobody had asked about:
+
+| Step 9 state | Entry gate | Requirement | Data model | Ruling |
+|---|---|---|---|---|
+| `pretrip_ok` | STT-005's "All checks passed" | OPS-007 pre-trip checklist | yes | **wired** — 2026-09-09 |
+| `arrived` | none | none | n/a | **declared, unreachable** |
+| `pod_pending` | none | none | n/a | **declared, unreachable** — P3's shipped STT-008 already skips it |
+| `settlement_pending` | none | TRP-P0-017, but that is SNG-TRN-017 | **`trip_settlements` does not exist** | **declared, unreachable** |
+
+All three remain in `TripStatus::ALL`, `::OPEN` and `::LABELS`. None gains an edge. The rule is
+recorded in `TEAM-CONTRACTS.md` so it is not re-argued by whoever reads the enum next.
+
 ---
 
 ## D-37 — Exception category is a required field with no enum
@@ -2851,3 +2875,130 @@ rather than the mention, and is proven to still catch a real assignment.
 
 **A guard that cannot tell a read from a write trains people to weaken it**, which is worse than
 not having one.
+
+---
+
+# D-105 … D-108 — found during the Block 3 (transit, delivery, closure) pre-build
+
+---
+
+## D-105 — An authorised transition, its columns, its index, and nothing that writes them
+
+**Raised:** 2026-09-17, reading the source for Block 3. **Verified by the lead the same day.**
+
+### What the code said
+
+Four documents — `TripStatus` (twice), `DispatchScope` (three times),
+`TransportDispatchController` (twice) and `TEAM-CONTRACTS.md` — all said the same thing:
+
+> STT-006 (`dispatched → in_transit`) is the Transit half of SNG-TRN-013, **blocked on the
+> owner's Q1/Q3 ruling**.
+
+### What the ruling actually says
+
+Q3 was answered on **2026-09-10**, seven days earlier, and it is an **approval**. Verbatim, from
+`ExceptionScope::RULINGS`:
+
+> "Option (b) — build the Exception engine, and also wire `dispatched → in_transit` as a manual
+> **'Record departure'** action (`departed_at`, `departed_by` columns only). Nothing beyond that
+> — no `in_transit → delivered`, no GPS/telemetry/odometer/temperature, no automatic triggers."
+
+Its precondition ("Dispatch confirmed") became satisfiable when Record Dispatch shipped on the
+same day. Migration `2026_12_16_000013_add_departure_to_transport_trips` created `departed_at`
+and `departed_by` **and** the index `transport_trips_tenant_departed_idx`.
+
+**Nothing writes either column.** `grep -rn departed_at app/ tests/ database/` returns the
+migration, one constant in `ExceptionScope`, two tests that assert that constant, and one
+unrelated migration docblock. No service, no controller, no route, no test of behaviour.
+
+So the edge was approved, its schema shipped, and the work stopped between the two — while every
+comment in the codebase went on describing it as blocked.
+
+### Why this is the D-58 shape, and worse
+
+D-58 was an edge nobody had built. This is an edge somebody was **told to build, built the
+scaffolding for, and left**, with four documents asserting it could not be built. Scaffolding
+that makes a thing look done is worse than an absence: an absence gets found, and a comment
+saying "blocked" gets believed.
+
+It was found by re-reading the ruling rather than trusting the comment that cited it.
+
+**Fixed in Block 3.** The stale text is corrected in all four documents in the same change, so
+the next reader does not hit the same dead comment.
+
+---
+
+## D-106 — No trip in this system can ever be closed, and the missing piece is one caller
+
+**Raised:** 2026-09-17. **Verified by the lead.** **P3's surface — raised, not fixed.**
+
+`STT-012` (`collection_pending → closed`) is the only edge into the terminal state, and
+`collection_pending` is the only state it leaves from. Walking backwards:
+
+| Edge | Built | Owner | Reachable by a user |
+|---|---|---|---|
+| `delivered → pod_verified` (STT-008) | yes | P3 | yes — `POST /trips/{id}/pod/{doc}/verify` |
+| `pod_verified → billable` (STT-009) | yes | P3 | yes — `POST /trips/{id}/bill` |
+| `billable → billed` (STT-010) | **model method only** | Accounts / P3 | **NO** |
+| `billed → collection_pending` (STT-011) | yes | P3 | only via `billed` |
+
+`TripBill::markInvoiced()` (`app/Models/Transport/TripBill.php:89`) is the single door to
+`billed`. **It has no caller.** Every other mention of it in the codebase is a comment.
+
+`TripCollectionService::open()` is honest about the consequence rather than papering over it: it
+guards the move with `TripStatus::canTransition()`, so opening a collection on a `billable` trip
+creates the collection row and correctly declines to advance the status. The trip stays at
+`billable`, and `collection_pending` is unreachable.
+
+### The consequence
+
+**Closure is plumbed, not reachable.** Block 3 builds STT-012 to the registry — API-009,
+CTR-013, PERM-005 including the Dispatcher denial, EVT-012 — and every test passes, and no user
+can get a trip into the state the endpoint requires.
+
+The coverage document marks it **PLUMBED**, never BUILT. That distinction exists for exactly
+this case.
+
+**The ask to P3:** `markInvoiced()` needs a caller and a route. Until it has one, no trip in the
+system can ever close — and `EVT-012 TripClosed`, which P3 has been waiting on since the 16th,
+is on the other side of that one gap. See `docs/transport/REQUEST-person3-invoice-door.md`.
+
+**Not fixed here.** `trip_bills` is P3's table and the standing rule is not to fix another
+developer's file to make our own work reachable.
+
+---
+
+## D-107 — EVT-012's idempotency key names a field that does not exist
+
+`EVT-012 TripClosed` | producer TripEngine | payload `trip_id, closure_timestamp` |
+**idempotency `trip_id+close_version`** | consumers ProfitEngine, ControlRoom | LOCKED.
+
+There is no `close_version` column and no versions table anywhere in the package. This is the
+same shape as **D-65**, where `EVT-004 TripApproved`'s key named an `approval_id` with no
+approvals table, and the ruling was **do not invent one**.
+
+Same answer. Closure is made idempotent by the state machine instead: `closed` is terminal, so a
+second close is refused with a sentence naming who closed it and when. What a version counter
+would add beyond that is response replay, which no consumer needs — and ProfitEngine, the one
+consumer that would care, does not exist either (`trip_profit_snapshots` is not a table).
+
+Recorded rather than invented.
+
+---
+
+## D-108 — Two LOCKED transitions with no API_Registry row
+
+Step 11's API_Registry runs API-001…API-015 and covers create, viability, assign, advance,
+expense, exception, POD, close, bill, collection, control-room, trip detail, GPS and e-way-bill.
+
+**Neither STT-006 (`dispatched → in_transit`) nor STT-007 (`in_transit → delivered`) has a row**,
+though every other trip transition in the machine does — including STT-012, which gets API-009.
+
+So the two edges Block 3 exists to build are the only two with no specified path, method,
+permission key or request contract. Consistent with D-18 (dispatch had no ticket) and D-8/D-21
+(permission keys with no matrix row): the registries thin out precisely where the operational
+middle of the trip lives.
+
+Paths follow the endpoints already beside them — `PATCH /trips/{trip}/depart` and
+`PATCH /trips/{trip}/deliver`, next to `PATCH /trips/{trip}/dispatch`. Recorded as derived, not
+quoted.

@@ -65,6 +65,16 @@ class TransportTrip extends Model
         // cleared by submitForViability(), never by a general update.
         'rejection_reason'     => 'string',
         'dispatch_version'     => 'integer',
+        // STT-006, STT-007, STT-012 — the manually recorded milestones. Not
+        // fillable, for the same reason as every stamp above: they move through
+        // their own service, which checks the edge and audits it.
+        'departed_at'          => 'datetime',
+        'departed_by'          => 'integer',
+        'delivered_at'         => 'datetime',
+        'delivered_by'         => 'integer',
+        'closed_at'            => 'datetime',
+        'closed_by'            => 'integer',
+        'closure_reason'       => 'string',
     ];
 
     protected $attributes = [

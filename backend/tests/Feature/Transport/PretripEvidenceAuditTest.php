@@ -428,7 +428,15 @@ class PretripEvidenceAuditTest extends TestCase
             TransportTrip::where('status', TripStatus::DISPATCHED)->count(),
             'no PRE-TRIP code path writes `dispatched` — that is DispatchService',
         );
-        $this->assertFalse(TripStatus::canTransition(TripStatus::DISPATCHED, TripStatus::IN_TRANSIT));
+        // Updated 2026-09-17: dispatched → in_transit IS now wired (STT-006,
+        // D-105). What this test guards is unchanged and is stated directly —
+        // no PRE-TRIP path may skip a state, and none may record a departure.
+        $this->assertFalse(TripStatus::canTransition(TripStatus::PRETRIP_OK, TripStatus::IN_TRANSIT));
+        $this->assertSame(
+            0,
+            TransportTrip::whereNotNull('departed_at')->count(),
+            'no pre-trip code path records a departure — that is DispatchService',
+        );
     }
 
     public function test_no_override_is_ever_recorded(): void

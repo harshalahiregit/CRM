@@ -9,7 +9,9 @@ use App\Models\Transport\TripAssignment;
 use App\Models\User;
 use App\Services\Transport\Contracts\FleetResourceGateway;
 use App\Support\Transport\DispatchScope;
+use App\Support\Transport\TransitScope;
 use App\Support\Transport\TripStatus;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -406,6 +408,151 @@ class DispatchService
         }
 
         return is_string($value) ? trim($value) : $value;
+    }
+
+    /**
+     * STT-006 — `dispatched → in_transit`. Record that the vehicle actually left.
+     *
+     *   STT-006 | trigger "Dispatch vehicle" | actor TripEngine
+     *           | precondition "Dispatch confirmed" | side effect "Start
+     *             monitoring" | audited | LOCKED
+     *   SM-TRP  | `in_transit` · active · entry gate "Departure recorded"
+     *           | exit "Delivered/Exception" · owner Operations
+     *   RTM     | STOS-REQ-OPS-009 "Track trip status" · P0
+     *
+     * ── AUTHORISED 2026-09-10 AND UNBUILT FOR A WEEK — D-105 ─────────────
+     * The owner's Q3 ruling wired this edge as a manual "Record departure" with
+     * `departed_at` and `departed_by` only. The columns and their index shipped
+     * that day and nothing ever wrote them, while four documents went on saying
+     * the edge was blocked. Found by re-reading the ruling, not the comments.
+     *
+     * ── WHY IT SITS IN DispatchService AND NOT IN THE TRIP SERVICE ───────
+     * "Dispatch confirmed" is this class's own precondition — nothing else
+     * knows whether a trip was released, by whom, or with which frozen fields.
+     * Departure is the second half of the dispatcher's act, and putting it
+     * anywhere else would mean re-deriving dispatch state from outside.
+     *
+     * ── WHAT IT DOES NOT DO ──────────────────────────────────────────────
+     * "Start monitoring" starts nothing. There is no GPS (SNG-TRN-020, P1), no
+     * reefer model, and `trip_exceptions` has a schema but no model. The
+     * deferred effects are recorded ON THE AUDIT ROW rather than implied by
+     * silence, so a reader six months from now can see what was not started.
+     *
+     * NOT re-validated against pre-trip. `assertDispatchable()` re-derives
+     * BRW-046 at RELEASE, which is the moment the rule is about. Re-running it
+     * here would mean a licence expiring while the truck is loading could strand
+     * a vehicle that has already been released — a block with no remedy, since
+     * the trip cannot go back either. Departure records a fact that has already
+     * happened; it does not grant permission.
+     *
+     * @param  array{departed_at?:string|null}  $fields
+     */
+    public function recordDeparture(TransportTrip $trip, array $fields, int $tenantId, ?User $actor = null): TransportTrip
+    {
+        $this->assertTenant($trip, $tenantId);
+
+        $from = $trip->status;
+        $to   = TripStatus::IN_TRANSIT;
+
+        if (! TripStatus::canTransition($from, $to)) {
+            throw new BusinessException(
+                $from === TripStatus::IN_TRANSIT
+                    ? 'This trip is already on the road — it left '.$trip->departed_at?->diffForHumans().'.'
+                    : 'Only a dispatched trip can be recorded as departed. This trip is '.$trip->statusLabel().'.',
+                422
+            );
+        }
+
+        $departedAt = $this->departureTime($trip, $fields['departed_at'] ?? null);
+
+        return DB::transaction(function () use ($trip, $from, $to, $departedAt, $tenantId, $actor) {
+            $trip->forceFill([
+                'status'      => $to,
+                'departed_at' => $departedAt,
+                'departed_by' => $actor?->id,
+                'updated_by'  => $actor?->id,
+            ])->save();
+
+            $assignment = TripAssignment::forTenant($tenantId)->forTrip($trip->id)->active()->first();
+
+            $trip->auditTransition(
+                'transport.trip.status_changed',
+                $from,
+                $to,
+                $actor,
+                [
+                    'rule'          => TransitScope::OPS_009,
+                    'transition'    => TransitScope::EDGE_DEPARTURE,
+                    'registry'      => TransitScope::STT_006,
+                    'authorization' => TransitScope::AUTHORIZATION_DEPARTURE,
+                    'sources'       => 'RTM STOS-REQ-OPS-009; FRS TRP-P0-011 ("manual update fallback"); SM-TRP entry gate "Departure recorded"',
+                    'trip_number'   => $trip->trip_number,
+                    'departed_at'   => $departedAt,
+                    // Recorded, not implied: a manual departure is a fallback
+                    // for telemetry that does not exist, and the audit says so.
+                    'recorded'      => 'manual',
+                    'crew'          => [
+                        'vehicle_id' => $assignment?->vehicle_id,
+                        'driver_id'  => $assignment?->driver_id,
+                    ],
+                    // STT-006's side effect, and what actually happened to it.
+                    'monitoring_started' => false,
+                    'deferred_effects'   => array_keys(array_filter(
+                        TransitScope::SIDE_EFFECTS,
+                        fn (string $d) => $d !== 'built',
+                    )),
+                ],
+            );
+
+            Log::channel('transport')->info('Trip departed', [
+                'trip_id' => $trip->id, 'tenant_id' => $tenantId,
+                'user_id' => $actor?->id, 'departed_at' => $departedAt,
+                // D-105 in the logs as well as the code, so the first live
+                // departure is traceable to the ruling that authorised it.
+                'registry' => TransitScope::STT_006, 'recorded' => 'manual',
+            ]);
+
+            return $trip->fresh();
+        });
+    }
+
+    /**
+     * When the trip left — TransitScope::TIME_ORDER.
+     *
+     * BACKDATING IS THE NORMAL CASE and is allowed. A dispatcher records at
+     * 11:00 that the truck left at 09:30; refusing that would teach people to
+     * enter the wrong time rather than the right one, which is worse than the
+     * imprecision it prevents.
+     *
+     * Two things are refused, because each asserts something false:
+     *   - a departure in the FUTURE — it has not happened;
+     *   - a departure BEFORE `dispatched_at` — the vehicle left before it was
+     *     released, which would make the dispatch record meaningless.
+     */
+    private function departureTime(TransportTrip $trip, ?string $given): string
+    {
+        if ($given === null || trim($given) === '') {
+            return now()->format('Y-m-d H:i:s');
+        }
+
+        $at = Carbon::parse($given);
+
+        if ($at->isFuture()) {
+            throw new BusinessException(
+                'A departure cannot be recorded in the future. Leave the time blank to use now.',
+                422
+            );
+        }
+
+        if ($trip->dispatched_at && $at->lt($trip->dispatched_at)) {
+            throw new BusinessException(
+                'The trip cannot have left before it was released. It was released on '
+                .$trip->dispatched_at->format('j M Y, H:i').'.',
+                422
+            );
+        }
+
+        return $at->format('Y-m-d H:i:s');
     }
 
     private function assertTenant(TransportTrip $trip, int $tenantId): void

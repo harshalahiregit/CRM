@@ -151,11 +151,17 @@ class PretripGateTest extends TestCase
     public function test_the_next_edge_is_dispatch_not_transit(): void
     {
         // Updated 2026-09-10: pretrip_ok -> dispatched is now wired (authorised
-        // directly by the owner; see DispatchScope). The line this test really
-        // guards has moved one state along — nothing may reach in_transit,
-        // because STT-006 is SNG-TRN-013's Transit half and that is blocked.
+        // directly by the owner; see DispatchScope).
+        //
+        // Updated again 2026-09-17: dispatched -> in_transit is wired too. The
+        // previous version of this test said that edge was "blocked on
+        // SNG-TRN-013" — it never was. The owner had authorised it a week
+        // earlier and its columns had shipped. See D-105.
+        //
+        // What this test guards has not changed: pre-trip releases a trip, and
+        // it does NOT put one on the road. Those are two acts and two services.
         $this->assertTrue(TripStatus::canTransition(TripStatus::PRETRIP_OK, TripStatus::DISPATCHED));
-        $this->assertFalse(TripStatus::canTransition(TripStatus::DISPATCHED, TripStatus::IN_TRANSIT));
+        $this->assertFalse(TripStatus::canTransition(TripStatus::PRETRIP_OK, TripStatus::IN_TRANSIT));
     }
 
     public function test_the_release_reverse_edge_is_declared_as_inferred(): void

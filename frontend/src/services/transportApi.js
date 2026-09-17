@@ -400,7 +400,12 @@ export const transportDispatchApi = {
   get: (tripId) =>
     api.get(`/transport/trips/${tripId}/dispatch`).then((r) => r.data?.data ?? null).catch(handleErr),
 
-  /** Release the trip — pretrip_ok → dispatched. Does NOT reach in_transit. */
+  /**
+   * Release the trip — pretrip_ok → dispatched.
+   *
+   * Does NOT put it on the road. Released and moving are two states and two
+   * acts, minutes to hours apart; `depart` below is the second one.
+   */
   confirm: (tripId, fields) =>
     api.patch(`/transport/trips/${tripId}/dispatch`, fields)
       .then((r) => ({ ok: true, ...(r.data?.data ?? {}) }))
@@ -418,6 +423,72 @@ export const transportDispatchApi = {
    */
   amend: (tripId, fields, reason) =>
     api.patch(`/transport/trips/${tripId}/dispatch/amend`, { ...fields, reason })
+      .then((r) => ({ ok: true, ...(r.data?.data ?? {}) }))
+      .catch((e) => {
+        const body = e?.response?.data
+        if (body && e?.response?.status === 422) {
+          return { ok: false, message: body.message, ...(body.data ?? {}) }
+        }
+        throw e
+      }),
+
+  /**
+   * STT-006 — record that the vehicle actually left. dispatched → in_transit.
+   *
+   * `departedAt` is optional and may be BACKDATED: a dispatcher records at
+   * 11:00 that the truck left at 09:30, and refusing that would teach people to
+   * enter the wrong time. The server refuses only a future time or one before
+   * the release.
+   *
+   * Same permission as dispatch (transport.trip.dispatch) — one dispatcher,
+   * one job, two moments.
+   */
+  depart: (tripId, departedAt = null) =>
+    api.patch(`/transport/trips/${tripId}/depart`, departedAt ? { departed_at: departedAt } : {})
+      .then((r) => ({ ok: true, ...(r.data?.data ?? {}) }))
+      .catch((e) => {
+        const body = e?.response?.data
+        if (body && e?.response?.status === 422) {
+          return { ok: false, message: body.message, ...(body.data ?? {}) }
+        }
+        throw e
+      }),
+}
+
+/**
+ * STT-007 and STT-012 — the far end of the trip.
+ *
+ * ── CLOSURE IS BUILT AND UNREACHABLE, AND THE UI IS TOLD SO ──────────────
+ * Every closure response carries `readiness.reachable`, which is false and will
+ * stay false until Accounts can mark a bill invoiced (D-106, Person 3's route).
+ * The panel reads that flag rather than inferring anything from the status, so
+ * it explains the situation instead of offering a button nothing can satisfy.
+ */
+export const transportJourneyApi = {
+  /** STT-007 — in_transit → delivered. RTM STOS-REQ-OPS-010. */
+  deliver: (tripId, deliveredAt = null) =>
+    api.patch(`/transport/trips/${tripId}/deliver`, deliveredAt ? { delivered_at: deliveredAt } : {})
+      .then((r) => ({ ok: true, trip: r.data?.data ?? null }))
+      .catch((e) => {
+        const body = e?.response?.data
+        if (body && e?.response?.status === 422) {
+          return { ok: false, message: body.message }
+        }
+        throw e
+      }),
+
+  /**
+   * What is blocking closure, and what could not be checked at all.
+   *
+   * A pure read on transport.trip.view, so a dispatcher who may not close a
+   * trip can still see why it is stuck and tell the customer.
+   */
+  closure: (tripId) =>
+    api.get(`/transport/trips/${tripId}/closure`).then((r) => r.data?.data ?? null).catch(handleErr),
+
+  /** API-009. `closureReason` is mandatory — CTR-013, and it is non-empty. */
+  close: (tripId, closureReason) =>
+    api.post(`/transport/trips/${tripId}/close`, { closure_reason: closureReason })
       .then((r) => ({ ok: true, ...(r.data?.data ?? {}) }))
       .catch((e) => {
         const body = e?.response?.data

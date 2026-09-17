@@ -43,6 +43,46 @@ destroy anything outside your own section, stop and say so before running it.
 
 ---
 
+## Which document wins when the state machines disagree
+
+**Ruled by the owner, 2026-09-17. Standing rule — applies to every state machine in
+Transport, not just the Trip.**
+
+> **Vocabulary from Step 9. Edges from Step 11. A Step 9 state becomes reachable only
+> when some document defines something that can gate it.**
+
+Step 9 (Master Product Constitution) is the authority tier and gives the Trip sixteen
+states. Step 11 (Canonical Registries) LOCKS transitions for twelve. Four times, Step 9
+puts a state where Step 11 draws a single edge straight past it. Each of those four was
+being re-argued from scratch by whoever reached it next, which is what this rule ends.
+
+Applying it:
+
+| Step 9 state | Entry gate in any document | Requirement that records it | Data model | Result |
+|---|---|---|---|---|
+| `pretrip_ok` | STT-005's "All checks passed" | OPS-007 pre-trip checklist | yes | **WIRED** (ruled 2026-09-09) |
+| `arrived` | none | none — the RTM runs OPS-008 dispatch → OPS-009 track → OPS-010 delivery with nothing between | n/a | **declared, unreachable** |
+| `pod_pending` | none | none | n/a | **declared, unreachable** |
+| `settlement_pending` | none | TRP-P0-017 exists, but it is SNG-TRN-017 | **`trip_settlements` does not exist** | **declared, unreachable** |
+
+**`arrived`, `pod_pending` and `settlement_pending` stay in the vocabulary and stay
+unreachable.** They remain in `TripStatus::ALL`, `::OPEN` and `::LABELS`, so the token is
+fixed before anything writes to the column and a later ticket that gains a gate can wire
+one without renaming anything. None of them gets an edge until that happens.
+
+**Why the vocabulary and not just the edges.** Dropping a Step 9 state would mean a later
+ticket inventing its own name for the same thing — which is D-9's mistake (a field with no
+defined values) one level up. Keeping it declared costs one line and fixes the word.
+
+**Why not wire them anyway.** A state with no gate is a hidden state change dressed as
+configuration: any caller could move a trip into it, and the state would assert something
+no document defines and nothing checks.
+
+This closes **D-36**, which had asked SNG-TRN-014 to decide `arrived` and which SNG-TRN-014
+shipped without deciding.
+
+---
+
 ## Defect numbering
 
 **P1's `docs/transport/registry-defects.md` is the list.** New findings get a
@@ -329,10 +369,16 @@ authorising role, and **BLK-10** means no CRM account maps to one.
 
 ### C-09 — POD verification is built but cannot fire until Transit is wired
 
-`TripStatus::TRANSITIONS` still has no edge out of `dispatched`. STT-006
+> **CLOSED 2026-09-17 — Block 3 wired both edges. This entry is kept for the record.**
+>
+> The paragraph below was wrong for a week. It said STT-006 was deferred; the owner had
+> already authorised it on 2026-09-10 (Q3) and its columns had already shipped. See
+> **D-105**. P3 needed nothing from this beyond the two edges landing, and they have.
+
+~~`TripStatus::TRANSITIONS` still has no edge out of `dispatched`. STT-006
 (`dispatched → in_transit`) is the Transit half of SNG-TRN-013 and is recorded in the
 code as deferred; STT-007 (`in_transit → delivered`) follows it. **Nothing writes
-`delivered`.**
+`delivered`.**~~
 
 STT-008 (`delivered → pod_verified`) is now implemented on P3's side and is wired into
 `TripDocumentService::verify()`. It is deliberately **conditional**: verifying a POD on
@@ -341,6 +387,9 @@ rather than throwing over a gap that is not the verifier's fault.
 
 **P1: the moment you wire STT-006 and STT-007, the POD edge starts firing with no change
 on P3's side.** Nothing needs coordinating beyond you landing those two edges.
+
+**Both are wired as of 2026-09-17.** `TripDocumentService::verify()` now has trips arriving
+in `delivered` to act on, with no change on P3's side — exactly as this entry predicted.
 
 ---
 

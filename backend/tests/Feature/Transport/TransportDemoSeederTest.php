@@ -69,13 +69,16 @@ class TransportDemoSeederTest extends TestCase
 
         $trips = TransportTrip::forTenant(1)->orderBy('id')->get();
 
-        // The further-along one has walked pre-trip as well, so it sits in
-        // pretrip_ok and is ready to dispatch. That is what makes the two trips
+        // The further-along one has walked pre-trip, dispatch AND departure,
+        // so it sits in `in_transit` and is genuinely on the road. Until
+        // 2026-09-17 the furthest it could reach was pretrip_ok, and the report
+        // line called it "moving" anyway. That is what makes the two trips
         // teach different things rather than showing the same screen twice.
-        $moving  = $trips->firstWhere('status', TripStatus::PRETRIP_OK);
+        $moving  = $trips->firstWhere('status', TripStatus::IN_TRANSIT);
         $waiting = $trips->firstWhere('status', TripStatus::APPROVED);
 
-        $this->assertNotNull($moving, 'one trip must be crewed and pre-tripped — it is what makes "back in N days" visible');
+        $this->assertNotNull($moving, 'one trip must be crewed and on the road — it is what makes "back in N days" visible');
+        $this->assertNotNull($moving->departed_at, 'a trip described as moving must have left');
         $this->assertNotNull($waiting, 'one trip must be uncrewed — it is the one you allocate in the demo');
 
         // The crewed one holds a vehicle AND a driver, through a real assignment.
@@ -92,7 +95,7 @@ class TransportDemoSeederTest extends TestCase
     {
         $this->runDemoSeeder();
 
-        $moving = TransportTrip::forTenant(1)->where('status', TripStatus::PRETRIP_OK)->sole();
+        $moving = TransportTrip::forTenant(1)->where('status', TripStatus::IN_TRANSIT)->sole();
 
         $this->assertNotNull($moving->planned_arrival_at);
         $this->assertTrue($moving->planned_arrival_at->isFuture());

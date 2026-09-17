@@ -225,7 +225,20 @@ class ContainerPassportService
             TripStatus::APPROVED          => $on.', approved but with no vehicle or driver yet.',
             TripStatus::ALLOCATED         => $on.', with a vehicle and driver assigned.',
             TripStatus::PRETRIP_OK        => $on.', checked and cleared to leave.',
-            TripStatus::DISPATCHED        => $on.', released and on its way.',
+            // `dispatched` is RELEASED, not moving. Before Block 3 the two were
+            // indistinguishable on this screen, which meant a container sitting
+            // in a yard read as one on the road.
+            TripStatus::DISPATCHED        => $on.', released but not recorded as having left yet.',
+            TripStatus::IN_TRANSIT        => $on.', on the road since '
+                                             .($trip->departed_at?->format('j M, H:i') ?? 'departure').'.',
+            TripStatus::DELIVERED         => $on.', delivered on '
+                                             .($trip->delivered_at?->format('j M Y') ?? 'arrival')
+                                             .' and waiting for proof of delivery.',
+            TripStatus::POD_VERIFIED      => $on.', delivered with proof of delivery on file.',
+            TripStatus::BILLABLE          => $on.', delivered and ready to invoice.',
+            TripStatus::BILLED            => $on.', delivered and invoiced.',
+            TripStatus::COLLECTION_PENDING => $on.', delivered and invoiced, with payment outstanding.',
+            TripStatus::CLOSED            => $on.', which is finished and closed.',
             default                       => $on.'.',
         };
     }
@@ -238,7 +251,17 @@ class ContainerPassportService
             TripStatus::APPROVED          => 'Assign a vehicle and a driver.',
             TripStatus::ALLOCATED         => 'Run the pre-trip checks.',
             TripStatus::PRETRIP_OK        => 'Confirm dispatch.',
-            TripStatus::DISPATCHED        => 'Continue monitoring until delivery.',
+            TripStatus::DISPATCHED        => 'Record the departure once the vehicle leaves.',
+            TripStatus::IN_TRANSIT        => 'Record the delivery when it arrives.',
+            TripStatus::DELIVERED         => 'Upload and verify the proof of delivery.',
+            TripStatus::POD_VERIFIED      => 'Hand the trip to Accounts for billing.',
+            TripStatus::BILLABLE          => 'Accounts raise the invoice.',
+            TripStatus::BILLED            => 'Open a collection and chase payment.',
+            TripStatus::COLLECTION_PENDING => 'Collect the balance, then close the trip.',
+            // Terminal. Saying "no action" here is not a fallback — it is the
+            // answer, and it is different from the default below, which means
+            // "this state has nothing defined".
+            TripStatus::CLOSED            => 'Nothing. This trip is closed.',
             default                       => 'No action is waiting on this container.',
         };
     }

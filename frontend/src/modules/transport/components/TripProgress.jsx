@@ -15,11 +15,16 @@ import { TRIP_JOURNEY, tripJourneyState } from '../constants'
  * is an outlined number. Someone who cannot separate green from grey still reads
  * the row correctly.
  *
- * ── THE FIFTH STEP IS HONEST, NOT DECORATION ────────────────────────────
- * "On the road" is dashed and labelled "Not built yet". Stopping the tracker at
- * Dispatch would imply a dispatched trip is a finished trip; showing the step
- * greyed with no label would imply this trip is simply behind. Neither is true —
- * tracking, delivery and POD are later work, and the row says so.
+ * ── "NOT BUILT YET" IS A LABEL THIS ROW CAN STILL SHOW ──────────────────
+ * It used to sit on "On the road", which was the honest label while nothing
+ * could reach in_transit. That stage is built as of 2026-09-17, and the row now
+ * runs the full job: set up → crew → checks → dispatch → on the road →
+ * delivered → paid & closed.
+ *
+ * The dashed "Not built yet" branch is KEPT rather than deleted. Nothing sets
+ * built:false today, and the next unbuilt stage will need it — and a tracker
+ * that has no way to say "this part does not exist" is a tracker that will one
+ * day imply the last built step is the end.
  */
 
 const tone = {
