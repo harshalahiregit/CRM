@@ -506,6 +506,14 @@ export const DOC_TYPE_LABEL = {
   insurance: 'Insurance', permit: 'Permit', fitness: 'Fitness certificate', other: 'Other',
 }
 
+/* ── Collections (SNG-TRN-016) ────────────────────────────────────────── */
+
+export const collectionStatusCfg = (s) => ({
+  pending: { label: 'Outstanding', color: '#fbbf24', bg: 'rgba(251,191,36,0.16)' },
+  part_paid: { label: 'Part paid', color: '#38bdf8', bg: 'rgba(56,189,248,0.14)' },
+  settled: { label: 'Settled', color: '#34d399', bg: 'rgba(52,211,153,0.14)' },
+}[s] ?? { label: s || '—', color: '#94a3b8', bg: 'rgba(148,163,184,0.14)' })
+
 /** Bytes → a size somebody can read. */
 export const fmtBytes = (n) => {
   if (n == null) return '—'

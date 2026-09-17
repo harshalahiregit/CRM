@@ -149,6 +149,18 @@ class TransportTrip extends Model
         return $this->hasOne(TripBill::class, 'trip_id');
     }
 
+    /**
+     * What the customer still owes on this trip — DB-013, SNG-TRN-016.
+     *
+     * hasOne for the same reason as bill(): `trip_collections` is unique on
+     * (tenant_id, trip_id), because a receivable follows an invoice and a trip
+     * is invoiced once. Part payments move `amount_received`, not row count.
+     */
+    public function collection(): HasOne
+    {
+        return $this->hasOne(TripCollection::class, 'trip_id');
+    }
+
     /* ── Scopes. Composed AFTER forTenant(), never instead of it. ────── */
 
     public function scopeWithStatus(Builder $query, string $status): Builder

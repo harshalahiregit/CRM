@@ -5,6 +5,7 @@ namespace App\Models\Transport;
 use App\Models\Transport\Concerns\RecordsTransportAudit;
 use App\Models\Traits\BelongsToTenant;
 use App\Support\Transport\TripBillStatus;
+use App\Support\Transport\TripStatus;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -94,6 +95,24 @@ class TripBill extends Model
             'invoiced_at' => now(),
             'updated_by'  => $actorId,
         ])->save();
+
+        // STT-010 | billable → billed | actor Accounts | "Post invoice".
+        //
+        // Their act, our bookkeeping of it. The trip's state machine belongs to
+        // Transport, so the edge is walked here rather than leaving Accounts to
+        // reach into `transport_trips` themselves — but nothing about posting
+        // the invoice happens in this module.
+        //
+        // Guarded by canTransition() rather than forced: a bill marked invoiced
+        // twice, or one whose trip has already moved on, must not drag the trip
+        // backwards.
+        $trip = $this->trip()->first();
+
+        if ($trip && TripStatus::canTransition((string) $trip->status, TripStatus::BILLED)) {
+            $from = (string) $trip->status;
+            $trip->forceFill(['status' => TripStatus::BILLED, 'updated_by' => $actorId])->save();
+            $trip->auditTransition('transport.trip.billed', $from, TripStatus::BILLED, null);
+        }
 
         return $this;
     }

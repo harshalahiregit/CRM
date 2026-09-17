@@ -156,6 +156,32 @@ final class TripStatus
         // 014's acceptance criterion doing the work 015 depends on.
         self::POD_VERIFIED => [self::BILLABLE],
 
+        // STT-010 | billable → billed | trigger "Post invoice"
+        //         | actor ACCOUNTS | guard "Approval/posting success"
+        //         | side effect "Emit invoice event" | audited | LOCKED
+        //
+        // The actor is Accounts, not Transport, and this module never posts an
+        // invoice (FORBID-002, LOCK-004). The edge is declared here because the
+        // state machine is the trip's and the trip is Transport's — but it is
+        // walked only from TripBill::markInvoiced(), which is the door Accounts
+        // calls after they have posted. Their act, our bookkeeping of it.
+        self::BILLABLE => [self::BILLED],
+
+        // STT-011 | billed → collection_pending | trigger "Invoice posted"
+        //         | actor Collections | guard "Receivable exists"
+        //         | side effect "Create collection task" | audited | LOCKED
+        //
+        // SNG-TRN-016. TripCollectionService::open() is that side effect, and
+        // the guard is a prepared bill — there is nothing to collect until
+        // Transport has frozen an amount.
+        self::BILLED => [self::COLLECTION_PENDING],
+
+        // ── STT-012 IS NOT WIRED, AND IS NOT P3'S ────────────────────────
+        // collection_pending → closed | actor TripEngine | guard
+        // "Settlement/POD/billing controls pass" | effect "Snapshot profit".
+        // TripEngine is P1's, and the snapshot it triggers is SNG-TRN-018,
+        // which is blocked on D-58. Left unwired deliberately.
+
         // ── INFERRED, NOT A REGISTRY TRANSITION ──────────────────────────
         // pretrip_ok → approved, when an assignment is released.
         //

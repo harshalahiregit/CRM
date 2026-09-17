@@ -475,13 +475,27 @@ class TransportAllocationTest extends TestCase
         // `delivered`, because STT-006 and STT-007 are P1's and not yet wired
         // (C-09). They are declared so the machine is complete, not because
         // anything can walk them today.
+        // Also 2026-09-17 (P3): SNG-TRN-016 added billable → billed (STT-010,
+        // walked only from TripBill::markInvoiced(), which is Accounts' door)
+        // and billed → collection_pending (STT-011). Both LOCKED.
+        //
+        // If you are here because this list failed: that is the test working.
+        // Add your key, then check the two assertions below still pass — THOSE
+        // are what this guards. The list is a snapshot so that adding an edge is
+        // a deliberate act rather than something that happens to a state machine
+        // three people share.
         $this->assertSame(
             [
                 TripStatus::DRAFT, TripStatus::APPROVED, TripStatus::ALLOCATED,
                 TripStatus::PRETRIP_OK, TripStatus::DELIVERED, TripStatus::POD_VERIFIED,
+                TripStatus::BILLABLE, TripStatus::BILLED,
             ],
             array_keys(TripStatus::TRANSITIONS)
         );
+
+        // STT-012 (collection_pending → closed) is P1's and must stay unwired —
+        // its side effect is the profit snapshot, which is blocked on D-58.
+        $this->assertFalse(TripStatus::canTransition(TripStatus::COLLECTION_PENDING, TripStatus::CLOSED));
 
         // P3's edges must not have opened a back door into dispatch or transit.
         $this->assertFalse(TripStatus::canTransition(TripStatus::DELIVERED, TripStatus::DISPATCHED));

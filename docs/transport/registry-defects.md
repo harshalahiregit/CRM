@@ -68,6 +68,7 @@ Authority for who rules on what: the Conflict Resolution matrix in
 | D-53 | Two CLOSED attachment windows may overlap | Low | Person 1 | Open — latent, unreachable today |
 | D-57 | Step 9 and ENUM-002 describe different advance lifecycles | **High** | Product + Finance | Open — ENUM-002 stored on FLD-012's authority, four Step 9 states unrepresentable |
 | D-58 | SNG-TRN-012's three refs point at the exception domain; `cost_type` and `amount` both dangle; cost/expense boundary undefined | **High** | Product + Finance + Architecture | Open — blocks 012, and via DEP-008 also 017 and 018 |
+| D-61 | EVT-011's payload is pure Accounts vocabulary (`receipt_id`, `posting_id`) that Transport cannot supply; no collection status vocabulary; DB-013 has one field row | **High** | Product + Accounts | Open — status derived, event payload honestly partial |
 | D-60 | API-010 promises a `BillingPrepared` event the Event_Registry never defines; no Billing permission domain; DB-012 has one field row | **High** | Product + Accounts | Open — event payload, permission row and bill vocabulary all constructed for 015 |
 | D-59 | STT-008 requires a "POD valid" guard, but no document lifecycle is registered anywhere; DB-009 has no field or index rows | **High** | Product + Compliance | Open — status vocabulary and MIME/size limits constructed for 014 |
 
@@ -2142,4 +2143,74 @@ states — `prepared` and `invoiced` — and Transport can reach only the first.
 
 **Escalation:** `CLARIFICATION_REQUIRED` for 1–3, `ARCHITECTURE_REVIEW_REQUIRED` for 4.
 **Does not block:** SNG-TRN-015 shipped against constructed values, all flagged here,
+and the module writes nothing to any ledger.
+
+---
+
+## D-61 — EVT-011 asks Transport for identifiers only Accounts can create
+
+**Raised:** 2026-09-17, building SNG-TRN-016. **Owner: Product + Accounts.**
+**Severity: high — it is the second handover point between the two modules.**
+
+### The API says Transport emits it; the payload says Accounts does
+
+```
+API-011 | POST /api/v1/transport/trips/{trip}/collection | Record collection
+        | transport.collection.record | emits CollectionRecorded | CONTROLLED
+
+EVT-011 | CollectionRecorded | Producer: Accounts/Collections
+        | Payload: receipt_id, invoice_id, amount
+        | Idempotency: receipt_id+posting_id | Consumers: ControlRoom
+```
+
+API-011 is a **Transport** endpoint on a Transport path behind a Transport
+permission, and its Event Emitted column names `CollectionRecorded`. But that event's
+payload is `receipt_id`, `invoice_id` and its key is `receipt_id+posting_id` — and a
+receipt and a posting are **accounting records Transport does not create**. FORBID-002
+and LOCK-004 keep this module out of the books, so there is nothing here to put in
+those fields.
+
+CTR-014's note resolves it: *"Posting event generated."* There are two acts — somebody
+records against the receivable (Transport, tracking), and somebody posts the receipt
+(Accounts, money) — and the first triggers the second.
+
+So the event is emitted with the registry's own field names, `receipt_id` left **null**
+rather than fabricated, `invoice_id` filled only once Accounts has set it on the linked
+bill, plus `collection_id` and `trip_id` added so a consumer has something to join on.
+A test asserts `receipt_id` stays null; it fails the day somebody starts inventing
+accounting records in this module.
+
+### No collection status vocabulary
+
+`IDX-009` is `INDEX (company_id, due_date, status)` for "collections ageing", so the
+registry plainly expects a `status` column and **never says what may go in it**. None
+of the eight enums describes a collection.
+
+Unlike CST-001, FLD-017's `COL-001` is not quite dangling — TRC-007 resolves it to
+`BR-COL-001` / `FRS-COL-001`, business RULE documents in the reference-only tier. They
+define no vocabulary. `CollectionStatus` therefore declares three states derived from
+the arithmetic — `pending`, `part_paid`, `settled` — and nothing else.
+
+Blockers are deliberately **not** a status. A blocked receivable is still outstanding,
+and "blocked" would hide how much is owed; a receivable can truthfully be part-paid and
+blocked at once, which is exactly the row somebody has to chase.
+
+### And one field row for the whole table
+
+`FLD-017 amount_due` is all DB-013 declares. `IDX-009` proves `due_date` and `status`
+are meant to exist by indexing them. Everything else — `amount_received`,
+`blocker_reason`, the follow-up stamps — is constructed against the acceptance
+criterion's four nouns.
+
+### What resolving it looks like
+
+1. Confirm the two-act reading, or move the event to Accounts entirely and have
+   Transport emit nothing. **One deletion either way — say which.**
+2. A collection status vocabulary, registered.
+3. Field rows for DB-013 beyond `amount_due`.
+4. A `Collection / view` permission row (only `record` exists).
+
+**Escalation:** `ARCHITECTURE_REVIEW_REQUIRED` for 1, `CLARIFICATION_REQUIRED` for 2-3,
+`SECURITY_REVIEW_REQUIRED` for 4.
+**Does not block:** SNG-TRN-016 shipped against constructed values, all flagged here,
 and the module writes nothing to any ledger.

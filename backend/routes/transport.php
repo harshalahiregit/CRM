@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\Transport\TransportAdvanceController;
 use App\Http\Controllers\Api\Transport\TransportAllocationController;
 use App\Http\Controllers\Api\Transport\TransportBillingController;
 use App\Http\Controllers\Api\Transport\TransportCapabilityController;
+use App\Http\Controllers\Api\Transport\TransportCollectionController;
 use App\Http\Controllers\Api\Transport\TransportConsignmentController;
 use App\Http\Controllers\Api\Transport\TransportContainerController;
 use App\Http\Controllers\Api\Transport\TransportCostController;
@@ -169,6 +170,32 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
 
     Route::middleware('transport.permission:'.TransportPermission::BILLING_PREPARE)->group(function () {
         Route::post('/trips/{id}/bill', [TransportBillingController::class, 'store'])->whereNumber('id');
+    });
+
+    /* ── Collections — SNG-TRN-016, API-011 ───────────────────────────────
+     *
+     * The ageing report and the follow-up queue are tenant-wide, not per-trip,
+     * so they cannot sit behind TRIP_VIEW the way a trip's own paperwork does —
+     * they read the whole receivables book. COLLECTION_VIEW is constructed for
+     * exactly that, and excludes Customer and Supplier for the obvious reason.
+     *
+     * Recording a receipt is narrower still: PERM-011 gives it to Owner,
+     * Accounts, Approver and Admin, and pointedly not to Operations. Whoever
+     * ran the trip does not get to declare it paid for.
+     *
+     * Opening a receivable sits with recording rather than viewing — it is
+     * STT-011's "Create collection task" and it moves the trip's state.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::COLLECTION_VIEW)->group(function () {
+        Route::get('/collections/ageing',     [TransportCollectionController::class, 'ageing']);
+        Route::get('/collections/follow-ups', [TransportCollectionController::class, 'followUpQueue']);
+        Route::get('/trips/{id}/collection',  [TransportCollectionController::class, 'show'])->whereNumber('id');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::COLLECTION_RECORD)->group(function () {
+        Route::post('/trips/{id}/collection/open', [TransportCollectionController::class, 'open'])->whereNumber('id');
+        Route::post('/trips/{id}/collection',      [TransportCollectionController::class, 'record'])->whereNumber('id');
+        Route::patch('/trips/{id}/collection',     [TransportCollectionController::class, 'update'])->whereNumber('id');
     });
 
     /* ── What this user may do ────────────────────────────────────────

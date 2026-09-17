@@ -502,6 +502,43 @@ export const transportBillingApi = {
 }
 
 /**
+ * Receivable tracking — SNG-TRN-016, API-011.
+ *
+ * Recording a receipt moves a TRACKED balance; it does not post money. Accounts
+ * turns the event into a posting (CTR-014, "Posting event generated"), so the
+ * UI says "record a receipt", never "take payment".
+ *
+ * `ageing` and `followUps` are tenant-wide — nobody chases one receivable at a
+ * time, and "what is 60 days overdue" is the question the table is indexed for.
+ */
+export const transportCollectionApi = {
+  get: (tripId) =>
+    api.get(`/transport/trips/${tripId}/collection`)
+      .then((r) => r.data?.data?.collection ?? null).catch(handleErr),
+
+  open: (tripId, dueDate) =>
+    post422(`/transport/trips/${tripId}/collection/open`, { due_date: dueDate || null }),
+
+  record: (tripId, amount, reference) =>
+    post422(`/transport/trips/${tripId}/collection`, {
+      amount_received: amount, reference: reference || null,
+    }),
+
+  /** Blockers and follow-up. Sending blocker_reason: null CLEARS the blocker. */
+  update: (tripId, fields) =>
+    api.patch(`/transport/trips/${tripId}/collection`, fields)
+      .then((r) => ({ ok: true, ...(r.data?.data ?? {}) })).catch(err422),
+
+  ageing: (asOf) =>
+    api.get('/transport/collections/ageing', { params: asOf ? { as_of: asOf } : {} })
+      .then((r) => r.data?.data ?? { buckets: {}, total: '0.00', rows: [] }).catch(handleErr),
+
+  followUps: (asOf) =>
+    api.get('/transport/collections/follow-ups', { params: asOf ? { as_of: asOf } : {} })
+      .then((r) => r.data?.data?.collections ?? []).catch(handleErr),
+}
+
+/**
  * What the signed-in user may do — so a screen can hide an action the API would
  * refuse rather than show a button that 403s.
  */

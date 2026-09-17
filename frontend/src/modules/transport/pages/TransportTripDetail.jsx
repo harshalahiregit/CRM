@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Truck, Building2, Package, History, Route as RouteIcon,
   AlertTriangle, Loader2, Gauge, Pencil, ClipboardCheck, Send, Boxes,
-  Wallet, IndianRupee, FileCheck2, Receipt,
+  Wallet, IndianRupee, FileCheck2, Receipt, Banknote,
 } from 'lucide-react'
 import { transportTripApi, transportCapabilityApi } from '@/services/transportApi'
 import { useToast } from '@/components/ui/Toast'
@@ -19,6 +19,7 @@ import AdvancesPanel from '../components/AdvancesPanel'
 import CostsPanel from '../components/CostsPanel'
 import TripDocumentsPanel from '../components/TripDocumentsPanel'
 import BillingPanel from '../components/BillingPanel'
+import CollectionPanel from '../components/CollectionPanel'
 import { tripStatusCfg, orderStatusCfg, fmtMoney, fmtDate } from '../constants'
 
 /**
@@ -330,6 +331,25 @@ export default function TransportTripDetail() {
               <BillingPanel
                 trip={trip}
                 canPrepare={!!grants['transport.billing.prepare']}
+                onChanged={load}
+              />
+            )}
+          </Panel>
+
+          {/* Step 8. SNG-TRN-016. The receivable opens once Accounts has raised
+              the invoice, so the panel appears from dispatch and explains
+              itself until then. Recording a receipt here is TRACKING — Accounts
+              posts the money (EVT-011), and the panel says so. */}
+          <Panel icon={Banknote} step={8} title="Getting paid"
+            subtitle="What the customer still owes, when it is due, and why it is stuck. Recording a receipt here tracks it; Accounts posts the money.">
+            {['draft', 'viability_pending', 'approved'].includes(trip.status) ? (
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 0' }}>
+                This becomes relevant once the trip has been billed.
+              </p>
+            ) : (
+              <CollectionPanel
+                trip={trip}
+                canRecord={!!grants['transport.collection.record']}
                 onChanged={load}
               />
             )}

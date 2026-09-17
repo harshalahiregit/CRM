@@ -140,6 +140,22 @@ final class TransportPermission
      */
     public const BILLING_PREPARE = 'transport.billing.prepare';
 
+    /* ── Collections (SNG-TRN-016) ───────────────────────────────────────
+     *
+     * COLLECTION_RECORD is SPECIFIED twice over, which is rare in this package:
+     * API-011's Permission column reads `transport.collection.record` exactly,
+     * AND PERM-011 `Collection / record` gives the matrix row. Nothing here is
+     * constructed.
+     *
+     * COLLECTION_VIEW is not. There is no Collection view row, and the ageing
+     * report is tenant-wide rather than hanging off one trip — so it cannot sit
+     * behind TRIP_VIEW the way a trip's own paperwork does. Constructed from the
+     * domain, and deliberately no wider than PERM-011 plus Operations, who chase
+     * what they dispatched.
+     */
+    public const COLLECTION_VIEW   = 'transport.collection.view';
+    public const COLLECTION_RECORD = 'transport.collection.record';
+
     /* ── Master data (SNG-TRN-003 / 004). NOT IN THE REGISTRY — see D-8. ── */
     public const VEHICLE_VIEW   = 'transport.vehicle.view';
     public const VEHICLE_CREATE = 'transport.vehicle.create';
@@ -301,6 +317,33 @@ final class TransportPermission
         // correctly here — deciding a customer may be charged is not a
         // dispatcher's call. Driver, Customer and Supplier obviously not.
         self::BILLING_PREPARE => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        // PERM-011 — Collection record: Owner Y, Accounts Y, Approver Y,
+        // Admin Y. Operations N, Dispatcher N, Driver N, Customer N,
+        // Supplier N. Reproduced verbatim; nothing inferred.
+        //
+        // Operations being absent is the row working: recording that money
+        // arrived is a finance act, and the person who ran the trip is not the
+        // person who should be able to say it was paid for.
+        self::COLLECTION_RECORD => [
+            self::ROLE_OWNER    => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS => self::SCOPE_ALL,
+            self::ROLE_APPROVER => self::SCOPE_ALL,
+            self::ROLE_ADMIN    => self::SCOPE_ALL,
+        ],
+        // CONSTRUCTED — no Collection view row exists (D-61).
+        //
+        // PERM-011's set, plus Operations. Reading the ageing report is not
+        // recording a receipt, and somebody has to be able to see that the trip
+        // they dispatched has not been paid for — a blocker only finance can
+        // read is a blocker nobody chases. Deliberately no wider: Customer and
+        // Supplier must never see the tenant's receivables book.
+        self::COLLECTION_VIEW => [
             self::ROLE_OWNER      => self::SCOPE_ALL,
             self::ROLE_OPERATIONS => self::SCOPE_ALL,
             self::ROLE_ACCOUNTS   => self::SCOPE_ALL,

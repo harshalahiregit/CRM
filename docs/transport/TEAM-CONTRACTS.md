@@ -150,6 +150,8 @@ built. Goes in P1's `REQUEST-step12-missing-tickets.md`.
 | C-08 | P1 | P3 | a way to ask "does this trip have a waived exception?" | **P3 is reading `trip_exceptions` directly meanwhile** — see below |
 | C-09 | P1 | P3 | STT-006 `dispatched → in_transit`, then STT-007 → `delivered` | **blocks nothing today, but POD verification cannot fire without it** |
 | C-10 | **Accounts** | P3 | fill `trip_bills.invoice_id` and emit EVT-010 `InvoicePosted` | **P3 side complete** — the queue and the door are built, see below |
+| C-11 | **Accounts** | P3 | post the receipt behind `CollectionRecorded`, and own `receipt_id` / `posting_id` | **P3 side complete** — tracking works, posting is yours (D-61) |
+| C-12 | P1 | P3 | STT-012 `collection_pending → closed`, whose effect is the profit snapshot | not started — and **blocked on D-58** anyway |
 
 ### C-01 — do not build a second one
 
@@ -171,6 +173,39 @@ and has since expired" are distinguishable.
 
 Nothing to add. A new `ComplianceGate` would have been the second duplicate in
 two days.
+
+### C-11 — Accounts: collections track here, the money posts with you
+
+SNG-TRN-016 records what a customer owes on a trip, when it is due, why it is stuck and
+who chased it. It does **not** post money. When a receipt is recorded, Transport moves a
+tracked balance and fires `CollectionRecorded`; CTR-014's own note on API-011 is
+*"Posting event generated"*, and the posting is yours.
+
+**One thing needs your decision (D-61).** EVT-011's registry payload is
+`receipt_id, invoice_id, amount`, keyed on `receipt_id+posting_id`. Transport creates
+neither a receipt nor a posting, so it cannot fill those. The event currently carries:
+
+```php
+['receipt_id' => null,              // yours — we never fabricate one
+ 'invoice_id' => $bill->invoice_id, // known only after you call markInvoiced()
+ 'amount'     => '2500.00',         // this receipt, not the running total
+ 'collection_id' => 12, 'trip_id' => 7]   // added so you have a join key
+```
+
+**Either** confirm this two-act reading and consume the event as a trigger, **or** take
+the event over entirely and we emit nothing. Both are one deletion on our side — tell us
+which before you build against it.
+
+**What you can read:** `TripCollection` carries `amount_due`, `amount_received`,
+`outstanding`, `status` (`pending` / `part_paid` / `settled`, derived from the
+arithmetic, never set by hand), `due_date`, `days_overdue`, `blocker_reason` and the
+follow-up stamps. `TripCollectionService::ageing($tenantId)` returns the standard
+0/30/60/90 buckets as decimal strings.
+
+Overpayment is refused here on purpose — a negative balance would make the ageing total
+meaningless, and a refund or credit note is your decision, not a tracking one.
+
+---
 
 ### C-10 — Accounts: the billing handover is built and waiting for you
 
