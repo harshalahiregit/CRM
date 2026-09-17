@@ -105,7 +105,7 @@ when Dispatch does. `MAINTENANCE_DUE` and `BREAKDOWN` are ours and are missing. 
 - [ ] **T-02** ⚠️ Vehicle-type vocabulary. Decide: adopt the spec's four uppercase values, or keep the seven lowercase ones. Adopting means a migration, a data map (`truck→CONTAINER_BODY`?), and touching the seeder, fuel benchmarks, tests and UI. **Blocked on a team answer — Devs 1 and 3 send these strings across the boundary.**
 - [ ] **T-03** Add `FINANCED` and `CONTRACTED` ownership values; decide whether `market` folds into `CONTRACTED`
 - [ ] **T-04** Add `MAINTENANCE_DUE` and `BREAKDOWN` vehicle states, with the rules that set them (service interval due; a breakdown job card raised on the road)
-- [ ] **T-05** Genset master: create/edit/fit endpoints, the conditional serial field on the reefer onboarding form, and fit/unfit from the passport
+- [x] **T-05** Genset master — register / edit / fit / unfit endpoints, the conditional serial field on the reefer onboarding form (which previously just *told* people to fit it from the passport later), and a fit/swap/remove panel on the passport. Serials normalised like plates, so `GS-0051` and `GS0051` cannot become two entries for one unit. A unit already fitted elsewhere is **moved**, not refused — that is what happens when one fails on the road · *GensetRegisterTest*
 
 ---
 
@@ -380,7 +380,7 @@ fires from a **model observer**, so no future code path can change availability 
 - [x] **T-47** Every screen behind `role:admin,staff`; portal logins (client/vendor/TPV) get 403 from every endpoint
 - [x] **T-48** Standalone mode: `DriverDirectory` binding auto-detects the CRM, so one codebase runs integrated and standalone
 - [ ] **T-49** Idle-vehicle and utilisation reporting for the executive tower (`STOS-REP` feeds from our data)
-- [ ] **T-50** 🟡 Frontend, the four screens the tasks above imply. **Urea modal — done** (`UreaTopUpModal`, T-23). Still missing: FASTag register (T-27), tyre master screen (T-36), genset management (T-05).
+- [ ] **T-50** 🟡 Frontend, the four screens the tasks above imply. **Urea modal — done** (T-23). **Genset management — done** (T-05: passport panel + onboarding field). Still missing: FASTag register (T-27), tyre master screen (T-36).
 - [ ] **T-51** ⚠️ Whole-vocabulary decision: adopt the spec's UPPERCASE enums across vehicle type, ownership, status, fuel recovery and toll reconciliation, or keep lowercase and publish a mapping table in `STOS-API`. **This is one coordinated migration, not five — do it once, with Devs 1 and 3 in the room.**
 - [x] **T-52** ~~`BannedPatternsTest` fails on `TpvVendorDetail.jsx`~~ — **no longer true.** Full backend suite verified green on 2026-09-17: **4,641 passing, 0 failures, 3 skipped.** The uncommitted refactor that caused it was committed in the meantime.
 

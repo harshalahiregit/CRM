@@ -27,7 +27,7 @@ const EMPTY = {
   chassis_number: '', engine_number: '', gps_device_id: '',
   fleet_number: '', manufacturer: '', model: '', variant: '',
   manufacturing_year: '', purchase_date: '', fuel_type: '', branch: '',
-  capacity_tonnes: '',
+  capacity_tonnes: '', genset_serial: '',
   registration_expiry: '', insurance_expiry: '', fitness_expiry: '', permit_expiry: '', puc_expiry: '',
   compliance_hold: false, compliance_hold_reason: '',
 }
@@ -95,14 +95,43 @@ export default function VehicleFormModal({ open, onClose, vehicle = null, onSave
       payload.purchase_date = form.purchase_date || null
       // An empty date is "not recorded", not an empty string the API must parse.
       EXPIRY_DOCUMENTS.forEach(({ field }) => { payload[field] = form[field] || null })
-      return editing
-        ? stosApi.fleet.update(vehicle.id, payload)
-        : stosApi.fleet.create(payload)
+      // Not a column on `vehicles` — a genset is its own asset. Stripped from
+      // the vehicle payload and registered separately once the vehicle exists.
+      const gensetSerial = String(payload.genset_serial || '').trim()
+      delete payload.genset_serial
+
+      if (editing) return stosApi.fleet.update(vehicle.id, payload)
+
+      return stosApi.fleet.create(payload).then(async (created) => {
+        if (!gensetSerial) return created
+
+        // Deliberately not fatal: the vehicle is saved either way, and losing
+        // the truck because a serial was a duplicate would be the wrong trade.
+        try {
+          await stosApi.gensets.create({ serial_number: gensetSerial, vehicle_id: created.id, status: 'active' })
+        } catch (e) {
+          created.genset_warning = e?.message || 'The vehicle was saved, but its genset could not be registered.'
+        }
+
+        return created
+      })
     },
     onSuccess: (row) => {
       qc.invalidateQueries({ queryKey: ['stos-fleet'] })
       qc.invalidateQueries({ queryKey: ['stos-vehicle'] })
       qc.invalidateQueries({ queryKey: ['stos-eligible'] })
+      qc.invalidateQueries({ queryKey: ['stos-gensets'] })
+
+      // The vehicle saved but its genset did not. Held open and said out loud
+      // rather than closing on a half-success — otherwise a reefer quietly ends
+      // up with no power unit on record and nobody knows why.
+      if (row?.genset_warning) {
+        setErr(`${row.genset_warning} The vehicle is saved — register its genset from the passport.`)
+        onSaved?.(row)
+
+        return
+      }
+
       onSaved?.(row)
       onClose?.()
     },
@@ -242,12 +271,25 @@ export default function VehicleFormModal({ open, onClose, vehicle = null, onSave
               placeholder="DEV-0001" className={inputClass} style={inputStyle} />
           </Field>
 
-          {form.vehicle_type === 'reefer' && (
-            <p className="flex items-start gap-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-              <Info size={12} className="shrink-0 mt-0.5" />
-              A reefer reports body temperature and genset state, and raises an excursion when the genset is off
-              above the set point. Fit its genset from the vehicle&apos;s passport once it is saved.
-            </p>
+          {/* T-05 — this used to be a sentence telling people to fit the genset
+              from the passport later. The field is here now, because the moment
+              somebody is registering a reefer is the moment they have the
+              serial in front of them. Still optional: a unit can be bolted on
+              afterwards, and the passport does that. */}
+          {form.vehicle_type === 'reefer' && !editing && (
+            <>
+              <Field label="Genset serial" error={fieldErrors.genset_serial}
+                hint="The power unit fitted to this reefer. Leave blank and fit one from the passport later.">
+                <input value={form.genset_serial} onChange={(e) => set('genset_serial', e.target.value)}
+                  placeholder="GS-0014" className={inputClass} style={inputStyle} />
+              </Field>
+
+              <p className="flex items-start gap-1.5 text-[11px] -mt-1" style={{ color: 'var(--text-muted)' }}>
+                <Info size={12} className="shrink-0 mt-0.5" />
+                A reefer reports body temperature and genset state, and raises an excursion when the genset
+                is off above the set point.
+              </p>
+            </>
           )}
 
           {/* The five statutory papers. The VERDICT is derived from these dates

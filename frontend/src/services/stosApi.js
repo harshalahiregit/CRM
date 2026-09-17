@@ -56,6 +56,14 @@ export const stosApi = {
       api.put(`/v1/fleet/drivers/${source}/${personId}/assign`, { vehicle_id: vehicleId }).then(unwrap).catch(handleErr),
   },
 
+  gensets: {
+    register: (params = {}) => api.get('/v1/fleet/gensets', { params }).then(unwrap).catch(handleErr),
+    create:   (data) => api.post('/v1/fleet/gensets', data).then(unwrap).catch(handleErr),
+    update:   (id, data) => api.put(`/v1/fleet/gensets/${id}`, data).then(unwrap).catch(handleErr),
+    fit:      (id, vehicleId) => api.post(`/v1/fleet/gensets/${id}/fit`, { vehicle_id: vehicleId }).then(unwrap).catch(handleErr),
+    unfit:    (id) => api.post(`/v1/fleet/gensets/${id}/unfit`).then(unwrap).catch(handleErr),
+  },
+
   urea: {
     record: (vehicleId, data) => api.post(`/v1/fleet/vehicles/${vehicleId}/urea`, data).then(unwrap).catch(handleErr),
   },
@@ -167,6 +175,14 @@ export const FUEL_TYPES = [
   { value: 'lng',      label: 'LNG' },
   { value: 'electric', label: 'Electric' },
   { value: 'hybrid',   label: 'Hybrid' },
+]
+
+/** Mirrors `Genset::STATUSES`. */
+export const GENSET_STATUSES = [
+  { value: 'idle',           label: 'In the yard' },
+  { value: 'active',         label: 'In service' },
+  { value: 'in_maintenance', label: 'Under repair' },
+  { value: 'retired',        label: 'Retired' },
 ]
 
 export const JOB_STATUSES = [

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\Transport\DeviceTokenController;
+use App\Http\Controllers\Api\V1\Transport\GensetController;
 use App\Http\Controllers\Api\V1\Transport\DriverController;
 use App\Http\Controllers\Api\V1\Transport\FleetController;
 use App\Http\Controllers\Api\V1\Transport\FuelController;
@@ -68,6 +69,15 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('v1/fleet')->gro
     // ── Drivers (STOS-FLEET) ────────────────────────────────────────────
     // Read LIVE from the CRM's customer/vendor directories — there is no
     // "create driver" here, because STOS does not own people.
+    // ── Gensets (T-05) ──────────────────────────────────────────────────
+    // Fit and unfit are their own endpoints, not a field on the update: a unit
+    // physically moving between trailers is an event, and it is logged as one.
+    Route::get('/gensets', [GensetController::class, 'index']);
+    Route::post('/gensets', [GensetController::class, 'store']);
+    Route::put('/gensets/{genset}', [GensetController::class, 'update'])->where('genset', '[0-9]+');
+    Route::post('/gensets/{genset}/fit', [GensetController::class, 'fit'])->where('genset', '[0-9]+');
+    Route::post('/gensets/{genset}/unfit', [GensetController::class, 'unfit'])->where('genset', '[0-9]+');
+
     // ── Device credentials (T-07) ───────────────────────────────────────
     // PEOPLE manage these; the hardware door is /v1/telemetry. Issuing from
     // behind the credential check would let any unit mint more.

@@ -10,6 +10,7 @@ import ExceptionPanel from '../components/ExceptionPanel'
 import LiveTelemetryGauge from '../components/LiveTelemetryGauge'
 import FuelExpenseModal from '../components/FuelExpenseModal'
 import UreaTopUpModal from '../components/UreaTopUpModal'
+import GensetPanel from '../components/GensetPanel'
 import MaintenanceJobCardForm from '../components/MaintenanceJobCardForm'
 import CompliancePanel from '../components/CompliancePanel'
 import TyrePanel from '../components/TyrePanel'
@@ -191,16 +192,13 @@ export default function VehiclePassportView() {
           <Card title="Live status" icon={Activity}>
             <LiveTelemetryGauge live={live} signal={signal} />
 
-            {gensets.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {gensets.map((g) => (
-                  <span key={g.id} className="inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-lg"
-                    style={{ background: 'var(--bg-input)', color: 'var(--text-muted)' }}>
-                    <Zap size={11} style={{ color: STOS_ACCENT }} /> Genset {g.serial_number} · {g.status}
-                  </span>
-                ))}
-              </div>
-            )}
+          </Card>
+
+          {/* T-05 — the unit is its own asset, so it gets its own panel rather
+              than a read-only chip: register one, swap a spare in when one
+              fails on the road, take one off without retiring it. */}
+          <Card title="Power unit" icon={Zap}>
+            <GensetPanel vehicle={vehicle} gensets={gensets} onChanged={() => refetch()} />
           </Card>
 
           <Card title={`Recent readings (${telemetry.length})`} icon={FileText}>
