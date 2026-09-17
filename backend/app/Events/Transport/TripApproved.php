@@ -22,7 +22,7 @@ use Illuminate\Queue\SerializesModels;
  * Neither consumer subscribes yet. Same published-seam pattern as EVT-001 and
  * EVT-002: emit-only, no outbox, no new mechanism.
  *
- * ── THE IDEMPOTENCY KEY CANNOT BE HONOURED AS SPECIFIED — D-60 ───────────
+ * ── THE IDEMPOTENCY KEY CANNOT BE HONOURED AS SPECIFIED — D-65 ───────────
  * The registry keys this on `trip_id+approval_id`. **There is no approvals
  * table in Step 11's DB_Registry and no field registry entry defines
  * `approval_id`.** The approval is recorded on the trip itself — `approved_by`
@@ -39,12 +39,12 @@ use Illuminate\Queue\SerializesModels;
  * ── `approved_by` IS WHY THIS IS A DECISION AND NOT A CALCULATION ────────
  * A margin computation has no approver. The payload names one, PERM-003 denies
  * the Dispatcher, and the key names an approval record: three independent
- * signals that STT-002 is a human act. See D-58.
+ * signals that STT-002 is a human act. See D-63.
  *
  * ── WHAT THE APPROVAL DID NOT CHECK ──────────────────────────────────────
  * STT-002's LOCKED precondition is "Margin policy passed". It is NOT enforced.
  * A consumer must not read this event as evidence that a trip is commercially
- * viable — only that an authorised person approved it. See D-59.
+ * viable — only that an authorised person approved it. See D-64.
  */
 class TripApproved
 {
@@ -69,7 +69,7 @@ class TripApproved
     /**
      * EVT-004 Idempotency Key — specified as "trip_id+approval_id".
      *
-     * `approval_id` has no table (D-60), so `approved_at` stands in. It is the
+     * `approval_id` has no table (D-65), so `approved_at` stands in. It is the
      * fact that exists and it moves when the approval does.
      */
     public function idempotencyKey(): string

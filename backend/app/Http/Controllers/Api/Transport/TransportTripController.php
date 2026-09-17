@@ -138,7 +138,7 @@ class TransportTripController extends Controller
      * INCLUDING its denial of the Dispatcher.
      *
      * The margin precondition is NOT enforced — see the service docblock and
-     * D-59. The response message says so, because a user who approves a trip
+     * D-64. The response message says so, because a user who approves a trip
      * should know what the system did and did not check.
      */
     public function approve(Request $request, int $id): JsonResponse

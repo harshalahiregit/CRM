@@ -24,11 +24,11 @@ use Tests\TestCase;
  *
  * Until this shipped, NO trip created through the application could ever be
  * approved, so allocation, pre-trip and dispatch were all built and all
- * unreachable. D-58.
+ * unreachable. D-63.
  *
  * Two things here are deliberately unusual and must not be "tidied":
  *   1. `test_the_margin_gate_is_still_deferred` is written to FAIL when
- *      SNG-TRN-008 lands. That is its job. See D-59.
+ *      SNG-TRN-008 lands. That is its job. See D-64.
  *   2. The Dispatcher denial is tested as hard as the grants. PERM-003 says N,
  *      and that N is the clearest evidence approval is a commercial decision
  *      rather than an operational step.
@@ -156,7 +156,7 @@ class TripApprovalTest extends TestCase
 
     public function test_the_event_does_not_invent_an_approval_id(): void
     {
-        // D-60. No approvals table exists, so no approval_id is fabricated —
+        // D-65. No approvals table exists, so no approval_id is fabricated —
         // not the audit row id, not a uuid. A fake identifier would satisfy a
         // consumer's de-duplication while keying on something the registry
         // never meant.
@@ -169,7 +169,7 @@ class TripApprovalTest extends TestCase
         $this->assertSame(
             $approved->id.'+'.$approved->approved_at->getTimestamp(),
             $key,
-            'approved_at stands in for the absent approval_id — see D-60',
+            'approved_at stands in for the absent approval_id — see D-65',
         );
     }
 
@@ -271,7 +271,7 @@ class TripApprovalTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.status', TripStatus::APPROVED)
             // The response says what was NOT checked — a user approving a trip
-            // should know. D-59.
+            // should know. D-64.
             ->assertJsonPath('message', 'Trip approved. The margin check is not yet enforced.');
     }
 
@@ -437,13 +437,13 @@ class TripApprovalTest extends TestCase
             ->assertJsonPath('data.rejection_reason', 'Price needs renegotiating.');
     }
 
-    /* ══════════ D-59 — the pinned absence ══════════ */
+    /* ══════════ D-64 — the pinned absence ══════════ */
 
     /**
      * THIS TEST IS WRITTEN TO FAIL WHEN SNG-TRN-008 LANDS. THAT IS ITS JOB.
      *
      * STT-002's LOCKED precondition is "Margin policy passed" and it is not
-     * enforced (D-59). When Trip Viability is built, this goes red, and whoever
+     * enforced (D-64). When Trip Viability is built, this goes red, and whoever
      * built it must add the gate in TransportTripService::approve() and then
      * delete this test.
      *
@@ -479,7 +479,7 @@ class TripApprovalTest extends TestCase
                 $needle,
                 $approve,
                 "approve() now references '{$needle}'. If SNG-TRN-008 has landed, WIRE THE MARGIN "
-                ."GATE into approve() and DELETE THIS TEST — see D-59. If it has not, something "
+                ."GATE into approve() and DELETE THIS TEST — see D-64. If it has not, something "
                 .'has been half-added and the precondition is now ambiguous.',
             );
         }

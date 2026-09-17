@@ -235,7 +235,7 @@ class TransportTripService
      * on SNG-TRN-005's rate card — a P0 ticket with NO ASSIGNED OWNER — and on
      * Person 3's unbuilt `trip_costs`. Without it the entire chain after trip
      * creation was unreachable by any real user: allocation, pre-trip and
-     * dispatch were all built and all dead. See D-58 for that gap and D-59 for
+     * dispatch were all built and all dead. See D-63 for that gap and D-64 for
      * this deferral.
      *
      * SO: A USER CAN APPROVE A TRIP THAT WOULD LOSE MONEY. The approval dialog
@@ -245,7 +245,7 @@ class TransportTripService
      *
      * ── WHY THE APPROVER IS RECORDED ON THE TRIP ─────────────────────────
      * EVT-004's payload needs `approved_by`, and its idempotency key names an
-     * `approval_id` for which no table exists (D-60). Recorded on the trip, like
+     * `approval_id` for which no table exists (D-65). Recorded on the trip, like
      * `dispatched_by` before it, rather than inventing an entity to satisfy a
      * key.
      */
@@ -295,7 +295,7 @@ class TransportTripService
             'trip_id' => $approved->id, 'from' => $from, 'to' => $to,
             'tenant_id' => $tenantId, 'user_id' => $actor?->id,
             // Recorded on every approval so the deferral is visible in the logs
-            // as well as the code — see D-59.
+            // as well as the code — see D-64.
             'margin_policy_checked' => false,
         ]);
 

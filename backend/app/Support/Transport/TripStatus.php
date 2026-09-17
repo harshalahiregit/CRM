@@ -27,7 +27,7 @@ namespace App\Support\Transport;
  *   SNG-TRN-007   draft → viability_pending                    (STT-001)
  *   (no ticket)   viability_pending → approved, and back to draft (STT-002/003)
  *                 No ticket owns it; ruled by the owner 2026-09-16 because the
- *                 whole chain after trip creation was unreachable. D-58/D-59.
+ *                 whole chain after trip creation was unreachable. D-63/D-64.
  *   SNG-TRN-009   approved → allocated, and back on release    (STT-004)
  *   SNG-TRN-010   allocated → pretrip_ok, and back on release  (STT-005, part)
  *   (no ticket)   pretrip_ok → dispatched                      (STT-005 dest.)
@@ -92,7 +92,7 @@ final class TripStatus
         // needs SNG-TRN-008 (Trip Viability), which is not built and is blocked
         // on SNG-TRN-005's rate card — a P0 ticket with NO ASSIGNED OWNER — and
         // on Person 3's unbuilt trip_costs. Approval today checks the state and
-        // the permission and nothing about the commercials. See D-59, which
+        // the permission and nothing about the commercials. See D-64, which
         // carries a test written to fail the day viability lands.
         // STT-003 | viability_pending → draft | trigger "Reject for correction"
         //         | actor Operations | precondition "Rejection reason"
@@ -202,7 +202,7 @@ final class TripStatus
         // collection_pending → closed | actor TripEngine | guard
         // "Settlement/POD/billing controls pass" | effect "Snapshot profit".
         // TripEngine is P1's, and the snapshot it triggers is SNG-TRN-018,
-        // which is blocked on D-58. Left unwired deliberately.
+        // which is blocked on D-63. Left unwired deliberately.
 
         // ── INFERRED, NOT A REGISTRY TRANSITION ──────────────────────────
         // pretrip_ok → approved, when an assignment is released.

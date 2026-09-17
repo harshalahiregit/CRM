@@ -29,13 +29,13 @@ use Illuminate\Support\Facades\Schema;
  * not a generated uuid. A fabricated identifier would satisfy a consumer's
  * de-duplication while keying on something the registry never meant, and would
  * fail as a silently dropped event long after anyone remembers why. Recorded as
- * D-60.
+ * D-65.
  *
  * ── WHAT THIS MIGRATION DELIBERATELY DOES NOT ADD ────────────────────────
  * No `margin_pct`, no `viability_snapshot_id`, no `viability_decision`. STT-001's
  * side effect is "Create viability snapshot" and ENUM-008 defines
  * accept|negotiate|reject|review — but both belong to SNG-TRN-008, which is not
- * built and is blocked on an unassigned rate card (D-59). Columns with nothing
+ * built and is blocked on an unassigned rate card (D-64). Columns with nothing
  * able to populate them are the D-9 mistake.
  *
  * `rejection_reason` is likewise absent: STT-003 is the next commit, not this

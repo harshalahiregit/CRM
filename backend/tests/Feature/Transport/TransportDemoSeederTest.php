@@ -209,7 +209,7 @@ class TransportDemoSeederTest extends TestCase
 
     public function test_the_seeder_never_writes_a_trip_status_directly(): void
     {
-        // D-58. This seeder used to forceFill status to APPROVED and ALLOCATED,
+        // D-63. This seeder used to forceFill status to APPROVED and ALLOCATED,
         // and that single shortcut meant the demo showed a chain the product
         // could not perform — nobody noticed STT-002 was missing because the
         // seeder covered for it.
@@ -224,7 +224,7 @@ class TransportDemoSeederTest extends TestCase
             $source,
             'TransportDemoSeeder references a trip status in code again. Demo trips must reach '
             .'their state by walking the real transitions (see approvedTrip()). If they cannot, '
-            .'that is a finding to report — not something to route around. See D-58.',
+            .'that is a finding to report — not something to route around. See D-63.',
         );
     }
 

@@ -85,7 +85,7 @@ use Illuminate\Database\Seeder;
  * Re-running is a reset, not a duplication: it clears first, then rebuilds, so
  * the walkthrough is identical every time.
  *
- * ── IT NO LONGER CHEATS. THAT WAS D-58, AND IT IS FIXED. ─────────────────
+ * ── IT NO LONGER CHEATS. THAT WAS D-63, AND IT IS FIXED. ─────────────────
  * This seeder used to write `status` directly — forceFill to APPROVED and to
  * ALLOCATED — because `viability_pending` had no outgoing edge and the
  * application literally could not produce an approved trip. The demo therefore
@@ -103,7 +103,7 @@ use Illuminate\Database\Seeder;
  * The planned departure/arrival dates ARE still set directly. Those are
  * ordinary data a dispatcher types, not a state change.
  *
- * One honest caveat: approval does not yet check margin policy (D-59), so the
+ * One honest caveat: approval does not yet check margin policy (D-64), so the
  * demo shows an approval that is real but not yet complete.
  *
  * ── EVERY ROW GOES THROUGH A REAL SERVICE ────────────────────────────────
@@ -428,7 +428,7 @@ class TransportDemoSeeder extends Seeder
      *
      *     draft  --STT-001-->  viability_pending  --STT-002-->  approved
      *
-     * This method is the whole of D-58's fix as far as the demo is concerned.
+     * This method is the whole of D-63's fix as far as the demo is concerned.
      * Until STT-002 existed, the seeder wrote `status` directly because there
      * was no other way to reach `approved` — and that single shortcut meant the
      * walkthrough demonstrated a chain the application could not perform.
@@ -451,7 +451,7 @@ class TransportDemoSeeder extends Seeder
         $trip = $trips->createFromOrder($orderId, $data, $tenantId, $actor);
         $trip = $trips->submitForViability($trip, $tenantId, $actor);
 
-        // NOTE: approval here does NOT check margin policy — see D-59. The demo
+        // NOTE: approval here does NOT check margin policy — see D-64. The demo
         // therefore shows an approval that is real but not yet complete, which
         // is the honest position.
         return $trips->approve($trip, $tenantId, $actor);
