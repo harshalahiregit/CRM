@@ -68,6 +68,7 @@ Authority for who rules on what: the Conflict Resolution matrix in
 | D-53 | Two CLOSED attachment windows may overlap | Low | Person 1 | Open — latent, unreachable today |
 | D-57 | Step 9 and ENUM-002 describe different advance lifecycles | **High** | Product + Finance | Open — ENUM-002 stored on FLD-012's authority, four Step 9 states unrepresentable |
 | D-58 | SNG-TRN-012's three refs point at the exception domain; `cost_type` and `amount` both dangle; cost/expense boundary undefined | **High** | Product + Finance + Architecture | Open — blocks 012, and via DEP-008 also 017 and 018 |
+| D-62 | Two live vehicle/driver systems: `transport_vehicles`/`transport_drivers` vs the fleet module's `vehicles`/driver directory | **Critical** | P1 + P2 | Open — both deployed, data does not cross; sidebar merged 2026-09-17 but data is not |
 | D-61 | EVT-011's payload is pure Accounts vocabulary (`receipt_id`, `posting_id`) that Transport cannot supply; no collection status vocabulary; DB-013 has one field row | **High** | Product + Accounts | Open — status derived, event payload honestly partial |
 | D-60 | API-010 promises a `BillingPrepared` event the Event_Registry never defines; no Billing permission domain; DB-012 has one field row | **High** | Product + Accounts | Open — event payload, permission row and bill vocabulary all constructed for 015 |
 | D-59 | STT-008 requires a "POD valid" guard, but no document lifecycle is registered anywhere; DB-009 has no field or index rows | **High** | Product + Compliance | Open — status vocabulary and MIME/size limits constructed for 014 |
@@ -2214,3 +2215,66 @@ criterion's four nouns.
 `SECURITY_REVIEW_REQUIRED` for 4.
 **Does not block:** SNG-TRN-016 shipped against constructed values, all flagged here,
 and the module writes nothing to any ledger.
+
+---
+
+## D-62 — Two vehicle and driver systems are live at the same time
+
+**Raised:** 2026-09-17, after the fleet module reached production.
+**Owner: P1 + P2 — not P3's to decide.** **Severity: critical — it is a data split,
+and it widens every day.**
+
+### What exists
+
+| | Operations | Fleet |
+|---|---|---|
+| Nav | Vehicles · Drivers | Fleet Status · Driver Directory · Workshop |
+| API | `/api/transport/vehicles`, `/api/transport/drivers` | `/api/v1/fleet/...` |
+| Tables | `transport_vehicles`, `transport_drivers` | `vehicles`, driver directory tables |
+| Built by | P1 (SNG-TRN-003 / 004) | P2 |
+| Reads it | allocation, pre-trip checks, dispatch | telemetry, fuel, tyres, maintenance |
+
+**Both are deployed. Both have a Vehicles screen and a Drivers screen. Neither knows
+about the other.** A vehicle added in one is invisible to the other; a trip can be
+allocated a vehicle the fleet system has never heard of, and a vehicle can accumulate
+fuel and maintenance history that allocation cannot see.
+
+### How it happened, and why it is nobody's mistake
+
+TEAM-CONTRACTS §1a records `transport_vehicles` / `transport_drivers` as **P1's
+PLACEHOLDER, not P1's property** — built early so trips had something to allocate, and
+explicitly meant to be replaced when P2 built Fleet.
+
+P2 built the replacement. It landed as a **new module beside** the old one rather than
+**into** it, and nobody retired the placeholder. So the handover started and never
+finished. That is a coordination gap, not a coding error, and it is exactly what
+TEAM-CONTRACTS exists to catch.
+
+### What has been done, and what has NOT
+
+**Done (2026-09-17):** the sidebar showed TWO top-level entries, both labelled
+"Transport", both with a Truck icon, pointing at different modules. They are now one
+section with all nine screens and no duplicate labels.
+
+**NOT done — and the distinction matters:** merging the menus did not merge the data.
+The tidy menu makes the split *less visible*, which is the one risk of having fixed it.
+A comment sits beside the merged list saying so.
+
+### What resolving it looks like
+
+One of two, and either is fine — having both is not:
+
+1. **Fleet absorbs operations.** `transport_vehicles` / `transport_drivers` are retired,
+   allocation and pre-trip checks are repointed at the fleet tables, and existing rows
+   are migrated. Larger change, matches the documented intent.
+2. **Operations keeps the master, fleet references it.** The fleet module drops its own
+   vehicle identity and keys off `transport_vehicles`. Smaller change, but the fleet
+   model is richer and would be the one losing.
+
+**Whoever decides also owns the data migration** — rows already exist on production in
+both, so neither option is a code-only change now.
+
+**Escalation:** `ARCHITECTURE_REVIEW_REQUIRED`.
+**Blocks:** nothing today, and that is precisely the danger — both systems work in
+isolation, so this fails silently rather than loudly, and the cost grows with every row
+written to the losing table.
