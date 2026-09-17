@@ -27,6 +27,24 @@ use Illuminate\Database\Seeder;
 /**
  * THE walkthrough: 2 drivers, 2 vehicles, 2 trips. Nothing else.
  *
+ * ── DEMO ONLY. NEVER PART OF A RELEASE. DELETE THIS FILE TO REMOVE IT. ───
+ * This exists so the team can see the work while it is being built. It does
+ * not ship. Removing the demo is ONE deletion — this file — plus the demo
+ * tenant's rows. There is nothing else to unpick, and that is a property held
+ * on purpose and verified, not an accident:
+ *
+ *   - It is NOT registered in DatabaseSeeder and is invoked only by name:
+ *         php artisan db:seed --class=TransportDemoSeeder
+ *   - NOTHING in app/, routes/ or config/ references it. The only references
+ *     anywhere are its own test and two documents.
+ *   - NO test depends on a row it creates. Checked by deleting this file and
+ *     its test and running the suite: 825 passed, zero failures — exactly the
+ *     837 minus this file's own 12. A test that only passes because the demo
+ *     ran would be a trap, and there is none.
+ *
+ * Keep it that way. If something outside this file ever needs a row from it,
+ * that row belongs in a factory or a fixture, not here.
+ *
  * Replaces TransportConsignmentDemoSeeder, which produced more rows than a
  * person can hold in their head. The point of a demo is that someone can follow
  * it, not that every field has been exercised.

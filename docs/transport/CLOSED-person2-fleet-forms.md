@@ -1,4 +1,24 @@
-# Request to Person 2 — "Drivers and Vehicles cannot be added"
+# CLOSED — no action needed. "Drivers and Vehicles cannot be added"
+
+> ## ✅ CLOSED 2026-09-17 — COULD NOT REPRODUCE, AND THE OWNER CONFIRMS IT WORKS
+>
+> **Shivam — there is no bug here. Please do not spend time on this.**
+>
+> The owner has since confirmed that adding a vehicle and a driver works on local.
+> I could not reproduce the reported failure either, at any layer: the API accepts
+> each form's exact payload, and neither form over-validates.
+>
+> Nothing in your module was changed, and nothing is being asked of you.
+>
+> The detail below is kept only as the record of what was checked, in case the
+> symptom ever comes back. **The one genuine observation in it — the
+> duplicate-registration error being keyed to `registration_normalized_probe`,
+> a field that does not exist on the form — is a small polish item, not a bug,
+> and entirely your call whether to touch it.**
+
+---
+
+## Original report (kept for the record — CLOSED, no action)
 
 **From:** Person 1 · **Date:** 2026-09-16 · **Owner-reported, not reproduced as described**
 **Your files. I have changed none of them.**
@@ -77,11 +97,13 @@ role=client  ->  403  "Unauthorized. Required role: admin or staff"
 If the owner was signed in as anything other than admin/staff, that is what they would have hit, and
 it would not look like a validation problem at all.
 
-## What I need
+## What I needed — ANSWERED, and the report is closed
 
-**The exact error text, or a screenshot.** Everything above is me failing to reproduce a report at
-second hand. One screenshot would settle in ten seconds which of these it is — or show a fourth thing
-none of us has thought of.
+I asked for the exact error text or a screenshot. **The answer came back as "it works now":** the
+owner confirms adding a vehicle and a driver succeeds on local. Combined with my failure to
+reproduce it at any layer, there is nothing to fix and nothing outstanding against you.
+
+Closed 2026-09-17. No open request stands against your module.
 
 ## Scope
 
