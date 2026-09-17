@@ -40,6 +40,9 @@ class SireExportTest extends TestCase
         ]);
 
         Sanctum::actingAs($this->lead);
+
+        // Evidence tests write real files; keep them out of storage/app.
+        \Illuminate\Support\Facades\Storage::fake(config('sire.attachments.disk'));
     }
 
     private function issue(array $attributes = []): Report
@@ -185,6 +188,81 @@ class SireExportTest extends TestCase
 
         Sanctum::actingAs($client);
         $this->get('/api/sire/export')->assertForbidden();
+    }
+
+    // ------------------------------------------------------------- evidence
+
+    /** A real 800x600 PNG on the attachments disk, uploaded the ordinary way. */
+    private function attach(Report $report): void
+    {
+        $this->post("/api/sire/reports/{$report->id}/attachments", [
+            'file' => \Illuminate\Http\UploadedFile::fake()->image('broken-screen.png', 800, 600),
+        ])->assertSuccessful();
+    }
+
+    public function test_screenshots_ride_inside_the_brief(): void
+    {
+        $report = $this->issue(['module' => 'sales', 'screen' => 'lead-details']);
+        $this->attach($report);
+
+        $md = $this->brief();
+
+        // The picture itself, not a URL: evidence lives behind an authenticated
+        // route, so a plain link renders as a broken image everywhere except a
+        // logged-in browser -- the one place the reader already had it.
+        $this->assertStringContainsString('data:image/', $md);
+        $this->assertStringContainsString('!['.$report->report_number.' screenshot', $md);
+    }
+
+    public function test_the_full_size_link_sits_under_the_thumbnail(): void
+    {
+        $report = $this->issue(['module' => 'sales', 'screen' => 'lead-details']);
+        $this->attach($report);
+
+        $md = $this->brief();
+
+        // The thumbnail says WHICH screen broke; the link is for reading the
+        // error text in it.
+        $this->assertStringContainsString('full size', $md);
+        $this->assertStringContainsString("/api/sire/reports/{$report->id}/attachments/", $md);
+    }
+
+    public function test_images_can_be_left_out_for_a_small_file(): void
+    {
+        $report = $this->issue(['module' => 'sales', 'screen' => 'lead-details']);
+        $this->attach($report);
+
+        $md = $this->brief(['images' => 0]);
+
+        $this->assertStringNotContainsString('data:image/', $md);
+        // Still listed, still reachable -- just not carried.
+        $this->assertStringContainsString("/api/sire/reports/{$report->id}/attachments/", $md);
+    }
+
+    public function test_an_issue_with_no_evidence_gets_no_evidence_block(): void
+    {
+        $this->issue(['module' => 'sales', 'screen' => 'lead-details']);
+
+        $this->assertStringNotContainsString('**Evidence**', $this->brief());
+    }
+
+    public function test_a_brief_with_pictures_is_still_small_enough_to_paste(): void
+    {
+        foreach (range(1, 5) as $i) {
+            $this->attach($this->issue(['module' => 'sales', 'screen' => 'lead-details']));
+        }
+
+        $md = $this->brief();
+
+        $this->assertSame(5, substr_count($md, 'data:image/'));
+
+        // Thumbnails, not originals. A brief nobody can paste is a brief nobody
+        // uses; this is the assertion that keeps that true as the backlog grows.
+        $this->assertLessThan(
+            1024 * 1024,
+            strlen($md),
+            'five screenshots must not make the brief unpasteable',
+        );
     }
 
     // -------------------------------------------------------- the way back

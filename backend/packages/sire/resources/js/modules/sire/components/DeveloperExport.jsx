@@ -28,6 +28,7 @@ export default function DeveloperExport({ modules = [], scope = 'open' }) {
   const [open, setOpen] = useState(false);
   const [chosen, setChosen] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [withImages, setWithImages] = useState(true);
 
   // The register returns the modules that actually have issues, so this list is
   // never longer than it needs to be and never offers an empty one.
@@ -48,6 +49,7 @@ export default function DeveloperExport({ modules = [], scope = 'open' }) {
         // No selection means everything. Making somebody tick eight boxes to say
         // "all of it" is a worse default than just giving them all of it.
         module: chosen.length ? chosen : undefined,
+        images: withImages ? undefined : 0,
         download: download ? 1 : undefined,
       });
 
@@ -108,6 +110,17 @@ export default function DeveloperExport({ modules = [], scope = 'open' }) {
             in the current scope. The brief carries reproduction steps and internal screen
             names — engineering material, not something to forward to a customer.
           </p>
+
+          <label className="mb-3 flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            <input
+              type="checkbox"
+              checked={withImages}
+              onChange={(e) => setWithImages(e.target.checked)}
+            />
+            {/* Screenshots travel as data URIs, so they survive being pasted
+                anywhere. Off gives links only, for a small file to skim. */}
+            Include screenshots in the file
+          </label>
 
           {available.length === 0 ? (
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>

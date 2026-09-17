@@ -225,6 +225,24 @@ broke, what they expected, the route and record they were on, **the API call tha
 failed**, and the browser. That last one is the single most useful line in the
 document — it is the one fact a reporter could never have written down.
 
+**The screenshots ride inside it.** Evidence lives on a private disk behind an
+authenticated route, so a plain `![](url)` renders as a broken image everywhere
+except a logged-in browser — the one place the reader already had it. So the
+brief carries the picture itself as a data URI: there is nothing left to fetch
+and nothing to authenticate, and it survives being pasted into an editor, a chat
+or a model.
+
+Thumbnails at 640px, not the originals, for two reasons and the second is the
+real one. Size, because a brief nobody can paste is a brief nobody uses. And
+reading: a 1600px screenshot inline is a page of scrolling between one issue and
+the next, when what the picture is for is saying *which* screen broke. The
+full-size link sits directly underneath for when you need the error text in it.
+
+The whole export shares a byte budget rather than capping each image, so one
+enormous screenshot cannot crowd out twenty small ones — and the brief says
+plainly when it ran out instead of quietly dropping the rest. `images=0` gives
+links only, for a small file to skim.
+
 It names nobody. No reporters, no assignees, no commentary: the brief exists to
 be pasted into an editor or a model, and the fewer people it names the less it
 matters where it ends up. It does carry reproduction detail and internal screen

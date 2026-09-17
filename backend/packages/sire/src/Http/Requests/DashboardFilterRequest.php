@@ -36,6 +36,11 @@ class DashboardFilterRequest extends FormRequest
             // Export only. The register pages; a brief does not, so it needs a
             // ceiling of its own or one call can try to render the whole history.
             'limit'       => ['nullable', 'integer', 'min:1', 'max:500'],
+
+            // Export only. Screenshots ride inside the brief as data URIs so it
+            // survives being pasted anywhere; images=0 gives links instead.
+            'images'      => ['nullable', 'boolean'],
+            'download'    => ['nullable', 'boolean'],
             'type'        => ['nullable', 'string', 'max:48'],
             'severity_id' => ['nullable', 'integer', Rule::exists('sire_severities', 'id')->where('tenant_id', $tenantId)],
             'assignee_id' => ['nullable', 'integer', Rule::exists('users', 'id')->where('tenant_id', $tenantId)],
