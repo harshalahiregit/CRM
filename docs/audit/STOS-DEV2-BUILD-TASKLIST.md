@@ -380,7 +380,7 @@ fires from a **model observer**, so no future code path can change availability 
 - [x] **T-47** Every screen behind `role:admin,staff`; portal logins (client/vendor/TPV) get 403 from every endpoint
 - [x] **T-48** Standalone mode: `DriverDirectory` binding auto-detects the CRM, so one codebase runs integrated and standalone
 - [ ] **T-49** Idle-vehicle and utilisation reporting for the executive tower (`STOS-REP` feeds from our data)
-- [ ] **T-50** Frontend: urea modal, FASTag register, tyre master screen, genset management — the four screens the tasks above imply
+- [ ] **T-50** 🟡 Frontend, the four screens the tasks above imply. **Urea modal — done** (`UreaTopUpModal`, T-23). Still missing: FASTag register (T-27), tyre master screen (T-36), genset management (T-05).
 - [ ] **T-51** ⚠️ Whole-vocabulary decision: adopt the spec's UPPERCASE enums across vehicle type, ownership, status, fuel recovery and toll reconciliation, or keep lowercase and publish a mapping table in `STOS-API`. **This is one coordinated migration, not five — do it once, with Devs 1 and 3 in the room.**
 - [x] **T-52** ~~`BannedPatternsTest` fails on `TpvVendorDetail.jsx`~~ — **no longer true.** Full backend suite verified green on 2026-09-17: **4,641 passing, 0 failures, 3 skipped.** The uncommitted refactor that caused it was committed in the meantime.
 
