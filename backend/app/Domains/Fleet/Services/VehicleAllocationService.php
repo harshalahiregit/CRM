@@ -87,9 +87,9 @@ class VehicleAllocationService
                 'proximity'   => $this->proximityScore($distanceKm),
                 'efficiency'  => $this->efficiencyScore($vehicle, $kmpl),
                 'utilisation' => $this->utilisationScore($recentKm),
-                // An expired licence does NOT exclude the vehicle — the truck is
-                // fine and a different driver can take it. It drops the score so
-                // a compliant pairing outranks it, and flags why.
+                // Whether the regular driver is free is a convenience of the
+                // pairing, not a property of the truck. A licence, by contrast,
+                // no longer touches this score at all — see driverScore().
                 'driver'      => $this->driverScore($driver),
             ];
 
@@ -217,25 +217,30 @@ class VehicleAllocationService
      * the truck down. A planner sees the flag and either re-assigns or picks
      * the next vehicle.
      */
+    /**
+     * How convenient is this truck's regular pairing — NOT how compliant.
+     *
+     * ── WHY THE LICENCE IS NOT IN HERE ────────────────────────────────────
+     * It used to be: an expired licence scored the vehicle to zero. Person 1
+     * pointed out that is the wrong object. A licence belongs to the driver,
+     * not the truck. The truck is roadworthy and nothing about it has expired,
+     * so it stays fully eligible and a different driver takes it — the licence
+     * is a hard block on the DRIVER, raised by DriverService::eligible().
+     *
+     * Scoring the truck down meant a dispatcher was quietly offered a worse
+     * vehicle because of a paperwork problem that a two-second driver swap
+     * fixes. What remains here is only whether the regular driver is free,
+     * which is a genuine convenience of the pairing.
+     */
     private function driverScore(?array $driver): float
     {
         if (! $driver) {
-            // No regular driver is normal in a yard where whoever is free
-            // takes the next load — not as good as a known compliant pairing,
-            // not as bad as a driver who legally cannot drive.
+            // No regular driver is normal in a yard where whoever is free takes
+            // the next load. Neutral, not a penalty.
             return 0.5;
         }
 
-        if (($driver['profile']['status'] ?? 'available') !== 'available') {
-            return 0.0;
-        }
-
-        return match ($driver['licence']['state'] ?? 'unknown') {
-            'valid'    => 1.0,
-            'expiring' => 0.7,
-            'unknown'  => 0.4,
-            default    => 0.0,     // expired
-        };
+        return ($driver['profile']['status'] ?? 'available') === 'available' ? 1.0 : 0.5;
     }
 
     /**
@@ -251,16 +256,10 @@ class VehicleAllocationService
         }
 
         $flags = [];
-        $state = $driver['licence']['state'] ?? 'unknown';
 
-        if ($state === 'expired') {
-            $flags[] = 'DRIVER_LICENSE_EXPIRED';
-        } elseif ($state === 'expiring') {
-            $flags[] = 'DRIVER_LICENSE_EXPIRING';
-        } elseif ($state === 'unknown') {
-            $flags[] = 'DRIVER_LICENSE_UNRECORDED';
-        }
-
+        // Licence state is deliberately absent. It is a fact about the person,
+        // and attaching it here made a dispatch board stand down a perfectly
+        // good truck. It is returned against the driver instead, as a blocker.
         if (($driver['profile']['status'] ?? 'available') !== 'available') {
             $flags[] = 'DRIVER_UNAVAILABLE';
         }

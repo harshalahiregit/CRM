@@ -68,6 +68,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('v1/fleet')->gro
     // Read LIVE from the CRM's customer/vendor directories — there is no
     // "create driver" here, because STOS does not own people.
     Route::get('/drivers', [DriverController::class, 'index']);
+    // The crew half of allocation. Same response shape as eligible vehicles,
+    // because a dispatch board shows them side by side.
+    Route::get('/drivers/eligible', [DriverController::class, 'eligible']);
     Route::put('/drivers/{source}/{person}', [DriverController::class, 'saveProfile'])
         ->where('source', '[a-z_]+')->where('person', '[0-9]+');
     Route::put('/drivers/{source}/{person}/assign', [DriverController::class, 'assign'])
