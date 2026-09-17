@@ -108,6 +108,19 @@ placeholder tables are migrated and retired.
 one. That fixed the confusion, not the split — and it makes the split *less* visible, which is
 the one risk of having fixed it.
 
+**Person 2 has now taken the recommended answer and built its half (17 Sep).** Fleet absorbs
+Operations. `vehicles` gained every identity column the placeholder had, the data move refuses
+ambiguous plates rather than guessing, and the two handovers Person 2 owed are closed: **C-05**
+`markDispatched()` and **C-06** Fleet costs into `trip_costs`. Both suites pass together —
+1,075 tests. Steps, order and rollback are in `D-62-RESOLUTION-PLAN.md`.
+
+This does not close the question, it narrows it. **What is still open is Person 1's:** repoint
+allocation and pre-trip to `FleetService::getEligibleVehicles()`, then retire the placeholder
+tables after a clean week. And one decision inside D-62 still needs an answer from Person 1,
+because his board consumes the result: **does an expired driver licence block allocation, or
+only score it down?** Fleet currently offers the vehicle and flags the licence — the truck is
+roadworthy and swapping drivers is the smaller decision — but the spec reads as a hard block.
+
 ---
 
 ## One thing that is not a question, but should be seen
