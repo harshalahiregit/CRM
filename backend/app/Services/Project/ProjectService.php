@@ -582,9 +582,28 @@ class ProjectService
         });
     }
 
+    /**
+     * A new milestone goes on the end of the list.
+     *
+     * `order` is what the milestone list sorts by, and nothing was choosing it:
+     * the form offered the number 1 as a default and sent it unchanged, so every
+     * milestone anybody created came in at 1. Three milestones, three 1s, and an
+     * ordered list whose order was decided by whatever the database returned.
+     *
+     * Chosen here rather than in the form because the API is the thing that has
+     * to be right — the next number depends on the other milestones, which the
+     * client would have to fetch and could race against. An explicit `order` in
+     * the payload still wins, so a deliberate reorder is untouched.
+     */
     public function createMilestone(int $projectId, array $data, int $tenantId): ProjectMilestone
     {
         $project = $this->find($projectId, $tenantId);
+
+        if (! isset($data['order'])) {
+            $data['order'] = (int) ProjectMilestone::forTenant($tenantId)
+                ->where('project_id', $project->id)
+                ->max('order') + 1;
+        }
 
         return $project->milestones()->create([...$data, 'tenant_id' => $tenantId]);
     }

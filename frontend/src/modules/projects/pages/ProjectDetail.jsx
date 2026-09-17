@@ -716,6 +716,11 @@ function MilestonesTab({ project, onChange, onErr, canManage = true }) {
       {formFor && (
         <MilestoneFormModal
           milestone={formFor === 'new' ? null : formFor}
+          // Where this one lands if nobody changes it. The field used to open on
+          // 1 whatever was already there, so every milestone was created at 1.
+          // The server decides the real number; this is so the form shows the
+          // same one rather than a guess.
+          nextOrder={milestones.reduce((n, m) => Math.max(n, Number(m.order) || 0), 0) + 1}
           busy={save.isPending}
           onClose={() => setFormFor(null)}
           onSubmit={(data) => save.mutate({ mid: formFor === 'new' ? null : formFor.id, data })}
@@ -730,7 +735,7 @@ function MilestonesTab({ project, onChange, onErr, canManage = true }) {
  * popup: Name, Start/Due dates, Description, the two customer-visibility switches,
  * and Order. Doubles as the edit form when a milestone is passed in.
  */
-function MilestoneFormModal({ milestone, onClose, onSubmit, busy }) {
+function MilestoneFormModal({ milestone, onClose, onSubmit, busy, nextOrder = 1 }) {
   const todayStr = new Date().toISOString().split('T')[0]
   const [f, setF] = useState({
     name: milestone?.name || '',
@@ -739,7 +744,7 @@ function MilestoneFormModal({ milestone, onClose, onSubmit, busy }) {
     description: milestone?.description || '',
     show_description_to_customer: !!milestone?.show_description_to_customer,
     hide_from_customer: !!milestone?.hide_from_customer,
-    order: milestone?.order ?? 1,
+    order: milestone?.order ?? nextOrder,
   })
   const snapRef = useRef(null)
   if (snapRef.current === null) snapRef.current = JSON.stringify(f)

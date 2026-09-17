@@ -59,6 +59,50 @@ class SettingsController extends Controller
         return $this->success($this->settings->create($kind, $data, $request->user()->tenant_id), 'Created', 201);
     }
 
+    /**
+     * Add many rows at once — a pasted list, or a CSV read in the browser.
+     *
+     * One request rather than one per row: master data arrives forty lines at a
+     * time, and forty round trips on a single-threaded server is the difference
+     * between an import and a coffee break. Each row still goes through the same
+     * rules as the single-row form.
+     */
+    public function bulk(Request $request, string $kind)
+    {
+        $this->requireAdmin($request, 'change inventory settings');
+        $this->settings->assertKind($kind);
+
+        $data = $request->validate([
+            'rows'          => 'required|array|min:1|max:500',
+            'rows.*.name'   => 'required|string|max:120',
+        ] + $this->bulkExtraRules($kind, $request));
+
+        $result = $this->settings->bulkCreate($kind, $data['rows'], $request->user()->tenant_id);
+
+        return $this->success($result, sprintf(
+            '%d added%s.',
+            $result['created'],
+            $result['skipped'] ? ", {$result['skipped']} already there" : '',
+        ));
+    }
+
+    /** The per-row extras a bulk import may carry, by section. */
+    private function bulkExtraRules(string $kind, Request $request): array
+    {
+        $tenantId = $request->user()->tenant_id;
+
+        return match ($kind) {
+            'units'      => ['rows.*.short_name' => 'nullable|string|max:20'],
+            'taxes'      => ['rows.*.rate' => 'nullable|numeric|min:0|max:100'],
+            'subgroups'  => ['rows.*.group_id' => ['required', 'integer', Rule::exists('inventory_groups', 'id')->where('tenant_id', $tenantId)]],
+            'attributes' => [
+                'rows.*.kind'  => ['required', Rule::in(Attribute::KINDS)],
+                'rows.*.value' => 'nullable|string|max:60',
+            ],
+            default => [],
+        };
+    }
+
     public function update(Request $request, string $kind, int $id)
     {
         $this->requireAdmin($request, 'change inventory settings');

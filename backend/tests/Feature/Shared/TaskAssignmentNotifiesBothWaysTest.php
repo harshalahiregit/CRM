@@ -69,6 +69,23 @@ class TaskAssignmentNotifiesBothWaysTest extends TestCase
         ]);
     }
 
+    /**
+     * Task mail is sent once the response has been flushed, not during it.
+     *
+     * Opening an SMTP session to the tenant's host takes about eleven seconds,
+     * and that used to happen inside the save — see TaskNotifier::mail. A real
+     * request terminates on its own and the mail goes; these tests call the
+     * service directly, so nothing would ever terminate the application and the
+     * mail would sit un-sent forever.
+     *
+     * Asserting after this is the honest question: by the time the request is
+     * over, did the message go?
+     */
+    private function requestEnds(): void
+    {
+        $this->app->terminate();
+    }
+
     public function test_assigning_to_someone_else_reaches_the_bell_and_the_inbox(): void
     {
         Mail::fake();
@@ -84,6 +101,8 @@ class TaskAssignmentNotifiesBothWaysTest extends TestCase
             'user_id'   => $staff->id,
             'type'      => 'task.assigned',
         ]);
+
+        $this->requestEnds();
 
         Mail::assertQueued(SubtaskAssignedMail::class, function ($mail) use ($staff) {
             return $mail->hasTo($staff->email);
@@ -109,6 +128,8 @@ class TaskAssignmentNotifiesBothWaysTest extends TestCase
         $this->assertSame(1, Notification::where('user_id', $staff->id)->where('type', 'task.assigned')->count(),
             'the in-app bell did not fire for the assignee');
 
+        $this->requestEnds();
+
         // A plain string second argument is read by MailFake as an ADDRESS, not
         // as a failure message — so the expectation goes in the closure.
         Mail::assertQueued(SubtaskAssignedMail::class, fn ($m) => $m->hasTo($staff->email));
@@ -132,6 +153,8 @@ class TaskAssignmentNotifiesBothWaysTest extends TestCase
             ]);
         }
 
+        $this->requestEnds();
+
         Mail::assertQueued(SubtaskAssignedMail::class, fn ($m) => $m->hasTo($a->email));
         Mail::assertQueued(SubtaskAssignedMail::class, fn ($m) => $m->hasTo($b->email));
     }
@@ -153,6 +176,10 @@ class TaskAssignmentNotifiesBothWaysTest extends TestCase
 
         $this->assertSame(0, Notification::where('user_id', $admin->id)->count(),
             'a person does not need to be told about their own action');
+
+        // Terminated first on purpose: mail now leaves after the response, so
+        // "nothing was sent" is only worth asserting once that has happened.
+        $this->requestEnds();
 
         Mail::assertNothingQueued();
     }
