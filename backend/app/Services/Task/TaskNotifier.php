@@ -284,11 +284,35 @@ class TaskNotifier
          * TenantMailer refuses outright when Settings → Email is not set up,
          * which is a visible failure instead of a silent log line.
          */
-        try {
-            $this->mailer->send($tenantId, $addresses, $make());
-        } catch (\Throwable $e) {
-            Log::warning("Task mail failed ({$what}): {$e->getMessage()}");
-        }
+        /*
+         * AFTER the response, not during it.
+         *
+         * Opening an SMTP session to the tenant's mail host and waiting for it
+         * to accept the message takes about eleven seconds from here. That was
+         * happening inside the save: somebody edited a task, and the request sat
+         * on a socket until the mail server answered before the browser was told
+         * anything had been saved. On a single-threaded dev server it is worse
+         * still — every other request queues behind it, which is why the report
+         * of a slow save came with a failed /helpdesk/tickets/status-counts, the
+         * sidebar's poll giving up while it waited its turn.
+         *
+         * `terminating` runs the callback once the response has been flushed, in
+         * this same process. No queue worker is involved — which matters,
+         * because there is not one running — so the mail still goes out on this
+         * request, just not while anybody is watching the spinner.
+         *
+         * A failure is logged, exactly as before. There is nothing to report to
+         * a caller that has already been answered, which is why only a
+         * fire-and-forget notification may use this path; anything that tells
+         * somebody "sent" or "failed" still sends inline.
+         */
+        app()->terminating(function () use ($tenantId, $addresses, $make, $what) {
+            try {
+                $this->mailer->send($tenantId, $addresses, $make());
+            } catch (\Throwable $e) {
+                Log::warning("Task mail failed ({$what}): {$e->getMessage()}");
+            }
+        });
     }
 
     /* ── Small helpers ──────────────────────────────────────────── */
