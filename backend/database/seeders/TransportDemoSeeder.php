@@ -11,6 +11,7 @@ use App\Models\Transport\TransportOrder;
 use App\Models\Transport\TransportTrip;
 use App\Models\Transport\TransportVehicle;
 use App\Models\User;
+use App\Services\Transport\AllocationService;
 use App\Services\Transport\ConsignmentService;
 use App\Services\Transport\ContainerService;
 use App\Services\Transport\TransportDriverService;
@@ -25,6 +26,24 @@ use Illuminate\Database\Seeder;
 
 /**
  * THE walkthrough: 2 drivers, 2 vehicles, 2 trips. Nothing else.
+ *
+ * ── DEMO ONLY. NEVER PART OF A RELEASE. DELETE THIS FILE TO REMOVE IT. ───
+ * This exists so the team can see the work while it is being built. It does
+ * not ship. Removing the demo is ONE deletion — this file — plus the demo
+ * tenant's rows. There is nothing else to unpick, and that is a property held
+ * on purpose and verified, not an accident:
+ *
+ *   - It is NOT registered in DatabaseSeeder and is invoked only by name:
+ *         php artisan db:seed --class=TransportDemoSeeder
+ *   - NOTHING in app/, routes/ or config/ references it. The only references
+ *     anywhere are its own test and two documents.
+ *   - NO test depends on a row it creates. Checked by deleting this file and
+ *     its test and running the suite: 825 passed, zero failures — exactly the
+ *     837 minus this file's own 12. A test that only passes because the demo
+ *     ran would be a trap, and there is none.
+ *
+ * Keep it that way. If something outside this file ever needs a row from it,
+ * that row belongs in a factory or a fixture, not here.
  *
  * Replaces TransportConsignmentDemoSeeder, which produced more rows than a
  * person can hold in their head. The point of a demo is that someone can follow
@@ -65,6 +84,27 @@ use Illuminate\Database\Seeder;
  *
  * Re-running is a reset, not a duplication: it clears first, then rebuilds, so
  * the walkthrough is identical every time.
+ *
+ * ── IT NO LONGER CHEATS. THAT WAS D-63, AND IT IS FIXED. ─────────────────
+ * This seeder used to write `status` directly — forceFill to APPROVED and to
+ * ALLOCATED — because `viability_pending` had no outgoing edge and the
+ * application literally could not produce an approved trip. The demo therefore
+ * demonstrated a chain the product could not perform.
+ *
+ * STT-002 now exists, so `approvedTrip()` WALKS IT:
+ *
+ *     draft  --STT-001-->  viability_pending  --STT-002-->  approved
+ *     and assigning a vehicle AND driver moves approved --STT-004--> allocated
+ *
+ * NOT ONE LINE HERE WRITES A TRIP STATUS. If a transition were refused the
+ * seeder would fail loudly, which is the point: demo data that cannot be
+ * produced through the real flow is a finding, not something to route around.
+ *
+ * The planned departure/arrival dates ARE still set directly. Those are
+ * ordinary data a dispatcher types, not a state change.
+ *
+ * One honest caveat: approval does not yet check margin policy (D-64), so the
+ * demo shows an approval that is real but not yet complete.
  *
  * ── EVERY ROW GOES THROUGH A REAL SERVICE ────────────────────────────────
  * Numbering, audit rows and refusals are the real ones. A seeder that wrote
@@ -135,14 +175,33 @@ class TransportDemoSeeder extends Seeder
         $consignments = TransportConsignment::forTenant($tenantId)->get();
         $orders       = TransportOrder::forTenant($tenantId)->get();
 
-        // Release first: an assignment row has no soft delete, and leaving an
-        // ACTIVE one pointing at a deleted trip would make a vehicle look busy
-        // for a trip nobody can open.
+        // Release through the REAL service, not by deleting the rows.
+        //
+        // Deleting them looked equivalent and was not: an assignment row is only
+        // half the state. AllocationService::release() also returns the vehicle
+        // and driver to Available. Deleting the row left the FLEET RESOURCE
+        // stranded in `Allocated`, so the very next run was refused with
+        // "Vehicle is Allocated — only an Available or Idle vehicle can be
+        // allocated." The seeder was un-runnable a second time and the reason
+        // was invisible, because the assignment it would have blamed was gone.
+        //
+        // Found by making this seeder walk the real transitions — which is the
+        // whole argument for doing so.
         $released = 0;
+        $allocation = app(AllocationService::class);
         foreach ($trips as $trip) {
-            $released += \App\Models\Transport\TripAssignment::forTenant($tenantId)
-                ->forTrip($trip->id)
-                ->delete();
+            $active = \App\Models\Transport\TripAssignment::forTenant($tenantId)
+                ->forTrip($trip->id)->active()->get();
+
+            foreach ($active as $assignment) {
+                $allocation->release($assignment, $tenantId, null, 'Demo data reset');
+                $released++;
+            }
+
+            // Anything already released keeps no hold on a resource, but its row
+            // must not outlive the trip it points at.
+            \App\Models\Transport\TripAssignment::forTenant($tenantId)
+                ->forTrip($trip->id)->delete();
         }
 
         // The SAME hazard one table across, and it bites harder. An attachment
@@ -256,20 +315,29 @@ class TransportDemoSeeder extends Seeder
             'gross_weight_kg'    => 21450.500,
         ], $tenantId, $actor);
 
-        $trip = app(TransportTripService::class)->createFromOrder($order->id, [
-            'route'          => 'JNPT → Bhiwandi',
-            'consignment_id' => $consignment->id,
-        ], $tenantId, $actor);
+        $trip = $this->approvedTrip($tenantId, $actor, $order->id, [
+            'route'            => 'JNPT → Bhiwandi',
+            'consignment_id'   => $consignment->id,
+            'approved_freight' => 68500.00,
+        ]);
 
-        // The dates are what item 4 renders. Set before the assignment so the
-        // commitment sentence is complete the moment the vehicle is held.
+        // Dates only — NOT status. These are ordinary data a dispatcher types,
+        // and they are set before the assignment so the "back in N days"
+        // sentence is complete the moment the vehicle is held.
         $trip->forceFill([
-            'status'               => TripStatus::ALLOCATED,
             'planned_departure_at' => now()->subDay(),
             'planned_arrival_at'   => now()->addDays(2)->setTime(16, 0),
         ])->save();
 
-        app(TripAssignmentService::class)
+        // STT-004, through the SAME service the allocation panel calls.
+        //
+        // AllocationService, not TripAssignmentService: the lower-level one
+        // writes the assignment row but does NOT move the trip, so using it here
+        // produced a crewed trip still sitting in `approved` — an assignment the
+        // UI could never have made. AllocationService runs the eligibility
+        // checks and performs approved → allocated, which is what a dispatcher
+        // actually triggers. Nothing here writes a status.
+        app(AllocationService::class)
             ->assign($trip->fresh(), $vehicle->id, $driver->id, $tenantId, $actor);
 
         return $trip->fresh();
@@ -293,13 +361,14 @@ class TransportDemoSeeder extends Seeder
             'gross_weight_kg'    => 4200.000,
         ], $tenantId, $actor);
 
-        $trip = app(TransportTripService::class)->createFromOrder($order->id, [
-            'route'          => 'Mundra → Pune',
-            'consignment_id' => $consignment->id,
-        ], $tenantId, $actor);
+        $trip = $this->approvedTrip($tenantId, $actor, $order->id, [
+            'route'            => 'Mundra → Pune',
+            'consignment_id'   => $consignment->id,
+            'approved_freight' => 41200.00,
+        ]);
 
+        // Dates only — NOT status.
         $trip->forceFill([
-            'status'               => TripStatus::APPROVED,
             'planned_departure_at' => now()->addDays(1)->setTime(6, 0),
             'planned_arrival_at'   => now()->addDays(3)->setTime(18, 0),
         ])->save();
@@ -352,6 +421,40 @@ class TransportDemoSeeder extends Seeder
             'container_number' => $entered,
             'container_type'   => $type,
         ], $tenantId, $actor);
+    }
+
+    /**
+     * A trip in `approved`, reached by WALKING THE STATE MACHINE.
+     *
+     *     draft  --STT-001-->  viability_pending  --STT-002-->  approved
+     *
+     * This method is the whole of D-63's fix as far as the demo is concerned.
+     * Until STT-002 existed, the seeder wrote `status` directly because there
+     * was no other way to reach `approved` — and that single shortcut meant the
+     * walkthrough demonstrated a chain the application could not perform.
+     *
+     * NOTHING HERE WRITES A STATUS. If a transition is refused, this throws and
+     * the seeder fails loudly, which is the point: if the demo data cannot be
+     * produced through the real flow, that is a finding and not something to
+     * route around with forceFill.
+     *
+     * `approved_freight` is required rather than decorative — STT-001 refuses a
+     * trip with no agreed price, because a trip with no price cannot be assessed
+     * for the margin the next state is named after.
+     *
+     * @param  array<string,mixed>  $data
+     */
+    private function approvedTrip(int $tenantId, ?User $actor, int $orderId, array $data): TransportTrip
+    {
+        $trips = app(TransportTripService::class);
+
+        $trip = $trips->createFromOrder($orderId, $data, $tenantId, $actor);
+        $trip = $trips->submitForViability($trip, $tenantId, $actor);
+
+        // NOTE: approval here does NOT check margin policy — see D-64. The demo
+        // therefore shows an approval that is real but not yet complete, which
+        // is the honest position.
+        return $trips->approve($trip, $tenantId, $actor);
     }
 
     /** @param array<string,string> $spec */

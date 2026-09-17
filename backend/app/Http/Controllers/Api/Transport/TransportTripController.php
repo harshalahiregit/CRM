@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Transport;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponse;
+use App\Http\Requests\Transport\RejectTripRequest;
 use App\Http\Requests\Transport\StoreTransportTripRequest;
 use App\Http\Requests\Transport\UpdateTransportTripRequest;
 use App\Services\Transport\TransportAuditLogger;
@@ -122,6 +123,51 @@ class TransportTripController extends Controller
         return $this->success(
             $this->trips->submitForViability($trip, $tenantId, $request->user()),
             'Trip submitted for viability'
+        );
+    }
+
+    /**
+     * STT-002 — approve a trip awaiting viability.
+     *
+     * NO API REGISTRY ROW EXISTS for approving a trip: Step 11 defines STT-002,
+     * PERM-003 and EVT-004, but names no endpoint. The path follows this
+     * module's shipped convention rather than being invented freely — it mirrors
+     * `submit-viability`, which sits beside it. Logged against D-12.
+     *
+     * Gated by TRIP_APPROVE at the route, which mirrors PERM-003 exactly,
+     * INCLUDING its denial of the Dispatcher.
+     *
+     * The margin precondition is NOT enforced — see the service docblock and
+     * D-64. The response message says so, because a user who approves a trip
+     * should know what the system did and did not check.
+     */
+    public function approve(Request $request, int $id): JsonResponse
+    {
+        $tenantId = $request->user()->tenant_id;
+        $trip     = $this->trips->find($id, $tenantId);
+
+        return $this->success(
+            $this->trips->approve($trip, $tenantId, $request->user()),
+            'Trip approved. The margin check is not yet enforced.'
+        );
+    }
+
+    /**
+     * STT-003 — send a trip back for correction.
+     *
+     * No API_Registry row, like approve; the path mirrors it. Gated by
+     * TRIP_APPROVE, reused rather than inventing a second permission matrix —
+     * approve and reject are the two answers to one question, and sending a trip
+     * back is strictly less powerful than approving it.
+     */
+    public function reject(RejectTripRequest $request, int $id): JsonResponse
+    {
+        $tenantId = $request->user()->tenant_id;
+        $trip     = $this->trips->find($id, $tenantId);
+
+        return $this->success(
+            $this->trips->reject($trip, $request->validated()['reason'], $tenantId, $request->user()),
+            'Trip sent back for correction'
         );
     }
 }

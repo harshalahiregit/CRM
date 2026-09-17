@@ -464,20 +464,26 @@ class TransportAllocationTest extends TestCase
         // and `dispatched` must stay unreachable from anywhere, because dispatch
         // confirmation belongs to no ticket in the register (D-18).
         //
-        // Updated 2026-09-17 (P3): SNG-TRN-014 added delivered → pod_verified
-        // (STT-008) and SNG-TRN-015 added pod_verified → billable (STT-009).
-        // Both are LOCKED registry transitions owned by those tickets, and
-        // neither touches what this test protects — the two behavioural
-        // assertions below are unchanged and still pass. Only the snapshot grew,
-        // exactly as it did on 09-09.
+        // Updated 2026-09-16 (P1): STT-002 added viability_pending → approved
+        // and STT-003 added viability_pending → draft, by the owner's ruling on
+        // D-63 — until then a trip reaching viability_pending stopped there
+        // forever and everything this test is about was unreachable by any real
+        // user.
         //
-        // Note both new edges are currently UNREACHABLE: nothing writes
+        // Updated 2026-09-17 (P3): SNG-TRN-014 added delivered → pod_verified
+        // (STT-008), SNG-TRN-015 added pod_verified → billable (STT-009),
+        // SNG-TRN-016 added billable → billed (STT-010, walked only from
+        // TripBill::markInvoiced(), which is Accounts' door) and billed →
+        // collection_pending (STT-011). All LOCKED.
+        //
+        // Note P3's new edges are currently UNREACHABLE: nothing writes
         // `delivered`, because STT-006 and STT-007 are P1's and not yet wired
         // (C-09). They are declared so the machine is complete, not because
-        // anything can walk them today.
-        // Also 2026-09-17 (P3): SNG-TRN-016 added billable → billed (STT-010,
-        // walked only from TripBill::markInvoiced(), which is Accounts' door)
-        // and billed → collection_pending (STT-011). Both LOCKED.
+        // anything can walk them today. P1's two ARE reachable — that was the
+        // point of D-58.
+        //
+        // Both sides fired this test on the same day and both updated it on
+        // purpose, which is the behaviour wanted.
         //
         // If you are here because this list failed: that is the test working.
         // Add your key, then check the two assertions below still pass — THOSE
@@ -486,9 +492,9 @@ class TransportAllocationTest extends TestCase
         // three people share.
         $this->assertSame(
             [
-                TripStatus::DRAFT, TripStatus::APPROVED, TripStatus::ALLOCATED,
-                TripStatus::PRETRIP_OK, TripStatus::DELIVERED, TripStatus::POD_VERIFIED,
-                TripStatus::BILLABLE, TripStatus::BILLED,
+                TripStatus::DRAFT, TripStatus::VIABILITY_PENDING, TripStatus::APPROVED,
+                TripStatus::ALLOCATED, TripStatus::PRETRIP_OK, TripStatus::DELIVERED,
+                TripStatus::POD_VERIFIED, TripStatus::BILLABLE, TripStatus::BILLED,
             ],
             array_keys(TripStatus::TRANSITIONS)
         );

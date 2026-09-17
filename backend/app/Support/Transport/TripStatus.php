@@ -25,6 +25,9 @@ namespace App\Support\Transport;
  *
  * Wired so far, and by whom:
  *   SNG-TRN-007   draft → viability_pending                    (STT-001)
+ *   (no ticket)   viability_pending → approved, and back to draft (STT-002/003)
+ *                 No ticket owns it; ruled by the owner 2026-09-16 because the
+ *                 whole chain after trip creation was unreachable. D-63/D-64.
  *   SNG-TRN-009   approved → allocated, and back on release    (STT-004)
  *   SNG-TRN-010   allocated → pretrip_ok, and back on release  (STT-005, part)
  *   (no ticket)   pretrip_ok → dispatched                      (STT-005 dest.)
@@ -80,6 +83,25 @@ final class TripStatus
         // STT-001 | draft → viability_pending | trigger "Submit viability"
         //         | precondition "Required fields present" | audited | LOCKED
         self::DRAFT => [self::VIABILITY_PENDING],
+
+        // STT-002 | viability_pending → approved | trigger "Approve viable trip"
+        //         | actor ApprovalService | precondition "Margin policy passed"
+        //         | side effect "Emit TripApproved" | audited | LOCKED
+        //
+        // SHIPPED WITHOUT ITS PRECONDITION, BY RULING. "Margin policy passed"
+        // needs SNG-TRN-008 (Trip Viability), which is not built and is blocked
+        // on SNG-TRN-005's rate card — a P0 ticket with NO ASSIGNED OWNER — and
+        // on Person 3's unbuilt trip_costs. Approval today checks the state and
+        // the permission and nothing about the commercials. See D-64, which
+        // carries a test written to fail the day viability lands.
+        // STT-003 | viability_pending → draft | trigger "Reject for correction"
+        //         | actor Operations | precondition "Rejection reason"
+        //         | side effect "Return to edit" | audited | LOCKED
+        //
+        // Both of viability_pending's exits, wired together: a reviewer who can
+        // only say yes is not reviewing. Without this, a trip that should NOT be
+        // approved had nowhere to go — the dead end STT-002 only half-fixed.
+        self::VIABILITY_PENDING => [self::APPROVED, self::DRAFT],
 
         // STT-004 | approved → allocated | trigger "Assign eligible resources"
         //         | actor AssignmentService | precondition "Vehicle/driver valid"
@@ -180,7 +202,7 @@ final class TripStatus
         // collection_pending → closed | actor TripEngine | guard
         // "Settlement/POD/billing controls pass" | effect "Snapshot profit".
         // TripEngine is P1's, and the snapshot it triggers is SNG-TRN-018,
-        // which is blocked on D-58. Left unwired deliberately.
+        // which is blocked on D-63. Left unwired deliberately.
 
         // ── INFERRED, NOT A REGISTRY TRANSITION ──────────────────────────
         // pretrip_ok → approved, when an assignment is released.

@@ -24,9 +24,36 @@ Structure follows what P1 already built: `app/Models/Transport`,
 
 ## Defect numbering
 
-**P1's `docs/transport/registry-defects.md` is the list.** It runs to D-54 and
-predates anything here. New findings get a D-number there, not a new scheme in
-this file. Where the two overlapped, the D-number wins.
+**P1's `docs/transport/registry-defects.md` is the list.** New findings get a
+D-number there, not a new scheme in this file. Where the two overlapped, the
+D-number wins.
+
+### Take your number from YOUR OWN RANGE — added 2026-09-17
+
+On 16–17 September P1 and P3 both allocated **D-58, D-59, D-60 and D-61**, on
+different branches, on the same day, to entirely different defects. Neither of
+us was careless: the register has no allocator, we both read the same last-used
+number, and we both counted on from it. It only became visible where the
+branches met — the same shape as the `transport.permission` alias collision.
+
+P1's four were renumbered to **D-63…D-66** because master is the shared
+baseline and P1's branch had not landed. The register carries a conversion
+table at the seam.
+
+**From now on, take the next free number in your own band:**
+
+| | Band | Next free |
+|---|---|---|
+| **P1** — core, orders, consignments, containers, trips, dispatch | **D-100 …** | D-100 |
+| **P2** — fleet, drivers, allocation scoring, maintenance, telemetry | **D-200 …** | D-200 |
+| **P3** — documents, POD, billing, collections, compliance, QC | **D-300 …** | D-300 |
+
+Existing numbers **D-1 … D-66 are frozen** — never renumber one, because they
+are cited from code comments, docblocks and commit messages across all three
+sections. The bands apply to new findings only.
+
+A three-digit band collides only if someone logs a hundred defects in one
+section, and at that point we have a larger problem than numbering.
 
 ---
 

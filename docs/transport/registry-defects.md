@@ -318,6 +318,29 @@ Covered by 14 tests in `TransportAllocationRefusalAuditTest`.
 
 ---
 
+### Fourth sighting, and the missing approve row — added 2026-09-16
+
+`API_Registry` also contains **no row for approving a trip**, though STT-002 and PERM-003 both
+exist and are LOCKED. The path is therefore ours, chosen by the shipped convention rather than
+invented freely: `PATCH /api/transport/trips/{id}/approve`, mirroring the `submit-viability` route
+that already ships beside it. Logged here with D-12's other missing endpoints.
+
+And a fourth instance of the fabricated positional counter (with D-15 and D-35): **SNG-TRN-008**'s
+`DB/API/State/Event Refs` column reads
+
+```
+DB-008;API-005;EV-004
+```
+
+The real rows for trip viability are **API-003** (`POST /transport/trips/{trip}/viability`) and
+**EVT-003** (`TripViabilityCalculated`). `DB-008` is `trip_expenses`. Not one of the three points
+at the right place, and the numbers again run in step with the ticket's own position in the
+register.
+
+**Four sightings is not a suspicion.** The refs column of the ticket pack should be treated as
+having no evidential value at all: resolve every reference **by name** against Step 11, never by
+the number a ticket prints. That is now the rule, not a caution.
+
 ## D-15 — Ticket SNG-TRN-010's registry references are a counter, not pointers
 
 `SNG-TRN-010` cites `FRS-P0-010`, `BR-009`, `DB-009`, `API-006`, `EV-006`. Every one misresolves:
@@ -2278,3 +2301,421 @@ both, so neither option is a code-only change now.
 **Blocks:** nothing today, and that is precisely the danger — both systems work in
 isolation, so this fails silently rather than loudly, and the cost grows with every row
 written to the losing table.
+
+---
+
+> ### NUMBERING COLLISION, RESOLVED 2026-09-17
+>
+> P3 and P1 both allocated **D-58 … D-61** on the same day, on different branches, to entirely
+> different defects. Neither side was wrong; the register has no allocator, so two people counting
+> from the same last-seen number produced the same numbers.
+>
+> **P1's four were renumbered to D-63 … D-66.** Master is the shared baseline, so the branch that
+> had not landed moved. P3's numbers are unchanged and every reference to them still resolves.
+>
+>   | was (P1's branch) | now | subject |
+>   |---|---|---|
+>   | D-58 | **D-63** | no trip can ever be approved |
+>   | D-59 | **D-64** | approval ships without its margin precondition |
+>   | D-60 | **D-65** | EVT-004's `approval_id` has no table |
+>   | D-61 | **D-66** | STT-003 has no permission row |
+>
+> Commit messages written before the merge still say D-58…D-61; the code, tests and docblocks were
+> all updated. **This is the same class of collision as the `transport.permission` alias** — invisible
+> inside one branch, obvious where two meet. Worth an allocator, or a per-person range, before it
+> happens again.
+
+## D-63 — CRITICAL: no trip can ever be approved. The chain is unreachable, and the demo hides it.
+
+**Raised:** 2026-09-16, by the owner, from the trip page. **Severity: CRITICAL — this is the gap
+that makes the 30 September vertical slice unachievable as things stand.** MS-001 §8 requires
+*"Trip can progress through controlled dispatch states"*. Today it cannot progress past the second
+one.
+
+### The dead end, verified in the code
+
+```
+TripStatus::TRANSITIONS
+    DRAFT     => [VIABILITY_PENDING]      STT-001, wired by SNG-TRN-007
+    APPROVED  => [ALLOCATED]              STT-004, wired by SNG-TRN-009
+    ...
+    VIABILITY_PENDING => nothing at all
+```
+
+`viability_pending` has **no outgoing edge**. A trip submitted for viability is stuck there
+permanently.
+
+Checked, not assumed:
+
+| Claim | Result |
+|---|---|
+| A route approves a trip | **No.** 24 trip routes. The only `approve` is `trips/{id}/advances/{advanceId}/approve` — Person 3's *cash advance* approval, an unrelated feature |
+| `TransportTripService` has an approve method | **No.** Zero matches. The only `approve()` in the service layer is `TripAdvanceService::approve()` |
+| Anything follows `submit-viability` | **No.** It is the last step that exists |
+
+**Consequence.** No trip created through the application can reach `approved`. Therefore it can
+never be allocated (STT-004 starts at `approved`), never pass pre-trip, never dispatch, never
+deliver. **Everything after trip creation is unreachable by a real user.** Allocation, pre-trip and
+dispatch are all built, all tested, and all currently unreachable except from data that bypassed
+the state machine.
+
+### THE PART THAT MATTERS MOST: the demo demonstrates a capability the application does not have
+
+`TransportDemoSeeder` writes the status column directly, twice:
+
+```
+line 267   $trip->forceFill(['status' => TripStatus::ALLOCATED, ...])->save();
+line 302   $trip->forceFill(['status' => TripStatus::APPROVED,  ...])->save();
+```
+
+`forceFill` bypasses `TripStatus::TRANSITIONS` entirely. **That is the only reason the walkthrough
+works.** Every screen downstream of trip creation — the allocation panel, the search box, the
+"back in 2 days" sentence, the pre-trip gate, the dispatch panel — is reachable in the demo *only*
+because the seeder put the trip into a state the application cannot produce.
+
+The owner's standing instruction is that everything shown must be real: not one thing on screen and
+another underneath. **This violates it.** The demo is showing a working dispatch chain on top of an
+application that cannot start one.
+
+This is also a failure of my own stated rule for that seeder. Its docblock claims every row goes
+through a real service *"so the demo exercises the real numbering, the real audit trail and the
+real refusals — a seeder that wrote rows directly could produce data the application itself could
+not"*. Two `forceFill` calls do exactly the thing the docblock forbids, and I wrote both.
+
+### Why it was missing, and why nobody noticed
+
+The register places viability with **SNG-TRN-008 (Trip Viability)**. The tickets built are 001,
+003, 004, 006, 007, 009, 010 — **008 was never built.** It is not an error by any developer; it is
+a gap that the seeder concealed. Allocation was built against `approved` trips that the seeder
+supplied, so it tested green and demonstrated green while the door into that state did not exist.
+
+**The general lesson, which is the reason this entry is long:** a seeder that bypasses a state
+machine does not just create convenient data — it removes the pressure that would have exposed the
+missing transition. Demo data built through the real services is a *test of reachability*. The
+moment it force-fills, it stops being evidence of anything.
+
+### Not yet resolved — what happens next
+
+1. Read what **Step 9 and Step 11** actually say about `viability_pending → approved` (STT-002),
+   and whether **SNG-TRN-008** has a ticket: its trigger, precondition, actor and side effects.
+   **The open question is whether approval is a HUMAN DECISION or the output of a VIABILITY
+   CALCULATION.** Those are different features, and guessing wrong is a rebuild.
+2. If the source defines it: build the edge, service method, permission, endpoint, refusal tests
+   and the button.
+3. If the source does NOT define it: **stop and get a ruling.** Do not invent an approve button —
+   the D-39/D-40 route.
+4. **Either way, the seeder stops writing statuses directly once a real path exists**, and creates
+   its trips by walking the same transitions a user walks. If it cannot, that is itself the
+   finding.
+
+Cross-referenced from `TransportDemoSeeder`'s docblock, so nobody reads the seeder as evidence that
+the flow works.
+
+### What the source actually says — read 2026-09-16, before any code
+
+**STT-002 EXISTS AND IS LOCKED.** From Step 11 `State_Transitions`, quoted verbatim:
+
+```
+STT-002 | SM-TRP | viability_pending | approved | Approve viable trip
+        | ApprovalService | Margin policy passed | Emit TripApproved | Yes | LOCKED
+```
+
+And its sibling, also LOCKED and also unbuilt:
+
+```
+STT-003 | SM-TRP | viability_pending | draft | Reject for correction
+        | Operations | Rejection reason | Return to edit | Yes | LOCKED
+```
+
+**Is approval a human decision or a calculation? IT IS BOTH, AND THEY ARE TWO SEPARATE FEATURES.**
+
+*Approval is a human decision:*
+
+- `EVT-004 TripApproved` payload is `trip_id, **approved_by**` — a calculation has no `approved_by`.
+- `PERM-003 | Trip | approve` grants it to Owner, Operations, Accounts, Approver, Admin and
+  **explicitly denies Dispatcher, Driver, Customer, Supplier.** A permission matrix that has to say
+  no to the dispatcher is describing a decision, not a computation.
+- EVT-004's idempotency key is `trip_id+**approval_id**` — approvals are records.
+
+*Gated by a calculation, which is a DIFFERENT feature:*
+
+- Precondition is **"Margin policy passed"**.
+- `API-003 | POST /transport/trips/{trip}/viability | Calculate trip viability | LOCKED`, body
+  `freight` (CTR-005, "Backend authoritative") and `target_margin_pct` (CTR-006, "Policy
+  constrained").
+- `EVT-003 TripViabilityCalculated | ViabilityEngine | trip_id, revenue, cost, margin`.
+- `ENUM-008 viability_decision = accept|negotiate|reject|review`.
+- `SNG-TRN-008 | Trip Viability | P0 | S4 | Type: Algorithm | Complexity: XL`, user story *"As
+  owner, I can evaluate accept/negotiate/reject before commitment"*, acceptance *"Cost assumptions
+  and target margin are explainable and deterministic"*, DoD *"Golden dataset reconciliation"*,
+  QA-002 *"Low-margin trip → System recommends NEGOTIATE/REJECT with explanation"* (Critical).
+
+So: **a human clicks approve, and the system refuses unless margin policy passes.**
+
+### Why STT-002 still cannot simply be built
+
+| What is needed | State |
+|---|---|
+| The transition itself | **Defined, LOCKED.** Buildable |
+| Permission | **Defined, LOCKED** — PERM-003 |
+| Event | **Defined, LOCKED** — EVT-004 |
+| An API endpoint | **MISSING.** `API_Registry` contains NO approve row for a trip. Same class as D-38/D-45 |
+| A ticket owning it | **MISSING.** The Trip epic holds only SNG-TRN-007 (Trip Creation, built) and SNG-TRN-008 (Viability). **No ticket owns the approval transition** |
+| A table for `approval_id` | **MISSING.** `DB_Registry` has no approvals table, though EVT-004's idempotency key names one |
+| "Margin policy passed" | **NOT BUILDABLE TODAY** — see the chain below |
+
+**The precondition's dependency chain, every link verified:**
+
+```
+STT-002 approve
+  └─ precondition "Margin policy passed"
+       └─ SNG-TRN-008  Trip Viability      P0, XL, Algorithm   NOT BUILT
+            ├─ depends on SNG-TRN-005  Commercial Rate Card    P0, L    NOT BUILT
+            │    └─ transport_rates (DB-016) — TEAM-CONTRACTS lists the owner as UNASSIGNED
+            └─ needs `cost` for EVT-003's payload
+                 └─ trip_costs (DB-006) — Person 3's, NOT BUILT
+```
+
+Confirmed in the codebase: **zero migrations exist for either `trip_costs` or `transport_rates`.**
+
+Corroborating D-12/D-15/D-35 once more: SNG-TRN-008's `DB/API/State/Event Refs` column reads
+`DB-008;API-005;EV-004`. The real rows are API-003 and EVT-003. The positional counter is fabricated
+again.
+
+### The decision this needs — NOT taken, and not to be guessed
+
+The source defines the EDGE but not a buildable GATE, and no ticket owns the work. Per the standing
+rule this stops here for a ruling, the D-39/D-40 route. Options as I see them:
+
+- **A. Build STT-002 now with the margin precondition explicitly DEFERRED.** Human decision,
+  permission-gated (PERM-003), audited, emitting TripApproved — but with **no margin check**, stated
+  on screen and recorded here. Unblocks allocation, pre-trip and dispatch, which are built and
+  currently unreachable. The cost: an approval step that does not yet enforce the rule it exists to
+  enforce. That must be labelled, not hidden.
+- **B. Build SNG-TRN-008 first.** Honest, and not achievable by 30 September: XL, type Algorithm,
+  DoD "golden dataset reconciliation", and it depends on an unbuilt L-sized rate card whose owner is
+  unassigned plus Person 3's unbuilt cost table.
+- **C. Build STT-003 as well or instead** — *Reject for correction*, viability_pending → draft. Also
+  LOCKED, and its precondition is only *"Rejection reason"*, which IS buildable today. It does not
+  unblock dispatch, but it removes the dead end: a trip could at least return to draft instead of
+  being stuck forever.
+
+**Recommendation: A plus C.** A is the only option that makes the 30 September slice reachable, and
+C costs almost nothing and fixes the trap door. Both are reversible; the margin gate slots into A's
+precondition when SNG-TRN-008 lands.
+
+---
+
+## D-64 — Trip approval ships WITHOUT its LOCKED precondition, "Margin policy passed"
+
+**Raised:** 2026-09-16, as a condition of the owner's ruling on D-63. **Owner: whoever lands
+SNG-TRN-008.** **Status: DEFERRED, deliberately, with a failing-on-purpose test holding the place.**
+
+STT-002 is LOCKED and its precondition is **"Margin policy passed"**. The approve transition is
+being built now, by ruling, **without that check**, because the check is not reachable:
+
+```
+STT-002  approve
+  └─ "Margin policy passed"
+       └─ SNG-TRN-008  Trip Viability        P0, XL, Algorithm   NOT BUILT
+            ├─ SNG-TRN-005  Commercial Rate Card   P0, L         NOT BUILT
+            │     └─ transport_rates (DB-016) — **OWNER UNASSIGNED**
+            └─ trip_costs (DB-006) — Person 3's — NOT BUILT
+```
+
+**THE BLOCKING FACT IS THE UNASSIGNED OWNER.** SNG-TRN-005 has no developer against it in
+TEAM-CONTRACTS, and `transport_rates` is listed as unassigned. Viability cannot start until
+somebody owns the rate card; approval cannot be gated until viability exists. That is the item a
+person has to fix, and no amount of Transport work removes it.
+
+### What shipping without it means, stated plainly
+
+A user can approve a trip that would lose money, and the system will not stop them. Approval today
+checks **the state and the permission, and nothing about the commercials.** That is a real
+reduction against the LOCKED registry row and it is not hidden:
+
+- `TransportTripService::approve()` says so in its docblock;
+- the approval dialog says so on screen, so a user knows what the system did and did not check;
+- and a test pins the absence.
+
+### The test that cannot be forgotten
+
+`TripApprovalTest::test_the_margin_gate_is_still_deferred` asserts that no margin or viability
+check exists on the approve path — the same technique used to pin `container_id` out of EVT-002's
+payload. **It is written to fail the moment SNG-TRN-008 lands.** Whoever builds viability will see
+it go red and must add the gate to make it pass. A deferred precondition with a failing test cannot
+be forgotten; one with a comment can.
+
+---
+
+## D-65 — EVT-004's idempotency key names an `approval_id` that has no table
+
+**Raised:** 2026-09-16. **Owner: Architecture / Step 11.** **Severity: low today, real later.**
+
+```
+EVT-004 | TripApproved | ApprovalService | trip_id, approved_by
+        | idempotency: trip_id+approval_id | TripEngine, Notifications | LOCKED
+```
+
+`DB_Registry` contains **no approvals table**, and no field registry entry defines `approval_id`.
+The key cannot be honoured as specified because the entity it keys on does not exist.
+
+**Resolved by precedent, not by invention.** The approval is recorded on the trip itself —
+`approved_by` and `approved_at` — exactly as `dispatched_by` / `dispatched_at` already ship on
+`transport_trips`. The event is emitted with what actually exists: `trip_id` and `approved_by`.
+
+**What was deliberately NOT done:** no `approval_id` was substituted. Not the audit-log row id, not
+a generated uuid, not the trip id doubled up. **A fabricated identifier is worse than an absent
+one** — it would satisfy a consumer's de-duplication logic while keying on something the registry
+never meant, and the failure would appear as a silently dropped event long after anyone remembers
+this decision. The absence is honest and visible; a fake would be neither.
+
+**Consequence, recorded:** a consumer that de-duplicates strictly on `trip_id+approval_id` cannot do
+so. Today there are no consumers — EVT-004 is emit-only, like EVT-001 and EVT-002 — so nothing is
+broken. Whoever builds the first consumer, or an approvals table, inherits this.
+
+---
+
+## D-66 — STT-003 has no permission row; TRIP_APPROVE is reused rather than a matrix invented
+
+**Raised and resolved:** 2026-09-17, building STT-003.
+
+```
+STT-003 | SM-TRP | viability_pending | draft | Reject for correction
+        | Operations | Rejection reason | Return to edit | Yes | LOCKED
+```
+
+The transition is LOCKED and fully specified. What does not exist anywhere: **no Permissions row
+for rejecting a trip, no Event_Registry row, no API_Registry path.** PERM-003 covers `Trip ·
+approve` only.
+
+**Decided without a ruling, and here is the reasoning.** `TRIP_APPROVE` is reused for reject rather
+than deriving a second grant matrix:
+
+- approve and reject are the two answers to **one** question, asked at one moment by one person;
+- sending a trip back is **strictly less powerful** than approving it, so reusing the narrower-
+  purpose key grants nothing that key did not already imply;
+- inventing a second matrix — deciding for ourselves which of the nine roles may reject — would be
+  a larger and less reversible step than reusing one the registry already fixed.
+
+STT-003's actor column reads "Operations", which is already inside PERM-003's grants. The Dispatcher
+denial carries over unchanged, and is tested.
+
+The path follows the shipped convention: `PATCH /trips/{id}/reject`, beside `approve`. Logged with
+D-12's other missing endpoint rows.
+
+**If Step 11 later adds a `Trip · reject` row that differs from PERM-003, this is the decision to
+revisit.**
+
+### D-62 — P1's half done, 2026-09-17: menu hidden, data join still open
+
+**Owner's ruling:** P2's Fleet is the visible fleet. P1's *Vehicles* and *Drivers* entries are
+**hidden from both navigations** — `TransportLayout.jsx` and `Sidebar.jsx`'s `TRANSPORT_SUB_ITEMS`.
+
+**HIDDEN, NOT DELETED.** Pages, routes, API, models and services all remain and still resolve by
+URL — verified after the change: `/app/transport/vehicles` and `/app/transport/drivers` both load
+with 5 rows each. They must remain, because **allocation, pre-trip checks and dispatch read
+`transport_vehicles` and `transport_drivers` today.** The reason is written at both commented-out
+entries so nobody un-hides them by accident or deletes them too early.
+
+**Accepted consequence, recorded so it is not "fixed" quietly:** the demo trucks are in
+`transport_vehicles`, so P2's Fleet Status reads *"No vehicles yet."* That is honest and it stays.
+**Copies were deliberately NOT seeded into the fleet tables** — two sets of the same trucks in two
+tables is the duplicate-master-data failure this arrangement exists to prevent, and those are P2's
+tables, not P1's.
+
+**What is still open — the half that matters.** Hiding a menu does not join the data. The question
+has gone to P2 as `docs/transport/REQUEST-person2-fleet-join.md`: migrate our rows into their
+tables, expose a contract we read, or something else they prefer. **No option was proposed as
+agreed and none has been started.** Their module, their call.
+
+### D-62 step 5 — partly done by P2, and a question back to them (2026-09-17)
+
+TEAM-CONTRACTS §1a made retiring P1's placeholder P1's job, "in the same PR that brings their Fleet
+in, or immediately after". **P2 has done part of it themselves.** `/app/transport/vehicles`,
+`/vehicles/:id`, `/drivers` and `/drivers/:id` now render Fleet's components.
+
+**Consequence, stated because it goes further than the owner's ruling.** The ruling was *hide, not
+delete*, with the pages still reachable by URL until allocation was repointed. They are no longer
+reachable: `TransportVehicles`, `TransportVehicleDetail`, `TransportDrivers` and
+`TransportDriverDetail` still exist as files, but no route renders them and their lazy imports in
+`routes.jsx` are dead.
+
+**The outcome is fine — arguably better than hiding — and P2's change has been left exactly as
+written.** The process point has gone to them: announce a change of that size rather than leaving
+it to be found in a diff. Nothing has been altered in response.
+
+**Open question to P2:** delete the four page files now, or leave them dormant until allocation is
+repointed at Fleet? Not decided unilaterally, because the files are the last piece of a handover
+they now partly own. Asked in `NOTE-team-approve-path-is-on-master.md`.
+
+**The backend is untouched by any of this.** Allocation, pre-trip and dispatch still read
+`transport_vehicles` and `transport_drivers`, which still hold the demo rows, so the dispatch chain
+works today. Repointing onto Fleet is the remaining half and is now in progress.
+
+**Also expected, not a fault:** Fleet, Drivers and Workshop read zero rows, because the demo
+vehicles are in P1's tables and `2027_01_02_000002` is deliberately unrun. Not to be worked around
+by seeding copies.
+
+---
+
+## D-100 — Allocation cannot be repointed at Fleet yet. Three blockers, in order.
+
+**Raised:** 2026-09-17, starting the repoint. **First use of P1's new D-100 band.**
+**Owner: P1 + P2.** **Status: NOT STARTED — deliberately, and here is why.**
+
+The instruction was to repoint allocation, pre-trip and dispatch onto
+`FleetService::getEligibleVehicles`. It exists, it is explicitly *"Consumed by Developer 1
+(Operations) during dispatch planning"*, and its payload is good — id, registration, type,
+compliance, live position, scores, reasons, and each vehicle's regular driver with a licence
+verdict. A driver equivalent exists too: `DriverService::list($companyId, ['ready_only' => true])`
+returns licence-valid, available people.
+
+**Doing it today would break the working dispatch chain within the hour.** Three blockers:
+
+### 1. Fleet's `vehicles` table is EMPTY — measured, not assumed
+
+```
+Fleet  vehicles            (company 1):  0 rows
+P1     transport_vehicles  (tenant 1) :  5 rows
+P1     transport_drivers   (tenant 1) :  5 rows
+```
+
+The demo fleet is still in P1's tables because `2027_01_02_000002` is deliberately unrun — the
+owner held it, since `stos:reconcile-fleet` does not exist. **Repointing before that migration runs
+hands a dispatcher an empty candidate list**, and allocation, pre-trip and dispatch all stop
+working. The order is therefore fixed: **migration first, repoint second.**
+
+### 2. Driver identity does not fit `trip_assignments.driver_id`
+
+Fleet identifies a driver by a directory reference — `source` + `source_id` — not by a single
+integer. `trip_assignments.driver_id` is an `unsignedBigInteger` pointing at
+`transport_drivers.id`. **What should it point at after the repoint?** `DriverProfile.id`? The
+directory person? A composite? That is P2's contract to state; guessing produces assignment rows
+that point at nothing.
+
+Vehicles are simpler — `vehicles.id` is an integer — but the same question applies: the ids in
+existing `trip_assignments` rows are P1's, and the migration must map them or they dangle.
+
+### 3. Calling `FleetService` directly would bypass the seam we just built
+
+`FleetResourceGateway` is the agreed door between Trip side and Fleet, and it currently has exactly
+one method: `markDispatched()`. Reaching from `AllocationService` into
+`App\Domains\Fleet\Services\FleetService` would defeat the interface both sides just agreed —
+the same mistake in the opposite direction from the one the gateway was created to stop.
+
+**The gateway needs two more methods** — something like `eligibleVehicles()` and
+`eligibleDrivers()` — or P2's explicit agreement that direct `FleetService` calls are the intended
+route. **Adding methods to that interface is P2's call, not P1's.**
+
+### The order that would work
+
+1. `stos:reconcile-fleet` exists, or the owner accepts the migration without it.
+2. `2027_01_02_000002` runs; Fleet's tables hold the vehicles and drivers.
+3. P2 states the driver identity that `trip_assignments.driver_id` should carry.
+4. P2 extends `FleetResourceGateway`, or rules that direct calls are fine.
+5. P1 repoints `AllocationService`, `VehicleEligibilityService`, `DriverEligibilityService`,
+   `PretripService` and `DispatchService`, and maps existing assignment rows.
+
+**Steps 1–4 are not P1's.** Asked of P2 in `NOTE-team-approve-path-is-on-master.md`'s follow-up.
+Container 360 (Block 2) is unblocked and starts now instead.
