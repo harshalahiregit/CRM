@@ -2628,3 +2628,31 @@ tables, not P1's.
 has gone to P2 as `docs/transport/REQUEST-person2-fleet-join.md`: migrate our rows into their
 tables, expose a contract we read, or something else they prefer. **No option was proposed as
 agreed and none has been started.** Their module, their call.
+
+### D-62 step 5 — partly done by P2, and a question back to them (2026-09-17)
+
+TEAM-CONTRACTS §1a made retiring P1's placeholder P1's job, "in the same PR that brings their Fleet
+in, or immediately after". **P2 has done part of it themselves.** `/app/transport/vehicles`,
+`/vehicles/:id`, `/drivers` and `/drivers/:id` now render Fleet's components.
+
+**Consequence, stated because it goes further than the owner's ruling.** The ruling was *hide, not
+delete*, with the pages still reachable by URL until allocation was repointed. They are no longer
+reachable: `TransportVehicles`, `TransportVehicleDetail`, `TransportDrivers` and
+`TransportDriverDetail` still exist as files, but no route renders them and their lazy imports in
+`routes.jsx` are dead.
+
+**The outcome is fine — arguably better than hiding — and P2's change has been left exactly as
+written.** The process point has gone to them: announce a change of that size rather than leaving
+it to be found in a diff. Nothing has been altered in response.
+
+**Open question to P2:** delete the four page files now, or leave them dormant until allocation is
+repointed at Fleet? Not decided unilaterally, because the files are the last piece of a handover
+they now partly own. Asked in `NOTE-team-approve-path-is-on-master.md`.
+
+**The backend is untouched by any of this.** Allocation, pre-trip and dispatch still read
+`transport_vehicles` and `transport_drivers`, which still hold the demo rows, so the dispatch chain
+works today. Repointing onto Fleet is the remaining half and is now in progress.
+
+**Also expected, not a fault:** Fleet, Drivers and Workshop read zero rows, because the demo
+vehicles are in P1's tables and `2027_01_02_000002` is deliberately unrun. Not to be worked around
+by seeding copies.
