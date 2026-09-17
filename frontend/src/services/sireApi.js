@@ -112,6 +112,17 @@ export const sireApi = {
   // open instantly.
   reportOptions: () => api.get('/sire/report-options'),
 
+  // The backlog as one markdown brief, grouped by screen. responseType 'text'
+  // because axios would otherwise try to JSON.parse markdown and hand back a
+  // string it had already given up on.
+  exportIssues: (params = {}) =>
+    api.get('/sire/export', { params, responseType: 'text' }),
+
+  // Many issues moved in one call. Every entry still runs its own guards and is
+  // audited separately -- this saves page loads, not rules.
+  bulkTransition: (transitions) =>
+    api.post('/sire/reports/transitions', { transitions }),
+
   // The host's own Customer Directory, read through SireCustomerProvider. SIRE
   // never writes to a customer record -- it names one on a defect so the
   // register can answer "which customers are hitting this".

@@ -204,6 +204,49 @@ redirects away.
 no screenshot, less context — but an issue filed with a description is worth far
 more than one nobody filed.
 
+## Getting them all out again
+
+Filing is one click. Fixing forty of them one at a time is eighty page loads, and
+the fixing was never the slow part — the round trip was.
+
+```
+GET  /api/sire/export?module[]=sales&module[]=inventory   one markdown brief
+POST /api/sire/reports/transitions                        the fixes, in one call
+```
+
+**Grouped by screen, not by ticket.** That is the whole idea. One code change
+usually closes several issues, because several people hit the same broken screen;
+ordering by screen turns "forty tickets" into "six files to open". Within a
+screen the order is severity then age, because once you are in the file you want
+the worst thing first.
+
+Each issue carries what somebody would otherwise open six pages to collect: what
+broke, what they expected, the route and record they were on, **the API call that
+failed**, and the browser. That last one is the single most useful line in the
+document — it is the one fact a reporter could never have written down.
+
+It names nobody. No reporters, no assignees, no commentary: the brief exists to
+be pasted into an editor or a model, and the fewer people it names the less it
+matters where it ends up. It does carry reproduction detail and internal screen
+names, so the document says **For developers** on its first line and the UI panel
+says so on its face.
+
+`sire.export` gates it — a capability that sat in the vocabulary from the
+beginning and was never once checked, because it described an endpoint nobody had
+built.
+
+**The way back is not a way around.** Every entry in a bulk transition runs the
+same capability check, the same guard and the same required fields as the
+single-issue route, and each is audited separately. Each also gets its own
+transaction: one missing fix summary must not roll back nineteen good ones and
+leave the caller guessing which. The response says what happened to every issue.
+
+**Shrink the pile before reading it.** Duplicate detection is a local engine that
+needs `sire:index-issues` in the scheduler — it is registered hourly now. Without
+the index it has no neighbours to reason about and abstains on everything, which
+reads exactly like "nothing similar exists". Of forty reports, a chunk are one
+bug found by five people.
+
 ## Why speed is a security property, sort of
 
 An engineer who finds Report Issue slow files a message in a chat channel

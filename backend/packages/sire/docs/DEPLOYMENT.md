@@ -93,7 +93,7 @@ php artisan sire:export-workflow
 ## 4. Cache
 
 Follow the existing deploy's cache steps. If none are documented, this is the
-minimum — and **`route:clear` is not optional**, because SIRE adds 82 routes:
+minimum — and **`route:clear` is not optional**, because SIRE adds 84 routes:
 
 ```bash
 php artisan route:clear
