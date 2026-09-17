@@ -5,6 +5,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useTheme } from '@/context/ThemeContext'
 import { useMoneyVisibility } from '@/context/MoneyVisibilityContext'
 import NotificationBell from './NotificationBell'
+import HeaderPunch from './HeaderPunch'
 import sangoeIcon from '@/assets/sangoe-icon.png'
 import clsx from 'clsx'
 
@@ -90,6 +91,11 @@ export default function Header({ sidebarCollapsed, mobileMenuOpen, onMobileMenuT
         </button>
 
         <div className="flex-1" />
+
+        {/* Clock in / out — first in the group because it is the one control
+            used every single day. Hidden for workspaces without HR and for
+            logins with no employee record behind them. */}
+        <HeaderPunch />
 
         {/* Hide-amounts toggle — global money visibility (accounts, customer, everywhere) */}
         <button

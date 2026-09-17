@@ -159,6 +159,22 @@ class HrSetting
             'How many days back somebody may ask to correct. 0 means no limit.', 'Attendance',
         ],
 
+        // Evidence on a punch made from the CRM in a browser. The phone app
+        // always takes a selfie and coordinates; a laptop may have no camera at
+        // all, so neither of these ever REFUSES a punch — a day's attendance is
+        // not worth losing over a broken webcam. What they change is whether the
+        // punch is recorded as verified: when evidence is missing, the reason is
+        // stored against the record and the register shows it, so HR can ask
+        // about the ones that matter instead of every punch looking identical.
+        'web_punch_require_selfie' => [
+            'Ask for a selfie on web clock-in', self::TYPE_BOOL, false,
+            'The punch still goes through if there is no camera — it is marked unverified with the reason.', 'Attendance',
+        ],
+        'web_punch_require_location' => [
+            'Ask for location on web clock-in', self::TYPE_BOOL, true,
+            'Coordinates are recorded when the browser allows it. A refusal is recorded too, never silently blank.', 'Attendance',
+        ],
+
         /* ── the advance ladder ──────────────────────────────────────── */
         // These are why "more control" matters: the tiers were fixed in code.
         // The app's advance form had these baked into it, so changing what a
