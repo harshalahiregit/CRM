@@ -150,17 +150,39 @@ class TripBillingTest extends TestCase
         $this->assertSame('45000.00', (string) $bill->billable_amount);
     }
 
-    public function test_a_trip_that_is_not_pod_verified_is_refused_with_a_useful_reason(): void
+    /**
+     * The refusal must name the REAL blocker, and this is the case that gets it
+     * wrong if nobody checks.
+     *
+     * Found by walking the flow against a running server: verify a POD, watch
+     * the documents panel go green, then be told by billing to go and verify
+     * the POD. Every unit test here missed it, because they all put the trip in
+     * the right state before asserting.
+     */
+    public function test_a_trip_with_good_paperwork_but_no_delivery_is_told_the_truth(): void
     {
-        // The waiver arm makes the POD check pass, but the trip is still sitting
-        // in `approved` — so the refusal must be about the STATE, not the POD.
+        // Paperwork satisfied — via the waiver arm — but the trip never travelled.
         $trip = $this->trip(TripStatus::APPROVED);
         $this->waive($trip);
 
         $readiness = $this->billing->readiness($trip, self::TENANT_A);
 
         $this->assertFalse($readiness['preparable']);
-        $this->assertStringContainsString('POD has been verified', $readiness['reason']);
+        $this->assertStringContainsString('delivered', $readiness['reason']);
+        $this->assertStringNotContainsString(
+            'POD has been verified', $readiness['reason'],
+            'telling somebody to verify a POD they have just verified is worse than saying nothing'
+        );
+    }
+
+    public function test_a_trip_with_no_paperwork_at_all_is_still_told_about_the_pod(): void
+    {
+        // The other branch: here the POD really is the blocker, so say so.
+        $trip = $this->trip(TripStatus::APPROVED);
+
+        $reason = $this->billing->readiness($trip, self::TENANT_A)['reason'];
+
+        $this->assertStringContainsString('POD', $reason);
     }
 
     public function test_a_waived_exception_is_recorded_as_the_basis(): void

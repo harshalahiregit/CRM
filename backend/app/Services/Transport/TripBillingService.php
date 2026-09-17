@@ -104,8 +104,7 @@ class TripBillingService
         if ($trip->status !== TripStatus::POD_VERIFIED) {
             return [
                 'preparable' => false,
-                'reason' => 'This trip is '.TripStatus::label((string) $trip->status)
-                    .'. Billing is prepared once its POD has been verified.',
+                'reason' => $this->wrongStateReason($trip, $pod),
                 'already_billed' => false, 'amount' => null,
                 'basis' => $this->basisFrom($pod),
             ];
@@ -147,10 +146,7 @@ class TripBillingService
         }
 
         if ($trip->status !== TripStatus::POD_VERIFIED) {
-            throw new BusinessException(
-                'This trip is '.TripStatus::label((string) $trip->status)
-                .'. Billing is prepared once its POD has been verified.'
-            );
+            throw new BusinessException($this->wrongStateReason($trip, $pod));
         }
 
         $amount = $this->amountFor($trip);
@@ -222,5 +218,35 @@ class TripBillingService
     private function basisFrom(array $pod): string
     {
         return $pod['waived'] ? 'exception_waiver' : 'verified_pod';
+    }
+
+    /**
+     * Why a trip with a good POD still is not billable.
+     *
+     * ── FOUND BY TESTING AGAINST A REAL SERVER, NOT BY THE SUITE ────────
+     * This used to say "Billing is prepared once its POD has been verified"
+     * for EVERY wrong state. Which reads as nonsense to the one person most
+     * likely to see it — somebody who has just verified the POD, watched the
+     * documents panel turn green, and is now told to go and verify the POD.
+     *
+     * The unit tests never caught it because they put the trip in the right
+     * state before asserting; only walking the real flow in order exposed it.
+     *
+     * The real cause is that nothing writes `delivered`: STT-006 and STT-007
+     * are P1's and unwired (C-09), so a trip cannot reach `pod_verified` no
+     * matter how good its paperwork is. Saying so is more useful than a
+     * state name, because it tells the reader this is not theirs to fix.
+     */
+    private function wrongStateReason(TransportTrip $trip, array $pod): string
+    {
+        $state = TripStatus::label((string) $trip->status);
+
+        // The POD is fine; the trip simply has not travelled.
+        if ($pod['billable']) {
+            return "The paperwork is in order, but this trip is still {$state} — "
+                .'it has to be recorded as delivered before it can be billed.';
+        }
+
+        return "This trip is {$state}. Billing is prepared once its POD has been verified.";
     }
 }
