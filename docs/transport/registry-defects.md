@@ -67,6 +67,11 @@ Authority for who rules on what: the Conflict Resolution matrix in
 | D-52 | No structural marker for a temperature-critical trip | **High** | Product + Person 2 | Open — TM-001 §12's P0 rule has nothing to key on |
 | D-53 | Two CLOSED attachment windows may overlap | Low | Person 1 | Open — latent, unreachable today |
 | D-57 | Step 9 and ENUM-002 describe different advance lifecycles | **High** | Product + Finance | Open — ENUM-002 stored on FLD-012's authority, four Step 9 states unrepresentable |
+| D-58 | SNG-TRN-012's three refs point at the exception domain; `cost_type` and `amount` both dangle; cost/expense boundary undefined | **High** | Product + Finance + Architecture | Open — blocks 012, and via DEP-008 also 017 and 018 |
+| D-62 | Two live vehicle/driver systems: `transport_vehicles`/`transport_drivers` vs the fleet module's `vehicles`/driver directory | **Critical** | P1 + P2 | Open — both deployed, data does not cross; sidebar merged 2026-09-17 but data is not |
+| D-61 | EVT-011's payload is pure Accounts vocabulary (`receipt_id`, `posting_id`) that Transport cannot supply; no collection status vocabulary; DB-013 has one field row | **High** | Product + Accounts | Open — status derived, event payload honestly partial |
+| D-60 | API-010 promises a `BillingPrepared` event the Event_Registry never defines; no Billing permission domain; DB-012 has one field row | **High** | Product + Accounts | Open — event payload, permission row and bill vocabulary all constructed for 015 |
+| D-59 | STT-008 requires a "POD valid" guard, but no document lifecycle is registered anywhere; DB-009 has no field or index rows | **High** | Product + Compliance | Open — status vocabulary and MIME/size limits constructed for 014 |
 
 > **D-54, D-55 and D-56 have bodies below but no row here** — they were added on 2026-09-16 and the
 > index was not extended with them. Person 1 owns those three; the rows are theirs to write, which
@@ -1942,7 +1947,385 @@ business lifecycle and the stored column. Any of the three is a decision; none i
 
 ---
 
-## D-58 — CRITICAL: no trip can ever be approved. The chain is unreachable, and the demo hides it.
+## D-58 — SNG-TRN-012 cites three references that all belong to another domain, and `cost_type` has no vocabulary
+
+**Raised:** 2026-09-16, building the Context Pack for SNG-TRN-012. **Owner: Product +
+Finance.** **Severity: high — it decides a LOCKED table's shape.**
+
+### The cited references resolve to the exception domain
+
+Step 12's `DB/API/State/Event Refs` column for SNG-TRN-012 reads `DB-011;API-007;EV-008`.
+Resolved by NAME against Step 11:
+
+| Ticket cites | What Step 11 actually says it is | Correct reference |
+|---|---|---|
+| `DB-011` | `trip_risks` — "Trip-linked risk exposure", Risk | **DB-006 `trip_costs`** |
+| `API-007` | `POST /api/v1/transport/trips/{trip}/exceptions` — Raise exception | **none exists** |
+| `EV-008` | `TripExceptionRaised` | **none exists** |
+
+All three land on *exceptions*, not cost. This is the placeholder-numbering defect the
+Authority Register carries as an unclosed OPEN ITEM, so the numbers are not evidence of
+anything. **There is no API row and no event for recording a cost anywhere in Step 11.**
+
+### Two dangling pointers in the field registry
+
+```
+FLD-010   DB-006  trip_costs  cost_type  VARCHAR(40)  INDEX   -> CST-001
+FLD-011   DB-006  trip_costs  amount     DECIMAL(18,2)        -> MON-002
+```
+
+Searched all fourteen sheets: **`CST-001` occurs exactly once** — in FLD-010's own
+reference column. **`MON-002` likewise occurs exactly once**, in FLD-011's. Neither is
+defined. The Enums sheet holds exactly eight enums, ENUM-001..008, and none is a cost
+type.
+
+This is D-50 (`container_type`) repeating, but worse. `container_type` was a search
+anchor; `cost_type` is **INDEXED and is the grouping key for SNG-TRN-018's profitability**
+(IDX-005 `company_id, trip_id, cost_type`, LOCKED, reason "profitability calculations").
+Free text means `fuel`, `Fuel`, `FUEL` and `diesel` become four categories and 018's
+acceptance — "revenue, cost and margin reconcile to source transactions" — cannot hold.
+
+### The larger question: what separates a cost from an expense?
+
+Two LOCKED tables, same owner, same source reference:
+
+```
+DB-006  trip_costs     "Canonical trip cost facts"        LOCKED  Finance Control  FRS-CST
+DB-008  trip_expenses  "Trip-linked operating expenses"   LOCKED  Finance Control  FRS-CST
+```
+
+The registry is markedly richer on *expense* than on *cost*: PERM-008 `Expense/submit`
+and PERM-009 `Expense/approve` exist, ENUM-005 `expense_approval_status` exists, and
+FLD-013 gives `trip_expenses.approval_status` a `pending` default. **For cost there is
+no permission row at all** — the Permissions sheet's thirteen rows cover Trip, Advance,
+Expense, POD, Collection, ControlRoom and Registry, and no Cost.
+
+Meanwhile SNG-TRN-012 is the only ticket that mentions expense (its Module is
+"Fuel/Toll/Expense"), and QA-005 files it under Area = **Expense**. So one ticket appears
+to straddle both tables while naming only one.
+
+**The coherent reading** — and it is a reading, not a finding — is that an expense is a
+human *claim* that goes through submit/approve, and a cost is the canonical *fact* used
+for margin; an approved expense becomes a cost row. That would also explain the otherwise
+undefined word "source" in the acceptance criterion "Every cost is linked to trip and
+**source**", for which no field exists.
+
+**This is not a developer's call.** Guessing it wrong produces one of two failures:
+a single table that later collides with the other LOCKED entity (FORBID-005, exactly the
+SNG-TRN-028 duplicate), or two tables that double-count and break 018's reconciliation.
+
+### What is NOT blocked
+
+DEP-004 (`Costs require trip`) is satisfied — SNG-TRN-007 is built. `trip_costs` can be
+built to its LOCKED spec (`VARCHAR(40)` is what the registry specifies, so storing free
+text obeys it rather than guessing) the moment the boundary and the `source` field are
+settled.
+
+### What resolving it looks like
+
+1. A `cost_type` vocabulary registered as an ENUM, or an explicit ruling that it is free
+   text and 018 groups on something else.
+2. A definition of `source`, and a field for it.
+3. A ruling on the `trip_costs` / `trip_expenses` boundary, and which of them
+   SNG-TRN-012 actually builds.
+
+**Escalation:** `CLARIFICATION_REQUIRED` for 1 and 2, `ARCHITECTURE_REVIEW_REQUIRED` for 3.
+**Blocks:** SNG-TRN-012, and through DEP-008 both SNG-TRN-017 and SNG-TRN-018.
+
+---
+
+## D-59 — STT-008 asks for a "POD valid" guard the registry never defines
+
+**Raised:** 2026-09-16, building SNG-TRN-014. **Owner: Product + Compliance.**
+**Severity: high — a LOCKED transition depends on it.**
+
+### The transition is LOCKED and its guard is unanswerable
+
+```
+STT-008 | SM-TRP | delivered -> pod_verified | Verify POD | DocumentEngine
+        | guard "POD valid" | effect "Unlock billing" | audited | LOCKED
+```
+
+"POD valid" is a question about a document's **status**. Step 11 registers:
+
+- **eight enums**, ENUM-001..008 — trip_status, advance_status, exception_severity,
+  exception_status, expense_approval_status, document_type, risk_rating, viability_decision
+- **four state machines** — SM-ADV, SM-EXC, SM-ORD, SM-TRP
+
+**Not one describes a document lifecycle.** ENUM-006 is document_*type* —
+`lr|ewaybill|invoice|pod|...` — which says what a document IS, never whether anyone
+has checked it. So a LOCKED transition guards on a property the canonical registry
+gives no vocabulary for.
+
+`TripDocumentStatus` is therefore constructed with exactly three states —
+`received`, `verified`, `rejected` — no more than STT-008 needs. STOS-DOC describes
+eighteen document statuses; those are **not** reproduced, because choosing three of
+eighteen is a product decision and naming only what this transition requires is an
+implementation one.
+
+### DB-009 has no field registry at all
+
+```
+DB-009 | trip_documents | LR/POD/EWB/attachments index | Tenant | id | company_id | LOCKED | Document | FRS-DOC
+```
+
+That row is the whole specification. `DB_Fields` has **zero** rows for DB-009 and
+`Indexes_Constraints` has zero. Every column and both indexes are named against the
+requirement that asks for them — the same discipline `trip_advances` used where
+FLD-012 gave it one column.
+
+### CTR-012 specifies a limit it does not state
+
+```
+CTR-012 | API-008 | pod_file | multipart | FILE | required | "allowed MIME/size" | signed upload | Immutable after verification
+```
+
+"allowed MIME/size" names neither the MIME list nor the size. Constructed as PDF plus
+common image types, 10 MB — a phone photograph of a signed sheet, and nothing that
+executes. `TripDocumentService::ALLOWED_MIME` and `MAX_BYTES` are the single place to
+correct them.
+
+### And no document-verify permission exists
+
+The Permissions sheet has thirteen rows. PERM-010 covers `POD / submit`; **nothing
+covers verifying one**, though STT-008 requires somebody to do it. `POD_VERIFY` is
+constructed from that transition's own domain and action, modelled on PERM-005
+`Trip / close` rather than on PERM-010 — because "Unlock billing" is a financial act.
+Already recorded as an open item in TEAM-CONTRACTS §4.
+
+### What resolving it looks like
+
+1. A document lifecycle registered as an ENUM or a state machine (SM-DOC).
+2. Field and index rows for DB-009.
+3. Concrete MIME and size limits on CTR-012.
+4. A `Document / verify` row in the Permissions sheet.
+
+**Escalation:** `CLARIFICATION_REQUIRED` for 1–3, `SECURITY_REVIEW_REQUIRED` for 4.
+**Does not block:** SNG-TRN-014 shipped against constructed values, all flagged here.
+
+---
+
+## D-60 — API-010 promises an event the Event_Registry never defines
+
+**Raised:** 2026-09-17, building SNG-TRN-015. **Owner: Product + Accounts.**
+**Severity: high — it is the handover point between two modules.**
+
+### The event does not exist
+
+```
+API-010 | POST /api/v1/transport/trips/{trip}/bill | Prepare customer billing
+        | transport.billing.prepare | emits BillingPrepared | CONTROLLED
+```
+
+The Event_Registry has twelve rows, `EVT-001..012`. **`BillingPrepared` is not one
+of them.** So the API registry names an event with no producer, no payload, no
+idempotency key and no consumer list — and it is precisely the event by which
+Transport hands a trip to Accounts.
+
+The payload is constructed (`bill_id`, `trip_id`, `amount`, `currency`), mirroring
+the registered events either side of it, with `bill_id` as the idempotency key by the
+same reasoning EVT-009 applies to `attachment_id`.
+
+### What the registry IS clear about, and it shapes the whole ticket
+
+```
+EVT-010 | InvoicePosted      | Producer: Accounts
+EVT-011 | CollectionRecorded | Producer: Accounts/Collections
+DB-012  | trip_bills         | Owner: Accounts
+```
+
+Transport does not post invoices and does not take money — consistent with FORBID-002
+and LOCK-004, which bar this module from writing any ledger entry. SNG-TRN-015 is
+therefore a **trigger**, exactly as its name says, and `trip_bills` is a linkage row
+rather than an invoice.
+
+`FLD-016` is the table's only field row, and it is the seam: `invoice_id BIGINT`,
+**nullable**, FK+INDEX. A nullable foreign key to an invoice only makes sense if the
+row can exist before the invoice does. Transport writes the row with `invoice_id` NULL;
+Accounts fills it in. Every other column on the table is constructed.
+
+### No Billing permission domain
+
+The Permissions sheet has thirteen rows and covers Trip, Advance, Expense, POD,
+Collection, ControlRoom and Registry. **There is no Billing domain**, though API-010
+names the key `transport.billing.prepare` exactly. The key is specified; its matrix row
+is constructed, modelled on PERM-005 `Trip / close`.
+
+### And no bill vocabulary
+
+None of the eight registered enums describes a bill. `TripBillStatus` declares two
+states — `prepared` and `invoiced` — and Transport can reach only the first.
+`invoiced` is declared-not-wired so Accounts has somewhere to land.
+
+### What resolving it looks like
+
+1. An `EVT-0xx BillingPrepared` row with a real payload and consumer list.
+2. A `Billing` domain in the Permissions sheet.
+3. Field rows for DB-012 beyond `invoice_id`.
+4. Confirmation that Transport writing the `trip_bills` row (invoice_id NULL) is the
+   intended division, since Step 11 marks the table's owner as Accounts.
+
+**Escalation:** `CLARIFICATION_REQUIRED` for 1–3, `ARCHITECTURE_REVIEW_REQUIRED` for 4.
+**Does not block:** SNG-TRN-015 shipped against constructed values, all flagged here,
+and the module writes nothing to any ledger.
+
+---
+
+## D-61 — EVT-011 asks Transport for identifiers only Accounts can create
+
+**Raised:** 2026-09-17, building SNG-TRN-016. **Owner: Product + Accounts.**
+**Severity: high — it is the second handover point between the two modules.**
+
+### The API says Transport emits it; the payload says Accounts does
+
+```
+API-011 | POST /api/v1/transport/trips/{trip}/collection | Record collection
+        | transport.collection.record | emits CollectionRecorded | CONTROLLED
+
+EVT-011 | CollectionRecorded | Producer: Accounts/Collections
+        | Payload: receipt_id, invoice_id, amount
+        | Idempotency: receipt_id+posting_id | Consumers: ControlRoom
+```
+
+API-011 is a **Transport** endpoint on a Transport path behind a Transport
+permission, and its Event Emitted column names `CollectionRecorded`. But that event's
+payload is `receipt_id`, `invoice_id` and its key is `receipt_id+posting_id` — and a
+receipt and a posting are **accounting records Transport does not create**. FORBID-002
+and LOCK-004 keep this module out of the books, so there is nothing here to put in
+those fields.
+
+CTR-014's note resolves it: *"Posting event generated."* There are two acts — somebody
+records against the receivable (Transport, tracking), and somebody posts the receipt
+(Accounts, money) — and the first triggers the second.
+
+So the event is emitted with the registry's own field names, `receipt_id` left **null**
+rather than fabricated, `invoice_id` filled only once Accounts has set it on the linked
+bill, plus `collection_id` and `trip_id` added so a consumer has something to join on.
+A test asserts `receipt_id` stays null; it fails the day somebody starts inventing
+accounting records in this module.
+
+### No collection status vocabulary
+
+`IDX-009` is `INDEX (company_id, due_date, status)` for "collections ageing", so the
+registry plainly expects a `status` column and **never says what may go in it**. None
+of the eight enums describes a collection.
+
+Unlike CST-001, FLD-017's `COL-001` is not quite dangling — TRC-007 resolves it to
+`BR-COL-001` / `FRS-COL-001`, business RULE documents in the reference-only tier. They
+define no vocabulary. `CollectionStatus` therefore declares three states derived from
+the arithmetic — `pending`, `part_paid`, `settled` — and nothing else.
+
+Blockers are deliberately **not** a status. A blocked receivable is still outstanding,
+and "blocked" would hide how much is owed; a receivable can truthfully be part-paid and
+blocked at once, which is exactly the row somebody has to chase.
+
+### And one field row for the whole table
+
+`FLD-017 amount_due` is all DB-013 declares. `IDX-009` proves `due_date` and `status`
+are meant to exist by indexing them. Everything else — `amount_received`,
+`blocker_reason`, the follow-up stamps — is constructed against the acceptance
+criterion's four nouns.
+
+### What resolving it looks like
+
+1. Confirm the two-act reading, or move the event to Accounts entirely and have
+   Transport emit nothing. **One deletion either way — say which.**
+2. A collection status vocabulary, registered.
+3. Field rows for DB-013 beyond `amount_due`.
+4. A `Collection / view` permission row (only `record` exists).
+
+**Escalation:** `ARCHITECTURE_REVIEW_REQUIRED` for 1, `CLARIFICATION_REQUIRED` for 2-3,
+`SECURITY_REVIEW_REQUIRED` for 4.
+**Does not block:** SNG-TRN-016 shipped against constructed values, all flagged here,
+and the module writes nothing to any ledger.
+
+---
+
+## D-62 — Two vehicle and driver systems are live at the same time
+
+**Raised:** 2026-09-17, after the fleet module reached production.
+**Owner: P1 + P2 — not P3's to decide.** **Severity: critical — it is a data split,
+and it widens every day.**
+
+### What exists
+
+| | Operations | Fleet |
+|---|---|---|
+| Nav | Vehicles · Drivers | Fleet Status · Driver Directory · Workshop |
+| API | `/api/transport/vehicles`, `/api/transport/drivers` | `/api/v1/fleet/...` |
+| Tables | `transport_vehicles`, `transport_drivers` | `vehicles`, driver directory tables |
+| Built by | P1 (SNG-TRN-003 / 004) | P2 |
+| Reads it | allocation, pre-trip checks, dispatch | telemetry, fuel, tyres, maintenance |
+
+**Both are deployed. Both have a Vehicles screen and a Drivers screen. Neither knows
+about the other.** A vehicle added in one is invisible to the other; a trip can be
+allocated a vehicle the fleet system has never heard of, and a vehicle can accumulate
+fuel and maintenance history that allocation cannot see.
+
+### How it happened, and why it is nobody's mistake
+
+TEAM-CONTRACTS §1a records `transport_vehicles` / `transport_drivers` as **P1's
+PLACEHOLDER, not P1's property** — built early so trips had something to allocate, and
+explicitly meant to be replaced when P2 built Fleet.
+
+P2 built the replacement. It landed as a **new module beside** the old one rather than
+**into** it, and nobody retired the placeholder. So the handover started and never
+finished. That is a coordination gap, not a coding error, and it is exactly what
+TEAM-CONTRACTS exists to catch.
+
+### What has been done, and what has NOT
+
+**Done (2026-09-17):** the sidebar showed TWO top-level entries, both labelled
+"Transport", both with a Truck icon, pointing at different modules. They are now one
+section with all nine screens and no duplicate labels.
+
+**NOT done — and the distinction matters:** merging the menus did not merge the data.
+The tidy menu makes the split *less visible*, which is the one risk of having fixed it.
+A comment sits beside the merged list saying so.
+
+### What resolving it looks like
+
+One of two, and either is fine — having both is not:
+
+1. **Fleet absorbs operations.** `transport_vehicles` / `transport_drivers` are retired,
+   allocation and pre-trip checks are repointed at the fleet tables, and existing rows
+   are migrated. Larger change, matches the documented intent.
+2. **Operations keeps the master, fleet references it.** The fleet module drops its own
+   vehicle identity and keys off `transport_vehicles`. Smaller change, but the fleet
+   model is richer and would be the one losing.
+
+**Whoever decides also owns the data migration** — rows already exist on production in
+both, so neither option is a code-only change now.
+
+**Escalation:** `ARCHITECTURE_REVIEW_REQUIRED`.
+**Blocks:** nothing today, and that is precisely the danger — both systems work in
+isolation, so this fails silently rather than loudly, and the cost grows with every row
+written to the losing table.
+
+---
+
+> ### NUMBERING COLLISION, RESOLVED 2026-09-17
+>
+> P3 and P1 both allocated **D-58 … D-61** on the same day, on different branches, to entirely
+> different defects. Neither side was wrong; the register has no allocator, so two people counting
+> from the same last-seen number produced the same numbers.
+>
+> **P1's four were renumbered to D-63 … D-66.** Master is the shared baseline, so the branch that
+> had not landed moved. P3's numbers are unchanged and every reference to them still resolves.
+>
+>   | was (P1's branch) | now | subject |
+>   |---|---|---|
+>   | D-58 | **D-63** | no trip can ever be approved |
+>   | D-59 | **D-64** | approval ships without its margin precondition |
+>   | D-60 | **D-65** | EVT-004's `approval_id` has no table |
+>   | D-61 | **D-66** | STT-003 has no permission row |
+>
+> Commit messages written before the merge still say D-58…D-61; the code, tests and docblocks were
+> all updated. **This is the same class of collision as the `transport.permission` alias** — invisible
+> inside one branch, obvious where two meet. Worth an allocator, or a per-person range, before it
+> happens again.
+
+## D-63 — CRITICAL: no trip can ever be approved. The chain is unreachable, and the demo hides it.
 
 **Raised:** 2026-09-16, by the owner, from the trip page. **Severity: CRITICAL — this is the gap
 that makes the 30 September vertical slice unachievable as things stand.** MS-001 §8 requires
@@ -2123,9 +2506,9 @@ precondition when SNG-TRN-008 lands.
 
 ---
 
-## D-59 — Trip approval ships WITHOUT its LOCKED precondition, "Margin policy passed"
+## D-64 — Trip approval ships WITHOUT its LOCKED precondition, "Margin policy passed"
 
-**Raised:** 2026-09-16, as a condition of the owner's ruling on D-58. **Owner: whoever lands
+**Raised:** 2026-09-16, as a condition of the owner's ruling on D-63. **Owner: whoever lands
 SNG-TRN-008.** **Status: DEFERRED, deliberately, with a failing-on-purpose test holding the place.**
 
 STT-002 is LOCKED and its precondition is **"Margin policy passed"**. The approve transition is
@@ -2165,7 +2548,7 @@ be forgotten; one with a comment can.
 
 ---
 
-## D-60 — EVT-004's idempotency key names an `approval_id` that has no table
+## D-65 — EVT-004's idempotency key names an `approval_id` that has no table
 
 **Raised:** 2026-09-16. **Owner: Architecture / Step 11.** **Severity: low today, real later.**
 
@@ -2193,7 +2576,7 @@ broken. Whoever builds the first consumer, or an approvals table, inherits this.
 
 ---
 
-## D-61 — STT-003 has no permission row; TRIP_APPROVE is reused rather than a matrix invented
+## D-66 — STT-003 has no permission row; TRIP_APPROVE is reused rather than a matrix invented
 
 **Raised and resolved:** 2026-09-17, building STT-003.
 

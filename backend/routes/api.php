@@ -58,3 +58,6 @@ require __DIR__.'/company_portal.php';
 
 // Sangoe Transport OS (STOS) — order/trip operations and financial control.
 require __DIR__.'/transport.php';
+// STOS (Sangoe Transport OS) — Fleet / Telemetry / Cost / Maintenance.
+// Its telemetry ingest endpoint is device-authenticated, not session-based.
+require __DIR__.'/stos.php';

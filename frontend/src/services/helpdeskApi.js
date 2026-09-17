@@ -18,6 +18,20 @@ export const helpdeskApi = {
     api.get('/helpdesk/analytics').then(unwrap).catch(handleErr),
 
   // Support settings — priorities / statuses / departments + public-form settings (Phase 1)
+  // Tenant-wide tag list for the create form's Tags field. The ticket-scoped
+  // tag calls under `tickets` attach/detach on an EXISTING ticket; this is the
+  // vocabulary to choose from before one exists.
+  tags: {
+    list: () => api.get('/helpdesk/tags').then(unwrap).catch(handleErr),
+    create: (name) => api.post('/helpdesk/tags', { name }).then(unwrap).catch(handleErr),
+  },
+
+  // People a ticket can be raised for — fills Contact, and with it the
+  // requester name and email.
+  contacts: {
+    list: () => api.get('/helpdesk/contacts').then(unwrap).catch(handleErr),
+  },
+
   settings: {
     all: () => api.get('/helpdesk/settings').then(unwrap).catch(handleErr),
     createItem: (type, data) => api.post(`/helpdesk/settings/${type}`, data).then(unwrap).catch(handleErr),
@@ -70,8 +84,31 @@ export const helpdeskApi = {
     get: (id) =>
       api.get(`/helpdesk/tickets/${id}`).then(unwrap).catch(handleErr),
 
-    create: (data) =>
-      api.post('/helpdesk/tickets', data).then(unwrap).catch(handleErr),
+    /*
+     * Files ride with the ticket, so a payload carrying them is sent as
+     * multipart. Arrays have to be spelled `tags[]` / `cc[]` / `attachments[]`
+     * for PHP to read them back as arrays rather than as a single value, and a
+     * JSON body cannot carry a File at all.
+     *
+     * Everything without files keeps going as plain JSON, which is what every
+     * existing caller sends.
+     */
+    create: (data) => {
+      const files = data.attachments || []
+      if (!files.length) {
+        return api.post('/helpdesk/tickets', data).then(unwrap).catch(handleErr)
+      }
+
+      const fd = new FormData()
+      Object.entries(data).forEach(([k, v]) => {
+        if (k === 'attachments' || v === undefined || v === null || v === '') return
+        if (Array.isArray(v)) v.forEach(item => fd.append(`${k}[]`, item))
+        else fd.append(k, v)
+      })
+      files.forEach(f => fd.append('attachments[]', f))
+
+      return api.post('/helpdesk/tickets', fd).then(unwrap).catch(handleErr)
+    },
 
     update: (id, data) =>
       api.put(`/helpdesk/tickets/${id}`, data).then(unwrap).catch(handleErr),

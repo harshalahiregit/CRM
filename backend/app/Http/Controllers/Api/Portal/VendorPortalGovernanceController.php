@@ -272,6 +272,11 @@ class VendorPortalGovernanceController extends Controller
             'email' => $vendor->email,
             'organisation' => $vendor->company_name ?: $vendor->name,
             'side' => 'external',
+            // Which column of the four-column attendance sheet to seat them in.
+            // A vendor seating itself is by definition the Third-Party Vendor
+            // column; without this they land in the grid's "not yet placed" row
+            // on a meeting held for them. See MeetingPartyDirectory.
+            'party' => \App\Services\Shared\MeetingPartyDirectory::TPV,
         ]));
     }
 

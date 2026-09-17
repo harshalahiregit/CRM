@@ -70,6 +70,11 @@ class PurchaseVendorService
                 $data['registration_type'] ?? $data['vendor_type'] ?? null
             ),
             'status'               => $data['status'] ?? Status::DRAFT,
+            // The create form no longer asks for a currency — it is a term of a
+            // trading relationship that does not exist yet, and every row in the
+            // table is INR. Defaulted here rather than demanded of whoever is
+            // typing a company name; the Profile tab can change it.
+            'currency'             => $data['currency'] ?? 'INR',
         ]);
 
         $vendor->recordAudit('Purchase Vendor Created', $actor, null, ['company_name' => $vendor->company_name]);

@@ -50,6 +50,20 @@ const sizeLabel = (bytes) => {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 };
 
+/**
+ * How an attachment is named in a URL: the FILENAME only, never the id.
+ *
+ * An id here is a storage path (sire/{tenant}/Report/{id}/file.jpg). Put one in
+ * a URL segment and each slash encodes as %2F, which the production web server
+ * (Plesk, Apache behind nginx) answers with its own 404 before the request
+ * reaches Laravel -- so evidence that had uploaded perfectly showed
+ * "Could not load" on live, while local dev passes %2F through and looked fine.
+ *
+ * The endpoint resolves the name against the report's own attachment listing,
+ * so the directory comes from the route and nothing is lost by dropping it.
+ */
+const attachmentRef = (id) => encodeURIComponent(String(id ?? '').split('/').pop());
+
 export const toAttachments = (response, reportId) => {
   const body = response?.data?.data ?? response?.data ?? [];
   const rows = Array.isArray(body) ? body : [];
@@ -59,7 +73,7 @@ export const toAttachments = (response, reportId) => {
     mime_type: a.mime ?? a.mime_type ?? '',
     original_name: a.name ?? a.original_name ?? 'attachment',
     size_label: sizeLabel(a.size),
-    download_url: `/api/sire/reports/${reportId}/attachments/${encodeURIComponent(a.id)}`,
+    download_url: `/api/sire/reports/${reportId}/attachments/${attachmentRef(a.id)}`,
   }));
 };
 
@@ -92,6 +106,30 @@ export const sireApi = {
    */
   createReport: (payload) => api.post('/sire/reports', payload),
 
+  // Categories, severities and priorities for the Report Issue form. Its own
+  // endpoint rather than /sire/dashboard/options, which carries filter-bar
+  // rosters the form has no use for -- the button is on every screen and has to
+  // open instantly.
+  reportOptions: () => api.get('/sire/report-options'),
+
+  // The backlog as one markdown brief, grouped by screen. responseType 'text'
+  // because axios would otherwise try to JSON.parse markdown and hand back a
+  // string it had already given up on.
+  exportIssues: (params = {}) =>
+    api.get('/sire/export', { params, responseType: 'text' }),
+
+  // Many issues moved in one call. Every entry still runs its own guards and is
+  // audited separately -- this saves page loads, not rules.
+  bulkTransition: (transitions) =>
+    api.post('/sire/reports/transitions', { transitions }),
+
+  // The host's own Customer Directory, read through SireCustomerProvider. SIRE
+  // never writes to a customer record -- it names one on a defect so the
+  // register can answer "which customers are hitting this".
+  searchCustomers: (q = '') => api.get('/sire/customers', { params: { q } }),
+  setCustomer:     (reportId, customerId) =>
+    api.put(`/sire/reports/${reportId}/customer`, { customer_id: customerId }),
+
   /**
    * Attach evidence through the existing shared attachment engine. The subject
    * comes from the ROUTE, never the body, so a file cannot be retargeted by
@@ -117,7 +155,7 @@ export const sireApi = {
    * shared client and are shown from an object URL instead.
    */
   attachmentBlob: (reportId, id) =>
-    api.get(`/sire/reports/${reportId}/attachments/${encodeURIComponent(id)}`, { responseType: 'blob' }),
+    api.get(`/sire/reports/${reportId}/attachments/${attachmentRef(id)}`, { responseType: 'blob' }),
   // ---- register -----------------------------------------------------------
   /**
    * The register. Note this is dashboard/register, NOT `GET /sire/reports` --

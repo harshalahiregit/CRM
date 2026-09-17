@@ -53,6 +53,34 @@ interface SireUserProvider
     public function lookupMany(int $tenantId, array $userIds): array;
 
     /**
+     * Everyone in this tenant who may be given engineering work.
+     *
+     * WHY THIS EXISTS. Without it SIRE had no way to ask "who works here", so
+     * the assignment picker could only offer the hand-maintained rosters in
+     * `sire.roles.*`. Those are settings keys with no screen behind them: when a
+     * developer joined, nobody could assign them anything until somebody edited
+     * a settings row by hand, and the picker looked simply broken.
+     *
+     * The rosters still mean something -- they answer "who is a lead", which is
+     * an authorisation question. This answers a different one: "who could
+     * plausibly pick this up". Conflating the two is what made adding a person
+     * to the team an administrative act.
+     *
+     * Return an empty array if the host cannot enumerate users; SIRE falls back
+     * to the rosters and behaves exactly as it did before.
+     *
+     * Returns SireDirectoryEntry, not SireUserIdentity: the picker needs the
+     * Staff Management fields -- department, designation -- and a `kind` saying
+     * whether this is a colleague or a customer contact. SireUserIdentity stays
+     * at four fields because it crosses the AI redaction boundary and this does
+     * not.
+     *
+     * @param  string|null  $search  optional name filter, for a type-ahead
+     * @return array<int, \Sire\Dto\SireDirectoryEntry>
+     */
+    public function directory(int $tenantId, ?string $search = null, int $limit = 200): array;
+
+    /**
      * Whether the user can still be assigned work.
      *
      * Return true when the host has no concept of inactive users. SIRE uses this

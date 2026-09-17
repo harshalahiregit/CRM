@@ -459,28 +459,53 @@ class TransportAllocationTest extends TestCase
     public function test_allocation_never_wired_a_transition_past_its_own(): void
     {
         // Updated 2026-09-09: SNG-TRN-010 added allocated → pretrip_ok and its
-        // release reverse. Updated 2026-09-16: STT-002 added
-        // viability_pending → approved, by the owner's ruling on D-58 — until
-        // then a trip could reach viability_pending and stop there forever, and
-        // everything this test is about was unreachable by any real user.
+        // release reverse. What this test guards is unchanged and is the part
+        // that matters — ALLOCATION itself must never reach past `allocated`,
+        // and `dispatched` must stay unreachable from anywhere, because dispatch
+        // confirmation belongs to no ticket in the register (D-18).
         //
-        // What this test guards is unchanged and is the part that matters —
-        // ALLOCATION itself must never reach past `allocated`, and `dispatched`
-        // must stay unreachable from anywhere, because dispatch confirmation
-        // belongs to no ticket in the register (D-18).
+        // Updated 2026-09-16 (P1): STT-002 added viability_pending → approved
+        // and STT-003 added viability_pending → draft, by the owner's ruling on
+        // D-63 — until then a trip reaching viability_pending stopped there
+        // forever and everything this test is about was unreachable by any real
+        // user.
         //
-        // It fired correctly when STT-002 landed. That is the behaviour wanted:
-        // a new edge in this machine should have to be declared here on purpose.
+        // Updated 2026-09-17 (P3): SNG-TRN-014 added delivered → pod_verified
+        // (STT-008), SNG-TRN-015 added pod_verified → billable (STT-009),
+        // SNG-TRN-016 added billable → billed (STT-010, walked only from
+        // TripBill::markInvoiced(), which is Accounts' door) and billed →
+        // collection_pending (STT-011). All LOCKED.
+        //
+        // Note P3's new edges are currently UNREACHABLE: nothing writes
+        // `delivered`, because STT-006 and STT-007 are P1's and not yet wired
+        // (C-09). They are declared so the machine is complete, not because
+        // anything can walk them today. P1's two ARE reachable — that was the
+        // point of D-58.
+        //
+        // Both sides fired this test on the same day and both updated it on
+        // purpose, which is the behaviour wanted.
+        //
+        // If you are here because this list failed: that is the test working.
+        // Add your key, then check the two assertions below still pass — THOSE
+        // are what this guards. The list is a snapshot so that adding an edge is
+        // a deliberate act rather than something that happens to a state machine
+        // three people share.
         $this->assertSame(
             [
-                TripStatus::DRAFT,
-                TripStatus::VIABILITY_PENDING,
-                TripStatus::APPROVED,
-                TripStatus::ALLOCATED,
-                TripStatus::PRETRIP_OK,
+                TripStatus::DRAFT, TripStatus::VIABILITY_PENDING, TripStatus::APPROVED,
+                TripStatus::ALLOCATED, TripStatus::PRETRIP_OK, TripStatus::DELIVERED,
+                TripStatus::POD_VERIFIED, TripStatus::BILLABLE, TripStatus::BILLED,
             ],
             array_keys(TripStatus::TRANSITIONS)
         );
+
+        // STT-012 (collection_pending → closed) is P1's and must stay unwired —
+        // its side effect is the profit snapshot, which is blocked on D-58.
+        $this->assertFalse(TripStatus::canTransition(TripStatus::COLLECTION_PENDING, TripStatus::CLOSED));
+
+        // P3's edges must not have opened a back door into dispatch or transit.
+        $this->assertFalse(TripStatus::canTransition(TripStatus::DELIVERED, TripStatus::DISPATCHED));
+        $this->assertFalse(TripStatus::canTransition(TripStatus::POD_VERIFIED, TripStatus::IN_TRANSIT));
 
         // ALLOCATION must never reach past `allocated` — that is what this
         // guards, and it is unchanged. pretrip_ok -> dispatched became live on

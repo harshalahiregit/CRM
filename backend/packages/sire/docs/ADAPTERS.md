@@ -1,12 +1,12 @@
 # Adapters
 
-**SIRE runs before you write a single one.** All thirteen contracts ship with an
+**SIRE runs before you write a single one.** All fourteen contracts ship with an
 implementation SIRE owns. This page is for connecting your systems when you want
 to — not a checklist to finish before SIRE works.
 
 Full method-by-method reference: [HOST-INTEGRATION.md](HOST-INTEGRATION.md).
 
-## The thirteen
+## The fourteen
 
 | Contract | Answers | Optional? |
 |---|---|---|
@@ -23,6 +23,7 @@ Full method-by-method reference: [HOST-INTEGRATION.md](HOST-INTEGRATION.md).
 | `SireSlaProvider` | This tenant's SLA policy | **Rarely** |
 | `SireKnowledgeProvider` | Find and draft articles | **Fully optional** |
 | `SireVersionProvider` | What version is deployed? | **Fully optional** |
+| `SireCustomerProvider` | Which customer does this issue affect? | **Fully optional** |
 
 **Six are optional in the strong sense**: SIRE owns tables and engines for
 audit, notes, settings, numbering, SLA and knowledge links. Never connecting
@@ -46,7 +47,7 @@ SIRE ships no adapter that pretends an integration exists.
 php artisan sire:doctor
 ```
 
-prints the state of all thirteen. "SIRE is installed" and "SIRE is connected to
+prints the state of all fourteen. "SIRE is installed" and "SIRE is connected to
 this application" are different things that look identical from the UI, and this
 is where you see the difference.
 

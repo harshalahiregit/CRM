@@ -74,6 +74,7 @@ $sireDefaults = [
         'knowledge'     => \Sire\Adapters\Defaults\SireLocalKnowledgeProvider::class,
         'version'       => \Sire\Adapters\Defaults\SireLocalVersionProvider::class,
         'context'       => \Sire\Adapters\Defaults\SireLocalContextProvider::class,
+        'customer'      => \Sire\Adapters\Defaults\SireLocalCustomerProvider::class,
     ],
 
     /*
@@ -238,6 +239,10 @@ $sireDefaults = [
     | SLA state is still computed on read; only proactive notices are lost.
     */
     'schedule' => [
+        // The duplicate/classification index, rebuilt hourly. Costs nothing when
+        // AI is off for every tenant -- the command skips those.
+        'index_issues' => true,
+
         'enabled'  => true,
         'interval' => 'everyFifteenMinutes',
     ],

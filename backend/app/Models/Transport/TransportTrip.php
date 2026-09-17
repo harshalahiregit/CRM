@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use RuntimeException;
 
@@ -115,6 +116,56 @@ class TransportTrip extends Model
     public function advances(): HasMany
     {
         return $this->hasMany(TripAdvance::class, 'trip_id');
+    }
+
+    /**
+     * What this trip cost — DB-006, SNG-TRN-012.
+     *
+     * hasMany because a trip accumulates costs from several sources over its
+     * life, and SNG-TRN-018's margin is the sum. Soft-deleted rows are excluded
+     * by the model's own scope, so a retracted cost leaves the total without
+     * leaving the audit trail.
+     */
+    public function costs(): HasMany
+    {
+        return $this->hasMany(TripCost::class, 'trip_id');
+    }
+
+    /**
+     * The paperwork this trip produced — DB-009, SNG-TRN-014.
+     *
+     * Distinct from `transport_documents` (DB-019), which indexes what master
+     * data carries. A POD belongs to a journey; a fitness certificate belongs
+     * to a vehicle. The registry keeps them in separate LOCKED tables and so
+     * does this.
+     */
+    public function documents(): HasMany
+    {
+        return $this->hasMany(TripDocument::class, 'trip_id');
+    }
+
+    /**
+     * The billing linkage — DB-012, SNG-TRN-015.
+     *
+     * hasOne, because a trip is billed once: `trip_bills` is unique on
+     * (tenant_id, trip_id). Part-billing is in no ticket, and a hasMany would
+     * make that look like an option somebody could take.
+     */
+    public function bill(): HasOne
+    {
+        return $this->hasOne(TripBill::class, 'trip_id');
+    }
+
+    /**
+     * What the customer still owes on this trip — DB-013, SNG-TRN-016.
+     *
+     * hasOne for the same reason as bill(): `trip_collections` is unique on
+     * (tenant_id, trip_id), because a receivable follows an invoice and a trip
+     * is invoiced once. Part payments move `amount_received`, not row count.
+     */
+    public function collection(): HasOne
+    {
+        return $this->hasOne(TripCollection::class, 'trip_id');
     }
 
     /* ── Scopes. Composed AFTER forTenant(), never instead of it. ────── */

@@ -5,6 +5,7 @@ import {
   Send, Copy, Upload, AlertTriangle, Loader2, FileText, ShieldCheck, History,
   Sparkles, Eye, Download, Video, ExternalLink, ClipboardCheck, ThumbsUp, Undo2, RotateCcw, ListChecks,
   Plus, Mail, MailCheck, Pencil, Building2, UserCheck, Briefcase, UserX, Trash2,
+  Monitor, Globe,
 } from 'lucide-react'
 // Resolves per call to the meeting engine of the module in the URL — the
 // shared engine under /app/tpv, Purchase's under /app/purchase. Aliased to
@@ -249,15 +250,20 @@ export default function KickoffMeetingDetail() {
                             style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#a78bfa' }}>joined as guest</span>
                         )}
                       </div>
-                      <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{[a.role, a.organisation].filter(Boolean).join(' · ') || '—'}</div>
+                      {/* Designation first: it comes from the person's own
+                          record and says why they were in the room. `role` is
+                          the meeting duty (Chair, Note-taker) and is set during
+                          the meeting rather than when the sheet is filled in —
+                          leading with it left most rows showing only a company
+                          name once the attendance grid stopped asking for it. */}
+                      <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{[a.designation || a.role, a.organisation].filter(Boolean).join(' · ') || '—'}</div>
                       {/* Recorded by the call, not typed by anyone: this is the
-                          evidence behind the pill on the right. */}
-                      {a.joined_at && (
-                        <div style={{ fontSize: 11, color: '#10b981', marginTop: 2 }}>
-                          In the call {clockOf(a.joined_at)}–{clockOf(a.left_at)}
-                          {a.seconds_in_call > 60 ? ` · ${Math.round(a.seconds_in_call / 60)} min` : ''}
-                        </div>
-                      )}
+                          evidence behind the pill on the right. This row used to
+                          inline the "in the call" line and nothing else, while
+                          AttendanceEvidence — which also knows about a link
+                          join, a manual tick, and where the person joined from —
+                          sat below unreferenced. */}
+                      <AttendanceEvidence attendee={a} />
                     </div>
                     <AttendancePill attendee={a} />
                   </div>
@@ -1742,32 +1748,85 @@ function MeetingLinkRow({ meeting: m }) {
 function AttendanceEvidence({ attendee: a }) {
   if (!a.joined_at && !a.attendance_source) return null
 
-  if (a.attendance_source === 'call' || (a.joined_at && a.seconds_in_call > 0)) {
-    return (
-      <div style={{ fontSize: 11, color: '#10b981', marginTop: 2 }}>
-        In the call {clockOf(a.joined_at)}–{clockOf(a.left_at)}
-        {a.seconds_in_call > 60 ? ` · ${Math.round(a.seconds_in_call / 60)} min` : ''}
-      </div>
-    )
-  }
+  const line = (() => {
+    if (a.attendance_source === 'call' || (a.joined_at && a.seconds_in_call > 0)) {
+      return (
+        <div style={{ fontSize: 11, color: '#10b981', marginTop: 2 }}>
+          In the call {clockOf(a.joined_at)}–{clockOf(a.left_at)}
+          {a.seconds_in_call > 60 ? ` · ${Math.round(a.seconds_in_call / 60)} min` : ''}
+        </div>
+      )
+    }
 
-  if (a.attendance_source === 'link') {
-    return (
-      <div style={{ fontSize: 11, color: '#0ea5e9', marginTop: 2 }} title={a.remark || undefined}>
-        Opened the meeting {clockOf(a.joined_at)}
-        <span style={{ color: 'var(--text-muted)' }}> · joined from the portal</span>
-      </div>
-    )
-  }
+    if (a.attendance_source === 'link') {
+      return (
+        <div style={{ fontSize: 11, color: '#0ea5e9', marginTop: 2 }}>
+          Opened the meeting {clockOf(a.joined_at)}
+          <span style={{ color: 'var(--text-muted)' }}> · joined from the portal</span>
+        </div>
+      )
+    }
 
-  if (a.attendance_source === 'manual') {
-    return <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Marked by hand</div>
-  }
+    if (a.attendance_source === 'manual') {
+      return <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Marked by hand</div>
+    }
 
-  return a.joined_at
-    ? <div style={{ fontSize: 11, color: '#10b981', marginTop: 2 }}>In the call {clockOf(a.joined_at)}</div>
-    : null
+    return a.joined_at
+      ? <div style={{ fontSize: 11, color: '#10b981', marginTop: 2 }}>In the call {clockOf(a.joined_at)}</div>
+      : null
+  })()
+
+  return <>{line}<JoinOrigin attendee={a} /></>
 }
+
+/**
+ * Where this person joined from — address, device, and location if they shared
+ * one.
+ *
+ * It answers the question somebody reading an attendance record asks next:
+ * everyone can see that a tick is there, and this is how it got there. All of
+ * it was previously buried in a free-text `remark` string on one of the two
+ * engines and nowhere at all on the other; see the join-evidence migration.
+ *
+ * "Location not shared" is printed rather than left blank, because a blank
+ * reads as a missing feature and this is a real answer: the person was asked
+ * and declined, or their device had nothing to offer. Nothing is looked up from
+ * the address — a city guessed by a third party would sit here looking exactly
+ * like one somebody actually gave.
+ */
+function JoinOrigin({ attendee: a }) {
+  if (!a.join_ip && !a.join_device && a.join_latitude == null) return null
+
+  const coords = a.join_latitude != null && a.join_longitude != null
+    ? `${Number(a.join_latitude).toFixed(5)}, ${Number(a.join_longitude).toFixed(5)}`
+    : null
+  const place = a.join_location_label || coords
+
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 8px', fontSize: 10.5, color: 'var(--text-muted)', marginTop: 3 }}>
+      {a.join_device && (
+        <span style={originChip} title="The device and browser the join came from">
+          <Monitor size={10} /> {a.join_device}
+        </span>
+      )}
+      {a.join_ip && (
+        <span style={originChip} title="The network address the join came from">
+          <Globe size={10} /> {a.join_ip}
+        </span>
+      )}
+      <span
+        style={originChip}
+        title={place
+          ? (a.join_location_label && coords ? `${a.join_location_label} · ${coords}` : undefined)
+          : 'This person did not share their location, or their device had none to give'}
+      >
+        <MapPin size={10} /> {place || 'Location not shared'}
+      </span>
+    </div>
+  )
+}
+
+const originChip = { display: 'inline-flex', alignItems: 'center', gap: 3, fontVariantNumeric: 'tabular-nums' }
 
 
 /**

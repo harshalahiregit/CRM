@@ -30,6 +30,8 @@ use Illuminate\Support\Facades\Storage;
 
 class KickoffMeetingController extends Controller
 {
+    use \App\Http\Controllers\Concerns\ListsMeetingParties;
+
     public function __construct(private KickoffMeetingService $kickoffService) {}
 
     public function index(Request $request)

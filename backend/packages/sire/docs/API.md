@@ -4,7 +4,7 @@
      Do not edit the endpoint tables by hand; edit the routes and re-run.
      The narrative below comes from tools/api-narrative.md. -->
 
-**76 endpoints**, all inside one route group:
+**84 endpoints**, all inside one route group:
 
 ```php
 Route::middleware([])->prefix('api/sire')->group(function () {
@@ -19,10 +19,13 @@ SIRE is for internal engineering staff. Customer-facing roles must not reach it.
 
 ## Endpoints
 
-### Report Issue (Phase 0)
+### developer export
 
 | Method | Endpoint | Handler |
 |---|---|---|
+| GET | `/api/sire/export` | SireExportController::markdown |
+| POST | `/api/sire/reports/transitions` | SireExportController::transitions |
+| GET | `/api/sire/report-options` | ReportController::options |
 | POST | `/api/sire/reports` | ReportController::store |
 | GET | `/api/sire/reports/{report}` | ReportController::show |
 | GET | `/api/sire/reports/{report}/attachments` | ReportController::indexAttachments |
@@ -41,6 +44,16 @@ SIRE is for internal engineering staff. Customer-facing roles must not reach it.
 | Method | Endpoint | Handler |
 |---|---|---|
 | GET | `/api/sire/reports/{report}/timeline` | SireTimelineController::__invoke |
+
+### affected customer
+
+| Method | Endpoint | Handler |
+|---|---|---|
+| GET | `/api/sire/customers` | SireCustomerController::index |
+| PUT | `/api/sire/reports/{report}/customer` | SireCustomerController::update |
+| GET | `/api/sire/reports/{report}/watchers` | SireWatcherController::index |
+| POST | `/api/sire/reports/{report}/watchers` | SireWatcherController::store |
+| DELETE | `/api/sire/reports/{report}/watchers/{user}` | SireWatcherController::destroy |
 | GET | `/api/sire/reports/{report}/comments` | SireCommentController::index |
 | POST | `/api/sire/reports/{report}/comments` | SireCommentController::store |
 | PATCH | `/api/sire/reports/{report}/comments/{note}` | SireCommentController::update |

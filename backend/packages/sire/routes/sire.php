@@ -52,7 +52,10 @@ use Sire\Http\Controllers\SireReleaseGovernanceController;
 use Sire\Http\Controllers\SireReleaseNotesController;
 use Sire\Http\Controllers\SireRootCauseController;
 use Sire\Http\Controllers\SireTestCaseController;
+use Sire\Http\Controllers\SireCustomerController;
+use Sire\Http\Controllers\SireExportController;
 use Sire\Http\Controllers\SireTimelineController;
+use Sire\Http\Controllers\SireWatcherController;
 
 Route::middleware(\Sire\Http\SireRouteMiddleware::stack())
     ->prefix((string) config('sire.host.route_prefix', 'api/sire'))
@@ -63,6 +66,17 @@ Route::middleware(\Sire\Http\SireRouteMiddleware::stack())
     // MERGE NOTE says to take only store() and storeAttachment() from its slice,
     // and the slice that was meant to carry these routes never landed -- so the
     // Report Issue button posted to a 404 and the detail screen could not load.
+    // The three lists the global Report Issue form needs, and nothing else.
+    // Kept off the dashboard options endpoint: the button is on every screen
+    // for every staff member, and that payload carries filter-bar rosters.
+    // ---- developer export ---------------------------------------------------
+    // The backlog as one markdown brief, and the fixes back in one call. Both
+    // exist to remove the round trip: forty issues is eighty page loads, and the
+    // fixing was never the slow part. `sire.export` is finally enforced here.
+    Route::get('export', [SireExportController::class, 'markdown']);
+    Route::post('reports/transitions', [SireExportController::class, 'transitions']);
+
+    Route::get('report-options', [ReportController::class, 'options']);
     Route::post('reports', [ReportController::class, 'store']);
     Route::get('reports/{report}', [ReportController::class, 'show']);
 
@@ -86,6 +100,21 @@ Route::middleware(\Sire\Http\SireRouteMiddleware::stack())
 
     // ---- activity ----------------------------------------------------------
     Route::get('reports/{report}/timeline', SireTimelineController::class);
+
+    // ---- watchers ---------------------------------------------------------
+    // Who else hears about this issue. Subscription only -- these never widen
+    // what anybody may READ, which is why they sit behind the same ownership
+    // check as every other route-bound endpoint.
+    // ---- affected customer -------------------------------------------------
+    // Read-only against the host's own directory, through SireCustomerProvider.
+    // SIRE names a customer on a defect so the register can answer "which
+    // customers are hitting this"; it never writes to a customer record.
+    Route::get('customers', [SireCustomerController::class, 'index']);
+    Route::put('reports/{report}/customer', [SireCustomerController::class, 'update']);
+
+    Route::get('reports/{report}/watchers', [SireWatcherController::class, 'index']);
+    Route::post('reports/{report}/watchers', [SireWatcherController::class, 'store']);
+    Route::delete('reports/{report}/watchers/{user}', [SireWatcherController::class, 'destroy']);
 
     Route::get('reports/{report}/comments',             [SireCommentController::class, 'index']);
     Route::post('reports/{report}/comments',            [SireCommentController::class, 'store']);

@@ -11,7 +11,7 @@ class TicketAttachment extends Model
     use HasFactory, BelongsToTenant;
 
     protected $fillable = [
-        'tenant_id', 'reply_id', 'file_path', 'file_name',
+        'tenant_id', 'ticket_id', 'reply_id', 'file_path', 'file_name',
     ];
 
     /* ── Relationships ──────────────────────────────────────────── */

@@ -35,9 +35,24 @@ class StorePurchaseVendorRequest extends FormRequest
             'manpower'            => 'nullable|string|max:60',
             'msme'                => 'nullable|string|max:120',
             'gst_number'          => ['nullable', 'string', 'max:20', 'regex:/^[0-9A-Za-z]{1,20}$/'],
-            // Required per §8: Company, Vendor Category, Currency
-            'category'            => 'required|string|max:120',
-            'currency'            => 'required|in:INR,USD,EUR',
+            /*
+             * Category and currency are no longer asked for when a vendor is
+             * added. The create form is the thirteen fields that have to be
+             * true at the moment a vendor exists — who they are, how to reach
+             * them, how they log in, where they are — and both of these
+             * describe a trading relationship that does not exist yet. Both
+             * remain editable on the vendor's Profile tab.
+             *
+             * `required` here was in any case stricter than the data: rows with
+             * a null category already existed, because they arrive through
+             * self-registration and conversion paths that never collected one.
+             * A rule the table already violates is not a rule.
+             *
+             * Currency defaults to INR in the service rather than being demanded
+             * of whoever is typing a company name.
+             */
+            'category'            => 'nullable|string|max:120',
+            'currency'            => 'nullable|in:INR,USD,EUR',
             'language'            => 'nullable|in:System Default,English',
             // Profile / financial (Purchase-owned)
             'balance'             => 'nullable|numeric',

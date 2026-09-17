@@ -303,6 +303,9 @@ class PurchasePortalGovernanceController extends Controller
             'email' => $v->email,
             'organisation' => $v->company_name ?: $v->name,
             'side' => 'external',
+            // A Purchase vendor seating itself belongs in the Vendor column —
+            // see the note on the TPV twin of this.
+            'party' => \App\Services\Shared\MeetingPartyDirectory::VENDOR,
         ]));
     }
 

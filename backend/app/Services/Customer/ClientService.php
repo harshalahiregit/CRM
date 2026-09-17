@@ -142,8 +142,26 @@ class ClientService
 
         $client->update(['active' => ! $client->active]);
 
+        // Switching a customer off has to end the sessions that are already open.
+        //
+        // Refusing the next login is not enough on its own: a contact holding a
+        // token from before the switch would keep reading their dashboard until
+        // it expired, and the person who flipped the switch would have no way to
+        // know. Scoped to this customer's own contacts — never a blanket delete.
+        $revoked = 0;
+        if (! $client->active) {
+            $contactIds = $client->contacts()->pluck('id');
+            if ($contactIds->isNotEmpty()) {
+                $revoked = DB::table('personal_access_tokens')
+                    ->where('tokenable_type', ClientContact::class)
+                    ->whereIn('tokenable_id', $contactIds)
+                    ->delete();
+            }
+        }
+
         Log::channel('customer')->info('Client status toggled', [
             'client_id' => $client->id, 'tenant_id' => $tenantId, 'active' => $client->active,
+            'portal_sessions_revoked' => $revoked,
         ]);
 
         return $client;

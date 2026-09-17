@@ -39,6 +39,10 @@ class KickoffAttendee extends Model
         'tenant_id','kickoff_meeting_id','vendor_contact_id','user_id',
         'name','email','phone','organisation','role','designation','side','attended',
         'attendance_status','remark',
+        // Which column of the four-column attendance sheet this person sits in
+        // — organiser | client | vendor | tpv — and where they were picked from.
+        // See MeetingPartyDirectory; party_ref is an opaque string, never a key.
+        'party','party_ref',
         // Written by the live room, not typed by anyone: when this person
         // arrived, when they were last seen, how long they were in the call,
         // and the call's own id for them. See MeetingPresence.
@@ -46,6 +50,10 @@ class KickoffAttendee extends Model
         // Whether this was observed in the call, recorded when they pressed
         // Join, or ticked by hand. See MeetingJoinRecorder.
         'attendance_source',
+        // Where and on what they joined from — the evidence behind the tick.
+        // Coordinates only exist if the person's browser offered them.
+        'join_ip', 'join_user_agent', 'join_device',
+        'join_latitude', 'join_longitude', 'join_location_label',
         // The ORGANISER's decision, kept beside the claim above rather than on
         // top of it — see MeetingAttendanceReview. NULL verdict means nobody has
         // reviewed this person yet, which is not the same as absent.

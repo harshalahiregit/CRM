@@ -4,6 +4,8 @@ namespace Sire\Services;
 
 use Sire\Exceptions\SireException;
 use Sire\Models\Report;
+use Sire\Models\ReportAssignee;
+use Sire\Models\RootCause;
 use Sire\Models\ReportApproval;
 use Sire\Models\WorkCycle;
 use Sire\Dto\SireUserIdentity;
@@ -52,6 +54,7 @@ class SireWorkflowService
         private readonly SireSettingsProvider $settings,
         private readonly SireAuditProvider $audit,
         private readonly SireDuplicateService $duplicates,
+        private readonly SireRootCauseService $rootCauses,
     ) {
     }
 
@@ -166,7 +169,7 @@ class SireWorkflowService
         $this->access->assert($user, $definition['capability'], $report);
 
         if (! $this->passesGuard($definition['guard'] ?? null, $report, $user)) {
-            throw new SireException('This issue is assigned to someone else. Ask a lead to reassign it first.');
+            throw new SireException($this->guardMessage($definition['guard'] ?? null));
         }
 
         $missing = $this->unmetRequirements($definition, $report, $payload);
@@ -194,6 +197,7 @@ class SireWorkflowService
             $report->status = $to;
             $report->save();
 
+            $this->syncCoAssignees($report, $payload, $user);
             $this->closeAndOpenCycles($report, $action, $user, $payload);
             $this->maintainApprovals($report, $action, $user, $payload);
 
@@ -283,6 +287,54 @@ class SireWorkflowService
         return $report->fresh();
     }
 
+    /**
+     * The people working an issue alongside whoever owns it.
+     *
+     * Only touched when the caller SENT the key. An absent `co_assignee_ids` means
+     * "I am not changing the team", not "clear it" -- otherwise every ordinary
+     * transition, every triage and every hold would quietly empty the list.
+     * Sending [] clears it, which is how you say so deliberately.
+     *
+     * The owner is never stored here. They are already on the issue through
+     * assignee_id, and holding them twice means every list has to remember to
+     * de-duplicate.
+     */
+    private function syncCoAssignees(Report $report, array $payload, SireUserIdentity $user): void
+    {
+        if (! array_key_exists('co_assignee_ids', $payload)) {
+            return;
+        }
+
+        $wanted = collect((array) $payload['co_assignee_ids'])
+            ->map(fn ($id) => (int) $id)
+            ->reject(fn (int $id) => $id === (int) $report->assignee_id)
+            ->unique()
+            ->values();
+
+        $existing = ReportAssignee::query()
+            ->forTenant($report->tenant_id)
+            ->where('report_id', $report->id)
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id);
+
+        ReportAssignee::query()
+            ->forTenant($report->tenant_id)
+            ->where('report_id', $report->id)
+            ->whereNotIn('user_id', $wanted->all() ?: [0])
+            ->delete();
+
+        foreach ($wanted->diff($existing) as $id) {
+            ReportAssignee::query()->forTenant($report->tenant_id)->firstOrCreate(
+                [
+                    'tenant_id' => (int) $report->tenant_id,
+                    'report_id' => (int) $report->id,
+                    'user_id'   => $id,
+                ],
+                ['added_by' => (int) $user->id],
+            );
+        }
+    }
+
     // ------------------------------------------------------------------ guards
 
     private function passesGuard(?string $guard, Report $report, SireUserIdentity $user): bool
@@ -295,7 +347,38 @@ class SireWorkflowService
             'actor_is_assignee'         => (int) $report->assignee_id === (int) $user->id,
             'actor_is_assignee_or_lead' => (int) $report->assignee_id === (int) $user->id
                                             || $this->access->can($user, 'sire.report.assign', $report),
+            'root_cause_confirmed_when_serious' => $this->rootCauseSatisfied($report),
             default                     => true,
+        };
+    }
+
+    /**
+     * A serious defect needs a CONFIRMED root cause before it can be closed.
+     *
+     * Confirmed, not merely written: an unsigned draft is somebody's working, and
+     * the whole point of the confirmation step is that a person put their name to
+     * the finding. An issue that is not serious closes as it always did.
+     */
+    private function rootCauseSatisfied(Report $report): bool
+    {
+        if (! $this->rootCauses->requiresStructuredAnalysis($report)) {
+            return true;
+        }
+
+        return RootCause::query()
+            ->forTenant($report->tenant_id)
+            ->where('report_id', $report->id)
+            ->whereNotNull('confirmed_at')
+            ->exists();
+    }
+
+    /** Why a guard said no, in words the person reading it can act on. */
+    private function guardMessage(?string $guard): string
+    {
+        return match ($guard) {
+            'root_cause_confirmed_when_serious' => 'This issue is serious enough to need a confirmed root '
+                .'cause before it is closed. Record the analysis and have it confirmed first.',
+            default => 'This issue is assigned to someone else. Ask a lead to reassign it first.',
         };
     }
 

@@ -399,7 +399,9 @@ export const purchasePortalApi = {
     // the click is the only evidence there is — and it is worth keeping.
     // Marking attendance is what releases the joining link — it is not in the
     // meetings payload until this returns. See MeetingAttendanceGate.
-    markAttendance:  (id)          => api.post(`/portal/purchase/meetings/${id}/attendance`).then(r => r.data),
+    // `where` is { latitude, longitude } when the browser offered them, {}
+    // otherwise — see whereAmI. Same contract as the TPV portal's.
+    markAttendance:  (id, where = {}) => api.post(`/portal/purchase/meetings/${id}/attendance`, where).then(r => r.data),
     // The minutes document itself. Distributing minutes the recipient cannot
     // open is not distributing them — this had no route at all until now.
     meetingMomFile:  (id)          => api.get(`/portal/purchase/meetings/${id}/mom/file`, { responseType: 'blob' }).then(r => r.data),

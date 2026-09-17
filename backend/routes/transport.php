@@ -2,12 +2,16 @@
 
 use App\Http\Controllers\Api\Transport\TransportAdvanceController;
 use App\Http\Controllers\Api\Transport\TransportAllocationController;
+use App\Http\Controllers\Api\Transport\TransportBillingController;
 use App\Http\Controllers\Api\Transport\TransportCapabilityController;
+use App\Http\Controllers\Api\Transport\TransportCollectionController;
 use App\Http\Controllers\Api\Transport\TransportConsignmentController;
 use App\Http\Controllers\Api\Transport\TransportContainerController;
+use App\Http\Controllers\Api\Transport\TransportCostController;
 use App\Http\Controllers\Api\Transport\TransportDispatchController;
 use App\Http\Controllers\Api\Transport\TransportDriverController;
 use App\Http\Controllers\Api\Transport\TransportOrderController;
+use App\Http\Controllers\Api\Transport\TransportPodController;
 use App\Http\Controllers\Api\Transport\TransportPretripController;
 use App\Http\Controllers\Api\Transport\TransportResourceCommitmentController;
 use App\Http\Controllers\Api\Transport\TransportTripController;
@@ -93,6 +97,105 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
             ->whereNumber('id')->whereNumber('advanceId');
         Route::post('/trips/{id}/advances/{advanceId}/reject', [TransportAdvanceController::class, 'reject'])
             ->whereNumber('id')->whereNumber('advanceId');
+    });
+
+    /* ── Trip costs — SNG-TRN-012 ─────────────────────────────────────────
+     *
+     * Three groups, not one, and the widths are the control. Step 11 has no
+     * Cost permission row at all (D-58), so these keys are constructed — which
+     * is exactly why they are applied narrowly rather than folded into the trip
+     * gate. Recording mirrors PERM-008 `Expense/submit`; retracting is narrower
+     * than recording, because taking a cost back out changes a reported margin.
+     *
+     * Reading is separate from TRIP_VIEW on purpose. PERM-001 shows a Customer
+     * and a Supplier the trip they are party to; what that haul cost us is not
+     * theirs to read, and COST_VIEW omits both.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::COST_VIEW)->group(function () {
+        Route::get('/trips/{id}/costs', [TransportCostController::class, 'index'])->whereNumber('id');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::COST_RECORD)->group(function () {
+        Route::post('/trips/{id}/costs', [TransportCostController::class, 'store'])->whereNumber('id');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::COST_RETRACT)->group(function () {
+        Route::delete('/trips/{id}/costs/{costId}', [TransportCostController::class, 'destroy'])
+            ->whereNumber('id')->whereNumber('costId');
+    });
+
+    /* ── POD and trip documents — SNG-TRN-014, API-008 ────────────────────
+     *
+     * Three groups, and the split between submitting and verifying is the
+     * control rather than tidiness. PERM-010 lets a Driver submit their own POD
+     * and a Supplier submit against trips assigned to them; POD_VERIFY does not
+     * let either of them decide it is valid. Whoever hands in the evidence does
+     * not certify it — STT-008's effect is "Unlock billing", and that is money.
+     *
+     * Reading sits behind TRIP_VIEW: a trip's paperwork is part of that trip,
+     * and Step 11 has no POD-view row to name a narrower key with. Inventing
+     * one would be FORBID-001.
+     *
+     * API-008's path is `/trips/{trip}/pod`, and that is kept even though DB-009
+     * indexes LR and e-way bills too — the registry named this endpoint and
+     * `document_type` carries the rest.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::TRIP_VIEW)->group(function () {
+        Route::get('/trips/{id}/documents', [TransportPodController::class, 'index'])->whereNumber('id');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::POD_SUBMIT)->group(function () {
+        Route::post('/trips/{id}/pod', [TransportPodController::class, 'store'])->whereNumber('id');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::POD_VERIFY)->group(function () {
+        Route::post('/trips/{id}/pod/{documentId}/verify', [TransportPodController::class, 'verify'])
+            ->whereNumber('id')->whereNumber('documentId');
+        Route::post('/trips/{id}/pod/{documentId}/reject', [TransportPodController::class, 'reject'])
+            ->whereNumber('id')->whereNumber('documentId');
+    });
+
+    /* ── Billing trigger — SNG-TRN-015, API-010 ───────────────────────────
+     *
+     * Reading readiness sits behind TRIP_VIEW: asking whether a trip may be
+     * billed, and why not, is something anyone who can see the trip should be
+     * able to do — a blocker nobody can read is a blocker nobody fixes.
+     *
+     * Preparing sits behind the narrower BILLING_PREPARE, which API-010 names.
+     * Neither route raises an invoice; Accounts does that and emits EVT-010.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::TRIP_VIEW)->group(function () {
+        Route::get('/trips/{id}/bill', [TransportBillingController::class, 'show'])->whereNumber('id');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::BILLING_PREPARE)->group(function () {
+        Route::post('/trips/{id}/bill', [TransportBillingController::class, 'store'])->whereNumber('id');
+    });
+
+    /* ── Collections — SNG-TRN-016, API-011 ───────────────────────────────
+     *
+     * The ageing report and the follow-up queue are tenant-wide, not per-trip,
+     * so they cannot sit behind TRIP_VIEW the way a trip's own paperwork does —
+     * they read the whole receivables book. COLLECTION_VIEW is constructed for
+     * exactly that, and excludes Customer and Supplier for the obvious reason.
+     *
+     * Recording a receipt is narrower still: PERM-011 gives it to Owner,
+     * Accounts, Approver and Admin, and pointedly not to Operations. Whoever
+     * ran the trip does not get to declare it paid for.
+     *
+     * Opening a receivable sits with recording rather than viewing — it is
+     * STT-011's "Create collection task" and it moves the trip's state.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::COLLECTION_VIEW)->group(function () {
+        Route::get('/collections/ageing',     [TransportCollectionController::class, 'ageing']);
+        Route::get('/collections/follow-ups', [TransportCollectionController::class, 'followUpQueue']);
+        Route::get('/trips/{id}/collection',  [TransportCollectionController::class, 'show'])->whereNumber('id');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::COLLECTION_RECORD)->group(function () {
+        Route::post('/trips/{id}/collection/open', [TransportCollectionController::class, 'open'])->whereNumber('id');
+        Route::post('/trips/{id}/collection',      [TransportCollectionController::class, 'record'])->whereNumber('id');
+        Route::patch('/trips/{id}/collection',     [TransportCollectionController::class, 'update'])->whereNumber('id');
     });
 
     /* ── What this user may do ────────────────────────────────────────

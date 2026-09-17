@@ -30,6 +30,11 @@ export const kickoffApi = {
   // doctor / customer / vendor). `staff` above stays -- it is the flat internal
   // list three other screens already read; this is the richer picker beside it.
   participants: ()     => api.get('/kickoff/participants').then(r => r.data),
+  // The four-column attendance sheet: the columns with their selectable
+  // companies, then one company's registered people (name + designation).
+  parties: ()          => api.get('/kickoff/parties').then(r => r.data),
+  partyPeople: (party, entityId) =>
+    api.get('/kickoff/party-people', { params: { party, entity_id: entityId } }).then(r => r.data),
   staff: ()            => api.get('/kickoff/staff').then(r => r.data),
 
   // Cross-meeting registers (Meeting.docx §8 / §9 / §10) — the searchable
@@ -57,7 +62,9 @@ export const kickoffApi = {
   // below, which is the organiser ticking other people's rows afterwards —
   // same URL, different verb and different authority. See
   // MeetingAttendanceGate.
-  markOwnAttendance: (id) => api.post(`/kickoff/meetings/${id}/attendance`).then(r => r.data),
+  // `where` is { latitude, longitude } when the browser offered them, {}
+  // otherwise — see whereAmI. The address and device are read from the request.
+  markOwnAttendance: (id, where = {}) => api.post(`/kickoff/meetings/${id}/attendance`, where).then(r => r.data),
   // The organiser's verdict on who actually attended — the three slabs, stored
   // BESIDE each person's own attendance mark rather than over it, so "punched
   // CRM attendance but did not join the call" stays writable. Authority is the

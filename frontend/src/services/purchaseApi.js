@@ -355,7 +355,8 @@ export const purchaseApi = {
     // (`attendance`), which is the organiser ticking other people's rows afterwards —
     // same URL, different verb and different authority. See
     // MeetingAttendanceGate.
-    markOwnAttendance: (id) => api.post(`/purchase/kickoff/${id}/attendance`).then(r => r.data),
+    // Same contract as the shared engine — see whereAmI.
+    markOwnAttendance: (id, where = {}) => api.post(`/purchase/kickoff/${id}/attendance`, where).then(r => r.data),
     // The organiser's verdict on who actually attended — the three slabs, stored
     // BESIDE each person's own attendance mark rather than over it, so "punched
     // CRM attendance but did not join the call" stays writable. Authority is the
@@ -383,6 +384,10 @@ export const purchaseApi = {
     // Category-wise picker. Purchase's vendor category lists purchase_vendors;
     // everything else is the same directory the shared engine uses.
     participants: ()         => api.get('/purchase/kickoff/participants').then(r => r.data),
+    // The four-column attendance sheet — same two endpoints as the shared engine.
+    parties: ()              => api.get('/purchase/kickoff/parties').then(r => r.data),
+    partyPeople: (party, entityId) =>
+      api.get('/purchase/kickoff/party-people', { params: { party, entity_id: entityId } }).then(r => r.data),
     staff:        ()         => api.get('/purchase/kickoff/staff').then(r => r.data),
     vendors:      ()         => api.get('/purchase/kickoff/vendors').then(r => r.data),
     // excludeMeetingId = the meeting being edited, so it is not counted as

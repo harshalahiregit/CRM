@@ -172,7 +172,7 @@ test('every provider key in config has a contract and a default', () => {
   const config = read('config/sire.php');
   const keys = [...config.matchAll(/^\s{8}'(\w+)'\s*=>\s*\\Sire\\Adapters\\Defaults\\(\w+)::class,/gm)];
 
-  assert.equal(keys.length, 13, `expected 13 provider bindings, found ${keys.length}`);
+  assert.equal(keys.length, 14, `expected 14 provider bindings, found ${keys.length}`);
 
   for (const [, key, impl] of keys) {
     assert.ok(existsSync(join(ROOT, `src/Adapters/Defaults/${impl}.php`)), `${impl} does not exist`);

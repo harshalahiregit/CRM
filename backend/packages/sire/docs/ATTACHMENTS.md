@@ -66,12 +66,18 @@ the flow degrades to "attach an image", which always works.
 The modal **closes for the capture and reopens with the draft preserved**,
 otherwise every screenshot is a picture of the report form.
 
-Images are downscaled to 1600px and 75% JPEG. **Size the volume before rollout** —
-the report warns the server runs close to full and a deploy that fills the disk can
-corrupt MySQL:
+**Segment capture** crops the grab to a rectangle the user drags over it. Less
+noise for the developer and less incidental data on disk, since a whole-screen
+grab of a CRM page carries whatever else was on it.
+
+Images are downscaled to 1600px and encoded as **WebP at 75%**, with JPEG as the
+fallback where a browser cannot encode WebP — the same screenshot lands roughly
+25-35% smaller. **Size the volume before rollout**: the report warns the server
+runs close to full and a deploy that fills the disk can corrupt MySQL. Up to six
+images per report now, so the upper bound is what to budget for:
 
 ```
-issues/month × screenshots/issue × ~150 KB
+issues/month × images/issue (max 6) × ~110 KB
 ```
 
 ## No image editor

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Video, UserCheck, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { whereAmI } from '@/lib/meetings/whereAmI'
 
 /**
  * The joining link, and what it costs — one component, every screen that shows
@@ -29,8 +30,10 @@ import { Video, UserCheck, CheckCircle2, AlertTriangle } from 'lucide-react'
  *
  * @param meeting  a row carrying has_meeting_link / meeting_link /
  *                 attendance_marked, plus the timing fields
- * @param onMark   (id) => Promise of the gate fields; the response is kept here
- *                 so the caller does not have to merge it back into its own list
+ * @param onMark   (id, where) => Promise of the gate fields; the response is
+ *                 kept here so the caller does not have to merge it back into
+ *                 its own list. `where` carries { latitude, longitude } when
+ *                 the browser offered them, and is {} otherwise.
  * @param compact  drop the readable address and the countdown — for a card with
  *                 no room for them
  */
@@ -48,11 +51,21 @@ export default function MeetingJoinGate({ meeting, onMark, compact = false }) {
   if (m.mode === 'onsite' || m.is_expired) return null
   if (m.status === 'Completed' || m.status === 'Cancelled') return null
 
+  /**
+   * Mark attendance, and offer the browser's location alongside it.
+   *
+   * The server records the address and the device on its own — it can see
+   * those. Coordinates it cannot, so they are asked for here, and `whereAmI`
+   * resolves empty rather than rejecting if the person says no or the device
+   * has nothing to give. Declining costs the record a line; it never costs
+   * somebody the meeting.
+   */
   const mark = () => {
     if (busy) return
     setBusy(true)
     setError('')
-    Promise.resolve(onMark(m.id))
+    whereAmI()
+      .then(where => onMark(m.id, where))
       .then(r => setMarked(r))
       .catch(() => setError('Your attendance could not be recorded, so the link is still locked. Please try again.'))
       .finally(() => setBusy(false))

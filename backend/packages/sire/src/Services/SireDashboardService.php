@@ -109,6 +109,20 @@ class SireDashboardService
         );
     }
 
+    /**
+     * The register's own query, for callers that need the rows rather than a page.
+     *
+     * Public so the export can reuse EVERY filter and scope the register applies
+     * -- including scopeVisible, which is what keeps a developer's export to the
+     * issues they were already allowed to read. An export that built its own
+     * query would be a second place for the visibility rules to live, and the
+     * one that gets forgotten is always the one that leaks.
+     */
+    public function exportQuery(int $tenantId, SireUserIdentity $user, string $scope, array $filters): EloquentBuilder
+    {
+        return $this->scoped($tenantId, $user, $scope ?: 'open', $filters);
+    }
+
     private function scoped(int $tenantId, SireUserIdentity $user, string $scope, array $filters): EloquentBuilder
     {
         $query = $this->applyFilters($this->base($tenantId, $user), $filters, $tenantId);
@@ -185,7 +199,12 @@ class SireDashboardService
         }
 
         return $query
-            ->when($filters['module'] ?? null, fn ($q, $v) => $q->where('module', $v))
+            // whereIn, so one module and a list of them take the same path. The
+            // register passes a string, the export passes an array.
+            ->when(
+                $filters['module'] ?? null,
+                fn ($q, $v) => $q->whereIn('module', array_values(array_filter((array) $v)))
+            )
             ->when($filters['type'] ?? null, fn ($q, $v) => $q->whereHas('category', fn ($c) => $c->where('code', $v)))
             ->when($filters['severity_id'] ?? null, fn ($q, $v) => $q->where('severity_id', (int) $v))
             ->when($filters['priority'] ?? null, fn ($q, $v) => $q->whereIn('priority', $this->csv($v, SirePriority::ALL)))

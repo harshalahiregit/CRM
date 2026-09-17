@@ -7,6 +7,7 @@ use App\Http\Controllers\Traits\ApiResponse;
 use App\Http\Requests\Helpdesk\AssignTicketRequest;
 use App\Http\Requests\Helpdesk\StoreTicketRequest;
 use App\Http\Requests\Helpdesk\UpdateTicketRequest;
+use App\Models\Helpdesk\TicketAttachment;
 use App\Services\Helpdesk\HelpdeskService;
 use App\Services\Helpdesk\TicketAssignmentService;
 use App\Services\Helpdesk\TicketSummaryService;
@@ -86,9 +87,51 @@ class TicketController extends Controller
     /* ── Create ────────────────────────────────────────────────── */
     public function store(StoreTicketRequest $request)
     {
-        $ticket = $this->helpdesk->createTicket($request->validated(), $request->user()->tenant_id);
+        $tenantId = $request->user()->tenant_id;
+        $ticket = $this->helpdesk->createTicket($request->validated(), $tenantId);
 
-        return $this->success($ticket, 'Ticket created', 201);
+        /*
+         * Files attached to the ticket itself, not to a reply.
+         *
+         * The screenshot that explains the problem arrives WITH the ticket, and
+         * until ticket_attachments.reply_id became nullable there was nowhere to
+         * put it: the only route in was to reply to yourself, which stamps
+         * first_responded_at and shows the SLA clock stopped before anybody had
+         * read the thing.
+         *
+         * Same private disk and same path convention as reply attachments, so
+         * the one authenticated download route serves both.
+         */
+        foreach ($request->file('attachments', []) as $file) {
+            $path = $file->store("helpdesk/attachments/{$tenantId}/{$ticket->id}", 'local');
+
+            TicketAttachment::create([
+                'tenant_id' => $tenantId,
+                'ticket_id' => $ticket->id,
+                'reply_id'  => null,
+                'file_path' => $path,
+                'file_name' => $file->getClientOriginalName(),
+            ]);
+        }
+
+        return $this->success($ticket->fresh(), 'Ticket created', 201);
+    }
+
+    /**
+     * People a ticket can be raised for.
+     *
+     * The Contact field on the create form picks one of these and fills the
+     * requester's name and e-mail from it, so an agent raising a ticket on
+     * somebody's behalf is not retyping an address they can get wrong. Read
+     * through the customer contract — Helpdesk never joins the Customer module's
+     * tables directly.
+     */
+    public function contacts(Request $request)
+    {
+        return $this->success(
+            $this->helpdesk->listCustomersFor($request->user()->tenant_id),
+            'Contacts retrieved',
+        );
     }
 
     /* ── Show ──────────────────────────────────────────────────── */
