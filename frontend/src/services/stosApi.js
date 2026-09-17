@@ -173,7 +173,7 @@ export const OPEN_JOB_STATUSES = JOB_STATUSES.slice(0, 3)
  */
 export const nextActionTo = (vehicleId, action = 'passport') => {
   const [, hash] = String(action).split('#')
-  return `/app/stos/fleet/vehicles/${vehicleId}${hash ? `#${hash}` : ''}`
+  return `/app/transport/fleet/vehicles/${vehicleId}${hash ? `#${hash}` : ''}`
 }
 
 export const VEHICLE_TYPE_LABELS = {

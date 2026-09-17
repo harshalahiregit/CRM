@@ -174,6 +174,17 @@ class VehicleAllocationService
             $blockers[] = $this->blocker('in_maintenance', 'Currently in the workshop.', 'The vehicle is marked under maintenance.', 'Workshop supervisor');
         }
 
+        // PLN-006 — prevent double allocation. A vehicle that departed on
+        // another trip is not available for this one, however compliant it is.
+        if ($vehicle->status === Vehicle::STATUS_IN_OPERATION) {
+            $blockers[] = $this->blocker(
+                'on_another_trip',
+                'Already out on a trip.',
+                'The vehicle was dispatched and has not been released yet.',
+                'Operations control tower'
+            );
+        }
+
         // A vehicle nobody can see is a vehicle nobody should promise. It is a
         // WARNING rather than a hard block only when it has never been fitted
         // with a device — a fitted device gone quiet is the more worrying case.

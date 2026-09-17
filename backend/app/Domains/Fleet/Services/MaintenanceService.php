@@ -2,6 +2,7 @@
 
 namespace App\Domains\Fleet\Services;
 
+use App\Domains\Fleet\Integration\TripCostPublisher;
 use App\Domains\Fleet\Models\MaintenanceJob;
 use App\Domains\Fleet\Models\Vehicle;
 use App\Exceptions\BusinessException;
@@ -33,6 +34,9 @@ class MaintenanceService
                 'company_id'      => $companyId,
                 'job_card_number' => $number,
                 'vehicle_id'      => $vehicle->id,
+                // A breakdown on the road belongs to the trip it happened on;
+                // routine servicing leaves this null and stays fleet overhead.
+                'trip_id'         => $data['trip_id'] ?? null,
                 'complaint'       => $data['complaint'] ?? null,
                 'diagnosis'       => $data['diagnosis'] ?? null,
                 'parts_cost'      => $data['parts_cost'] ?? 0,
@@ -127,6 +131,11 @@ class MaintenanceService
             $job->save();
 
             $release = $this->tryRelease($job->vehicle_id, $companyId, (bool) $job->qc_passed);
+
+            // C-06 — published on closure, not on opening: the cost is not
+            // known until then, and the dedupe key would refuse to correct a
+            // zero posted early.
+            app(TripCostPublisher::class)->publishMaintenance($companyId, $job->fresh());
 
             Log::channel('stos')->info('Job card closed', [
                 'company_id' => $companyId, 'user_id' => $userId,

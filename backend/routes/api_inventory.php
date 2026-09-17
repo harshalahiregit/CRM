@@ -86,6 +86,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('inventory')->gr
     Route::get('/settings/groups/{group}/subgroups', [SettingsController::class, 'subgroups']);
     Route::get('/settings/{kind}',           [SettingsController::class, 'index']);
     Route::post('/settings/{kind}',          [SettingsController::class, 'store']);
+    // Many rows in one request — a pasted list or a CSV read in the browser.
+    // Declared before the {id} routes so "bulk" is never read as an id.
+    Route::post('/settings/{kind}/bulk',     [SettingsController::class, 'bulk']);
     Route::patch('/settings/{kind}/reorder', [SettingsController::class, 'reorder']);
     Route::put('/settings/{kind}/{id}',      [SettingsController::class, 'update'])->where('id', '[0-9]+');
     Route::delete('/settings/{kind}/{id}',   [SettingsController::class, 'destroy'])->where('id', '[0-9]+');

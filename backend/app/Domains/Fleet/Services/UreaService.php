@@ -2,6 +2,7 @@
 
 namespace App\Domains\Fleet\Services;
 
+use App\Domains\Fleet\Integration\TripCostPublisher;
 use App\Domains\Fleet\Models\UreaTransaction;
 use App\Domains\Fleet\Models\Vehicle;
 use App\Exceptions\BusinessException;
@@ -52,6 +53,9 @@ class UreaService
             'station_vendor'   => $data['station_vendor'] ?? null,
             'litres_per_100km' => $this->consumption($odometer, $previous, (float) $data['litres']),
         ]);
+
+        // C-06 — urea is a trip cost when it names a trip.
+        app(TripCostPublisher::class)->publishUrea($companyId, $row);
 
         if ($row->litres_per_100km !== null && $this->isOutsideBand((float) $row->litres_per_100km)) {
             Log::channel('stos')->warning('Urea consumption outside the expected band', [

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Settings2, Plus, Trash2, Pencil, Check, X, Layers, Lock, AlertTriangle } from 'lucide-react'
+import { Settings2, Plus, Trash2, Pencil, Check, X, Layers, Lock, AlertTriangle, Search, Upload } from 'lucide-react'
 import { inventoryApi, INV_ACCENT, SETTING_TABS } from '@/services/inventoryApi'
 import { useAuth } from '@/context/AuthContext'
 import Select from '@/components/ui/Select'
@@ -445,6 +445,11 @@ function LookupTab({ tab, isAdmin }) {
   const [editingId, setEditingId] = useState(null)
   const [editDraft, setEditDraft] = useState({ name: '', extra: '' })
   const [err, setErr] = useState('')
+  // A tenant's colour list runs to dozens and its commodity types to hundreds;
+  // finding out whether "Galvanised sheet" is already there meant reading the
+  // whole list, so people added it twice.
+  const [q, setQ] = useState('')
+  const [bulkOpen, setBulkOpen] = useState(false)
 
   const params = tab.attrKind ? { kind: tab.attrKind } : {}
   const qk = ['inv-setting', tab.key]
@@ -484,28 +489,60 @@ function LookupTab({ tab, isAdmin }) {
   const extraLabel = { short_name: 'Short (kg)', rate: 'Rate %', value: 'Hex / value' }[tab.extra]
   const rowExtra = (r) => tab.extra === 'short_name' ? r.short_name : tab.extra === 'rate' ? r.rate : r.value
 
+  // Filter on both columns: somebody looking for a colour may remember "#c0392b"
+  // rather than the name somebody else gave it.
+  const term = q.trim().toLowerCase()
+  const shown = term
+    ? rows.filter(r => [r.name, rowExtra(r)].some(v => String(v ?? '').toLowerCase().includes(term)))
+    : rows
+
   if (isLoading) return <div className="rounded-2xl animate-pulse" style={{ height: 160, background: 'var(--bg-card)' }} />
 
   return (
     <div className="space-y-4">
       <section className="rounded-2xl p-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-        <h2 className="font-bold text-xs mb-3 flex items-center gap-1.5" style={{ color: 'var(--text-h)' }}>
-          <Layers size={14} style={{ color: INV_ACCENT }} /> {tab.label}
-          <span className="font-normal" style={{ color: 'var(--text-muted)' }}>{rows.length}</span>
-        </h2>
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <h2 className="font-bold text-xs flex items-center gap-1.5" style={{ color: 'var(--text-h)' }}>
+            <Layers size={14} style={{ color: INV_ACCENT }} /> {tab.label}
+            <span className="font-normal" style={{ color: 'var(--text-muted)' }}>
+              {term ? `${shown.length} of ${rows.length}` : rows.length}
+            </span>
+          </h2>
+
+          <div className="ml-auto flex items-center gap-2">
+            {rows.length > 5 && (
+              <div className="relative">
+                <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                <input value={q} onChange={e => setQ(e.target.value)}
+                  placeholder={`Search ${tab.label.toLowerCase()}…`} aria-label={`Search ${tab.label}`}
+                  className="rounded-lg outline-none" style={{ ...MINI, paddingLeft: 24, width: 170 }} />
+              </div>
+            )}
+            {isAdmin && (
+              <button type="button" onClick={() => setBulkOpen(o => !o)}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold"
+                style={{ background: bulkOpen ? INV_ACCENT : 'var(--bg-input)', color: bulkOpen ? '#fff' : 'var(--text-body)', border: '1px solid var(--border)' }}>
+                <Upload size={11} /> Bulk add
+              </button>
+            )}
+          </div>
+        </div>
 
         {err && <p className="text-xs mb-2" style={{ color: 'var(--color-danger-500)' }}>{err}</p>}
 
+        {bulkOpen && isAdmin && (
+          <BulkAddPanel tab={tab} onDone={() => { setBulkOpen(false); bust() }} onClose={() => setBulkOpen(false)} />
+        )}
+
         <ul className="space-y-1.5 mb-3">
-          {rows.map(r => (
+          {shown.map(r => (
             <li key={r.id} className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: 'var(--bg-input)' }}>
               {editingId === r.id ? (
                 <>
                   <input value={editDraft.name} onChange={e => setEditDraft(d => ({ ...d, name: e.target.value }))}
                     className="flex-1 rounded-lg outline-none" style={MINI} autoFocus />
                   {tab.extra && (
-                    <input value={editDraft.extra} onChange={e => setEditDraft(d => ({ ...d, extra: e.target.value }))}
-                      placeholder={extraLabel} className="rounded-lg outline-none" style={{ ...MINI, width: 110 }} />
+                    <ExtraInput tab={tab} value={editDraft.extra} onChange={v => setEditDraft(d => ({ ...d, extra: v }))} label={extraLabel} />
                   )}
                   <button onClick={() => save.mutate(r.id)} aria-label="Save" className="hover:opacity-70">
                     <Check size={14} style={{ color: INV_ACCENT }} />
@@ -545,7 +582,11 @@ function LookupTab({ tab, isAdmin }) {
               )}
             </li>
           ))}
-          {rows.length === 0 && <li className="text-xs py-3" style={{ color: 'var(--text-muted)' }}>Nothing here yet.</li>}
+          {shown.length === 0 && (
+            <li className="text-xs py-3" style={{ color: 'var(--text-muted)' }}>
+              {term ? `Nothing matches “${q}”.` : 'Nothing here yet.'}
+            </li>
+          )}
         </ul>
 
         {isAdmin && (
@@ -554,8 +595,7 @@ function LookupTab({ tab, isAdmin }) {
               placeholder={`New ${tab.label.replace(/s$/, '').toLowerCase()}`}
               className="flex-1 rounded-lg outline-none" style={{ ...MINI, minWidth: 160 }} />
             {tab.extra && (
-              <input value={draft.extra} onChange={e => setDraft(d => ({ ...d, extra: e.target.value }))}
-                placeholder={extraLabel} className="rounded-lg outline-none" style={{ ...MINI, width: 120 }} />
+              <ExtraInput tab={tab} value={draft.extra} onChange={v => setDraft(d => ({ ...d, extra: v }))} label={extraLabel} />
             )}
             <button type="submit" disabled={!draft.name.trim() || add.isPending}
               className="px-3 rounded-lg disabled:opacity-40" style={{ background: INV_ACCENT, color: '#fff' }} aria-label="Add">
@@ -570,6 +610,171 @@ function LookupTab({ tab, isAdmin }) {
   )
 }
 
+/* ── The "extra" column, which is a colour on one tab ──────────── */
+
+/**
+ * The second field on a lookup row — a short name, a tax rate, or a colour.
+ *
+ * A colour was a plain text box asking for "Hex / value", so choosing one meant
+ * knowing that #c0392b is a brick red and typing it correctly. Both ways now
+ * work and they are the same field: the swatch opens the operating system's
+ * colour picker, and the box beside it still takes anything typed — a hex, or a
+ * name like "Brick red" for a tenant who prefers words to codes.
+ *
+ * The swatch only claims to show a colour when the value actually is one.
+ * Painting the chip for "Brick red" would render black and quietly assert the
+ * wrong thing.
+ */
+function ExtraInput({ tab, value, onChange, label }) {
+  if (tab.attrKind !== 'color') {
+    return (
+      <input value={value} onChange={e => onChange(e.target.value)} placeholder={label}
+        className="rounded-lg outline-none" style={{ ...MINI, width: 120 }} />
+    )
+  }
+
+  const isHex = /^#[0-9a-f]{6}$/i.test(String(value || '').trim())
+
+  return (
+    <span className="flex items-center gap-1.5">
+      <input
+        type="color"
+        value={isHex ? value : '#7c3aed'}
+        onChange={e => onChange(e.target.value)}
+        aria-label="Pick a colour"
+        title={isHex ? value : 'Pick a colour'}
+        style={{
+          width: 30, height: 30, padding: 0, borderRadius: 8, cursor: 'pointer',
+          border: '1px solid var(--border)', background: 'var(--bg-input)',
+        }}
+      />
+      <input value={value} onChange={e => onChange(e.target.value)} placeholder="#c0392b or a name"
+        className="rounded-lg outline-none" style={{ ...MINI, width: 130 }} />
+    </span>
+  )
+}
+
+/* ── Bulk add ──────────────────────────────────────────────────── */
+
+/**
+ * Add a list at once — pasted, or read out of a CSV in the browser.
+ *
+ * Master data arrives in lists: a page of commodity types off a supplier's
+ * catalogue, forty colours off a swatch card. Entering them through a
+ * single-line form is the complaint this answers.
+ *
+ * The file is parsed HERE rather than uploaded, because the parsing is one
+ * split on commas and the alternative is a multipart endpoint, a temp file and
+ * a format nobody can see before it commits. What goes to the server is the
+ * same list of rows the textarea shows, so what you can read is what you get.
+ *
+ * One request for the whole list — see settings.bulk.
+ */
+function BulkAddPanel({ tab, onDone, onClose }) {
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [result, setResult] = useState(null)
+
+  const extraName = { short_name: 'short name', rate: 'rate', value: 'hex or colour name' }[tab.extra]
+
+  // "Name" or "Name, extra" per line. Blank lines and a leading header row are
+  // dropped, because a pasted spreadsheet column almost always has one.
+  const parse = (raw) => raw.split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(Boolean)
+    .filter((l, i) => !(i === 0 && /^name\s*(,|$)/i.test(l)))
+    .map(line => {
+      const [name, ...rest] = line.split(',')
+      const row = { name: (name || '').trim() }
+      const extra = rest.join(',').trim()
+      if (tab.attrKind) row.kind = tab.attrKind
+      // Sub-groups all belong to the group chosen above the panel.
+      if (tab.groupId) row.group_id = tab.groupId
+      if (extra) {
+        if (tab.extra === 'short_name') row.short_name = extra
+        if (tab.extra === 'rate') row.rate = Number(extra) || 0
+        if (tab.extra === 'value') row.value = extra
+      }
+      return row
+    })
+    .filter(r => r.name)
+
+  const rows = parse(text)
+
+  const readFile = (file) => {
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => setText(String(reader.result || ''))
+    reader.readAsText(file)
+  }
+
+  const submit = async () => {
+    if (!rows.length || busy) return
+    setBusy(true); setErr(''); setResult(null)
+    try {
+      const r = await inventoryApi.settings.bulk(tab.kind, rows)
+      setResult(r)
+      setText('')
+      // Left open on purpose: the count is the only record of what happened,
+      // and closing over it would answer "did that work?" by vanishing.
+      onDone?.()
+    } catch (e) {
+      setErr(e?.message || 'Could not import that list.')
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="rounded-xl p-3 mb-3" style={{ background: 'var(--bg-input)', border: '1px dashed var(--border)' }}>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[11px] font-bold" style={{ color: 'var(--text-h)' }}>
+          One per line{tab.extra ? ` — “Name, ${extraName}” to set both` : ''}
+        </p>
+        <button type="button" onClick={onClose} aria-label="Close bulk add" className="hover:opacity-70">
+          <X size={13} style={{ color: 'var(--text-muted)' }} />
+        </button>
+      </div>
+
+      <textarea
+        value={text}
+        onChange={e => setText(e.target.value)}
+        rows={5}
+        aria-label={`Bulk add ${tab.label}`}
+        placeholder={tab.extra === 'value' ? 'Brick red, #c0392b\nSlate, #475569' : 'Galvanised sheet\nMild steel bar'}
+        className="w-full rounded-lg outline-none"
+        style={{ ...MINI, resize: 'vertical', minHeight: 90, fontFamily: 'ui-monospace, monospace' }}
+      />
+
+      <div className="flex flex-wrap items-center gap-2 mt-2">
+        <label className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer"
+          style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-body)' }}>
+          <Upload size={11} /> Choose a CSV
+          <input type="file" accept=".csv,.txt,text/csv,text/plain" className="hidden"
+            onChange={e => { readFile(e.target.files?.[0]); e.target.value = '' }} />
+        </label>
+
+        <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          {rows.length ? `${rows.length} ready` : 'Nothing to add yet'}
+        </span>
+
+        <button type="button" onClick={submit} disabled={!rows.length || busy}
+          className="ml-auto px-3 py-1.5 rounded-lg text-[11px] font-bold disabled:opacity-40"
+          style={{ background: INV_ACCENT, color: '#fff' }}>
+          {busy ? 'Adding…' : `Add ${rows.length || ''}`.trim()}
+        </button>
+      </div>
+
+      {err && <p className="text-[11px] mt-2" style={{ color: 'var(--color-danger-500)' }}>{err}</p>}
+      {result && (
+        <p className="text-[11px] mt-2" style={{ color: 'var(--text-body)' }}>
+          <strong style={{ color: INV_ACCENT }}>{result.created} added</strong>
+          {result.skipped ? ` · ${result.skipped} were already there` : ''}
+        </p>
+      )}
+    </div>
+  )
+}
+
 /* ── Sub-groups (dependent on a group) ────────────────────────── */
 
 function SubgroupPanel({ groups, isAdmin, onChange }) {
@@ -577,6 +782,8 @@ function SubgroupPanel({ groups, isAdmin, onChange }) {
   const [groupId, setGroupId] = useState(groups[0]?.id ?? '')
   const [name, setName] = useState('')
   const [err, setErr] = useState('')
+  const [q, setQ] = useState('')
+  const [bulkOpen, setBulkOpen] = useState(false)
 
   const { data: subs = [] } = useQuery({
     queryKey: ['inv-subgroups', groupId], queryFn: () => inventoryApi.settings.subgroups(groupId), enabled: !!groupId,
@@ -600,20 +807,51 @@ function SubgroupPanel({ groups, isAdmin, onChange }) {
 
   if (!groups.length) return null
 
+  const term = q.trim().toLowerCase()
+  const shownSubs = term ? subs.filter(s => String(s.name ?? '').toLowerCase().includes(term)) : subs
+
   return (
     <section className="rounded-2xl p-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
       <h2 className="font-bold text-xs mb-3" style={{ color: 'var(--text-h)' }}>
-        Sub groups <span className="font-normal" style={{ color: 'var(--text-muted)' }}>— belong to one group</span>
+        Sub groups <span className="font-normal" style={{ color: 'var(--text-muted)' }}>
+          — belong to one group{term ? ` · ${shownSubs.length} of ${subs.length}` : ''}
+        </span>
       </h2>
 
-      <div className="mb-3" style={{ maxWidth: 240 }}>
-        <Select size="sm" value={groupId} onChange={setGroupId} options={groups.map(g => ({ value: g.id, label: g.name }))} />
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <div style={{ maxWidth: 240, flex: '1 1 180px' }}>
+          <Select size="sm" value={groupId} onChange={setGroupId} options={groups.map(g => ({ value: g.id, label: g.name }))} />
+        </div>
+        {subs.length > 5 && (
+          <div className="relative">
+            <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search sub-groups…"
+              aria-label="Search sub-groups" className="rounded-lg outline-none" style={{ ...MINI, paddingLeft: 24, width: 170 }} />
+          </div>
+        )}
+        {isAdmin && groupId && (
+          <button type="button" onClick={() => setBulkOpen(o => !o)}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold"
+            style={{ background: bulkOpen ? INV_ACCENT : 'var(--bg-input)', color: bulkOpen ? '#fff' : 'var(--text-body)', border: '1px solid var(--border)' }}>
+            <Upload size={11} /> Bulk add
+          </button>
+        )}
       </div>
 
       {err && <p className="text-xs mb-2" style={{ color: 'var(--color-danger-500)' }}>{err}</p>}
 
+      {/* Sub-groups belong to the group chosen above, so the import carries it
+          on every row — there is no sensible "which group?" per line. */}
+      {bulkOpen && isAdmin && groupId && (
+        <BulkAddPanel
+          tab={{ kind: 'subgroups', label: 'Sub-groups', groupId: Number(groupId) }}
+          onDone={() => { setBulkOpen(false); bust() }}
+          onClose={() => setBulkOpen(false)}
+        />
+      )}
+
       <ul className="space-y-1.5 mb-3">
-        {subs.map(s => (
+        {shownSubs.map(s => (
           <li key={s.id} className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: 'var(--bg-input)' }}>
             <span className="flex-1 text-xs" style={{ color: 'var(--text-h)' }}>{s.name}</span>
             {isAdmin && (
@@ -623,7 +861,11 @@ function SubgroupPanel({ groups, isAdmin, onChange }) {
             )}
           </li>
         ))}
-        {subs.length === 0 && <li className="text-xs py-2" style={{ color: 'var(--text-muted)' }}>No sub-groups in this group.</li>}
+        {shownSubs.length === 0 && (
+          <li className="text-xs py-2" style={{ color: 'var(--text-muted)' }}>
+            {term ? `Nothing matches “${q}”.` : 'No sub-groups in this group.'}
+          </li>
+        )}
       </ul>
 
       {isAdmin && (

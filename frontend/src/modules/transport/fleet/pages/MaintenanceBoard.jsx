@@ -148,7 +148,7 @@ export default function MaintenanceBoard() {
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>{j.job_card_number}</span>
                     {j.vehicle && (
-                      <Link to={`/app/stos/fleet/vehicles/${j.vehicle.id}`} className="text-xs font-semibold hover:underline"
+                      <Link to={`/app/transport/fleet/vehicles/${j.vehicle.id}`} className="text-xs font-semibold hover:underline"
                         style={{ color: STOS_ACCENT }}>
                         {j.vehicle.registration_number}
                       </Link>

@@ -216,11 +216,11 @@ const SireRecurrenceDetail = lazy(() => import('@/modules/sire/pages/RecurrenceD
 // STOS Module (lazy) -- Sangoe Transport OS. This shell is the FLEET & ASSET
 // control tower (Developer 2); the CEO / Operations / Driver towers read trip
 // and invoice data owned by other developers and are not stubbed here.
-const StosLayout = lazy(() => import('@/modules/stos/StosLayout'))
-const StosFleetOverview = lazy(() => import('@/modules/stos/pages/FleetOverview'))
-const StosVehiclePassport = lazy(() => import('@/modules/stos/pages/VehiclePassportView'))
-const StosWorkshop = lazy(() => import('@/modules/stos/pages/MaintenanceBoard'))
-const StosDrivers = lazy(() => import('@/modules/stos/pages/DriversBoard'))
+// Fleet screens (Person 2), inside the Transport module since the D-62 merge.
+const FleetOverview = lazy(() => import('@/modules/transport/fleet/pages/FleetOverview'))
+const FleetVehiclePassport = lazy(() => import('@/modules/transport/fleet/pages/VehiclePassportView'))
+const FleetWorkshop = lazy(() => import('@/modules/transport/fleet/pages/MaintenanceBoard'))
+const FleetDrivers = lazy(() => import('@/modules/transport/fleet/pages/DriversBoard'))
 
 // Projects Module (lazy)
 const ProjectList = lazy(() => import('@/modules/projects/pages/ProjectList'))
@@ -793,14 +793,6 @@ export default function AppRoutes() {
           <Route path="recurring/:id" element={<S><SireRecurrenceDetail /></S>} />
         </Route>
 
-        {/* STOS MODULE (transport: fleet, telemetry, workshop, cost) */}
-        <Route path="stos" element={<ProtectedRoute blockRoles={['client', 'third_party_vendor', 'vendor', 'company', 'doctor']}><S><StosLayout /></S></ProtectedRoute>}>
-          <Route index element={<Navigate to="fleet" replace />} />
-          <Route path="fleet" element={<S><StosFleetOverview /></S>} />
-          <Route path="fleet/vehicles/:id" element={<S><StosVehiclePassport /></S>} />
-          <Route path="drivers" element={<S><StosDrivers /></S>} />
-          <Route path="workshop" element={<S><StosWorkshop /></S>} />
-        </Route>
 
         {/* PURCHASE MODULE (procure-to-pay) */}
         <Route path="purchase" element={<S><PurchaseLayout /></S>}>
@@ -928,10 +920,18 @@ export default function AppRoutes() {
           <Route path="consignments" element={<S><TransportConsignments /></S>} />
           <Route path="containers" element={<S><TransportContainers /></S>} />
           <Route path="trips/:id" element={<S><TransportTripDetail /></S>} />
-          <Route path="vehicles" element={<S><TransportVehicles /></S>} />
-          <Route path="vehicles/:id" element={<S><TransportVehicleDetail /></S>} />
-          <Route path="drivers" element={<S><TransportDrivers /></S>} />
-          <Route path="drivers/:id" element={<S><TransportDriverDetail /></S>} />
+          {/* Fleet (Person 2), merged in 2026-09-17 — D-62.
+              P1's placeholder Vehicles/Drivers screens are unrouted here rather
+              than deleted: removing the files is P1's step under TEAM-CONTRACTS
+              §1a, and unrouting is what actually ends the duplicate UI.
+              The old paths still resolve so nobody's bookmark breaks. */}
+          <Route path="fleet" element={<S><FleetOverview /></S>} />
+          <Route path="fleet/vehicles/:id" element={<S><FleetVehiclePassport /></S>} />
+          <Route path="workshop" element={<S><FleetWorkshop /></S>} />
+          <Route path="vehicles" element={<S><FleetOverview /></S>} />
+          <Route path="vehicles/:id" element={<S><FleetVehiclePassport /></S>} />
+          <Route path="drivers" element={<S><FleetDrivers /></S>} />
+          <Route path="drivers/:id" element={<S><FleetDrivers /></S>} />
         </Route>
 
         {/* TPV MODULE */}

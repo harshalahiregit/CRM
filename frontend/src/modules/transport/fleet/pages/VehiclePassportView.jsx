@@ -365,7 +365,7 @@ export default function VehiclePassportView() {
 
 function BackLink() {
   return (
-    <Link to="/app/stos/fleet" className="inline-flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+    <Link to="/app/transport/fleet" className="inline-flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
       <ArrowLeft size={13} /> Back to fleet
     </Link>
   )

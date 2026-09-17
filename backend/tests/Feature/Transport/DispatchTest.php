@@ -407,9 +407,25 @@ class DispatchTest extends TestCase
         $this->assertSame(DriverAvailability::ASSIGNED, $driver->fresh()->availability);
     }
 
-    public function test_the_shipped_gateway_declines_and_says_so(): void
+    /**
+     * C-05 CLOSED, 2026-09-17 — Person 2 supplied the gateway.
+     *
+     * This test used to assert that `PendingFleetResourceGateway` was what
+     * shipped, and that it declined with "pending Person 2". Fleet now answers
+     * the seam (`TransportFleetResourceGateway`), so that assertion is obsolete
+     * by design rather than broken — it was documenting a handover that has
+     * since completed.
+     *
+     * What it asserts instead is the case that still matters and is easy to get
+     * wrong: a trip whose `vehicle_id` still points at a `transport_vehicles`
+     * row — i.e. one the D-62 data migration has not remapped yet — is honestly
+     * reported as NOT applied, rather than silently passing. The audit trail
+     * keeps the discrepancy discoverable, which was the whole point of the
+     * original test.
+     */
+    public function test_the_shipped_gateway_is_fleets_and_reports_an_unmigrated_vehicle_honestly(): void
     {
-        $this->assertInstanceOf(PendingFleetResourceGateway::class, app(FleetResourceGateway::class));
+        $this->assertNotInstanceOf(PendingFleetResourceGateway::class, app(FleetResourceGateway::class));
 
         [$trip] = $this->readyTrip();
         $this->dispatch->confirm($trip, $this->fields(), self::TENANT_A, $this->actor);
@@ -417,8 +433,9 @@ class DispatchTest extends TestCase
         $entry = $trip->auditTrail()->where('action', 'transport.trip.status_changed')->get()
             ->first(fn ($e) => ($e->new_values['status'] ?? null) === TripStatus::DISPATCHED);
 
+        // The fixture's vehicle exists only in transport_vehicles, so Fleet
+        // cannot find it and says so instead of claiming success.
         $this->assertFalse($entry->context['fleet_state_applied']);
-        $this->assertStringContainsString('pending Person 2', $entry->context['fleet_boundary']);
     }
 
     public function test_a_gateway_that_applies_is_recorded_as_applied(): void

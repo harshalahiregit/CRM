@@ -46,3 +46,62 @@ find them in one pass; I will otherwise keep discovering them one feature at a t
 surprise partway through a block.
 
 **Approved by the owner on 2026-09-12** as a whole-RTM sweep.
+
+---
+
+# Addendum — two more, from Person 3's side (2026-09-17)
+
+The sweep above was approved on 12 September. These two surfaced while building SNG-TRN-011
+to 016 and are added here rather than raised separately, because they are the same pattern the
+sweep exists to catch. **They are two different gaps and the difference matters.**
+
+| | Stranded | Priority | Evidence |
+|---|---|---|---|
+| **1. Risk** | `DB-011 trip_risks`, `ENUM-007 risk_rating` | CONTROLLED | Step 11 declares **both a table and an enum**. **No ticket builds either.** |
+| **2. Quality / CAPA** | the whole domain | unknown | **Zero occurrences of the word CAPA in Step 11 and Step 12.** Only STOS-QC describes it — reference tier. |
+
+## 1. Risk has a table and an enum, and no ticket
+
+```
+DB-011   trip_risks  | "Trip-linked risk exposure" | Tenant | CONTROLLED | Owner: Risk | FRS-RSK
+ENUM-007 risk_rating | low|moderate|high|critical  | Used by: Risk | Change rule: Risk governance
+```
+
+Step 11 went to the trouble of registering a table, an owner, a source reference **and a
+vocabulary with a named change-control rule**. Two tickets mention risk in passing —
+SNG-TRN-013 (exceptions) and SNG-TRN-019 (control room, which *reads* risk) — and neither
+creates it.
+
+So SNG-TRN-019's control room is specified to display a risk position that nothing in the
+register produces.
+
+**Ask:** a ticket that builds `trip_risks` against `ENUM-007`, or a ruling that Risk is out of
+scope for R1 — in which case SNG-TRN-019's risk column should be struck at the same time, so
+one ticket does not quietly depend on another's absence.
+
+## 2. CAPA is assigned to a person and exists in no authority
+
+This one is the opposite shape and is the more uncomfortable of the two.
+
+TM-001's person split gives **Quality / CAPA to Person 3**. Searched as a standalone word
+across every sheet of both authoritative steps:
+
+```
+Step 11 (Canonical registries)  0 hits
+Step 12 (Developer ticket pack) 0 hits
+```
+
+STOS-QC describes fourteen quality statuses and eleven CAPA statuses, but STOS-QC is
+reference-tier — below Step 11 in the authority hierarchy, and explicitly not something a
+developer may build from.
+
+**So a domain is assigned to a developer with no canonical table, no ticket, no vocabulary and
+no acceptance criterion.** Nothing has been built for it and nothing can be, without inventing
+the entire thing — which is FORBID-001 at a scale no defect note would cover.
+
+**Ask:** either promote CAPA into Step 11 and Step 12 with a ticket, or **record that it is out
+of scope for R1 and remove it from Person 3's assignment**. Both are fine. What is not fine is
+leaving it assigned, because on 30 September it will read as a developer who did not deliver
+their domain rather than a domain that was never specified.
+
+**Raised by Person 3, 2026-09-17.** Neither blocks anything currently in progress.

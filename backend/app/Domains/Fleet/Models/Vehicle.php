@@ -25,7 +25,17 @@ class Vehicle extends Model
 
     public const TYPES      = ['truck', 'trailer', 'tipper', 'tanker', 'reefer', 'lcv', 'other'];
     public const OWNERSHIPS = ['owned', 'leased', 'attached', 'market'];
-    public const STATUSES   = ['active', 'in_maintenance', 'idle', 'retired'];
+    /**
+     * `in_operation` is set by dispatch through FleetResourceGateway (BRW-050)
+     * when a trip departs, and cleared when it closes. Its absence was flagged
+     * in PendingFleetResourceGateway as the thing blocking that handover.
+     *
+     * It is deliberately NOT settable from the vehicle form: like the workshop
+     * states, it is a consequence of something happening elsewhere.
+     */
+    public const STATUS_IN_OPERATION = 'in_operation';
+
+    public const STATUSES   = ['active', 'in_operation', 'in_maintenance', 'idle', 'retired'];
     public const COMPLIANCE = ['compliant', 'expiring', 'expired', 'blocked'];
 
     protected $fillable = [

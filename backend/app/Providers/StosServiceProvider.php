@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Domains\Fleet\Contracts\DriverDirectory;
+use App\Domains\Fleet\Integration\TransportFleetResourceGateway;
 use App\Domains\Fleet\Directory\CrmDriverDirectory;
 use App\Domains\Fleet\Directory\StandaloneDriverDirectory;
 use App\Domains\Fleet\Events\EmergencyFuelIssued;
@@ -57,6 +58,17 @@ class StosServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // C-05 — Fleet answers the dispatch seam. Replaces
+        // PendingFleetResourceGateway, whose TODO was addressed to Person 2.
+        // Bound only when the Transport module is installed, so the Fleet
+        // module still boots standalone.
+        if (interface_exists(\App\Services\Transport\Contracts\FleetResourceGateway::class)) {
+            $this->app->bind(
+                \App\Services\Transport\Contracts\FleetResourceGateway::class,
+                TransportFleetResourceGateway::class
+            );
+        }
+
         $this->app->singleton(DriverDirectory::class, function () {
             $mode = config('stos.directory.driver', 'auto');
 

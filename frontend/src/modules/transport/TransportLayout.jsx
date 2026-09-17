@@ -1,8 +1,5 @@
 import ModuleShell from '@/components/layout/ModuleShell'
-// `Users` is imported but currently referenced only by the commented-out
-// Drivers entry below (D-62). Kept so restoring that entry is one line rather
-// than two.
-import { Package, Truck, Users, Boxes, Container,
+import { Package, Truck, Users, Boxes, Container, Wrench,
 } from 'lucide-react'
 
 /**
@@ -51,18 +48,13 @@ const TRANSPORT_ITEMS = [
   // STOS-CTD §8 — the commercial shipment, distinct from the container.
   { label: 'Consignments',     path: '/app/transport/consignments', icon: Boxes },
   { label: 'Containers',       path: '/app/transport/containers',   icon: Container },
-  // ── VEHICLES AND DRIVERS ARE HIDDEN, NOT REMOVED — D-62 ────────────────
-  // Hidden because Person 2's Fleet module is now the visible one; removed
-  // entirely only when allocation has been repointed at it.
-  //
-  //   { label: 'Vehicles', path: '/app/transport/vehicles', icon: Truck },
-  //   { label: 'Drivers',  path: '/app/transport/drivers',  icon: Users },
-  //
-  // The pages, routes, API, models and services all still exist and still work
-  // by URL. Allocation, pre-trip and dispatch read `transport_vehicles` and
-  // `transport_drivers` TODAY, so deleting them would break the dispatch chain.
-  // Do not uncomment these to "fix" a missing screen, and do not delete the
-  // code behind them, until D-62 is closed and allocation reads Fleet.
+  // Master data — Person 2's Fleet, merged in 2026-09-17 (D-62). These were
+  // `/transport/vehicles` and `/transport/drivers`, P1's placeholders under
+  // TEAM-CONTRACTS §1a; Fleet's screens replace them at the same rail position
+  // so the nav a user learned does not move under them.
+  { label: 'Fleet',            path: '/app/transport/fleet',        icon: Truck },
+  { label: 'Drivers',          path: '/app/transport/drivers',      icon: Users },
+  { label: 'Workshop',         path: '/app/transport/workshop',     icon: Wrench },
 ]
 
 export default function TransportLayout() {
