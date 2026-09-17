@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams, Link, useLocation } from 'react-router-dom'
 import {
-  Truck, ArrowLeft, Fuel, Wrench, Receipt, ShieldCheck, Activity, Zap, Plus, FileText, AlertTriangle, Droplets, Disc3, UserRound,
+  Truck, ArrowLeft, Fuel, Wrench, Receipt, ShieldCheck, Activity, Zap, Plus, FileText, AlertTriangle, Droplets, Disc3, UserRound, ShieldAlert,
 } from 'lucide-react'
 import { stosApi, STOS_ACCENT, VEHICLE_TYPE_LABELS, fmtMoney, fmtWhen } from '@/services/stosApi'
 import HealthChip from '../components/HealthChip'
 import ExceptionPanel from '../components/ExceptionPanel'
 import LiveTelemetryGauge from '../components/LiveTelemetryGauge'
 import FuelExpenseModal from '../components/FuelExpenseModal'
+import UreaTopUpModal from '../components/UreaTopUpModal'
 import MaintenanceJobCardForm from '../components/MaintenanceJobCardForm'
 import CompliancePanel from '../components/CompliancePanel'
 import TyrePanel from '../components/TyrePanel'
@@ -39,6 +40,7 @@ export default function VehiclePassportView() {
   const { hash } = useLocation()
   const [tab, setTab] = useState('overview')
   const [fuelOpen, setFuelOpen] = useState(false)
+  const [ureaOpen, setUreaOpen] = useState(false)
   const [jobOpen, setJobOpen] = useState(false)
 
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -260,7 +262,12 @@ export default function VehiclePassportView() {
           </Card>
 
           <Card title="Urea / AdBlue" icon={Droplets}
-            badges={[`${Number(urea?.total_litres ?? 0).toFixed(1)} L`, fmtMoney(urea?.total_amount)]}>
+            badges={[
+              `${Number(urea?.total_litres ?? 0).toFixed(1)} L`,
+              fmtMoney(urea?.total_amount),
+              ...(urea?.exceptions ? [`${urea.exceptions} outside band`] : []),
+            ]}
+            action={<SmallButton onClick={() => setUreaOpen(true)} icon={Plus}>Record top-up</SmallButton>}>
             {!urea?.recent?.length ? <Empty>No urea top-ups recorded.</Empty> : (
               <div className="space-y-1.5">
                 {urea.recent.map((u) => (
@@ -273,7 +280,16 @@ export default function VehiclePassportView() {
                         {Number(u.litres).toFixed(1)} L
                         {u.litres_per_100km ? ` · ${Number(u.litres_per_100km).toFixed(2)} L/100km` : ''}
                         {u.odometer ? ` · ${Number(u.odometer).toLocaleString('en-IN')} km` : ''}
+                        {u.litres_per_100km == null ? ' · not measured' : ''}
                       </p>
+                      {/* T-22 — the service has always logged this and no screen
+                          ever showed it, which made the check invisible to the
+                          only people who can act on it. */}
+                      {u.outside_band === true && urea?.band && (
+                        <p className="text-[10px] font-semibold mt-0.5" style={{ color: 'var(--color-danger-500)' }}>
+                          Outside the expected {urea.band.min}–{urea.band.max} {urea.band.unit} band
+                        </p>
+                      )}
                     </div>
                     <span className="text-xs font-bold shrink-0" style={{ color: 'var(--text-h)' }}>{fmtMoney(u.amount)}</span>
                   </div>
@@ -305,8 +321,32 @@ export default function VehiclePassportView() {
       {/* ── Maintenance ────────────────────────────────────────── */}
       {tab === 'workshop' && (
         <Card title="Job cards" icon={Wrench}
-          badges={[`${workshop.open_count} open`, `${fmtMoney(workshop.total_cost)} lifetime`]}
+          badges={[
+            `${workshop.open_count} open`,
+            `${fmtMoney(workshop.total_cost)} lifetime`,
+            // T-33 — what the workshop actually cost in availability, which is
+            // the number that never appears on any invoice.
+            ...(workshop.downtime ? [`${Number(workshop.downtime.total_hours).toFixed(0)} h off the road`] : []),
+          ]}
           action={<SmallButton onClick={() => setJobOpen(true)} icon={Plus}>Open job card</SmallButton>}>
+          {/* T-31 — a condemnation outlives its own card, so closing anything
+              else will not release this vehicle. Say so where the work happens. */}
+          {workshop.condemnation && (
+            <div className="rounded-xl px-3 py-2.5 mb-2 flex items-start gap-2"
+              style={{
+                background: 'color-mix(in srgb, var(--color-danger-500) 12%, transparent)',
+                border: '1px solid var(--color-danger-500)',
+              }}>
+              <ShieldAlert size={13} className="mt-0.5 shrink-0" style={{ color: 'var(--color-danger-500)' }} />
+              <p className="text-[11px]" style={{ color: 'var(--text-h)' }}>
+                <span className="font-bold">QC condemned this vehicle on {workshop.condemnation.job_card_number}.</span>{' '}
+                <span style={{ color: 'var(--text-muted)' }}>
+                  It stays in the workshop until a re-test passes QC and names that card.
+                </span>
+              </p>
+            </div>
+          )}
+
           {workshop.jobs.length === 0 ? <Empty>No job cards have been raised for this vehicle.</Empty> : (
             <div className="space-y-2">
               {workshop.jobs.map((j) => (
@@ -315,6 +355,11 @@ export default function VehiclePassportView() {
                     <span className="text-xs font-bold" style={{ color: 'var(--text-h)' }}>{j.job_card_number}</span>
                     <Tag capitalize>{String(j.status).replace('_', ' ')}</Tag>
                     {j.is_safety_critical && <Flag tone="var(--color-danger-500)">safety-critical</Flag>}
+                    {j.qc_result && j.qc_result !== 'PASS' && (
+                      <Flag tone="var(--color-danger-500)">
+                        {j.qc_result === 'CRITICAL_FAIL' ? 'QC critical fail' : 'QC fail'}
+                      </Flag>
+                    )}
                     <span className="ml-auto text-xs font-bold" style={{ color: STOS_ACCENT }}>{fmtMoney(j.total_cost)}</span>
                   </div>
                   {j.complaint && <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>{j.complaint}</p>}
@@ -323,9 +368,38 @@ export default function VehiclePassportView() {
                       <span className="font-semibold">Found: </span>{j.diagnosis}
                     </p>
                   )}
+                  {/* T-30 — the lines are stored now, so the money on the card
+                      can be justified item by item instead of asserted. */}
+                  {(j.parts?.length > 0 || j.labour?.length > 0) && (
+                    <div className="mt-1.5 space-y-0.5">
+                      {j.parts?.map((pt) => (
+                        <p key={`p${pt.id}`} className="text-[10px] flex gap-2" style={{ color: 'var(--text-muted)' }}>
+                          <span className="flex-1 truncate">
+                            {pt.part_name}
+                            {pt.supplier ? ` · ${pt.supplier}` : ''}
+                            {pt.warranty_months ? ` · ${pt.warranty_months} mo warranty` : ''}
+                          </span>
+                          <span>{Number(pt.quantity)} × {fmtMoney(pt.unit_cost)}</span>
+                          <span className="font-semibold">{fmtMoney(pt.line_cost)}</span>
+                        </p>
+                      ))}
+                      {j.labour?.map((lb) => (
+                        <p key={`l${lb.id}`} className="text-[10px] flex gap-2" style={{ color: 'var(--text-muted)' }}>
+                          <span className="flex-1 truncate">
+                            {lb.labour_type}{lb.technician ? ` · ${lb.technician}` : ''}
+                          </span>
+                          <span>{Number(lb.hours)} h × {fmtMoney(lb.hourly_rate)}</span>
+                          <span className="font-semibold">{fmtMoney(lb.line_cost)}</span>
+                        </p>
+                      ))}
+                    </div>
+                  )}
                   <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
                     Parts {fmtMoney(j.parts_cost)} · Labour {fmtMoney(j.labour_cost)}
+                    {j.workshop_name ? ` · ${j.workshop_name}` : ''}
                     {j.closed_at ? ` · closed ${fmtWhen(j.closed_at)}` : ''}
+                    {j.downtime_hours != null ? ` · ${Number(j.downtime_hours).toFixed(1)} h down` : ''}
+                    {j.road_tested ? ' · road tested' : ''}
                   </p>
                 </div>
               ))}
@@ -356,7 +430,9 @@ export default function VehiclePassportView() {
       )}
 
       <FuelExpenseModal open={fuelOpen} onClose={() => setFuelOpen(false)} vehicle={vehicle} onSaved={() => refetch()} />
-      <MaintenanceJobCardForm open={jobOpen} onClose={() => setJobOpen(false)} vehicle={vehicle} onSaved={() => refetch()} />
+      <UreaTopUpModal open={ureaOpen} onClose={() => setUreaOpen(false)} vehicle={vehicle} band={urea?.band} onSaved={() => refetch()} />
+      <MaintenanceJobCardForm open={jobOpen} onClose={() => setJobOpen(false)} vehicle={vehicle}
+        condemnation={workshop?.condemnation} onSaved={() => refetch()} />
     </div>
   )
 }

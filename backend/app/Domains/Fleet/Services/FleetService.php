@@ -34,6 +34,7 @@ class FleetService
         private ComplianceService $compliance,
         private TyreService $tyres,
         private DriverService $drivers,
+        private MaintenanceService $maintenance,
     ) {
     }
 
@@ -193,8 +194,14 @@ class FleetService
         $tolls = FastagTransaction::forCompany($companyId)->where('vehicle_id', $vehicle->id)
             ->orderByDesc('transaction_timestamp')->limit(10)->get();
 
+        // With the lines eager-loaded, the passport can justify the money on a
+        // card item by item instead of showing a total and asking for trust.
         $jobs = MaintenanceJob::forCompany($companyId)->where('vehicle_id', $vehicle->id)
+            ->with(['parts', 'labour'])
             ->orderByDesc('id')->limit(20)->get();
+
+        $urea = UreaTransaction::forCompany($companyId)->where('vehicle_id', $vehicle->id)
+            ->orderByDesc('id')->limit(10)->get();
 
         return [
             'vehicle' => $vehicle->toArray(),
@@ -235,11 +242,19 @@ class FleetService
             // vehicle's own papers are.
             'driver' => $this->drivers->forVehicle($vehicle->id, $companyId),
 
+            // T-22 — the band travels with the readings. The service has always
+            // logged an out-of-band top-up and no screen ever showed it, which
+            // made the check invisible to the only people who can act on it.
             'urea' => [
-                'recent' => UreaTransaction::forCompany($companyId)->where('vehicle_id', $vehicle->id)
-                    ->orderByDesc('id')->limit(10)->get()->all(),
+                'recent' => $urea->all(),
                 'total_litres' => $this->exact(UreaTransaction::forCompany($companyId)->where('vehicle_id', $vehicle->id)->sum('litres'), 3),
                 'total_amount' => $this->exact(UreaTransaction::forCompany($companyId)->where('vehicle_id', $vehicle->id)->sum('amount')),
+                'band' => [
+                    'min'  => UreaService::EXPECTED_MIN,
+                    'max'  => UreaService::EXPECTED_MAX,
+                    'unit' => 'L/100km',
+                ],
+                'exceptions' => $urea->filter(fn ($u) => $u->outside_band === true)->count(),
             ],
 
             'tyres' => $this->tyres->forVehicle($vehicle->id, $companyId),
@@ -248,6 +263,13 @@ class FleetService
                 'jobs'       => $jobs->all(),
                 'open_count' => $openJobs,
                 'total_cost' => $this->exact(MaintenanceJob::forCompany($companyId)->where('vehicle_id', $vehicle->id)->sum('total_cost')),
+                // T-33 — what the workshop cost in availability. The repair
+                // bill appears on an invoice; the days off the road never do,
+                // and they are usually the larger number.
+                'downtime'   => $this->maintenance->downtimeFor($vehicle->id, $companyId),
+                // A condemnation outlives its own card, so the screen has to be
+                // able to name which card is still holding the vehicle.
+                'condemnation' => $this->maintenance->condemnationFor($vehicle->id, $companyId),
             ],
         ];
     }

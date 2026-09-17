@@ -39,6 +39,29 @@ class UreaTransaction extends Model
         'litres_per_100km' => 'decimal:2',
     ];
 
+    /**
+     * T-22 — is this top-up outside the expected band?
+     *
+     * Appended rather than stored: the band is a policy that can be retuned,
+     * and a stored flag would freeze every historic row at the threshold that
+     * happened to be in force the day it was entered. The reading is a fact;
+     * whether it is abnormal is a judgement made at the time of looking.
+     *
+     * Null consumption means no verdict — the first top-up on a vehicle, or one
+     * entered without an odometer, is not an exception, it is unmeasured.
+     */
+    protected $appends = ['outside_band'];
+
+    public function getOutsideBandAttribute(): ?bool
+    {
+        if ($this->litres_per_100km === null) {
+            return null;
+        }
+
+        return app(\App\Domains\Fleet\Services\UreaService::class)
+            ->isOutsideBand((float) $this->litres_per_100km);
+    }
+
     public function vehicle()
     {
         return $this->belongsTo(Vehicle::class, 'vehicle_id');

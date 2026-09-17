@@ -32,8 +32,8 @@ validation rules and business logic** — so nothing has to be reconstructed fro
 Anything that cannot yet be real is marked ⬜ or ⚠️ and says why. A disabled control with an
 honest label is acceptable; a control that pretends to work is not.
 
-**Current position:** 112 STOS tests / 448 assertions passing. Full backend suite: 3,649
-passing, 1 unrelated failure in another module's lint-ratchet (see §11).
+**Current position:** Stos + Transport together: **1,100 passing, 0 failures**. Full backend
+suite verified green on 2026-09-17: **4,641 passing, 0 failures, 3 skipped**.
 
 ---
 
@@ -210,8 +210,8 @@ answer — T-07.
 
 - [x] **T-20** `urea_transactions` table, endpoint, and L/100 km consumption · *FleetContractsAndAssetsTest*
 - [x] **T-21** Kept out of `fuel_transactions` — mixing urea into diesel corrupts every km/l figure
-- [ ] **T-22** Flag consumption outside the 0.8–4.0 L/100 km band in the UI (the service already logs it; no screen shows it)
-- [ ] **T-23** Urea entry screen — the API exists, the modal does not
+- [x] **T-22** Consumption outside the 0.8–4.0 L/100 km band is flagged on the passport, per row and as a count. The band travels with the readings rather than being hardcoded in the screen · *UreaConsumptionBandTest*
+- [x] **T-23** Urea entry screen — `UreaTopUpModal`, reached from the passport's Urea card. Rate fills the amount, the amount stays editable, and an entry with no odometer says plainly that it will not be measured
 
 ---
 
@@ -261,11 +261,11 @@ answer — T-07.
 
 - [x] **T-28** Open / update / close, auto-numbering, cost totals, guarded release · *FleetOperationsTest*
 - [x] **T-28b** A signed total overrides parts + labour (a warranty credit or rounded settlement is legitimate)
-- [ ] **T-29** Add `workshop_name` to `maintenance_jobs`, the form and the board
-- [ ] **T-30** **Persist the line items.** New tables `maintenance_job_parts` (part, qty, unit cost, supplier, warranty) and `maintenance_job_labour` (type, hours, rate, technician), summed into the stored totals. *Today the itemisation is entered and thrown away — the screen says so rather than pretending, but it is the biggest untruth left in this module.*
-- [ ] **T-31** QC result as `PASS/FAIL/CRITICAL_FAIL` plus a road-test checkbox; `CRITICAL_FAIL` must block release even if every other hold is clear
-- [ ] **T-32** Add `TESTING` and `QC` to the job status flow
-- [ ] **T-33** Downtime: hours off the road per card, and a per-vehicle downtime total on the passport
+- [x] **T-29** `workshop_name` on the card, the form and the board · *WorkshopJobCardTest*
+- [x] **T-30** **Line items persisted.** `maintenance_job_parts` (part, number, qty, unit cost, supplier, warranty months) and `maintenance_job_labour` (type, hours, rate, technician). Totals are summed FROM the lines so the card and its itemisation cannot disagree; a scalar total is still accepted for a card settled at the counter, and an explicit `total_cost` still overrides · *WorkshopJobCardTest*
+- [x] **T-31** QC as `PASS/FAIL/CRITICAL_FAIL` plus a road-test flag. `CRITICAL_FAIL` holds the vehicle beyond its own card and is cleared only by a later card that passes QC **and names it** (`clears_job_id`) — not by any later pass, or a routine oil change would un-condemn a vehicle failed on its brakes · *WorkshopJobCardTest*
+- [x] **T-32** `testing` and `qc` added to the status flow, both OPEN states so they still hold the vehicle · *WorkshopJobCardTest*
+- [x] **T-33** Downtime hours per card, fixed at closure, with a per-vehicle total on the passport · *WorkshopJobCardTest*
 
 ---
 
@@ -382,7 +382,7 @@ fires from a **model observer**, so no future code path can change availability 
 - [ ] **T-49** Idle-vehicle and utilisation reporting for the executive tower (`STOS-REP` feeds from our data)
 - [ ] **T-50** Frontend: urea modal, FASTag register, tyre master screen, genset management — the four screens the tasks above imply
 - [ ] **T-51** ⚠️ Whole-vocabulary decision: adopt the spec's UPPERCASE enums across vehicle type, ownership, status, fuel recovery and toll reconciliation, or keep lowercase and publish a mapping table in `STOS-API`. **This is one coordinated migration, not five — do it once, with Devs 1 and 3 in the room.**
-- [ ] **T-52** Unrelated but blocking a green suite: `BannedPatternsTest` fails on `modules/tpv/pages/TpvVendorDetail.jsx` — an uncommitted refactor cut its `alert(` count from 7 to 2 without lowering the recorded budget (line 93). **Not Developer 2's file; belongs to whoever owns that vendor-access work.**
+- [x] **T-52** ~~`BannedPatternsTest` fails on `TpvVendorDetail.jsx`~~ — **no longer true.** Full backend suite verified green on 2026-09-17: **4,641 passing, 0 failures, 3 skipped.** The uncommitted refactor that caused it was committed in the meantime.
 
 ---
 

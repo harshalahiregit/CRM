@@ -1,30 +1,34 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { X, Wrench, Plus, Trash2, Check, ShieldAlert } from 'lucide-react'
-import { stosApi, STOS_ACCENT, fmtMoney, OPEN_JOB_STATUSES } from '@/services/stosApi'
+import { stosApi, STOS_ACCENT, fmtMoney, OPEN_JOB_STATUSES, QC_RESULTS } from '@/services/stosApi'
 import Select from '@/components/ui/Select'
 
 /**
  * Open a job card, or close one and try to release the vehicle (Feature 4).
  *
- * Parts and labour are entered as ITEMISED rows and summed, because "18,500"
- * with no breakdown is unauditable the moment anyone queries the bill. The
- * summed total is what gets posted; the rows themselves are a workshop detail
- * the API does not store yet, and the form says so rather than pretending.
+ * Parts and labour are entered as ITEMISED rows and POSTED as rows, because
+ * "18,500" with no breakdown is unauditable the moment anyone queries the bill
+ * and useless when a warranty claim comes back six months later. The server
+ * stores each line and sums the totals from them, so the card and its total can
+ * never disagree.
  *
  * Closes only via ✕ or Cancel — never a backdrop click.
  */
-export default function MaintenanceJobCardForm({ open, onClose, vehicle, job = null, onSaved }) {
+export default function MaintenanceJobCardForm({ open, onClose, vehicle, job = null, condemnation = null, onSaved }) {
   const qc = useQueryClient()
   const closing = Boolean(job)
 
   const [complaint, setComplaint] = useState('')
   const [diagnosis, setDiagnosis] = useState('')
+  const [workshopName, setWorkshopName] = useState('')
   const [status, setStatus] = useState('open')
   const [safety, setSafety] = useState(false)
-  const [qcPassed, setQcPassed] = useState(true)
-  const [parts, setParts] = useState([{ name: '', qty: 1, unit: '' }])
-  const [labour, setLabour] = useState([{ name: '', hours: '', rate: '' }])
+  const [qcResult, setQcResult] = useState('PASS')
+  const [roadTested, setRoadTested] = useState(false)
+  const [clears, setClears] = useState(false)
+  const [parts, setParts] = useState([blankPart()])
+  const [labour, setLabour] = useState([blankLabour()])
   const [err, setErr] = useState('')
 
   useEffect(() => {
@@ -32,11 +36,17 @@ export default function MaintenanceJobCardForm({ open, onClose, vehicle, job = n
     setErr('')
     setComplaint(job?.complaint || '')
     setDiagnosis(job?.diagnosis || '')
+    setWorkshopName(job?.workshop_name || '')
     setStatus(job?.status || 'open')
     setSafety(Boolean(job?.is_safety_critical))
-    setQcPassed(true)
-    setParts([{ name: '', qty: 1, unit: '' }])
-    setLabour([{ name: '', hours: '', rate: '' }])
+    setQcResult(job?.qc_result || 'PASS')
+    setRoadTested(Boolean(job?.road_tested))
+    setClears(false)
+
+    // Prefill from what is stored, now that the lines survive. Re-opening a
+    // card and seeing the parts you entered is the whole point of T-30.
+    setParts(job?.parts?.length ? job.parts.map(fromPart) : [blankPart()])
+    setLabour(job?.labour?.length ? job.labour.map(fromLabour) : [blankLabour()])
   }, [open, job])
 
   const partsCost = parts.reduce((sum, p) => sum + (Number(p.qty) || 0) * (Number(p.unit) || 0), 0)
@@ -44,15 +54,21 @@ export default function MaintenanceJobCardForm({ open, onClose, vehicle, job = n
 
   const save = useMutation({
     mutationFn: () => {
+      const lines = { parts: parts.filter(hasPart).map(toPart), labour: labour.filter(hasLabour).map(toLabour) }
+
       if (closing) {
         return stosApi.maintenance.close(job.id, {
-          diagnosis, parts_cost: partsCost, labour_cost: labourCost, qc_passed: qcPassed,
+          diagnosis, workshop_name: workshopName || null,
+          qc_result: qcResult, road_tested: roadTested,
+          // Only meaningful on a PASS; the server drops it otherwise.
+          clears_job_id: clears && condemnation ? condemnation.id : null,
+          ...lines,
         })
       }
 
       return stosApi.maintenance.open({
         vehicle_id: vehicle.id, complaint, diagnosis, status,
-        parts_cost: partsCost, labour_cost: labourCost, is_safety_critical: safety,
+        workshop_name: workshopName || null, is_safety_critical: safety, ...lines,
       })
     },
     onSuccess: (result) => {
@@ -76,11 +92,13 @@ export default function MaintenanceJobCardForm({ open, onClose, vehicle, job = n
     save.mutate()
   }
 
+  const releases = !closing || qcResult === 'PASS'
+
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center p-4 pt-[8vh] bg-black/50">
       <form
         onSubmit={submit}
-        className="w-full max-w-2xl rounded-2xl overflow-hidden flex flex-col"
+        className="w-full max-w-3xl rounded-2xl overflow-hidden flex flex-col"
         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', maxHeight: '84vh' }}
         onKeyDown={(e) => { if (e.key === 'Escape') onClose?.() }}
       >
@@ -138,17 +156,23 @@ export default function MaintenanceJobCardForm({ open, onClose, vehicle, job = n
             </>
           )}
 
-          <Field label={closing ? 'Diagnosis *' : 'Diagnostic notes'} hint="What the workshop actually found">
-            <textarea rows={2} value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)}
-              placeholder="Warped discs — replaced both sides" className={inputClass} style={inputStyle} />
-          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={closing ? 'Diagnosis *' : 'Diagnostic notes'} hint="What the workshop actually found">
+              <textarea rows={2} value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)}
+                placeholder="Warped discs — replaced both sides" className={inputClass} style={inputStyle} />
+            </Field>
+            <Field label="Yard / workshop" hint="Who did the work — the first question when it comes back">
+              <input value={workshopName} onChange={(e) => setWorkshopName(e.target.value)}
+                placeholder="Bhiwandi yard — Bay 3" className={inputClass} style={inputStyle} />
+            </Field>
+          </div>
 
           {/* ── Itemised parts ──────────────────────────────────── */}
           <ItemTable
             title="Replacement parts" total={partsCost}
-            columns={['Part', 'Qty', 'Unit cost']}
-            rows={parts} setRows={setParts}
-            blank={{ name: '', qty: 1, unit: '' }}
+            columns={['Part', 'Qty', 'Unit cost', 'Supplier', 'Warr. mo']}
+            grid="1fr 56px 84px 120px 68px 28px"
+            rows={parts} setRows={setParts} blank={blankPart()}
             render={(row, update) => (
               <>
                 <input value={row.name} onChange={(e) => update({ name: e.target.value })}
@@ -157,6 +181,10 @@ export default function MaintenanceJobCardForm({ open, onClose, vehicle, job = n
                   onChange={(e) => update({ qty: e.target.value })} className={cellClass} style={inputStyle} />
                 <input type="number" step="0.01" inputMode="decimal" value={row.unit}
                   onChange={(e) => update({ unit: e.target.value })} className={cellClass} style={inputStyle} />
+                <input value={row.supplier} onChange={(e) => update({ supplier: e.target.value })}
+                  placeholder="TVS Auto" className={cellClass} style={inputStyle} />
+                <input type="number" step="1" inputMode="numeric" value={row.warranty}
+                  onChange={(e) => update({ warranty: e.target.value })} className={cellClass} style={inputStyle} />
               </>
             )}
           />
@@ -164,9 +192,9 @@ export default function MaintenanceJobCardForm({ open, onClose, vehicle, job = n
           {/* ── Itemised labour ─────────────────────────────────── */}
           <ItemTable
             title="Labour" total={labourCost}
-            columns={['Task', 'Hours', 'Rate/hr']}
-            rows={labour} setRows={setLabour}
-            blank={{ name: '', hours: '', rate: '' }}
+            columns={['Task', 'Hours', 'Rate/hr', 'Technician']}
+            grid="1fr 64px 84px 140px 28px"
+            rows={labour} setRows={setLabour} blank={blankLabour()}
             render={(row, update) => (
               <>
                 <input value={row.name} onChange={(e) => update({ name: e.target.value })}
@@ -175,6 +203,8 @@ export default function MaintenanceJobCardForm({ open, onClose, vehicle, job = n
                   onChange={(e) => update({ hours: e.target.value })} className={cellClass} style={inputStyle} />
                 <input type="number" step="0.01" inputMode="decimal" value={row.rate}
                   onChange={(e) => update({ rate: e.target.value })} className={cellClass} style={inputStyle} />
+                <input value={row.tech} onChange={(e) => update({ tech: e.target.value })}
+                  placeholder="R. Kadam" className={cellClass} style={inputStyle} />
               </>
             )}
           />
@@ -185,24 +215,55 @@ export default function MaintenanceJobCardForm({ open, onClose, vehicle, job = n
             <span className="text-sm font-black" style={{ color: STOS_ACCENT }}>{fmtMoney(partsCost + labourCost)}</span>
           </div>
           <p className="text-[10px] -mt-1" style={{ color: 'var(--text-muted)' }}>
-            Parts and labour totals are stored. The individual lines are not kept yet — they are a workshop
-            detail the API has no table for, so record anything you need to keep in the diagnosis.
+            Every line is stored against this card. The totals are summed from them by the server, so the
+            card and its total cannot drift apart.
           </p>
 
           {closing && (
-            <label className="flex items-center gap-2 rounded-xl px-3 py-2.5 cursor-pointer"
-              style={{
-                background: qcPassed ? 'var(--bg-input)' : 'color-mix(in srgb, var(--color-danger-500) 12%, transparent)',
-                border: `1px solid ${qcPassed ? 'var(--border)' : 'var(--color-danger-500)'}`,
-              }}>
-              <input type="checkbox" checked={qcPassed} onChange={(e) => setQcPassed(e.target.checked)} />
-              <span className="text-xs font-bold" style={{ color: 'var(--text-h)' }}>QC passed — safe to release</span>
-            </label>
-          )}
-          {closing && !qcPassed && (
-            <p className="text-[11px] -mt-1" style={{ color: 'var(--color-danger-500)' }}>
-              The card will close but the vehicle stays in the workshop.
-            </p>
+            <>
+              <Field label="QC result" hint="A critical failure keeps holding the vehicle after this card closes, until a later QC clears it">
+                <Select size="sm" value={qcResult} onChange={setQcResult} options={QC_RESULTS} ariaLabel="QC result" />
+              </Field>
+
+              <label className="flex items-center gap-2 rounded-xl px-3 py-2.5 cursor-pointer"
+                style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                <input type="checkbox" checked={roadTested} onChange={(e) => setRoadTested(e.target.checked)} />
+                <span className="text-xs font-bold" style={{ color: 'var(--text-h)' }}>Road tested after repair</span>
+              </label>
+
+              {/* T-31 — clearing a condemnation is a deliberate act naming the
+                  card it answers, never a side effect of unrelated work. */}
+              {condemnation && qcResult === 'PASS' && (
+                <label className="flex items-start gap-2 rounded-xl px-3 py-2.5 cursor-pointer"
+                  style={{
+                    background: clears ? 'color-mix(in srgb, var(--color-success-500, #10b981) 12%, transparent)' : 'var(--bg-input)',
+                    border: `1px solid ${clears ? 'var(--color-success-500, #10b981)' : 'var(--border)'}`,
+                  }}>
+                  <input type="checkbox" checked={clears} onChange={(e) => setClears(e.target.checked)} className="mt-0.5" />
+                  <span className="text-[11px]" style={{ color: 'var(--text-h)' }}>
+                    <span className="font-bold">This re-test clears {condemnation.job_card_number}.</span>{' '}
+                    <span style={{ color: 'var(--text-muted)' }}>
+                      That card condemned this vehicle. Until something clears it the vehicle stays
+                      in the workshop however many other cards are closed.
+                    </span>
+                  </span>
+                </label>
+              )}
+
+              {condemnation && qcResult === 'PASS' && !clears && (
+                <p className="text-[11px] -mt-1" style={{ color: 'var(--color-danger-500)' }}>
+                  The vehicle will stay in the workshop — {condemnation.job_card_number} is still standing.
+                </p>
+              )}
+
+              {!releases && (
+                <p className="text-[11px] -mt-1" style={{ color: 'var(--color-danger-500)' }}>
+                  {qcResult === 'CRITICAL_FAIL'
+                    ? 'The card will close and the vehicle stays condemned until a later QC passes it.'
+                    : 'The card will close but the vehicle stays in the workshop.'}
+                </p>
+              )}
+            </>
           )}
 
           {err && (
@@ -223,7 +284,7 @@ export default function MaintenanceJobCardForm({ open, onClose, vehicle, job = n
             className="flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-xl disabled:opacity-60"
             style={{ background: closing ? 'var(--color-success-500, #10b981)' : STOS_ACCENT, color: '#fff' }}>
             <Check size={13} />
-            {save.isPending ? 'Saving…' : (closing ? 'Close & release vehicle' : 'Open job card')}
+            {save.isPending ? 'Saving…' : (closing ? (releases ? 'Close & release vehicle' : 'Close card') : 'Open job card')}
           </button>
         </div>
       </form>
@@ -231,7 +292,39 @@ export default function MaintenanceJobCardForm({ open, onClose, vehicle, job = n
   )
 }
 
-function ItemTable({ title, columns, rows, setRows, blank, render, total }) {
+/* ── row shapes ───────────────────────────────────────────────── */
+
+const blankPart = () => ({ name: '', qty: 1, unit: '', supplier: '', warranty: '' })
+const blankLabour = () => ({ name: '', hours: '', rate: '', tech: '' })
+
+const hasPart = (p) => String(p.name || '').trim() !== ''
+const hasLabour = (l) => String(l.name || '').trim() !== ''
+
+const toPart = (p) => ({
+  part_name: p.name.trim(),
+  quantity: Number(p.qty) || 0,
+  unit_cost: Number(p.unit) || 0,
+  supplier: p.supplier?.trim() || null,
+  warranty_months: p.warranty === '' || p.warranty == null ? null : Number(p.warranty),
+})
+
+const toLabour = (l) => ({
+  labour_type: l.name.trim(),
+  hours: Number(l.hours) || 0,
+  hourly_rate: Number(l.rate) || 0,
+  technician: l.tech?.trim() || null,
+})
+
+const fromPart = (p) => ({
+  name: p.part_name || '', qty: p.quantity ?? 1, unit: p.unit_cost ?? '',
+  supplier: p.supplier || '', warranty: p.warranty_months ?? '',
+})
+
+const fromLabour = (l) => ({
+  name: l.labour_type || '', hours: l.hours ?? '', rate: l.hourly_rate ?? '', tech: l.technician || '',
+})
+
+function ItemTable({ title, columns, rows, setRows, blank, render, total, grid }) {
   const update = (i, patch) => setRows(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
 
   return (
@@ -241,7 +334,7 @@ function ItemTable({ title, columns, rows, setRows, blank, render, total }) {
         <span className="text-[11px] font-bold ml-auto" style={{ color: STOS_ACCENT }}>{fmtMoney(total)}</span>
       </div>
 
-      <div className="grid gap-1" style={{ gridTemplateColumns: '1fr 70px 90px 28px' }}>
+      <div className="grid gap-1" style={{ gridTemplateColumns: grid }}>
         {columns.map((c) => (
           <span key={c} className="text-[10px] font-semibold" style={{ color: 'var(--text-muted)' }}>{c}</span>
         ))}
