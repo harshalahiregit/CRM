@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\Transport\TransportOrderController;
 use App\Http\Controllers\Api\Transport\TransportPodController;
 use App\Http\Controllers\Api\Transport\TransportPretripController;
 use App\Http\Controllers\Api\Transport\TransportResourceCommitmentController;
+use App\Http\Controllers\Api\Transport\TransportSearchController;
 use App\Http\Controllers\Api\Transport\TransportTripController;
 use App\Http\Controllers\Api\Transport\TransportVehicleController;
 use App\Support\Transport\TransportPermission;
@@ -388,6 +389,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
      */
     Route::middleware('transport.permission:'.TransportPermission::TRIP_VIEW)->group(function () {
         Route::get('/resource-commitments', [TransportResourceCommitmentController::class, 'index']);
+        // TM-001 §8 — one box, any Transport identifier. Exact matches only.
+        Route::get('/search', TransportSearchController::class);
     });
 
     /* ── Containers — STOS-CTD §7, §8 ─────────────────────────────────
@@ -420,6 +423,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
         // somebody removing the constraint.
         Route::get('/containers/lookup', [TransportContainerController::class, 'lookup']);
         Route::get('/containers/{id}',   [TransportContainerController::class, 'show'])->whereNumber('id');
+        // Container 360 — the Digital Passport. Read-only, assembled from rows
+        // that already exist. MS-001 §14 step 2.
+        Route::get('/containers/{id}/passport', [TransportContainerController::class, 'passport'])->whereNumber('id');
         // STOS-CTD §8 — a consignment may carry one container or several.
         Route::get('/consignments/{consignment}/containers', [TransportContainerController::class, 'forConsignment'])
             ->whereNumber('consignment');

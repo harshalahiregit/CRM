@@ -7,6 +7,7 @@ use App\Http\Controllers\Traits\ApiResponse;
 use App\Http\Requests\Transport\AttachContainerRequest;
 use App\Http\Requests\Transport\StoreContainerRequest;
 use App\Services\Transport\ConsignmentService;
+use App\Services\Transport\ContainerPassportService;
 use App\Services\Transport\ContainerService;
 use App\Services\Transport\TransportAuditLogger;
 use Illuminate\Http\JsonResponse;
@@ -49,6 +50,7 @@ class TransportContainerController extends Controller
 
     public function __construct(
         private ContainerService $containers,
+        private ContainerPassportService $passports,
         private ConsignmentService $consignments,
         private TransportAuditLogger $audit,
     ) {
@@ -126,6 +128,24 @@ class TransportContainerController extends Controller
                 $request->boolean('active_only'),
             ),
             'Containers retrieved',
+        );
+    }
+
+    /**
+     * Container 360 — the Digital Passport (STOS-CTD, MS-001 §14 step 2).
+     *
+     * No API_Registry row exists for it, like the rest of this controller
+     * (D-45). The path follows the module's convention.
+     *
+     * Read-only and assembled from rows that already exist; it writes nothing.
+     * Gated by CONTAINER_VIEW, which has no customer grant — CTD §70's
+     * customer-facing passport stays out until D-46's scope narrowing is real.
+     */
+    public function passport(Request $request, int $id): JsonResponse
+    {
+        return $this->success(
+            $this->passports->forContainer($id, $request->user()->tenant_id),
+            'Container passport retrieved',
         );
     }
 

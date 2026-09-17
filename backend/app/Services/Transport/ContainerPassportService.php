@@ -1,0 +1,380 @@
+<?php
+
+namespace App\Services\Transport;
+
+use App\Models\Transport\ConsignmentContainer;
+use App\Models\Transport\TransportAuditLog;
+use App\Models\Transport\TransportContainer;
+use App\Models\Transport\TransportTrip;
+use App\Models\Transport\TripBill;
+use App\Models\Transport\TripCollection;
+use App\Models\Transport\TripDocument;
+use App\Support\Transport\TripStatus;
+
+/**
+ * Container 360 — the Digital Passport (STOS-CTD, MS-001 §14 step 2).
+ *
+ * TM-001 §8 puts "Consignment / Container 360", "Container search",
+ * "Consignment Passport" and "Cross-module traceability" in Person 1's column,
+ * and §9 restates the rule this service is built on:
+ *
+ *   "Container Number is the universal search/traceability anchor. Vehicle,
+ *    driver, trip, finance and maintenance retain correct domain ownership."
+ *
+ * So the passport ANCHORS on the container and READS ACROSS — it does not own
+ * what it shows. Everything here is assembled from rows that already exist;
+ * this service writes nothing and has no table of its own.
+ *
+ * ── WHAT IT DELIBERATELY DOES NOT DO ─────────────────────────────────────
+ * It does not re-render other people's panels. Documents, POD, billing,
+ * invoice and collection are P3's, keyed on `trip_id`; the passport reports
+ * that they EXIST and links to the trip screen that owns them. Copying those
+ * panels here would duplicate a boundary we spent two blocks establishing.
+ *
+ * It does not invent sections for data nobody has. CTD lists thirty passport
+ * sections (§9) — GPS, temperature, Genset, fuel, FASTag, port/gate, feedback,
+ * CAPA, profitability. None has an entity in this codebase. **An empty panel
+ * implies the feature exists**, which is the rule the consignment drawer
+ * already follows, so absent sections are absent rather than empty.
+ *
+ * ── §76: SEPARATED BY LIFECYCLE INSTANCE ─────────────────────────────────
+ * "A container may later be associated with another consignment. Historical
+ * Passport events must remain immutable and separated by lifecycle instance."
+ *
+ * One passport per CONTAINER, with the CURRENT attachment prominent and prior
+ * ones listed beside it — ruled 2026-09-17. A page per attachment would
+ * fragment the single thing the screen exists to show: where this box is and
+ * how it got there.
+ */
+class ContainerPassportService
+{
+    public function __construct(
+        private ContainerService $containers,
+        private PretripService $pretrip,
+    ) {
+    }
+
+    /**
+     * The whole passport for one container.
+     *
+     * @return array<string,mixed>
+     */
+    public function forContainer(int $containerId, int $tenantId): array
+    {
+        // Tenant-scoped AT the lookup: another workspace's container reads as
+        // "no such container", never "not yours" (CTD-022).
+        $container = $this->containers->find($containerId, $tenantId);
+
+        $history = $this->containers->history($container->id, $tenantId);
+        $current = $history->firstWhere('detached_at', null);
+        $trip    = $this->tripFor($current, $tenantId);
+
+        return [
+            'container'   => $container,
+            'lifecycle'   => $this->lifecycle($history, $current),
+            'chain'       => $this->chain($current, $trip),
+            'status'      => $this->status($container, $current, $trip),
+            'readiness'   => $this->readiness($trip, $tenantId),
+            'linked'      => $this->linkedRecords($trip, $tenantId),
+            'timeline'    => $this->timeline($container, $current, $trip, $tenantId),
+        ];
+    }
+
+    /** The trip carrying this container right now, if any. */
+    private function tripFor(?ConsignmentContainer $current, int $tenantId): ?TransportTrip
+    {
+        if (! $current?->consignment_id) {
+            return null;
+        }
+
+        return TransportTrip::forTenant($tenantId)
+            ->where('consignment_id', $current->consignment_id)
+            ->with([
+                'customer:id,company',
+                'order:id,order_number,order_status,service_type,required_at,priority',
+                'consignment:id,consignment_number,customer_reference,cargo_description,package_count,gross_weight_kg',
+                'vehicle:id,registration_number,vehicle_type',
+                'driver:id,name,licence_class',
+            ])
+            ->latest('id')
+            ->first();
+    }
+
+    /**
+     * CTD §76 — this lifecycle instance, and the ones before it.
+     *
+     * @param  \Illuminate\Support\Collection<int,ConsignmentContainer>  $history
+     * @return array<string,mixed>
+     */
+    private function lifecycle($history, ?ConsignmentContainer $current): array
+    {
+        return [
+            'current'  => $current,
+            'previous' => $history->filter(fn (ConsignmentContainer $a) => $a->detached_at !== null)->values(),
+            'times_used' => $history->count(),
+        ];
+    }
+
+    /**
+     * CTD §71's two chains, in one shape.
+     *
+     *   Customer → Transport Order → Consignment → Container
+     *   Container → Trip → Vehicle → Driver
+     *
+     * Every node carries the id the screen needs to link to it. A node with no
+     * data is null rather than an empty object, so the UI can omit it instead
+     * of rendering a blank row.
+     *
+     * CTD-002, CTD-003, CTD-006, CTD-007.
+     *
+     * @return array<string,mixed>
+     */
+    private function chain(?ConsignmentContainer $current, ?TransportTrip $trip): array
+    {
+        // The trip's copy carries every column the chain needs; the attachment's
+        // is column-limited for the history list. Prefer the fuller one.
+        $consignment = $trip?->consignment ?? $current?->consignment;
+
+        return [
+            'customer'    => $trip?->customer ? [
+                'id' => $trip->customer->id, 'name' => $trip->customer->company,
+            ] : null,
+            'order'       => $trip?->order ? [
+                'id' => $trip->order->id, 'number' => $trip->order->order_number,
+                'status' => $trip->order->order_status, 'service_type' => $trip->order->service_type,
+                'required_at' => $trip->order->required_at?->toIso8601String(),
+            ] : null,
+            'consignment' => $consignment ? [
+                'id' => $consignment->id, 'number' => $consignment->consignment_number,
+                'customer_reference' => $consignment->customer_reference,
+                'cargo_description'  => $consignment->cargo_description,
+                'package_count'      => $consignment->package_count,
+                'gross_weight_kg'    => $consignment->gross_weight_kg,
+            ] : null,
+            'trip'        => $trip ? [
+                'id' => $trip->id, 'number' => $trip->trip_number, 'status' => $trip->status,
+                'status_label' => TripStatus::LABELS[$trip->status] ?? $trip->status,
+                'route' => $trip->route,
+                'planned_departure_at' => $trip->planned_departure_at?->toIso8601String(),
+                'planned_arrival_at'   => $trip->planned_arrival_at?->toIso8601String(),
+                'dispatched_at'        => $trip->dispatched_at?->toIso8601String(),
+            ] : null,
+            // CTD-006 / CTD-007. Read from transport_vehicles / transport_drivers
+            // — P1's own tables (TEAM-CONTRACTS §1a's placeholder), NOT Fleet's.
+            // There is no read contract to Fleet: FleetResourceGateway carries
+            // only markDispatched(). When allocation is repointed (D-100), this
+            // is one of the places that follows.
+            'vehicle'     => $trip?->vehicle ? [
+                'id' => $trip->vehicle->id, 'registration' => $trip->vehicle->registration_number,
+                'type' => $trip->vehicle->vehicle_type,
+            ] : null,
+            'driver'      => $trip?->driver ? [
+                'id' => $trip->driver->id, 'name' => $trip->driver->name,
+                'licence_class' => $trip->driver->licence_class,
+            ] : null,
+        ];
+    }
+
+    /**
+     * CTD §11 and §12 — the status, and what it MEANS.
+     *
+     * §12 is explicit that the UI "must not merely show BILLING_BLOCKED" but
+     * explain it. A container has no status of its own (CTD §8 — the
+     * consignment carries the commercial facts), so the status shown is the
+     * TRIP's, translated, with what happens next.
+     *
+     * @return array<string,mixed>
+     */
+    private function status(TransportContainer $container, ?ConsignmentContainer $current, ?TransportTrip $trip): array
+    {
+        if (! $current) {
+            return [
+                'code' => 'not_on_a_consignment',
+                'label' => 'Not on a consignment',
+                'explanation' => 'This container is free. It is not carrying anything at the moment.',
+                'next_action' => 'Attach it to a consignment when it is loaded.',
+            ];
+        }
+
+        if (! $trip) {
+            return [
+                'code' => 'awaiting_trip',
+                'label' => 'Loaded, no trip yet',
+                'explanation' => 'This container is on consignment '
+                    .$current->consignment?->consignment_number.', which no trip is carrying yet.',
+                'next_action' => 'Raise a trip for that consignment.',
+            ];
+        }
+
+        return [
+            'code'        => $trip->status,
+            'label'       => TripStatus::LABELS[$trip->status] ?? $trip->status,
+            'explanation' => $this->explain($trip),
+            'next_action' => $this->nextAction($trip),
+        ];
+    }
+
+    /** CTD §12 — the sentence a client understands, not the enum. */
+    private function explain(TransportTrip $trip): string
+    {
+        $on = 'On trip '.$trip->trip_number;
+
+        return match ($trip->status) {
+            TripStatus::DRAFT             => $on.', which is still being set up.',
+            TripStatus::VIABILITY_PENDING => $on.', which is waiting for someone to approve it.',
+            TripStatus::APPROVED          => $on.', approved but with no vehicle or driver yet.',
+            TripStatus::ALLOCATED         => $on.', with a vehicle and driver assigned.',
+            TripStatus::PRETRIP_OK        => $on.', checked and cleared to leave.',
+            TripStatus::DISPATCHED        => $on.', released and on its way.',
+            default                       => $on.'.',
+        };
+    }
+
+    private function nextAction(TransportTrip $trip): string
+    {
+        return match ($trip->status) {
+            TripStatus::DRAFT             => 'Complete the trip and submit it for viability.',
+            TripStatus::VIABILITY_PENDING => 'Approve the trip, or send it back for correction.',
+            TripStatus::APPROVED          => 'Assign a vehicle and a driver.',
+            TripStatus::ALLOCATED         => 'Run the pre-trip checks.',
+            TripStatus::PRETRIP_OK        => 'Confirm dispatch.',
+            TripStatus::DISPATCHED        => 'Continue monitoring until delivery.',
+            default                       => 'No action is waiting on this container.',
+        };
+    }
+
+    /**
+     * MS-001 §14 step 5 — "dispatch eligibility".
+     *
+     * Added after reading §14: the demonstration script asks for it explicitly
+     * and it is ours (PretripService). The COMPLIANCE half of that step is
+     * P2's and P3's and has no read contract, so only eligibility appears.
+     *
+     * @return array<string,mixed>|null
+     */
+    private function readiness(?TransportTrip $trip, int $tenantId): ?array
+    {
+        if (! $trip) {
+            return null;
+        }
+
+        return $this->pretrip->readiness($trip, $tenantId);
+    }
+
+    /**
+     * CTD-016, CTD-017, CTD-019, CTD-020 — P3's records, REPORTED not rendered.
+     *
+     * Each is a count and a flag. The screen says "3 documents, POD verified"
+     * and links to the trip, which already renders P3's panels in full. The
+     * passport does not reimplement them.
+     *
+     * A section with a zero count is returned as `null` so the UI omits it
+     * rather than showing an empty panel.
+     *
+     * @return array<string,mixed>|null
+     */
+    private function linkedRecords(?TransportTrip $trip, int $tenantId): ?array
+    {
+        if (! $trip) {
+            return null;
+        }
+
+        $documents = TripDocument::forTenant($tenantId)->where('trip_id', $trip->id)->get();
+        $bill      = TripBill::forTenant($tenantId)->where('trip_id', $trip->id)->latest('id')->first();
+        $collected = TripCollection::forTenant($tenantId)->where('trip_id', $trip->id)->count();
+
+        $out = [];
+
+        if ($documents->isNotEmpty()) {
+            $out['documents'] = [
+                'total'    => $documents->count(),
+                'verified' => $documents->whereNotNull('verified_at')->count(),
+                // CTD-017. POD is a document TYPE, not a separate entity.
+                'pod'      => $documents->first(fn ($d) => str_contains(strtolower((string) $d->document_type), 'pod')) !== null,
+            ];
+        }
+
+        if ($bill) {
+            $out['billing'] = [
+                'status'  => $bill->status,
+                'amount'  => $bill->billable_amount,
+                'invoiced' => $bill->invoice_id !== null,
+            ];
+        }
+
+        if ($collected > 0) {
+            $out['collections'] = ['total' => $collected];
+        }
+
+        return $out === [] ? null : $out;
+    }
+
+    /**
+     * CTD-021 and CTD §31–§33 — one chronological timeline across the chain.
+     *
+     * The container, its consignment and its trip each carry their own audit
+     * rows. A person tracing a box does not care which table an event was
+     * written to, so they are merged and sorted by time.
+     *
+     * §33 requires each event to name its SOURCE. Every row here is a user or
+     * system action recorded by this module, so the source is derived from the
+     * subject that produced it — container, consignment, trip. GPS, SENSOR,
+     * ACCOUNTING and the rest are listed in §33 but have no producer in this
+     * codebase; they will appear here when something writes them, and inventing
+     * a source column for feeds that do not exist would be the D-9 mistake.
+     *
+     * @return \Illuminate\Support\Collection<int,array<string,mixed>>
+     */
+    private function timeline(
+        TransportContainer $container,
+        ?ConsignmentContainer $current,
+        ?TransportTrip $trip,
+        int $tenantId,
+    ) {
+        $subjects = [[TransportContainer::class, $container->id, 'Container']];
+
+        if ($current?->consignment_id) {
+            $subjects[] = [\App\Models\Transport\TransportConsignment::class, $current->consignment_id, 'Consignment'];
+        }
+
+        if ($trip) {
+            $subjects[] = [TransportTrip::class, $trip->id, 'Trip'];
+        }
+
+        $rows = collect();
+
+        foreach ($subjects as [$type, $id, $source]) {
+            TransportAuditLog::forTenant($tenantId)
+                ->forSubject($type, $id)
+                ->orderBy('occurred_at')
+                ->get()
+                ->each(function (TransportAuditLog $log) use ($rows, $source) {
+                    $rows->push([
+                        'at'      => $log->occurred_at?->toIso8601String(),
+                        'action'  => $log->action,
+                        'label'   => $this->humanise($log->action),
+                        'source'  => $source,
+                        'actor'   => $log->actor_name,
+                        'role'    => $log->actor_role,
+                        'details' => $log->new_values,
+                    ]);
+                });
+        }
+
+        // Newest first: a person opening a passport wants what just happened.
+        return $rows->sortByDesc('at')->values();
+    }
+
+    /**
+     * `transport.trip.status_changed` → "Trip status changed".
+     *
+     * CTD §12's principle applied to the timeline: the reader should not have
+     * to decode a dotted action name.
+     */
+    private function humanise(string $action): string
+    {
+        $tail = str_replace('transport.', '', $action);
+
+        return ucfirst(str_replace(['.', '_'], ' ', $tail));
+    }
+}

@@ -359,6 +359,25 @@ export const transportContainerApi = {
 
   detach: (id) =>
     api.post(`/transport/containers/${id}/detach`).then((r) => r.data?.data ?? null).catch(handleErr),
+
+  /**
+   * Container 360 — the Digital Passport (STOS-CTD, MS-001 §14 step 2).
+   * Read-only; assembled server-side from records that already exist.
+   */
+  passport: (id) =>
+    api.get(`/transport/containers/${id}/passport`).then((r) => r.data?.data ?? null).catch(handleErr),
+}
+
+/**
+ * One box, any Transport identifier — TM-001 §8.
+ *
+ * Exact matches only. A miss is a 200 with `result: null`, not an error, so the
+ * caller renders "nothing matches that" rather than a failure.
+ */
+export const transportSearchApi = {
+  resolve: (q) =>
+    api.get('/transport/search', { params: { q } })
+      .then((r) => r.data?.data ?? { query: q, result: null }).catch(handleErr),
 }
 
 /* ── Dispatch (RTM STOS-REQ-OPS-008, FRS TRP-P0-006) ──────────────────── */
@@ -574,6 +593,7 @@ export const transportApi = {
   dispatch: transportDispatchApi,
   consignments: transportConsignmentApi,
   containers: transportContainerApi,
+  search: transportSearchApi,
   vehicles: transportVehicleApi,
   drivers: transportDriverApi,
 }

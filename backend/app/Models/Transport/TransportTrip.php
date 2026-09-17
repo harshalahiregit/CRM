@@ -101,6 +101,27 @@ class TransportTrip extends Model
         return $this->belongsTo(TransportConsignment::class, 'consignment_id');
     }
 
+    /**
+     * CTD-006 / CTD-007 — the vehicle and driver carrying this trip.
+     *
+     * These point at `transport_vehicles` / `transport_drivers`, which are P1's
+     * PLACEHOLDER tables under TEAM-CONTRACTS §1a, not Fleet's. There is no read
+     * contract to Fleet — FleetResourceGateway carries only markDispatched() —
+     * so this is the only way the passport can name a vehicle today.
+     *
+     * When allocation is repointed at Fleet (D-100), these two relations are
+     * among the places that follow.
+     */
+    public function vehicle(): BelongsTo
+    {
+        return $this->belongsTo(TransportVehicle::class, 'vehicle_id');
+    }
+
+    public function driver(): BelongsTo
+    {
+        return $this->belongsTo(TransportDriver::class, 'driver_id');
+    }
+
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Client::class, 'customer_id');

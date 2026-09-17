@@ -2743,3 +2743,47 @@ adds one inherits this — either force-delete, or make the unique index ignore 
 
 Same shape as D-53's latent overlap: correct today because a path does not exist, wrong the day it
 does.
+
+---
+
+## D-102 — Container 360's nine absent sections, and why none of them is a stub
+
+**Raised:** 2026-09-17, building Block 2. **Status: recorded, not deferred and not dropped.**
+
+STOS-CTD §9 lists **thirty** passport sections. Nine have no entity anywhere in this codebase, so
+the passport does not render them at all:
+
+| Section | CTD req | Owner | Why absent |
+|---|---|---|---|
+| GPS / current location (§13, §14) | CTD-010 P1 | P2 | telemetry is Fleet's; no read contract exists |
+| Temperature (§15–§17) | CTD-011 **P0** | Product | no entity. Same root as D-52 — nothing marks a trip temperature-critical |
+| Genset (§18, §19) | — | P2 | no entity |
+| Fuel · FASTag | CTD-015 P1 | P2 | Fleet's |
+| Port / Gate (§28–§30) | CTD-009 P1 | Product | no entity — D-42 |
+| Feedback (§36–§40) | CTD-018 **P0** | Product | no entity |
+| Incident / CAPA (§56, §57) | CTD-012/013 **P0** | P3 | SIRE owns CAPA; `trip_exceptions` has a table and no model |
+| Compliance (§23, §58, §59) | CTD-008 **P0** | P2/P3 | no read contract — D-100 |
+| Profitability (§52–§54) | — | P3 | Finance's |
+
+**The rule applied, and the reason it is a rule:** an empty panel implies the feature exists. A
+dispatcher who sees a Temperature card reading "—" concludes the sensor is broken; one who sees no
+card concludes the system does not track it. The second is true. This is the same rule the
+consignment drawer follows and the reason its Containers panel waited for containers to exist.
+
+**Five of these are P0.** They are not deferred by choice — there is nothing to render. Each
+becomes a one-section addition to `ContainerPassportService` the day its entity exists, and the
+service is shaped so that adding one touches nothing else.
+
+---
+
+## D-103 — CTD §77's passport snapshots, deferred
+
+**Raised and deferred:** 2026-09-17, on the owner's ruling.
+
+§77 asks the system to preserve "current view; historical event stream; rule versions; important
+snapshots". The first two exist — the passport IS the current view and `transport_audit_logs` is
+the immutable stream. **Rule versions and snapshots would need a new table**, and nothing today can
+say which snapshots matter or what a rule version is.
+
+Deferred rather than built: a table whose contents nobody can specify is the D-9 mistake in a
+different shape. **Owner: Product**, to specify what a snapshot is for before one is stored.

@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import {
-  Plus, Container, Loader2, Link2, Unlink, Eye, History, Boxes, CheckCircle2,
+  Plus, Container, Loader2, Link2, Unlink, Eye, History, Boxes, CheckCircle2, Search,
 } from 'lucide-react'
-import { transportContainerApi, transportConsignmentApi } from '@/services/transportApi'
+import { transportContainerApi, transportConsignmentApi, transportSearchApi } from '@/services/transportApi'
 import { useToast } from '@/components/ui/Toast'
 import DataTable from '@/components/ui/DataTable'
 import PagerBar from '@/components/ui/PagerBar'
@@ -41,6 +42,7 @@ import { fmtDateTime } from '../constants'
 const EMPTY = { container_number: '', container_type: '' }
 
 export default function TransportContainers() {
+  const navigate = useNavigate()
   const toast = useToast()
   const qc = useQueryClient()
 
@@ -78,6 +80,26 @@ export default function TransportContainers() {
     queryFn: () => transportConsignmentApi.list({ per_page: 200 }),
   })
   const consignments = consignmentPage?.data ?? []
+
+  /*
+   * TM-001 §8 / CTD §4 — ONE BOX, ANY IDENTIFIER.
+   *
+   * The same box that filters this list also resolves an exact identifier. Type
+   * a container number and the list narrows; type a TRIP number and a banner
+   * offers to take you there. CTD §4 lists nine entry points and says "all
+   * relevant search paths must ultimately lead to the same Digital Passport" —
+   * this is that, without a second search box competing with the filter.
+   *
+   * Only fires for terms long enough to be an identifier, so it is not called
+   * on every keystroke of a two-letter filter.
+   */
+  const { data: resolved } = useQuery({
+    queryKey: ['transport', 'search', search],
+    queryFn: () => transportSearchApi.resolve(search),
+    enabled: search.trim().length >= 4,
+    retry: false,
+  })
+  const hit = resolved?.result
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['transport', 'containers'] })
   const sf = (k, v) => setForm((p) => ({ ...p, [k]: v }))
@@ -170,6 +192,14 @@ export default function TransportContainers() {
         const on = (r.active_attachments_count ?? 0) > 0
         return (
           <div className="flex items-center gap-1.5 justify-end">
+            {/* Container 360 — the passport is the detail view now. The old
+                history drawer stays available behind it, because a quick look
+                at where a box has been should not need a page load. */}
+            <button title="Open Container 360" onClick={() => navigate(`/app/transport/containers/${r.id}`)}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold"
+              style={{ background: 'rgba(124,58,237,0.14)', color: 'var(--accent)' }}>
+              Open 360
+            </button>
             <button title="History" onClick={() => setViewing(r)}
               className="p-1.5 rounded-lg hover:opacity-80 transition-opacity"
               style={{ color: 'var(--color-info-500)' }}>
@@ -234,7 +264,7 @@ export default function TransportContainers() {
             own className, so passing one would strip the input-3d styling. */}
         <div className="w-full max-w-md">
           <Input value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search container number — spacing and case do not matter…" />
+            placeholder="Container, trip, order, consignment or vehicle number…" />
         </div>
         {/* The one filter the data can answer. No status chips — see docblock. */}
         {[
@@ -255,6 +285,22 @@ export default function TransportContainers() {
           </button>
         ))}
       </div>
+
+      {/* The identifier hit. Shown only when it points somewhere the list does
+          not already show — a container match is the list, so offering to
+          "go to" it would be noise. */}
+      {hit && hit.type !== 'container' && (
+        <button onClick={() => navigate(hit.path)}
+          className="w-full text-left p-3 rounded-2xl flex items-center gap-3"
+          style={{ background: 'rgba(124,58,237,0.10)', border: '1px solid var(--accent)' }}>
+          <Search size={15} style={{ color: 'var(--accent)' }} />
+          <span className="flex-1 min-w-0">
+            <span className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>{hit.label}</span>
+            <span className="text-xs ml-2" style={{ color: 'var(--text-muted)' }}>{hit.kind}</span>
+          </span>
+          <span className="text-xs font-bold" style={{ color: 'var(--accent)' }}>Open →</span>
+        </button>
+      )}
 
       {isLoading ? (
         <Loader2 className="animate-spin mx-auto my-10" style={{ color: 'var(--text-muted)' }} />

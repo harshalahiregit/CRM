@@ -264,6 +264,7 @@ const TransportOrderDetail = lazy(() => import('@/modules/transport/pages/Transp
 const TransportTrips       = lazy(() => import('@/modules/transport/pages/TransportTrips'))
 const TransportConsignments = lazy(() => import('@/modules/transport/pages/TransportConsignments'))
 const TransportContainers = lazy(() => import('@/modules/transport/pages/TransportContainers'))
+const ContainerPassport = lazy(() => import('@/modules/transport/pages/ContainerPassport'))
 const TransportTripDetail  = lazy(() => import('@/modules/transport/pages/TransportTripDetail'))
 const TransportVehicles    = lazy(() => import('@/modules/transport/pages/TransportVehicles'))
 const TransportVehicleDetail = lazy(() => import('@/modules/transport/pages/TransportVehicleDetail'))
@@ -919,6 +920,7 @@ export default function AppRoutes() {
           <Route path="trips" element={<S><TransportTrips /></S>} />
           <Route path="consignments" element={<S><TransportConsignments /></S>} />
           <Route path="containers" element={<S><TransportContainers /></S>} />
+          <Route path="containers/:id" element={<S><ContainerPassport /></S>} />
           <Route path="trips/:id" element={<S><TransportTripDetail /></S>} />
           {/* Fleet (Person 2), merged in 2026-09-17 — D-62.
               P1's placeholder Vehicles/Drivers screens are unrouted here rather
