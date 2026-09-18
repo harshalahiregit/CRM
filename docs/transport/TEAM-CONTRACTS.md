@@ -43,6 +43,36 @@ destroy anything outside your own section, stop and say so before running it.
 
 ---
 
+## Always run `migrate:status` before `migrate`
+
+**Read what is pending before you apply it. Every time.**
+
+`php artisan migrate` applies **everything** that is pending, not the migration you just wrote.
+Another developer's migration, sitting unapplied on your branch since a merge you did not look
+at closely, runs on your database the moment you add a column of your own.
+
+This happened on **2026-09-18**. Block 3 added two columns to `transport_trips`;
+`php artisan migrate` also ran `2027_01_02_000002_move_transport_masters_into_fleet`, which the
+owner had said explicitly not to run yet. Nobody opted into it. Nobody passed a flag or named a
+file. Laravel did what Laravel does. See D-109.
+
+**The rule:**
+
+```
+php artisan migrate:status     # read the pending list
+php artisan migrate --pretend  # if anything on it is not yours
+php artisan migrate
+```
+
+**And the judgement behind it:** `migrate` is not a command that applies *your* change. It is a
+command that applies *the branch's* changes, and a pending migration you did not write is
+somebody else's decision executing on your database. A status check is the only thing standing
+between you and the next one.
+
+Same family as the rule above: a routine command with an irreversible effect nobody expects.
+
+---
+
 ## `php artisan migrate` currently moves the Fleet masters — D-109
 
 **Added 2026-09-17, after I triggered it by accident.**
