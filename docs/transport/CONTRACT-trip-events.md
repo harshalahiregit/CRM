@@ -1,6 +1,36 @@
-# `trip_events` — the timeline all three of us write to
+# Shivam, Zafar — three calls on your side turns a demonstration step green
 
-**From:** Mohammad (Person 1) · **2026-09-18** · **Shivam and Zafar — this one is for you both.**
+**From:** Mohammad (Person 1) · **2026-09-18**
+
+---
+
+## The payoff first
+
+**Shivam.** MS-001 §14 step 8 is *"Show GPS/temperature/generator event"*. I walked the
+demonstration's fourteen steps in a browser on 18 September and recorded that one as **NOT
+REACHABLE** — you had shipped telemetry ingestion, and there was no way to get from a container
+to a reading. It is one of only four steps of the fourteen that do not work.
+
+**Three `record()` calls inside `TelemetryIngestionService` close it.** Not a new endpoint, not a
+schema change, not a conversation with me:
+
+```php
+app(\App\Services\Transport\TripEventRecorder::class)->record(
+    type: 'gps.activated',  trip: $trip, occurredAt: $ping->recorded_at,
+);
+// and 'genset.on' / 'temperature.reading' the same way
+```
+
+The events land on the container's Digital Passport with **no change on my side**. Step 8 goes
+from a gap in the 30 September script to a line in the timeline.
+
+**Zafar.** Same shape for two more. Step 10 is *"Record delivery, feedback and POD"* — delivery
+is mine and works; `pod.uploaded` from your service puts the rest on the same screen. Step 12 is
+*"Show invoice linkage"*, and `billing.ready` plus `invoice.posted` do the same there. (Feedback
+is still unspecified anywhere in the package — separate note.)
+
+That is the cheapest progress available on this project right now, and it is entirely yours to
+take.
 
 ---
 
@@ -95,21 +125,6 @@ three names for one event is not a timeline.
 
 An unregistered type is still **recorded**, not refused, and still renders as English
 (`gate.weighbridge` → "Gate weighbridge"). You are never blocked; you are just visible.
-
----
-
-## What this unlocks, concretely
-
-**Shivam** — MS-001 §14 step 8 is *"Show GPS/temperature/generator event"*, and my walk of the
-fourteen on 18 September recorded it as **NOT REACHABLE**: you shipped telemetry ingestion, and
-there was no way to get from a container to a reading. Three `record()` calls in
-`TelemetryIngestionService` and that step turns green — the events land on the container's
-passport with no change on my side.
-
-**Zafar** — step 10 is *"Record delivery, feedback and POD"* and step 12 is *"Show invoice
-linkage"*. Delivery is mine and works. `pod.uploaded` and `billing.ready` from your services put
-the rest of that story on the same screen. (Feedback is still unspecified — see
-`REQUEST-person3-feedback-is-yours.md`.)
 
 ---
 
