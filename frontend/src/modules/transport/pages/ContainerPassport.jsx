@@ -197,7 +197,7 @@ export default function ContainerPassport() {
                 style={filter === s
                   ? { background: 'rgba(124,58,237,0.16)', color: 'var(--accent)', border: '1px solid var(--accent)' }
                   : { background: 'var(--bg-input)', color: 'var(--text-body)', border: '1px solid var(--border)' }}>
-                {s === 'all' ? 'Everything' : s}
+                {s === 'all' ? 'Everything' : (CATEGORY_LABEL[s] || s)}
               </button>
             ))}
           </div>
@@ -209,7 +209,7 @@ export default function ContainerPassport() {
               {/* CTD §32: "each event should identify its source." The
                   category is the filter; the source is who said it. */}
               <span className="text-[10px] font-bold uppercase shrink-0 w-24" style={{ color: 'var(--text-faint)' }}>
-                {r.category}
+                {CATEGORY_LABEL[r.category] || r.category}
               </span>
               <span className="text-xs flex-1" style={{ color: 'var(--text-h)' }}>
                 {r.label}
@@ -229,6 +229,26 @@ export default function ContainerPassport() {
       </Section>
     </div>
   )
+}
+
+/**
+ * CTD §101's nine branches of the event stream, as a reader would say them.
+ *
+ * The stored values are lower-case tokens — `gps`, `temperature`, `operational`
+ * — and CSS uppercasing them does not make them English. "GPS" and "Paperwork"
+ * are what a dispatcher calls these; `document` and `quality` are what the
+ * document calls them.
+ */
+const CATEGORY_LABEL = {
+  commercial: 'Commercial',
+  operational: 'Operations',
+  document: 'Paperwork',
+  compliance: 'Compliance',
+  gps: 'GPS',
+  temperature: 'Temperature',
+  financial: 'Money',
+  customer: 'Customer',
+  quality: 'Incidents',
 }
 
 function Section({ title, icon: Icon, children }) {

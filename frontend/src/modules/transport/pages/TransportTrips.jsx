@@ -100,9 +100,20 @@ export default function TransportTrips() {
         ) : rows.length === 0 ? (
           <div style={{ padding: 48, textAlign: 'center' }}>
             <Truck size={30} style={{ color: 'var(--text-muted)', marginBottom: 10 }} />
-            <p style={{ color: 'var(--text-h)', fontSize: 15, fontWeight: 700, margin: 0 }}>No trips yet</p>
+            {/* Three situations, three sentences. It said "No X yet" even when
+                the workspace was full of them, simply because a filter matched
+                none — which tells the reader something false about their own
+                data and hides the thing they should check: what they typed.
+                Same defect as the Containers list carried until 2026-09-18. */}
+            <p style={{ color: 'var(--text-h)', fontSize: 15, fontWeight: 700, margin: 0 }}>
+              {search ? `Nothing here matches “${search}”` : status ? 'No trip is at that stage' : 'No trips yet'}
+            </p>
             <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '6px 0 0' }}>
-              {status || search ? 'Nothing matches this filter.' : 'Approve a transport order, then create its trip from the order page.'}
+              {search
+                ? 'Try the trip number, the customer, or the route.'
+                : status
+                  ? 'Choose “All” to see every trip.'
+                  : 'Approve a transport order, then create its trip from the order page.'}
             </p>
           </div>
         ) : (

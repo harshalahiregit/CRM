@@ -175,9 +175,13 @@ export default function TransportConsignments() {
       key: 'order', label: 'Order',
       render: (r) => (
         <div>
-          <span style={{ color: 'var(--text-h)' }}>{r.order?.order_number ?? '—'}</span>
+          <span style={{ color: 'var(--text-h)' }}>{r.order?.order_number ?? 'No order'}</span>
+          {/* The label, not the stored code. Swapping an underscore for a space
+              still leaves the database's word on a client's screen. */}
           {r.order?.order_status && (
-            <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{r.order.order_status.replace(/_/g, ' ')}</div>
+            <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              {ORDER_STATUS_LABEL[r.order.order_status] || r.order.order_status}
+            </div>
           )}
         </div>
       ),
@@ -297,9 +301,16 @@ export default function TransportConsignments() {
             emptyState={
               <div className="text-center py-10">
                 <Boxes size={26} className="mx-auto mb-2" style={{ color: 'var(--text-muted)' }} />
-                <p className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>No consignments yet</p>
+                {/* See the note on the Orders list — "No consignments yet" was
+                    shown to workspaces that had plenty, because a search matched
+                    none of them. */}
+                <p className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>
+                  {search ? `Nothing here matches “${search}”` : 'No consignments yet'}
+                </p>
                 <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                  {search ? 'Nothing matches that search.' : 'Create one against an approved transport order.'}
+                  {search
+                    ? 'Try the consignment number, the customer reference, or the order.'
+                    : 'Create one against an approved transport order.'}
                 </p>
               </div>
             } />
@@ -501,8 +512,12 @@ function ConsignmentDetail({ id }) {
           ? <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Nothing recorded yet.</p>
           : audit.map((e) => (
             <div key={e.id} className="py-1.5 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
+              {/* It read "created" and "updated" — the action key with its
+                  prefix stripped. The order detail page has always rendered
+                  these as sentences ("Trip created from this order", "Status
+                  changed — Submitted → Approved"); this one was left behind. */}
               <p className="text-xs font-bold" style={{ color: 'var(--text-h)' }}>
-                {String(e.action ?? '').replace('transport.consignment.', '').replace(/_/g, ' ')}
+                {CONSIGNMENT_EVENT[e.action] || humaniseAction(e.action)}
               </p>
               <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                 {e.actor_name || 'System'} · {fmtDateTime(e.occurred_at)}
@@ -594,6 +609,28 @@ function Section({ title, children }) {
  * the true thing; "Not recorded" is the safe default because it is the one
  * claim always available — we do not have it.
  */
+/**
+ * What happened to a consignment, in a sentence.
+ *
+ * An action key with its prefix stripped is still the key — "created" is not a
+ * sentence and "container_attached" is a column name. Anything unmapped is
+ * humanised rather than hidden, so a new action reads as English on the day it
+ * ships instead of waiting for somebody to notice.
+ */
+const CONSIGNMENT_EVENT = {
+  'transport.consignment.created': 'Consignment created',
+  'transport.consignment.updated': 'Details changed',
+  'transport.consignment.deleted': 'Consignment removed',
+  'transport.container.attached': 'Container attached',
+  'transport.container.detached': 'Container detached',
+}
+
+const humaniseAction = (a) => {
+  const tail = String(a ?? '').replace(/^transport\.[a-z_]+\./, '').replace(/[._]/g, ' ')
+
+  return tail ? tail.charAt(0).toUpperCase() + tail.slice(1) : 'Something happened'
+}
+
 function KV({ label, value, strong = false, empty = 'Not recorded' }) {
   const shown = value === 0 || value ? value : empty
 
