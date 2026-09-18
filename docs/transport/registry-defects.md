@@ -717,7 +717,36 @@ tokens across the package — the worst state divergence found, worse than the T
 
 Only `STT-015` (open→acknowledged) and `STT-016` (acknowledged→resolved) are defined.
 
-**Blocks SNG-TRN-013.** Awaiting the owner's Q1 ruling.
+~~**Blocks SNG-TRN-013.** Awaiting the owner's Q1 ruling.~~
+
+### RULED 2026-09-18 — and it needed no new decision
+
+The owner's ruling: **this contradiction dissolves under a rule we already made.**
+
+See `TEAM-CONTRACTS.md`, *"Which document wins when the state machines disagree"* — the standing
+rule from Block 3. Applied here:
+
+| | |
+|---|---|
+| **VOCABULARY** — from Step 9 | open · acknowledged · in_progress · mitigation_planned · resolved · verified · closed |
+| **EDGES** — from Step 11, which LOCKS exactly two | `STT-015` open → acknowledged · `STT-016` acknowledged → resolved |
+| **EVERYTHING ELSE** | stays in the vocabulary, stays unreachable — exactly as `arrived`, `pod_pending` and `settlement_pending` do on the Trip machine |
+
+### And it settles Step 11 contradicting itself, without either half losing
+
+That was the part that looked intractable: `SM-EXC` calls `resolved` **terminal** while
+`ENUM-004` lists `closed` **after** it. One document, two answers.
+
+They are answers to different questions. **`SM-EXC` calling `resolved` terminal is an EDGE claim.
+`ENUM-004` listing `closed` is a VOCABULARY claim.** Under the rule the edge claim is Step 11's to
+make and the vocabulary claim is Step 9's — and Step 9 lists `closed` too.
+
+So `closed` exists in the vocabulary, no edge leaves `resolved`, and **`resolved` is terminal in
+practice**, because a state absent from `TRANSITIONS` is terminal by construction. Both halves of
+Step 11 are honoured. Nothing invented, nothing discarded.
+
+**SNG-TRN-013 is unblocked.** This is step 9 of MS-001 §14's fourteen, and it was the only one of
+that walk's eight gaps that belonged to P1.
 
 ---
 
@@ -730,7 +759,35 @@ No enum or state machine in the package contains `waived`.
 
 Notable: this is the **first override written into a P0 Hard rule's own definition**, unlike
 PLN-007, CMP-007 and BRW-049, which were all deferred as P1. That makes it a closer call than the
-other overrides. **Blocks SNG-TRN-013.** Awaiting the owner's Q2 ruling.
+other overrides. ~~**Blocks SNG-TRN-013.** Awaiting the owner's Q2 ruling.~~
+
+### RULED 2026-09-18 — DEFERRED, the same way BR-P0-017's waiver is
+
+**A SPECIFIED behaviour we are choosing not to build yet, not an invented one we are refusing.**
+The distinction is the one the owner drew for closure, and it applies here unchanged:
+
+| | |
+|---|---|
+| **Specified by** | FRS `TRP-P0-012` — output *"Open→acknowledged→resolved/**waived**"*, control *"Waiver requires reason/role"* |
+| **Role named** | **Owner** — `BR-P0-011`'s Override column reads *"Owner waiver"* |
+| **Status** | Deferred. No ticket authorises or audits a waiver, and building one would mean inventing who may exercise it and what evidence it needs |
+
+**Two things follow, and both are load-bearing.**
+
+**1. Nothing on screen may imply an exception cannot be waived.** The refusal says the waiver is
+**not built yet**. A user told *"this cannot be waived"* when their own rule book says it can is
+being misled by our software about their own business. Same wording discipline as
+`ClosureScope::WAIVER_MESSAGE`.
+
+**2. `waived` leaves the vocabulary.** This supersedes the owner's Q2 ruling of 2026-09-10
+("waived declared in the enum, not wired") — cleanly, rather than by reversal. The standing
+Step 9 / Step 11 rule says the vocabulary comes from **Step 9**, and `waived` is the one status in
+`ExceptionStatus` that Step 9 does not contain; it is in FRS and BRWM alone.
+
+That is exactly why it is treated differently from `in_progress`, `mitigation_planned`, `verified`
+and `closed` — those ARE Step 9's, so they stay declared and unreachable. `waived` is not, so it
+stays **out of `ALL`** until it has an edge and a gate. The constant remains, carrying its
+deferral, because the behaviour is specified and will one day be built.
 
 ---
 

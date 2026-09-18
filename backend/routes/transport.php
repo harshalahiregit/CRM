@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\Transport\TransportConsignmentController;
 use App\Http\Controllers\Api\Transport\TransportContainerController;
 use App\Http\Controllers\Api\Transport\TransportCostController;
 use App\Http\Controllers\Api\Transport\TransportDispatchController;
+use App\Http\Controllers\Api\Transport\TransportExceptionController;
 use App\Http\Controllers\Api\Transport\TransportDriverController;
 use App\Http\Controllers\Api\Transport\TransportOrderController;
 use App\Http\Controllers\Api\Transport\TransportPodController;
@@ -384,6 +385,42 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
 
     Route::middleware('transport.permission:'.TransportPermission::TRIP_CLOSE)->group(function () {
         Route::post('/trips/{trip}/close', [TransportClosureController::class, 'close'])->whereNumber('trip');
+    });
+
+    /* ── Exceptions — SNG-TRN-013, API-007 ───────────────────────────────
+     *
+     * API-007 gives the path and the permission key verbatim:
+     *   API-007 | POST | /api/v1/transport/trips/{trip}/exceptions
+     *           | Raise exception | JWT | transport.exception.create
+     *           | TripExceptionRaised | LOCKED
+     *
+     * The two transitions have no API row — Step 11 registers no endpoint for
+     * STT-015 or STT-016 — so their paths follow this module's convention (a
+     * state change is a PATCH on a named verb) and are derived, not quoted.
+     *
+     * They hang off the EXCEPTION rather than the trip, because an exception
+     * may have no trip: OPS §87's transaction field is "trip_id, and optionally
+     * vehicle/driver", and a vehicle breakdown between trips is a real thing.
+     *
+     * Raising is wider than managing, deliberately. transport.exception.create
+     * mirrors PERM-006 and includes the DISPATCHER — the person most likely to
+     * be standing next to the problem; a register nobody on the ground can
+     * write to only ever hears things second-hand. Acknowledging and resolving
+     * mirror PERM-005 and exclude them: raise, but do not sign off. The same
+     * separation POD_SUBMIT and POD_VERIFY already draw. D-31 records that
+     * Step 11 has no Exception permission row at all.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::TRIP_VIEW)->group(function () {
+        Route::get('/trips/{trip}/exceptions', [TransportExceptionController::class, 'index'])->whereNumber('trip');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::EXCEPTION_CREATE)->group(function () {
+        Route::post('/trips/{trip}/exceptions', [TransportExceptionController::class, 'store'])->whereNumber('trip');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::EXCEPTION_MANAGE)->group(function () {
+        Route::patch('/exceptions/{exception}/acknowledge', [TransportExceptionController::class, 'acknowledge'])->whereNumber('exception');
+        Route::patch('/exceptions/{exception}/resolve', [TransportExceptionController::class, 'resolve'])->whereNumber('exception');
     });
 
     /* ── Consignments — STOS-CTD §8 ───────────────────────────────────
