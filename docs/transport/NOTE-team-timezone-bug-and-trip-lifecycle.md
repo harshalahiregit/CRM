@@ -36,21 +36,42 @@ day it shipped:
 **1311 tests were green the whole time.** They could not have caught it: every service test
 builds its times on the server, where there is nothing to convert.
 
-### Check yours — it takes two minutes
+### I checked yours already — and here is the honest answer
+
+I ran the sweep across your areas rather than asking you to. **Neither of you has the throwing
+variant of this bug**, and I would rather tell you that than have you spend an afternoon looking
+for it:
 
 ```bash
-grep -rn 'datetime-local' frontend/src/modules/<your-area>
+grep -rn 'datetime-local' frontend/src/modules/transport/fleet          # Shivam → no hits
+grep -rn 'datetime-local' frontend/src/modules/transport/components     # Zafar  → no hits in yours
 ```
 
-For each hit, follow the value to where it is sent. If it goes out as `"2026-09-20 14:00:00"` or
-`"2026-09-20T14:00"` — no `Z`, no `+05:30` — **you have this bug.**
+**Every date field either of you has is `type="date"`, date-only**, and date-only does not carry a
+time to get wrong. So no action is needed from either of you today.
 
-**Shivam:** `FuelExpenseModal`, `MaintenanceJobCardForm`, `TyrePanel` and `VehicleFormModal` all
-carry date fields. I have not touched them — they are yours, and I do not know whether they
-convert.
+| | file | field |
+|---|---|---|
+| **Shivam** | `fleet/components/VehicleFormModal.jsx` | purchase date, and the compliance dates |
+| **Shivam** | `fleet/pages/DriversBoard.jsx` | licence expiry |
+| **Zafar** | `components/CostsPanel.jsx` | cost date |
+| **Zafar** | `components/CollectionPanel.jsx` | due date, next follow-up |
 
-**Zafar:** `CollectionPanel` and `CostsPanel` both have date pickers, and `CostsPanel` caps one at
-`new Date().toISOString().slice(0,10)`, which is a UTC date compared against a local one.
+**What you ARE exposed to** is the quieter one below — the day-drift — because those four fields
+are exactly the kind it affects. And one specific thing worth a look, Zafar:
+
+```js
+// CostsPanel.jsx:195
+<input type="date" max={new Date().toISOString().slice(0, 10)} ... />
+```
+
+`toISOString()` is a **UTC** date being used as the ceiling on a **local** date picker. Between
+midnight and 05:30 IST those are different days, so someone recording a cost at 1am cannot date it
+today. Small, real, and yours.
+
+**If you add a `datetime-local` anywhere later, read the fix below first.** There is now a test
+(`TransportDateTimeContractTest`) that fails if a file in the transport module renders one without
+converting it — including indirectly, through a shared field config.
 
 ### The fix
 
