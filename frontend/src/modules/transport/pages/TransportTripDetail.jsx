@@ -4,6 +4,7 @@ import {
   ArrowLeft, Truck, Building2, Package, History, Route as RouteIcon,
   AlertTriangle, Loader2, Gauge, Pencil, ClipboardCheck, Send, Boxes, CheckCircle2, Undo2,
   Wallet, IndianRupee, FileCheck2, Receipt, Banknote, MapPin, Lock, ChevronDown, ChevronRight,
+  AlertTriangle as AlertIcon,
 } from 'lucide-react'
 import { transportTripApi, transportCapabilityApi, transportPretripApi } from '@/services/transportApi'
 import { useToast } from '@/components/ui/Toast'
@@ -21,6 +22,8 @@ import TripStep from '../components/TripStep'
 // closure is P1's too (STT-012) and is built but unreachable — see D-106.
 import JourneyPanel from '../components/JourneyPanel'
 import ClosurePanel from '../components/ClosurePanel'
+// SNG-TRN-013, unblocked 2026-09-18 — step 9 of MS-001 §14.
+import ExceptionsPanel from '../components/ExceptionsPanel'
 // Steps 4-6 — P3's tickets. Self-contained panels, same shape as the three
 // above, so the seam into this page stays three imports and three blocks.
 import AdvancesPanel from '../components/AdvancesPanel'
@@ -221,6 +224,9 @@ export default function TransportTripDetail() {
     // Not stages of the journey — see the comment beside them in the markup.
     advances:  { available: 2 },
     costs:     { available: 2 },
+    // Neither is an exception a STAGE. Something can go wrong at any point
+    // after a trip exists, and a trip that never has one is not incomplete.
+    exceptions: { available: 0 },
   }
 
   const stageState = (key) => {
@@ -419,6 +425,26 @@ export default function TransportTripDetail() {
               canDepart={!!grants['transport.trip.dispatch']}
               canDeliver={!!grants['transport.trip.deliver']}
               onChanged={load} />
+          </TripStep>
+
+          {/* SNG-TRN-013. Blocked since 2026-09-10 on D-29 and D-30, both ruled
+              on 2026-09-18 — and D-29 needed no new decision, only the standing
+              Step 9 / Step 11 rule applied to it.
+
+              Sits with the operational work rather than below it: an exception
+              is the reason a dispatcher is on this page at all, and burying it
+              under billing would be the same mistake this rebuild removed.
+
+              `available`, not numbered — something can go wrong at any point,
+              and a trip with no exceptions is not a trip missing a step. */}
+          <TripStep {...stepProps('exceptions')} icon={AlertIcon} n="!" title="What has gone wrong"
+            hint="Anything that needs somebody to own it and put it right. Raising is wider than resolving: whoever is nearest the problem can record it.">
+            <ExceptionsPanel
+              trip={trip}
+              canRaise={!!grants['transport.exception.create']}
+              canManage={!!grants['transport.exception.manage']}
+              onChanged={load}
+            />
           </TripStep>
 
           <GroupLabel>Paperwork and money</GroupLabel>

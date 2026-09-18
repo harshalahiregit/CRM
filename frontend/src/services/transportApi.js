@@ -2,6 +2,23 @@ import api from '@/lib/api'
 import { handleErr } from '@/services/apiError'
 
 /**
+ * The sentence a refusal actually carries.
+ *
+ * Laravel answers a FormRequest failure with `message: "Validation failed"` and
+ * puts the real wording in `errors`. Every carefully worded rule message in
+ * this module — "BR-P0-011 requires resolution evidence", "that waiver is
+ * specified but not built yet", "OPS §87 asks for it and no document defines a
+ * formula" — lives there, and a client that shows `message` shows the reader
+ * nothing. Found by driving the screen, not by reading the code.
+ */
+const refusalText = (body) => {
+  const first = Object.values(body?.errors ?? {}).flat().filter(Boolean)
+
+  return first.length ? first.join(' ') : (body?.message || 'That was refused.')
+}
+
+
+/**
  * Sangoe Transport OS — every /api/transport/* call.
  *
  * Uses the shared axios instance from @/lib/api, which attaches the bearer
@@ -28,7 +45,7 @@ import { handleErr } from '@/services/apiError'
 const err422 = (e) => {
   const body = e?.response?.data
   if (body && e?.response?.status === 422) {
-    return { ok: false, message: body.message, ...(body.data ?? {}) }
+    return { ok: false, message: refusalText(body), ...(body.data ?? {}) }
   }
   throw e
 }
@@ -147,7 +164,7 @@ export const transportAllocationApi = {
       .catch((e) => {
         const body = e?.response?.data
         if (body && e?.response?.status === 422) {
-          return { ok: false, message: body.message, eligibility: body.eligibility, data: body.data }
+          return { ok: false, message: refusalText(body), eligibility: body.eligibility, data: body.data }
         }
         throw e
       }),
@@ -252,7 +269,7 @@ export const transportPretripApi = {
       .catch((e) => {
         const body = e?.response?.data
         if (body && e?.response?.status === 422) {
-          return { ok: false, message: body.message, readiness: body.data }
+          return { ok: false, message: refusalText(body), readiness: body.data }
         }
         throw e
       }),
@@ -267,7 +284,7 @@ export const transportPretripApi = {
       .catch((e) => {
         const body = e?.response?.data
         if (body && e?.response?.status === 422) {
-          return { ok: false, message: body.message, readiness: body.data }
+          return { ok: false, message: refusalText(body), readiness: body.data }
         }
         throw e
       }),
@@ -282,7 +299,7 @@ export const transportPretripApi = {
       .catch((e) => {
         const body = e?.response?.data
         if (body && e?.response?.status === 422) {
-          return { ok: false, message: body.message, readiness: body.data }
+          return { ok: false, message: refusalText(body), readiness: body.data }
         }
         throw e
       }),
@@ -412,7 +429,7 @@ export const transportDispatchApi = {
       .catch((e) => {
         const body = e?.response?.data
         if (body && e?.response?.status === 422) {
-          return { ok: false, message: body.message, ...(body.data ?? {}) }
+          return { ok: false, message: refusalText(body), ...(body.data ?? {}) }
         }
         throw e
       }),
@@ -427,7 +444,7 @@ export const transportDispatchApi = {
       .catch((e) => {
         const body = e?.response?.data
         if (body && e?.response?.status === 422) {
-          return { ok: false, message: body.message, ...(body.data ?? {}) }
+          return { ok: false, message: refusalText(body), ...(body.data ?? {}) }
         }
         throw e
       }),
@@ -449,7 +466,7 @@ export const transportDispatchApi = {
       .catch((e) => {
         const body = e?.response?.data
         if (body && e?.response?.status === 422) {
-          return { ok: false, message: body.message, ...(body.data ?? {}) }
+          return { ok: false, message: refusalText(body), ...(body.data ?? {}) }
         }
         throw e
       }),
@@ -472,7 +489,7 @@ export const transportJourneyApi = {
       .catch((e) => {
         const body = e?.response?.data
         if (body && e?.response?.status === 422) {
-          return { ok: false, message: body.message }
+          return { ok: false, message: refusalText(body) }
         }
         throw e
       }),
@@ -493,7 +510,7 @@ export const transportJourneyApi = {
       .catch((e) => {
         const body = e?.response?.data
         if (body && e?.response?.status === 422) {
-          return { ok: false, message: body.message, ...(body.data ?? {}) }
+          return { ok: false, message: refusalText(body), ...(body.data ?? {}) }
         }
         throw e
       }),
@@ -646,6 +663,59 @@ export const transportCollectionApi = {
  * What the signed-in user may do — so a screen can hide an action the API would
  * refuse rather than show a button that 403s.
  */
+/* ── Exceptions (SNG-TRN-013, API-007) ────────────────────────────────── */
+
+/**
+ * The exception register.
+ *
+ * Every response carries the vocabulary — OPS §88's eight categories,
+ * CTR-011's four severities, and which statuses are reachable. The form does
+ * NOT hardcode them: D-37 records that the category list exists in exactly one
+ * document, so a client keeping its own copy has nothing to check it against
+ * and will disagree with the server the first time the list moves.
+ *
+ * Refusals come back as a 422 carrying the exception, so a blocked resolve
+ * renders as an explanation rather than a toast that loses the reason.
+ */
+export const transportExceptionApi = {
+  forTrip: (tripId) =>
+    api.get(`/transport/trips/${tripId}/exceptions`).then((r) => r.data?.data ?? null).catch(handleErr),
+
+  /** API-007, verbatim path. */
+  raise: (tripId, body) =>
+    api.post(`/transport/trips/${tripId}/exceptions`, body)
+      .then((r) => ({ ok: true, exception: r.data?.data ?? null }))
+      .catch((e) => {
+        const b = e?.response?.data
+        if (b && e?.response?.status === 422) {
+          // Field errors AND the sentence, because a prohibited field's message
+          // is the explanation (financial impact, waiver) rather than a nag.
+          return { ok: false, message: refusalText(b), errors: b.errors ?? null }
+        }
+        throw e
+      }),
+
+  /** STT-015 — assign the owner, start the clock. */
+  acknowledge: (id, ownerId = null) =>
+    api.patch(`/transport/exceptions/${id}/acknowledge`, ownerId ? { owner_id: ownerId } : {})
+      .then((r) => ({ ok: true, exception: r.data?.data ?? null }))
+      .catch((e) => {
+        const b = e?.response?.data
+        if (b && e?.response?.status === 422) return { ok: false, message: b.message }
+        throw e
+      }),
+
+  /** STT-016 — BR-P0-011's evidence. The note is mandatory. */
+  resolve: (id, resolutionNote) =>
+    api.patch(`/transport/exceptions/${id}/resolve`, { resolution_note: resolutionNote })
+      .then((r) => ({ ok: true, exception: r.data?.data ?? null }))
+      .catch((e) => {
+        const b = e?.response?.data
+        if (b && e?.response?.status === 422) return { ok: false, message: refusalText(b), errors: b.errors ?? null }
+        throw e
+      }),
+}
+
 export const transportCapabilityApi = {
   get: () =>
     api.get('/transport/permissions').then((r) => r.data?.data ?? { grants: {}, role: null }).catch(handleErr),
