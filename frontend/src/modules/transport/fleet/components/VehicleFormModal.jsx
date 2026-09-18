@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { X, Truck, Check, Info } from 'lucide-react'
-import { stosApi, STOS_ACCENT, VEHICLE_TYPE_OPTIONS, EXPIRY_DOCUMENTS } from '@/services/stosApi'
+import { stosApi, STOS_ACCENT, VEHICLE_TYPE_OPTIONS, EXPIRY_DOCUMENTS, FUEL_TYPES } from '@/services/stosApi'
 import Select from '@/components/ui/Select'
 
 /**
@@ -25,6 +25,9 @@ const OWNERSHIPS = [
 const EMPTY = {
   registration_number: '', vehicle_type: 'truck', ownership_type: 'owned',
   chassis_number: '', engine_number: '', gps_device_id: '',
+  fleet_number: '', manufacturer: '', model: '', variant: '',
+  manufacturing_year: '', purchase_date: '', fuel_type: '', branch: '',
+  capacity_tonnes: '',
   registration_expiry: '', insurance_expiry: '', fitness_expiry: '', permit_expiry: '', puc_expiry: '',
   compliance_hold: false, compliance_hold_reason: '',
 }
@@ -47,6 +50,15 @@ export default function VehicleFormModal({ open, onClose, vehicle = null, onSave
           chassis_number: vehicle.chassis_number || '',
           engine_number: vehicle.engine_number || '',
           gps_device_id: vehicle.gps_device_id || '',
+          fleet_number: vehicle.fleet_number || '',
+          manufacturer: vehicle.manufacturer || '',
+          model: vehicle.model || '',
+          variant: vehicle.variant || '',
+          manufacturing_year: vehicle.manufacturing_year ?? '',
+          purchase_date: vehicle.purchase_date?.slice(0, 10) || '',
+          fuel_type: vehicle.fuel_type || '',
+          branch: vehicle.branch || '',
+          capacity_tonnes: vehicle.capacity_tonnes ?? '',
           registration_expiry: vehicle.registration_expiry?.slice(0, 10) || '',
           insurance_expiry: vehicle.insurance_expiry?.slice(0, 10) || '',
           fitness_expiry: vehicle.fitness_expiry?.slice(0, 10) || '',
@@ -72,6 +84,15 @@ export default function VehicleFormModal({ open, onClose, vehicle = null, onSave
         gps_device_id: form.gps_device_id.trim() || null,
         compliance_hold_reason: form.compliance_hold ? form.compliance_hold_reason : null,
       }
+
+      // Blank is "not recorded", never an empty string the API has to coerce.
+      // A blank number sent as '' becomes 0, and a 0-tonne truck is one the
+      // eligibility engine will never match to an order.
+      ;['fleet_number', 'manufacturer', 'model', 'variant', 'fuel_type', 'branch']
+        .forEach((k) => { payload[k] = form[k]?.trim() || null })
+      ;['manufacturing_year', 'capacity_tonnes']
+        .forEach((k) => { payload[k] = form[k] === '' || form[k] == null ? null : Number(form[k]) })
+      payload.purchase_date = form.purchase_date || null
       // An empty date is "not recorded", not an empty string the API must parse.
       EXPIRY_DOCUMENTS.forEach(({ field }) => { payload[field] = form[field] || null })
       return editing
@@ -157,6 +178,60 @@ export default function VehicleFormModal({ open, onClose, vehicle = null, onSave
             </Field>
             <Field label="Engine number">
               <input value={form.engine_number} onChange={(e) => set('engine_number', e.target.value)}
+                className={inputClass} style={inputStyle} />
+            </Field>
+          </div>
+
+          {/* T-01 — identity and payload. These columns arrived with the D-62
+              union and nothing could set them, so every vehicle onboarded here
+              came out blank. `capacity_tonnes` is the one that reaches beyond
+              this screen: Operations matches it against an order's required
+              payload, so a blank one is invisible to allocation. */}
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Make">
+              <input value={form.manufacturer} onChange={(e) => set('manufacturer', e.target.value)}
+                placeholder="Tata" className={inputClass} style={inputStyle} />
+            </Field>
+            <Field label="Model">
+              <input value={form.model} onChange={(e) => set('model', e.target.value)}
+                placeholder="Signa 4825" className={inputClass} style={inputStyle} />
+            </Field>
+            <Field label="Variant">
+              <input value={form.variant} onChange={(e) => set('variant', e.target.value)}
+                className={inputClass} style={inputStyle} />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Payload (tonnes)" error={fieldErrors.capacity_tonnes}
+              hint="Matched against an order's required capacity">
+              <input type="number" step="0.01" inputMode="decimal" value={form.capacity_tonnes}
+                onChange={(e) => set('capacity_tonnes', e.target.value)}
+                placeholder="25.00" className={inputClass} style={inputStyle} />
+            </Field>
+            <Field label="Fuel" error={fieldErrors.fuel_type}>
+              <Select size="sm" value={form.fuel_type} onChange={(v) => set('fuel_type', v)}
+                options={FUEL_TYPES} ariaLabel="Fuel type" />
+            </Field>
+            <Field label="Year" error={fieldErrors.manufacturing_year}>
+              <input type="number" step="1" inputMode="numeric" value={form.manufacturing_year}
+                onChange={(e) => set('manufacturing_year', e.target.value)}
+                placeholder="2021" className={inputClass} style={inputStyle} />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Fleet number" hint="Your own internal number">
+              <input value={form.fleet_number} onChange={(e) => set('fleet_number', e.target.value)}
+                placeholder="TRK-014" className={inputClass} style={inputStyle} />
+            </Field>
+            <Field label="Branch">
+              <input value={form.branch} onChange={(e) => set('branch', e.target.value)}
+                placeholder="Bhiwandi" className={inputClass} style={inputStyle} />
+            </Field>
+            <Field label="Purchased" error={fieldErrors.purchase_date}>
+              <input type="date" value={form.purchase_date}
+                onChange={(e) => set('purchase_date', e.target.value)}
                 className={inputClass} style={inputStyle} />
             </Field>
           </div>

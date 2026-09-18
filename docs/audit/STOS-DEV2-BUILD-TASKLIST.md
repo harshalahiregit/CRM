@@ -32,8 +32,8 @@ validation rules and business logic** — so nothing has to be reconstructed fro
 Anything that cannot yet be real is marked ⬜ or ⚠️ and says why. A disabled control with an
 honest label is acceptable; a control that pretends to work is not.
 
-**Current position:** 112 STOS tests / 448 assertions passing. Full backend suite: 3,649
-passing, 1 unrelated failure in another module's lint-ratchet (see §11).
+**Current position:** Stos + Transport together: **1,100 passing, 0 failures**. Full backend
+suite verified green on 2026-09-17: **4,641 passing, 0 failures, 3 skipped**.
 
 ---
 
@@ -101,7 +101,7 @@ when Dispatch does. `MAINTENANCE_DUE` and `BREAKDOWN` are ours and are missing. 
 - [x] **T-00** `vehicles` table, soft deletes, unique plate per company · *VehicleOnboardingTest*
 - [x] **T-00b** Onboarding creates the vehicle **and** initialises its `vehicle_live_status` row in one transaction, so ingestion is a pure primary-key update for the asset's life
 - [x] **T-00c** Retire = soft delete, blocked while job cards are open, frees the genset, keeps fuel/job history
-- [ ] **T-01** Add `capacity_tons DECIMAL(8,2)` to `vehicles`; add to the onboarding form, the request rules and the passport identity block
+- [x] **T-01** Payload and identity are reachable. The D-62 union put `capacity_tonnes`, make/model/variant, year, purchase date, fuel type, branch and fleet number on `vehicles`; none were fillable, so every vehicle onboarded through Fleet came out blank — and a blank `capacity_tonnes` is invisible to Operations' capacity matching. Now in the model, the request rules, the onboarding form and the passport, with the passport saying so when payload is missing · *VehicleIdentityTest*
 - [ ] **T-02** ⚠️ Vehicle-type vocabulary. Decide: adopt the spec's four uppercase values, or keep the seven lowercase ones. Adopting means a migration, a data map (`truck→CONTAINER_BODY`?), and touching the seeder, fuel benchmarks, tests and UI. **Blocked on a team answer — Devs 1 and 3 send these strings across the boundary.**
 - [ ] **T-03** Add `FINANCED` and `CONTRACTED` ownership values; decide whether `market` folds into `CONTRACTED`
 - [ ] **T-04** Add `MAINTENANCE_DUE` and `BREAKDOWN` vehicle states, with the rules that set them (service interval due; a breakdown job card raised on the road)
@@ -147,9 +147,9 @@ answer — T-07.
 - [x] **T-10** Excursion rule — genset OFF ∧ speed > 0 ∧ temp > −18 °C → `telemetry.temperature_excursion.detected`
 - [x] **T-11** `GET /v1/fleet/vehicles/{id}/live-status` with three-state GPS health (`active` / `degraded` / `offline`)
 - [ ] **T-06** Align `generator_status` values with the spec, or document the mapping in `STOS-API`
-- [ ] **T-07** Per-device tokens (rotatable, one per unit) replacing the single fleet-wide secret
-- [ ] **T-12** Ingest idempotency: a device re-sending the same `(device_id, recorded_at)` currently appends twice. Decide dedupe vs. keep-all-and-dedupe-on-read
-- [ ] **T-13** Batch ingest (`POST` an array) — a unit with an hour of buffered pings currently needs one request per ping
+- [ ] **T-07** Per-device tokens (rotatable, one per unit) replacing the single fleet-wide secret. **Not cosmetic:** `gps_device_id` is unique per *company*, so two companies can claim the same id, and with one shared secret ingestion cannot tell which is calling — it refuses with 409 rather than guess and write another company's truck. Those vehicles cannot receive telemetry at all until this lands · *asserted today in TelemetryIdempotencyAndBatchTest*
+- [x] **T-12** Ingest is idempotent. **Decision taken: dedupe on write**, enforced by a unique index on `(company_id, device_id, recorded_at)` — one device has one clock, so the same instant is the same reading. Keep-all-and-dedupe-on-read was rejected because it makes every future consumer of the trail responsible for de-duplicating forever, and the first one that forgets double-counts a journey. A retry is answered 201 with `duplicate: true`, never 409: a device told 409 by a retry it could not avoid either retries forever or drops its buffer · *TelemetryIdempotencyAndBatchTest*
+- [x] **T-13** Batch ingest — `POST /v1/telemetry/ingest/batch`, up to 500 readings. Sorted by the device's own clock before writing, because the live row only moves forward; and one bad reading is rejected on its own line rather than failing the batch, because a device cannot resend just the good ones · *TelemetryIdempotencyAndBatchTest*
 
 > ⚠️ **Known trade in the excursion rule.** `speed > 0` silences a reefer parked with its
 > genset deliberately off — and *also* silences a **loaded trailer standing in a yard with a
@@ -210,8 +210,8 @@ answer — T-07.
 
 - [x] **T-20** `urea_transactions` table, endpoint, and L/100 km consumption · *FleetContractsAndAssetsTest*
 - [x] **T-21** Kept out of `fuel_transactions` — mixing urea into diesel corrupts every km/l figure
-- [ ] **T-22** Flag consumption outside the 0.8–4.0 L/100 km band in the UI (the service already logs it; no screen shows it)
-- [ ] **T-23** Urea entry screen — the API exists, the modal does not
+- [x] **T-22** Consumption outside the 0.8–4.0 L/100 km band is flagged on the passport, per row and as a count. The band travels with the readings rather than being hardcoded in the screen · *UreaConsumptionBandTest*
+- [x] **T-23** Urea entry screen — `UreaTopUpModal`, reached from the passport's Urea card. Rate fills the amount, the amount stays editable, and an entry with no odometer says plainly that it will not be measured
 
 ---
 
@@ -261,11 +261,11 @@ answer — T-07.
 
 - [x] **T-28** Open / update / close, auto-numbering, cost totals, guarded release · *FleetOperationsTest*
 - [x] **T-28b** A signed total overrides parts + labour (a warranty credit or rounded settlement is legitimate)
-- [ ] **T-29** Add `workshop_name` to `maintenance_jobs`, the form and the board
-- [ ] **T-30** **Persist the line items.** New tables `maintenance_job_parts` (part, qty, unit cost, supplier, warranty) and `maintenance_job_labour` (type, hours, rate, technician), summed into the stored totals. *Today the itemisation is entered and thrown away — the screen says so rather than pretending, but it is the biggest untruth left in this module.*
-- [ ] **T-31** QC result as `PASS/FAIL/CRITICAL_FAIL` plus a road-test checkbox; `CRITICAL_FAIL` must block release even if every other hold is clear
-- [ ] **T-32** Add `TESTING` and `QC` to the job status flow
-- [ ] **T-33** Downtime: hours off the road per card, and a per-vehicle downtime total on the passport
+- [x] **T-29** `workshop_name` on the card, the form and the board · *WorkshopJobCardTest*
+- [x] **T-30** **Line items persisted.** `maintenance_job_parts` (part, number, qty, unit cost, supplier, warranty months) and `maintenance_job_labour` (type, hours, rate, technician). Totals are summed FROM the lines so the card and its itemisation cannot disagree; a scalar total is still accepted for a card settled at the counter, and an explicit `total_cost` still overrides · *WorkshopJobCardTest*
+- [x] **T-31** QC as `PASS/FAIL/CRITICAL_FAIL` plus a road-test flag. `CRITICAL_FAIL` holds the vehicle beyond its own card and is cleared only by a later card that passes QC **and names it** (`clears_job_id`) — not by any later pass, or a routine oil change would un-condemn a vehicle failed on its brakes · *WorkshopJobCardTest*
+- [x] **T-32** `testing` and `qc` added to the status flow, both OPEN states so they still hold the vehicle · *WorkshopJobCardTest*
+- [x] **T-33** Downtime hours per card, fixed at closure, with a per-vehicle total on the passport · *WorkshopJobCardTest*
 
 ---
 
@@ -380,9 +380,9 @@ fires from a **model observer**, so no future code path can change availability 
 - [x] **T-47** Every screen behind `role:admin,staff`; portal logins (client/vendor/TPV) get 403 from every endpoint
 - [x] **T-48** Standalone mode: `DriverDirectory` binding auto-detects the CRM, so one codebase runs integrated and standalone
 - [ ] **T-49** Idle-vehicle and utilisation reporting for the executive tower (`STOS-REP` feeds from our data)
-- [ ] **T-50** Frontend: urea modal, FASTag register, tyre master screen, genset management — the four screens the tasks above imply
+- [ ] **T-50** 🟡 Frontend, the four screens the tasks above imply. **Urea modal — done** (`UreaTopUpModal`, T-23). Still missing: FASTag register (T-27), tyre master screen (T-36), genset management (T-05).
 - [ ] **T-51** ⚠️ Whole-vocabulary decision: adopt the spec's UPPERCASE enums across vehicle type, ownership, status, fuel recovery and toll reconciliation, or keep lowercase and publish a mapping table in `STOS-API`. **This is one coordinated migration, not five — do it once, with Devs 1 and 3 in the room.**
-- [ ] **T-52** Unrelated but blocking a green suite: `BannedPatternsTest` fails on `modules/tpv/pages/TpvVendorDetail.jsx` — an uncommitted refactor cut its `alert(` count from 7 to 2 without lowering the recorded budget (line 93). **Not Developer 2's file; belongs to whoever owns that vendor-access work.**
+- [x] **T-52** ~~`BannedPatternsTest` fails on `TpvVendorDetail.jsx`~~ — **no longer true.** Full backend suite verified green on 2026-09-17: **4,641 passing, 0 failures, 3 skipped.** The uncommitted refactor that caused it was committed in the meantime.
 
 ---
 

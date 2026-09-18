@@ -4,6 +4,8 @@ namespace App\Domains\Fleet\Services;
 
 use App\Domains\Fleet\Integration\TripCostPublisher;
 use App\Domains\Fleet\Models\MaintenanceJob;
+use App\Domains\Fleet\Models\MaintenanceJobLabour;
+use App\Domains\Fleet\Models\MaintenanceJobPart;
 use App\Domains\Fleet\Models\Vehicle;
 use App\Exceptions\BusinessException;
 use Illuminate\Support\Facades\DB;
@@ -37,15 +39,15 @@ class MaintenanceService
                 // A breakdown on the road belongs to the trip it happened on;
                 // routine servicing leaves this null and stays fleet overhead.
                 'trip_id'         => $data['trip_id'] ?? null,
+                'workshop_name'   => $data['workshop_name'] ?? null,
                 'complaint'       => $data['complaint'] ?? null,
                 'diagnosis'       => $data['diagnosis'] ?? null,
-                'parts_cost'      => $data['parts_cost'] ?? 0,
-                'labour_cost'     => $data['labour_cost'] ?? 0,
-                'total_cost'      => $this->total($data),
                 'status'          => $data['status'] ?? 'open',
                 'is_safety_critical' => (bool) ($data['is_safety_critical'] ?? false),
                 'opened_at'       => now(),
             ]);
+
+            $this->applyCosts($job, $companyId, $data);
 
             // The vehicle comes off the road with the card. Doing this here and
             // not in the controller is what keeps the two in step.
@@ -57,7 +59,7 @@ class MaintenanceService
                 'safety_critical' => $job->is_safety_critical,
             ]);
 
-            return $job;
+            return $job->fresh();
         });
     }
 
@@ -70,29 +72,27 @@ class MaintenanceService
             throw new BusinessException('That job card is already closed. Open a new one for further work.');
         }
 
-        $job->fill([
-            'complaint'   => $data['complaint']   ?? $job->complaint,
-            'diagnosis'   => $data['diagnosis']   ?? $job->diagnosis,
-            'parts_cost'  => $data['parts_cost']  ?? $job->parts_cost,
-            'labour_cost' => $data['labour_cost'] ?? $job->labour_cost,
-            'status'      => $data['status']      ?? $job->status,
-            'is_safety_critical' => $data['is_safety_critical'] ?? $job->is_safety_critical,
-        ]);
+        return DB::transaction(function () use ($job, $companyId, $data, $userId) {
+            $job->fill([
+                'complaint'     => $data['complaint']     ?? $job->complaint,
+                'diagnosis'     => $data['diagnosis']     ?? $job->diagnosis,
+                'workshop_name' => $data['workshop_name'] ?? $job->workshop_name,
+                'status'        => $data['status']        ?? $job->status,
+                'is_safety_critical' => $data['is_safety_critical'] ?? $job->is_safety_critical,
+                'road_tested'   => $data['road_tested']   ?? $job->road_tested,
+            ]);
 
-        $job->total_cost = $this->total([
-            'parts_cost'  => $job->parts_cost,
-            'labour_cost' => $job->labour_cost,
-            'total_cost'  => $data['total_cost'] ?? null,
-        ]);
+            $job->save();
 
-        $job->save();
+            $this->applyCosts($job, $companyId, $data);
 
-        Log::channel('stos')->info('Job card updated', [
-            'company_id' => $companyId, 'user_id' => $userId,
-            'job_card' => $job->job_card_number, 'changed' => array_keys($data),
-        ]);
+            Log::channel('stos')->info('Job card updated', [
+                'company_id' => $companyId, 'user_id' => $userId,
+                'job_card' => $job->job_card_number, 'changed' => array_keys($data),
+            ]);
 
-        return $job->fresh();
+            return $job->fresh();
+        });
     }
 
     /**
@@ -112,38 +112,50 @@ class MaintenanceService
         }
 
         return DB::transaction(function () use ($job, $companyId, $data, $userId) {
-            $job->fill([
-                'diagnosis'   => $data['diagnosis']   ?? $job->diagnosis,
-                'parts_cost'  => $data['parts_cost']  ?? $job->parts_cost,
-                'labour_cost' => $data['labour_cost'] ?? $job->labour_cost,
-                'status'      => 'completed',
-                'closed_at'   => now(),
-                'qc_passed'   => (bool) ($data['qc_passed'] ?? true),
-                'released_by' => $userId,
-            ]);
+            $verdict = $this->verdict($data);
+            $closedAt = now();
 
-            $job->total_cost = $this->total([
-                'parts_cost'  => $job->parts_cost,
-                'labour_cost' => $job->labour_cost,
-                'total_cost'  => $data['total_cost'] ?? null,
+            $job->fill([
+                'diagnosis'     => $data['diagnosis']     ?? $job->diagnosis,
+                'workshop_name' => $data['workshop_name'] ?? $job->workshop_name,
+                'status'        => 'completed',
+                'closed_at'     => $closedAt,
+                // Both are written from one verdict so they cannot drift.
+                'qc_result'     => $verdict,
+                'qc_passed'     => $verdict === MaintenanceJob::QC_PASS,
+                // Only a pass can clear anything; naming a card while failing
+                // QC yourself is meaningless, so it is dropped rather than stored.
+                'clears_job_id' => $verdict === MaintenanceJob::QC_PASS
+                    ? ($data['clears_job_id'] ?? null)
+                    : null,
+                'road_tested'   => (bool) ($data['road_tested'] ?? $job->road_tested),
+                // T-33 — fixed at closure. Computing it on read would make a
+                // historic card's downtime grow every time somebody looked.
+                'downtime_hours' => $this->downtimeHours($job->opened_at, $closedAt),
+                'released_by'   => $userId,
             ]);
 
             $job->save();
 
-            $release = $this->tryRelease($job->vehicle_id, $companyId, (bool) $job->qc_passed);
+            $this->applyCosts($job, $companyId, $data);
+
+            $job = $job->fresh();
+
+            $release = $this->tryRelease($job->vehicle_id, $companyId, $job);
 
             // C-06 — published on closure, not on opening: the cost is not
             // known until then, and the dedupe key would refuse to correct a
             // zero posted early.
-            app(TripCostPublisher::class)->publishMaintenance($companyId, $job->fresh());
+            app(TripCostPublisher::class)->publishMaintenance($companyId, $job);
 
             Log::channel('stos')->info('Job card closed', [
                 'company_id' => $companyId, 'user_id' => $userId,
                 'job_card' => $job->job_card_number, 'total_cost' => $job->total_cost,
+                'qc_result' => $job->qc_result, 'downtime_hours' => $job->downtime_hours,
                 'vehicle_released' => $release['released'],
             ]);
 
-            return ['job' => $job->fresh(), 'release' => $release];
+            return ['job' => $job, 'release' => $release];
         });
     }
 
@@ -153,13 +165,30 @@ class MaintenanceService
      * Never a bare false: the workshop needs to know whether to chase the
      * compliance desk or another bay.
      */
-    private function tryRelease(int $vehicleId, int $companyId, bool $qcPassed): array
+    private function tryRelease(int $vehicleId, int $companyId, MaintenanceJob $job): array
     {
         $vehicle = $this->vehicle($vehicleId, $companyId);
         $holds = [];
 
-        if (! $qcPassed) {
+        if ($job->qc_result === MaintenanceJob::QC_CRITICAL_FAIL) {
+            $holds[] = [
+                'code'  => 'qc_critical_fail',
+                'why'   => 'QC recorded a critical failure on this job card.',
+                'owner' => 'Workshop supervisor',
+            ];
+        } elseif (! $job->qc_passed) {
             $holds[] = ['code' => 'qc_failed', 'why' => 'QC did not pass on this job card.', 'owner' => 'Workshop supervisor'];
+        }
+
+        // T-31 — a critical failure outlives its own card.
+        $condemning = $this->standingCondemnation($vehicleId, $companyId, $job);
+
+        if ($condemning) {
+            $holds[] = [
+                'code'  => 'qc_critical_fail_standing',
+                'why'   => 'Job card '.$condemning->job_card_number.' condemned this vehicle and nothing has cleared it.',
+                'owner' => 'Workshop supervisor',
+            ];
         }
 
         $otherOpen = MaintenanceJob::forCompany($companyId)
@@ -192,12 +221,82 @@ class MaintenanceService
         return ['released' => true, 'status' => 'active', 'holds' => []];
     }
 
+    /**
+     * The condemnation still standing against this vehicle, if any.
+     *
+     * A critical failure is cleared only by a later card that passes QC AND
+     * names it in `clears_job_id`. Deliberately not "any later pass": a routine
+     * oil change closed with a pass would otherwise un-condemn a vehicle that
+     * failed on its brakes, which is the exact accident this hold exists to
+     * prevent. Clearing is an act somebody performs and signs, not a side
+     * effect of unrelated work.
+     */
+    private function standingCondemnation(int $vehicleId, int $companyId, MaintenanceJob $current): ?MaintenanceJob
+    {
+        $condemnations = MaintenanceJob::forCompany($companyId)
+            ->where('vehicle_id', $vehicleId)
+            ->where('qc_result', MaintenanceJob::QC_CRITICAL_FAIL)
+            ->orderByDesc('id')->get();
+
+        foreach ($condemnations as $condemnation) {
+            // The card being closed right now counts as a clearance too, so a
+            // re-test does not need a second round trip to release the vehicle.
+            if ($current->qc_result === MaintenanceJob::QC_PASS
+                && (int) $current->clears_job_id === (int) $condemnation->id) {
+                continue;
+            }
+
+            $cleared = MaintenanceJob::forCompany($companyId)
+                ->where('clears_job_id', $condemnation->id)
+                ->where('qc_result', MaintenanceJob::QC_PASS)
+                ->exists();
+
+            if (! $cleared) {
+                return $condemnation;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * What is condemning this vehicle right now, for the screens to show.
+     *
+     * Null is the common answer; when it is not null the vehicle cannot be
+     * released by closing any other card, and the workshop needs to see which
+     * card to answer.
+     */
+    public function condemnationFor(int $vehicleId, int $companyId): ?array
+    {
+        $condemnations = MaintenanceJob::forCompany($companyId)
+            ->where('vehicle_id', $vehicleId)
+            ->where('qc_result', MaintenanceJob::QC_CRITICAL_FAIL)
+            ->orderByDesc('id')->get();
+
+        foreach ($condemnations as $condemnation) {
+            $cleared = MaintenanceJob::forCompany($companyId)
+                ->where('clears_job_id', $condemnation->id)
+                ->where('qc_result', MaintenanceJob::QC_PASS)
+                ->exists();
+
+            if (! $cleared) {
+                return [
+                    'id'              => $condemnation->id,
+                    'job_card_number' => $condemnation->job_card_number,
+                    'closed_at'       => optional($condemnation->closed_at)->toIso8601String(),
+                ];
+            }
+        }
+
+        return null;
+    }
+
     /** The workshop board: open cards first, newest first within each group. */
     public function board(int $companyId, ?string $status = null): array
     {
         $jobs = MaintenanceJob::forCompany($companyId)
             ->when($status, fn ($q) => $q->where('status', $status))
-            ->with('vehicle:id,registration_number,vehicle_type,status')
+            ->with(['vehicle:id,registration_number,vehicle_type,status', 'parts', 'labour'])
             ->orderByDesc('id')->limit(200)->get();
 
         $byStatus = [];
@@ -218,7 +317,173 @@ class MaintenanceService
         ];
     }
 
+    /**
+     * T-33 — how long this vehicle has been off the road, and on how many cards.
+     *
+     * Closed cards only: an open card's downtime is still running, and adding a
+     * moving number to a historic total makes the total meaningless.
+     */
+    public function downtimeFor(int $vehicleId, int $companyId): array
+    {
+        $rows = MaintenanceJob::forCompany($companyId)
+            ->where('vehicle_id', $vehicleId)
+            ->whereNotNull('downtime_hours')
+            ->get(['downtime_hours']);
+
+        $hours = 0.0;
+        foreach ($rows as $row) {
+            $hours += (float) $row->downtime_hours;
+        }
+
+        return [
+            'total_hours' => number_format($hours, 2, '.', ''),
+            'total_days'  => number_format($hours / 24, 2, '.', ''),
+            'cards'       => $rows->count(),
+        ];
+    }
+
+    /* ── costs and line items ───────────────────────────────────── */
+
+    /**
+     * Write the line items, then set the totals from them.
+     *
+     * The itemisation is the truth when it is supplied: a card with parts rows
+     * takes its `parts_cost` from those rows, so the stored total and the lines
+     * can never disagree. A scalar `parts_cost` with no rows is still accepted,
+     * because a card closed at the counter with a single settled figure is a
+     * real thing, and refusing it would only push people to invent a fake line.
+     */
+    private function applyCosts(MaintenanceJob $job, int $companyId, array $data): void
+    {
+        $partsGiven  = array_key_exists('parts', $data) && is_array($data['parts']);
+        $labourGiven = array_key_exists('labour', $data) && is_array($data['labour']);
+
+        if ($partsGiven) {
+            $job->parts_cost = $this->replaceParts($job, $companyId, $data['parts']);
+        } elseif (array_key_exists('parts_cost', $data) && $data['parts_cost'] !== null) {
+            $job->parts_cost = $data['parts_cost'];
+        }
+
+        if ($labourGiven) {
+            $job->labour_cost = $this->replaceLabour($job, $companyId, $data['labour']);
+        } elseif (array_key_exists('labour_cost', $data) && $data['labour_cost'] !== null) {
+            $job->labour_cost = $data['labour_cost'];
+        }
+
+        $job->total_cost = $this->total([
+            'parts_cost'  => $job->parts_cost,
+            'labour_cost' => $job->labour_cost,
+            'total_cost'  => $data['total_cost'] ?? null,
+        ]);
+
+        $job->save();
+    }
+
+    /** Replace this card's parts wholesale and return their summed cost. */
+    private function replaceParts(MaintenanceJob $job, int $companyId, array $rows): string
+    {
+        MaintenanceJobPart::forCompany($companyId)->where('maintenance_job_id', $job->id)->delete();
+
+        $sum = 0.0;
+
+        foreach ($rows as $row) {
+            $name = trim((string) ($row['part_name'] ?? ''));
+
+            // A blank row is the form's empty starter line, not an entry.
+            if ($name === '') {
+                continue;
+            }
+
+            $line = MaintenanceJobPart::lineCost($row['quantity'] ?? 1, $row['unit_cost'] ?? 0);
+
+            MaintenanceJobPart::create([
+                'company_id'         => $companyId,
+                'maintenance_job_id' => $job->id,
+                'part_name'          => $name,
+                'part_number'        => $row['part_number'] ?? null,
+                'quantity'           => $row['quantity'] ?? 1,
+                'unit_cost'          => $row['unit_cost'] ?? 0,
+                'line_cost'          => $line,
+                'supplier'           => $row['supplier'] ?? null,
+                'warranty_months'    => $row['warranty_months'] ?? null,
+            ]);
+
+            $sum += (float) $line;
+        }
+
+        return number_format($sum, 2, '.', '');
+    }
+
+    /** Replace this card's labour wholesale and return its summed cost. */
+    private function replaceLabour(MaintenanceJob $job, int $companyId, array $rows): string
+    {
+        MaintenanceJobLabour::forCompany($companyId)->where('maintenance_job_id', $job->id)->delete();
+
+        $sum = 0.0;
+
+        foreach ($rows as $row) {
+            $type = trim((string) ($row['labour_type'] ?? ''));
+
+            if ($type === '') {
+                continue;
+            }
+
+            $line = MaintenanceJobLabour::lineCost($row['hours'] ?? 0, $row['hourly_rate'] ?? 0);
+
+            MaintenanceJobLabour::create([
+                'company_id'         => $companyId,
+                'maintenance_job_id' => $job->id,
+                'labour_type'        => $type,
+                'hours'              => $row['hours'] ?? 0,
+                'hourly_rate'        => $row['hourly_rate'] ?? 0,
+                'line_cost'          => $line,
+                'technician'         => $row['technician'] ?? null,
+            ]);
+
+            $sum += (float) $line;
+        }
+
+        return number_format($sum, 2, '.', '');
+    }
+
     /* ── helpers ────────────────────────────────────────────────── */
+
+    /**
+     * One QC verdict from whichever field the caller sent.
+     *
+     * `qc_result` wins when present. A caller sending only the old boolean still
+     * works and gets PASS or FAIL — never CRITICAL_FAIL, because the boolean
+     * cannot express it and guessing the severe reading would strand vehicles.
+     */
+    private function verdict(array $data): string
+    {
+        $result = strtoupper(trim((string) ($data['qc_result'] ?? '')));
+
+        if (in_array($result, MaintenanceJob::QC_RESULTS, true)) {
+            return $result;
+        }
+
+        if (array_key_exists('qc_passed', $data) && $data['qc_passed'] !== null) {
+            return filter_var($data['qc_passed'], FILTER_VALIDATE_BOOLEAN)
+                ? MaintenanceJob::QC_PASS
+                : MaintenanceJob::QC_FAIL;
+        }
+
+        // Nothing said: the historic default is that a card closes clean.
+        return MaintenanceJob::QC_PASS;
+    }
+
+    /** Hours off the road, to two places; never negative. */
+    private function downtimeHours($openedAt, $closedAt): string
+    {
+        if (! $openedAt) {
+            return '0.00';
+        }
+
+        $hours = $openedAt->diffInMinutes($closedAt) / 60;
+
+        return number_format(max($hours, 0), 2, '.', '');
+    }
 
     /**
      * Parts + labour, unless a total was supplied.

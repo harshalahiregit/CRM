@@ -25,6 +25,15 @@ class Vehicle extends Model
 
     public const TYPES      = ['truck', 'trailer', 'tipper', 'tanker', 'reefer', 'lcv', 'other'];
     public const OWNERSHIPS = ['owned', 'leased', 'attached', 'market'];
+
+    /**
+     * T-01 — the vocabulary the D-62 union migration documents.
+     *
+     * Validated on input only, never on read: rows migrated from Operations
+     * carry whatever that table held, and rejecting a stored value would make a
+     * vehicle unopenable in the very screen you would use to correct it.
+     */
+    public const FUEL_TYPES = ['diesel', 'petrol', 'cng', 'lng', 'electric', 'hybrid'];
     /**
      * `in_operation` is set by dispatch through FleetResourceGateway (BRW-050)
      * when a trip departs, and cleared when it closes. Its absence was flagged
@@ -41,6 +50,20 @@ class Vehicle extends Model
     protected $fillable = [
         'company_id',
         'registration_number',
+        // T-01 — the identity columns the D-62 union brought over from
+        // Operations. They were on the table but unreachable: nothing could set
+        // them, so every vehicle onboarded through Fleet came out blank, and
+        // `capacity_tonnes` blank means the eligibility engine cannot match it
+        // to an order's required payload (PLN-001).
+        'fleet_number',
+        'manufacturer',
+        'model',
+        'variant',
+        'manufacturing_year',
+        'purchase_date',
+        'fuel_type',
+        'branch',
+        'capacity_tonnes',
         'vehicle_type',
         'ownership_type',
         'chassis_number',
@@ -59,6 +82,9 @@ class Vehicle extends Model
 
     protected $casts = [
         'company_id' => 'integer',
+        'manufacturing_year' => 'integer',
+        'purchase_date'      => 'date',
+        'capacity_tonnes'    => 'decimal:2',
         'registration_expiry' => 'date',
         'insurance_expiry'    => 'date',
         'fitness_expiry'      => 'date',

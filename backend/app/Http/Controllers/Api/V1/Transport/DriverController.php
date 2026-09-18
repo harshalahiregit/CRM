@@ -38,6 +38,24 @@ class DriverController extends Controller
     }
 
     /**
+     * Who can take a load right now, and who cannot — with the reason.
+     *
+     * Answers in the same `{eligible, excluded[blockers]}` shape as
+     * `FleetService::getEligibleVehicles()`, so a dispatch board renders the
+     * truck list and the crew list with one component. An expired licence
+     * blocks the DRIVER here; it no longer touches the vehicle's ranking.
+     */
+    public function eligible(Request $request): JsonResponse
+    {
+        $this->denyExternal($request);
+
+        return $this->success(
+            $this->drivers->eligible($this->companyId($request), $request->only('q', 'drivers_only')),
+            'Driver eligibility evaluated'
+        );
+    }
+
+    /**
      * Save the Transport overlay against a person from the directory.
      *
      * Addressed by `source:source_id` — the handle that points back at the

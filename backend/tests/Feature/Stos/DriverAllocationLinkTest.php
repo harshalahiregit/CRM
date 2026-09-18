@@ -98,9 +98,21 @@ class DriverAllocationLinkTest extends TestCase
         return app(FleetService::class)->getEligibleVehicles(self::COMPANY, 'REEFER')['eligible'];
     }
 
-    /* ── The rule the task asks for ─────────────────────────────── */
+    /* ── The rule, as Person 1 ruled it ─────────────────── */
 
-    public function test_an_expired_licence_lowers_the_score_and_flags_the_pairing(): void
+    /*
+     * An expired licence used to be reported against the VEHICLE: a flag on the
+     * allocation row, and a driver score of zero that pushed the truck down the
+     * ranking. Person 1 ruled that this is the wrong object — the licence
+     * belongs to the driver, the truck is roadworthy, and standing it down
+     * offers a dispatcher a worse vehicle to solve a problem that swapping
+     * drivers fixes in seconds.
+     *
+     * So: the vehicle stays fully eligible and unflagged, and the licence is a
+     * hard block on the DRIVER, raised by DriverService::eligible().
+     */
+
+    public function test_an_expired_licence_does_not_touch_the_vehicles_ranking(): void
     {
         $good = $this->vehicle('MH12GOOD01');
         $bad  = $this->vehicle('MH12EXPD01');
@@ -110,34 +122,114 @@ class DriverAllocationLinkTest extends TestCase
 
         $rows = collect($this->eligible())->keyBy('registration_number');
 
-        // Flagged, in the token Developer 1's board switches on.
-        $this->assertContains('DRIVER_LICENSE_EXPIRED', $rows['MH12EXPD01']['flags']);
+        // No licence token on either vehicle — the board reads it off the driver.
+        $this->assertSame([], $rows['MH12EXPD01']['flags']);
         $this->assertSame([], $rows['MH12GOOD01']['flags']);
 
-        // Scored down, not hidden: the truck is still roadworthy.
-        $this->assertLessThan($rows['MH12GOOD01']['score'], $rows['MH12EXPD01']['score']);
-        $this->assertSame(0.0, $rows['MH12EXPD01']['scores']['driver']);
-        $this->assertSame(1.0, $rows['MH12GOOD01']['scores']['driver']);
-
-        // And the compliant pairing is what gets recommended.
-        $this->assertSame('MH12GOOD01', $this->eligible()[0]['registration_number']);
+        // And both trucks rank identically: nothing about either has expired.
+        $this->assertSame($rows['MH12GOOD01']['scores']['driver'], $rows['MH12EXPD01']['scores']['driver']);
+        $this->assertSame($rows['MH12GOOD01']['score'], $rows['MH12EXPD01']['score']);
     }
 
-    public function test_the_vehicle_is_still_offered_despite_an_expired_driver(): void
+    public function test_the_expired_driver_is_the_one_that_is_blocked(): void
+    {
+        $vehicle = $this->vehicle('MH12ONLY01');
+        $this->assignDriver($this->person('Expired Rajesh'), $vehicle, now()->subMonth()->toDateString());
+
+        $result = app(\App\Domains\Fleet\Services\DriverService::class)->eligible(self::COMPANY);
+
+        $blocked = collect($result['excluded'])->firstWhere('name', 'Expired Rajesh');
+
+        $this->assertNotNull($blocked, 'An expired licence must block the person, not the truck');
+        $this->assertSame('DRIVER_LICENSE_EXPIRED', $blocked['blockers'][0]['code']);
+        // The same shape as a vehicle blocker, so one board component renders
+        // both — and `owner` routes the dispatcher to the desk that clears it.
+        $this->assertArrayHasKey('why', $blocked['blockers'][0]);
+        $this->assertSame('Fleet compliance desk', $blocked['blockers'][0]['owner']);
+    }
+
+    public function test_the_truck_of_an_expired_driver_is_still_offered(): void
     {
         $vehicle = $this->vehicle('MH12ONLY01');
         $this->assignDriver($this->person('Expired Rajesh'), $vehicle, now()->subMonth()->toDateString());
 
         $rows = $this->eligible();
 
-        // Excluding it would hide the only truck in the yard over a problem
-        // solved by handing the keys to somebody else.
+        // Hiding it would hide the only truck in the yard over a problem solved
+        // by handing the keys to somebody else.
         $this->assertCount(1, $rows);
         $this->assertSame('MH12ONLY01', $rows[0]['registration_number']);
-        $this->assertContains('DRIVER_LICENSE_EXPIRED', $rows[0]['flags']);
     }
 
-    /* ── The states around it ───────────────────────────────────── */
+    public function test_a_valid_driver_is_eligible_and_carries_no_blockers(): void
+    {
+        $this->assignDriver($this->person('Valid Vikram'), $this->vehicle('MH12PAIR02'), now()->addYear()->toDateString());
+
+        $result = app(\App\Domains\Fleet\Services\DriverService::class)->eligible(self::COMPANY);
+
+        $ok = collect($result['eligible'])->firstWhere('name', 'Valid Vikram');
+        $this->assertNotNull($ok);
+        $this->assertSame([], $ok['warnings']);
+    }
+
+    public function test_an_expiring_licence_is_a_warning_not_a_block(): void
+    {
+        $this->assignDriver($this->person('Soon Suresh'), $this->vehicle('MH12SOON01'), now()->addDays(9)->toDateString());
+
+        $result = app(\App\Domains\Fleet\Services\DriverService::class)->eligible(self::COMPANY);
+
+        // Still legal today, so still offered — but a planner should see it
+        // before sending them out on a three-day run.
+        $ok = collect($result['eligible'])->firstWhere('name', 'Soon Suresh');
+        $this->assertNotNull($ok);
+        $this->assertSame('DRIVER_LICENSE_EXPIRING', $ok['warnings'][0]['code']);
+    }
+
+    public function test_an_unrecorded_licence_blocks_the_driver_but_reads_differently(): void
+    {
+        $this->assignDriver($this->person('Unknown Umesh'), $this->vehicle('MH12UNRC01'), null);
+
+        $result = app(\App\Domains\Fleet\Services\DriverService::class)->eligible(self::COMPANY);
+
+        $blocked = collect($result['excluded'])->firstWhere('name', 'Unknown Umesh');
+
+        // Nobody should be dispatched on a licence nobody has seen — but it is
+        // cleared by recording one, not by a renewal, so it says so.
+        $this->assertNotNull($blocked);
+        $this->assertSame('DRIVER_LICENSE_UNRECORDED', collect($blocked['blockers'])->pluck('code')->first());
+    }
+
+    public function test_a_suspended_driver_is_blocked_and_the_fleet_office_owns_it(): void
+    {
+        $this->assignDriver($this->person('Suspended Sam'), $this->vehicle('MH12SUSP01'), now()->addYear()->toDateString(), 'suspended');
+
+        $result = app(\App\Domains\Fleet\Services\DriverService::class)->eligible(self::COMPANY);
+
+        $blocked = collect($result['excluded'])->firstWhere('name', 'Suspended Sam');
+        $this->assertNotNull($blocked);
+
+        $codes = collect($blocked['blockers'])->pluck('code');
+        $this->assertTrue($codes->contains('DRIVER_UNAVAILABLE'));
+        // A suspension is an office decision, not a compliance one.
+        $this->assertSame('Fleet office', collect($blocked['blockers'])->firstWhere('code', 'DRIVER_UNAVAILABLE')['owner']);
+    }
+
+    public function test_the_eligible_endpoint_answers_in_the_vehicle_shape(): void
+    {
+        $this->assignDriver($this->person('Valid Vikram'), $this->vehicle('MH12API001'), now()->addYear()->toDateString());
+        $this->assignDriver($this->person('Expired Rajesh'), $this->vehicle('MH12API002'), now()->subDay()->toDateString());
+
+        $data = $this->actingAs($this->user())
+            ->getJson('/api/v1/fleet/drivers/eligible')
+            ->assertOk()->json('data');
+
+        // One dispatch board renders trucks and crew with one component.
+        $this->assertArrayHasKey('eligible', $data);
+        $this->assertArrayHasKey('excluded', $data);
+        $this->assertSame(1, $data['counts']['excluded']);
+    }
+
+    /* ── The states around it ────────────────────────── */
 
     public function test_driver_compliance_travels_beside_vehicle_compliance(): void
     {
@@ -146,7 +238,9 @@ class DriverAllocationLinkTest extends TestCase
 
         $row = $this->eligible()[0];
 
-        // Both halves of "can this go out today", in one payload.
+        // The driver still TRAVELS with the vehicle row — a planner sees who
+        // normally drives it. What changed is that their licence no longer
+        // scores or flags the truck.
         $this->assertSame('compliant', $row['compliance_status']);
         $this->assertSame('Valid Vikram', $row['driver']['name']);
         $this->assertSame('valid', $row['driver']['licence']['state']);
@@ -154,58 +248,34 @@ class DriverAllocationLinkTest extends TestCase
         $this->assertStringContainsString('Valid Vikram', implode(' ', $row['reasons']));
     }
 
-    public function test_a_vehicle_with_no_regular_driver_sits_between_the_two(): void
+    public function test_a_vehicle_with_no_regular_driver_is_flagged_but_not_punished(): void
     {
         $none = $this->vehicle('MH12NONE01');
         $good = $this->vehicle('MH12GOOD02');
-        $bad  = $this->vehicle('MH12EXPD02');
 
         $this->assignDriver($this->person('Valid Vikram'), $good, now()->addYear()->toDateString());
-        $this->assignDriver($this->person('Expired Rajesh'), $bad, now()->subDay()->toDateString());
 
         $rows = collect($this->eligible())->keyBy('registration_number');
 
-        // Whoever is free takes the next load — not as good as a known
-        // compliant pairing, not as bad as somebody who cannot legally drive.
+        // Whoever is free takes the next load, so this is information rather
+        // than a fault — but a truck with a driver already on it is the
+        // marginally more convenient pick.
         $this->assertContains('NO_DRIVER_ASSIGNED', $rows['MH12NONE01']['flags']);
         $this->assertNull($rows['MH12NONE01']['driver']);
         $this->assertLessThan($rows['MH12GOOD02']['score'], $rows['MH12NONE01']['score']);
-        $this->assertGreaterThan($rows['MH12EXPD02']['score'], $rows['MH12NONE01']['score']);
     }
 
-    public function test_an_expiring_licence_is_flagged_without_being_treated_as_expired(): void
+    public function test_an_unavailable_regular_driver_still_flags_the_pairing(): void
     {
-        $vehicle = $this->vehicle('MH12SOON01');
-        $this->assignDriver($this->person('Soon Suresh'), $vehicle, now()->addDays(9)->toDateString());
-
-        $row = $this->eligible()[0];
-
-        $this->assertContains('DRIVER_LICENSE_EXPIRING', $row['flags']);
-        $this->assertNotContains('DRIVER_LICENSE_EXPIRED', $row['flags']);
-        // Still usable today, so it outscores an expired pairing.
-        $this->assertGreaterThan(0.0, $row['scores']['driver']);
-    }
-
-    public function test_an_unrecorded_licence_is_flagged_but_does_not_read_as_expired(): void
-    {
-        $vehicle = $this->vehicle('MH12UNRC01');
-        $this->assignDriver($this->person('Unknown Umesh'), $vehicle, null);
-
-        $row = $this->eligible()[0];
-
-        $this->assertContains('DRIVER_LICENSE_UNRECORDED', $row['flags']);
-        $this->assertSame('unknown', $row['driver']['licence']['state']);
-    }
-
-    public function test_a_suspended_driver_is_flagged_unavailable(): void
-    {
-        $vehicle = $this->vehicle('MH12SUSP01');
+        $vehicle = $this->vehicle('MH12SUSP02');
         $this->assignDriver($this->person('Suspended Sam'), $vehicle, now()->addYear()->toDateString(), 'suspended');
 
         $row = $this->eligible()[0];
 
+        // Availability stays on the vehicle row: it describes the pairing, not
+        // the person's right to drive. The licence is what moved.
         $this->assertContains('DRIVER_UNAVAILABLE', $row['flags']);
-        $this->assertSame(0.0, $row['scores']['driver']);
+        $this->assertNotContains('DRIVER_LICENSE_EXPIRED', $row['flags']);
     }
 
     /* ── Assignment mechanics ───────────────────────────────────── */

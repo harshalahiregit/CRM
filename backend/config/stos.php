@@ -128,10 +128,11 @@ return [
             'proximity'   => 0.35,   // near the pickup
             'efficiency'  => 0.22,   // cheaper to run
             'utilisation' => 0.13,   // spread wear across the fleet
-            // Driver compliance carries real weight: a truck whose regular
-            // driver cannot legally drive it is a worse pick than one 50 km
-            // further away, because the paperwork problem stops the load and
-            // the distance only costs fuel.
+            // Whether the regular driver is FREE — not whether they are
+            // licensed. A licence is a fact about the person and blocks the
+            // driver, not the truck (Person 1's ruling, D-62 §5); it was scored
+            // here until 2026-09-17 and quietly offered dispatchers a worse
+            // vehicle to solve a problem a driver swap fixes in seconds.
             'driver'      => 0.30,
         ],
         // Beyond this, proximity scores zero rather than going negative.

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Wrench, ShieldAlert, CheckCircle2, ArrowRight } from 'lucide-react'
-import { stosApi, STOS_ACCENT, JOB_STATUSES, fmtMoney, fmtWhen } from '@/services/stosApi'
+import { stosApi, STOS_ACCENT, JOB_STATUSES, fmtMoney, fmtWhen, isJobOpen } from '@/services/stosApi'
 import HealthChip from '../components/HealthChip'
 import MaintenanceJobCardForm from '../components/MaintenanceJobCardForm'
 
@@ -27,7 +27,7 @@ export default function MaintenanceBoard() {
   })
 
   const jobs = [...(data?.jobs ?? [])].sort((a, b) => {
-    const open = (j) => ['open', 'in_progress', 'awaiting_parts'].includes(j.status)
+    const open = (j) => isJobOpen(j.status)
     // Safety first, then still-open, then most recent.
     if (a.is_safety_critical !== b.is_safety_critical) return a.is_safety_critical ? -1 : 1
     if (open(a) !== open(b)) return open(a) ? -1 : 1
@@ -134,7 +134,7 @@ export default function MaintenanceBoard() {
 
       <div className="space-y-3">
         {jobs.map((j) => {
-          const isOpen = ['open', 'in_progress', 'awaiting_parts'].includes(j.status)
+          const isOpen = isJobOpen(j.status)
 
           return (
             <section key={j.id} className="rounded-2xl p-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
@@ -162,12 +162,25 @@ export default function MaintenanceBoard() {
                         <ShieldAlert size={9} /> SAFETY
                       </span>
                     )}
+                    {/* A critical fail keeps holding the vehicle after the card
+                        closes, so it has to stay visible on a closed card. */}
+                    {j.qc_result && j.qc_result !== 'PASS' && (
+                      <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded"
+                        style={{ background: 'color-mix(in srgb, var(--color-danger-500) 15%, transparent)', color: 'var(--color-danger-500)' }}>
+                        QC {j.qc_result === 'CRITICAL_FAIL' ? 'CRITICAL FAIL' : 'FAIL'}
+                      </span>
+                    )}
                   </div>
 
                   {j.complaint && <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>{j.complaint}</p>}
                   <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
                     Parts {fmtMoney(j.parts_cost)} · Labour {fmtMoney(j.labour_cost)} · Total {fmtMoney(j.total_cost)}
+                    {j.parts?.length || j.labour?.length
+                      ? ` · ${(j.parts?.length ?? 0) + (j.labour?.length ?? 0)} line${((j.parts?.length ?? 0) + (j.labour?.length ?? 0)) === 1 ? '' : 's'}`
+                      : ''}
+                    {j.workshop_name ? ` · ${j.workshop_name}` : ''}
                     {j.opened_at ? ` · opened ${fmtWhen(j.opened_at)}` : ''}
+                    {j.downtime_hours != null ? ` · ${Number(j.downtime_hours).toFixed(1)} h off the road` : ''}
                   </p>
                 </div>
 

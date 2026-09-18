@@ -301,6 +301,37 @@ class SireExportTest extends TestCase
         }
     }
 
+    /**
+     * The bulk endpoint validates a fixed field list, and a field it drops can
+     * never satisfy a `requires`. Before `resolution_note` was added to it,
+     * every note-requiring action -- close_directly, reject, wont_fix,
+     * cannot_reproduce -- was silently unreachable in bulk: the call came back
+     * 0 applied, complaining about a field the caller had in fact sent.
+     */
+    public function test_a_batch_can_be_closed_outright_with_one_note_each(): void
+    {
+        $ids = collect(range(1, 3))
+            ->map(fn () => $this->issue(['module' => 'sales', 'screen' => 'lead-details'])->id);
+
+        $response = $this->postJson('/api/sire/reports/transitions', [
+            'transitions' => $ids->map(fn ($id) => [
+                'report_id'       => $id,
+                'action'          => 'close_directly',
+                'resolution_note' => 'Same stale-cache cause as the rest of this batch.',
+            ])->all(),
+        ])->assertOk();
+
+        $this->assertSame(3, $response->json('data.applied'));
+        $this->assertSame(0, $response->json('data.failed'));
+
+        foreach ($ids as $id) {
+            $report = Report::findOrFail($id);
+            $this->assertSame(SireStatus::CLOSED, $report->status);
+            $this->assertNotNull($report->closed_at);
+            $this->assertStringContainsString('stale-cache', (string) $report->resolution_note);
+        }
+    }
+
     public function test_one_bad_entry_does_not_roll_back_the_good_ones(): void
     {
         $good = $this->issue(['module' => 'sales', 'screen' => 'lead-details']);

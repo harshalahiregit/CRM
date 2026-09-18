@@ -19,16 +19,31 @@ class MaintenanceJob extends Model
 
     protected $table = 'maintenance_jobs';
 
-    public const STATUSES = ['open', 'in_progress', 'awaiting_parts', 'completed', 'cancelled'];
+    /**
+     * T-32 — `testing` and `qc` sit between the bench work and the signature.
+     *
+     * They are not cosmetic: a card in `qc` has had its work done but has not
+     * been cleared, and that is precisely the window in which somebody is
+     * tempted to take the vehicle. Both are OPEN states for that reason.
+     */
+    public const STATUSES = ['open', 'in_progress', 'awaiting_parts', 'testing', 'qc', 'completed', 'cancelled'];
 
     /** States that still hold the vehicle in the workshop. */
-    public const OPEN_STATES = ['open', 'in_progress', 'awaiting_parts'];
+    public const OPEN_STATES = ['open', 'in_progress', 'awaiting_parts', 'testing', 'qc'];
+
+    /* T-31 — what QC actually said. */
+    public const QC_PASS = 'PASS';
+    public const QC_FAIL = 'FAIL';
+    public const QC_CRITICAL_FAIL = 'CRITICAL_FAIL';
+
+    public const QC_RESULTS = [self::QC_PASS, self::QC_FAIL, self::QC_CRITICAL_FAIL];
 
     protected $fillable = [
         'company_id',
         'job_card_number',
         'vehicle_id',
         'trip_id',
+        'workshop_name',
         'complaint',
         'diagnosis',
         'parts_cost',
@@ -38,7 +53,11 @@ class MaintenanceJob extends Model
         'is_safety_critical',
         'opened_at',
         'closed_at',
+        'downtime_hours',
         'qc_passed',
+        'qc_result',
+        'clears_job_id',
+        'road_tested',
         'released_by',
     ];
 
@@ -49,8 +68,11 @@ class MaintenanceJob extends Model
         'parts_cost'  => 'decimal:2',
         'labour_cost' => 'decimal:2',
         'total_cost'  => 'decimal:2',
+        'downtime_hours' => 'decimal:2',
         'is_safety_critical' => 'boolean',
         'qc_passed'   => 'boolean',
+        'clears_job_id' => 'integer',
+        'road_tested' => 'boolean',
         'opened_at'   => 'datetime',
         'closed_at'   => 'datetime',
     ];
@@ -58,5 +80,15 @@ class MaintenanceJob extends Model
     public function vehicle()
     {
         return $this->belongsTo(Vehicle::class, 'vehicle_id');
+    }
+
+    public function parts()
+    {
+        return $this->hasMany(MaintenanceJobPart::class, 'maintenance_job_id');
+    }
+
+    public function labour()
+    {
+        return $this->hasMany(MaintenanceJobLabour::class, 'maintenance_job_id');
     }
 }

@@ -154,15 +154,52 @@ export const TYRE_POSITIONS = [
 
 export const TYRE_POSITION_LABEL = (p) => String(p || '').replace(/_/g, ' ')
 
+/**
+ * T-01 — mirrors `Vehicle::FUEL_TYPES`. The blank first option is deliberate:
+ * fuel type is nullable, and forcing "diesel" on a vehicle nobody recorded
+ * would be a guess written into the register as a fact.
+ */
+export const FUEL_TYPES = [
+  { value: '',         label: 'Not recorded' },
+  { value: 'diesel',   label: 'Diesel' },
+  { value: 'petrol',   label: 'Petrol' },
+  { value: 'cng',      label: 'CNG' },
+  { value: 'lng',      label: 'LNG' },
+  { value: 'electric', label: 'Electric' },
+  { value: 'hybrid',   label: 'Hybrid' },
+]
+
 export const JOB_STATUSES = [
-  { value: 'open',           label: 'Open' },
-  { value: 'in_progress',    label: 'In progress' },
-  { value: 'awaiting_parts', label: 'Awaiting parts' },
+  { value: 'open',           label: 'Open',           open: true },
+  { value: 'in_progress',    label: 'In progress',    open: true },
+  { value: 'awaiting_parts', label: 'Awaiting parts', open: true },
+  // T-32 — the work is done but nobody has signed it off yet. This is exactly
+  // the window in which a vehicle gets taken, so both still hold it.
+  { value: 'testing',        label: 'Road testing',   open: true },
+  { value: 'qc',             label: 'With QC',        open: true },
   { value: 'completed',      label: 'Completed' },
   { value: 'cancelled',      label: 'Cancelled' },
 ]
 
-export const OPEN_JOB_STATUSES = JOB_STATUSES.slice(0, 3)
+/**
+ * Derived from the flag, not a positional slice.
+ *
+ * This was `JOB_STATUSES.slice(0, 3)`, which silently meant the wrong thing the
+ * moment a status was inserted before `completed` — a vehicle in QC would have
+ * read as released.
+ */
+export const OPEN_JOB_STATUSES = JOB_STATUSES.filter((s) => s.open)
+
+/** One definition of "still in the workshop", so no screen disagrees. */
+export const isJobOpen = (status) => OPEN_JOB_STATUSES.some((s) => s.value === status)
+
+/** T-31 — what QC actually said. CRITICAL_FAIL is not just a louder FAIL: it
+ *  keeps holding the vehicle after this card closes, until a later QC clears it. */
+export const QC_RESULTS = [
+  { value: 'PASS',          label: 'Pass — safe to release' },
+  { value: 'FAIL',          label: 'Fail — rework needed' },
+  { value: 'CRITICAL_FAIL', label: 'Critical fail — vehicle condemned' },
+]
 
 /**
  * The Next-Action Engine's link resolver.

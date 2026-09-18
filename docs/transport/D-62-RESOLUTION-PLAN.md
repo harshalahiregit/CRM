@@ -185,11 +185,21 @@ which is why Steps 4 and 5 are deliberately last and a week apart.
 1. **Enum vocabulary (open as T-51 in `docs/audit/STOS-DEV2-BUILD-TASKLIST.md`).** The spec
    wants UPPERCASE (`REEFER`, `AVAILABLE`, `BILLABLE`); Fleet stores lowercase. Settle it in the
    same migration rather than twice — this touches both sides.
-2. **Does an expired driver licence block allocation, or score it down?** Fleet currently
-   **scores it to zero and flags `DRIVER_LICENSE_EXPIRED`**, so the vehicle is still offered —
-   the truck is roadworthy, and swapping drivers is a smaller decision than standing it down.
-   The spec reads as a hard block. It is one branch in `VehicleAllocationService`; P1 should
-   choose, because P1's board consumes the result.
+2. ~~**Does an expired driver licence block allocation, or score it down?**~~ **RULED by P1,
+   2026-09-17, and the question was the wrong shape.** Neither: the licence belongs to the
+   driver, not the truck. The vehicle stays fully eligible — it is roadworthy and nothing about
+   it has expired — and the *driver* becomes unassignable.
+
+   Built that way the same day. `DRIVER_LICENSE_EXPIRED` no longer appears on the vehicle
+   result at all, and licence state no longer scores the vehicle. It is now a hard blocker on
+   the person, from `DriverService::eligible()` / `GET /v1/fleet/drivers/eligible`, in the same
+   `blockers[{code, why, owner}]` shape as `getEligibleVehicles()` so one dispatch board renders
+   trucks and crew with one component.
+
+   One judgement call left inside it, for P1 to overrule if he wants: **driver *availability*
+   still nudges the vehicle score** (`DRIVER_UNAVAILABLE` stays a vehicle flag). It describes
+   the convenience of the pairing rather than anyone's right to drive, so it did not seem to
+   fall under the ruling — but it is the same category of fact, and reverting it is one line.
 
 ---
 

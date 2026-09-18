@@ -108,6 +108,12 @@ class SireExportController
             'transitions.*.qa_notes'    => ['nullable', 'string', 'max:20000'],
             'transitions.*.release_ref' => ['nullable', 'string', 'max:255'],
 
+            // Without this, `close_directly` is unusable from here: it requires a
+            // resolution note, and a field the validator drops can never satisfy
+            // a requirement. The same applies to reject / wont_fix /
+            // cannot_reproduce, which were equally unreachable in bulk.
+            'transitions.*.resolution_note' => ['nullable', 'string', 'max:20000'],
+
             // "Assign these nine to me" is the other bulk action people actually
             // want, and it is the same transition with a payload field.
             'transitions.*.assignee_id' => ['nullable', 'integer'],
@@ -153,12 +159,13 @@ class SireExportController
                 (string) $entry['action'],
                 $user,
                 array_filter([
-                    'fix_summary' => $entry['fix_summary'] ?? null,
-                    'qa_notes'    => $entry['qa_notes'] ?? null,
-                    'release_ref' => $entry['release_ref'] ?? null,
-                    'assignee_id' => $entry['assignee_id'] ?? null,
-                    'severity_id' => $entry['severity_id'] ?? null,
-                    'priority'    => $entry['priority'] ?? null,
+                    'fix_summary'     => $entry['fix_summary'] ?? null,
+                    'qa_notes'        => $entry['qa_notes'] ?? null,
+                    'release_ref'     => $entry['release_ref'] ?? null,
+                    'resolution_note' => $entry['resolution_note'] ?? null,
+                    'assignee_id'     => $entry['assignee_id'] ?? null,
+                    'severity_id'     => $entry['severity_id'] ?? null,
+                    'priority'        => $entry['priority'] ?? null,
                 ], static fn ($v) => $v !== null),
             ));
 
