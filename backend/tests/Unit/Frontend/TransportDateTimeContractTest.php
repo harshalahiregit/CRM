@@ -75,6 +75,71 @@ class TransportDateTimeContractTest extends TestCase
         );
     }
 
+    public function test_every_datetime_field_in_the_module_is_converted_before_it_is_sent(): void
+    {
+        // THIS IS THE TEST THAT WOULD HAVE CAUGHT THE SIBLING. Fixing
+        // fromLocalInput fixed the two panels that CALLED it, and left
+        // TransportOrderForm — which had a datetime-local and called nothing —
+        // still shipping a raw wall clock. It was found by sweeping, which is
+        // the expensive way to find the second instance of a bug you just fixed.
+        //
+        // A file that offers a datetime-local must also convert one.
+        $offenders = [];
+
+        foreach ($this->moduleFiles() as $path) {
+            // Comments stripped first. The guard flagged TransportOrders.jsx on
+            // its first run because a comment there EXPLAINS this bug — the same
+            // trap the D-63 seeder guard and the D-106 caller scan both fell
+            // into. A guard that cannot tell code from prose gets weakened by
+            // whoever it wrongly accuses.
+            //
+            // `[^\n]*` and not `.*$` with /s. With the s flag `.` matches
+            // newlines, so `//.*$` runs greedily from the FIRST comment to the
+            // last line of the file and strips everything after it — the guard
+            // then scans a nearly empty string and passes on anything. That was
+            // true here and in TripClosureTest until it was measured.
+            $src = preg_replace('#//[^\n]*|/\*.*?\*/#s', '', file_get_contents($path));
+
+            // RENDERS one, not merely mentions one.
+            if (! preg_match('/type=\s*[{"\']\s*["\']?datetime-local/', $src)) {
+                continue;
+            }
+
+            // constants.js DEFINES the converter rather than calling it.
+            if (str_ends_with($path, 'constants.js')) {
+                continue;
+            }
+
+            if (! str_contains($src, 'fromLocalInput')) {
+                $offenders[] = str_replace(self::FRONTEND.'/', '', $path);
+            }
+        }
+
+        $this->assertSame([], $offenders, sprintf(
+            "These files render a datetime-local and never convert it before sending:\n  %s\n\n"
+            ."A raw datetime-local value is a wall clock with no zone. The API is UTC, so it is "
+            ."read as UTC and the time silently shifts by the user's offset — or, if the field "
+            .'defaults to now, the action is refused as "in the future". Use fromLocalInput().',
+            implode("\n  ", $offenders),
+        ));
+    }
+
+    /** @return array<int,string> every js/jsx file in the transport module */
+    private function moduleFiles(): array
+    {
+        $dir = self::FRONTEND.'/modules/transport';
+        $out = [];
+
+        $it = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir));
+        foreach ($it as $file) {
+            if (! $file->isDir() && in_array($file->getExtension(), ['js', 'jsx'], true)) {
+                $out[] = $file->getPathname();
+            }
+        }
+
+        return $out;
+    }
+
     public function test_the_transit_panel_lets_the_server_stamp_its_own_now(): void
     {
         $path = self::FRONTEND.'/modules/transport/components/JourneyPanel.jsx';

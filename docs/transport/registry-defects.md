@@ -3104,3 +3104,85 @@ Either of these, and both belong to a conversation rather than to this pass:
    Fleet's `vehicles` reads zero through Transport's current paths.
 
 Raised to P2 alongside D-109.
+
+---
+
+## D-111 — The browser/server boundary had two more time bugs, and one is still open
+
+**Raised:** 2026-09-18, sweeping for siblings of the `fromLocalInput` bug on the owner's
+instruction. **One fixed, one reported.**
+
+### Why a sweep was ordered
+
+The `fromLocalInput` defect made Record departure and Record delivery unusable outside UTC and
+silently shifted every dispatch time, with 1311 tests green over the top of it. The owner's
+reading: *"every service test built its times on the server, where there is nothing to get wrong
+— that is a structural blind spot, not bad luck, and it will have siblings."*
+
+It had two.
+
+### Sibling 1 — the order deadline. FIXED.
+
+`TransportOrderForm`'s "Required by" is a `datetime-local` and was submitted **raw**, the only
+one of the module's four such fields with no conversion:
+
+| | |
+|---|---|
+| `components/TransportOrderForm.jsx` | **0 conversions** ← the bug |
+| `components/JourneyPanel.jsx` | 2 |
+| `components/DispatchPanel.jsx` | 2 |
+
+Measured, not inferred:
+
+```
+user types      25 Sep 2026, 09:00   (their clock)
+browser sends   "2026-09-25T09:00"   no zone
+server stores   2026-09-25 09:00 UTC
+shown back      25 Sep 2026, 14:30   ← five and a half hours late
+```
+
+**Every transport order ever created through the UI carries a customer deadline shifted by the
+local offset.** Unlike the transit bug this one never refused anything — it just quietly stored
+the wrong time, which is why nobody saw it.
+
+Fixed by `toTransportOrderPayload()`, which converts on the way out. Verified in the browser:
+typed 09:00, list now reads **09:00 am**.
+
+### Sibling 2 — date-only fields drift by a day west of UTC. REPORTED, NOT FIXED.
+
+`<input type="date">` sends `"2026-09-25"`. The server stores midnight UTC. `fmtDate()` renders
+with `toLocaleDateString`, which converts to the viewer's zone:
+
+```
+Asia/Kolkata      picked 25 Sep  →  displays 25 Sept 2026   correct
+America/New_York  picked 25 Sep  →  displays 24 Sept 2026   OFF BY ONE DAY
+```
+
+A licence expiry, a document validity date or a due date shown one day early is a compliance
+answer that is wrong, and `PretripService` blocks dispatch on exactly those dates.
+
+**Not fixed in this pass, deliberately.** It does not bite today — Sangoé runs in IST, where the
+offset is positive and the date survives — and the correct fix is to render a date-only value
+without any timezone conversion, which means changing `fmtDate` or introducing a `fmtDateOnly`
+across call sites in **P1's, P2's and P3's** panels (`DocumentsPanel`, `DriverForm`,
+`VehicleForm`, `CostsPanel`, `CollectionPanel`, the whole Fleet folder). That is a cross-section
+change, not a fix, and it needs a decision rather than a quiet edit during a defect pass.
+
+**It becomes urgent the day anyone opens Sangoé from a timezone west of Greenwich.**
+
+### The numbers are fine
+
+Checked as part of the same sweep and reported because a sweep that only lists what it found is
+half a sweep. Every numeric field (`approved_freight`, `package_count`, `gross_weight_kg`,
+`volume_cbm`, advances, costs) submits `e.target.value` — a plain string like `"12450.5"` — with
+no locale formatting applied on the way out. `toLocaleString` appears only in DISPLAY paths.
+Nothing round-trips wrong. The one transform on a submit path is `Number(pickedConsignment)` on
+a container attach, which is an integer id.
+
+### The guard
+
+`TransportDateTimeContractTest` fails on the exact shape of the original bug and on a
+`JourneyPanel` that stops letting the server stamp its own clock. Proven by reintroducing the old
+one-liner. It does **not** yet assert that every `datetime-local` in the module is converted —
+that is worth adding the next time this area is touched, and is why sibling 1 survived the first
+fix.

@@ -4,7 +4,7 @@ import { Plus, RefreshCw, Search, Package, AlertTriangle, Loader2, Eye } from 'l
 import { transportOrderApi } from '@/services/transportApi'
 import { useToast } from '@/components/ui/Toast'
 import Modal from '@/components/ui/Modal'
-import TransportOrderForm, { emptyTransportOrder, validateTransportOrder } from '../components/TransportOrderForm'
+import TransportOrderForm, { emptyTransportOrder, validateTransportOrder, toTransportOrderPayload } from '../components/TransportOrderForm'
 import {
   ORDER_STATUS_LABEL, orderStatusCfg, priorityCfg,
   fmtDateTime, fmtLocation,
@@ -62,7 +62,9 @@ export default function TransportOrders() {
 
     setSaving(true)
     try {
-      const created = await transportOrderApi.create(form)
+      // toTransportOrderPayload, not `form`: the deadline leaves the browser as a
+      // zoned instant. Sending the raw datetime-local value stored it as UTC.
+      const created = await transportOrderApi.create(toTransportOrderPayload(form))
       toast.success(`Order ${created?.order_number ?? ''} created.`)
       setOpen(false); setForm(emptyTransportOrder())
       load()

@@ -158,7 +158,7 @@ class TripClosureTest extends TestCase
                 // is not a caller, and a scan that cannot tell the difference
                 // would have to be weakened the first time someone wrote the
                 // name down. (Same lesson as the D-63 seeder guard.)
-                $src = preg_replace('#//.*$|/\*.*?\*/#ms', '', $src);
+                $src = preg_replace('#//[^\n]*|/\*.*?\*/#s', '', $src);
                 $src = preg_replace('#\'(?:\\\\.|[^\'\\\\])*\'|"(?:\\\\.|[^"\\\\])*"#s', "''", $src);
 
                 $invoked = preg_match('/(->|::)markInvoiced\s*\(/', $src) === 1;

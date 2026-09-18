@@ -43,6 +43,76 @@ destroy anything outside your own section, stop and say so before running it.
 
 ---
 
+## A block is not done until it has been walked in a real browser
+
+**Ruled by the owner, 2026-09-18. Standing rule, all three sections.**
+
+Not tested — **walked**, by a person clicking, in a real browser, using the values a user would
+actually use.
+
+This is not a suggestion born of caution. On 2026-09-18 three blocks that were marked done,
+fully tested and merged were walked for the first time. **Six user-visible defects**, including
+two shipped features that **nobody outside UTC could use at all**. The suite was green at 1311
+tests throughout.
+
+A green suite is evidence that the code does what the tests say. It is not evidence that anybody
+can use the product.
+
+---
+
+## First click, default values
+
+**The lazy path is the one everybody takes. Test it.**
+
+Every one of the six defects above failed on the **first click with nothing typed**:
+
+- `Record departure` — pressed with the time field untouched: *"A departure cannot be recorded in
+  the future."*
+- `Record delivery` — same.
+- A free container's passport — opened with no arguments: six cards reading "—".
+- A search that matches nothing — "No containers yet", with three containers on file.
+
+Nobody types a custom value on their first try. They press the button and see what happens. If
+that path is broken the feature is broken, whatever the form does when carefully filled in.
+
+---
+
+## Anything crossing the browser/server boundary needs a contract test
+
+**Dates, times, money, numbers — anything with a format.**
+
+Server-side tests cannot see that boundary **by construction**: they build their values on the
+server, where there is nothing to convert and nothing to get wrong. A suite made entirely of them
+will be green over a feature that cannot be used, and was.
+
+What that blind spot cost, measured:
+
+| | typed | stored | shown back |
+|---|---|---|---|
+| Dispatch ETD | 14:00 | 08:30 UTC | **19:30** |
+| Order "Required by" | 09:00 | 09:00 UTC | **14:30** |
+| Record departure / delivery | *(default: now)* | — | **refused as "in the future"** |
+
+So: when a value is transformed on its way out of the browser, there is a test asserting the
+shape it leaves in. `TransportDateTimeContractTest` is the worked example — it reads the frontend
+source from the PHP suite, because **the PHP suite is what runs**.
+
+**Two things that guard has already taught us:**
+
+1. **Fixing the converter does not fix the callers who never called it.** `TransportOrderForm`
+   had a `datetime-local` and called nothing, and survived the first fix untouched. The guard now
+   asserts that **every** file rendering a `datetime-local` also converts one.
+2. **A guard must read code, not prose.** It first fired on a file whose only offence was a
+   comment explaining the bug — the same trap the D-63 seeder guard fell into. Strip comments,
+   and strip them with `[^\n]*`, not `.*$` with the `/s` flag: with `/s` a line-comment pattern
+   runs greedily to the end of the file and the guard then scans almost nothing and passes on
+   everything. That was true of two guards here until it was measured.
+
+**And prove the guard fires.** Break the thing on purpose, watch it go red, put it back. A guard
+that has never failed is a guard nobody has tested.
+
+---
+
 ## Always run `migrate:status` before `migrate`
 
 **Read what is pending before you apply it. Every time.**
