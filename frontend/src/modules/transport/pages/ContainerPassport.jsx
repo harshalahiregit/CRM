@@ -61,8 +61,12 @@ export default function ContainerPassport() {
   }
 
   const { container, chain, status, lifecycle, readiness, linked, timeline } = data
-  const rows = filter === 'all' ? timeline : timeline.filter((t) => t.source === filter)
-  const sources = [...new Set(timeline.map((t) => t.source))]
+  // CTD §35 filters the timeline by CATEGORY — documents, operations, GPS,
+  // temperature, financial, customer, incident — not by which of our three
+  // tables an audit row happened to sit on. That is what it filtered by until
+  // trip_events existed, because a category was not something we recorded.
+  const rows = filter === 'all' ? timeline : timeline.filter((t) => t.category === filter)
+  const categories = [...new Set(timeline.map((t) => t.category))].filter(Boolean).sort()
 
   return (
     <div className="space-y-5 animate-fade-in">
@@ -185,9 +189,9 @@ export default function ContainerPassport() {
 
       {/* ── CTD-021, §31–§35: one chronological view, filterable by source ── */}
       <Section title="Everything that has happened" icon={History}>
-        {sources.length > 1 && (
+        {categories.length > 1 && (
           <div className="flex gap-1.5 flex-wrap mb-3">
-            {['all', ...sources].map((s) => (
+            {['all', ...categories].map((s) => (
               <button key={s} onClick={() => setFilter(s)}
                 className="px-2.5 py-1 rounded-lg text-[11px] font-bold"
                 style={filter === s
@@ -202,7 +206,11 @@ export default function ContainerPassport() {
           {rows.map((r, i) => (
             <div key={i} className="flex gap-3 py-1.5 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
               <span className="text-[11px] shrink-0 w-36" style={{ color: 'var(--text-muted)' }}>{fmtDateTime(r.at)}</span>
-              <span className="text-[10px] font-bold uppercase shrink-0 w-20" style={{ color: 'var(--text-faint)' }}>{r.source}</span>
+              {/* CTD §32: "each event should identify its source." The
+                  category is the filter; the source is who said it. */}
+              <span className="text-[10px] font-bold uppercase shrink-0 w-24" style={{ color: 'var(--text-faint)' }}>
+                {r.category}
+              </span>
               <span className="text-xs flex-1" style={{ color: 'var(--text-h)' }}>
                 {r.label}
                 {/* WHICH change it was. A walked trip produced seven identical

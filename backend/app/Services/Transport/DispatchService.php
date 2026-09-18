@@ -3,6 +3,7 @@
 namespace App\Services\Transport;
 
 use App\Exceptions\BusinessException;
+use App\Services\Transport\TripEventRecorder;
 use App\Models\Transport\TransportAuditLog;
 use App\Models\Transport\TransportTrip;
 use App\Models\Transport\TripAssignment;
@@ -122,6 +123,8 @@ class DispatchService
                     )),
                 ],
             );
+
+            app(TripEventRecorder::class)->record('trip.dispatched', trip: $trip, actor: $actor);
 
             Log::channel('transport')->info('Trip dispatched', [
                 'trip_id' => $trip->id, 'tenant_id' => $tenantId,
@@ -502,6 +505,10 @@ class DispatchService
                         fn (string $d) => $d !== 'built',
                     )),
                 ],
+            );
+
+            app(TripEventRecorder::class)->record(
+                'trip.departed', trip: $trip, actor: $actor, occurredAt: $departedAt,
             );
 
             Log::channel('transport')->info('Trip departed', [

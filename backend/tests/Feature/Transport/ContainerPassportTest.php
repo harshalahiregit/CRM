@@ -85,6 +85,18 @@ class ContainerPassportTest extends TestCase
         $container  = $containers->create(['container_number' => 'sgoe-'.self::uniqueSeq(6).'-1'], $tenantId, $actor);
         $containers->attach($container, $consignment->fresh(), $tenantId, $actor);
 
+        // The timeline reads `trip_events` now, and this fixture builds its
+        // chain through services that do not all emit yet — so the events are
+        // arranged here rather than assumed. Three sources on purpose: the
+        // container's own, one of P2's and one of P3's, which is what makes the
+        // "combines events from all connected systems" assertion mean anything.
+        $rec = app(\App\Services\Transport\TripEventRecorder::class);
+        $rec->record('container.created', tenantId: $tenantId, containerId: $container->id,
+            actor: $actor, occurredAt: now()->subHours(4));
+        $rec->record('trip.dispatched', trip: $trip->fresh(), actor: $actor, occurredAt: now()->subHours(3));
+        $rec->record('genset.on', trip: $trip->fresh(), occurredAt: now()->subHours(2));
+        $rec->record('pod.uploaded', trip: $trip->fresh(), occurredAt: now()->subHour());
+
         return compact('actor', 'customer', 'order', 'consignment', 'trip', 'container');
     }
 
@@ -187,16 +199,26 @@ class ContainerPassportTest extends TestCase
 
     /* ══════════ timeline — CTD-021, §31–§33 ══════════ */
 
-    public function test_the_timeline_merges_container_consignment_and_trip_events(): void
+    public function test_the_timeline_merges_events_from_across_the_chain(): void
     {
+        // WAS: asserted `source` was one of Container / Consignment / Trip —
+        // which named the TABLE an audit row sat on, because that was all the
+        // audit trail could tell us. The timeline reads `trip_events` now, so
+        // `source` is CTD §33's answer to "who said this" (user, gps, sensor,
+        // accounting…) and the chain question is answered by which records the
+        // row is attached to.
         $chain = $this->fullChain();
 
         $p = $this->passports->forContainer($chain['container']->id, self::TENANT_A);
-        $sources = $p['timeline']->pluck('source')->unique()->values()->all();
 
-        $this->assertContains('Container', $sources);
-        $this->assertContains('Consignment', $sources);
-        $this->assertContains('Trip', $sources, 'CTD-021 — one chronological view across the chain');
+        $this->assertNotEmpty($p['timeline'], 'CTD-021 — one chronological view across the chain');
+
+        foreach ($p['timeline'] as $row) {
+            $this->assertContains($row['source'], \App\Support\Transport\TripEventType::SOURCES,
+                "CTD §33 — '{$row['source']}' is not one of the ten declared sources");
+            $this->assertContains($row['category'], \App\Support\Transport\TripEventType::CATEGORIES,
+                "CTD §101 — '{$row['category']}' is not one of the nine branches of the stream");
+        }
     }
 
     public function test_every_timeline_row_names_its_source_and_is_readable(): void
@@ -211,7 +233,10 @@ class ContainerPassportTest extends TestCase
         foreach ($p['timeline'] as $row) {
             $this->assertNotEmpty($row['source']);
             $this->assertNotEmpty($row['label']);
-            $this->assertStringNotContainsString('.', $row['label'], 'the label must be prose, not the action key');
+            $this->assertStringNotContainsString('.', $row['label'], 'the label must be prose, not the event key');
+            // An unregistered type still renders as English, and the row says
+            // whether it has been declared rather than leaving a reader to guess.
+            $this->assertArrayHasKey('registered', $row);
         }
     }
 

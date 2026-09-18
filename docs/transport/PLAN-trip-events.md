@@ -184,4 +184,43 @@ the parts that make it usable by anyone other than me.
 
 ---
 
-**No code written. Four questions in §4, each with a recommendation. Ready to build on the word.**
+---
+
+## 7. The four answers, and what shipped
+
+**Q1 — OPEN COLUMN, ruled by the owner**, with a third piece I had not proposed and which is the
+one that makes it work: **a test asserting every type present in the table appears in the
+registry**. Without it an open column becomes three vocabularies inside a month.
+`TripEventRegistryTest` does that and is proven to fire — writing `TEMPERATURE_BREACH` turns it
+red and names the file to edit.
+
+**Q2 — CTD §101's nine categories.** Answered by the source, so not brought back: §101 defines
+the stream; §35 is one screen's filter bar. §35's seven map onto §101's nine, with its "incident"
+being §101's "quality". Both lists are recorded — `CATEGORIES` and `CTD_35_FILTERS` — rather than
+one being silently discarded.
+
+**Q3 — replace, with a backfill.** Also answered by the source: §32 calls the timeline the thing
+that combines *all* systems and §101 makes it one stream, so a "single source of truth" that is
+two sources is the thing those sections argue against. `stos:backfill-trip-events` is idempotent
+— every row carries the audit id it came from — and covers trips, containers and consignments, so
+nothing that had a timeline lost one.
+
+**Q4 — recorder service, no HTTP write endpoint.** Nothing in the source asks for one, and an
+HTTP write surface answers device authentication, retry idempotency and rate limiting by
+accident if it is added silently.
+
+## 8. What shipped against this plan
+
+| planned | shipped | |
+|---|---|---|
+| migration, model, registry, recorder | as planned | ✓ |
+| P1's own events emitted | approve, deliver, dispatch, depart, close, exception raised/resolved | ✓ |
+| backfill command | plus containers and consignments, which the plan did not mention | **wider** |
+| Container 360 reads `trip_events` | and filters by CTD §35's categories rather than by table | ✓ |
+| notes to P2 and P3 | one shared contract note instead of two | **merged** — the contract is identical for both and a single document cannot drift against itself |
+| ~18 files, about a day | 12 files | **smaller** — the schema and registry carried more than expected |
+
+**Two things the plan did not foresee**, both found by reading the rebuilt screen rather than the
+code: the backfill mapped both the assignment row and the `allocated` status change, so "Vehicle
+allocated" rendered twice in a row; and it only walked trip audit rows, so a container's own
+"Container created" would have disappeared from its passport.

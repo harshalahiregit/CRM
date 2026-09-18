@@ -3,6 +3,7 @@
 namespace App\Services\Transport;
 
 use App\Models\Transport\ConsignmentContainer;
+use App\Models\Transport\TripEvent;
 use App\Models\Transport\TransportAuditLog;
 use App\Models\Transport\TransportContainer;
 use App\Models\Transport\TransportTrip;
@@ -354,47 +355,53 @@ class ContainerPassportService
         ?TransportTrip $trip,
         int $tenantId,
     ) {
-        $subjects = [[TransportContainer::class, $container->id, 'Container']];
+        /* ── READS trip_events NOW, NOT THE AUDIT LOG ────────────────────
+         *
+         * It read `transport_audit_logs` until 2026-09-18, and read it well —
+         * but an audit row is a FIELD CHANGE, and this is meant to be a
+         * chronology of THINGS THAT HAPPENED, from every connected system.
+         * CTD §32: "Timeline must combine events from all connected systems."
+         * Half of CTD §31's worked example belongs to P2 and P3, and neither
+         * could ever have written into our audit trail.
+         *
+         * The audit log has not moved and has not changed — it is still the
+         * compliance record of what this module did. Existing trips were
+         * carried across by `stos:backfill-trip-events`, so nothing that had a
+         * timeline lost one.
+         */
+        $events = TripEvent::forTenant($tenantId)
+            ->where(function ($q) use ($container, $current, $trip) {
+                $q->where('container_id', $container->id);
 
-        if ($current?->consignment_id) {
-            $subjects[] = [\App\Models\Transport\TransportConsignment::class, $current->consignment_id, 'Consignment'];
-        }
+                if ($current?->consignment_id) {
+                    $q->orWhere('consignment_id', $current->consignment_id);
+                }
 
-        if ($trip) {
-            $subjects[] = [TransportTrip::class, $trip->id, 'Trip'];
-        }
+                if ($trip) {
+                    $q->orWhere('trip_id', $trip->id);
+                }
+            })
+            ->chronological()
+            ->limit(200)
+            ->get();
 
-        $rows = collect();
-
-        foreach ($subjects as [$type, $id, $source]) {
-            TransportAuditLog::forTenant($tenantId)
-                ->forSubject($type, $id)
-                ->orderBy('occurred_at')
-                ->get()
-                ->each(function (TransportAuditLog $log) use ($rows, $source) {
-                    $rows->push([
-                        'at'      => $log->occurred_at?->toIso8601String(),
-                        'action'  => $log->action,
-                        'label'   => $this->humanise($log->action),
-                        'source'  => $source,
-                        'actor'   => $log->actor_name,
-                        'role'    => $log->actor_role,
-                        'details' => $log->new_values,
-
-                        // The two ends of a status change, so the screen can say
-                        // WHICH change this was. Without them a walked trip
-                        // renders as seven identical "Trip status changed" rows
-                        // — technically a timeline, useless as one. The trip
-                        // detail page has always shown from → to; the passport
-                        // could not, because it was never sent them.
-                        'from'    => $log->old_values['status'] ?? null,
-                        'to'      => $log->new_values['status'] ?? null,
-                    ]);
-                });
-        }
-
-        // Newest first: a person opening a passport wants what just happened.
-        return $rows->sortByDesc('at')->values();
+        return $events->map(fn (TripEvent $e) => [
+            'at'       => $e->occurred_at?->toIso8601String(),
+            'action'   => $e->event_type,
+            'label'    => $e->label(),
+            // CTD §35's filters, which is what the screen groups by now.
+            'category' => $e->category,
+            // CTD §32: "each event should identify its source."
+            'source'   => $e->source,
+            'actor'    => $e->actor_name,
+            'role'     => $e->actor_role,
+            'details'  => $e->detail,
+            // CTD §34 — a correction is visible AS a correction.
+            'corrects' => $e->corrects_event_id,
+            // An unregistered type still renders; this is how a reader knows it
+            // has not been declared yet rather than wondering what it is.
+            'registered' => $e->isRegistered(),
+        ]);
     }
 
     /**

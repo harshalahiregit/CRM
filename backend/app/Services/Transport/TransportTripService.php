@@ -3,6 +3,7 @@
 namespace App\Services\Transport;
 
 use App\Events\Transport\TripApproved;
+use App\Services\Transport\TripEventRecorder;
 use App\Events\Transport\TripCreated;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ResourceNotFoundException;
@@ -293,6 +294,9 @@ class TransportTripService
         // listener can ever see an approval that was rolled back.
         TripApproved::dispatch($approved);
 
+        // CTD §31's timeline. After the commit, for the same reason.
+        app(TripEventRecorder::class)->record('trip.approved', trip: $approved, actor: $actor);
+
         Log::channel('transport')->info('Trip approved', [
             'trip_id' => $approved->id, 'from' => $from, 'to' => $to,
             'tenant_id' => $tenantId, 'user_id' => $actor?->id,
@@ -570,6 +574,10 @@ class TransportTripService
 
             return $trip->fresh();
         });
+
+        app(TripEventRecorder::class)->record(
+            'trip.delivered', trip: $delivered, actor: $actor, occurredAt: $delivered->delivered_at,
+        );
 
         Log::channel('transport')->info('Trip delivered', [
             'trip_id' => $delivered->id, 'tenant_id' => $tenantId,

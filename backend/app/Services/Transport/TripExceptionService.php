@@ -3,6 +3,7 @@
 namespace App\Services\Transport;
 
 use App\Events\Transport\TripExceptionRaised;
+use App\Services\Transport\TripEventRecorder;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ResourceNotFoundException;
 use App\Models\Transport\TransportTrip;
@@ -148,6 +149,12 @@ class TripExceptionService
 
         TripExceptionRaised::dispatch($exception);
 
+        app(TripEventRecorder::class)->record(
+            'exception.raised', tenantId: $tenantId, tripId: $trip?->id, actor: $actor,
+            summary: ExceptionSeverity::label($severity).' exception — '.ExceptionCategory::label($category),
+            detail: ['exception_number' => $exception->exception_number, 'cause' => $cause],
+        );
+
         Log::channel('transport')->info('Transport exception raised', [
             'exception_id' => $exception->id, 'tenant_id' => $tenantId,
             'trip_id' => $trip?->id, 'severity' => $severity, 'category' => $category,
@@ -264,6 +271,11 @@ class TripExceptionService
 
             return $e->fresh();
         });
+
+        app(TripEventRecorder::class)->record(
+            'exception.resolved', tenantId: $tenantId, tripId: $resolved->trip_id, actor: $actor,
+            detail: ['exception_number' => $resolved->exception_number],
+        );
 
         Log::channel('transport')->info('Transport exception resolved', [
             'exception_id' => $resolved->id, 'tenant_id' => $tenantId,

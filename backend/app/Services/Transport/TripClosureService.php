@@ -3,6 +3,7 @@
 namespace App\Services\Transport;
 
 use App\Events\Transport\TripClosed;
+use App\Services\Transport\TripEventRecorder;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ResourceNotFoundException;
 use App\Models\Transport\TransportTrip;
@@ -212,6 +213,11 @@ class TripClosureService
             array_column($readiness['controls'], 'key'),
             array_column($readiness['controls'], 'state'),
         ));
+
+        app(TripEventRecorder::class)->record(
+            'trip.closed', trip: $closed, actor: $actor,
+            detail: ['closure_reason' => $reason, 'controls_not_checked' => array_column($readiness['not_checked'], 'key')],
+        );
 
         Log::channel('transport')->info('Trip closed', [
             'trip_id' => $closed->id, 'tenant_id' => $tenantId, 'user_id' => $actor?->id,
