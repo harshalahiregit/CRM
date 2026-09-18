@@ -113,6 +113,62 @@ that has never failed is a guard nobody has tested.
 
 ---
 
+## No guard is trusted until it has been seen to fail on the thing it guards
+
+**Ruled by the owner, 2026-09-18. One line, and it has already paid for itself twice.**
+
+Write the guard, then **break the thing on purpose and watch it go red**, then put it back. A
+guard that has never failed is not a guard — it is a comment that costs CPU.
+
+**Break it a second way, too.** On 2026-09-18 two guards in this module were stripping comments
+with `'#//.*$|/\*.*?\*/#ms'`. The `/s` flag makes `.` match newlines, so `//.*$` ran greedily
+from the file's first comment to its last line and **stripped the entire file**. Both guards were
+scanning an almost-empty string and passing on anything at all.
+
+The newest of them — a timezone contract test — **passed while a second timezone bug was still
+live in the file it was reading.**
+
+The D-106 caller scan had the identical line and *did* fire when it was tested, for one reason:
+the probe happened to be inserted **above that file's first comment**. One probe in one position
+is not proof. Put the probe somewhere else as well.
+
+**This is not hypothetical — the second break found a second hole the same day.** The timezone
+guard checked "does this file render a `datetime-local`". Probe A removed the conversion from a
+file that renders one directly: it went red, correctly. Probe B removed the conversion from
+`DispatchPanel`, which renders `type={field.type}` out of a shared field config — and deleting
+the conversion deleted the file's last mention of the literal, so the file **fell out of the
+guard's scope entirely and the guard stayed green over a real regression.**
+
+Two probes, two positions, two different mechanisms. The first proved the guard worked. The
+second proved it did not.
+
+**A test that cannot fail is worse than no test: it converts a gap into confidence.**
+
+---
+
+## When you sweep a boundary, look for the silent bugs first
+
+**They are the ones that have been running longest.**
+
+The timezone sweep found two faults of the same cause and they behaved completely differently:
+
+| | behaviour | how long it survived |
+|---|---|---|
+| `Record departure` / `Record delivery` | **threw** — "cannot be recorded in the future" | found the first time anyone clicked |
+| Order "Required by" | **stored the wrong time, silently** | every order ever created through the UI |
+
+A bug that throws gets found, by a user if not by us. A bug that quietly writes the wrong value
+does not — there is nothing to notice, and the wrong data accumulates the whole time.
+
+So when sweeping: start with the paths that **succeed**, not the ones that fail. Take a value
+through the full round trip — type it, store it, read it back — and compare it to what was typed.
+"No error" is not the same as "correct".
+
+**And report what was clean, not only what was found.** A sweep that lists only its hits tells
+the reader nothing about what was actually checked.
+
+---
+
 ## Always run `migrate:status` before `migrate`
 
 **Read what is pending before you apply it. Every time.**

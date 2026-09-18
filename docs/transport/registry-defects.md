@@ -3186,3 +3186,70 @@ a container attach, which is an integer id.
 one-liner. It does **not** yet assert that every `datetime-local` in the module is converted —
 that is worth adding the next time this area is touched, and is why sibling 1 survived the first
 fix.
+
+---
+
+## D-112 — Both guards written this week were blind, and the second break found a third hole
+
+**Raised:** 2026-09-18. **Fixed.** Recorded because the lesson outlives the bugs.
+
+Three faults, all in test code, all found by attacking my own guards rather than by running them.
+
+### 1. A comment-stripper that stripped the file
+
+`TransportDateTimeContractTest` and `TripClosureTest` both did:
+
+```php
+preg_replace('#//.*$|/\*.*?\*/#ms', '', $src)
+```
+
+The `/s` flag makes `.` match newlines, so `//.*$` runs greedily **from the file's first comment
+to its last line**. Both guards were scanning an almost-empty string and would have passed on
+anything at all.
+
+Measured:
+
+```
+input   <?php  ·  // a comment  ·  $x = "type=\"datetime-local\"";  ·  // another  ·  $y = 1;
+/ms     '<?php\n'                        ← everything after the first // is gone
+/s + [^\n]*   the whole file, comments removed   ← correct
+```
+
+**The timezone guard passed while the second timezone bug was still live in the file it read.**
+A test that cannot fail converts a gap into confidence, which is worse than no test.
+
+### 2. One probe in one position is not proof
+
+The D-106 caller scan had the identical `/ms` line and nevertheless went red when it was tested.
+The only reason: the probe happened to be inserted **above that file's first comment**, in the
+sliver the broken regex left behind. Re-probed at the end of a different service, it fires
+properly now.
+
+### 3. And the second break found a third hole
+
+With the stripper fixed, the timezone guard was attacked twice more:
+
+| probe | file | mechanism | result |
+|---|---|---|---|
+| **A** | `TransportOrderForm` | renders `type="datetime-local"` directly | **red** — correct |
+| **B** | `DispatchPanel` | renders `type={field.type}` from `DISPATCH_FIELDS` | **GREEN — wrong** |
+
+Removing DispatchPanel's conversion also removed the file's last mention of the literal, so the
+file **dropped out of the guard's scope** and the guard reported success over a real regression.
+
+The scope test now covers both: a file is in scope if it renders a datetime field **or** consumes
+an exported field config that declares one. The config list is read from `constants.js` rather
+than hardcoded, so a new config is covered without anyone remembering this test exists.
+
+Both probes now fire. Both were restored.
+
+### A fourth, caught on the way
+
+The first version of that config scanner used
+`/export const ([A-Z_]+)\s*=\s*\[(.*?)\n\]/s` and reported `PRETRIP_CATEGORY_ORDER` — a list of
+plain strings with no fields in it. The lazy capture ran past its own closing bracket into the
+next declaration. Rewritten to walk the file line by line.
+
+**Three of these four are the same mistake: a pattern matching more than its author pictured.**
+Regexes over source are guard-writing's sharpest tool and its commonest way to be wrong, and the
+only defence that works is to break the guard and watch it go red — twice, in two different ways.

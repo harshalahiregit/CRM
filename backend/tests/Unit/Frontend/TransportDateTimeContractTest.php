@@ -100,8 +100,29 @@ class TransportDateTimeContractTest extends TestCase
             // true here and in TripClosureTest until it was measured.
             $src = preg_replace('#//[^\n]*|/\*.*?\*/#s', '', file_get_contents($path));
 
-            // RENDERS one, not merely mentions one.
-            if (! preg_match('/type=\s*[{"\']\s*["\']?datetime-local/', $src)) {
+            // IN SCOPE TWO WAYS, and the second was a blind spot.
+            //
+            //   1. the file renders a datetime-local directly;
+            //   2. the file CONSUMES a field config that declares one, like
+            //      DispatchPanel — it renders `type={field.type}` out of
+            //      DISPATCH_FIELDS and never writes the literal itself.
+            //
+            // Only (1) was checked at first. Deleting DispatchPanel's
+            // conversion also deleted its last mention of the literal, so the
+            // file dropped out of scope and the guard stayed green over a real
+            // regression. Found by breaking this guard a SECOND way, in a
+            // second file — which is the rule that came out of the first blind
+            // spot, applied to the guard that came out of it.
+            $inScope = preg_match('/type=\s*[{"\']\s*["\']?datetime-local/', $src) === 1;
+
+            foreach ($this->datetimeFieldConfigs() as $config) {
+                if ($inScope) {
+                    break;
+                }
+                $inScope = preg_match('/\b'.preg_quote($config, '/').'\b/', $src) === 1;
+            }
+
+            if (! $inScope) {
                 continue;
             }
 
@@ -122,6 +143,40 @@ class TransportDateTimeContractTest extends TestCase
             .'defaults to now, the action is refused as "in the future". Use fromLocalInput().',
             implode("\n  ", $offenders),
         ));
+    }
+
+    /**
+     * Exported field lists in constants.js that declare a datetime-local field.
+     *
+     * Read from the source, so a new config is covered without anyone having to
+     * remember this test exists.
+     *
+     * Walked line by line and NOT matched with one array-spanning regex. The
+     * first attempt used `/export const ([A-Z_]+)\s*=\s*\[(.*?)\n\]/s` and
+     * reported PRETRIP_CATEGORY_ORDER, a list of plain strings with no fields
+     * in it: the lazy capture ran past its own closing bracket into the next
+     * declaration. Same family of mistake as the /s comment-stripper this whole
+     * test exists because of — a pattern matching more than its author pictured.
+     *
+     * @return array<int,string>
+     */
+    private function datetimeFieldConfigs(): array
+    {
+        $current = null;
+        $out = [];
+
+        foreach (explode("\n", $this->constants()) as $line) {
+            if (preg_match('/^export const ([A-Z][A-Z0-9_]*)\s*=\s*\[/', $line, $m) === 1) {
+                $current = $m[1];
+            } elseif (str_starts_with($line, ']')) {
+                $current = null;
+            } elseif ($current !== null && str_contains($line, 'datetime-local')) {
+                $out[$current] = true;
+                $current = null;
+            }
+        }
+
+        return array_keys($out);
     }
 
     /** @return array<int,string> every js/jsx file in the transport module */
