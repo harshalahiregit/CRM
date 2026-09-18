@@ -65,9 +65,15 @@ export default function TripProgress({ status }) {
                 }}>
                   {s.label}
                 </p>
-                <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.45 }}>
-                  {s.blurb}
-                </p>
+                {/* The blurb only on the step you are ON. Seven paragraphs
+                    across the top of the page is the same noise the panels
+                    below used to carry, and it competes with the one sentence
+                    that actually tells you what to do. */}
+                {s.state === 'current' && (
+                  <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.45 }}>
+                    {s.blurb}
+                  </p>
+                )}
 
                 {s.state === 'current' && (
                   <p style={{ margin: '4px 0 0', fontSize: 10.5, fontWeight: 800, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a78bfa' }}>
