@@ -3253,3 +3253,49 @@ next declaration. Rewritten to walk the file line by line.
 **Three of these four are the same mistake: a pattern matching more than its author pictured.**
 Regexes over source are guard-writing's sharpest tool and its commonest way to be wrong, and the
 only defence that works is to break the guard and watch it go red — twice, in two different ways.
+
+---
+
+## D-113 — The canonical registry has no events table, and two product documents build on one
+
+**Raised:** 2026-09-18, reading the source for `trip_events` on the owner's instruction.
+
+**STOS-DB §37** names the table outright:
+
+> **TRIP EVENT LOG** — "Do not overwrite every historical status. Maintain: `trip_events`."
+> Examples: PLANNED, ASSIGNED, DISPATCHED, STARTED, GATE_IN, PORT_ENTRY, PORT_EXIT, DELIVERED
+
+**STOS-DB §38** makes it the architecture: *"Current status = latest valid state. History =
+events."*
+
+**STOS-CTD** goes further and builds the Digital Passport on it — §31's worked timeline, §32's
+"timeline must combine events from all connected systems", §33's source vocabulary, §34's
+immutability rule, §35's filters, §101's "the Passport should have access to a chronological
+event stream", §133 listing `Events` among the eighteen records the Passport is composed from.
+
+**Step 11's DB_Registry does not contain it.** DB-001…DB-020 cover orders, trips, assignments,
+vehicles, drivers, costs, advances, expenses, documents, exceptions, risks, bills, collections,
+settlements, profit snapshots, rates, customers, suppliers, documents and policies — and no
+events table. There are correspondingly no `DB_Fields` rows, no `API_Registry` row, no
+`Permissions` row and no `Event_Registry` entry for it.
+
+So the registry that is supposed to be canonical is silent about the one table two product
+documents treat as the spine of the Passport.
+
+### Why this one is different from D-38 and D-45
+
+Those recorded entities the registry omitted while some other document defined them in passing.
+This is an entity **STOS-DB names, gives a purpose, gives example values, and states an
+architectural principle for** — and Step 11 still has no row. It is the largest single gap
+between the product documents and the canonical registry found so far.
+
+### How it is handled
+
+The schema in `PLAN-trip-events.md` is derived from **STOS-DB §37 and CTD §§31–35, 101, 133**,
+and every column in it cites the line it comes from. Nothing is invented; where two sections
+disagree — CTD §101's nine categories against §35's seven filters — the divergence is recorded
+and put to the owner rather than silently resolved.
+
+Three further gaps follow from the same silence and are ruled in that plan rather than guessed:
+no locked `event_type` enum exists anywhere (both lists say "Example"), no permission row exists,
+and no API row exists.
