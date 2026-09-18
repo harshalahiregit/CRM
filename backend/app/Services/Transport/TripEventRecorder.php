@@ -46,6 +46,14 @@ use Illuminate\Support\Facades\Log;
  * That is a deliberate asymmetry with transport_audit_logs, which DOES throw:
  * the audit trail is the compliance record and losing one silently is a
  * defect. Losing a timeline entry is a gap in a story.
+ *
+ * ── SO DO NOT "FIX" THE INCONSISTENCY ───────────────────────────────────
+ * Two writes that look identical are treated oppositely on purpose. Making
+ * this one throw would mean a sensor batch, a dispatch or an invoice posting
+ * can be taken down by a row in a table nobody is waiting on. Making the audit
+ * log swallow would mean a compliance record can go missing without anybody
+ * finding out. The asymmetry IS the design; the reasoning is above so that the
+ * next reader can disagree with it deliberately rather than tidy it away.
  */
 class TripEventRecorder
 {
