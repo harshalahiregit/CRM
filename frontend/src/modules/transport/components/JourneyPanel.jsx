@@ -41,6 +41,13 @@ export default function JourneyPanel({ trip, canDepart, canDeliver, onChanged })
   const toast = useToast()
   const [busy, setBusy] = useState(false)
   const [when, setWhen] = useState(toLocalInput(new Date()))
+  // Whether the person actually chose a time, or is accepting "now".
+  //
+  // If they have not touched it we send NOTHING and let the server stamp its
+  // own clock. Sending our idea of "now" instead means a browser running even a
+  // few seconds ahead of the API gets "that is in the future" on the default
+  // click — which is exactly how this panel shipped broken.
+  const [edited, setEdited] = useState(false)
   const [refusal, setRefusal] = useState(null)
 
   const departed = !!trip.departed_at
@@ -52,7 +59,7 @@ export default function JourneyPanel({ trip, canDepart, canDeliver, onChanged })
     setBusy(true)
     setRefusal(null)
     try {
-      const at = fromLocalInput(when)
+      const at = edited ? fromLocalInput(when) : null
       const res = kind === 'depart'
         ? await transportDispatchApi.depart(trip.id, at)
         : await transportJourneyApi.deliver(trip.id, at)
@@ -133,14 +140,16 @@ export default function JourneyPanel({ trip, canDepart, canDeliver, onChanged })
             <input
               type="datetime-local"
               value={when}
-              onChange={(e) => setWhen(e.target.value)}
+              onChange={(e) => { setWhen(e.target.value); setEdited(true) }}
               style={{
                 padding: '8px 10px', borderRadius: 8, fontSize: 12.5,
                 border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-b)',
               }}
             />
             <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-              Defaults to now. Change it if you are recording this after the fact.
+              {edited
+                ? 'Recorded at the time you have set.'
+                : 'Leave this as it is to use the time you press the button. Change it if you are recording this after the fact.'}
             </span>
           </label>
 

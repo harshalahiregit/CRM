@@ -9,7 +9,7 @@ import PagerBar from '@/components/ui/PagerBar'
 import Drawer from '@/components/ui/Drawer'
 import FormField, { Input, Select, Textarea } from '@/components/ui/FormField'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
-import { fmtDateTime } from '../constants'
+import { fmtDateTime, ORDER_STATUS_LABEL, TRIP_STATUS_LABEL } from '../constants'
 
 /**
  * Consignments — the commercial shipment (STOS-CTD §8).
@@ -386,7 +386,7 @@ function ConsignmentForm({ form, sf, orders, lockOrder = false }) {
           <option value="">Choose an order…</option>
           {orders.map((o) => (
             <option key={o.id} value={o.id}>
-              {o.order_number} — {o.customer?.company ?? 'Customer'} ({String(o.order_status ?? '').replace(/_/g, ' ')})
+              {o.order_number} — {o.customer?.company ?? 'Customer'} ({ORDER_STATUS_LABEL[o.order_status] || o.order_status})
             </option>
           ))}
         </Select>
@@ -454,23 +454,23 @@ function ConsignmentDetail({ id }) {
     <div className="space-y-5">
       <Section title="Shipment">
         <KV label="Consignment" value={c.consignment_number} strong />
-        <KV label="Customer reference" value={c.customer_reference} />
+        <KV label="Customer reference" value={c.customer_reference} empty="None given" />
         <KV label="Service type" value={c.service_type} />
         <KV label="Created" value={fmtDateTime(c.created_at)} />
       </Section>
 
       <Section title="Commercial">
         <KV label="Order" value={c.order?.order_number} strong />
-        <KV label="Order status" value={String(c.order?.order_status ?? '').replace(/_/g, ' ')} />
+        <KV label="Order status" value={ORDER_STATUS_LABEL[c.order?.order_status] || c.order?.order_status} />
         <KV label="Customer" value={c.customer?.company} />
       </Section>
 
       <Section title="Cargo">
-        <KV label="Description" value={c.cargo_description} />
+        <KV label="Description" value={c.cargo_description} empty="Not described" />
         <KV label="Packages" value={c.package_count} />
         <KV label="Weight" value={c.gross_weight_kg ? `${Number(c.gross_weight_kg).toLocaleString('en-IN')} kg` : null} />
         <KV label="Volume" value={c.volume_cbm ? `${Number(c.volume_cbm).toLocaleString('en-IN')} cbm` : null} />
-        <KV label="Special handling" value={c.special_handling} />
+        <KV label="Special handling" value={c.special_handling} empty="Nothing special" />
       </Section>
 
       <Section title={`Trips (${trips.length})`}>
@@ -480,7 +480,12 @@ function ConsignmentDetail({ id }) {
             <div key={t.id} className="flex items-center justify-between py-1.5 border-b last:border-0"
               style={{ borderColor: 'var(--border)' }}>
               <span className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>{t.trip_number}</span>
-              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{String(t.status ?? '').replace(/_/g, ' ')}</span>
+              {/* The label, not the stored code. `pod_verified` with its
+                  underscore swapped for a space is still the database's word,
+                  not the customer's. */}
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                {TRIP_STATUS_LABEL[t.status] || t.status}
+              </span>
             </div>
           ))}
       </Section>
@@ -527,7 +532,15 @@ function ConsignmentContainers({ id }) {
   const current = list.filter((r) => !r.detached_at)
 
   return (
-    <Section title={`Containers (${current.length})`}>
+    /* The count used to be `current.length` while the list below rendered
+       BOTH current and historical attachments — a header reading "(1)" above
+       two rows. It now counts what it is actually the header of, and names the
+       split when there is one. */
+    <Section title={
+      current.length === list.length
+        ? `Containers (${current.length})`
+        : `Containers (${current.length} on it now, ${list.length - current.length} before)`
+    }>
       {isLoading ? (
         <Loader2 className="animate-spin my-2" style={{ color: 'var(--text-muted)' }} />
       ) : list.length === 0 ? (
@@ -572,13 +585,24 @@ function Section({ title, children }) {
   )
 }
 
-function KV({ label, value, strong = false }) {
+/**
+ * A labelled fact.
+ *
+ * An absent value says WHAT IS ABSENT, in words. It used to render "—", which
+ * on the cargo card gave a client two rows of punctuation and no idea whether
+ * the volume was unknown, zero, or not applicable. `empty` lets each field say
+ * the true thing; "Not recorded" is the safe default because it is the one
+ * claim always available — we do not have it.
+ */
+function KV({ label, value, strong = false, empty = 'Not recorded' }) {
+  const shown = value === 0 || value ? value : empty
+
   return (
     <div className="flex items-baseline justify-between gap-3 py-1">
       <span className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }}>{label}</span>
       <span className={`text-sm text-right ${strong ? 'font-bold' : ''}`}
-        style={{ color: value ? 'var(--text-h)' : 'var(--text-faint)' }}>
-        {value || '—'}
+        style={{ color: (value === 0 || value) ? 'var(--text-h)' : 'var(--text-faint)' }}>
+        {shown}
       </span>
     </div>
   )

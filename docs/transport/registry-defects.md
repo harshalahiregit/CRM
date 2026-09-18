@@ -3064,3 +3064,43 @@ This needs a decision from the owner, and it is not mine to take because the mig
 
 Recorded in `TEAM-CONTRACTS.md` under the never-`migrate:fresh` rule, because it belongs to the
 same family: a routine command with an irreversible effect nobody expects.
+
+---
+
+## D-110 — Container 360's Vehicle and Driver nodes cannot be made clickable yet
+
+**Raised:** 2026-09-18, walking the three finished blocks in a browser.
+**Not fixed — it is blocked on a cross-team gap, and faking it would be worse.**
+
+CTD §71's second chain is `Container → Trip → Vehicle → Driver`, and Container 360 renders all
+four. Order, consignment and trip each carry an **Open** link. **Vehicle and Driver do not.**
+
+That is not an oversight in the page. It is the D-62/D-100 boundary showing through:
+
+- `ContainerPassportService::chain()` reads `transport_vehicles` and `transport_drivers` — P1's
+  placeholder masters (TEAM-CONTRACTS §1a), so the ids it returns are **transport_vehicles.id**
+  and **transport_drivers.id**.
+- The only vehicle and driver screens in the app are P2's — `/transport/vehicles/:id`
+  (`FleetVehiclePassport`) and `/transport/drivers` — and they resolve **Fleet** ids.
+
+The two id spaces are different. Linking `chain.vehicle.id` at P2's route would open the wrong
+vehicle or none at all, and "the wrong truck's history" is exactly the failure mode D-62's own
+migration refuses to risk.
+
+### Why it is left as it is
+
+A link that lands on the wrong record is worse than no link. The nodes still show the
+registration, the type, the driver's name and licence class, so the chain READS correctly end to
+end — only the last two steps are not navigable.
+
+### What would close it
+
+Either of these, and both belong to a conversation rather than to this pass:
+
+1. **P2 exposes a lookup by our id** — a read contract that answers "which Fleet vehicle is
+   `transport_vehicles.id = N`?". `vehicles.legacy_transport_vehicle_id` already holds exactly
+   that mapping for the rows the D-62 migration moved (see D-109), so the data exists.
+2. **The masters are unified** — D-100's repoint, which is measured as not yet possible because
+   Fleet's `vehicles` reads zero through Transport's current paths.
+
+Raised to P2 alongside D-109.

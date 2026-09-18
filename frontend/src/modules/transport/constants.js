@@ -493,7 +493,30 @@ export const toLocalInput = (v) => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-export const fromLocalInput = (v) => (v ? v.replace('T', ' ') + ':00' : null)
+/**
+ * A `datetime-local` value back to something the SERVER cannot misread.
+ *
+ * ── THIS USED TO SEND A WALL CLOCK WITH NO TIMEZONE ─────────────────────
+ * It returned "2026-09-20 14:00:00". The API runs in UTC, so Carbon read that
+ * as 14:00 UTC — and a user in IST who typed 2pm got 19:30 back. Worse, the
+ * default on the transit panel is NOW: "now" in IST is five and a half hours in
+ * the FUTURE in UTC, so the server refused it with "a departure cannot be
+ * recorded in the future" and BOTH Record departure and Record delivery failed
+ * on the very first click, for every user not sitting on UTC.
+ *
+ * Found by clicking the button, not by reading the code — every server-side
+ * test passed, because they all build their times on the server.
+ *
+ * The fix is to send the INSTANT the user meant, offset included, so the server
+ * converts instead of guessing. `date` validation and Carbon::parse() both take
+ * ISO-8601 with an offset.
+ */
+export const fromLocalInput = (v) => {
+  if (!v) return null
+  const d = new Date(v)          // parsed in the browser's own zone, which is the point
+  if (Number.isNaN(d.getTime())) return null
+  return d.toISOString()
+}
 
 /** A dispatch history entry — version 1 is the release, the rest are amendments. */
 export const dispatchVersionCfg = (type, version) =>

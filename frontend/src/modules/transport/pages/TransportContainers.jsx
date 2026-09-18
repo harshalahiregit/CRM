@@ -308,14 +308,39 @@ export default function TransportContainers() {
         <>
           <DataTable columns={columns} rows={rows} keyField="id"
             emptyState={
+              /* Three different situations, and they used to share one
+                 sentence. "No containers yet" was said even with three
+                 containers on file, simply because a search matched none of
+                 them — which tells the reader something false about their own
+                 workspace and hides the thing they should check: what they
+                 typed. */
               <div className="text-center py-10">
                 <Container size={26} className="mx-auto mb-2" style={{ color: 'var(--text-muted)' }} />
-                <p className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>No containers yet</p>
-                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                  {search || attached
-                    ? 'Nothing matches that filter.'
-                    : 'Add a container, then attach it to a consignment.'}
-                </p>
+                {search ? (
+                  <>
+                    <p className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>
+                      Nothing here matches “{search}”
+                    </p>
+                    <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                      Spacing, case and dashes are ignored, so check the characters themselves.
+                      {attached ? ' The filter above is also narrowing this list.' : ''}
+                    </p>
+                  </>
+                ) : attached ? (
+                  <>
+                    <p className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>
+                      No container is {attached === '1' ? 'on a consignment' : 'free'} right now
+                    </p>
+                    <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Choose “All” to see every container.</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>No containers yet</p>
+                    <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                      Add a container, then attach it to a consignment.
+                    </p>
+                  </>
+                )}
               </div>
             } />
           <PagerBar meta={page} onPage={setPageNo} unit="containers" className="mt-3" />

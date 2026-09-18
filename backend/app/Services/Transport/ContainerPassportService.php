@@ -380,6 +380,15 @@ class ContainerPassportService
                         'actor'   => $log->actor_name,
                         'role'    => $log->actor_role,
                         'details' => $log->new_values,
+
+                        // The two ends of a status change, so the screen can say
+                        // WHICH change this was. Without them a walked trip
+                        // renders as seven identical "Trip status changed" rows
+                        // — technically a timeline, useless as one. The trip
+                        // detail page has always shown from → to; the passport
+                        // could not, because it was never sent them.
+                        'from'    => $log->old_values['status'] ?? null,
+                        'to'      => $log->new_values['status'] ?? null,
                     ]);
                 });
         }

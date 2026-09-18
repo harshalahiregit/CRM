@@ -6,7 +6,7 @@ import {
   Building2, Package, Boxes, Truck, UserRound, FileCheck2, ClipboardCheck,
 } from 'lucide-react'
 import { transportContainerApi } from '@/services/transportApi'
-import { fmtDateTime } from '../constants'
+import { fmtDateTime, TRIP_STATUS_LABEL } from '../constants'
 
 /**
  * Container 360 — the Digital Passport (STOS-CTD; MS-001 §14 steps 1–2).
@@ -97,7 +97,11 @@ export default function ContainerPassport() {
         </p>
       </div>
 
-      {/* ── CTD §71: the two chains, every node clickable ── */}
+      {/* ── CTD §71: the two chains, every node clickable ──
+          Hidden entirely when the container is on nothing: a section whose only
+          row is "you are here" tells the reader less than the status sentence
+          above it already did. */}
+      {(chain.customer || chain.order || chain.consignment || chain.trip) && (
       <Section title="Where this container sits" icon={Link2}>
         <div className="grid gap-2">
           <ChainRow icon={Building2} label="Customer" value={chain.customer?.name} />
@@ -115,6 +119,7 @@ export default function ContainerPassport() {
           <ChainRow icon={UserRound} label="Driver" value={chain.driver?.name} hint={chain.driver?.licence_class} />
         </div>
       </Section>
+      )}
 
       {/* ── MS-001 §14 step 5: dispatch eligibility. Ours (pre-trip). ── */}
       {readiness && (
@@ -148,8 +153,11 @@ export default function ContainerPassport() {
               <Pill label={`${linked.documents.total} document${linked.documents.total === 1 ? '' : 's'}`}
                 sub={`${linked.documents.verified} verified${linked.documents.pod ? ' · POD on file' : ''}`} />
             )}
-            {linked.billing && <Pill label={`Billing: ${linked.billing.status}`}
-              sub={linked.billing.invoiced ? 'Invoiced' : 'Not invoiced'} />}
+            {/* The bill's own two states, in words. `prepared` is the stored
+                code; "Ready to invoice" is what it means to whoever is reading. */}
+            {linked.billing && <Pill
+              label={linked.billing.invoiced ? 'Invoiced' : 'Ready to invoice'}
+              sub={linked.billing.invoiced ? 'Accounts have posted it' : 'Handed to Accounts, not yet posted'} />}
             {linked.collections && <Pill label={`${linked.collections.total} collection(s)`} />}
           </div>
           {chain.trip && (
@@ -195,7 +203,17 @@ export default function ContainerPassport() {
             <div key={i} className="flex gap-3 py-1.5 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
               <span className="text-[11px] shrink-0 w-36" style={{ color: 'var(--text-muted)' }}>{fmtDateTime(r.at)}</span>
               <span className="text-[10px] font-bold uppercase shrink-0 w-20" style={{ color: 'var(--text-faint)' }}>{r.source}</span>
-              <span className="text-xs flex-1" style={{ color: 'var(--text-h)' }}>{r.label}</span>
+              <span className="text-xs flex-1" style={{ color: 'var(--text-h)' }}>
+                {r.label}
+                {/* WHICH change it was. A walked trip produced seven identical
+                    "Trip status changed" rows before this — a timeline nobody
+                    could read. Labels, never the stored codes. */}
+                {r.from && r.to && (
+                  <span style={{ color: 'var(--text-muted)' }}>
+                    {' — '}{TRIP_STATUS_LABEL[r.from] || r.from} → {TRIP_STATUS_LABEL[r.to] || r.to}
+                  </span>
+                )}
+              </span>
               {r.actor && <span className="text-[11px] shrink-0" style={{ color: 'var(--text-muted)' }}>{r.actor}</span>}
             </div>
           ))}
@@ -216,16 +234,24 @@ function Section({ title, icon: Icon, children }) {
   )
 }
 
-/** A node in the chain. Absent data renders as "—", never as a blank row. */
+/**
+ * A node in the chain — rendered only when there is something to say.
+ *
+ * It used to fall back to "—". On a free container that produced SIX cards in a
+ * row reading "—" (customer, order, consignment, trip, vehicle, driver), which
+ * is precisely the empty section this screen was told never to show. An em-dash
+ * is not an answer to "where is this container"; the surrounding sentence
+ * already gives the real one ("This container is free").
+ */
 function ChainRow({ icon: Icon, label, value, hint, onOpen }) {
+  if (!value) return null
+
   return (
     <div className="flex items-center gap-3 py-1.5 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
       <Icon size={13} className="shrink-0" style={{ color: 'var(--text-muted)' }} />
       <span className="text-[11px] uppercase font-bold w-32 shrink-0" style={{ color: 'var(--text-muted)' }}>{label}</span>
       <div className="flex-1 min-w-0">
-        <span className="text-sm font-bold" style={{ color: value ? 'var(--text-h)' : 'var(--text-faint)' }}>
-          {value || '—'}
-        </span>
+        <span className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>{value}</span>
         {hint && <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{hint}</div>}
       </div>
       {onOpen && (
