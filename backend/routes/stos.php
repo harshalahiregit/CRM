@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\V1\Transport\OperatingCostController;
 use App\Http\Controllers\Api\V1\Transport\TelemetryIngestionController;
 use App\Http\Controllers\Api\V1\Transport\VehicleAllocationController;
 use App\Http\Controllers\Api\V1\Transport\VehicleController;
+use App\Http\Controllers\Api\V1\Transport\VehicleDocumentController;
 use App\Http\Controllers\Api\V1\Transport\VehiclePassportController;
 use Illuminate\Support\Facades\Route;
 
@@ -55,6 +56,16 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('v1/fleet')->gro
     // T-56 — the hand-driven edge of the asset state machine. Absorbed from
     // Dev 1's retiring endpoint; Fleet is the sole authority for this machine.
     Route::patch('/vehicles/{vehicle}/status', [VehicleController::class, 'transition'])->where('vehicle', '[0-9]+');
+
+    // T-57 — statutory paperwork. Absorbed from Dev 1's retiring endpoint.
+    // Writes go through STOS-DOC's service; Fleet owns only the consequence,
+    // which is that five of these gate dispatch.
+    Route::get('/vehicles/{vehicle}/documents', [VehicleDocumentController::class, 'index'])->where('vehicle', '[0-9]+');
+    Route::post('/vehicles/{vehicle}/documents', [VehicleDocumentController::class, 'store'])->where('vehicle', '[0-9]+');
+    Route::post('/vehicles/{vehicle}/documents/{document}/renew', [VehicleDocumentController::class, 'renew'])
+        ->where(['vehicle' => '[0-9]+', 'document' => '[0-9]+']);
+    // INTERIM — the verification workflow is Person 3's. See the controller.
+    Route::patch('/documents/{document}/verify', [VehicleDocumentController::class, 'verify'])->where('document', '[0-9]+');
 
     // BEFORE the {vehicle} routes: "eligible" is a word, not an id, and a
     // wildcard declared first would swallow it.
