@@ -113,6 +113,41 @@ that has never failed is a guard nobody has tested.
 
 ---
 
+## Assert on what the user ends up with, not on what you just added
+
+**P1, 2026-09-19. Standing rule for every test on this project.** It has been earned five separate
+times, each one a case where **the code was right, the suite was green, and the outcome was
+wrong.**
+
+| What was added | What was asserted | What the user got |
+|---|---|---|
+| A timezone converter | That the converter converts | A departure stored 5½ hours out, because two callers never called it |
+| Two comment-stripping guards | That the guard runs | Nothing scanned — the regex ate the whole file |
+| Refusal messages with reasons | That the API returns the reason | *"Validation failed"* — the screen read a different key |
+| `trip_events` rows on every trip | That the rows exist | Four types written by nothing; a backfill had filled them in |
+| A search that reaches the passport | That `passport` was attached | Every search landed exactly where it always had |
+
+The last one is the clearest, because it is three characters. `$hit + ['path' => $passport]` —
+PHP's union operator keeps the **left** operand's keys, and `$hit` already had a `path`. The
+passport attached. The trail rendered. Every test passed. Every search went exactly where it had
+gone before. **A finished-looking feature that did nothing.**
+
+**So: write the assertion against the thing the user receives.** Not the flag you set, not the
+field you added, not "the method was called". The path they navigate to, the text on the screen,
+the row in the table, the value in the column.
+
+Ask, before you commit: *if the wiring between my new code and the user were cut, would this test
+still pass?* If it would, it is testing that you wrote some code.
+
+**And when a test that should have broken does not, find out why before moving on.** Changing
+where seven search keys landed should have broken a test that asserts paths. It did not. The
+reason turned out to be legitimate — its fixture never attached a container, so every key
+correctly stopped at its own record — and the test now says so in a docblock naming which half it
+pins. **A test that passes for the wrong reason is a blind guard that has not been caught yet**,
+and the moment to catch it is when it surprises you.
+
+---
+
 ## Ask what filled the screen, not whether the screen is filled
 
 **P1, 2026-09-19, from D-115.** Standing rule wherever data can arrive by more than one route —
