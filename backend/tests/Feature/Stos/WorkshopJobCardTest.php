@@ -52,7 +52,7 @@ class WorkshopJobCardTest extends TestCase
             'company_id'          => self::COMPANY,
             'registration_number' => 'MH12AB'.random_int(1000, 9999),
             'vehicle_type'        => 'reefer',
-            'status'              => 'active',
+            'status'              => 'AVAILABLE',
             'compliance_status'   => 'compliant',
         ], $over));
 
@@ -194,7 +194,7 @@ class WorkshopJobCardTest extends TestCase
 
         // T-32 — the work is done but nobody has signed it off. This is exactly
         // the window in which somebody is tempted to take the vehicle.
-        $this->assertSame('in_maintenance', $vehicle->fresh()->status);
+        $this->assertSame('UNDER_MAINTENANCE', $vehicle->fresh()->status);
         $this->assertContains('qc', MaintenanceJob::OPEN_STATES);
         $this->assertContains('testing', MaintenanceJob::OPEN_STATES);
     }
@@ -240,7 +240,7 @@ class WorkshopJobCardTest extends TestCase
         $this->assertTrue($result['release']['released']);
         $this->assertSame('PASS', $result['job']->qc_result);
         $this->assertTrue((bool) $result['job']->road_tested);
-        $this->assertSame('active', $vehicle->fresh()->status);
+        $this->assertSame('AVAILABLE', $vehicle->fresh()->status);
     }
 
     public function test_a_critical_fail_blocks_release_and_names_the_hold(): void
@@ -253,7 +253,7 @@ class WorkshopJobCardTest extends TestCase
         ], $this->user()->id);
 
         $this->assertFalse($result['release']['released']);
-        $this->assertSame('in_maintenance', $vehicle->fresh()->status);
+        $this->assertSame('UNDER_MAINTENANCE', $vehicle->fresh()->status);
 
         $codes = collect($result['release']['holds'])->pluck('code');
         $this->assertTrue($codes->contains('qc_critical_fail'));
@@ -306,7 +306,7 @@ class WorkshopJobCardTest extends TestCase
         // vehicle condemned on its brakes walking out of the yard because
         // somebody changed its oil.
         $this->assertFalse($result['release']['released']);
-        $this->assertSame('in_maintenance', $vehicle->fresh()->status);
+        $this->assertSame('UNDER_MAINTENANCE', $vehicle->fresh()->status);
 
         $hold = collect($result['release']['holds'])->firstWhere('code', 'qc_critical_fail_standing');
         $this->assertNotNull($hold);
@@ -328,7 +328,7 @@ class WorkshopJobCardTest extends TestCase
         // Clearing is a deliberate act naming the card it answers, and it
         // leaves a record of who performed it.
         $this->assertTrue($result['release']['released']);
-        $this->assertSame('active', $vehicle->fresh()->status);
+        $this->assertSame('AVAILABLE', $vehicle->fresh()->status);
         $this->assertSame($brakes->id, $result['job']->clears_job_id);
     }
 

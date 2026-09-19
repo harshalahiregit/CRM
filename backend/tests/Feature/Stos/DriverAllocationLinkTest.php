@@ -53,7 +53,7 @@ class DriverAllocationLinkTest extends TestCase
         $vehicle = Vehicle::create([
             'company_id' => self::COMPANY, 'registration_number' => $plate,
             'vehicle_type' => 'reefer', 'gps_device_id' => 'DEV-'.Str::random(6),
-            'status' => 'active', 'compliance_status' => 'compliant',
+            'status' => 'AVAILABLE', 'compliance_status' => 'compliant',
         ]);
 
         VehicleLiveStatus::create([
@@ -141,7 +141,7 @@ class DriverAllocationLinkTest extends TestCase
         $blocked = collect($result['excluded'])->firstWhere('name', 'Expired Rajesh');
 
         $this->assertNotNull($blocked, 'An expired licence must block the person, not the truck');
-        $this->assertSame('DRIVER_LICENSE_EXPIRED', $blocked['blockers'][0]['code']);
+        $this->assertSame('driver_license_expired', $blocked['blockers'][0]['code']);
         // The same shape as a vehicle blocker, so one board component renders
         // both — and `owner` routes the dispatcher to the desk that clears it.
         $this->assertArrayHasKey('why', $blocked['blockers'][0]);
@@ -182,7 +182,7 @@ class DriverAllocationLinkTest extends TestCase
         // before sending them out on a three-day run.
         $ok = collect($result['eligible'])->firstWhere('name', 'Soon Suresh');
         $this->assertNotNull($ok);
-        $this->assertSame('DRIVER_LICENSE_EXPIRING', $ok['warnings'][0]['code']);
+        $this->assertSame('driver_license_expiring', $ok['warnings'][0]['code']);
     }
 
     public function test_an_unrecorded_licence_blocks_the_driver_but_reads_differently(): void
@@ -196,7 +196,7 @@ class DriverAllocationLinkTest extends TestCase
         // Nobody should be dispatched on a licence nobody has seen — but it is
         // cleared by recording one, not by a renewal, so it says so.
         $this->assertNotNull($blocked);
-        $this->assertSame('DRIVER_LICENSE_UNRECORDED', collect($blocked['blockers'])->pluck('code')->first());
+        $this->assertSame('driver_license_unrecorded', collect($blocked['blockers'])->pluck('code')->first());
     }
 
     public function test_a_suspended_driver_is_blocked_and_the_fleet_office_owns_it(): void
@@ -209,9 +209,9 @@ class DriverAllocationLinkTest extends TestCase
         $this->assertNotNull($blocked);
 
         $codes = collect($blocked['blockers'])->pluck('code');
-        $this->assertTrue($codes->contains('DRIVER_UNAVAILABLE'));
+        $this->assertTrue($codes->contains('driver_unavailable'));
         // A suspension is an office decision, not a compliance one.
-        $this->assertSame('Fleet office', collect($blocked['blockers'])->firstWhere('code', 'DRIVER_UNAVAILABLE')['owner']);
+        $this->assertSame('Fleet office', collect($blocked['blockers'])->firstWhere('code', 'driver_unavailable')['owner']);
     }
 
     public function test_the_eligible_endpoint_answers_in_the_vehicle_shape(): void
@@ -260,7 +260,7 @@ class DriverAllocationLinkTest extends TestCase
         // Whoever is free takes the next load, so this is information rather
         // than a fault — but a truck with a driver already on it is the
         // marginally more convenient pick.
-        $this->assertContains('NO_DRIVER_ASSIGNED', $rows['MH12NONE01']['flags']);
+        $this->assertContains('no_driver_assigned', $rows['MH12NONE01']['flags']);
         $this->assertNull($rows['MH12NONE01']['driver']);
         $this->assertLessThan($rows['MH12GOOD02']['score'], $rows['MH12NONE01']['score']);
     }
@@ -274,8 +274,8 @@ class DriverAllocationLinkTest extends TestCase
 
         // Availability stays on the vehicle row: it describes the pairing, not
         // the person's right to drive. The licence is what moved.
-        $this->assertContains('DRIVER_UNAVAILABLE', $row['flags']);
-        $this->assertNotContains('DRIVER_LICENSE_EXPIRED', $row['flags']);
+        $this->assertContains('driver_unavailable', $row['flags']);
+        $this->assertNotContains('driver_license_expired', $row['flags']);
     }
 
     /* ── Assignment mechanics ───────────────────────────────────── */
@@ -306,7 +306,7 @@ class DriverAllocationLinkTest extends TestCase
             ->assertOk();
 
         $this->assertNull(DriverProfile::first()->assigned_vehicle_id);
-        $this->assertContains('NO_DRIVER_ASSIGNED', $this->eligible()[0]['flags']);
+        $this->assertContains('no_driver_assigned', $this->eligible()[0]['flags']);
     }
 
     public function test_a_driver_cannot_be_assigned_to_another_companys_vehicle(): void

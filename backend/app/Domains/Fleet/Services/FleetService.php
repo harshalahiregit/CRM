@@ -35,6 +35,7 @@ class FleetService
         private TyreService $tyres,
         private DriverService $drivers,
         private MaintenanceService $maintenance,
+        private ServiceScheduleEvaluator $schedule,
     ) {
     }
 
@@ -232,6 +233,11 @@ class FleetService
                 'unreconciled' => FastagTransaction::forCompany($companyId)->where('vehicle_id', $vehicle->id)
                     ->where('reconciliation_status', 'unreconciled')->count(),
             ],
+
+            // T-04 — derived, never a status. A truck past its interval is
+            // still roadworthy; this warns so a service can be booked rather
+            // than discovered.
+            'service' => $this->schedule->evaluate($vehicle),
 
             // The pre-dispatch gate's evidence: five documents, each with its
             // own date and verdict, rather than one rolled-up flag.

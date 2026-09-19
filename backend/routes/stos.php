@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\Api\V1\Transport\DeviceTokenController;
+use App\Http\Controllers\Api\V1\Transport\GensetController;
 use App\Http\Controllers\Api\V1\Transport\DriverController;
 use App\Http\Controllers\Api\V1\Transport\FleetController;
 use App\Http\Controllers\Api\V1\Transport\FuelController;
@@ -50,6 +52,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('v1/fleet')->gro
     Route::get('/vehicle-options', [VehicleController::class, 'options']);
     Route::put('/vehicles/{vehicle}', [VehicleController::class, 'update'])->where('vehicle', '[0-9]+');
     Route::delete('/vehicles/{vehicle}', [VehicleController::class, 'destroy'])->where('vehicle', '[0-9]+');
+    // T-56 — the hand-driven edge of the asset state machine. Absorbed from
+    // Dev 1's retiring endpoint; Fleet is the sole authority for this machine.
+    Route::patch('/vehicles/{vehicle}/status', [VehicleController::class, 'transition'])->where('vehicle', '[0-9]+');
 
     // BEFORE the {vehicle} routes: "eligible" is a word, not an id, and a
     // wildcard declared first would swallow it.
@@ -67,6 +72,23 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('v1/fleet')->gro
     // ── Drivers (STOS-FLEET) ────────────────────────────────────────────
     // Read LIVE from the CRM's customer/vendor directories — there is no
     // "create driver" here, because STOS does not own people.
+    // ── Gensets (T-05) ──────────────────────────────────────────────────
+    // Fit and unfit are their own endpoints, not a field on the update: a unit
+    // physically moving between trailers is an event, and it is logged as one.
+    Route::get('/gensets', [GensetController::class, 'index']);
+    Route::post('/gensets', [GensetController::class, 'store']);
+    Route::put('/gensets/{genset}', [GensetController::class, 'update'])->where('genset', '[0-9]+');
+    Route::post('/gensets/{genset}/fit', [GensetController::class, 'fit'])->where('genset', '[0-9]+');
+    Route::post('/gensets/{genset}/unfit', [GensetController::class, 'unfit'])->where('genset', '[0-9]+');
+
+    // ── Device credentials (T-07) ───────────────────────────────────────
+    // PEOPLE manage these; the hardware door is /v1/telemetry. Issuing from
+    // behind the credential check would let any unit mint more.
+    Route::get('/devices/tokens', [DeviceTokenController::class, 'index']);
+    Route::post('/devices/tokens', [DeviceTokenController::class, 'store']);
+    Route::post('/devices/tokens/{token}/rotate', [DeviceTokenController::class, 'rotate'])->where('token', '[0-9]+');
+    Route::delete('/devices/tokens/{token}', [DeviceTokenController::class, 'revoke'])->where('token', '[0-9]+');
+
     Route::get('/drivers', [DriverController::class, 'index']);
     // The crew half of allocation. Same response shape as eligible vehicles,
     // because a dispatch board shows them side by side.

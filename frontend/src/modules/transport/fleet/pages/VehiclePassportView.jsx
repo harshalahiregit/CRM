@@ -4,12 +4,13 @@ import { useParams, Link, useLocation } from 'react-router-dom'
 import {
   Truck, ArrowLeft, Fuel, Wrench, Receipt, ShieldCheck, Activity, Zap, Plus, FileText, AlertTriangle, Droplets, Disc3, UserRound, ShieldAlert,
 } from 'lucide-react'
-import { stosApi, STOS_ACCENT, VEHICLE_TYPE_LABELS, fmtMoney, fmtWhen } from '@/services/stosApi'
+import { stosApi, STOS_ACCENT, VEHICLE_TYPE_LABELS, fmtMoney, fmtWhen, vehicleStatusLabel } from '@/services/stosApi'
 import HealthChip from '../components/HealthChip'
 import ExceptionPanel from '../components/ExceptionPanel'
 import LiveTelemetryGauge from '../components/LiveTelemetryGauge'
 import FuelExpenseModal from '../components/FuelExpenseModal'
 import UreaTopUpModal from '../components/UreaTopUpModal'
+import GensetPanel from '../components/GensetPanel'
 import MaintenanceJobCardForm from '../components/MaintenanceJobCardForm'
 import CompliancePanel from '../components/CompliancePanel'
 import TyrePanel from '../components/TyrePanel'
@@ -71,7 +72,7 @@ export default function VehiclePassportView() {
     )
   }
 
-  const { vehicle, health, live, signal, gensets = [], telemetry = [], fuel, tolls, workshop, compliance, urea, tyres, driver } = data
+  const { vehicle, health, live, signal, gensets = [], telemetry = [], fuel, tolls, workshop, compliance, urea, tyres, driver, service } = data
 
   return (
     <div className="max-w-5xl space-y-4">
@@ -91,7 +92,7 @@ export default function VehiclePassportView() {
               <HealthChip tone={health.tone} />
               <Tag>{VEHICLE_TYPE_LABELS[vehicle.vehicle_type] || vehicle.vehicle_type}</Tag>
               <Tag capitalize>{String(vehicle.ownership_type).replace('_', ' ')}</Tag>
-              <Tag capitalize>{String(vehicle.status).replace('_', ' ')}</Tag>
+              <Tag>{vehicleStatusLabel(vehicle.status)}</Tag>
             </div>
             <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>{health.headline}</p>
           </div>
@@ -159,6 +160,18 @@ export default function VehiclePassportView() {
               <Fact label="Purchased" value={vehicle.purchase_date?.slice(0, 10)} />
             </div>
 
+            {/* T-04 — a warning, never a block. The truck stays allocatable; it
+                just wants a slot booked before somebody discovers it. */}
+            {service && service.state !== 'ok' && (
+              <p className="text-[10px] mt-2 flex items-start gap-1.5"
+                style={{ color: service.state === 'overdue' ? 'var(--color-danger-500)' : 'var(--text-muted)' }}>
+                <Wrench size={11} className="mt-0.5 shrink-0" />
+                {service.state === 'unknown'
+                  ? service.message
+                  : `Service ${service.state === 'overdue' ? 'overdue' : 'due soon'} — ${service.message}`}
+              </p>
+            )}
+
             {/* Not cosmetic: Operations matches an order's required capacity
                 against this, so a blank one is a vehicle allocation cannot see. */}
             {vehicle.capacity_tonnes == null && (
@@ -191,16 +204,13 @@ export default function VehiclePassportView() {
           <Card title="Live status" icon={Activity}>
             <LiveTelemetryGauge live={live} signal={signal} />
 
-            {gensets.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {gensets.map((g) => (
-                  <span key={g.id} className="inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-lg"
-                    style={{ background: 'var(--bg-input)', color: 'var(--text-muted)' }}>
-                    <Zap size={11} style={{ color: STOS_ACCENT }} /> Genset {g.serial_number} · {g.status}
-                  </span>
-                ))}
-              </div>
-            )}
+          </Card>
+
+          {/* T-05 — the unit is its own asset, so it gets its own panel rather
+              than a read-only chip: register one, swap a spare in when one
+              fails on the road, take one off without retiring it. */}
+          <Card title="Power unit" icon={Zap}>
+            <GensetPanel vehicle={vehicle} gensets={gensets} onChanged={() => refetch()} />
           </Card>
 
           <Card title={`Recent readings (${telemetry.length})`} icon={FileText}>

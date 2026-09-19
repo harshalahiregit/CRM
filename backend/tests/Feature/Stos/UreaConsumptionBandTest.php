@@ -51,7 +51,7 @@ class UreaConsumptionBandTest extends TestCase
             'company_id' => self::COMPANY,
             'registration_number' => 'MH12AB'.random_int(1000, 9999),
             'vehicle_type' => 'reefer', 'ownership_type' => 'owned',
-            'status' => 'active', 'compliance_status' => 'compliant',
+            'status' => 'AVAILABLE', 'compliance_status' => 'compliant',
         ]);
 
         VehicleLiveStatus::create([

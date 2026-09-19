@@ -39,7 +39,7 @@ class VehicleStatusChanged
     /** Did the vehicle become unavailable for dispatch on this change? */
     public function isNowBlocked(): bool
     {
-        return $this->vehicle->status !== 'active'
+        return $this->vehicle->status !== Vehicle::STATUS_AVAILABLE
             || in_array($this->vehicle->compliance_status, ['expired', 'blocked'], true);
     }
 
