@@ -7,6 +7,7 @@ use App\Models\Transport\TransportTrip;
 use App\Services\Transport\TripEventRecorder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * STOS-INT → the shared trip timeline.
@@ -195,22 +196,116 @@ class TripTimelinePublisher
     /**
      * The trip this vehicle is currently out on, if any.
      *
-     * Matched on `transport_trips.vehicle_id`. Note that until
-     * `stos:repoint-trip-fleet-refs` has run, those ids still point at the
-     * legacy master, so a migrated vehicle finds nothing here — which is
-     * correct, not a bug: before the repoint the trip genuinely does not
-     * reference this row.
+     * ── D-116: THE ID ALONE CANNOT BE INTERPRETED ─────────────────────────
+     * Person 1 found this. `transport_trips.vehicle_id` holds a
+     * `transport_vehicles` id today and will hold a `vehicles` id after the
+     * repoint — two tables that issue ids independently, with no foreign key
+     * and no column saying which space the number is in.
+     *
+     * My first version compared a Fleet id against that column directly and I
+     * documented the mismatch as "finds nothing, which is correct". It was not
+     * correct, it was lucky: the two ranges did not overlap on his machine. He
+     * constructed the overlap and both events landed on a trip belonging to a
+     * different truck — no error, no log line, a plausible-looking entry.
+     *
+     * And it gets harder after the repoint, not easier: some trips will carry
+     * Fleet ids while rows whose legacy vehicle never migrated still carry the
+     * old ones, so BOTH spaces will match something.
+     *
+     * ── SO THE ID FINDS CANDIDATES AND THE PLATE DECIDES ──────────────────
+     * The registration number is the one identifier both tables agree on, in
+     * both directions, before and after the repoint. The id is still used for
+     * the lookup because it is indexed — it just no longer gets the last word.
+     *
+     * When a candidate's plate cannot be confirmed as this vehicle's, it is
+     * REFUSED and logged rather than published. A wrong timeline entry naming
+     * the wrong truck is worse than a missing one: the missing one is noticed.
      */
     private function openTripFor(Vehicle $vehicle): ?TransportTrip
     {
-        $id = DB::table('transport_trips')
+        $ids = $this->idsThisVehicleMayBeKnownBy($vehicle);
+
+        if ($ids === []) {
+            return null;
+        }
+
+        $candidates = DB::table('transport_trips')
             ->where('tenant_id', $vehicle->company_id)
-            ->where('vehicle_id', $vehicle->id)
+            ->whereIn('vehicle_id', $ids)
             ->whereIn('status', self::LIVE_TRIP_STATES)
             ->orderByDesc('id')
-            ->value('id');
+            ->get(['id', 'vehicle_id']);
 
-        return $id ? TransportTrip::find($id) : null;
+        $plate = $this->normalisePlate($vehicle->registration_number);
+
+        foreach ($candidates as $candidate) {
+            if ($this->platesFor((int) $candidate->vehicle_id, (int) $vehicle->company_id) === [$plate]) {
+                return TransportTrip::find($candidate->id);
+            }
+
+            Log::channel('stos')->warning('Trip matched a vehicle id but not its registration; not published', [
+                'defect' => 'D-116',
+                'trip_id' => $candidate->id, 'trip_vehicle_id' => $candidate->vehicle_id,
+                'fleet_vehicle_id' => $vehicle->id, 'expected_plate' => $plate,
+                'why' => 'transport_trips.vehicle_id is ambiguous between the two masters until the repoint completes',
+            ]);
+        }
+
+        return null;
+    }
+
+    /**
+     * Both ids this vehicle could be referenced by, in either space.
+     *
+     * The Fleet id for a repointed trip, and the legacy id it was moved from
+     * for one that has not been repointed yet. `legacy_transport_vehicle_id` is
+     * recorded by the data move precisely so this stays answerable.
+     */
+    private function idsThisVehicleMayBeKnownBy(Vehicle $vehicle): array
+    {
+        $ids = [$vehicle->id];
+
+        if ($vehicle->legacy_transport_vehicle_id) {
+            $ids[] = (int) $vehicle->legacy_transport_vehicle_id;
+        }
+
+        return array_values(array_unique($ids));
+    }
+
+    /**
+     * Every plate this id resolves to, across both masters.
+     *
+     * One entry means the id is unambiguous. Two different plates means the
+     * number means different trucks in the two tables, and nothing can tell
+     * which one the trip meant — so the caller refuses.
+     */
+    private function platesFor(int $vehicleId, int $companyId): array
+    {
+        $plates = [];
+
+        $fleet = DB::table('vehicles')->where('company_id', $companyId)
+            ->where('id', $vehicleId)->value('registration_number');
+
+        if ($fleet) {
+            $plates[] = $this->normalisePlate($fleet);
+        }
+
+        if (Schema::hasTable('transport_vehicles')) {
+            $legacy = DB::table('transport_vehicles')->where('tenant_id', $companyId)
+                ->where('id', $vehicleId)->value('registration_number');
+
+            if ($legacy) {
+                $plates[] = $this->normalisePlate($legacy);
+            }
+        }
+
+        return array_values(array_unique($plates));
+    }
+
+    /** Plates are written "MH 12 AB 1234" as often as "MH12AB1234". */
+    private function normalisePlate(?string $plate): string
+    {
+        return preg_replace('/[^A-Z0-9]/', '', strtoupper((string) $plate));
     }
 
     private function recorder(): TripEventRecorder
