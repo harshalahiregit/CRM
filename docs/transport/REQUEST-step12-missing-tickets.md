@@ -58,7 +58,7 @@ sweep exists to catch. **They are two different gaps and the difference matters.
 | | Stranded | Priority | Evidence |
 |---|---|---|---|
 | **1. Risk** | `DB-011 trip_risks`, `ENUM-007 risk_rating` | CONTROLLED | Step 11 declares **both a table and an enum**. **No ticket builds either.** |
-| **2. Quality / CAPA** | the whole domain | unknown | **Zero occurrences of the word CAPA in Step 11 and Step 12.** Only STOS-QC describes it — reference tier. |
+| **2. Feedback / Complaints / CAPA** | the whole domain | unknown | **Zero occurrences of `CAPA`, `feedback` or `complaint` in Step 11 and Step 12.** Verified across every sheet of both. |
 
 ## 1. Risk has a table and an enum, and no ticket
 
@@ -79,29 +79,38 @@ register produces.
 scope for R1 — in which case SNG-TRN-019's risk column should be struck at the same time, so
 one ticket does not quietly depend on another's absence.
 
-## 2. CAPA is assigned to a person and exists in no authority
+## 2. Feedback, Complaints and CAPA are assigned to a person and exist in no authority
 
 This one is the opposite shape and is the more uncomfortable of the two.
 
-TM-001's person split gives **Quality / CAPA to Person 3**. Searched as a standalone word
+TM-001 §8 gives **Feedback / Complaints / CAPA to Person 3**. Searched as standalone words
 across every sheet of both authoritative steps:
 
 ```
-Step 11 (Canonical registries)  0 hits
-Step 12 (Developer ticket pack) 0 hits
+                                CAPA   feedback   complaint
+Step 11 (Canonical registries)     0          0           0
+Step 12 (Developer ticket pack)    0          0           0
 ```
 
 STOS-QC describes fourteen quality statuses and eleven CAPA statuses, but STOS-QC is
 reference-tier — below Step 11 in the authority hierarchy, and explicitly not something a
 developer may build from.
 
+**Feedback is worse than merely unspecified: it is on the demonstration script.** MS-001 §14
+step 10 reads *"Record delivery, feedback and POD."* Two of those three exist and are built.
+The middle one has no entity, no field and no requirement ID anywhere in the package.
+
 **So a domain is assigned to a developer with no canonical table, no ticket, no vocabulary and
-no acceptance criterion.** Nothing has been built for it and nothing can be, without inventing
-the entire thing — which is FORBID-001 at a scale no defect note would cover.
+no acceptance criterion — and one third of it is expected to be demonstrated on 30 September.**
+Nothing has been built for it and nothing can be, without inventing the entire thing, which is
+FORBID-001 at a scale no defect note would cover. Same call Person 1 made on rate cards (D-24)
+and the temperature marker (D-52).
 
-**Ask:** either promote CAPA into Step 11 and Step 12 with a ticket, or **record that it is out
-of scope for R1 and remove it from Person 3's assignment**. Both are fine. What is not fine is
-leaving it assigned, because on 30 September it will read as a developer who did not deliver
-their domain rather than a domain that was never specified.
+**Ask:** either promote Feedback and CAPA into Step 11 and Step 12 with a ticket, or **record
+that they are out of scope for R1, remove them from Person 3's assignment, and strike step 10's
+"feedback" from the demonstration script.** Any of those is fine. What is not fine is leaving it
+assigned, because on 30 September it will read as a developer who did not deliver their domain
+rather than a domain that was never specified.
 
-**Raised by Person 3, 2026-09-17.** Neither blocks anything currently in progress.
+**Raised by Person 3, 2026-09-17; Feedback added 2026-09-19 after Person 1 flagged the same gap
+independently.** Neither blocks anything currently in progress.
