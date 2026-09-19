@@ -66,7 +66,7 @@ This is the short list, and it is genuinely short.
 | What is missing | Whose | How big | What it blocks |
 |---|---|---|---|
 | **A button for Accounts to mark a bill invoiced** | Documents & Billing | **One button and one call.** The route behind it already works. | Nothing in the data — the step can be shown on a completed trip. It means a bill cannot be marked invoiced by clicking. *[D-106]* |
-| **Connecting a tracker to a specific trip** | Fleet & Telemetry | **One join, once a shared vehicle identifier is agreed.** | GPS, temperature and generator events reaching the trip screen. This is the only reason the demonstration cannot show live tracking. *[D-116]* |
+| **Connecting a tracker to a specific trip** | Fleet & Telemetry | **Half done on 19 September.** The safety check is in; the vehicle records the two systems share are still out of step. | GPS, temperature and generator events reaching the trip screen. This is the only reason the demonstration cannot show live tracking. *[D-116]* |
 | **Recording a payment on the timeline** | Documents & Billing | One line of code. | Nothing. The payment is recorded correctly; it just does not appear as a timeline entry. |
 | **The management control-room view** | Documents & Billing | A screen. Specified, not started. | A single view of everything needing attention. Today that information is on each trip. |
 | **Geofencing — port and gate events** | Fleet & Telemetry | Depends on hardware being in place. | Automatic port entry/exit and gate events on the timeline. |
@@ -75,6 +75,11 @@ This is the short list, and it is genuinely short.
 planned migration of vehicle records interact: doing the migration first would make a wrong
 connection hard to detect afterwards, because it would look correct on screen. The migration is
 therefore on hold until the connection is fixed — a deliberate sequencing choice, not a delay.
+
+That judgement has already paid for itself. A fix for the connection landed the same day and was
+re-tested rather than accepted: it behaves correctly in the case it was written for, and there is
+one remaining case where it confirms a match against itself. Had the migration run first, that
+case would have been mixed into live records and would have looked right on screen.
 *[D-116, D-100]*
 
 ---
