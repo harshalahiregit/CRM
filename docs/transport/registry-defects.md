@@ -3522,3 +3522,59 @@ That is also why `AllocationService` writes its two calls out longhand instead o
 *A screen populated by a migration proves nothing about the code that is supposed to populate it.*
 Walking the screen is necessary and was not sufficient here. Where data can arrive by more than one
 route, the question is not "is it there" but "what put it there".
+
+---
+
+## D-116 — Telemetry joins the trip on a raw id across two vehicle namespaces
+
+**Raised:** 2026-09-19, walking MS-001 §14 step 8. **P2's code (`TripTimelinePublisher`). Raised,
+not fixed.** Blocked behind **D-100(c)**.
+
+### What it does
+
+`TripTimelinePublisher::openTripFor()` finds the trip a reading belongs to like this:
+
+```php
+DB::table('transport_trips')
+    ->where('tenant_id', $vehicle->company_id)
+    ->where('vehicle_id', $vehicle->id)          // <- a FLEET vehicle id
+    ->whereIn('status', self::LIVE_TRIP_STATES)
+```
+
+`$vehicle` is `App\Domains\Fleet\Models\Vehicle`. `transport_trips.vehicle_id` holds a
+`transport_vehicles` id — **P1's placeholder table, which is exactly what D-100(c) says has not
+been repointed yet.** The two tables issue ids independently and there is no foreign key on the
+column, so the comparison is two unrelated integers.
+
+### Today it is silent; the day it is not, it is wrong
+
+On the dev database the ranges happen not to overlap — Fleet holds ids 1–2 and
+`transport_vehicles` holds 35–36 — so every reading is dropped by the `if (! $trip) return;`
+branch, which reads as "a truck idling in the yard". **Step 8 is therefore still NOT REACHABLE,
+and not for the reason the walk document gave.** It is not a missing read contract any more; the
+contract is built and joins on the wrong key.
+
+Constructed the collision to see which failure it is. A trip was set `in_transit` with
+`vehicle_id = 1`, and a reading was published for **Fleet** vehicle 1 (`MH12DEMO01`):
+
+```
+gps.activated        —  Tracking active on MH12DEMO01
+temperature.reading  —  4.2°C on MH12DEMO01
+```
+
+Both landed on that trip, **naming a truck that is not the truck the trip's `vehicle_id` refers
+to.** So this is not a "no data yet" defect. It is a silent wrong-join that produces no error, no
+log line and a plausible-looking timeline entry. The rows were removed afterwards and the trip put
+back.
+
+### Why it is worth raising now rather than after the repoint
+
+Because the repoint is what makes the ids collide. Today the mismatch is invisible; the moment
+Transport's allocation starts writing Fleet ids into that column, some trips will carry Fleet ids
+and the older rows will still carry `transport_vehicles` ids, and **both will match something.**
+The safest moment to fix the join is before the two id spaces are mixed in one column.
+
+### Not ours to fix
+
+`TripTimelinePublisher` is P2's file and the standing rule is not to edit another section's code
+to make our step pass. Raised in `NOTE-person2-telemetry-joins-on-the-wrong-vehicle-id.md`.

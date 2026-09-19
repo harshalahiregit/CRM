@@ -120,11 +120,31 @@ with one button:
 
 Done stages carry their outcome on the collapsed line.
 
-### 8 · GPS / temperature / generator event — NOT REACHABLE
-P2 shipped telemetry ingestion this week (`TelemetryIngestionService`, batch + idempotency) and
-the Fleet screen mentions telemetry. **There is no trip-side or container-side surface**, so the
-demonstration cannot get from the container to a GPS or temperature reading. Nothing on our side
-is blocking it — it needs a read contract from P2's telemetry to the trip.
+### 8 · GPS / temperature / generator event — NOT REACHABLE, for a different reason than before
+**Re-walked 19 Sep**, after P2's `TripTimelinePublisher` landed (`79815f29`). The verdict does not
+change; the reason does, and the old reason would have sent somebody looking in the wrong place.
+
+The read contract **exists now**. P2 publishes `gps.activated`, `genset.on/off`,
+`temperature.reading` and `temperature.excursion` into `trip_events` — our timeline, through our
+recorder, emitting on change rather than per ping. Driven directly, it produces exactly what this
+step asks for:
+
+> `gps.activated` — Tracking active on MH12DEMO01
+> `temperature.reading` — 4.2°C on MH12DEMO01
+
+**But nothing reaches a trip.** `TripTimelinePublisher::openTripFor()` matches
+`transport_trips.vehicle_id` against a **Fleet** `Vehicle` id, and that column holds a
+`transport_vehicles` id — P1's placeholder table, which is D-100(c)'s unfinished repoint. Two id
+spaces, no foreign key, compared as raw integers. Every reading currently falls into the
+"no trip for this vehicle" branch and is dropped.
+
+Worth knowing which kind of failure it is, so it was constructed rather than assumed: with a trip
+whose `vehicle_id` was made to collide with a Fleet id, **both events landed on it, naming a truck
+that was not that trip's truck.** Silent today because the ranges do not overlap; a wrong-join the
+day they do. That is **D-116**, P2's, raised in
+`NOTE-person2-telemetry-joins-on-the-wrong-vehicle-id.md`. The constructed rows were removed.
+
+Nothing on our side blocks it. It is one join away.
 
 ### 9 · Exception / CAPA — ~~NOT BUILT~~ **WORKS** (18 Sep)
 Nothing on the trip page mentions an exception. `trip_exceptions` has a schema and a vocabulary
@@ -138,6 +158,23 @@ D-30 deferred `waived` the way BR-P0-017's waiver is deferred. The register is b
 acknowledge → resolve, on the trip page.
 
 CAPA itself remains P3's (Quality, TM-001 §8).
+
+**Walked properly on 19 September**, which had not been done — the 18th recorded that the register
+existed, not that it ran. On `TRP-2026-000035`, by clicking, in one sitting:
+
+| Click | Result on screen |
+|---|---|
+| Raise an exception → *Tyre burst on NH-48…* | `EXC-2026-000002` · Low · Resource · **Open**, due 20 Sept |
+| Acknowledge & own it | **Acknowledged** (one click — no form, correctly) |
+| Resolve → *Tyre replaced at 11:20…* | **Resolved**, `Open 0` |
+
+The counters at the top (`Open` / `Critical open` / `Overdue`) track each transition, and the
+resolution note is kept on the card rather than replacing the original complaint.
+
+It also proved this morning's D-115 fix from the user's side: the trip's timeline now reads
+`exception.raised → exception.acknowledged → exception.resolved`, all three **LIVE**. Until today
+the middle one was written by nothing, so an exception appeared and disappeared with nothing
+between — and the SLA clock, which starts at acknowledgement, started invisibly.
 
 ### 10 · Record delivery, feedback and POD — PARTIAL
 **Delivery works** (STT-007, ours, shipped 17 Sept). **POD works** (P3). **Feedback does not
