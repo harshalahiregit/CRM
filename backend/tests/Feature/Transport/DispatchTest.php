@@ -455,6 +455,12 @@ class DispatchTest extends TestCase
         // Proves the seam works, so Person 2's real service needs no change here.
         $this->app->bind(FleetResourceGateway::class, fn () => new class implements FleetResourceGateway {
             public function markDispatched($trip, ?int $v, ?int $d, int $t, $a = null): bool { return true; }
+        
+            // Added 2026-09-19 when the interface grew a departure and a
+            // release. These fakes only exercise the dispatch edge, so both
+            // answer the same way the fake's markDispatched does.
+            public function markDeparted($trip, ?int $v, int $t, $a = null): bool { return true; }
+            public function markReleased(?int $v, ?int $d, int $t): bool { return true; }
         });
 
         [$trip] = $this->readyTrip();
@@ -474,6 +480,12 @@ class DispatchTest extends TestCase
             public function markDispatched($trip, ?int $v, ?int $d, int $t, $a = null): bool {
                 return false;
             }
+        
+            // Added 2026-09-19 when the interface grew a departure and a
+            // release. These fakes only exercise the dispatch edge, so both
+            // answer the same way the fake's markDispatched does.
+            public function markDeparted($trip, ?int $v, int $t, $a = null): bool { return false; }
+            public function markReleased(?int $v, ?int $d, int $t): bool { return false; }
         });
 
         [$trip] = $this->readyTrip();

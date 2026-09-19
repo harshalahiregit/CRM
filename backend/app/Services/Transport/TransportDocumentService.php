@@ -227,6 +227,16 @@ class TransportDocumentService
     private function entityTypeFor(Model $subject): string
     {
         return match (true) {
+            // Fleet's masters come FIRST, deliberately.
+            //
+            // D-62 made `vehicles` and `driver_profiles` the surviving masters;
+            // TransportVehicle and TransportDriver below are the placeholders
+            // being retired. Without these two arms a document cannot be filed
+            // against a Fleet vehicle at all — and on the day the placeholders
+            // are deleted, documents would lose their vehicle subject entirely.
+            $subject instanceof \App\Domains\Fleet\Models\Vehicle       => TransportDocumentEntity::VEHICLE,
+            $subject instanceof \App\Domains\Fleet\Models\DriverProfile => TransportDocumentEntity::DRIVER,
+
             $subject instanceof \App\Models\Transport\TransportVehicle => TransportDocumentEntity::VEHICLE,
             $subject instanceof \App\Models\Transport\TransportDriver  => TransportDocumentEntity::DRIVER,
             // D-41: LR and DO stay documents, so the consignment is what they

@@ -61,6 +61,18 @@ use Illuminate\Support\Facades\Storage;
 class TripDocumentService
 {
     /**
+     * The shared consignment timeline — STOS-CTD §31/§32, P1's recorder.
+     *
+     * Injected rather than resolved inline so it is visible in the constructor
+     * that this service writes to a table it does not own. The recorder never
+     * throws into its caller: a POD that was filed must not be un-filed because
+     * its timeline row failed.
+     */
+    public function __construct(private TripEventRecorder $events)
+    {
+    }
+
+    /**
      * CTR-012's "allowed MIME/size", made specific.
      *
      * The registry says "allowed MIME/size" and names neither. These are
@@ -263,6 +275,18 @@ class TripDocumentService
             PodReceived::dispatch($document);
         }
 
+        // CTD §31's timeline. Two different lines, because the Passport reads
+        // as a story and "POD uploaded" at 17:00 is a different moment from
+        // "Documents handed over" at 10:05 — the LR and e-way bill that travel
+        // WITH the load, handed over before it leaves.
+        $this->events->record(
+            type: $type === TransportDocumentType::POD ? 'pod.uploaded' : 'documents.handed_over',
+            trip: $trip,
+            actor: $actor,
+            detail: ['document_type' => $type, 'file_name' => $document->file_name],
+            occurredAt: $document->created_at,
+        );
+
         Log::channel('transport')->info('Trip document filed', [
             'document_id' => $document->id, 'trip_id' => $trip->id, 'type' => $type,
             'tenant_id' => $tenantId, 'user_id' => $actor?->id,
@@ -299,6 +323,17 @@ class TripDocumentService
             );
 
             $this->advanceTripOnVerification($document, $actor, $tenantId);
+
+            // Derived from STT-008 rather than quoted from CTD §31, which lists
+            // only the upload. Verification is the moment billing unlocks, so a
+            // timeline that showed the upload and not the decision would leave
+            // the reader unable to see why the next step became possible.
+            $this->events->record(
+                type: 'pod.verified',
+                trip: $document->trip()->first(),
+                actor: $actor,
+                detail: ['document_id' => $document->id, 'file_hash' => $document->file_hash],
+            );
 
             Log::channel('transport')->info('Trip document verified', [
                 'document_id' => $document->id, 'trip_id' => $document->trip_id,

@@ -68,6 +68,12 @@ class TelemetryIngestionService
             ];
         }
 
+        // The live row as it stands BEFORE this ping. The timeline publishes on
+        // CHANGE — genset stopped, temperature moved — so it needs the previous
+        // value, and after the transaction below it is gone.
+        $previous = VehicleLiveStatus::forCompany($vehicle->company_id)
+            ->where('vehicle_id', $vehicle->id)->first();
+
         // One transaction: a ping is either fully recorded or not at all. A
         // history row without its live update would leave the map lying.
         [$record, $liveUpdated, $duplicate] = DB::transaction(function () use ($vehicle, $payload, $recordedAt, $reading) {
@@ -112,6 +118,17 @@ class TelemetryIngestionService
         }
 
         $excursion = $this->checkExcursion($vehicle, $reading, $recordedAt, $liveUpdated, $record->id);
+
+        // The shared trip timeline (Person 1's `trip_events`). Only when this
+        // ping belongs to a live trip, and only on change — a position every
+        // two minutes would bury the four events somebody actually reads a
+        // journey for. The full trail stays in `telemetry_records`.
+        $timeline = app(\App\Domains\Fleet\Integration\TripTimelinePublisher::class);
+        $timeline->publish($vehicle, $reading, $recordedAt, $previous);
+
+        if ($excursion) {
+            $timeline->publishExcursion($vehicle, $reading, $recordedAt);
+        }
 
         return [
             'vehicle_id'          => $vehicle->id,

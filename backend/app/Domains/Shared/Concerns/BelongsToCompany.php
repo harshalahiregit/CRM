@@ -22,6 +22,25 @@ namespace App\Domains\Shared\Concerns;
  */
 trait BelongsToCompany
 {
+    /**
+     * The same workspace id, under the host's name for it.
+     *
+     * STOS tables say `company_id`; the host CRM and the Transport module say
+     * `tenant_id`. When a Fleet model is handed to a host service — filing a
+     * document through `TransportDocumentService`, say — that service checks
+     * `$subject->tenant_id` and would otherwise read null, decide the record
+     * belongs to nobody, and throw "not found" on a vehicle sitting right there.
+     *
+     * A read-only alias, not a column and not appended to JSON: STOS still
+     * stores `company_id` and nothing about the schema changes. This is the same
+     * bridge `currentCompanyId()` makes in the other direction, in the same
+     * place, so there is still exactly one file where the two names meet.
+     */
+    public function getTenantIdAttribute(): ?int
+    {
+        return $this->attributes['company_id'] ?? null;
+    }
+
     /** Opt-in read scope. Nothing filters for you — call this explicitly. */
     public function scopeForCompany($query, $companyId)
     {

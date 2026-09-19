@@ -42,13 +42,36 @@ class TransportDocument extends Model
 
     protected $table = 'transport_documents';
 
+    /** The VERSIONING axis: is this the current row, or one a renewal replaced. */
     public const STATUS_ACTIVE     = 'active';
     public const STATUS_SUPERSEDED = 'superseded';
+
+    /**
+     * The VERIFICATION axis — a different question about the same row.
+     *
+     * Ruled 2026-09-19: an unverified upload never equals a verified document,
+     * and raw OCR extraction does not count either. A truck is not cleared for
+     * dispatch because a file was attached to it.
+     *
+     * Deliberately separate from `status`: a superseded-but-verified document
+     * and a current one nobody has checked are different things, and one column
+     * carrying both meanings cannot tell them apart.
+     */
+    public const VERIFICATION_UPLOADED  = 'UPLOADED';
+    public const VERIFICATION_UNDER     = 'UNDER_VERIFICATION';
+    public const VERIFICATION_VERIFIED  = 'VERIFIED';
+    public const VERIFICATION_REJECTED  = 'REJECTED';
+
+    public const VERIFICATION_STATES = [
+        self::VERIFICATION_UPLOADED, self::VERIFICATION_UNDER,
+        self::VERIFICATION_VERIFIED, self::VERIFICATION_REJECTED,
+    ];
 
     protected $fillable = [
         'tenant_id', 'entity_type', 'entity_id', 'document_type', 'version',
         'document_number', 'issued_on', 'valid_from', 'valid_until',
         'file_path', 'file_name', 'file_hash', 'source', 'status', 'notes',
+        'verification_status', 'verified_at', 'verified_by', 'rejection_reason',
         'created_by', 'updated_by',
     ];
 
@@ -58,12 +81,14 @@ class TransportDocument extends Model
         'valid_until' => 'date',
         'version'     => 'integer',
         'entity_id'   => 'integer',
+        'verified_at' => 'datetime',
     ];
 
     /** Mirrors the column defaults so a new instance reads the same as its row. */
     protected $attributes = [
         'status'  => self::STATUS_ACTIVE,
         'version' => 1,
+        'verification_status' => self::VERIFICATION_UPLOADED,
     ];
 
     /* ── Validity ───────────────────────────────────────────────────── */
