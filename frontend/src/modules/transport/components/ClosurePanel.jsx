@@ -30,12 +30,20 @@ import { fmtDateTime } from '../constants'
  * exists. Telling a user "this cannot be waived" when their own rule book says
  * it can is misleading them about their own business.
  *
- * ── AND THE PART THAT IS HARDEST TO SAY OUT LOUD ────────────────────────
- * Closure is built and cannot be reached. Nothing can move a trip into
- * `collection_pending`, because marking a bill invoiced has no route yet
- * (D-106, Person 3's). `readiness.reachable` carries that from the server, and
- * the panel prints the reason rather than showing a dead button or, worse,
- * pretending the stage does not exist.
+ * ── THIS PANEL WAS UNREACHABLE UNTIL 19 SEP 2026 ────────────────────────
+ * Nothing could move a trip into `collection_pending`, because marking a bill
+ * invoiced had no route (D-106, Person 3's). It has one now, and a trip has been
+ * walked all the way to `closed` through this panel.
+ *
+ * `readiness.reachable` still carries the answer from the server and the panel
+ * still prints whatever reason comes back, because the NEXT thing to go
+ * unreachable will not announce itself either — and a panel that prints the
+ * server's reason needed no change on the day this one was fixed.
+ *
+ * ── ONE CONTROL STILL CANNOT BE CHECKED ─────────────────────────────────
+ * Supplier settlement. There is no `trip_settlements` table (SNG-TRN-017), so
+ * the control reports "not checked" and says why. That is the only one left:
+ * open exceptions joined the checks that actually run on 19 Sep.
  */
 export default function ClosurePanel({ trip, canClose, onChanged }) {
   const toast = useToast()

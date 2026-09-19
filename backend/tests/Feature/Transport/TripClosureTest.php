@@ -276,7 +276,9 @@ class TripClosureTest extends TestCase
 
         Event::assertDispatched(TripClosed::class, function (TripClosed $e) {
             $this->assertSame('not_checked', $e->controls()['settlement'] ?? null);
-            $this->assertSame('not_checked', $e->controls()['exceptions'] ?? null);
+            // `exceptions` was 'not_checked' too until 2026-09-19 — the register
+            // was built on the 18th and this control kept saying otherwise.
+            $this->assertSame('passed', $e->controls()['exceptions'] ?? null);
             $this->assertSame('passed', $e->controls()['pod'] ?? null);
 
             return true;
@@ -295,13 +297,15 @@ class TripClosureTest extends TestCase
 
         $byKey = array_column($readiness['controls'], null, 'key');
 
+        // ONE control cannot run now, not two. trip_settlements still does not
+        // exist; the exception register was built on 2026-09-18 and this test
+        // asserted a staleness rather than a rule until it was corrected.
         $this->assertSame('not_checked', $byKey['settlement']['state']);
-        $this->assertSame('not_checked', $byKey['exceptions']['state']);
         $this->assertNotSame('passed', $byKey['settlement']['state']);
-        $this->assertNotSame('passed', $byKey['exceptions']['state']);
-
         $this->assertStringContainsString('not built yet', $byKey['settlement']['message']);
-        $this->assertStringContainsString('could not be checked', $byKey['exceptions']['message']);
+
+        $this->assertNotSame('not_checked', $byKey['exceptions']['state'],
+            'the exception register exists — this control must actually run');
     }
 
     public function test_an_unrunnable_control_does_not_block_closure(): void
@@ -310,7 +314,7 @@ class TripClosureTest extends TestCase
         // perform would make closure impossible for a reason no user could fix.
         $readiness = $this->closure->readiness($this->closableTrip(), self::TENANT_A);
 
-        $this->assertCount(2, $readiness['not_checked']);
+        $this->assertCount(1, $readiness['not_checked'], 'only supplier settlement cannot be checked now');
         $this->assertSame([], $readiness['blockers']);
         $this->assertTrue($readiness['closable']);
     }
@@ -452,8 +456,8 @@ class TripClosureTest extends TestCase
         $ctx = $row->context ?? [];
 
         $this->assertSame('not_checked', $ctx['controls']['settlement'] ?? null);
-        $this->assertSame('not_checked', $ctx['controls']['exceptions'] ?? null);
-        $this->assertEqualsCanonicalizing(['settlement', 'exceptions'], $ctx['not_checked'] ?? []);
+        $this->assertSame('passed', $ctx['controls']['exceptions'] ?? null);
+        $this->assertSame(['settlement'], $ctx['not_checked'] ?? []);
         $this->assertSame('not_built', $ctx['profit_snapshot'] ?? null);
         $this->assertStringContainsString('BR-P0-017', $ctx['waiver'] ?? '');
     }
@@ -472,6 +476,82 @@ class TripClosureTest extends TestCase
         );
         $this->assertArrayNotHasKey('dispatcher', $matrix, 'PERM-005 denies the Dispatcher, and that is the point');
         $this->assertArrayNotHasKey('driver', $matrix);
+    }
+
+    /* ══════════ TRP-P0-014, enforced since 2026-09-19 ══════════ */
+
+    public function test_a_critical_exception_still_open_blocks_the_close(): void
+    {
+        // "No silent closure with unresolved critical exceptions." Until the
+        // exception register was built this control could only report that it
+        // had not run. It runs now, and the rule is a rule.
+        $trip = $this->closableTrip();
+
+        app(\App\Services\Transport\TripExceptionService::class)->raise([
+            'category' => \App\Support\Transport\ExceptionCategory::OPERATIONAL,
+            'severity' => \App\Support\Transport\ExceptionSeverity::CRITICAL,
+            'cause'    => 'Seal was broken on arrival and nobody has accounted for it.',
+            'trip_id'  => $trip->id,
+        ], self::TENANT_A, $this->actor);
+
+        try {
+            $this->closure->close($trip->fresh(), 'Settled in full.', self::TENANT_A, $this->actor);
+            $this->fail('a trip with an open critical exception must not close');
+        } catch (BusinessException $e) {
+            $this->assertStringContainsString('critical exception', $e->getMessage());
+            $this->assertStringContainsString('TRP-P0-014', $e->getMessage());
+        }
+    }
+
+    public function test_a_non_critical_exception_does_not_block_the_close(): void
+    {
+        // The rule's own word is CRITICAL. Widening a Hard rule past its own
+        // wording would be inventing one, and a low-severity note left open is
+        // not what "silent closure" means.
+        $trip = $this->closableTrip();
+
+        app(\App\Services\Transport\TripExceptionService::class)->raise([
+            'category' => \App\Support\Transport\ExceptionCategory::DOCUMENTATION,
+            'severity' => \App\Support\Transport\ExceptionSeverity::LOW,
+            'cause'    => 'A copy of the weighbridge slip is still to be filed.',
+            'trip_id'  => $trip->id,
+        ], self::TENANT_A, $this->actor);
+
+        $closed = $this->closure->close($trip->fresh(), 'Settled in full by NEFT.', self::TENANT_A, $this->actor);
+
+        $this->assertSame(TripStatus::CLOSED, $closed->status);
+
+        $control = array_column(
+            $this->closure->readiness($closed, self::TENANT_A)['controls'], null, 'key'
+        )['exceptions'];
+
+        // Passed, but it SAYS the exception is there. Passing silently would be
+        // the thing TRP-P0-014 is against.
+        $this->assertSame('passed', $control['state']);
+        $this->assertStringContainsString('none of them critical', $control['message']);
+    }
+
+    public function test_a_resolved_exception_does_not_block_anything(): void
+    {
+        $trip = $this->closableTrip();
+        $svc  = app(\App\Services\Transport\TripExceptionService::class);
+
+        $e = $svc->raise([
+            'category' => \App\Support\Transport\ExceptionCategory::OPERATIONAL,
+            'severity' => \App\Support\Transport\ExceptionSeverity::CRITICAL,
+            'cause'    => 'Held at the gate for two hours with no paperwork.',
+            'trip_id'  => $trip->id,
+        ], self::TENANT_A, $this->actor);
+
+        $svc->resolve(
+            $svc->acknowledge($e, $this->actor->id, self::TENANT_A, $this->actor),
+            'Gate pass reissued and the vehicle released.',
+            self::TENANT_A, $this->actor,
+        );
+
+        $closed = $this->closure->close($trip->fresh(), 'Settled in full by NEFT.', self::TENANT_A, $this->actor);
+
+        $this->assertSame(TripStatus::CLOSED, $closed->status);
     }
 
     public function test_the_permission_key_is_quoted_from_api_009(): void

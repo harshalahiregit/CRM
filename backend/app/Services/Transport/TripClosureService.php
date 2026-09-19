@@ -3,6 +3,7 @@
 namespace App\Services\Transport;
 
 use App\Events\Transport\TripClosed;
+use App\Services\Transport\TripExceptionService;
 use App\Services\Transport\TripEventRecorder;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ResourceNotFoundException;
@@ -64,6 +65,9 @@ class TripClosureService
 {
     public function __construct(
         private TripDocumentService $documents,
+        // Built 2026-09-18. Until then this control could not run and said so;
+        // now it runs, and TRP-P0-014 is enforced rather than reported.
+        private TripExceptionService $exceptions,
     ) {
     }
 
@@ -86,7 +90,7 @@ class TripClosureService
             $this->billingControl($trip, $tenantId),
             $this->collectionControl($trip, $tenantId),
             $this->settlementControl(),
-            $this->exceptionControl(),
+            $this->exceptionControl($trip, $tenantId),
         ];
 
         $blockers   = array_values(array_filter($controls, fn (array $c) => $c['state'] === 'failed'));
@@ -305,10 +309,34 @@ class TripClosureService
      * That is the single most misleading thing this class could do, so it
      * reports not checked instead.
      */
-    private function exceptionControl(): array
+    private function exceptionControl(TransportTrip $trip, int $tenantId): array
     {
-        return $this->control('exceptions', 'Open exceptions', 'not_checked',
-            ClosureScope::NOT_BUILT_REASONS['exceptions']);
+        $s = $this->exceptions->summaryForTrip($trip->id, $tenantId);
+
+        // TRP-P0-014's own word is CRITICAL, so that is what blocks. An open
+        // exception of another severity is reported and does not stop a close —
+        // widening a Hard rule past its own wording would be inventing one.
+        if ($s['critical_open'] > 0) {
+            return $this->control('exceptions', 'Open exceptions', 'failed', sprintf(
+                '%d critical exception%s still open on this trip. %s',
+                $s['critical_open'],
+                $s['critical_open'] === 1 ? ' is' : 's are',
+                ClosureScope::EXCEPTION_RULE,
+            ));
+        }
+
+        if ($s['open'] > 0) {
+            return $this->control('exceptions', 'Open exceptions', 'passed', sprintf(
+                '%d exception%s still open, none of them critical. %s',
+                $s['open'], $s['open'] === 1 ? '' : 's',
+                'Only a critical one blocks a close (TRP-P0-014).',
+            ));
+        }
+
+        return $this->control('exceptions', 'Open exceptions', 'passed',
+            $s['total'] > 0
+                ? 'Every exception raised on this trip has been resolved.'
+                : 'No exception was ever raised on this trip.');
     }
 
     /** @return array{key:string,label:string,state:string,message:string} */
