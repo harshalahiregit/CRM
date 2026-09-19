@@ -3619,3 +3619,64 @@ that: the stored mapping points at `transport_vehicles` 29 and 30, rows a reseed
 repoint today would change nothing **and** leave every trip pointing at the placeholder table.
 
 Order: fix the mapping → P2's plate check starts firing → then repoint.
+
+---
+
+## D-117 — CTD names eleven search keys in §4 and nine in §97, and two of them have nowhere to look
+
+**Raised:** 2026-09-19, reading §4 and §5 before proposing the search entry point. **Ours to ask,
+not to decide.**
+
+### The contradiction
+
+| Source | Keys | Notes |
+|---|---|---|
+| **§4 PRIMARY SEARCH KEY** | **11** | Container *(preferred)* + LR, DO, Transport Order, Trip, Customer Reference, Vehicle, Driver, Invoice, **POD**, **Internal Consignment ID** |
+| **§97 SEARCH API** | **9** | The same list **minus POD Number and Internal Consignment ID** |
+| **§150 NON-NEGOTIABLE** | **3** | Only *"Container Number must be a primary search key"* and *"LR and DO must be searchable"* |
+
+The two keys §97 drops are exactly the two that do not resolve today, which suggests the §4 list
+was written as an aspiration and §97 as the buildable subset. Nothing in the package says which
+governs, so this is recorded rather than resolved by picking the convenient one.
+
+### POD Number has no field anywhere
+
+`trip_documents` — the table that actually holds PODs — carries `file_path`, `file_name`,
+`file_mime`, `file_size`, `file_hash`, `status`, `verified_by`, `verified_at` and **no
+`document_number`**. A POD in this system is a file attached to a trip, not a numbered artefact.
+
+`transport_documents` does have a `document_number` and lists `pod` among its types, but PODs are
+not filed there — the POD path is `TripDocumentService` and `trip_documents`.
+
+So "search by POD number" cannot be built without (a) a schema change, (b) a ruling on who issues
+the number, and (c) a format. **None of the three is specified.** §97 and §150 both omit POD, which
+is consistent with it never having been designed as a numbered entity.
+
+**Recommendation: do not invent one.** Say "POD numbers cannot be searched" on screen until
+somebody specifies it. Inventing a numbering scheme here is precisely what Hard Rule 1 forbids.
+
+### Internal Consignment ID already works
+
+Read as `consignment_number`, it resolves today — `CNM-2026-000034` finds its consignment. If the
+document means a different identifier, no section defines one, and that is a question for the
+owner rather than a build.
+
+### Also corrected
+
+`CommandPalette.jsx`'s docblock says §4 lists "nine entry points". It lists eleven. Ours, wrong
+since the palette was written, and to be fixed with whatever ships from
+`PROPOSAL-search-as-the-entry-point.md`.
+
+### And one thing the brief attributed to the wrong cause
+
+The proposal records this in full, but it belongs here too: **a vehicle number failing to reach a
+Digital Passport is not caused by D-110/D-116.** The chain
+
+```
+MH12DEMO01 → transport_vehicles #35 → TRP-2026-000034 → consignment 34 → container 23
+```
+
+resolves end to end today, inside our own id namespace. The only reason a plate stops at Fleet's
+list is that `TransportSearchService::vehicle()` returns that path and follows through no further —
+a leftover from D-62, never revisited against §4. What genuinely waits on the repoint is a plate
+held by Fleet and not by our placeholder table.
