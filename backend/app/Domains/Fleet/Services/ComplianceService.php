@@ -119,7 +119,7 @@ class ComplianceService
 
         Vehicle::query()
             ->when($companyId, fn ($q) => $q->forCompany($companyId))
-            ->whereIn('status', ['active', 'idle', 'in_maintenance'])
+            ->whereIn('status', [Vehicle::STATUS_AVAILABLE, Vehicle::STATUS_IDLE, Vehicle::STATUS_UNDER_MAINTENANCE, Vehicle::STATUS_COMPLIANCE_BLOCKED])
             ->chunkById(200, function ($vehicles) use (&$changed) {
                 foreach ($vehicles as $vehicle) {
                     $before = $vehicle->compliance_status;

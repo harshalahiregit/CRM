@@ -53,7 +53,7 @@ class FleetControlTowerTest extends TestCase
             'registration_number' => 'MH12AB'.random_int(1000, 9999),
             'vehicle_type'        => 'reefer',
             'gps_device_id'       => 'DEV-'.Str::random(6),
-            'status'              => 'active',
+            'status'              => 'AVAILABLE',
             'compliance_status'   => 'compliant',
         ], $over));
     }

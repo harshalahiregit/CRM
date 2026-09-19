@@ -35,33 +35,68 @@ class Vehicle extends Model
      */
     public const FUEL_TYPES = ['diesel', 'petrol', 'cng', 'lng', 'electric', 'hybrid'];
     /**
-     * `in_operation` is set by dispatch through FleetResourceGateway (BRW-050)
-     * when a trip departs, and cleared when it closes. Its absence was flagged
-     * in PendingFleetResourceGateway as the thing blocking that handover.
-     *
-     * It is deliberately NOT settable from the vehicle form: like the workshop
-     * states, it is a consequence of something happening elsewhere.
+     * ── SERVICE-DUE IS DELIBERATELY NOT A STATE ───────────────────────────
+     * A truck past its service interval is still roadworthy. Writing that into
+     * `status` would drop it out of allocation, so a missed oil change would
+     * silently take a working truck off the road. It is derived by
+     * ServiceScheduleEvaluator and warns instead — the same reason a driver's
+     * expired licence blocks the driver rather than the truck.
      */
-    public const STATUS_IN_OPERATION = 'in_operation';
+    /**
+     * The vehicle asset state machine. Fleet is the sole authority for it.
+     *
+     * Ruled by the owner, 2026-09-19, closing T-02 and the vehicle half of
+     * T-51. Uppercase because these strings cross a module boundary: Dev 1's
+     * board and Dev 3's billing switch on them, and two spellings of one state
+     * is how a condition gets tested for and silently never matches.
+     */
+    public const STATUS_AVAILABLE          = 'AVAILABLE';
+    public const STATUS_ALLOCATED          = 'ALLOCATED';
+    public const STATUS_IN_TRANSIT         = 'IN_TRANSIT';
+    public const STATUS_UNDER_MAINTENANCE  = 'UNDER_MAINTENANCE';
+    public const STATUS_COMPLIANCE_BLOCKED = 'COMPLIANCE_BLOCKED';
+    public const STATUS_IDLE               = 'IDLE';
+    public const STATUS_BREAKDOWN          = 'BREAKDOWN';
+    public const STATUS_RETIRED            = 'RETIRED';
+
+    public const STATUSES = [
+        self::STATUS_AVAILABLE,
+        self::STATUS_ALLOCATED,
+        self::STATUS_IN_TRANSIT,
+        self::STATUS_UNDER_MAINTENANCE,
+        self::STATUS_COMPLIANCE_BLOCKED,
+        self::STATUS_IDLE,
+        self::STATUS_BREAKDOWN,
+        self::STATUS_RETIRED,
+    ];
 
     /**
-     * T-04 — `breakdown` is a state, `service due` deliberately is not.
+     * Out on a trip: assigned, or actually moving.
      *
-     * A truck stopped on the hard shoulder is not the same as one in a workshop
-     * bay: the first means a load is stranded and somebody is arranging
-     * recovery. Operations needs to tell them apart.
-     *
-     * Service-due is NOT here. A truck past its interval is still roadworthy,
-     * and writing that into `status` would drop it out of allocation — a missed
-     * oil change silently taking a truck off the road. It is derived by
-     * ServiceScheduleEvaluator and warns instead.
+     * Both mean "not available for another load", but they are not the same
+     * fact — an ALLOCATED truck can still be swapped, an IN_TRANSIT one is a
+     * recovery problem.
      */
-    public const STATUS_BREAKDOWN = 'breakdown';
-
-    public const STATUSES   = ['active', 'in_operation', 'in_maintenance', 'breakdown', 'idle', 'retired'];
+    public const ON_TRIP_STATES = [self::STATUS_ALLOCATED, self::STATUS_IN_TRANSIT];
 
     /** States in which the vehicle is off the road and cannot be dispatched. */
-    public const OFF_ROAD_STATES = ['in_maintenance', 'breakdown', 'retired'];
+    public const OFF_ROAD_STATES = [
+        self::STATUS_UNDER_MAINTENANCE,
+        self::STATUS_BREAKDOWN,
+        self::STATUS_COMPLIANCE_BLOCKED,
+        self::STATUS_RETIRED,
+    ];
+
+    /**
+     * States a person may set by hand.
+     *
+     * The rest are applied by the thing that owns the fact: job cards apply
+     * UNDER_MAINTENANCE and BREAKDOWN, dispatch applies ALLOCATED and
+     * IN_TRANSIT, and the compliance sweep applies COMPLIANCE_BLOCKED. Letting
+     * those be typed would put a truck back on the road without the check that
+     * took it off.
+     */
+    public const MANUALLY_SETTABLE = [self::STATUS_AVAILABLE, self::STATUS_IDLE, self::STATUS_RETIRED];
     public const COMPLIANCE = ['compliant', 'expiring', 'expired', 'blocked'];
 
     protected $fillable = [

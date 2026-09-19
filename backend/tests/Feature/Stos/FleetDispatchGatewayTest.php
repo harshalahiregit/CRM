@@ -43,7 +43,7 @@ class FleetDispatchGatewayTest extends TestCase
         return app(FleetResourceGateway::class);
     }
 
-    private function vehicle(string $status = 'active'): Vehicle
+    private function vehicle(string $status = 'AVAILABLE'): Vehicle
     {
         return Vehicle::create([
             'company_id' => self::COMPANY,
@@ -99,7 +99,7 @@ class FleetDispatchGatewayTest extends TestCase
         $applied = $this->gateway()->markDispatched($this->trip(), $vehicle->id, $driver->id, self::COMPANY);
 
         $this->assertTrue($applied);
-        $this->assertSame('in_operation', $vehicle->fresh()->status);
+        $this->assertSame('IN_TRANSIT', $vehicle->fresh()->status);
         $this->assertSame('on_trip', $driver->fresh()->status);
     }
 
@@ -115,7 +115,7 @@ class FleetDispatchGatewayTest extends TestCase
         // Dispatch is confirmed once and amended repeatedly — the caller asked
         // for a state, and the state holds.
         $this->assertTrue($second);
-        $this->assertSame('in_operation', $vehicle->fresh()->status);
+        $this->assertSame('IN_TRANSIT', $vehicle->fresh()->status);
     }
 
     public function test_a_trip_with_nothing_assigned_is_not_a_failure(): void
@@ -127,22 +127,22 @@ class FleetDispatchGatewayTest extends TestCase
 
     public function test_a_vehicle_in_the_workshop_is_not_dragged_onto_the_road(): void
     {
-        $vehicle = $this->vehicle('in_maintenance');
+        $vehicle = $this->vehicle('UNDER_MAINTENANCE');
 
         $applied = $this->gateway()->markDispatched($this->trip(), $vehicle->id, null, self::COMPANY);
 
         // A workshop release — which checks QC and compliance — is the only
         // thing that puts this vehicle back on the road.
         $this->assertFalse($applied, 'The gateway must report that it could not apply this');
-        $this->assertSame('in_maintenance', $vehicle->fresh()->status);
+        $this->assertSame('UNDER_MAINTENANCE', $vehicle->fresh()->status);
     }
 
     public function test_a_retired_vehicle_is_left_alone(): void
     {
-        $vehicle = $this->vehicle('retired');
+        $vehicle = $this->vehicle('RETIRED');
 
         $this->assertFalse($this->gateway()->markDispatched($this->trip(), $vehicle->id, null, self::COMPANY));
-        $this->assertSame('retired', $vehicle->fresh()->status);
+        $this->assertSame('RETIRED', $vehicle->fresh()->status);
     }
 
     public function test_a_suspended_driver_is_not_put_on_a_trip(): void
@@ -170,11 +170,11 @@ class FleetDispatchGatewayTest extends TestCase
 
         $theirs = Vehicle::create([
             'company_id' => 2, 'registration_number' => 'MH99ZZ0001',
-            'vehicle_type' => 'truck', 'ownership_type' => 'owned', 'status' => 'active',
+            'vehicle_type' => 'truck', 'ownership_type' => 'owned', 'status' => 'AVAILABLE',
         ]);
 
         $this->assertFalse($this->gateway()->markDispatched($this->trip(), $theirs->id, null, self::COMPANY));
-        $this->assertSame('active', $theirs->fresh()->status);
+        $this->assertSame('AVAILABLE', $theirs->fresh()->status);
     }
 
     public function test_a_partial_application_is_reported_as_failure(): void
@@ -187,7 +187,7 @@ class FleetDispatchGatewayTest extends TestCase
         // The vehicle moved, the driver did not — so the answer is false, and
         // the discrepancy is discoverable rather than assumed away.
         $this->assertFalse($applied);
-        $this->assertSame('in_operation', $vehicle->fresh()->status);
+        $this->assertSame('IN_TRANSIT', $vehicle->fresh()->status);
     }
 
     /* ── What the new state means for allocation ────────────────── */
@@ -227,7 +227,7 @@ class FleetDispatchGatewayTest extends TestCase
 
         // Without this half, every vehicle is permanently "in operation" and
         // the fleet has no availability at all.
-        $this->assertSame('active', $vehicle->fresh()->status);
+        $this->assertSame('AVAILABLE', $vehicle->fresh()->status);
         $this->assertSame('available', $driver->fresh()->status);
     }
 }

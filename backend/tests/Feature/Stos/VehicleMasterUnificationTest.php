@@ -164,7 +164,7 @@ class VehicleMasterUnificationTest extends TestCase
         DB::table('vehicles')->insert([
             'company_id' => self::COMPANY, 'registration_number' => 'MH-12-AB-1234',
             'vehicle_type' => 'truck', 'ownership_type' => 'owned',
-            'status' => 'active', 'compliance_status' => 'compliant',
+            'status' => 'AVAILABLE', 'compliance_status' => 'compliant',
             'created_at' => now(), 'updated_at' => now(),
         ]);
         $legacyId = $this->legacyVehicle();

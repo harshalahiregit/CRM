@@ -53,7 +53,7 @@ class DriverAllocationLinkTest extends TestCase
         $vehicle = Vehicle::create([
             'company_id' => self::COMPANY, 'registration_number' => $plate,
             'vehicle_type' => 'reefer', 'gps_device_id' => 'DEV-'.Str::random(6),
-            'status' => 'active', 'compliance_status' => 'compliant',
+            'status' => 'AVAILABLE', 'compliance_status' => 'compliant',
         ]);
 
         VehicleLiveStatus::create([

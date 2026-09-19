@@ -57,7 +57,7 @@ class MaintenanceService
             // a return time; a breakdown means a load is stranded somewhere and
             // somebody is arranging recovery. Same card, different fact.
             $vehicle->update([
-                'status' => $job->trip_id ? Vehicle::STATUS_BREAKDOWN : 'in_maintenance',
+                'status' => $job->trip_id ? Vehicle::STATUS_BREAKDOWN : Vehicle::STATUS_UNDER_MAINTENANCE,
             ]);
 
             Log::channel('stos')->info('Job card opened', [
@@ -223,9 +223,9 @@ class MaintenanceService
             return ['released' => false, 'status' => $vehicle->status, 'holds' => $holds];
         }
 
-        $vehicle->update(['status' => 'active']);
+        $vehicle->update(['status' => Vehicle::STATUS_AVAILABLE]);
 
-        return ['released' => true, 'status' => 'active', 'holds' => []];
+        return ['released' => true, 'status' => Vehicle::STATUS_AVAILABLE, 'holds' => []];
     }
 
     /**

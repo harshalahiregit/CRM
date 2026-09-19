@@ -171,7 +171,7 @@ class VehicleAllocationService
     {
         $blockers = [];
 
-        if ($vehicle->status === 'retired') {
+        if ($vehicle->status === Vehicle::STATUS_RETIRED) {
             $blockers[] = $this->blocker('retired', 'Retired from the fleet.', 'It is no longer an operating asset.', 'Fleet manager');
         }
 
@@ -193,7 +193,7 @@ class VehicleAllocationService
             );
         }
 
-        if ($vehicle->status === 'in_maintenance') {
+        if ($vehicle->status === Vehicle::STATUS_UNDER_MAINTENANCE) {
             $blockers[] = $this->blocker('in_maintenance', 'Currently in the workshop.', 'The vehicle is marked under maintenance.', 'Workshop supervisor');
         }
 
@@ -211,7 +211,7 @@ class VehicleAllocationService
 
         // PLN-006 — prevent double allocation. A vehicle that departed on
         // another trip is not available for this one, however compliant it is.
-        if ($vehicle->status === Vehicle::STATUS_IN_OPERATION) {
+        if (in_array($vehicle->status, Vehicle::ON_TRIP_STATES, true)) {
             $blockers[] = $this->blocker(
                 'on_another_trip',
                 'Already out on a trip.',

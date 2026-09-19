@@ -92,9 +92,14 @@ export const stosApi = {
 /**
  * The grid's filter tiles.
  *
- * "Allocated" and "In Transit" are NOT here. Those are trip facts and Dispatch
- * (Developer 1) owns trips — deriving them from telemetry would report a yard
- * shunt as a delivery. They arrive when Dispatch does.
+ * These are TELEMETRY-derived presentation states (moving / idle / offline), not
+ * the vehicle asset state machine in VEHICLE_STATUS_LABELS below. Two different
+ * vocabularies on purpose: one answers "what is this truck doing right now",
+ * the other "what may be done with it".
+ *
+ * Dispatch has since landed, so ALLOCATED and IN_TRANSIT are real asset states —
+ * but they are not filter tiles here until FleetService::grid() can filter on
+ * them. Adding the tile first would give a user a filter that returns nothing.
  */
 export const FLEET_STATES = [
   { value: '',                   label: 'All' },
@@ -106,6 +111,28 @@ export const FLEET_STATES = [
   { value: 'unmonitored',        label: 'Unmonitored' },
   { value: 'retired',            label: 'Retired' },
 ]
+
+/**
+ * The vehicle asset state machine, as ruled 2026-09-19 — Fleet is its sole
+ * authority. See docs/transport/STOS-PROCESS-FLOW-AND-OWNERSHIP.md §4.
+ *
+ * Labelled here so a screen never shows a user `UNDER_MAINTENANCE`. The wire
+ * value is uppercase because it crosses a module boundary; what a person reads
+ * is a sentence.
+ */
+export const VEHICLE_STATUS_LABELS = {
+  AVAILABLE:          'Available',
+  ALLOCATED:          'Allocated to a trip',
+  IN_TRANSIT:         'In transit',
+  UNDER_MAINTENANCE:  'In the workshop',
+  COMPLIANCE_BLOCKED: 'Compliance blocked',
+  IDLE:               'Idle',
+  BREAKDOWN:          'Broken down',
+  RETIRED:            'Retired',
+}
+
+export const vehicleStatusLabel = (status) =>
+  VEHICLE_STATUS_LABELS[status] || String(status || '').replace(/_/g, ' ').toLowerCase()
 
 /** Traffic light. One definition, so no two screens disagree about red. */
 export const TONES = {

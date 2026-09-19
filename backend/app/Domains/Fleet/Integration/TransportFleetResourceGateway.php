@@ -51,7 +51,7 @@ class TransportFleetResourceGateway implements FleetResourceGateway
     // `breakdown` joins these: a truck on the hard shoulder is not dispatchable
     // however confident the trip board is, and only a workshop release — which
     // checks QC and compliance — puts it back.
-    private const IMMOVABLE = ['in_maintenance', 'breakdown', 'retired'];
+    private const IMMOVABLE = Vehicle::OFF_ROAD_STATES;
 
     public function markDispatched(
         TransportTrip $trip,
@@ -102,7 +102,7 @@ class TransportFleetResourceGateway implements FleetResourceGateway
             return false;
         }
 
-        if ($vehicle->status === Vehicle::STATUS_IN_OPERATION) {
+        if (in_array($vehicle->status, Vehicle::ON_TRIP_STATES, true)) {
             return true;    // already there — idempotent
         }
 
@@ -118,7 +118,7 @@ class TransportFleetResourceGateway implements FleetResourceGateway
 
         // Goes through the model so the status observer fires and Developers 1
         // and 3 hear `fleet.vehicle.status_changed`.
-        $vehicle->update(['status' => Vehicle::STATUS_IN_OPERATION]);
+        $vehicle->update(['status' => Vehicle::STATUS_IN_TRANSIT]);
 
         Log::channel('stos')->info('Vehicle marked in operation', [
             'rule' => 'BRW-050', 'trip_id' => $trip->id, 'vehicle_id' => $vehicle->id,
@@ -179,9 +179,9 @@ class TransportFleetResourceGateway implements FleetResourceGateway
             if ($vehicleId) {
                 Vehicle::forCompany($tenantId)
                     ->where('id', $vehicleId)
-                    ->where('status', Vehicle::STATUS_IN_OPERATION)
+                    ->whereIn('status', Vehicle::ON_TRIP_STATES)
                     ->get()
-                    ->each(fn (Vehicle $v) => $v->update(['status' => 'active']));
+                    ->each(fn (Vehicle $v) => $v->update(['status' => Vehicle::STATUS_AVAILABLE]));
             }
 
             if ($driverId) {

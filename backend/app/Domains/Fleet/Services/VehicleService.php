@@ -88,9 +88,13 @@ class VehicleService
         }
 
         // Status is NOT editable here. A vehicle goes into and out of the
-        // workshop through its job cards (MaintenanceService), and letting this
-        // screen set 'active' directly would put a truck back on the road with
-        // its brakes still in pieces.
+        // workshop through its job cards (MaintenanceService), onto a trip
+        // through dispatch, and into COMPLIANCE_BLOCKED through the compliance
+        // sweep. Letting this screen set AVAILABLE directly would put a truck
+        // back on the road with its brakes still in pieces.
+        //
+        // The deliberate, narrow exception is `transition()` below, which is
+        // the only hand-driven edge and accepts only MANUALLY_SETTABLE states.
         unset($data['status']);
 
         $vehicle->fill($data)->save();
@@ -138,7 +142,7 @@ class VehicleService
 
             VehicleLiveStatus::forCompany($companyId)->where('vehicle_id', $id)->delete();
 
-            $vehicle->update(['status' => 'retired']);
+            $vehicle->update(['status' => Vehicle::STATUS_RETIRED]);
             $vehicle->delete();
         });
 

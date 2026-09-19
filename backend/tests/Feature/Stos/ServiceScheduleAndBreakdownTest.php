@@ -57,7 +57,7 @@ class ServiceScheduleAndBreakdownTest extends TestCase
         $v = Vehicle::create(array_merge([
             'company_id' => self::COMPANY,
             'registration_number' => 'MH'.random_int(10, 99).'AB'.random_int(1000, 9999),
-            'vehicle_type' => 'reefer', 'status' => 'active', 'compliance_status' => 'compliant',
+            'vehicle_type' => 'reefer', 'status' => 'AVAILABLE', 'compliance_status' => 'compliant',
         ], $over));
 
         VehicleLiveStatus::create([
@@ -119,7 +119,7 @@ class ServiceScheduleAndBreakdownTest extends TestCase
         // change is the wrong trade, and the person who could clear it is the
         // same person allocation is trying to help.
         $this->assertCount(1, $result['eligible']);
-        $this->assertSame('active', $vehicle->fresh()->status);
+        $this->assertSame('AVAILABLE', $vehicle->fresh()->status);
         $this->assertContains('SERVICE_OVERDUE', $result['eligible'][0]['flags']);
     }
 
@@ -128,7 +128,7 @@ class ServiceScheduleAndBreakdownTest extends TestCase
         // If it were a status, a missed service would drop the truck out of
         // allocation silently. It is derived instead.
         $this->assertNotContains('maintenance_due', Vehicle::STATUSES);
-        $this->assertContains('breakdown', Vehicle::STATUSES);
+        $this->assertContains('BREAKDOWN', Vehicle::STATUSES);
     }
 
     public function test_a_service_coming_up_warns_before_it_is_missed(): void
@@ -256,7 +256,7 @@ class ServiceScheduleAndBreakdownTest extends TestCase
 
         // Not `in_maintenance`: a planner reading that assumes a booked slot
         // and a return time. This truck is on a road with a load on it.
-        $this->assertSame('breakdown', $vehicle->fresh()->status);
+        $this->assertSame('BREAKDOWN', $vehicle->fresh()->status);
     }
 
     public function test_routine_servicing_is_still_in_maintenance(): void
@@ -267,7 +267,7 @@ class ServiceScheduleAndBreakdownTest extends TestCase
             'vehicle_id' => $vehicle->id, 'complaint' => 'Scheduled 10,000 km service',
         ], $this->user()->id);
 
-        $this->assertSame('in_maintenance', $vehicle->fresh()->status);
+        $this->assertSame('UNDER_MAINTENANCE', $vehicle->fresh()->status);
     }
 
     public function test_a_broken_down_vehicle_is_excluded_with_its_own_reason(): void
@@ -305,7 +305,7 @@ class ServiceScheduleAndBreakdownTest extends TestCase
         ], $this->user()->id);
 
         $this->assertTrue($result['release']['released']);
-        $this->assertSame('active', $vehicle->fresh()->status);
+        $this->assertSame('AVAILABLE', $vehicle->fresh()->status);
     }
 
     public function test_a_broken_down_vehicle_is_not_dragged_onto_a_trip_by_dispatch(): void
@@ -321,7 +321,7 @@ class ServiceScheduleAndBreakdownTest extends TestCase
         // Only a workshop release — which checks QC and compliance — puts this
         // vehicle back, however confident the trip board is.
         $this->assertFalse($gateway->markDispatched($trip, $vehicle->id, null, self::COMPANY));
-        $this->assertSame('breakdown', $vehicle->fresh()->status);
+        $this->assertSame('BREAKDOWN', $vehicle->fresh()->status);
     }
 
     /* ── Where it surfaces ──────────────────────────────────────── */

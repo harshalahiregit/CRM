@@ -68,7 +68,7 @@ class TripCostPublishingTest extends TestCase
         return Vehicle::create([
             'company_id' => self::COMPANY,
             'registration_number' => 'MH12AB'.random_int(1000, 9999),
-            'vehicle_type' => 'reefer', 'ownership_type' => 'owned', 'status' => 'active',
+            'vehicle_type' => 'reefer', 'ownership_type' => 'owned', 'status' => 'AVAILABLE',
         ]);
     }
 

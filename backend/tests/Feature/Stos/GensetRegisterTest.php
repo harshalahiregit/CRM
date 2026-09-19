@@ -53,7 +53,7 @@ class GensetRegisterTest extends TestCase
         return Vehicle::create(array_merge([
             'company_id' => $company,
             'registration_number' => 'MH'.random_int(10, 99).'AB'.random_int(1000, 9999),
-            'vehicle_type' => 'reefer', 'status' => 'active',
+            'vehicle_type' => 'reefer', 'status' => 'AVAILABLE',
         ], $over));
     }
 

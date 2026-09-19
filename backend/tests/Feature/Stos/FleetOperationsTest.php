@@ -58,7 +58,7 @@ class FleetOperationsTest extends TestCase
             'registration_number' => 'MH12AB'.random_int(1000, 9999),
             'vehicle_type'        => 'reefer',
             'gps_device_id'       => 'DEV-'.Str::random(6),
-            'status'              => 'active',
+            'status'              => 'AVAILABLE',
             'compliance_status'   => 'compliant',
         ], $over));
 
@@ -288,7 +288,7 @@ class FleetOperationsTest extends TestCase
 
         // Numbered for you — nobody invents a scheme at the counter.
         $this->assertStringStartsWith('JC-'.now()->format('Y'), $response->json('data.job_card_number'));
-        $this->assertSame('in_maintenance', $v->fresh()->status);
+        $this->assertSame('UNDER_MAINTENANCE', $v->fresh()->status);
     }
 
     public function test_closing_a_job_card_totals_the_costs_and_releases_the_vehicle(): void
@@ -307,7 +307,7 @@ class FleetOperationsTest extends TestCase
         $this->assertSame('completed', $response->json('data.job.status'));
         $this->assertSame('22700.00', $response->json('data.job.total_cost'));
         $this->assertTrue($response->json('data.release.released'));
-        $this->assertSame('active', $v->fresh()->status);
+        $this->assertSame('AVAILABLE', $v->fresh()->status);
     }
 
     public function test_a_vehicle_is_not_released_while_something_still_holds_it(): void
@@ -328,7 +328,7 @@ class FleetOperationsTest extends TestCase
             ->assertOk();
 
         $this->assertFalse($response->json('data.release.released'));
-        $this->assertSame('in_maintenance', $v->fresh()->status);
+        $this->assertSame('UNDER_MAINTENANCE', $v->fresh()->status);
 
         // And it says WHAT holds it — both reasons, each with an owner.
         $codes = collect($response->json('data.release.holds'))->pluck('code');
@@ -348,7 +348,7 @@ class FleetOperationsTest extends TestCase
             ->assertOk();
 
         $this->assertFalse($response->json('data.release.released'));
-        $this->assertSame('in_maintenance', $v->fresh()->status);
+        $this->assertSame('UNDER_MAINTENANCE', $v->fresh()->status);
     }
 
     public function test_a_signed_total_overrides_parts_plus_labour(): void
@@ -454,6 +454,6 @@ class FleetOperationsTest extends TestCase
                 'vehicle_id' => $theirs->id, 'complaint' => 'Nothing',
             ])->assertNotFound();
 
-        $this->assertSame('active', $theirs->fresh()->status);
+        $this->assertSame('AVAILABLE', $theirs->fresh()->status);
     }
 }

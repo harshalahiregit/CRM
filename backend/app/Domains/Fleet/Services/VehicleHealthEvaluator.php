@@ -80,7 +80,7 @@ class VehicleHealthEvaluator
      */
     public function operationalState(Vehicle $vehicle, ?object $live, int $openJobs = 0): string
     {
-        if ($vehicle->status === 'retired') {
+        if ($vehicle->status === Vehicle::STATUS_RETIRED) {
             return 'retired';
         }
 
@@ -88,7 +88,7 @@ class VehicleHealthEvaluator
             return 'compliance_blocked';
         }
 
-        if (in_array($vehicle->status, ['in_maintenance', 'breakdown'], true) || $openJobs > 0) {
+        if (in_array($vehicle->status, [Vehicle::STATUS_UNDER_MAINTENANCE, Vehicle::STATUS_BREAKDOWN], true) || $openJobs > 0) {
             return 'maintenance';
         }
 
@@ -174,7 +174,7 @@ class VehicleHealthEvaluator
 
     private function workshopIssue(Vehicle $vehicle, int $openJobs): ?array
     {
-        if ($openJobs < 1 && ! in_array($vehicle->status, ['in_maintenance', 'breakdown'], true)) {
+        if ($openJobs < 1 && ! in_array($vehicle->status, [Vehicle::STATUS_UNDER_MAINTENANCE, Vehicle::STATUS_BREAKDOWN], true)) {
             return null;
         }
 

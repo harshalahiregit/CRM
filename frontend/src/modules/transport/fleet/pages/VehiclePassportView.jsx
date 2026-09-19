@@ -4,7 +4,7 @@ import { useParams, Link, useLocation } from 'react-router-dom'
 import {
   Truck, ArrowLeft, Fuel, Wrench, Receipt, ShieldCheck, Activity, Zap, Plus, FileText, AlertTriangle, Droplets, Disc3, UserRound, ShieldAlert,
 } from 'lucide-react'
-import { stosApi, STOS_ACCENT, VEHICLE_TYPE_LABELS, fmtMoney, fmtWhen } from '@/services/stosApi'
+import { stosApi, STOS_ACCENT, VEHICLE_TYPE_LABELS, fmtMoney, fmtWhen, vehicleStatusLabel } from '@/services/stosApi'
 import HealthChip from '../components/HealthChip'
 import ExceptionPanel from '../components/ExceptionPanel'
 import LiveTelemetryGauge from '../components/LiveTelemetryGauge'
@@ -92,7 +92,7 @@ export default function VehiclePassportView() {
               <HealthChip tone={health.tone} />
               <Tag>{VEHICLE_TYPE_LABELS[vehicle.vehicle_type] || vehicle.vehicle_type}</Tag>
               <Tag capitalize>{String(vehicle.ownership_type).replace('_', ' ')}</Tag>
-              <Tag capitalize>{String(vehicle.status).replace('_', ' ')}</Tag>
+              <Tag>{vehicleStatusLabel(vehicle.status)}</Tag>
             </div>
             <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>{health.headline}</p>
           </div>
