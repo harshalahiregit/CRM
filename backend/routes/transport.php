@@ -175,6 +175,26 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
         Route::post('/trips/{id}/bill', [TransportBillingController::class, 'store'])->whereNumber('id');
     });
 
+    /* ── STT-010, `billable → billed` — THE ROUTE D-106 WAS MISSING ───────
+     *
+     * `TripBill::markInvoiced()` shipped on 2026-09-17 documented as "the one
+     * door Accounts calls", with no caller and no route. Nothing could open it,
+     * so `collection_pending` was unreachable and P1's closure work — STT-012,
+     * EVT-012, the whole control set — was built on a step that had no way in.
+     *
+     * A handover is not complete when the method exists. It is complete when
+     * the other side can reach it. That is now in TEAM-CONTRACTS.
+     *
+     * Narrower than BILLING_PREPARE by exactly one role. Operations may mark a
+     * trip ready to invoice; only finance may say it WAS invoiced.
+     *
+     * Records the linkage and moves the trip. Creates no invoice and writes no
+     * ledger line — EVT-010 InvoicePosted is Accounts' to emit.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::BILLING_INVOICED)->group(function () {
+        Route::post('/trips/{id}/bill/invoiced', [TransportBillingController::class, 'invoiced'])->whereNumber('id');
+    });
+
     /* ── Collections — SNG-TRN-016, API-011 ───────────────────────────────
      *
      * The ageing report and the follow-up queue are tenant-wide, not per-trip,

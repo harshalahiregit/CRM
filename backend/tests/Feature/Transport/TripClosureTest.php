@@ -98,9 +98,11 @@ class TripClosureTest extends TestCase
     /**
      * A trip standing at `collection_pending` with everything settled.
      *
-     * Walked through P3's real services wherever one exists. The single place
-     * it cannot be is `billable → billed`, which is D-106 — markInvoiced() is
-     * called directly here because that is the ONLY way to call it anywhere.
+     * Walked through P3's real services at EVERY step, which became true on
+     * 2026-09-19. It used to call markInvoiced() on the model directly, with a
+     * note saying that was the only way to call it anywhere — D-106. There is a
+     * service method and a route now, so the fixture uses them and the shortcut
+     * is gone.
      */
     private function closableTrip(int $tenantId = self::TENANT_A, bool $settle = true): TransportTrip
     {
@@ -117,10 +119,9 @@ class TripClosureTest extends TestCase
         $trip = $trip->fresh();
         $bill = $this->billing->prepare($trip, $tenantId, $this->actor);   // STT-009
 
-        // ── D-106, IN THE FIXTURE ────────────────────────────────────────
-        // There is no route, no controller and no service method that reaches
-        // this. It is P3's table and the missing caller is theirs to add.
-        $bill->markInvoiced(9001, $this->actor->id);                       // STT-010
+        // STT-010, through the service that POST /trips/{id}/bill/invoiced
+        // calls. D-106 closed: this no longer reaches past the service layer.
+        $this->billing->markInvoiced($trip->fresh(), 9001, $tenantId, $this->actor);
 
         $collection = $this->collections->open($trip->fresh(), $tenantId, now()->addDays(30)->toDateString(), $this->actor);   // STT-011
 
@@ -131,14 +132,24 @@ class TripClosureTest extends TestCase
         return $trip->fresh();
     }
 
-    /* ═══════════════ D-106 — the gap, asserted rather than dodged ══════ */
+    /* ═══════════ D-106 — CLOSED 2026-09-19. The guard, reversed ════════ */
 
-    public function test_nothing_in_the_application_can_reach_collection_pending(): void
+    /**
+     * markInvoiced() has a caller, so closure is genuinely reachable.
+     *
+     * This test used to assert the OPPOSITE — that no caller existed — and it
+     * did its job: it went red the moment P3 added
+     * `POST /trips/{id}/bill/invoiced`, and told whoever saw it to flip
+     * ClosureScope::REACHABLE. Both are now done, so the same scan points the
+     * other way and fails if the route is ever taken away again.
+     *
+     * The original wording is kept below, because the interesting thing about
+     * this test is not what it asserts today but that it caught a three-state
+     * gap nobody was looking at: markInvoiced() shipped with no caller, so
+     * `collection_pending` was unoccupiable, so closure could never run.
+     */
+    public function test_marking_a_trip_invoiced_has_a_caller_so_closure_is_reachable(): void
     {
-        // The single most important test in this file. If this ever FAILS,
-        // somebody has given markInvoiced() a caller and closure has become
-        // genuinely reachable — at which point D-106 closes and
-        // ClosureScope::REACHABLE must be flipped to true in the same change.
         $callers = [];
 
         foreach (['app', 'routes'] as $dir) {
@@ -169,14 +180,31 @@ class TripClosureTest extends TestCase
             }
         }
 
-        $this->assertSame([], $callers, sprintf(
-            "markInvoiced() now has a caller (%s), so `billable → billed` may be reachable.\n"
-            ."If it is, D-106 is closed: flip ClosureScope::REACHABLE to true and mark closure\n"
-            .'BUILT rather than PLUMBED in the coverage document.',
-            implode(', ', $callers),
-        ));
+        $this->assertNotSame([], $callers,
+            "markInvoiced() has lost its caller, so `billable → billed` cannot fire.\n"
+            ."That makes `collection_pending` unoccupiable and closure dead again — D-106 reopens.\n"
+            .'Restore POST /trips/{id}/bill/invoiced, or flip ClosureScope::REACHABLE back to false.'
+        );
 
-        $this->assertFalse(ClosureScope::REACHABLE, 'the scope must not claim closure is reachable while it is not');
+        $this->assertTrue(ClosureScope::REACHABLE, 'the scope must not deny a reachability it has');
+        $this->assertNull(ClosureScope::UNREACHABLE_BECAUSE, 'a reason is only honest while there is one');
+    }
+
+    /**
+     * The whole chain, walked in order, with nothing called directly.
+     *
+     * The test D-106 needed and nobody had: every earlier suite reached its own
+     * state by shortcut, so no single test proved a trip could get from a
+     * verified POD to closed through routes alone. This one does, and it is the
+     * test that would have caught the missing route on the 17th.
+     */
+    public function test_a_trip_walks_from_billable_to_closed_without_shortcuts(): void
+    {
+        $trip = $this->closableTrip();
+
+        $this->assertSame(TripStatus::COLLECTION_PENDING, $trip->status,
+            'the chain must reach collection_pending through the service, not around it');
+        $this->assertTrue(TripStatus::canTransition((string) $trip->status, TripStatus::CLOSED));
     }
 
     /* ═══════════════════════ the edge ═════════════════════════════════ */

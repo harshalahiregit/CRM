@@ -133,6 +133,52 @@ class TripPanelContractsTest extends TestCase
     }
 
     /**
+     * The route D-106 was missing, over HTTP.
+     *
+     * A service-level test would not have caught the original gap: the method
+     * existed and worked, and was simply unreachable. So this asserts the HTTP
+     * surface specifically — that a request can reach STT-010 at all.
+     */
+    public function test_the_invoiced_route_exists_and_is_gated(): void
+    {
+        $trip = $this->trip();
+
+        // 404 here would mean no route. 422 means the route exists, the
+        // permission passed, and the service refused for a business reason
+        // (no prepared bill yet) — which is the shape we want.
+        $this->postJson("/api/transport/trips/{$trip->id}/bill/invoiced", ['invoice_id' => 4242])
+            ->assertStatus(422);
+
+        $this->postJson("/api/transport/trips/{$trip->id}/bill/invoiced", [])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['invoice_id']);
+    }
+
+    public function test_the_whole_chain_is_reachable_over_http(): void
+    {
+        // The test that would have caught D-106 on the 17th: no direct model
+        // calls, only requests, all the way to collection_pending.
+        $trip = $this->trip(\App\Support\Transport\TripStatus::DELIVERED);
+
+        $this->postJson("/api/transport/trips/{$trip->id}/pod", [
+            'file' => \Illuminate\Http\UploadedFile::fake()->create('pod.pdf', 20, 'application/pdf'),
+            'document_type' => 'pod',
+        ])->assertStatus(201);
+
+        $docId = $this->getJson("/api/transport/trips/{$trip->id}/documents")->json('data.documents.0.id');
+        $this->postJson("/api/transport/trips/{$trip->id}/pod/{$docId}/verify")->assertOk();
+        $this->postJson("/api/transport/trips/{$trip->id}/bill")->assertStatus(201);
+        $this->postJson("/api/transport/trips/{$trip->id}/bill/invoiced", ['invoice_id' => 7])->assertOk();
+        $this->postJson("/api/transport/trips/{$trip->id}/collection/open", [])->assertStatus(201);
+
+        $this->assertSame(
+            \App\Support\Transport\TripStatus::COLLECTION_PENDING,
+            $trip->fresh()->status,
+            'routes alone must be able to reach collection_pending'
+        );
+    }
+
+    /**
      * Every permission key the panels gate their buttons on must be answerable.
      *
      * The panels read `grants['transport.cost.record']` and friends. A key that
