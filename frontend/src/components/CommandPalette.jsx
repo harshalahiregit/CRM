@@ -144,7 +144,23 @@ export default function CommandPalette() {
         </div>
 
         <div className="max-h-[50vh] overflow-y-auto py-2">
-          {flat.length === 0 && <p className="text-center text-sm py-8" style={{ color: 'var(--text-muted)' }}>No matches.</p>}
+          {/* Name what was typed. "No matches." is the same defect the four
+              transport lists carried until 18 September: it tells the reader
+              nothing about WHAT was searched, and the thing they need to check
+              is the characters in the box. An identifier search in particular
+              is usually one wrong character rather than a missing record. */}
+          {flat.length === 0 && (
+            <div className="text-center py-8">
+              <p className="text-sm" style={{ color: 'var(--text-h)' }}>
+                {term ? <>Nothing matches “{term}”</> : 'Type to search'}
+              </p>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                {term
+                  ? 'Try a container, trip, order or consignment number, a vehicle registration, or part of a ticket or project name.'
+                  : 'Containers, trips, orders, consignments, vehicles, drivers, tickets, projects and tasks.'}
+              </p>
+            </div>
+          )}
           {results.map(g => (
             <div key={g.key} className="mb-1">
               <p className="text-[10px] uppercase tracking-wide px-4 py-1" style={{ color: 'var(--text-muted)' }}>{g.key}</p>
