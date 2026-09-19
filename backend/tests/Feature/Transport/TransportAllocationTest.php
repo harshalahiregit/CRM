@@ -490,28 +490,45 @@ class TransportAllocationTest extends TestCase
         // are what this guards. The list is a snapshot so that adding an edge is
         // a deliberate act rather than something that happens to a state machine
         // three people share.
+        // Updated 2026-09-17 by Block 3, which added three keys: `dispatched`
+        // (STT-006), `in_transit` (STT-007) and `collection_pending` (STT-012).
+        // The machine is now walkable end to end from draft to closed.
         $this->assertSame(
             [
                 TripStatus::DRAFT, TripStatus::VIABILITY_PENDING, TripStatus::APPROVED,
-                TripStatus::ALLOCATED, TripStatus::PRETRIP_OK, TripStatus::DELIVERED,
-                TripStatus::POD_VERIFIED, TripStatus::BILLABLE, TripStatus::BILLED,
+                TripStatus::ALLOCATED, TripStatus::PRETRIP_OK,
+                TripStatus::DISPATCHED, TripStatus::IN_TRANSIT,
+                TripStatus::DELIVERED, TripStatus::POD_VERIFIED,
+                TripStatus::BILLABLE, TripStatus::BILLED, TripStatus::COLLECTION_PENDING,
             ],
             array_keys(TripStatus::TRANSITIONS)
         );
 
-        // STT-012 (collection_pending → closed) is P1's and must stay unwired —
-        // its side effect is the profit snapshot, which is blocked on D-58.
-        $this->assertFalse(TripStatus::canTransition(TripStatus::COLLECTION_PENDING, TripStatus::CLOSED));
+        // STT-012 is now wired. It is PLUMBED, NOT REACHABLE — nothing can
+        // reach collection_pending, because billable → billed has no caller
+        // (D-106, P3's surface). The edge is correct; the door before it is shut.
+        $this->assertTrue(TripStatus::canTransition(TripStatus::COLLECTION_PENDING, TripStatus::CLOSED));
 
-        // P3's edges must not have opened a back door into dispatch or transit.
+        // P3's edges must not have opened a back door BACKWARDS into dispatch
+        // or transit. This is the part that never changes.
         $this->assertFalse(TripStatus::canTransition(TripStatus::DELIVERED, TripStatus::DISPATCHED));
         $this->assertFalse(TripStatus::canTransition(TripStatus::POD_VERIFIED, TripStatus::IN_TRANSIT));
 
         // ALLOCATION must never reach past `allocated` — that is what this
-        // guards, and it is unchanged. pretrip_ok -> dispatched became live on
-        // 2026-09-10 but belongs to DispatchService, not here.
+        // guards, and it is unchanged. Every edge beyond it belongs to another
+        // service: pretrip_ok → dispatched and dispatched → in_transit to
+        // DispatchService, in_transit → delivered to TransportTripService.
         $this->assertFalse(TripStatus::canTransition(TripStatus::ALLOCATED, TripStatus::DISPATCHED));
-        $this->assertFalse(TripStatus::canTransition(TripStatus::DISPATCHED, TripStatus::IN_TRANSIT));
+        $this->assertFalse(TripStatus::canTransition(TripStatus::ALLOCATED, TripStatus::IN_TRANSIT));
+
+        // And the three Step 9 states that stay unreachable stay unreachable.
+        foreach ([TripStatus::ARRIVED, TripStatus::POD_PENDING, TripStatus::SETTLEMENT_PENDING] as $unreachable) {
+            $this->assertArrayNotHasKey($unreachable, TripStatus::TRANSITIONS);
+            $this->assertSame([], array_filter(
+                TripStatus::TRANSITIONS,
+                fn (array $to) => in_array($unreachable, $to, true),
+            ));
+        }
 
         // Both reverses are inferred and must keep saying so.
         $this->assertSame(

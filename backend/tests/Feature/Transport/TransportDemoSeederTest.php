@@ -69,10 +69,16 @@ class TransportDemoSeederTest extends TestCase
 
         $trips = TransportTrip::forTenant(1)->orderBy('id')->get();
 
-        $moving  = $trips->firstWhere('status', TripStatus::ALLOCATED);
+        // The further-along one has walked pre-trip, dispatch AND departure,
+        // so it sits in `in_transit` and is genuinely on the road. Until
+        // 2026-09-17 the furthest it could reach was pretrip_ok, and the report
+        // line called it "moving" anyway. That is what makes the two trips
+        // teach different things rather than showing the same screen twice.
+        $moving  = $trips->firstWhere('status', TripStatus::IN_TRANSIT);
         $waiting = $trips->firstWhere('status', TripStatus::APPROVED);
 
-        $this->assertNotNull($moving, 'one trip must be crewed — it is what makes "back in N days" visible');
+        $this->assertNotNull($moving, 'one trip must be crewed and on the road — it is what makes "back in N days" visible');
+        $this->assertNotNull($moving->departed_at, 'a trip described as moving must have left');
         $this->assertNotNull($waiting, 'one trip must be uncrewed — it is the one you allocate in the demo');
 
         // The crewed one holds a vehicle AND a driver, through a real assignment.
@@ -89,7 +95,7 @@ class TransportDemoSeederTest extends TestCase
     {
         $this->runDemoSeeder();
 
-        $moving = TransportTrip::forTenant(1)->where('status', TripStatus::ALLOCATED)->sole();
+        $moving = TransportTrip::forTenant(1)->where('status', TripStatus::IN_TRANSIT)->sole();
 
         $this->assertNotNull($moving->planned_arrival_at);
         $this->assertTrue($moving->planned_arrival_at->isFuture());
@@ -166,13 +172,13 @@ class TransportDemoSeederTest extends TestCase
     {
         $this->runDemoSeeder();
 
-        // Two: one on a consignment, one free — the two states the screen
-        // distinguishes, so the "Free" filter has something to show.
+        // Two containers, ONE PER TRIP, so the chain reads end to end from
+        // either one: trip → consignment → container.
         $this->assertSame(2, TransportContainer::forTenant(1)->count());
         $attached = TransportContainer::forTenant(1)->get()->filter->isAttached();
-        $this->assertCount(1, $attached, 'exactly one demo container is on a consignment');
+        $this->assertCount(2, $attached, 'both demo containers are on a consignment');
 
-        $container = $attached->sole();
+        $container = $attached->firstWhere('container_number', 'sgoe-402215-9');
         // §7 — stored as typed, matched on the normalised key.
         $this->assertSame('sgoe-402215-9', $container->container_number);
         $this->assertSame('SGOE4022159', $container->container_number_normalized);
@@ -204,7 +210,7 @@ class TransportDemoSeederTest extends TestCase
 
         // And the container is usable again, not stuck.
         $this->assertSame(2, TransportContainer::forTenant(1)->count(), 'reused, not duplicated');
-        $this->assertCount(1, TransportContainer::forTenant(1)->get()->filter->isAttached());
+        $this->assertCount(2, TransportContainer::forTenant(1)->get()->filter->isAttached());
     }
 
     public function test_the_seeder_never_writes_a_trip_status_directly(): void
@@ -219,13 +225,23 @@ class TransportDemoSeederTest extends TestCase
         $source = file_get_contents(database_path('seeders/TransportDemoSeeder.php'));
         $source = preg_replace('#//.*$#m', '', $source);   // code only, not the story
 
-        $this->assertStringNotContainsString(
-            'TripStatus::',
-            $source,
-            'TransportDemoSeeder references a trip status in code again. Demo trips must reach '
-            .'their state by walking the real transitions (see approvedTrip()). If they cannot, '
-            .'that is a finding to report — not something to route around. See D-63.',
-        );
+        // WRITES, not mentions. The seeder legitimately COMPARES against
+        // TripStatus in assertDemoIsWhatItClaims() — checking its own work is
+        // the opposite of forcing a state. What must never come back is
+        // ASSIGNING one, which is exactly what D-63 was about.
+        //
+        // The first version of this guard banned the string outright and fired
+        // on the self-check the day it was added. A guard that cannot tell a
+        // read from a write trains people to weaken it.
+        preg_match_all("/'status'\\s*=>\\s*[^,\\]\\)]+/", $source, $writes);
+
+        $this->assertSame([], $writes[0], sprintf(
+            "TransportDemoSeeder ASSIGNS a trip status in code again:\n  %s\n\n"
+            ."Demo trips must reach their state by walking the real transitions (see "
+            ."approvedTrip()). If they cannot, that is a finding to report — not something to "
+            .'route around. See D-63.',
+            implode("\n  ", $writes[0]),
+        ));
     }
 
     public function test_the_demo_trips_reached_their_state_through_the_state_machine(): void

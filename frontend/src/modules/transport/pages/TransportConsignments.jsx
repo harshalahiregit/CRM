@@ -9,7 +9,9 @@ import PagerBar from '@/components/ui/PagerBar'
 import Drawer from '@/components/ui/Drawer'
 import FormField, { Input, Select, Textarea } from '@/components/ui/FormField'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
-import { fmtDateTime } from '../constants'
+import { fmtDateTime, ORDER_STATUS_LABEL, TRIP_STATUS_LABEL, DOCUMENT_TYPE_LABEL } from '../constants'
+// ORD-005/006 — the same panel the vehicle and driver screens file with.
+import DocumentsPanel from '../components/DocumentsPanel'
 
 /**
  * Consignments — the commercial shipment (STOS-CTD §8).
@@ -175,9 +177,13 @@ export default function TransportConsignments() {
       key: 'order', label: 'Order',
       render: (r) => (
         <div>
-          <span style={{ color: 'var(--text-h)' }}>{r.order?.order_number ?? '—'}</span>
+          <span style={{ color: 'var(--text-h)' }}>{r.order?.order_number ?? 'No order'}</span>
+          {/* The label, not the stored code. Swapping an underscore for a space
+              still leaves the database's word on a client's screen. */}
           {r.order?.order_status && (
-            <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{r.order.order_status.replace(/_/g, ' ')}</div>
+            <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              {ORDER_STATUS_LABEL[r.order.order_status] || r.order.order_status}
+            </div>
           )}
         </div>
       ),
@@ -297,9 +303,16 @@ export default function TransportConsignments() {
             emptyState={
               <div className="text-center py-10">
                 <Boxes size={26} className="mx-auto mb-2" style={{ color: 'var(--text-muted)' }} />
-                <p className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>No consignments yet</p>
+                {/* See the note on the Orders list — "No consignments yet" was
+                    shown to workspaces that had plenty, because a search matched
+                    none of them. */}
+                <p className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>
+                  {search ? `Nothing here matches “${search}”` : 'No consignments yet'}
+                </p>
                 <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                  {search ? 'Nothing matches that search.' : 'Create one against an approved transport order.'}
+                  {search
+                    ? 'Try the consignment number, the customer reference, or the order.'
+                    : 'Create one against an approved transport order.'}
                 </p>
               </div>
             } />
@@ -386,7 +399,7 @@ function ConsignmentForm({ form, sf, orders, lockOrder = false }) {
           <option value="">Choose an order…</option>
           {orders.map((o) => (
             <option key={o.id} value={o.id}>
-              {o.order_number} — {o.customer?.company ?? 'Customer'} ({String(o.order_status ?? '').replace(/_/g, ' ')})
+              {o.order_number} — {o.customer?.company ?? 'Customer'} ({ORDER_STATUS_LABEL[o.order_status] || o.order_status})
             </option>
           ))}
         </Select>
@@ -435,6 +448,8 @@ function ConsignmentForm({ form, sf, orders, lockOrder = false }) {
  * because the list does not carry the trips or the audit trail.
  */
 function ConsignmentDetail({ id }) {
+  const qc = useQueryClient()
+  const toast = useToast()
   const { data, isLoading } = useQuery({
     queryKey: ['transport', 'consignments', id],
     queryFn: () => transportConsignmentApi.get(id),
@@ -449,28 +464,33 @@ function ConsignmentDetail({ id }) {
 
   const trips = data?.trips ?? []
   const audit = data?.audit ?? []
+  const documents = data?.documents ?? []
+  // From the server, never a local copy — see the note on fileDocument().
+  const documentTypes = data?.document_types ?? []
+
+  const refile = () => qc.invalidateQueries({ queryKey: ['transport', 'consignments', id] })
 
   return (
     <div className="space-y-5">
       <Section title="Shipment">
         <KV label="Consignment" value={c.consignment_number} strong />
-        <KV label="Customer reference" value={c.customer_reference} />
+        <KV label="Customer reference" value={c.customer_reference} empty="None given" />
         <KV label="Service type" value={c.service_type} />
         <KV label="Created" value={fmtDateTime(c.created_at)} />
       </Section>
 
       <Section title="Commercial">
         <KV label="Order" value={c.order?.order_number} strong />
-        <KV label="Order status" value={String(c.order?.order_status ?? '').replace(/_/g, ' ')} />
+        <KV label="Order status" value={ORDER_STATUS_LABEL[c.order?.order_status] || c.order?.order_status} />
         <KV label="Customer" value={c.customer?.company} />
       </Section>
 
       <Section title="Cargo">
-        <KV label="Description" value={c.cargo_description} />
+        <KV label="Description" value={c.cargo_description} empty="Not described" />
         <KV label="Packages" value={c.package_count} />
         <KV label="Weight" value={c.gross_weight_kg ? `${Number(c.gross_weight_kg).toLocaleString('en-IN')} kg` : null} />
         <KV label="Volume" value={c.volume_cbm ? `${Number(c.volume_cbm).toLocaleString('en-IN')} cbm` : null} />
-        <KV label="Special handling" value={c.special_handling} />
+        <KV label="Special handling" value={c.special_handling} empty="Nothing special" />
       </Section>
 
       <Section title={`Trips (${trips.length})`}>
@@ -480,9 +500,47 @@ function ConsignmentDetail({ id }) {
             <div key={t.id} className="flex items-center justify-between py-1.5 border-b last:border-0"
               style={{ borderColor: 'var(--border)' }}>
               <span className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>{t.trip_number}</span>
-              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{String(t.status ?? '').replace(/_/g, ' ')}</span>
+              {/* The label, not the stored code. `pod_verified` with its
+                  underscore swapped for a space is still the database's word,
+                  not the customer's. */}
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                {TRIP_STATUS_LABEL[t.status] || t.status}
+              </span>
             </div>
           ))}
+      </Section>
+
+      {/* ── ORD-005 and ORD-006, both P0 — "LR traceable", "DO traceable" ──
+          D-41 ruled on 12 September that an LR and a DO stay DOCUMENTS rather
+          than getting tables of their own. That ruling only means anything if a
+          consignment is something a document can be filed against, and it
+          became one on 16 September when Person 3 shipped the entity and the
+          two routes. Nothing had ever called them.
+
+          Same panel as the vehicle and driver documents, deliberately: three
+          screens filing paperwork three different ways is how the rules on one
+          of them drift. Which TYPES may be filed comes from the server. */}
+      <Section title={`Paperwork (${documents.length})`}>
+        <DocumentsPanel
+          documents={documents}
+          types={documentTypes}
+          heading="Shipment paperwork"
+          emptyText="No paperwork filed yet. The LR and the delivery order travel with the goods; file them here and they appear on the container's passport."
+          // An LR does not expire. The expiry column is the vehicle and driver
+          // case, and showing "Valid until —" against a lorry receipt says
+          // something untrue about it.
+          showExpiry={false}
+          onFile={async (body) => {
+            await transportConsignmentApi.fileDocument(id, body)
+            toast.success(`${DOCUMENT_TYPE_LABEL[body.document_type] || 'Document'} filed against ${c.consignment_number}.`)
+            refile()
+          }}
+          onRenew={async (doc, body) => {
+            await transportConsignmentApi.renewDocument(id, doc.id, body)
+            toast.success('Filed as a new version — the previous one is kept.')
+            refile()
+          }}
+        />
       </Section>
 
       {/* STOS-CTD §8 — "a consignment may contain one container; contain
@@ -496,8 +554,12 @@ function ConsignmentDetail({ id }) {
           ? <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Nothing recorded yet.</p>
           : audit.map((e) => (
             <div key={e.id} className="py-1.5 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
+              {/* It read "created" and "updated" — the action key with its
+                  prefix stripped. The order detail page has always rendered
+                  these as sentences ("Trip created from this order", "Status
+                  changed — Submitted → Approved"); this one was left behind. */}
               <p className="text-xs font-bold" style={{ color: 'var(--text-h)' }}>
-                {String(e.action ?? '').replace('transport.consignment.', '').replace(/_/g, ' ')}
+                {CONSIGNMENT_EVENT[e.action] || humaniseAction(e.action)}
               </p>
               <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                 {e.actor_name || 'System'} · {fmtDateTime(e.occurred_at)}
@@ -527,7 +589,15 @@ function ConsignmentContainers({ id }) {
   const current = list.filter((r) => !r.detached_at)
 
   return (
-    <Section title={`Containers (${current.length})`}>
+    /* The count used to be `current.length` while the list below rendered
+       BOTH current and historical attachments — a header reading "(1)" above
+       two rows. It now counts what it is actually the header of, and names the
+       split when there is one. */
+    <Section title={
+      current.length === list.length
+        ? `Containers (${current.length})`
+        : `Containers (${current.length} on it now, ${list.length - current.length} before)`
+    }>
       {isLoading ? (
         <Loader2 className="animate-spin my-2" style={{ color: 'var(--text-muted)' }} />
       ) : list.length === 0 ? (
@@ -572,13 +642,46 @@ function Section({ title, children }) {
   )
 }
 
-function KV({ label, value, strong = false }) {
+/**
+ * A labelled fact.
+ *
+ * An absent value says WHAT IS ABSENT, in words. It used to render "—", which
+ * on the cargo card gave a client two rows of punctuation and no idea whether
+ * the volume was unknown, zero, or not applicable. `empty` lets each field say
+ * the true thing; "Not recorded" is the safe default because it is the one
+ * claim always available — we do not have it.
+ */
+/**
+ * What happened to a consignment, in a sentence.
+ *
+ * An action key with its prefix stripped is still the key — "created" is not a
+ * sentence and "container_attached" is a column name. Anything unmapped is
+ * humanised rather than hidden, so a new action reads as English on the day it
+ * ships instead of waiting for somebody to notice.
+ */
+const CONSIGNMENT_EVENT = {
+  'transport.consignment.created': 'Consignment created',
+  'transport.consignment.updated': 'Details changed',
+  'transport.consignment.deleted': 'Consignment removed',
+  'transport.container.attached': 'Container attached',
+  'transport.container.detached': 'Container detached',
+}
+
+const humaniseAction = (a) => {
+  const tail = String(a ?? '').replace(/^transport\.[a-z_]+\./, '').replace(/[._]/g, ' ')
+
+  return tail ? tail.charAt(0).toUpperCase() + tail.slice(1) : 'Something happened'
+}
+
+function KV({ label, value, strong = false, empty = 'Not recorded' }) {
+  const shown = value === 0 || value ? value : empty
+
   return (
     <div className="flex items-baseline justify-between gap-3 py-1">
       <span className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }}>{label}</span>
       <span className={`text-sm text-right ${strong ? 'font-bold' : ''}`}
-        style={{ color: value ? 'var(--text-h)' : 'var(--text-faint)' }}>
-        {value || '—'}
+        style={{ color: (value === 0 || value) ? 'var(--text-h)' : 'var(--text-faint)' }}>
+        {shown}
       </span>
     </div>
   )

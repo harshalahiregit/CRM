@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Transport;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponse;
+use App\Http\Requests\Transport\RecordDeliveryRequest;
 use App\Http\Requests\Transport\RejectTripRequest;
 use App\Http\Requests\Transport\StoreTransportTripRequest;
 use App\Http\Requests\Transport\UpdateTransportTripRequest;
@@ -149,6 +150,31 @@ class TransportTripController extends Controller
         return $this->success(
             $this->trips->approve($trip, $tenantId, $request->user()),
             'Trip approved. The margin check is not yet enforced.'
+        );
+    }
+
+    /**
+     * STT-007 — record that the load arrived. RTM STOS-REQ-OPS-010, P0.
+     *
+     * PATCH on a named verb, like every other state change here. D-108 records
+     * that Step 11 has no API row for this edge, so the path is derived.
+     *
+     * Gated on transport.trip.deliver, which mirrors PERM-004 — and NOT on
+     * PERM-010's POD row, though FRS TRP-P0-013 names a driver. Confirming a
+     * trip is delivered unlocks billing for everyone downstream; submitting the
+     * proof of it does not. See TransitScope::PERMISSION_DELIVERY.
+     */
+    public function deliver(RecordDeliveryRequest $request, int $id): JsonResponse
+    {
+        $tenantId = $request->user()->tenant_id;
+        $trip     = $this->trips->find($id, $tenantId);   // 404, never 403
+
+        return $this->success(
+            $this->trips->recordDelivery($trip, $request->validated(), $tenantId, $request->user()),
+            // STT-007's side effect, said rather than stored. The trip reaching
+            // `delivered` IS the POD request; this sentence is what makes that
+            // visible to the person who just pressed the button.
+            'Delivery recorded. Proof of delivery is now required before this trip can be billed.'
         );
     }
 

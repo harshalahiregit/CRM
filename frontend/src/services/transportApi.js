@@ -2,6 +2,23 @@ import api from '@/lib/api'
 import { handleErr } from '@/services/apiError'
 
 /**
+ * The sentence a refusal actually carries.
+ *
+ * Laravel answers a FormRequest failure with `message: "Validation failed"` and
+ * puts the real wording in `errors`. Every carefully worded rule message in
+ * this module — "BR-P0-011 requires resolution evidence", "that waiver is
+ * specified but not built yet", "OPS §87 asks for it and no document defines a
+ * formula" — lives there, and a client that shows `message` shows the reader
+ * nothing. Found by driving the screen, not by reading the code.
+ */
+const refusalText = (body) => {
+  const first = Object.values(body?.errors ?? {}).flat().filter(Boolean)
+
+  return first.length ? first.join(' ') : (body?.message || 'That was refused.')
+}
+
+
+/**
  * Sangoe Transport OS — every /api/transport/* call.
  *
  * Uses the shared axios instance from @/lib/api, which attaches the bearer
@@ -28,7 +45,7 @@ import { handleErr } from '@/services/apiError'
 const err422 = (e) => {
   const body = e?.response?.data
   if (body && e?.response?.status === 422) {
-    return { ok: false, message: body.message, ...(body.data ?? {}) }
+    return { ok: false, message: refusalText(body), ...(body.data ?? {}) }
   }
   throw e
 }
@@ -147,7 +164,7 @@ export const transportAllocationApi = {
       .catch((e) => {
         const body = e?.response?.data
         if (body && e?.response?.status === 422) {
-          return { ok: false, message: body.message, eligibility: body.eligibility, data: body.data }
+          return { ok: false, message: refusalText(body), eligibility: body.eligibility, data: body.data }
         }
         throw e
       }),
@@ -252,7 +269,7 @@ export const transportPretripApi = {
       .catch((e) => {
         const body = e?.response?.data
         if (body && e?.response?.status === 422) {
-          return { ok: false, message: body.message, readiness: body.data }
+          return { ok: false, message: refusalText(body), readiness: body.data }
         }
         throw e
       }),
@@ -267,7 +284,7 @@ export const transportPretripApi = {
       .catch((e) => {
         const body = e?.response?.data
         if (body && e?.response?.status === 422) {
-          return { ok: false, message: body.message, readiness: body.data }
+          return { ok: false, message: refusalText(body), readiness: body.data }
         }
         throw e
       }),
@@ -282,7 +299,7 @@ export const transportPretripApi = {
       .catch((e) => {
         const body = e?.response?.data
         if (body && e?.response?.status === 422) {
-          return { ok: false, message: body.message, readiness: body.data }
+          return { ok: false, message: refusalText(body), readiness: body.data }
         }
         throw e
       }),
@@ -317,6 +334,26 @@ export const transportConsignmentApi = {
 
   remove: (id) =>
     api.delete(`/transport/consignments/${id}`).then((r) => r.data ?? null).catch(handleErr),
+
+  /* ── The shipment's own paperwork — ORD-005, ORD-006, both P0 ─────────
+   *
+   * D-41 ruled that an LR and a DO stay DOCUMENTS rather than getting tables of
+   * their own, so filing one is filing a document against the consignment.
+   * Person 3 made a consignment a document entity on 16 September and exposed
+   * these two routes; nothing had ever called them.
+   *
+   * Which TYPES may be filed comes back on the detail payload rather than being
+   * listed here. A form holding its own copy of that list will offer a fitness
+   * certificate against a shipment the first time somebody edits one and not
+   * the other.
+   */
+  fileDocument: (id, body) =>
+    api.post(`/transport/consignments/${id}/documents`, body).then((r) => r.data?.data ?? null).catch(handleErr),
+
+  /** STOS-DOC §26 — a replacement is a new version, never an overwrite. */
+  renewDocument: (id, documentId, body) =>
+    api.post(`/transport/consignments/${id}/documents/${documentId}/renew`, body)
+      .then((r) => r.data?.data ?? null).catch(handleErr),
 }
 
 /* ── Containers (MDM-008, STOS-CTD §7 and §8) ─────────────────────────── */
@@ -359,6 +396,25 @@ export const transportContainerApi = {
 
   detach: (id) =>
     api.post(`/transport/containers/${id}/detach`).then((r) => r.data?.data ?? null).catch(handleErr),
+
+  /**
+   * Container 360 — the Digital Passport (STOS-CTD, MS-001 §14 step 2).
+   * Read-only; assembled server-side from records that already exist.
+   */
+  passport: (id) =>
+    api.get(`/transport/containers/${id}/passport`).then((r) => r.data?.data ?? null).catch(handleErr),
+}
+
+/**
+ * One box, any Transport identifier — TM-001 §8.
+ *
+ * Exact matches only. A miss is a 200 with `result: null`, not an error, so the
+ * caller renders "nothing matches that" rather than a failure.
+ */
+export const transportSearchApi = {
+  resolve: (q) =>
+    api.get('/transport/search', { params: { q } })
+      .then((r) => r.data?.data ?? { query: q, result: null }).catch(handleErr),
 }
 
 /* ── Dispatch (RTM STOS-REQ-OPS-008, FRS TRP-P0-006) ──────────────────── */
@@ -381,14 +437,19 @@ export const transportDispatchApi = {
   get: (tripId) =>
     api.get(`/transport/trips/${tripId}/dispatch`).then((r) => r.data?.data ?? null).catch(handleErr),
 
-  /** Release the trip — pretrip_ok → dispatched. Does NOT reach in_transit. */
+  /**
+   * Release the trip — pretrip_ok → dispatched.
+   *
+   * Does NOT put it on the road. Released and moving are two states and two
+   * acts, minutes to hours apart; `depart` below is the second one.
+   */
   confirm: (tripId, fields) =>
     api.patch(`/transport/trips/${tripId}/dispatch`, fields)
       .then((r) => ({ ok: true, ...(r.data?.data ?? {}) }))
       .catch((e) => {
         const body = e?.response?.data
         if (body && e?.response?.status === 422) {
-          return { ok: false, message: body.message, ...(body.data ?? {}) }
+          return { ok: false, message: refusalText(body), ...(body.data ?? {}) }
         }
         throw e
       }),
@@ -403,7 +464,73 @@ export const transportDispatchApi = {
       .catch((e) => {
         const body = e?.response?.data
         if (body && e?.response?.status === 422) {
-          return { ok: false, message: body.message, ...(body.data ?? {}) }
+          return { ok: false, message: refusalText(body), ...(body.data ?? {}) }
+        }
+        throw e
+      }),
+
+  /**
+   * STT-006 — record that the vehicle actually left. dispatched → in_transit.
+   *
+   * `departedAt` is optional and may be BACKDATED: a dispatcher records at
+   * 11:00 that the truck left at 09:30, and refusing that would teach people to
+   * enter the wrong time. The server refuses only a future time or one before
+   * the release.
+   *
+   * Same permission as dispatch (transport.trip.dispatch) — one dispatcher,
+   * one job, two moments.
+   */
+  depart: (tripId, departedAt = null) =>
+    api.patch(`/transport/trips/${tripId}/depart`, departedAt ? { departed_at: departedAt } : {})
+      .then((r) => ({ ok: true, ...(r.data?.data ?? {}) }))
+      .catch((e) => {
+        const body = e?.response?.data
+        if (body && e?.response?.status === 422) {
+          return { ok: false, message: refusalText(body), ...(body.data ?? {}) }
+        }
+        throw e
+      }),
+}
+
+/**
+ * STT-007 and STT-012 — the far end of the trip.
+ *
+ * ── CLOSURE IS BUILT AND UNREACHABLE, AND THE UI IS TOLD SO ──────────────
+ * Every closure response carries `readiness.reachable`, which is false and will
+ * stay false until Accounts can mark a bill invoiced (D-106, Person 3's route).
+ * The panel reads that flag rather than inferring anything from the status, so
+ * it explains the situation instead of offering a button nothing can satisfy.
+ */
+export const transportJourneyApi = {
+  /** STT-007 — in_transit → delivered. RTM STOS-REQ-OPS-010. */
+  deliver: (tripId, deliveredAt = null) =>
+    api.patch(`/transport/trips/${tripId}/deliver`, deliveredAt ? { delivered_at: deliveredAt } : {})
+      .then((r) => ({ ok: true, trip: r.data?.data ?? null }))
+      .catch((e) => {
+        const body = e?.response?.data
+        if (body && e?.response?.status === 422) {
+          return { ok: false, message: refusalText(body) }
+        }
+        throw e
+      }),
+
+  /**
+   * What is blocking closure, and what could not be checked at all.
+   *
+   * A pure read on transport.trip.view, so a dispatcher who may not close a
+   * trip can still see why it is stuck and tell the customer.
+   */
+  closure: (tripId) =>
+    api.get(`/transport/trips/${tripId}/closure`).then((r) => r.data?.data ?? null).catch(handleErr),
+
+  /** API-009. `closureReason` is mandatory — CTR-013, and it is non-empty. */
+  close: (tripId, closureReason) =>
+    api.post(`/transport/trips/${tripId}/close`, { closure_reason: closureReason })
+      .then((r) => ({ ok: true, ...(r.data?.data ?? {}) }))
+      .catch((e) => {
+        const body = e?.response?.data
+        if (body && e?.response?.status === 422) {
+          return { ok: false, message: refusalText(body), ...(body.data ?? {}) }
         }
         throw e
       }),
@@ -556,6 +683,59 @@ export const transportCollectionApi = {
  * What the signed-in user may do — so a screen can hide an action the API would
  * refuse rather than show a button that 403s.
  */
+/* ── Exceptions (SNG-TRN-013, API-007) ────────────────────────────────── */
+
+/**
+ * The exception register.
+ *
+ * Every response carries the vocabulary — OPS §88's eight categories,
+ * CTR-011's four severities, and which statuses are reachable. The form does
+ * NOT hardcode them: D-37 records that the category list exists in exactly one
+ * document, so a client keeping its own copy has nothing to check it against
+ * and will disagree with the server the first time the list moves.
+ *
+ * Refusals come back as a 422 carrying the exception, so a blocked resolve
+ * renders as an explanation rather than a toast that loses the reason.
+ */
+export const transportExceptionApi = {
+  forTrip: (tripId) =>
+    api.get(`/transport/trips/${tripId}/exceptions`).then((r) => r.data?.data ?? null).catch(handleErr),
+
+  /** API-007, verbatim path. */
+  raise: (tripId, body) =>
+    api.post(`/transport/trips/${tripId}/exceptions`, body)
+      .then((r) => ({ ok: true, exception: r.data?.data ?? null }))
+      .catch((e) => {
+        const b = e?.response?.data
+        if (b && e?.response?.status === 422) {
+          // Field errors AND the sentence, because a prohibited field's message
+          // is the explanation (financial impact, waiver) rather than a nag.
+          return { ok: false, message: refusalText(b), errors: b.errors ?? null }
+        }
+        throw e
+      }),
+
+  /** STT-015 — assign the owner, start the clock. */
+  acknowledge: (id, ownerId = null) =>
+    api.patch(`/transport/exceptions/${id}/acknowledge`, ownerId ? { owner_id: ownerId } : {})
+      .then((r) => ({ ok: true, exception: r.data?.data ?? null }))
+      .catch((e) => {
+        const b = e?.response?.data
+        if (b && e?.response?.status === 422) return { ok: false, message: b.message }
+        throw e
+      }),
+
+  /** STT-016 — BR-P0-011's evidence. The note is mandatory. */
+  resolve: (id, resolutionNote) =>
+    api.patch(`/transport/exceptions/${id}/resolve`, { resolution_note: resolutionNote })
+      .then((r) => ({ ok: true, exception: r.data?.data ?? null }))
+      .catch((e) => {
+        const b = e?.response?.data
+        if (b && e?.response?.status === 422) return { ok: false, message: refusalText(b), errors: b.errors ?? null }
+        throw e
+      }),
+}
+
 export const transportCapabilityApi = {
   get: () =>
     api.get('/transport/permissions').then((r) => r.data?.data ?? { grants: {}, role: null }).catch(handleErr),
@@ -574,6 +754,7 @@ export const transportApi = {
   dispatch: transportDispatchApi,
   consignments: transportConsignmentApi,
   containers: transportContainerApi,
+  search: transportSearchApi,
   vehicles: transportVehicleApi,
   drivers: transportDriverApi,
 }

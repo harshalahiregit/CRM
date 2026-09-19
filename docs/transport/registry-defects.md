@@ -717,7 +717,36 @@ tokens across the package — the worst state divergence found, worse than the T
 
 Only `STT-015` (open→acknowledged) and `STT-016` (acknowledged→resolved) are defined.
 
-**Blocks SNG-TRN-013.** Awaiting the owner's Q1 ruling.
+~~**Blocks SNG-TRN-013.** Awaiting the owner's Q1 ruling.~~
+
+### RULED 2026-09-18 — and it needed no new decision
+
+The owner's ruling: **this contradiction dissolves under a rule we already made.**
+
+See `TEAM-CONTRACTS.md`, *"Which document wins when the state machines disagree"* — the standing
+rule from Block 3. Applied here:
+
+| | |
+|---|---|
+| **VOCABULARY** — from Step 9 | open · acknowledged · in_progress · mitigation_planned · resolved · verified · closed |
+| **EDGES** — from Step 11, which LOCKS exactly two | `STT-015` open → acknowledged · `STT-016` acknowledged → resolved |
+| **EVERYTHING ELSE** | stays in the vocabulary, stays unreachable — exactly as `arrived`, `pod_pending` and `settlement_pending` do on the Trip machine |
+
+### And it settles Step 11 contradicting itself, without either half losing
+
+That was the part that looked intractable: `SM-EXC` calls `resolved` **terminal** while
+`ENUM-004` lists `closed` **after** it. One document, two answers.
+
+They are answers to different questions. **`SM-EXC` calling `resolved` terminal is an EDGE claim.
+`ENUM-004` listing `closed` is a VOCABULARY claim.** Under the rule the edge claim is Step 11's to
+make and the vocabulary claim is Step 9's — and Step 9 lists `closed` too.
+
+So `closed` exists in the vocabulary, no edge leaves `resolved`, and **`resolved` is terminal in
+practice**, because a state absent from `TRANSITIONS` is terminal by construction. Both halves of
+Step 11 are honoured. Nothing invented, nothing discarded.
+
+**SNG-TRN-013 is unblocked.** This is step 9 of MS-001 §14's fourteen, and it was the only one of
+that walk's eight gaps that belonged to P1.
 
 ---
 
@@ -730,7 +759,35 @@ No enum or state machine in the package contains `waived`.
 
 Notable: this is the **first override written into a P0 Hard rule's own definition**, unlike
 PLN-007, CMP-007 and BRW-049, which were all deferred as P1. That makes it a closer call than the
-other overrides. **Blocks SNG-TRN-013.** Awaiting the owner's Q2 ruling.
+other overrides. ~~**Blocks SNG-TRN-013.** Awaiting the owner's Q2 ruling.~~
+
+### RULED 2026-09-18 — DEFERRED, the same way BR-P0-017's waiver is
+
+**A SPECIFIED behaviour we are choosing not to build yet, not an invented one we are refusing.**
+The distinction is the one the owner drew for closure, and it applies here unchanged:
+
+| | |
+|---|---|
+| **Specified by** | FRS `TRP-P0-012` — output *"Open→acknowledged→resolved/**waived**"*, control *"Waiver requires reason/role"* |
+| **Role named** | **Owner** — `BR-P0-011`'s Override column reads *"Owner waiver"* |
+| **Status** | Deferred. No ticket authorises or audits a waiver, and building one would mean inventing who may exercise it and what evidence it needs |
+
+**Two things follow, and both are load-bearing.**
+
+**1. Nothing on screen may imply an exception cannot be waived.** The refusal says the waiver is
+**not built yet**. A user told *"this cannot be waived"* when their own rule book says it can is
+being misled by our software about their own business. Same wording discipline as
+`ClosureScope::WAIVER_MESSAGE`.
+
+**2. `waived` leaves the vocabulary.** This supersedes the owner's Q2 ruling of 2026-09-10
+("waived declared in the enum, not wired") — cleanly, rather than by reversal. The standing
+Step 9 / Step 11 rule says the vocabulary comes from **Step 9**, and `waived` is the one status in
+`ExceptionStatus` that Step 9 does not contain; it is in FRS and BRWM alone.
+
+That is exactly why it is treated differently from `in_progress`, `mitigation_planned`, `verified`
+and `closed` — those ARE Step 9's, so they stay declared and unreachable. `waived` is not, so it
+stays **out of `ALL`** until it has an edge and a gate. The constant remains, carrying its
+deferral, because the behaviour is specified and will one day be built.
 
 ---
 
@@ -832,6 +889,30 @@ against Step 9's 16).
 `TripStatus::ARRIVED` is declared and unreachable. SNG-TRN-013 stops at `in_transit`, so this does
 not block it — but **SNG-TRN-014 (POD) must resolve it**, because it owns `in_transit → delivered`
 and has to decide whether a trip passes through `arrived` on the way.
+
+### CLOSED 2026-09-17 by the standing ruling below
+
+SNG-TRN-014 shipped `delivered → pod_verified` without deciding it, so the question fell to
+Block 3, which owns `in_transit → delivered`. The owner ruled on the general case rather than
+this one state:
+
+> **Vocabulary from Step 9. Edges from Step 11. A Step 9 state becomes reachable only when
+> some document defines something that can gate it.**
+
+`arrived` has no entry gate in any document, no requirement that records an arrival distinct
+from a delivery — the RTM runs OPS-008 dispatch → OPS-009 track → OPS-010 delivery with nothing
+between — and no data model. So it stays in the vocabulary and stays unreachable, and the same
+answer settles the two states nobody had asked about:
+
+| Step 9 state | Entry gate | Requirement | Data model | Ruling |
+|---|---|---|---|---|
+| `pretrip_ok` | STT-005's "All checks passed" | OPS-007 pre-trip checklist | yes | **wired** — 2026-09-09 |
+| `arrived` | none | none | n/a | **declared, unreachable** |
+| `pod_pending` | none | none | n/a | **declared, unreachable** — P3's shipped STT-008 already skips it |
+| `settlement_pending` | none | TRP-P0-017, but that is SNG-TRN-017 | **`trip_settlements` does not exist** | **declared, unreachable** |
+
+All three remain in `TripStatus::ALL`, `::OPEN` and `::LABELS`. None gains an edge. The rule is
+recorded in `TEAM-CONTRACTS.md` so it is not re-argued by whoever reads the enum next.
 
 ---
 
@@ -2719,3 +2800,610 @@ route. **Adding methods to that interface is P2's call, not P1's.**
 
 **Steps 1–4 are not P1's.** Asked of P2 in `NOTE-team-approve-path-is-on-master.md`'s follow-up.
 Container 360 (Block 2) is unblocked and starts now instead.
+
+---
+
+## D-101 — A soft-deleted container reserves its number forever
+
+**Raised:** 2026-09-17, by a constraint violation during a demo reset.
+
+`transport_containers` uses `SoftDeletes`, and `UNIQUE(tenant_id, container_number_normalized)`
+**does not exclude trashed rows**. So deleting a container keeps its number permanently reserved:
+re-creating the same number fails with an integrity violation naming a row the user cannot see.
+
+Found when the demo reset soft-deleted its own containers and the next run was refused inserting
+`sgoe-402215-9` — its own data, blocked by its own tombstone.
+
+**Not reachable by a user today:** there is deliberately no delete path for containers (the number
+is the identity and §7 requires the association history survive). Only a seeder or a manual query
+can create the tombstone. **The seeder now uses `forceDelete()`.**
+
+**It becomes reachable the moment anyone adds a delete or archive action for containers**, and the
+symptom will be baffling: "that number already exists" for a container nobody can find. Whoever
+adds one inherits this — either force-delete, or make the unique index ignore soft-deleted rows.
+
+Same shape as D-53's latent overlap: correct today because a path does not exist, wrong the day it
+does.
+
+---
+
+## D-102 — Container 360's nine absent sections, and why none of them is a stub
+
+**Raised:** 2026-09-17, building Block 2. **Status: recorded, not deferred and not dropped.**
+
+STOS-CTD §9 lists **thirty** passport sections. Nine have no entity anywhere in this codebase, so
+the passport does not render them at all:
+
+| Section | CTD req | Owner | Why absent |
+|---|---|---|---|
+| GPS / current location (§13, §14) | CTD-010 P1 | P2 | telemetry is Fleet's; no read contract exists |
+| Temperature (§15–§17) | CTD-011 **P0** | Product | no entity. Same root as D-52 — nothing marks a trip temperature-critical |
+| Genset (§18, §19) | — | P2 | no entity |
+| Fuel · FASTag | CTD-015 P1 | P2 | Fleet's |
+| Port / Gate (§28–§30) | CTD-009 P1 | Product | no entity — D-42 |
+| Feedback (§36–§40) | CTD-018 **P0** | Product | no entity |
+| Incident / CAPA (§56, §57) | CTD-012/013 **P0** | P3 | SIRE owns CAPA; `trip_exceptions` has a table and no model |
+| Compliance (§23, §58, §59) | CTD-008 **P0** | P2/P3 | no read contract — D-100 |
+| Profitability (§52–§54) | — | P3 | Finance's |
+
+**The rule applied, and the reason it is a rule:** an empty panel implies the feature exists. A
+dispatcher who sees a Temperature card reading "—" concludes the sensor is broken; one who sees no
+card concludes the system does not track it. The second is true. This is the same rule the
+consignment drawer follows and the reason its Containers panel waited for containers to exist.
+
+**Five of these are P0.** They are not deferred by choice — there is nothing to render. Each
+becomes a one-section addition to `ContainerPassportService` the day its entity exists, and the
+service is shaped so that adding one touches nothing else.
+
+---
+
+## D-103 — CTD §77's passport snapshots, deferred
+
+**Raised and deferred:** 2026-09-17, on the owner's ruling.
+
+§77 asks the system to preserve "current view; historical event stream; rule versions; important
+snapshots". The first two exist — the passport IS the current view and `transport_audit_logs` is
+the immutable stream. **Rule versions and snapshots would need a new table**, and nothing today can
+say which snapshots matter or what a rule version is.
+
+Deferred rather than built: a table whose contents nobody can specify is the D-9 mistake in a
+different shape. **Owner: Product**, to specify what a snapshot is for before one is stored.
+
+---
+
+## D-104 — The demo reset was not atomic, and a half-finished one looks like a broken build
+
+**Raised:** 2026-09-17, chasing a state seen once and not reproducible by re-running.
+**Found by simulation.** **Fixed.**
+
+### What was seen
+
+A demo trip reporting **"approved, no vehicle"** when the seeder had just claimed it was "crewed
+and moving". Re-running produced the correct state twice, so it could not be reproduced, and no
+guess was offered at the time.
+
+### What it actually was
+
+`clearPreviousDemo()` releases assignments FIRST and soft-deletes the trips LAST:
+
+```
+1. AllocationService::release()   ← reverts ALLOCATED → APPROVED, clears vehicle + driver
+2. delete assignment rows
+3. detach containers
+4. delete pre-trip checks, exceptions
+5. delete vehicles, drivers, containers
+6. soft-delete trips, consignments, orders   ← the trip finally goes
+```
+
+**None of it was in a transaction.** Anything stopping it between 1 and 6 — a throw, a Ctrl-C —
+commits the release and never reaches the delete. What survives is a trip that has been reverted
+to `approved` with its vehicle and driver cleared, and never removed.
+
+**That is exactly the observed state**, and this session did interrupt seeder runs.
+
+Proved rather than argued: running only the release half against a clean demo produces
+
+```
+clean run          TRP-…-000001 pretrip_ok  v=1     TRP-…-000002 approved v=-
+release half only  TRP-…-000001 approved    v=-     TRP-…-000002 approved v=-
+```
+
+The first line is what the seeder claims; the second is what was seen.
+
+### Fixed two ways
+
+1. **The reset is atomic.** `clearPreviousDemo()` now runs inside one transaction: it completes,
+   or the previous demo is left untouched. A half-cleared demo is no longer reachable.
+2. **The seeder checks its own work.** `assertDemoIsWhatItClaims()` runs before the success line
+   is printed and throws if either trip is not in the state, or carrying the resources, the report
+   is about to claim. Proven to fire: skipping the pre-trip step produces
+   *"TRP-…-000001 should be ready to dispatch but is 'allocated'"*.
+
+**The second matters more than the first.** An intermittent demo failure that nobody can reproduce
+is the worst kind to meet in front of a client. The seeder now fails loudly at build time instead
+of leaving a walkthrough that looks broken to whoever opens it next.
+
+### And a guard that had to learn a distinction
+
+The D-63 guard banned the string `TripStatus::` from the seeder outright. The new self-check
+legitimately COMPARES against it — checking your own work is the opposite of forcing a state — so
+the guard fired on the fix the day it was written. It now matches the WRITE (`'status' => …`)
+rather than the mention, and is proven to still catch a real assignment.
+
+**A guard that cannot tell a read from a write trains people to weaken it**, which is worse than
+not having one.
+
+---
+
+# D-105 … D-108 — found during the Block 3 (transit, delivery, closure) pre-build
+
+---
+
+## D-105 — An authorised transition, its columns, its index, and nothing that writes them
+
+**Raised:** 2026-09-17, reading the source for Block 3. **Verified by the lead the same day.**
+
+### What the code said
+
+Four documents — `TripStatus` (twice), `DispatchScope` (three times),
+`TransportDispatchController` (twice) and `TEAM-CONTRACTS.md` — all said the same thing:
+
+> STT-006 (`dispatched → in_transit`) is the Transit half of SNG-TRN-013, **blocked on the
+> owner's Q1/Q3 ruling**.
+
+### What the ruling actually says
+
+Q3 was answered on **2026-09-10**, seven days earlier, and it is an **approval**. Verbatim, from
+`ExceptionScope::RULINGS`:
+
+> "Option (b) — build the Exception engine, and also wire `dispatched → in_transit` as a manual
+> **'Record departure'** action (`departed_at`, `departed_by` columns only). Nothing beyond that
+> — no `in_transit → delivered`, no GPS/telemetry/odometer/temperature, no automatic triggers."
+
+Its precondition ("Dispatch confirmed") became satisfiable when Record Dispatch shipped on the
+same day. Migration `2026_12_16_000013_add_departure_to_transport_trips` created `departed_at`
+and `departed_by` **and** the index `transport_trips_tenant_departed_idx`.
+
+**Nothing writes either column.** `grep -rn departed_at app/ tests/ database/` returns the
+migration, one constant in `ExceptionScope`, two tests that assert that constant, and one
+unrelated migration docblock. No service, no controller, no route, no test of behaviour.
+
+So the edge was approved, its schema shipped, and the work stopped between the two — while every
+comment in the codebase went on describing it as blocked.
+
+### Why this is the D-58 shape, and worse
+
+D-58 was an edge nobody had built. This is an edge somebody was **told to build, built the
+scaffolding for, and left**, with four documents asserting it could not be built. Scaffolding
+that makes a thing look done is worse than an absence: an absence gets found, and a comment
+saying "blocked" gets believed.
+
+It was found by re-reading the ruling rather than trusting the comment that cited it.
+
+**Fixed in Block 3.** The stale text is corrected in all four documents in the same change, so
+the next reader does not hit the same dead comment.
+
+---
+
+## D-106 — No trip in this system can ever be closed, and the missing piece is one caller
+
+**Raised:** 2026-09-17. **Verified by the lead.** **P3's surface — raised, not fixed.**
+
+`STT-012` (`collection_pending → closed`) is the only edge into the terminal state, and
+`collection_pending` is the only state it leaves from. Walking backwards:
+
+| Edge | Built | Owner | Reachable by a user |
+|---|---|---|---|
+| `delivered → pod_verified` (STT-008) | yes | P3 | yes — `POST /trips/{id}/pod/{doc}/verify` |
+| `pod_verified → billable` (STT-009) | yes | P3 | yes — `POST /trips/{id}/bill` |
+| `billable → billed` (STT-010) | **model method only** | Accounts / P3 | **NO** |
+| `billed → collection_pending` (STT-011) | yes | P3 | only via `billed` |
+
+`TripBill::markInvoiced()` (`app/Models/Transport/TripBill.php:89`) is the single door to
+`billed`. **It has no caller.** Every other mention of it in the codebase is a comment.
+
+`TripCollectionService::open()` is honest about the consequence rather than papering over it: it
+guards the move with `TripStatus::canTransition()`, so opening a collection on a `billable` trip
+creates the collection row and correctly declines to advance the status. The trip stays at
+`billable`, and `collection_pending` is unreachable.
+
+### The consequence
+
+**Closure is plumbed, not reachable.** Block 3 builds STT-012 to the registry — API-009,
+CTR-013, PERM-005 including the Dispatcher denial, EVT-012 — and every test passes, and no user
+can get a trip into the state the endpoint requires.
+
+The coverage document marks it **PLUMBED**, never BUILT. That distinction exists for exactly
+this case.
+
+**The ask to P3:** `markInvoiced()` needs a caller and a route. Until it has one, no trip in the
+system can ever close — and `EVT-012 TripClosed`, which P3 has been waiting on since the 16th,
+is on the other side of that one gap. See `docs/transport/REQUEST-person3-invoice-door.md`.
+
+**Not fixed here.** `trip_bills` is P3's table and the standing rule is not to fix another
+developer's file to make our own work reachable.
+
+---
+
+## D-107 — EVT-012's idempotency key names a field that does not exist
+
+`EVT-012 TripClosed` | producer TripEngine | payload `trip_id, closure_timestamp` |
+**idempotency `trip_id+close_version`** | consumers ProfitEngine, ControlRoom | LOCKED.
+
+There is no `close_version` column and no versions table anywhere in the package. This is the
+same shape as **D-65**, where `EVT-004 TripApproved`'s key named an `approval_id` with no
+approvals table, and the ruling was **do not invent one**.
+
+Same answer. Closure is made idempotent by the state machine instead: `closed` is terminal, so a
+second close is refused with a sentence naming who closed it and when. What a version counter
+would add beyond that is response replay, which no consumer needs — and ProfitEngine, the one
+consumer that would care, does not exist either (`trip_profit_snapshots` is not a table).
+
+Recorded rather than invented.
+
+---
+
+## D-108 — Two LOCKED transitions with no API_Registry row
+
+Step 11's API_Registry runs API-001…API-015 and covers create, viability, assign, advance,
+expense, exception, POD, close, bill, collection, control-room, trip detail, GPS and e-way-bill.
+
+**Neither STT-006 (`dispatched → in_transit`) nor STT-007 (`in_transit → delivered`) has a row**,
+though every other trip transition in the machine does — including STT-012, which gets API-009.
+
+So the two edges Block 3 exists to build are the only two with no specified path, method,
+permission key or request contract. Consistent with D-18 (dispatch had no ticket) and D-8/D-21
+(permission keys with no matrix row): the registries thin out precisely where the operational
+middle of the trip lives.
+
+Paths follow the endpoints already beside them — `PATCH /trips/{trip}/depart` and
+`PATCH /trips/{trip}/deliver`, next to `PATCH /trips/{trip}/dispatch`. Recorded as derived, not
+quoted.
+
+---
+
+## D-109 — The Fleet data-move migration is armed, and `php artisan migrate` fires it
+
+**Raised:** 2026-09-17. **By running it myself, by accident.**
+
+### What happened
+
+`php artisan migrate`, run to apply Block 3's two new columns, also applied
+`2027_01_02_000002_move_transport_masters_into_fleet`, which was sitting pending. The owner had
+said explicitly: **do not run that migration yet.**
+
+It is not guarded by anything. It is an ordinary pending migration, so the ordinary command that
+every developer runs after a `git pull` executes it. I did not pass a flag, target a file or opt
+in — I ran the command you run to add a column.
+
+### What it did
+
+It moved `transport_vehicles` and `transport_drivers` into the Fleet masters and **repointed
+every foreign key that referenced them** — `transport_trips.vehicle_id`, `.driver_id` and the
+same two on `trip_assignments`.
+
+The Transport side still reads `transport_vehicles` and `transport_drivers`, so every repointed
+row became an orphan: the demo trip's vehicle and driver both resolved to null. Measured, not
+assumed — 4 trips and 1 assignment across all tenants.
+
+`down()` is deliberately a no-op, so `migrate:rollback` does not undo it.
+
+### How it was repaired
+
+Re-running `TransportDemoSeeder`. The seeder soft-deletes the previous demo and rebuilds it
+through the real services, so the new trips and assignments point at `transport_vehicles` and
+`transport_drivers` again. Verified: **zero orphaned live rows** on all four table/column pairs.
+
+I did **not** delete the rows the migration inserted into `vehicles`, `driver_profiles` and
+`stos_drivers`. Those are Person 2's tables, and the standing rule is that we do not delete
+another developer's data to tidy up after ourselves. Two rows in each, all carrying their
+`legacy_transport_*_id`, so they are identifiable and reversible by whoever owns them.
+
+Three soft-deleted trips still carry Fleet ids. Inert — nothing reads a deleted trip's vehicle —
+and left alone rather than rewritten, for the same reason.
+
+### The actual defect
+
+**Not that I ran it. That anyone can, without meaning to.**
+
+`2027_01_02_000002` will fire on the next `php artisan migrate` on every machine in the team,
+including production, with no prompt and no flag. It is marked run on this dev database now, so
+it will not fire again *here* — which is worse in one way, because the hazard has moved to
+everyone else's machine and mine now looks clean.
+
+This needs a decision from the owner, and it is not mine to take because the migration is P2's:
+
+- **Guard it** — an env flag or a `STOS_FLEET_MIGRATION=1` check, so it is opt-in;
+- **or hold it out of the branch** until the repoint is genuinely wanted;
+- **or run it deliberately, everywhere, once**, with the Transport read paths moved over in the
+  same change — which is D-100, and D-100's measured finding was that Fleet's `vehicles` table
+  reads zero, so that cannot happen yet.
+
+Recorded in `TEAM-CONTRACTS.md` under the never-`migrate:fresh` rule, because it belongs to the
+same family: a routine command with an irreversible effect nobody expects.
+
+---
+
+## D-110 — Container 360's Vehicle and Driver nodes cannot be made clickable yet
+
+**Raised:** 2026-09-18, walking the three finished blocks in a browser.
+**Not fixed — it is blocked on a cross-team gap, and faking it would be worse.**
+
+CTD §71's second chain is `Container → Trip → Vehicle → Driver`, and Container 360 renders all
+four. Order, consignment and trip each carry an **Open** link. **Vehicle and Driver do not.**
+
+That is not an oversight in the page. It is the D-62/D-100 boundary showing through:
+
+- `ContainerPassportService::chain()` reads `transport_vehicles` and `transport_drivers` — P1's
+  placeholder masters (TEAM-CONTRACTS §1a), so the ids it returns are **transport_vehicles.id**
+  and **transport_drivers.id**.
+- The only vehicle and driver screens in the app are P2's — `/transport/vehicles/:id`
+  (`FleetVehiclePassport`) and `/transport/drivers` — and they resolve **Fleet** ids.
+
+The two id spaces are different. Linking `chain.vehicle.id` at P2's route would open the wrong
+vehicle or none at all, and "the wrong truck's history" is exactly the failure mode D-62's own
+migration refuses to risk.
+
+### Why it is left as it is
+
+A link that lands on the wrong record is worse than no link. The nodes still show the
+registration, the type, the driver's name and licence class, so the chain READS correctly end to
+end — only the last two steps are not navigable.
+
+### What would close it
+
+Either of these, and both belong to a conversation rather than to this pass:
+
+1. **P2 exposes a lookup by our id** — a read contract that answers "which Fleet vehicle is
+   `transport_vehicles.id = N`?". `vehicles.legacy_transport_vehicle_id` already holds exactly
+   that mapping for the rows the D-62 migration moved (see D-109), so the data exists.
+2. **The masters are unified** — D-100's repoint, which is measured as not yet possible because
+   Fleet's `vehicles` reads zero through Transport's current paths.
+
+Raised to P2 alongside D-109.
+
+---
+
+## D-111 — The browser/server boundary had two more time bugs, and one is still open
+
+**Raised:** 2026-09-18, sweeping for siblings of the `fromLocalInput` bug on the owner's
+instruction. **One fixed, one reported.**
+
+### Why a sweep was ordered
+
+The `fromLocalInput` defect made Record departure and Record delivery unusable outside UTC and
+silently shifted every dispatch time, with 1311 tests green over the top of it. The owner's
+reading: *"every service test built its times on the server, where there is nothing to get wrong
+— that is a structural blind spot, not bad luck, and it will have siblings."*
+
+It had two.
+
+### Sibling 1 — the order deadline. FIXED.
+
+`TransportOrderForm`'s "Required by" is a `datetime-local` and was submitted **raw**, the only
+one of the module's four such fields with no conversion:
+
+| | |
+|---|---|
+| `components/TransportOrderForm.jsx` | **0 conversions** ← the bug |
+| `components/JourneyPanel.jsx` | 2 |
+| `components/DispatchPanel.jsx` | 2 |
+
+Measured, not inferred:
+
+```
+user types      25 Sep 2026, 09:00   (their clock)
+browser sends   "2026-09-25T09:00"   no zone
+server stores   2026-09-25 09:00 UTC
+shown back      25 Sep 2026, 14:30   ← five and a half hours late
+```
+
+**Every transport order ever created through the UI carries a customer deadline shifted by the
+local offset.** Unlike the transit bug this one never refused anything — it just quietly stored
+the wrong time, which is why nobody saw it.
+
+Fixed by `toTransportOrderPayload()`, which converts on the way out. Verified in the browser:
+typed 09:00, list now reads **09:00 am**.
+
+### Sibling 2 — date-only fields drift by a day west of UTC. REPORTED, NOT FIXED.
+
+`<input type="date">` sends `"2026-09-25"`. The server stores midnight UTC. `fmtDate()` renders
+with `toLocaleDateString`, which converts to the viewer's zone:
+
+```
+Asia/Kolkata      picked 25 Sep  →  displays 25 Sept 2026   correct
+America/New_York  picked 25 Sep  →  displays 24 Sept 2026   OFF BY ONE DAY
+```
+
+A licence expiry, a document validity date or a due date shown one day early is a compliance
+answer that is wrong, and `PretripService` blocks dispatch on exactly those dates.
+
+**Not fixed in this pass, deliberately.** It does not bite today — Sangoé runs in IST, where the
+offset is positive and the date survives — and the correct fix is to render a date-only value
+without any timezone conversion, which means changing `fmtDate` or introducing a `fmtDateOnly`
+across call sites in **P1's, P2's and P3's** panels (`DocumentsPanel`, `DriverForm`,
+`VehicleForm`, `CostsPanel`, `CollectionPanel`, the whole Fleet folder). That is a cross-section
+change, not a fix, and it needs a decision rather than a quiet edit during a defect pass.
+
+**It becomes urgent the day anyone opens Sangoé from a timezone west of Greenwich.**
+
+### The numbers are fine
+
+Checked as part of the same sweep and reported because a sweep that only lists what it found is
+half a sweep. Every numeric field (`approved_freight`, `package_count`, `gross_weight_kg`,
+`volume_cbm`, advances, costs) submits `e.target.value` — a plain string like `"12450.5"` — with
+no locale formatting applied on the way out. `toLocaleString` appears only in DISPLAY paths.
+Nothing round-trips wrong. The one transform on a submit path is `Number(pickedConsignment)` on
+a container attach, which is an integer id.
+
+### The guard
+
+`TransportDateTimeContractTest` fails on the exact shape of the original bug and on a
+`JourneyPanel` that stops letting the server stamp its own clock. Proven by reintroducing the old
+one-liner. It does **not** yet assert that every `datetime-local` in the module is converted —
+that is worth adding the next time this area is touched, and is why sibling 1 survived the first
+fix.
+
+---
+
+## D-112 — Both guards written this week were blind, and the second break found a third hole
+
+**Raised:** 2026-09-18. **Fixed.** Recorded because the lesson outlives the bugs.
+
+Three faults, all in test code, all found by attacking my own guards rather than by running them.
+
+### 1. A comment-stripper that stripped the file
+
+`TransportDateTimeContractTest` and `TripClosureTest` both did:
+
+```php
+preg_replace('#//.*$|/\*.*?\*/#ms', '', $src)
+```
+
+The `/s` flag makes `.` match newlines, so `//.*$` runs greedily **from the file's first comment
+to its last line**. Both guards were scanning an almost-empty string and would have passed on
+anything at all.
+
+Measured:
+
+```
+input   <?php  ·  // a comment  ·  $x = "type=\"datetime-local\"";  ·  // another  ·  $y = 1;
+/ms     '<?php\n'                        ← everything after the first // is gone
+/s + [^\n]*   the whole file, comments removed   ← correct
+```
+
+**The timezone guard passed while the second timezone bug was still live in the file it read.**
+A test that cannot fail converts a gap into confidence, which is worse than no test.
+
+### 2. One probe in one position is not proof
+
+The D-106 caller scan had the identical `/ms` line and nevertheless went red when it was tested.
+The only reason: the probe happened to be inserted **above that file's first comment**, in the
+sliver the broken regex left behind. Re-probed at the end of a different service, it fires
+properly now.
+
+### 3. And the second break found a third hole
+
+With the stripper fixed, the timezone guard was attacked twice more:
+
+| probe | file | mechanism | result |
+|---|---|---|---|
+| **A** | `TransportOrderForm` | renders `type="datetime-local"` directly | **red** — correct |
+| **B** | `DispatchPanel` | renders `type={field.type}` from `DISPATCH_FIELDS` | **GREEN — wrong** |
+
+Removing DispatchPanel's conversion also removed the file's last mention of the literal, so the
+file **dropped out of the guard's scope** and the guard reported success over a real regression.
+
+The scope test now covers both: a file is in scope if it renders a datetime field **or** consumes
+an exported field config that declares one. The config list is read from `constants.js` rather
+than hardcoded, so a new config is covered without anyone remembering this test exists.
+
+Both probes now fire. Both were restored.
+
+### A fourth, caught on the way
+
+The first version of that config scanner used
+`/export const ([A-Z_]+)\s*=\s*\[(.*?)\n\]/s` and reported `PRETRIP_CATEGORY_ORDER` — a list of
+plain strings with no fields in it. The lazy capture ran past its own closing bracket into the
+next declaration. Rewritten to walk the file line by line.
+
+**Three of these four are the same mistake: a pattern matching more than its author pictured.**
+Regexes over source are guard-writing's sharpest tool and its commonest way to be wrong, and the
+only defence that works is to break the guard and watch it go red — twice, in two different ways.
+
+---
+
+## D-113 — The canonical registry has no events table, and two product documents build on one
+
+**Raised:** 2026-09-18, reading the source for `trip_events` on the owner's instruction.
+
+**STOS-DB §37** names the table outright:
+
+> **TRIP EVENT LOG** — "Do not overwrite every historical status. Maintain: `trip_events`."
+> Examples: PLANNED, ASSIGNED, DISPATCHED, STARTED, GATE_IN, PORT_ENTRY, PORT_EXIT, DELIVERED
+
+**STOS-DB §38** makes it the architecture: *"Current status = latest valid state. History =
+events."*
+
+**STOS-CTD** goes further and builds the Digital Passport on it — §31's worked timeline, §32's
+"timeline must combine events from all connected systems", §33's source vocabulary, §34's
+immutability rule, §35's filters, §101's "the Passport should have access to a chronological
+event stream", §133 listing `Events` among the eighteen records the Passport is composed from.
+
+**Step 11's DB_Registry does not contain it.** DB-001…DB-020 cover orders, trips, assignments,
+vehicles, drivers, costs, advances, expenses, documents, exceptions, risks, bills, collections,
+settlements, profit snapshots, rates, customers, suppliers, documents and policies — and no
+events table. There are correspondingly no `DB_Fields` rows, no `API_Registry` row, no
+`Permissions` row and no `Event_Registry` entry for it.
+
+So the registry that is supposed to be canonical is silent about the one table two product
+documents treat as the spine of the Passport.
+
+### Why this one is different from D-38 and D-45
+
+Those recorded entities the registry omitted while some other document defined them in passing.
+This is an entity **STOS-DB names, gives a purpose, gives example values, and states an
+architectural principle for** — and Step 11 still has no row. It is the largest single gap
+between the product documents and the canonical registry found so far.
+
+### How it is handled
+
+The schema in `PLAN-trip-events.md` is derived from **STOS-DB §37 and CTD §§31–35, 101, 133**,
+and every column in it cites the line it comes from. Nothing is invented; where two sections
+disagree — CTD §101's nine categories against §35's seven filters — the divergence is recorded
+and put to the owner rather than silently resolved.
+
+Three further gaps follow from the same silence and are ruled in that plan rather than guessed:
+no locked `event_type` enum exists anywhere (both lists say "Example"), no permission row exists,
+and no API row exists.
+
+
+---
+
+## D-114 — Two blockers cleared and neither of us noticed, for three days
+
+**Raised:** 2026-09-19. **Not a code defect. A process one, and it cost real time.**
+
+The owner asked whether P2 or P3 might have landed something we were waiting on. Both had.
+
+| | | |
+|---|---|---|
+| **16 Sep** | **Zafar** — "a consignment can hold its own paperwork" | `TransportDocumentEntity::CONSIGNMENT` in `ALL` and `ACTIVE`, `DELIVERY_ORDER` in the type enum, `CONSIGNMENT_APPLICABLE`, and both document routes. **Every one of the three changes `REQUEST-person3-document-entity.md` asked for.** |
+| **17 Sep** | **Shivam** — `ReconcileFleetMasters` on master | D-100's blocker (a) closed. |
+
+**Our own walk of MS-001 §14, written on 18 September, recorded step 3 as "PARTIAL — LR/DO
+blocked on P3".** It had not been blocked for two days. The register said it was, the register
+was read instead of the repository, and the document went out saying we were waiting on work
+that was already done.
+
+That is the expensive failure mode: **it sends you to ask somebody for something they have
+already given you.** It nearly did exactly that here.
+
+### What was actually still open — verified against the code, not the register
+
+- `TripBill::markInvoiced()` still has no caller. The only mentions in `app/` and `routes/` are
+  our own comments saying so. **D-106 stands**, closure stays PLUMBED.
+- `FleetResourceGateway` still carries one method. **D-100 (b) and (c) stand**, so the
+  allocation repoint still cannot happen even though (a) is clear.
+- No feedback entity anywhere. **Still P3's, still unspecified.**
+
+### And nobody is at fault
+
+Neither of them announced it. **We did not announce the trip lifecycle to them either**, and
+that landed on the 17th. Three people on one repository, each shipping several times a day, is
+simply a situation where announcements are not a reliable channel — and the answer is to look
+rather than to wait.
+
+Recorded as a standing rule in `TEAM-CONTRACTS.md`: *before every block, and before any message
+saying you are blocked, fetch and check each open blocker against the code.*
+
+### D-100's status, corrected
+
+| | |
+|---|---|
+| ~~(a) no reconciliation for ambiguous plates~~ | **CLEARED 17 Sep** — `ReconcileFleetMasters` is on master |
+| (b) `FleetResourceGateway` has one method | **open** |
+| (c) Fleet's `vehicles` reads zero through Transport's paths | **open** |
+
+Two blockers, not three. The repoint still cannot happen, and for one fewer reason than the
+register said yesterday.

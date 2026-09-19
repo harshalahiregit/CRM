@@ -65,6 +65,16 @@ class TransportTrip extends Model
         // cleared by submitForViability(), never by a general update.
         'rejection_reason'     => 'string',
         'dispatch_version'     => 'integer',
+        // STT-006, STT-007, STT-012 — the manually recorded milestones. Not
+        // fillable, for the same reason as every stamp above: they move through
+        // their own service, which checks the edge and audits it.
+        'departed_at'          => 'datetime',
+        'departed_by'          => 'integer',
+        'delivered_at'         => 'datetime',
+        'delivered_by'         => 'integer',
+        'closed_at'            => 'datetime',
+        'closed_by'            => 'integer',
+        'closure_reason'       => 'string',
     ];
 
     protected $attributes = [
@@ -99,6 +109,27 @@ class TransportTrip extends Model
     public function consignment(): BelongsTo
     {
         return $this->belongsTo(TransportConsignment::class, 'consignment_id');
+    }
+
+    /**
+     * CTD-006 / CTD-007 — the vehicle and driver carrying this trip.
+     *
+     * These point at `transport_vehicles` / `transport_drivers`, which are P1's
+     * PLACEHOLDER tables under TEAM-CONTRACTS §1a, not Fleet's. There is no read
+     * contract to Fleet — FleetResourceGateway carries only markDispatched() —
+     * so this is the only way the passport can name a vehicle today.
+     *
+     * When allocation is repointed at Fleet (D-100), these two relations are
+     * among the places that follow.
+     */
+    public function vehicle(): BelongsTo
+    {
+        return $this->belongsTo(TransportVehicle::class, 'vehicle_id');
+    }
+
+    public function driver(): BelongsTo
+    {
+        return $this->belongsTo(TransportDriver::class, 'driver_id');
     }
 
     public function customer(): BelongsTo

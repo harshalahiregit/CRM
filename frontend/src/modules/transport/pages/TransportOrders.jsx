@@ -4,7 +4,7 @@ import { Plus, RefreshCw, Search, Package, AlertTriangle, Loader2, Eye } from 'l
 import { transportOrderApi } from '@/services/transportApi'
 import { useToast } from '@/components/ui/Toast'
 import Modal from '@/components/ui/Modal'
-import TransportOrderForm, { emptyTransportOrder, validateTransportOrder } from '../components/TransportOrderForm'
+import TransportOrderForm, { emptyTransportOrder, validateTransportOrder, toTransportOrderPayload } from '../components/TransportOrderForm'
 import {
   ORDER_STATUS_LABEL, orderStatusCfg, priorityCfg,
   fmtDateTime, fmtLocation,
@@ -62,7 +62,9 @@ export default function TransportOrders() {
 
     setSaving(true)
     try {
-      const created = await transportOrderApi.create(form)
+      // toTransportOrderPayload, not `form`: the deadline leaves the browser as a
+      // zoned instant. Sending the raw datetime-local value stored it as UTC.
+      const created = await transportOrderApi.create(toTransportOrderPayload(form))
       toast.success(`Order ${created?.order_number ?? ''} created.`)
       setOpen(false); setForm(emptyTransportOrder())
       load()
@@ -133,9 +135,20 @@ export default function TransportOrders() {
         ) : rows.length === 0 ? (
           <div style={{ padding: 48, textAlign: 'center' }}>
             <Package size={30} style={{ color: 'var(--text-muted)', marginBottom: 10 }} />
-            <p style={{ color: 'var(--text-h)', fontSize: 15, fontWeight: 700, margin: 0 }}>No transport orders yet</p>
+            {/* Three situations, three sentences. It said "No X yet" even when
+                the workspace was full of them, simply because a filter matched
+                none — which tells the reader something false about their own
+                data and hides the thing they should check: what they typed.
+                Same defect as the Containers list carried until 2026-09-18. */}
+            <p style={{ color: 'var(--text-h)', fontSize: 15, fontWeight: 700, margin: 0 }}>
+              {search ? `Nothing here matches “${search}”` : status ? 'No order is at that stage' : 'No transport orders yet'}
+            </p>
             <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '6px 0 0' }}>
-              {status || search ? 'Nothing matches this filter.' : 'Create the first order to start the operational chain.'}
+              {search
+                ? 'Try the order number, or the customer.'
+                : status
+                  ? 'Choose “All” to see every order.'
+                  : 'Create the first order to start the operational chain.'}
             </p>
           </div>
         ) : (

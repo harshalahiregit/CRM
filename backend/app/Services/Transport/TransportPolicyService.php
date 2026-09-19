@@ -50,6 +50,25 @@ class TransportPolicyService
 {
     /** key => default. Grouped by the subject that owns it. */
     public const DEFAULTS = [
+        /* ── Exception SLA (SNG-TRN-013, owner's Q5) ─────────────────────
+         *
+         * Minutes per severity. WALL CLOCK ONLY — BRWM §58 wants seven
+         * elements for an SLA including a business calendar, and §59 wants that
+         * calendar to model working hours, weekends, holidays, branch and
+         * customer. None has an entity (D-34). Elapsed wall-clock is the part
+         * that can be computed honestly, and the screen says so.
+         *
+         * The numbers are configurable per workspace precisely because no
+         * document sets them: FRS TRP-P0-011 gives "critical alert SLA e.g.
+         * 15/30/60 min configurable" as an EXAMPLE, so these defaults follow
+         * that example's shape and are a workspace's to change, not ours to
+         * fix. Zero means "no SLA for this severity".
+         */
+        'exception.sla_minutes.critical' => 15,
+        'exception.sla_minutes.high'     => 60,
+        'exception.sla_minutes.medium'   => 240,
+        'exception.sla_minutes.low'      => 1440,
+
         // ── Compliance thresholds ────────────────────────────────────────
         // The one value present in BOTH CMP §18 (90/60/30/15/7) and FLEET §13
         // (60/30/15/7). "Exact configuration belongs to the organization."

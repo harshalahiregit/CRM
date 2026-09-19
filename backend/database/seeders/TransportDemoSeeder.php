@@ -4,16 +4,20 @@ namespace Database\Seeders;
 
 use App\Models\Tenant;
 use App\Models\Transport\ConsignmentContainer;
+use App\Models\Transport\TransportAuditLog;
 use App\Models\Transport\TransportConsignment;
 use App\Models\Transport\TransportContainer;
 use App\Models\Transport\TransportDriver;
 use App\Models\Transport\TransportOrder;
 use App\Models\Transport\TransportTrip;
 use App\Models\Transport\TransportVehicle;
+use App\Models\Transport\TripPretripCheck;
 use App\Models\User;
 use App\Services\Transport\AllocationService;
 use App\Services\Transport\ConsignmentService;
 use App\Services\Transport\ContainerService;
+use App\Services\Transport\DispatchService;
+use App\Services\Transport\PretripService;
 use App\Services\Transport\TransportDriverService;
 use App\Services\Transport\TransportOrderService;
 use App\Services\Transport\TransportTripService;
@@ -23,9 +27,27 @@ use App\Support\Transport\OrderStatus;
 use App\Support\Transport\TripStatus;
 use App\Support\Transport\VehicleStatus;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 
 /**
  * THE walkthrough: 2 drivers, 2 vehicles, 2 trips. Nothing else.
+ *
+ * ── NEVER RUN migrate:fresh OR migrate:refresh ON THE DEV DATABASE ──────
+ * Not for cleanup, not for testing, not "just this once". Those commands drop
+ * EVERY table in the application — HR, Purchase, Sales, Helpdesk, TPV,
+ * Inventory, users, everything — not just Transport's. The dev database is the
+ * owner's working copy and five other modules live in it.
+ *
+ * It has happened once, on 2026-09-17, from a cleanup instruction that meant
+ * "remove the demo data" and was carried out as "reset the database". The owner
+ * could not log in. It was recovered only because a mysqldump had been taken
+ * minutes earlier.
+ *
+ * Tests run on their own in-memory sqlite and are unaffected — that is where
+ * migrate:fresh belongs and the only place it belongs.
+ *
+ * To clear the demo, call clearPreviousDemo() below. It is scoped to ONE tenant
+ * and to Transport's own tables, and a test asserts it touches nothing else.
  *
  * ── DEMO ONLY. NEVER PART OF A RELEASE. DELETE THIS FILE TO REMOVE IT. ───
  * This exists so the team can see the work while it is being built. It does
@@ -146,11 +168,16 @@ class TransportDemoSeeder extends Seeder
         $moving  = $this->buildMovingTrip($tenantId, $actor, $customerId, $vehicles[0], $drivers[0]);
         $waiting = $this->buildWaitingTrip($tenantId, $actor, $customerId);
 
-        // One container on the moving trip's consignment, so the Containers
-        // screen and the §7 history have something real to show. Entered with
-        // dashes deliberately: it demonstrates that the stored value is what was
-        // typed while the match is on the normalised key.
-        $this->attachDemoContainer($tenantId, $actor, (int) $moving->consignment_id);
+        // One container per trip, entered with dashes deliberately: it
+        // demonstrates that the stored value is what was TYPED while the match
+        // is on the normalised key.
+        $this->attachDemoContainer($tenantId, $actor, (int) $moving->consignment_id, 'sgoe-402215-9', '40ft Reefer');
+        $this->attachDemoContainer($tenantId, $actor, (int) $waiting->consignment_id, 'sgoe-771040-2', '20ft Standard');
+
+        // ── PROVE THE DEMO IS WHAT IT CLAIMS, BEFORE ANYONE OPENS IT ────────
+        // If the build drifts from its intent, fail HERE, loudly, rather than
+        // leave a walkthrough that looks broken to whoever opens it next. D-104.
+        $this->assertDemoIsWhatItClaims($tenantId, $moving, $waiting, $vehicles[0], $drivers[0]);
 
         $this->report($tenantId, $cleared, $moving, $waiting);
     }
@@ -170,6 +197,27 @@ class TransportDemoSeeder extends Seeder
      * @return array<string,int>
      */
     private function clearPreviousDemo(int $tenantId): array
+    {
+        // ── ALL OR NOTHING, AND THIS IS THE BUG THAT MADE IT SO ─────────────
+        // The clear releases assignments FIRST and deletes the trips LAST.
+        // Without a transaction, anything that stops it in between -- a throw, a
+        // Ctrl-C -- commits the releases and not the deletes, and
+        // AllocationService::release() reverts ALLOCATED -> APPROVED and clears
+        // the vehicle and driver.
+        //
+        // The result is a demo trip sitting at "approved, no vehicle" that
+        // LOOKS like the seeder built it wrong. It was seen once on 2026-09-17,
+        // could not be reproduced by re-running, and was found by simulating
+        // the release half alone: it produces that state exactly. See D-104.
+        //
+        // A demo that fails intermittently in front of a client is the worst
+        // kind of failure, so the reset is now atomic: it either completes or
+        // leaves the previous demo untouched.
+        return DB::transaction(fn () => $this->clearPreviousDemoWithin($tenantId));
+    }
+
+    /** @return array<string,int> */
+    private function clearPreviousDemoWithin(int $tenantId): array
     {
         $trips        = TransportTrip::forTenant($tenantId)->get();
         $consignments = TransportConsignment::forTenant($tenantId)->get();
@@ -226,9 +274,58 @@ class TransportDemoSeeder extends Seeder
             'orders'       => $orders->count(),
         ];
 
+        // Children before parents, so nothing is orphaned mid-delete. These are
+        // HARD deletes: pre-trip checks and exceptions belong to a trip that is
+        // going away, and leaving them behind them makes the next run's
+        // readiness maths wrong.
+        $tripIds = $trips->pluck('id');
+
+        $counts['pretrip_checks'] = TripPretripCheck::forTenant($tenantId)
+            ->whereIn('trip_id', $tripIds)->delete();
+
+        // trip_exceptions has a table (migration 000012) but no model — the
+        // exception engine was never completed, so nothing writes to it today.
+        // Cleared through the query builder anyway, tenant-scoped, so the reset
+        // does not quietly stop covering it the day something does.
+        $counts['exceptions'] = DB::table('trip_exceptions')
+            ->where('tenant_id', $tenantId)->whereIn('trip_id', $tripIds)->delete();
+
         $trips->each->delete();
         $consignments->each->delete();
         $orders->each->delete();
+
+        // EVERY vehicle, driver and container in TRANSPORT'S OWN tables for this
+        // tenant — not only the ones this file created.
+        //
+        // The target is "exactly two of each, and nothing else". Clearing only
+        // the seeder's own rows leaves whatever earlier walkthroughs and manual
+        // testing put there, and the demo drifts back up to five within a day.
+        //
+        // These are P1's placeholder tables (TEAM-CONTRACTS §1a), so this stays
+        // inside P1's section. It does NOT touch P2's fleet tables — `vehicles`
+        // and the driver directory are untouched, and nothing is ever copied
+        // into them.
+        $counts['vehicles'] = TransportVehicle::withTrashed()->forTenant($tenantId)->forceDelete();
+        $counts['drivers']  = TransportDriver::withTrashed()->forTenant($tenantId)->forceDelete();
+
+        // Containers and their attachment history, same reasoning as above.
+        $containerIds = TransportContainer::withTrashed()->forTenant($tenantId)->pluck('id');
+
+        $counts['attachments'] = ConsignmentContainer::forTenant($tenantId)
+            ->whereIn('container_id', $containerIds)->delete();
+
+        // forceDelete, NOT delete. TransportContainer soft-deletes, and
+        // UNIQUE(tenant_id, container_number_normalized) does NOT exclude
+        // trashed rows — so a soft-deleted container keeps its number reserved
+        // and the next run is refused with a constraint violation on its own
+        // demo data. See D-101.
+        $counts['containers_removed'] = TransportContainer::withTrashed()->forTenant($tenantId)
+            ->whereIn('id', $containerIds)->forceDelete();
+
+        // The audit trail for everything above. It describes rows that no longer
+        // exist, and a demo reset that left it behind would grow it without
+        // bound across runs.
+        $counts['audit'] = TransportAuditLog::forTenant($tenantId)->delete();
 
         return $counts;
     }
@@ -324,8 +421,18 @@ class TransportDemoSeeder extends Seeder
         // Dates only — NOT status. These are ordinary data a dispatcher types,
         // and they are set before the assignment so the "back in N days"
         // sentence is complete the moment the vehicle is held.
+        // ── THESE DATES USED TO CONTRADICT THE TRIP ──────────────────────
+        // The planned departure was yesterday, which was harmless while the
+        // furthest a trip could reach was `pretrip_ok`. Now that the demo trip
+        // actually departs, it is not: DispatchService refuses a departure
+        // earlier than the release, and the release is always "now" for a trip
+        // the seeder just built. The guard caught it the first time this ran.
+        //
+        // So the demo now says what is true — released today, left today, due
+        // back in two days — instead of describing a journey that started
+        // before the trip existed.
         $trip->forceFill([
-            'planned_departure_at' => now()->subDay(),
+            'planned_departure_at' => now(),
             'planned_arrival_at'   => now()->addDays(2)->setTime(16, 0),
         ])->save();
 
@@ -340,7 +447,130 @@ class TransportDemoSeeder extends Seeder
         app(AllocationService::class)
             ->assign($trip->fresh(), $vehicle->id, $driver->id, $tenantId, $actor);
 
+        // STT-005 — pre-trip, walked the same way a dispatcher walks it:
+        // generate the checklist, confirm each check, then pass the gate. The
+        // trip lands in `pretrip_ok`, ready to dispatch, which is what makes
+        // this trip DIFFERENT from the other one rather than a second copy.
+        $this->passPretrip($trip->fresh(), $tenantId, $actor);
+
+        // STT-005's destination, then STT-006 — released, then actually rolling.
+        //
+        // ── WHY THIS TRIP NOW GOES TWO STATES FURTHER ────────────────────
+        // The report line has always called this trip "crewed and moving", and
+        // until 2026-09-17 it was not moving: the furthest any trip could reach
+        // was `pretrip_ok`, and `in_transit` had never been occupied by
+        // anything. The demo said one thing and the data said another, which is
+        // the same class of problem as the seeder writing statuses directly.
+        //
+        // Both edges are walked through the real services, as everything here
+        // is. Departure is backdated to the planned departure, so the trip has
+        // a believable history rather than having left the instant it was seeded.
+        $dispatch = app(DispatchService::class);
+
+        $trip = $dispatch->confirm($trip->fresh(), [
+            'pickup_contact'        => 'Suresh Nair · 98200 11223',
+            'dispatch_destination'  => 'Bhiwandi Warehouse, Gate 3',
+            'dispatch_instructions' => 'Report to security first. Seal number is on the LR.',
+        ], $tenantId, $actor);
+
+        // No explicit time: it left when it was released, which is what the
+        // planned departure now says too.
+        $dispatch->recordDeparture($trip->fresh(), [], $tenantId, $actor);
+
         return $trip->fresh();
+    }
+
+    /**
+     * The seeder checks its own work.
+     *
+     * Everything here is something the demo SAYS is true — the report line
+     * printed at the end claims one trip is "crewed and moving" and the other
+     * "approved, needs a vehicle and a driver". This asserts the database
+     * agrees before that claim is printed.
+     *
+     * It exists because a trip was once found at "approved, no vehicle" when it
+     * should have been crewed, and nothing anywhere said so: the seeder reported
+     * success, the screen reported the truth, and the two disagreed silently.
+     * An intermittent demo failure nobody can reproduce is the worst kind to
+     * meet in front of a client. See D-104.
+     */
+    private function assertDemoIsWhatItClaims(
+        int $tenantId,
+        TransportTrip $moving,
+        TransportTrip $waiting,
+        TransportVehicle $vehicle,
+        TransportDriver $driver,
+    ): void {
+        $moving  = $moving->fresh();
+        $waiting = $waiting->fresh();
+        $problems = [];
+
+        if ($moving->status !== TripStatus::IN_TRANSIT) {
+            $problems[] = "{$moving->trip_number} should be on the road but is '{$moving->status}'";
+        }
+
+        // The claim is "moving", and a trip with no recorded departure is not.
+        if ($moving->departed_at === null) {
+            $problems[] = "{$moving->trip_number} is described as moving but has no recorded departure";
+        }
+
+        if ((int) $moving->vehicle_id !== (int) $vehicle->id) {
+            $problems[] = "{$moving->trip_number} should carry vehicle #{$vehicle->id} but carries "
+                .var_export($moving->vehicle_id, true);
+        }
+
+        if ((int) $moving->driver_id !== (int) $driver->id) {
+            $problems[] = "{$moving->trip_number} should carry driver #{$driver->id} but carries "
+                .var_export($moving->driver_id, true);
+        }
+
+        if ($waiting->status !== TripStatus::APPROVED) {
+            $problems[] = "{$waiting->trip_number} should be approved but is '{$waiting->status}'";
+        }
+
+        if ($waiting->vehicle_id !== null || $waiting->driver_id !== null) {
+            $problems[] = "{$waiting->trip_number} should have nothing assigned — it is the trip the "
+                .'demo allocates — but already has one';
+        }
+
+        foreach ([$moving, $waiting] as $trip) {
+            if ($trip->consignment_id === null) {
+                $problems[] = "{$trip->trip_number} has no consignment, so the chain does not read end to end";
+            }
+        }
+
+        if ($problems !== []) {
+            throw new \RuntimeException(
+                "The demo did not come out the way it claims, so it has NOT been published:\n  - "
+                .implode("\n  - ", $problems)
+                ."\n\nRe-run the seeder. If it happens again, something outside the seeder is "
+                .'changing these trips — see D-104.'
+            );
+        }
+    }
+
+    /**
+     * Take a crewed trip through pre-trip to `pretrip_ok` — the real sequence.
+     *
+     * generate() evaluates the checks, complete() confirms each one, and
+     * passPretrip() moves the trip. Nothing here writes a status.
+     *
+     * If a check cannot be confirmed — an expired document, a missing driver —
+     * passPretrip() REFUSES and the seeder fails loudly. That is correct: a
+     * demo trip that could not really pass its own pre-trip is a finding, not
+     * something to force past.
+     */
+    private function passPretrip(TransportTrip $trip, int $tenantId, ?User $actor): void
+    {
+        $pretrip = app(PretripService::class);
+
+        $checks = $pretrip->generate($trip, $tenantId, $actor);
+
+        foreach ($checks as $check) {
+            $pretrip->complete($check, $tenantId, $actor, 'Confirmed for the demo walkthrough.');
+        }
+
+        $pretrip->passPretrip($trip->fresh(), $tenantId, $actor);
     }
 
     /** Trip 2 — approved, and waiting for someone to crew it. */
@@ -383,25 +613,28 @@ class TransportDemoSeeder extends Seeder
      * re-run finds the existing container and re-attaches it rather than
      * colliding with it.
      */
-    private function attachDemoContainer(int $tenantId, ?User $actor, ?int $consignmentId): void
+    /**
+     * One container on each consignment, so the chain reads end to end from
+     * EITHER trip: trip → consignment → container, both ways round.
+     *
+     * A previous version left the second container free so the "Free" filter
+     * had something to show. Wiring both is the owner's call and the better
+     * demo: a filter with nothing behind it is a smaller loss than a chain that
+     * only completes from one of the two trips.
+     */
+    private function attachDemoContainer(int $tenantId, ?User $actor, ?int $consignmentId, string $entered, string $type): void
     {
         if (! $consignmentId) {
             return;
         }
 
-        $service = app(ContainerService::class);
-
-        // TWO containers, in the two states the screen has to distinguish: one
-        // on a consignment and one free. With only the attached one, the "Free"
-        // filter and the empty half of the list could not be demonstrated — and
-        // an unused filter is the kind of thing nobody notices is broken.
-        $onConsignment = $this->ensureContainer($service, $tenantId, $actor, 'sgoe-402215-9', '40ft Reefer');
-        $this->ensureContainer($service, $tenantId, $actor, 'sgoe-771040-2', '20ft Standard');
+        $service   = app(ContainerService::class);
+        $container = $this->ensureContainer($service, $tenantId, $actor, $entered, $type);
 
         $consignment = TransportConsignment::forTenant($tenantId)->find($consignmentId);
 
-        if ($consignment && ! $onConsignment->fresh()->isAttached()) {
-            $service->attach($onConsignment->fresh(), $consignment, $tenantId, $actor);
+        if ($consignment && ! $container->fresh()->isAttached()) {
+            $service->attach($container->fresh(), $consignment, $tenantId, $actor);
         }
     }
 

@@ -199,6 +199,41 @@ final class TransportPermission
     /* ── Dispatch. NOT IN THE REGISTRY — see D-18/D-21. ─────────────────── */
     public const TRIP_DISPATCH = 'transport.trip.dispatch';
 
+    /* ── Exceptions — KEY SPECIFIED, MATRIX ROW NOT. D-31. ─────────────── */
+    // API-007's Permission column reads `transport.exception.create` exactly, so
+    // unlike D-8 and D-21 the KEY is specified. Step 11's Permissions sheet has
+    // no Exception row at all, so who holds it is not.
+    //
+    // Raising is modelled on PERM-006 `Advance/request` — the widest "anyone
+    // doing the work may record a problem" grant the registry makes, including
+    // the Dispatcher, who is the person most likely to be standing next to the
+    // problem. An exception nobody on the ground can raise is a register that
+    // only ever hears second-hand.
+    public const EXCEPTION_CREATE = 'transport.exception.create';
+
+    // Acknowledging takes ownership and starts an SLA; resolving closes one.
+    // Both are modelled on PERM-005 `Trip/close` — the nearest act of
+    // comparable consequence the registry grants — and both therefore EXCLUDE
+    // the Dispatcher, who may raise but may not sign off. Constructed, not
+    // quoted; flagged with the rest of the derived rows.
+    public const EXCEPTION_MANAGE = 'transport.exception.manage';
+
+    /* ── Delivery — DERIVED KEY, PERM-004's row. D-8/D-45 precedent. ────── */
+    // Step 11 has no permission row for recording a delivery, and D-108 records
+    // that STT-007 has no API row to name a key either.
+    //
+    // RTM STOS-REQ-OPS-010's actor is Operations. FRS TRP-P0-013's is
+    // "Driver/Delivery", but that row is POD CAPTURE — P3's, gated by PERM-010,
+    // where the Driver already holds `own`. The state change is not the POD, and
+    // keeping the two apart is what preserves the boundary: a driver submits
+    // their proof, an operator confirms the trip arrived.
+    public const TRIP_DELIVER = 'transport.trip.deliver';
+
+    /* ── Closure — API-009's key VERBATIM, PERM-005's row VERBATIM. ─────── */
+    // The only permission in this module that needs no derivation at all:
+    // API-009 names the string and PERM-005 names the roles.
+    public const TRIP_CLOSE = 'transport.trip.close';
+
     /**
      * The matrix. Role => scope, for each permission.
      *
@@ -562,6 +597,59 @@ final class TransportPermission
             self::ROLE_OWNER      => self::SCOPE_ALL,
             self::ROLE_OPERATIONS => self::SCOPE_ALL,
             self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+
+        // Mirrors PERM-004 exactly, like TRIP_DISPATCH above it. The dispatcher
+        // who released the trip is the person the delivery call reaches, and
+        // STT-007's own actor is the TripEngine acting for Operations.
+        //
+        // Driver is N HERE and `own` under PERM-010 for the POD itself. That is
+        // the split, not an oversight: confirming a trip is delivered changes
+        // its state for everyone downstream; submitting proof does not.
+        // PERM-006's set — Owner, Operations, Dispatcher, Accounts, Admin.
+        // Approver is absent because PERM-006 omits them, and a Driver holds
+        // `own` there against their own advance; there is no "own exception",
+        // so Driver is absent rather than guessed at.
+        self::EXCEPTION_CREATE => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+
+        // PERM-005's set. The Dispatcher may RAISE and may not SIGN OFF, which
+        // is the same separation POD_SUBMIT and POD_VERIFY already draw.
+        self::EXCEPTION_MANAGE => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+
+        self::TRIP_DELIVER => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+
+        // PERM-005 `Trip / close`, VERBATIM — Owner Y, Operations Y,
+        // Dispatcher N, Accounts Y, Approver Y, Driver N, Customer N,
+        // Supplier N, Admin Y.
+        //
+        // THE DISPATCHER DENIAL IS THE POINT, and it is tested as a refusal
+        // exactly as PERM-003's is. Closing a trip settles it commercially; the
+        // person who moved the truck is not the person who signs it off. Note
+        // that PERM-005 and PERM-003 are the only two Trip rows that exclude the
+        // Dispatcher, and they are the two commercial acts.
+        self::TRIP_CLOSE => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
             self::ROLE_ADMIN      => self::SCOPE_ALL,
         ],
 

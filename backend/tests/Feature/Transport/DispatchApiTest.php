@@ -127,15 +127,50 @@ class DispatchApiTest extends TestCase
         $this->assertEqualsWithDelta(12.0, $res->json('data.turnaround_hours'), 0.05);
     }
 
-    public function test_the_response_states_it_is_not_in_transit(): void
+    public function test_the_response_states_it_is_released_but_not_yet_moving(): void
     {
+        // WAS: "…and in_transit is blocked by SNG-TRN-013". It was not blocked
+        // (D-105). The distinction the response draws is now a real one:
+        // released is not moving, and the client is told it may record the
+        // departure next.
         $a = $this->user(); Sanctum::actingAs($a);
         $trip = $this->readyTrip(actor: $a);
 
         $res = $this->patchJson($this->url($trip), $this->fields())->assertOk();
 
         $this->assertFalse($res->json('data.in_transit'));
-        $this->assertStringContainsString('SNG-TRN-013', $res->json('data.in_transit_note'));
+        $this->assertNull($res->json('data.departed_at'));
+        $this->assertTrue($res->json('data.can_depart'), 'the client is told what it may do next');
+    }
+
+    public function test_recording_the_departure_moves_it_onto_the_road(): void
+    {
+        // STT-006 over the wire, on transport.trip.dispatch — the same
+        // permission, because it is the same dispatcher's same job.
+        $a = $this->user(); Sanctum::actingAs($a);
+        $trip = $this->readyTrip(actor: $a);
+
+        $this->patchJson($this->url($trip), $this->fields())->assertOk();
+
+        $res = $this->patchJson('/api/transport/trips/'.$trip->id.'/depart', [])->assertOk();
+
+        $this->assertSame(TripStatus::IN_TRANSIT, $res->json('data.trip.status'));
+        $this->assertTrue($res->json('data.in_transit'));
+        $this->assertNotNull($res->json('data.departed_at'));
+        $this->assertFalse($res->json('data.can_depart'), 'it cannot depart twice');
+    }
+
+    public function test_the_departure_endpoint_refuses_the_fields_q3_excluded(): void
+    {
+        // Prohibited, not ignored. Silently dropping an odometer reading would
+        // let a client believe it had been recorded — D-9's mistake.
+        $a = $this->user(); Sanctum::actingAs($a);
+        $trip = $this->readyTrip(actor: $a);
+        $this->patchJson($this->url($trip), $this->fields())->assertOk();
+
+        $this->patchJson('/api/transport/trips/'.$trip->id.'/depart', ['odometer' => 145320])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('odometer');
     }
 
     public function test_the_response_names_the_deferred_side_effects(): void

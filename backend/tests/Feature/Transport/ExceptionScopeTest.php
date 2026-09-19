@@ -209,24 +209,34 @@ class ExceptionScopeTest extends TestCase
         ], ExceptionStatus::STEP_9);
     }
 
-    public function test_the_enum_declares_step_9_plus_waived(): void
+    public function test_the_enum_declares_step_9_and_nothing_else(): void
     {
-        // Q1 gives seven; Q2 adds waived. Eight, and the scope file says eight.
-        $this->assertCount(8, ExceptionStatus::ALL);
+        // WAS: "step 9 plus waived", eight states, under the owner's Q2 ruling
+        // of 2026-09-10. Superseded on 2026-09-18 by the standing Step 9 /
+        // Step 11 rule — the vocabulary comes from Step 9, full stop. D-30.
+        $this->assertCount(7, ExceptionStatus::ALL);
+        $this->assertSame(ExceptionStatus::STEP_9, ExceptionStatus::ALL);
         $this->assertSame(ExceptionScope::STATE_COUNT_DECLARED, count(ExceptionStatus::ALL));
-        $this->assertSame(
-            ExceptionStatus::STEP_9,
-            array_values(array_diff(ExceptionStatus::ALL, [ExceptionStatus::WAIVED])),
-        );
     }
 
-    public function test_waived_is_in_no_registry_which_is_why_it_is_declared_here(): void
+    public function test_waived_is_in_no_registry_which_is_why_it_is_not_in_the_vocabulary(): void
     {
         // It comes from FRS TRP-P0-012 alone and is BR-P0-011's named override.
-        $this->assertNotContains(ExceptionStatus::WAIVED, ExceptionStatus::STEP_9);
-        $this->assertNotContains(ExceptionStatus::WAIVED, ExceptionStatus::SM_EXC);
-        $this->assertNotContains(ExceptionStatus::WAIVED, ExceptionStatus::ENUM_004);
-        $this->assertContains(ExceptionStatus::WAIVED, ExceptionStatus::ALL);
+        //
+        // That is exactly WHY it is out of ALL, and why it is treated
+        // differently from in_progress, mitigation_planned, verified and closed
+        // — those are Step 9's, so they stay declared and unreachable. This one
+        // is not Step 9's, so it stays out until it has an edge and a gate.
+        foreach ([ExceptionStatus::STEP_9, ExceptionStatus::SM_EXC,
+                  ExceptionStatus::ENUM_004, ExceptionStatus::ALL] as $list) {
+            $this->assertNotContains(ExceptionStatus::WAIVED, $list);
+        }
+
+        // The CONSTANT stays, because the behaviour is SPECIFIED and we are
+        // choosing not to build it yet — not invented and refused.
+        $this->assertSame('waived', ExceptionStatus::WAIVED);
+        $this->assertStringContainsString('not built yet', ExceptionScope::WAIVER_MESSAGE);
+        $this->assertStringNotContainsString('cannot be waived', ExceptionScope::WAIVER_MESSAGE);
     }
 
     public function test_sm_exc_and_enum_004_are_recorded_as_the_documents_have_them(): void

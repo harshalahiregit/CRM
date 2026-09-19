@@ -99,17 +99,22 @@ export const TRIP_STATUS_LABEL = {
  * trip is "being set up" whether it is draft, awaiting viability, or approved).
  * Grouping them is what makes the page walkable — 16 chips explain nothing.
  *
- * `states` is what counts as DONE for that step. A step with no built states is
- * marked `built: false` and rendered as still to come, because the honest answer
- * to "what happens after dispatch?" is "that part is not built yet", and a
- * tracker that quietly stopped at four steps would imply dispatch is the end.
+ * `states` is what counts as DONE for that step, `active` is what counts as
+ * CURRENT. A step with nothing behind it is marked `built: false` and rendered
+ * as still to come — a tracker that quietly stopped would imply the last built
+ * step was the end of the job.
+ *
+ * As of 2026-09-17 every step is built. "On the road", "Delivered" and
+ * "Paid & closed" all have states behind them now. The `built: false` mechanism
+ * is kept because the next unbuilt stage will need it, not because anything
+ * uses it today.
  */
 export const TRIP_JOURNEY = [
   {
     key: 'setup',
     label: 'Trip set up',
     blurb: 'The trip exists and has been approved to run.',
-    states: ['approved', 'allocated', 'pretrip_ok', 'dispatched'],
+    states: ['approved', 'allocated', 'pretrip_ok', 'dispatched', 'in_transit', 'delivered', 'pod_verified', 'billable', 'billed', 'collection_pending', 'closed'],
     active: ['draft', 'viability_pending'],
     built: true,
   },
@@ -117,7 +122,7 @@ export const TRIP_JOURNEY = [
     key: 'crew',
     label: 'Vehicle & driver',
     blurb: 'A vehicle and a driver are assigned to the trip.',
-    states: ['allocated', 'pretrip_ok', 'dispatched'],
+    states: ['allocated', 'pretrip_ok', 'dispatched', 'in_transit', 'delivered', 'pod_verified', 'billable', 'billed', 'collection_pending', 'closed'],
     active: ['approved'],
     built: true,
   },
@@ -125,7 +130,7 @@ export const TRIP_JOURNEY = [
     key: 'checks',
     label: 'Pre-trip checks',
     blurb: 'Everything is verified as fit to leave — papers, vehicle, driver.',
-    states: ['pretrip_ok', 'dispatched'],
+    states: ['pretrip_ok', 'dispatched', 'in_transit', 'delivered', 'pod_verified', 'billable', 'billed', 'collection_pending', 'closed'],
     active: ['allocated'],
     built: true,
   },
@@ -133,17 +138,40 @@ export const TRIP_JOURNEY = [
     key: 'dispatch',
     label: 'Dispatch',
     blurb: 'The trip is released, with its departure and arrival times fixed.',
-    states: ['dispatched'],
+    states: ['dispatched', 'in_transit', 'delivered', 'pod_verified', 'billable', 'billed', 'collection_pending', 'closed'],
     active: ['pretrip_ok'],
     built: true,
   },
+  // Built 2026-09-17. This step used to read "Not built yet" and it was the
+  // honest label at the time: nothing could reach in_transit. Two states now
+  // sit behind it — released is not moving, and moving is not delivered.
   {
     key: 'journey',
     label: 'On the road',
-    blurb: 'Tracking the trip, delivery and proof of delivery.',
-    states: [],
-    active: [],
-    built: false,
+    blurb: 'The vehicle has left and is on its way to the destination.',
+    states: ['delivered', 'pod_verified', 'billable', 'billed', 'collection_pending', 'closed'],
+    active: ['dispatched', 'in_transit'],
+    built: true,
+  },
+  {
+    key: 'delivery',
+    label: 'Delivered',
+    blurb: 'The load has arrived and proof of delivery is on file.',
+    states: ['pod_verified', 'billable', 'billed', 'collection_pending', 'closed'],
+    active: ['delivered'],
+    built: true,
+  },
+  // Deliberately NOT marked built:false, because it IS built — it is
+  // unreachable, which is a different thing and needs a different word. See
+  // D-106: nothing can reach collection_pending until Accounts can mark a bill
+  // invoiced, and that one missing route is Person 3's.
+  {
+    key: 'closed',
+    label: 'Paid & closed',
+    blurb: 'The invoice has been collected and the trip is settled.',
+    states: ['closed'],
+    active: ['billable', 'billed', 'collection_pending'],
+    built: true,
   },
 ]
 
@@ -465,7 +493,30 @@ export const toLocalInput = (v) => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-export const fromLocalInput = (v) => (v ? v.replace('T', ' ') + ':00' : null)
+/**
+ * A `datetime-local` value back to something the SERVER cannot misread.
+ *
+ * ── THIS USED TO SEND A WALL CLOCK WITH NO TIMEZONE ─────────────────────
+ * It returned "2026-09-20 14:00:00". The API runs in UTC, so Carbon read that
+ * as 14:00 UTC — and a user in IST who typed 2pm got 19:30 back. Worse, the
+ * default on the transit panel is NOW: "now" in IST is five and a half hours in
+ * the FUTURE in UTC, so the server refused it with "a departure cannot be
+ * recorded in the future" and BOTH Record departure and Record delivery failed
+ * on the very first click, for every user not sitting on UTC.
+ *
+ * Found by clicking the button, not by reading the code — every server-side
+ * test passed, because they all build their times on the server.
+ *
+ * The fix is to send the INSTANT the user meant, offset included, so the server
+ * converts instead of guessing. `date` validation and Carbon::parse() both take
+ * ISO-8601 with an offset.
+ */
+export const fromLocalInput = (v) => {
+  if (!v) return null
+  const d = new Date(v)          // parsed in the browser's own zone, which is the point
+  if (Number.isNaN(d.getTime())) return null
+  return d.toISOString()
+}
 
 /** A dispatch history entry — version 1 is the release, the rest are amendments. */
 export const dispatchVersionCfg = (type, version) =>
