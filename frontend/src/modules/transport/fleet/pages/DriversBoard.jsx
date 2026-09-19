@@ -25,6 +25,7 @@ export default function DriversBoard() {
   const [term, setTerm] = useState('')
   const [driversOnly, setDriversOnly] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [readyOnly, setReadyOnly] = useState(false)
 
   const params = { ...(term ? { q: term } : {}), ...(driversOnly ? { drivers_only: 1 } : {}) }
 
@@ -32,6 +33,26 @@ export default function DriversBoard() {
     queryKey: ['stos-drivers', params],
     queryFn: () => stosApi.drivers.list(params),
   })
+
+  /**
+   * Who can actually take a load right now.
+   *
+   * The same `{eligible, excluded[blockers]}` shape the vehicle picker uses, so
+   * a dispatcher reads trucks and crew the same way — and each blocker names
+   * the desk that can clear it rather than only saying "blocked".
+   *
+   * Fetched only when asked for: the list above is the directory, this is a
+   * question about it.
+   */
+  const eligibility = useQuery({
+    queryKey: ['stos-drivers-eligible', params],
+    queryFn: () => stosApi.drivers.eligible(params),
+    enabled: readyOnly,
+  })
+
+  const blockedBy = new Map(
+    (eligibility.data?.excluded ?? []).map((d) => [d.ref, d.blockers])
+  )
 
   const drivers = data?.drivers ?? []
   const counts = data?.counts
@@ -75,6 +96,37 @@ export default function DriversBoard() {
             appear on this screen. Transport only stores their licence and availability.
           </span>
         </p>
+      )}
+
+      {/* The licence blocks the DRIVER, never the truck — Person 1's ruling.
+          This is where that becomes visible: a name with a reason beside it,
+          and the truck it usually drives stays fully allocatable. */}
+      <label className="flex items-center gap-2 mb-3 cursor-pointer w-fit">
+        <input type="checkbox" checked={readyOnly} onChange={(e) => setReadyOnly(e.target.checked)} />
+        <span className="text-[11px] font-semibold" style={{ color: 'var(--text-h)' }}>
+          Show who can take a load right now
+        </span>
+      </label>
+
+      {readyOnly && eligibility.data && (
+        <div className="rounded-xl p-3 mb-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+          <p className="text-[11px] font-bold mb-2" style={{ color: 'var(--text-h)' }}>
+            {eligibility.data.counts.eligible} ready · {eligibility.data.counts.excluded} cannot be dispatched
+          </p>
+
+          {eligibility.data.excluded.map((d) => (
+            <div key={d.ref} className="flex items-start gap-2 py-1">
+              <span className="text-[11px] font-semibold shrink-0" style={{ color: 'var(--text-h)' }}>{d.name}</span>
+              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                {d.blockers.map((b) => `${b.why} (${b.owner})`).join(' · ')}
+              </span>
+            </div>
+          ))}
+
+          {eligibility.data.excluded.length === 0 && (
+            <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Everyone on file can be dispatched.</p>
+          )}
+        </div>
       )}
 
       {counts && (counts.licence_expired > 0 || counts.unlicensed > 0) && (

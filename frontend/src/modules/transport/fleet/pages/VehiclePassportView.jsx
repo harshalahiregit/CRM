@@ -13,6 +13,8 @@ import UreaTopUpModal from '../components/UreaTopUpModal'
 import GensetPanel from '../components/GensetPanel'
 import MaintenanceJobCardForm from '../components/MaintenanceJobCardForm'
 import CompliancePanel from '../components/CompliancePanel'
+import VehicleDocumentsPanel from '../components/VehicleDocumentsPanel'
+import VehicleStatusControl from '../components/VehicleStatusControl'
 import TyrePanel from '../components/TyrePanel'
 import AssignedDriverCard from '../components/AssignedDriverCard'
 
@@ -181,6 +183,13 @@ export default function VehiclePassportView() {
                 specifies a required capacity.
               </p>
             )}
+            {/* T-56 — the three things a person may actually decide. The rest of
+                the state machine is a consequence of something happening
+                elsewhere, and the server says which when it refuses. */}
+            <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+              <VehicleStatusControl vehicle={vehicle} onChanged={() => refetch()} />
+            </div>
+
             {/* Driver comes from Dispatch, which owns trips and crew. Saying so
                 beats an empty field labelled "Current driver". */}
             <p className="text-[10px] mt-2" style={{ color: 'var(--text-muted)' }}>
@@ -449,6 +458,14 @@ export default function VehiclePassportView() {
         <>
           <Card title="Compliance & permits" icon={ShieldCheck}>
             <CompliancePanel compliance={compliance} vehicle={vehicle} />
+          </Card>
+
+          {/* T-57 — the evidence behind the five dates above. Separate card on
+              purpose: the panel above is the VERDICT, this is what it is
+              derived from, and conflating them hides which certificate to go
+              and renew. */}
+          <Card title="Documents" icon={FileText}>
+            <VehicleDocumentsPanel vehicle={vehicle} onChanged={() => refetch()} />
           </Card>
 
           {/* The gate has two halves: the vehicle's papers and the driver's
