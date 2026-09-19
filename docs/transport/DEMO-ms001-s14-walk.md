@@ -11,20 +11,30 @@ following sequence."*
 
 ## The scoreboard
 
-**6 of 14 work end to end. 4 are partial. 4 are not built.**
-Of the eight gaps, **one is ours.**
+**9 of 14 work end to end. 3 are partial. 2 are not built.**
+Of the five remaining gaps, **none is ours.**
+
+*(The first version of this line read "6 / 4 / 4". That was wrong when written — counting the
+table gives 7 / 4 / 3 for 18 September. Corrected here rather than quietly restated, because a
+scoreboard nobody can reproduce from the table underneath it is worse than no scoreboard.)*
+
+> **Updated 2026-09-19.** Step 3 moved from PARTIAL to **WORKS**, and step 9 from NOT BUILT to
+> **WORKS**. Neither needed new permission: step 3's blocker had been cleared by P3 three days
+> before this document was written and nobody said so, and step 9's was a ruling rather than
+> work. The lesson is in TEAM-CONTRACTS — *check a blocker against the repository, not against
+> the register.*
 
 | # | Step | Verdict | Whose gap |
 |---|---|---|---|
 | 1 | Search by Container Number | **WORKS** | — |
 | 2 | Open Container 360 / Consignment Passport | **WORKS** | — |
-| 3 | Show customer, order, **LR/DO** and trip | **PARTIAL** | LR/DO — **P3** |
+| 3 | Show customer, order, **LR/DO** and trip | **WORKS** ✅ | *was P3 — cleared 16 Sep* |
 | 4 | Show recommended vehicle/driver and allocation **reason/score** | **PARTIAL** | score — **P2** |
 | 5 | Show compliance and dispatch eligibility | **WORKS** | — |
 | 6 | Show document status and handover chain | **WORKS** | — |
 | 7 | Show dispatch/trip progression | **WORKS** | — |
 | 8 | Show GPS/temperature/generator event | **NOT REACHABLE** | **P2** |
-| 9 | Show exception/CAPA where applicable | **NOT BUILT** | **P1** — blocked, see below |
+| 9 | Show exception/CAPA where applicable | **WORKS** ✅ | *was P1 — built 18 Sep* |
 | 10 | Record delivery, **feedback** and POD | **PARTIAL** | feedback — **P3** |
 | 11 | Show Billing Ready or exact blocker | **WORKS** | — |
 | 12 | Show invoice linkage | **PARTIAL** | **P3** — D-106 |
@@ -47,14 +57,28 @@ One click to `/app/transport/containers/23`.
 > On trip TRP-2026-000034, on the road since 18 Sep, 09:44.
 > **NEXT** — Record the delivery when it arrives.
 
-### 3 · Customer, order, LR/DO and trip — PARTIAL
+### 3 · Customer, order, LR/DO and trip — ~~PARTIAL~~ **WORKS** (19 Sep)
 Six of the seven chain nodes render with real data: customer, transport order, consignment,
 container, trip, vehicle, driver — each with an **Open** link except the last two (D-110).
 
-**LR/DO is absent.** It is P3's, and D-41 records that the document entity does not model a
-lorry receipt or delivery order as first-class records. `TripDocumentsPanel` offers "Lorry
-receipt" and "Delivery order" as document TYPES, so the chain can carry one once a trip has one
-filed — but the passport has no LR/DO node and cannot invent it.
+~~**LR/DO is absent.**~~ **Built 19 September.** The chain now carries both, in the position
+CTD §5's worked search example puts them — Container, Status, Customer, Transport Order, **LR**,
+Vehicle, Driver:
+
+> CUSTOMER · TRANSPORT ORDER · CONSIGNMENT · **LR / BILTY LR-2026-0042** · **DELIVERY ORDER
+> DO-2026-0099** · CONTAINER *(you are here)* · TRIP · VEHICLE · DRIVER
+
+**And the blocker had already cleared when this document said it had not.** D-41 ruled on
+12 September that an LR and a DO stay documents rather than getting tables of their own, which
+needed a consignment to be something a document can be filed against. **P3 shipped exactly that
+on 16 September** — `TransportDocumentEntity::CONSIGNMENT`, `DELIVERY_ORDER`, and the two routes
+— two days before this walk recorded the step as blocked on him. Nobody announced it; we did not
+announce the trip lifecycle to them either.
+
+What P1 then built on top of it: the capture panel on the consignment (ORD-005/006, "LR
+traceable", "DO traceable"), the two chain nodes (CTD-004/005, "LR visible", "DO visible"), and
+**LR/DO as search keys** — which CTD §150 lists among its NON-NEGOTIABLE REQUIREMENTS and §4
+lists among the entry points that "must ultimately lead to the same Digital Passport".
 
 ### 4 · Recommended vehicle/driver and allocation reason/score — PARTIAL
 The candidate picker is genuinely good on the **reason** half:
@@ -93,15 +117,18 @@ the Fleet screen mentions telemetry. **There is no trip-side or container-side s
 demonstration cannot get from the container to a GPS or temperature reading. Nothing on our side
 is blocking it — it needs a read contract from P2's telemetry to the trip.
 
-### 9 · Exception / CAPA — NOT BUILT, AND THIS ONE IS OURS
+### 9 · Exception / CAPA — ~~NOT BUILT~~ **WORKS** (18 Sep)
 Nothing on the trip page mentions an exception. `trip_exceptions` has a schema and a vocabulary
 and **no model**: SNG-TRN-013 shipped the first two and stopped, blocked on **D-29** (six
 different exception lifecycles across the documents, Step 11 contradicting itself) and **D-30**
 (`waived` is required by FRS TRP-P0-012 and exists in no enum).
 
-Both are awaiting an owner ruling. **This is the one step of the fourteen that P1 could deliver
-and has not**, and it is one decision away rather than one build away. CAPA itself is P3's
-(Quality, TM-001 §8).
+~~Both are awaiting an owner ruling.~~ **Both were ruled on 18 September and neither needed a new
+decision.** D-29 dissolved under the standing Step 9 / Step 11 rule already in TEAM-CONTRACTS;
+D-30 deferred `waived` the way BR-P0-017's waiver is deferred. The register is built: raise →
+acknowledge → resolve, on the trip page.
+
+CAPA itself remains P3's (Quality, TM-001 §8).
 
 ### 10 · Record delivery, feedback and POD — PARTIAL
 **Delivery works** (STT-007, ours, shipped 17 Sept). **POD works** (P3). **Feedback does not
@@ -138,12 +165,21 @@ newest first, and every status change now reads in English:
 
 ## What this means for 30 September
 
-**Steps 1 → 7 and 14 run as one unbroken story** on a single real container: search it, open its
+**Steps 1 → 7, 9 and 14 run as one unbroken story** on a single real container: search it, open its
 passport, read its whole chain, see it is fit to leave, see its paperwork, watch it progress, and
 read everything that has happened to it. That is the spine of the demonstration and it holds.
 
-**The four not-built steps are 8, 9, 12 and 13.** Three are P2's or P3's. The fourth — the
-exception engine — is ours and is waiting on a ruling, not on work.
+**The five remaining gaps are steps 4, 8, 10, 12 and 13 — and not one of them is ours.**
+
+| | | whose | how far away |
+|---|---|---|---|
+| 4 | allocation **score** | P2 | their scoring engine; we show eligibility with reasons |
+| 8 | GPS / temperature event | P2 | **one change** — three `record()` calls in `TelemetryIngestionService`, see `CONTRACT-trip-events.md` |
+| 10 | **feedback** | P3 | unspecified anywhere in the package |
+| 12 | invoice linkage | P3 | **one route** — `markInvoiced()` still has no caller, D-106 |
+| 13 | native CIA / control room | P3 | API-012, unbuilt |
+
+Two of the five are a single change each, and both are somebody else's to make.
 
 **The highest-value single unblock is D-106**: one route on P3's side turns step 12 from
 explained into demonstrated, and makes `closed` reachable, which lights up the end of step 7 as

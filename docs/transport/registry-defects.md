@@ -3356,3 +3356,54 @@ and put to the owner rather than silently resolved.
 Three further gaps follow from the same silence and are ruled in that plan rather than guessed:
 no locked `event_type` enum exists anywhere (both lists say "Example"), no permission row exists,
 and no API row exists.
+
+
+---
+
+## D-114 — Two blockers cleared and neither of us noticed, for three days
+
+**Raised:** 2026-09-19. **Not a code defect. A process one, and it cost real time.**
+
+The owner asked whether P2 or P3 might have landed something we were waiting on. Both had.
+
+| | | |
+|---|---|---|
+| **16 Sep** | **Zafar** — "a consignment can hold its own paperwork" | `TransportDocumentEntity::CONSIGNMENT` in `ALL` and `ACTIVE`, `DELIVERY_ORDER` in the type enum, `CONSIGNMENT_APPLICABLE`, and both document routes. **Every one of the three changes `REQUEST-person3-document-entity.md` asked for.** |
+| **17 Sep** | **Shivam** — `ReconcileFleetMasters` on master | D-100's blocker (a) closed. |
+
+**Our own walk of MS-001 §14, written on 18 September, recorded step 3 as "PARTIAL — LR/DO
+blocked on P3".** It had not been blocked for two days. The register said it was, the register
+was read instead of the repository, and the document went out saying we were waiting on work
+that was already done.
+
+That is the expensive failure mode: **it sends you to ask somebody for something they have
+already given you.** It nearly did exactly that here.
+
+### What was actually still open — verified against the code, not the register
+
+- `TripBill::markInvoiced()` still has no caller. The only mentions in `app/` and `routes/` are
+  our own comments saying so. **D-106 stands**, closure stays PLUMBED.
+- `FleetResourceGateway` still carries one method. **D-100 (b) and (c) stand**, so the
+  allocation repoint still cannot happen even though (a) is clear.
+- No feedback entity anywhere. **Still P3's, still unspecified.**
+
+### And nobody is at fault
+
+Neither of them announced it. **We did not announce the trip lifecycle to them either**, and
+that landed on the 17th. Three people on one repository, each shipping several times a day, is
+simply a situation where announcements are not a reliable channel — and the answer is to look
+rather than to wait.
+
+Recorded as a standing rule in `TEAM-CONTRACTS.md`: *before every block, and before any message
+saying you are blocked, fetch and check each open blocker against the code.*
+
+### D-100's status, corrected
+
+| | |
+|---|---|
+| ~~(a) no reconciliation for ambiguous plates~~ | **CLEARED 17 Sep** — `ReconcileFleetMasters` is on master |
+| (b) `FleetResourceGateway` has one method | **open** |
+| (c) Fleet's `vehicles` reads zero through Transport's paths | **open** |
+
+Two blockers, not three. The repoint still cannot happen, and for one fewer reason than the
+register said yesterday.

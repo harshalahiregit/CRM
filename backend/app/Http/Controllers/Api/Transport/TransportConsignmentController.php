@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api\Transport;
 
 use App\Http\Controllers\Controller;
+use App\Support\Transport\TransportDocumentEntity;
+use App\Support\Transport\TransportDocumentType;
 use App\Http\Controllers\Traits\ApiResponse;
 use App\Http\Requests\Transport\StoreConsignmentRequest;
 use App\Http\Requests\Transport\StoreTransportDocumentRequest;
@@ -84,6 +86,14 @@ class TransportConsignmentController extends Controller
             // D-41: the LR and the DO live here, so the detail payload carries
             // them exactly as the vehicle and driver payloads carry theirs.
             'documents'   => $consignment->documents()->orderByDesc('id')->get(),
+            // Which types may be filed here, from the one place that decides —
+            // TransportDocumentType::forEntity(). A form that keeps its own copy
+            // of the list will offer a fitness certificate against a shipment
+            // the first time somebody edits one and not the other.
+            'document_types' => array_map(
+                fn (string $t) => ['value' => $t, 'label' => TransportDocumentType::label($t)],
+                TransportDocumentType::forEntity(TransportDocumentEntity::CONSIGNMENT),
+            ),
             'audit'       => $this->audit->forSubject($consignment, $tenantId),
         ], 'Consignment retrieved');
     }

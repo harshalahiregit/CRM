@@ -3,6 +3,10 @@
 namespace App\Services\Transport;
 
 use App\Models\Transport\ConsignmentContainer;
+use App\Models\Transport\TransportConsignment;
+use App\Support\Transport\TransportDocumentType;
+use App\Support\Transport\TransportDocumentEntity;
+use App\Models\Transport\TransportDocument;
 use App\Models\Transport\TripEvent;
 use App\Models\Transport\TransportAuditLog;
 use App\Models\Transport\TransportContainer;
@@ -73,7 +77,7 @@ class ContainerPassportService
         return [
             'container'   => $container,
             'lifecycle'   => $this->lifecycle($history, $current),
-            'chain'       => $this->chain($current, $trip),
+            'chain'       => $this->chain($current, $trip, $tenantId),
             'status'      => $this->status($container, $current, $trip),
             'readiness'   => $this->readiness($trip, $tenantId),
             'linked'      => $this->linkedRecords($trip, $tenantId),
@@ -130,7 +134,7 @@ class ContainerPassportService
      *
      * @return array<string,mixed>
      */
-    private function chain(?ConsignmentContainer $current, ?TransportTrip $trip): array
+    private function chain(?ConsignmentContainer $current, ?TransportTrip $trip, int $tenantId): array
     {
         // The trip's copy carries every column the chain needs; the attachment's
         // is column-limited for the history list. Prefer the fuller one.
@@ -152,6 +156,25 @@ class ContainerPassportService
                 'package_count'      => $consignment->package_count,
                 'gross_weight_kg'    => $consignment->gross_weight_kg,
             ] : null,
+
+            /* ── CTD-004 and CTD-005, both P0 ────────────────────────────
+             *
+             * "Link container to LR" · acceptance "LR visible".
+             * "Link container to DO" · acceptance "DO visible".
+             *
+             * CTD §5's worked search example puts the LR in exactly this
+             * position — Container, Status, Customer, Transport Order, **LR**,
+             * Vehicle, Driver — so the chain carries it between the order and
+             * the trip rather than hiding it in a documents list.
+             *
+             * Unbuildable until 2026-09-16. D-41 ruled that an LR and a DO stay
+             * DOCUMENTS rather than getting tables of their own, and P3 made a
+             * consignment something a document can be filed against. Our own
+             * walk of MS-001 §14 recorded step 3 as partial for want of this,
+             * and the blocker had already cleared — nobody announced it.
+             */
+            'lr' => $this->shipmentDocument($consignment, TransportDocumentType::LR, $tenantId),
+            'do' => $this->shipmentDocument($consignment, TransportDocumentType::DELIVERY_ORDER, $tenantId),
             'trip'        => $trip ? [
                 'id' => $trip->id, 'number' => $trip->trip_number, 'status' => $trip->status,
                 'status_label' => TripStatus::LABELS[$trip->status] ?? $trip->status,
@@ -186,6 +209,42 @@ class ContainerPassportService
      *
      * @return array<string,mixed>
      */
+    /**
+     * The current LR or DO on this shipment, or null.
+     *
+     * NULL rather than an empty shape, because ChainRow renders nothing for a
+     * missing value — a consignment with no LR yet shows no LR row rather than
+     * a row saying "—". CTD-004's acceptance is "LR visible", and a dash is not
+     * an LR.
+     *
+     * Newest version wins: STOS-DOC §26 makes a renewal a new version rather
+     * than an overwrite, so the chain shows the one in force.
+     */
+    private function shipmentDocument(?TransportConsignment $consignment, string $type, int $tenantId): ?array
+    {
+        if (! $consignment) {
+            return null;
+        }
+
+        $doc = TransportDocument::forTenant($tenantId)
+            ->where('entity_type', TransportDocumentEntity::CONSIGNMENT)
+            ->where('entity_id', $consignment->id)
+            ->where('document_type', $type)
+            ->orderByDesc('version')
+            ->first();
+
+        return $doc ? [
+            'id'     => $doc->id,
+            'number' => $doc->document_number,
+            'label'  => TransportDocumentType::label($type),
+            // A document may be filed without its number — the file itself is
+            // the record. Say which, rather than rendering a blank.
+            'issued_on' => $doc->issued_on?->toDateString(),
+            'version'   => (int) $doc->version,
+            'has_file'  => $doc->file_path !== null,
+        ] : null;
+    }
+
     private function status(TransportContainer $container, ?ConsignmentContainer $current, ?TransportTrip $trip): array
     {
         if (! $current) {

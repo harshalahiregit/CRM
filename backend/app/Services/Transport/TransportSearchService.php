@@ -3,6 +3,9 @@
 namespace App\Services\Transport;
 
 use App\Models\Transport\TransportConsignment;
+use App\Support\Transport\TransportDocumentType;
+use App\Support\Transport\TransportDocumentEntity;
+use App\Models\Transport\TransportDocument;
 use App\Models\Transport\TransportContainer;
 use App\Models\Transport\TransportDriver;
 use App\Models\Transport\TransportOrder;
@@ -72,6 +75,15 @@ class TransportSearchService
             fn () => $this->trip($term, $tenantId),
             fn () => $this->order($term, $tenantId),
             fn () => $this->consignment($term, $tenantId),
+            // CTD §150 NON-NEGOTIABLE: "LR and DO must be searchable", and
+            // CTD §4 lists both among the entry points that "must ultimately
+            // lead to the same Digital Passport". Unbuildable until 2026-09-16,
+            // when P3 made a consignment something a document can be filed
+            // against (D-41). Ahead of the customer reference because an LR
+            // number is a Sangoé identifier and a customer reference is
+            // somebody else's — a collision between the two should resolve to
+            // ours.
+            fn () => $this->shipmentDocument($term, $tenantId),
             fn () => $this->customerReference($term, $tenantId),
             fn () => $this->vehicle($term, $tenantId),
             fn () => $this->driver($term, $tenantId),
@@ -133,6 +145,60 @@ class TransportSearchService
     }
 
     /** CTD §4 names "Customer Reference" — the customer's own PO, off their paperwork. */
+    /**
+     * An LR or DO number — CTD §4, and §150's non-negotiable.
+     *
+     * D-41 ruled that an LR and a DO stay DOCUMENTS rather than getting tables
+     * of their own, so "search by LR number" is a search of
+     * `transport_documents.document_number` for a document filed against a
+     * consignment. It resolves to the consignment, because that is the thing
+     * the number identifies and the thing a passport can be opened from.
+     *
+     * Only LR and DELIVERY_ORDER, deliberately. The same column holds e-way
+     * bill and invoice numbers, and those are other systems' identifiers with
+     * their own meanings — CTD §4 lists "Invoice Number" as a separate entry
+     * point, and answering an invoice search with a consignment would be
+     * guessing at what somebody meant.
+     *
+     * Case-insensitive and trimmed, and nothing more: unlike a container number
+     * there is no normalisation rule for an LR anywhere in the package, and
+     * inventing one would be D-9 — stripping dashes from "LR-2026-0001" assumes
+     * a format no document defines.
+     */
+    private function shipmentDocument(string $term, int $tenantId): ?array
+    {
+        $doc = TransportDocument::forTenant($tenantId)
+            ->where('entity_type', TransportDocumentEntity::CONSIGNMENT)
+            ->whereIn('document_type', [TransportDocumentType::LR, TransportDocumentType::DELIVERY_ORDER])
+            ->whereRaw('LOWER(document_number) = ?', [mb_strtolower($term)])
+            // The newest version wins. STOS-DOC §26 makes a renewal a new
+            // version rather than an overwrite, so one LR number can have
+            // several rows and the current one is the one somebody means.
+            ->orderByDesc('version')
+            ->first();
+
+        if (! $doc) {
+            return null;
+        }
+
+        $consignment = TransportConsignment::forTenant($tenantId)->find($doc->entity_id);
+
+        if (! $consignment) {
+            // A document whose consignment has gone. Say nothing rather than
+            // offer a link to a record that will 404.
+            return null;
+        }
+
+        return $this->hit(
+            'consignment',
+            $consignment->id,
+            $consignment->consignment_number,
+            TransportDocumentType::label($doc->document_type),
+            '/app/transport/consignments?open='.$consignment->id,
+            matched: TransportDocumentType::label($doc->document_type).' '.$doc->document_number,
+        );
+    }
+
     private function customerReference(string $term, int $tenantId): ?array
     {
         $c = TransportConsignment::forTenant($tenantId)->where('customer_reference', $term)->first();

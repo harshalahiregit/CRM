@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   ArrowLeft, Container, Loader2, AlertTriangle, History, Link2,
-  Building2, Package, Boxes, Truck, UserRound, FileCheck2, ClipboardCheck,
+  Building2, Package, Boxes, Truck, UserRound, FileCheck2, ClipboardCheck, FileText,
 } from 'lucide-react'
 import { transportContainerApi } from '@/services/transportApi'
 import { fmtDateTime, TRIP_STATUS_LABEL } from '../constants'
@@ -114,6 +114,17 @@ export default function ContainerPassport() {
             onOpen={chain.order && (() => navigate(`/app/transport/orders/${chain.order.id}`))} />
           <ChainRow icon={Boxes} label="Consignment" value={chain.consignment?.number}
             hint={chain.consignment?.cargo_description}
+            onOpen={chain.consignment && (() => navigate(`/app/transport/consignments?open=${chain.consignment.id}`))} />
+          {/* CTD-004 and CTD-005, both P0 — "LR visible", "DO visible".
+              CTD §5's worked search example puts the LR exactly here, between
+              the Transport Order and the Vehicle. Absent until the consignment
+              has one, because ChainRow renders nothing for a missing value and
+              a dash is not an LR. */}
+          <ChainRow icon={FileText} label="LR / Bilty" value={chain.lr?.number}
+            hint={chain.lr ? `${chain.lr.has_file ? 'Filed' : 'Recorded'}${chain.lr.version > 1 ? ` · version ${chain.lr.version}` : ''}` : null}
+            onOpen={chain.consignment && (() => navigate(`/app/transport/consignments?open=${chain.consignment.id}`))} />
+          <ChainRow icon={FileText} label="Delivery order" value={chain.do?.number}
+            hint={chain.do ? `${chain.do.has_file ? 'Filed' : 'Recorded'}${chain.do.version > 1 ? ` · version ${chain.do.version}` : ''}` : null}
             onOpen={chain.consignment && (() => navigate(`/app/transport/consignments?open=${chain.consignment.id}`))} />
           <ChainRow icon={Container} label="Container" value={container.container_number} hint="you are here" />
           <ChainRow icon={Truck} label="Trip" value={chain.trip?.number}

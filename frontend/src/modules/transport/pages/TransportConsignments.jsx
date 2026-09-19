@@ -9,7 +9,9 @@ import PagerBar from '@/components/ui/PagerBar'
 import Drawer from '@/components/ui/Drawer'
 import FormField, { Input, Select, Textarea } from '@/components/ui/FormField'
 import ConfirmDialog from '@/components/ui/ConfirmDialog'
-import { fmtDateTime, ORDER_STATUS_LABEL, TRIP_STATUS_LABEL } from '../constants'
+import { fmtDateTime, ORDER_STATUS_LABEL, TRIP_STATUS_LABEL, DOCUMENT_TYPE_LABEL } from '../constants'
+// ORD-005/006 — the same panel the vehicle and driver screens file with.
+import DocumentsPanel from '../components/DocumentsPanel'
 
 /**
  * Consignments — the commercial shipment (STOS-CTD §8).
@@ -446,6 +448,8 @@ function ConsignmentForm({ form, sf, orders, lockOrder = false }) {
  * because the list does not carry the trips or the audit trail.
  */
 function ConsignmentDetail({ id }) {
+  const qc = useQueryClient()
+  const toast = useToast()
   const { data, isLoading } = useQuery({
     queryKey: ['transport', 'consignments', id],
     queryFn: () => transportConsignmentApi.get(id),
@@ -460,6 +464,11 @@ function ConsignmentDetail({ id }) {
 
   const trips = data?.trips ?? []
   const audit = data?.audit ?? []
+  const documents = data?.documents ?? []
+  // From the server, never a local copy — see the note on fileDocument().
+  const documentTypes = data?.document_types ?? []
+
+  const refile = () => qc.invalidateQueries({ queryKey: ['transport', 'consignments', id] })
 
   return (
     <div className="space-y-5">
@@ -499,6 +508,39 @@ function ConsignmentDetail({ id }) {
               </span>
             </div>
           ))}
+      </Section>
+
+      {/* ── ORD-005 and ORD-006, both P0 — "LR traceable", "DO traceable" ──
+          D-41 ruled on 12 September that an LR and a DO stay DOCUMENTS rather
+          than getting tables of their own. That ruling only means anything if a
+          consignment is something a document can be filed against, and it
+          became one on 16 September when Person 3 shipped the entity and the
+          two routes. Nothing had ever called them.
+
+          Same panel as the vehicle and driver documents, deliberately: three
+          screens filing paperwork three different ways is how the rules on one
+          of them drift. Which TYPES may be filed comes from the server. */}
+      <Section title={`Paperwork (${documents.length})`}>
+        <DocumentsPanel
+          documents={documents}
+          types={documentTypes}
+          heading="Shipment paperwork"
+          emptyText="No paperwork filed yet. The LR and the delivery order travel with the goods; file them here and they appear on the container's passport."
+          // An LR does not expire. The expiry column is the vehicle and driver
+          // case, and showing "Valid until —" against a lorry receipt says
+          // something untrue about it.
+          showExpiry={false}
+          onFile={async (body) => {
+            await transportConsignmentApi.fileDocument(id, body)
+            toast.success(`${DOCUMENT_TYPE_LABEL[body.document_type] || 'Document'} filed against ${c.consignment_number}.`)
+            refile()
+          }}
+          onRenew={async (doc, body) => {
+            await transportConsignmentApi.renewDocument(id, doc.id, body)
+            toast.success('Filed as a new version — the previous one is kept.')
+            refile()
+          }}
+        />
       </Section>
 
       {/* STOS-CTD §8 — "a consignment may contain one container; contain

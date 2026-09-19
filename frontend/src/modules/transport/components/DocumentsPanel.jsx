@@ -6,7 +6,12 @@ import { expiryCfg, fmtDate, DOCUMENT_TYPE_LABEL } from '../constants'
 import { Section, Field, Chip, inputStyle, selectStyle } from './MasterFormFields'
 
 /**
- * Compliance documents for a vehicle or driver — DB-019.
+ * Documents filed against a vehicle, a driver or a consignment — DB-019.
+ *
+ * The consignment case arrived on 2026-09-19 (ORD-005/006) and is why the
+ * heading, the empty sentence and the expiry column are props: an LR is not a
+ * compliance document and does not expire, and a panel that says otherwise is
+ * wrong on the screen a client is looking at.
  *
  * Shows what CTD §22/§23 ask a document panel to show: the document, its status
  * and its expiry. The expiry state comes from expiryCfg, which reads the same
@@ -17,7 +22,21 @@ import { Section, Field, Chip, inputStyle, selectStyle } from './MasterFormField
  * NEW VERSION rather than an edit: "do not silently overwrite the previous
  * version. Maintain Version 1, Version 2, Version 3 with history."
  */
-export default function DocumentsPanel({ documents = [], types = [], onFile, onRenew, canEdit = true, windowDays = 30 }) {
+export default function DocumentsPanel({
+  documents = [], types = [], onFile, onRenew, canEdit = true, windowDays = 30,
+  /* ── Three words this panel used to own, now its caller's ─────────────
+   *
+   * It was written for a VEHICLE and a DRIVER, where every document is a
+   * compliance document with an expiry. A consignment's paperwork is not: an
+   * LR and a delivery order are what travels with the goods, they do not
+   * expire, and "Compliance documents · Valid until —" told a reader three
+   * wrong things at once. Defaults are the vehicle/driver behaviour exactly,
+   * so those two screens are unchanged.
+   */
+  heading = 'Compliance documents',
+  emptyText = 'No documents on file. Required documents are configured per workspace — until then, nothing is treated as missing.',
+  showExpiry = true,
+}) {
   const toast = useToast()
   const [open, setOpen] = useState(false)
   const [renewing, setRenewing] = useState(null)
@@ -58,7 +77,7 @@ export default function DocumentsPanel({ documents = [], types = [], onFile, onR
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <FileText size={15} style={{ color: '#7C3AED' }} />
           <h3 style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-h)', margin: 0, textTransform: 'uppercase', letterSpacing: '.03em' }}>
-            Compliance documents
+            {heading}
           </h3>
         </div>
         {canEdit && (
@@ -71,7 +90,7 @@ export default function DocumentsPanel({ documents = [], types = [], onFile, onR
 
       {active.length === 0 && (
         <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: 0 }}>
-          No documents on file. Required documents are configured per workspace — until then, nothing is treated as missing.
+          {emptyText}
         </p>
       )}
 
@@ -87,11 +106,12 @@ export default function DocumentsPanel({ documents = [], types = [], onFile, onR
                     <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}> · v{d.version}</span>
                   </p>
                   <p style={{ margin: '2px 0 0', fontSize: 11.5, color: 'var(--text-muted)' }}>
-                    {d.document_number ? `${d.document_number} · ` : ''}Valid until {fmtDate(d.valid_until)}
+                    {d.document_number || 'No number recorded'}
+                    {showExpiry ? ` · Valid until ${fmtDate(d.valid_until)}` : (d.issued_on ? ` · issued ${fmtDate(d.issued_on)}` : '')}
                   </p>
                 </div>
-                {cfg.days !== null && cfg.days < 0 && <AlertTriangle size={14} style={{ color: '#f87171' }} />}
-                <Chip cfg={cfg} />
+                {showExpiry && cfg.days !== null && cfg.days < 0 && <AlertTriangle size={14} style={{ color: '#f87171' }} />}
+                {showExpiry && <Chip cfg={cfg} />}
                 {canEdit && (
                   <button onClick={() => start(d)} title="Renew — keeps the current version as history"
                     style={{ padding: '5px 9px', borderRadius: 7, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-p)', fontSize: 11.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>

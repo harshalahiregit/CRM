@@ -334,6 +334,26 @@ export const transportConsignmentApi = {
 
   remove: (id) =>
     api.delete(`/transport/consignments/${id}`).then((r) => r.data ?? null).catch(handleErr),
+
+  /* ── The shipment's own paperwork — ORD-005, ORD-006, both P0 ─────────
+   *
+   * D-41 ruled that an LR and a DO stay DOCUMENTS rather than getting tables of
+   * their own, so filing one is filing a document against the consignment.
+   * Person 3 made a consignment a document entity on 16 September and exposed
+   * these two routes; nothing had ever called them.
+   *
+   * Which TYPES may be filed comes back on the detail payload rather than being
+   * listed here. A form holding its own copy of that list will offer a fitness
+   * certificate against a shipment the first time somebody edits one and not
+   * the other.
+   */
+  fileDocument: (id, body) =>
+    api.post(`/transport/consignments/${id}/documents`, body).then((r) => r.data?.data ?? null).catch(handleErr),
+
+  /** STOS-DOC §26 — a replacement is a new version, never an overwrite. */
+  renewDocument: (id, documentId, body) =>
+    api.post(`/transport/consignments/${id}/documents/${documentId}/renew`, body)
+      .then((r) => r.data?.data ?? null).catch(handleErr),
 }
 
 /* ── Containers (MDM-008, STOS-CTD §7 and §8) ─────────────────────────── */

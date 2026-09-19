@@ -113,6 +113,41 @@ that has never failed is a guard nobody has tested.
 
 ---
 
+## Check a blocker against the code, not against the register
+
+**Ruled by the owner, 2026-09-19, after two of ours had quietly cleared.**
+
+**Before every block, and before any message saying you are blocked:**
+
+```bash
+git fetch origin
+git log --oneline HEAD..origin/master     # what landed since you last looked
+```
+
+Then take each of your open blockers and **look at the thing itself** — the class, the method,
+the route — rather than at what the register says about it.
+
+On 2026-09-19 we found that two of ours had been cleared days earlier and nobody had said so:
+P3 made a consignment a document entity on the 16th, closing every item of
+`REQUEST-person3-document-entity.md`; P2 landed `ReconcileFleetMasters` on the 17th, closing one
+of D-100's three blockers. **A walk of the demonstration written on the 18th still recorded the
+first as "blocked on P3".**
+
+A register that says you are blocked on something that landed three days ago is **worse than no
+register**: it sends you to ask a colleague for work they have already done, and it stops you
+building something that is sitting there unblocked.
+
+**Nobody is at fault for not announcing.** We did not announce the trip lifecycle to them
+either. Three people shipping to one repository several times a day is simply a situation where
+announcements are not a reliable channel. Looking is.
+
+**And when you check, record what is STILL open too** — with how you verified it. D-114 lists
+`markInvoiced()` as still having no caller and `FleetResourceGateway` as still carrying one
+method, each checked in the code, because "I looked and it is still blocked" is worth exactly as
+much as "I looked and it is not".
+
+---
+
 ## No guard is trusted until it has been seen to fail on the thing it guards
 
 **Ruled by the owner, 2026-09-18. One line, and it has already paid for itself twice.**
