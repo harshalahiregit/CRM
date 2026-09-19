@@ -29,6 +29,16 @@ export const stosApi = {
     update: (id, data) => api.put(`/v1/fleet/vehicles/${id}`, data).then(unwrap).catch(handleErr),
     // Admin only, and soft — fuel spend and job cards stay attached.
     retire: (id) => api.delete(`/v1/fleet/vehicles/${id}`).then(unwrap).catch(handleErr),
+
+    /**
+     * T-56 — the one hand-driven edge of the asset state machine.
+     *
+     * Only AVAILABLE, IDLE and RETIRED are accepted. Everything else is a
+     * consequence of something happening elsewhere, and the server explains
+     * which — so a 422 here carries a sentence worth showing the user.
+     */
+    setStatus: (id, status) =>
+      api.patch(`/v1/fleet/vehicles/${id}/status`, { status }).then(unwrap).catch(handleErr),
   },
 
   fuel: {
@@ -49,11 +59,47 @@ export const stosApi = {
   // overlay is ours to write.
   drivers: {
     list: (params = {}) => api.get('/v1/fleet/drivers', { params }).then(unwrap).catch(handleErr),
+
+    /** Who can take a load right now, and who cannot — with the reason and whose desk owns it. */
+    eligible: (params = {}) => api.get('/v1/fleet/drivers/eligible', { params }).then(unwrap).catch(handleErr),
     saveProfile: (source, personId, data) =>
       api.put(`/v1/fleet/drivers/${source}/${personId}`, data).then(unwrap).catch(handleErr),
     // The REGULAR assignment the allocation engine reads. Pass null to clear.
     assign: (source, personId, vehicleId) =>
       api.put(`/v1/fleet/drivers/${source}/${personId}/assign`, { vehicle_id: vehicleId }).then(unwrap).catch(handleErr),
+  },
+
+  /**
+   * T-57 — statutory paperwork.
+   *
+   * `file` posts multipart because a driver photographs a certificate at the
+   * roadside; everything else is JSON. Uploading never clears a truck — only
+   * verifying does, which is why `verify` is a separate call and not a
+   * checkbox on the upload.
+   */
+  documents: {
+    forVehicle: (vehicleId) => api.get(`/v1/fleet/vehicles/${vehicleId}/documents`).then(unwrap).catch(handleErr),
+
+    file: (vehicleId, form) => {
+      const body = new FormData()
+      Object.entries(form).forEach(([k, v]) => { if (v !== null && v !== undefined && v !== '') body.append(k, v) })
+
+      return api.post(`/v1/fleet/vehicles/${vehicleId}/documents`, body, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }).then(unwrap).catch(handleErr)
+    },
+
+    renew: (vehicleId, documentId, form) => {
+      const body = new FormData()
+      Object.entries(form).forEach(([k, v]) => { if (v !== null && v !== undefined && v !== '') body.append(k, v) })
+
+      return api.post(`/v1/fleet/vehicles/${vehicleId}/documents/${documentId}/renew`, body, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }).then(unwrap).catch(handleErr)
+    },
+
+    verify: (documentId, verdict, reason = null) =>
+      api.patch(`/v1/fleet/documents/${documentId}/verify`, { verdict, reason }).then(unwrap).catch(handleErr),
   },
 
   gensets: {
