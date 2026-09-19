@@ -120,7 +120,7 @@ class ServiceScheduleAndBreakdownTest extends TestCase
         // same person allocation is trying to help.
         $this->assertCount(1, $result['eligible']);
         $this->assertSame('AVAILABLE', $vehicle->fresh()->status);
-        $this->assertContains('SERVICE_OVERDUE', $result['eligible'][0]['flags']);
+        $this->assertContains('service_overdue', $result['eligible'][0]['flags']);
     }
 
     public function test_service_due_never_appears_in_the_status_vocabulary(): void

@@ -43,11 +43,17 @@ reads or consumes. Owning a stage does not mean owning the data it reads.
 | 7 | **Billing readiness** | `STOS-DOC` + `STOS-FIN` (Dev 3) | `STOS-OPS`, `STOS-FLEET` | `BillingReadinessEngine` verifies POD, gate slips, recoverable diesel → `BILLING_READY` |
 | 8 | **Customer invoicing** | `STOS-FIN` (Dev 3) | `STOS-OPS`, Sangoe Accounts | `billable` → `billed`. Posting event to `PostingService` |
 | 9 | **Collections & settlement** | `STOS-FIN` / Accounts (Dev 3) | `STOS-REP` control tower, Operations | Receivables; settles driver advances and vendor payables |
+| 10 | **Billing readiness engine** | `STOS-DOC` (Dev 3) | `STOS-OPS`, `STOS-FIN` | Delivery + valid POD + docs complete + rate available + recoverable expenses = `BILLING_READY`. A miss creates a `billing_blockers` row naming the item, owner, SLA and the exact **revenue blocked** |
+| 11 | **Financial control & invoicing** | `STOS-FIN` (Dev 3) | `STOS-OPS`, Sangoe Accounts | Consumes `BILLING_READY`. Applies rate cards (freight, detention, toll recovery), drafts the invoice, posts to Accounts |
+| 12 | **Receivables & collection** | `STOS-FIN` (Dev 3) | `STOS-REP` | Submission, acceptance, aging 30/60/90, DSO, collection tasks for overdue invoices |
+| 13 | **Trip profitability & margin** | `STOS-FIN` / `STOS-REP` (Dev 3) | Control tower, `STOS-FLEET` | `margin = revenue − (fuel + urea + FASTag + driver + maintenance allocation)`. Negative-margin trips trigger management review |
 
-> ⚠️ **Known gap, deliberately not filled in.** The ruling describes **13 stages**; nine were
-> supplied. Stages 10–13 are **not recorded here and must not be guessed** — inventing them is
-> exactly the failure mode this document exists to stop. Ask the owner before building anything
-> that would sit after stage 9.
+> **Fleet's obligation to stage 13.** Four of the five cost terms are Fleet's and are already
+> published to `trip_costs` under C-06: fuel, urea, FASTag tolls and maintenance. **"Maintenance
+> allocation" is the open one** — Fleet publishes a workshop cost only when the job card names a
+> `trip_id`. Routine servicing is fleet overhead and is deliberately *not* spread across trips,
+> because apportioning it is a costing policy for Finance to set, not for Fleet to invent. If
+> stage 13 expects an apportioned share, Dev 3 must specify the rule.
 
 ---
 
@@ -61,8 +67,9 @@ it. Nobody keeps a second copy, and nobody writes to someone else's master.
 | **Vehicle master** (`vehicles`) | **`STOS-FLEET` — Dev 2** | Registration, chassis, engine, specification, asset status, job cards, physical readiness | Trailers, gensets and tyres follow the same rule |
 | **Driver identity / HR** | **Sangoe HR / CRM** (platform core) | Name, phone, address, employment contract | Transport never stores personhood |
 | **Driver operational profile** (`driver_profiles`) | **`STOS-FLEET` — Dev 2**, via the `DriverDirectory` adapter | Licence number, class, expiry; duty availability | **Zero demographic columns.** A reference into the CRM directory, never a copy |
-| **Vehicle & driver document FILES** | **`STOS-DOC` — Dev 3** | File storage, versioning, OCR, audit history | Fleet holds metadata *references* only |
-| **Document validity RULES** | **`STOS-CMP` — Dev 3** | What makes a document valid | Fleet holds the expiry dates it gates dispatch on |
+| **Vehicle & driver document FILES** | **`STOS-DOC` — Dev 3** | File storage, versioning, the `UPLOADED → UNDER_VERIFICATION → VERIFIED` workflow | The **authoritative master** for evidence and expiry |
+| **Document validity RULES & verified expiry** | **`STOS-CMP` — Dev 3** | Whether a document meets statutory requirements; holds the verified expiry | Fleet never decides validity |
+| **Expiry dates on `vehicles`** | **`STOS-FLEET` — Dev 2**, as a *projection* | A read-optimised **cache** for fast allocation queries | **Not a master.** See §4a |
 | **Trip lifecycle state machine** | **`STOS-OPS` / `TripEngine` — Dev 1** | `draft → allocated → dispatched → in_transit → delivered → closed` | Fleet never moves a trip |
 | **Vehicle asset state machine** | **`STOS-FLEET` — Dev 2** | See §4 | Operations never writes vehicle status directly — it calls the gateway |
 
@@ -120,6 +127,41 @@ COMPLIANCE_BLOCKED · IDLE · BREAKDOWN · RETIRED
 **Uppercase, because these strings cross a module boundary.** Dev 1's board and Dev 3's billing
 switch on them, and two spellings of one state is how a condition gets tested for and silently
 never matches.
+
+**The naming standard, ruled 2026-09-19 (spec 12.S11) — two casings, on purpose:**
+
+| Kind | Casing | Examples |
+|---|---|---|
+| Database enums & state-machine states | **UPPERCASE** | `AVAILABLE`, `IN_TRANSIT`, `BILLING_READY`, `REEFER`, `VERIFIED` |
+| API blocker codes & machine reasons | **lowercase snake_case** | `safety_job_open`, `pod_missing`, `driver_license_expired`, `service_overdue` |
+
+They are different things. A state is what an entity *is*; a machine reason is what a response
+*says about* it. Fleet's advisory flags (`service_overdue`) and blocker codes
+(`driver_license_expired`) are the second kind and are lowercase.
+
+### 4a. Expiry dates are a projection, not a master
+
+**Ruled 2026-09-19.** The uploaded certificate in `STOS-DOC`, validated by `STOS-CMP`, is the
+authoritative source for a document and its expiry. Fleet's five date columns
+(`registration_expiry`, `insurance_expiry`, `fitness_expiry`, `permit_expiry`, `puc_expiry`) are
+an **operational cache**, kept for fast indexing during allocation queries.
+
+```
+STOS-DOC        upload → UNDER_VERIFICATION → VERIFIED
+                                  ↓
+STOS-CMP        decides statutory validity, holds the verified expiry
+                                  ↓
+STOS-FLEET      projects the date onto `vehicles`, clearing the dispatch block
+```
+
+**Verifying a renewal must clear the gate with no manual date re-entry.** And **editing a date in
+Fleet without a verified document behind it is prohibited** by the single-evidence-trail rule.
+
+> ⚠️ **Sequencing risk, open.** Fleet's date fields are currently hand-editable on the vehicle
+> form, and that is how every compliance date in the system got there. Removing that input before
+> the `STOS-DOC` → `STOS-CMP` → Fleet projection actually runs would leave **no way to record a
+> compliance date at all**, and every vehicle would fail the gate. The prohibition therefore
+> lands *after* the projection is wired, not before. Tracked as **T-53**.
 
 ### Who applies each state — none of them are free-typed
 
@@ -205,12 +247,53 @@ Per-person bands, after two developers collided on D-58…D-61 on the same day.
 
 ---
 
-## 8. Open questions for the owner
+## 8a. Trailers are their own asset
 
-- **Stages 10–13** of the lifecycle — not supplied (§1).
-- **Genset / tyre / job-card status vocabularies** — the ruling covered the *vehicle* state
-  machine. These are still lowercase and Fleet-internal. Align them or leave them?
-- **Blocker codes** (`on_another_trip`, `broken_down`) are lowercase while flags
-  (`DRIVER_LICENSE_EXPIRED`, `SERVICE_OVERDUE`) are uppercase. Both cross to Dev 1's board.
-  Worth one ruling.
-- **Person 3's defect band** (§6).
+**Ruled 2026-09-19.** A trailer is **not** a row in `vehicles`. Fleet manages the tractor unit
+and the trailer as separate entities, each with its own compliance profile, tyre set and
+maintenance record, coupled dynamically through `vehicle_trailer_assignments` — a tractor and a
+trailer couple for a trip or an operational period, and the historical association is preserved.
+
+Not built yet. Tracked as **T-54**.
+
+---
+
+## 8b. Standalone operation is retained
+
+The `DriverDirectory` adapter seam (`CrmDriverDirectory` / `StandaloneDriverDirectory`) stays.
+Integrated operation inside Sangoe Business OS is the production target, but the seam earns its
+keep twice over: tests run without seeding the whole platform CRM schema, and Fleet degrades
+rather than returning 500s when the workforce tables are unavailable or in a lightweight field
+deployment.
+
+---
+
+## 8c. The dispatch and departure edges
+
+The trip engine (`SM-TRP`, Dev 1) runs `ALLOCATED → DISPATCHED → IN_TRANSIT` as two guarded
+steps, and the vehicle follows:
+
+| Trip edge | Fired by | Vehicle becomes |
+|---|---|---|
+| `ALLOCATED → DISPATCHED` | Operations, once the pre-trip checklist passes | `ALLOCATED` — committed, not yet moving |
+| `DISPATCHED → IN_TRANSIT` (`STT-006`) | Driver app **START TRIP**, or telemetry confirming geofence exit | `IN_TRANSIT` |
+
+**Telemetry validates; it does not transition.** A truck that moves without a formal dispatch
+raises a **Route / Movement Anomaly exception** rather than being silently promoted into a valid
+state — otherwise a stolen or misused vehicle would quietly look like a legitimate trip.
+
+Fleet's side: `markDispatched()` allocates, `markDeparted()` departs. The anomaly detector is not
+built yet — tracked as **T-55**.
+
+---
+
+## 9. Open questions for the owner
+
+Everything asked on 2026-09-19 has been answered and folded in above. What remains:
+
+- **Maintenance allocation for stage 13** — does trip margin expect an apportioned share of
+  routine servicing, and if so what is the rule? Fleet publishes only workshop costs that name a
+  `trip_id`; spreading overhead across trips is a costing policy, not Fleet's to invent (§1).
+- **When does the `STOS-DOC` → `STOS-CMP` → Fleet projection go live?** Until it does, the
+  prohibition on hand-editing expiry dates cannot be enforced without leaving no way to record
+  one at all (§4a, T-53).

@@ -381,7 +381,14 @@ fires from a **model observer**, so no future code path can change availability 
 - [x] **T-48** Standalone mode: `DriverDirectory` binding auto-detects the CRM, so one codebase runs integrated and standalone
 - [ ] **T-49** Idle-vehicle and utilisation reporting for the executive tower (`STOS-REP` feeds from our data)
 - [ ] **T-50** 🟡 Frontend, the four screens the tasks above imply. **Urea modal — done** (T-23). **Genset management — done** (T-05: passport panel + onboarding field). Still missing: FASTag register (T-27), tyre master screen (T-36).
-- [ ] **T-51** ⚠️ Whole-vocabulary decision: adopt the spec's UPPERCASE enums across vehicle type, ownership, status, fuel recovery and toll reconciliation, or keep lowercase and publish a mapping table in `STOS-API`. **This is one coordinated migration, not five — do it once, with Devs 1 and 3 in the room.**
+- [x] **T-51** — **RULED 2026-09-19 (spec 12.S11): two casings, on purpose.** Database enums and state-machine states are UPPERCASE; API blocker codes and machine reasons are lowercase snake_case. Fleet's advisory flags and blocker codes were uppercase and are now lowercase (`service_overdue`, `driver_license_expired`). A state is what a thing *is*; a machine reason is what a response *says about* it
+- [ ] **T-53** Expiry dates become a **projection**, not a master. `STOS-DOC` verification → `STOS-CMP` → Fleet's five date columns, so verifying a renewal clears the dispatch block with no manual re-entry; then hand-editing dates is prohibited. **Sequencing matters:** removing the manual input before the projection runs leaves no way to record a compliance date at all · *needs Dev 3's verify workflow live*
+- [ ] **T-54** `trailers` as their own master with `vehicle_trailer_assignments` dynamic coupling — a trailer is NOT a `vehicles` row. Own compliance profile, tyre set and maintenance record; coupling preserved historically
+- [ ] **T-55** Route / Movement Anomaly exception — a vehicle moving under power while not ALLOCATED or IN_TRANSIT raises an exception rather than being silently promoted into a valid state
+- [ ] **T-56** Vehicle asset status transitions endpoint (`PATCH /v1/fleet/vehicles/{id}/status`), accepting only `MANUALLY_SETTABLE` states — blocks retiring Dev 1's CRUD
+- [ ] **T-57** Vehicle documents into Dev 3's shared `transport_documents` (`entity_type = 'vehicle'`), never a Fleet document table — blocks retiring Dev 1's CRUD
+- [ ] **T-58** Genset, tyre and job-card statuses to UPPERCASE — they are database enums, so the ruled standard applies
+
 - [x] **T-52** ~~`BannedPatternsTest` fails on `TpvVendorDetail.jsx`~~ — **no longer true.** Full backend suite verified green on 2026-09-17: **4,641 passing, 0 failures, 3 skipped.** The uncommitted refactor that caused it was committed in the meantime.
 
 ---

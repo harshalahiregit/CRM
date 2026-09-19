@@ -91,7 +91,7 @@ class FleetDispatchGatewayTest extends TestCase
 
     /* ── BRW-050: the crew departed ─────────────────────────────── */
 
-    public function test_a_departure_puts_the_vehicle_in_operation_and_the_driver_on_trip(): void
+    public function test_a_dispatch_allocates_the_vehicle_and_puts_the_driver_on_trip(): void
     {
         $vehicle = $this->vehicle();
         $driver = $this->driver();
@@ -99,7 +99,11 @@ class FleetDispatchGatewayTest extends TestCase
         $applied = $this->gateway()->markDispatched($this->trip(), $vehicle->id, $driver->id, self::COMPANY);
 
         $this->assertTrue($applied);
-        $this->assertSame('IN_TRANSIT', $vehicle->fresh()->status);
+        // ALLOCATED, not IN_TRANSIT. Ruled 2026-09-19: dispatch commits the
+        // truck to the trip; departure is a separate edge. Calling it in
+        // transit here would tell a planner chasing a late load that it was on
+        // the road when it was still loading.
+        $this->assertSame('ALLOCATED', $vehicle->fresh()->status);
         $this->assertSame('on_trip', $driver->fresh()->status);
     }
 
@@ -115,7 +119,7 @@ class FleetDispatchGatewayTest extends TestCase
         // Dispatch is confirmed once and amended repeatedly — the caller asked
         // for a state, and the state holds.
         $this->assertTrue($second);
-        $this->assertSame('IN_TRANSIT', $vehicle->fresh()->status);
+        $this->assertSame('ALLOCATED', $vehicle->fresh()->status);
     }
 
     public function test_a_trip_with_nothing_assigned_is_not_a_failure(): void
@@ -187,10 +191,78 @@ class FleetDispatchGatewayTest extends TestCase
         // The vehicle moved, the driver did not — so the answer is false, and
         // the discrepancy is discoverable rather than assumed away.
         $this->assertFalse($applied);
+        $this->assertSame('ALLOCATED', $vehicle->fresh()->status);
+    }
+
+    /* ── STT-006: the crew actually left ────────────────────────── */
+
+    public function test_departure_moves_an_allocated_vehicle_into_transit(): void
+    {
+        $vehicle = $this->vehicle();
+        $trip = $this->trip();
+        $gateway = $this->gateway();
+
+        $gateway->markDispatched($trip, $vehicle->id, null, self::COMPANY);
+        $this->assertSame('ALLOCATED', $vehicle->fresh()->status);
+
+        $this->assertTrue($gateway->markDeparted($trip, $vehicle->id, self::COMPANY));
         $this->assertSame('IN_TRANSIT', $vehicle->fresh()->status);
     }
 
-    /* ── What the new state means for allocation ────────────────── */
+    public function test_reporting_the_same_departure_twice_is_a_no_op(): void
+    {
+        $vehicle = $this->vehicle();
+        $trip = $this->trip();
+        $gateway = $this->gateway();
+
+        $gateway->markDispatched($trip, $vehicle->id, null, self::COMPANY);
+        $gateway->markDeparted($trip, $vehicle->id, self::COMPANY);
+
+        $this->assertTrue($gateway->markDeparted($trip, $vehicle->id, self::COMPANY));
+        $this->assertSame('IN_TRANSIT', $vehicle->fresh()->status);
+    }
+
+    public function test_a_vehicle_that_was_never_allocated_cannot_depart(): void
+    {
+        $vehicle = $this->vehicle();
+
+        // The trip and the fleet disagree about which truck is on this job.
+        // Quietly moving it would hide that rather than surface it.
+        $this->assertFalse($this->gateway()->markDeparted($this->trip(), $vehicle->id, self::COMPANY));
+        $this->assertSame('AVAILABLE', $vehicle->fresh()->status);
+    }
+
+    public function test_a_vehicle_in_the_workshop_cannot_depart(): void
+    {
+        $vehicle = $this->vehicle('UNDER_MAINTENANCE');
+
+        $this->assertFalse($this->gateway()->markDeparted($this->trip(), $vehicle->id, self::COMPANY));
+        $this->assertSame('UNDER_MAINTENANCE', $vehicle->fresh()->status);
+    }
+
+    public function test_closing_a_trip_releases_a_vehicle_from_either_on_trip_state(): void
+    {
+        $gateway = $this->gateway();
+
+        foreach ([false, true] as $departed) {
+            $vehicle = $this->vehicle();
+            $trip = $this->trip();
+
+            $gateway->markDispatched($trip, $vehicle->id, null, self::COMPANY);
+
+            if ($departed) {
+                $gateway->markDeparted($trip, $vehicle->id, self::COMPANY);
+            }
+
+            $gateway->markReleased($vehicle->id, null, self::COMPANY);
+
+            // A trip can be closed from either side of departure — cancelled
+            // before it left, or completed after.
+            $this->assertSame('AVAILABLE', $vehicle->fresh()->status);
+        }
+    }
+
+    /* ── What the new state means for allocation ────────────── */
 
     public function test_a_vehicle_out_on_a_trip_cannot_be_allocated_again(): void
     {

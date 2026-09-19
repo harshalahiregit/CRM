@@ -116,12 +116,86 @@ class TransportFleetResourceGateway implements FleetResourceGateway
             return false;
         }
 
+        // ALLOCATED, not IN_TRANSIT.
+        //
+        // Ruled 2026-09-19: the trip engine goes ALLOCATED → DISPATCHED →
+        // IN_TRANSIT, and dispatch is only the second of those. The truck is
+        // committed to this trip and cannot take another, but it has not left
+        // the yard. Calling it IN_TRANSIT here would mean "in transit" reports
+        // that somebody pressed a button, and a planner chasing a late load
+        // would be told it was on the road when it was still loading.
+        //
+        // Departure is a separate edge — markDeparted() below.
+        //
         // Goes through the model so the status observer fires and Developers 1
         // and 3 hear `fleet.vehicle.status_changed`.
+        $vehicle->update(['status' => Vehicle::STATUS_ALLOCATED]);
+
+        Log::channel('stos')->info('Vehicle allocated to a trip', [
+            'rule' => 'BRW-050', 'trip_id' => $trip->id, 'vehicle_id' => $vehicle->id,
+            'user_id' => $actor?->id,
+        ]);
+
+        return true;
+    }
+
+    /**
+     * The crew actually left — ALLOCATED → IN_TRANSIT.
+     *
+     * Ruled 2026-09-19 as `STT-006`, fired by the trip engine when the driver
+     * taps START TRIP or telemetry confirms the vehicle has left the pickup
+     * geofence. Person 1 owns the trigger; this is Fleet's side of it.
+     *
+     * ── WHY THIS IS NOT JUST markDispatched RENAMED ───────────────────────
+     * A truck that has cleared the pre-trip gate and a truck that is moving are
+     * different operational facts. The first can still be swapped for another
+     * vehicle at no cost; the second is a recovery problem. Collapsing them
+     * loses the only window in which a planner can change their mind cheaply.
+     *
+     * Same four clauses as the rest of this gateway: idempotent, never throws,
+     * never forces a transition, and honest about whether it applied anything.
+     *
+     * NOTE FOR PERSON 1: this method is not on `FleetResourceGateway` yet,
+     * because adding it to the interface would break `PendingFleetResourceGateway`
+     * on your side. One line each — say the word and I will send the diff.
+     */
+    public function markDeparted(TransportTrip $trip, ?int $vehicleId, int $tenantId, ?User $actor = null): bool
+    {
+        if (! $vehicleId) {
+            return true;    // a trip with nothing assigned is not a failure
+        }
+
+        $vehicle = Vehicle::forCompany($tenantId)->find($vehicleId);
+
+        if (! $vehicle) {
+            Log::channel('stos')->warning('Departure named a vehicle that is not in the fleet', [
+                'rule' => 'STT-006', 'trip_id' => $trip->id, 'vehicle_id' => $vehicleId, 'tenant_id' => $tenantId,
+            ]);
+
+            return false;
+        }
+
+        if ($vehicle->status === Vehicle::STATUS_IN_TRANSIT) {
+            return true;    // already gone — idempotent
+        }
+
+        if ($vehicle->status !== Vehicle::STATUS_ALLOCATED) {
+            // A vehicle departs FROM being allocated. Anything else means the
+            // trip and the fleet disagree about which truck is on this job, and
+            // quietly moving it would hide that rather than surface it.
+            Log::channel('stos')->warning('Departure was reported for a vehicle that was not allocated', [
+                'rule' => 'STT-006', 'trip_id' => $trip->id, 'vehicle_id' => $vehicle->id,
+                'status' => $vehicle->status,
+                'why' => 'only an ALLOCATED vehicle can depart; this one was never committed to the trip',
+            ]);
+
+            return false;
+        }
+
         $vehicle->update(['status' => Vehicle::STATUS_IN_TRANSIT]);
 
-        Log::channel('stos')->info('Vehicle marked in operation', [
-            'rule' => 'BRW-050', 'trip_id' => $trip->id, 'vehicle_id' => $vehicle->id,
+        Log::channel('stos')->info('Vehicle departed', [
+            'rule' => 'STT-006', 'trip_id' => $trip->id, 'vehicle_id' => $vehicle->id,
             'user_id' => $actor?->id,
         ]);
 

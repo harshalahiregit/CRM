@@ -136,7 +136,7 @@ class DriverService
 
         if ($licence === 'expired') {
             $blockers[] = [
-                'code'  => 'DRIVER_LICENSE_EXPIRED',
+                'code'  => 'driver_license_expired',
                 'why'   => $row['licence']['message'] ?? 'Licence has expired.',
                 'owner' => 'Fleet compliance desk',
             ];
@@ -147,7 +147,7 @@ class DriverService
             // should be dispatched on a licence nobody has seen. It is cleared
             // by recording one, which is why the owner differs from a renewal.
             $blockers[] = [
-                'code'  => 'DRIVER_LICENSE_UNRECORDED',
+                'code'  => 'driver_license_unrecorded',
                 'why'   => 'No licence is on file for this driver.',
                 'owner' => 'Fleet compliance desk',
             ];
@@ -157,13 +157,13 @@ class DriverService
 
         if ($status === null) {
             $blockers[] = [
-                'code'  => 'DRIVER_NOT_ONBOARDED',
+                'code'  => 'driver_not_onboarded',
                 'why'   => 'This person is in the directory but has no driver record yet.',
                 'owner' => 'Fleet office',
             ];
         } elseif ($status !== 'available') {
             $blockers[] = [
-                'code'  => 'DRIVER_UNAVAILABLE',
+                'code'  => 'driver_unavailable',
                 'why'   => 'This driver is '.str_replace('_', ' ', (string) $status).'.',
                 'owner' => 'Fleet office',
             ];
@@ -180,7 +180,7 @@ class DriverService
         }
 
         return [[
-            'code'  => 'DRIVER_LICENSE_EXPIRING',
+            'code'  => 'driver_license_expiring',
             'why'   => $row['licence']['message'] ?? 'Licence expires soon.',
             'owner' => 'Fleet compliance desk',
         ]];

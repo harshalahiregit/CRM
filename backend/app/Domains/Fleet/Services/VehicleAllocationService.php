@@ -281,13 +281,17 @@ class VehicleAllocationService
     /**
      * Machine-readable reasons a pairing is imperfect.
      *
-     * Uppercase tokens because these cross a module boundary — Developer 1's
-     * dispatch board switches on them, and a token is stabler than a sentence.
+     * lowercase snake_case, per the naming standard ruled 2026-09-19: DATABASE
+     * enums and state-machine states are UPPERCASE, while machine reasons
+     * returned in an API payload are lowercase. These are the second kind —
+     * they are not states a vehicle is in, they are reasons attached to a
+     * response — so they match `safety_job_open` and `on_another_trip` rather
+     * than `IN_TRANSIT`.
      */
     private function driverFlags(?array $driver): array
     {
         if (! $driver) {
-            return ['NO_DRIVER_ASSIGNED'];
+            return ['no_driver_assigned'];
         }
 
         $flags = [];
@@ -296,7 +300,7 @@ class VehicleAllocationService
         // and attaching it here made a dispatch board stand down a perfectly
         // good truck. It is returned against the driver instead, as a blocker.
         if (($driver['profile']['status'] ?? 'available') !== 'available') {
-            $flags[] = 'DRIVER_UNAVAILABLE';
+            $flags[] = 'driver_unavailable';
         }
 
         return $flags;

@@ -80,8 +80,8 @@ class ServiceScheduleEvaluator
     public function flag(Vehicle $vehicle, ?float $odometer = null): ?string
     {
         return match ($this->evaluate($vehicle, $odometer)['state']) {
-            self::STATE_OVERDUE  => 'SERVICE_OVERDUE',
-            self::STATE_DUE_SOON => 'SERVICE_DUE_SOON',
+            self::STATE_OVERDUE  => 'service_overdue',
+            self::STATE_DUE_SOON => 'service_due_soon',
             default              => null,
         };
     }
