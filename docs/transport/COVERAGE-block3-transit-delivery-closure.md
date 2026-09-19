@@ -3,8 +3,13 @@
 **Person 1.** Built 2026-09-17 against `PLAN-block3-transit-delivery-closure.md`, approved the
 same day. Checked three ways, as ruled.
 
-**Result up front:** transit and delivery are **BUILT**. Closure is **PLUMBED** — every line of
-it is correct, tested and routed, and no user can reach it. That distinction is the whole of §2.
+**Result up front:** transit, delivery and closure are all **BUILT**.
+
+> **Updated 2026-09-19.** Closure shipped as **PLUMBED** — correct, tested, routed, and reachable
+> by nobody. Person 3 closed **D-106** on 19 September and it became **BUILT** with no change on
+> this side, exactly as §2 predicted. A trip has since been walked `delivered → closed` by
+> clicking, so this is observed, not inferred. §2 is kept below as written, because the useful
+> part of it is the argument, and the argument was tested by events.
 
 ---
 
@@ -43,9 +48,9 @@ screen, and a click path from the trip list.
 | **Record departure** | `PATCH /trips/{trip}/depart` | `transport.trip.dispatch` (existing, PERM-004's set) | Trip detail, **step 4 "On the road"** | Trips → open → step 4 → Record departure | **BUILT** |
 | **Record delivery** | `PATCH /trips/{id}/deliver` | `transport.trip.deliver` (derived, PERM-004's set) | same panel, second act | Trips → open → step 4 → Record delivery | **BUILT** |
 | **Closure readiness** | `GET /trips/{trip}/closure` | `transport.trip.view` | **step 10 "Close the trip"** | Trips → open → step 10 | **BUILT** |
-| **Close the trip** | `POST /trips/{trip}/close` | `transport.trip.close` (API-009 verbatim) | same panel | — no trip can reach the state — | **PLUMBED** |
+| **Close the trip** | `POST /trips/{trip}/close` | `transport.trip.close` (API-009 verbatim) | same panel | Trips → open → step 8 → Close this trip | **BUILT** ✅ |
 
-### Why closure is PLUMBED and not BUILT
+### Why closure was PLUMBED and not BUILT — and what happened to it
 
 `collection_pending` is the only state STT-012 leaves from, and nothing in the application can
 reach it. `TripBill::markInvoiced()` is the single door into `billed` and **it has no caller and
@@ -62,6 +67,29 @@ Three things make this honest rather than a fudge:
 3. The panel prints the reason on screen instead of showing a dead button.
 
 **The day P3 adds one route, closure becomes BUILT with no change on this side.**
+
+#### That day was 2026-09-19, and the prediction held exactly
+
+Person 3 shipped `POST /trips/{id}/bill/invoiced`. Closure became reachable with **no change to
+any closure code**: the constant flipped, the panel followed the flag it was already reading, and
+`TRP-2026-000034` was walked to `closed` in the browser.
+
+Two notes on how the three honesty devices actually behaved, since both are worth more than the
+prediction:
+
+- **The scan in device 2 did not fire, and that needed investigating rather than celebrating.**
+  Person 3 flipped `REACHABLE` and reversed the scan's assertion in the same commit, so the suite
+  stayed green and the tripwire never rang. That is the correct outcome and it is also
+  indistinguishable from a blind guard. It was checked the only way that settles it: the original
+  assertion was restored against the current tree, and it failed, naming
+  `TransportBillingController.php` and `TripBillingService.php`. Not blind — it had simply been
+  answered before it could ring.
+- **Device 1 had gone stale in a way none of the three covered.** `NOT_BUILT_REASONS['exceptions']`
+  still said the exception register was not built, a day after it was. So the closure screen
+  reported that **TRP-P0-014 could not be checked** while the check was, in fact, buildable and
+  unbuilt into the flow — the rule was unenforced behind a sentence claiming it was unenforceable.
+  Fixed, with three tests. The lesson is that these devices guard *code that does not exist yet*
+  and say nothing about *text that describes code that now does*.
 
 ---
 

@@ -113,6 +113,36 @@ that has never failed is a guard nobody has tested.
 
 ---
 
+## Ask what filled the screen, not whether the screen is filled
+
+**P1, 2026-09-19, from D-115.** Standing rule wherever data can arrive by more than one route —
+a seeder, a backfill, a migration, an import, another team's job.
+
+MS-001 §14 step 14 — *"show the complete timeline"* — was walked in a browser and marked **WORKS**.
+The screen was right. Eleven events, correctly ordered, in English. What it did not show is that
+seven of them had been **reconstructed by a backfill** and that four types
+(`trip.created`, `trip.submitted`, `vehicle.allocated`, `pretrip.passed`) were **emitted by no
+code at all**. Every existing trip looked complete. A trip created the next day would have had
+four holes, silently.
+
+**So: when a screen can be populated by something other than the code under test, walking it is
+not sufficient.** Read a row and ask where it came from. Better, make one from scratch — the fix
+above was confirmed by creating a new trip and checking its first three events said `LIVE` rather
+than `BACKFILLED`.
+
+**Two corollaries, both earned the hard way on the same day:**
+
+1. **Keep the audited token a literal.** `TripEventEmissionTest` audits the event registry by
+   finding type strings in recorder calls. The first version of `AllocationService` looped a
+   `[$type => $id]` table, and the audit could not see either call — a value assembled from a
+   variable is invisible to any scanner. If a test greps for it, write it out longhand.
+2. **Trust the test over your own grep.** The allow-list for that test was drafted from a hand-run
+   `grep` which reported `genset.on` as emitted. The only occurrence outside the registry was **an
+   example inside a docblock.** The test contradicted the grep on its first run and the test was
+   right.
+
+---
+
 ## Check a blocker against the code, not against the register
 
 **Ruled by the owner, 2026-09-19, after two of ours had quietly cleared.**

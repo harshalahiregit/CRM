@@ -2988,6 +2988,23 @@ the next reader does not hit the same dead comment.
 ## D-106 — No trip in this system can ever be closed, and the missing piece is one caller
 
 **Raised:** 2026-09-17. **Verified by the lead.** **P3's surface — raised, not fixed.**
+**CLOSED 2026-09-19 by Person 3** (commit `36a7504a`), who shipped
+`POST /transport/trips/{id}/bill/invoiced` and its controller. Verified here by walking a trip
+**delivered → closed** in the browser; `TRP-2026-000034` is closed and `EVT-012 TripClosed`
+fired. `ClosureScope::REACHABLE` is now `true`.
+
+> **What closing it left behind.** Two things the fix did not cover, both written up rather than
+> assumed away:
+>
+> 1. **No UI control calls the new route.** `BillingPanel.jsx` has one button (*Prepare billing*)
+>    and `transportApi.js` has no method for the endpoint, so a trip still cannot get past
+>    *Billable* by clicking. The walk above posted to the route by hand. P3's, raised in
+>    `NOTE-person3-d106-landed-and-the-button-is-missing.md`.
+> 2. **Three of our own comments went stale the moment it landed** — `transportApi.js`,
+>    `ClosurePanel.jsx` and `constants.js` each still said the route did not exist. Corrected.
+>    This is the second time in two days that fixed code left true-sounding false text behind
+>    (the first was the `exceptions` closure control), and it is the argument for treating a
+>    comment that states a *fact about other code* as something that expires.
 
 `STT-012` (`collection_pending → closed`) is the only edge into the terminal state, and
 `collection_pending` is the only state it leaves from. Walking backwards:
@@ -3407,3 +3424,76 @@ saying you are blocked, fetch and check each open blocker against the code.*
 
 Two blockers, not three. The repoint still cannot happen, and for one fewer reason than the
 register said yesterday.
+
+---
+
+## D-115 — Four lifecycle events were never written live, and a backfill hid it
+
+**Raised:** 2026-09-19, during the closure walk. **Ours (P1). Fixed the same day.**
+
+### What was wrong
+
+`trip_events` had ten registered P1 types that **no code emitted**. The four that mattered were
+`trip.created`, `trip.submitted`, `vehicle.allocated` and `pretrip.passed` — the opening half of
+every trip's timeline.
+
+### Why nobody saw it, including the person who walked the screen
+
+`BackfillTripEvents` reconstructs a dozen types from the audit trail. It had been run, so **every
+existing trip already had those rows** and every timeline on screen looked complete. MS-001 §14
+step 14 was walked in a browser on 18 September and marked **WORKS**, correctly — the screen was
+right. The rows behind it were reconstructions.
+
+A trip created after the backfill would simply have been missing four lines. Nothing would have
+failed, nothing would have logged, and the gap would have been noticed whenever somebody
+eventually compared an old trip's timeline with a new one.
+
+It was found by reading trip 43's rows after the closure walk and asking, of each one, *where did
+this come from* — not by any test and not by looking at the screen.
+
+### The fix
+
+Ten live recorder calls, each after its transaction commits, matching the five that already
+existed:
+
+| Type | Where |
+|---|---|
+| `trip.created` | `TransportTripService::createFromOrder` |
+| `trip.submitted` | `TransportTripService::submitForViability` |
+| `trip.returned` | `TransportTripService::reject` |
+| `vehicle.allocated`, `driver.allocated` | `AllocationService::assign` |
+| `crew.released` | `AllocationService::release` |
+| `pretrip.passed` | `PretripService::passPretrip` |
+| `exception.acknowledged` | `TripExceptionService::acknowledge` |
+| `container.created`, `container.attached`, `container.detached` | `ContainerService` |
+| `consignment.created` | `ConsignmentService::create` |
+
+`exception.acknowledged` deserves its own line: `raise` and `resolve` both recorded and this one
+did not, so a timeline showed an exception appearing and disappearing with nothing between — and
+the SLA clock, which starts there, started invisibly.
+
+Confirmed live rather than assumed: `TRP-2026-000036` was created on the dev database and its
+first three events read **LIVE**, not `BACKFILLED`.
+
+### The guard, and what it caught immediately
+
+`TripEventEmissionTest` pins the set of declared-but-unemitted types. It does not forbid the gap —
+declaring P2's telemetry and P3's billing vocabulary before the work lands is deliberate — it
+requires that the unemitted set is **exactly** the documented one, so both a new silent type and a
+deleted emitter go red.
+
+It was broken two ways before being trusted: deleting a live emitter (named `pretrip.passed`) and
+declaring a new type with no emitter (named `trip.rerouted`).
+
+It also immediately contradicted the hand-run grep used to write its own allow-list: that grep had
+counted `genset.on` as emitted, because the only occurrence outside the registry is **an example
+in `TripEventRecorder`'s docblock**. The test was right and the grep was wrong.
+
+That is also why `AllocationService` writes its two calls out longhand instead of looping a
+`[$type => $id]` table: **a type assembled from a variable is a type the audit cannot see.**
+
+### The general lesson
+
+*A screen populated by a migration proves nothing about the code that is supposed to populate it.*
+Walking the screen is necessary and was not sufficient here. Where data can arrive by more than one
+route, the question is not "is it there" but "what put it there".
