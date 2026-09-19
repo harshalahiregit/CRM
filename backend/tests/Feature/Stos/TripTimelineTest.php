@@ -187,6 +187,77 @@ class TripTimelineTest extends TestCase
         $this->assertCount(1, $this->events('temperature.excursion'));
     }
 
+    /* ── D-116: the id alone cannot be interpreted ──────── */
+
+    /*
+     * Person 1 found this and constructed the failure case rather than
+     * assuming which kind of bug it was. `transport_trips.vehicle_id` holds a
+     * `transport_vehicles` id today and a `vehicles` id after the repoint —
+     * two independent id spaces, no foreign key, nothing saying which.
+     *
+     * My first version compared a Fleet id straight against that column and I
+     * wrote the mismatch off as "finds nothing, which is correct". It was not
+     * correct, it was lucky: the ranges did not overlap. These are the cases
+     * that make it not luck.
+     */
+
+    public function test_a_trip_pointing_at_a_different_truck_is_not_published_to(): void
+    {
+        // The collision: the trip's vehicle_id matches this vehicle's id as a
+        // NUMBER, but belongs to a different truck in the legacy master.
+        DB::table('transport_vehicles')->insert([
+            'id' => $this->vehicle->id, 'tenant_id' => self::COMPANY,
+            'registration_number' => 'MH99OTHER9', 'registration_normalized' => 'MH99OTHER9',
+            'vehicle_type' => 'TRUCK', 'ownership_type' => 'OWNED', 'status' => 'AVAILABLE',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $this->ping()->assertCreated();
+
+        // No error, no event. A timeline entry naming the wrong truck is worse
+        // than a missing one, because the missing one gets noticed.
+        $this->assertCount(0, $this->events());
+        $this->assertSame(1, DB::table('telemetry_records')->count(), 'the reading is still kept');
+    }
+
+    public function test_a_trip_still_pointing_at_the_legacy_id_is_published_to(): void
+    {
+        // Before the repoint: the trip references the vehicle's OLD id, and the
+        // Fleet row records which one that was.
+        $legacyId = DB::table('transport_vehicles')->insertGetId([
+            'tenant_id' => self::COMPANY,
+            'registration_number' => 'MH12TL0001', 'registration_normalized' => 'MH12TL0001',
+            'vehicle_type' => 'REEFER', 'ownership_type' => 'OWNED', 'status' => 'AVAILABLE',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $this->vehicle->forceFill(['legacy_transport_vehicle_id' => $legacyId])->save();
+        DB::table('transport_trips')->where('id', $this->tripId)->update(['vehicle_id' => $legacyId]);
+
+        $this->ping()->assertCreated();
+
+        // Same truck, older id space. The plate is what confirms it.
+        $this->assertCount(1, $this->events('gps.activated'));
+    }
+
+    public function test_the_plate_decides_even_when_spacing_differs(): void
+    {
+        $legacyId = DB::table('transport_vehicles')->insertGetId([
+            'tenant_id' => self::COMPANY,
+            // Same truck, written the way a person types it.
+            'registration_number' => 'MH 12 TL 0001', 'registration_normalized' => 'MH12TL0001',
+            'vehicle_type' => 'REEFER', 'ownership_type' => 'OWNED', 'status' => 'AVAILABLE',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $this->vehicle->forceFill(['legacy_transport_vehicle_id' => $legacyId])->save();
+        DB::table('transport_trips')->where('id', $this->tripId)->update(['vehicle_id' => $legacyId]);
+
+        $this->ping()->assertCreated();
+
+        $this->assertCount(1, $this->events('gps.activated'));
+    }
+
     /* ── A ping with no trip ────────────────────────────────────── */
 
     public function test_a_truck_idling_in_the_yard_writes_nothing_to_any_timeline(): void
