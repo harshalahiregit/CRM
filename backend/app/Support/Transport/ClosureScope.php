@@ -27,22 +27,25 @@ namespace App\Support\Transport;
  *
  * Nothing below is derived. That makes what IS missing sharper.
  *
- * ── PLUMBED, NOT REACHABLE — D-106 ────────────────────────────────────────
- * `collection_pending` is the only state STT-012 leaves from, and NO USER CAN
- * REACH IT. Walking backwards: STT-008 and STT-009 are built and routed;
- * STT-011 is built; but STT-010 (billable → billed) runs through
- * TripBill::markInvoiced(), which HAS NO CALLER AND NO ROUTE.
- *
- * TripCollectionService::open() is honest about the consequence rather than
- * forcing past it — it guards with canTransition(), so opening a collection on
- * a `billable` trip creates the collection row and correctly declines to move
- * the status. The trip stays at `billable`.
+ * ── IT WAS PLUMBED AND UNREACHABLE FOR TWO DAYS — D-106, CLOSED ───────────
+ * `collection_pending` is the only state STT-012 leaves from, and for two days
+ * NO USER COULD REACH IT. STT-008 and STT-009 were built and routed, STT-011 was
+ * built, but STT-010 (billable → billed) ran through TripBill::markInvoiced(),
+ * which had NO CALLER AND NO ROUTE.
  *
  * `trip_bills` is P3's table and the standing rule is not to fix another
- * developer's file to make our own work reachable. So this edge is built to the
- * registry, tested including its refusals, and marked PLUMBED — never BUILT —
- * in the coverage document. The day P3 adds one route it becomes live with no
- * change here.
+ * developer's file to make our own work reachable. So this edge was built to the
+ * registry, tested including its refusals, and marked PLUMBED — never BUILT.
+ *
+ * Person 3 shipped `POST /trips/{id}/bill/invoiced` on 2026-09-19 and it went
+ * live WITH NO CHANGE HERE, which was the point of building it this way. A trip
+ * has been walked `delivered → closed` in the browser since.
+ *
+ * TripCollectionService::open() still guards with canTransition() rather than
+ * forcing the status, so opening a collection on a `billable` trip creates the
+ * row and declines to move the state. That guard was not a workaround for the
+ * gap and does not come out now that the gap is closed — it is what keeps the
+ * collection row and the trip status from disagreeing.
  *
  * ── BR-P0-017'S WAIVER IS DEFERRED, AND THAT IS A DIFFERENT KIND OF NO ────
  * Every other override this module has refused was UNSPECIFIED — PLN-007,
@@ -121,14 +124,30 @@ final class ClosureScope
         'billing'    => 'checked',      // a trip_bills row carrying an invoice
         'collection' => 'checked',      // CollectionStatus::SETTLED
         'settlement' => 'not_built',    // trip_settlements does not exist — SNG-TRN-017
-        'exceptions' => 'not_built',    // trip_exceptions has schema, no model — D-29/D-30
+        // WAS 'not_built'. The exception register was built on 2026-09-18 once
+        // D-29 and D-30 were ruled, and this line kept saying otherwise for a
+        // day — so TRP-P0-014's "no silent closure with unresolved critical
+        // exceptions" was not being enforced while the screen claimed the check
+        // could not run. An honest "not checked" becomes a lie the moment the
+        // thing it was waiting for exists, and nothing announces that.
+        'exceptions' => 'checked',
     ];
 
     /** Why each unrunnable control cannot run, in the words the screen uses. */
     public const NOT_BUILT_REASONS = [
         'settlement' => 'Supplier and driver settlement is not built yet (SNG-TRN-017 — there is no trip_settlements table), so this control could not be checked.',
-        'exceptions' => 'The exception register is not built yet (SNG-TRN-013 stopped at the schema), so this control could not be checked.',
     ];
+
+    /**
+     * TRP-P0-014's rule, enforced rather than reported, since 2026-09-19.
+     *
+     * "No silent closure with unresolved critical exceptions." CRITICAL is the
+     * word the rule uses, so a critical exception still open BLOCKS the close.
+     * An open exception of any other severity is reported and does not block —
+     * widening a Hard rule beyond its own wording would be inventing one, and
+     * a low-severity note left open is not what "silent closure" means.
+     */
+    public const EXCEPTION_RULE = 'TRP-P0-014 — no silent closure with unresolved critical exceptions.';
 
     /* ── BR-P0-017's waiver ──────────────────────────────────────────── */
 

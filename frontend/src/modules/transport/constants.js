@@ -161,10 +161,11 @@ export const TRIP_JOURNEY = [
     active: ['delivered'],
     built: true,
   },
-  // Deliberately NOT marked built:false, because it IS built — it is
-  // unreachable, which is a different thing and needs a different word. See
-  // D-106: nothing can reach collection_pending until Accounts can mark a bill
-  // invoiced, and that one missing route is Person 3's.
+  // This carried a note for a week explaining that the stage was built but
+  // unreachable — nothing could reach collection_pending until Accounts could
+  // mark a bill invoiced (D-106). Person 3 shipped that route on 19 Sep and a
+  // trip has been walked through to `closed`, so the note is gone rather than
+  // left to quietly mislead the next reader.
   {
     key: 'closed',
     label: 'Paid & closed',

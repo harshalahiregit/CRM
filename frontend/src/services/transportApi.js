@@ -495,11 +495,15 @@ export const transportDispatchApi = {
 /**
  * STT-007 and STT-012 — the far end of the trip.
  *
- * ── CLOSURE IS BUILT AND UNREACHABLE, AND THE UI IS TOLD SO ──────────────
- * Every closure response carries `readiness.reachable`, which is false and will
- * stay false until Accounts can mark a bill invoiced (D-106, Person 3's route).
- * The panel reads that flag rather than inferring anything from the status, so
- * it explains the situation instead of offering a button nothing can satisfy.
+ * ── CLOSURE IS REACHABLE AS OF 19 SEP 2026 ───────────────────────────────
+ * Every closure response carries `readiness.reachable`. It was false for as long
+ * as nothing could mark a bill invoiced (D-106); Person 3 shipped that route on
+ * 19 Sep and the flag is now true. A trip has since been walked delivered →
+ * closed in the browser, so this is observed rather than assumed.
+ *
+ * The panel still reads the flag rather than inferring anything from the status.
+ * That indirection earned itself the day the answer changed: one server-side
+ * boolean flipped and the screen followed, with nothing here to edit.
  */
 export const transportJourneyApi = {
   /** STT-007 — in_transit → delivered. RTM STOS-REQ-OPS-010. */

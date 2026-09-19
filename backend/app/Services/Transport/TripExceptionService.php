@@ -194,7 +194,7 @@ class TripExceptionService
             );
         }
 
-        return DB::transaction(function () use ($e, $from, $to, $owner, $actor) {
+        $acknowledged = DB::transaction(function () use ($e, $from, $to, $owner, $actor) {
             $e->forceFill([
                 'status'          => $to,
                 'owner_id'        => $owner,
@@ -213,6 +213,21 @@ class TripExceptionService
 
             return $e->fresh();
         });
+
+        // CTD §31. `raise` and `resolve` both recorded; this one did not, so a
+        // timeline showed an exception appearing and disappearing with nothing
+        // in between — and the SLA clock, which starts HERE, started invisibly.
+        // D-115.
+        app(TripEventRecorder::class)->record(
+            'exception.acknowledged', tenantId: $tenantId, tripId: $acknowledged->trip_id, actor: $actor,
+            detail: [
+                'exception_number' => $acknowledged->exception_number,
+                'owner_id'         => $owner,
+                'due_at'           => $acknowledged->due_at?->toIso8601String(),
+            ],
+        );
+
+        return $acknowledged;
     }
 
     /**

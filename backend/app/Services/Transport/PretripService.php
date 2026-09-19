@@ -4,6 +4,7 @@ namespace App\Services\Transport;
 
 use App\Exceptions\BusinessException;
 use App\Models\Transport\TransportTrip;
+use App\Services\Transport\TripEventRecorder;
 use App\Models\Transport\TripAssignment;
 use App\Models\Transport\TripPretripCheck;
 use App\Models\User;
@@ -437,7 +438,7 @@ class PretripService
         }
 
         // STOS-DB §192 — the state change and its audit are one act.
-        return DB::transaction(function () use ($trip, $checks, $tenantId, $actor) {
+        $passed = DB::transaction(function () use ($trip, $checks, $tenantId, $actor) {
             $from = $trip->status;
 
             $trip->forceFill([
@@ -484,6 +485,20 @@ class PretripService
 
             return $trip->fresh();
         });
+
+        // CTD §31's timeline, after the commit like every other recorder call.
+        // The audit row above carries every check; this carries the count,
+        // because a timeline is read at a glance and thirty checks inlined into
+        // it would bury the line after it. D-115.
+        app(TripEventRecorder::class)->record(
+            'pretrip.passed', trip: $passed, actor: $actor,
+            detail: [
+                'checks'   => $checks->count(),
+                'warnings' => count(TripPretripCheck::warningsOf($checks)),
+            ],
+        );
+
+        return $passed;
     }
 
     /**

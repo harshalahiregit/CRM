@@ -190,7 +190,14 @@ export default function TransportConsignments() {
     },
     {
       key: 'customer', label: 'Customer',
-      render: (r) => <span style={{ color: 'var(--text-body)' }}>{r.customer?.company ?? '—'}</span>,
+      // A consignment always has a customer — it comes from the order — so this
+      // fallback should never fire. It said "—" anyway, which would have told a
+      // reader nothing on the day it did.
+      render: (r) => (
+        <span style={{ color: r.customer?.company ? 'var(--text-body)' : 'var(--text-muted)' }}>
+          {r.customer?.company ?? 'Customer not linked'}
+        </span>
+      ),
     },
     {
       key: 'cargo', label: 'Cargo',
