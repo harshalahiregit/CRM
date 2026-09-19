@@ -6,6 +6,7 @@ import {
   Check, AlertTriangle, ShieldCheck, Loader,
 } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
+import InternalDoctorSelect from '@/components/medical/InternalDoctorSelect'
 import { useVendorModule } from '@/modules/tpv/useVendorModule'
 import { useAuth } from '@/context/AuthContext'
 import AuditTimeline from '@/components/ui/AuditTimeline'
@@ -899,6 +900,11 @@ function Step2Medical({ worker, editable, onSaved, onNext }) {
         exam_type: isExternal ? 'external' : 'internal',
         clinic_name: f.organization_name || null,
         examiner_name: (isExternal ? f.external_doctor_name : f.doctor_name) || null,
+        // Only meaningful for an internal exam: an external doctor is by
+        // definition not one of ours. The registration number typed here used
+        // to be folded into the remarks and lost as a field; picking a doctor
+        // now records it properly, from their profile.
+        doctor_user_id: isExternal ? null : (f.doctor_user_id || null),
         blood_group: f.blood_group || null,
         restrictions: f.doctor_comments || null,
         // The prose stays — it is what a reader sees on the record — but the
@@ -1043,6 +1049,21 @@ function Step2Medical({ worker, editable, onSaved, onNext }) {
           {/* Doctor Details */}
           <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-h)', marginBottom: 12, borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>👨‍⚕️ Doctor Details</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 20 }}>
+            {/* Pick one of our own doctors and the three boxes below fill
+                themselves; leave it alone and they behave exactly as they always
+                did. The Purchase mirror of the TPV wizard's picker. */}
+            <div style={{ gridColumn: '1 / -1' }}>
+              <InternalDoctorSelect
+                module="purchase" portal={isPortal} value={f.doctor_user_id}
+                onPick={d => setF(p => ({
+                  ...p,
+                  doctor_user_id: d?.user_id ?? null,
+                  doctor_name: d ? (d.name || '') : p.doctor_name,
+                  organization_name: d?.clinic_name || p.organization_name,
+                  doctor_registration: d?.license_no || p.doctor_registration,
+                }))}
+              />
+            </div>
             <Field label="Doctor Name *"><TextInput value={f.doctor_name} onChange={set('doctor_name')} placeholder="Dr. Full Name" /></Field>
             <Field label="Hospital / Organisation *"><TextInput value={f.organization_name} onChange={set('organization_name')} placeholder="Hospital or Clinic" /></Field>
             <Field label="Registration No *"><TextInput value={f.doctor_registration} onChange={set('doctor_registration')} placeholder="Medical Reg. Number" /></Field>

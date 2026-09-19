@@ -56,12 +56,15 @@ class PurchaseWorkforceAdminApiTest extends TestCase
 
     private function vendor(string $n, int $tenant = self::TENANT): PurchaseVendor
     {
-        return PurchaseVendor::create([
+        $vendor = PurchaseVendor::create([
             'tenant_id' => $tenant, 'company_name' => $n,
             'purchase_vendor_code' => 'PV-'.strtoupper(Str::random(6)),
             'email' => strtolower($n).Str::random(3).'@test.local',
             'status' => 'Active', 'portal_status' => 'active',
         ]);
+        $this->markOnboarded($vendor);
+
+        return $vendor->fresh();
     }
 
     /**

@@ -199,6 +199,7 @@ const TicketThread = lazy(() => import('@/modules/helpdesk/components/TicketThre
 const PublicArticle = lazy(() => import('@/modules/helpdesk/public/PublicArticle'))
 const PublicKb = lazy(() => import('@/modules/helpdesk/public/PublicKb'))
 const PublicTicketView = lazy(() => import('@/modules/helpdesk/public/PublicTicketView'))
+const PublicSupport = lazy(() => import('@/modules/helpdesk/public/PublicSupport'))
 
 // SIRE Module (lazy) -- the engineering defect track. Not the Helpdesk: a ticket
 // closes when the requester is satisfied, a SIRE case when the fix ships verified.
@@ -1141,6 +1142,9 @@ export default function AppRoutes() {
       <Route path="/kb/a/:slug" element={<S><PublicArticle /></S>} />
       <Route path="/kb/:key" element={<S><PublicKb /></S>} />
       <Route path="/ticket/:ref" element={<S><PublicTicketView /></S>} />
+      {/* The shareable support link. Same widget key as /kb/:key and the embed
+          snippet, so one key gives a site its help centre AND its contact form. */}
+      <Route path="/support/:key" element={<S><PublicSupport /></S>} />
 
       {/* Public Web-to-Lead form (no auth) */}
       <Route path="/f/:token" element={<S><PublicLeadForm /></S>} />

@@ -217,6 +217,30 @@ class PurchaseVendorService
             'purchase_vendor_id' => $vendor->id, 'actor_id' => $actor->id,
         ]);
 
+        /*
+         * Activating by hand IS the approval onboarding exists to produce, so it
+         * has to leave the same record behind.
+         *
+         * Everything downstream — the portal nav, every operational write, the
+         * workforce — now asks whether this vendor's ONBOARDING is approved,
+         * because the status column disagreed with reality too often to be
+         * trusted. This endpoint set the column and nothing else, which would
+         * leave a vendor activated by an admin permanently unable to register a
+         * worker: approved on screen, not onboarded in fact.
+         *
+         * firstOrCreate, so a vendor that came through the wizard keeps the real
+         * record and its history; only the hand-activated case gets one written.
+         */
+        \App\Models\Purchase\PurchaseOnboarding::firstOrCreate(
+            ['tenant_id' => $vendor->tenant_id, 'purchase_vendor_id' => $vendor->id],
+            [
+                'status' => \App\Support\Purchase\PurchaseOnboardingStatus::APPROVED,
+                'current_step' => \App\Support\Purchase\PurchaseOnboardingStatus::TOTAL_STEPS,
+                'approved_at' => now(),
+                'approved_by' => $actor->id,
+            ],
+        );
+
         // The FULL activation — access window, portal login and the once-only
         // activation e-mail. Shared with updateStatus() so a direct status change
         // to Active and an onboarding approval both activate for real.

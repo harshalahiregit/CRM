@@ -5,6 +5,7 @@ import { fmtDate } from '@/modules/purchase/constants'
 import VendorAddModal from '@/modules/tpv/components/VendorAddModal'
 import { useVendorWorkspace } from './vendorWorkspaceContext'
 import { VendorScopedList, linkBtn } from './vendorDetailShared'
+import { useDoctorOptions, doctorSelectOptions } from '@/components/medical/InternalDoctorSelect'
 
 /**
  * The Workforce group on a Purchase vendor: roster, medical, training, gate log
@@ -93,6 +94,7 @@ export function WorkforceTab() {
 export function MedicalTab() {
   const { vendor } = useVendorWorkspace()
   const workers = useVendorWorkers(vendor.id)
+  const doctors = useDoctorOptions('purchase')
 
   return (
     <VendorScopedList
@@ -123,6 +125,12 @@ export function MedicalTab() {
             ] },
             { name: 'exam_date', label: 'Exam date', type: 'date' },
             { name: 'valid_until', label: 'Valid until', type: 'date', help: 'Defaults to exam date + 1 year if left blank' },
+            // Pick one of our own doctors, or leave it and type any name in
+            // Examiner below. Choosing one makes the server copy their licence
+            // and clinic from the directory — see DoctorOptions on the server.
+            { name: 'doctor_user_id', label: 'Internal doctor', type: 'select',
+              options: doctorSelectOptions(doctors),
+              help: 'Optional. Leave blank and type the name in Examiner instead.' },
             { name: 'examiner_name', label: 'Examiner' },
             { name: 'clinic_name', label: 'Clinic' },
             { name: 'restrictions', label: 'Restrictions', type: 'textarea' },

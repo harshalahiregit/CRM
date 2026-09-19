@@ -57,6 +57,7 @@ class MedicalQualityCheckTest extends TestCase
             'tenant_id' => self::TENANT, 'company_name' => 'Acme Contracting',
             'email' => $login->email, 'user_id' => $login->id, 'status' => 'Active',
         ]);
+        $this->markOnboarded($vendor);
 
         return [$vendor, $login];
     }

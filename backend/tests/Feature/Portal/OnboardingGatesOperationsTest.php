@@ -62,17 +62,52 @@ class OnboardingGatesOperationsTest extends TestCase
             'status' => $status, 'user_id' => $login->id,
         ]);
 
+        $this->onboardingFor($vendor, $status);
+
         return [$login, $vendor];
+    }
+
+    /**
+     * The onboarding the vendor's state implies.
+     *
+     * The gate reads the ONBOARDING, not the status column, so a fixture that
+     * sets a status and stops describes a vendor that cannot exist. Active gets
+     * an approved onboarding; every other state gets one that is not approved,
+     * which is the thing actually under test.
+     */
+    private function onboardingFor(object $vendor, string $status): void
+    {
+        $approved = $status === VendorStatus::ACTIVE;
+
+        if ($vendor instanceof Vendor) {
+            \App\Models\Tpv\TpvOnboarding::create([
+                'tenant_id' => self::TENANT, 'vendor_id' => $vendor->id,
+                'status' => $approved ? 'Approved' : 'In_Progress',
+                'current_step' => $approved ? 6 : 1,
+            ]);
+
+            return;
+        }
+
+        \App\Models\Purchase\PurchaseOnboarding::create([
+            'tenant_id' => self::TENANT, 'purchase_vendor_id' => $vendor->id,
+            'status' => $approved ? 'Approved' : 'In_Progress',
+            'current_step' => $approved ? 6 : 1,
+        ]);
     }
 
     private function purchase(string $status): PurchaseVendor
     {
-        return PurchaseVendor::create([
+        $vendor = PurchaseVendor::create([
             'tenant_id' => self::TENANT, 'company_name' => 'Southgate',
             'purchase_vendor_code' => 'PV-'.strtoupper(Str::random(6)),
             'email' => 'sg-'.Str::random(4).'@t.local',
             'status' => $status, 'portal_status' => 'active',
         ]);
+
+        $this->onboardingFor($vendor, $status);
+
+        return $vendor;
     }
 
     /* ── TPV ─────────────────────────────────────────────────────────── */

@@ -287,6 +287,14 @@ export const medicalApi = {
   },
 
   /* ── Doctor directory (admin) ─────────────────────────────────────── */
+  // Internal doctors, as pickable options. Deliberately NOT doctors.list
+  // below: that is the admin directory and returns the whole profile. This is
+  // a name, a licence and a clinic, readable by any signed-in user — naming
+  // the examining doctor is not an admin job.
+  doctorOptions: (module) =>
+    api.get('/medical/doctor-options', { params: module ? { module } : {} })
+      .then(r => r.data?.data ?? r.data).catch(handleErr),
+
   doctors: {
     list:   (params = {}) => api.get('/medical/doctors', { params }).then(r => r.data?.data ?? r.data).catch(handleErr),
     create: (data)        => api.post('/medical/doctors', data).then(r => r.data).catch(handleErr),

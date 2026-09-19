@@ -102,7 +102,12 @@ class PurchasePortalController extends Controller
     public function me(Request $request)
     {
         $vendor = $this->purchaseVendor($request);
-        $vendor->loadMissing(['contacts', 'accountManager']);
+        // `onboarding` is what the portal nav locks on: until it is Approved the
+        // vendor sees Dashboard + Onboarding and nothing else. It was not loaded
+        // here, so the client fell back to the vendor's status column — and a
+        // vendor set Active with its onboarding still In_Progress saw the whole
+        // portal open on day one, which is the opposite of the intent.
+        $vendor->loadMissing(['contacts', 'accountManager', 'onboarding']);
         // Drives the one-time post-activation welcome banner. Persisted
         // server-side, so dismissing it on one device dismisses it everywhere.
         $vendor->setAttribute('show_welcome_banner', $vendor->shouldShowWelcomeBanner());

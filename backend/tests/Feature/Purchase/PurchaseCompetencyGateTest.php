@@ -62,11 +62,14 @@ class PurchaseCompetencyGateTest extends TestCase
 
     private function vendor(string $n = 'Acme'): PurchaseVendor
     {
-        return PurchaseVendor::create([
+        $vendor = PurchaseVendor::create([
             'tenant_id' => self::TENANT, 'company_name' => $n,
             'purchase_vendor_code' => 'PV-'.strtoupper(Str::random(6)),
             'email' => strtolower($n).'-'.Str::random(4).'@test.local', 'status' => 'Active', 'portal_status' => 'active',
         ]);
+        $this->markOnboarded($vendor);
+
+        return $vendor->fresh();
     }
 
     private function worker(PurchaseVendor $v, string $n = 'Worker'): PurchaseWorker

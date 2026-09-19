@@ -267,6 +267,8 @@ export const purchasePortalApi = {
     deleteWorker:  (id)          => api.delete(`/portal/purchase/workers/${id}`).then(r => r.data),
     readiness:     (id)          => api.get(`/portal/purchase/workers/${id}/readiness`).then(r => r.data),
     saveMedical:   (id, data)    => api.post(`/portal/purchase/workers/${id}/medical`, data).then(r => r.data),
+    // The Purchase mirror of the TPV picker, fixed to the Purchase module.
+    doctorOptions: () => api.get('/portal/purchase/medical/doctor-options').then(r => r.data?.data ?? r.data),
     saveTraining:  (id, data)    => api.post(`/portal/purchase/workers/${id}/training`, data).then(r => r.data),
     saveInduction: (id, data)    => api.post(`/portal/purchase/workers/${id}/induction`, data).then(r => r.data),
     document:      (id, fd)      => api.post(`/portal/purchase/workers/${id}/documents`, fd).then(r => r.data),

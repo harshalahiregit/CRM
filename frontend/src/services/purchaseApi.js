@@ -215,6 +215,7 @@ export const purchaseApi = {
       // "Searching..." -- no toast, nothing in the network tab, just a spinner.
       search: (vid, q)    => api.get(`/purchase/vendors/${vid}/customers/search`, { params: { q } }).then(r => r.data),
       link:   (vid, clientId) => api.post(`/purchase/vendors/${vid}/customers/link`, { client_id: clientId }).then(r => r.data),
+      update: (vid, clientId, data) => api.put(`/purchase/vendors/${vid}/customers/${clientId}`, data).then(r => r.data),
     },
 
     // Commercial: native. Every purchase document already keys to
@@ -552,6 +553,23 @@ export const purchaseApi = {
     updateWorker:  (id, data)  => api.put(`/purchase/workforce/workers/${id}`, data).then(r => r.data),
     deleteWorker:  (id)        => api.delete(`/purchase/workforce/workers/${id}`).then(r => r.data),
     saveMedical:   (id, data)  => api.post(`/purchase/workforce/workers/${id}/medical`, data).then(r => r.data),
+    /*
+     * Many fitness certificates at once, keyed by worker_code.
+     *
+     * The importer, its batch record and its per-row error list all existed
+     * server-side and nothing in the UI ever called them, so a vendor arriving
+     * with a stack of certificates had to be entered one worker at a time
+     * (SIR-000015). `certificates[]` is optional: name each file after the
+     * worker_code and it is filed against that row.
+     */
+    bulkMedical:   (file, vendorId, certificates = []) => {
+      const fd = new FormData()
+      fd.append('file', file)
+      if (vendorId) fd.append('vendor_id', vendorId)
+      certificates.forEach(c => fd.append('certificates[]', c))
+      return api.post('/purchase/medical/bulk', fd).then(r => r.data)
+    },
+    medicalBatches: () => api.get('/purchase/medical/batches').then(r => r.data?.data ?? r.data),
     // Step 3 needs BOTH — a worker with an induction but no training never
     // clears the step and so can never be badged.
     saveTraining:  (id, data)  => api.post(`/purchase/workforce/workers/${id}/training`, data).then(r => r.data),

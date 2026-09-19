@@ -50,6 +50,7 @@ class PurchaseVendorWorkspaceTabsTest extends TestCase
             'email' => 'nex-'.Str::random(4).'@t.local',
             'status' => 'Active', 'portal_status' => 'active',
         ]);
+        $this->markOnboarded($this->vendor);
     }
 
     private function admin(): User
@@ -156,6 +157,7 @@ class PurchaseVendorWorkspaceTabsTest extends TestCase
             'email' => 'sg-'.Str::random(4).'@t.local',
             'status' => 'Active', 'portal_status' => 'active',
         ]);
+        $this->markOnboarded($other);
 
         foreach ([[$this->vendor, 'Ravi Kumar'], [$other, 'Someone Else']] as [$v, $name]) {
             $this->postJson('/api/purchase/workforce/workers', [

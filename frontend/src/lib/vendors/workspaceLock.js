@@ -72,14 +72,29 @@ const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').re
 /**
  * Is this vendor's workspace fully unlocked?
  *
- * Active OR approved, not both: a vendor activated directly by an admin never
- * goes through an onboarding record, and an approved onboarding may not have
- * flipped the vendor's own status yet. Either answer means the same thing to
- * the person looking at the screen — this company is ours to work with.
+ * An APPROVED onboarding, or nothing. There is no second way in.
+ *
+ * This used to read
+ *
+ *     if (vendor.status === VENDOR_ACTIVE) return true
+ *
+ * on the reasoning that either answer means the same thing. They do not. The
+ * two disagree constantly in real data: a vendor can be set Active — by hand,
+ * by an older import, by an admin activating before the wizard was finished —
+ * while its onboarding still sits In_Progress at step 1. That check unlocked
+ * every one of those, which is why both portals opened with everything visible
+ * for a vendor that had not onboarded at all.
+ *
+ * A missing onboarding record is not a pass either. "No wizard was ever
+ * started" is the least onboarded a vendor can be, and both portals create the
+ * record the moment the vendor opens Onboarding — so refusing here strands
+ * nobody, it just makes them start.
+ *
+ * The same rule is enforced server-side by EnsureVendorOnboardingComplete; this
+ * decides what is worth rendering, that decides what is allowed.
  */
 export function isWorkspaceUnlocked(vendor, onboarding) {
   if (!vendor) return false
-  if (vendor.status === VENDOR_ACTIVE) return true
 
   return onboarding?.status === ONBOARDING_APPROVED
 }

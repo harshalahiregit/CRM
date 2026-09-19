@@ -94,6 +94,22 @@ class PurchaseVendorLifecycleEndToEndTest extends TestCase
         $this->assertNotNull($vendor, 'the Purchase vendor should exist after registration');
         $this->assertNotEmpty($vendor->purchase_vendor_code, 'a vendor without its code cannot be referenced');
 
+        /*
+         * Approve it, because the chain below starts by registering a workforce.
+         *
+         * A newly registered vendor is Draft, and a Draft vendor no longer
+         * accepts workers — see PurchaseWorkforceService, added for SIR-000014,
+         * which asked for exactly that. This step was missing here: the test
+         * jumped from "vendor created" to "add its workers" and skipped the
+         * approval that happens in between in the real product, so it was not
+         * quite the end-to-end run it claims to be.
+         */
+        $this->asAdmin();
+        $this->postJson("/api/purchase/vendors/{$vendor->id}/approve")->assertSuccessful();
+
+        $vendor = $vendor->fresh();
+        $this->assertSame('Active', $vendor->status, 'approval must leave the vendor engageable');
+
         return $vendor;
     }
 

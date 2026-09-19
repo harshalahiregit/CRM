@@ -55,7 +55,7 @@ class TpvAdminApiVendorIsolationTest extends TestCase
     /** A vendor company, optionally linked to a portal login. */
     private function vendor(string $name, ?User $owner = null): Vendor
     {
-        return Vendor::create([
+        $vendor = Vendor::create([
             'tenant_id'   => self::TENANT,
             'company_name' => $name,
             // Never the owner's email: the portal middleware also links by email,
@@ -64,14 +64,26 @@ class TpvAdminApiVendorIsolationTest extends TestCase
             'status'      => 'Active',
             'user_id'     => $owner?->id,
         ]);
+        $this->markOnboarded($vendor);
+
+        return $vendor->fresh();
     }
 
+    /**
+     * Put this vendor's onboarding back to in-progress.
+     *
+     * updateOrCreate, not create: vendor() already gives every vendor the
+     * approved onboarding a working vendor has (onboarding is the gate on all
+     * portal writes now), and onboarding is UNIQUE per vendor — so a second
+     * insert here collided. The tests that call this want the in-progress state,
+     * which is a change to the existing row.
+     */
     private function onboardingFor(Vendor $v): TpvOnboarding
     {
-        return TpvOnboarding::create([
-            'tenant_id' => self::TENANT, 'vendor_id' => $v->id,
-            'current_step' => 1, 'status' => Status::IN_PROGRESS,
-        ]);
+        return TpvOnboarding::updateOrCreate(
+            ['tenant_id' => self::TENANT, 'vendor_id' => $v->id],
+            ['current_step' => 1, 'status' => Status::IN_PROGRESS],
+        );
     }
 
     private function workerFor(Vendor $v): TpvWorker

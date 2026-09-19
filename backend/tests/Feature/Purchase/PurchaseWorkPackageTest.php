@@ -51,12 +51,15 @@ class PurchaseWorkPackageTest extends TestCase
 
     private function vendor(int $tenant = self::TENANT): PurchaseVendor
     {
-        return PurchaseVendor::create([
+        $vendor = PurchaseVendor::create([
             'tenant_id' => $tenant, 'company_name' => 'V'.Str::random(4),
             'purchase_vendor_code' => 'PV-'.strtoupper(Str::random(6)),
             'email' => Str::random(6).'@test.local',
             'status' => 'Active', 'portal_status' => 'active',
         ]);
+        $this->markOnboarded($vendor);
+
+        return $vendor->fresh();
     }
 
     private function svc(): PurchaseWorkPackageService

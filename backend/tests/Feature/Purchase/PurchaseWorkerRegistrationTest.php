@@ -48,12 +48,15 @@ class PurchaseWorkerRegistrationTest extends TestCase
 
     private function vendor(string $name = 'Southgate', string $status = 'Active'): PurchaseVendor
     {
-        return PurchaseVendor::create([
+        $vendor = PurchaseVendor::create([
             'tenant_id' => self::TENANT, 'company_name' => $name,
             'purchase_vendor_code' => 'PV-'.strtoupper(Str::random(6)),
             'email' => strtolower($name).'-'.Str::random(4).'@t.local',
             'status' => $status, 'portal_status' => 'active',
         ]);
+        $this->markOnboarded($vendor);
+
+        return $vendor->fresh();
     }
 
     /* ── the dropdown ───────────────────────────────────────────────── */

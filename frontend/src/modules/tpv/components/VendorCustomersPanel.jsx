@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Building2, Plus, Loader2, Inbox, Search, Link2 } from 'lucide-react'
+import { Building2, Plus, Loader2, Inbox, Search, Link2, Pencil } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
 import { INDIAN_STATES } from '@/lib/indianStates'
 import { Overlay, ModalFooter, Field, TextInput } from '@/components/ui/kit3d'
@@ -15,6 +15,7 @@ export function VendorCustomers({ vendorId, vendorName, manage = false, api = tp
   const [rows, setRows] = useState(null)
   const [error, setError] = useState('')
   const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState(null)
 
   const load = useCallback(() => {
     setError('')
@@ -56,6 +57,7 @@ export function VendorCustomers({ vendorId, vendorName, manage = false, api = tp
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr style={{ background: 'var(--bg-input)' }}>
               <th style={th}>Customer</th><th style={th}>Phone</th><th style={th}>Location</th><th style={th}>GST</th><th style={th}>Added</th>
+              {manage && <th style={{ ...th, textAlign: 'right' }}>Actions</th>}
             </tr></thead>
             <tbody>
               {rows.map(c => (
@@ -65,11 +67,30 @@ export function VendorCustomers({ vendorId, vendorName, manage = false, api = tp
                   <td style={td}>{[c.city, c.state, c.country].filter(Boolean).join(', ') || '—'}</td>
                   <td style={td}>{c.gst_number || '—'}</td>
                   <td style={td}>{c.created_at ? new Date(c.created_at).toLocaleDateString() : '—'}</td>
+                  {/* A customer added here could not be corrected here, so a typo
+                      meant a trip to the Customer module to fix it. */}
+                  {manage && (
+                    <td style={{ ...td, textAlign: 'right' }}>
+                      <button onClick={() => setEditing(c)} style={ghostBtn}>
+                        <Pencil size={12} /> Edit
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+
+      {editing && (
+        <EditCustomerModal
+          api={api}
+          vendorId={vendorId}
+          customer={editing}
+          onClose={() => setEditing(null)}
+          onDone={() => { setEditing(null); load() }}
+        />
       )}
 
       {adding && (
@@ -203,23 +224,79 @@ function CreateNew({ api, vendorId, setErr, busy, setBusy, onCreated, onClose })
 
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <Field label="Company *"><TextInput value={form.company} onChange={e => set('company', e.target.value)} placeholder="Customer company name" autoFocus /></Field>
-        <Field label="Phone"><TextInput value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="Phone" /></Field>
-        <Field label="Website"><TextInput value={form.website} onChange={e => set('website', e.target.value)} placeholder="https://" /></Field>
-        <Field label="GST Number"><TextInput value={form.gst_number} onChange={e => set('gst_number', e.target.value)} placeholder="GSTIN" /></Field>
-        <Field label="City"><TextInput value={form.city} onChange={e => set('city', e.target.value)} placeholder="City" /></Field>
-        <Field label="State">
-          <select value={form.state} onChange={e => set('state', e.target.value)}
-            style={{ width: '100%', padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-h)', fontSize: 13 }}>
-            <option value="">Select State</option>
-            {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </Field>
-        <Field label="Country"><TextInput value={form.country} onChange={e => set('country', e.target.value)} placeholder="Country" /></Field>
-      </div>
+      <CustomerFields form={form} set={set} />
       <ModalFooter onClose={onClose} onConfirm={save} loading={busy} disabled={!form.company.trim()} confirmLabel="Add Customer" />
     </div>
+  )
+}
+
+/*
+ * The one field grid, used by both Add and Edit.
+ *
+ * Kept as a single component on purpose: these are exactly the columns the
+ * server accepts on either route, so two copies would drift and one of the two
+ * forms would quietly stop being able to set something.
+ */
+function CustomerFields({ form, set }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <Field label="Company *"><TextInput value={form.company} onChange={e => set('company', e.target.value)} placeholder="Customer company name" autoFocus /></Field>
+      <Field label="Phone"><TextInput value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="Phone" /></Field>
+      <Field label="Website"><TextInput value={form.website} onChange={e => set('website', e.target.value)} placeholder="https://" /></Field>
+      <Field label="GST Number"><TextInput value={form.gst_number} onChange={e => set('gst_number', e.target.value)} placeholder="GSTIN" /></Field>
+      <Field label="City"><TextInput value={form.city} onChange={e => set('city', e.target.value)} placeholder="City" /></Field>
+      <Field label="State">
+        <select value={form.state} onChange={e => set('state', e.target.value)}
+          style={{ width: '100%', padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-h)', fontSize: 13 }}>
+          <option value="">Select State</option>
+          {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </Field>
+      <Field label="Country"><TextInput value={form.country} onChange={e => set('country', e.target.value)} placeholder="Country" /></Field>
+    </div>
+  )
+}
+
+/**
+ * Correct a linked customer in place.
+ *
+ * Only the fields the row was created with; changing WHICH vendor a customer
+ * belongs to is not an edit, and the route refuses a client that is not already
+ * linked to this vendor.
+ */
+function EditCustomerModal({ api, vendorId, customer, onClose, onDone }) {
+  const [form, setForm] = useState({
+    company: customer.company || '',
+    phone: customer.phone || '',
+    website: customer.website || '',
+    gst_number: customer.gst_number || '',
+    city: customer.city || '',
+    state: customer.state || '',
+    country: customer.country || '',
+  })
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const save = async () => {
+    if (!form.company.trim()) { setErr('Company name is required.'); return }
+    setBusy(true); setErr('')
+    try { await api.vendors.customers.update(vendorId, customer.id, { ...form, company: form.company.trim() }); onDone() }
+    catch (e) { setErr(e?.response?.data?.message || 'Could not save the changes.'); setBusy(false) }
+  }
+
+  return (
+    <Overlay onClose={onClose} width={620}>
+      <h2 style={{ color: 'var(--text-h)', margin: '0 0 4px', fontSize: 17, fontWeight: 800 }}>Edit Customer</h2>
+      <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '0 0 16px' }}>
+        Changes are saved to the customer record itself, so they show everywhere it appears.
+      </p>
+
+      {err && <p style={{ color: '#ef4444', fontSize: 12.5, margin: '0 0 10px' }}>{err}</p>}
+
+      <CustomerFields form={form} set={set} />
+      <ModalFooter onClose={onClose} onConfirm={save} loading={busy} disabled={!form.company.trim()} confirmLabel="Save Changes" />
+    </Overlay>
   )
 }
 

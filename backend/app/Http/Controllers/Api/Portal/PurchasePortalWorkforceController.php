@@ -11,6 +11,7 @@ use App\Models\Purchase\PurchaseWorkerPpeIssue;
 use App\Services\Purchase\PurchaseGateService;
 use App\Services\Purchase\PurchasePpeService;
 use App\Services\Purchase\PurchaseWorkforceService;
+use App\Support\Medical\DoctorOptions;
 use Illuminate\Http\Request;
 
 /**
@@ -97,7 +98,12 @@ class PurchasePortalWorkforceController extends Controller
             'restrictions'   => 'nullable|string|max:1000',
             'examiner_name'  => 'nullable|string|max:150',
             'approved_by'    => 'nullable|integer',
+            // Which in-house doctor was picked, if any. Licence and clinic are
+            // looked up server-side from the directory, never sent from here.
+            'doctor_user_id' => 'nullable|integer',
         ]);
+
+        $data = DoctorOptions::applyTo($data, (int) $w->tenant_id, 'purchase');
 
         return response()->json($this->service->saveMedical($w, $data), 201);
     }

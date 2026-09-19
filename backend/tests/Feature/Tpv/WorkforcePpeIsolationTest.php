@@ -93,6 +93,7 @@ class WorkforcePpeIsolationTest extends TestCase
             'email' => strtolower($name).'-'.Str::random(6).'@vendor.local',
             'status' => VendorStatus::ACTIVE, 'user_id' => $user->id,
         ]);
+        $this->markOnboarded($vendor);
 
         return [$user, $vendor];
     }
@@ -428,10 +429,14 @@ class WorkforcePpeIsolationTest extends TestCase
             'tenant_id' => self::TENANT, 'company_name' => 'PendingCo',
             'email' => 'pending@vendor.local', 'status' => VendorStatus::INACTIVE,
         ]);
-        $ob = TpvOnboarding::create([
-            'tenant_id' => self::TENANT, 'vendor_id' => $vendor->id,
-            'current_step' => 6, 'status' => ObStatus::SUBMITTED,
-        ]);
+        $this->markOnboarded($vendor);
+        $ob = TpvOnboarding::updateOrCreate(
+            // Matched on the vendor, updated with the state this test needs:
+            // vendor() already gave it the approved onboarding a live vendor
+            // has, and onboarding is UNIQUE per vendor.
+            ['tenant_id' => self::TENANT, 'vendor_id' => $vendor->id],
+            ['current_step' => 6, 'status' => ObStatus::SUBMITTED],
+        );
         $this->completeChecklist($ob);
 
         Sanctum::actingAs($this->user('admin'));
@@ -450,10 +455,14 @@ class WorkforcePpeIsolationTest extends TestCase
             'tenant_id' => self::TENANT, 'company_name' => 'GateCo',
             'email' => 'gate@vendor.local', 'status' => VendorStatus::INACTIVE,
         ]);
-        $ob     = TpvOnboarding::create([
-            'tenant_id' => self::TENANT, 'vendor_id' => $vendor->id,
-            'current_step' => 6, 'status' => ObStatus::SUBMITTED,
-        ]);
+        $this->markOnboarded($vendor);
+        $ob     = TpvOnboarding::updateOrCreate(
+            // Matched on the vendor, updated with the state this test needs:
+            // vendor() already gave it the approved onboarding a live vendor
+            // has, and onboarding is UNIQUE per vendor.
+            ['tenant_id' => self::TENANT, 'vendor_id' => $vendor->id],
+            ['current_step' => 6, 'status' => ObStatus::SUBMITTED],
+        );
         $this->completeChecklist($ob);
         $worker = $this->worker($vendor);
         $svc    = app(\App\Services\Tpv\TpvWorkerService::class);
@@ -479,10 +488,13 @@ class WorkforcePpeIsolationTest extends TestCase
         // 19 — approval stays admin-only. No self-activation.
         [$user, $vendor] = $this->vendorWithLogin('SelfCo');
         $vendor->update(['status' => VendorStatus::INACTIVE]);
-        $ob = TpvOnboarding::create([
-            'tenant_id' => self::TENANT, 'vendor_id' => $vendor->id,
-            'current_step' => 6, 'status' => ObStatus::SUBMITTED,
-        ]);
+        $ob = TpvOnboarding::updateOrCreate(
+            // Matched on the vendor, updated with the state this test needs:
+            // vendor() already gave it the approved onboarding a live vendor
+            // has, and onboarding is UNIQUE per vendor.
+            ['tenant_id' => self::TENANT, 'vendor_id' => $vendor->id],
+            ['current_step' => 6, 'status' => ObStatus::SUBMITTED],
+        );
 
         Sanctum::actingAs($user);
         $this->postJson("/api/tpv/onboarding/{$ob->id}/approve", [])->assertStatus(403);

@@ -36,6 +36,19 @@ final class PurchaseOnboardingStatus
         self::SUBMITTED, self::UNDER_REVIEW,
     ];
 
+    /**
+     * Onboarding is still moving — not decided, not stopped.
+     *
+     * Deliberately excludes APPROVED (it is finished, not in progress) as well
+     * as ON_HOLD and REJECTED (stopped). Used to decide whether a step that
+     * runs BEFORE approval, such as a workforce category's worker registration,
+     * is legitimately open.
+     */
+    public const LIVE = [
+        self::DRAFT, self::IN_PROGRESS, self::SUBMITTED,
+        self::UNDER_REVIEW, self::RESUBMIT_REQUIRED,
+    ];
+
     public const TOTAL_STEPS = 6;
 
     public const LABELS = [
@@ -62,5 +75,11 @@ final class PurchaseOnboardingStatus
     public static function isValid(?string $status): bool
     {
         return in_array($status, self::ALL, true);
+    }
+
+    /** Onboarding is still progressing — see LIVE. */
+    public static function isLive(?string $status): bool
+    {
+        return in_array($status, self::LIVE, true);
     }
 }

@@ -2,6 +2,8 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\Purchase\PurchaseOnboardingStatus;
+use App\Support\Tpv\TpvOnboardingStatus;
 use App\Support\Vendor\VendorStatus;
 use Closure;
 use Illuminate\Http\Request;
@@ -92,7 +94,7 @@ class EnsureVendorOnboardingComplete
             return $next($request);
         }
 
-        if ((string) $vendor->status === VendorStatus::ACTIVE) {
+        if ($this->isOnboarded($vendor)) {
             return $next($request);
         }
 
@@ -110,5 +112,49 @@ class EnsureVendorOnboardingComplete
                 .'workers and use the rest of the portal.',
             'vendor_status' => $vendor->status,
         ], 403);
+    }
+
+    /**
+     * Has this vendor's onboarding actually been approved?
+     *
+     * This used to read `$vendor->status === ACTIVE`, which is not the same
+     * question and answers it wrongly in the common case: a vendor can be set
+     * Active — by hand, by an older import, by an admin activating before the
+     * wizard was finished — while its onboarding still sits In_Progress at step
+     * 1. Every one of those walked straight through the gate this class exists
+     * to be, and could create the worker records the docblock above describes.
+     *
+     * So the onboarding decides when there is one. The status column is the
+     * fallback for a vendor with no onboarding record at all, where there is
+     * nothing to be approved and no other answer available.
+     *
+     * Both vendor masters arrive here — TPV's Vendor (relation tpvOnboarding,
+     * because it can also carry a Purchase one) and PurchaseVendor (relation
+     * onboarding) — so the relation is resolved by name rather than assumed.
+     */
+    private function isOnboarded(object $vendor): bool
+    {
+        foreach (['onboarding', 'tpvOnboarding'] as $relation) {
+            if (! method_exists($vendor, $relation)) {
+                continue;
+            }
+
+            if ($record = $vendor->{$relation}()->first()) {
+                // The two engines keep separate status vocabularies that happen
+                // to agree on this word; both are named rather than one being
+                // assumed to cover the other.
+                return in_array((string) $record->status, [
+                    PurchaseOnboardingStatus::APPROVED,
+                    TpvOnboardingStatus::APPROVED,
+                ], true);
+            }
+        }
+
+        // No onboarding record at all is NOT a pass. It used to fall through to
+        // `status === Active`, which meant a vendor activated by hand skipped
+        // onboarding entirely and could write from its first login. Both portals
+        // create the record as soon as the vendor opens Onboarding, so refusing
+        // here strands nobody — it makes them start.
+        return false;
     }
 }

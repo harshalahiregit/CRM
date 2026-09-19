@@ -58,6 +58,7 @@ class PurchaseMedicalSignatureTest extends TestCase
             'email' => 'acme-'.Str::random(3).'@test.local',
             'status' => 'Active', 'portal_status' => 'active',
         ]);
+        $this->markOnboarded($vendor);
 
         return app(PurchaseWorkforceService::class)->create($vendor, [
             'full_name' => 'Ravi', 'dob' => '1990-01-01', 'designation' => 'Fitter', 'phone' => '9990000000',

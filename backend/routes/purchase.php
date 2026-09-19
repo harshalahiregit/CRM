@@ -196,6 +196,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     // whereNumber above keeps that safe.
     Route::get('/vendors/{purchaseVendor}/customers/search', [PurchaseVendorController::class, 'searchCustomers'])->whereNumber('purchaseVendor');
     Route::post('/vendors/{purchaseVendor}/customers/link', [PurchaseVendorController::class, 'linkCustomer'])->whereNumber('purchaseVendor');
+    // Correcting a linked customer in place -- the tab could add one and then never
+    // fix a typo in it. Numeric {client} so it cannot shadow /customers/search.
+    Route::put('/vendors/{purchaseVendor}/customers/{client}', [PurchaseVendorController::class, 'updateCustomer'])->whereNumber(['purchaseVendor', 'client']);
     Route::put('/vendors/{purchaseVendor}',          [PurchaseVendorController::class, 'update'])->whereNumber('purchaseVendor');
     Route::patch('/vendors/{purchaseVendor}/status', [PurchaseVendorController::class, 'updateStatus'])->whereNumber('purchaseVendor');
     Route::delete('/vendors/{purchaseVendor}',       [PurchaseVendorController::class, 'destroy'])->whereNumber('purchaseVendor');

@@ -55,6 +55,7 @@ class GovernanceActionsRenderTest extends TestCase
             'status' => PurchaseVendorStatus::ACTIVE, 'portal_status' => 'active',
             'email' => 'bolt@vendor.test',
         ]);
+        $this->markOnboarded($vendor);
 
         $meeting = PurchaseKickoffMeeting::create([
             'tenant_id' => self::TENANT, 'purchase_vendor_id' => $vendor->id,

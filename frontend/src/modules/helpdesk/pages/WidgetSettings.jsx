@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Code2, RefreshCw, Copy, Check, Send,
-  Shield, Globe, Key, AlertCircle
+  Shield, Globe, Key, AlertCircle, Link as LinkIcon, ExternalLink
 } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 
@@ -38,6 +38,10 @@ export default function WidgetSettings() {
       </div>
     )
   }
+
+  // Built from the browser's own origin, so it is right in dev, on staging and
+  // in production without another setting to keep in step.
+  const publicSupportUrl = `${window.location.origin}/support/${settings.public_key}`
 
   const copy = (txt) => {
     navigator.clipboard?.writeText(txt)
@@ -102,6 +106,60 @@ export default function WidgetSettings() {
               />
             </button>
           </label>
+        </div>
+
+        {/*
+          The shareable link.
+
+          The embed snippet is only usable by someone who can edit a page's HTML.
+          A plain URL can go in an email signature, a QR code, a chat pin or a
+          menu item on a site nobody here controls (SIR-000025) — so it is shown
+          FIRST, above the snippet, because it is what most people came for.
+        */}
+        <div
+          className="rounded-xl p-4"
+          style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <LinkIcon size={13} style={{ color: '#22d3ee', flexShrink: 0 }} />
+            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+              Public support link
+            </p>
+          </div>
+          <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+            Anyone with this link can raise a ticket — no login, no embedding. Replies go to the
+            email address they give.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <code
+              className="flex-1 min-w-0 truncate text-xs font-mono px-3 py-2 rounded-lg"
+              style={{ background: 'var(--bg-global)', border: '1px solid var(--border)', color: 'var(--text-h)' }}
+            >
+              {publicSupportUrl}
+            </code>
+            <button
+              onClick={() => copy(publicSupportUrl)}
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg transition-all hover:opacity-80"
+              style={{ background: 'rgba(34,211,238,0.15)', color: '#22d3ee' }}
+            >
+              {copied ? <Check size={11} /> : <Copy size={11} />} {copied ? 'Copied!' : 'Copy link'}
+            </button>
+            <a
+              href={publicSupportUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg transition-all hover:opacity-80"
+              style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)' }}
+            >
+              <ExternalLink size={11} /> Open
+            </a>
+          </div>
+          {/* Disabling the widget disables this too — they are one key. */}
+          {!settings.is_enabled && (
+            <p className="mt-2 text-xs" style={{ color: '#f59e0b' }}>
+              The widget is disabled, so this link will not accept requests until it is enabled.
+            </p>
+          )}
         </div>
 
         {/* Code snippet */}
