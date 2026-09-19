@@ -3667,6 +3667,34 @@ owner rather than a build.
 since the palette was written, and to be fixed with whatever ships from
 `PROPOSAL-search-as-the-entry-point.md`.
 
+### RULED 2026-09-19 — the three answers, and the divergence they authorise
+
+**Q1 — a trip number goes to the trip page, not to the passport. APPROVED, with two conditions.**
+
+This is a deliberate departure from §4's letter — *"all relevant search paths must ultimately lead
+to the same Digital Passport"* — and it is recorded here because **an undocumented divergence is
+indistinguishable from an oversight.** The next person to read §4 against the code would otherwise
+"fix" it.
+
+The owner's reasoning, kept verbatim in substance: *§4's intent is traceability — that the whole
+story is always reachable — not that every screen is the same screen. Someone typing
+`TRP-2026-000034` is a dispatcher who wants the working screen, and landing them on a traceability
+view would be answering a question they did not ask.*
+
+| Condition | Status |
+|---|---|
+| The passport must be **one obvious click** from the trip page | **Met.** It was not: "What is being moved" linked to the consignment drawer and read as cargo detail. The trip payload now carries its container and the trip page opens with *"Open the full journey of sgoe-402215-9 → Everything that has happened to this container"*, above the fold. Clicked in a browser; it lands on `/app/transport/containers/23`. |
+| Log the divergence with the reasoning | This entry, plus `test_a_trip_number_deliberately_goes_to_the_trip_and_not_the_passport`, which pins it in the suite so it cannot be silently "corrected". |
+
+**Q2 — Internal Consignment ID = `consignment_number`. CONFIRMED.** Already the established
+reading: `SCHEMA-PROPOSAL-consignment-container.md` cited "CTD §4 Internal Consignment ID" as the
+source for that column on 11 September.
+
+**Q3 — do not invent a POD number. CONFIRMED.** The answer we give is: *"not searchable yet,
+because a POD here is a file attached to a trip rather than a numbered artefact."* Inventing a
+numbering scheme to satisfy a search key would be D-9 for the fifth time. Kept in this entry so
+whoever eventually specifies POD numbering finds the reason it was left alone.
+
 ### And one thing the brief attributed to the wrong cause
 
 The proposal records this in full, but it belongs here too: **a vehicle number failing to reach a

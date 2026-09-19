@@ -95,6 +95,11 @@ export default function TransportTripDetail() {
   const [trip, setTrip] = useState(null)
   const [audit, setAudit] = useState([])
   const [assignment, setAssignment] = useState(null)
+  // The container this trip is carrying — CTD §4's Digital Passport, one click
+  // from here. A trip number is the one search key that deliberately does NOT
+  // land on the passport (D-117), and the condition attached to that ruling is
+  // that the passport stays reachable in one obvious step.
+  const [passport, setPassport] = useState(null)
   // Asked, never assumed — no button appears that the API would refuse.
   const [grants, setGrants] = useState({})
   const [loading, setLoading] = useState(true)
@@ -124,6 +129,7 @@ export default function TransportTripDetail() {
       setTrip(d?.trip ?? null)
       setAudit(Array.isArray(d?.audit) ? d.audit : [])
       setAssignment(d?.assignment ?? null)
+      setPassport(d?.passport ?? null)
     } catch (e) {
       if (e?.status === 404) setNotFound(true)
       else setError(e?.message || 'Could not load this trip.')
@@ -536,6 +542,25 @@ export default function TransportTripDetail() {
               <KV label="Agreed price" value={fmtMoney(trip.approved_freight, trip.currency)} />
             </div>
           </Panel>
+
+          {/* CTD §4 — "all relevant search paths must ultimately lead to the same
+              Digital Passport". This is the trip's route to it.
+              Deliberately ABOVE "What is being moved" and worded as the whole
+              story rather than as cargo detail: the reason a trip number is
+              allowed to skip the passport is that this link exists, so it has
+              to read like a way through and not like a specification. */}
+          {passport && (
+            <button onClick={() => navigate(`/app/transport/containers/${passport.container_id}`)}
+              style={{ ...linkCard, width: '100%', marginBottom: 12, textAlign: 'left' }}>
+              <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--accent)' }}>
+                Open the full journey of {passport.container_number} →
+              </span>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 5 }}>
+                Everything that has happened to this container — the order, the paperwork, the
+                money and the complete timeline.
+              </div>
+            </button>
+          )}
 
           <Fold icon={Boxes} title="What is being moved"
             summary={trip.consignment?.consignment_number || 'No consignment linked'}>

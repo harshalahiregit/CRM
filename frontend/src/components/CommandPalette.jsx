@@ -21,11 +21,23 @@ import { transportSearchApi } from '@/services/transportApi'
  * normalise on the way — ABCD1234567, abcd-123456-7 and ABCD 1234 567 are one
  * box — which no amount of client-side `includes()` could do.
  *
- * STOS-CTD §4 lists nine entry points and requires that "all relevant search
+ * STOS-CTD §4 lists ELEVEN entry points and requires that "all relevant search
  * paths must ultimately lead to the same Digital Passport". Until now that
  * resolver existed only in the Containers page's own filter box, which meant
  * the one search that understands transport identifiers was reachable from
  * exactly one screen out of every screen in the product.
+ *
+ * (This said "nine" from the day it was written. §4 lists eleven and §97 lists
+ * nine — the document disagrees with itself, and the count here was copied from
+ * the wrong one. D-117 records the discrepancy; the two §97 drops, POD Number
+ * and Internal Consignment ID, are exactly the two that gave trouble later.)
+ *
+ * ── THE PASSPORT FOLLOW-THROUGH IS THE SERVER'S, AND THAT IS THE POINT ───
+ * A plate or an LR number now lands on the Digital Passport rather than on a
+ * list, because TransportSearchService walks the rest of the chain. Nothing
+ * here had to change for that. `/app/transport` has a search box too, and the
+ * only reason those two screens cannot disagree is that neither of them owns
+ * any of this logic.
  *
  * It is placed FIRST in the results. An exact identifier match is a stronger
  * signal than a substring of somebody's ticket subject, and a dispatcher who
@@ -156,8 +168,8 @@ export default function CommandPalette() {
               </p>
               <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
                 {term
-                  ? 'Try a container, trip, order or consignment number, a vehicle registration, or part of a ticket or project name.'
-                  : 'Containers, trips, orders, consignments, vehicles, drivers, tickets, projects and tasks.'}
+                  ? 'Try a container, trip, order, consignment or LR number, a customer reference, a vehicle registration, a driver name, or part of a ticket or project name. Invoice and POD numbers cannot be searched yet.'
+                  : 'Containers, trips, orders, consignments, LR and delivery orders, vehicles, drivers, tickets, projects and tasks.'}
               </p>
             </div>
           )}

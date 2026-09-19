@@ -12,7 +12,10 @@ use App\Services\Transport\TransportAuditLogger;
 use App\Services\Transport\TransportTripService;
 use App\Services\Transport\TripAssignmentService;
 use Illuminate\Http\JsonResponse;
+use App\Models\Transport\TransportContainer;
+use App\Models\Transport\TransportTrip;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Trips (SNG-TRN-007).
@@ -80,7 +83,54 @@ class TransportTripController extends Controller
             'assignment' => $this->assignments->activeForTrip($trip->id, $tenantId)
                 ?->load('vehicle:id,registration_number,vehicle_type,status', 'driver:id,name,driver_code,licence_class,availability'),
             'audit' => $this->audit->forSubject($trip, $tenantId),
+            // CTD §4's destination, reachable from the trip in one click.
+            //
+            // A trip number is the ONE search key that deliberately does not
+            // land on the Digital Passport — somebody typing TRP-2026-000034
+            // is a dispatcher who wants the working screen (D-117). The
+            // condition attached to that ruling is that the passport stays one
+            // obvious click away, and it cannot be if the trip does not know
+            // which container it is carrying.
+            //
+            // Null where the consignment has no container on it — loose cargo
+            // is allowed (§8) and there is genuinely no passport to open.
+            'passport' => $this->passportFor($trip, $tenantId),
         ], 'Trip retrieved');
+    }
+
+    /**
+     * The container this trip is carrying, if it is carrying one.
+     *
+     * Two columns, deliberately. This exists so the screen can offer a link,
+     * not so it can render a container — CTD §9's passport sections are the
+     * passport's own job and duplicating any of them here is how two screens
+     * start disagreeing about one box.
+     *
+     * @return array<string,mixed>|null
+     */
+    private function passportFor(TransportTrip $trip, int $tenantId): ?array
+    {
+        if (! $trip->consignment_id) {
+            return null;
+        }
+
+        $id = DB::table('transport_consignment_containers')
+            ->where('tenant_id', $tenantId)
+            ->where('consignment_id', $trip->consignment_id)
+            ->whereNull('detached_at')
+            ->orderByDesc('id')
+            ->value('container_id');
+
+        if (! $id) {
+            return null;
+        }
+
+        $container = TransportContainer::forTenant($tenantId)->find($id);
+
+        return $container ? [
+            'container_id'     => $container->id,
+            'container_number' => $container->container_number,
+        ] : null;
     }
 
     /** Create a trip from an approved order. */

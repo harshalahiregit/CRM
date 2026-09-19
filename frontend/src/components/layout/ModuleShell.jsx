@@ -141,10 +141,16 @@ export default function ModuleShell({ label, badge, items, groups }) {
         {groups ? null : (
           <nav className="modnav-plate">
             <div className="modnav-rail">
-              {items.map(({ label: tabLabel, path, icon: Icon }, i) => (
+              {items.map(({ label: tabLabel, path, icon: Icon, end }, i) => (
                 <Fragment key={path}>
                   {i > 0 && <span className="modnav-tick" aria-hidden="true" />}
-                  <NavLink to={path} className={({ isActive }) => `modnav-tab${isActive ? ' on' : ''}`}>
+                  {/* `end` is optional and off by default, so every existing
+                      rail behaves exactly as before. It exists for a module
+                      whose INDEX is a real screen rather than a redirect: a
+                      NavLink to /app/transport matches every child route by
+                      prefix, so without this the entry point stays highlighted
+                      while you are three pages deep inside it. */}
+                  <NavLink to={path} end={end} className={({ isActive }) => `modnav-tab${isActive ? ' on' : ''}`}>
                     <Icon size={13} className="modnav-ico" />
                     {tabLabel}
                   </NavLink>
