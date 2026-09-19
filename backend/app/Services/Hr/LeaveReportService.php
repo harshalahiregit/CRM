@@ -2,6 +2,7 @@
 
 namespace App\Services\Hr;
 
+use App\Models\User;
 use App\Repositories\Hr\LeaveReportRepository;
 use Illuminate\Support\Carbon;
 
@@ -18,14 +19,14 @@ class LeaveReportService
     {
     }
 
-    public function dashboard(int $tenantId): array
+    public function dashboard(int $tenantId, ?User $actor = null): array
     {
-        return $this->repo->dashboard($tenantId, now()->toDateString());
+        return $this->repo->dashboard($tenantId, now()->toDateString(), $actor);
     }
 
-    public function employees(int $tenantId, array $f): array
+    public function employees(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->employees($tenantId, $f)->map(fn ($r) => [
+        return $this->repo->employees($tenantId, $f, $actor)->map(fn ($r) => [
             'employee_name' => $r->name, 'employee_code' => $r->employee_code,
             'department' => $r->department, 'designation' => $r->designation, 'leave_type' => $r->leave_type,
             'applied_days' => (float) $r->applied_days, 'approved_days' => (float) $r->approved_days,
@@ -34,11 +35,14 @@ class LeaveReportService
         ])->all();
     }
 
-    public function departments(int $tenantId, array $f): array
+    public function departments(int $tenantId, array $f, ?User $actor = null): array
     {
-        $apps = $this->repo->departmentApps($tenantId, $f)->keyBy('department');
-        $bal = $this->repo->balancesByDept($tenantId)->keyBy('department');
-        $onLeave = $this->repo->onLeaveTodayByDept($tenantId, now()->toDateString())->keyBy('department');
+        // All three sources take the same actor: the row's application counts,
+        // its utilisation and its on-leave headcount have to describe the same
+        // set of people or the row is three different departments at once.
+        $apps = $this->repo->departmentApps($tenantId, $f, $actor)->keyBy('department');
+        $bal = $this->repo->balancesByDept($tenantId, $actor)->keyBy('department');
+        $onLeave = $this->repo->onLeaveTodayByDept($tenantId, now()->toDateString(), $actor)->keyBy('department');
 
         $depts = collect($apps->keys())->merge($bal->keys())->unique()->values();
 
@@ -58,9 +62,9 @@ class LeaveReportService
         })->all();
     }
 
-    public function types(int $tenantId, array $f): array
+    public function types(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->typeAnalysis($tenantId, $f)->map(function ($r) {
+        return $this->repo->typeAnalysis($tenantId, $f, $actor)->map(function ($r) {
             $allocated = (float) $r->allocated;
 
             return [
@@ -72,9 +76,9 @@ class LeaveReportService
         })->all();
     }
 
-    public function balances(int $tenantId, array $f): array
+    public function balances(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->balances($tenantId, $f)->map(fn ($r) => [
+        return $this->repo->balances($tenantId, $f, $actor)->map(fn ($r) => [
             'employee_name' => $r->name, 'employee_code' => $r->employee_code, 'department' => $r->department,
             'leave_type' => $r->leave_type,
             'opening' => (float) $r->opening_balance, 'allocated' => (float) $r->allocated,
@@ -104,11 +108,11 @@ class LeaveReportService
         ];
     }
 
-    public function trends(int $tenantId, array $f): array
+    public function trends(int $tenantId, array $f, ?User $actor = null): array
     {
         $year = (int) ($f['year'] ?? now()->year);
-        $rows = $this->repo->trendRows($tenantId, $year);
-        $alloc = $this->repo->totalAllocated($tenantId);
+        $rows = $this->repo->trendRows($tenantId, $year, $actor);
+        $alloc = $this->repo->totalAllocated($tenantId, $actor);
 
         $months = [];
         for ($m = 1; $m <= 12; $m++) {
@@ -137,29 +141,29 @@ class LeaveReportService
         }, $months));
     }
 
-    public function filterOptions(int $tenantId): array
+    public function filterOptions(int $tenantId, ?User $actor = null): array
     {
-        return $this->repo->filterOptions($tenantId);
+        return $this->repo->filterOptions($tenantId, $actor);
     }
 
     /* ── Export rows (CSV / PDF share the shaped data) ────── */
-    public function exportRows(string $report, int $tenantId, array $f): array
+    public function exportRows(string $report, int $tenantId, array $f, ?User $actor = null): array
     {
         return match ($report) {
             'departments' => [
                 'title' => 'Department Leave Report',
                 'headers' => ['Department', 'Applications', 'Approved', 'Pending', 'Rejected', 'On Leave', 'Utilization %'],
-                'rows' => array_map(fn ($d) => [$d['department'], $d['total'], $d['approved'], $d['pending'], $d['rejected'], $d['employees_on_leave'], $d['utilization']], $this->departments($tenantId, $f)),
+                'rows' => array_map(fn ($d) => [$d['department'], $d['total'], $d['approved'], $d['pending'], $d['rejected'], $d['employees_on_leave'], $d['utilization']], $this->departments($tenantId, $f, $actor)),
             ],
             'types' => [
                 'title' => 'Leave Type Analysis',
                 'headers' => ['Leave Type', 'Allocated', 'Used', 'Remaining', 'Carry Forward', 'Utilization %'],
-                'rows' => array_map(fn ($t) => [$t['leave_type'], $t['allocated'], $t['used'], $t['remaining'], $t['carry_forward'], $t['utilization']], $this->types($tenantId, $f)),
+                'rows' => array_map(fn ($t) => [$t['leave_type'], $t['allocated'], $t['used'], $t['remaining'], $t['carry_forward'], $t['utilization']], $this->types($tenantId, $f, $actor)),
             ],
             'balances' => [
                 'title' => 'Leave Balance Report',
                 'headers' => ['Employee', 'Code', 'Department', 'Leave Type', 'Opening', 'Allocated', 'Used', 'Adjusted', 'Carry Fwd', 'Available'],
-                'rows' => array_map(fn ($b) => [$b['employee_name'], $b['employee_code'], $b['department'], $b['leave_type'], $b['opening'], $b['allocated'], $b['used'], $b['adjusted'], $b['carry_forward'], $b['available']], $this->balances($tenantId, $f)),
+                'rows' => array_map(fn ($b) => [$b['employee_name'], $b['employee_code'], $b['department'], $b['leave_type'], $b['opening'], $b['allocated'], $b['used'], $b['adjusted'], $b['carry_forward'], $b['available']], $this->balances($tenantId, $f, $actor)),
             ],
             'holidays' => [
                 'title' => 'Holiday Report',
@@ -169,7 +173,7 @@ class LeaveReportService
             default => [ // employees
                 'title' => 'Employee Leave Report',
                 'headers' => ['Employee', 'Department', 'Designation', 'Leave Type', 'Applied Days', 'Approved Days', 'Remaining', 'Status'],
-                'rows' => array_map(fn ($e) => [$e['employee_name'], $e['department'], $e['designation'], $e['leave_type'], $e['applied_days'], $e['approved_days'], $e['remaining'] ?? '—', $e['status']], $this->employees($tenantId, $f)),
+                'rows' => array_map(fn ($e) => [$e['employee_name'], $e['department'], $e['designation'], $e['leave_type'], $e['applied_days'], $e['approved_days'], $e['remaining'] ?? '—', $e['status']], $this->employees($tenantId, $f, $actor)),
             ],
         };
     }

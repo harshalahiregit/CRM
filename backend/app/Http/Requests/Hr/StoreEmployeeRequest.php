@@ -4,6 +4,7 @@ namespace App\Http\Requests\Hr;
 
 use App\Rules\Hr\ValidWorkState;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreEmployeeRequest extends FormRequest
 {
@@ -23,6 +24,23 @@ class StoreEmployeeRequest extends FormRequest
             'address'                => 'nullable|string',
             'department'             => 'required|string',
             'designation'            => 'required|string',
+            // Two fields, on purpose, and they are not duplicates of each other.
+            //
+            // reporting_manager_id is the IDENTITY, and it is what every feature
+            // that walks the hierarchy reads: the org chart, the advance ladder's
+            // manager rung, the attendance app's approval queue. Until now it had
+            // exactly one writer in the whole codebase — EmployeeMovementService,
+            // the transfer flow — so a person's manager only became real if they
+            // were later moved. Hired and left alone, they had none.
+            //
+            // reporting_manager_name stays because it is the only thing that can
+            // hold a manager who is not an employee record at all ("CEO" in the
+            // seeded data), and because three screens render it. Id where we have
+            // one, name where we do not; neither is derived from the other.
+            'reporting_manager_id'   => [
+                'nullable', 'integer',
+                Rule::exists('hr_employees', 'id')->where('tenant_id', $this->user()?->tenant_id),
+            ],
             'reporting_manager_name' => 'nullable|string',
             // Statutory jurisdiction (Professional Tax). Optional — an employee
             // without one simply gets no PT, with the reason recorded on the record.

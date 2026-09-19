@@ -115,8 +115,26 @@ class PayrollService
             throw new BusinessException('This payroll run is cancelled.');
         }
 
+        // The salary that applied IN THIS PERIOD — not whichever row is active today.
+        //
+        // This used to filter on `status = ACTIVE` alone, so a revision made in
+        // July silently became the basis for a June run reprocessed afterwards:
+        // the June record would carry July's CTC and July's components, and
+        // nothing in the output said so. The effective dates existed on the row
+        // the whole time and payroll was the one service not reading them.
+        //
+        // A superseded row is deliberately eligible here. For an earlier period
+        // the INACTIVE row is the correct one — restricting to ACTIVE is exactly
+        // what caused the bug.
+        [$periodStart, $periodEnd] = $this->periodBounds($run->payroll_year, $run->payroll_month);
+
         $salaries = HrEmployeeSalary::where('tenant_id', $tenantId)
-            ->where('status', HrEmployeeSalary::ACTIVE)
+            ->where(fn ($q) => $q
+                ->whereNull('effective_from')
+                ->orWhereDate('effective_from', '<=', $periodEnd))
+            ->where(fn ($q) => $q
+                ->whereNull('effective_to')
+                ->orWhereDate('effective_to', '>=', $periodStart))
             // `work_state` is loaded because Professional Tax is resolved per state;
             // without it the constrained eager load returns a null state and every
             // state-specific PT rule silently fails to match.
@@ -125,7 +143,33 @@ class PayrollService
             // so leaving them out means gender-neutral PT slabs and an EPS
             // contribution for somebody past 58 — silently, on every run.
             ->with('employee:id,name,work_state,gender,dob')
+            ->orderBy('employee_id')
+            ->orderBy('effective_from')
+            ->orderBy('revision_no')
             ->get();
+
+        // One salary per employee: the LAST revision that had taken effect by the
+        // end of the period. Ordered above, so the last match wins.
+        //
+        // Mid-period revisions are NOT pro-rated. Pro-rating a month across two
+        // structures is a real calculation with real edge cases (statutory wage
+        // ceilings, PT slabs, a changed PF applicability mid-month), and guessing
+        // at it would produce a confident wrong number. Where two revisions apply
+        // to one period the run is annotated instead, so somebody can decide.
+        $midPeriodRevisions = [];
+        $salaries = $salaries
+            ->groupBy('employee_id')
+            ->map(function ($rows) use ($periodStart, &$midPeriodRevisions) {
+                $startedInside = $rows->filter(fn ($s) => $s->effective_from
+                    && $s->effective_from->gt($periodStart));
+
+                if ($startedInside->isNotEmpty() && $rows->count() > 1) {
+                    $midPeriodRevisions[] = $rows->first()->employee_id;
+                }
+
+                return $rows->last();
+            })
+            ->values();
 
         // Honour the Pre-check selection when one was made.
         //
@@ -148,7 +192,7 @@ class PayrollService
 
         $period = $this->period($run->payroll_year, $run->payroll_month);
 
-        DB::transaction(function () use ($run, $salaries, $tenantId, $period, $actor) {
+        DB::transaction(function () use ($run, $salaries, $tenantId, $period, $actor, $midPeriodRevisions) {
             $run->update(['status' => HrPayrollRun::PROCESSING]);
             $run->recordAudit('Payroll Started', $actor, null, ['period' => $period, 'employees' => $salaries->count()]);
 
@@ -243,9 +287,19 @@ class PayrollService
 
                 $this->storeLines($record, array_merge($lines, $loanLines), $tenantId);
 
-                $gross      += (float) $salary->gross_salary;
-                $deductions += (float) $salary->total_deductions;
-                $net        += (float) $salary->net_salary;
+                // Run totals are what a human reads on the payroll screen, so they
+                // are the PERIOD figures, not the structure snapshot. These used
+                // to accumulate $salary->total_deductions (0 for every structure
+                // that defines no deductions of its own — i.e. all of them) and
+                // $salary->net_salary (== gross), which is how the hub came to
+                // show "Gross ₹1,34,808 · Deductions ₹0" directly above a
+                // "Statutory ₹8,261" tile computed from the same run.
+                //
+                // The per-record snapshot columns are untouched; only the run
+                // summary changes, and it now agrees with total_payable.
+                $gross      += $record->periodGross();
+                $deductions += $record->periodDeductions();
+                $net        += $record->netPayable();
                 // The bank figure, from the one definition of it. Accumulated
                 // here rather than derived later so the run total and the
                 // advice cannot drift apart.
@@ -268,6 +322,22 @@ class PayrollService
                 'processed_at'     => now(),
             ]);
             $run->recordAudit('Payroll Completed', $actor, null, ['employees' => $count, 'total_net' => round($net, 2)]);
+
+            // A revision that took effect part-way through this period was NOT
+            // pro-rated — the later structure was used for the whole month. Said
+            // out loud in the audit trail and the log, because the alternative is
+            // a figure nobody can explain six months from now.
+            if ($midPeriodRevisions !== []) {
+                $run->recordAudit('Mid-period salary revision not pro-rated', $actor, null, [
+                    'employee_ids' => array_values(array_unique($midPeriodRevisions)),
+                    'period'       => $period,
+                    'applied'      => 'the revision effective latest within the period, for the whole period',
+                ]);
+                Log::channel('hr')->warning('Payroll: mid-period salary revision not pro-rated', [
+                    'run_id' => $run->id, 'tenant_id' => $tenantId, 'period' => $period,
+                    'employee_ids' => array_values(array_unique($midPeriodRevisions)),
+                ]);
+            }
         });
 
         $this->log('Payroll processed', $tenantId, $run->id);
@@ -559,6 +629,14 @@ class PayrollService
             // spellings disagreed, which is how PF was paid to the government
             // and to the employee at the same time.
             'net_payable'       => $r->netPayable(),
+            // The period figures beside the structure snapshot above, so a screen
+            // never has to choose between `gross_salary` (structure) and what the
+            // employee actually earned and lost this month. `total_deductions` is
+            // kept as-is for anything still reading it; `period_deductions` is the
+            // one to show a human.
+            'period_gross'      => $r->periodGross(),
+            'period_deductions' => $r->periodDeductions(),
+            'employer_contributions' => $r->employerContributions(),
             // Set by accounts at the Disburse stage. "The run completed" is a
             // statement about arithmetic; this is about money arriving.
             'payment_status'    => $r->payment_status ?? HrPayrollRecord::PAY_PENDING,
@@ -640,6 +718,21 @@ class PayrollService
     private function period(int $year, int $month): string
     {
         return sprintf('%04d-%02d', $year, $month);
+    }
+
+    /**
+     * First and last calendar day of a payroll period.
+     *
+     * Used to decide which salary revision applied during the period, rather
+     * than which one happens to be active today.
+     *
+     * @return array{0: Carbon, 1: Carbon}
+     */
+    private function periodBounds(int $year, int $month): array
+    {
+        $start = Carbon::create($year, $month, 1)->startOfDay();
+
+        return [$start, $start->copy()->endOfMonth()];
     }
 
     private function periodLabel(int $year, int $month): string

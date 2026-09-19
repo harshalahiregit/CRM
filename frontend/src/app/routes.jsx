@@ -126,7 +126,6 @@ const Commission = lazy(() => import('@/modules/sales/pages/Commission'))
 const SettingsLayout = lazy(() => import('@/modules/settings/SettingsLayout'))
 // Roles and departments as data — created from Settings rather than by a
 // developer. Staff JOB roles only; account types stay in code (each is a portal).
-const RolesSettings = lazy(() => import('@/modules/settings/pages/RolesSettings'))
 const DepartmentsSettings = lazy(() => import('@/modules/settings/pages/DepartmentsSettings'))
 const GeneralBrandingSettings = lazy(() => import('@/modules/settings/pages/GeneralBrandingSettings'))
 const LocalizationSettings = lazy(() => import('@/modules/settings/pages/LocalizationSettings'))
@@ -1123,7 +1122,10 @@ export default function AppRoutes() {
           <Route path="notification-preferences" element={<S><NotificationPreferences /></S>} />
           <Route path="recycle-bin" element={<S><RecycleBinSettings /></S>} />
           <Route path="statuses" element={<S><StatusManager /></S>} />
-          <Route path="roles" element={<S><RolesSettings /></S>} />
+          {/* /settings/roles retired: it managed a second staff-role catalogue
+              (access_roles) beside the live one. staff_roles owns the vocabulary,
+              permissions and scope together, and is maintained in Staff
+              Management at /admin/roles. */}
           <Route path="departments" element={<S><DepartmentsSettings /></S>} />
           {/* Each module's own settings, reachable from the one Setup panel as
               well as from inside the module. Same component either way, so the

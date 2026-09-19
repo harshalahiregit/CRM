@@ -108,8 +108,17 @@ class LoanController extends Controller
         return response()->json($this->service->show($id, $this->tenant($request)));
     }
 
+    /**
+     * HR-only: this lends company money to an arbitrary employee_id.
+     *
+     * Gated like approve() and reject() below. It was not, and combined with
+     * submit() that was an escalation rather than just an oversight — see the
+     * note there.
+     */
     public function save(Request $request, ?int $id = null)
     {
+        $this->assertCanManage($request);
+
         $data = $request->validate([
             'employee_id'   => 'required|integer',
             'loan_type_id'  => 'required|integer',
@@ -145,8 +154,19 @@ class LoanController extends Controller
         ));
     }
 
+    /**
+     * HR-only, and this one closed a self-approval route, not just a gap.
+     *
+     * A loan type with requires_approval = false is moved straight to Approved by
+     * submit(). Ungated, that meant two calls — save() then submit() — put a loan
+     * in Approved without the gated approve() endpoint ever being touched.
+     * Reproduced before this change: an Employee-role account booked ₹50,000
+     * against another employee and had it Approved.
+     */
     public function submit(Request $request, int $id)
     {
+        $this->assertCanManage($request);
+
         return response()->json($this->service->submit($id, $this->tenant($request), $request->user()));
     }
 
@@ -184,8 +204,11 @@ class LoanController extends Controller
         return response()->json($this->service->close($id, $data['remarks'], $this->tenant($request), $request->user()));
     }
 
+    /** HR-only, like close() above: cancelling somebody's approved loan is a decision. */
     public function cancel(Request $request, int $id)
     {
+        $this->assertCanManage($request);
+
         return response()->json($this->service->cancel($id, $this->tenant($request), $request->user()));
     }
 

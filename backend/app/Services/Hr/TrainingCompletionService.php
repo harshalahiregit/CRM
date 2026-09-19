@@ -16,14 +16,25 @@ class TrainingCompletionService
     {
     }
 
-    public function list(int $tenantId, array $f): array
+    /**
+     * @param  \App\Models\User|null  $actor  Whose completion records may be
+     *                                        returned. Both callers now supply
+     *                                        one — the Training report path
+     *                                        (Phase 6) and the completion
+     *                                        screen's own controller (Phase 7).
+     *
+     * `stats` below is counted from $rows, which is the scoped set, so the four
+     * tiles narrow with the list rather than reporting the tenant's totals
+     * beside somebody's department.
+     */
+    public function list(int $tenantId, array $f, ?\App\Models\User $actor = null): array
     {
         $attendance = $this->repo->attendanceMap($tenantId);
         $assessment = $this->repo->assessmentMap($tenantId);
         $quiz = $this->repo->quizMap($tenantId);
         $cert = $this->repo->certificateMap($tenantId);
 
-        $rows = $this->repo->assignmentsForCompletion($tenantId, $f)
+        $rows = $this->repo->assignmentsForCompletion($tenantId, $f, $actor)
             ->map(fn ($a) => $this->present($a, $attendance, $assessment, $quiz, $cert))->all();
 
         $stats = [
@@ -37,9 +48,9 @@ class TrainingCompletionService
     }
 
     /** Compact completion payload for one employee (Employee Profile Training tab). */
-    public function forEmployee(int $employeeId, int $tenantId): array
+    public function forEmployee(int $employeeId, int $tenantId, ?\App\Models\User $actor = null): array
     {
-        return $this->list($tenantId, ['employee_id' => $employeeId])['data'];
+        return $this->list($tenantId, ['employee_id' => $employeeId], $actor)['data'];
     }
 
     private function present(HrEmployeeTraining $a, array $att, array $asm, array $qz, array $crt): array

@@ -4,6 +4,8 @@ import {
   ListChecks, AlertTriangle, Search, Zap,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { useAuth } from '@/context/AuthContext'
+import { canManageHrQueue } from '@/modules/hr/constants'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 
 const GRAD = 'linear-gradient(135deg,#7C3AED,#5b21b6)'
@@ -34,6 +36,17 @@ const INST_C = {
  * fact people get wrong: only a DISBURSED loan is deducted by payroll.
  */
 export default function LoanManagement({ showToast }) {
+  // Every write on this screen — create, edit, delete a type, and the whole
+  // Draft → Submitted → Approved → Disbursed ladder — goes through
+  // LoanController, where all eight of those methods call assertCanManage().
+  // This is that same question, answered by the server.
+  //
+  // Reading stays open: HR Operations sits outside the managesHr branch of the
+  // sidebar, so people reach this page legitimately and the lists are worth
+  // seeing. Only the actions that would 403 are withheld.
+  const { user } = useAuth()
+  const canManageHr = canManageHrQueue(user)
+
   const [view, setView] = useState('loans')
   const [stats, setStats] = useState({})
   const [loans, setLoans] = useState([])
@@ -122,7 +135,7 @@ export default function LoanManagement({ showToast }) {
             <Icon size={13}/> {label}
           </button>
         ))}
-        {view !== 'recovery' && <button
+        {view !== 'recovery' && canManageHr && <button
           onClick={() => view === 'types'
             ? setTypeModal({ id:null, form:{ name:'', code:'', is_advance:false, max_amount:'', max_tenure_months:'', interest_rate:'', requires_approval:true, description:'', is_active:true } })
             : setLoanModal({ id:null, form:{ employee_id:'', loan_type_id:'', principal:'', tenure_months:12, interest_rate:'', purpose:'' } })}
@@ -150,13 +163,17 @@ export default function LoanManagement({ showToast }) {
                       : ` · up to ${t.max_tenure_months ?? '∞'} months · ${t.interest_rate ?? 0}% p.a.`}
                   </p>
                 </div>
-                <button onClick={() => setTypeModal({ id:t.id, form:{ ...t, max_amount:t.max_amount ?? '', max_tenure_months:t.max_tenure_months ?? '', interest_rate:t.interest_rate ?? '' } })}
-                  className="p-2 rounded-lg" style={{ background:'var(--bg-input)' }}><Pencil size={13} style={{ color:'var(--text-muted)' }}/></button>
-                <button onClick={async () => {
-                  if (!window.confirm(`Delete "${t.name}"?`)) return
-                  try { await hrApi.loans.removeType(t.id); showToast?.('Deleted'); load() }
-                  catch (e) { showToast?.(e?.response?.data?.message || 'Could not delete', 'error') }
-                }} className="p-2 rounded-lg" style={{ background:'rgba(239,68,68,0.1)' }}><Trash2 size={13} style={{ color:'#f87171' }}/></button>
+                {/* Editing and deleting a loan type are both assertCanManage'd.
+                    The delete is the destructive one and matters most here. */}
+                {canManageHr && <>
+                  <button onClick={() => setTypeModal({ id:t.id, form:{ ...t, max_amount:t.max_amount ?? '', max_tenure_months:t.max_tenure_months ?? '', interest_rate:t.interest_rate ?? '' } })}
+                    className="p-2 rounded-lg" style={{ background:'var(--bg-input)' }}><Pencil size={13} style={{ color:'var(--text-muted)' }}/></button>
+                  <button onClick={async () => {
+                    if (!window.confirm(`Delete "${t.name}"?`)) return
+                    try { await hrApi.loans.removeType(t.id); showToast?.('Deleted'); load() }
+                    catch (e) { showToast?.(e?.response?.data?.message || 'Could not delete', 'error') }
+                  }} className="p-2 rounded-lg" style={{ background:'rgba(239,68,68,0.1)' }}><Trash2 size={13} style={{ color:'#f87171' }}/></button>
+                </>}
               </div>
             ))}
           </div>
@@ -228,7 +245,7 @@ export default function LoanManagement({ showToast }) {
 
       {typeModal && <TypeModal modal={typeModal} setModal={setTypeModal} saving={saving} onSave={saveType} />}
       {loanModal && <LoanModal modal={loanModal} setModal={setLoanModal} employees={employees} types={types} saving={saving} onSave={saveLoan} showToast={showToast} />}
-      {detail && <LoanDetail loan={detail} onClose={() => setDetail(null)} act={act} showToast={showToast} />}
+      {detail && <LoanDetail loan={detail} onClose={() => setDetail(null)} act={act} showToast={showToast} canManageHr={canManageHr} />}
     </div>
   )
 }
@@ -453,7 +470,7 @@ function EligibilityMeter({ result }) {
   )
 }
 
-function LoanDetail({ loan, onClose, act, showToast }) {
+function LoanDetail({ loan, onClose, act, showToast, canManageHr }) {
   const sc = STATUS_C[loan.status] || {}
   const progress = loan.total_payable > 0 ? Math.round((loan.total_repaid / loan.total_payable) * 100) : 0
 
@@ -521,7 +538,10 @@ function LoanDetail({ loan, onClose, act, showToast }) {
                       <td className="px-3 py-2 text-[11px]" style={{ color:'var(--text-muted)' }}>{inr(i.interest_component)}</td>
                       <td className="px-3 py-2"><span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background:ic.bg, color:ic.c }}>{i.status}</span></td>
                       <td className="px-3 py-2 text-right">
-                        {i.status === 'Pending' && loan.status === 'Disbursed' && (
+                        {/* waiveInstallment() is assertCanManage'd too — writing
+                            off money owed is the most consequential button on
+                            this screen, so it goes with the rest. */}
+                        {canManageHr && i.status === 'Pending' && loan.status === 'Disbursed' && (
                           <button onClick={() => waive(i)} className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>Waive</button>
                         )}
                       </td>
@@ -534,6 +554,12 @@ function LoanDetail({ loan, onClose, act, showToast }) {
         )}
 
         <div className="flex gap-2 flex-wrap">
+          {/* The whole ladder — submit, cancel, approve, reject, disburse,
+              close — is assertCanManage'd on LoanController. Withheld as one
+              block rather than button by button, because a drawer offering
+              "Approve" and not "Reject" would read as a workflow state rather
+              than as a permission. Read-only still shows the schedule. */}
+          {canManageHr && <>
           {loan.status === 'Draft' && <>
             <button onClick={() => act(() => hrApi.loans.submit(loan.id), 'Submitted')} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: GRAD }}><Send size={14}/> Submit</button>
             <button onClick={() => act(() => hrApi.loans.cancel(loan.id), 'Cancelled')} className="px-4 py-2.5 rounded-xl text-sm font-bold" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>Cancel loan</button>
@@ -548,6 +574,7 @@ function LoanDetail({ loan, onClose, act, showToast }) {
           {loan.status === 'Disbursed' && (
             <button onClick={close} className="px-4 py-2.5 rounded-xl text-sm font-bold" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>Close early</button>
           )}
+          </>}
           <button onClick={onClose} className="ml-auto px-5 py-2.5 rounded-xl text-sm font-semibold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>Close</button>
         </div>
       </div>

@@ -748,7 +748,13 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
               : openSection === 'hr' && (
                 <>
                   {/* Dashboard */}
-                  <NavLeaf item={HR_DASHBOARD} />
+                  {/* /api/hr/dashboard is permission:hr_attendance,view_global —
+                      the same grid module `managesHr` already reads, so this is
+                      an exact mirror of the server's gate rather than a guess.
+                      It was the one HR item still offering a locked door: the
+                      Attendance and Requests groups below have been gated on it
+                      since they were added. */}
+                  {managesHr && <NavLeaf item={HR_DASHBOARD} />}
 
                   {/* Recruitment group */}
                   <NavGroupHeader label="Recruitment" icon={Briefcase} expanded={isGroupOpen('recruitment')} onToggle={() => toggleGroup('recruitment')} />

@@ -189,8 +189,32 @@ class AdvanceTierService
         );
     }
 
+    /**
+     * Whether this person stands on the accounts or director rung by role.
+     *
+     * The account type is checked first, and it has to be: TIER_ROLES is matched
+     * against internal_role, which is a free string every account carries —
+     * clients, vendors, external companies and doctors are rows in `users` too.
+     * A client whose internal_role read 'director' therefore held an approval
+     * rung, and this method is consulted by HrmAdminController::deny(), which is
+     * the door to all twenty attendance-app admin screens: the dashboard, the
+     * employee list, payroll, salaries and the advance approvals.
+     *
+     * EnsureCanAccessAdvances makes the same check before it reaches the ladder,
+     * so the web queue was already closed. This shuts the door the phone uses.
+     *
+     * The two callers that SCOPE rather than admit — scopeQueue() here and
+     * HrmAdminController::queueScope() — both treat a false as "you are not an
+     * overseer" and fall through to the reporting-hierarchy lookup, which for an
+     * account with no employee record resolves to nothing rather than to
+     * everything. Narrowing, never widening.
+     */
     public function holdsAnyTierRole(User $actor): bool
     {
+        if (! $actor->isStaffAccount()) {
+            return false;
+        }
+
         foreach (self::TIER_ROLES as $roles) {
             if (in_array((string) $actor->internal_role, $roles, true)) {
                 return true;

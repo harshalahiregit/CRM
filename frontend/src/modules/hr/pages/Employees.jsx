@@ -2,9 +2,11 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { GRAD } from '@/components/ui/brand'
 import { useTheme } from '@/context/ThemeContext'
+import { useAuth } from '@/context/AuthContext'
 import { Search, Building2, Plus, X, LayoutGrid, List, Eye, Pencil } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { useMasterData, withInactive } from '@/modules/hr/useMasterData'
+import { canManageHrQueue } from '@/modules/hr/constants'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import Modal from '@/components/ui/Modal'
 import DirectoryGapPanel from '@/modules/hr/components/DirectoryGapPanel'
@@ -15,7 +17,7 @@ const initials = n => (n||'').split(' ').slice(0,2).map(x=>x[0]).join('').toUppe
 const fmtDate  = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'
 const deptColor = d => DEPT_COLORS[d]||'#7C3AED'
 
-const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', gender:'', address:'', department:'', designation:'', reporting_manager_name:'', work_state:'', joining_date:'', probation_end_date:'', confirmation_date:'', status:'Active',
+const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', gender:'', address:'', department:'', designation:'', reporting_manager_id:'', reporting_manager_name:'', work_state:'', joining_date:'', probation_end_date:'', confirmation_date:'', status:'Active',
   // #36 — probation must be set when adding an employee, or the hire explicitly exempted.
   probation_policy_id:'', skip_probation:false, probation_skip_reason:'',
   // #29 — what this person is, and the comment's explicit "option to consider
@@ -71,16 +73,57 @@ const OnboardingBadge = ({ status, progress, bar = false }) => {
 export default function Employees() {
   const { isDark } = useTheme()
   const navigate = useNavigate()
+  // PUT /hr/employees/{id} and /detail are gated on canManageHrQueue(); the same
+  // helper the other nine HR screens use, now answered by the server.
+  //
+  // READING stays open — the directory is in everybody's sidebar on purpose, and
+  // this hides only the actions that would come back 403.
+  //
+  // isAdmin is a separate question and belongs to "Add Employee" alone: that one
+  // does not call this API at all, it navigates to Staff Management, which is
+  // role:admin on the server and already hidden from the sidebar for everyone
+  // else. The button was the one door still offering it.
+  const { user, isAdmin } = useAuth()
+  const canManageHr = canManageHrQueue(user)
   // Department / Designation / Reporting Manager all come from Org Setup master data
   // (single source of truth, active-only). No hardcoded lists; a saved-but-inactive
   // value stays visible and marked via withInactive().
   const { masters } = useMasterData()
   const deptNames    = (masters.departments  || []).map(d => d.name)
   const desigNames   = (masters.designations || []).map(d => d.name)
-  const managerNames = (masters.managers     || []).map(m => m.name)
   const deptOptions    = (f) => withInactive(deptNames,    f?.department)
   const desigOptions   = (f) => withInactive(desigNames,   f?.designation)
-  const managerOptions = (f) => withInactive(managerNames, f?.reporting_manager_name)
+  // Managers are picked by ID, not by name. masters.managers already carries
+  // {id, name, employee_code}; the name was the only part being used, so the
+  // hierarchy every other feature reads — org chart, advance approvals, the
+  // app's approval queue — was never actually set at hire.
+  //
+  // The name is still stored alongside, because three read-only views render it
+  // and because a manager who is not an employee record (the seeded "CEO") can
+  // only ever be a name. Id where there is one, name either way.
+  const managerPeople  = (masters.managers || []).filter(m => m?.id)
+  const managerOptions = (f) => {
+    const opts = managerPeople.map(m => ({
+      value: String(m.id),
+      label: m.employee_code ? `${m.name} (${m.employee_code})` : m.name,
+    }))
+    // An already-set manager who has since left the master list stays visible,
+    // so editing somebody else's field cannot silently clear it.
+    const current = f?.reporting_manager_id
+    if (current && !opts.some(o => o.value === String(current))) {
+      opts.unshift({ value: String(current), label: `${f?.reporting_manager_name || 'Unknown'} (inactive)` })
+    }
+    return opts
+  }
+  const pickManager = (form, setForm, id) => {
+    const picked = managerPeople.find(m => String(m.id) === String(id))
+    setForm({
+      ...form,
+      reporting_manager_id:   id || '',
+      // Kept in step so the list and detail views keep rendering a name.
+      reporting_manager_name: picked?.name || (id ? form.reporting_manager_name : ''),
+    })
+  }
   // Work states come from the backend, not a hardcoded list, so the options here
   // and the states Professional Tax rules are keyed by can never drift apart.
   const [workStates, setWorkStates] = useState([])
@@ -228,13 +271,19 @@ export default function Employees() {
               that payroll had no way to tell from the first.
               Staff Management already writes both in one transaction, so it is
               the one door in. This screen owns everything after that. */}
-          <button
-            onClick={() => navigate('/app/admin/staff')}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white"
-            style={{ background: GRAD, boxShadow: '0 4px 14px rgba(124,58,237,0.4)' }}
-            title="Employees are created in Staff Management, so the login and the employment record are made together">
-            <Plus size={15}/> Add Employee
-          </button>
+          {/* Shown only to an admin, because that is who Staff Management lets
+              in — routes/admin.php is role:admin and the sidebar already hides
+              the same destination. Offering the button to everybody else sent
+              them to a screen that refuses them. */}
+          {isAdmin && (
+            <button
+              onClick={() => navigate('/app/admin/staff')}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white"
+              style={{ background: GRAD, boxShadow: '0 4px 14px rgba(124,58,237,0.4)' }}
+              title="Employees are created in Staff Management, so the login and the employment record are made together">
+              <Plus size={15}/> Add Employee
+            </button>
+          )}
         </div>
       </div>
 
@@ -314,8 +363,12 @@ export default function Employees() {
                         {emp.app_login_enabled ? 'Can sign in' : 'No access'}
                       </p>
                     </div>
-                    <button type="button" onClick={()=>toggleAppAccess(emp)} disabled={appBusy===emp.id}
-                      title={emp.app_login_enabled ? 'Revoke attendance-app access' : 'Grant attendance-app access'}
+                    {/* Granting attendance-app access writes through the same
+                        gated PUT. Disabled rather than hidden, because the CURRENT
+                        state is worth seeing even when you cannot change it. */}
+                    <button type="button" onClick={()=>toggleAppAccess(emp)} disabled={appBusy===emp.id || !canManageHr}
+                      title={!canManageHr ? 'Only HR can change attendance-app access'
+                        : emp.app_login_enabled ? 'Revoke attendance-app access' : 'Grant attendance-app access'}
                       className="w-11 h-6 rounded-full relative transition-all shrink-0"
                       style={{ background: emp.app_login_enabled ? '#10b981' : 'var(--border)', opacity: appBusy===emp.id ? 0.6 : 1 }}>
                       <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all"
@@ -325,7 +378,12 @@ export default function Employees() {
                 </div>
                 <div className="flex gap-2 mt-auto">
                   <button onClick={()=>openProfile(emp.id)} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}><Eye size={12}/> View Profile</button>
-                  <button onClick={()=>openEdit(emp)} className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-bold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}><Pencil size={12}/> Edit</button>
+                  {/* The modal behind this saves through PUT /hr/employees/{id},
+                      which is canManageHrQueue()-gated. Offering it to somebody
+                      who cannot save is a form that fills in and then refuses. */}
+                  {canManageHr && (
+                    <button onClick={()=>openEdit(emp)} className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-bold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}><Pencil size={12}/> Edit</button>
+                  )}
                 </div>
               </div>
             )
@@ -355,8 +413,9 @@ export default function Employees() {
                         access directly — stopPropagation because the row opens a profile. */}
                     <td className="px-3 py-2.5" onClick={e=>e.stopPropagation()}>
                       <button type="button" onClick={()=>toggleAppAccess(emp)}
-                        disabled={appBusy===emp.id}
-                        title={emp.app_login_enabled ? 'Can sign in to the attendance app — click to revoke' : 'No app access — click to grant'}
+                        disabled={appBusy===emp.id || !canManageHr}
+                        title={!canManageHr ? 'Only HR can change attendance-app access'
+                          : emp.app_login_enabled ? 'Can sign in to the attendance app — click to revoke' : 'No app access — click to grant'}
                         className="text-[10px] font-bold px-2 py-0.5 rounded-lg"
                         style={{
                           background: emp.app_login_enabled ? 'rgba(52,211,153,0.14)' : 'var(--bg-input)',
@@ -371,7 +430,9 @@ export default function Employees() {
                     <td className="px-3 py-2.5" onClick={e=>e.stopPropagation()}>
                       <div className="flex gap-1.5">
                         <button onClick={()=>openProfile(emp.id)} title="View profile" className="p-1.5 rounded-lg" style={{ background:'rgba(124,58,237,0.1)', color:'#a78bfa' }}><Eye size={13}/></button>
-                        <button onClick={()=>openEdit(emp)} title="Edit" className="p-1.5 rounded-lg" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}><Pencil size={13}/></button>
+                        {canManageHr && (
+                          <button onClick={()=>openEdit(emp)} title="Edit" className="p-1.5 rounded-lg" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}><Pencil size={13}/></button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -456,7 +517,7 @@ export default function Employees() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="label">Reporting Manager</label>
-                  <select className="input-3d text-sm" value={form.reporting_manager_name||''} onChange={e=>setForm({...form,reporting_manager_name:e.target.value})}>
+                  <select className="input-3d text-sm" value={form.reporting_manager_id||''} onChange={e=>pickManager(form,setForm,e.target.value)}>
                     <option value="">Select…</option>
                     {managerOptions(form).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>

@@ -271,7 +271,12 @@ export const hrApi = {
     list:           (params={})   => api.get('/hr/onboarding', { params }).then(r => r.data),
     get:            (id)          => api.get(`/hr/onboarding/${id}`).then(r => r.data),
     start:          (data)        => api.post('/hr/onboarding', data).then(r => r.data),
-    toggleStep:     (id, step)    => api.patch(`/hr/onboarding/${id}/step`, { step }).then(r => r.data),
+    // reportingManagerId is only meaningful on the 'manager_assigned' step, and
+    // is sent ONLY when supplied — an explicit null clears the manager, whereas
+    // omitting the key leaves it alone and plain-toggles the step as before.
+    toggleStep:     (id, step, reportingManagerId) => api.patch(`/hr/onboarding/${id}/step`,
+      reportingManagerId === undefined ? { step } : { step, reporting_manager_id: reportingManagerId || null }
+    ).then(r => r.data),
     updateChecklist:(id, checklist)=> api.patch(`/hr/onboarding/${id}/step`, { checklist }).then(r => r.data),
     verify:         (id, data)    => api.patch(`/hr/onboarding/${id}/verify`, data).then(r => r.data),
     documentUrl:    (id, docId)   => `${BASE}/hr/onboarding/${id}/documents/${docId}`,

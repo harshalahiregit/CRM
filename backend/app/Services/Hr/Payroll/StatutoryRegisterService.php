@@ -4,6 +4,9 @@ namespace App\Services\Hr\Payroll;
 
 use App\Models\Hr\HrPayrollRecord;
 use App\Models\Hr\HrPayrollRun;
+use App\Models\User;
+use App\Services\Auth\ScopeResolver;
+use App\Support\Hr\DataScope;
 use Illuminate\Support\Collection;
 
 /**
@@ -26,9 +29,9 @@ use Illuminate\Support\Collection;
 class StatutoryRegisterService
 {
     /** PF register — identity, the wage bases, then the PF/VPF/EPF/EPS split. */
-    public function pf(HrPayrollRun $run): array
+    public function pf(HrPayrollRun $run, ?User $actor = null): array
     {
-        $rows = $this->records($run)
+        $rows = $this->records($run, $actor)
             ->filter(fn ($r) => (float) $r->pf_employee > 0 || (float) $r->pf_employer > 0)
             ->values()
             ->map(function (HrPayrollRecord $r, int $i) {
@@ -104,9 +107,9 @@ class StatutoryRegisterService
     }
 
     /** ESIC register — only those actually covered this month. */
-    public function esic(HrPayrollRun $run): array
+    public function esic(HrPayrollRun $run, ?User $actor = null): array
     {
-        $rows = $this->records($run)
+        $rows = $this->records($run, $actor)
             ->filter(fn ($r) => (float) $r->esic_employee > 0 || (float) $r->esic_employer > 0)
             ->values()
             ->map(fn (HrPayrollRecord $r, int $i) => [
@@ -135,9 +138,9 @@ class StatutoryRegisterService
      * differ by gender — one "200 slab" line would hide that a woman on 20,000
      * pays nothing where a man on the same salary pays.
      */
-    public function pt(HrPayrollRun $run): array
+    public function pt(HrPayrollRun $run, ?User $actor = null): array
     {
-        $rows = $this->records($run)
+        $rows = $this->records($run, $actor)
             ->filter(fn ($r) => (float) $r->pt_amount > 0)
             ->values()
             ->map(fn (HrPayrollRecord $r, int $i) => [
@@ -174,9 +177,9 @@ class StatutoryRegisterService
      * Half-yearly, so in most months this is legitimately empty — a different
      * thing from "nothing was calculated", and the caller is told which.
      */
-    public function lwf(HrPayrollRun $run): array
+    public function lwf(HrPayrollRun $run, ?User $actor = null): array
     {
-        $rows = $this->records($run)
+        $rows = $this->records($run, $actor)
             ->filter(fn ($r) => (float) ($r->lwf_employee ?? 0) > 0 || (float) ($r->lwf_employer ?? 0) > 0)
             ->values()
             ->map(fn (HrPayrollRecord $r, int $i) => [
@@ -208,12 +211,38 @@ class StatutoryRegisterService
         );
     }
 
-    /** @return Collection<int, HrPayrollRecord> */
-    private function records(HrPayrollRun $run): Collection
+    /**
+     * The one query all four registers are built from, and the one place the
+     * scope goes.
+     *
+     * Every row, every column total and the PF challan's account-wise split
+     * derive from this collection, so scoping here scopes the whole document —
+     * including the PT summary, which groups the rows it was given.
+     *
+     * SCOPE IS NOT PERMISSION. The controller's gate already decided whether
+     * this caller may open a register at all and is untouched; this decides
+     * only which employees appear on the one they opened. A register is the
+     * most disclosing document in the module — UAN, PF and ESIC numbers, wages,
+     * date of birth, father's name — which is why it gets both.
+     *
+     * A register is also a FILING, so a scoped one is a partial document by
+     * design: `employees` already reports the row count rather than headcount,
+     * for the same reason the unscoped register excludes non-contributors.
+     *
+     * BRANCH is excluded as in Phase 1.
+     *
+     * @return Collection<int, HrPayrollRecord>
+     */
+    private function records(HrPayrollRun $run, ?User $actor = null): Collection
     {
-        return HrPayrollRecord::with(['employee', 'employee.detail'])
-            ->where('payroll_run_id', $run->id)
-            ->get()
+        $q = HrPayrollRecord::with(['employee', 'employee.detail'])
+            ->where('payroll_run_id', $run->id);
+
+        $q = app(ScopeResolver::class)->applyToQuery($q, $actor, 'employee_id', [
+            DataScope::OWN, DataScope::DEPARTMENT, DataScope::TEAM,
+        ]);
+
+        return $q->get()
             ->sortBy(fn ($r) => $r->employee?->employee_code ?? '')
             ->values();
     }

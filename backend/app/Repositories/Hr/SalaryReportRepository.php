@@ -2,6 +2,9 @@
 
 namespace App\Repositories\Hr;
 
+use App\Models\User;
+use App\Services\Auth\ScopeResolver;
+use App\Support\Hr\DataScope;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -11,6 +14,29 @@ use Illuminate\Support\Facades\DB;
  */
 class SalaryReportRepository
 {
+    /**
+     * The one place this class talks to the scope resolver.
+     *
+     * Scope decides WHO contributes to a report and nothing else. The
+     * effective-salary selection (`es.status = 'active'`), the frozen snapshot
+     * columns and the revision ledger's ordering are untouched — a
+     * department-scoped user sees the same figures for their own people that a
+     * global user sees for everybody.
+     *
+     * structures() and components() are deliberately NOT scoped: a salary
+     * structure is a template and a component is a definition. Neither names a
+     * person, and hiding the pay-scale catalogue from a department head would
+     * withhold policy rather than protect privacy.
+     *
+     * BRANCH is excluded as in Phase 1.
+     */
+    private function scoped($query, ?User $actor, string $column)
+    {
+        return app(ScopeResolver::class)->applyToQuery($query, $actor, $column, [
+            DataScope::OWN, DataScope::DEPARTMENT, DataScope::TEAM,
+        ]);
+    }
+
     /** Salary structures with their (denormalised) computed totals. */
     public function structures(int $tenantId, array $f)
     {
@@ -42,14 +68,20 @@ class SalaryReportRepository
     }
 
     /** Active employee salary snapshots joined to the employee + structure. */
-    public function employeeSalaries(int $tenantId, array $f)
+    public function employeeSalaries(int $tenantId, array $f, ?User $actor = null)
     {
-        return DB::table('hr_employee_salaries as es')
+        $q = DB::table('hr_employee_salaries as es')
             ->join('hr_employees as e', 'es.employee_id', '=', 'e.id')
             ->leftJoin('hr_salary_structures as s', 'es.salary_structure_id', '=', 's.id')
             ->leftJoin('hr_grades as g', 'e.grade_id', '=', 'g.id')
             ->where('es.tenant_id', $tenantId)
-            ->where('es.status', 'active')
+            ->where('es.status', 'active');
+
+        // Scope before the filters, so an employee_id from outside returns
+        // nothing rather than reaching that person's CTC.
+        $q = $this->scoped($q, $actor, 'es.employee_id');
+
+        return $q
             ->when(! empty($f['department']), fn ($q) => $q->where('e.department', $f['department']))
             ->when(! empty($f['designation']), fn ($q) => $q->where('e.designation', $f['designation']))
             ->when(! empty($f['grade_id']), fn ($q) => $q->where('e.grade_id', $f['grade_id']))
@@ -66,7 +98,7 @@ class SalaryReportRepository
      * Salary cost grouped by a dimension: 'department' | 'designation' | 'grade'.
      * Uses the active snapshot's monthly/annual CTC. Tenant-scoped.
      */
-    public function costByDimension(int $tenantId, string $dimension, array $f)
+    public function costByDimension(int $tenantId, string $dimension, array $f, ?User $actor = null)
     {
         $col = match ($dimension) {
             'designation' => 'e.designation',
@@ -78,6 +110,11 @@ class SalaryReportRepository
             ->join('hr_employees as e', 'es.employee_id', '=', 'e.id')
             ->where('es.tenant_id', $tenantId)
             ->where('es.status', 'active');
+
+        // Every SUM below is built from this set, so the scope goes on before
+        // the grouping — the department subtotals and the headcount count the
+        // same people.
+        $q = $this->scoped($q, $actor, 'es.employee_id');
 
         if ($dimension === 'grade') {
             $q->leftJoin('hr_grades as g', 'e.grade_id', '=', 'g.id');
@@ -97,13 +134,19 @@ class SalaryReportRepository
     }
 
     /** Append-only salary revision ledger across all employees. */
-    public function revisions(int $tenantId, array $f)
+    public function revisions(int $tenantId, array $f, ?User $actor = null)
     {
-        return DB::table('hr_salary_revisions as r')
+        $q = DB::table('hr_salary_revisions as r')
             ->join('hr_employees as e', 'r.employee_id', '=', 'e.id')
             ->leftJoin('hr_salary_structures as s', 'r.to_structure_id', '=', 's.id')
             ->leftJoin('users as u', 'r.changed_by', '=', 'u.id')
-            ->where('r.tenant_id', $tenantId)
+            ->where('r.tenant_id', $tenantId);
+
+        // A revision row carries the previous and new CTC — a pay-rise history,
+        // which is among the most sensitive rows in the module.
+        $q = $this->scoped($q, $actor, 'r.employee_id');
+
+        return $q
             ->when(! empty($f['employee_id']), fn ($q) => $q->where('e.id', $f['employee_id']))
             ->when(! empty($f['department']), fn ($q) => $q->where('e.department', $f['department']))
             ->orderByDesc('r.id')
@@ -115,11 +158,14 @@ class SalaryReportRepository
             ]);
     }
 
-    public function filterOptions(int $tenantId): array
+    /** Grades and structures are the pay-scale catalogue and stay whole. */
+    public function filterOptions(int $tenantId, ?User $actor = null): array
     {
+        $employees = $this->scoped(DB::table('hr_employees')->where('tenant_id', $tenantId), $actor, 'id');
+
         return [
-            'departments'  => DB::table('hr_employees')->where('tenant_id', $tenantId)->whereNotNull('department')->distinct()->orderBy('department')->pluck('department')->all(),
-            'designations' => DB::table('hr_employees')->where('tenant_id', $tenantId)->whereNotNull('designation')->distinct()->orderBy('designation')->pluck('designation')->all(),
+            'departments'  => (clone $employees)->whereNotNull('department')->distinct()->orderBy('department')->pluck('department')->all(),
+            'designations' => (clone $employees)->whereNotNull('designation')->distinct()->orderBy('designation')->pluck('designation')->all(),
             'grades'       => DB::table('hr_grades')->where('tenant_id', $tenantId)->orderBy('name')->get(['id', 'name'])->all(),
             'structures'   => DB::table('hr_salary_structures')->where('tenant_id', $tenantId)->orderBy('name')->get(['id', 'name'])->all(),
         ];

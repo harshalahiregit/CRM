@@ -26,24 +26,24 @@ class ProbationReportController extends Controller
         $this->gate($request);
         $this->audit($request, 'Probation Report Viewed');
 
-        return response()->json($this->service->dashboard($this->tenant($request)));
+        return response()->json($this->service->dashboard($this->tenant($request), $request->user()));
     }
 
-    public function employees(Request $request)     { $this->gate($request); return response()->json($this->service->employees($this->tenant($request), $this->filters($request))); }
-    public function departments(Request $request)   { $this->gate($request); return response()->json($this->service->departments($this->tenant($request), $this->filters($request))); }
-    public function policies(Request $request)       { $this->gate($request); return response()->json($this->service->policies($this->tenant($request), $this->filters($request))); }
-    public function reviews(Request $request)         { $this->gate($request); return response()->json($this->service->reviews($this->tenant($request))); }
-    public function extensions(Request $request)     { $this->gate($request); return response()->json($this->service->extensions($this->tenant($request), $this->filters($request))); }
-    public function confirmations(Request $request)  { $this->gate($request); return response()->json($this->service->confirmations($this->tenant($request), $this->filters($request))); }
-    public function trends(Request $request)          { $this->gate($request); return response()->json($this->service->trends($this->tenant($request), $this->filters($request))); }
-    public function filterOptions(Request $request)  { $this->gate($request); return response()->json($this->service->filterOptions($this->tenant($request))); }
+    public function employees(Request $request)     { $this->gate($request); return response()->json($this->service->employees($this->tenant($request), $this->filters($request), $request->user())); }
+    public function departments(Request $request)   { $this->gate($request); return response()->json($this->service->departments($this->tenant($request), $this->filters($request), $request->user())); }
+    public function policies(Request $request)       { $this->gate($request); return response()->json($this->service->policies($this->tenant($request), $this->filters($request), $request->user())); }
+    public function reviews(Request $request)         { $this->gate($request); return response()->json($this->service->reviews($this->tenant($request), $request->user())); }
+    public function extensions(Request $request)     { $this->gate($request); return response()->json($this->service->extensions($this->tenant($request), $this->filters($request), $request->user())); }
+    public function confirmations(Request $request)  { $this->gate($request); return response()->json($this->service->confirmations($this->tenant($request), $this->filters($request), $request->user())); }
+    public function trends(Request $request)          { $this->gate($request); return response()->json($this->service->trends($this->tenant($request), $this->filters($request), $request->user())); }
+    public function filterOptions(Request $request)  { $this->gate($request); return response()->json($this->service->filterOptions($this->tenant($request), $request->user())); }
 
     public function export(Request $request)
     {
         $this->gate($request);
         $report = $request->query('report', 'employees');
         $format = $request->query('format', 'csv');
-        $data   = $this->service->exportRows($report, $this->tenant($request), $this->filters($request));
+        $data   = $this->service->exportRows($report, $this->tenant($request), $this->filters($request), $request->user());
         $base   = str_replace(' ', '_', strtolower($data['title']));
 
         $this->audit($request, 'Probation Report Exported', ['report' => $report, 'format' => $format]);

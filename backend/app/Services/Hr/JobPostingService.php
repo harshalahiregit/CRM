@@ -235,9 +235,19 @@ class JobPostingService
         });
     }
 
+    /**
+     * Authorised like every other write on this service.
+     *
+     * update(), duplicate(), destroy() and everything routed through transition()
+     * call authorize($user->canManageHrQueue()); this one had the tenant check
+     * and nothing else, so a signed-in non-HR account could rewrite the posting's
+     * external reference — verified, and it persisted. Gated here rather than in
+     * the controller to match where its siblings are gated.
+     */
     public function updateExternalId(HrJobPosting $jobPosting, string $platform, string $externalId, User $user): array
     {
         $this->assertTenant($jobPosting, $user);
+        $this->authorize($user->canManageHrQueue(), 'You are not authorised to change this job');
 
         $externalIds = $jobPosting->external_job_ids ?? [];
         $externalIds[$platform] = $externalId;

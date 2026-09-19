@@ -2,6 +2,7 @@
 
 namespace App\Services\Hr;
 
+use App\Models\User;
 use App\Repositories\Hr\ExitReportRepository;
 
 /**
@@ -20,14 +21,14 @@ class ExitReportService
     {
     }
 
-    public function dashboard(int $tenantId): array
+    public function dashboard(int $tenantId, ?User $actor = null): array
     {
-        return $this->repo->dashboard($tenantId);
+        return $this->repo->dashboard($tenantId, $actor);
     }
 
-    public function employees(int $tenantId, array $f): array
+    public function employees(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->employees($tenantId, $f)->map(fn ($r) => [
+        return $this->repo->employees($tenantId, $f, $actor)->map(fn ($r) => [
             'employee_name' => $r->name, 'employee_code' => $r->employee_code,
             'department' => $r->department, 'designation' => $r->designation,
             'exit_type' => $r->exit_type, 'status' => $r->status,
@@ -39,12 +40,15 @@ class ExitReportService
         ])->all();
     }
 
-    public function departments(int $tenantId, array $f): array
+    public function departments(int $tenantId, array $f, ?User $actor = null): array
     {
-        $reqs = $this->repo->departmentRequests($tenantId, $f)->keyBy('department');
-        $completed = $this->repo->completedClearancesByDept($tenantId)->keyBy('department');
-        $settled = $this->repo->settledByDept($tenantId)->keyBy('department');
-        $headcount = $this->repo->headcountByDept($tenantId)->keyBy('department');
+        // All four sources take the same actor. exit_rate divides requests by
+        // headcount, so the numerator and the denominator have to count the same
+        // population or the percentage is meaningless.
+        $reqs = $this->repo->departmentRequests($tenantId, $f, $actor)->keyBy('department');
+        $completed = $this->repo->completedClearancesByDept($tenantId, $actor)->keyBy('department');
+        $settled = $this->repo->settledByDept($tenantId, $actor)->keyBy('department');
+        $headcount = $this->repo->headcountByDept($tenantId, $actor)->keyBy('department');
 
         return $reqs->keys()->map(function ($dept) use ($reqs, $completed, $settled, $headcount) {
             $r = $reqs->get($dept);
@@ -63,9 +67,9 @@ class ExitReportService
         })->all();
     }
 
-    public function exitTypes(int $tenantId, array $f): array
+    public function exitTypes(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->exitTypes($tenantId, $f)->map(function ($r) {
+        return $this->repo->exitTypes($tenantId, $f, $actor)->map(function ($r) {
             $count = (int) $r->count;
 
             return [
@@ -77,9 +81,9 @@ class ExitReportService
         })->all();
     }
 
-    public function settlements(int $tenantId, array $f): array
+    public function settlements(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->settlements($tenantId, $f)->map(fn ($r) => [
+        return $this->repo->settlements($tenantId, $f, $actor)->map(fn ($r) => [
             'employee_name' => $r->name, 'employee_code' => $r->employee_code, 'department' => $r->department,
             'settlement_month' => $r->settlement_month,
             'gross' => $r->gross_earnings !== null ? (float) $r->gross_earnings : null,
@@ -89,9 +93,9 @@ class ExitReportService
         ])->all();
     }
 
-    public function clearances(int $tenantId, array $f): array
+    public function clearances(int $tenantId, array $f, ?User $actor = null): array
     {
-        $rows = $this->repo->clearanceByDepartment($tenantId)->keyBy('department');
+        $rows = $this->repo->clearanceByDepartment($tenantId, $actor)->keyBy('department');
 
         // Fixed department order; departments with no items still show as zeroed.
         return collect(self::CLR_DEPTS)->map(function ($dept) use ($rows) {
@@ -110,11 +114,11 @@ class ExitReportService
         })->all();
     }
 
-    public function trends(int $tenantId, array $f): array
+    public function trends(int $tenantId, array $f, ?User $actor = null): array
     {
         $year = (int) ($f['year'] ?? now()->year);
-        $reqRows = $this->repo->trendRequests($tenantId, $year);
-        $setRows = $this->repo->trendSettlements($tenantId, $year);
+        $reqRows = $this->repo->trendRequests($tenantId, $year, $actor);
+        $setRows = $this->repo->trendSettlements($tenantId, $year, $actor);
 
         $months = [];
         for ($m = 1; $m <= 12; $m++) {
@@ -156,44 +160,44 @@ class ExitReportService
         }, $months));
     }
 
-    public function filterOptions(int $tenantId): array
+    public function filterOptions(int $tenantId, ?User $actor = null): array
     {
-        return $this->repo->filterOptions($tenantId);
+        return $this->repo->filterOptions($tenantId, $actor);
     }
 
     /* ── Export rows (CSV / PDF share the shaped data) ────── */
-    public function exportRows(string $report, int $tenantId, array $f): array
+    public function exportRows(string $report, int $tenantId, array $f, ?User $actor = null): array
     {
         return match ($report) {
             'departments' => [
                 'title' => 'Department Exit Report',
                 'headers' => ['Department', 'Requests', 'Approved', 'Completed', 'Settled', 'Avg Notice', 'Exit Rate %'],
-                'rows' => array_map(fn ($d) => [$d['department'], $d['requests'], $d['approved'], $d['completed'], $d['settled'], $d['avg_notice'], $d['exit_rate']], $this->departments($tenantId, $f)),
+                'rows' => array_map(fn ($d) => [$d['department'], $d['requests'], $d['approved'], $d['completed'], $d['settled'], $d['avg_notice'], $d['exit_rate']], $this->departments($tenantId, $f, $actor)),
             ],
             'exit-types', 'types' => [
                 'title' => 'Exit Type Analysis',
                 'headers' => ['Exit Type', 'Count', 'Avg Notice', 'Avg Settlement', 'Approval %'],
-                'rows' => array_map(fn ($t) => [$t['exit_type'], $t['count'], $t['avg_notice'], $t['avg_settlement'], $t['approval_pct']], $this->exitTypes($tenantId, $f)),
+                'rows' => array_map(fn ($t) => [$t['exit_type'], $t['count'], $t['avg_notice'], $t['avg_settlement'], $t['approval_pct']], $this->exitTypes($tenantId, $f, $actor)),
             ],
             'settlements' => [
                 'title' => 'Settlement Report',
                 'headers' => ['Employee', 'Code', 'Department', 'Settlement Month', 'Gross', 'Recoveries', 'Net', 'Status'],
-                'rows' => array_map(fn ($s) => [$s['employee_name'], $s['employee_code'], $s['department'], $s['settlement_month'] ?? '—', $s['gross'] ?? 0, $s['recoveries'] ?? 0, $s['net'] ?? 0, $s['status']], $this->settlements($tenantId, $f)),
+                'rows' => array_map(fn ($s) => [$s['employee_name'], $s['employee_code'], $s['department'], $s['settlement_month'] ?? '—', $s['gross'] ?? 0, $s['recoveries'] ?? 0, $s['net'] ?? 0, $s['status']], $this->settlements($tenantId, $f, $actor)),
             ],
             'clearances' => [
                 'title' => 'Clearance Report',
                 'headers' => ['Department', 'Pending', 'In Progress', 'Cleared', 'Rejected', 'Completion %'],
-                'rows' => array_map(fn ($c) => [$c['department'], $c['pending'], $c['in_progress'], $c['cleared'], $c['rejected'], $c['completion_pct']], $this->clearances($tenantId, $f)),
+                'rows' => array_map(fn ($c) => [$c['department'], $c['pending'], $c['in_progress'], $c['cleared'], $c['rejected'], $c['completion_pct']], $this->clearances($tenantId, $f, $actor)),
             ],
             'trends' => [
                 'title' => 'Exit Trends',
                 'headers' => ['Month', 'Requests', 'Approvals', 'Settlements', 'Avg Notice', 'Avg Settlement'],
-                'rows' => array_map(fn ($t) => [$t['month'], $t['requests'], $t['approvals'], $t['settlements'], $t['avg_notice'], $t['avg_settlement']], $this->trends($tenantId, $f)),
+                'rows' => array_map(fn ($t) => [$t['month'], $t['requests'], $t['approvals'], $t['settlements'], $t['avg_notice'], $t['avg_settlement']], $this->trends($tenantId, $f, $actor)),
             ],
             default => [ // employees
                 'title' => 'Employee Exit Report',
                 'headers' => ['Employee', 'Department', 'Exit Type', 'Status', 'Notice', 'Settlement', 'Timeline'],
-                'rows' => array_map(fn ($e) => [$e['employee_name'], $e['department'], $e['exit_type'], $e['status'], $e['notice_days'], $e['settlement'] ?? '—', $e['timeline']], $this->employees($tenantId, $f)),
+                'rows' => array_map(fn ($e) => [$e['employee_name'], $e['department'], $e['exit_type'], $e['status'], $e['notice_days'], $e['settlement'] ?? '—', $e['timeline']], $this->employees($tenantId, $f, $actor)),
             ],
         };
     }

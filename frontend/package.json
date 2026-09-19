@@ -10,7 +10,8 @@
     "lint": "eslint src",
     "lint:crash": "eslint src --rule '{\"no-undef\":\"error\"}'",
     "check:media": "node scripts/media-compress.check.mjs",
-    "check:selects": "node scripts/searchable-selects.check.mjs"
+    "check:selects": "node scripts/searchable-selects.check.mjs",
+    "check:login-roles": "node scripts/login-roles.check.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",

@@ -382,9 +382,9 @@ export default function Onboarding() {
   const DOC_ITEMS = ONBOARDING_DOC_ITEMS
   const DOC_LABELS = ONBOARDING_DOC_LABELS
 
-  const handleToggle = async (id, step) => {
+  const handleToggle = async (id, step, reportingManagerId) => {
     try {
-      const updated = await hrApi.onboarding.toggleStep(id, step)
+      const updated = await hrApi.onboarding.toggleStep(id, step, reportingManagerId)
       setRecords(prev => prev.map(r => r.id === id ? updated : r))
       if (updated.status === 'Completed') showToast('Onboarding complete! Employee record created.')
     } catch {
@@ -658,8 +658,14 @@ export default function Onboarding() {
                     <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-2.5">
                       {STEPS.map(s => {
                         const isDone = getStepDone(r, s.key)
+                        // "Reporting Manager Assigned" was a checkbox that
+                        // recorded no manager, so the hire it produced had no
+                        // place in the hierarchy. It now asks who, and picking
+                        // somebody is what completes the step.
+                        const isManagerStep = s.key === 'manager_assigned'
                         return (
-                        <div key={s.key} onClick={()=>handleToggle(r.id, s.key)} className="px-3 py-2.5 rounded-xl cursor-pointer transition-all"
+                        <div key={s.key} onClick={isManagerStep ? undefined : ()=>handleToggle(r.id, s.key)}
+                          className={`px-3 py-2.5 rounded-xl transition-all ${isManagerStep ? '' : 'cursor-pointer'}`}
                           style={{ background:isDone?'rgba(16,185,129,0.1)':'var(--bg-input)', border:`1px solid ${isDone?'rgba(16,185,129,0.3)':'var(--border)'}` }}>
                           <div className="flex items-center gap-2 mb-1">
                             <span className="text-base">{s.icon}</span>
@@ -670,6 +676,22 @@ export default function Onboarding() {
                               {s.label}
                             </p>
                           </div>
+                          {isManagerStep && (
+                            <select
+                              className="input-3d text-[10px] w-full mt-1"
+                              value={r.reporting_manager_id || ''}
+                              onClick={e=>e.stopPropagation()}
+                              onChange={e=>handleToggle(r.id, s.key, e.target.value)}>
+                              <option value="">Select a manager…</option>
+                              {/* Same master-data source the rest of HR uses —
+                                  no second manager list. */}
+                              {(masters.managers || []).map(m => (
+                                <option key={m.id} value={m.id}>
+                                  {m.employee_code ? `${m.name} (${m.employee_code})` : m.name}
+                                </option>
+                              ))}
+                            </select>
+                          )}
                         </div>
                         )
                       })}

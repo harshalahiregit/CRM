@@ -24,33 +24,34 @@ class LeaveReportController extends Controller
     public function dashboard(Request $request)
     {
         $this->gate($request);
-        return response()->json($this->service->dashboard($this->tenant($request)));
+        return response()->json($this->service->dashboard($this->tenant($request), $request->user()));
     }
 
     public function employees(Request $request)
     {
         $this->gate($request);
-        return response()->json($this->service->employees($this->tenant($request), $this->filters($request)));
+        return response()->json($this->service->employees($this->tenant($request), $this->filters($request), $request->user()));
     }
 
     public function departments(Request $request)
     {
         $this->gate($request);
-        return response()->json($this->service->departments($this->tenant($request), $this->filters($request)));
+        return response()->json($this->service->departments($this->tenant($request), $this->filters($request), $request->user()));
     }
 
     public function types(Request $request)
     {
         $this->gate($request);
-        return response()->json($this->service->types($this->tenant($request), $this->filters($request)));
+        return response()->json($this->service->types($this->tenant($request), $this->filters($request), $request->user()));
     }
 
     public function balances(Request $request)
     {
         $this->gate($request);
-        return response()->json($this->service->balances($this->tenant($request), $this->filters($request)));
+        return response()->json($this->service->balances($this->tenant($request), $this->filters($request), $request->user()));
     }
 
+    /** The company holiday calendar — not employee data, so not scoped. */
     public function holidays(Request $request)
     {
         $this->gate($request);
@@ -60,13 +61,13 @@ class LeaveReportController extends Controller
     public function trends(Request $request)
     {
         $this->gate($request);
-        return response()->json($this->service->trends($this->tenant($request), $this->filters($request)));
+        return response()->json($this->service->trends($this->tenant($request), $this->filters($request), $request->user()));
     }
 
     public function filterOptions(Request $request)
     {
         $this->gate($request);
-        return response()->json($this->service->filterOptions($this->tenant($request)));
+        return response()->json($this->service->filterOptions($this->tenant($request), $request->user()));
     }
 
     /** CSV (Excel) or PDF export. report=employees|departments|types|balances|holidays, format=csv|pdf. */
@@ -75,7 +76,7 @@ class LeaveReportController extends Controller
         $this->gate($request);
         $report = $request->query('report', 'employees');
         $format = $request->query('format', 'csv');
-        $data   = $this->service->exportRows($report, $this->tenant($request), $this->filters($request));
+        $data   = $this->service->exportRows($report, $this->tenant($request), $this->filters($request), $request->user());
         $base   = str_replace(' ', '_', strtolower($data['title']));
 
         Log::channel('hr')->info('Leave report exported', ['tenant_id' => $this->tenant($request), 'report' => $report, 'format' => $format]);

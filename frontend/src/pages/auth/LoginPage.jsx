@@ -19,9 +19,6 @@ import sangoeFull from '@/assets/sangoe-full.png'
 const ROLES = [
   { value: 'admin',               label: 'Admin',                icon: '🛡️' },
   { value: 'staff',               label: 'Staff / Employee',     icon: '👔' },
-  // Examining doctors sign in here too — they are ordinary Users with their own
-  // portal, not a separate identity like a Purchase Vendor.
-  { value: 'doctor',              label: 'Doctor',               icon: '🩺' },
   { value: 'purchase_vendor',     label: 'Purchase Vendor',      icon: '📦', purchaseVendor: true },
   { value: 'third_party_vendor',  label: 'Third-Party Vendor',   icon: '🤝' },
   /*
@@ -39,7 +36,26 @@ const ROLES = [
    * they have been retired.
    */
   { value: 'client',              label: 'Client / Customer',    icon: '👤', clientPortal: true },
-  { value: 'company',             label: 'Company',              icon: '🏢' },
+  /*
+   * Doctor and Company are deliberately ABSENT from this selector, and their
+   * accounts still sign in here.
+   *
+   * Neither is an HR role, and offering them made the login screen ask a
+   * question most people could not answer. Both are, however, real Users with
+   * real portals — `doctor` for routes/medical.php, `company` for the external
+   * hiring portal (routes/company_portal.php, CompanyRole, hr_hiring_requests).
+   * Removing them from the BACKEND would lock the only door into two working
+   * subsystems, so nothing server-side changed: LoginRequest still accepts both.
+   *
+   * They reach their portal by leaving this selector on "Access role (optional)".
+   * That works because the role is optional and users.email is globally unique,
+   * so an address already resolves to exactly one account — the selector only
+   * ever narrowed a search that could not return two rows. See LoginRequest.
+   *
+   * FOLLOW-UP, not done here: the owner's position is that a doctor should be
+   * Staff or a vendor, and a company may belong under Client. That is an
+   * identity-model migration across two subsystems, not a dropdown edit.
+   */
 ]
 
 const schema = z.object({

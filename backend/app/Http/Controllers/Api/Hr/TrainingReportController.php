@@ -26,26 +26,26 @@ class TrainingReportController extends Controller
         $this->gate($request);
         $this->audit($request, 'Training Report Viewed');
 
-        return response()->json($this->service->dashboard($this->tenant($request)));
+        return response()->json($this->service->dashboard($this->tenant($request), $request->user()));
     }
 
-    public function employees(Request $request)   { $this->gate($request); return response()->json($this->service->employees($this->tenant($request), $this->filters($request))); }
-    public function departments(Request $request) { $this->gate($request); return response()->json($this->service->departments($this->tenant($request), $this->filters($request))); }
-    public function programs(Request $request)     { $this->gate($request); return response()->json($this->service->programs($this->tenant($request), $this->filters($request))); }
-    public function trainers(Request $request)     { $this->gate($request); return response()->json($this->service->trainers($this->tenant($request), $this->filters($request))); }
-    public function attendance(Request $request)   { $this->gate($request); return response()->json($this->service->attendance($this->tenant($request), $this->filters($request))); }
-    public function assessments(Request $request)  { $this->gate($request); return response()->json($this->service->assessments($this->tenant($request), $this->filters($request))); }
-    public function certificates(Request $request) { $this->gate($request); return response()->json($this->service->certificates($this->tenant($request), $this->filters($request))); }
-    public function completion(Request $request)   { $this->gate($request); return response()->json($this->service->completion($this->tenant($request), $this->filters($request))); }
-    public function trends(Request $request)       { $this->gate($request); return response()->json($this->service->trends($this->tenant($request), $this->filters($request))); }
-    public function filterOptions(Request $request){ $this->gate($request); return response()->json($this->service->filterOptions($this->tenant($request))); }
+    public function employees(Request $request)   { $this->gate($request); return response()->json($this->service->employees($this->tenant($request), $this->filters($request), $request->user())); }
+    public function departments(Request $request) { $this->gate($request); return response()->json($this->service->departments($this->tenant($request), $this->filters($request), $request->user())); }
+    public function programs(Request $request)     { $this->gate($request); return response()->json($this->service->programs($this->tenant($request), $this->filters($request), $request->user())); }
+    public function trainers(Request $request)     { $this->gate($request); return response()->json($this->service->trainers($this->tenant($request), $this->filters($request), $request->user())); }
+    public function attendance(Request $request)   { $this->gate($request); return response()->json($this->service->attendance($this->tenant($request), $this->filters($request), $request->user())); }
+    public function assessments(Request $request)  { $this->gate($request); return response()->json($this->service->assessments($this->tenant($request), $this->filters($request), $request->user())); }
+    public function certificates(Request $request) { $this->gate($request); return response()->json($this->service->certificates($this->tenant($request), $this->filters($request), $request->user())); }
+    public function completion(Request $request)   { $this->gate($request); return response()->json($this->service->completion($this->tenant($request), $this->filters($request), $request->user())); }
+    public function trends(Request $request)       { $this->gate($request); return response()->json($this->service->trends($this->tenant($request), $this->filters($request), $request->user())); }
+    public function filterOptions(Request $request){ $this->gate($request); return response()->json($this->service->filterOptions($this->tenant($request), $request->user())); }
 
     public function export(Request $request)
     {
         $this->gate($request);
         $report = $request->query('report', 'employees');
         $format = $request->query('format', 'csv');
-        $data   = $this->service->exportRows($report, $this->tenant($request), $this->filters($request));
+        $data   = $this->service->exportRows($report, $this->tenant($request), $this->filters($request), $request->user());
         $base   = str_replace(' ', '_', strtolower($data['title']));
 
         $this->audit($request, 'Training Report Exported', ['report' => $report, 'format' => $format]);

@@ -833,9 +833,26 @@ class HrmAdminController extends Controller
         return $this->deny($request);
     }
 
-    /** A manager only in the real sense — somebody actually reports to them. */
+    /**
+     * A manager only in the real sense — somebody actually reports to them.
+     *
+     * Account type first, for the reason every other HR helper checks it: this
+     * asks a DATABASE question, not a role question, and answers it for any
+     * `users` row — portal logins included. denyApprover() calls this BEFORE
+     * falling through to deny(), so it is the one clause here that does not
+     * inherit the boundary from canManageHrQueue() or holdsAnyTierRole().
+     *
+     * Not reachable today: it needs a client, vendor, company or doctor login
+     * linked to an HrEmployee that has direct reports, and linking one is an HR
+     * action. Guarded anyway — the cost is three lines, and the alternative is
+     * relying on a data shape nobody is enforcing.
+     */
     private function managesAnyone(User $user): bool
     {
+        if (! $user->isStaffAccount()) {
+            return false;
+        }
+
         $me = $this->employeeOf($user);
 
         return $me !== null
