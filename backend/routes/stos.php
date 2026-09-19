@@ -52,6 +52,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('v1/fleet')->gro
     Route::get('/vehicle-options', [VehicleController::class, 'options']);
     Route::put('/vehicles/{vehicle}', [VehicleController::class, 'update'])->where('vehicle', '[0-9]+');
     Route::delete('/vehicles/{vehicle}', [VehicleController::class, 'destroy'])->where('vehicle', '[0-9]+');
+    // T-56 — the hand-driven edge of the asset state machine. Absorbed from
+    // Dev 1's retiring endpoint; Fleet is the sole authority for this machine.
+    Route::patch('/vehicles/{vehicle}/status', [VehicleController::class, 'transition'])->where('vehicle', '[0-9]+');
 
     // BEFORE the {vehicle} routes: "eligible" is a word, not an id, and a
     // wildcard declared first would swallow it.

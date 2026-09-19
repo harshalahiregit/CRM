@@ -121,6 +121,105 @@ class VehicleService
      * The live row goes, because a retired truck has no live state — and that
      * frees the primary key if the same vehicle is ever re-onboarded.
      */
+    /**
+     * The one hand-driven edge of the vehicle asset state machine (T-56).
+     *
+     * Fleet is the sole authority for this machine, but almost none of it is a
+     * human decision. A truck enters and leaves the workshop through its job
+     * cards, goes on and off a trip through dispatch, and is blocked and
+     * cleared by the compliance sweep. What is left for a person is the small
+     * honest set: parking a truck (IDLE), bringing it back (AVAILABLE), and
+     * retiring it.
+     *
+     * ── EVERY REFUSAL NAMES WHO CAN CLEAR IT ──────────────────────────────
+     * "You cannot do that" sends somebody hunting. Each branch below says which
+     * desk owns the state and what actually releases it, because the person
+     * hitting this button is usually trying to fix something and needs pointing
+     * rather than stopping.
+     */
+    public function transition(int $id, int $companyId, string $to, int $userId): Vehicle
+    {
+        $vehicle = $this->find($id, $companyId);
+        $to = strtoupper(trim($to));
+
+        if (! in_array($to, Vehicle::MANUALLY_SETTABLE, true)) {
+            throw new BusinessException(
+                $this->whyNotSettable($to)
+            );
+        }
+
+        if ($vehicle->status === $to) {
+            return $vehicle;    // idempotent; setting a state it already holds is not an error
+        }
+
+        // Leaving some states is not a person's decision, whatever they are
+        // moving to.
+        if ($reason = $this->whatHoldsIt($vehicle)) {
+            throw new BusinessException($reason);
+        }
+
+        if ($to === Vehicle::STATUS_RETIRED) {
+            // Retiring has its own guards — open job cards, the genset that
+            // outlives the truck, the live-status row. Routed through the one
+            // implementation rather than duplicated here.
+            $this->retire($id, $companyId, $userId);
+
+            return $vehicle->fresh();
+        }
+
+        $from = $vehicle->status;
+
+        // Through the model, so the observer fires and Developers 1 and 3 hear
+        // `fleet.vehicle.status_changed`.
+        $vehicle->update(['status' => $to]);
+
+        Log::channel('stos')->info('Vehicle status changed by hand', [
+            'company_id' => $companyId, 'user_id' => $userId,
+            'vehicle_id' => $vehicle->id, 'from' => $from, 'to' => $to,
+        ]);
+
+        return $vehicle->fresh();
+    }
+
+    /** Why this target is not something a person may set. */
+    private function whyNotSettable(string $to): string
+    {
+        return match ($to) {
+            Vehicle::STATUS_UNDER_MAINTENANCE =>
+                'Open a job card instead — that is what takes a vehicle into the workshop, and it records why.',
+            Vehicle::STATUS_BREAKDOWN =>
+                'Open a job card against the trip instead. A breakdown is a job card raised on the road, not a status somebody types.',
+            Vehicle::STATUS_ALLOCATED, Vehicle::STATUS_IN_TRANSIT =>
+                'Dispatch puts a vehicle on a trip. Setting this by hand would tell Operations a truck is committed to a trip that does not exist.',
+            Vehicle::STATUS_COMPLIANCE_BLOCKED =>
+                'Compliance is derived from the document expiry dates. To block a vehicle deliberately, place a compliance hold on it.',
+            default =>
+                'That is not a vehicle status. A person may set AVAILABLE, IDLE or RETIRED.',
+        };
+    }
+
+    /**
+     * What stops this vehicle being moved by hand at all — and who releases it.
+     */
+    private function whatHoldsIt(Vehicle $vehicle): ?string
+    {
+        return match ($vehicle->status) {
+            Vehicle::STATUS_UNDER_MAINTENANCE =>
+                'This vehicle is in the workshop. Closing its job card is what releases it, and that checks QC and its papers first — which is the point.',
+            Vehicle::STATUS_BREAKDOWN =>
+                'This vehicle is broken down on the road. Closing the breakdown job card releases it.',
+            Vehicle::STATUS_ALLOCATED =>
+                'This vehicle is allocated to a trip. Operations has to release it from that trip first.',
+            Vehicle::STATUS_IN_TRANSIT =>
+                'This vehicle is out on a trip. It comes back when the trip closes.',
+            Vehicle::STATUS_COMPLIANCE_BLOCKED =>
+                'This vehicle is compliance blocked. Renewing the expired document clears it — the compliance sweep applies and removes this state, so setting it by hand would be overwritten.',
+            Vehicle::STATUS_RETIRED =>
+                'This vehicle is retired. Reinstating a retired asset is not done from here.',
+            default => null,
+        };
+    }
+
     public function retire(int $id, int $companyId, int $userId): void
     {
         $vehicle = $this->find($id, $companyId);

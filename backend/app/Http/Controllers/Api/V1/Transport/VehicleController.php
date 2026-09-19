@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers\Api\V1\Transport;
 
+use App\Domains\Fleet\Models\Vehicle;
 use App\Domains\Fleet\Services\VehicleService;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponse;
 use App\Http\Requests\Stos\StoreVehicleRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 /**
  * STOS-FLEET — Step 1: onboarding a vehicle, and correcting its master data.
@@ -47,6 +49,40 @@ class VehicleController extends Controller
         return $this->success(
             $this->vehicles->update($vehicle, $request->validated(), $this->companyId($request), $request->user()->id),
             'Vehicle updated'
+        );
+    }
+
+    /**
+     * The one hand-driven edge of the asset state machine (T-56).
+     *
+     * Absorbed from Dev 1's retiring `/api/transport/vehicles/{id}/status`,
+     * because Fleet is the sole authority for this machine. Only AVAILABLE,
+     * IDLE and RETIRED are accepted; the rest are consequences of something
+     * happening elsewhere and the service explains which.
+     */
+    public function transition(Request $request, int $vehicle): JsonResponse
+    {
+        $this->denyExternal($request);
+
+        // Canonicalised BEFORE validation, so the door and the service agree.
+        // Without this the rule rejects `idle` while the service would happily
+        // have uppercased it — two layers disagreeing about the same string,
+        // which is the exact class of bug the uppercase ruling exists to stop.
+        //
+        // Tolerant at the edge, canonical inside: a caller written against the
+        // old lowercase vocabulary still works, and what lands in the database
+        // is always the ruled spelling.
+        $request->merge([
+            'status' => strtoupper(trim((string) $request->input('status'))),
+        ]);
+
+        $data = $request->validate([
+            'status' => ['required', 'string', Rule::in(Vehicle::STATUSES)],
+        ]);
+
+        return $this->success(
+            $this->vehicles->transition($vehicle, $this->companyId($request), $data['status'], $request->user()->id),
+            'Vehicle status updated'
         );
     }
 
