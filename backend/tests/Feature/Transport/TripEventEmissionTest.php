@@ -44,36 +44,20 @@ class TripEventEmissionTest extends TestCase
      */
     private const NOT_EMITTED_YET = [
         // P1 — ours.
-        'order.approved'  => 'No order-approval transition exists; TransportOrderService has no approve(). CTD §31 lists the moment, the state machine does not.',
-        'event.corrected' => 'CTD §34 corrections have no path yet — nothing in the UI can correct an event, so nothing emits this.',
+        'order.approved' => 'No order-approval transition exists; TransportOrderService has no approve(). CTD §31 lists the moment, the state machine does not.',
 
-        // P2 — Shivam. Telemetry; declared so the vocabulary is fixed first.
-        'gps.activated'         => 'P2 — telemetry not wired.',
-        'gps.position'          => 'P2 — telemetry not wired.',
-        // Both, not just one. The first draft of this list said "only genset.on
-        // is emitted today" — copied from a hand-run grep that had matched the
-        // EXAMPLE in TripEventRecorder's own docblock and counted it as a call
-        // site. This test caught it immediately, which is the argument for
-        // having it: a scanner that only recognises real calls beats a grep
-        // that recognises the word.
-        'genset.on'             => 'P2 — telemetry not wired.',
-        'genset.off'            => 'P2 — telemetry not wired.',
-        'temperature.reading'   => 'P2 — telemetry not wired.',
-        'temperature.excursion' => 'P2 — telemetry not wired.',
-        'port.entry'            => 'P2 — geofencing not wired.',
-        'port.exit'             => 'P2 — geofencing not wired.',
-        'gate.in'               => 'P2 — geofencing not wired.',
+        // P2 — Shivam. Telemetry landed 19 Sep; these four are the geofencing
+        // half, which needs positions matched against sites.
+        'gps.position' => 'P2 — TripTimelinePublisher emits gps.activated on first fix; per-ping positions stay in telemetry_records by design.',
+        'port.entry'   => 'P2 — geofencing not wired.',
+        'port.exit'    => 'P2 — geofencing not wired.',
+        'gate.in'      => 'P2 — geofencing not wired.',
 
-        // P3 — Zafar. Documents, billing, collection, feedback, compliance.
-        'documents.handed_over' => 'P3 — declared, not emitted.',
-        'pod.uploaded'          => 'P3 — the document path does not record events yet.',
-        'pod.verified'          => 'P3 — verification moves the trip but writes no event.',
-        'billing.ready'         => 'P3 — billing writes no events.',
-        'invoice.posted'        => 'P3 — billing writes no events.',
-        'collection.recorded'   => 'P3 — collection writes no events.',
-        'feedback.requested'    => 'P3 — feedback is TM-001 §8, not ours.',
-        'feedback.received'     => 'P3 — feedback is TM-001 §8, not ours.',
-        'compliance.checked'    => 'P3 — compliance writes no events.',
+        // P3 — Zafar. Documents and billing landed 19 Sep; these four have not.
+        'collection.recorded' => 'P3 — collection writes no events yet. Raised in NOTE-person3-d106-landed-and-the-button-is-missing.md.',
+        'feedback.requested'  => 'P3 — feedback is TM-001 §8, not ours.',
+        'feedback.received'   => 'P3 — feedback is TM-001 §8, not ours.',
+        'compliance.checked'  => 'P3 — compliance writes no events.',
     ];
 
     public function test_the_set_of_declared_but_unemitted_event_types_is_exactly_the_documented_one(): void
@@ -122,8 +106,34 @@ class TripEventEmissionTest extends TestCase
             }
 
             foreach ($calls[1] as $args) {
-                if (preg_match("/^\s*'([a-z_]+\.[a-z_]+)'/", $args, $m)) {
-                    $found[$m[1]] = true;
+                // The type argument, in either form this codebase uses:
+                //
+                //   record('trip.closed', trip: $t)        positional — P1
+                //   record(type: 'invoice.posted', ...)    named     — P2, P3
+                //
+                // The named form is why this loop is not a one-line regex on the
+                // first positional argument, which is what it WAS. That version
+                // passed cleanly on the day Person 2 and Person 3 shipped nine
+                // emitters between them, because it could not see a single one.
+                // A guard that reads only the dialect its author happens to
+                // write is not a guard; it is a mirror.
+                if (preg_match('/^\s*type:\s*(.+?)(?:,\s*\w+:|$)/s', $args, $m)) {
+                    $typeArg = $m[1];
+                } else {
+                    $typeArg = $args;
+                }
+
+                // Every literal in the argument, not just the first: a type
+                // chosen by a ternary
+                //
+                //   type: $x === 'off' ? 'genset.off' : 'genset.on'
+                //
+                // emits BOTH, and crediting only one would leave the other
+                // looking silent.
+                if (preg_match_all("/'([a-z_]+\.[a-z_]+)'/", $typeArg, $lits)) {
+                    foreach ($lits[1] as $lit) {
+                        $found[$lit] = true;
+                    }
                 }
             }
         }

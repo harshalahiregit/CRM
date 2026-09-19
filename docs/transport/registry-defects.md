@@ -3485,6 +3485,31 @@ deleted emitter go red.
 It was broken two ways before being trusted: deleting a live emitter (named `pretrip.passed`) and
 declaring a new type with no emitter (named `trip.rerouted`).
 
+**Two was not enough.** Merging `origin/master` an hour later brought nine emitters — five of P3's
+(`e0077b00`) and four of P2's (`79815f29`) — and **the guard stayed green through all of them.** It
+matched the type only as a FIRST POSITIONAL ARGUMENT, and both of them had used the named form:
+
+```php
+record('trip.closed', trip: $t)         // P1's dialect — seen
+record(type: 'invoice.posted', ...)     // P2's and P3's — invisible
+```
+
+So on the day two sections shipped nine emitters, a test whose entire job was to notice emitters
+reported that none of them existed — and it mis-reported one of **our own** calls the same way,
+`TripEventRecorder::correct()`, which had been emitting `event.corrected` in the named form all
+along. The allow-list built from that scan was wrong about four different people's code, including
+the author's.
+
+Fixed to read both forms and both branches of a ternary (`type: $x ? 'genset.off' : 'genset.on'`
+emits both, and crediting one leaves the other looking silent). Then broken two more ways: deleting
+a named-argument emitter, and gutting one branch of a ternary. Both named the right type.
+
+**The lesson, which is more general than this test: a guard that only recognises the dialect its
+author happens to write is a mirror, not a guard.** Three of this project's guards have now failed
+in this exact shape — the two comment-stripping regexes, the datetime scanner that missed indirect
+config consumption, and this one. Every time, the guard was correct about the code its author had
+in mind and blind to the code somebody else wrote.
+
 It also immediately contradicted the hand-run grep used to write its own allow-list: that grep had
 counted `genset.on` as emitted, because the only occurrence outside the registry is **an example
 in `TripEventRecorder`'s docblock**. The test was right and the grep was wrong.

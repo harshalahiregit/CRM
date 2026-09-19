@@ -219,6 +219,12 @@ That is **D-115**, and it is entirely ours. Ten call sites now emit live, a fres
 all three **LIVE** — and `TripEventEmissionTest` pins the set of declared-but-unemitted types so
 the next missing emitter fails a test instead of hiding behind a backfill.
 
+The timeline is also no longer only ours. Merging on the same afternoon brought **P3's five
+document and billing events** (`e0077b00`) and **P2's four telemetry events** (`79815f29`), all
+written through the same recorder. Step 8 — GPS, temperature and generator — is the one to
+re-walk next as a result; it is still marked NOT REACHABLE above because it has not been walked
+since, and this document does not promote a step it has not clicked.
+
 The general lesson, which is the reason this paragraph is here rather than only in the register:
 **a screen that is populated by a migration proves nothing about the code that is supposed to
 populate it.** This step was walked, and walking it still did not catch this — it took reading the

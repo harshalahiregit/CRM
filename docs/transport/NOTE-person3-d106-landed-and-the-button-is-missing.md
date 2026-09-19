@@ -37,28 +37,26 @@ give it, a button plus a `transportApi.js` method is all that is left.
   the reason rather than trusting the old text: still true, there is no `trip_settlements` table
   (SNG-TRN-017).
 
-## Something for you in `trip_events`
+## `trip_events` — you got there first, and this section is the proof
 
-The timeline now has live traffic on both sides of your half of the lifecycle, which makes the
-hole in the middle visible. Walking that trip produced `trip.delivered` and then `trip.closed`
-with **nothing in between** — no `pod.verified`, no `billing.ready`, no `invoice.posted`, no
-`collection.recorded`, though I did all four by clicking.
+I wrote this section an hour ago saying your half of the lifecycle emitted nothing, because the
+closure walk produced `trip.delivered` and then `trip.closed` with nothing between them, though I
+had done POD, billing, invoicing and collection by clicking.
 
-Those nine types are registered and owned by you (`TripEventType::REGISTRY`, the P3 block). They
-are declared exactly so the vocabulary is agreed before the work lands, so this is not a defect —
-but the recorder is a one-line call and the timeline is MS-001 §14 step 14, so it is cheap to
-close now:
+Then I merged and found `e0077b00` — **your five lines on the shared timeline**. So:
+`documents.handed_over`, `pod.uploaded`, `pod.verified`, `billing.ready` and `invoice.posted` all
+emit now. The gap I was about to report to you had been closed before I could send it.
 
-```php
-app(TripEventRecorder::class)->record(
-    'invoice.posted', trip: $trip, actor: $actor,
-    detail: ['invoice_id' => $invoiceId],
-);
-```
+**One is left:** `collection.recorded` (EVT-011). `TripCollectionService::record()` moves the money
+and writes no event, so a timeline still shows a trip billed and then closed with the payment
+invisible between them. Same one-line call as your other five.
 
-Call it **after the transaction commits**, and pass the type **as a literal string** — not through
-a variable. `TripEventEmissionTest` audits the registry by finding those literals, and a type
-built from a variable is one it cannot see.
+Two things I'd ask, both learned by getting them wrong today:
+
+- **Call it after the transaction commits.** Five of your six already do.
+- **Keep the type a literal.** `TripEventEmissionTest` audits the registry by finding those
+  strings, and it now reads both `record('x.y', …)` and `record(type: 'x.y', …)` — see the warning
+  below for why that sentence exists.
 
 ## A warning from our side of the same table
 
@@ -68,5 +66,15 @@ We had ten registered types that nothing emitted — `trip.created`, `trip.submi
 looked complete. A trip created tomorrow would have had four holes in it.
 
 That is **D-115**, fixed today, with a test that now pins the whole declared-but-unemitted set.
-Worth knowing before you wire yours: **a populated screen proves nothing about the code meant to
-populate it** when a migration can populate it too.
+Worth knowing: **a populated screen proves nothing about the code meant to populate it** when a
+migration can populate it too.
+
+And the part that concerns you directly. The first version of that test **could not see a single
+one of your emitters, or Shivam's.** It matched the type only as a first positional argument, and
+you both used the named form — `record(type: 'invoice.posted', …)`. So on the day the two of you
+shipped nine emitters between them, my guard went green and reported that none of them existed.
+It also mis-reported one of *my own* calls for the same reason.
+
+Fixed: it reads both forms, and both branches of a ternary. But the lesson is the one I'd pass on
+— **a guard that only recognises the dialect its author writes is a mirror, not a guard.** If you
+add a check that scans our code, scan mine and Shivam's with it before you trust a green run.

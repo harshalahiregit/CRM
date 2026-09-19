@@ -136,6 +136,13 @@ than `BACKFILLED`.
    finding type strings in recorder calls. The first version of `AllocationService` looped a
    `[$type => $id]` table, and the audit could not see either call — a value assembled from a
    variable is invisible to any scanner. If a test greps for it, write it out longhand.
+
+   **And scan the other sections' code before you trust a green run.** That same test matched the
+   type only as a first positional argument, which is P1's dialect. P2 and P3 both write
+   `record(type: 'x.y', …)`, so on the day they shipped nine emitters between them the guard went
+   green and reported none of them existed — and mis-reported one of P1's own calls too. **A guard
+   that only recognises the dialect its author writes is a mirror, not a guard.** Three guards on
+   this project have now failed in that exact shape.
 2. **Trust the test over your own grep.** The allow-list for that test was drafted from a hand-run
    `grep` which reported `genset.on` as emitted. The only occurrence outside the registry was **an
    example inside a docblock.** The test contradicted the grep on its first run and the test was
