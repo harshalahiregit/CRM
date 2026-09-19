@@ -16,6 +16,10 @@ class SaveWorkerMedicalRequest extends FormRequest
     public function rules(): array
     {
         return [
+            // Which in-house doctor was picked, if any. Everything else about
+            // them (licence, council, clinic) is looked up server-side from the
+            // directory -- never taken from the browser. See DoctorOptions.
+            'doctor_user_id'      => 'nullable|integer',
             'exam_type'           => 'nullable|in:internal,external',
             'exam_date'           => 'nullable|date',
             // Certificate currency window. Optional — defaults to exam_date + 1yr

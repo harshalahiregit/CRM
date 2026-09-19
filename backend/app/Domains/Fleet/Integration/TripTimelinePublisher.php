@@ -39,6 +39,13 @@ class TripTimelinePublisher
     /** Trip states in which a vehicle's readings belong to that trip. */
     private const LIVE_TRIP_STATES = ['dispatched', 'in_transit', 'DISPATCHED', 'IN_TRANSIT'];
 
+    /** Schema answers that cannot change inside one request. */
+    private ?bool $legacyMaster = null;
+    private ?bool $ledger = null;
+
+    /** company id => has the repoint run for it. */
+    private array $switched = [];
+
     /**
      * Publish whatever this ping changed.
      *
@@ -208,18 +215,30 @@ class TripTimelinePublisher
      * constructed the overlap and both events landed on a trip belonging to a
      * different truck — no error, no log line, a plausible-looking entry.
      *
-     * And it gets harder after the repoint, not easier: some trips will carry
-     * Fleet ids while rows whose legacy vehicle never migrated still carry the
-     * old ones, so BOTH spaces will match something.
+     * ── AND THE FIRST FIX STILL CONFIRMED ITSELF ──────────────────────────
+     * My second version asked the plate to decide, but resolved that plate in
+     * BOTH masters and unioned the answers. When the `transport_vehicles` row
+     * was missing — a dangling id, of which we have three in the demonstration
+     * data — the only plate that came back was Fleet's own, read with the
+     * trip's number. The check compared a vehicle's plate against itself and
+     * could not fail. Person 1 re-ran the experiment instead of accepting the
+     * fix, and that is how we know.
      *
-     * ── SO THE ID FINDS CANDIDATES AND THE PLATE DECIDES ──────────────────
-     * The registration number is the one identifier both tables agree on, in
-     * both directions, before and after the repoint. The id is still used for
-     * the lookup because it is indexed — it just no longer gets the last word.
+     * ── SO EVERY ANSWER NOW COMES FROM THE TABLE THE NUMBER BELONGS TO ────
+     * Three questions, in order, and each one is answered from data:
      *
-     * When a candidate's plate cannot be confirmed as this vehicle's, it is
-     * REFUSED and logged rather than published. A wrong timeline entry naming
-     * the wrong truck is worse than a missing one: the missing one is noticed.
+     *   1. Did the repoint rule on this trip? Its verdict decides — including
+     *      the verdict "this pointed at a row that was gone", which is a
+     *      permanent NO rather than an invitation to guess.
+     *   2. No verdict, and the switch has happened for this company? Then the
+     *      trip was raised afterwards and the column means a Fleet id.
+     *   3. Otherwise the column still means `transport_vehicles`, so the plate
+     *      is read THERE and nowhere else. A row that is gone is unknown, and
+     *      unknown is never a match.
+     *
+     * A candidate that cannot be confirmed is REFUSED and logged rather than
+     * published. A wrong timeline entry naming the wrong truck is worse than a
+     * missing one: the missing one gets noticed.
      */
     private function openTripFor(Vehicle $vehicle): ?TransportTrip
     {
@@ -236,17 +255,16 @@ class TripTimelinePublisher
             ->orderByDesc('id')
             ->get(['id', 'vehicle_id']);
 
-        $plate = $this->normalisePlate($vehicle->registration_number);
-
         foreach ($candidates as $candidate) {
-            if ($this->platesFor((int) $candidate->vehicle_id, (int) $vehicle->company_id) === [$plate]) {
+            if ($this->tripBelongsTo($candidate, $vehicle)) {
                 return TransportTrip::find($candidate->id);
             }
 
-            Log::channel('stos')->warning('Trip matched a vehicle id but not its registration; not published', [
+            Log::channel('stos')->warning('Trip matched a vehicle id but not the vehicle; not published', [
                 'defect' => 'D-116',
                 'trip_id' => $candidate->id, 'trip_vehicle_id' => $candidate->vehicle_id,
-                'fleet_vehicle_id' => $vehicle->id, 'expected_plate' => $plate,
+                'fleet_vehicle_id' => $vehicle->id,
+                'expected_plate' => $this->normalisePlate($vehicle->registration_number),
                 'why' => 'transport_trips.vehicle_id is ambiguous between the two masters until the repoint completes',
             ]);
         }
@@ -255,51 +273,142 @@ class TripTimelinePublisher
     }
 
     /**
-     * Both ids this vehicle could be referenced by, in either space.
+     * Is this candidate trip out on THIS vehicle?
      *
-     * The Fleet id for a repointed trip, and the legacy id it was moved from
-     * for one that has not been repointed yet. `legacy_transport_vehicle_id` is
-     * recorded by the data move precisely so this stays answerable.
+     * The three questions from `openTripFor()`, in that order. Nothing here
+     * falls back to "the number looked right".
+     */
+    private function tripBelongsTo(object $candidate, Vehicle $vehicle): bool
+    {
+        $verdict = $this->repointVerdictFor((int) $candidate->id);
+
+        if ($verdict !== null) {
+            // `to_id` of null is the repoint saying it found nothing to map
+            // this row to. That row is stranded in the old space for good.
+            return $verdict->to_id !== null && (int) $verdict->to_id === (int) $vehicle->id;
+        }
+
+        if ($this->switchHasHappenedFor((int) $vehicle->company_id)) {
+            return (int) $candidate->vehicle_id === (int) $vehicle->id;
+        }
+
+        $legacy = $this->legacyPlateFor((int) $candidate->vehicle_id, (int) $vehicle->company_id);
+
+        return $legacy !== null
+            && $legacy === $this->normalisePlate($vehicle->registration_number);
+    }
+
+    /**
+     * Every id this vehicle could be referenced by, in either space.
+     *
+     * The Fleet id for a repointed trip, and the legacy id for one that has not
+     * been repointed yet.
+     *
+     * ── THE STORED LINK IS NOT ENOUGH ON ITS OWN ──────────────────────────
+     * `legacy_transport_vehicle_id` is written by the data move, and it goes
+     * stale: a reseed of the legacy table left ours pointing at rows 29 and 30
+     * while the live rows for the same two trucks were 35 and 36. The effect is
+     * not a wrong answer, it is no answer — a trip on the RIGHT truck finds no
+     * candidate and the reading is dropped, which looks exactly like an idle
+     * truck. That is why step 8 stayed blank.
+     *
+     * So the plate finds candidates as well as confirming them. It is the one
+     * identifier that survives a reseed, and `transport_vehicles` is unique on
+     * (tenant, normalised plate) so this adds at most one id.
      */
     private function idsThisVehicleMayBeKnownBy(Vehicle $vehicle): array
     {
-        $ids = [$vehicle->id];
+        $ids = [(int) $vehicle->id];
 
         if ($vehicle->legacy_transport_vehicle_id) {
             $ids[] = (int) $vehicle->legacy_transport_vehicle_id;
         }
 
+        foreach ($this->legacyIdsWithThisPlate($vehicle) as $id) {
+            $ids[] = $id;
+        }
+
         return array_values(array_unique($ids));
     }
 
-    /**
-     * Every plate this id resolves to, across both masters.
-     *
-     * One entry means the id is unambiguous. Two different plates means the
-     * number means different trucks in the two tables, and nothing can tell
-     * which one the trip meant — so the caller refuses.
-     */
-    private function platesFor(int $vehicleId, int $companyId): array
+    /** The legacy row for this truck, found by plate rather than by a stored id. */
+    private function legacyIdsWithThisPlate(Vehicle $vehicle): array
     {
-        $plates = [];
-
-        $fleet = DB::table('vehicles')->where('company_id', $companyId)
-            ->where('id', $vehicleId)->value('registration_number');
-
-        if ($fleet) {
-            $plates[] = $this->normalisePlate($fleet);
+        if (! $this->legacyMasterExists()) {
+            return [];
         }
 
-        if (Schema::hasTable('transport_vehicles')) {
-            $legacy = DB::table('transport_vehicles')->where('tenant_id', $companyId)
-                ->where('id', $vehicleId)->value('registration_number');
+        return DB::table('transport_vehicles')
+            ->where('tenant_id', $vehicle->company_id)
+            ->where('registration_normalized', $this->normalisePlate($vehicle->registration_number))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
 
-            if ($legacy) {
-                $plates[] = $this->normalisePlate($legacy);
-            }
+    /**
+     * The plate this id means in the legacy master, or null if it means nothing.
+     *
+     * Deliberately one table. Asking Fleet's table what a Fleet id's plate is,
+     * to check whether it is this Fleet vehicle, is a question that answers
+     * itself — which is the whole of the second half of D-116.
+     */
+    private function legacyPlateFor(int $vehicleId, int $companyId): ?string
+    {
+        if (! $this->legacyMasterExists()) {
+            return null;
         }
 
-        return array_values(array_unique($plates));
+        $plate = DB::table('transport_vehicles')
+            ->where('tenant_id', $companyId)
+            ->where('id', $vehicleId)
+            ->value('registration_number');
+
+        return $plate ? $this->normalisePlate($plate) : null;
+    }
+
+    /** What `stos:repoint-trip-fleet-refs` decided about this trip, if anything. */
+    private function repointVerdictFor(int $tripId): ?object
+    {
+        if (! $this->ledgerExists()) {
+            return null;
+        }
+
+        return DB::table('fleet_reference_repoints')
+            ->where('table_name', 'transport_trips')
+            ->where('column_name', 'vehicle_id')
+            ->where('row_id', $tripId)
+            ->first(['to_id']);
+    }
+
+    /**
+     * Has this company's trip data been moved into the Fleet id space?
+     *
+     * One ledger entry is enough to know: the repoint rules on every reference
+     * it looks at in a single pass, so anything it left without a verdict was
+     * raised afterwards and is therefore already in the new space.
+     */
+    private function switchHasHappenedFor(int $companyId): bool
+    {
+        if (! $this->ledgerExists()) {
+            return false;
+        }
+
+        return $this->switched[$companyId] ??= DB::table('fleet_reference_repoints')
+            ->where('company_id', $companyId)
+            ->where('table_name', 'transport_trips')
+            ->where('column_name', 'vehicle_id')
+            ->exists();
+    }
+
+    private function legacyMasterExists(): bool
+    {
+        return $this->legacyMaster ??= Schema::hasTable('transport_vehicles');
+    }
+
+    private function ledgerExists(): bool
+    {
+        return $this->ledger ??= Schema::hasTable('fleet_reference_repoints');
     }
 
     /** Plates are written "MH 12 AB 1234" as often as "MH12AB1234". */

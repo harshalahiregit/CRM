@@ -19,9 +19,25 @@ import sangoeFull from '@/assets/sangoe-full.png'
 const ROLES = [
   { value: 'admin',               label: 'Admin',                icon: '🛡️' },
   { value: 'staff',               label: 'Staff / Employee',     icon: '👔' },
-  // Examining doctors sign in here too — they are ordinary Users with their own
-  // portal, not a separate identity like a Purchase Vendor.
-  { value: 'doctor',              label: 'Doctor',               icon: '🩺' },
+  /*
+   * There is deliberately no "Doctor" option.
+   *
+   * An examining doctor is an employee of this company who happens to practise
+   * medicine — not an outside identity like a Purchase Vendor, which has its own
+   * table and its own password. They are an ordinary User, hired like anybody
+   * else, so they sign in under Staff / Employee with their own credentials.
+   *
+   * Nothing is lost by removing the option, because the option never decided
+   * anything: the landing page is chosen from the role the SERVER returns
+   * (see roleHome(result.role) below), so a doctor still lands on the doctor
+   * portal. All the entry did was ask a doctor to know they were a special case
+   * before they could type their password — and get it wrong, because "Doctor"
+   * and "Staff" both read as true.
+   *
+   * AuthService::findUserForLogin admits a doctor under `staff` for this
+   * reason; role=doctor is still accepted by the API so old deep links and
+   * saved bookmarks keep working.
+   */
   { value: 'purchase_vendor',     label: 'Purchase Vendor',      icon: '📦', purchaseVendor: true },
   { value: 'third_party_vendor',  label: 'Third-Party Vendor',   icon: '🤝' },
   /*

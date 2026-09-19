@@ -62,7 +62,8 @@ const KNOWN_MODULES = new Set(Object.keys(MODULE_LABELS));
  *   entityType: string|null, entityId: string|null,
  *   moduleLabel: string|null, sectionLabel: string|null, screenLabel: string|null,
  *   entityLabel: string|null, matchedPattern: string|null,
- *   confidence: 'high'|'medium'|'low', source: 'route'|'module-prefix'|'none'
+ *   confidence: 'high'|'medium'|'low',
+ *   source: 'route'|'route-prefix'|'module-prefix'|'none'
  * }}
  */
 export function resolveRouteContext(pathname) {
@@ -95,6 +96,59 @@ export function resolveRouteContext(pathname) {
       matchedPattern: entry.pattern,
       confidence,
       source: 'route',
+    };
+  }
+
+  /*
+   * Second pass: the deepest mapped route this path sits UNDER.
+   *
+   * The exact matcher above demands the same number of segments, so a workspace
+   * that puts its tabs on the URL — '/app/purchase/vendors/1/customer' against a
+   * mapped '/app/purchase/vendors/:id' — matched nothing and fell all the way to
+   * the module-only fallback. Report Issue then showed a module and no section,
+   * screen or record, which is exactly what SIR-000011 describes.
+   *
+   * Listing every tab by hand would fix those tabs and none of the next ones, so
+   * the parent is inherited instead: its module, section and record still hold on
+   * a child path (it IS that vendor), and the leftover segments name the screen.
+   * Confidence is 'medium', never 'high' — the screen key is derived, not mapped,
+   * so the reporter is still offered the correction box.
+   */
+  for (const entry of COMPILED) {
+    // '/app' itself is mapped (the dashboard), and every in-app path sits under
+    // it — inheriting from it would label all of them "Dashboard / Home". A
+    // parent has to name a module at least, so one segment is never enough.
+    if (entry.wildcard || entry.segs.length < 2) continue;
+    if (parts.length <= entry.segs.length) continue;
+    const params = matchEntry(entry, parts.slice(0, entry.segs.length));
+    if (!params) continue;
+
+    const tail = parts.slice(entry.segs.length);
+    // A trailing id ('/documents/57') names a record inside the tab, not a screen.
+    const words = tail.filter((t) => !/^\d+$/.test(t));
+    const screen = words.length
+      ? `${entry.section || entry.module || ''}-${words.join('-')}`.replace(/^-/, '')
+      : entry.screen ?? null;
+
+    const entityId = entry.entityType
+      ? (params[entry.entityParam || 'id'] ?? null)
+      : null;
+
+    return {
+      module: entry.module ?? null,
+      section: entry.section ?? null,
+      screen,
+      entityType: entry.entityType ?? null,
+      entityId: entityId != null ? String(entityId) : null,
+      moduleLabel: MODULE_LABELS[entry.module] ?? titleize(entry.module),
+      sectionLabel: entry.sectionLabel ?? titleize(entry.section),
+      screenLabel: titleize(words.join('-')) || entry.screenLabel || titleize(entry.screen),
+      entityLabel: entry.entityType && entityId
+        ? `${titleize(entry.entityType)} #${entityId}`
+        : null,
+      matchedPattern: `${entry.pattern}/*`,
+      confidence: 'medium',
+      source: 'route-prefix',
     };
   }
 

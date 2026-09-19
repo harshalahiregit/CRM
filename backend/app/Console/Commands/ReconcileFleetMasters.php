@@ -17,12 +17,25 @@ use Illuminate\Support\Facades\Schema;
  *
  * So this exists to answer one question: after the migration, is there anything
  * left in the old tables that a human needs to look at? It reads, counts and
- * prints. It writes nothing — resolving an ambiguity is a decision, and this
- * command's whole purpose is to put that decision in front of somebody.
+ * prints.
+ *
+ * ── TWO DIFFERENT THINGS USED TO PRINT THE SAME SENTENCE ──────────────────
+ * Every unmigrated row was reported as "AMBIGUOUS, matches N Fleet vehicles",
+ * followed by "resolve by correcting the duplicate plates". With N = 1 there is
+ * no duplicate to correct, and the reader goes looking for something that is
+ * not there. Person 1 hit exactly that.
+ *
+ * One match is not an ambiguity, it is a BROKEN LINK: the truck is in Fleet,
+ * the plate agrees, and only `legacy_transport_vehicle_id` is wrong — which is
+ * what a reseed of the legacy table does. That case is repairable without a
+ * judgement call, so `--relink` repairs it and nothing else. Anything that
+ * needs a person is still only reported.
  */
 class ReconcileFleetMasters extends Command
 {
-    protected $signature = 'stos:reconcile-fleet {--company= : limit to one company}';
+    protected $signature = 'stos:reconcile-fleet
+                            {--relink : repair links where exactly one Fleet vehicle carries the plate}
+                            {--company= : limit to one company}';
 
     protected $description = 'Report which legacy transport vehicles and drivers are still unmigrated, and why';
 
@@ -55,12 +68,10 @@ class ReconcileFleetMasters extends Command
             return;
         }
 
-        $moved = $pending = [];
+        $moved = $repairable = $ambiguous = $missing = [];
 
         foreach ($legacy as $row) {
-            $already = DB::table('vehicles')->where('legacy_transport_vehicle_id', $row->id)->exists();
-
-            if ($already) {
+            if (DB::table('vehicles')->where('legacy_transport_vehicle_id', $row->id)->exists()) {
                 $moved[] = $row;
 
                 continue;
@@ -73,48 +84,111 @@ class ReconcileFleetMasters extends Command
             $candidates = DB::table('vehicles')
                 ->where('company_id', $row->tenant_id)
                 ->whereNull('deleted_at')
-                ->get(['id', 'registration_number'])
+                ->get(['id', 'registration_number', 'legacy_transport_vehicle_id'])
                 ->filter(fn ($v) => $this->normalise($v->registration_number) === $plate)
                 ->values();
 
-            $pending[] = [
-                'legacy_id'  => $row->id,
-                'plate'      => $row->registration_number,
-                'candidates' => $candidates,
-            ];
+            $entry = ['legacy_id' => $row->id, 'plate' => $row->registration_number, 'candidates' => $candidates];
+
+            match (true) {
+                $candidates->count() === 0 => $missing[] = $entry,
+                $candidates->count() === 1 => $repairable[] = $entry,
+                default => $ambiguous[] = $entry,
+            };
         }
 
-        $this->line("Vehicles: {$legacy->count()} legacy rows — ".count($moved).' migrated, '.count($pending).' outstanding.');
+        $outstanding = count($repairable) + count($ambiguous) + count($missing);
 
-        if ($pending === []) {
+        $this->line("Vehicles: {$legacy->count()} legacy rows — ".count($moved).' migrated, '.$outstanding.' outstanding.');
+
+        if ($outstanding === 0) {
             $this->info('  Nothing needs a person. The legacy table can be retired on schedule.');
 
             return;
         }
 
         $this->newLine();
-        $this->warn('  These were NOT migrated. Each needs a decision:');
 
-        foreach ($pending as $row) {
-            $count = $row['candidates']->count();
+        foreach ($missing as $row) {
+            // Should not happen: the migration inserts these. Worth saying
+            // loudly rather than reporting a tidy zero.
+            $this->warn("  · #{$row['legacy_id']} {$row['plate']} — no Fleet vehicle carries this plate and none was inserted. Re-run the migration.");
+        }
 
-            if ($count === 0) {
-                // Should not happen: the migration inserts these. Worth saying
-                // loudly rather than reporting a tidy zero.
-                $this->line("  · #{$row['legacy_id']} {$row['plate']} — no Fleet match and not inserted. Re-run the migration.");
+        foreach ($ambiguous as $row) {
+            $plates = $row['candidates']->pluck('registration_number')->implode(', ');
+            $ids = $row['candidates']->pluck('id')->implode(', ');
+
+            $this->warn("  · #{$row['legacy_id']} {$row['plate']} — AMBIGUOUS, {$row['candidates']->count()} Fleet vehicles carry this plate (ids {$ids}: {$plates}).");
+            $this->line('      Needs a person: correct the duplicate plates in Fleet, then re-run the migration.');
+            $this->line("      Do not guess — a wrong match attaches one truck's fuel and job history to another.");
+        }
+
+        if ($repairable !== []) {
+            $this->reportRepairable($repairable);
+        }
+    }
+
+    /**
+     * Exactly one Fleet vehicle carries the plate — so the link is knowable.
+     *
+     * The only reason it is not already set is that something overwrote the
+     * legacy side: a reseed gives the same truck a new `transport_vehicles` id
+     * and the stored link keeps pointing at the row that used to be there.
+     *
+     * Repairing it is still refused when the Fleet vehicle is already linked to
+     * a legacy row that STILL EXISTS. That is two live legacy rows competing
+     * for one Fleet vehicle, which is a decision, not a repair.
+     */
+    private function reportRepairable(array $repairable): void
+    {
+        $relink = (bool) $this->option('relink');
+
+        $this->line('  These are not ambiguous — exactly one Fleet vehicle carries the plate, and only the');
+        $this->line('  stored link is wrong. That is what a reseed of the legacy table leaves behind.');
+        $this->newLine();
+
+        $repaired = 0;
+
+        foreach ($repairable as $row) {
+            $fleet = $row['candidates']->first();
+            $held = $fleet->legacy_transport_vehicle_id;
+
+            $contested = $held
+                && (int) $held !== (int) $row['legacy_id']
+                && DB::table('transport_vehicles')->where('id', $held)->exists();
+
+            if ($contested) {
+                $this->warn("  · #{$row['legacy_id']} {$row['plate']} — Fleet #{$fleet->id} is already linked to live legacy #{$held}.");
+                $this->line('      Needs a person: two legacy rows claim one Fleet vehicle.');
 
                 continue;
             }
 
-            $plates = $row['candidates']->pluck('registration_number')->implode(', ');
-            $ids = $row['candidates']->pluck('id')->implode(', ');
+            if (! $relink) {
+                $this->line("  · #{$row['legacy_id']} {$row['plate']} — Fleet #{$fleet->id}"
+                    .($held ? " (link points at #{$held}, which is gone)" : ' (no link stored)').'. Repairable.');
 
-            $this->line("  · #{$row['legacy_id']} {$row['plate']} — AMBIGUOUS, matches {$count} Fleet vehicles (ids {$ids}: {$plates}).");
+                continue;
+            }
+
+            DB::table('vehicles')->where('id', $fleet->id)
+                ->update(['legacy_transport_vehicle_id' => $row['legacy_id']]);
+
+            $repaired++;
+            $this->info("  · #{$row['legacy_id']} {$row['plate']} — relinked to Fleet #{$fleet->id}.");
         }
 
         $this->newLine();
-        $this->line('  Resolve by correcting the duplicate plates in Fleet, then re-running the migration.');
-        $this->line('  Do not guess: a wrong match attaches one truck\'s fuel and job history to another.');
+
+        if ($relink) {
+            $this->info("  Repaired {$repaired} link".($repaired === 1 ? '' : 's').'.');
+
+            return;
+        }
+
+        $this->line('  Re-run with --relink to repair them. It only writes `legacy_transport_vehicle_id`,');
+        $this->line('  and only where one plate matches one vehicle — nothing else is touched.');
     }
 
     private function reconcileDrivers(?string $company): void

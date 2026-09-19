@@ -32,6 +32,7 @@ class PortalHsseTest extends TestCase
     private function portalVendor(string $name = 'Acme'): Vendor
     {
         $vendor = Vendor::create(['tenant_id' => self::TENANT, 'company_name' => $name, 'status' => VendorStatus::ACTIVE, 'email' => strtolower($name).'@test.local']);
+        $this->markOnboarded($vendor);
         $user = User::create([
             'tenant_id' => self::TENANT, 'name' => $name.' Portal', 'role' => 'third_party_vendor',
             'email' => strtolower($name).'@test.local', 'password' => bcrypt('secret'), 'status' => 'active',

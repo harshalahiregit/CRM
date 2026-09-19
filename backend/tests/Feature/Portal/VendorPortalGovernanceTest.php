@@ -44,6 +44,7 @@ class VendorPortalGovernanceTest extends TestCase
             'email' => strtolower($name).'-'.Str::random(6).'@vendor.local',
             'status' => VendorStatus::ACTIVE, 'user_id' => $user->id,
         ]);
+        $this->markOnboarded($vendor);
 
         return [$user, $vendor];
     }

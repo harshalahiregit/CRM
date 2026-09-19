@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Tpv\IssueWorkerPpeRequest;
 use App\Http\Requests\Tpv\SaveWorkerInductionRequest;
 use App\Http\Requests\Tpv\SaveWorkerMedicalRequest;
+use App\Support\Medical\DoctorOptions;
 use App\Http\Requests\Tpv\StoreTpvWorkerRequest;
 use App\Http\Requests\Tpv\UpdateTpvWorkerRequest;
 use App\Models\Tpv\TpvWorker;
@@ -98,6 +99,11 @@ class TpvWorkerController extends Controller
         // §16 legal capture — the IP is stamped server-side (never trusted from the
         // client); geolocation + photo arrive in the validated body.
         $data = [...$request->validated(), 'system_ip' => $request->ip()];
+
+        // A picked in-house doctor becomes the record's doctor identity, copied
+        // from the directory rather than retyped. Nothing picked leaves the
+        // free-text examiner name exactly as it was.
+        $data = DoctorOptions::applyTo($data, (int) $request->user()->tenant_id, 'tpv');
 
         return response()->json($this->workerService->saveMedical($worker, $data, $request->user()));
     }

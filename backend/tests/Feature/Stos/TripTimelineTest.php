@@ -21,6 +21,17 @@ use Tests\TestCase;
  * These cover Fleet's half, and the judgement that makes it usable: the
  * timeline is the story, not the trail. Every ping is still kept in
  * `telemetry_records`; only changes reach the timeline.
+ *
+ * ── WHAT THE SETUP HAD WRONG, AND WHY IT MATTERED ─────────────────────────
+ * These tests used to point the demonstration trip at the Fleet vehicle's own
+ * id with no `transport_vehicles` row behind it. That is not what the live data
+ * looks like — before the repoint, `transport_trips.vehicle_id` holds a LEGACY
+ * id — and it is the exact arrangement the second half of D-116 was about. So
+ * eight of them passed by asking the Fleet table whether a Fleet id was that
+ * Fleet vehicle, which it always is.
+ *
+ * The setup now builds the world as it actually is: a legacy row per truck, in
+ * an id range deliberately clear of Fleet's, and the trip pointing at it.
  */
 class TripTimelineTest extends TestCase
 {
@@ -29,8 +40,17 @@ class TripTimelineTest extends TestCase
     private const COMPANY = 1;
     private const TOKEN = 'test-device-token';
     private const DEVICE = 'DEV-TL-0001';
+    private const PLATE = 'MH12TL0001';
+
+    /**
+     * Legacy ids start here so that nothing in these tests can pass because
+     * two independent sequences happened to issue the same number. The one
+     * test that NEEDS them to collide arranges it explicitly.
+     */
+    private const LEGACY_BASE = 900;
 
     private Vehicle $vehicle;
+    private int $legacyId;
     private int $tripId;
 
     protected function setUp(): void
@@ -49,12 +69,33 @@ class TripTimelineTest extends TestCase
         ])->save();
 
         $this->vehicle = Vehicle::create([
-            'company_id' => self::COMPANY, 'registration_number' => 'MH12TL0001',
+            'company_id' => self::COMPANY, 'registration_number' => self::PLATE,
             'vehicle_type' => 'reefer', 'gps_device_id' => self::DEVICE,
             'status' => Vehicle::STATUS_IN_TRANSIT,
         ]);
 
-        $this->tripId = $this->trip('in_transit', $this->vehicle->id);
+        // Before the repoint the trip references the truck's legacy id, and the
+        // Fleet row records which one that was.
+        $this->legacyId = $this->legacyVehicle(self::PLATE, self::LEGACY_BASE);
+        $this->vehicle->forceFill(['legacy_transport_vehicle_id' => $this->legacyId])->save();
+
+        $this->tripId = $this->trip('in_transit', $this->legacyId);
+
+        $this->assertNotSame($this->legacyId, $this->vehicle->id,
+            'the two id spaces must not overlap, or these tests prove nothing');
+    }
+
+    private function legacyVehicle(string $plate, int $id): int
+    {
+        DB::table('transport_vehicles')->insert([
+            'id' => $id, 'tenant_id' => self::COMPANY,
+            'registration_number' => $plate,
+            'registration_normalized' => preg_replace('/[^A-Z0-9]/', '', strtoupper($plate)),
+            'vehicle_type' => 'REEFER', 'ownership_type' => 'OWNED', 'status' => 'AVAILABLE',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        return $id;
     }
 
     private function trip(string $status, ?int $vehicleId): int
@@ -73,6 +114,17 @@ class TripTimelineTest extends TestCase
             'trip_number' => 'TRP-'.Str::random(6), 'status' => $status,
             'vehicle_id' => $vehicleId,
             'created_at' => now(), 'updated_at' => now(),
+        ]);
+    }
+
+    /** What `stos:repoint-trip-fleet-refs --apply` writes down about a trip. */
+    private function repointVerdict(int $tripId, int $from, ?int $to): void
+    {
+        DB::table('fleet_reference_repoints')->insert([
+            'company_id' => self::COMPANY,
+            'table_name' => 'transport_trips', 'column_name' => 'vehicle_id',
+            'row_id' => $tripId, 'from_id' => $from, 'to_id' => $to,
+            'applied_at' => now(),
         ]);
     }
 
@@ -190,27 +242,41 @@ class TripTimelineTest extends TestCase
     /* ── D-116: the id alone cannot be interpreted ──────── */
 
     /*
-     * Person 1 found this and constructed the failure case rather than
-     * assuming which kind of bug it was. `transport_trips.vehicle_id` holds a
+     * Person 1 found this twice, and constructed the failure case both times
+     * rather than accepting the fix. `transport_trips.vehicle_id` holds a
      * `transport_vehicles` id today and a `vehicles` id after the repoint —
      * two independent id spaces, no foreign key, nothing saying which.
      *
-     * My first version compared a Fleet id straight against that column and I
-     * wrote the mismatch off as "finds nothing, which is correct". It was not
-     * correct, it was lucky: the ranges did not overlap. These are the cases
-     * that make it not luck.
+     * Round one: I compared a Fleet id straight against that column and wrote
+     * the mismatch off as "finds nothing, which is correct". It was not
+     * correct, it was lucky — the ranges did not overlap.
+     *
+     * Round two: I asked the plate to decide but resolved it in BOTH masters.
+     * With the legacy row absent, the only plate returned was Fleet's own, read
+     * with the trip's number — so the check compared a vehicle's plate against
+     * itself and could not fail.
+     *
+     * These are his three cases — same truck, wrong truck, dangling id — plus
+     * the id-space switch that comes after them.
      */
+
+    public function test_a_trip_on_the_same_truck_is_published_to(): void
+    {
+        // Case 1. The trip points at the legacy row for THIS truck. It should
+        // publish, and before the fix to the candidate search it did not: the
+        // stored link went stale and nothing was even considered.
+        $this->ping()->assertCreated();
+
+        $this->assertCount(1, $this->events('gps.activated'));
+    }
 
     public function test_a_trip_pointing_at_a_different_truck_is_not_published_to(): void
     {
-        // The collision: the trip's vehicle_id matches this vehicle's id as a
-        // NUMBER, but belongs to a different truck in the legacy master.
-        DB::table('transport_vehicles')->insert([
-            'id' => $this->vehicle->id, 'tenant_id' => self::COMPANY,
-            'registration_number' => 'MH99OTHER9', 'registration_normalized' => 'MH99OTHER9',
-            'vehicle_type' => 'TRUCK', 'ownership_type' => 'OWNED', 'status' => 'AVAILABLE',
-            'created_at' => now(), 'updated_at' => now(),
-        ]);
+        // Case 2. The trip's vehicle_id matches this vehicle's id as a NUMBER,
+        // but belongs to a different truck in the legacy master.
+        $this->legacyVehicle('MH99OTHER9', $this->vehicle->id);
+        DB::table('transport_trips')->where('id', $this->tripId)
+            ->update(['vehicle_id' => $this->vehicle->id]);
 
         $this->ping()->assertCreated();
 
@@ -220,42 +286,94 @@ class TripTimelineTest extends TestCase
         $this->assertSame(1, DB::table('telemetry_records')->count(), 'the reading is still kept');
     }
 
-    public function test_a_trip_still_pointing_at_the_legacy_id_is_published_to(): void
+    public function test_a_trip_on_a_dangling_id_that_equals_a_fleet_id_is_not_published_to(): void
     {
-        // Before the repoint: the trip references the vehicle's OLD id, and the
-        // Fleet row records which one that was.
-        $legacyId = DB::table('transport_vehicles')->insertGetId([
-            'tenant_id' => self::COMPANY,
-            'registration_number' => 'MH12TL0001', 'registration_normalized' => 'MH12TL0001',
-            'vehicle_type' => 'REEFER', 'ownership_type' => 'OWNED', 'status' => 'AVAILABLE',
-            'created_at' => now(), 'updated_at' => now(),
-        ]);
+        // Case 3, and the one that was still publishing. The trip points at a
+        // legacy row that a reseed removed, and that number happens to be a
+        // live Fleet id. There is no legacy row to read the plate from — which
+        // is UNKNOWN, and unknown must never resolve to a match.
+        DB::table('transport_trips')->where('id', $this->tripId)
+            ->update(['vehicle_id' => $this->vehicle->id]);
 
-        $this->vehicle->forceFill(['legacy_transport_vehicle_id' => $legacyId])->save();
-        DB::table('transport_trips')->where('id', $this->tripId)->update(['vehicle_id' => $legacyId]);
+        $this->assertFalse(
+            DB::table('transport_vehicles')->where('id', $this->vehicle->id)->exists(),
+            'the point of this case is that the legacy row is gone'
+        );
 
         $this->ping()->assertCreated();
 
-        // Same truck, older id space. The plate is what confirms it.
-        $this->assertCount(1, $this->events('gps.activated'));
+        $this->assertCount(0, $this->events());
+        $this->assertSame(1, DB::table('telemetry_records')->count());
     }
 
     public function test_the_plate_decides_even_when_spacing_differs(): void
     {
-        $legacyId = DB::table('transport_vehicles')->insertGetId([
-            'tenant_id' => self::COMPANY,
-            // Same truck, written the way a person types it.
-            'registration_number' => 'MH 12 TL 0001', 'registration_normalized' => 'MH12TL0001',
-            'vehicle_type' => 'REEFER', 'ownership_type' => 'OWNED', 'status' => 'AVAILABLE',
-            'created_at' => now(), 'updated_at' => now(),
-        ]);
-
-        $this->vehicle->forceFill(['legacy_transport_vehicle_id' => $legacyId])->save();
-        DB::table('transport_trips')->where('id', $this->tripId)->update(['vehicle_id' => $legacyId]);
+        DB::table('transport_vehicles')->where('id', $this->legacyId)
+            ->update(['registration_number' => 'MH 12 TL 0001']);
 
         $this->ping()->assertCreated();
 
         $this->assertCount(1, $this->events('gps.activated'));
+    }
+
+    public function test_a_stale_legacy_link_no_longer_hides_the_trip(): void
+    {
+        // The other half of what Person 1 found: `legacy_transport_vehicle_id`
+        // pointed at rows 29 and 30 while the live rows for the same trucks
+        // were 35 and 36. Nothing overlapped, so the RIGHT trip found no
+        // candidate and the reading was dropped — indistinguishable on screen
+        // from an idle truck. The plate now finds candidates too.
+        $this->vehicle->forceFill(['legacy_transport_vehicle_id' => 29])->save();
+
+        $this->assertFalse(DB::table('transport_vehicles')->where('id', 29)->exists());
+
+        $this->ping()->assertCreated();
+
+        $this->assertCount(1, $this->events('gps.activated'));
+    }
+
+    /* ── After the switch, the repoint's own record decides ─────── */
+
+    public function test_a_repointed_trip_is_published_to_on_its_fleet_id(): void
+    {
+        DB::table('transport_trips')->where('id', $this->tripId)
+            ->update(['vehicle_id' => $this->vehicle->id]);
+        $this->repointVerdict($this->tripId, $this->legacyId, $this->vehicle->id);
+
+        $this->ping()->assertCreated();
+
+        $this->assertCount(1, $this->events('gps.activated'));
+    }
+
+    public function test_a_trip_the_repoint_could_not_map_is_never_published_to(): void
+    {
+        // The repoint found nothing to map this trip to, left it alone and said
+        // so. That verdict is permanent: the number is still in the old space
+        // and it happens to equal a live Fleet id.
+        $stranded = $this->trip('in_transit', $this->vehicle->id);
+        $this->repointVerdict($stranded, $this->vehicle->id, null);
+
+        // Another trip in the same company HAS been repointed, so the switch
+        // has happened — which is what makes the stranded one dangerous.
+        $this->repointVerdict($this->tripId, $this->legacyId, 4242);
+
+        $this->ping()->assertCreated();
+
+        $this->assertSame(0, DB::table('trip_events')->where('trip_id', $stranded)->count());
+    }
+
+    public function test_a_trip_raised_after_the_switch_is_published_to(): void
+    {
+        // No verdict of its own — it did not exist when the repoint ran — but
+        // the company has switched, so its vehicle_id is a Fleet id.
+        $this->repointVerdict($this->tripId, $this->legacyId, 4242);
+
+        $fresh = $this->trip('in_transit', $this->vehicle->id);
+
+        $this->ping()->assertCreated();
+
+        $this->assertSame(1, DB::table('trip_events')
+            ->where('trip_id', $fresh)->where('event_type', 'gps.activated')->count());
     }
 
     /* ── A ping with no trip ────────────────────────────────────── */

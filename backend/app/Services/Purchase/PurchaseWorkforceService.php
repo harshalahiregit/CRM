@@ -12,6 +12,8 @@ use App\Models\Purchase\PurchaseWorkerTraining;
 use App\Models\User;
 use App\Repositories\Purchase\PurchaseWorkerRepository;
 use App\Support\Medical\MedicalWorkflow;
+use App\Support\Purchase\PurchaseOnboardingStatus;
+use App\Support\Purchase\PurchaseVendorStatus;
 use App\Support\Shared\WorkerImport;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
@@ -42,8 +44,61 @@ class PurchaseWorkforceService
         return $this->workers->findForVendor($id, $vendor->tenant_id, $vendor->id);
     }
 
+    /**
+     * A workforce belongs to a vendor that is going somewhere.
+     *
+     * Registration used to be allowed against a vendor in ANY state, with a
+     * warning banner explaining that the people being entered could not be
+     * badged. That reads as an invitation: workers were entered against vendors
+     * still in onboarding and then sat unusable, indistinguishable from workers
+     * blocked for some other reason (SIR-000014, "to avoid confusion").
+     *
+     * The test is the ONBOARDING, not the status column. Those disagree often —
+     * a vendor can sit Active while its onboarding is still In_Progress at step
+     * 1 — and a first pass at this checked the status, which let exactly the
+     * reported vendors through.
+     *
+     * The one exception is a workforce category (security, housekeeping,
+     * manpower — PurchaseVendorCategoryConfig::WORKFORCE_KEYWORDS), whose flow is
+     *
+     *     Company Profile -> Documents -> WORKFORCE -> Approvals -> Kickoff -> Activation
+     *
+     * There the workforce IS step 3 and approval is step 4, so demanding
+     * approval first would deadlock those vendors permanently: they could never
+     * finish the step that leads to the approval the step requires.
+     *
+     * The rule itself lives on PurchaseVendor::can_register_workers so the forms
+     * and this guard cannot disagree; see it for the full order of precedence.
+     *
+     * Enforced here rather than in the form because the admin screens and the
+     * vendor portal both reach this one method, and a disabled button is not a
+     * rule. The message names the remedy instead of only refusing.
+     */
+    private function assertVendorMayRegisterWorkers(PurchaseVendor $vendor): void
+    {
+        // One rule, one place. The model computes it for the forms to read; this
+        // is the same answer, enforced. Two copies would drift, and the copy that
+        // matters is this one.
+        if ($vendor->can_register_workers) {
+            return;
+        }
+
+        $onboarding = $vendor->onboarding()->first();
+
+        throw new BusinessException(sprintf(
+            'Workers cannot be registered for %s — its onboarding is %s, not approved. '
+            .'Complete and approve the vendor\'s onboarding first, then add its workforce.',
+            $vendor->company_name ?: 'this vendor',
+            $onboarding
+                ? PurchaseOnboardingStatus::label($onboarding->status)
+                : 'not started',
+        ));
+    }
+
     public function create(PurchaseVendor $vendor, array $data): PurchaseWorker
     {
+        $this->assertVendorMayRegisterWorkers($vendor);
+
         $worker = PurchaseWorker::create(array_merge($this->cleanWorker($data), [
             'tenant_id' => $vendor->tenant_id,
             'purchase_vendor_id' => $vendor->id,
@@ -75,6 +130,8 @@ class PurchaseWorkforceService
      */
     public function bulkUpload(mixed $file, PurchaseVendor $vendor): array
     {
+        $this->assertVendorMayRegisterWorkers($vendor);
+
         ['rows' => $rows, 'photos' => $photos, 'cleanup' => $cleanup] = WorkerImport::read($file);
 
         $inserted = 0;

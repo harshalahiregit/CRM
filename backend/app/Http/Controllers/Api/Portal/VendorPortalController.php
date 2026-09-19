@@ -7,6 +7,7 @@ use App\Http\Requests\Tpv\IssueWorkerPpeRequest;
 use App\Http\Requests\Tpv\SaveOnboardingProfileRequest;
 use App\Http\Requests\Tpv\SaveWorkerInductionRequest;
 use App\Http\Requests\Tpv\SaveWorkerMedicalRequest;
+use App\Support\Medical\DoctorOptions;
 use App\Http\Requests\Tpv\StoreTpvWorkerRequest;
 use App\Http\Requests\Tpv\SubmitOnboardingRequest;
 use App\Http\Requests\Tpv\UpdateTpvWorkerRequest;
@@ -487,7 +488,19 @@ class VendorPortalController extends Controller
             if (! $vendor) {
                 return response()->json(['status' => 'error', 'message' => 'Vendor profile not found'], 404);
             }
-            $vendor->loadMissing(['contacts', 'accountManager:id,name,email']);
+            $vendor->loadMissing(['contacts', 'accountManager:id,name,email', 'tpvOnboarding']);
+            /*
+             * The portal nav locks on this: until onboarding is Approved the
+             * vendor sees Dashboard + Onboarding and nothing else.
+             *
+             * Exposed as `onboarding` because PortalShell is shared with the
+             * Purchase portal and reads one key for both; the relation is named
+             * tpvOnboarding here because this Vendor can carry a Purchase
+             * onboarding too. Without it the client found nothing and fell back
+             * to the status column, so a vendor set Active mid-onboarding saw
+             * the entire portal open.
+             */
+            $vendor->setAttribute('onboarding', $vendor->tpvOnboarding);
             // Drives the one-time post-activation welcome banner. Persisted
             // server-side, so dismissing it on one device dismisses it everywhere.
             $vendor->setAttribute('show_welcome_banner', $vendor->shouldShowWelcomeBanner());
@@ -1121,7 +1134,11 @@ class VendorPortalController extends Controller
     {
         $this->assertWorkerOwned($request, $worker);
 
-        return response()->json($this->workerService->saveMedical($worker, $request->validated(), $request->user()));
+        // Same resolution as the admin side: a vendor may name one of OUR
+        // doctors, and the licence recorded is the one we hold for them.
+        $data = DoctorOptions::applyTo($request->validated(), (int) $request->user()->tenant_id, 'tpv');
+
+        return response()->json($this->workerService->saveMedical($worker, $data, $request->user()));
     }
 
     public function saveInduction(SaveWorkerInductionRequest $request, TpvWorker $worker)

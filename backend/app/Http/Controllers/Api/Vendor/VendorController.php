@@ -575,6 +575,42 @@ class VendorController extends Controller
     }
 
     /**
+     * Correct a customer already linked to this vendor.
+     *
+     * The tab could add a customer and then never touch it again, so a typo in a
+     * company name meant opening the Customer module to find the record
+     * (SIR-000012). Same fields the Add form collects -- no more -- and the
+     * client must ALREADY be linked to this vendor, so this is a correction
+     * route, not a way to reach into the Customer module at large.
+     */
+    public function updateCustomer(Request $request, Vendor $vendor, int $client)
+    {
+        $this->assertTenant($request, $vendor);
+
+        $data = $request->validate([
+            'company'    => 'required|string|max:191',
+            'phone'      => 'nullable|string|max:40',
+            'website'    => 'nullable|string|max:191',
+            'gst_number' => 'nullable|string|max:40',
+            'address'    => 'nullable|string|max:255',
+            'city'       => 'nullable|string|max:120',
+            'state'      => 'nullable|string|max:120',
+            'country'    => 'nullable|string|max:120',
+        ]);
+
+        $record = Client::query()
+            ->where('tenant_id', (int) $request->user()->tenant_id)
+            ->where('vendor_id', $vendor->id)
+            ->find($client);
+
+        abort_unless($record, 404, 'That customer is not linked to this vendor.');
+
+        $record->update($data);
+
+        return response()->json($record->fresh() ?? $record, 200);
+    }
+
+    /**
      * Search existing (registered) customers that can be linked to this vendor —
      * tenant-scoped clients not already tied to a vendor, matching q on company /
      * phone / GST. Lets the admin add an existing customer instead of re-creating.

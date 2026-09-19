@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
 import { portalApi } from '@/services/portalApi'
+import InternalDoctorSelect from '@/components/medical/InternalDoctorSelect'
 import { useAuth } from '@/context/AuthContext'
 import AuditTimeline from '@/components/ui/AuditTimeline'
 import {
@@ -701,6 +702,9 @@ function Step2Medical({ worker, editable, onSaved, onNext, api }) {
         exam_date: new Date().toISOString().slice(0, 10),
         examiner_name: (isExternal ? f.external_doctor_name : f.doctor_name) || null,
         clinic_name: f.organization_name || null,
+        // Only meaningful for an internal exam: an external doctor is by
+        // definition not one of ours.
+        doctor_user_id: isExternal ? null : (f.doctor_user_id || null),
         height_cm: f.height ? Number(f.height) : null,
         weight_kg: f.weight ? Number(f.weight) : null,
         bp_systolic: Number.isFinite(sys) ? sys : null,
@@ -815,6 +819,24 @@ function Step2Medical({ worker, editable, onSaved, onNext, api }) {
           {/* Doctor Details */}
           <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-h)', marginBottom: 12, borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>👨‍⚕️ Doctor Details</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 20 }}>
+            {/* Pick one of our own doctors and the three boxes below fill
+                themselves; leave it alone and they behave exactly as they always
+                did. The id is what lets the server copy the licence from the
+                directory — see InternalDoctorSelect. */}
+            <div style={{ gridColumn: '1 / -1' }}>
+              <InternalDoctorSelect
+                module="tpv" portal={isPortal} value={f.doctor_user_id}
+                onPick={d => setF(p => ({
+                  ...p,
+                  doctor_user_id: d?.user_id ?? null,
+                  // Auto-filled, and still editable: the picker is a shortcut,
+                  // not a lock. Clearing the choice leaves what was typed.
+                  doctor_name: d ? (d.name || '') : p.doctor_name,
+                  organization_name: d?.clinic_name || p.organization_name,
+                  doctor_registration: d?.license_no || p.doctor_registration,
+                }))}
+              />
+            </div>
             <Field label="Doctor Name *"><TextInput value={f.doctor_name} onChange={set('doctor_name')} placeholder="Dr. Full Name" /></Field>
             <Field label="Hospital / Organisation *"><TextInput value={f.organization_name} onChange={set('organization_name')} placeholder="Hospital or Clinic" /></Field>
             <Field label="Registration No *"><TextInput value={f.doctor_registration} onChange={set('doctor_registration')} placeholder="Medical Reg. Number" /></Field>

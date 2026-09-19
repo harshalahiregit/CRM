@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\Medical\DoctorGeneralController;
+use App\Http\Controllers\Api\Medical\DoctorOptionsController;
 use App\Http\Controllers\Api\Medical\DoctorPortalController;
 use App\Http\Controllers\Api\Medical\GeneralMedicalAdminController;
 use App\Http\Controllers\Api\Medical\MedicalDoctorController;
@@ -26,6 +27,18 @@ use Illuminate\Support\Facades\Route;
 */
 
 /* ── Doctor portal — the Internal Medical Flow ───────────────────────────── */
+
+/* ── Internal-doctor picker ─────────────────────────
+ |
+ | Any signed-in User may read this: a staff member filling in a worker's
+ | medical has to be able to name the doctor who examined them. It is NOT the
+ | admin directory (that stays role:admin) — this returns a name, a licence
+ | and a clinic, and nothing else about the person.
+ */
+
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::get('/medical/doctor-options', [DoctorOptionsController::class, 'index']);
+});
 
 Route::middleware(['auth:sanctum', 'role:doctor'])->prefix('doctor')->group(function () {
     Route::get('/me',        [DoctorPortalController::class, 'me']);

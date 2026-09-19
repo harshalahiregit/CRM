@@ -96,8 +96,13 @@ class ContractReachesThePartyTest extends TestCase
 
     public function test_a_vendor_cannot_see_another_vendors_contract(): void
     {
-        [$loginA] = $this->tpvVendor();
+        // Both are working vendors. This test is about one not reaching the
+        // other's contract, so the caller has to get past the onboarding gate
+        // first — otherwise it refuses for the wrong reason and proves nothing
+        // about isolation.
+        [$loginA, $vendorA] = $this->tpvVendor();
         [, $vendorB] = $this->tpvVendor();
+        $this->markOnboarded($vendorA);
         $b = $this->contractFor(Vendor::class, $vendorB->id, 'BetaCo');
 
         Sanctum::actingAs($loginA);
@@ -113,7 +118,10 @@ class ContractReachesThePartyTest extends TestCase
 
     public function test_a_draft_is_not_shown_to_the_other_side(): void
     {
+        // A working vendor, so what hides the draft is the draft being a draft
+        // and not the onboarding gate refusing the call before it gets there.
         [$login, $vendor] = $this->tpvVendor();
+        $this->markOnboarded($vendor);
         $draft = $this->contractFor(Vendor::class, $vendor->id, 'AlphaCo');
         $draft->update(['status' => 'draft']);
 
