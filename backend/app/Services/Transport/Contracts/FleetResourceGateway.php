@@ -63,4 +63,48 @@ interface FleetResourceGateway
         int $tenantId,
         ?User $actor = null,
     ): bool;
+
+    /**
+     * STT-006 — the truck actually left.
+     *
+     * Added 2026-09-19 at Person 1's request: his "Record departure" action
+     * exists and had no way through this seam. Called on the SAME event, so one
+     * departure record moves both the trip and the vehicle — not a second
+     * mechanism that can disagree with the first.
+     *
+     * Dispatch is not departure. `markDispatched()` above leaves the vehicle
+     * ALLOCATED: committed to this trip, unable to take another, still in the
+     * yard. That gap is the only window in which a planner can swap a truck at
+     * no cost, and collapsing the two states closes it.
+     *
+     * Same four clauses as the rest of this interface: idempotent, never
+     * throws, never forces a transition, honest about whether it applied.
+     *
+     * @param  int|null  $vehicleId  null when no vehicle is assigned
+     * @return bool  true when Fleet applied it. False when it could not — a
+     *               vehicle that was never ALLOCATED has not departed, it is on
+     *               a different trip from the one being recorded.
+     */
+    public function markDeparted(
+        TransportTrip $trip,
+        ?int $vehicleId,
+        int $tenantId,
+        ?User $actor = null,
+    ): bool;
+
+    /**
+     * The trip is over — give the vehicle and driver back.
+     *
+     * Added 2026-09-19. Without it every dispatched vehicle stays committed
+     * forever and the fleet reports no availability at all, so this is not
+     * optional bookkeeping.
+     *
+     * Works from either on-trip state: a trip can end before it left
+     * (cancelled) or after (completed), and both must release.
+     */
+    public function markReleased(
+        ?int $vehicleId,
+        ?int $driverId,
+        int $tenantId,
+    ): bool;
 }
