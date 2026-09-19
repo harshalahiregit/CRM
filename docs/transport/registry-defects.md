@@ -3671,6 +3671,58 @@ instead of reading the code** — and the second time, doing it to a fix rather 
 
 ---
 
+### VERIFIED BY P1, 2026-09-19 — the code half is closed. The DATA half is not, yet.
+
+Re-ran the collision experiment rather than accepting the closure, because the first D-116 fix was
+also reported closed and was not. **Five cases this time, three before the switch and two after.**
+
+| Trip's `vehicle_id` points at | Want | Got |
+|---|---|---|
+| The same truck (`transport_vehicles#35`) | publish | **publish** ✅ |
+| A different truck (`#36`) | block | **block** ✅ |
+| A dangling id that equals a live Fleet id (`1`) | block | **block** ✅ |
+| *(post-switch)* correctly repointed `35 → 1`, ledger `to_id = 1` | publish | **publish** ✅ |
+| *(post-switch)* unmappable row left in the old space, ledger `to_id = NULL` | block | **block** ✅ |
+
+The last row is the one that matters most, and it is the scenario the repoint was held for. It
+behaves correctly. `legacyPlateFor()` resolves in one table and treats a missing row as unknown —
+P1's suggestion taken as written — and `fleet_reference_repoints` is **read** by the publisher, not
+merely written by the command, which was the first thing checked after D-115.
+
+**The misleading dry run is fixed too.** It no longer says "0 rows" and stops; it now reports
+*"0 to move, 5 pointing at ids that no longer map"* and names the likely cause. That was the
+second half of the original finding.
+
+### What is still open: the mapping itself is stale, and a repoint today still moves nothing
+
+`stos:reconcile-fleet` now diagnoses it precisely instead of advising a fix for a problem that did
+not exist:
+
+```
+· #35 MH 12 DEMO 01 — Fleet #1 (link points at #29, which is gone). Repairable.
+· #36 MH 14 DEMO 02 — Fleet #2 (link points at #30, which is gone). Repairable.
+```
+
+A `--relink` flag now exists to repair it. **It has not been run** — it is a write, and it is not
+in the sequence agreed with the owner. Simulated in a rolled-back transaction, this is exactly what
+it would unlock:
+
+| | After `--relink` |
+|---|---|
+| Mapping | `{35 → 1, 36 → 2}` |
+| `transport_trips.vehicle_id` | **2 would move**, 3 still unmappable |
+| `trip_assignments.vehicle_id` | **3 would move**, 0 unmappable |
+
+Those 3 permanently unmappable trip references are the dangling `10` and `17` on trips 2, 12 and
+14 — the reseed's leftovers, and the same rows that made the original defect dangerous. They are
+handled by design: the ledger records `to_id = NULL` and the publisher refuses to match them,
+which is the fifth row of the table above.
+
+**So: the code is closed and proven; the data is one command away.** A repoint run before that
+command would still move nothing, which is why this is being reported rather than pushed through.
+
+---
+
 ## D-117 — CTD names eleven search keys in §4 and nine in §97, and two of them have nowhere to look
 
 **Raised:** 2026-09-19, reading §4 and §5 before proposing the search entry point. **Ours to ask,
