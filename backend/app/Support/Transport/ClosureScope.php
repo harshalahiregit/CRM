@@ -86,10 +86,23 @@ final class ClosureScope
 
     /* ── D-106 ───────────────────────────────────────────────────────── */
 
-    /** Stated as data so a test can assert we never quietly claim otherwise. */
-    public const REACHABLE = false;
+    /**
+     * Stated as data so a test can assert we never quietly claim otherwise.
+     *
+     * FLIPPED 2026-09-19 by P3. `POST /trips/{id}/bill/invoiced` now calls
+     * TripBill::markInvoiced() through TripBillingService, so STT-010 has a
+     * caller and a route. The full chain is reachable end to end:
+     *
+     *   delivered → pod_verified → billable → billed → collection_pending → closed
+     *
+     * D-106 is closed. Closure moves from PLUMBED to BUILT, and the test that
+     * scanned app/ and routes/ for a caller now asserts one EXISTS — it goes red
+     * if the route is ever removed, which is the same guard pointing the other
+     * way.
+     */
+    public const REACHABLE = true;
 
-    public const UNREACHABLE_BECAUSE = 'STT-010 (billable → billed) runs through TripBill::markInvoiced(), which has no caller and no route. Nothing can reach collection_pending. P3\'s surface — D-106.';
+    public const UNREACHABLE_BECAUSE = null;
 
     /* ── The closure controls ────────────────────────────────────────── */
 

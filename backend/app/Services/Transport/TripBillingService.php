@@ -56,8 +56,10 @@ use Illuminate\Support\Facades\Log;
  */
 class TripBillingService
 {
-    public function __construct(private TripDocumentService $documents)
-    {
+    public function __construct(
+        private TripDocumentService $documents,
+        private TripEventRecorder $events,
+    ) {
     }
 
     /* ── Reading ──────────────────────────────────────────────────────── */
@@ -192,9 +194,100 @@ class TripBillingService
 
         BillingPrepared::dispatch($bill);
 
+        // CTD §31 "17:15 Billing Ready" — the last line of the worked example
+        // before the Passport goes quiet. Carries the basis, so the timeline
+        // shows WHICH arm let it through: a verified POD, or a waiver.
+        $this->events->record(
+            type: 'billing.ready',
+            trip: $trip,
+            actor: $actor,
+            detail: ['amount' => $amount, 'currency' => $bill->currency, 'basis' => $bill->basis],
+        );
+
         Log::channel('transport')->info('Trip billing prepared', [
             'bill_id' => $bill->id, 'trip_id' => $trip->id, 'amount' => $amount,
             'basis' => $bill->basis, 'tenant_id' => $tenantId, 'user_id' => $actor?->id,
+        ]);
+
+        return $bill->fresh();
+    }
+
+    /**
+     * Accounts has raised the invoice — STT-010, `billable → billed`.
+     *
+     * ── WHY THIS EXISTS, AND WHY IT SHOULD HAVE ON THE 17th ─────────────
+     * `TripBill::markInvoiced()` was written as "the one door Accounts calls"
+     * and then given no route, so nothing in the system could open it. The
+     * consequence ran three states deep and was not visible from here:
+     * `billable → billed` never fired, so `collection_pending` was unreachable,
+     * so STT-012 could never close a trip. P1 built closure on top of a step
+     * that had no caller. Recorded as D-106.
+     *
+     * The lesson, which is now in TEAM-CONTRACTS: a handover is not complete
+     * when the method exists. It is complete when the other side can reach it.
+     *
+     * ── STILL NOT AN INVOICE ────────────────────────────────────────────
+     * This records that Accounts raised one and moves the trip's state. It
+     * writes no ledger entry and creates no invoice — FORBID-002, LOCK-004.
+     * EVT-010 `InvoicePosted` is theirs to emit, before or after calling this.
+     *
+     * Idempotent, because a posting webhook retries: the same invoice id twice
+     * returns the existing row untouched. A DIFFERENT id against an already
+     * invoiced bill is refused — a trip is invoiced once, and silently
+     * repointing it would orphan the first invoice with nothing recording that
+     * it happened.
+     */
+    public function markInvoiced(
+        TransportTrip $trip,
+        int $invoiceId,
+        int $tenantId,
+        ?User $actor = null,
+    ): TripBill {
+        if ((int) $trip->tenant_id !== $tenantId) {
+            throw new ResourceNotFoundException('Trip');
+        }
+
+        $bill = $this->forTrip($trip->id, $tenantId);
+
+        if (! $bill) {
+            throw new BusinessException(
+                'Billing has not been prepared for this trip yet, so there is nothing to invoice.'
+            );
+        }
+
+        if ($bill->isInvoiced()) {
+            if ((int) $bill->invoice_id === $invoiceId) {
+                return $bill;                       // the retry case
+            }
+
+            throw new BusinessException(
+                'This trip is already linked to invoice '.$bill->invoice_id
+                .'. A trip is invoiced once.'
+            );
+        }
+
+        $bill->markInvoiced($invoiceId, $actor?->id);
+
+        $bill->audit('transport.billing.invoiced', $actor, new: [
+            'trip_id' => $trip->id, 'invoice_id' => $invoiceId,
+        ]);
+
+        // MS-001 §14 step 12, "Show invoice linkage". This is the line that
+        // makes it visible: the invoice id on the Passport's own timeline,
+        // rather than something a viewer has to go and look up elsewhere.
+        //
+        // `source: ACCOUNTING` in the registry, because the act is theirs even
+        // though we are the ones writing it down.
+        $this->events->record(
+            type: 'invoice.posted',
+            trip: $trip,
+            actor: $actor,
+            detail: ['invoice_id' => $invoiceId, 'bill_id' => $bill->id],
+        );
+
+        Log::channel('transport')->info('Trip marked invoiced', [
+            'bill_id' => $bill->id, 'trip_id' => $trip->id, 'invoice_id' => $invoiceId,
+            'tenant_id' => $tenantId, 'user_id' => $actor?->id,
         ]);
 
         return $bill->fresh();

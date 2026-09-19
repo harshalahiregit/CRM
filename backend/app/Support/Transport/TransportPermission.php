@@ -140,6 +140,20 @@ final class TransportPermission
      */
     public const BILLING_PREPARE = 'transport.billing.prepare';
 
+    /* ── Recording that Accounts raised the invoice (STT-010) — D-106 ─────
+     *
+     * CONSTRUCTED. No API row and no PERM row covers it: Step 11 gives the
+     * transition an actor ("Accounts") and no key to gate it with.
+     *
+     * Modelled on PERM-011 `Collection / record` rather than on BILLING_PREPARE,
+     * and the difference is the point. Preparing billing is Transport saying a
+     * trip is ready; this is recording that money has been invoiced against it,
+     * which is the nearest act the registry actually grants — and PERM-011
+     * pointedly EXCLUDES Operations. Whoever ran the trip does not get to
+     * declare it invoiced.
+     */
+    public const BILLING_INVOICED = 'transport.billing.invoiced';
+
     /* ── Collections (SNG-TRN-016) ───────────────────────────────────────
      *
      * COLLECTION_RECORD is SPECIFIED twice over, which is rare in this package:
@@ -363,6 +377,17 @@ final class TransportPermission
             self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
             self::ROLE_APPROVER   => self::SCOPE_ALL,
             self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        // CONSTRUCTED — D-106. PERM-011's set exactly: Owner, Accounts,
+        // Approver, Admin. NARROWER than BILLING_PREPARE above by one role, and
+        // that one role is the whole reason for a separate key: Operations may
+        // mark a trip ready to invoice and may not then declare that it WAS
+        // invoiced. Saying money moved is a finance act.
+        self::BILLING_INVOICED => [
+            self::ROLE_OWNER    => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS => self::SCOPE_ALL,
+            self::ROLE_APPROVER => self::SCOPE_ALL,
+            self::ROLE_ADMIN    => self::SCOPE_ALL,
         ],
         // PERM-011 — Collection record: Owner Y, Accounts Y, Approver Y,
         // Admin Y. Operations N, Dispatcher N, Driver N, Customer N,

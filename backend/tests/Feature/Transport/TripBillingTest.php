@@ -302,6 +302,85 @@ class TripBillingTest extends TestCase
         $this->assertTrue($bill->fresh()->isInvoiced());
     }
 
+    /* ── D-106: the service method the door was missing ───────────────── */
+
+    /**
+     * The route existed only as a model method until 2026-09-19.
+     *
+     * `markInvoiced()` shipped documented as "the one door Accounts calls" with
+     * no caller and no route, so `billable → billed` never fired, so
+     * `collection_pending` was unoccupiable, so no trip could ever close. Three
+     * states of consequence from one missing endpoint, and none of it visible
+     * from the tests that existed — every one of them called the model directly.
+     */
+    public function test_marking_invoiced_moves_the_trip_to_billed(): void
+    {
+        $trip = $this->billableTrip();
+        $this->billing->prepare($trip, self::TENANT_A, $this->actor);
+
+        $bill = $this->billing->markInvoiced($trip->fresh(), 4242, self::TENANT_A, $this->actor);
+
+        $this->assertSame(4242, (int) $bill->invoice_id);
+        $this->assertSame(TripBillStatus::INVOICED, $bill->status);
+        $this->assertSame(TripStatus::BILLED, $trip->fresh()->status);   // STT-010
+    }
+
+    public function test_marking_invoiced_is_idempotent_for_a_retrying_webhook(): void
+    {
+        $trip = $this->billableTrip();
+        $this->billing->prepare($trip, self::TENANT_A, $this->actor);
+
+        $first  = $this->billing->markInvoiced($trip->fresh(), 4242, self::TENANT_A, $this->actor);
+        $second = $this->billing->markInvoiced($trip->fresh(), 4242, self::TENANT_A, $this->actor);
+
+        $this->assertSame($first->id, $second->id);
+        $this->assertSame(4242, (int) $second->invoice_id);
+    }
+
+    public function test_a_second_different_invoice_is_refused(): void
+    {
+        $trip = $this->billableTrip();
+        $this->billing->prepare($trip, self::TENANT_A, $this->actor);
+        $this->billing->markInvoiced($trip->fresh(), 4242, self::TENANT_A, $this->actor);
+
+        // Silently repointing would orphan invoice 4242 with nothing recording
+        // that it had ever been raised.
+        $this->expectException(BusinessException::class);
+        $this->billing->markInvoiced($trip->fresh(), 9999, self::TENANT_A, $this->actor);
+    }
+
+    public function test_a_trip_with_no_prepared_bill_cannot_be_invoiced(): void
+    {
+        $this->expectException(BusinessException::class);
+        $this->billing->markInvoiced($this->billableTrip(), 4242, self::TENANT_A, $this->actor);
+    }
+
+    public function test_another_tenant_cannot_mark_a_trip_invoiced(): void
+    {
+        $trip = $this->billableTrip();
+        $this->billing->prepare($trip, self::TENANT_A, $this->actor);
+
+        $this->expectException(ResourceNotFoundException::class);
+        $this->billing->markInvoiced($trip->fresh(), 4242, self::TENANT_B, $this->actor);
+    }
+
+    public function test_marking_invoiced_still_writes_no_ledger_entry(): void
+    {
+        // The wall is unchanged by adding the route. Transport records that
+        // Accounts raised an invoice; it does not raise one.
+        $trip = $this->billableTrip();
+        $this->billing->prepare($trip, self::TENANT_A, $this->actor);
+        $bill = $this->billing->markInvoiced($trip->fresh(), 4242, self::TENANT_A, $this->actor);
+
+        // `acc_voucher_lines`, not `voucher_lines` — the Accounts module
+        // prefixes every table. FORBID-002 names the concept, not the DDL.
+        $this->assertSame(0, DB::table('acc_voucher_lines')->count(),
+            'FORBID-002 / LOCK-004 — Transport never writes a ledger line');
+        $this->assertSame(0, DB::table('acc_vouchers')->count(),
+            'and never a voucher header either');
+        $this->assertSame(4242, (int) $bill->invoice_id);
+    }
+
     public function test_awaiting_invoice_is_the_queue_accounts_will_read(): void
     {
         $billed  = $this->billing->prepare($this->billableTrip(), self::TENANT_A, $this->actor);

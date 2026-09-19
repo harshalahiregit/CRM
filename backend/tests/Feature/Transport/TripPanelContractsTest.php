@@ -133,6 +133,115 @@ class TripPanelContractsTest extends TestCase
     }
 
     /**
+     * The route D-106 was missing, over HTTP.
+     *
+     * A service-level test would not have caught the original gap: the method
+     * existed and worked, and was simply unreachable. So this asserts the HTTP
+     * surface specifically — that a request can reach STT-010 at all.
+     */
+    public function test_the_invoiced_route_exists_and_is_gated(): void
+    {
+        $trip = $this->trip();
+
+        // 404 here would mean no route. 422 means the route exists, the
+        // permission passed, and the service refused for a business reason
+        // (no prepared bill yet) — which is the shape we want.
+        $this->postJson("/api/transport/trips/{$trip->id}/bill/invoiced", ['invoice_id' => 4242])
+            ->assertStatus(422);
+
+        $this->postJson("/api/transport/trips/{$trip->id}/bill/invoiced", [])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['invoice_id']);
+    }
+
+    public function test_the_whole_chain_is_reachable_over_http(): void
+    {
+        // The test that would have caught D-106 on the 17th: no direct model
+        // calls, only requests, all the way to collection_pending.
+        $trip = $this->trip(\App\Support\Transport\TripStatus::DELIVERED);
+
+        $this->postJson("/api/transport/trips/{$trip->id}/pod", [
+            'file' => \Illuminate\Http\UploadedFile::fake()->create('pod.pdf', 20, 'application/pdf'),
+            'document_type' => 'pod',
+        ])->assertStatus(201);
+
+        $docId = $this->getJson("/api/transport/trips/{$trip->id}/documents")->json('data.documents.0.id');
+        $this->postJson("/api/transport/trips/{$trip->id}/pod/{$docId}/verify")->assertOk();
+        $this->postJson("/api/transport/trips/{$trip->id}/bill")->assertStatus(201);
+        $this->postJson("/api/transport/trips/{$trip->id}/bill/invoiced", ['invoice_id' => 7])->assertOk();
+        $this->postJson("/api/transport/trips/{$trip->id}/collection/open", [])->assertStatus(201);
+
+        $this->assertSame(
+            \App\Support\Transport\TripStatus::COLLECTION_PENDING,
+            $trip->fresh()->status,
+            'routes alone must be able to reach collection_pending'
+        );
+    }
+
+    /**
+     * P3's five lines actually reach the shared timeline — CTD §31.
+     *
+     * Asserted against the TABLE, not against the fact that record() was
+     * called. D-106's whole lesson was that wiring which exists in code and
+     * nowhere else is not wiring; the only proof that counts is the row.
+     */
+    public function test_p3_contributes_its_five_lines_to_the_shared_timeline(): void
+    {
+        $trip = $this->trip(\App\Support\Transport\TripStatus::DELIVERED);
+
+        // The LR travels with the load, long before anyone signs for it.
+        $this->postJson("/api/transport/trips/{$trip->id}/pod", [
+            // createWithContent, not create(): two fake files of the same size
+            // hold identical bytes, so the second would hash the same and be
+            // absorbed as a retry by the duplicate rule. The rule is right; the
+            // fixture was wrong.
+            'file' => \Illuminate\Http\UploadedFile::fake()->createWithContent('lr.pdf', '%PDF lorry receipt'),
+            'document_type' => 'lr',
+        ])->assertStatus(201);
+
+        $this->postJson("/api/transport/trips/{$trip->id}/pod", [
+            'file' => \Illuminate\Http\UploadedFile::fake()->createWithContent('pod.pdf', '%PDF signed proof'),
+            'document_type' => 'pod',
+        ])->assertStatus(201);
+
+        $docs  = $this->getJson("/api/transport/trips/{$trip->id}/documents")->json('data.documents');
+        $podId = collect($docs)->firstWhere('document_type', 'pod')['id'];
+
+        $this->postJson("/api/transport/trips/{$trip->id}/pod/{$podId}/verify")->assertOk();
+        $this->postJson("/api/transport/trips/{$trip->id}/bill")->assertStatus(201);
+        $this->postJson("/api/transport/trips/{$trip->id}/bill/invoiced", ['invoice_id' => 88])->assertOk();
+
+        $types = \Illuminate\Support\Facades\DB::table('trip_events')
+            ->where('trip_id', $trip->id)->pluck('event_type')->all();
+
+        foreach (['documents.handed_over', 'pod.uploaded', 'pod.verified', 'billing.ready', 'invoice.posted'] as $t) {
+            $this->assertContains($t, $types, "CTD §31 expects {$t} on the Passport timeline");
+        }
+    }
+
+    public function test_the_invoice_line_carries_the_id_step_12_needs_to_show(): void
+    {
+        // MS-001 §14 step 12 is "Show invoice linkage". A timeline row that
+        // said an invoice was posted without saying WHICH would not show it.
+        $trip = $this->trip(\App\Support\Transport\TripStatus::DELIVERED);
+
+        $this->postJson("/api/transport/trips/{$trip->id}/pod", [
+            'file' => \Illuminate\Http\UploadedFile::fake()->create('pod.pdf', 10, 'application/pdf'),
+            'document_type' => 'pod',
+        ])->assertStatus(201);
+        $docId = $this->getJson("/api/transport/trips/{$trip->id}/documents")->json('data.documents.0.id');
+        $this->postJson("/api/transport/trips/{$trip->id}/pod/{$docId}/verify")->assertOk();
+        $this->postJson("/api/transport/trips/{$trip->id}/bill")->assertStatus(201);
+        $this->postJson("/api/transport/trips/{$trip->id}/bill/invoiced", ['invoice_id' => 4242])->assertOk();
+
+        $row = \Illuminate\Support\Facades\DB::table('trip_events')
+            ->where('trip_id', $trip->id)->where('event_type', 'invoice.posted')->first();
+
+        $this->assertNotNull($row);
+        $this->assertStringContainsString('4242', (string) $row->detail);
+    }
+
+    /**
      * Every permission key the panels gate their buttons on must be answerable.
      *
      * The panels read `grants['transport.cost.record']` and friends. A key that
