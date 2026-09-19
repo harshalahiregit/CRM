@@ -8,6 +8,7 @@ use App\Exceptions\ResourceNotFoundException;
 use App\Models\Transport\TransportDocument;
 use App\Models\Transport\TransportDriver;
 use App\Models\Transport\TransportTrip;
+use App\Services\Transport\TripEventRecorder;
 use App\Models\Transport\TransportVehicle;
 use App\Models\Transport\TripAssignment;
 use App\Models\User;
@@ -150,7 +151,7 @@ class AllocationService
             $this->assertEligible($verdicts['driver'], 'driver', $driver, $trip, $tenantId, $actor);
         }
 
-        return DB::transaction(function () use ($trip, $vehicle, $driver, $vehicleId, $driverId, $tenantId, $actor, $meta, $verdicts) {
+        $result = DB::transaction(function () use ($trip, $vehicle, $driver, $vehicleId, $driverId, $tenantId, $actor, $meta, $verdicts) {
             /* ── 2. The assignment row. Owns the lock and BR-P0-003. ───── */
             $assignment = $this->assignments->assign($trip, $vehicleId, $driverId, $tenantId, $actor, $meta);
 
@@ -219,6 +220,37 @@ class AllocationService
                 'eligibility' => $verdicts,
             ];
         });
+
+        /* ── 7. CTD §31's timeline, after the commit. ──────────────────── */
+        //
+        // Two types, not one: CTD §31 lists "09:15 Driver Allocated" and
+        // "09:20 Vehicle Allocated" as separate moments, and they genuinely are
+        // — a trip can get its vehicle on Monday and its driver on Tuesday, and
+        // one merged line would date the pair to whichever came last.
+        //
+        // Recorded on what THIS call attached, not on what the assignment now
+        // holds: a second call adding the driver must not re-announce the
+        // vehicle that was already there. D-115.
+        // Written out rather than looped over a [$type => $id] table: the type
+        // is the one thing in a recorder call that must stay greppable. The
+        // registry is audited by searching for it, and a type assembled from a
+        // variable is a type that audit cannot see — which is how these two came
+        // to be missing without anyone noticing.
+        if ($vehicleId !== null) {
+            app(TripEventRecorder::class)->record(
+                'vehicle.allocated', trip: $result['trip'], actor: $actor,
+                detail: ['vehicle_id' => $vehicleId, 'assignment_id' => $result['assignment']->id],
+            );
+        }
+
+        if ($driverId !== null) {
+            app(TripEventRecorder::class)->record(
+                'driver.allocated', trip: $result['trip'], actor: $actor,
+                detail: ['driver_id' => $driverId, 'assignment_id' => $result['assignment']->id],
+            );
+        }
+
+        return $result;
     }
 
     /**
@@ -239,7 +271,11 @@ class AllocationService
             throw new ResourceNotFoundException('Assignment');
         }
 
-        return DB::transaction(function () use ($assignment, $tenantId, $actor, $reason) {
+        // Read before the transaction: the released row may no longer point at
+        // the trip, and the event has to say which trip lost its crew.
+        $releasedTripId = $assignment->trip_id;
+
+        $freed = DB::transaction(function () use ($assignment, $tenantId, $actor, $reason) {
             $vehicleId = $assignment->vehicle_id;
             $driverId  = $assignment->driver_id;
             $tripId    = $assignment->trip_id;
@@ -311,6 +347,20 @@ class AllocationService
 
             return $released;
         });
+
+        // CTD §31, after the commit. The reason travels with it: a release is
+        // one of the few timeline entries a reader will stop at and ask "why",
+        // and the answer is already in hand here. D-115.
+        app(TripEventRecorder::class)->record(
+            'crew.released', tenantId: $tenantId, tripId: $releasedTripId, actor: $actor,
+            detail: array_filter([
+                'assignment_id' => $freed->id,
+                'reason'        => $reason,
+            ]),
+            summary: $reason ? 'Released: '.$reason : null,
+        );
+
+        return $freed;
     }
 
     /** The candidates a dispatcher may choose from — PLN-002/003. */

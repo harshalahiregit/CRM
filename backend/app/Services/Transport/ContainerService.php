@@ -7,6 +7,7 @@ use App\Exceptions\ResourceNotFoundException;
 use App\Models\Transport\ConsignmentContainer;
 use App\Models\Transport\TransportConsignment;
 use App\Models\Transport\TransportContainer;
+use App\Services\Transport\TripEventRecorder;
 use App\Models\User;
 use App\Repositories\Transport\TransportContainerRepository;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -140,7 +141,7 @@ class ContainerService
             );
         }
 
-        return DB::transaction(function () use ($data, $number, $tenantId, $actor) {
+        $created = DB::transaction(function () use ($data, $number, $tenantId, $actor) {
             /** @var TransportContainer $container */
             $container = TransportContainer::create(array_merge(
                 array_intersect_key($data, array_flip(self::WRITABLE)),
@@ -165,6 +166,15 @@ class ContainerService
 
             return $container->fresh();
         });
+
+        // CTD §31, after the commit. No trip: a container exists before any trip
+        // carries it, and the recorder takes containerId for exactly this. D-115.
+        app(TripEventRecorder::class)->record(
+            'container.created', tenantId: $tenantId, containerId: $created->id, actor: $actor,
+            detail: ['container_number' => $created->container_number],
+        );
+
+        return $created;
     }
 
     /**
@@ -189,7 +199,7 @@ class ContainerService
         }
 
         try {
-            return DB::transaction(function () use ($container, $consignment, $tenantId, $actor) {
+            $attached = DB::transaction(function () use ($container, $consignment, $tenantId, $actor) {
                 $attachment = ConsignmentContainer::create([
                     'tenant_id'      => $tenantId,
                     'consignment_id' => $consignment->id,
@@ -214,6 +224,19 @@ class ContainerService
 
                 return $attachment->fresh();
             });
+
+            // CTD §31. Both entities are named, because this event is read from
+            // the container's passport AND from the consignment. D-115.
+            app(TripEventRecorder::class)->record(
+                'container.attached', tenantId: $tenantId, actor: $actor,
+                containerId: $container->id, consignmentId: $consignment->id,
+                detail: [
+                    'container_number'   => $container->container_number,
+                    'consignment_number' => $consignment->consignment_number,
+                ],
+            );
+
+            return $attached;
         } catch (QueryException $e) {
             // The race the check above cannot close: another request attached
             // this container between our read and our insert. The database
@@ -243,7 +266,7 @@ class ContainerService
             );
         }
 
-        return DB::transaction(function () use ($active, $container, $actor, $tenantId) {
+        $detached = DB::transaction(function () use ($active, $container, $actor, $tenantId) {
             $active->forceFill([
                 'detached_at' => now(),
                 'detached_by' => $actor?->id,
@@ -266,6 +289,15 @@ class ContainerService
 
             return $active->fresh();
         });
+
+        // CTD §31. D-115.
+        app(TripEventRecorder::class)->record(
+            'container.detached', tenantId: $tenantId, actor: $actor,
+            containerId: $container->id, consignmentId: $detached->consignment_id,
+            detail: ['container_number' => $container->container_number],
+        );
+
+        return $detached;
     }
 
     /* ── internals ──────────────────────────────────────────────────── */

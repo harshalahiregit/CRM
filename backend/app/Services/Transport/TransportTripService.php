@@ -102,7 +102,7 @@ class TransportTripService
             );
         }
 
-        return DB::transaction(function () use ($order, $data, $tenantId, $actor) {
+        $created = DB::transaction(function () use ($order, $data, $tenantId, $actor) {
             /** @var TransportTrip $trip */
             $trip = TransportTrip::create([
                 'tenant_id'        => $tenantId,
@@ -168,6 +168,17 @@ class TransportTripService
 
             return $trip;
         });
+
+        // CTD §31's timeline. AFTER the commit, like every other recorder call:
+        // a trip event describing a trip that was rolled back would be a line of
+        // history for something that never happened.
+        //
+        // This was missing until 2026-09-19. The row existed on every trip only
+        // because BackfillTripEvents reconstructed it from the audit log, so the
+        // gap was invisible — the timelines looked complete. D-115.
+        app(TripEventRecorder::class)->record('trip.created', trip: $created, actor: $actor);
+
+        return $created;
     }
 
     /**
@@ -219,7 +230,13 @@ class TransportTripService
             'tenant_id' => $tenantId, 'user_id' => $actor?->id,
         ]);
 
-        return $trip->fresh();
+        $submitted = $trip->fresh();
+
+        // CTD §31. Backfill supplied this row historically; nothing wrote it
+        // live. D-115.
+        app(TripEventRecorder::class)->record('trip.submitted', trip: $submitted, actor: $actor);
+
+        return $submitted;
     }
 
     /**
@@ -389,6 +406,16 @@ class TransportTripService
             'trip_id' => $rejected->id, 'from' => $from, 'to' => $to,
             'tenant_id' => $tenantId, 'user_id' => $actor?->id,
         ]);
+
+        // CTD §31. The reason travels with it: a timeline that shows a trip went
+        // back to draft without saying what was objected to sends the reader to
+        // the audit log to find out, which is the thing the timeline exists to
+        // save them. D-115.
+        app(TripEventRecorder::class)->record(
+            'trip.returned', trip: $rejected, actor: $actor,
+            detail: ['reason' => $reason],
+            summary: $reason ? 'Sent back: '.$reason : null,
+        );
 
         return $rejected;
     }
