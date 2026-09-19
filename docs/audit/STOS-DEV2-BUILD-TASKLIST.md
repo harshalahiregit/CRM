@@ -32,6 +32,10 @@ validation rules and business logic** — so nothing has to be reconstructed fro
 Anything that cannot yet be real is marked ⬜ or ⚠️ and says why. A disabled control with an
 honest label is acceptable; a control that pretends to work is not.
 
+> 🛑 **Hardware is parked.** Anything needing a GPS box, temperature probe or genset sensor is
+> NOT being built. Every hardware touchpoint is recorded in
+> `docs/transport/HARDWARE-DEPENDENCIES.md` instead — read it before picking up a telemetry task.
+
 **Current position:** Stos + Transport together: **1,100 passing, 0 failures**. Full backend
 suite verified green on 2026-09-17: **4,641 passing, 0 failures, 3 skipped**.
 
@@ -226,8 +230,8 @@ answer — T-07.
 | `reconciliation_status` | Spec `PENDING / MATCHED / ANOMALY` | 🟡 built `unreconciled / matched / disputed / settled` |
 
 - [x] **T-24** Table, idempotency key `(company, tag, timestamp)` so a re-imported statement cannot double-count tolls
-- [ ] **T-25** ⬜ **Import endpoint** — provider feed / CSV upload with a parser and a per-row result. *Nothing ingests tolls today; rows only exist via the seeder.*
-- [ ] **T-26** ⬜ **Reconciliation engine** — match plaza hits against the trip's route and timestamps, flag unmatched and duplicate charges as `ANOMALY`. **Needs Dispatch's route data; until then match only on vehicle + time window and mark the rest unresolved**
+- [ ] 🛑 **T-25** FASTag import — **PARKED** with hardware/provider feed. Needs the toll provider, not a device. See `docs/transport/HARDWARE-DEPENDENCIES.md` §5 · *was:* ⬜ **Import endpoint** — provider feed / CSV upload with a parser and a per-row result. *No…
+- [ ] 🛑 **T-26** FASTag reconciliation — **PARKED**. Needs the provider feed AND Dispatch route data · *was:* ⬜ **Reconciliation engine** — match plaza hits against the trip's route and timestamps, fl…
 - [ ] **T-27** FASTag screen: the register, the anomalies, and a manual match action
 
 ---
@@ -384,7 +388,7 @@ fires from a **model observer**, so no future code path can change availability 
 - [x] **T-51** — **RULED 2026-09-19 (spec 12.S11): two casings, on purpose.** Database enums and state-machine states are UPPERCASE; API blocker codes and machine reasons are lowercase snake_case. Fleet's advisory flags and blocker codes were uppercase and are now lowercase (`service_overdue`, `driver_license_expired`). A state is what a thing *is*; a machine reason is what a response *says about* it
 - [ ] **T-53** Expiry dates become a **projection**, not a master. `STOS-DOC` verification → `STOS-CMP` → Fleet's five date columns, so verifying a renewal clears the dispatch block with no manual re-entry; then hand-editing dates is prohibited. **Sequencing matters:** removing the manual input before the projection runs leaves no way to record a compliance date at all · *needs Dev 3's verify workflow live*
 - [ ] **T-54** `trailers` as their own master with `vehicle_trailer_assignments` dynamic coupling — a trailer is NOT a `vehicles` row. Own compliance profile, tyre set and maintenance record; coupling preserved historically
-- [ ] **T-55** Route / Movement Anomaly exception — a vehicle moving under power while not ALLOCATED or IN_TRANSIT raises an exception rather than being silently promoted into a valid state
+- [ ] 🛑 **T-55** Route / Movement Anomaly exception — **PARKED**: needs real pings to detect movement · *was:* Route / Movement Anomaly exception — a vehicle moving under power while not ALLOCATED or I…
 - [x] **T-56** Vehicle asset status transitions — `PATCH /v1/fleet/vehicles/{id}/status`, absorbed from Dev 1's retiring endpoint. Accepts only `AVAILABLE`, `IDLE`, `RETIRED`; every refusal names the desk that can clear it rather than just saying no. Retiring routes through the existing guarded `retire()` so it is not a second, weaker implementation. Input is canonicalised before validation, so the door and the service cannot disagree about a spelling · *VehicleStatusTransitionTest*
 - [ ] **T-57** Vehicle documents into Dev 3's shared `transport_documents` (`entity_type = 'vehicle'`), never a Fleet document table — blocks retiring Dev 1's CRUD
 - [ ] **T-58** Genset, tyre and job-card statuses to UPPERCASE — they are database enums, so the ruled standard applies
