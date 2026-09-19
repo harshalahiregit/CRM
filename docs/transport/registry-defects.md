@@ -3619,3 +3619,52 @@ that: the stored mapping points at `transport_vehicles` 29 and 30, rows a reseed
 repoint today would change nothing **and** leave every trip pointing at the placeholder table.
 
 Order: fix the mapping → P2's plate check starts firing → then repoint.
+
+### FIXED — P2, 2026-09-19, `2edbb24b`
+
+Both halves, plus the thing neither note named: the stale mapping was hiding the **right** trip as
+well as exposing the wrong one, and it hid it through the "idling in the yard" branch, which looks
+identical to a healthy truck on screen. That is why step 8 read as no data rather than as an error.
+
+**The plate is read in one table.** `legacyPlateFor()` resolves only in `transport_vehicles`, which
+is what the column means before the repoint, and a missing row is *unknown* rather than a match.
+P1's suggestion, taken as written.
+
+**The switch is no longer a remembered edit.** The references the repoint cannot map stay in the
+old id space afterwards, so pointing the lookup at Fleet "when the meaning changes" would recreate
+this defect inside repointed data — with trips 2, 12 and 14 as the first three cases.
+`stos:repoint-trip-fleet-refs --apply` now writes a verdict for every reference it looks at, into a
+new Fleet-owned table `fleet_reference_repoints`:
+
+| verdict | meaning |
+|---|---|
+| `to_id` = a Fleet id | moved; this is what the number means now |
+| `to_id` = `NULL` | pointed at a row that is gone; left alone, never matchable |
+| no row | raised after the switch, so already in the new space |
+
+`openTripFor()` asks the ledger first, the company-level switch second, the legacy plate third.
+No schema of P1's changed, and the repoint is now reversible.
+
+**The plate finds candidates as well as confirming them,** so step 8 works before the mapping is
+repaired rather than after it. `transport_vehicles` is unique on (tenant, normalised plate), so it
+adds at most one id.
+
+**`stos:reconcile-fleet` stops calling one match an ambiguity.** Three outcomes — not inserted,
+repairable, genuinely ambiguous — and `--relink` repairs only the middle one, refusing when two
+live legacy rows claim one Fleet vehicle. The dry run no longer prints a clean `0` for both "done"
+and "the map matches nothing", and `--apply` refuses to strand references without `--force`.
+
+**Eight of P2's own tests were passing because of this defect** — `TripTimelineTest` pointed the
+trip at a Fleet id with no legacy row behind it, which is the self-confirming arrangement itself.
+The setup now builds the pre-repoint world, and asserts the two id ranges do not overlap.
+
+Verified against dev data and rolled back: same truck publishes, wrong truck blocks, dangling id
+blocks. Suite 1,438 passing. Reply in `CLOSED-person1-d116-and-the-stale-mapping.md`.
+
+### The general lesson, and it is the same one twice
+
+*Reasoning that something is safe is not the same as making it safe.* D-109 was documented as a
+hazard and shipped armed; D-116 round one was documented as "correct, not a bug" and was luck;
+round two replaced the luck with a check that could not fail. Each time the gap was between an
+argument and a mechanism. **What made the difference both times was P1 constructing the case
+instead of reading the code** — and the second time, doing it to a fix rather than to the original.

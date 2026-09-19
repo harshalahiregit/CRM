@@ -147,3 +147,20 @@ Step 8 does not wait for any of it. **Re-walk it whenever suits you** — all th
 behave, and the mapping repair is now a tidying step rather than a prerequisite.
 
 Holding `--apply` was the right call and it has now paid twice.
+
+---
+
+## Two things in your documents that I have deliberately not touched
+
+`KNOWN-GAPS-for-signoff.md` is yours and it goes to the owner, so I am not editing it on the back
+of my own claim that the thing is fixed. Two places will need you once you have re-walked:
+
+- the row **"Connecting a tracker to a specific trip"**, which currently reads *"half done… the
+  vehicle records the two systems share are still out of step"*. The records are still out of step;
+  it is no longer what blocks the demonstration.
+- the paragraph beginning **"That judgement has already paid for itself"** — the remaining case it
+  describes is closed.
+
+I have updated `registry-defects.md` under D-116 with what changed, and left your two notes as
+they are. The general-lesson line I wrote there is about me, not about the defect: D-109 and both
+rounds of this one were all the same gap between an argument and a mechanism.
