@@ -3809,3 +3809,78 @@ resolves end to end today, inside our own id namespace. The only reason a plate 
 list is that `TransportSearchService::vehicle()` returns that path and follows through no further —
 a leftover from D-62, never revisited against §4. What genuinely waits on the repoint is a plate
 held by Fleet and not by our placeholder table.
+
+---
+
+## D-118 — the driver half of the reconcile counts links instead of checking them
+
+**Raised:** 2026-09-19, preparing the repoint. **P2's command. Raised, not fixed.**
+**Blocks the repoint** — found before `--relink` was run, not after.
+
+### The same stale-link damage as vehicles, on drivers, unreported
+
+| | Live rows | What the link says |
+|---|---|---|
+| Vehicles | `transport_vehicles` 35, 36 | `legacy_transport_vehicle_id` 29, 30 — **reported as repairable** ✅ |
+| Drivers | `transport_drivers` 39, 40 | `legacy_transport_driver_id` 33, 34 — **reported as fine** ❌ |
+
+Both were broken the same way by the same reseed. The vehicle side now diagnoses it precisely
+(*"link points at #29, which is gone. Repairable."*). The driver side says:
+
+```
+Drivers: 2 legacy rows — 2 have a Fleet profile.
+```
+
+Which is **true and misleading**. `reconcileDrivers()` counts `driver_profiles` rows whose
+`legacy_transport_driver_id` is not null. It never asks whether that id points at a driver that
+exists. Two profiles do carry a legacy id; neither carries one of the two that are actually there.
+
+### What it costs
+
+`--relink` is vehicle-only by its own help text — *"repair links where exactly one Fleet vehicle
+carries the plate"*. So running it today repairs half the problem and leaves the other half
+looking healthy:
+
+| After `--relink` as it stands | |
+|---|---|
+| `transport_trips.vehicle_id` | 2 move, **0 unmappable** |
+| `transport_trips.driver_id` | 0 move, **2 unmappable** |
+| `trip_assignments.vehicle_id` | 3 move, **0 unmappable** |
+| `trip_assignments.driver_id` | 0 move, **3 unmappable** |
+
+Five driver references would be written into `fleet_reference_repoints` as permanent `to_id = NULL`
+— the ledger entry that means *"this row points at something that no longer exists; never match
+it"*. Permanent, in a ledger, for rows that are repairable in one pass.
+
+### The fix is the exact analogue of the plate, and it is already half-built
+
+`driver_profiles` carries `licence_number` **and `licence_normalized`** — the same shape as the
+vehicle side's plate normalisation. The licences match one-to-one today:
+
+```
+driver_profile #2  RJ14 2019 0011221  ->  transport_drivers #39
+driver_profile #3  MH12 2020 0033445  ->  transport_drivers #40
+```
+
+Simulated in a rolled-back transaction, with the three junk trips cleared and both halves
+relinked:
+
+```
+transport_trips    vehicle_id   2 would move, 0 unmappable
+transport_trips    driver_id    2 would move, 0 unmappable
+trip_assignments   vehicle_id   3 would move, 0 unmappable
+trip_assignments   driver_id    3 would move, 0 unmappable
+```
+
+**Everything reaches zero.** No permanent NULLs in the ledger at all, which is the condition the
+owner set for the repoint going ahead.
+
+### Also found: there is no way to remove a trip through the services
+
+The three junk trips (2, 12, 14 — one of them numbered `TRP-Hyxjpm`, a test fixture) hold
+`vehicle_id` and `driver_id` with **zero assignment rows**, which is a state the services cannot
+produce. `AllocationService::release()` works from a `TripAssignment` and there is none, so it
+cannot reach them; there is no `cancelled` state in `TripStatus`, no delete route and no delete
+method. `TransportTrip` uses `SoftDeletes`, so the model's own mechanism exists — but nothing
+above it does. Recorded because "clear it through the real services" is not currently possible for
+a trip, and that is worth knowing before somebody needs it on real data.
