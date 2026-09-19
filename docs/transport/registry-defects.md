@@ -3578,3 +3578,44 @@ The safest moment to fix the join is before the two id spaces are mixed in one c
 
 `TripTimelinePublisher` is P2's file and the standing rule is not to edit another section's code
 to make our step pass. Raised in `NOTE-person2-telemetry-joins-on-the-wrong-vehicle-id.md`.
+
+### P2's fix, same day — better, and still open
+
+`6842b70a` — *"the id finds the candidate, the plate decides"*. The id narrows the candidates, the
+registration decides, and a mismatch fails closed with a logged warning. Right shape. Re-ran the
+collision experiment against it; two findings, and the defect stays open for the second.
+
+**It does not reach the plate check on our data.** The candidate set is the Fleet vehicle's own id
+plus its `legacy_transport_vehicle_id` — 29 and 30 — while the live `transport_vehicles` rows for
+those trucks are 35 and 36, and trips point at 10, 17 and 35. Nothing overlaps, so every reading
+finds no candidate and is dropped. The *correct* case was tested explicitly: a trip on
+`transport_vehicles#35`, genuinely the same truck as Fleet #1, is **blocked**. Step 8 still shows
+nothing. That half is stale data, not code — `stos:reconcile-fleet` reports both vehicles
+unmigrated, which is the same fact from the other end.
+
+**The one case that publishes is the one that should not.** `platesFor()` looks the id up in
+**both** masters and unions the result. When the `transport_vehicles` row is absent, the only plate
+returned is Fleet's own — read with the trip's id — so the check compares the Fleet vehicle's plate
+against itself and always agrees:
+
+```
+platesFor(1) -> ['MH12DEMO01']   (from `vehicles`; transport_vehicles#1 does not exist)
+$plate       ->  'MH12DEMO01'    (the same vehicle)   => true => publish
+```
+
+Not hypothetical: trips 2, 12 and 14 hold `vehicle_id` 10 and 17, neither of which exists in
+`transport_vehicles`. The day Fleet issues an id 10 or 17, that truck's telemetry lands on trips
+that carried different trucks.
+
+Suggested to P2 in `NOTE-person2-d116-nearly-the-plate-check-confirms-itself.md`: resolve the
+candidate's plate **only** in `transport_vehicles` while that is what the column means, and treat a
+missing row as unknown rather than as a match.
+
+### What this does to the repoint
+
+**Held**, on the lead's sequencing call, and this strengthens it. `stos:repoint-trip-fleet-refs`
+(dry run, 19 Sep) reports **0 rows on all four columns**, which reads as "nothing to do" and is not
+that: the stored mapping points at `transport_vehicles` 29 and 30, rows a reseed replaced. A
+repoint today would change nothing **and** leave every trip pointing at the placeholder table.
+
+Order: fix the mapping → P2's plate check starts firing → then repoint.
