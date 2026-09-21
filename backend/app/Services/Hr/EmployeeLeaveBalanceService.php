@@ -29,18 +29,35 @@ class EmployeeLeaveBalanceService
     {
     }
 
-    public function list(int $tenantId, array $f): array
+    /**
+     * The admin balance grid.
+     *
+     * Only this listing takes the scope. activeByType / allActiveForEmployee /
+     * activeForEmployee stay unscoped on purpose: they are the leave APPLY and
+     * DEDUCT path, reached by the employee's own request and by the Attendance
+     * App, and a balance has to be debited whoever triggered the leave.
+     */
+    public function list(int $tenantId, array $f, ?User $actor = null): array
     {
         return [
-            'data'  => $this->repo->balances($tenantId, $f)->map(fn ($b) => $this->present($b))->all(),
-            'stats' => $this->repo->stats($tenantId),
+            'data'  => $this->repo->balances($tenantId, $f, $actor)->map(fn ($b) => $this->present($b))->all(),
+            'stats' => $this->repo->stats($tenantId, $actor),
         ];
     }
 
-    /** Active balances + current policy for one employee. */
-    public function forEmployee(int $employeeId, int $tenantId): array
+    /**
+     * Active balances + current policy for one employee.
+     *
+     * The guard sits here rather than on activeForEmployee(), because that
+     * repository method is shared with the leave apply/deduct path, which has
+     * to run whoever triggered the leave. This is the admin read surface, where
+     * the employee id arrives in the URL, so it takes the scope assertion.
+     */
+    public function forEmployee(int $employeeId, int $tenantId, ?User $actor = null): array
     {
         $this->employee($employeeId, $tenantId);
+        app(\App\Services\Auth\ScopeResolver::class)->assertCanActOnEmployee($actor, $employeeId);
+
         $balances = $this->repo->activeForEmployee($employeeId, $tenantId);
         $policy = $balances->first(fn ($b) => $b->policy)?->policy;
 
@@ -302,12 +319,16 @@ class EmployeeLeaveBalanceService
         return $balance->fresh();
     }
 
-    public function history(int $balanceId, int $tenantId): array
+    public function history(int $balanceId, int $tenantId, ?User $actor = null): array
     {
         $balance = $this->repo->findBalance($balanceId, $tenantId);
         if (! $balance) {
             throw new BusinessException('Leave balance not found', 404);
         }
+
+        // The ledger is one employee's accrual and deduction history, so the
+        // balance being readable is not enough — whose it is decides.
+        app(\App\Services\Auth\ScopeResolver::class)->assertCanActOnEmployee($actor, $balance->employee_id);
 
         return [
             'balance' => $this->present($balance),

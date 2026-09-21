@@ -19,7 +19,7 @@ class ProbationReviewController extends Controller
 
     public function index(Request $request)
     {
-        return response()->json($this->service->list($this->tenant($request), $request->only(['employee_id', 'employee_probation_id', 'reviewer_id', 'department', 'status', 'recommendation', 'from', 'to', 'search'])));
+        return response()->json($this->service->list($this->tenant($request), $request->only(['employee_id', 'employee_probation_id', 'reviewer_id', 'department', 'status', 'recommendation', 'from', 'to', 'search']), $request->user()));
     }
 
     public function show(Request $request, int $id)
@@ -29,7 +29,7 @@ class ProbationReviewController extends Controller
 
     public function forEmployee(Request $request, int $employee)
     {
-        return response()->json($this->service->forEmployee($employee, $this->tenant($request)));
+        return response()->json($this->service->forEmployee($employee, $this->tenant($request), $request->user()));
     }
 
     public function store(Request $request)

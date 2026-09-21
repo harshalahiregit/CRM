@@ -18,7 +18,7 @@ class ExitApprovalController extends Controller
 
     public function index(Request $request)
     {
-        return response()->json($this->service->queue($this->tenant($request), $request->only(['employee_id', 'department', 'exit_type_id', 'status', 'search'])));
+        return response()->json($this->service->queue($this->tenant($request), $request->only(['employee_id', 'department', 'exit_type_id', 'status', 'search']), $request->user()));
     }
 
     public function show(Request $request, int $id)
@@ -28,7 +28,7 @@ class ExitApprovalController extends Controller
 
     public function history(Request $request)
     {
-        return response()->json($this->service->history($this->tenant($request), $request->only(['employee_id'])));
+        return response()->json($this->service->history($this->tenant($request), $request->only(['employee_id']), $request->user()));
     }
 
     public function startReview(Request $request, int $id)

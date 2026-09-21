@@ -32,27 +32,27 @@ class ExitClearanceService
         $this->ensureForApproved($tenantId, $actor);
 
         return [
-            'stats' => $this->repo->stats($tenantId),
-            'rows'  => $this->repo->queue($tenantId, $f)->map(fn ($c) => $this->present($c))->all(),
+            'stats' => $this->repo->stats($tenantId, $actor),
+            'rows'  => $this->repo->queue($tenantId, $f, $actor)->map(fn ($c) => $this->present($c))->all(),
         ];
     }
 
     public function show(int $id, int $tenantId, ?User $actor = null): array
     {
-        $clearance = $this->find($id, $tenantId);
+        $clearance = $this->find($id, $tenantId, $actor);
         $clearance->recordAudit('Clearance Viewed', $actor);
 
         return $this->present($clearance, true);
     }
 
-    public function history(int $tenantId, array $f): array
+    public function history(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->history($tenantId, $f)->map(fn ($c) => $this->present($c))->all();
+        return $this->repo->history($tenantId, $f, $actor)->map(fn ($c) => $this->present($c))->all();
     }
 
-    public function forEmployee(int $employeeId, int $tenantId): ?array
+    public function forEmployee(int $employeeId, int $tenantId, ?User $actor = null): ?array
     {
-        $clearance = $this->repo->findByEmployee($employeeId, $tenantId);
+        $clearance = $this->repo->findByEmployee($employeeId, $tenantId, $actor);
 
         return $clearance ? $this->present($clearance, true) : null;
     }
@@ -61,7 +61,7 @@ class ExitClearanceService
 
     public function startItem(int $clearanceId, int $itemId, array $data, int $tenantId, ?User $actor = null): array
     {
-        $clearance = $this->find($clearanceId, $tenantId);
+        $clearance = $this->find($clearanceId, $tenantId, $actor);
         $this->assertNotReadOnly($clearance);
         $item = $this->item($clearance, $itemId);
 
@@ -79,12 +79,12 @@ class ExitClearanceService
         $this->recompute($clearance, $actor);
         $this->log('Clearance started', $tenantId, $clearance->id);
 
-        return $this->present($this->find($clearanceId, $tenantId), true);
+        return $this->present($this->find($clearanceId, $tenantId, $actor), true);
     }
 
     public function clearItem(int $clearanceId, int $itemId, array $data, int $tenantId, ?User $actor = null): array
     {
-        $clearance = $this->find($clearanceId, $tenantId);
+        $clearance = $this->find($clearanceId, $tenantId, $actor);
         $this->assertNotReadOnly($clearance);
         $item = $this->item($clearance, $itemId);
         $this->assertDecidable($item);
@@ -99,12 +99,12 @@ class ExitClearanceService
         $this->recompute($clearance, $actor);
         $this->log('Department cleared', $tenantId, $clearance->id);
 
-        return $this->present($this->find($clearanceId, $tenantId), true);
+        return $this->present($this->find($clearanceId, $tenantId, $actor), true);
     }
 
     public function rejectItem(int $clearanceId, int $itemId, array $data, int $tenantId, ?User $actor = null): array
     {
-        $clearance = $this->find($clearanceId, $tenantId);
+        $clearance = $this->find($clearanceId, $tenantId, $actor);
         $this->assertNotReadOnly($clearance);
         $item = $this->item($clearance, $itemId);
         $this->assertDecidable($item);
@@ -119,12 +119,12 @@ class ExitClearanceService
         $this->recompute($clearance, $actor);
         $this->log('Department rejected', $tenantId, $clearance->id);
 
-        return $this->present($this->find($clearanceId, $tenantId), true);
+        return $this->present($this->find($clearanceId, $tenantId, $actor), true);
     }
 
     public function updateItemRemarks(int $clearanceId, int $itemId, array $data, int $tenantId, ?User $actor = null): array
     {
-        $clearance = $this->find($clearanceId, $tenantId);
+        $clearance = $this->find($clearanceId, $tenantId, $actor);
         $this->assertNotReadOnly($clearance);
         $item = $this->item($clearance, $itemId);
         if (in_array($item->status, [HrExitClearanceItem::CLEARED, HrExitClearanceItem::REJECTED], true)) {
@@ -133,7 +133,7 @@ class ExitClearanceService
         $item->update(['remarks' => $data['remarks'] ?? null, 'assigned_to' => $data['assigned_to'] ?? $item->assigned_to, 'updated_by' => $actor?->id]);
         $clearance->recordAudit('Clearance Updated', $actor, $data['remarks'] ?? null, ['department' => $item->department]);
 
-        return $this->present($this->find($clearanceId, $tenantId), true);
+        return $this->present($this->find($clearanceId, $tenantId, $actor), true);
     }
 
     /* ── Lazy initialisation ──────────────────────────────── */
@@ -272,9 +272,9 @@ class ExitClearanceService
         return $out;
     }
 
-    private function find(int $id, int $tenantId): HrExitClearance
+    private function find(int $id, int $tenantId, ?User $actor = null): HrExitClearance
     {
-        $clearance = $this->repo->find($id, $tenantId);
+        $clearance = $this->repo->find($id, $tenantId, $actor);
         if (! $clearance) {
             throw new BusinessException('Clearance not found', 404);
         }

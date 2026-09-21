@@ -5,10 +5,14 @@ namespace App\Repositories\Hr;
 use App\Models\Hr\HrEmployeeProbation;
 use App\Models\Hr\HrProbationExtension;
 use Illuminate\Database\Eloquent\Collection;
+use App\Models\User;
+use App\Repositories\Hr\Concerns\ScopesEmployeeData;
 
 /** Read queries for Probation Extensions (Phase 4). Tenant-scoped; no writes. */
 class ProbationExtensionRepository
 {
+    use ScopesEmployeeData;
+
     private const EAGER = [
         'employee:id,name,employee_code,department,designation',
         'requestedBy:id,name',
@@ -16,9 +20,10 @@ class ProbationExtensionRepository
         'probation.policy:id,name,extension_limit', 'probation.probationType:id,name,max_extensions',
     ];
 
-    public function list(int $tenantId, array $f): Collection
+    public function list(int $tenantId, array $f, ?User $actor = null): Collection
     {
-        return HrProbationExtension::where('tenant_id', $tenantId)
+        // Scope before the filters: a filter narrows within it, never past it.
+        return $this->scopeToEmployees(HrProbationExtension::where('tenant_id', $tenantId), $actor)
             ->with(self::EAGER)
             ->when(! empty($f['employee_id']), fn ($q) => $q->where('employee_id', $f['employee_id']))
             ->when(! empty($f['probation_id']), fn ($q) => $q->where('probation_id', $f['probation_id']))
@@ -32,21 +37,27 @@ class ProbationExtensionRepository
             ->orderByDesc('id')->get();
     }
 
-    public function find(int $id, int $tenantId): ?HrProbationExtension
+    public function find(int $id, int $tenantId, ?User $actor = null): ?HrProbationExtension
     {
-        return HrProbationExtension::where('tenant_id', $tenantId)->with([...self::EAGER, 'auditLogs'])->find($id);
+        // Out of scope returns null, so the caller's 404 stands and the record
+        // looks absent rather than forbidden.
+        return $this->scopeToEmployees(HrProbationExtension::where('tenant_id', $tenantId), $actor)->with([...self::EAGER, 'auditLogs'])->find($id);
     }
 
-    public function forEmployee(int $employeeId, int $tenantId): Collection
+    public function forEmployee(int $employeeId, int $tenantId, ?User $actor = null): Collection
     {
+        $this->assertEmployeeInScope($actor, $employeeId);
+
         return HrProbationExtension::where('tenant_id', $tenantId)->where('employee_id', $employeeId)
             ->with([...self::EAGER, 'auditLogs'])->orderByDesc('id')->get();
     }
 
     /** Decided extensions (Approved / Rejected) — the extension history log. */
-    public function history(int $tenantId, array $f): Collection
+    public function history(int $tenantId, array $f, ?User $actor = null): Collection
     {
-        return HrProbationExtension::where('tenant_id', $tenantId)
+        // Same population as the live list — a history view is the same data
+        // with the decided rows kept.
+        return $this->scopeToEmployees(HrProbationExtension::where('tenant_id', $tenantId), $actor)
             ->whereIn('status', HrProbationExtension::TERMINAL)
             ->with(self::EAGER)
             ->when(! empty($f['employee_id']), fn ($q) => $q->where('employee_id', $f['employee_id']))
@@ -65,9 +76,11 @@ class ProbationExtensionRepository
             ->where('probation_id', $probationId)->max('extension_number') + 1;
     }
 
-    public function stats(int $tenantId): array
+    public function stats(int $tenantId, ?User $actor = null): array
     {
-        $rows = HrProbationExtension::where('tenant_id', $tenantId)
+        // Aggregated over the scoped population rather than computed globally
+        // and trimmed afterwards: a total is a disclosure too.
+        $rows = $this->scopeToEmployees(HrProbationExtension::where('tenant_id', $tenantId), $actor)
             ->selectRaw("COUNT(*) as total,
                 SUM(CASE WHEN status='Pending' THEN 1 ELSE 0 END) as pending,
                 SUM(CASE WHEN status='Approved' THEN 1 ELSE 0 END) as approved,

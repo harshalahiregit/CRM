@@ -20,17 +20,18 @@ class TrainingAssessmentService
     {
     }
 
-    public function list(int $tenantId, array $f): array
+    public function list(int $tenantId, array $f, ?User $actor = null): array
     {
         return [
-            'data'  => $this->repo->assessments($tenantId, $f)->map(fn ($a) => $this->present($a))->all(),
-            'stats' => $this->repo->assessmentStats($tenantId),
+            'data'  => $this->repo->assessments($tenantId, $f, $actor)->map(fn ($a) => $this->present($a))->all(),
+            // Counted over the same population as the rows above it.
+            'stats' => $this->repo->assessmentStats($tenantId, $actor),
         ];
     }
 
-    public function show(int $id, int $tenantId): array
+    public function show(int $id, int $tenantId, ?User $actor = null): array
     {
-        return $this->present($this->find($id, $tenantId), true);
+        return $this->present($this->find($id, $tenantId, $actor), true);
     }
 
     public function create(array $data, int $tenantId, ?User $actor = null): array
@@ -56,7 +57,7 @@ class TrainingAssessmentService
 
     public function update(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $assessment = $this->find($id, $tenantId);
+        $assessment = $this->find($id, $tenantId, $actor);
         $merged = [
             'total_marks' => $data['total_marks'] ?? $assessment->total_marks,
             'obtained_marks' => $data['obtained_marks'] ?? $assessment->obtained_marks,
@@ -133,9 +134,9 @@ class TrainingAssessmentService
         return $out;
     }
 
-    private function find(int $id, int $tenantId): HrTrainingAssessment
+    private function find(int $id, int $tenantId, ?User $actor = null): HrTrainingAssessment
     {
-        $assessment = $this->repo->findAssessment($id, $tenantId);
+        $assessment = $this->repo->findAssessment($id, $tenantId, $actor);
         if (! $assessment) {
             throw new BusinessException('Assessment not found', 404);
         }

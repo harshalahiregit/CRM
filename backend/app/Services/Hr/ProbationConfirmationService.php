@@ -26,30 +26,32 @@ class ProbationConfirmationService
     {
     }
 
-    public function list(int $tenantId, array $f): array
+    public function list(int $tenantId, array $f, ?User $actor = null): array
     {
         return [
-            'data'  => $this->repo->list($tenantId, $f)->map(fn ($c) => $this->present($c))->all(),
-            'stats' => $this->repo->stats($tenantId),
+            'data'  => $this->repo->list($tenantId, $f, $actor)->map(fn ($c) => $this->present($c))->all(),
+            // Counted over the same population as the rows, so the header
+            // cannot contradict the table beneath it.
+            'stats' => $this->repo->stats($tenantId, $actor),
         ];
     }
 
     public function show(int $id, int $tenantId, ?User $actor = null): array
     {
-        $conf = $this->find($id, $tenantId);
+        $conf = $this->find($id, $tenantId, $actor);
         $conf->recordAudit('Probation Confirmation Viewed', $actor);
 
         return $this->present($conf, true);
     }
 
-    public function forEmployee(int $employeeId, int $tenantId): array
+    public function forEmployee(int $employeeId, int $tenantId, ?User $actor = null): array
     {
-        return $this->repo->forEmployee($employeeId, $tenantId)->map(fn ($c) => $this->present($c, true))->all();
+        return $this->repo->forEmployee($employeeId, $tenantId, $actor)->map(fn ($c) => $this->present($c, true))->all();
     }
 
-    public function history(int $tenantId, array $f): array
+    public function history(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->history($tenantId, $f)->map(fn ($c) => $this->present($c))->all();
+        return $this->repo->history($tenantId, $f, $actor)->map(fn ($c) => $this->present($c))->all();
     }
 
     /* ── Create / update ──────────────────────────────────── */
@@ -89,12 +91,12 @@ class ProbationConfirmationService
         $conf->recordAudit('Probation Confirmation Created', $actor, null, ['employee' => $probation->employee?->name, 'recommendation' => $review?->recommendation]);
         $this->log('Probation confirmation created', $tenantId, $conf->id);
 
-        return $this->present($this->find($conf->id, $tenantId), true);
+        return $this->present($this->find($conf->id, $tenantId, $actor), true);
     }
 
     public function update(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $conf = $this->find($id, $tenantId);
+        $conf = $this->find($id, $tenantId, $actor);
         $this->assertEditable($conf);
 
         $attrs = ['updated_by' => $actor?->id];
@@ -113,14 +115,14 @@ class ProbationConfirmationService
         $conf->update($attrs);
         $conf->recordAudit('Probation Confirmation Updated', $actor);
 
-        return $this->present($this->find($id, $tenantId), true);
+        return $this->present($this->find($id, $tenantId, $actor), true);
     }
 
     /* ── Workflow ─────────────────────────────────────────── */
 
     public function approve(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $conf = $this->find($id, $tenantId);
+        $conf = $this->find($id, $tenantId, $actor);
         if ($conf->status !== HrProbationConfirmation::PENDING) {
             throw new BusinessException('Only a pending confirmation can be approved.');
         }
@@ -144,12 +146,12 @@ class ProbationConfirmationService
         $conf->recordAudit('Probation Confirmation Approved', $actor, $data['hr_comments'] ?? null);
         $this->log('Probation confirmation approved', $tenantId, $conf->id);
 
-        return $this->present($this->find($id, $tenantId), true);
+        return $this->present($this->find($id, $tenantId, $actor), true);
     }
 
     public function reject(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $conf = $this->find($id, $tenantId);
+        $conf = $this->find($id, $tenantId, $actor);
         if (in_array($conf->status, [HrProbationConfirmation::CONFIRMED, HrProbationConfirmation::REJECTED], true)) {
             throw new BusinessException("A {$conf->status} confirmation cannot be rejected.");
         }
@@ -162,12 +164,12 @@ class ProbationConfirmationService
         $conf->recordAudit('Probation Confirmation Rejected', $actor, $data['hr_comments'] ?? null);
         $this->log('Probation confirmation rejected', $tenantId, $conf->id);
 
-        return $this->present($this->find($id, $tenantId), true);
+        return $this->present($this->find($id, $tenantId, $actor), true);
     }
 
     public function confirm(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $conf = $this->find($id, $tenantId);
+        $conf = $this->find($id, $tenantId, $actor);
         if ($conf->status === HrProbationConfirmation::CONFIRMED) {
             throw new BusinessException('This employee is already confirmed.');
         }
@@ -203,7 +205,7 @@ class ProbationConfirmationService
         $conf->recordAudit('Employee Confirmed', $actor, $data['remarks'] ?? null, ['effective_date' => $effective]);
         $this->log('Employee confirmed', $tenantId, $conf->id);
 
-        return $this->present($this->find($id, $tenantId), true);
+        return $this->present($this->find($id, $tenantId, $actor), true);
     }
 
     /* ── Guards + helpers ─────────────────────────────────── */
@@ -275,9 +277,9 @@ class ProbationConfirmationService
         return $out;
     }
 
-    private function find(int $id, int $tenantId): HrProbationConfirmation
+    private function find(int $id, int $tenantId, ?User $actor = null): HrProbationConfirmation
     {
-        $conf = $this->repo->find($id, $tenantId);
+        $conf = $this->repo->find($id, $tenantId, $actor);
         if (! $conf) {
             throw new BusinessException('Probation confirmation not found', 404);
         }

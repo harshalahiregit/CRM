@@ -26,27 +26,27 @@ class ExitRequestService
     {
     }
 
-    public function list(int $tenantId, array $f): array
+    public function list(int $tenantId, array $f, ?User $actor = null): array
     {
         return [
-            'stats' => $this->repo->requestStats($tenantId),
-            'rows'  => $this->repo->requests($tenantId, $f)->map(fn ($r) => $this->present($r))->all(),
+            'stats' => $this->repo->requestStats($tenantId, $actor),
+            'rows'  => $this->repo->requests($tenantId, $f, $actor)->map(fn ($r) => $this->present($r))->all(),
         ];
     }
 
     public function show(int $id, int $tenantId, ?User $actor = null): array
     {
-        $request = $this->find($id, $tenantId);
+        $request = $this->find($id, $tenantId, $actor);
         $request->recordAudit('Exit Request Viewed', $actor);
 
         return $this->present($request, true);
     }
 
     /** Read-only current exit for an employee (Employee Profile → Exit tab). */
-    public function currentForEmployee(int $employeeId, int $tenantId): ?array
+    public function currentForEmployee(int $employeeId, int $tenantId, ?User $actor = null): ?array
     {
         $this->employee($employeeId, $tenantId);
-        $request = $this->repo->currentRequestForEmployee($employeeId, $tenantId);
+        $request = $this->repo->currentRequestForEmployee($employeeId, $tenantId, $actor);
 
         return $request ? $this->present($request, true) : null;
     }
@@ -88,12 +88,12 @@ class ExitRequestService
         );
         $this->log('Exit request created', $tenantId, $request->id);
 
-        return $this->present($this->find($request->id, $tenantId), true);
+        return $this->present($this->find($request->id, $tenantId, $actor), true);
     }
 
     public function update(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $request = $this->find($id, $tenantId);
+        $request = $this->find($id, $tenantId, $actor);
         if (! in_array($request->status, [HrExitRequest::DRAFT, HrExitRequest::SUBMITTED], true)) {
             throw new BusinessException('Only a draft or submitted exit request can be edited.');
         }
@@ -134,24 +134,24 @@ class ExitRequestService
         ]);
         $request->recordAudit('Exit Request Updated', $actor, null, ['type' => $exitType->name]);
 
-        return $this->present($this->find($id, $tenantId), true);
+        return $this->present($this->find($id, $tenantId, $actor), true);
     }
 
     public function submit(int $id, int $tenantId, ?User $actor = null): array
     {
-        $request = $this->find($id, $tenantId);
+        $request = $this->find($id, $tenantId, $actor);
         if ($request->status !== HrExitRequest::DRAFT) {
             throw new BusinessException('Only a draft exit request can be submitted.');
         }
         $request->update(['status' => HrExitRequest::SUBMITTED, 'submitted_at' => now(), 'updated_by' => $actor?->id]);
         $request->recordAudit('Exit Request Submitted', $actor);
 
-        return $this->present($this->find($id, $tenantId), true);
+        return $this->present($this->find($id, $tenantId, $actor), true);
     }
 
     public function withdraw(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $request = $this->find($id, $tenantId);
+        $request = $this->find($id, $tenantId, $actor);
         if (! in_array($request->status, [HrExitRequest::DRAFT, HrExitRequest::SUBMITTED], true)) {
             throw new BusinessException('Only a draft or submitted exit request can be withdrawn.');
         }
@@ -163,7 +163,7 @@ class ExitRequestService
         ]);
         $request->recordAudit('Exit Request Withdrawn', $actor, $data['reason'] ?? null);
 
-        return $this->present($this->find($id, $tenantId), true);
+        return $this->present($this->find($id, $tenantId, $actor), true);
     }
 
     /* ── Notice period ────────────────────────────────────── */
@@ -291,9 +291,9 @@ class ExitRequestService
         return $out;
     }
 
-    private function find(int $id, int $tenantId): HrExitRequest
+    private function find(int $id, int $tenantId, ?User $actor = null): HrExitRequest
     {
-        $request = $this->repo->findRequest($id, $tenantId);
+        $request = $this->repo->findRequest($id, $tenantId, $actor);
         if (! $request) {
             throw new BusinessException('Exit request not found', 404);
         }

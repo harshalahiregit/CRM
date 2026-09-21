@@ -25,7 +25,7 @@ class ExitApprovalService
     }
 
     /** Approval queue: everything in the review pipeline, plus KPI counters. */
-    public function queue(int $tenantId, array $f): array
+    public function queue(int $tenantId, array $f, ?User $actor = null): array
     {
         // Default view is the actionable pipeline; an explicit status filter narrows it.
         if (empty($f['status']) || $f['status'] === 'All') {
@@ -33,27 +33,27 @@ class ExitApprovalService
         }
 
         return [
-            'stats' => $this->repo->approvalStats($tenantId),
-            'rows'  => $this->repo->requests($tenantId, $f)->map(fn ($r) => $this->requests->present($r))->all(),
+            'stats' => $this->repo->approvalStats($tenantId, $actor),
+            'rows'  => $this->repo->requests($tenantId, $f, $actor)->map(fn ($r) => $this->requests->present($r))->all(),
         ];
     }
 
     public function show(int $id, int $tenantId, ?User $actor = null): array
     {
-        $request = $this->find($id, $tenantId);
+        $request = $this->find($id, $tenantId, $actor);
         $request->recordAudit('Exit Approval Viewed', $actor);
 
         return $this->requests->present($request, true);
     }
 
-    public function history(int $tenantId, array $f): array
+    public function history(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->approvalHistory($tenantId, $f)->map(fn ($r) => $this->requests->present($r))->all();
+        return $this->repo->approvalHistory($tenantId, $f, $actor)->map(fn ($r) => $this->requests->present($r))->all();
     }
 
     public function startReview(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $request = $this->find($id, $tenantId);
+        $request = $this->find($id, $tenantId, $actor);
         if ($request->status !== HrExitRequest::SUBMITTED) {
             throw new BusinessException('Only a submitted exit request can be moved to review.');
         }
@@ -67,24 +67,24 @@ class ExitApprovalService
         $request->recordAudit('Exit Review Started', $actor, $data['review_remarks'] ?? null);
         $this->log('Exit review started', $tenantId, $request->id);
 
-        return $this->requests->present($this->find($id, $tenantId), true);
+        return $this->requests->present($this->find($id, $tenantId, $actor), true);
     }
 
     public function updateReviewRemarks(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $request = $this->find($id, $tenantId);
+        $request = $this->find($id, $tenantId, $actor);
         if ($request->status !== HrExitRequest::UNDER_REVIEW) {
             throw new BusinessException('Review remarks can only be updated while the request is under review.');
         }
         $request->update(['review_remarks' => $data['review_remarks'] ?? null, 'updated_by' => $actor?->id]);
         $request->recordAudit('Exit Review Updated', $actor, $data['review_remarks'] ?? null);
 
-        return $this->requests->present($this->find($id, $tenantId), true);
+        return $this->requests->present($this->find($id, $tenantId, $actor), true);
     }
 
     public function approve(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $request = $this->find($id, $tenantId);
+        $request = $this->find($id, $tenantId, $actor);
         $this->assertDecidable($request);
         $request->update([
             'status'           => HrExitRequest::APPROVED,
@@ -96,12 +96,12 @@ class ExitApprovalService
         $request->recordAudit('Exit Approved', $actor, $data['remarks'] ?? null, ['employee' => $request->employee?->name]);
         $this->log('Exit approved', $tenantId, $request->id);
 
-        return $this->requests->present($this->find($id, $tenantId), true);
+        return $this->requests->present($this->find($id, $tenantId, $actor), true);
     }
 
     public function reject(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $request = $this->find($id, $tenantId);
+        $request = $this->find($id, $tenantId, $actor);
         $this->assertDecidable($request);
         $request->update([
             'status'           => HrExitRequest::REJECTED,
@@ -113,7 +113,7 @@ class ExitApprovalService
         $request->recordAudit('Exit Rejected', $actor, $data['remarks'] ?? null, ['employee' => $request->employee?->name]);
         $this->log('Exit rejected', $tenantId, $request->id);
 
-        return $this->requests->present($this->find($id, $tenantId), true);
+        return $this->requests->present($this->find($id, $tenantId, $actor), true);
     }
 
     /* ── Guards + helpers ─────────────────────────────────── */
@@ -134,9 +134,9 @@ class ExitApprovalService
         }
     }
 
-    private function find(int $id, int $tenantId): HrExitRequest
+    private function find(int $id, int $tenantId, ?User $actor = null): HrExitRequest
     {
-        $request = $this->repo->findRequest($id, $tenantId);
+        $request = $this->repo->findRequest($id, $tenantId, $actor);
         if (! $request) {
             throw new BusinessException('Exit request not found', 404);
         }
