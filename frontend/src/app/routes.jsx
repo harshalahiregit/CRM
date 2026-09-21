@@ -51,6 +51,7 @@ const MyLeave = lazy(() => import('@/modules/hr/pages/MyLeave'))
 const MyCorrections = lazy(() => import('@/modules/hr/pages/MyCorrections'))
 const Corrections   = lazy(() => import('@/modules/hr/pages/Corrections'))
 const HrSettings    = lazy(() => import('@/modules/hr/pages/HrSettings'))
+const ApprovalWorkflows = lazy(() => import('@/modules/hr/pages/ApprovalWorkflows'))
 const DemoRequests  = lazy(() => import('@/modules/hr/pages/DemoRequests'))
 const Holidays            = lazy(() => import('@/modules/hr/pages/Holidays'))
 const HRDashboard = lazy(() => import('@/modules/hr/pages/HRDashboard'))
@@ -674,6 +675,7 @@ export default function AppRoutes() {
           <Route path="my-corrections" element={<S><MyCorrections /></S>} />
           <Route path="corrections" element={<S><Corrections /></S>} />
           <Route path="settings" element={<S><HrSettings /></S>} />
+          <Route path="approval-workflows" element={<S><ApprovalWorkflows /></S>} />
           <Route path="demo-requests" element={<S><DemoRequests /></S>} />
             <Route path="holidays" element={<S><Holidays /></S>} />
           {/* An index of every HR master and where it is maintained. Links

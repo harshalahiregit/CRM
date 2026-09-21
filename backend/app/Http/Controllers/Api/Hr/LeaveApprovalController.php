@@ -3,8 +3,11 @@
 namespace App\Http\Controllers\Api\Hr;
 
 use App\Http\Controllers\Controller;
+use App\Models\Hr\HrApprovalAction;
 use App\Models\Hr\HrLeaveApplication;
+use App\Services\Hr\Approval\ApprovalEngine;
 use App\Services\Hr\LeaveApprovalService;
+use App\Support\Hr\Approval\ApprovalProcess;
 use Illuminate\Http\Request;
 
 /**
@@ -14,8 +17,10 @@ use Illuminate\Http\Request;
  */
 class LeaveApprovalController extends Controller
 {
-    public function __construct(private LeaveApprovalService $service)
-    {
+    public function __construct(
+        private LeaveApprovalService $service,
+        private ApprovalEngine $engine,
+    ) {
     }
 
     public function index(Request $request)
@@ -36,13 +41,26 @@ class LeaveApprovalController extends Controller
         return response()->json($this->service->show($id, $this->tenant($request), $request->user()));
     }
 
+    /**
+     * Approve — through the configured ladder.
+     *
+     * The three gates in order: can() is the capability, assertInScope() is the
+     * data scope, and the engine asks whether this request is actually waiting
+     * on this person. All three must pass, and none of them stands in for
+     * another — being named on a step is not a grant of access to the employee.
+     *
+     * Only the LAST rung calls the service. An intermediate approval records
+     * the decision and advances the ladder while the application stays
+     * Submitted, because deducting the balance halfway up would pay out a leave
+     * nobody has finished approving.
+     */
     public function approve(Request $request, int $id)
     {
         $this->can($request);
         $this->assertInScope($request, $id);
         $data = $request->validate(['remarks' => 'nullable|string']);
 
-        return response()->json($this->service->approve($id, $data['remarks'] ?? null, $this->tenant($request), $request->user()));
+        return $this->decide($request, $id, HrApprovalAction::APPROVED, $data['remarks'] ?? null);
     }
 
     public function reject(Request $request, int $id)
@@ -51,7 +69,81 @@ class LeaveApprovalController extends Controller
         $this->assertInScope($request, $id);
         $data = $request->validate(['remarks' => 'nullable|string']);
 
-        return response()->json($this->service->reject($id, $data['remarks'] ?? null, $this->tenant($request), $request->user()));
+        return $this->decide($request, $id, HrApprovalAction::REJECTED, $data['remarks'] ?? null);
+    }
+
+    /**
+     * One decision, through the engine, for both verbs.
+     *
+     * Rejection is terminal at any rung — which is the behaviour every existing
+     * HR flow already has, so the ladder does not change what a "no" means.
+     */
+    private function decide(Request $request, int $id, string $action, ?string $remarks)
+    {
+        $tenantId = $this->tenant($request);
+        $actor    = $request->user();
+
+        $application = HrLeaveApplication::where('tenant_id', $tenantId)->find($id);
+        abort_unless($application, 404, 'Leave application not found');
+
+        $approval = $this->engine->requestFor(
+            $application,
+            ApprovalProcess::LEAVE,
+            $tenantId,
+            (int) $application->employee_id,
+        );
+
+        // Already decided elsewhere — the attendance app decides through the
+        // service directly and is deliberately unchanged. Close the engine's
+        // view so it does not contradict the record, then let the service raise
+        // its own "already approved" message exactly as it does today.
+        if (! in_array($application->status, [HrLeaveApplication::SUBMITTED, HrLeaveApplication::DRAFT], true)) {
+            $this->engine->supersede($approval);
+
+            return response()->json(
+                $action === HrApprovalAction::APPROVED
+                    ? $this->service->approve($id, $remarks, $tenantId, $actor)
+                    : $this->service->reject($id, $remarks, $tenantId, $actor)
+            );
+        }
+
+        // An unresolvable rung is flagged rather than silently approved.
+        $inspection = $this->engine->inspect($approval);
+        if (! $inspection['resolvable']) {
+            $this->engine->block($approval, $inspection['describe']);
+            abort(409, 'This request cannot be approved yet: '.$inspection['describe'].'.');
+        }
+
+        $this->engine->assertMayDecide($approval, $actor);
+
+        $result = $this->engine->decide($approval, $actor, $action, $remarks);
+
+        if (! $result['final']) {
+            // Still climbing. The application is untouched.
+            return response()->json([
+                'approval' => $this->approvalPayload($result['request']),
+                'data'     => $this->service->show($id, $tenantId, $actor),
+            ]);
+        }
+
+        // Last rung: the service does what it has always done — balance ledger,
+        // status transition, audit line and the employee's notification.
+        $payload = $action === HrApprovalAction::APPROVED
+            ? $this->service->approve($id, $remarks, $tenantId, $actor)
+            : $this->service->reject($id, $remarks, $tenantId, $actor);
+
+        return response()->json($payload + ['approval' => $this->approvalPayload($result['request'])]);
+    }
+
+    /** What the UI needs to draw the ladder's current position. */
+    private function approvalPayload($approval): array
+    {
+        return [
+            'state'        => $approval->state,
+            'current_step' => $approval->current_step,
+            'total_steps'  => count($approval->steps_snapshot ?: []),
+            'steps'        => $approval->steps_snapshot ?: [],
+        ];
     }
 
     public function history(Request $request, int $employeeId)

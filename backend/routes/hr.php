@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\Hr\MyAttendanceController;
 use App\Http\Controllers\Api\Hr\AdvanceController;
 use App\Http\Controllers\Api\Hr\AttendanceReportController;
 use App\Http\Controllers\Api\Hr\MyAdvanceController;
+use App\Http\Controllers\Api\Hr\ApprovalWorkflowController;
 use App\Http\Controllers\Api\Hr\AttendanceCorrectionController;
 use App\Http\Controllers\Api\Hr\MyAttendanceCorrectionController;
 use App\Http\Controllers\Api\Hr\DemoRequestController;
@@ -651,6 +652,15 @@ Route::middleware(['auth:sanctum', 'permission:hr_attendance,view_global'])->pre
     // The controls that used to be constants — the advance thresholds above all.
     Route::get('/settings',  [HrSettingsController::class, 'index']);
     Route::put('/settings',  [HrSettingsController::class, 'update']);
+
+    // ── Approval workflows ──────────────────────────────────────────────
+    // Who approves what, in what order. Gated on hr_settings inside the
+    // controller, not on the HR-queue predicate: an approver must not be able
+    // to edit the ladder they stand on.
+    Route::get('/approval-workflows',                     [ApprovalWorkflowController::class, 'index']);
+    Route::get('/approval-workflows/{process}',           [ApprovalWorkflowController::class, 'show']);
+    Route::put('/approval-workflows/{process}',           [ApprovalWorkflowController::class, 'save']);
+    Route::patch('/approval-workflows/{process}/status',  [ApprovalWorkflowController::class, 'setStatus']);
 
     // ── Attendance corrections ──────────────────────────────────────────
     Route::get('/corrections',                 [AttendanceCorrectionController::class, 'index']);

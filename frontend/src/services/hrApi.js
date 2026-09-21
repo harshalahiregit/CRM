@@ -1348,6 +1348,20 @@ export const hrApi = {
     mine:   ()       => api.get('/hr/me/settings').then(r => r.data?.data ?? {}),
   },
 
+  /**
+   * Approval workflows — who approves what, in what order.
+   *
+   * show() returns the ladder AND the options the form renders from (approver
+   * types, this workspace's roles and users, the conditions this process
+   * understands), so the screen keeps no copy of the vocabulary.
+   */
+  approvalWorkflows: {
+    list:      ()                => api.get('/hr/approval-workflows').then(r => r.data?.data ?? []),
+    show:      (process)         => api.get(`/hr/approval-workflows/${process}`).then(r => r.data),
+    save:      (process, data)   => api.put(`/hr/approval-workflows/${process}`, data).then(r => r.data),
+    setStatus: (process, active) => api.patch(`/hr/approval-workflows/${process}/status`, { is_active: active }).then(r => r.data),
+  },
+
   /** Inbound demo enquiries. */
   demoRequests: {
     list:   (params = {}) => api.get('/hr/demo-requests', { params }).then(r => r.data?.data ?? []),

@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Building2, Tag, Layers, UserCog, MapPin, Clock, CalendarOff, PartyPopper,
   LogOut, GraduationCap, ShieldCheck, Settings2, Network, KeyRound, ArrowRight,
+  GitBranch,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 
@@ -58,6 +59,12 @@ const GROUPS = [
     items: [
       { icon: CalendarOff,  label: 'Leave Types',   desc: 'Casual, sick, earned — and their rules', to: '/app/hr/leave-management' },
       { icon: PartyPopper,  label: 'Holidays',      desc: 'The company holiday calendar',           to: '/app/hr/holidays' },
+    ],
+  },
+  {
+    title: 'Approvals & workflow',
+    items: [
+      { icon: GitBranch, label: 'Approval Workflows', desc: 'Who approves each request, and in what order', to: '/app/hr/approval-workflows' },
     ],
   },
   {
