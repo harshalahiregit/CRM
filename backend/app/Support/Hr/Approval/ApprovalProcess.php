@@ -7,6 +7,7 @@ use App\Models\Hr\HrEmployeeVariableEarning;
 use App\Models\Hr\HrExitRequest;
 use App\Models\Hr\HrInvestmentDeclaration;
 use App\Models\Hr\HrLeaveApplication;
+use App\Models\Hr\HrPayrollRun;
 use App\Models\Hr\HrProbationConfirmation;
 use App\Models\Hr\HrReimbursement;
 
@@ -33,6 +34,7 @@ final class ApprovalProcess
     public const REIMBURSEMENT           = 'reimbursement';
     public const EXIT_REQUEST            = 'exit_request';
     public const PROBATION_CONFIRMATION  = 'probation_confirmation';
+    public const PAYROLL_RUN             = 'payroll_run';
 
     /**
      * Everything the engine needs to know about a process, per process.
@@ -163,6 +165,28 @@ final class ApprovalProcess
             'model'        => HrProbationConfirmation::class,
             'amount_field' => null,
             'conditions'   => ['department_id', 'branch', 'grade_id'],
+        ],
+
+        /*
+         | Payroll run approval — signing off a whole month, not one person.
+         |
+         | The first process with NO employee. A run covers everybody in it, so
+         | there is no single employee to scope against and the employee-level
+         | conditions do not apply: department, branch and grade are facts about
+         | a person, and a run is not a person. The condition list is therefore
+         | EMPTY, which leaves only the amount bounds — and those are the rule a
+         | company actually wants here, because "a month over fifty lakh needs
+         | the director" is a real policy and "a month in the Sales department"
+         | is not a sentence.
+         |
+         | total_payable rather than total_net: it is the figure that leaves the
+         | bank, computed once by PayrollService and never recomputed here.
+         */
+        self::PAYROLL_RUN => [
+            'label'        => 'Payroll run',
+            'model'        => HrPayrollRun::class,
+            'amount_field' => 'total_payable',
+            'conditions'   => [],
         ],
     ];
 
