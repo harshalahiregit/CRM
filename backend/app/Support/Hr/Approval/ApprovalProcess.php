@@ -6,6 +6,7 @@ use App\Models\Hr\HrEmployeeLoan;
 use App\Models\Hr\HrEmployeeVariableEarning;
 use App\Models\Hr\HrInvestmentDeclaration;
 use App\Models\Hr\HrLeaveApplication;
+use App\Models\Hr\HrReimbursement;
 
 /**
  * The HR processes an approval workflow can be configured for.
@@ -15,10 +16,11 @@ use App\Models\Hr\HrLeaveApplication;
  * keeps the engine out of the business — which value to read for an amount
  * condition. Nothing here executes anything.
  *
- * Processes are registered one at a time, each with its own reviewed migration,
- * so a mistake costs one flow rather than eleven. Leave, loans and variable
- * earnings are wired; the rest stay on the old shared gate until they are
- * migrated deliberately.
+ * Processes are registered one at a time, each reviewed on its own, so a mistake
+ * costs one flow rather than eleven. Whatever is listed below is wired; every
+ * other HR approval stays on the old shared gate until it is migrated
+ * deliberately. The list is the record — this sentence does not repeat it,
+ * because a docblock enumerating the entries goes stale on the next phase.
  */
 final class ApprovalProcess
 {
@@ -26,6 +28,7 @@ final class ApprovalProcess
     public const LOAN                    = 'loan';
     public const VARIABLE_EARNING        = 'variable_earning';
     public const INVESTMENT_DECLARATION  = 'investment_declaration';
+    public const REIMBURSEMENT           = 'reimbursement';
 
     /**
      * Everything the engine needs to know about a process, per process.
@@ -96,6 +99,21 @@ final class ApprovalProcess
             'label'        => 'Investment declarations',
             'model'        => HrInvestmentDeclaration::class,
             'amount_field' => 'declared_total',
+            'conditions'   => ['department_id', 'branch', 'grade_id'],
+        ],
+
+        /*
+         | Expense claims.
+         |
+         | `amount_claimed` is what the employee is asking for, and it is what
+         | decides whether a second signature is wanted. amount_approved is the
+         | OUTPUT of the decision — null until somebody approves — so routing on
+         | it would mean the ladder could not be chosen until after it had run.
+         */
+        self::REIMBURSEMENT => [
+            'label'        => 'Expense claims',
+            'model'        => HrReimbursement::class,
+            'amount_field' => 'amount_claimed',
             'conditions'   => ['department_id', 'branch', 'grade_id'],
         ],
     ];
