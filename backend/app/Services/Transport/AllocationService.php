@@ -319,8 +319,13 @@ class AllocationService
         $driverId  = $assignment->driver_id;
 
         $released = DB::transaction(function () use ($assignment, $trip, $tenantId, $actor, $vehicleId, $driverId) {
+            // clearTripPointers: FALSE. The trip keeps its vehicle_id and
+            // driver_id, because on a finished trip those are the record of what
+            // ran it, not a claim on a resource. Clearing them broke Container
+            // 360, the CTD §4 plate search and the repoint's own row count.
             $row = $this->assignments->release(
-                $assignment, $tenantId, $actor, 'Trip '.$trip->trip_number.' delivered'
+                $assignment, $tenantId, $actor, 'Trip '.$trip->trip_number.' delivered',
+                clearTripPointers: false,
             );
 
             $this->freeResources($vehicleId, $driverId, $tenantId, $actor, 'Trip '.$trip->trip_number.' delivered');

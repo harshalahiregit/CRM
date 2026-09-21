@@ -33,7 +33,17 @@ import { fmtDateTime } from '../constants'
  * told "this cannot be waived" when their own rule book says it can is being
  * misled about their own business.
  */
-export default function ExceptionsPanel({ trip, canRaise, canManage, onChanged }) {
+/**
+ * @param {boolean} compact
+ *   Rendered inline above the tracker rather than inside a drawer. An OPEN
+ *   exception can refuse a close, so it has to be visible without a click — but
+ *   a trip's resolved history does not, and showing it there pushed the tracker
+ *   300px down a screen whose job is "what do I do next". Compact shows what is
+ *   still open plus the way to report a new one, and folds everything resolved
+ *   behind one line.
+ */
+export default function ExceptionsPanel({ trip, canRaise, canManage, onChanged, compact }) {
+  const [showResolved, setShowResolved] = useState(false)
   const toast = useToast()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -85,9 +95,14 @@ export default function ExceptionsPanel({ trip, canRaise, canManage, onChanged }
     )
   }
 
+  // In compact mode the OPEN ones are the point; resolved history is one line
+  // away rather than 300px of it above the tracker.
+  const closedCount = rows.filter((e) => !e.is_open).length
+  const visible = compact && !showResolved ? rows.filter((e) => e.is_open) : rows
+
   return (
     <div style={{ display: 'grid', gap: 12 }}>
-      {summary?.total > 0 && (
+      {summary?.total > 0 && !compact && (
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 11.5 }}>
           <Stat label="Open" value={summary.open} tone={summary.open ? 'var(--color-warning-500)' : 'var(--text-muted)'} />
           <Stat label="Critical open" value={summary.critical_open} tone={summary.critical_open ? 'var(--color-danger-500, #f87171)' : 'var(--text-muted)'} />
@@ -95,11 +110,18 @@ export default function ExceptionsPanel({ trip, canRaise, canManage, onChanged }
         </div>
       )}
 
-      {rows.length === 0 && !adding && (
+      {rows.length === 0 && !adding && !compact && (
         <p style={muted}>Nothing has gone wrong on this trip — or nothing has been recorded.</p>
       )}
 
-      {rows.map((e) => (
+      {compact && closedCount > 0 && !showResolved && (
+        <button type="button" onClick={() => setShowResolved(true)}
+          style={{ ...muted, textAlign: 'left', cursor: 'pointer', background: 'none', border: 0, padding: 0 }}>
+          {closedCount} resolved — show
+        </button>
+      )}
+
+      {visible.map((e) => (
         <div key={e.id} style={{
           padding: '11px 12px', borderRadius: 10, background: 'var(--bg-input)',
           border: `1px solid ${e.is_open ? 'var(--color-warning-500)' : 'var(--border)'}`,
@@ -210,11 +232,17 @@ export default function ExceptionsPanel({ trip, canRaise, canManage, onChanged }
         </div>
       )}
 
-      {/* Q5 and D-30, on screen rather than only in the code. */}
+      {/* Q5 and D-30, on screen rather than only in the code — but NOT in the
+          compact view. It is a caveat about how due times are measured and it
+          quotes a rule id; inline above the tracker it became the longest piece
+          of text on a screen whose job is "what do I do next". It belongs where
+          somebody is reading an exception, not where they are glancing at one. */}
+      {!compact && (
       <p style={{ margin: 0, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
         Due times are elapsed clock time — working hours, weekends and holidays are not modelled yet.
         {vocab?.waiver ? ` ${vocab.waiver}` : ''}
       </p>
+      )}
     </div>
   )
 }

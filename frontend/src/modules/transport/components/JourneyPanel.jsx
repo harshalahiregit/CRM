@@ -37,7 +37,16 @@ import { toLocalInput, fromLocalInput, fmtDateTime } from '../constants'
  * `canDepart` and `canDeliver` come from the capability endpoint. No button
  * appears that the API would refuse.
  */
-export default function JourneyPanel({ trip, canDepart, canDeliver, onChanged }) {
+/**
+ * @param {'departure'|'delivery'|undefined} phase
+ *   Which half of the journey this instance owns. The panel used to live in one
+ *   drawer titled "On the road" that held both actions — and that drawer was the
+ *   only one on the page covering two tracker positions, so its outcome line
+ *   read "Delivered 19 Sept" under a heading named after the previous stage.
+ *   One drawer per action is the rule everywhere else; this prop is what lets
+ *   this panel follow it. Omitted renders both, as before.
+ */
+export default function JourneyPanel({ trip, canDepart, canDeliver, onChanged, phase }) {
   const toast = useToast()
   const [busy, setBusy] = useState(false)
   const [when, setWhen] = useState(toLocalInput(new Date()))
@@ -114,11 +123,15 @@ export default function JourneyPanel({ trip, canDepart, canDeliver, onChanged })
   return (
     <div style={{ marginTop: 12, display: 'grid', gap: 14 }}>
       <div style={{ display: 'grid', gap: 12 }}>
-        <Milestone icon={MapPin} label="Left the pickup point" at={trip.departed_at} tone={departed ? done : todo} />
-        <Milestone icon={Flag} label="Arrived at the destination" at={trip.delivered_at} tone={delivered ? done : todo} />
+        {phase !== 'delivery' && (
+          <Milestone icon={MapPin} label="Left the pickup point" at={trip.departed_at} tone={departed ? done : todo} />
+        )}
+        {phase !== 'departure' && (
+          <Milestone icon={Flag} label="Arrived at the destination" at={trip.delivered_at} tone={delivered ? done : todo} />
+        )}
       </div>
 
-      {delivered && (
+      {delivered && phase !== 'departure' && (
         <div style={{
           display: 'flex', gap: 8, alignItems: 'flex-start', padding: '10px 12px',
           borderRadius: 10, background: 'rgba(52,211,153,0.10)', border: '1px solid rgba(52,211,153,0.28)',
@@ -131,7 +144,10 @@ export default function JourneyPanel({ trip, canDepart, canDeliver, onChanged })
         </div>
       )}
 
-      {(atDispatch || onTheRoad) && (canDepart || canDeliver) && (
+      {/* The form appears in the drawer that owns the action, so a reader is
+          never offered "record departure" under a heading about delivery. */}
+      {(atDispatch || onTheRoad) && (canDepart || canDeliver)
+        && (!phase || (atDispatch ? phase === 'departure' : phase === 'delivery')) && (
         <div style={{ display: 'grid', gap: 10, paddingTop: 2 }}>
           <label style={{ display: 'grid', gap: 5 }}>
             <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)' }}>

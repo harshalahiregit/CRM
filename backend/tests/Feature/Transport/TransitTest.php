@@ -575,4 +575,44 @@ class TransitTest extends TestCase
         $this->assertSame(TripStatus::DELIVERED, $trip->fresh()->status,
             'releasing the crew is not abandoning the allocation');
     }
+
+    /**
+     * A finished trip must not forget which truck ran it.
+     *
+     * Releasing an assignment clears the trip's denormalised `vehicle_id` and
+     * `driver_id`, which is right for an ABANDONED allocation — the trip goes
+     * back to `approved` and must not claim a vehicle it no longer holds.
+     *
+     * It is wrong for a finished one, and the damage was measured before this
+     * test existed: after one delivery, Container 360 lost its vehicle and
+     * driver, a plate search answered "no trip has run on this vehicle yet"
+     * about a truck that had just delivered one, and the repoint dry run fell
+     * from 2 rows to move to 0 — it would have run, moved nothing, and looked
+     * finished.
+     */
+    public function test_a_delivered_trip_keeps_the_vehicle_and_driver_it_ran_with(): void
+    {
+        $trip = $this->movingTrip();
+        $before = $trip->fresh()->only(['vehicle_id', 'driver_id']);
+
+        $this->trips->recordDelivery($trip->fresh(), [], self::TENANT_A, $this->actor);
+
+        $after = $trip->fresh()->only(['vehicle_id', 'driver_id']);
+
+        $this->assertNotNull($after['vehicle_id'], 'the trip forgot which vehicle ran it');
+        $this->assertSame($before, $after,
+            'a finished trip keeps its crew pointers — they are history, not a claim');
+    }
+
+    /** An ABANDONED allocation still clears them. The two paths differ on purpose. */
+    public function test_releasing_an_allocation_early_still_clears_the_pointers(): void
+    {
+        $trip = $this->dispatchedTrip();
+        $a = app(TripAssignmentService::class)->activeForTrip($trip->id, self::TENANT_A);
+
+        $this->alloc->release($a, self::TENANT_A, $this->actor, 'changed our minds');
+
+        $this->assertNull($trip->fresh()->vehicle_id,
+            'an abandoned allocation must not leave the trip claiming a vehicle');
+    }
 }
