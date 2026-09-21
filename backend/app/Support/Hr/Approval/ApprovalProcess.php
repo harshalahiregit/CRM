@@ -4,6 +4,7 @@ namespace App\Support\Hr\Approval;
 
 use App\Models\Hr\HrEmployeeLoan;
 use App\Models\Hr\HrEmployeeVariableEarning;
+use App\Models\Hr\HrInvestmentDeclaration;
 use App\Models\Hr\HrLeaveApplication;
 
 /**
@@ -21,9 +22,10 @@ use App\Models\Hr\HrLeaveApplication;
  */
 final class ApprovalProcess
 {
-    public const LEAVE             = 'leave';
-    public const LOAN              = 'loan';
-    public const VARIABLE_EARNING  = 'variable_earning';
+    public const LEAVE                   = 'leave';
+    public const LOAN                    = 'loan';
+    public const VARIABLE_EARNING        = 'variable_earning';
+    public const INVESTMENT_DECLARATION  = 'investment_declaration';
 
     /**
      * Everything the engine needs to know about a process, per process.
@@ -74,6 +76,27 @@ final class ApprovalProcess
             'model'        => HrEmployeeVariableEarning::class,
             'amount_field' => 'amount',
             'conditions'   => ['department_id', 'branch', 'grade_id', 'component_id'],
+        ],
+
+        /*
+         | Investment declarations — VERIFICATION, not approval.
+         |
+         | The domain word is deliberate and kept: a declaration is Verified,
+         | never Approved, because somebody has checked the proofs behind a
+         | claim rather than granted a request. Only a Verified declaration
+         | reduces tax (HrInvestmentDeclaration::countsForTax()).
+         |
+         | `declared_total` is the amount to route on — what the employee is
+         | claiming, which is what decides whether a second pair of eyes is
+         | wanted. verified_total cannot be used: it is the OUTPUT of the
+         | decision the ladder is about to make, and on a submitted declaration
+         | it is still zero.
+         */
+        self::INVESTMENT_DECLARATION => [
+            'label'        => 'Investment declarations',
+            'model'        => HrInvestmentDeclaration::class,
+            'amount_field' => 'declared_total',
+            'conditions'   => ['department_id', 'branch', 'grade_id'],
         ],
     ];
 

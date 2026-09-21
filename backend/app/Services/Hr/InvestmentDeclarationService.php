@@ -281,6 +281,21 @@ class InvestmentDeclarationService
         }
     }
 
+    /**
+     * The declaration a decision is about, or null.
+     *
+     * Same scoped query as find() below, returning null rather than throwing
+     * because the approval controller needs the model in hand before it can
+     * open a request against it.
+     */
+    public function findForDecision(int $id, int $tenantId, ?User $actor = null): ?HrInvestmentDeclaration
+    {
+        return $this->scopeToEmployees(
+            HrInvestmentDeclaration::forTenant($tenantId)->with('items'),
+            $actor
+        )->find($id);
+    }
+
     /** save, submit, verify, reject and reopen all reach their row through here. */
     private function find(int $id, int $tenantId, ?User $actor = null): HrInvestmentDeclaration
     {
