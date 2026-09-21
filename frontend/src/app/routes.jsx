@@ -71,6 +71,7 @@ const RecruiterWorkspace = lazy(() => import('@/modules/hr/pages/RecruiterWorksp
 const CompanyApprovals = lazy(() => import('@/modules/hr/pages/CompanyApprovals'))
 const Attendance = lazy(() => import('@/modules/hr/pages/Attendance'))
 const OrganizationSetup = lazy(() => import('@/modules/hr/pages/OrganizationSetup'))
+const HrConfiguration = lazy(() => import('@/modules/hr/pages/HrConfiguration'))
 // #29 — organisation chart, derived from the employee reporting hierarchy.
 const OrgChart = lazy(() => import('@/modules/hr/pages/OrgChart'))
 // #10 — interview question bank + AI generation.
@@ -675,6 +676,9 @@ export default function AppRoutes() {
           <Route path="settings" element={<S><HrSettings /></S>} />
           <Route path="demo-requests" element={<S><DemoRequests /></S>} />
             <Route path="holidays" element={<S><Holidays /></S>} />
+          {/* An index of every HR master and where it is maintained. Links
+              only — it owns no data and duplicates no API. */}
+          <Route path="configuration" element={<S><HrConfiguration /></S>} />
           <Route path="organization-setup" element={<S><OrganizationSetup /></S>} />
           <Route path="org-chart" element={<S><OrgChart /></S>} />
           <Route path="interview-questions" element={<S><InterviewQuestionBank /></S>} />
@@ -1133,7 +1137,9 @@ export default function AppRoutes() {
           {/* /settings/roles retired: it managed a second staff-role catalogue
               (access_roles) beside the live one. staff_roles owns the vocabulary,
               permissions and scope together, and is maintained in Staff
-              Management at /admin/roles. */}
+              Management — the UI route /app/admin/staff, whose Roles button opens
+              the permission grid. (/admin/roles is that screen's API, not a page;
+              naming it here sent people looking for a route that never existed.) */}
           <Route path="departments" element={<S><DepartmentsSettings /></S>} />
           {/* Each module's own settings, reachable from the one Setup panel as
               well as from inside the module. Same component either way, so the
