@@ -2,6 +2,9 @@
 
 namespace App\Repositories\Hr;
 
+use App\Models\User;
+use App\Services\Auth\ScopeResolver;
+use App\Support\Hr\DataScope;
 use App\Support\Sql\SqlDate;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -16,13 +19,38 @@ use Illuminate\Support\Facades\DB;
  */
 class LeaveReportRepository
 {
+    /**
+     * The one place this class talks to the scope resolver.
+     *
+     * Unlike Payroll, this class has no single base query: the dashboard, the
+     * balance report, the type analysis and the trend series each read a
+     * different table. So the scope is applied at every employee-level query
+     * rather than at one choke point — scoping only apps() would have produced
+     * a scoped application list sitting beside a tenant-wide dashboard tile and
+     * a tenant-wide utilisation percentage, which is worse than either alone.
+     *
+     * BRANCH is excluded for the same reason as Phase 1: hr_employees.branch is
+     * free text with no master, so a role scoped to it reads as global here.
+     */
+    private function scoped($query, ?User $actor, string $column)
+    {
+        return app(ScopeResolver::class)->applyToQuery($query, $actor, $column, [
+            DataScope::OWN, DataScope::DEPARTMENT, DataScope::TEAM,
+        ]);
+    }
+
     /** Base applications join with the shared filters applied. */
-    private function apps(int $tenantId, array $f)
+    private function apps(int $tenantId, array $f, ?User $actor = null)
     {
         $q = DB::table('hr_leave_applications as a')
             ->join('hr_employees as e', 'a.employee_id', '=', 'e.id')
             ->join('hr_leave_types as lt', 'a.leave_type_id', '=', 'lt.id')
             ->where('a.tenant_id', $tenantId);
+
+        // Scope first, filters after, so a filter can only narrow within the
+        // scope — supplying employee_id for somebody outside it returns nothing
+        // rather than reaching them.
+        $q = $this->scoped($q, $actor, 'a.employee_id');
 
         if (! empty($f['year']))          { $q->whereYear('a.from_date', $f['year']); }
         if (! empty($f['month']))         { $q->whereMonth('a.from_date', $f['month']); }
@@ -36,20 +64,26 @@ class LeaveReportRepository
     }
 
     /* ── Dashboard ────────────────────────────────────────── */
-    public function dashboard(int $tenantId, string $today): array
+    public function dashboard(int $tenantId, string $today, ?User $actor = null): array
     {
-        $counts = DB::table('hr_leave_applications')->where('tenant_id', $tenantId)
-            ->selectRaw('status, count(*) as c')->groupBy('status')->pluck('c', 'status')->all();
+        $counts = $this->scoped(
+            DB::table('hr_leave_applications')->where('tenant_id', $tenantId), $actor, 'employee_id'
+        )->selectRaw('status, count(*) as c')->groupBy('status')->pluck('c', 'status')->all();
 
-        $onLeaveToday = DB::table('hr_leave_applications')->where('tenant_id', $tenantId)
-            ->where('status', 'Approved')->whereDate('from_date', '<=', $today)->whereDate('to_date', '>=', $today)
+        $onLeaveToday = $this->scoped(
+            DB::table('hr_leave_applications')->where('tenant_id', $tenantId), $actor, 'employee_id'
+        )->where('status', 'Approved')->whereDate('from_date', '<=', $today)->whereDate('to_date', '>=', $today)
             ->distinct()->count('employee_id');
 
+        // Holidays are company calendar, not employee data — deliberately not
+        // scoped. A public holiday is the same fact for everyone.
         $upcomingHolidays = DB::table('hr_holidays')->where('tenant_id', $tenantId)
             ->where('is_active', true)->whereDate('holiday_date', '>=', $today)->count();
 
-        $bal = DB::table('hr_employee_leave_balances')->where('tenant_id', $tenantId)->where('status', 'active')
-            ->selectRaw('COALESCE(SUM(allocated),0) alloc, COALESCE(SUM(used),0) used')->first();
+        $bal = $this->scoped(
+            DB::table('hr_employee_leave_balances')->where('tenant_id', $tenantId)->where('status', 'active'),
+            $actor, 'employee_id'
+        )->selectRaw('COALESCE(SUM(allocated),0) alloc, COALESCE(SUM(used),0) used')->first();
         $utilization = ($bal->alloc ?? 0) > 0 ? round($bal->used / $bal->alloc * 100, 1) : 0.0;
 
         return [
@@ -65,10 +99,10 @@ class LeaveReportRepository
     }
 
     /* ── Employee leave report (application-level rows) ───── */
-    public function employees(int $tenantId, array $f): Collection
+    public function employees(int $tenantId, array $f, ?User $actor = null): Collection
     {
         return collect(
-            $this->apps($tenantId, $f)
+            $this->apps($tenantId, $f, $actor)
                 ->leftJoin('hr_employee_leave_balances as b', function ($j) use ($tenantId) {
                     $j->on('b.employee_id', '=', 'a.employee_id')->on('b.leave_type_id', '=', 'a.leave_type_id')
                       ->where('b.status', '=', 'active')->where('b.tenant_id', '=', $tenantId);
@@ -82,10 +116,10 @@ class LeaveReportRepository
     }
 
     /* ── Department report ────────────────────────────────── */
-    public function departmentApps(int $tenantId, array $f): Collection
+    public function departmentApps(int $tenantId, array $f, ?User $actor = null): Collection
     {
         return collect(
-            $this->apps($tenantId, $f)
+            $this->apps($tenantId, $f, $actor)
                 ->groupBy('e.department')
                 ->selectRaw("COALESCE(e.department,'Unassigned') as department, COUNT(*) as total,
                     SUM(CASE WHEN a.status='Approved' THEN 1 ELSE 0 END) as approved,
@@ -95,22 +129,28 @@ class LeaveReportRepository
         );
     }
 
-    public function balancesByDept(int $tenantId): Collection
+    public function balancesByDept(int $tenantId, ?User $actor = null): Collection
     {
         return collect(
-            DB::table('hr_employee_leave_balances as b')->join('hr_employees as e', 'b.employee_id', '=', 'e.id')
-                ->where('b.tenant_id', $tenantId)->where('b.status', 'active')
+            $this->scoped(
+                DB::table('hr_employee_leave_balances as b')->join('hr_employees as e', 'b.employee_id', '=', 'e.id')
+                    ->where('b.tenant_id', $tenantId)->where('b.status', 'active'),
+                $actor, 'b.employee_id'
+            )
                 ->groupBy('e.department')
                 ->selectRaw("COALESCE(e.department,'Unassigned') as department, COALESCE(SUM(b.allocated),0) as allocated, COALESCE(SUM(b.used),0) as used")
                 ->get()
         );
     }
 
-    public function onLeaveTodayByDept(int $tenantId, string $today): Collection
+    public function onLeaveTodayByDept(int $tenantId, string $today, ?User $actor = null): Collection
     {
         return collect(
-            DB::table('hr_leave_applications as a')->join('hr_employees as e', 'a.employee_id', '=', 'e.id')
-                ->where('a.tenant_id', $tenantId)->where('a.status', 'Approved')
+            $this->scoped(
+                DB::table('hr_leave_applications as a')->join('hr_employees as e', 'a.employee_id', '=', 'e.id')
+                    ->where('a.tenant_id', $tenantId)->where('a.status', 'Approved'),
+                $actor, 'a.employee_id'
+            )
                 ->whereDate('a.from_date', '<=', $today)->whereDate('a.to_date', '>=', $today)
                 ->groupBy('e.department')
                 ->selectRaw("COALESCE(e.department,'Unassigned') as department, COUNT(DISTINCT a.employee_id) as c")
@@ -119,11 +159,14 @@ class LeaveReportRepository
     }
 
     /* ── Leave type analysis + balance report (from balances) ── */
-    public function typeAnalysis(int $tenantId, array $f): Collection
+    public function typeAnalysis(int $tenantId, array $f, ?User $actor = null): Collection
     {
         return collect(
-            DB::table('hr_employee_leave_balances as b')->join('hr_leave_types as lt', 'b.leave_type_id', '=', 'lt.id')
-                ->where('b.tenant_id', $tenantId)->where('b.status', 'active')
+            $this->scoped(
+                DB::table('hr_employee_leave_balances as b')->join('hr_leave_types as lt', 'b.leave_type_id', '=', 'lt.id')
+                    ->where('b.tenant_id', $tenantId)->where('b.status', 'active'),
+                $actor, 'b.employee_id'
+            )
                 ->when(! empty($f['leave_type_id']), fn ($q) => $q->where('b.leave_type_id', $f['leave_type_id']))
                 ->groupBy('lt.id', 'lt.name', 'lt.code')
                 ->selectRaw('lt.name, lt.code,
@@ -133,13 +176,16 @@ class LeaveReportRepository
         );
     }
 
-    public function balances(int $tenantId, array $f): Collection
+    public function balances(int $tenantId, array $f, ?User $actor = null): Collection
     {
         return collect(
-            DB::table('hr_employee_leave_balances as b')
-                ->join('hr_employees as e', 'b.employee_id', '=', 'e.id')
-                ->join('hr_leave_types as lt', 'b.leave_type_id', '=', 'lt.id')
-                ->where('b.tenant_id', $tenantId)->where('b.status', 'active')
+            $this->scoped(
+                DB::table('hr_employee_leave_balances as b')
+                    ->join('hr_employees as e', 'b.employee_id', '=', 'e.id')
+                    ->join('hr_leave_types as lt', 'b.leave_type_id', '=', 'lt.id')
+                    ->where('b.tenant_id', $tenantId)->where('b.status', 'active'),
+                $actor, 'b.employee_id'
+            )
                 ->when(! empty($f['employee_id']), fn ($q) => $q->where('b.employee_id', $f['employee_id']))
                 ->when(! empty($f['department']) && $f['department'] !== 'All', fn ($q) => $q->where('e.department', $f['department']))
                 ->when(! empty($f['leave_type_id']), fn ($q) => $q->where('b.leave_type_id', $f['leave_type_id']))
@@ -164,30 +210,56 @@ class LeaveReportRepository
     }
 
     /* ── Monthly trends (aggregate in PHP — DB-agnostic) ──── */
-    public function trendRows(int $tenantId, int $year): Collection
+    public function trendRows(int $tenantId, int $year, ?User $actor = null): Collection
     {
         return collect(
-            DB::table('hr_leave_applications')->where('tenant_id', $tenantId)->whereYear('from_date', $year)
-                ->get(['from_date', 'status', 'days'])
+            $this->scoped(
+                DB::table('hr_leave_applications')->where('tenant_id', $tenantId), $actor, 'employee_id'
+            )->whereYear('from_date', $year)->get(['from_date', 'status', 'days'])
         );
     }
 
-    public function totalAllocated(int $tenantId): float
+    /**
+     * The denominator of the trend utilisation percentage.
+     *
+     * Scoped for the same reason as the numerator: days taken by this actor's
+     * people over allocation belonging to everybody would read as a near-zero
+     * utilisation for a department that is in fact fully booked.
+     */
+    public function totalAllocated(int $tenantId, ?User $actor = null): float
     {
-        return (float) DB::table('hr_employee_leave_balances')->where('tenant_id', $tenantId)->where('status', 'active')->sum('allocated');
+        return (float) $this->scoped(
+            DB::table('hr_employee_leave_balances')->where('tenant_id', $tenantId)->where('status', 'active'),
+            $actor, 'employee_id'
+        )->sum('allocated');
     }
 
     /* ── Filter options ───────────────────────────────────── */
-    public function filterOptions(int $tenantId): array
+    /**
+     * The dropdown contents — scoped, because a filter list is data too.
+     *
+     * `employees` is a list of names and codes: tenant-wide it would hand a
+     * department-scoped user the whole staff directory inside a <select>, which
+     * is the same disclosure as the report with extra steps. Departments and
+     * designations come from the same scoped set, so the filters offered are the
+     * filters that can actually return something. Leave types are master data
+     * and stay whole.
+     */
+    public function filterOptions(int $tenantId, ?User $actor = null): array
     {
+        $employees = $this->scoped(
+            DB::table('hr_employees')->where('tenant_id', $tenantId), $actor, 'id'
+        );
+
         return [
-            'years' => DB::table('hr_leave_applications')->where('tenant_id', $tenantId)
-                ->selectRaw('DISTINCT '.$this->yearExpr('from_date').' as y')->orderByDesc('y')->pluck('y')->filter()->values()->all(),
-            'departments' => DB::table('hr_employees')->where('tenant_id', $tenantId)->whereNotNull('department')->where('department', '!=', '')
+            'years' => $this->scoped(
+                DB::table('hr_leave_applications')->where('tenant_id', $tenantId), $actor, 'employee_id'
+            )->selectRaw('DISTINCT '.$this->yearExpr('from_date').' as y')->orderByDesc('y')->pluck('y')->filter()->values()->all(),
+            'departments' => (clone $employees)->whereNotNull('department')->where('department', '!=', '')
                 ->distinct()->orderBy('department')->pluck('department')->all(),
-            'designations' => DB::table('hr_employees')->where('tenant_id', $tenantId)->whereNotNull('designation')->where('designation', '!=', '')
+            'designations' => (clone $employees)->whereNotNull('designation')->where('designation', '!=', '')
                 ->distinct()->orderBy('designation')->pluck('designation')->all(),
-            'employees' => DB::table('hr_employees')->where('tenant_id', $tenantId)->orderBy('name')->get(['id', 'name', 'employee_code'])->all(),
+            'employees' => (clone $employees)->orderBy('name')->get(['id', 'name', 'employee_code'])->all(),
             'leave_types' => DB::table('hr_leave_types')->where('tenant_id', $tenantId)->orderBy('name')->get(['id', 'name', 'code'])->all(),
         ];
     }

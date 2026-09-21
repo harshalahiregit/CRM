@@ -75,6 +75,10 @@ class HrSettingsController extends Controller
             'data'   => array_intersect_key($all, array_flip([
                 'company_start_time', 'company_end_time', 'standard_day_hours', 'half_day_hours',
                 'allow_self_correction', 'correction_window_days',
+                // What the punch button must ask for before it posts. The client
+                // cannot be trusted to enforce these, and does not: it decides
+                // what to PROMPT for, and the server records whatever arrives.
+                'web_punch_require_selfie', 'web_punch_require_location',
             ])),
         ]);
     }

@@ -34,14 +34,26 @@ final class StaffPermission
     /**
      * Every module the grid covers.
      *
-     * The first 23 are what StaffModal already renders. The last two are added
-     * here for reasons the plan sets out:
+     * This list and StaffModal.jsx's PERMISSION_MODULES are one vocabulary in two
+     * files, and StaffPermissionModuleParityTest fails if they disagree. They had
+     * already drifted — hr_attendance and self existed here with no checkbox
+     * anywhere, so the only way to grant them was to pick a role template.
      *
      *   hr_attendance — so "may approve leave" is separable from "may see
      *                   payroll". Today both sit behind one coarse HR gate.
      *   self          — "my own record only". Without it, letting somebody clock
      *                   themselves in means granting HR-admin rights over the
      *                   whole company, which is what blocks self check-in.
+     *
+     * The four hr_* modules below name the parts of HR that could not be spoken
+     * about at all. There was no way to say "may run payroll" or "may approve
+     * leave but not see salaries": every one of those sits behind the single
+     * canManageHrQueue() check, on 113 call sites, which reads none of this.
+     *
+     * NAMING A MODULE HERE GRANTS NOTHING. It makes the statement expressible;
+     * something has to read it before it means anything, and today nothing does.
+     * That separation is deliberate — the vocabulary lands first so the screen
+     * and the enforcement can be reviewed apart from each other.
      */
     public const MODULES = [
         'contacts', 'deals', 'tasks', 'projects', 'invoices', 'estimates',
@@ -50,6 +62,29 @@ final class StaffPermission
         'delivery_notes', 'hr_recruitment', 'hr_checklists', 'hr_settings',
         'affiliates', 'staff_mgmt',
         'hr_attendance', 'self',
+        'hr_employees', 'hr_payroll', 'hr_leave', 'hr_exit',
+
+        /*
+         | Narrow authorities that were hardcoded to role slugs.
+         |
+         | Each replaces one User capability helper that matched internal_role
+         | against a fixed list, which meant a role created in HR Settings could
+         | never hold it however many boxes were ticked. They are separate
+         | modules rather than capabilities on an existing one because each is a
+         | DIFFERENT authority, and the seeded roles that hold them are disjoint
+         | sets — an L1 approver is not an L2 approver.
+         |
+         | The capability used is view_global, following canManageHrQueue's use
+         | of hr_employees:view_global: on a module this narrow, "sees all of it"
+         | and "may act on it" are the same statement.
+         |
+         | hr_manpower_l1/l2 are the two rungs of the manpower ladder. Their
+         | MEMBERSHIP is static, which is why it can live here; the ORDER stays
+         | in ManpowerRequestService, which checks the request's status. Advance
+         | tiers are deliberately NOT here — their manager rung is resolved per
+         | record from the reporting line, which no permission can express.
+         */
+        'hr_onboarding', 'hr_manpower_l1', 'hr_manpower_l2', 'hr_ai_jd',
     ];
 
     public static function isModule(string $module): bool

@@ -16,7 +16,10 @@ class HrOnboarding extends Model
 
     protected $fillable = [
         'candidate_id','tenant_id','candidate_name','position','joining_date',
-        'department','employee_code','reporting_manager_name',
+        // Two manager fields, and neither is derived from the other: the id is
+        // the hierarchy edge every other feature walks, the name is the only
+        // thing that can hold a manager who is not an employee record.
+        'department','employee_code','reporting_manager_name','reporting_manager_id',
         'step_doc_verification','step_joining_confirmed','step_emp_id_generated',
         'step_dept_assigned','step_manager_assigned','step_record_created',
         'document_checklist','status',

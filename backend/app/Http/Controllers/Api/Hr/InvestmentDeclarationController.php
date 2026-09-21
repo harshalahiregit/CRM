@@ -58,8 +58,21 @@ class InvestmentDeclarationController extends Controller
         ));
     }
 
+    /**
+     * HR-only for now, matching verify() below.
+     *
+     * A declaration decides how much tax is withheld — regime, HRA, 80C, previous
+     * employer income all feed TDS — and this takes a declaration id, not "mine",
+     * so ungated it let any signed-in staff member rewrite anybody's.
+     *
+     * An employee filling in their OWN declaration is the obvious next thing to
+     * want, and it is deliberately not built here: it needs a /me route that
+     * resolves the caller's declaration rather than accepting an id.
+     */
     public function save(Request $request, int $id)
     {
+        $this->assertCanManage($request);
+
         $data = $request->validate([
             'regime'                   => ['nullable', Rule::in(HrInvestmentDeclaration::REGIMES)],
             'previous_employer_income' => 'nullable|numeric|min:0',
@@ -83,8 +96,11 @@ class InvestmentDeclarationController extends Controller
         return response()->json($this->service->save($id, $data, $this->tenant($request), $request->user()));
     }
 
+    /** HR-only, like save(): submitting locks the declaration for verification. */
     public function submit(Request $request, int $id)
     {
+        $this->assertCanManage($request);
+
         return response()->json($this->service->submit($id, $this->tenant($request), $request->user()));
     }
 
@@ -136,8 +152,13 @@ class InvestmentDeclarationController extends Controller
         return (int) $request->user()->tenant_id;
     }
 
+    /**
+     * Wording widened from "verify" now that save() and submit() share this gate —
+     * a refusal that says "verify" when somebody pressed Save sends them looking
+     * for the wrong permission. Same authority, same status, no test pins it.
+     */
     private function assertCanManage(Request $request): void
     {
-        abort_unless($request->user()->canManageHrQueue(), 403, 'You are not authorised to verify declarations');
+        abort_unless($request->user()->canManageHrQueue(), 403, 'You are not authorised to manage declarations');
     }
 }

@@ -2,6 +2,9 @@
 
 namespace App\Repositories\Hr;
 
+use App\Models\User;
+use App\Services\Auth\ScopeResolver;
+use App\Support\Hr\DataScope;
 use App\Support\Sql\SqlDate;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -15,14 +18,33 @@ use Illuminate\Support\Facades\DB;
  */
 class ProbationReportRepository
 {
+    /**
+     * The one place this class talks to the scope resolver.
+     *
+     * A probation record is a judgement about a named person — a rating, a
+     * recommendation, an extension — so every query here that reaches an
+     * employee is scoped, not just the three that go through base().
+     *
+     * BRANCH is excluded as in Phase 1: free text, no master, no data.
+     */
+    private function scoped($query, ?User $actor, string $column)
+    {
+        return app(ScopeResolver::class)->applyToQuery($query, $actor, $column, [
+            DataScope::OWN, DataScope::DEPARTMENT, DataScope::TEAM,
+        ]);
+    }
+
     /** Base probation query joined to employee / policy / type with shared filters. */
-    private function base(int $tenantId, array $f)
+    private function base(int $tenantId, array $f, ?User $actor = null)
     {
         $q = DB::table('hr_employee_probations as ep')
             ->join('hr_employees as e', 'ep.employee_id', '=', 'e.id')
             ->join('hr_probation_policies as pol', 'ep.probation_policy_id', '=', 'pol.id')
             ->join('hr_probation_types as pt', 'ep.probation_type_id', '=', 'pt.id')
             ->where('ep.tenant_id', $tenantId);
+
+        // Scope before filters — a filter narrows within the scope, never past it.
+        $q = $this->scoped($q, $actor, 'ep.employee_id');
 
         if (! empty($f['year']))         { $q->whereRaw($this->yearExpr('ep.probation_start_date').' = ?', [(int) $f['year']]); }
         if (! empty($f['month']))        { $q->whereRaw($this->monthExpr('ep.probation_start_date').' = ?', [(int) $f['month']]); }
@@ -41,22 +63,22 @@ class ProbationReportRepository
     }
 
     /* ── Dashboard (tenant-scoped) ────────────────────────── */
-    public function dashboard(int $tenantId): array
+    public function dashboard(int $tenantId, ?User $actor = null): array
     {
-        $prob = DB::table('hr_employee_probations')->where('tenant_id', $tenantId)
+        $prob = $this->scoped(DB::table('hr_employee_probations')->where('tenant_id', $tenantId), $actor, 'employee_id')
             ->selectRaw("COUNT(*) as total,
                 SUM(CASE WHEN current_status='Active' THEN 1 ELSE 0 END) as active,
                 SUM(CASE WHEN current_status='Extended' THEN 1 ELSE 0 END) as extended,
                 SUM(CASE WHEN current_status='Confirmed' THEN 1 ELSE 0 END) as confirmed,
                 AVG(".SqlDate::days('probation_start_date', 'probation_end_date').') as avg_duration')->first();
 
-        $conf = DB::table('hr_probation_confirmations')->where('tenant_id', $tenantId)
+        $conf = $this->scoped(DB::table('hr_probation_confirmations')->where('tenant_id', $tenantId), $actor, 'employee_id')
             ->selectRaw("SUM(CASE WHEN status='Pending' THEN 1 ELSE 0 END) as pending,
                 SUM(CASE WHEN status='Rejected' THEN 1 ELSE 0 END) as rejected")->first();
 
         $monthStart = now()->startOfMonth()->toDateString();
         $monthEnd = now()->endOfMonth()->toDateString();
-        $due = (int) DB::table('hr_employee_probations')->where('tenant_id', $tenantId)
+        $due = (int) $this->scoped(DB::table('hr_employee_probations')->where('tenant_id', $tenantId), $actor, 'employee_id')
             ->whereIn('current_status', ['Active', 'Extended'])
             ->whereDate('probation_end_date', '>=', $monthStart)->whereDate('probation_end_date', '<=', $monthEnd)->count();
 
@@ -73,10 +95,10 @@ class ProbationReportRepository
     }
 
     /* ── Employee report ──────────────────────────────────── */
-    public function employees(int $tenantId, array $f): Collection
+    public function employees(int $tenantId, array $f, ?User $actor = null): Collection
     {
         return collect(
-            $this->base($tenantId, $f)
+            $this->base($tenantId, $f, $actor)
                 ->leftJoin('hr_probation_confirmations as c', 'c.probation_id', '=', 'ep.id')
                 ->leftJoin('hr_probation_reviews as rv', function ($j) {
                     $j->on('rv.employee_probation_id', '=', 'ep.id')
@@ -91,10 +113,10 @@ class ProbationReportRepository
     }
 
     /* ── Department report ────────────────────────────────── */
-    public function departments(int $tenantId, array $f): Collection
+    public function departments(int $tenantId, array $f, ?User $actor = null): Collection
     {
         return collect(
-            $this->base($tenantId, $f)
+            $this->base($tenantId, $f, $actor)
                 ->groupBy('e.department')
                 ->selectRaw("COALESCE(e.department,'Unassigned') as department, COUNT(*) as employees,
                     SUM(CASE WHEN ep.current_status='Active' THEN 1 ELSE 0 END) as active,
@@ -106,10 +128,10 @@ class ProbationReportRepository
     }
 
     /* ── Policy report ────────────────────────────────────── */
-    public function policies(int $tenantId, array $f): Collection
+    public function policies(int $tenantId, array $f, ?User $actor = null): Collection
     {
         return collect(
-            $this->base($tenantId, $f)
+            $this->base($tenantId, $f, $actor)
                 ->groupBy('pol.id', 'pol.name')
                 ->selectRaw("pol.name as policy, COUNT(*) as employees,
                     SUM(CASE WHEN ep.current_status='Confirmed' THEN 1 ELSE 0 END) as confirmed,
@@ -119,9 +141,9 @@ class ProbationReportRepository
     }
 
     /* ── Review report ────────────────────────────────────── */
-    public function reviewSummary(int $tenantId): array
+    public function reviewSummary(int $tenantId, ?User $actor = null): array
     {
-        $r = DB::table('hr_probation_reviews')->where('tenant_id', $tenantId)
+        $r = $this->scoped(DB::table('hr_probation_reviews')->where('tenant_id', $tenantId), $actor, 'employee_id')
             ->selectRaw("SUM(CASE WHEN status='Completed' THEN 1 ELSE 0 END) as completed,
                 SUM(CASE WHEN status IN ('Draft','Submitted') THEN 1 ELSE 0 END) as pending,
                 AVG(NULLIF(overall_rating,0)) as avg_rating")->first();
@@ -129,20 +151,23 @@ class ProbationReportRepository
         return ['completed' => (int) ($r->completed ?? 0), 'pending' => (int) ($r->pending ?? 0), 'avg_rating' => round((float) ($r->avg_rating ?? 0), 1)];
     }
 
-    public function reviewRecommendations(int $tenantId): Collection
+    public function reviewRecommendations(int $tenantId, ?User $actor = null): Collection
     {
         return collect(
-            DB::table('hr_probation_reviews')->where('tenant_id', $tenantId)
+            $this->scoped(DB::table('hr_probation_reviews')->where('tenant_id', $tenantId), $actor, 'employee_id')
                 ->groupBy('recommendation')->selectRaw('recommendation, COUNT(*) as c')->get()
         );
     }
 
     /* ── Extension report (by department) ─────────────────── */
-    public function extensions(int $tenantId, array $f): Collection
+    public function extensions(int $tenantId, array $f, ?User $actor = null): Collection
     {
         return collect(
-            DB::table('hr_probation_extensions as x')->join('hr_employees as e', 'x.employee_id', '=', 'e.id')
-                ->where('x.tenant_id', $tenantId)
+            $this->scoped(
+                DB::table('hr_probation_extensions as x')->join('hr_employees as e', 'x.employee_id', '=', 'e.id')
+                    ->where('x.tenant_id', $tenantId),
+                $actor, 'x.employee_id'
+            )
                 ->when(! empty($f['department']) && $f['department'] !== 'All', fn ($q) => $q->where('e.department', $f['department']))
                 ->groupBy('e.department')
                 ->selectRaw("COALESCE(e.department,'Unassigned') as department, COUNT(*) as requested,
@@ -153,14 +178,17 @@ class ProbationReportRepository
     }
 
     /* ── Confirmation report ──────────────────────────────── */
-    public function confirmations(int $tenantId, array $f): Collection
+    public function confirmations(int $tenantId, array $f, ?User $actor = null): Collection
     {
         return collect(
-            DB::table('hr_probation_confirmations as c')
-                ->join('hr_employees as e', 'c.employee_id', '=', 'e.id')
-                ->leftJoin('hr_employee_probations as ep', 'c.probation_id', '=', 'ep.id')
-                ->leftJoin('hr_probation_policies as pol', 'ep.probation_policy_id', '=', 'pol.id')
-                ->where('c.tenant_id', $tenantId)
+            $this->scoped(
+                DB::table('hr_probation_confirmations as c')
+                    ->join('hr_employees as e', 'c.employee_id', '=', 'e.id')
+                    ->leftJoin('hr_employee_probations as ep', 'c.probation_id', '=', 'ep.id')
+                    ->leftJoin('hr_probation_policies as pol', 'ep.probation_policy_id', '=', 'pol.id')
+                    ->where('c.tenant_id', $tenantId),
+                $actor, 'c.employee_id'
+            )
                 ->when(! empty($f['employee_id']), fn ($q) => $q->where('c.employee_id', $f['employee_id']))
                 ->when(! empty($f['department']) && $f['department'] !== 'All', fn ($q) => $q->where('e.department', $f['department']))
                 ->when(! empty($f['status']) && $f['status'] !== 'All', fn ($q) => $q->where('c.status', $f['status']))
@@ -171,41 +199,43 @@ class ProbationReportRepository
     }
 
     /* ── Trends (rows fetched, aggregated in PHP) ─────────── */
-    public function trendProbations(int $tenantId, int $year): Collection
+    public function trendProbations(int $tenantId, int $year, ?User $actor = null): Collection
     {
-        return collect(DB::table('hr_employee_probations')->where('tenant_id', $tenantId)
+        return collect($this->scoped(DB::table('hr_employee_probations')->where('tenant_id', $tenantId), $actor, 'employee_id')
             ->whereRaw($this->yearExpr('probation_start_date').' = ?', [$year])->get(['probation_start_date']));
     }
 
-    public function trendReviews(int $tenantId, int $year): Collection
+    public function trendReviews(int $tenantId, int $year, ?User $actor = null): Collection
     {
-        return collect(DB::table('hr_probation_reviews')->where('tenant_id', $tenantId)
+        return collect($this->scoped(DB::table('hr_probation_reviews')->where('tenant_id', $tenantId), $actor, 'employee_id')
             ->whereRaw($this->yearExpr('review_date').' = ?', [$year])->get(['review_date']));
     }
 
-    public function trendExtensions(int $tenantId, int $year): Collection
+    public function trendExtensions(int $tenantId, int $year, ?User $actor = null): Collection
     {
-        return collect(DB::table('hr_probation_extensions')->where('tenant_id', $tenantId)
+        return collect($this->scoped(DB::table('hr_probation_extensions')->where('tenant_id', $tenantId), $actor, 'employee_id')
             ->whereRaw($this->yearExpr('created_at').' = ?', [$year])->get(['created_at']));
     }
 
-    public function trendConfirmations(int $tenantId, int $year): Collection
+    public function trendConfirmations(int $tenantId, int $year, ?User $actor = null): Collection
     {
-        return collect(DB::table('hr_probation_confirmations')->where('tenant_id', $tenantId)
+        return collect($this->scoped(DB::table('hr_probation_confirmations')->where('tenant_id', $tenantId), $actor, 'employee_id')
             ->whereRaw($this->yearExpr('created_at').' = ?', [$year])->get(['created_at', 'status']));
     }
 
-    /* ── Filter options ───────────────────────────────────── */
-    public function filterOptions(int $tenantId): array
+    /** The dropdown contents — scoped; policies and the status list are masters. */
+    public function filterOptions(int $tenantId, ?User $actor = null): array
     {
+        $employees = $this->scoped(DB::table('hr_employees')->where('tenant_id', $tenantId), $actor, 'id');
+
         return [
-            'years' => DB::table('hr_employee_probations')->where('tenant_id', $tenantId)
+            'years' => $this->scoped(DB::table('hr_employee_probations')->where('tenant_id', $tenantId), $actor, 'employee_id')
                 ->selectRaw('DISTINCT '.$this->yearExpr('probation_start_date').' as y')->orderByDesc('y')->pluck('y')->filter()->values()->all(),
-            'departments' => DB::table('hr_employees')->where('tenant_id', $tenantId)->whereNotNull('department')->where('department', '!=', '')
+            'departments' => (clone $employees)->whereNotNull('department')->where('department', '!=', '')
                 ->distinct()->orderBy('department')->pluck('department')->all(),
-            'designations' => DB::table('hr_employees')->where('tenant_id', $tenantId)->whereNotNull('designation')->where('designation', '!=', '')
+            'designations' => (clone $employees)->whereNotNull('designation')->where('designation', '!=', '')
                 ->distinct()->orderBy('designation')->pluck('designation')->all(),
-            'employees' => DB::table('hr_employees')->where('tenant_id', $tenantId)->orderBy('name')->get(['id', 'name', 'employee_code'])->all(),
+            'employees' => (clone $employees)->orderBy('name')->get(['id', 'name', 'employee_code'])->all(),
             'policies' => DB::table('hr_probation_policies')->where('tenant_id', $tenantId)->orderBy('name')->get(['id', 'name'])->all(),
             'statuses' => ['Assigned', 'Active', 'Extended', 'Confirmed', 'Failed', 'Cancelled'],
         ];

@@ -512,6 +512,11 @@ class OnboardingService
                 'phone'                  => $candidate?->phone,
                 'department'             => $onboarding->department ?? optional($offer)->department,
                 'designation'            => $onboarding->position ?? optional($offer)->position,
+                // The id is the hierarchy edge the org chart, the advance ladder
+                // and the app's approval queue all walk. Passed straight through
+                // — never inferred from the name, which may well be somebody who
+                // is not an employee record at all.
+                'reporting_manager_id'   => $onboarding->reporting_manager_id,
                 'reporting_manager_name' => $manager,
                 'joining_date'           => $onboarding->joining_date ?? optional($offer)->joining_date,
                 'status'                 => 'Active',
@@ -616,10 +621,32 @@ class OnboardingService
         return $onboarding->fresh();
     }
 
-    public function toggleStep(HrOnboarding $onboarding, string $step): HrOnboarding
+    /**
+     * @param  int|null|false  $managerId  false = not supplied, leave as is;
+     *                                     null = clear it; an int = set it.
+     */
+    public function toggleStep(HrOnboarding $onboarding, string $step, $managerId = false): HrOnboarding
     {
         $col = 'step_'.$step;
-        $onboarding->update([$col => ! $onboarding->$col]);
+
+        // The "Reporting Manager Assigned" step can now carry the answer. Picking
+        // somebody MARKS the step done rather than toggling it, because choosing
+        // a manager and then having the step flip off is not what anybody means
+        // by picking one.
+        if ($step === 'manager_assigned' && $managerId !== false) {
+            $manager = $managerId === null ? null : HrEmployee::where('tenant_id', $onboarding->tenant_id)
+                ->find($managerId);
+
+            $onboarding->update([
+                'reporting_manager_id'   => $manager?->id,
+                // Kept in step so every existing read of the name still works,
+                // including the two employee-create paths further down this file.
+                'reporting_manager_name' => $manager?->name ?? ($managerId === null ? null : $onboarding->reporting_manager_name),
+                $col                     => $manager !== null,
+            ]);
+        } else {
+            $onboarding->update([$col => ! $onboarding->$col]);
+        }
 
         $steps = [
             $onboarding->step_doc_verification,
@@ -640,6 +667,8 @@ class OnboardingService
                 'name'                   => $onboarding->candidate_name,
                 'department'             => $onboarding->department,
                 'designation'            => $onboarding->position,
+                // Same as the other create path above — id and name together.
+                'reporting_manager_id'   => $onboarding->reporting_manager_id,
                 'reporting_manager_name' => $onboarding->reporting_manager_name,
                 'joining_date'           => $onboarding->joining_date,
                 'status'                 => 'Active',

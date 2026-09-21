@@ -49,6 +49,26 @@ class User extends Authenticatable
     /* ── Role helpers ───────────────────────── */
     public function isAdmin():            bool { return $this->role === 'admin'; }
     public function isStaff():            bool { return $this->role === 'staff'; }
+
+    /**
+     * Whether this is an account that works INSIDE the CRM at all.
+     *
+     * Clients, vendors, third-party vendors, external companies and doctors are
+     * rows in `users` exactly like staff are — same model, different `role` — and
+     * they carry `internal_role` too. So any check written as
+     * `in_array($this->internal_role, [...])` answers yes for a portal login
+     * whose internal_role happens to hold a matching string, and there is nothing
+     * theoretical about that: user 11 is a CLIENT carrying internal_role
+     * 'director', which is one of the advance ladder's approval roles.
+     *
+     * EnsureUserHasRole and EnsureStaffPermission already make this distinction,
+     * each with its own copy of the list and its own comment explaining why. This
+     * is the same rule, named once, so a check on the model can make it too.
+     *
+     * An allow-list rather than a deny-list: a role added later is shut out until
+     * somebody decides otherwise, which is the safe direction to be wrong in.
+     */
+    public function isStaffAccount(): bool { return in_array($this->role, ['admin', 'staff'], true); }
     /**
      * The assigned permission role, if any.
      *
@@ -91,47 +111,144 @@ class User extends Authenticatable
      | Roles are matched against internal_role (staff) so the same helpers work
      | regardless of how the tenant labels its managers. Adjust the role sets
      | here to change who may approve — every check funnels through these two.
+     |
+     | The isStaffAccount() guard is the same one canManageHrQueue() carries, and
+     | is needed for the same reason: internal_role is a free string that EVERY
+     | account has, portal logins included, so `in_array($this->internal_role,
+     | [...])` answered yes for a client or an external company whose column
+     | happened to read 'department_head'. Approving a headcount request is
+     | company authority; a customer contact does not hold it by coincidence.
      */
     public function canApproveL1(): bool
     {
+        if (! $this->isStaffAccount()) {
+            return false;
+        }
+
         return $this->isAdmin()
-            || in_array($this->internal_role, ['department_head', 'hiring_manager'], true);
+            || in_array($this->internal_role, ['department_head', 'hiring_manager'], true)
+            || $this->grantedAuthority('hr_manpower_l1');
     }
 
     public function canApproveL2(): bool
     {
+        if (! $this->isStaffAccount()) {
+            return false;
+        }
+
         return $this->isAdmin()
-            || in_array($this->internal_role, ['project_manager', 'senior_executive'], true);
+            || in_array($this->internal_role, ['project_manager', 'senior_executive'], true)
+            || $this->grantedAuthority('hr_manpower_l2');
     }
 
-    /** May act on the HR queue (convert to JD, publish, close). */
+    /**
+     * May act on the HR queue (convert to JD, publish, close).
+     *
+     * The account-type guard comes FIRST, and does the work the role-string
+     * clause cannot: isAdmin() and isHRExecutive() both pin `role` themselves,
+     * but `in_array($this->internal_role, [...])` never did, so a client or
+     * vendor login whose internal_role read 'hr_executive' satisfied the HR gate
+     * on 117 call sites. It also covers the grid clause below — a portal account
+     * granted hr_employees is still refused, because it never reaches it.
+     *
+     * The last clause is the one that makes a configurable role mean something.
+     * Until it existed, creating "Senior HR Executive" in HR Settings and ticking
+     * every box granted nothing: HR authority was three hardcoded strings, and a
+     * developer had to add a fourth before the role could do its job. Now the
+     * permission grid is an ALTERNATIVE way in.
+     *
+     * Strictly widening, and deliberately so. Every existing clause is untouched
+     * and evaluated first, so no account that could act yesterday can be refused
+     * today — `php artisan permissions:audit` reports that per user and must keep
+     * saying "Nobody loses access".
+     *
+     * One coarse module rather than per-area ones. hr_employees:view_global is
+     * the whole of HR for now; splitting the 117 call sites into hr_payroll /
+     * hr_leave / hr_exit is a separate pass, once there are real custom roles to
+     * test it against. Naming the other modules early (they exist in
+     * StaffPermission::MODULES) is what lets that happen without a second
+     * vocabulary change.
+     */
     public function canManageHrQueue(): bool
     {
+        if (! $this->isStaffAccount()) {
+            return false;
+        }
+
         return $this->isAdmin()
             || $this->isHRExecutive()
-            || in_array($this->internal_role, ['hr_recruiter', 'hr_executive'], true);
+            || in_array($this->internal_role, ['hr_recruiter', 'hr_executive'], true)
+            || app(\App\Services\Auth\StaffPermissionService::class)->can(
+                $this,
+                \App\Support\Hr\StaffPermission::VIEW_GLOBAL,
+                'hr_employees',
+            );
     }
 
     /**
      * May manage the Employee Onboarding module (HR-driven in Sprint 1).
      * Future ESS will add an 'employee' scope resolved via HrEmployee.user_id;
      * this helper stays the HR gate.
+     *
+     * Guarded on account type like every other HR helper — it is the single gate
+     * on 26 onboarding routes, and its role-string clause never pinned `role`.
+     *
+     * Note 'hr_manager' is in that list and is not a seeded staff_roles slug, so
+     * it can only ever match an internal_role somebody typed by hand. Left as it
+     * is: removing it would narrow access, which is not what this pass is for.
      */
     public function canManageOnboarding(): bool
     {
+        if (! $this->isStaffAccount()) {
+            return false;
+        }
+
         return $this->isAdmin()
             || $this->isHRExecutive()
-            || in_array($this->internal_role, ['hr_recruiter', 'hr_executive', 'hr_manager'], true);
+            || in_array($this->internal_role, ['hr_recruiter', 'hr_executive', 'hr_manager'], true)
+            || $this->grantedAuthority('hr_onboarding');
     }
 
     /**
      * May use the AI Job Description generator. Restricted to HR Recruiter,
      * HR Manager and Super Admin (per the AI JD sprint spec).
+     *
+     * Same guard, same reason. This one bills a third-party AI call, so an
+     * unauthorised caller costs money as well as reaching something they should
+     * not.
      */
     public function canGenerateAiJd(): bool
     {
+        if (! $this->isStaffAccount()) {
+            return false;
+        }
+
         return $this->isAdmin()
-            || in_array($this->internal_role, ['hr_recruiter', 'hr_manager'], true);
+            || in_array($this->internal_role, ['hr_recruiter', 'hr_manager'], true)
+            || $this->grantedAuthority('hr_ai_jd');
+    }
+
+    /**
+     * Does the permission grid give this person a narrow HR authority?
+     *
+     * The four helpers above each used to be a fixed list of internal_role
+     * strings, which meant a role created in HR Settings could never hold them
+     * however many boxes an admin ticked — a developer had to add the slug to
+     * PHP first, which is the whole thing the configurable-role work exists to
+     * remove.
+     *
+     * Each is now an ADDITIONAL way in, never a replacement: every original
+     * clause is evaluated first and unchanged, so no account that could act
+     * yesterday is refused today.
+     *
+     * view_global on a module this narrow is the same statement as "may act" —
+     * the same reading canManageHrQueue() already takes of hr_employees. These
+     * modules exist for one authority each and have no other capabilities.
+     */
+    private function grantedAuthority(string $module): bool
+    {
+        return app(\App\Services\Auth\StaffPermissionService::class)
+            ->can($this, \App\Support\Hr\StaffPermission::VIEW_GLOBAL, $module);
     }
 
     /* ── Scopes ─────────────────────────────── */

@@ -28,8 +28,18 @@ const today = () => new Date().toISOString().slice(0,10)
  * and the question being asked of it is "was this the site?", which one click
  * answers without turning every row into a map tile.
  */
-function PunchLocation({ lat, lng, address }) {
-  if (!lat || !lng) return <span style={{ color: 'var(--text-muted)' }}>—</span>
+function PunchLocation({ lat, lng, address, verification }) {
+  if (!lat || !lng) {
+    // A dash says nothing. When the punch recorded WHY there are no
+    // coordinates, show that instead — "declined" is worth asking about and an
+    // office desktop with no GPS is not.
+    const why = (verification || '').replace(/^(Verified|Unverified)\s*—\s*/, '')
+    return (
+      <span className="text-[11px]" style={{ color: 'var(--text-muted)' }} title={verification || ''}>
+        {why ? why.slice(0, 26) : '—'}
+      </span>
+    )
+  }
 
   return (
     <a href={`https://www.google.com/maps?q=${lat},${lng}`} target="_blank" rel="noreferrer"
@@ -201,10 +211,10 @@ export default function Attendance() {
                   <td className="px-3 py-2.5 whitespace-nowrap" style={{ color:'var(--text-muted)' }}>{emp.designation||'—'}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap" style={{ color:'var(--text-muted)' }}>{r.shift}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap" style={{ color:'var(--text-h)' }}>{fmtT(r.check_in)}</td>
-                  <td className="px-3 py-2.5"><PunchLocation lat={r.check_in_latitude} lng={r.check_in_longitude} address={r.check_in_address}/></td>
+                  <td className="px-3 py-2.5"><PunchLocation lat={r.check_in_latitude} lng={r.check_in_longitude} address={r.check_in_address} verification={r.check_in_verification}/></td>
                   <td className="px-3 py-2.5"><PunchSelfie url={r.check_in_selfie_url} who={emp.name} when="clock-in"/></td>
                   <td className="px-3 py-2.5 whitespace-nowrap" style={{ color:'var(--text-h)' }}>{fmtT(r.check_out)}</td>
-                  <td className="px-3 py-2.5"><PunchLocation lat={r.check_out_latitude} lng={r.check_out_longitude} address={r.check_out_address}/></td>
+                  <td className="px-3 py-2.5"><PunchLocation lat={r.check_out_latitude} lng={r.check_out_longitude} address={r.check_out_address} verification={r.check_out_verification}/></td>
                   <td className="px-3 py-2.5"><PunchSelfie url={r.check_out_selfie_url} who={emp.name} when="clock-out"/></td>
                   <td className="px-3 py-2.5 whitespace-nowrap font-mono text-[10px]" style={{ color:'var(--text-muted)' }}>{r.check_in_ip || r.check_out_ip || '—'}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap text-xs" style={{ color:'var(--text-muted)' }}>{brk}</td>

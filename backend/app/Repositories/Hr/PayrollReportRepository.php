@@ -2,6 +2,9 @@
 
 namespace App\Repositories\Hr;
 
+use App\Models\User;
+use App\Services\Auth\ScopeResolver;
+use App\Support\Hr\DataScope;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -15,14 +18,32 @@ use Illuminate\Support\Facades\DB;
  */
 class PayrollReportRepository
 {
-    /** Base join: records ⨝ completed runs ⨝ employees, with the shared filters applied. */
-    private function base(int $tenantId, array $f)
+    /**
+     * Base join: records ⨝ completed runs ⨝ employees, with the shared filters.
+     *
+     * Every figure this class produces — the summary tiles, the per-employee
+     * rows, the department rollup, the CSV and the PDF — is built from here, so
+     * the scope goes here rather than onto each of them. A total computed from
+     * an unscoped set and shown beside a scoped list is worse than either: two
+     * numbers on one screen that cannot both be right.
+     *
+     * Applied as an AND alongside the filters, which is what stops a filter
+     * being used to widen: supplying employee_id for somebody in another
+     * department narrows within the scope and cannot reach outside it.
+     *
+     * BRANCH is not in the supported list — hr_employees.branch is free text
+     * with no master and no data, so a role scoped to it reads as global here,
+     * exactly as in Phase 1.
+     */
+    private function base(int $tenantId, array $f, ?User $actor = null)
     {
         $q = DB::table('hr_payroll_records as r')
             ->join('hr_payroll_runs as run', 'r.payroll_run_id', '=', 'run.id')
             ->join('hr_employees as e', 'r.employee_id', '=', 'e.id')
             ->where('r.tenant_id', $tenantId)
             ->where('run.status', 'Completed');
+
+        $q = $this->scoped($q, $actor, 'r.employee_id');
 
         if (! empty($f['year']))        { $q->where('run.payroll_year', $f['year']); }
         if (! empty($f['month']))       { $q->where('run.payroll_month', $f['month']); }
@@ -33,23 +54,56 @@ class PayrollReportRepository
         return $q;
     }
 
-    /** Single-row totals for the KPI cards. */
-    public function summary(int $tenantId, array $f): object
+    /** The one place this class talks to the scope resolver. */
+    private function scoped($query, ?User $actor, string $column)
     {
-        return $this->base($tenantId, $f)
+        return app(ScopeResolver::class)->applyToQuery($query, $actor, $column, [
+            DataScope::OWN, DataScope::DEPARTMENT, DataScope::TEAM,
+        ]);
+    }
+
+    /**
+     * The period expressions, in SQL, mirroring HrPayrollRecord::periodGross(),
+     * periodDeductions(), netPayable() and employerContributions().
+     *
+     * Reports used to aggregate r.gross_salary / r.total_deductions / r.net_salary
+     * directly. Those three are the FROZEN SALARY-STRUCTURE snapshot: deductions
+     * is 0 for every structure that defines none of its own — i.e. all of them,
+     * because PF, ESIC, PT and LWF are statutory and resolved per period — and
+     * net equals gross. So every payroll report showed a company withholding
+     * nothing from anybody, beside a payroll hub that showed ₹8,261 withheld from
+     * the same run.
+     *
+     * Kept as constants rather than repeated inline so summary() and
+     * departments() cannot drift apart from each other or from the model.
+     */
+    private const GROSS_SQL = '(COALESCE(r.gross_salary,0) + COALESCE(r.variable_earnings,0) + COALESCE(r.overtime_amount,0) + COALESCE(r.adjustment_total,0))';
+
+    private const DEDUCTIONS_SQL = '(COALESCE(r.total_deductions,0) + COALESCE(r.statutory_deductions,0) + COALESCE(r.loan_deduction,0) + COALESCE(r.late_mark_deduction,0))';
+
+    private const NET_PAYABLE_SQL = '(COALESCE(r.net_salary,0) + COALESCE(r.variable_earnings,0) + COALESCE(r.overtime_amount,0) + COALESCE(r.adjustment_total,0) - COALESCE(r.statutory_deductions,0) - COALESCE(r.loan_deduction,0) - COALESCE(r.late_mark_deduction,0))';
+
+    /** Company cost, NEVER withheld from an employee — reported separately. */
+    private const EMPLOYER_SQL = '(COALESCE(r.pf_employer,0) + COALESCE(r.eps_employer,0) + COALESCE(r.esic_employer,0) + COALESCE(r.lwf_employer,0) + COALESCE(r.wcp_employer,0) + COALESCE(r.mediclaim_employer,0))';
+
+    /** Single-row totals for the KPI cards. */
+    public function summary(int $tenantId, array $f, ?User $actor = null): object
+    {
+        return $this->base($tenantId, $f, $actor)
             ->selectRaw('COUNT(*) as employees,
-                COALESCE(SUM(r.gross_salary),0)     as gross,
-                COALESCE(SUM(r.total_benefits),0)   as benefits,
-                COALESCE(SUM(r.total_deductions),0) as deductions,
-                COALESCE(SUM(r.net_salary),0)       as net')
+                COALESCE(SUM('.self::GROSS_SQL.'),0)      as gross,
+                COALESCE(SUM(r.total_benefits),0)         as benefits,
+                COALESCE(SUM('.self::DEDUCTIONS_SQL.'),0) as deductions,
+                COALESCE(SUM('.self::EMPLOYER_SQL.'),0)   as employer_contributions,
+                COALESCE(SUM('.self::NET_PAYABLE_SQL.'),0) as net')
             ->first();
     }
 
     /** Employee-wise rows (structure + payslip status via left joins). */
-    public function employees(int $tenantId, array $f): Collection
+    public function employees(int $tenantId, array $f, ?User $actor = null): Collection
     {
         return collect(
-            $this->base($tenantId, $f)
+            $this->base($tenantId, $f, $actor)
                 ->leftJoin('hr_employee_salaries as es', 'r.employee_salary_id', '=', 'es.id')
                 ->leftJoin('hr_salary_structures as st', 'es.salary_structure_id', '=', 'st.id')
                 ->leftJoin('hr_payslips as ps', function ($j) use ($tenantId) {
@@ -66,6 +120,11 @@ class PayrollReportRepository
                     st.name as structure_name,
                     r.gross_salary, r.total_benefits, r.total_deductions, r.net_salary,
                     r.statutory_deductions, r.loan_deduction, r.variable_earnings,
+                    r.overtime_amount, r.late_mark_deduction, r.adjustment_total,
+                    ".self::GROSS_SQL." as period_gross,
+                    ".self::DEDUCTIONS_SQL." as period_deductions,
+                    ".self::EMPLOYER_SQL." as employer_contributions,
+                    ".self::NET_PAYABLE_SQL." as net_payable,
                     COALESCE(ps.status, 'Pending') as payslip_status,
                     run.payroll_year, run.payroll_month")
                 ->orderBy('e.name')
@@ -74,29 +133,34 @@ class PayrollReportRepository
     }
 
     /** Department-wise aggregates. */
-    public function departments(int $tenantId, array $f): Collection
+    public function departments(int $tenantId, array $f, ?User $actor = null): Collection
     {
         return collect(
-            $this->base($tenantId, $f)
+            $this->base($tenantId, $f, $actor)
                 ->groupBy('e.department')
                 ->selectRaw("COALESCE(e.department,'Unassigned') as department,
                     COUNT(*) as employees,
-                    COALESCE(SUM(r.gross_salary),0)     as gross,
-                    COALESCE(SUM(r.total_benefits),0)   as benefits,
-                    COALESCE(SUM(r.total_deductions),0) as deductions,
-                    COALESCE(SUM(r.net_salary),0)       as net")
+                    COALESCE(SUM(".self::GROSS_SQL."),0)      as gross,
+                    COALESCE(SUM(r.total_benefits),0)         as benefits,
+                    COALESCE(SUM(".self::DEDUCTIONS_SQL."),0) as deductions,
+                    COALESCE(SUM(".self::EMPLOYER_SQL."),0)   as employer_contributions,
+                    COALESCE(SUM(".self::NET_PAYABLE_SQL."),0) as net")
                 ->orderByDesc('net')
                 ->get()
         );
     }
 
     /** Frozen payslip breakdown JSON for component analysis (decoded in the service). */
-    public function payslipBreakdowns(int $tenantId, array $f): Collection
+    public function payslipBreakdowns(int $tenantId, array $f, ?User $actor = null): Collection
     {
+        // Its own query rather than base(), so it needs its own scope call —
+        // a payslip breakdown is the most employee-level thing here.
         $q = DB::table('hr_payslips as ps')
             ->join('hr_employees as e', 'ps.employee_id', '=', 'e.id')
             ->where('ps.tenant_id', $tenantId)
             ->where('ps.status', 'Generated');
+
+        $q = $this->scoped($q, $actor, 'ps.employee_id');
 
         if (! empty($f['year']))        { $q->where('ps.payslip_year', $f['year']); }
         if (! empty($f['month']))       { $q->where('ps.payslip_month', $f['month']); }
@@ -134,17 +198,33 @@ class PayrollReportRepository
     }
 
     /** Distinct values that populate the report filter bar. */
-    public function filterOptions(int $tenantId): array
+    /**
+     * The dropdown contents — scoped, because a filter list is data too.
+     *
+     * `employees` here is a list of names and codes. Leaving it tenant-wide
+     * would hand a department-scoped user the whole staff directory in a
+     * <select>, which is the same disclosure as the report itself with extra
+     * steps. Departments and designations are derived from the same scoped set
+     * rather than from every employee, so the filters offered are the filters
+     * that can actually return something.
+     */
+    public function filterOptions(int $tenantId, ?User $actor = null): array
     {
+        $employees = $this->scoped(
+            DB::table('hr_employees')->where('tenant_id', $tenantId),
+            $actor,
+            'id',
+        );
+
         return [
+            // Years come from runs, not people — a period is not employee data.
             'years' => DB::table('hr_payroll_runs')->where('tenant_id', $tenantId)->where('status', 'Completed')
                 ->distinct()->orderByDesc('payroll_year')->pluck('payroll_year')->all(),
-            'departments' => DB::table('hr_employees')->where('tenant_id', $tenantId)->whereNotNull('department')
+            'departments' => (clone $employees)->whereNotNull('department')
                 ->where('department', '!=', '')->distinct()->orderBy('department')->pluck('department')->all(),
-            'designations' => DB::table('hr_employees')->where('tenant_id', $tenantId)->whereNotNull('designation')
+            'designations' => (clone $employees)->whereNotNull('designation')
                 ->where('designation', '!=', '')->distinct()->orderBy('designation')->pluck('designation')->all(),
-            'employees' => DB::table('hr_employees')->where('tenant_id', $tenantId)->orderBy('name')
-                ->get(['id', 'name', 'employee_code'])->all(),
+            'employees' => (clone $employees)->orderBy('name')->get(['id', 'name', 'employee_code'])->all(),
         ];
     }
 }

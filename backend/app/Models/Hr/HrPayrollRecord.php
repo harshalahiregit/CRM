@@ -112,6 +112,81 @@ class HrPayrollRecord extends Model
         );
     }
 
+    /**
+     * What the employee EARNED this period.
+     *
+     * `gross_salary` is the structure's monthly gross and never changes. Overtime
+     * and commission are earned inside the period, so a payslip that shows only
+     * the structure figure under-reports what the person was paid for.
+     *
+     * `adjustment_total` is HR's additions net of their deductions for this month
+     * only. It sits on the earnings side so that the identity below holds
+     * exactly; a month with a net-negative adjustment therefore shows a smaller
+     * gross, which is the honest reading of "HR took something off this month".
+     *
+     * THE IDENTITY, which every consumer depends on:
+     *
+     *     periodGross() - periodDeductions() === netPayable()
+     *
+     * It holds because the structure snapshot satisfies
+     * net_salary = gross_salary - total_deductions (SalaryFormulaEngine:316), so
+     * periodDeductions() must carry the structure's own deductions as well as
+     * the period's. Change one of these three methods and you must change the
+     * others, or the payroll hub, the payslip and the reports will disagree
+     * again — which is the bug this trio exists to prevent.
+     */
+    public function periodGross(): float
+    {
+        return round(
+            (float) $this->gross_salary
+            + (float) $this->variable_earnings
+            + (float) $this->overtime_amount
+            + (float) $this->adjustment_total,
+            2
+        );
+    }
+
+    /**
+     * What was WITHHELD from the employee this period.
+     *
+     * Emphatically not `total_deductions`, which is the structure snapshot and is
+     * 0 for every structure that defines no deductions of its own — which is all
+     * of them, because PF, ESIC, PT and LWF are statutory and resolved per period
+     * against the rules in force that month.
+     *
+     * Employer contributions (pf_employer, eps_employer, esic_employer,
+     * lwf_employer, wcp_employer, mediclaim_employer) are NOT included. They are
+     * company cost, never withheld from anybody, and showing them as deductions
+     * on a payslip would understate take-home and alarm the employee.
+     */
+    public function periodDeductions(): float
+    {
+        return round(
+            // The structure's own deductions. Zero for every structure that
+            // defines none — but a structure MAY define them, and leaving this
+            // out would break the identity documented on periodGross().
+            (float) $this->total_deductions
+            + (float) $this->statutory_deductions
+            + (float) $this->loan_deduction
+            + (float) $this->late_mark_deduction,
+            2
+        );
+    }
+
+    /** Total company cost of the statutory contributions it pays on top of pay. */
+    public function employerContributions(): float
+    {
+        return round(
+            (float) $this->pf_employer
+            + (float) $this->eps_employer
+            + (float) $this->esic_employer
+            + (float) $this->lwf_employer
+            + (float) $this->wcp_employer
+            + (float) $this->mediclaim_employer,
+            2
+        );
+    }
+
     public function run()
     {
         return $this->belongsTo(HrPayrollRun::class, 'payroll_run_id');

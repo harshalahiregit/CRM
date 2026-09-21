@@ -34,9 +34,10 @@ class LeaveApplicationService
     ) {
     }
 
-    public function list(int $tenantId, array $f): array
+    /** @param  User|null  $actor  Whose view this is; null is unscoped, as before. */
+    public function list(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->filtered($tenantId, $f)->map(fn ($a) => $this->present($a))->all();
+        return $this->repo->filtered($tenantId, $f, $actor)->map(fn ($a) => $this->present($a))->all();
     }
 
     public function show(int $id, int $tenantId): array

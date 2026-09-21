@@ -20,9 +20,64 @@ class EmployeeService
     ) {
     }
 
-    public function list(int $tenantId, array $filters): LengthAwarePaginator
+    /** @param  User|null  $actor  Whose view this is; null is unscoped, as before. */
+    public function list(int $tenantId, array $filters, ?User $actor = null): LengthAwarePaginator
     {
-        return $this->employeeRepository->filtered($tenantId, $filters);
+        return $this->employeeRepository->filtered($tenantId, $filters, $actor);
+    }
+
+    /**
+     * Whether this employee may report to that one.
+     *
+     * Two rules, and both matter because OrgChartService groups the whole tenant
+     * by reporting_manager_id and walks down from the roots. A self-reference or
+     * a loop does not produce a wrong chart, it produces a chart that never
+     * finishes building — and AdvanceTierService walks the same edge to decide
+     * who approves an advance.
+     *
+     * Only reachable on UPDATE. At create there is no id yet, so neither rule can
+     * be broken, which is why create() does not call this.
+     *
+     * Existence and tenant are already settled by the request's Rule::exists, so
+     * this deliberately re-checks neither.
+     */
+    private function assertManagerIsUsable(HrEmployee $employee, $managerId): void
+    {
+        if ($managerId === null || $managerId === '') {
+            return;   // clearing the manager is always allowed
+        }
+
+        $managerId = (int) $managerId;
+
+        if ($managerId === (int) $employee->id) {
+            throw new BusinessException('An employee cannot report to themselves.', 422);
+        }
+
+        // Walk up from the proposed manager. If we arrive back at this employee,
+        // the edge would close a loop. Bounded by the number of employees so a
+        // loop that already exists in the data cannot hang the request.
+        $seen    = [];
+        $current = $managerId;
+        $limit   = HrEmployee::where('tenant_id', $employee->tenant_id)->count() + 1;
+
+        for ($i = 0; $i < $limit && $current !== null; $i++) {
+            if ((int) $current === (int) $employee->id) {
+                throw new BusinessException(
+                    'That would make the reporting line circular — '
+                    .'the person you picked already reports to this employee.',
+                    422
+                );
+            }
+
+            if (isset($seen[$current])) {
+                break;   // a pre-existing loop further up; not this edge's fault
+            }
+            $seen[$current] = true;
+
+            $current = HrEmployee::where('tenant_id', $employee->tenant_id)
+                ->whereKey($current)
+                ->value('reporting_manager_id');
+        }
     }
 
     /**
@@ -110,6 +165,10 @@ class EmployeeService
 
     public function update(HrEmployee $employee, array $data, ?User $actor = null): HrEmployee
     {
+        if (array_key_exists('reporting_manager_id', $data)) {
+            $this->assertManagerIsUsable($employee, $data['reporting_manager_id']);
+        }
+
         $before = $employee->only(['department', 'designation', 'status', 'reporting_manager_name']);
 
         $employee->update($data);

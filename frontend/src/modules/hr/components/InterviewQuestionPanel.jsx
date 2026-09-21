@@ -162,7 +162,13 @@ export default function InterviewQuestionPanel({ roundId, manageHr, readOnly = f
             )
           })}
 
-          {!readOnly && Object.keys(dirty).length > 0 && (
+          {/* evaluate() is canManageHrQueue()-gated on the server. The panel was
+              already given `manageHr` for attaching and detaching questions;
+              scoring had been left on readOnly alone, so somebody who could not
+              save was still shown a Save button once they touched a score.
+              readOnly stays in the condition — a cancelled round is closed to
+              everyone, including HR. */}
+          {manageHr && !readOnly && Object.keys(dirty).length > 0 && (
             <button onClick={saveEvaluation} disabled={saving}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white"
               style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)', opacity:saving?0.7:1 }}>

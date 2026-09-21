@@ -15,14 +15,10 @@ export const settingsApi = {
     restore: (type, id) => api.post('/settings/recycle-bin/restore', { type, id }).then(r => r.data).catch(handleErr),
   },
   // Roles & Departments — maintained from Settings instead of by a developer.
-  // `roles` are staff JOB roles (users.internal_role); account types are
-  // returned alongside, read-only, because each one is a whole portal.
-  roles: {
-    list:   () => api.get('/settings/roles').then(r => r.data).catch(handleErr),
-    create: (data) => api.post('/settings/roles', data).then(r => r.data).catch(handleErr),
-    update: (id, data) => api.put(`/settings/roles/${id}`, data).then(r => r.data).catch(handleErr),
-    remove: (id) => api.delete(`/settings/roles/${id}`).then(r => r.data).catch(handleErr),
-  },
+  // `roles` retired: /settings/roles managed a second staff-role catalogue
+  // (access_roles) beside the live one. staff_roles owns the vocabulary,
+  // permissions and scope together; Staff Management maintains it at
+  // /admin/roles, which is what RolesModal.jsx already calls.
   departments: {
     list:   () => api.get('/settings/departments').then(r => r.data?.data ?? r.data).catch(handleErr),
     create: (data) => api.post('/settings/departments', data).then(r => r.data).catch(handleErr),

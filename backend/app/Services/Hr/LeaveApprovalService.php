@@ -29,11 +29,18 @@ class LeaveApprovalService
     ) {
     }
 
-    /** Approval queue — every application, filterable, plus status counters. */
-    public function queue(int $tenantId, array $f): array
+    /**
+     * Approval queue — every application, filterable, plus status counters.
+     *
+     * `stats` is deliberately left tenant-wide for now. Scoping the counters
+     * means re-running the narrowing inside a grouped count, and a header that
+     * disagrees with the list is worse than one that is honestly the whole
+     * tenant. Noted as a known limitation of this phase rather than half-done.
+     */
+    public function queue(int $tenantId, array $f, ?User $actor = null): array
     {
         return [
-            'data'  => $this->repo->filtered($tenantId, $f)->map(fn ($a) => $this->present($a))->all(),
+            'data'  => $this->repo->filtered($tenantId, $f, $actor)->map(fn ($a) => $this->present($a))->all(),
             'stats' => $this->repo->statusCounts($tenantId),
         ];
     }

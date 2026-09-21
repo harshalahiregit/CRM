@@ -22,25 +22,25 @@ class PayrollReportController extends Controller
     public function summary(Request $request)
     {
         $this->gate($request);
-        return response()->json($this->service->summary($this->tenant($request), $this->filters($request)));
+        return response()->json($this->service->summary($this->tenant($request), $this->filters($request), $request->user()));
     }
 
     public function employees(Request $request)
     {
         $this->gate($request);
-        return response()->json($this->service->employees($this->tenant($request), $this->filters($request)));
+        return response()->json($this->service->employees($this->tenant($request), $this->filters($request), $request->user()));
     }
 
     public function departments(Request $request)
     {
         $this->gate($request);
-        return response()->json($this->service->departments($this->tenant($request), $this->filters($request)));
+        return response()->json($this->service->departments($this->tenant($request), $this->filters($request), $request->user()));
     }
 
     public function components(Request $request)
     {
         $this->gate($request);
-        return response()->json($this->service->components($this->tenant($request), $this->filters($request)));
+        return response()->json($this->service->components($this->tenant($request), $this->filters($request), $request->user()));
     }
 
     public function trends(Request $request)
@@ -52,7 +52,7 @@ class PayrollReportController extends Controller
     public function filterOptions(Request $request)
     {
         $this->gate($request);
-        return response()->json($this->service->filterOptions($this->tenant($request)));
+        return response()->json($this->service->filterOptions($this->tenant($request), $request->user()));
     }
 
     /** CSV (Excel) or PDF export of a report. report=summary|departments|components, format=csv|pdf. */
@@ -61,7 +61,7 @@ class PayrollReportController extends Controller
         $this->gate($request);
         $report = $request->query('report', 'summary');
         $format = $request->query('format', 'csv');
-        $data   = $this->service->exportRows($report, $this->tenant($request), $this->filters($request));
+        $data   = $this->service->exportRows($report, $this->tenant($request), $this->filters($request), $request->user());
         $base   = str_replace(' ', '_', strtolower($data['title']));
 
         if ($format === 'pdf') {

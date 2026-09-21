@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { X, Eye, EyeOff, RefreshCw, User, Shield, ChevronRight, ChevronDown, Check, Monitor, Activity, StickyNote } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { X, Eye, EyeOff, RefreshCw, User, Shield, ChevronRight, ChevronDown, Check, Monitor, Activity, StickyNote, RotateCcw } from 'lucide-react'
 import { AccountTab, ActivityTab, NotesTab } from './StaffRecordTabs'
 import api from '@/lib/api'
 import { useAuth } from '@/context/AuthContext'
@@ -12,6 +12,15 @@ const TIMEZONES = [
 ]
 
 // ── Full Permissions Matrix ─────────────────────────────────────────────────
+// The keys here and App\Support\Hr\StaffPermission::MODULES are ONE vocabulary
+// kept in two files, and StaffPermissionModuleParityTest fails the build if they
+// disagree. A key missing here can never be ticked; a key missing there can
+// never be granted, because sanitise() discards it on the way in and out.
+//
+// They had already drifted: hr_attendance and self existed server-side with no
+// row here, so the only way to grant either was to pick a role template and
+// inherit it. The six rows at the bottom close that gap and add the parts of HR
+// the grid could not previously say anything about.
 const PERMISSION_MODULES = [
   { key:'contacts',        label:'Contacts',              actions:['view_own','view_global','create','edit','delete'] },
   { key:'deals',           label:'Deals',                 actions:['view_own','view_global','create','edit','delete'] },
@@ -39,6 +48,26 @@ const PERMISSION_MODULES = [
   { key:'hr_settings',     label:'HR Settings',           actions:['view_global','create','edit','delete'] },
   { key:'affiliates',      label:'Affiliate Management',  actions:['view_global','create','edit','delete'] },
   { key:'staff_mgmt',      label:'Staff Management',      actions:['view_global','create','edit','delete'] },
+  // Existed server-side with no checkbox until now.
+  { key:'hr_attendance',   label:'HR Attendance',         actions:['view_own','view_global','create','edit','delete'] },
+  // "My own record" — clocking yourself in, your own leave and claims. Separate
+  // from every row above, which are all about other people's records.
+  { key:'self',            label:'My Own Record',         actions:['view_own','create','edit'] },
+  // The parts of HR that could not be described at all. Nothing reads these yet
+  // — HR authority still runs through one canManageHrQueue() check — so ticking
+  // them grants nothing today. They are here so a role can be written down
+  // before the enforcement is moved onto it.
+  { key:'hr_employees',    label:'HR Employees',          actions:['view_own','view_global','create','edit','delete'] },
+  { key:'hr_payroll',      label:'HR Payroll',            actions:['view_own','view_global','create','edit','delete'] },
+  { key:'hr_leave',        label:'HR Leave',              actions:['view_own','view_global','create','edit','delete'] },
+  { key:'hr_exit',         label:'HR Exit',               actions:['view_own','view_global','create','edit','delete'] },
+  // Narrow authorities that used to be hardcoded to role slugs. Each offers
+  // view_global only: on a module this specific, "sees all of it" and "may act
+  // on it" are the same statement, which is how hr_employees already works.
+  { key:'hr_onboarding',   label:'Employee Onboarding',   actions:['view_global'] },
+  { key:'hr_manpower_l1',  label:'Manpower Approval (L1)', actions:['view_global'] },
+  { key:'hr_manpower_l2',  label:'Manpower Approval (L2)', actions:['view_global'] },
+  { key:'hr_ai_jd',        label:'AI Job Descriptions',   actions:['view_global'] },
 ]
 
 const ACTION_LABELS = {
@@ -104,13 +133,19 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
   const [permSearch,    setPermSearch]    = useState('')
   const [expandedGroup, setExpandedGroup] = useState(null)
 
-  // Grouped modules for collapsible sections
+  // Grouped modules for collapsible sections.
+  //
+  // A key missing from every group NEVER RENDERS, whatever PERMISSION_MODULES
+  // says — this is the second half of the drift that hid hr_attendance and self.
+  // The parity test checks these keys too, not just the matrix above, because a
+  // row nobody can see is the same as a row that does not exist.
   const MODULE_GROUPS = [
     { label:'CRM Core',     keys:['contacts','deals','tasks','projects','customers','vendors'] },
     { label:'Finance',      keys:['invoices','estimates','expenses','credit_notes','delivery_notes'] },
     { label:'Operations',   keys:['appointments','tickets','inventory','goals','surveys'] },
-    { label:'HR Module',    keys:['hr_recruitment','hr_checklists','hr_settings'] },
+    { label:'HR Module',    keys:['hr_recruitment','hr_checklists','hr_settings','hr_attendance','hr_employees','hr_payroll','hr_leave','hr_exit','hr_onboarding','hr_manpower_l1','hr_manpower_l2','hr_ai_jd'] },
     { label:'System',       keys:['reports','email_templates','affiliates','staff_mgmt'] },
+    { label:'Personal',     keys:['self'] },
   ]
 
   useEffect(() => {
@@ -157,34 +192,96 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
   }
 
   // ── Permission helpers ──────────────────────────────────────────────────
-  const hasPermission = (module, action) =>
-    (formData.permissions[module] || []).includes(action)
+  //
+  // formData.permissions holds PERSONAL OVERRIDES ONLY, and is saved to
+  // users.meta.permissions verbatim. It is not the effective permission set.
+  //
+  // The server resolves the two with array_replace(role, own) per MODULE, and
+  // the three states that produces are the whole model:
+  //
+  //   module absent        → inherit whatever the role grants, live
+  //   module present, list → this person gets exactly this, role ignored
+  //   module present, []   → this person gets NOTHING here, role ignored
+  //
+  // The last one is why an override cannot be stored as an empty list meaning
+  // "no opinion": un-ticking every box for a module is a real decision and has
+  // to survive. Absent and empty are different answers.
 
+  /** What the currently selected role grants, or {} when no role is assigned. */
+  const inheritedPermissions = useMemo(() => {
+    const role = roles.find(r => String(r.id) === String(formData.staff_role_id))
+    return role?.permissions || {}
+  }, [roles, formData.staff_role_id])
+
+  /** Whether this module has been decided for this person specifically. */
+  const isOverridden = (module) =>
+    Object.prototype.hasOwnProperty.call(formData.permissions, module)
+
+  /** The effective grant for a module — the override if there is one, else the role's. */
+  const grantFor = (module) =>
+    (isOverridden(module) ? formData.permissions[module] : inheritedPermissions[module]) || []
+
+  const hasPermission = (module, action) => grantFor(module).includes(action)
+
+  /**
+   * Touching a checkbox on an INHERITED module converts it to an override,
+   * seeded from what it was inheriting.
+   *
+   * Seeding matters: overrides replace the role at module level, so starting
+   * from an empty list would silently strip every other capability the role
+   * gave for that module the moment somebody added one.
+   */
   const togglePermission = (module, action) => {
     setFormData(prev => {
-      const current = prev.permissions[module] || []
-      const next    = current.includes(action)
-        ? current.filter(a => a !== action)
-        : [...current, action]
+      const base = Object.prototype.hasOwnProperty.call(prev.permissions, module)
+        ? prev.permissions[module]
+        : (inheritedPermissions[module] || [])
+      const next = base.includes(action) ? base.filter(a => a !== action) : [...base, action]
       return { ...prev, permissions: { ...prev.permissions, [module]: next } }
     })
   }
 
   const toggleAllModule = (module) => {
-    const mod  = PERMISSION_MODULES.find(m => m.key === module)
+    const mod = PERMISSION_MODULES.find(m => m.key === module)
     if (!mod) return
-    const curr = formData.permissions[module] || []
+    const curr = grantFor(module)
     const all  = curr.length === mod.actions.length ? [] : [...mod.actions]
     setFormData(prev => ({...prev, permissions:{...prev.permissions, [module]:all}}))
   }
 
   /**
-   * Choosing a role assigns it and pre-fills the grid from ITS definition.
+   * Hand a module back to the role.
    *
-   * The permissions come from the role record, so what is shown here is what
-   * the server will actually enforce. The grid stays editable afterwards —
-   * anything changed becomes a personal override for that module, which is how
-   * "the Accounts role plus one extra thing" gets expressed.
+   * Deleting the key is the only way to express "no opinion" — setting it to []
+   * would deny the module outright, which is the opposite of what an admin means
+   * when they undo an override.
+   */
+  const resetModuleToRole = (module) => {
+    setFormData(prev => {
+      const next = { ...prev.permissions }
+      delete next[module]
+      return { ...prev, permissions: next }
+    })
+  }
+
+  /**
+   * Choosing a role LINKS to it. It no longer copies.
+   *
+   * It used to set `permissions` to the role's own grants, which looked like
+   * pre-filling a form and was in fact a snapshot: those grants were written to
+   * this person's meta.permissions, and from then on the role record was dead
+   * weight for them. Editing "HR Executive" afterwards changed nothing for
+   * anybody already holding it, because array_replace() hands the per-user copy
+   * the win for every module it names.
+   *
+   * Leaving `permissions` alone is the entire fix. The role is read live on
+   * every request, so a change to it reaches its holders immediately, and an
+   * override is now something an admin has to actually make rather than
+   * something that happens to them for picking a role from a dropdown.
+   *
+   * Existing overrides are deliberately NOT cleared here. Somebody may be on
+   * "Accounts plus one extra thing", and swapping their role is not a statement
+   * about the extra thing.
    */
   const applyRole = (roleId) => {
     const role = roles.find(r => String(r.id) === String(roleId))
@@ -195,18 +292,32 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
       // The slug is what the server writes to internal_role anyway; keeping the
       // form in step means the profile field never shows something stale.
       internal_role: role?.slug || prev.internal_role,
-      permissions:   role ? (role.permissions || {}) : {},
     }))
   }
 
+  /** Override every module to everything — an explicit decision, not inheritance. */
   const selectAllPermissions = () => {
     const all = {}
     PERMISSION_MODULES.forEach(m => { all[m.key] = [...m.actions] })
     setFormData(prev => ({...prev, permissions:all}))
   }
 
+  /**
+   * Drop every override.
+   *
+   * With a role assigned this hands the whole grid back to it, which is why the
+   * button says "Reset to role" in that case; with no role it leaves the person
+   * with nothing, which is what "Clear all" always meant.
+   */
   const clearAllPermissions = () => {
     setFormData(prev => ({...prev, permissions:{}}))
+  }
+
+  /** Override every module to DENY — the only way to say "this person, nothing". */
+  const denyAllPermissions = () => {
+    const none = {}
+    PERMISSION_MODULES.forEach(m => { none[m.key] = [] })
+    setFormData(prev => ({...prev, permissions:none}))
   }
 
   const toggleDept = (dept) => {
@@ -276,7 +387,10 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
       .filter(m => m && (!permSearch || m.label.toLowerCase().includes(permSearch.toLowerCase()))),
   })).filter(g => g.modules.length > 0)
 
-  const totalGranted = Object.values(formData.permissions).reduce((s,a)=>s+a.length,0)
+  // Counted on the EFFECTIVE grant, not on the overrides, or the tab would read
+  // "0 permissions" for somebody inheriting a full role and doing nothing wrong.
+  const totalGranted    = PERMISSION_MODULES.reduce((s,m)=>s+grantFor(m.key).length,0)
+  const overrideCount   = Object.keys(formData.permissions).length
 
   return (
     <div
@@ -568,6 +682,13 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
                   style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
                   <span className="text-xs font-semibold" style={{ color:'var(--text-muted)' }}>
                     {totalGranted} permission{totalGranted!==1?'s':''} granted
+                    {/* Said plainly, because "12 granted" is a different fact
+                        depending on where the 12 came from. */}
+                    {formData.staff_role_id
+                      ? overrideCount > 0
+                        ? ` — inherited from the role, with ${overrideCount} module${overrideCount!==1?'s':''} overridden`
+                        : ' — all inherited from the role'
+                      : ' — set directly on this person'}
                   </span>
                   <div className="flex gap-2">
                     <button type="button" onClick={selectAllPermissions}
@@ -575,11 +696,29 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
                       style={{ background:'rgba(16,185,129,0.1)', color:'#10b981', border:'1px solid rgba(16,185,129,0.2)' }}>
                       Select All
                     </button>
-                    <button type="button" onClick={clearAllPermissions}
-                      className="px-3 py-1.5 rounded-lg text-xs font-bold"
-                      style={{ background:'rgba(239,68,68,0.1)', color:'#f87171', border:'1px solid rgba(239,68,68,0.2)' }}>
-                      Clear All
-                    </button>
+                    {/* With a role, an empty override map means "inherit"; without
+                        one it means "nothing". Two different acts, so two buttons
+                        rather than one whose meaning silently depends on state. */}
+                    {formData.staff_role_id ? (
+                      <>
+                        <button type="button" onClick={denyAllPermissions}
+                          className="px-3 py-1.5 rounded-lg text-xs font-bold"
+                          style={{ background:'rgba(239,68,68,0.1)', color:'#f87171', border:'1px solid rgba(239,68,68,0.2)' }}>
+                          Deny All
+                        </button>
+                        <button type="button" onClick={clearAllPermissions} disabled={overrideCount===0}
+                          className="px-3 py-1.5 rounded-lg text-xs font-bold disabled:opacity-40"
+                          style={{ background:'rgba(124,58,237,0.1)', color:'#a78bfa', border:'1px solid rgba(124,58,237,0.2)' }}>
+                          Reset to Role
+                        </button>
+                      </>
+                    ) : (
+                      <button type="button" onClick={clearAllPermissions}
+                        className="px-3 py-1.5 rounded-lg text-xs font-bold"
+                        style={{ background:'rgba(239,68,68,0.1)', color:'#f87171', border:'1px solid rgba(239,68,68,0.2)' }}>
+                        Clear All
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -622,7 +761,9 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
                 {filteredGroups.map(group=>{
                   const isOpen = expandedGroup===group.label || permSearch.length>0
                   // Count granted in this group
-                  const groupGranted = group.modules.reduce((s,m)=>s+(formData.permissions[m.key]||[]).length,0)
+                  // Effective, matching the header count — a group of fully
+                  // inherited modules is not an empty group.
+                  const groupGranted = group.modules.reduce((s,m)=>s+grantFor(m.key).length,0)
 
                   return (
                     <div key={group.label} className="rounded-xl overflow-hidden"
@@ -661,8 +802,8 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
                                 style={{ borderBottom:i<group.modules.length-1?'1px solid var(--border)':'none' }}>
                                 <div className="grid px-4 py-3 items-start gap-4"
                                   style={{ gridTemplateColumns:'1fr 1fr' }}>
-                                  {/* Module Name + select all */}
-                                  <div className="flex items-center gap-2 pt-0.5">
+                                  {/* Module Name + select all + where this grant came from */}
+                                  <div className="flex items-center gap-2 pt-0.5 flex-wrap">
                                     <div onClick={()=>toggleAllModule(mod.key)}
                                       className="w-4 h-4 rounded flex items-center justify-center cursor-pointer flex-shrink-0 transition-all"
                                       style={{
@@ -673,6 +814,31 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
                                       {someChecked&&!allChecked&&<div className="w-1.5 h-1.5 rounded-sm bg-purple-400"/>}
                                     </div>
                                     <span className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{mod.label}</span>
+
+                                    {/* Only meaningful when a role is assigned — with
+                                        no role every grant is personal by definition,
+                                        and a badge on all 29 rows says nothing. */}
+                                    {formData.staff_role_id && (
+                                      isOverridden(mod.key) ? (
+                                        <span className="flex items-center gap-1">
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide"
+                                            style={{ background:'rgba(251,191,36,0.15)', color:'#fbbf24' }}>
+                                            {grantFor(mod.key).length===0 ? 'Denied' : 'Custom'}
+                                          </span>
+                                          <button type="button" title="Hand this module back to the role"
+                                            onClick={()=>resetModuleToRole(mod.key)}
+                                            className="p-0.5 rounded hover:opacity-100 opacity-60"
+                                            style={{ color:'var(--text-muted)' }}>
+                                            <RotateCcw size={11}/>
+                                          </button>
+                                        </span>
+                                      ) : (
+                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide"
+                                          style={{ background:'rgba(124,58,237,0.12)', color:'#a78bfa' }}>
+                                          Role
+                                        </span>
+                                      )
+                                    )}
                                   </div>
 
                                   {/* Permission checkboxes */}

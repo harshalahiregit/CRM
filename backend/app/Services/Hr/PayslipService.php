@@ -90,10 +90,23 @@ class PayslipService
                     'payslip_number'    => $number,
                     'payslip_month'     => $run->payroll_month,
                     'payslip_year'      => $run->payroll_year,
-                    'gross_salary'      => $record->gross_salary,
+                    // PERIOD figures, not the structure snapshot.
+                    //
+                    // This used to copy $record->total_deductions and
+                    // $record->net_salary, which are the frozen salary-structure
+                    // values: deductions 0 and net == gross, for every employee,
+                    // always. A payslip therefore told somebody their net was
+                    // ₹48,478 with no deductions while ₹1,800 PF and ₹200 PT had
+                    // been withheld and ₹46,478 reached their bank — and an
+                    // Indian payslip that does not show PF and PT is not just
+                    // confusing, it is not a payslip.
+                    //
+                    // netPayable() is the single definition of take-home and is
+                    // reused rather than re-derived here; see HrPayrollRecord.
+                    'gross_salary'      => $record->periodGross(),
                     'total_benefits'    => $record->total_benefits,
-                    'total_deductions'  => $record->total_deductions,
-                    'net_salary'        => $record->net_salary,
+                    'total_deductions'  => $record->periodDeductions(),
+                    'net_salary'        => $record->netPayable(),
                     'breakdown'         => $this->buildBreakdown($record, $tenantId),
                     'status'            => HrPayslip::GENERATED,
                     'generated_by'      => $actor?->id,

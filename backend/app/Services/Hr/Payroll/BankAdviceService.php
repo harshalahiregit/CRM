@@ -4,6 +4,9 @@ namespace App\Services\Hr\Payroll;
 
 use App\Models\Hr\HrPayrollRecord;
 use App\Models\Hr\HrPayrollRun;
+use App\Models\User;
+use App\Services\Auth\ScopeResolver;
+use App\Support\Hr\DataScope;
 use Illuminate\Support\Collection;
 
 /**
@@ -36,11 +39,26 @@ class BankAdviceService
 
     private const TRANSFER_MODES = ['transfer', 'bank', 'neft', 'imps', 'rtgs', 'bank transfer'];
 
-    public function forRun(HrPayrollRun $run): array
+    /**
+     * @param  User|null  $actor  Narrows WHO appears, never how they are paid.
+     *
+     * This is the single most disclosing payload in the module — every
+     * employee's account number, IFSC and take-home in one list — so it gets a
+     * data scope on top of the controller's permission gate, which is
+     * unchanged. The exclusion reasons, the IFSC validation and the payable
+     * formula are untouched: a scoped advice is the same document for fewer
+     * people, and `totals.employees` already counts rows rather than headcount.
+     */
+    public function forRun(HrPayrollRun $run, ?User $actor = null): array
     {
-        $records = HrPayrollRecord::with(['employee', 'employee.detail'])
-            ->where('payroll_run_id', $run->id)
-            ->get()
+        $q = HrPayrollRecord::with(['employee', 'employee.detail'])
+            ->where('payroll_run_id', $run->id);
+
+        $q = app(ScopeResolver::class)->applyToQuery($q, $actor, 'employee_id', [
+            DataScope::OWN, DataScope::DEPARTMENT, DataScope::TEAM,
+        ]);
+
+        $records = $q->get()
             ->sortBy(fn ($r) => $r->employee?->employee_code ?? '')
             ->values();
 
@@ -98,9 +116,9 @@ class BankAdviceService
      * Deliberately plain: no currency symbols, no thousands separators, amounts
      * to two decimals. Every one of those is a reason an upload is rejected.
      */
-    public function csv(HrPayrollRun $run): string
+    public function csv(HrPayrollRun $run, ?User $actor = null): string
     {
-        $advice = $this->forRun($run);
+        $advice = $this->forRun($run, $actor);
 
         $out = "Account Name,Account Number,IFSC,Amount,Reference\n";
 
