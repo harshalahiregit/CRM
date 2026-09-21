@@ -1190,6 +1190,33 @@ rows?". Read it as *21 permissions, none of which narrow anything*, not as *one 
 (The count is 21, not the 13 on Step 11's original Permissions sheet: the difference is the rows
 derived under D-8, D-21 and D-45 for entities that sheet never covered.)
 
+### The same problem was solved next door on 2026-09-21 — talk to P3 before designing this
+
+Person 3 shipped `app/Services/Auth/ScopeResolver.php` and `app/Support/Hr/DataScope.php` for HR.
+Its docblock describes this defect almost word for word:
+
+> *"scope existed, was computed correctly, and was consulted in a single place that rendered
+> menus."*
+
+That is this entry: `SCOPE_OWN` and `SCOPE_ASSIGNED` declared in the matrix, `scope()` called once,
+no production path consuming either. He has now solved that problem class, with a deliberately
+small primitive — `visibleEmployeeIds($actor)` returning `null` (global) / `[]` (nothing) /
+`[ids]` — plus `applyToQuery($query, $actor, $column)` so a module is one `whereIn()` away rather
+than a fresh copy of the hierarchy walk.
+
+**It is not adoptable as it stands, and the reason is the axis.** `DataScope` is
+`global / own / department / branch / team` — an EMPLOYEE hierarchy, resolved through `HrEmployee`,
+with no Transport awareness anywhere in the file. Ours is a CUSTOMER axis: "own" in HR means *my
+employee record*; "own" in Transport means *my company's consignments*. Only `global` and `own`
+overlap even as words.
+
+**So this does not unblock D-46.** What it changes is who should be in the room. When the client
+roles are designed — and CLP §3 now names six of them, organisation-, branch-, role-,
+transaction- and document-type aware — that is a conversation with Person 3 and a second
+implementation of a pattern he has already built, not a design from scratch.
+
+Recorded so that nobody solves this twice in one repository.
+
 `ORDER_VIEW` and `TRIP_VIEW` both grant `ROLE_CUSTOMER => SCOPE_OWN`, and `TRIP_VIEW` also grants
 `ROLE_SUPPLIER => SCOPE_ASSIGNED`.
 
@@ -3884,3 +3911,92 @@ cannot reach them; there is no `cancelled` state in `TripStatus`, no delete rout
 method. `TransportTrip` uses `SoftDeletes`, so the model's own mechanism exists — but nothing
 above it does. Recorded because "clear it through the real services" is not currently possible for
 a trip, and that is worth knowing before somebody needs it on real data.
+
+---
+
+## D-118, continued — the relink ran. The driver half is now the only thing holding the repoint.
+
+**2026-09-21.** Backup proven, `--relink` run under authorisation, dry run re-run. Stopped before
+`--apply`, which is where it must stay.
+
+### The backup is a backup now, not a file
+
+`sangoe_crm_backup_20260919_175826_pre-repoint.sql` was restored into a throwaway **MySQL 8.0.46**
+container — the same version as dev — because the app user is granted only `sangoe_crm.*` and no
+scratch schema could be created on the host.
+
+**570 tables restored.** Row counts matched live exactly on every table this touches:
+`transport_trips` 39, `transport_vehicles` 2, `transport_drivers` 2, `trip_assignments` 3,
+`vehicles` 2, `driver_profiles` 3, `trip_events` 31, `transport_containers` 2, `users` 17. Content
+spot-checked, not just counts — trips 2, 12, 14 and 43 came back with the right numbers and states.
+
+### Two corrections to what this entry said two days ago
+
+**1. The junk trips were already cleared, and I reported otherwise.** Trips 2, 12 and 14 carry
+`deleted_at` dated **2026-09-16** — five days before I first looked at them. My earlier count used
+`DB::table('transport_trips')`, which **bypasses soft deletes**, so I counted three already-deleted
+rows as live references and reported "clear them first" for work that was already done.
+
+The lesson is the one this project keeps relearning in new costumes: *I queried the table, not the
+model, and the table does not know about `deleted_at`.*
+
+**2. Clearing them would not have helped anyway, because the command does not honour soft
+deletes.** `RepointTripFleetReferences` reads through `DB::table($table)` with no `deleted_at`
+filter, so it sees deleted rows and would repoint and ledger them. That is a finding in its own
+right and is raised with P2.
+
+### What the relink did
+
+`stos:reconcile-fleet --relink` repaired exactly two links, one-to-one on the plate, and wrote
+nothing else — confirmed by reading the command: it updates `vehicles.legacy_transport_vehicle_id`
+and **writes no ledger rows at all.**
+
+```
+vehicles.legacy_transport_vehicle_id   {1: 29, 2: 30}  ->  {1: 35, 2: 36}
+```
+
+That matters for the gate attached to this step: the permanent-`NULL` harm the condition guards
+against can only be written by `--apply`. `--relink` cannot cause it.
+
+### The dry run is meaningful for the first time
+
+| | Before | After |
+|---|---|---|
+| `transport_trips.vehicle_id` | 0 to move, 5 unmapped | **2 to move**, 3 unmapped |
+| `transport_trips.driver_id` | 0 to move, 5 unmapped | 0 to move, **5 unmapped** |
+| `trip_assignments.vehicle_id` | 0 to move, 3 unmapped | **3 to move**, 0 unmapped |
+| `trip_assignments.driver_id` | 0 to move, 3 unmapped | 0 to move, **3 unmapped** |
+
+### The vehicle side is clean. The driver side is not, and that is the whole blocker.
+
+Every unmappable **vehicle** reference is a soft-deleted junk trip:
+
+```
+trip 2   TRP-Hyxjpm        vehicle_id=10  SOFT-DELETED
+trip 12  TRP-2026-000004   vehicle_id=17  SOFT-DELETED
+trip 14  TRP-2026-000006   vehicle_id=17  SOFT-DELETED
+```
+
+**No live vehicle reference would get a permanent NULL.** Five live **driver** references would:
+
+```
+trip 43        TRP-2026-000034  driver_id=39  LIVE
+trip 44        TRP-2026-000035  driver_id=40  LIVE
+assignment 34  trip 43          driver_id=39  LIVE
+assignment 35  trip 44          driver_id=40  LIVE
+assignment 36  trip 44          driver_id=40  LIVE
+```
+
+All five are real demo data pointing at real drivers, unmappable only because
+`driver_profiles.legacy_transport_driver_id` still holds **33 and 34** while the live
+`transport_drivers` rows are **39 and 40** — and `--relink` is vehicle-only.
+
+**So `--apply` must not run.** It would write five permanent *"never match this row"* entries
+against live records, which is precisely the outcome the owner's condition exists to prevent.
+
+The fix is unchanged and still one pass: extend `--relink` to match drivers on the normalised
+licence, as it matches vehicles on the normalised plate. `driver_profiles.licence_normalized`
+already exists and the licences match one-to-one. Simulated with both halves relinked, every
+column reaches **0 unmappable**.
+
+**State: ledger 0 rows. Nothing repointed. Backup proven and retained.**
