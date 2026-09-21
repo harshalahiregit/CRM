@@ -387,9 +387,17 @@ export default function TransportTripDetail() {
 
           {/* SNG-TRN-009. Assigning only becomes possible once the trip is
               approved (STT-004's from-state). */}
+          {/* The summary says who, and — once the trip is delivered — that they
+              have been given back. D-119 releases the crew at delivery, and a
+              driver quietly becoming free is as confusing as one that never
+              does, so the step that held them is the step that says so. */}
           <TripStep {...stepProps('crew')} icon={Truck} n={1} title="Vehicle & driver"
-            outcome={[assignment?.vehicle?.registration_number, assignment?.driver?.name]
-              .filter(Boolean).join(' · ') || 'Assigned'}
+            outcome={(() => {
+              const who = [assignment?.vehicle?.registration_number, assignment?.driver?.name]
+                .filter(Boolean).join(' · ')
+              if (!who) return 'Assigned'
+              return assignment?.status === 'released' ? `${who} · released` : who
+            })()}
             hint="Only vehicles and drivers that are free and have valid papers are offered.">
             {['draft', 'viability_pending'].includes(trip.status) ? (
               <p style={muted}>You can assign a vehicle and driver once the trip has been approved.</p>

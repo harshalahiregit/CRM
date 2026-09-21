@@ -291,6 +291,22 @@ export default function AllocationPanel({ trip, assignment, canAssign, onChanged
 
   return (
     <>
+      {/* D-119 — the crew is released when the trip is delivered, and the
+          screen has to say so. Without this line the vehicle and driver are
+          still listed, look allocated, and are silently free for another trip;
+          the owner's original complaint was the mirror of this, a driver that
+          never came free at all. */}
+      {assignment?.status === 'released' && (
+        <p style={{
+          margin: '12px 0 0', padding: '9px 11px', borderRadius: 9, fontSize: 12.5,
+          background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-p)',
+        }}>
+          <strong>Released.</strong> This vehicle and driver were freed when the trip was
+          delivered and are available for other trips. They stay listed here because this is
+          who ran this trip.
+        </p>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
         <Slot kind="vehicle" icon={Truck} label="Vehicle"
           value={assignment?.vehicle ? assignment.vehicle.registration_number : (hasVehicle ? `#${assignment.vehicle_id}` : null)}

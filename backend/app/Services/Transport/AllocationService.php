@@ -8,6 +8,7 @@ use App\Exceptions\ResourceNotFoundException;
 use App\Models\Transport\TransportDocument;
 use App\Models\Transport\TransportDriver;
 use App\Models\Transport\TransportTrip;
+use App\Services\Transport\Contracts\FleetResourceGateway;
 use App\Services\Transport\TripEventRecorder;
 use App\Models\Transport\TransportVehicle;
 use App\Models\Transport\TripAssignment;
@@ -75,6 +76,10 @@ class AllocationService
         private DriverEligibilityService $driverEligibility,
         private TransportPolicyService $policies,
         private PretripService $pretrip,
+        // The seam to Fleet. Dispatch has always told Fleet when a resource was
+        // TAKEN; nothing ever told it when one came free — `markReleased()` sat
+        // on the interface with no caller in the codebase. D-119.
+        private FleetResourceGateway $fleet,
     ) {
     }
 
@@ -254,6 +259,123 @@ class AllocationService
     }
 
     /**
+     * The trip is delivered — give the vehicle and the driver back.
+     *
+     * ── WHY DELIVERY AND NOT CLOSURE ────────────────────────────────────
+     * The owner asked for this and their instinct was right, but the reasoning
+     * is worth writing down because it is not obvious and the documents had to
+     * be read for it. STOS-OPS §39 and §8 put the operational chain as
+     *
+     *   DELIVERY → CUSTOMER HANDOVER → FEEDBACK → POD → DOCUMENT RETURN
+     *   → BILLING READINESS → ACCOUNTING → OPERATIONAL CLOSURE
+     *
+     * and §83 states plainly that "operational closure does not necessarily
+     * mean accounting closure". Our `closed` is the accounting end: it needs a
+     * verified POD, an invoice and a collected payment. Holding a truck until a
+     * customer pays would tie a physical asset to a commercial event, which is
+     * the thing that separation exists to prevent. STOS-FLEET §16 is the other
+     * half of it — "Available — Asset is free" — and after delivery the asset
+     * IS free.
+     *
+     * ── THE DRIVER LOOKED LIKE AN EXCEPTION, AND IS NOT ─────────────────
+     * A driver does have a duty after delivery: OPS §78 requires the physical
+     * documents to be returned, and creates a "Submit Trip Documents" task. So
+     * the obvious question is whether the driver stays held until they do.
+     *
+     * §79 answers it. The consequence of a late document return is
+     * "reminder; supervisor escalation; billing block; management visibility"
+     * — a BILLING block, not an availability block. The document says what to
+     * withhold and it is money, not the driver. So both come free together.
+     *
+     * (When §78/§79 are built, that billing block belongs in the billing gate,
+     * not here. This method should not acquire a document check.)
+     *
+     * ── WHAT IT DOES NOT DO ─────────────────────────────────────────────
+     * It does not revert the trip and it does not invalidate the pre-trip
+     * checklist. `release()` below does both, because that is an ABANDONED
+     * allocation — the trip goes back to `approved` and has to be crewed again.
+     * This is a COMPLETED one: the trip keeps going to POD, billing and
+     * closure, and the checklist it passed is a historical fact about a journey
+     * that actually happened.
+     *
+     * The assignment is moved to RELEASED, which is the vocabulary's only
+     * terminal state. There is no COMPLETED — inventing one would be a new
+     * state with no Step 11 entry.
+     */
+    public function releaseOnDelivery(TransportTrip $trip, int $tenantId, ?User $actor = null): ?TripAssignment
+    {
+        $this->assertTenant($trip, $tenantId);
+
+        $assignment = $this->assignments->activeForTrip($trip->id, $tenantId);
+
+        if (! $assignment) {
+            // Nothing held this trip. A trip delivered without an allocation is
+            // odd but not an error, and refusing here would block a delivery
+            // over a bookkeeping detail.
+            return null;
+        }
+
+        $vehicleId = $assignment->vehicle_id;
+        $driverId  = $assignment->driver_id;
+
+        $released = DB::transaction(function () use ($assignment, $trip, $tenantId, $actor, $vehicleId, $driverId) {
+            $row = $this->assignments->release(
+                $assignment, $tenantId, $actor, 'Trip '.$trip->trip_number.' delivered'
+            );
+
+            $this->freeResources($vehicleId, $driverId, $tenantId, $actor, 'Trip '.$trip->trip_number.' delivered');
+
+            return $row;
+        });
+
+        // CTD §31. The timeline should say the crew came free, because a driver
+        // quietly becoming available is as confusing as one that never does.
+        app(TripEventRecorder::class)->record(
+            'crew.released', trip: $trip, actor: $actor,
+            detail: array_filter([
+                'assignment_id' => $released->id,
+                'vehicle_id'    => $vehicleId,
+                'driver_id'     => $driverId,
+                'because'       => 'delivered',
+            ]),
+            summary: 'Vehicle and driver released — trip delivered',
+        );
+
+        return $released;
+    }
+
+    /**
+     * Give a vehicle and a driver back, on our side AND on Fleet's.
+     *
+     * Both guards are deliberate. A vehicle that broke down while allocated must
+     * not be quietly marked Available by a trip finishing, so each move is
+     * conditioned on the state it is actually in.
+     *
+     * The Fleet call is the half that was missing everywhere: `markReleased()`
+     * existed on the gateway and NOTHING in the codebase called it, so Fleet was
+     * told when a resource was taken and never when it came back. D-119.
+     */
+    private function freeResources(?int $vehicleId, ?int $driverId, int $tenantId, ?User $actor, string $reason): void
+    {
+        if ($vehicleId) {
+            $vehicle = TransportVehicle::forTenant($tenantId)->find($vehicleId);
+            if ($vehicle && $vehicle->status === VehicleStatus::ALLOCATED) {
+                $this->moveVehicle($vehicle, VehicleStatus::AVAILABLE, $actor, $reason);
+            }
+        }
+
+        if ($driverId) {
+            $driver = TransportDriver::forTenant($tenantId)->find($driverId);
+            if ($driver && $driver->availability === DriverAvailability::ASSIGNED) {
+                $this->moveDriver($driver, DriverAvailability::AVAILABLE, $actor, $reason);
+            }
+        }
+
+        // Through the seam, never throwing — same contract as markDispatched.
+        $this->fleet->markReleased($vehicleId, $driverId, $tenantId);
+    }
+
+    /**
      * Release an allocation and free everything it held.
      *
      * The trip reverts to approved, from `allocated` or from `pretrip_ok`. Both
@@ -284,18 +406,11 @@ class AllocationService
 
             // Free the resources. Guarded on their current state so a vehicle
             // that broke down while allocated is not quietly marked Available.
-            if ($vehicleId) {
-                $vehicle = TransportVehicle::forTenant($tenantId)->find($vehicleId);
-                if ($vehicle && $vehicle->status === VehicleStatus::ALLOCATED) {
-                    $this->moveVehicle($vehicle, VehicleStatus::AVAILABLE, $actor, $reason ?? 'Assignment released');
-                }
-            }
-            if ($driverId) {
-                $driver = TransportDriver::forTenant($tenantId)->find($driverId);
-                if ($driver && $driver->availability === DriverAvailability::ASSIGNED) {
-                    $this->moveDriver($driver, DriverAvailability::AVAILABLE, $actor, $reason ?? 'Assignment released');
-                }
-            }
+            // Same helper as releaseOnDelivery, so BOTH release paths tell
+            // Fleet. Before D-119 this branch freed our own two tables and left
+            // Fleet holding the resource for ever — the gap was in the abandoned
+            // path as well as the completed one.
+            $this->freeResources($vehicleId, $driverId, $tenantId, $actor, $reason ?? 'Assignment released');
 
             $trip = TransportTrip::forTenant($tenantId)->find($tripId);
 

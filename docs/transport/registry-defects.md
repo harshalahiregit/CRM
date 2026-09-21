@@ -4000,3 +4000,89 @@ already exists and the licences match one-to-one. Simulated with both halves rel
 column reaches **0 unmappable**.
 
 **State: ledger 0 rows. Nothing repointed. Backup proven and retained.**
+
+---
+
+## D-119 — a finished trip never gave its vehicle and driver back
+
+**Raised:** 2026-09-21 by the owner, who had been freeing the driver by hand after every trip.
+**Ours. Fixed the same day.**
+
+### What was wrong
+
+`markReleased()` sat on `FleetResourceGateway` with **no caller anywhere in the codebase**. Its two
+siblings had 5 and 2. So Fleet was told when a resource was taken and **never** when it came back.
+
+Worse than the gateway: nothing freed our own tables either. `AllocationService::release()` frees a
+vehicle and driver, but it is the ABANDONED path — it reverts the trip to `approved` and voids the
+pre-trip checklist. No completion path existed at all. Proven on live data rather than by reading:
+`TRP-2026-000035` was **closed** with its vehicle still `allocated` and its driver still `assigned`.
+The other demo trip's resources were free only because somebody had released them by hand — which
+is the complaint.
+
+STOS-FLEET §8 is on the owner's side: *"Vehicle status must be driven by business events. Users
+should not freely type 'Available' without satisfying required conditions."*
+
+### The decision: at DELIVERY, not at closure — and why the driver is not an exception
+
+Neither FLEET nor OPS states the moment outright, so it was ruled here. The reasoning, because an
+unwritten decision reads as an oversight later:
+
+**The vehicle.** STOS-OPS §39 and §8 put the chain as `DELIVERY → CUSTOMER HANDOVER → FEEDBACK →
+POD → DOCUMENT RETURN → BILLING READINESS → ACCOUNTING → OPERATIONAL CLOSURE`, and §83 says plainly
+that *"operational closure does not necessarily mean accounting closure"*. Our `closed` is the
+accounting end — it requires a verified POD, an invoice and a collected payment. Holding a physical
+truck until a customer pays ties an asset to a commercial event, which is the thing that separation
+exists to prevent. STOS-FLEET §16 supplies the other half: *"Available — Asset is free."*
+
+**The driver looked like an exception and is not.** OPS §78 does give a driver a post-delivery
+duty — physical documents must be returned, and the system raises a *"Submit Trip Documents"* task.
+So the fair question is whether the driver stays held until they do.
+
+**§79 answers it.** The consequence of a late return is *"reminder; supervisor escalation; billing
+block; management visibility"* — a **billing** block, not an availability block. The document says
+what to withhold and it is money, not the driver. So both come free together.
+
+*(When §78/§79 are built, that billing block belongs in the billing gate. `releaseOnDelivery()`
+should not acquire a document check.)*
+
+### What shipped
+
+`AllocationService::releaseOnDelivery()`, called from `recordDelivery()` after the commit. It moves
+the assignment to `RELEASED` — the vocabulary's only terminal state; there is no `COMPLETED` and
+inventing one would be a new state with no Step 11 entry — frees both resources, tells Fleet, and
+records `crew.released` with `because: delivered`.
+
+It deliberately does **not** revert the trip or void the checklist. `release()` does both because
+that is an abandoned allocation; this is a completed one, and the checklist it passed is a
+historical fact about a journey that happened.
+
+**The Fleet call was wired into `release()` too.** That path had the same gap: it freed our two
+tables and left Fleet holding the resource for ever.
+
+### The screen says it
+
+Releasing the crew must not erase who drove. The trip payload read only the ACTIVE assignment, so
+without a fallback a delivered trip would have blanked its own vehicle and driver — the opposite of
+what freeing them is meant to communicate. It now falls back to the latest assignment, the step
+summary reads *"MH 12 DEMO 01 · Ramesh Kumar · released"*, and the panel explains that they were
+freed at delivery and stay listed because this is who ran this trip.
+
+The allocation controller still reads the ACTIVE assignment, correctly: it decides whether a trip
+can be allocated or released, rather than displaying history. And `assign()` refuses anything that
+is not `approved`, so releasing at delivery cannot reopen allocation on a finished trip.
+
+### Proved, and proved to fail
+
+Six tests. Broken three ways: removing the call from delivery reproduced the original bug and
+failed four of them; freeing our tables without telling Fleet failed exactly one; freeing a
+broken-down truck failed exactly one.
+
+The breakdown guard is the one worth keeping in mind — FLEET §8 says a vehicle *"cannot become
+AVAILABLE if critical maintenance unresolved"*, so a delivery must not overwrite a breakdown. The
+driver is judged separately and still comes free.
+
+### The stuck rows were repaired through the new path
+
+Not by hand: `releaseOnDelivery()` was run over the finished trips, which released
+`TRP-2026-000035`'s assignment and left all four demo resources available.
