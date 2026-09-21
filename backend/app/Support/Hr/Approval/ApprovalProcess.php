@@ -2,6 +2,7 @@
 
 namespace App\Support\Hr\Approval;
 
+use App\Models\Hr\HrAdvance;
 use App\Models\Hr\HrEmployeeLoan;
 use App\Models\Hr\HrEmployeeVariableEarning;
 use App\Models\Hr\HrExitRequest;
@@ -35,6 +36,7 @@ final class ApprovalProcess
     public const EXIT_REQUEST            = 'exit_request';
     public const PROBATION_CONFIRMATION  = 'probation_confirmation';
     public const PAYROLL_RUN             = 'payroll_run';
+    public const ADVANCE                 = 'advance';
 
     /**
      * Everything the engine needs to know about a process, per process.
@@ -182,6 +184,32 @@ final class ApprovalProcess
          | total_payable rather than total_net: it is the figure that leaves the
          | bank, computed once by PayrollService and never recomputed here.
          */
+        /*
+         | Salary advances.
+         |
+         | The one process whose ladder is NOT configured here. Its three rungs
+         | — manager, accounts, director — are fixed by AdvanceStage and their
+         | membership is resolved by AdvanceTierService: the manager rung is the
+         | employee's OWN reporting manager, and the other two go by
+         | internal_role, which none of the engine's approver types can express.
+         | Offering a configurable ladder that did not actually govern would be
+         | worse than not offering one, so advances are registered for their
+         | SNAPSHOT and their history, not for configuration.
+         |
+         | What the engine contributes is the thing that was broken:
+         | AdvanceTierService::ladderFor() read live settings on every call, so
+         | changing a limit mid-flight rewrote the ladder under a request
+         | somebody was halfway through. The snapshot freezes the thresholds at
+         | submission and that method now prefers them.
+         */
+        self::ADVANCE => [
+            'label'        => 'Salary advances',
+            'model'        => HrAdvance::class,
+            'amount_field' => 'amount_requested',
+            'conditions'   => [],
+            'configurable' => false,
+        ],
+
         self::PAYROLL_RUN => [
             'label'        => 'Payroll run',
             'model'        => HrPayrollRun::class,
@@ -190,9 +218,33 @@ final class ApprovalProcess
         ],
     ];
 
+    /** Every registered process, including the ones nobody may configure. */
     public static function all(): array
     {
         return array_keys(self::DEFINITIONS);
+    }
+
+    /**
+     * The processes an administrator may actually build a ladder for.
+     *
+     * Advances are registered but not configurable: their rungs are resolved by
+     * AdvanceTierService from the reporting line and internal_role, which the
+     * engine's approver types cannot express. Listing them in Settings would
+     * offer a ladder that does not govern, which is a worse answer than not
+     * offering one.
+     */
+    public static function configurable(): array
+    {
+        return array_keys(array_filter(
+            self::DEFINITIONS,
+            fn ($def) => ($def['configurable'] ?? true) === true
+        ));
+    }
+
+    public static function isConfigurable(?string $process): bool
+    {
+        return $process !== null
+            && (self::DEFINITIONS[$process]['configurable'] ?? true) === true;
     }
 
     public static function exists(?string $process): bool

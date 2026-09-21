@@ -36,7 +36,7 @@ class WorkflowConfigService
     {
         $out = [];
 
-        foreach (ApprovalProcess::all() as $process) {
+        foreach (ApprovalProcess::configurable() as $process) {
             $workflow = $this->registry->anyFor($tenantId, $process);
 
             $out[] = [
@@ -228,6 +228,15 @@ class WorkflowConfigService
     {
         if (! ApprovalProcess::exists($process)) {
             throw new BusinessException('Unknown approval process: '.$process, 404);
+        }
+
+        // Registered but not configurable — advances, whose rungs are resolved
+        // by AdvanceTierService rather than by a ladder anyone can edit.
+        if (! ApprovalProcess::isConfigurable($process)) {
+            throw new BusinessException(
+                ApprovalProcess::label($process).' approvals are not configurable: their approvers are resolved from the reporting line and role.',
+                422
+            );
         }
     }
 }
