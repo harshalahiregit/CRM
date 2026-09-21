@@ -229,10 +229,16 @@ it.
 **Say:** *"The trip carries its invoice, so a container number answers 'has this been billed, and
 has it been paid' without anybody opening the accounts system."*
 
-**Important — do not try to bill a different trip live.** Marking a bill as invoiced is done by
-Accounts and **the button for it is not in this build yet**. On this closed trip everything is
-already linked and shows correctly. Starting a fresh trip and trying to reach *Billed* by clicking
-will stop at *Billable* and leave you stuck in front of an audience.
+**You can now do this live, as of 21 September.** Person 3 shipped the *Record invoice* button, and
+a trip has been walked delivered → closed entirely by clicking. If you want to show it on a live
+trip rather than the closed one: **6 · Paperwork → Verify**, then **7 · Getting paid → Mark ready
+to invoice**, type an invoice number, **Record invoice**, **Open receivable**, **Record a receipt**,
+then **8 · Close the trip**.
+
+**One thing to expect if you do:** the close may be refused with *"1 critical exception is still
+open on this trip."* That is the system working, not a fault — say *"it will not let us close a
+trip with an unresolved critical exception, which is the point"*, resolve it in **5 · What has gone
+wrong**, and close again. It is a better moment than the happy path.
 
 ---
 
@@ -264,10 +270,12 @@ new entry."*
 
 ## The honest list — read before you present
 
-**Six things will visibly not work or fall short.** Each has one sentence above; they are collected
-here so nothing surprises you. Two of the six (steps 3 and 12) are only partly gaps — step 3 works
-if you do the optional setup, and step 12 shows correctly on this trip and simply cannot be
-performed live on another.
+**Five things will visibly not work or fall short.** Each has one sentence above; they are
+collected here so nothing surprises you. One of the five (step 3) is only partly a gap — it works
+if you do the optional setup.
+
+*(This was six until 21 September, when the invoice button landed and step 12 became something a
+presenter can do by clicking.)*
 
 | Step | What happens | Your one sentence |
 |---|---|---|
@@ -275,7 +283,7 @@ performed live on another.
 | **4 · Allocation score** | Reasons shown, no numeric ranking | *"The system shows why a vehicle is eligible rather than scoring it — ranking is planned."* |
 | **8 · GPS / temperature** | Nothing on screen at all | *"Telemetry is built and the last link to a specific trip is being finished this week."* |
 | **10 · Feedback** | Not present | *"Customer feedback after delivery is specified and scheduled, not in this build."* |
-| **12 · Marking invoiced** | Works on this trip; cannot be done live on another | *"Accounts marks a bill invoiced; that screen is being added."* |
+
 | **13 · Control room** | Not in the menu | *"The management control-room view is specified and not in this build."* |
 
 **The rule for all six: say the sentence, then move on.** A screen going quiet while somebody
