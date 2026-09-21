@@ -52,7 +52,15 @@ export default function EmployeeSalarySection({ employeeId }) {
     { l: 'Monthly CTC', v: cur.monthly_ctc, c: '#7C3AED' },
     { l: 'Gross', v: cur.gross_salary, c: '#10b981' },
     { l: 'Employer', v: cur.total_benefits, c: '#3b82f6' },
-    { l: 'Net (In Hand)', v: cur.net_salary, c: '#059669' },
+    /*
+     * NOT "In Hand". This is the salary STRUCTURE's net — gross less whatever
+     * deductions the structure itself defines, which is usually none, because
+     * PF, ESIC, PT and TDS are statutory and resolved per payroll period. The
+     * amount that reaches the bank is the payroll record's Net Payable and is
+     * routinely lower. Calling this "In Hand" promised the second and showed
+     * the first.
+     */
+    { l: 'Structure Net', v: cur.net_salary, c: '#059669' },
   ]
 
   return (

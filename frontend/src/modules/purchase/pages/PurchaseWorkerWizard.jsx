@@ -568,7 +568,11 @@ function StepProfile({ worker, editable, onCreated, onSaved, onNext, registerFlu
  * the badge gate reads, so it carries the truthful outcome and nothing else.
  */
 function Step2Medical({ worker, editable, onSaved, onNext }) {
-  const { api } = useVendorModule()
+  // `portal` as well as `api`: the internal-doctor picker below needs to know
+  // which side it is on, and referenced isPortal without it being in scope —
+  // a ReferenceError the moment the Doctor Details block rendered. Same
+  // destructure the other two components in this file already use.
+  const { api, portal: isPortal } = useVendorModule()
 
   // Newest first — the top row is the current fitness the readiness gate reads.
   const history = useMemo(() => sortMedicals(worker.medicals), [worker.medicals])

@@ -523,7 +523,9 @@ export default function EmployeeProfile() {
                   <Field k="Gross Salary" v={money(salary.current.gross_salary)}/>
                   <Field k="Benefits" v={money(salary.current.total_benefits)}/>
                   <Field k="Deductions" v={money(salary.current.total_deductions)}/>
-                  <Field k="Net Salary" v={money(salary.current.net_salary)}/>
+                  {/* The structure's net, not the month's take-home — see
+                      EmployeeSalarySection for why the distinction matters. */}
+                  <Field k="Structure Net" v={money(salary.current.net_salary)}/>
                 </Grid>
                 {salary.history?.length > 1 && (
                   <>

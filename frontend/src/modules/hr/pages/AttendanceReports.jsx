@@ -15,6 +15,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { BarChart3, Download, RefreshCw, ChevronLeft, ChevronRight, Info } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { hrTime } from '@/modules/hr/constants'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import { useToast } from '@/components/ui/Toast'
 
@@ -300,10 +301,10 @@ export default function AttendanceReports() {
                           <td style={{ padding: '7px 9px', color: 'var(--text-h)' }}>{String(d.date).slice(0, 10)}</td>
                           <td style={{ padding: '7px 9px', color: 'var(--text-p)' }}>{d.status}</td>
                           <td style={{ padding: '7px 9px', textAlign: 'right', color: 'var(--text-p)' }}>
-                            {d.check_in ? String(d.check_in).slice(11, 16) : '—'}
+                            {hrTime(d.check_in)}
                           </td>
                           <td style={{ padding: '7px 9px', textAlign: 'right', color: 'var(--text-p)' }}>
-                            {d.check_out ? String(d.check_out).slice(11, 16) : '—'}
+                            {hrTime(d.check_out)}
                           </td>
                           <td style={{ padding: '7px 9px', textAlign: 'right', color: 'var(--text-p)', fontVariantNumeric: 'tabular-nums' }}>{d.working_hours}</td>
                           <td style={{ padding: '7px 9px', textAlign: 'right', color: 'var(--text-p)', fontVariantNumeric: 'tabular-nums' }}>{d.overtime_hours}</td>

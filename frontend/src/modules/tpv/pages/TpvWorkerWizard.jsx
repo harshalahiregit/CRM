@@ -162,7 +162,12 @@ export default function TpvWorkerWizard() {
 
       <div style={{ marginTop: 18 }}>
         {active === 1 && <StepProfile worker={worker} editable={editable} onSaved={refresh} onNext={() => goStep(2)} registerFlush={registerFlush} api={api} />}
-        {active === 2 && <Step2Medical worker={worker} editable={editable} onSaved={refresh} onNext={() => goStep(3)} api={api} />}
+        {/* isPortal travels the same way api does. Step2Medical's doctor picker
+            referenced it without receiving it, which threw a ReferenceError as
+            soon as the Doctor Details block rendered. This file computes the
+            flag once at the top rather than re-reading the hook per component,
+            so the prop is the fix that matches it. */}
+        {active === 2 && <Step2Medical worker={worker} editable={editable} onSaved={refresh} onNext={() => goStep(3)} api={api} isPortal={isPortal} />}
         {active === 3 && <StepInduction worker={worker} editable={editable} onSaved={refresh} onNext={() => goStep(4)} api={api} />}
         {active === 4 && <StepPpe worker={worker} editable={editable} manage={manage} onChanged={refresh} onNext={() => goStep(5)} api={api} compliance={progress.ppe_compliance} />}
         {active === 5 && <StepBadge worker={worker} progress={progress} admin={admin} onChanged={refresh} api={api} />}
@@ -387,7 +392,7 @@ function StepProfile({ worker, editable, onSaved, onNext, registerFlush, api }) 
 }
 
 // ── Step 2 — Medical + screening ─────────────────────────────────────────────
-function Step2Medical({ worker, editable, onSaved, onNext, api }) {
+function Step2Medical({ worker, editable, onSaved, onNext, api, isPortal }) {
   const m = worker.medical || {}
   // Hydrate from the canonical tpv_worker_medicals columns (exam_type, examiner_name,
   // clinic_name, vision, height_cm, weight_kg, bp_systolic/diastolic, restrictions),

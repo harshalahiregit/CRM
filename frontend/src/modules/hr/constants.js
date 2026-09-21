@@ -281,3 +281,73 @@ export const canManageHrQueue = (u) => capability(u, 'hr_manage')
 export const jobCode = (id) => id ? `JOB-${String(id).padStart(4, '0')}` : '—'
 export const publicApplyUrl = (slug, id) => (slug && id) ? `${window.location.origin}/careers/${slug}/jobs/${id}` : null
 export const internalApplyUrl = (id) => id ? `${window.location.origin}/app/hr/jobs/${id}` : null
+
+/*
+|------------------------------------------------------------------------------
+| Attendance clock times
+|------------------------------------------------------------------------------
+|
+| Storage is UTC and stays UTC — config/app.php says so, and warns that setting
+| it to Asia/Kolkata "to fix attendance times" broke numbering and localisation
+| instead. So the conversion belongs here, in presentation, done once.
+|
+| It was not done once. The Attendance Register parsed the timestamp and let the
+| browser localise it; four other screens took a substring of the ISO string,
+| which is the UTC clock face with the date cut off. Same record, two answers,
+| 5 hours 30 minutes apart — a punch at 10:53 IST read 05:23 on the dashboard.
+|
+| TWO SHAPES ARRIVE HERE, and telling them apart is the whole job:
+|
+|   hr_attendance.check_in            datetime, cast, serialised "…T09:28:00Z"
+|                                     → an INSTANT. Must be converted.
+|   hr_attendance_corrections
+|     .requested_check_in             a `time` column, value "09:15"
+|                                     → a WALL-CLOCK time. Already local; it
+|                                       carries no date and no zone, so parsing
+|                                       it as an instant would invent both.
+|
+| Converting the second would be the same bug pointing the other way, which is
+| why this does not simply call new Date() on everything.
+*/
+
+/** Does this value carry a date, and therefore a zone? */
+const isInstant = (v) => /^\d{4}-\d{2}-\d{2}[T ]/.test(String(v))
+
+/**
+ * An attendance clock time as HH:MM in the reader's local zone.
+ *
+ * Accepts either shape above. Bare times pass through trimmed to HH:MM;
+ * timestamps are parsed and localised — the same conversion the Attendance
+ * Register already did, now shared so the screens cannot disagree again.
+ *
+ * An unparseable timestamp returns the dash rather than "Invalid Date": a
+ * clock face is read at a glance and a wrong one is worse than an absent one.
+ */
+export const hrTime = (v) => {
+  if (v === null || v === undefined || v === '') return '—'
+
+  const s = String(v)
+
+  if (!isInstant(s)) {
+    // "09:15", "09:15:00" → "09:15". Anything else is not a time we know.
+    const m = s.match(/^(\d{1,2}):(\d{2})/)
+    return m ? `${m[1].padStart(2, '0')}:${m[2]}` : '—'
+  }
+
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return '—'
+
+  return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })
+}
+
+/**
+ * Two attendance times compared on the same footing.
+ *
+ * The correction queue shows "now → asked for", where `now` is a stored
+ * timestamp and `asked for` is a wall-clock time the employee typed. Comparing
+ * their raw strings compared a UTC clock face against a local one: an approver
+ * reviewing a request to change nothing saw a five-and-a-half hour move, and
+ * the "(no change)" hint never fired. Normalising both through hrTime() first
+ * is what makes the two comparable at all.
+ */
+export const hrTimeEquals = (a, b) => hrTime(a) === hrTime(b)

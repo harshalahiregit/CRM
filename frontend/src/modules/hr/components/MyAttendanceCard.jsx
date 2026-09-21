@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Clock, LogIn, LogOut, Coffee, Play } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { hrTime } from '@/modules/hr/constants'
 import { useToast } from '@/components/ui/Toast'
 
 /**
@@ -51,7 +52,9 @@ export default function MyAttendanceCard({ compact = false }) {
     }
   }
 
-  const time = (v) => (v ? String(v).slice(11, 16) || String(v).slice(0, 5) : '—')
+  // Was a substring of the ISO string, which showed the UTC clock face — this
+  // card read 05:23 for a punch the register showed as 10:53. hrTime converts.
+  const time = hrTime
 
   if (state.loading) {
     // A skeleton the same shape and height as the loaded card, so the button
