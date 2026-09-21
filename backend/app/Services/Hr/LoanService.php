@@ -520,6 +520,22 @@ class LoanService
     }
 
     /**
+     * The loan a decision is about, or null.
+     *
+     * Same scoped query as find() below, returning null rather than throwing
+     * because the approval controller needs the model in hand before it can
+     * open a request against it. Scoped for the same reason everything else
+     * here is: an out-of-scope loan must be absent, not forbidden.
+     */
+    public function findForDecision(int $id, int $tenantId, ?User $actor = null): ?HrEmployeeLoan
+    {
+        return $this->scopeToEmployees(
+            HrEmployeeLoan::forTenant($tenantId)->with(['employee', 'loanType']),
+            $actor
+        )->find($id);
+    }
+
+    /**
      * The one lookup every loan action goes through.
      *
      * submit, approve, reject, disburse, close, cancel and waiveInstallment all

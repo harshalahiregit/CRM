@@ -78,6 +78,39 @@ function StepRow({ step, index, total, options, onChange, onMove, onRemove }) {
               <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>1 is the employee’s own manager.</span>
             </label>
           )}
+
+          {/*
+            Amount bounds, only where the process has money on it — the server
+            says which do. Leave has no amount, so offering the field there
+            would invite a rule that can never match.
+
+            Blank means "no bound", which is why an empty string clears the key
+            rather than sending 0: a minimum of zero would read as a rule and
+            match everything.
+          */}
+          {options.supports_amount && (
+            <>
+              <label className="flex flex-col gap-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Only if amount ≥</span>
+                <input type="number" min="0" step="0.01" placeholder="Any"
+                  value={step.conditions?.min_amount ?? ''}
+                  onChange={e => onChange(index, {
+                    conditions: { ...(step.conditions || {}), min_amount: e.target.value === '' ? undefined : Number(e.target.value) },
+                  })}
+                  className="rounded-lg text-sm w-full" style={inputStyle} />
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Only if amount ≤</span>
+                <input type="number" min="0" step="0.01" placeholder="Any"
+                  value={step.conditions?.max_amount ?? ''}
+                  onChange={e => onChange(index, {
+                    conditions: { ...(step.conditions || {}), max_amount: e.target.value === '' ? undefined : Number(e.target.value) },
+                  })}
+                  className="rounded-lg text-sm w-full" style={inputStyle} />
+              </label>
+            </>
+          )}
         </div>
 
         <div className="flex flex-col gap-1 shrink-0">
@@ -251,6 +284,7 @@ export default function ApprovalWorkflows() {
               Steps run in order — the next approver is asked only once the previous one has
               approved, and a rejection at any step ends the request. Changing this ladder does
               not affect approvals already in progress.
+              {options.supports_amount && ' A step with an amount bound is used only for requests inside it; the others always apply.'}
             </p>
           </div>
         </>

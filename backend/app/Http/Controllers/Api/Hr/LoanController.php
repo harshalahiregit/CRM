@@ -3,9 +3,12 @@
 namespace App\Http\Controllers\Api\Hr;
 
 use App\Http\Controllers\Controller;
+use App\Models\Hr\HrApprovalAction;
 use App\Models\Hr\HrEmployeeLoan;
+use App\Services\Hr\Approval\ApprovalEngine;
 use App\Services\Hr\LoanEligibilityService;
 use App\Services\Hr\LoanService;
+use App\Support\Hr\Approval\ApprovalProcess;
 use Illuminate\Http\Request;
 
 /**
@@ -19,6 +22,7 @@ class LoanController extends Controller
     public function __construct(
         private LoanService $service,
         private LoanEligibilityService $eligibility,
+        private ApprovalEngine $engine,
     ) {
     }
 
@@ -176,11 +180,20 @@ class LoanController extends Controller
         return response()->json($this->service->submit($id, $this->tenant($request), $request->user()));
     }
 
+    /**
+     * Approve — through the configured ladder.
+     *
+     * Only approve and reject go through the engine. submit(), disburse(),
+     * close() and cancel() are not approvals: submit moves a draft into the
+     * queue, and the other three are what happens to a loan that has ALREADY
+     * been approved. Routing them through a ladder would ask for a second
+     * approval of a decision already taken.
+     */
     public function approve(Request $request, int $id)
     {
         $this->assertCanManage($request);
 
-        return response()->json($this->service->approve($id, $this->tenant($request), $request->user()));
+        return $this->decide($request, $id, HrApprovalAction::APPROVED, null);
     }
 
     public function reject(Request $request, int $id)
@@ -188,7 +201,89 @@ class LoanController extends Controller
         $this->assertCanManage($request);
         $data = $request->validate(['remarks' => 'required|string|max:1000']);
 
-        return response()->json($this->service->reject($id, $data['remarks'], $this->tenant($request), $request->user()));
+        return $this->decide($request, $id, HrApprovalAction::REJECTED, $data['remarks']);
+    }
+
+    /**
+     * One decision, through the engine, for both verbs.
+     *
+     * The three gates stay separate: assertCanManage() above is the capability,
+     * the engine re-asserts data scope against the loan's employee, and the
+     * ladder decides whether this request is waiting on this person. Only the
+     * last rung calls LoanService, which still owns the status transition, the
+     * audit line and every existing guard on them.
+     */
+    private function decide(Request $request, int $id, string $action, ?string $remarks)
+    {
+        $tenantId = $this->tenant($request);
+        $actor    = $request->user();
+
+        // Scoped read, so an out-of-scope loan is absent here exactly as it is
+        // inside LoanService::find() and the ladder never sees it.
+        $loan = $this->service->findForDecision($id, $tenantId, $actor);
+        abort_unless($loan, 404, 'Loan not found');
+
+        $approval = $this->engine->requestFor(
+            $loan,
+            ApprovalProcess::LOAN,
+            $tenantId,
+            (int) $loan->employee_id,
+            (float) $loan->principal,
+        );
+
+        /*
+         | Anything other than Submitted is not the ladder's business.
+         |
+         | That includes the auto-approved path: a loan type with
+         | requires_approval = false moves straight from Draft to Approved on
+         | submit. It is existing type-level configuration meaning "this needs
+         | no approval", so the engine closes its view rather than demanding
+         | one, and the service raises its own message unchanged.
+         */
+        if ($loan->status !== HrEmployeeLoan::SUBMITTED) {
+            $this->engine->supersede($approval);
+
+            return response()->json(
+                $action === HrApprovalAction::APPROVED
+                    ? $this->service->approve($id, $tenantId, $actor)
+                    : $this->service->reject($id, (string) $remarks, $tenantId, $actor)
+            );
+        }
+
+        $inspection = $this->engine->inspect($approval);
+        if (! $inspection['resolvable']) {
+            $this->engine->block($approval, $inspection['describe']);
+            abort(409, 'This loan cannot be approved yet: '.$inspection['describe'].'.');
+        }
+
+        $this->engine->assertMayDecide($approval, $actor);
+
+        $result = $this->engine->decide($approval, $actor, $action, $remarks);
+
+        if (! $result['final']) {
+            // Still climbing. The loan stays Submitted and no money moves.
+            return response()->json([
+                'approval' => $this->approvalPayload($result['request']),
+                'data'     => $this->service->show($id, $tenantId, $actor),
+            ]);
+        }
+
+        $payload = $action === HrApprovalAction::APPROVED
+            ? $this->service->approve($id, $tenantId, $actor)
+            : $this->service->reject($id, (string) $remarks, $tenantId, $actor);
+
+        return response()->json($payload + ['approval' => $this->approvalPayload($result['request'])]);
+    }
+
+    /** What the UI needs to draw the ladder's current position. */
+    private function approvalPayload($approval): array
+    {
+        return [
+            'state'        => $approval->state,
+            'current_step' => $approval->current_step,
+            'total_steps'  => count($approval->steps_snapshot ?: []),
+            'steps'        => $approval->steps_snapshot ?: [],
+        ];
     }
 
     public function disburse(Request $request, int $id)

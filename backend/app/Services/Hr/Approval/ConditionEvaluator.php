@@ -27,7 +27,7 @@ class ConditionEvaluator
     public const KEYS = [
         'department_id', 'branch', 'grade_id',
         'min_amount', 'max_amount',
-        'leave_type_id',
+        'leave_type_id', 'loan_type_id',
     ];
 
     /**
@@ -117,9 +117,30 @@ class ConditionEvaluator
             }
         }
 
-        // Process-specific facts, read off the subject itself.
-        if ($subject && isset($subject->leave_type_id)) {
-            $context['leave_type_id'] = $subject->leave_type_id;
+        /*
+         | Process-specific facts, read off the subject itself.
+         |
+         | Driven by the vocabulary rather than by a branch per process: any key
+         | in KEYS that names a column on the subject is read from it. That is
+         | what stops this method growing an `if` every time a process is
+         | migrated, and it keeps the closed vocabulary as the single place a
+         | new condition has to be declared.
+         |
+         | The employee facts above are NOT overwritten — those are read from
+         | hr_employees on purpose, so a stale denormalised column on a subject
+         | cannot decide which approver applies.
+         */
+        if ($subject) {
+            foreach (self::KEYS as $key) {
+                if ($key === 'min_amount' || $key === 'max_amount' || array_key_exists($key, $context)) {
+                    continue;
+                }
+
+                $value = $subject->getAttribute($key);
+                if ($value !== null) {
+                    $context[$key] = $value;
+                }
+            }
         }
 
         return $context;

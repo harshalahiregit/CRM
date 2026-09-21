@@ -2,6 +2,7 @@
 
 namespace App\Support\Hr\Approval;
 
+use App\Models\Hr\HrEmployeeLoan;
 use App\Models\Hr\HrLeaveApplication;
 
 /**
@@ -19,6 +20,7 @@ use App\Models\Hr\HrLeaveApplication;
 final class ApprovalProcess
 {
     public const LEAVE = 'leave';
+    public const LOAN  = 'loan';
 
     /**
      * Everything the engine needs to know about a process, per process.
@@ -34,6 +36,22 @@ final class ApprovalProcess
             'model'        => HrLeaveApplication::class,
             'amount_field' => null,
             'conditions'   => ['department_id', 'branch', 'grade_id', 'leave_type_id'],
+        ],
+
+        /*
+         | The first process that carries money, so the first where an amount
+         | condition means anything.
+         |
+         | `principal` rather than `total_payable`: the ladder should be decided
+         | by what the company is lending, not by what interest turns it into.
+         | Two loans of the same principal on different rates would otherwise
+         | route differently, which is not a rule anybody asked for.
+         */
+        self::LOAN => [
+            'label'        => 'Loans & advances',
+            'model'        => HrEmployeeLoan::class,
+            'amount_field' => 'principal',
+            'conditions'   => ['department_id', 'branch', 'grade_id', 'loan_type_id'],
         ],
     ];
 
