@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Camera, X, RotateCcw, Check, CameraOff } from 'lucide-react'
+// The shared brand gradient. Inline copies of this value are guarded against
+// by BannedPatternsTest: 274 of them exist and none can be restyled centrally.
+import { GRAD } from '@/components/ui/brand'
 
 /**
  * Take a photo for a punch — or say plainly that you cannot.
@@ -108,7 +111,7 @@ export default function SelfieCapture({ onDone, onCancel, title = 'Photo for you
           <div className="flex gap-2 mt-4">
             {error ? (
               <button onClick={skip} className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white"
-                style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>
+                style={{ background: GRAD }}>
                 Clock in without a photo
               </button>
             ) : shot ? (
@@ -130,7 +133,7 @@ export default function SelfieCapture({ onDone, onCancel, title = 'Photo for you
                 </button>
                 <button onClick={capture} disabled={starting}
                   className="flex-[2] py-2.5 rounded-xl text-xs font-bold text-white flex items-center justify-center gap-1.5 disabled:opacity-60"
-                  style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>
+                  style={{ background: GRAD }}>
                   <Camera size={14} /> {starting ? 'Starting camera…' : 'Take photo'}
                 </button>
               </>

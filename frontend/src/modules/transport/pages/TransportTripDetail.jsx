@@ -476,7 +476,14 @@ export default function TransportTripDetail() {
             {['draft', 'viability_pending', 'approved'].includes(trip.status) ? (
               <p style={muted}>Billing becomes relevant once the trip has been dispatched.</p>
             ) : (
-              <BillingPanel trip={trip} canPrepare={!!grants['transport.billing.prepare']} onChanged={load} />
+              <BillingPanel
+                trip={trip}
+                canPrepare={!!grants['transport.billing.prepare']}
+                /* Narrower than prepare by one role: Operations may mark a trip
+                   ready to invoice and may not declare that it WAS invoiced. */
+                canInvoice={!!grants['transport.billing.invoiced']}
+                onChanged={load}
+              />
             )}
           </TripStep>
 
