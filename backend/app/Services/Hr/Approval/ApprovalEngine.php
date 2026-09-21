@@ -57,8 +57,22 @@ class ApprovalEngine
         ?int $employeeId,
         ?float $amount = null
     ): HrApprovalRequest {
+        /*
+         | The record's OPEN round, not merely its last one.
+         |
+         | A closed round must not be handed back: variable earnings return to
+         | Pending when the figure is edited, and reusing the previous
+         | (approved) request would leave the record pending and permanently
+         | unapprovable, because mayAct() refuses a request that is not open.
+         |
+         | Opening a fresh row instead keeps the earlier round's decisions and
+         | comments intact, so the trail shows what was approved before the
+         | amount changed rather than overwriting it.
+         */
         $existing = HrApprovalRequest::where('subject_type', $subject->getMorphClass())
             ->where('subject_id', $subject->getKey())
+            ->whereIn('state', ApprovalState::OPEN)
+            ->latest('id')
             ->first();
 
         if ($existing) {

@@ -255,6 +255,18 @@ class VariableEarningService
         ];
     }
 
+    /**
+     * The earning a decision is about, or null.
+     *
+     * Same scoped query as find() below, returning null rather than throwing
+     * because the approval controller needs the model in hand before it can
+     * open a request against it.
+     */
+    public function findForDecision(int $id, int $tenantId, ?User $actor = null): ?HrEmployeeVariableEarning
+    {
+        return $this->scopeToEmployees(HrEmployeeVariableEarning::forTenant($tenantId), $actor)->find($id);
+    }
+
     /** approve(), reject() and destroy() all reach their row through here. */
     private function find(int $id, int $tenantId, ?User $actor = null): HrEmployeeVariableEarning
     {

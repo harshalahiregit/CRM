@@ -27,7 +27,7 @@ class ConditionEvaluator
     public const KEYS = [
         'department_id', 'branch', 'grade_id',
         'min_amount', 'max_amount',
-        'leave_type_id', 'loan_type_id',
+        'leave_type_id', 'loan_type_id', 'component_id',
     ];
 
     /**

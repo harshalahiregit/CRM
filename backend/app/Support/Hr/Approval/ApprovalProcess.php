@@ -3,6 +3,7 @@
 namespace App\Support\Hr\Approval;
 
 use App\Models\Hr\HrEmployeeLoan;
+use App\Models\Hr\HrEmployeeVariableEarning;
 use App\Models\Hr\HrLeaveApplication;
 
 /**
@@ -13,14 +14,16 @@ use App\Models\Hr\HrLeaveApplication;
  * keeps the engine out of the business — which value to read for an amount
  * condition. Nothing here executes anything.
  *
- * Phase 1 registers LEAVE only. The other ten processes are listed in the audit
- * and are deliberately not wired yet: the engine is proven on one flow before
- * the rest follow, so a mistake costs one migration rather than eleven.
+ * Processes are registered one at a time, each with its own reviewed migration,
+ * so a mistake costs one flow rather than eleven. Leave, loans and variable
+ * earnings are wired; the rest stay on the old shared gate until they are
+ * migrated deliberately.
  */
 final class ApprovalProcess
 {
-    public const LEAVE = 'leave';
-    public const LOAN  = 'loan';
+    public const LEAVE             = 'leave';
+    public const LOAN              = 'loan';
+    public const VARIABLE_EARNING  = 'variable_earning';
 
     /**
      * Everything the engine needs to know about a process, per process.
@@ -52,6 +55,25 @@ final class ApprovalProcess
             'model'        => HrEmployeeLoan::class,
             'amount_field' => 'principal',
             'conditions'   => ['department_id', 'branch', 'grade_id', 'loan_type_id'],
+        ],
+
+        /*
+         | Commissions and incentives.
+         |
+         | `amount` is the figure being added to somebody's pay, so it is the
+         | right thing to route on — a ₹2,000 incentive and a ₹2,00,000 one are
+         | not the same decision.
+         |
+         | component_id is offered as a condition because which COMPONENT an
+         | earning is paid against is the closest thing this process has to a
+         | type, and companies distinguish a sales commission from a retention
+         | bonus that way.
+         */
+        self::VARIABLE_EARNING => [
+            'label'        => 'Variable earnings',
+            'model'        => HrEmployeeVariableEarning::class,
+            'amount_field' => 'amount',
+            'conditions'   => ['department_id', 'branch', 'grade_id', 'component_id'],
         ],
     ];
 
