@@ -133,10 +133,17 @@ class ManpowerRequestService
 
         $this->assertCompleteForApproval($manpowerRequest);
 
+        // Resolved once, here: the same collection answers "is there anybody to
+        // approve this" and "who do we tell". Computing it before the
+        // transaction means a workspace with no Department Head is refused
+        // rather than left holding a request nobody can move.
+        $l1Approvers = $this->eligibleApprovers($manpowerRequest, 'L1');
+        $this->assertSomebodyCanApprove($l1Approvers, 'L1');
+
         $wasRejected = $manpowerRequest->status === Status::REJECTED;
         $fromStatus  = $manpowerRequest->status;
 
-        return DB::transaction(function () use ($manpowerRequest, $user, $wasRejected, $fromStatus) {
+        return DB::transaction(function () use ($manpowerRequest, $user, $wasRejected, $fromStatus, $l1Approvers) {
             // Record the submission (Draft/Rejected → L1 Pending) …
             $manpowerRequest->update([
                 'status'       => Status::L1_PENDING,
@@ -182,7 +189,7 @@ class ManpowerRequestService
              | REFUSAL (assertNotOwnRequest) rather than a free pass.
              */
             $this->notifyLevelPending($manpowerRequest, 'L1', $user,
-                $wasRejected ? 'resubmitted' : 'submitted');
+                $wasRejected ? 'resubmitted' : 'submitted', $l1Approvers);
 
             Log::channel('hr')->info('Manpower request submitted — awaiting L1', ['request_id' => $manpowerRequest->id, 'tenant_id' => $manpowerRequest->tenant_id]);
 
@@ -827,6 +834,52 @@ class ManpowerRequestService
     }
 
     /**
+     * Who could actually decide THIS request at a level.
+     *
+     * The requester is excluded, because assertNotOwnRequest() would refuse
+     * them. That exclusion is the whole point of asking: a workspace whose only
+     * Department Head is the person raising the requisition has nobody to
+     * approve it, and counting them would report an approver who cannot act.
+     *
+     * @return \Illuminate\Support\Collection<int, User>
+     */
+    private function eligibleApprovers(HrManpowerRequest $mr, string $level)
+    {
+        return $this->approversFor((int) $mr->tenant_id, $level)
+            ->reject(fn (User $u) => (int) $u->id === (int) $mr->requested_by)
+            ->values();
+    }
+
+    /**
+     * Refuse a submission that nobody could ever approve.
+     *
+     * Without this the request goes to L1_Pending and stays there — no error,
+     * no queue entry anybody can see, no notification that resolves to a
+     * recipient. Silence is the worst possible answer, because the requester
+     * assumes it is being considered.
+     *
+     * It REFUSES rather than falling through to L2 or granting the approval:
+     * bypassing L1 because L1 is unstaffed is how the defect this phase removed
+     * came about. The way out is to give somebody the authority, which the
+     * message says in the words used on the screen that grants it.
+     */
+    private function assertSomebodyCanApprove($approvers, string $level): void
+    {
+        if ($approvers->isNotEmpty()) {
+            return;
+        }
+
+        $who = $level === 'L1' ? 'Department Head' : 'Management';
+
+        throw new BusinessException(
+            "Nobody in this workspace can give {$who} ({$level}) approval on this request"
+            .' — you cannot approve one you raised yourself. Ask an administrator to grant'
+            ." \"Manpower Approval ({$level})\" to somebody else before submitting.",
+            422
+        );
+    }
+
+    /**
      * Tell the people a request is now waiting on.
      *
      * This is the half that makes L1 safe to restore. A blocking stage nobody is
@@ -835,13 +888,16 @@ class ManpowerRequestService
      * publish. Best-effort throughout: notify() swallows its own failures, so an
      * approval is never lost because a bell could not be rung.
      */
-    private function notifyLevelPending(HrManpowerRequest $mr, string $level, User $actor, string $because): void
+    private function notifyLevelPending(HrManpowerRequest $mr, string $level, User $actor, string $because, $approvers = null): void
     {
         $who   = $level === 'L1' ? 'Department Head' : 'Management';
         $title = "Manpower request awaiting {$who} ({$level}) approval";
         $body  = 'MR-'.$mr->id.' · '.$mr->position_title.' — '.$mr->department.' ('.$because.')';
 
-        foreach ($this->approversFor((int) $mr->tenant_id, $level) as $approver) {
+        // Reuses the collection submit() already resolved, when there is one —
+        // the eligibility check and the notification are asking the same
+        // question, and asking it twice would walk the permission grid twice.
+        foreach ($approvers ?? $this->eligibleApprovers($mr, $level) as $approver) {
             // The actor is skipped by notify() itself: somebody who just
             // approved at L1 and also holds L2 does not need telling that the
             // thing they did happened.

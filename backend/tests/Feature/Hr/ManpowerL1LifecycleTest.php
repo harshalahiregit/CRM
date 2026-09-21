@@ -43,6 +43,16 @@ class ManpowerL1LifecycleTest extends TestCase
 
     private const TENANT = 1;
 
+    /**
+     * A Department Head who exists in every test but takes part in none.
+     *
+     * submit() refuses when nobody could approve the request, so a workspace
+     * with no L1 approver at all cannot submit anything — see the
+     * "no eligible approver" tests, which remove this one deliberately. Every
+     * other test needs somebody standing there for submission to be possible.
+     */
+    private User $standingHead;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -50,6 +60,8 @@ class ManpowerL1LifecycleTest extends TestCase
         (new Tenant())->forceFill([
             'id' => self::TENANT, 'name' => 'T1', 'slug' => 't1', 'subdomain' => 't1', 'status' => 'active',
         ])->save();
+
+        $this->standingHead = $this->deptHead();
     }
 
     /* ── fixture ──────────────────────────────────────────────────────── */
@@ -136,6 +148,91 @@ class ManpowerL1LifecycleTest extends TestCase
 
         $this->assertSame(Status::L1_PENDING, $mr->status);
         $this->assertNull($mr->l1_approver_id);
+    }
+
+    /* ── 1b. a submission nobody could approve is refused, not stranded ── */
+
+    public function test_a_workspace_with_no_l1_approver_cannot_submit(): void
+    {
+        // The only L1-capable account is removed, so there is nobody to decide.
+        $this->standingHead->delete();
+        $requester = $this->plainStaff();
+        $mr = $this->draft($requester);
+
+        $this->expectException(BusinessException::class);
+        $this->expectExceptionMessage('Nobody in this workspace can give Department Head (L1) approval');
+        $this->service()->submit($mr, $requester);
+    }
+
+    public function test_a_refused_submission_leaves_the_request_editable(): void
+    {
+        $this->standingHead->delete();
+        $requester = $this->plainStaff();
+        $mr = $this->draft($requester);
+
+        try {
+            $this->service()->submit($mr, $requester);
+        } catch (BusinessException) {
+            // expected
+        }
+
+        // Refused, not half-done: the request must not be sitting at L1_Pending
+        // with nobody able to move it, which is the stall this check exists to
+        // prevent.
+        $this->assertSame(Status::DRAFT, $mr->fresh()->status);
+        $this->assertNull($mr->fresh()->submitted_at);
+    }
+
+    public function test_the_sole_l1_approver_cannot_submit_their_own_request(): void
+    {
+        // The deadlock case. This department head is the only L1 approver, and
+        // nobody approves what they raised — so there is genuinely no route
+        // through, and submission says so instead of stalling silently.
+        $this->standingHead->delete();
+        $head = $this->deptHead();
+        $mr = $this->draft($head);
+
+        $this->expectException(BusinessException::class);
+        $this->expectExceptionMessage('you cannot approve one you raised yourself');
+        $this->service()->submit($mr, $head);
+    }
+
+    public function test_a_second_l1_approver_unblocks_that_submission(): void
+    {
+        $this->standingHead->delete();
+        $head = $this->deptHead();
+        $this->deptHead();          // a colleague at the same level
+
+        $mr = $this->draft($head);
+        $this->service()->submit($mr, $head);
+
+        $this->assertSame(Status::L1_PENDING, $mr->fresh()->status);
+    }
+
+    public function test_an_admin_counts_as_an_l1_approver(): void
+    {
+        // canApproveL1() admits an admin, so a workspace that has not set up
+        // department heads yet is not stopped — it is the same reading the
+        // approval gate itself takes, not a bypass invented here.
+        $this->standingHead->delete();
+        $this->user('admin');
+        $requester = $this->plainStaff();
+
+        $mr = $this->draft($requester);
+        $this->service()->submit($mr, $requester);
+
+        $this->assertSame(Status::L1_PENDING, $mr->fresh()->status);
+    }
+
+    public function test_an_inactive_approver_does_not_count(): void
+    {
+        $this->standingHead->update(['status' => 'inactive']);
+        $requester = $this->plainStaff();
+        $mr = $this->draft($requester);
+
+        $this->expectException(BusinessException::class);
+        $this->expectExceptionMessage('Nobody in this workspace can give Department Head (L1) approval');
+        $this->service()->submit($mr, $requester);
     }
 
     /* ── 2. only an authorised L1 approver may act ────────────────────── */

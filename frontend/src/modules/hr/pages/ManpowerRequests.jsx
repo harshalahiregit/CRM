@@ -968,7 +968,7 @@ function ActionModal({ actionModal, remarks, setRemarks, actionLoading, onClose,
       <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 14 }}>
         <strong style={{ color: 'var(--text-h)' }}>MR-{request.id} · {request.position_title}</strong> — {request.department}
       </p>
-      {action === 'submit' && <InfoBox><strong>L1 is approved automatically</strong> on submission — the request goes straight to <strong>Management (L2)</strong> approval, then the HR queue.</InfoBox>}
+      {action === 'submit' && <InfoBox>This goes to your <strong>Department Head (L1)</strong> for approval, then to <strong>Management (L2)</strong>, and only then to the HR queue. You cannot approve a request you raised yourself.</InfoBox>}
       {action === 'delete' && <InfoBox tone="danger">This permanently deletes the request. This cannot be undone.</InfoBox>}
       {showRemarks && (
         <>

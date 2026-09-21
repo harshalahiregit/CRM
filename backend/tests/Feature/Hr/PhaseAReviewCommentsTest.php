@@ -408,6 +408,15 @@ class PhaseAReviewCommentsTest extends TestCase
 
     public function test_a_complete_request_submits(): void
     {
+        // Somebody other than the requester has to be able to approve L1, or
+        // submission is refused before the completeness gate this test is
+        // about ever comes into it — nobody approves a request they raised.
+        User::create([
+            'tenant_id' => self::TENANT, 'name' => 'Dept Head', 'email' => 'dh'.uniqid().'@test.com',
+            'password' => bcrypt('secret'), 'role' => 'staff', 'status' => 'active',
+            'internal_role' => 'department_head',
+        ]);
+
         $manager = $this->employee();
         $mr = $this->manpowerRequest([
             'job_description'     => 'Build and maintain the platform.',
