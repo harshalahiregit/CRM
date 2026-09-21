@@ -7,6 +7,7 @@ use App\Models\Hr\HrEmployeeVariableEarning;
 use App\Models\Hr\HrExitRequest;
 use App\Models\Hr\HrInvestmentDeclaration;
 use App\Models\Hr\HrLeaveApplication;
+use App\Models\Hr\HrProbationConfirmation;
 use App\Models\Hr\HrReimbursement;
 
 /**
@@ -31,6 +32,7 @@ final class ApprovalProcess
     public const INVESTMENT_DECLARATION  = 'investment_declaration';
     public const REIMBURSEMENT           = 'reimbursement';
     public const EXIT_REQUEST            = 'exit_request';
+    public const PROBATION_CONFIRMATION  = 'probation_confirmation';
 
     /**
      * Everything the engine needs to know about a process, per process.
@@ -137,6 +139,30 @@ final class ApprovalProcess
             'model'        => HrExitRequest::class,
             'amount_field' => null,
             'conditions'   => ['department_id', 'branch', 'grade_id', 'exit_type_id'],
+        ],
+
+        /*
+         | Probation confirmation — the APPROVAL, not the confirmation itself.
+         |
+         | The lifecycle is two-stage: Pending --approve--> Approved
+         | --confirm--> Confirmed. Only the first is a decision. confirm() is
+         | the execution of a decision already taken, in the same way
+         | disburse() is for a loan — it writes the effective date and closes
+         | the probation, and it already refuses anything that is not Approved.
+         |
+         | That refusal is what makes the ladder safe here: an intermediate
+         | rung leaves the confirmation Pending, so confirm() still says "the
+         | confirmation must be approved before the employee can be confirmed".
+         | A half-approved probation cannot be closed, and closing one is
+         | irreversible — a confirmed employee cannot return to probation.
+         |
+         | No amount. Confirming somebody carries no figure of its own.
+         */
+        self::PROBATION_CONFIRMATION => [
+            'label'        => 'Probation confirmation',
+            'model'        => HrProbationConfirmation::class,
+            'amount_field' => null,
+            'conditions'   => ['department_id', 'branch', 'grade_id'],
         ],
     ];
 
