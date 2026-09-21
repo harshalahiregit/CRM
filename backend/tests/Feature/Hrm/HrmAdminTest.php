@@ -264,7 +264,26 @@ class HrmAdminTest extends TestCase
         ])->assertOk()->assertJsonPath('status', 1);
 
         $day = HrAttendance::where('employee_id', $e->id)->firstOrFail();
-        $this->assertSame('18:00:00', $day->check_out->format('H:i:s'));
+
+        /*
+         * The employee typed 18:00 on their phone; the column holds an INSTANT.
+         *
+         * This asserted the stored string was '18:00:00', which is precisely how
+         * the timezone bug survived in both suites: writing the local clock face
+         * straight into a UTC column satisfied the assertion exactly, while
+         * moving the punch by the whole offset. Approving a raise from the app
+         * therefore recorded a different time from the one requested, and
+         * working hours followed it.
+         *
+         * Read back on the tenant's clock it is still 18:00 — the request is
+         * honoured — and the stored value is the matching UTC instant. Nothing
+         * about the endpoint, its payload or its response changed.
+         */
+        $zone = app(\App\Services\Settings\SettingsFormatter::class)->timezone($this->tenant()->id);
+        $this->assertSame('18:00', $day->check_out->copy()->setTimezone($zone)->format('H:i'),
+            'The raise must land on the clock time the employee asked for.');
+        $this->assertSame('12:30:00', $day->check_out->format('H:i:s'),
+            'And be stored as the matching UTC instant.');
         $this->assertTrue($c->fresh()->applied);
     }
 

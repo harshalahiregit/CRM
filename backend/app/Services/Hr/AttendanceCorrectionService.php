@@ -7,6 +7,7 @@ use App\Models\Hr\HrAttendance;
 use App\Models\Hr\HrAttendanceCorrection;
 use App\Models\Hr\HrEmployee;
 use App\Models\User;
+use App\Support\Hr\TenantTime;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -30,6 +31,47 @@ class AttendanceCorrectionService
         // This flow told the employee nothing at any point.
         private RequestNotifier $notifier,
     ) {
+    }
+
+    /**
+     * The UTC instant an employee meant when they typed a clock time.
+     *
+     * A correction carries a WALL-CLOCK time — `requested_check_in` is a `time`
+     * column holding "09:28", with no date and no zone, because that is what the
+     * person read off their watch. hr_attendance.check_in is the opposite: a cast
+     * datetime, stored in the application timezone, which config/app.php keeps at
+     * UTC deliberately and warns against changing.
+     *
+     * Those two were joined with string concatenation — `$date.' '.$time` — which
+     * writes the local clock face into a UTC column and moves the punch by the
+     * whole offset. An employee asking for 09:28 IST had 09:28 UTC stored and read
+     * it back as 14:58. That is not only a display error: restampAndSave() derives
+     * working hours, status and overtime from these columns, and payroll reads
+     * those, so a correction quietly changed what somebody was paid.
+     *
+     * A normal punch never had the problem because it stores now() — already an
+     * instant. This gives a corrected punch the same footing.
+     *
+     * The zone comes from TenantTime, which is where HR already keeps this
+     * question. It reads the tenant's own localization.timezone (SettingRegistry
+     * default Asia/Kolkata, validated as a real timezone), caches it per tenant,
+     * and falls back to the app timezone when a workspace has none.
+     *
+     * Using it rather than reading the setting directly matters because
+     * TenantTime is the OTHER half of this conversion: HrmAttendanceController
+     * and HrmAdminController render stored instants back to the phone with
+     * TenantTime::hm(). Resolving the zone through the same helper is what makes
+     * the write and the read exact inverses by construction, instead of two
+     * places that happen to agree today.
+     *
+     * Hardcoding +05:30 would be wrong for the first tenant outside India and
+     * wrong twice a year anywhere with DST — Carbon resolves the offset for THAT
+     * date, which a fixed number cannot.
+     */
+    private function instantFor(int $tenantId, string $date, string $time): Carbon
+    {
+        return Carbon::parse($date.' '.$time, TenantTime::zone($tenantId))
+            ->setTimezone(config('app.timezone'));
     }
 
     /* ── the employee's side ─────────────────────────────────────────── */
@@ -169,7 +211,7 @@ class AttendanceCorrectionService
 
             // A null in the request means "leave this one alone", never "clear it".
             foreach ($c->requestedTimes() as $field => $time) {
-                $row->{$field} = $date . ' ' . $time;
+                $row->{$field} = $this->instantFor($c->tenant_id, $date, $time);
             }
 
             if (! $row->exists) {
