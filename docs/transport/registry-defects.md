@@ -2772,6 +2772,47 @@ by seeding copies.
 **Raised:** 2026-09-17, starting the repoint. **First use of P1's new D-100 band.**
 **Owner: P1 + P2.** **Status: NOT STARTED — deliberately, and here is why.**
 
+> ### Three couplings, measured 2026-09-21 — find these before you discover them
+>
+> The repoint is not one change to one reader. Three things on OUR side must move in the same
+> commit as the data, and the first would have wasted an afternoon.
+>
+> **1. The status vocabularies disagree, and the comparison is strict.**
+> `vehicles.status = "AVAILABLE"`, `transport_vehicles.status = "available"`, and
+> `VehicleEligibilityService` gates on
+> `in_array($vehicle->status, VehicleStatus::ALLOCATABLE, true)` where `ALLOCATABLE` is
+> `['available', 'idle']`. Point the picker at Fleet without normalising this and **every Fleet
+> vehicle reads as not allocatable — an empty candidate list that looks like a considered
+> eligibility verdict rather than a bug.**
+> *(The drivers happen to agree — both sides store `available` — though the columns are named
+> `status` and `availability`.)*
+>
+> **2. The relations are hard-coded to our model, in both places that matter.**
+> `TransportTrip::vehicle()` and `TripAssignment::vehicle()` are both
+> `belongsTo(TransportVehicle::class, 'vehicle_id')`, and the trip detail payload loads the
+> registration through that relation. Repoint the column without the relation and the trip screen
+> shows a **blank vehicle** today, and a **different truck** the day the two id ranges overlap.
+>
+> **3. Two readers resolve a `vehicle_id` against our table and would fail silently.**
+> `TransportSearchService::vehicle()` resolves a plate in `transport_vehicles` and then looks for
+> trips by that id — after a repoint a plate search finds the vehicle and **no journeys**, quietly
+> undoing CTD §4's follow-through. And `AllocationService::freeResources()` (D-119) resolves
+> `vehicle_id` the same way and would **stop freeing trucks without a word**.
+>
+> **The picker is not separable from the data.** If the picker offers Fleet vehicles, `assign()`
+> writes a Fleet id into `transport_trips.vehicle_id` while every existing row holds one of ours —
+> the mixed namespace arrives through the back door with no ledger recording which is which.
+>
+> **Ruled 2026-09-21: do not split the repoint into a vehicle half and a driver half.** Couplings
+> 2 and 3 touch drivers in the same files, so a vehicle-only repoint does most of the driver work
+> to avoid waiting for the driver data — and leaves `vehicle_id` meaning Fleet and `driver_id`
+> meaning ours in the same row. We wait for D-118.
+>
+> **The good news, also measured:** Fleet's `vehicles` carries every column ours does except
+> `tenant_id` (it uses `company_id`), including status, capacity, type and normalised
+> registration. This is a reader swap plus a vocabulary normalisation plus relation repointing —
+> **not** a data-model migration.
+
 The instruction was to repoint allocation, pre-trip and dispatch onto
 `FleetService::getEligibleVehicles`. It exists, it is explicitly *"Consumed by Developer 1
 (Operations) during dispatch planning"*, and its payload is good — id, registration, type,
