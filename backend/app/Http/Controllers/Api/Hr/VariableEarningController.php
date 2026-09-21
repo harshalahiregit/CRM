@@ -26,7 +26,8 @@ class VariableEarningController extends Controller
 
         return response()->json(['data' => $this->service->list(
             $this->tenant($request),
-            $request->only(['employee_id', 'period', 'status', 'component_id'])
+            $request->only(['employee_id', 'period', 'status', 'component_id']),
+            $request->user()
         )]);
     }
 

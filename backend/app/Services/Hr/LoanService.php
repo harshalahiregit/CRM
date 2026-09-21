@@ -8,6 +8,7 @@ use App\Models\Hr\HrEmployeeLoan;
 use App\Models\Hr\HrLoanInstallment;
 use App\Models\Hr\HrLoanType;
 use App\Models\User;
+use App\Repositories\Hr\Concerns\ScopesEmployeeData;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -26,6 +27,11 @@ use Illuminate\Support\Facades\Log;
  */
 class LoanService
 {
+    // The loan RECORDS are employee-owned; the loan TYPES above them are tenant
+    // master data and stay unscoped. Payroll reaches loans through
+    // LoanDeductionService with no actor, which leaves those queries untouched.
+    use ScopesEmployeeData;
+
     public function __construct(private LoanEligibilityService $eligibility)
     {
     }
@@ -88,10 +94,15 @@ class LoanService
 
     /* ── Loans ────────────────────────────────────────────────────────── */
 
-    public function list(int $tenantId, array $filters = []): array
+    public function list(int $tenantId, array $filters = [], ?User $actor = null): array
     {
-        $q = HrEmployeeLoan::forTenant($tenantId)
-            ->with(['employee:id,name,employee_code,department', 'loanType:id,name,is_advance']);
+        // Before the filters, so an employee_id filter can only narrow within
+        // the scope rather than reach outside it.
+        $q = $this->scopeToEmployees(
+            HrEmployeeLoan::forTenant($tenantId)
+                ->with(['employee:id,name,employee_code,department', 'loanType:id,name,is_advance']),
+            $actor
+        );
 
         if (! empty($filters['status'])) {
             $q->where('status', $filters['status']);
@@ -110,14 +121,22 @@ class LoanService
         return $q->orderByDesc('id')->get()->map(fn ($l) => $this->present($l))->all();
     }
 
-    public function show(int $id, int $tenantId): array
+    public function show(int $id, int $tenantId, ?User $actor = null): array
     {
-        return $this->present($this->find($id, $tenantId), full: true);
+        return $this->present($this->find($id, $tenantId, $actor), full: true);
     }
 
-    public function stats(int $tenantId): array
+    /**
+     * Queue tiles.
+     *
+     * total_outstanding and total_disbursed are sums of money owed by named
+     * people, so these count the scoped population like the list does. An
+     * unscoped total beside a scoped list is the more disclosing half: it says
+     * how much the employees you cannot see between them owe.
+     */
+    public function stats(int $tenantId, ?User $actor = null): array
     {
-        $base = fn () => HrEmployeeLoan::forTenant($tenantId);
+        $base = fn () => $this->scopeToEmployees(HrEmployeeLoan::forTenant($tenantId), $actor);
 
         return [
             'pending_approval' => (clone $base())->where('status', HrEmployeeLoan::SUBMITTED)->count(),
@@ -142,6 +161,12 @@ class LoanService
         if (! $employee) {
             throw new BusinessException('Employee not found', 404);
         }
+
+        // This books company money against an employee named in the request
+        // body, so whose name it is has to be inside the actor's scope. An
+        // edit ($id given) also re-enters through find() below, which scopes
+        // the existing row; this covers the create, where there is no row yet.
+        $this->assertEmployeeInScope($actor, $employee->id);
 
         $principal = round((float) ($data['principal'] ?? 0), 2);
         if ($principal <= 0) {
@@ -185,7 +210,7 @@ class LoanService
         ];
 
         if ($id) {
-            $loan = $this->find($id, $tenantId);
+            $loan = $this->find($id, $tenantId, $actor);
             if ($loan->status !== HrEmployeeLoan::DRAFT) {
                 throw new BusinessException('Only a draft loan can be edited.');
             }
@@ -206,7 +231,7 @@ class LoanService
 
     public function submit(int $id, int $tenantId, ?User $actor = null): array
     {
-        $loan = $this->find($id, $tenantId);
+        $loan = $this->find($id, $tenantId, $actor);
         $this->assertStatus($loan, [HrEmployeeLoan::DRAFT], 'Only a draft loan can be submitted.');
 
         // A type that needs no approval goes straight to Approved — otherwise a
@@ -226,7 +251,7 @@ class LoanService
 
     public function approve(int $id, int $tenantId, ?User $actor = null): array
     {
-        $loan = $this->find($id, $tenantId);
+        $loan = $this->find($id, $tenantId, $actor);
         $this->assertStatus($loan, [HrEmployeeLoan::SUBMITTED], 'Only a submitted loan can be approved.');
 
         $loan->update([
@@ -241,7 +266,7 @@ class LoanService
 
     public function reject(int $id, string $remarks, int $tenantId, ?User $actor = null): array
     {
-        $loan = $this->find($id, $tenantId);
+        $loan = $this->find($id, $tenantId, $actor);
         $this->assertStatus($loan, [HrEmployeeLoan::SUBMITTED], 'Only a submitted loan can be rejected.');
 
         $loan->update(['status' => HrEmployeeLoan::REJECTED, 'remarks' => $remarks, 'updated_by' => $actor?->id]);
@@ -258,7 +283,7 @@ class LoanService
      */
     public function disburse(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $loan = $this->find($id, $tenantId);
+        $loan = $this->find($id, $tenantId, $actor);
         $this->assertStatus($loan, [HrEmployeeLoan::APPROVED], 'Only an approved loan can be disbursed.');
 
         // Re-checked at the last moment: salary or other loans may have changed
@@ -320,7 +345,7 @@ class LoanService
     /** Close a loan early. Remaining instalments are skipped, not deleted. */
     public function close(int $id, string $remarks, int $tenantId, ?User $actor = null): array
     {
-        $loan = $this->find($id, $tenantId);
+        $loan = $this->find($id, $tenantId, $actor);
         $this->assertStatus($loan, [HrEmployeeLoan::DISBURSED], 'Only a disbursed loan can be closed.');
 
         DB::transaction(function () use ($loan, $remarks, $actor) {
@@ -340,7 +365,7 @@ class LoanService
 
     public function cancel(int $id, int $tenantId, ?User $actor = null): array
     {
-        $loan = $this->find($id, $tenantId);
+        $loan = $this->find($id, $tenantId, $actor);
         $this->assertStatus($loan, [HrEmployeeLoan::DRAFT, HrEmployeeLoan::SUBMITTED, HrEmployeeLoan::APPROVED],
             'A disbursed loan cannot be cancelled — close it instead.');
 
@@ -353,7 +378,7 @@ class LoanService
     /** Waive a single instalment — it stops being due without touching the rest. */
     public function waiveInstallment(int $loanId, int $installmentId, string $remarks, int $tenantId, ?User $actor = null): array
     {
-        $loan = $this->find($loanId, $tenantId);
+        $loan = $this->find($loanId, $tenantId, $actor);
         $installment = $loan->installments()->find($installmentId);
 
         if (! $installment) {
@@ -494,10 +519,23 @@ class LoanService
         return $type;
     }
 
-    private function find(int $id, int $tenantId): HrEmployeeLoan
+    /**
+     * The one lookup every loan action goes through.
+     *
+     * submit, approve, reject, disburse, close, cancel and waiveInstallment all
+     * reach their record here, so scoping this single read is what stops a
+     * department-scoped HR user approving or disbursing against an employee
+     * outside their scope. The scope is on the query, so an out-of-scope loan
+     * raises the same "Loan not found" 404 as one that does not exist — saying
+     * "not yours" would confirm whose it is.
+     */
+    private function find(int $id, int $tenantId, ?User $actor = null): HrEmployeeLoan
     {
-        $loan = HrEmployeeLoan::forTenant($tenantId)
-            ->with(['employee:id,name,employee_code,department', 'loanType', 'installments'])->find($id);
+        $loan = $this->scopeToEmployees(
+            HrEmployeeLoan::forTenant($tenantId)
+                ->with(['employee:id,name,employee_code,department', 'loanType', 'installments']),
+            $actor
+        )->find($id);
         if (! $loan) {
             throw new BusinessException('Loan not found', 404);
         }

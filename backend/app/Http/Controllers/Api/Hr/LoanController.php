@@ -34,7 +34,10 @@ class LoanController extends Controller
      * Affordability for a proposed EMI, before anything is saved.
      *
      * Read-only, so no permission gate — the UI calls it as figures are typed to
-     * show the warning before a submit is rejected.
+     * show the warning before a submit is rejected. Read-only is not the same as
+     * harmless, though: the answer carries the employee's net_salary and their
+     * existing EMI commitments, for an employee id named in the request body.
+     * So the data scope applies even where the permission gate does not.
      */
     public function checkEligibility(Request $request)
     {
@@ -43,6 +46,8 @@ class LoanController extends Controller
             'emi'             => 'required|numeric|min:0',
             'exclude_loan_id' => 'nullable|integer',
         ]);
+
+        $this->assertEmployeeInScope($request, (int) $data['employee_id']);
 
         return response()->json($this->eligibility->evaluate(
             (int) $data['employee_id'], $this->tenant($request),
@@ -94,18 +99,19 @@ class LoanController extends Controller
     {
         return response()->json([
             'data' => $this->service->list($this->tenant($request),
-                $request->only(['status', 'employee_id', 'loan_type_id', 'is_advance'])),
+                $request->only(['status', 'employee_id', 'loan_type_id', 'is_advance']),
+                $request->user()),
         ]);
     }
 
     public function stats(Request $request)
     {
-        return response()->json($this->service->stats($this->tenant($request)));
+        return response()->json($this->service->stats($this->tenant($request), $request->user()));
     }
 
     public function show(Request $request, int $id)
     {
-        return response()->json($this->service->show($id, $this->tenant($request)));
+        return response()->json($this->service->show($id, $this->tenant($request), $request->user()));
     }
 
     /**
@@ -230,5 +236,19 @@ class LoanController extends Controller
     private function assertCanManage(Request $request): void
     {
         abort_unless($request->user()->canManageHrQueue(), 403, 'You are not authorised to manage loans');
+    }
+
+    /**
+     * Whose employee is this?
+     *
+     * Separate from assertCanManage() above on purpose: that asks whether they
+     * may touch loans at all, this asks whose. The loan actions reached by id
+     * are scoped inside LoanService::find(); this is for the endpoints that take
+     * an employee id directly instead.
+     */
+    private function assertEmployeeInScope(Request $request, int $employeeId): void
+    {
+        app(\App\Services\Auth\ScopeResolver::class)
+            ->assertCanActOnEmployee($request->user(), $employeeId);
     }
 }

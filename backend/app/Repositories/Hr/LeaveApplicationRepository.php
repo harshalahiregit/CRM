@@ -68,10 +68,22 @@ class LeaveApplicationRepository
             ->orderByDesc('id')->get();
     }
 
-    /** Queue counters by status. */
-    public function statusCounts(int $tenantId): array
+    /**
+     * Queue counters by status.
+     *
+     * Scoped for the same reason the list above is: these are the tiles drawn
+     * over that list. Left global they contradicted it — a department approver
+     * saw "14 pending" above four rows, which both leaks the size of the other
+     * ten and makes the queue look broken.
+     */
+    public function statusCounts(int $tenantId, ?\App\Models\User $actor = null): array
     {
-        $rows = HrLeaveApplication::where('tenant_id', $tenantId)
+        $rows = app(\App\Services\Auth\ScopeResolver::class)->applyToQuery(
+            HrLeaveApplication::where('tenant_id', $tenantId),
+            $actor,
+            'employee_id',
+            [\App\Support\Hr\DataScope::OWN, \App\Support\Hr\DataScope::DEPARTMENT, \App\Support\Hr\DataScope::TEAM],
+        )
             ->selectRaw('status, count(*) as c')->groupBy('status')->pluck('c', 'status')->all();
 
         return [

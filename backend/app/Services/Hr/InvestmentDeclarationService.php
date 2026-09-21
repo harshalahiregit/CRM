@@ -7,6 +7,7 @@ use App\Models\Hr\HrEmployee;
 use App\Models\Hr\HrInvestmentDeclaration;
 use App\Models\Hr\HrInvestmentDeclarationItem;
 use App\Models\User;
+use App\Repositories\Hr\Concerns\ScopesEmployeeData;
 use App\Services\Settings\SettingsService;
 use App\Support\Hr\FinancialYear;
 use App\Support\Hr\TaxSections;
@@ -28,6 +29,13 @@ use Illuminate\Support\Facades\Log;
  */
 class InvestmentDeclarationService
 {
+    // A declaration is the most personal financial record HR holds: rent, PAN of
+    // the landlord, insurance, dependants' medical claims, previous employer
+    // income. It is also HR-only — there is no /me route yet (see the note on
+    // InvestmentDeclarationController::save) — so the boundary sits here in the
+    // service rather than on the controller.
+    use ScopesEmployeeData;
+
     public function __construct(private SettingsService $settings)
     {
     }
@@ -43,9 +51,12 @@ class InvestmentDeclarationService
         return FinancialYear::forDate(now(), $this->fyStartMonth($tenantId))->label();
     }
 
-    public function list(int $tenantId, array $filters = []): array
+    public function list(int $tenantId, array $filters = [], ?User $actor = null): array
     {
-        $q = HrInvestmentDeclaration::forTenant($tenantId)->with(['employee:id,name,employee_code,department', 'items']);
+        $q = $this->scopeToEmployees(
+            HrInvestmentDeclaration::forTenant($tenantId)->with(['employee:id,name,employee_code,department', 'items']),
+            $actor
+        );
 
         if (! empty($filters['financial_year'])) {
             $q->where('financial_year', $filters['financial_year']);
@@ -64,9 +75,9 @@ class InvestmentDeclarationService
             ->get()->map(fn ($d) => $this->present($d))->all();
     }
 
-    public function show(int $id, int $tenantId): array
+    public function show(int $id, int $tenantId, ?User $actor = null): array
     {
-        return $this->present($this->find($id, $tenantId), full: true);
+        return $this->present($this->find($id, $tenantId, $actor), full: true);
     }
 
     /**
@@ -75,12 +86,18 @@ class InvestmentDeclarationService
      * Creating on read keeps the UI simple — the form always has something to bind
      * to — and an empty Draft changes no tax figure, so it is safe.
      */
-    public function forEmployee(int $employeeId, int $tenantId, ?string $fy = null): array
+    public function forEmployee(int $employeeId, int $tenantId, ?string $fy = null, ?User $actor = null): array
     {
         $employee = HrEmployee::where('tenant_id', $tenantId)->find($employeeId);
         if (! $employee) {
             throw new BusinessException('Employee not found', 404);
         }
+
+        // Before the create below, not after. This method makes a Draft row when
+        // the employee has none, so an unchecked call would not merely read
+        // somebody else's declaration — it would create one for them.
+        $this->assertEmployeeInScope($actor, $employeeId);
+
         $fy ??= $this->currentFy($tenantId);
 
         $declaration = HrInvestmentDeclaration::forTenant($tenantId)
@@ -102,7 +119,7 @@ class InvestmentDeclarationService
      */
     public function save(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $declaration = $this->find($id, $tenantId);
+        $declaration = $this->find($id, $tenantId, $actor);
         $this->assertEditable($declaration);
 
         DB::transaction(function () use ($declaration, $data, $tenantId, $actor) {
@@ -140,12 +157,12 @@ class InvestmentDeclarationService
 
         $declaration->recordAudit('Declaration Saved', $actor);
 
-        return $this->present($this->find($id, $tenantId), full: true);
+        return $this->present($this->find($id, $tenantId, $actor), full: true);
     }
 
     public function submit(int $id, int $tenantId, ?User $actor = null): array
     {
-        $declaration = $this->find($id, $tenantId);
+        $declaration = $this->find($id, $tenantId, $actor);
         $this->assertEditable($declaration);
 
         if ($declaration->items->isEmpty() && ! $declaration->previous_employer_income && ! ($declaration->hra['rent_paid_annual'] ?? null)) {
@@ -159,7 +176,7 @@ class InvestmentDeclarationService
         $declaration->recordAudit('Declaration Submitted', $actor);
         $this->log('Declaration submitted', $tenantId, $declaration->id);
 
-        return $this->present($this->find($id, $tenantId), full: true);
+        return $this->present($this->find($id, $tenantId, $actor), full: true);
     }
 
     /**
@@ -171,7 +188,7 @@ class InvestmentDeclarationService
      */
     public function verify(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $declaration = $this->find($id, $tenantId);
+        $declaration = $this->find($id, $tenantId, $actor);
 
         if ($declaration->status !== HrInvestmentDeclaration::SUBMITTED) {
             throw new BusinessException('Only a submitted declaration can be verified.');
@@ -203,12 +220,12 @@ class InvestmentDeclarationService
             ['verified_total' => $declaration->fresh()->verified_total]);
         $this->log('Declaration verified', $tenantId, $declaration->id);
 
-        return $this->present($this->find($id, $tenantId), full: true);
+        return $this->present($this->find($id, $tenantId, $actor), full: true);
     }
 
     public function reject(int $id, string $remarks, int $tenantId, ?User $actor = null): array
     {
-        $declaration = $this->find($id, $tenantId);
+        $declaration = $this->find($id, $tenantId, $actor);
 
         if ($declaration->status !== HrInvestmentDeclaration::SUBMITTED) {
             throw new BusinessException('Only a submitted declaration can be rejected.');
@@ -220,13 +237,13 @@ class InvestmentDeclarationService
         ]);
         $declaration->recordAudit('Declaration Rejected', $actor, $remarks);
 
-        return $this->present($this->find($id, $tenantId), full: true);
+        return $this->present($this->find($id, $tenantId, $actor), full: true);
     }
 
     /** Send a verified or rejected declaration back to Draft so it can be revised. */
     public function reopen(int $id, int $tenantId, ?User $actor = null): array
     {
-        $declaration = $this->find($id, $tenantId);
+        $declaration = $this->find($id, $tenantId, $actor);
 
         if ($declaration->status === HrInvestmentDeclaration::DRAFT) {
             throw new BusinessException('This declaration is already open for editing.');
@@ -239,7 +256,7 @@ class InvestmentDeclarationService
         ]);
         $declaration->recordAudit('Declaration Reopened', $actor);
 
-        return $this->present($this->find($id, $tenantId), full: true);
+        return $this->present($this->find($id, $tenantId, $actor), full: true);
     }
 
     /* ── Helpers ──────────────────────────────────────────────────────── */
@@ -264,9 +281,13 @@ class InvestmentDeclarationService
         }
     }
 
-    private function find(int $id, int $tenantId): HrInvestmentDeclaration
+    /** save, submit, verify, reject and reopen all reach their row through here. */
+    private function find(int $id, int $tenantId, ?User $actor = null): HrInvestmentDeclaration
     {
-        $declaration = HrInvestmentDeclaration::forTenant($tenantId)->with(['items', 'employee:id,name,employee_code,department'])->find($id);
+        $declaration = $this->scopeToEmployees(
+            HrInvestmentDeclaration::forTenant($tenantId)->with(['items', 'employee:id,name,employee_code,department']),
+            $actor
+        )->find($id);
         if (! $declaration) {
             throw new BusinessException('Declaration not found', 404);
         }

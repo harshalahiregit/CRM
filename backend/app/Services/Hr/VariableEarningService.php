@@ -7,6 +7,7 @@ use App\Models\Hr\HrEmployeeVariableEarning;
 use App\Models\Hr\HrPayrollRecord;
 use App\Models\Hr\HrSalaryComponent;
 use App\Models\User;
+use App\Repositories\Hr\Concerns\ScopesEmployeeData;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -19,6 +20,13 @@ use Illuminate\Support\Facades\DB;
  */
 class VariableEarningService
 {
+    // The CRM's own list/detail/write surfaces take the scope. linesFor(),
+    // markPaid(), releaseForRun() and runTotals() below do NOT: those are the
+    // payroll run reading its own inputs, with no actor to scope by, and a run
+    // that skipped an employee because the person who started it could not see
+    // them would underpay somebody.
+    use ScopesEmployeeData;
+
     /** Raise or amend a commission/incentive for one employee and period. */
     public function save(array $data, int $tenantId, ?User $actor = null): HrEmployeeVariableEarning
     {
@@ -46,8 +54,14 @@ class VariableEarningService
             throw new BusinessException('Period must be in YYYY-MM format', 422);
         }
 
+        // This adds money to a named employee's pay, so both the employee being
+        // credited and (on an amend) the row being changed have to be inside
+        // the actor's scope. Checking only the row would let a new earning be
+        // raised against anybody.
+        $this->assertEmployeeInScope($actor, (int) ($data['employee_id'] ?? 0));
+
         $existing = ! empty($data['id'])
-            ? HrEmployeeVariableEarning::forTenant($tenantId)->find($data['id'])
+            ? $this->scopeToEmployees(HrEmployeeVariableEarning::forTenant($tenantId), $actor)->find($data['id'])
             : null;
 
         if ($existing && $existing->status === HrEmployeeVariableEarning::PAID) {
@@ -85,7 +99,7 @@ class VariableEarningService
 
     public function approve(int $id, int $tenantId, ?User $actor = null): HrEmployeeVariableEarning
     {
-        $earning = $this->find($id, $tenantId);
+        $earning = $this->find($id, $tenantId, $actor);
 
         if ($earning->status === HrEmployeeVariableEarning::PAID) {
             throw new BusinessException('This earning has already been paid', 422);
@@ -102,7 +116,7 @@ class VariableEarningService
 
     public function reject(int $id, int $tenantId, string $remarks, ?User $actor = null): HrEmployeeVariableEarning
     {
-        $earning = $this->find($id, $tenantId);
+        $earning = $this->find($id, $tenantId, $actor);
 
         if ($earning->status === HrEmployeeVariableEarning::PAID) {
             throw new BusinessException('This earning has already been paid and cannot be rejected', 422);
@@ -116,7 +130,7 @@ class VariableEarningService
 
     public function destroy(int $id, int $tenantId, ?User $actor = null): void
     {
-        $earning = $this->find($id, $tenantId);
+        $earning = $this->find($id, $tenantId, $actor);
 
         if ($earning->status === HrEmployeeVariableEarning::PAID) {
             throw new BusinessException('A paid earning is part of a payroll record and cannot be deleted', 422);
@@ -126,10 +140,13 @@ class VariableEarningService
         $earning->delete();
     }
 
-    public function list(int $tenantId, array $filters = []): array
+    public function list(int $tenantId, array $filters = [], ?User $actor = null): array
     {
-        $query = HrEmployeeVariableEarning::forTenant($tenantId)
-            ->with(['employee:id,name,employee_code,department', 'component:id,name,code,type']);
+        $query = $this->scopeToEmployees(
+            HrEmployeeVariableEarning::forTenant($tenantId)
+                ->with(['employee:id,name,employee_code,department', 'component:id,name,code,type']),
+            $actor
+        );
 
         foreach (['employee_id', 'period', 'status', 'component_id'] as $key) {
             if (! empty($filters[$key]) && $filters[$key] !== 'All') {
@@ -238,9 +255,10 @@ class VariableEarningService
         ];
     }
 
-    private function find(int $id, int $tenantId): HrEmployeeVariableEarning
+    /** approve(), reject() and destroy() all reach their row through here. */
+    private function find(int $id, int $tenantId, ?User $actor = null): HrEmployeeVariableEarning
     {
-        $earning = HrEmployeeVariableEarning::forTenant($tenantId)->find($id);
+        $earning = $this->scopeToEmployees(HrEmployeeVariableEarning::forTenant($tenantId), $actor)->find($id);
 
         if (! $earning) {
             throw new BusinessException('Variable earning not found', 404);

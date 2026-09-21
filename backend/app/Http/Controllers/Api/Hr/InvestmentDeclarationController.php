@@ -29,7 +29,8 @@ class InvestmentDeclarationController extends Controller
     {
         return response()->json([
             'data' => $this->service->list($this->tenant($request),
-                $request->only(['financial_year', 'status', 'regime', 'employee_id'])),
+                $request->only(['financial_year', 'status', 'regime', 'employee_id']),
+                $request->user()),
         ]);
     }
 
@@ -47,14 +48,14 @@ class InvestmentDeclarationController extends Controller
 
     public function show(Request $request, int $id)
     {
-        return response()->json($this->service->show($id, $this->tenant($request)));
+        return response()->json($this->service->show($id, $this->tenant($request), $request->user()));
     }
 
     /** The employee's declaration for a year, creating an empty draft if needed. */
     public function forEmployee(Request $request, int $employeeId)
     {
         return response()->json($this->service->forEmployee(
-            $employeeId, $this->tenant($request), $request->query('financial_year')
+            $employeeId, $this->tenant($request), $request->query('financial_year'), $request->user()
         ));
     }
 
@@ -135,8 +136,17 @@ class InvestmentDeclarationController extends Controller
 
     /* ── Form-16-ready data ───────────────────────────────────────────── */
 
+    /**
+     * Form 16 is an export of the whole tax position for one employee — gross,
+     * every exemption, TDS deducted, PAN. The employee id comes from the URL, so
+     * the scope is checked here for the same reason the declaration endpoints
+     * check theirs. An export is a read, and this is the most complete read of
+     * an employee's pay that the product offers.
+     */
     public function form16(Request $request, int $employeeId)
     {
+        $this->assertEmployeeInScope($request, $employeeId);
+
         return response()->json($this->form16->forEmployee(
             $employeeId, $this->tenant($request), $request->query('financial_year')
         ));
@@ -144,7 +154,16 @@ class InvestmentDeclarationController extends Controller
 
     public function form16Years(Request $request, int $employeeId)
     {
+        // Which years exist is itself a fact about that employee's service.
+        $this->assertEmployeeInScope($request, $employeeId);
+
         return response()->json(['data' => $this->form16->availableYears($employeeId, $this->tenant($request))]);
+    }
+
+    private function assertEmployeeInScope(Request $request, int $employeeId): void
+    {
+        app(\App\Services\Auth\ScopeResolver::class)
+            ->assertCanActOnEmployee($request->user(), $employeeId);
     }
 
     private function tenant(Request $request): int

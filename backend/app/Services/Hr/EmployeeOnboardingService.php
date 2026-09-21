@@ -8,6 +8,7 @@ use App\Models\Hr\HrEmployee;
 use App\Models\Hr\HrEmployeeOnboarding;
 use App\Models\Hr\HrEmployeeOnboardingTask;
 use App\Models\User;
+use App\Repositories\Hr\Concerns\ScopesEmployeeData;
 use App\Services\Notifications\NotificationService;
 use App\Support\Hr\EmployeeOnboardingStage as Stage;
 use App\Support\Hr\EmployeeOnboardingStatus as Status;
@@ -28,6 +29,13 @@ use Illuminate\Support\Facades\Log;
  */
 class EmployeeOnboardingService
 {
+    // Onboarding is the one table here whose employee link is legitimately
+    // null, so the list and dashboard below use the "or unassigned" shape:
+    // candidate rows stay visible to anyone permitted, employee rows scope
+    // normally. createFromEmployee() and the candidate portal paths take no
+    // actor and are unaffected.
+    use ScopesEmployeeData;
+
     /** Profile columns owned by each editable 1:1 section. */
     private const SECTION_FIELDS = [
         'personal'   => ['first_name', 'middle_name', 'last_name', 'dob', 'gender', 'marital_status', 'blood_group', 'father_name', 'mother_name', 'nationality', 'religion'],
@@ -55,9 +63,13 @@ class EmployeeOnboardingService
     }
 
     /* ─────────────────────────────────── Dashboard ─────────────────────────────────── */
-    public function dashboard(int $tenantId): array
+    public function dashboard(int $tenantId, ?User $actor = null): array
     {
-        $base = HrEmployeeOnboarding::where('tenant_id', $tenantId);
+        // Every card, list and the average below derive from $base, so scoping
+        // it once keeps the tiles agreeing with the rows under them.
+        $base = $this->scopeToEmployeesOrUnassigned(
+            HrEmployeeOnboarding::where('tenant_id', $tenantId), $actor
+        );
         $today = Carbon::today();
 
         $byStatus = fn (string $s) => (clone $base)->where('status', $s)->count();
@@ -71,7 +83,10 @@ class EmployeeOnboardingService
         return [
             'cards' => [
                 'total'             => (clone $base)->count(),
-                'total_employees'   => HrEmployee::where('tenant_id', $tenantId)->count(),
+                // On hr_employees the employee id IS the primary key.
+                'total_employees'   => $this->scopeToEmployees(
+                    HrEmployee::where('tenant_id', $tenantId), $actor, 'id'
+                )->count(),
                 'pending'           => $byStatus(Status::PENDING),
                 'in_progress'       => $byStatus(Status::IN_PROGRESS),
                 'waiting_documents' => $byStatus(Status::WAITING_DOCUMENTS),
@@ -103,7 +118,7 @@ class EmployeeOnboardingService
     }
 
     /* ─────────────────────────────────── List (paginated) ─────────────────────────────────── */
-    public function list(int $tenantId, array $filters = [])
+    public function list(int $tenantId, array $filters = [], ?User $actor = null)
     {
         $perPage = min((int) ($filters['per_page'] ?? 12), 100);
         $sort    = $filters['sort'] ?? 'created_at';
@@ -111,7 +126,9 @@ class EmployeeOnboardingService
         $sortable = ['created_at', 'joining_date', 'progress_percent', 'status', 'current_stage'];
         $sort = in_array($sort, $sortable, true) ? $sort : 'created_at';
 
-        return HrEmployeeOnboarding::where('tenant_id', $tenantId)
+        return $this->scopeToEmployeesOrUnassigned(
+            HrEmployeeOnboarding::where('tenant_id', $tenantId), $actor
+        )
             ->when(! empty($filters['status']) && $filters['status'] !== 'All', fn ($q) => $q->where('status', $filters['status']))
             ->when(! empty($filters['stage']) && $filters['stage'] !== 'All', fn ($q) => $q->where('current_stage', $filters['stage']))
             ->when(! empty($filters['search']), function ($q) use ($filters) {

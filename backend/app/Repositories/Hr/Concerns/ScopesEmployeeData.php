@@ -44,6 +44,43 @@ trait ScopesEmployeeData
     }
 
     /**
+     * The same scope, for a table whose employee link is legitimately null.
+     *
+     * Onboarding is the case this exists for. hr_employee_onboardings.employee_id
+     * is nullable on purpose — the migration that made it so says an onboarding
+     * "must be able to exist against a candidate only; employee_id is populated
+     * later, on joining". A plain whereIn would drop those rows, so a scoped HR
+     * user would stop seeing candidates who have not joined yet and could not
+     * finish onboarding them. That is a lifecycle break, not a privacy win.
+     *
+     * A row with no employee belongs to no employee, so it discloses nobody and
+     * stays visible. Once joining fills employee_id in, the row scopes like
+     * everything else. This is the same resolver and the same vocabulary — only
+     * where the boundary falls for an unassigned row differs.
+     */
+    protected function scopeToEmployeesOrUnassigned($query, ?User $actor, string $column = 'employee_id')
+    {
+        if (! $actor) {
+            return $query;
+        }
+
+        $ids = app(ScopeResolver::class)->visibleEmployeeIds($actor, [
+            DataScope::OWN, DataScope::DEPARTMENT, DataScope::TEAM,
+        ]);
+
+        if ($ids === null) {
+            return $query;                       // global: everything, unchanged
+        }
+
+        return $query->where(function ($q) use ($column, $ids) {
+            $q->whereNull($column);
+            if ($ids !== []) {
+                $q->orWhereIn($column, $ids);
+            }
+        });
+    }
+
+    /**
      * May this actor touch this specific employee's records at all?
      *
      * For the direct-id surfaces — "show me employee 41's payslips" — where a
