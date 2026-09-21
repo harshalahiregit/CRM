@@ -4,6 +4,7 @@ namespace App\Support\Hr\Approval;
 
 use App\Models\Hr\HrEmployeeLoan;
 use App\Models\Hr\HrEmployeeVariableEarning;
+use App\Models\Hr\HrExitRequest;
 use App\Models\Hr\HrInvestmentDeclaration;
 use App\Models\Hr\HrLeaveApplication;
 use App\Models\Hr\HrReimbursement;
@@ -29,6 +30,7 @@ final class ApprovalProcess
     public const VARIABLE_EARNING        = 'variable_earning';
     public const INVESTMENT_DECLARATION  = 'investment_declaration';
     public const REIMBURSEMENT           = 'reimbursement';
+    public const EXIT_REQUEST            = 'exit_request';
 
     /**
      * Everything the engine needs to know about a process, per process.
@@ -115,6 +117,26 @@ final class ApprovalProcess
             'model'        => HrReimbursement::class,
             'amount_field' => 'amount_claimed',
             'conditions'   => ['department_id', 'branch', 'grade_id'],
+        ],
+
+        /*
+         | Exit APPROVAL — deciding whether somebody leaves, and nothing after.
+         |
+         | Exit is three domains, not one, and only this first is wired here.
+         | Clearance (handing back the laptop, item by item) and settlement (the
+         | final figure) each have their own lifecycle, their own queue and — in
+         | the settlement's case — its own review/approve/settle chain. They are
+         | separate processes and stay on the old gate.
+         |
+         | No amount. An exit request carries no money; the money is the
+         | settlement's business, and routing an exit decision on a figure that
+         | does not exist yet would be inventing one.
+         */
+        self::EXIT_REQUEST => [
+            'label'        => 'Exit approval',
+            'model'        => HrExitRequest::class,
+            'amount_field' => null,
+            'conditions'   => ['department_id', 'branch', 'grade_id', 'exit_type_id'],
         ],
     ];
 
