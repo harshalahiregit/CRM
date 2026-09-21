@@ -32,8 +32,12 @@ validation rules and business logic** — so nothing has to be reconstructed fro
 Anything that cannot yet be real is marked ⬜ or ⚠️ and says why. A disabled control with an
 honest label is acceptable; a control that pretends to work is not.
 
-**Current position:** 112 STOS tests / 448 assertions passing. Full backend suite: 3,649
-passing, 1 unrelated failure in another module's lint-ratchet (see §11).
+> 🛑 **Hardware is parked.** Anything needing a GPS box, temperature probe or genset sensor is
+> NOT being built. Every hardware touchpoint is recorded in
+> `docs/transport/HARDWARE-DEPENDENCIES.md` instead — read it before picking up a telemetry task.
+
+**Current position:** Stos + Transport together: **1,100 passing, 0 failures**. Full backend
+suite verified green on 2026-09-17: **4,641 passing, 0 failures, 3 skipped**.
 
 ---
 
@@ -101,11 +105,11 @@ when Dispatch does. `MAINTENANCE_DUE` and `BREAKDOWN` are ours and are missing. 
 - [x] **T-00** `vehicles` table, soft deletes, unique plate per company · *VehicleOnboardingTest*
 - [x] **T-00b** Onboarding creates the vehicle **and** initialises its `vehicle_live_status` row in one transaction, so ingestion is a pure primary-key update for the asset's life
 - [x] **T-00c** Retire = soft delete, blocked while job cards are open, frees the genset, keeps fuel/job history
-- [ ] **T-01** Add `capacity_tons DECIMAL(8,2)` to `vehicles`; add to the onboarding form, the request rules and the passport identity block
-- [ ] **T-02** ⚠️ Vehicle-type vocabulary. Decide: adopt the spec's four uppercase values, or keep the seven lowercase ones. Adopting means a migration, a data map (`truck→CONTAINER_BODY`?), and touching the seeder, fuel benchmarks, tests and UI. **Blocked on a team answer — Devs 1 and 3 send these strings across the boundary.**
+- [x] **T-01** Payload and identity are reachable. The D-62 union put `capacity_tonnes`, make/model/variant, year, purchase date, fuel type, branch and fleet number on `vehicles`; none were fillable, so every vehicle onboarded through Fleet came out blank — and a blank `capacity_tonnes` is invisible to Operations' capacity matching. Now in the model, the request rules, the onboarding form and the passport, with the passport saying so when payload is missing · *VehicleIdentityTest*
+- [x] **T-02** — **RULED by the owner, 2026-09-19.** The vehicle asset state machine is `AVAILABLE / ALLOCATED / IN_TRANSIT / UNDER_MAINTENANCE / COMPLIANCE_BLOCKED / IDLE / BREAKDOWN / RETIRED`, and Fleet is its sole authority. Not just a rename: `in_operation` **split** into ALLOCATED and IN_TRANSIT (an allocated truck can be swapped, a departed one is a recovery problem), and COMPLIANCE_BLOCKED became a state that only the compliance sweep applies. See `docs/transport/STOS-PROCESS-FLOW-AND-OWNERSHIP.md` §4
 - [ ] **T-03** Add `FINANCED` and `CONTRACTED` ownership values; decide whether `market` folds into `CONTRACTED`
-- [ ] **T-04** Add `MAINTENANCE_DUE` and `BREAKDOWN` vehicle states, with the rules that set them (service interval due; a breakdown job card raised on the road)
-- [ ] **T-05** Genset master: create/edit/fit endpoints, the conditional serial field on the reefer onboarding form, and fit/unfit from the passport
+- [x] **T-04** — built as **two different kinds of thing**, which is a deliberate divergence from how this task was worded. **`breakdown` IS a state**: a job card naming a `trip_id` is a breakdown on the road, not a booked workshop slot, and a planner reading "in the workshop" assumes a return time. It excludes from allocation with its own blocker and owner (Operations, not the workshop). **`maintenance_due` is NOT a state** — a truck past its interval is still roadworthy, and writing that into `status` drops it out of allocation, so a missed oil change silently takes a truck off the road. That is the same category error Person 1 caught in the driver licence. It is derived by `ServiceScheduleEvaluator` from a km and/or day schedule, warns via `SERVICE_OVERDUE` / `SERVICE_DUE_SOON`, and never blocks · *ServiceScheduleAndBreakdownTest*
+- [x] **T-05** Genset master — register / edit / fit / unfit endpoints, the conditional serial field on the reefer onboarding form (which previously just *told* people to fit it from the passport later), and a fit/swap/remove panel on the passport. Serials normalised like plates, so `GS-0051` and `GS0051` cannot become two entries for one unit. A unit already fitted elsewhere is **moved**, not refused — that is what happens when one fails on the road · *GensetRegisterTest*
 
 ---
 
@@ -147,9 +151,9 @@ answer — T-07.
 - [x] **T-10** Excursion rule — genset OFF ∧ speed > 0 ∧ temp > −18 °C → `telemetry.temperature_excursion.detected`
 - [x] **T-11** `GET /v1/fleet/vehicles/{id}/live-status` with three-state GPS health (`active` / `degraded` / `offline`)
 - [ ] **T-06** Align `generator_status` values with the spec, or document the mapping in `STOS-API`
-- [ ] **T-07** Per-device tokens (rotatable, one per unit) replacing the single fleet-wide secret
-- [ ] **T-12** Ingest idempotency: a device re-sending the same `(device_id, recorded_at)` currently appends twice. Decide dedupe vs. keep-all-and-dedupe-on-read
-- [ ] **T-13** Batch ingest (`POST` an array) — a unit with an hour of buffered pings currently needs one request per ping
+- [x] **T-07** Per-device tokens — issue / rotate / revoke, SHA-256 hashed, plaintext shown once, `stos_dev_` prefix so a leaked one is identifiable on sight. **It also fixes the 409:** a token carries its company, so a device id held by two companies now resolves instead of being refused. The fleet-wide secret still works and is deprecated; the listing names every unit still relying on it, which is the migration checklist. Rotation issues before revoking, so re-flashing a unit is not an outage · *DeviceTokenTest*
+- [x] **T-12** Ingest is idempotent. **Decision taken: dedupe on write**, enforced by a unique index on `(company_id, device_id, recorded_at)` — one device has one clock, so the same instant is the same reading. Keep-all-and-dedupe-on-read was rejected because it makes every future consumer of the trail responsible for de-duplicating forever, and the first one that forgets double-counts a journey. A retry is answered 201 with `duplicate: true`, never 409: a device told 409 by a retry it could not avoid either retries forever or drops its buffer · *TelemetryIdempotencyAndBatchTest*
+- [x] **T-13** Batch ingest — `POST /v1/telemetry/ingest/batch`, up to 500 readings. Sorted by the device's own clock before writing, because the live row only moves forward; and one bad reading is rejected on its own line rather than failing the batch, because a device cannot resend just the good ones · *TelemetryIdempotencyAndBatchTest*
 
 > ⚠️ **Known trade in the excursion rule.** `speed > 0` silences a reefer parked with its
 > genset deliberately off — and *also* silences a **loaded trailer standing in a yard with a
@@ -210,8 +214,8 @@ answer — T-07.
 
 - [x] **T-20** `urea_transactions` table, endpoint, and L/100 km consumption · *FleetContractsAndAssetsTest*
 - [x] **T-21** Kept out of `fuel_transactions` — mixing urea into diesel corrupts every km/l figure
-- [ ] **T-22** Flag consumption outside the 0.8–4.0 L/100 km band in the UI (the service already logs it; no screen shows it)
-- [ ] **T-23** Urea entry screen — the API exists, the modal does not
+- [x] **T-22** Consumption outside the 0.8–4.0 L/100 km band is flagged on the passport, per row and as a count. The band travels with the readings rather than being hardcoded in the screen · *UreaConsumptionBandTest*
+- [x] **T-23** Urea entry screen — `UreaTopUpModal`, reached from the passport's Urea card. Rate fills the amount, the amount stays editable, and an entry with no odometer says plainly that it will not be measured
 
 ---
 
@@ -226,8 +230,8 @@ answer — T-07.
 | `reconciliation_status` | Spec `PENDING / MATCHED / ANOMALY` | 🟡 built `unreconciled / matched / disputed / settled` |
 
 - [x] **T-24** Table, idempotency key `(company, tag, timestamp)` so a re-imported statement cannot double-count tolls
-- [ ] **T-25** ⬜ **Import endpoint** — provider feed / CSV upload with a parser and a per-row result. *Nothing ingests tolls today; rows only exist via the seeder.*
-- [ ] **T-26** ⬜ **Reconciliation engine** — match plaza hits against the trip's route and timestamps, flag unmatched and duplicate charges as `ANOMALY`. **Needs Dispatch's route data; until then match only on vehicle + time window and mark the rest unresolved**
+- [ ] 🛑 **T-25** FASTag import — **PARKED** with hardware/provider feed. Needs the toll provider, not a device. See `docs/transport/HARDWARE-DEPENDENCIES.md` §5 · *was:* ⬜ **Import endpoint** — provider feed / CSV upload with a parser and a per-row result. *No…
+- [ ] 🛑 **T-26** FASTag reconciliation — **PARKED**. Needs the provider feed AND Dispatch route data · *was:* ⬜ **Reconciliation engine** — match plaza hits against the trip's route and timestamps, fl…
 - [ ] **T-27** FASTag screen: the register, the anomalies, and a manual match action
 
 ---
@@ -261,11 +265,11 @@ answer — T-07.
 
 - [x] **T-28** Open / update / close, auto-numbering, cost totals, guarded release · *FleetOperationsTest*
 - [x] **T-28b** A signed total overrides parts + labour (a warranty credit or rounded settlement is legitimate)
-- [ ] **T-29** Add `workshop_name` to `maintenance_jobs`, the form and the board
-- [ ] **T-30** **Persist the line items.** New tables `maintenance_job_parts` (part, qty, unit cost, supplier, warranty) and `maintenance_job_labour` (type, hours, rate, technician), summed into the stored totals. *Today the itemisation is entered and thrown away — the screen says so rather than pretending, but it is the biggest untruth left in this module.*
-- [ ] **T-31** QC result as `PASS/FAIL/CRITICAL_FAIL` plus a road-test checkbox; `CRITICAL_FAIL` must block release even if every other hold is clear
-- [ ] **T-32** Add `TESTING` and `QC` to the job status flow
-- [ ] **T-33** Downtime: hours off the road per card, and a per-vehicle downtime total on the passport
+- [x] **T-29** `workshop_name` on the card, the form and the board · *WorkshopJobCardTest*
+- [x] **T-30** **Line items persisted.** `maintenance_job_parts` (part, number, qty, unit cost, supplier, warranty months) and `maintenance_job_labour` (type, hours, rate, technician). Totals are summed FROM the lines so the card and its itemisation cannot disagree; a scalar total is still accepted for a card settled at the counter, and an explicit `total_cost` still overrides · *WorkshopJobCardTest*
+- [x] **T-31** QC as `PASS/FAIL/CRITICAL_FAIL` plus a road-test flag. `CRITICAL_FAIL` holds the vehicle beyond its own card and is cleared only by a later card that passes QC **and names it** (`clears_job_id`) — not by any later pass, or a routine oil change would un-condemn a vehicle failed on its brakes · *WorkshopJobCardTest*
+- [x] **T-32** `testing` and `qc` added to the status flow, both OPEN states so they still hold the vehicle · *WorkshopJobCardTest*
+- [x] **T-33** Downtime hours per card, fixed at closure, with a per-vehicle total on the passport · *WorkshopJobCardTest*
 
 ---
 
@@ -380,9 +384,16 @@ fires from a **model observer**, so no future code path can change availability 
 - [x] **T-47** Every screen behind `role:admin,staff`; portal logins (client/vendor/TPV) get 403 from every endpoint
 - [x] **T-48** Standalone mode: `DriverDirectory` binding auto-detects the CRM, so one codebase runs integrated and standalone
 - [ ] **T-49** Idle-vehicle and utilisation reporting for the executive tower (`STOS-REP` feeds from our data)
-- [ ] **T-50** Frontend: urea modal, FASTag register, tyre master screen, genset management — the four screens the tasks above imply
-- [ ] **T-51** ⚠️ Whole-vocabulary decision: adopt the spec's UPPERCASE enums across vehicle type, ownership, status, fuel recovery and toll reconciliation, or keep lowercase and publish a mapping table in `STOS-API`. **This is one coordinated migration, not five — do it once, with Devs 1 and 3 in the room.**
-- [ ] **T-52** Unrelated but blocking a green suite: `BannedPatternsTest` fails on `modules/tpv/pages/TpvVendorDetail.jsx` — an uncommitted refactor cut its `alert(` count from 7 to 2 without lowering the recorded budget (line 93). **Not Developer 2's file; belongs to whoever owns that vendor-access work.**
+- [ ] **T-50** 🟡 Frontend, the four screens the tasks above imply. **Urea modal — done** (T-23). **Genset management — done** (T-05: passport panel + onboarding field). Still missing: FASTag register (T-27), tyre master screen (T-36).
+- [x] **T-51** — **RULED 2026-09-19 (spec 12.S11): two casings, on purpose.** Database enums and state-machine states are UPPERCASE; API blocker codes and machine reasons are lowercase snake_case. Fleet's advisory flags and blocker codes were uppercase and are now lowercase (`service_overdue`, `driver_license_expired`). A state is what a thing *is*; a machine reason is what a response *says about* it
+- [ ] **T-53** Expiry dates become a **projection**, not a master. `STOS-DOC` verification → `STOS-CMP` → Fleet's five date columns, so verifying a renewal clears the dispatch block with no manual re-entry; then hand-editing dates is prohibited. **Sequencing matters:** removing the manual input before the projection runs leaves no way to record a compliance date at all · *needs Dev 3's verify workflow live*
+- [ ] **T-54** `trailers` as their own master with `vehicle_trailer_assignments` dynamic coupling — a trailer is NOT a `vehicles` row. Own compliance profile, tyre set and maintenance record; coupling preserved historically
+- [ ] 🛑 **T-55** Route / Movement Anomaly exception — **PARKED**: needs real pings to detect movement · *was:* Route / Movement Anomaly exception — a vehicle moving under power while not ALLOCATED or I…
+- [x] **T-56** Vehicle asset status transitions — `PATCH /v1/fleet/vehicles/{id}/status`, absorbed from Dev 1's retiring endpoint. Accepts only `AVAILABLE`, `IDLE`, `RETIRED`; every refusal names the desk that can clear it rather than just saying no. Retiring routes through the existing guarded `retire()` so it is not a second, weaker implementation. Input is canonicalised before validation, so the door and the service cannot disagree about a spelling · *VehicleStatusTransitionTest*
+- [x] **T-57** Vehicle documents — file / renew / list, written **through** STOS-DOC's service so versioning and audit stay Person 3's. The owner approved `rc`, `puc`, `tax` + six driver types, which fixes the ambiguity that made RC and PUC unfilable as themselves. **An upload never moves the dispatch gate** — only a VERIFIED document projects onto the vehicle's date, and an older certificate verified late cannot pull a date backwards · *VehicleDocumentTest*
+- [ ] **T-58** Genset, tyre and job-card statuses to UPPERCASE — they are database enums, so the ruled standard applies
+
+- [x] **T-52** ~~`BannedPatternsTest` fails on `TpvVendorDetail.jsx`~~ — **no longer true.** Full backend suite verified green on 2026-09-17: **4,641 passing, 0 failures, 3 skipped.** The uncommitted refactor that caused it was committed in the meantime.
 
 ---
 

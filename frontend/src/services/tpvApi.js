@@ -443,6 +443,7 @@ export const tpvApi = {
       search: (vid, q)    => api.get(`/tpv/vendors/${vid}/customers/search`, { params: { q } }).then(r => r.data),
       // Link an existing customer to this vendor (sets clients.vendor_id).
       link:   (vid, clientId) => api.post(`/tpv/vendors/${vid}/customers/link`, { client_id: clientId }).then(r => r.data),
+      update: (vid, clientId, data) => api.put(`/tpv/vendors/${vid}/customers/${clientId}`, data).then(r => r.data),
     },
     // TPV-local vendor↔project engagements (§35) with the shed requirement.
     shedProjects: {

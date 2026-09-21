@@ -203,8 +203,11 @@ class PretripScopeTest extends TestCase
         // shipped, was later authorised directly by the owner (see DispatchScope)
         // and is now live. What ticket 010 owns is unchanged.
         $this->assertTrue(TripStatus::canTransition(TripStatus::ALLOCATED, TripStatus::PRETRIP_OK));
-        // in_transit stays unreachable — STT-006 is SNG-TRN-013's Transit half.
-        $this->assertFalse(TripStatus::canTransition(TripStatus::DISPATCHED, TripStatus::IN_TRANSIT));
+
+        // Updated 2026-09-17: in_transit is reachable now (STT-006, D-105), but
+        // not from anywhere ticket 010 owns. That boundary is what this guards.
+        $this->assertFalse(TripStatus::canTransition(TripStatus::ALLOCATED, TripStatus::DISPATCHED));
+        $this->assertFalse(TripStatus::canTransition(TripStatus::PRETRIP_OK, TripStatus::IN_TRANSIT));
     }
 
     /* ══════════ Step 1 · readiness status, OPS §29 ══════════ */

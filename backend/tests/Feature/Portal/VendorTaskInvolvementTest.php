@@ -59,6 +59,7 @@ class VendorTaskInvolvementTest extends TestCase
             'purchase_vendor_code' => 'PV-'.uniqid(),
             'status' => PurchaseVendorStatus::ACTIVE, 'portal_status' => 'active',
         ]);
+        $this->markOnboarded($this->vendor);
     }
 
     private function task(array $overrides = []): Task
@@ -98,6 +99,7 @@ class VendorTaskInvolvementTest extends TestCase
             'tenant_id' => self::TENANT, 'vendor_code' => 'V-'.uniqid(),
             'company_name' => 'Crane Hire Ltd', 'user_id' => $rep->id,
         ]);
+        $this->markOnboarded($tpv);
 
         $this->task(['rel_type' => 'tpv_vendor', 'rel_id' => $tpv->id]);
 
@@ -117,6 +119,7 @@ class VendorTaskInvolvementTest extends TestCase
             'tenant_id' => self::TENANT, 'vendor_code' => 'V-'.uniqid(),
             'company_name' => 'Ghost Ltd', 'user_id' => $gone->id,
         ]);
+        $this->markOnboarded($tpv);
 
         $this->task(['rel_type' => 'tpv_vendor', 'rel_id' => $tpv->id]);
 
@@ -148,6 +151,7 @@ class VendorTaskInvolvementTest extends TestCase
             'purchase_vendor_code' => 'PV-'.uniqid(),
             'status' => PurchaseVendorStatus::ACTIVE, 'portal_status' => 'active',
         ]);
+        $this->markOnboarded($other);
 
         app(TaskService::class)->update($task->id, ['rel_id' => $other->id], self::TENANT, $this->staff->id);
 
@@ -273,6 +277,7 @@ class VendorTaskInvolvementTest extends TestCase
             'tenant_id' => self::TENANT, 'vendor_code' => 'V-'.uniqid(),
             'company_name' => 'Crane Hire Ltd', 'user_id' => $rep->id,
         ]);
+        $this->markOnboarded($tpv);
         $task = $this->task(['rel_type' => 'tpv_vendor', 'rel_id' => $tpv->id]);
 
         Sanctum::actingAs($rep);
@@ -321,6 +326,7 @@ class VendorTaskInvolvementTest extends TestCase
             'tenant_id' => self::TENANT, 'vendor_code' => 'V-'.uniqid(),
             'company_name' => 'Crane Hire Ltd', 'user_id' => $rep->id,
         ]);
+        $this->markOnboarded($tpv);
         $task = $this->task(['rel_type' => 'tpv_vendor', 'rel_id' => $tpv->id]);
         app(TaskService::class)->syncAssignees($task->id, [$this->staff->id], self::TENANT, $this->staff->id);
 
@@ -345,6 +351,7 @@ class VendorTaskInvolvementTest extends TestCase
             'purchase_vendor_code' => 'PV-'.uniqid(),
             'status' => PurchaseVendorStatus::ACTIVE, 'portal_status' => 'active',
         ]);
+        $this->markOnboarded($other);
         $task = $this->task(['rel_id' => $other->id]);
 
         Sanctum::actingAs($this->vendor);

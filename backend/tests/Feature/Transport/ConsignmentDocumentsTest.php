@@ -168,10 +168,21 @@ class ConsignmentDocumentsTest extends TestCase
             'ENUM-006 must appear first, in registry order'
         );
 
+        // Two approvals now, and the guard still guards: anything appearing
+        // here that is not on this list was added without one.
+        //
+        //   delivery_order  — owner approval 2026-09-12 (D-41)
+        //   rc/puc/tax + the six driver types — owner approval 2026-09-19,
+        //   because ENUM-006 had no value for RC or PUC and STOS-FLEET gates
+        //   dispatch on both, so nothing could tell which of five dates a
+        //   certificate was meant to set.
         $this->assertSame(
-            ['delivery_order'],
+            ['delivery_order',
+             'rc', 'puc', 'tax',
+             'driving_license', 'medical_certificate', 'police_verification',
+             'id_proof', 'training_certificate', 'customer_qualification'],
             array_values(array_diff(TransportDocumentType::ALL, $registry)),
-            'delivery_order is the only value approved beyond ENUM-006'
+            'every value beyond ENUM-006 must carry a recorded owner approval'
         );
 
         foreach (TransportDocumentType::ALL as $type) {
@@ -182,17 +193,30 @@ class ConsignmentDocumentsTest extends TestCase
     /** The vehicle and driver branches behave exactly as they did before. */
     public function test_the_existing_entities_are_unchanged_by_the_new_branch(): void
     {
-        $this->assertSame(
-            [TransportDocumentType::VEHICLE_DOC, TransportDocumentType::INSURANCE,
-             TransportDocumentType::PERMIT, TransportDocumentType::FITNESS, TransportDocumentType::OTHER],
-            TransportDocumentType::forEntity(TransportDocumentEntity::VEHICLE)
-        );
+        // Widened by the 2026-09-19 approval, so this no longer asserts an
+        // exact list. What it protects is that nothing was REMOVED: a value a
+        // tenant already has configured, or already has documents filed under,
+        // must keep working.
+        $vehicle = TransportDocumentType::forEntity(TransportDocumentEntity::VEHICLE);
 
-        $this->assertSame(
-            [TransportDocumentType::DRIVER_DOC, TransportDocumentType::FITNESS,
-             TransportDocumentType::PERMIT, TransportDocumentType::OTHER],
-            TransportDocumentType::forEntity(TransportDocumentEntity::DRIVER)
-        );
+        foreach ([TransportDocumentType::VEHICLE_DOC, TransportDocumentType::INSURANCE,
+                  TransportDocumentType::PERMIT, TransportDocumentType::FITNESS,
+                  TransportDocumentType::OTHER] as $type) {
+            $this->assertContains($type, $vehicle, "{$type} was removed from vehicles");
+        }
+
+        $driver = TransportDocumentType::forEntity(TransportDocumentEntity::DRIVER);
+
+        foreach ([TransportDocumentType::DRIVER_DOC, TransportDocumentType::FITNESS,
+                  TransportDocumentType::PERMIT, TransportDocumentType::OTHER] as $type) {
+            $this->assertContains($type, $driver, "{$type} was removed from drivers");
+        }
+
+        // And the new ones are reachable where they belong, but nowhere else.
+        $this->assertContains(TransportDocumentType::RC, $vehicle);
+        $this->assertNotContains(TransportDocumentType::RC, $driver);
+        $this->assertContains(TransportDocumentType::DRIVING_LICENSE, $driver);
+        $this->assertNotContains(TransportDocumentType::DRIVING_LICENSE, $vehicle);
     }
 
     /**

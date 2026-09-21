@@ -3,9 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Truck, Building2, Package, History, Route as RouteIcon,
   AlertTriangle, Loader2, Gauge, Pencil, ClipboardCheck, Send, Boxes, CheckCircle2, Undo2,
-  Wallet, IndianRupee, FileCheck2, Receipt, Banknote,
+  Wallet, IndianRupee, FileCheck2, Receipt, Banknote, MapPin, Lock, ChevronDown, ChevronRight,
+  AlertTriangle as AlertIcon,
 } from 'lucide-react'
-import { transportTripApi, transportCapabilityApi } from '@/services/transportApi'
+import { transportTripApi, transportCapabilityApi, transportPretripApi } from '@/services/transportApi'
 import { useToast } from '@/components/ui/Toast'
 import Modal from '@/components/ui/Modal'
 import { Wrap, Panel, KV, AuditList } from './TransportOrderDetail'
@@ -13,6 +14,16 @@ import AllocationPanel from '../components/AllocationPanel'
 import PretripPanel from '../components/PretripPanel'
 import DispatchPanel from '../components/DispatchPanel'
 import TripProgress from '../components/TripProgress'
+// The rebuild of 2026-09-18: one next action at the top, every stage collapsed
+// except the one you are on. See the page docblock.
+import TripNextAction from '../components/TripNextAction'
+import TripStep from '../components/TripStep'
+// Steps 4 and 9 — Block 3. Transit and delivery are P1's (STT-006/007);
+// closure is P1's too (STT-012) and is built but unreachable — see D-106.
+import JourneyPanel from '../components/JourneyPanel'
+import ClosurePanel from '../components/ClosurePanel'
+// SNG-TRN-013, unblocked 2026-09-18 — step 9 of MS-001 §14.
+import ExceptionsPanel from '../components/ExceptionsPanel'
 // Steps 4-6 — P3's tickets. Self-contained panels, same shape as the three
 // above, so the seam into this page stays three imports and three blocks.
 import AdvancesPanel from '../components/AdvancesPanel'
@@ -20,34 +31,61 @@ import CostsPanel from '../components/CostsPanel'
 import TripDocumentsPanel from '../components/TripDocumentsPanel'
 import BillingPanel from '../components/BillingPanel'
 import CollectionPanel from '../components/CollectionPanel'
-import { tripStatusCfg, orderStatusCfg, fmtMoney, fmtDate } from '../constants'
+import { tripStatusCfg, orderStatusCfg, fmtMoney, fmtDate, fmtDateTime } from '../constants'
 
 /**
  * Trip detail (SNG-TRN-007).
  *
- * ── THE PAGE IS A SEQUENCE, AND IT IS LAID OUT AS ONE ────────────────────
- * The panels are not four independent boxes; they are the stages of one job,
- * and they only make sense in order. So the left column runs
+ * ── REBUILT 2026-09-18, BECAUSE THE OWNER COULD NOT USE IT ───────────────
+ * This page rendered fourteen panels, all expanded, all at once, each with a
+ * paragraph of explanation underneath. Vehicle & driver, pre-trip, dispatch, on
+ * the road, advances, costs, paperwork, billing, getting paid, close, plus four
+ * reference panels. Every one of them correct; nothing on the page said which
+ * of them mattered right now. The owner opened it and could not work out what
+ * to do — and that is a failure of the screen, not of the reader.
  *
- *     tracker  →  1 Vehicle & driver  →  2 Pre-trip checks  →  3 Dispatch
+ * A trip has twelve reachable states. At any moment the person looking at it
+ * needs three things and nothing else, and the page is now those three things
+ * in that order:
  *
- * with the tracker at the top naming the same steps. Someone being walked
- * through the page for the first time can follow it top to bottom and never
- * needs the 16-state machine explained to them.
+ *   1. WHAT DO I DO NEXT.  One sentence and one button, at the top, before
+ *      anything else. TripNextAction derives it from the trip's own state and
+ *      the grants the capability endpoint returned. Where the next step is
+ *      blocked it says what is blocking it and who can clear it, reusing the
+ *      wording the API would have refused with.
  *
- * Reference material — who the customer is, which order this came from, the
- * commercial figures — sits in the right column, and the activity trail at the
- * foot, out of the path of the work.
+ *   2. WHERE IS THIS TRIP.  The seven-step tracker, one row.
  *
- * ── THE STATUS IS SHOWN ONCE ─────────────────────────────────────────────
- * It used to appear five times: the header chip, a "Status" row in the Trip
- * panel, and a chip inside each of the three stage panels. Five copies of one
- * fact is not reassurance, it is noise — and read at different moments they
- * could even disagree. The header chip and the tracker carry it now; the stage
- * panels report only their own state.
+ *   3. THE DETAILS, IF I WANT THEM.  Every stage is a collapsed row. Done
+ *      stages show their outcome and date on one line — "Dispatched 18 Sept
+ *      06:40" — and open if asked. Stages not yet relevant are collapsed,
+ *      greyed and locked, so the shape of the journey is visible without
+ *      anyone being asked to act on it. Only the current stage is open.
+ *      Trip details, what is being moved, the source order and the history are
+ *      reference, not actions, and now sit in the side column instead of being
+ *      interleaved with the work.
  *
- * Vehicle and driver are shown as "Not assigned yet" rather than hidden: the
- * concept exists and saying so is more honest than pretending it does not.
+ * ── THE TEACHING TEXT MOVED INSIDE ──────────────────────────────────────
+ * The paragraph under each heading was useful the first time somebody met the
+ * page and noise every time after. It now appears only inside the stage that is
+ * open, and only as one line. A closed stage says what HAPPENED, not what it
+ * is for.
+ *
+ * ── P3'S PANELS ─────────────────────────────────────────────────────────
+ * Advances, costs, paperwork, billing and getting paid are Person 3's
+ * components and their internals are untouched. WHERE they sit and WHETHER they
+ * are open is this page's layout decision, and they now sit below the
+ * operational stages: a dispatcher assigning a truck should not be scrolling
+ * past billing to reach the vehicle list.
+ *
+ * Advances and costs are marked `available` rather than given a step number —
+ * they are not stages of a journey, they may happen any time after approval,
+ * and they never become "done". A tick or a lock on either would be a lie.
+ *
+ * ── NOTHING BECAME POSSIBLE THAT WAS NOT POSSIBLE BEFORE ────────────────
+ * No rule, gate or refusal changed. Every permission check, every state guard
+ * and every server sentence is exactly where it was; this is purely what the
+ * screen shows and when.
  */
 export default function TransportTripDetail() {
   const { id } = useParams()
@@ -57,6 +95,11 @@ export default function TransportTripDetail() {
   const [trip, setTrip] = useState(null)
   const [audit, setAudit] = useState([])
   const [assignment, setAssignment] = useState(null)
+  // The container this trip is carrying — CTD §4's Digital Passport, one click
+  // from here. A trip number is the one search key that deliberately does NOT
+  // land on the passport (D-117), and the condition attached to that ruling is
+  // that the passport stays reachable in one obvious step.
+  const [passport, setPassport] = useState(null)
   // Asked, never assumed — no button appears that the API would refuse.
   const [grants, setGrants] = useState({})
   const [loading, setLoading] = useState(true)
@@ -70,6 +113,15 @@ export default function TransportTripDetail() {
   const [rejectReason, setRejectReason] = useState('')
   const [form, setForm] = useState({ approved_freight: '', currency: 'INR', route: '' })
 
+  // Pre-trip readiness, read at page level for ONE reason: the next-action line
+  // says "Pre-trip checks not done — 2 of 5", and a headline that cannot count
+  // is a headline nobody trusts. The panel below fetches its own detail.
+  const [readiness, setReadiness] = useState(null)
+
+  // Which stages are expanded. Owned here rather than inside each step, so the
+  // next-action button can open the one it points at.
+  const [openKeys, setOpenKeys] = useState(() => new Set())
+
   const load = useCallback(async () => {
     setLoading(true); setError(null)
     try {
@@ -77,6 +129,7 @@ export default function TransportTripDetail() {
       setTrip(d?.trip ?? null)
       setAudit(Array.isArray(d?.audit) ? d.audit : [])
       setAssignment(d?.assignment ?? null)
+      setPassport(d?.passport ?? null)
     } catch (e) {
       if (e?.status === 404) setNotFound(true)
       else setError(e?.message || 'Could not load this trip.')
@@ -87,6 +140,13 @@ export default function TransportTripDetail() {
 
   useEffect(() => { load() }, [load])
   useEffect(() => { transportCapabilityApi.get().then((c) => setGrants(c?.grants || {})).catch(() => {}) }, [])
+
+  // Only where it can say something: before a trip is approved there is no
+  // checklist to count, and asking for one would be a request with no answer.
+  useEffect(() => {
+    if (!trip || ['draft', 'viability_pending'].includes(trip.status)) return
+    transportPretripApi.readiness(id).then(setReadiness).catch(() => {})
+  }, [id, trip?.status])
 
   const submitViability = async () => {
     setBusy(true)
@@ -147,6 +207,70 @@ export default function TransportTripDetail() {
     }
   }
 
+  // The current stage, derived once from the trip's own status. Nothing here
+  // decides what is POSSIBLE — every gate and refusal is unchanged and still
+  // lives in the panels and the API. This only decides what is OPEN.
+  const ORDER = [
+    'draft', 'viability_pending', 'approved', 'allocated', 'pretrip_ok',
+    'dispatched', 'in_transit', 'delivered', 'pod_verified', 'billable',
+    'billed', 'collection_pending', 'closed',
+  ]
+  const at = Math.max(0, ORDER.indexOf(trip?.status))
+
+  /** done once the trip is past it, current while it is on it, later before. */
+  const STAGES = {
+    crew:      { done: 3, current: [2] },
+    checks:    { done: 4, current: [3] },
+    dispatch:  { done: 5, current: [4] },
+    road:      { done: 7, current: [5, 6] },
+    paperwork: { done: 8, current: [7] },
+    billing:   { done: 10, current: [8, 9] },
+    paid:      { done: 12, current: [10, 11] },
+    close:     { done: 12, current: [11] },
+    // Not stages of the journey — see the comment beside them in the markup.
+    advances:  { available: 2 },
+    costs:     { available: 2 },
+    // Neither is an exception a STAGE. Something can go wrong at any point
+    // after a trip exists, and a trip that never has one is not incomplete.
+    exceptions: { available: 0 },
+  }
+
+  const stageState = (key) => {
+    const s = STAGES[key]
+    if (s.available !== undefined) return at >= s.available ? 'available' : 'later'
+    if (s.current.includes(at)) return 'current'
+    if (at >= s.done) return 'done'
+
+    return 'later'
+  }
+
+  const goToStep = (key) => {
+    setOpenKeys((prev) => new Set(prev).add(key))
+    // After the row has rendered open, bring it into view.
+    requestAnimationFrame(() => {
+      document.getElementById(`trip-step-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }
+
+  const stepProps = (key) => {
+    const state = stageState(key)
+
+    return {
+      id: `trip-step-${key}`,
+      state,
+      // The current stage is open on arrival. Everything else stays shut until
+      // somebody asks for it — which is the whole point of the rebuild.
+      open: openKeys.has(key) || (state === 'current' && !openKeys.has(`!${key}`)),
+      onToggle: () => setOpenKeys((prev) => {
+        const next = new Set(prev)
+        const isOpen = next.has(key) || (state === 'current' && !next.has(`!${key}`))
+        if (isOpen) { next.delete(key); next.add(`!${key}`) } else { next.delete(`!${key}`); next.add(key) }
+
+        return next
+      }),
+    }
+  }
+
   if (loading) {
     return (
       <Wrap>
@@ -204,31 +328,12 @@ export default function TransportTripDetail() {
               <Pencil size={14} /> Edit
             </button>
           )}
-          {/* STT-001 — the only transition this ticket owns. */}
-          {isDraft && (
-            <button disabled={busy} onClick={submitViability} style={btn('#f59e0b', true)}>
-              {busy ? <Loader2 size={13} className="animate-spin" /> : <Gauge size={14} />} Submit for viability
-            </button>
-          )}
-          {/* STT-002. Until this shipped, a trip reaching viability_pending was
-              stuck there forever and nothing downstream could be reached. */}
-          {/* STT-003. Beside Approve, because they are the two answers to one
-              question and a reviewer who can only say yes is not reviewing. */}
-          {awaitingApproval && canApprove && (
-            <button disabled={busy} onClick={() => { setRejectReason(''); setRejectOpen(true) }} style={btn('#94a3b8')}>
-              <Undo2 size={14} /> Send back
-            </button>
-          )}
-          {awaitingApproval && canApprove && (
-            <button disabled={busy} onClick={() => setApproveOpen(true)} style={btn('#10b981', true)}>
-              <CheckCircle2 size={14} /> Approve trip
-            </button>
-          )}
-          {awaitingApproval && !canApprove && (
-            <span style={{ fontSize: 11.5, color: 'var(--text-muted)', alignSelf: 'center', maxWidth: 260, textAlign: 'right' }}>
-              This trip is waiting for approval. Your role cannot approve trips.
-            </span>
-          )}
+          {/* Submit, Approve and Send back USED TO LIVE HERE, three buttons in
+              a row above fourteen open panels. They are the next action for
+              exactly one state each, so they now appear in the next-action card
+              below — one sentence, one button, in the place the eye lands
+              first. Edit stays: it is not the next step, it is a thing you may
+              also want while the trip is still a draft. */}
         </div>
       </div>
 
@@ -258,182 +363,177 @@ export default function TransportTripDetail() {
         </div>
       )}
 
-      {/* Where this trip stands, before any detail. */}
+      {/* ── 1. THE ONE NEXT THING, before anything else on the page ──────
+          A trip has twelve reachable states and this page used to show every
+          stage of all of them at once. Nothing said which one mattered now. */}
+      <TripNextAction
+        trip={trip}
+        grants={grants}
+        readiness={readiness}
+        busy={busy}
+        onSubmitViability={submitViability}
+        onApprove={() => setApproveOpen(true)}
+        onReject={() => { setRejectReason(''); setRejectOpen(true) }}
+        onGoToStep={goToStep}
+      />
+
+      {/* ── 2. WHERE IT IS, in one row ─────────────────────────────────── */}
       <TripProgress status={trip.status} />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 16, alignItems: 'start' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* Step 1. SNG-TRN-009. Assigning only becomes possible once the trip
-              is approved (STT-004's from-state), so before that the panel says
-              what has to happen first rather than offering buttons the API
-              would refuse. Titled "Vehicle & driver", not "Allocation" —
-              allocation is our word for it, not the reader's. */}
-          <Panel icon={Truck} step={1} title="Vehicle & driver"
-            subtitle="Choose which vehicle and which driver will run this trip. Only ones that are free and have valid papers are offered.">
-            {['draft', 'viability_pending'].includes(trip.status) ? (
-              <>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
-                  <KV label="Vehicle" value="Not assigned yet" />
-                  <KV label="Driver" value="Not assigned yet" />
-                </div>
-                <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 0' }}>
-                  You can assign a vehicle and driver once the trip has been approved.
-                </p>
-              </>
-            ) : (
-              <AllocationPanel
-                trip={trip}
-                assignment={assignment}
-                canAssign={!!grants['transport.trip.assign']}
-                onChanged={load}
-              />
-            )}
-          </Panel>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
 
-          {/* Step 2. SNG-TRN-010. The panel appears once the trip is approved,
-              which is the first state a checklist can be built from — RTM
-              OPS-004's acceptance is "missing requirements identified", and a
-              checklist that could only be built after crewing could never
-              identify a missing driver. */}
-          <Panel icon={ClipboardCheck} step={2} title="Pre-trip checks"
-            subtitle="Confirm the trip is fit to leave. The system checks the order, the driver's papers and the vehicle's papers, and you confirm each one.">
-            {['draft', 'viability_pending'].includes(trip.status) ? (
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 0' }}>
-                These checks begin once the trip has been approved.
-              </p>
-            ) : (
-              <PretripPanel
-                trip={trip}
-                canPerform={!!grants['transport.pretrip.perform']}
-                onChanged={load}
-              />
-            )}
-          </Panel>
+          <GroupLabel>Getting it on the road</GroupLabel>
 
-          {/* Step 3. No ticket owns dispatch (D-18); the owner authorised the
-              scope on 2026-09-10. The panel appears from `allocated` onward —
-              early enough that a dispatcher can see WHY a trip cannot leave,
-              which is UX §35's whole point, and not so early that it offers a
-              control nothing could satisfy. */}
-          <Panel icon={Send} step={3} title="Dispatch"
-            subtitle="Release the trip. Record when it leaves, when it should arrive, and what the driver needs to know.">
+          {/* SNG-TRN-009. Assigning only becomes possible once the trip is
+              approved (STT-004's from-state). */}
+          <TripStep {...stepProps('crew')} icon={Truck} n={1} title="Vehicle & driver"
+            outcome={[assignment?.vehicle?.registration_number, assignment?.driver?.name]
+              .filter(Boolean).join(' · ') || 'Assigned'}
+            hint="Only vehicles and drivers that are free and have valid papers are offered.">
+            {['draft', 'viability_pending'].includes(trip.status) ? (
+              <p style={muted}>You can assign a vehicle and driver once the trip has been approved.</p>
+            ) : (
+              <AllocationPanel trip={trip} assignment={assignment}
+                canAssign={!!grants['transport.trip.assign']} onChanged={load} />
+            )}
+          </TripStep>
+
+          {/* SNG-TRN-010. RTM OPS-004 — "missing requirements identified". */}
+          <TripStep {...stepProps('checks')} icon={ClipboardCheck} n={2} title="Pre-trip checks"
+            outcome={readiness?.total ? `${readiness.completed} of ${readiness.total} confirmed` : 'Passed'}
+            hint="The order, the driver's papers and the vehicle's papers — you confirm each one.">
+            {['draft', 'viability_pending'].includes(trip.status) ? (
+              <p style={muted}>These checks begin once the trip has been approved.</p>
+            ) : (
+              <PretripPanel trip={trip} canPerform={!!grants['transport.pretrip.perform']} onChanged={load} />
+            )}
+          </TripStep>
+
+          {/* No ticket owns dispatch (D-18); owner authorised 2026-09-10. */}
+          <TripStep {...stepProps('dispatch')} icon={Send} n={3} title="Dispatch"
+            outcome={trip.dispatched_at ? `Dispatched ${fmtDateTime(trip.dispatched_at)}` : 'Released'}
+            hint="Release the trip, and record when it should leave and arrive.">
             {['draft', 'viability_pending', 'approved'].includes(trip.status) ? (
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 0' }}>
-                You can dispatch this trip once a vehicle and driver are assigned and the pre-trip checks have passed.
-              </p>
+              <p style={muted}>You can dispatch once a vehicle and driver are assigned and the pre-trip checks have passed.</p>
             ) : (
-              <DispatchPanel
-                trip={trip}
-                canDispatch={!!grants['transport.trip.dispatch']}
-                onChanged={load}
-              />
+              <DispatchPanel trip={trip} canDispatch={!!grants['transport.trip.dispatch']} onChanged={load} />
             )}
-          </Panel>
+          </TripStep>
 
-          {/* Step 4. SNG-TRN-011. Money advanced against a trip before it has
-              earned any, so the panel appears from `approved` — the first state
-              where there is a trip worth funding. BR-P0-005's exposure figures
-              come from the server; the panel never adds them up itself. */}
-          <Panel icon={Wallet} step={4} title="Advances"
-            subtitle="Money paid out before the trip earns anything. The limit comes from your workspace policy, and requesting is separate from approving.">
-            {['draft', 'viability_pending'].includes(trip.status) ? (
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 0' }}>
-                Advances can be requested once the trip has been approved.
-              </p>
-            ) : (
-              <AdvancesPanel
-                trip={trip}
-                canRequest={!!grants['transport.advance.request']}
-                canApprove={!!grants['transport.advance.approve']}
-                onChanged={load}
-              />
-            )}
-          </Panel>
+          {/* STT-006 and STT-007 — D-105. Released is not moving. */}
+          <TripStep {...stepProps('road')} icon={MapPin} n={4} title="On the road"
+            outcome={trip.delivered_at
+              ? `Delivered ${fmtDateTime(trip.delivered_at)}`
+              : trip.departed_at ? `Left ${fmtDateTime(trip.departed_at)}` : 'Recorded'}
+            hint="Recorded by hand — there is no live vehicle tracking yet.">
+            <JourneyPanel trip={trip}
+              canDepart={!!grants['transport.trip.dispatch']}
+              canDeliver={!!grants['transport.trip.deliver']}
+              onChanged={load} />
+          </TripStep>
 
-          {/* Step 5. SNG-TRN-012. Costs accumulate from dispatch onward, but the
-              panel is shown from `approved` too: a cost recorded early is still
-              a cost, and hiding the total until the trip moves would leave the
-              margin half-visible for most of its life. */}
-          <Panel icon={IndianRupee} step={5} title="Trip costs"
-            subtitle="What this trip actually cost — fuel, tolls, and anything else. These are subtracted from the freight to give the margin.">
-            {['draft', 'viability_pending'].includes(trip.status) ? (
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 0' }}>
-                Costs can be recorded once the trip has been approved.
-              </p>
-            ) : (
-              <CostsPanel
-                trip={trip}
-                canRecord={!!grants['transport.cost.record']}
-                canRetract={!!grants['transport.cost.retract']}
-                onChanged={load}
-              />
-            )}
-          </Panel>
+          {/* SNG-TRN-013. Blocked since 2026-09-10 on D-29 and D-30, both ruled
+              on 2026-09-18 — and D-29 needed no new decision, only the standing
+              Step 9 / Step 11 rule applied to it.
 
-          {/* Step 6. SNG-TRN-014. Shown from dispatch onward — paperwork follows
-              the load out of the yard, and an LR is filed long before anyone
-              signs for delivery. The billing verdict sits at the top of the
-              panel because it is the answer somebody came for. */}
-          <Panel icon={FileCheck2} step={6} title="Paperwork and proof of delivery"
-            subtitle="The LR, e-way bill and signed POD. A trip cannot be billed until its POD has been verified, unless an exception waives it.">
+              Sits with the operational work rather than below it: an exception
+              is the reason a dispatcher is on this page at all, and burying it
+              under billing would be the same mistake this rebuild removed.
+
+              `available`, not numbered — something can go wrong at any point,
+              and a trip with no exceptions is not a trip missing a step. */}
+          <TripStep {...stepProps('exceptions')} icon={AlertIcon} n="!" title="What has gone wrong"
+            hint="Anything that needs somebody to own it and put it right. Raising is wider than resolving: whoever is nearest the problem can record it.">
+            <ExceptionsPanel
+              trip={trip}
+              canRaise={!!grants['transport.exception.create']}
+              canManage={!!grants['transport.exception.manage']}
+              onChanged={load}
+            />
+          </TripStep>
+
+          <GroupLabel>Paperwork and money</GroupLabel>
+
+          {/* P3's components. WHERE they sit and WHETHER they are open is this
+              page's layout decision; their internals are untouched. A
+              dispatcher assigning a truck should not scroll past billing. */}
+          <TripStep {...stepProps('paperwork')} icon={FileCheck2} n={5} title="Paperwork and proof of delivery"
+            outcome="Proof of delivery verified"
+            hint="A trip cannot be billed until its POD is verified, unless an exception waives it.">
             {['draft', 'viability_pending', 'approved'].includes(trip.status) ? (
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 0' }}>
-                Paperwork can be filed once the trip has been dispatched.
-              </p>
+              <p style={muted}>Paperwork can be filed once the trip has been dispatched.</p>
             ) : (
-              <TripDocumentsPanel
-                trip={trip}
+              <TripDocumentsPanel trip={trip}
                 canSubmit={!!grants['transport.pod.submit']}
-                canVerify={!!grants['transport.pod.verify']}
-                onChanged={load}
-              />
+                canVerify={!!grants['transport.pod.verify']} onChanged={load} />
             )}
-          </Panel>
+          </TripStep>
 
-          {/* Step 7. SNG-TRN-015. Shown from dispatch onward rather than only
-              once the POD is verified, because the blocker is the useful part:
-              somebody needs to see WHY a trip is not yet invoiceable while
-              there is still time to fix it. Transport marks it ready; Accounts
-              raises the invoice — EVT-010's producer, not this module. */}
-          <Panel icon={Receipt} step={7} title="Billing"
-            subtitle="Hand the trip to Accounts once its proof of delivery is in. Transport marks it ready to invoice; it does not raise the invoice.">
+          <TripStep {...stepProps('billing')} icon={Receipt} n={6} title="Billing"
+            outcome="Handed to Accounts"
+            hint="Transport marks a trip ready to invoice; Accounts raise the invoice.">
             {['draft', 'viability_pending', 'approved'].includes(trip.status) ? (
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 0' }}>
-                Billing becomes relevant once the trip has been dispatched.
-              </p>
+              <p style={muted}>Billing becomes relevant once the trip has been dispatched.</p>
             ) : (
-              <BillingPanel
-                trip={trip}
-                canPrepare={!!grants['transport.billing.prepare']}
-                onChanged={load}
-              />
+              <BillingPanel trip={trip} canPrepare={!!grants['transport.billing.prepare']} onChanged={load} />
             )}
-          </Panel>
+          </TripStep>
 
-          {/* Step 8. SNG-TRN-016. The receivable opens once Accounts has raised
-              the invoice, so the panel appears from dispatch and explains
-              itself until then. Recording a receipt here is TRACKING — Accounts
-              posts the money (EVT-011), and the panel says so. */}
-          <Panel icon={Banknote} step={8} title="Getting paid"
-            subtitle="What the customer still owes, when it is due, and why it is stuck. Recording a receipt here tracks it; Accounts posts the money.">
+          <TripStep {...stepProps('paid')} icon={Banknote} n={7} title="Getting paid"
+            outcome="Settled"
+            hint="Recording a receipt here tracks it; Accounts post the money.">
             {['draft', 'viability_pending', 'approved'].includes(trip.status) ? (
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 0' }}>
-                This becomes relevant once the trip has been billed.
-              </p>
+              <p style={muted}>This becomes relevant once the trip has been billed.</p>
             ) : (
-              <CollectionPanel
-                trip={trip}
-                canRecord={!!grants['transport.collection.record']}
-                onChanged={load}
-              />
+              <CollectionPanel trip={trip} canRecord={!!grants['transport.collection.record']} onChanged={load} />
             )}
-          </Panel>
+          </TripStep>
 
+          {/* Advances and costs are not stages — they may happen any time after
+              approval and never become "done". Marked `available` so they carry
+              neither a tick nor a lock, both of which would be untrue. */}
+          <TripStep {...stepProps('advances')} icon={Wallet} n="₹" title="Advances"
+            hint="Money paid out before the trip earns anything. Requesting is separate from approving.">
+            {['draft', 'viability_pending'].includes(trip.status) ? (
+              <p style={muted}>Advances can be requested once the trip has been approved.</p>
+            ) : (
+              <AdvancesPanel trip={trip}
+                canRequest={!!grants['transport.advance.request']}
+                canApprove={!!grants['transport.advance.approve']} onChanged={load} />
+            )}
+          </TripStep>
+
+          <TripStep {...stepProps('costs')} icon={IndianRupee} n="₹" title="Trip costs"
+            hint="Fuel, tolls and anything else. Subtracted from the freight to give the margin.">
+            {['draft', 'viability_pending'].includes(trip.status) ? (
+              <p style={muted}>Costs can be recorded once the trip has been approved.</p>
+            ) : (
+              <CostsPanel trip={trip}
+                canRecord={!!grants['transport.cost.record']}
+                canRetract={!!grants['transport.cost.retract']} onChanged={load} />
+            )}
+          </TripStep>
+
+          <GroupLabel>Closing</GroupLabel>
+
+          {/* STT-012. Built and unreachable — D-106. The panel says so itself. */}
+          <TripStep {...stepProps('close')} icon={Lock} n={8} title="Close the trip"
+            outcome={trip.closed_at ? `Closed ${fmtDateTime(trip.closed_at)}` : 'Closed'}
+            hint="What is still outstanding before this trip can be settled for good.">
+            {['draft', 'viability_pending', 'approved', 'allocated', 'pretrip_ok', 'dispatched', 'in_transit'].includes(trip.status) ? (
+              <p style={muted}>A trip can be closed once it has been delivered, invoiced and paid for.</p>
+            ) : (
+              <ClosurePanel trip={trip} canClose={!!grants['transport.trip.close']} onChanged={load} />
+            )}
+          </TripStep>
         </div>
 
-        {/* Right column: reference. Nothing here is a step, so nothing here
-            competes with the sequence on the left. */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* ── 3. THE FACTS, where facts go ────────────────────────────────
+            Trip details, what is being moved, the source order and the history
+            are REFERENCE. They were interleaved with the things a dispatcher
+            has to do; now they sit beside them and only the summary is open. */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <Panel icon={Truck} title="Trip details">
             <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
               <KV label="Customer" value={trip.customer?.company} />
@@ -443,20 +543,34 @@ export default function TransportTripDetail() {
             </div>
           </Panel>
 
-          {/* What is actually being moved. Without this the page showed an
-              order and a vehicle with nothing in between, and the chain the
-              walkthrough is meant to demonstrate was invisible. */}
-          <Panel icon={Boxes} title="What is being moved">
+          {/* CTD §4 — "all relevant search paths must ultimately lead to the same
+              Digital Passport". This is the trip's route to it.
+              Deliberately ABOVE "What is being moved" and worded as the whole
+              story rather than as cargo detail: the reason a trip number is
+              allowed to skip the passport is that this link exists, so it has
+              to read like a way through and not like a specification. */}
+          {passport && (
+            <button onClick={() => navigate(`/app/transport/containers/${passport.container_id}`)}
+              style={{ ...linkCard, width: '100%', marginBottom: 12, textAlign: 'left' }}>
+              <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--accent)' }}>
+                Open the full journey of {passport.container_number} →
+              </span>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 5 }}>
+                Everything that has happened to this container — the order, the paperwork, the
+                money and the complete timeline.
+              </div>
+            </button>
+          )}
+
+          <Fold icon={Boxes} title="What is being moved"
+            summary={trip.consignment?.consignment_number || 'No consignment linked'}>
             {trip.consignment ? (
-              <div style={{ marginTop: 12 }}>
-                {/* Consignments have NO detail route by design — the detail is a
-                    Drawer on the list. So this deep-links into the list and asks
-                    it to open that drawer. Adding a consignments/:id route just
-                    for this button would give consignments two different detail
-                    experiences depending on how you arrived. */}
+              <div>
+                {/* Consignments have no detail ROUTE by design — the detail is a
+                    drawer on the list, so this deep-links and asks it to open. */}
                 <button onClick={() => navigate(`/app/transport/consignments?open=${trip.consignment.id}`)}
-                  style={{ textAlign: 'left', width: '100%', padding: '11px 12px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', cursor: 'pointer' }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 800, color: '#a78bfa' }}>
+                  style={linkCard}>
+                  <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--accent)' }}>
                     {trip.consignment.consignment_number}
                   </span>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 5 }}>
@@ -466,25 +580,20 @@ export default function TransportTripDetail() {
                 <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
                   <KV label="Customer reference" value={trip.consignment.customer_reference} />
                   <KV label="Packages" value={trip.consignment.package_count} />
-                  <KV label="Weight"
-                    value={trip.consignment.gross_weight_kg
-                      ? `${Number(trip.consignment.gross_weight_kg).toLocaleString('en-IN')} kg`
-                      : null} />
+                  <KV label="Weight" value={trip.consignment.gross_weight_kg
+                    ? `${Number(trip.consignment.gross_weight_kg).toLocaleString('en-IN')} kg` : null} />
                 </div>
               </div>
             ) : (
-              <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '12px 0 0' }}>
-                No consignment is linked to this trip yet.
-              </p>
+              <p style={muted}>No consignment is linked to this trip yet.</p>
             )}
-          </Panel>
+          </Fold>
 
-          <Panel icon={Package} title="Source order">
+          <Fold icon={Package} title="Source order" summary={trip.order?.order_number || 'None'}>
             {trip.order ? (
-              <div style={{ marginTop: 12 }}>
-                <button onClick={() => navigate(`/app/transport/orders/${trip.order.id}`)}
-                  style={{ textAlign: 'left', width: '100%', padding: '11px 12px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', cursor: 'pointer' }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 800, color: '#a78bfa' }}>{trip.order.order_number}</span>
+              <div>
+                <button onClick={() => navigate(`/app/transport/orders/${trip.order.id}`)} style={linkCard}>
+                  <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--accent)' }}>{trip.order.order_number}</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5 }}>
                     <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{trip.order.service_type}</span>
                     {trip.order.order_status && (() => {
@@ -499,21 +608,17 @@ export default function TransportTripDetail() {
                 </div>
               </div>
             ) : (
-              <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '12px 0 0' }}>—</p>
+              <p style={muted}>No source order.</p>
             )}
-          </Panel>
+          </Fold>
+
+          <Fold icon={History} title="History" summary={`${audit.length} event${audit.length === 1 ? '' : 's'}`}>
+            <AuditList entries={audit} />
+          </Fold>
         </div>
       </div>
 
-      {/* The trail sits at the foot, full width: it is what HAPPENED, and it
-          should not sit between two things a person still has to DO. */}
-      <div style={{ marginTop: 16 }}>
-        <Panel icon={History} title="History"
-          subtitle="Everything that has happened to this trip, newest first — who did it and when.">
-          <AuditList entries={audit} />
-        </Panel>
-      </div>
-
+      {/*
       {/* STT-003. The reason is the precondition, so the button stays disabled
           until there is one — the person correcting the trip has to know what
           to change. */}
@@ -626,6 +731,63 @@ export default function TransportTripDetail() {
 
 const modalInput = { width: '100%', padding: '9px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 9, color: 'var(--text-h)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }
 const backBtn = { width: 34, height: 34, borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-p)', display: 'grid', placeItems: 'center', cursor: 'pointer', flexShrink: 0 }
+
+/** A quiet divider between the three things a trip page is actually about. */
+function GroupLabel({ children }) {
+  return (
+    <p style={{
+      margin: '10px 0 2px', fontSize: 10.5, fontWeight: 900, letterSpacing: '.08em',
+      color: 'var(--text-muted)', textTransform: 'uppercase',
+    }}>
+      {children}
+    </p>
+  )
+}
+
+/**
+ * A reference panel that opens if you want it.
+ *
+ * The facts — what is being moved, which order it came from, what has happened
+ * — are worth having and are not worth reading every time. Closed they cost one
+ * line and still answer the question at a glance, because the summary carries
+ * the identifier rather than the word "Consignment".
+ */
+function Fold({ icon: Icon, title, summary, children }) {
+  const [open, setOpen] = useState(false)
+  const Chevron = open ? ChevronDown : ChevronRight
+
+  return (
+    <div className="pr-glass" style={{ padding: 0, overflow: 'hidden' }}>
+      <button onClick={() => setOpen((v) => !v)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '12px 15px',
+          background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left',
+        }}>
+        <Icon size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+        <span style={{ minWidth: 0, flex: 1 }}>
+          <span style={{
+            display: 'block', fontSize: 12, fontWeight: 800, color: 'var(--text-h)',
+            textTransform: 'uppercase', letterSpacing: '.03em',
+          }}>{title}</span>
+          {summary && (
+            <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
+              {summary}
+            </span>
+          )}
+        </span>
+        <Chevron size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+      </button>
+      {open && <div style={{ padding: '0 15px 15px' }}>{children}</div>}
+    </div>
+  )
+}
+
+const muted = { fontSize: 12, color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }
+
+const linkCard = {
+  textAlign: 'left', width: '100%', padding: '11px 12px', borderRadius: 10,
+  background: 'var(--bg-input)', border: '1px solid var(--border)', cursor: 'pointer',
+}
 
 const btn = (color, solid = false) => ({
   padding: '8px 14px', borderRadius: 9, fontSize: 12.5, fontWeight: 800, cursor: 'pointer',

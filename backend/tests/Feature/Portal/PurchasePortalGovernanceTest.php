@@ -31,11 +31,14 @@ class PurchasePortalGovernanceTest extends TestCase
 
     private function vendor(string $name = 'Bolt Supplies'): PurchaseVendor
     {
-        return PurchaseVendor::create([
+        $vendor = PurchaseVendor::create([
             'tenant_id' => self::TENANT, 'company_name' => $name,
             'purchase_vendor_code' => 'PV-'.uniqid(), 'status' => PurchaseVendorStatus::ACTIVE,
             'portal_status' => 'active',
         ]);
+        $this->markOnboarded($vendor);
+
+        return $vendor->fresh();
     }
 
     public function test_vendor_responds_to_its_own_ncr(): void

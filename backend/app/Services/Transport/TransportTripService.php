@@ -3,6 +3,7 @@
 namespace App\Services\Transport;
 
 use App\Events\Transport\TripApproved;
+use App\Services\Transport\TripEventRecorder;
 use App\Events\Transport\TripCreated;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ResourceNotFoundException;
@@ -12,9 +13,11 @@ use App\Models\Transport\TransportTrip;
 use App\Models\User;
 use App\Repositories\Transport\TransportTripRepository;
 use App\Support\Transport\OrderStatus;
+use App\Support\Transport\TransitScope;
 use App\Support\Transport\TransportDocumentNumber;
 use App\Support\Transport\TripStatus;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -99,7 +102,7 @@ class TransportTripService
             );
         }
 
-        return DB::transaction(function () use ($order, $data, $tenantId, $actor) {
+        $created = DB::transaction(function () use ($order, $data, $tenantId, $actor) {
             /** @var TransportTrip $trip */
             $trip = TransportTrip::create([
                 'tenant_id'        => $tenantId,
@@ -165,6 +168,17 @@ class TransportTripService
 
             return $trip;
         });
+
+        // CTD §31's timeline. AFTER the commit, like every other recorder call:
+        // a trip event describing a trip that was rolled back would be a line of
+        // history for something that never happened.
+        //
+        // This was missing until 2026-09-19. The row existed on every trip only
+        // because BackfillTripEvents reconstructed it from the audit log, so the
+        // gap was invisible — the timelines looked complete. D-115.
+        app(TripEventRecorder::class)->record('trip.created', trip: $created, actor: $actor);
+
+        return $created;
     }
 
     /**
@@ -216,7 +230,13 @@ class TransportTripService
             'tenant_id' => $tenantId, 'user_id' => $actor?->id,
         ]);
 
-        return $trip->fresh();
+        $submitted = $trip->fresh();
+
+        // CTD §31. Backfill supplied this row historically; nothing wrote it
+        // live. D-115.
+        app(TripEventRecorder::class)->record('trip.submitted', trip: $submitted, actor: $actor);
+
+        return $submitted;
     }
 
     /**
@@ -290,6 +310,9 @@ class TransportTripService
         // STT-002's side effect. Emitted AFTER the transaction commits, so no
         // listener can ever see an approval that was rolled back.
         TripApproved::dispatch($approved);
+
+        // CTD §31's timeline. After the commit, for the same reason.
+        app(TripEventRecorder::class)->record('trip.approved', trip: $approved, actor: $actor);
 
         Log::channel('transport')->info('Trip approved', [
             'trip_id' => $approved->id, 'from' => $from, 'to' => $to,
@@ -384,6 +407,16 @@ class TransportTripService
             'tenant_id' => $tenantId, 'user_id' => $actor?->id,
         ]);
 
+        // CTD §31. The reason travels with it: a timeline that shows a trip went
+        // back to draft without saying what was objected to sends the reader to
+        // the audit log to find out, which is the thing the timeline exists to
+        // save them. D-115.
+        app(TripEventRecorder::class)->record(
+            'trip.returned', trip: $rejected, actor: $actor,
+            detail: ['reason' => $reason],
+            summary: $reason ? 'Sent back: '.$reason : null,
+        );
+
         return $rejected;
     }
 
@@ -469,6 +502,149 @@ class TransportTripService
         $this->assertTenant($trip, $tenantId);
 
         return $this->orders->find((int) $trip->order_id, $tenantId);
+    }
+
+    /**
+     * STT-007 — `in_transit → delivered`. Record that the load arrived.
+     *
+     *   STT-007 | trigger "Delivery confirmation" | actor TripEngine
+     *           | precondition "Destination event" | side effect "Request POD"
+     *           | audited | LOCKED
+     *   SM-TRP  | `delivered` · active · entry gate "Destination confirmed"
+     *           | exit "POD received" · owner Operations
+     *   RTM     | STOS-REQ-OPS-010 "Record delivery" · P0 · "Delivery confirmed"
+     *
+     * ── "DESTINATION EVENT" WITH NO SENSOR TO RAISE ONE ──────────────────
+     * The precondition names an event that only telemetry could produce, and
+     * there is none (SNG-TRN-020, P1). But SM-TRP's entry gate is "Destination
+     * CONFIRMED", which a person can do, and FRS TRP-P0-011's own rule line
+     * grants a "manual update fallback". So this is the specified path with its
+     * automatic half missing, not a substitute for it. Same reasoning the owner
+     * accepted for departure in Q3.
+     *
+     * ── NOT VIA `arrived` ────────────────────────────────────────────────
+     * Step 9 puts ARRIVED on this edge. Nothing in any document gates it, and
+     * no requirement records an arrival distinct from a delivery — the RTM runs
+     * OPS-008 dispatch → OPS-009 track → OPS-010 delivery with nothing between.
+     * Under the standing rule of 2026-09-17 it stays declared and unreachable.
+     * D-36, closed.
+     *
+     * ── "REQUEST POD" IS A SENTENCE, NOT A RECORD ────────────────────────
+     * Reaching `delivered` IS the request: TripDocumentService::verify()
+     * already declines to advance a trip that is not standing here, and
+     * billingReadiness() already computes what is outstanding. A `pod_requests`
+     * table invented to satisfy two words would be a record no document
+     * defines — nothing would say when it closes, who owns it, or what a second
+     * one means. The screen says proof of delivery is now required; the state
+     * does the rest. See TransitScope::POD_REQUEST_FORM.
+     *
+     * ── THE PERMISSION IS DELIBERATELY NOT THE DRIVER'S ──────────────────
+     * FRS TRP-P0-013's actor is "Driver/Delivery", but that row is POD CAPTURE,
+     * which is P3's and where PERM-010 already gives the Driver `own`. The
+     * state change is not the proof. A driver submits what they have; an
+     * operator confirms the trip is delivered, because that unlocks billing for
+     * everyone downstream. TRIP_DELIVER mirrors PERM-004.
+     *
+     * @param  array{delivered_at?:string|null}  $fields
+     */
+    public function recordDelivery(TransportTrip $trip, array $fields, int $tenantId, ?User $actor = null): TransportTrip
+    {
+        $this->assertTenant($trip, $tenantId);
+
+        $from = $trip->status;
+        $to   = TripStatus::DELIVERED;
+
+        if (! TripStatus::canTransition($from, $to)) {
+            throw new BusinessException(
+                $from === TripStatus::DISPATCHED
+                    // The most likely mistake, and the one worth naming: the
+                    // trip was released but nobody recorded it leaving.
+                    ? 'This trip has been released but is not recorded as having left yet. Record the departure first.'
+                    : ($from === TripStatus::DELIVERED
+                        ? 'This trip is already recorded as delivered.'
+                        : 'Only a trip in transit can be recorded as delivered. This trip is '.$trip->statusLabel().'.'),
+                422
+            );
+        }
+
+        $deliveredAt = $this->deliveryTime($trip, $fields['delivered_at'] ?? null);
+
+        $delivered = DB::transaction(function () use ($trip, $from, $to, $deliveredAt, $actor) {
+            $trip->forceFill([
+                'status'       => $to,
+                'delivered_at' => $deliveredAt,
+                'delivered_by' => $actor?->id,
+                'updated_by'   => $actor?->id,
+            ])->save();
+
+            $trip->auditTransition(
+                'transport.trip.status_changed',
+                $from,
+                $to,
+                $actor,
+                [
+                    'rule'          => TransitScope::OPS_010,
+                    'transition'    => TransitScope::EDGE_DELIVERY,
+                    'registry'      => TransitScope::STT_007,
+                    'authorization' => TransitScope::AUTHORIZATION_DELIVERY,
+                    'sources'       => 'RTM STOS-REQ-OPS-010; SM-TRP entry gate "Destination confirmed"; FRS TRP-P0-011 ("manual update fallback")',
+                    'trip_number'   => $trip->trip_number,
+                    'delivered_at'  => $deliveredAt,
+                    'recorded'      => 'manual',
+                    // STT-007's side effect, and the form it actually takes.
+                    'pod_requested' => TransitScope::POD_REQUEST_FORM,
+                    // Declared so the audit trail itself records that no arrival
+                    // was skipped over — the state does not exist.
+                    'via_arrived'   => false,
+                ],
+            );
+
+            return $trip->fresh();
+        });
+
+        app(TripEventRecorder::class)->record(
+            'trip.delivered', trip: $delivered, actor: $actor, occurredAt: $delivered->delivered_at,
+        );
+
+        Log::channel('transport')->info('Trip delivered', [
+            'trip_id' => $delivered->id, 'tenant_id' => $tenantId,
+            'user_id' => $actor?->id, 'delivered_at' => $deliveredAt,
+            'registry' => TransitScope::STT_007, 'recorded' => 'manual',
+        ]);
+
+        return $delivered;
+    }
+
+    /**
+     * When it arrived — TransitScope::TIME_ORDER.
+     *
+     * Backdating allowed, for the same reason as departure. Refused: a delivery
+     * in the future, and a delivery before the trip left.
+     */
+    private function deliveryTime(TransportTrip $trip, ?string $given): string
+    {
+        if ($given === null || trim($given) === '') {
+            return now()->format('Y-m-d H:i:s');
+        }
+
+        $at = Carbon::parse($given);
+
+        if ($at->isFuture()) {
+            throw new BusinessException(
+                'A delivery cannot be recorded in the future. Leave the time blank to use now.',
+                422
+            );
+        }
+
+        if ($trip->departed_at && $at->lt($trip->departed_at)) {
+            throw new BusinessException(
+                'The trip cannot have arrived before it left. It departed on '
+                .$trip->departed_at->format('j M Y, H:i').'.',
+                422
+            );
+        }
+
+        return $at->format('Y-m-d H:i:s');
     }
 
     private function assertTenant(TransportTrip $trip, int $tenantId): void

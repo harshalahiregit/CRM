@@ -322,6 +322,9 @@ class SireExportService
             '}',
             '```',
             '',
+            'Use `"action": "close_directly"` with a `"resolution_note"` for the ones that are',
+            'simply done and need no QA pass — it closes the issue outright from wherever it is.',
+            '',
             'Each one still runs every guard and is audited separately — this is a way to',
             'avoid forty page loads, not a way around the workflow.',
         ];

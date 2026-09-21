@@ -97,6 +97,35 @@ issue rests at `QA_PASSED` for a lead to advance explicitly.
 | `hold` | a reason given |
 | `mark_duplicate` | a target issue, and no loop |
 | `reject` / `wont_fix` / `cannot_reproduce` | a resolution note |
+| `close_directly` | a resolution note |
+| `close` | a **confirmed** root cause, when the issue is critical, P1, recurring or reopened |
+
+## Closing in one click — `close_directly`
+
+Most defects are small, and walking a typo through assign → develop → QA →
+release → validate to reach `CLOSED` is five clicks of ceremony for a one-line
+fix. The cost of that ceremony is not the clicks: it is that people stop closing
+things, and the backlog fills with work that is already done.
+
+`close_directly` goes to `CLOSED` from **every live state except
+`PRODUCTION_VALIDATED`**, takes `sire.report.close`, and requires a
+`resolution_note`.
+
+Three things about it are deliberate:
+
+- **It grants no new power.** `wont_fix` already ended an issue from most of the
+  same states on the same capability. The only difference is that the issue lands
+  in `closed`, which is the honest label when the thing was in fact fixed.
+- **It is not offered from `PRODUCTION_VALIDATED`.** That state keeps the guarded
+  `close` above, and it is the one path that enforces the root-cause rule. If the
+  shortcut appeared there too, that rule would be one button away from optional.
+- **It carries no root-cause guard of its own.** A failing guard *removes* an
+  action from `available_transitions` rather than refusing it, so guarding this
+  one would make the button silently vanish on serious issues — which reads as a
+  broken UI, not as a rule.
+
+The note is the whole price, and it is not negotiable: an issue that leaves the
+backlog without a word is one nobody can audit later.
 
 ## Reopen, hold, terminal
 

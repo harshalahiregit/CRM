@@ -184,6 +184,9 @@ export const portalApi = {
     create:        (data)      => api.post('/portal/workers', data).then(r => r.data),
     update:        (id, data)  => api.put(`/portal/workers/${id}`, data).then(r => r.data),
     saveMedical:   (id, data)  => api.post(`/portal/workers/${id}/medical`, data, data instanceof FormData ? { headers: { 'Content-Type': undefined } } : undefined).then(r => r.data),
+    // The in-house doctors this vendor may name on a medical. Fixed to the TPV
+    // module server-side — there is no parameter here to point elsewhere.
+    doctorOptions: () => api.get('/portal/medical/doctor-options').then(r => r.data?.data ?? r.data),
     saveInduction: (id, data)  => api.post(`/portal/workers/${id}/induction`, data).then(r => r.data),
     // The typed training catalogue. Multipart when a certificate is attached —
     // axios must be left to set its own boundary, hence the undefined header.

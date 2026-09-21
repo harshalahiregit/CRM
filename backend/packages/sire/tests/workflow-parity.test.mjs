@@ -75,7 +75,7 @@ for (const m of trBlock.matchAll(/^        '(\w+)' => \[([\s\S]*?)\n        \],/
 test('the PHP source parsed at all (guards against a silently empty test)', () => {
   assert.ok(Object.keys(CONST).length >= 18, 'status constants');
   assert.equal(Object.keys(phpStates).length, 22, 'parsed states');
-  assert.equal(Object.keys(phpTransitions).length, 26, 'parsed transitions');
+  assert.equal(Object.keys(phpTransitions).length, 27, 'parsed transitions');
 });
 
 test('state sets match exactly', () => {

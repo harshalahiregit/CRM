@@ -717,7 +717,36 @@ tokens across the package — the worst state divergence found, worse than the T
 
 Only `STT-015` (open→acknowledged) and `STT-016` (acknowledged→resolved) are defined.
 
-**Blocks SNG-TRN-013.** Awaiting the owner's Q1 ruling.
+~~**Blocks SNG-TRN-013.** Awaiting the owner's Q1 ruling.~~
+
+### RULED 2026-09-18 — and it needed no new decision
+
+The owner's ruling: **this contradiction dissolves under a rule we already made.**
+
+See `TEAM-CONTRACTS.md`, *"Which document wins when the state machines disagree"* — the standing
+rule from Block 3. Applied here:
+
+| | |
+|---|---|
+| **VOCABULARY** — from Step 9 | open · acknowledged · in_progress · mitigation_planned · resolved · verified · closed |
+| **EDGES** — from Step 11, which LOCKS exactly two | `STT-015` open → acknowledged · `STT-016` acknowledged → resolved |
+| **EVERYTHING ELSE** | stays in the vocabulary, stays unreachable — exactly as `arrived`, `pod_pending` and `settlement_pending` do on the Trip machine |
+
+### And it settles Step 11 contradicting itself, without either half losing
+
+That was the part that looked intractable: `SM-EXC` calls `resolved` **terminal** while
+`ENUM-004` lists `closed` **after** it. One document, two answers.
+
+They are answers to different questions. **`SM-EXC` calling `resolved` terminal is an EDGE claim.
+`ENUM-004` listing `closed` is a VOCABULARY claim.** Under the rule the edge claim is Step 11's to
+make and the vocabulary claim is Step 9's — and Step 9 lists `closed` too.
+
+So `closed` exists in the vocabulary, no edge leaves `resolved`, and **`resolved` is terminal in
+practice**, because a state absent from `TRANSITIONS` is terminal by construction. Both halves of
+Step 11 are honoured. Nothing invented, nothing discarded.
+
+**SNG-TRN-013 is unblocked.** This is step 9 of MS-001 §14's fourteen, and it was the only one of
+that walk's eight gaps that belonged to P1.
 
 ---
 
@@ -730,7 +759,35 @@ No enum or state machine in the package contains `waived`.
 
 Notable: this is the **first override written into a P0 Hard rule's own definition**, unlike
 PLN-007, CMP-007 and BRW-049, which were all deferred as P1. That makes it a closer call than the
-other overrides. **Blocks SNG-TRN-013.** Awaiting the owner's Q2 ruling.
+other overrides. ~~**Blocks SNG-TRN-013.** Awaiting the owner's Q2 ruling.~~
+
+### RULED 2026-09-18 — DEFERRED, the same way BR-P0-017's waiver is
+
+**A SPECIFIED behaviour we are choosing not to build yet, not an invented one we are refusing.**
+The distinction is the one the owner drew for closure, and it applies here unchanged:
+
+| | |
+|---|---|
+| **Specified by** | FRS `TRP-P0-012` — output *"Open→acknowledged→resolved/**waived**"*, control *"Waiver requires reason/role"* |
+| **Role named** | **Owner** — `BR-P0-011`'s Override column reads *"Owner waiver"* |
+| **Status** | Deferred. No ticket authorises or audits a waiver, and building one would mean inventing who may exercise it and what evidence it needs |
+
+**Two things follow, and both are load-bearing.**
+
+**1. Nothing on screen may imply an exception cannot be waived.** The refusal says the waiver is
+**not built yet**. A user told *"this cannot be waived"* when their own rule book says it can is
+being misled by our software about their own business. Same wording discipline as
+`ClosureScope::WAIVER_MESSAGE`.
+
+**2. `waived` leaves the vocabulary.** This supersedes the owner's Q2 ruling of 2026-09-10
+("waived declared in the enum, not wired") — cleanly, rather than by reversal. The standing
+Step 9 / Step 11 rule says the vocabulary comes from **Step 9**, and `waived` is the one status in
+`ExceptionStatus` that Step 9 does not contain; it is in FRS and BRWM alone.
+
+That is exactly why it is treated differently from `in_progress`, `mitigation_planned`, `verified`
+and `closed` — those ARE Step 9's, so they stay declared and unreachable. `waived` is not, so it
+stays **out of `ALL`** until it has an edge and a gate. The constant remains, carrying its
+deferral, because the behaviour is specified and will one day be built.
 
 ---
 
@@ -832,6 +889,30 @@ against Step 9's 16).
 `TripStatus::ARRIVED` is declared and unreachable. SNG-TRN-013 stops at `in_transit`, so this does
 not block it — but **SNG-TRN-014 (POD) must resolve it**, because it owns `in_transit → delivered`
 and has to decide whether a trip passes through `arrived` on the way.
+
+### CLOSED 2026-09-17 by the standing ruling below
+
+SNG-TRN-014 shipped `delivered → pod_verified` without deciding it, so the question fell to
+Block 3, which owns `in_transit → delivered`. The owner ruled on the general case rather than
+this one state:
+
+> **Vocabulary from Step 9. Edges from Step 11. A Step 9 state becomes reachable only when
+> some document defines something that can gate it.**
+
+`arrived` has no entry gate in any document, no requirement that records an arrival distinct
+from a delivery — the RTM runs OPS-008 dispatch → OPS-009 track → OPS-010 delivery with nothing
+between — and no data model. So it stays in the vocabulary and stays unreachable, and the same
+answer settles the two states nobody had asked about:
+
+| Step 9 state | Entry gate | Requirement | Data model | Ruling |
+|---|---|---|---|---|
+| `pretrip_ok` | STT-005's "All checks passed" | OPS-007 pre-trip checklist | yes | **wired** — 2026-09-09 |
+| `arrived` | none | none | n/a | **declared, unreachable** |
+| `pod_pending` | none | none | n/a | **declared, unreachable** — P3's shipped STT-008 already skips it |
+| `settlement_pending` | none | TRP-P0-017, but that is SNG-TRN-017 | **`trip_settlements` does not exist** | **declared, unreachable** |
+
+All three remain in `TripStatus::ALL`, `::OPEN` and `::LABELS`. None gains an edge. The rule is
+recorded in `TEAM-CONTRACTS.md` so it is not re-argued by whoever reads the enum next.
 
 ---
 
@@ -2628,3 +2709,1178 @@ tables, not P1's.
 has gone to P2 as `docs/transport/REQUEST-person2-fleet-join.md`: migrate our rows into their
 tables, expose a contract we read, or something else they prefer. **No option was proposed as
 agreed and none has been started.** Their module, their call.
+
+### D-62 step 5 — partly done by P2, and a question back to them (2026-09-17)
+
+TEAM-CONTRACTS §1a made retiring P1's placeholder P1's job, "in the same PR that brings their Fleet
+in, or immediately after". **P2 has done part of it themselves.** `/app/transport/vehicles`,
+`/vehicles/:id`, `/drivers` and `/drivers/:id` now render Fleet's components.
+
+**Consequence, stated because it goes further than the owner's ruling.** The ruling was *hide, not
+delete*, with the pages still reachable by URL until allocation was repointed. They are no longer
+reachable: `TransportVehicles`, `TransportVehicleDetail`, `TransportDrivers` and
+`TransportDriverDetail` still exist as files, but no route renders them and their lazy imports in
+`routes.jsx` are dead.
+
+**The outcome is fine — arguably better than hiding — and P2's change has been left exactly as
+written.** The process point has gone to them: announce a change of that size rather than leaving
+it to be found in a diff. Nothing has been altered in response.
+
+**Open question to P2:** delete the four page files now, or leave them dormant until allocation is
+repointed at Fleet? Not decided unilaterally, because the files are the last piece of a handover
+they now partly own. Asked in `NOTE-team-approve-path-is-on-master.md`.
+
+**The backend is untouched by any of this.** Allocation, pre-trip and dispatch still read
+`transport_vehicles` and `transport_drivers`, which still hold the demo rows, so the dispatch chain
+works today. Repointing onto Fleet is the remaining half and is now in progress.
+
+**Also expected, not a fault:** Fleet, Drivers and Workshop read zero rows, because the demo
+vehicles are in P1's tables and `2027_01_02_000002` is deliberately unrun. Not to be worked around
+by seeding copies.
+
+---
+
+## D-100 — Allocation cannot be repointed at Fleet yet. Three blockers, in order.
+
+**Raised:** 2026-09-17, starting the repoint. **First use of P1's new D-100 band.**
+**Owner: P1 + P2.** **Status: NOT STARTED — deliberately, and here is why.**
+
+The instruction was to repoint allocation, pre-trip and dispatch onto
+`FleetService::getEligibleVehicles`. It exists, it is explicitly *"Consumed by Developer 1
+(Operations) during dispatch planning"*, and its payload is good — id, registration, type,
+compliance, live position, scores, reasons, and each vehicle's regular driver with a licence
+verdict. A driver equivalent exists too: `DriverService::list($companyId, ['ready_only' => true])`
+returns licence-valid, available people.
+
+**Doing it today would break the working dispatch chain within the hour.** Three blockers:
+
+### 1. Fleet's `vehicles` table is EMPTY — measured, not assumed
+
+```
+Fleet  vehicles            (company 1):  0 rows
+P1     transport_vehicles  (tenant 1) :  5 rows
+P1     transport_drivers   (tenant 1) :  5 rows
+```
+
+The demo fleet is still in P1's tables because `2027_01_02_000002` is deliberately unrun — the
+owner held it, since `stos:reconcile-fleet` does not exist. **Repointing before that migration runs
+hands a dispatcher an empty candidate list**, and allocation, pre-trip and dispatch all stop
+working. The order is therefore fixed: **migration first, repoint second.**
+
+### 2. Driver identity does not fit `trip_assignments.driver_id`
+
+Fleet identifies a driver by a directory reference — `source` + `source_id` — not by a single
+integer. `trip_assignments.driver_id` is an `unsignedBigInteger` pointing at
+`transport_drivers.id`. **What should it point at after the repoint?** `DriverProfile.id`? The
+directory person? A composite? That is P2's contract to state; guessing produces assignment rows
+that point at nothing.
+
+Vehicles are simpler — `vehicles.id` is an integer — but the same question applies: the ids in
+existing `trip_assignments` rows are P1's, and the migration must map them or they dangle.
+
+### 3. Calling `FleetService` directly would bypass the seam we just built
+
+`FleetResourceGateway` is the agreed door between Trip side and Fleet, and it currently has exactly
+one method: `markDispatched()`. Reaching from `AllocationService` into
+`App\Domains\Fleet\Services\FleetService` would defeat the interface both sides just agreed —
+the same mistake in the opposite direction from the one the gateway was created to stop.
+
+**The gateway needs two more methods** — something like `eligibleVehicles()` and
+`eligibleDrivers()` — or P2's explicit agreement that direct `FleetService` calls are the intended
+route. **Adding methods to that interface is P2's call, not P1's.**
+
+### The order that would work
+
+1. `stos:reconcile-fleet` exists, or the owner accepts the migration without it.
+2. `2027_01_02_000002` runs; Fleet's tables hold the vehicles and drivers.
+3. P2 states the driver identity that `trip_assignments.driver_id` should carry.
+4. P2 extends `FleetResourceGateway`, or rules that direct calls are fine.
+5. P1 repoints `AllocationService`, `VehicleEligibilityService`, `DriverEligibilityService`,
+   `PretripService` and `DispatchService`, and maps existing assignment rows.
+
+**Steps 1–4 are not P1's.** Asked of P2 in `NOTE-team-approve-path-is-on-master.md`'s follow-up.
+Container 360 (Block 2) is unblocked and starts now instead.
+
+---
+
+## D-101 — A soft-deleted container reserves its number forever
+
+**Raised:** 2026-09-17, by a constraint violation during a demo reset.
+
+`transport_containers` uses `SoftDeletes`, and `UNIQUE(tenant_id, container_number_normalized)`
+**does not exclude trashed rows**. So deleting a container keeps its number permanently reserved:
+re-creating the same number fails with an integrity violation naming a row the user cannot see.
+
+Found when the demo reset soft-deleted its own containers and the next run was refused inserting
+`sgoe-402215-9` — its own data, blocked by its own tombstone.
+
+**Not reachable by a user today:** there is deliberately no delete path for containers (the number
+is the identity and §7 requires the association history survive). Only a seeder or a manual query
+can create the tombstone. **The seeder now uses `forceDelete()`.**
+
+**It becomes reachable the moment anyone adds a delete or archive action for containers**, and the
+symptom will be baffling: "that number already exists" for a container nobody can find. Whoever
+adds one inherits this — either force-delete, or make the unique index ignore soft-deleted rows.
+
+Same shape as D-53's latent overlap: correct today because a path does not exist, wrong the day it
+does.
+
+---
+
+## D-102 — Container 360's nine absent sections, and why none of them is a stub
+
+**Raised:** 2026-09-17, building Block 2. **Status: recorded, not deferred and not dropped.**
+
+STOS-CTD §9 lists **thirty** passport sections. Nine have no entity anywhere in this codebase, so
+the passport does not render them at all:
+
+| Section | CTD req | Owner | Why absent |
+|---|---|---|---|
+| GPS / current location (§13, §14) | CTD-010 P1 | P2 | telemetry is Fleet's; no read contract exists |
+| Temperature (§15–§17) | CTD-011 **P0** | Product | no entity. Same root as D-52 — nothing marks a trip temperature-critical |
+| Genset (§18, §19) | — | P2 | no entity |
+| Fuel · FASTag | CTD-015 P1 | P2 | Fleet's |
+| Port / Gate (§28–§30) | CTD-009 P1 | Product | no entity — D-42 |
+| Feedback (§36–§40) | CTD-018 **P0** | Product | no entity |
+| Incident / CAPA (§56, §57) | CTD-012/013 **P0** | P3 | SIRE owns CAPA; `trip_exceptions` has a table and no model |
+| Compliance (§23, §58, §59) | CTD-008 **P0** | P2/P3 | no read contract — D-100 |
+| Profitability (§52–§54) | — | P3 | Finance's |
+
+**The rule applied, and the reason it is a rule:** an empty panel implies the feature exists. A
+dispatcher who sees a Temperature card reading "—" concludes the sensor is broken; one who sees no
+card concludes the system does not track it. The second is true. This is the same rule the
+consignment drawer follows and the reason its Containers panel waited for containers to exist.
+
+**Five of these are P0.** They are not deferred by choice — there is nothing to render. Each
+becomes a one-section addition to `ContainerPassportService` the day its entity exists, and the
+service is shaped so that adding one touches nothing else.
+
+---
+
+## D-103 — CTD §77's passport snapshots, deferred
+
+**Raised and deferred:** 2026-09-17, on the owner's ruling.
+
+§77 asks the system to preserve "current view; historical event stream; rule versions; important
+snapshots". The first two exist — the passport IS the current view and `transport_audit_logs` is
+the immutable stream. **Rule versions and snapshots would need a new table**, and nothing today can
+say which snapshots matter or what a rule version is.
+
+Deferred rather than built: a table whose contents nobody can specify is the D-9 mistake in a
+different shape. **Owner: Product**, to specify what a snapshot is for before one is stored.
+
+---
+
+## D-104 — The demo reset was not atomic, and a half-finished one looks like a broken build
+
+**Raised:** 2026-09-17, chasing a state seen once and not reproducible by re-running.
+**Found by simulation.** **Fixed.**
+
+### What was seen
+
+A demo trip reporting **"approved, no vehicle"** when the seeder had just claimed it was "crewed
+and moving". Re-running produced the correct state twice, so it could not be reproduced, and no
+guess was offered at the time.
+
+### What it actually was
+
+`clearPreviousDemo()` releases assignments FIRST and soft-deletes the trips LAST:
+
+```
+1. AllocationService::release()   ← reverts ALLOCATED → APPROVED, clears vehicle + driver
+2. delete assignment rows
+3. detach containers
+4. delete pre-trip checks, exceptions
+5. delete vehicles, drivers, containers
+6. soft-delete trips, consignments, orders   ← the trip finally goes
+```
+
+**None of it was in a transaction.** Anything stopping it between 1 and 6 — a throw, a Ctrl-C —
+commits the release and never reaches the delete. What survives is a trip that has been reverted
+to `approved` with its vehicle and driver cleared, and never removed.
+
+**That is exactly the observed state**, and this session did interrupt seeder runs.
+
+Proved rather than argued: running only the release half against a clean demo produces
+
+```
+clean run          TRP-…-000001 pretrip_ok  v=1     TRP-…-000002 approved v=-
+release half only  TRP-…-000001 approved    v=-     TRP-…-000002 approved v=-
+```
+
+The first line is what the seeder claims; the second is what was seen.
+
+### Fixed two ways
+
+1. **The reset is atomic.** `clearPreviousDemo()` now runs inside one transaction: it completes,
+   or the previous demo is left untouched. A half-cleared demo is no longer reachable.
+2. **The seeder checks its own work.** `assertDemoIsWhatItClaims()` runs before the success line
+   is printed and throws if either trip is not in the state, or carrying the resources, the report
+   is about to claim. Proven to fire: skipping the pre-trip step produces
+   *"TRP-…-000001 should be ready to dispatch but is 'allocated'"*.
+
+**The second matters more than the first.** An intermittent demo failure that nobody can reproduce
+is the worst kind to meet in front of a client. The seeder now fails loudly at build time instead
+of leaving a walkthrough that looks broken to whoever opens it next.
+
+### And a guard that had to learn a distinction
+
+The D-63 guard banned the string `TripStatus::` from the seeder outright. The new self-check
+legitimately COMPARES against it — checking your own work is the opposite of forcing a state — so
+the guard fired on the fix the day it was written. It now matches the WRITE (`'status' => …`)
+rather than the mention, and is proven to still catch a real assignment.
+
+**A guard that cannot tell a read from a write trains people to weaken it**, which is worse than
+not having one.
+
+---
+
+# D-105 … D-108 — found during the Block 3 (transit, delivery, closure) pre-build
+
+---
+
+## D-105 — An authorised transition, its columns, its index, and nothing that writes them
+
+**Raised:** 2026-09-17, reading the source for Block 3. **Verified by the lead the same day.**
+
+### What the code said
+
+Four documents — `TripStatus` (twice), `DispatchScope` (three times),
+`TransportDispatchController` (twice) and `TEAM-CONTRACTS.md` — all said the same thing:
+
+> STT-006 (`dispatched → in_transit`) is the Transit half of SNG-TRN-013, **blocked on the
+> owner's Q1/Q3 ruling**.
+
+### What the ruling actually says
+
+Q3 was answered on **2026-09-10**, seven days earlier, and it is an **approval**. Verbatim, from
+`ExceptionScope::RULINGS`:
+
+> "Option (b) — build the Exception engine, and also wire `dispatched → in_transit` as a manual
+> **'Record departure'** action (`departed_at`, `departed_by` columns only). Nothing beyond that
+> — no `in_transit → delivered`, no GPS/telemetry/odometer/temperature, no automatic triggers."
+
+Its precondition ("Dispatch confirmed") became satisfiable when Record Dispatch shipped on the
+same day. Migration `2026_12_16_000013_add_departure_to_transport_trips` created `departed_at`
+and `departed_by` **and** the index `transport_trips_tenant_departed_idx`.
+
+**Nothing writes either column.** `grep -rn departed_at app/ tests/ database/` returns the
+migration, one constant in `ExceptionScope`, two tests that assert that constant, and one
+unrelated migration docblock. No service, no controller, no route, no test of behaviour.
+
+So the edge was approved, its schema shipped, and the work stopped between the two — while every
+comment in the codebase went on describing it as blocked.
+
+### Why this is the D-58 shape, and worse
+
+D-58 was an edge nobody had built. This is an edge somebody was **told to build, built the
+scaffolding for, and left**, with four documents asserting it could not be built. Scaffolding
+that makes a thing look done is worse than an absence: an absence gets found, and a comment
+saying "blocked" gets believed.
+
+It was found by re-reading the ruling rather than trusting the comment that cited it.
+
+**Fixed in Block 3.** The stale text is corrected in all four documents in the same change, so
+the next reader does not hit the same dead comment.
+
+---
+
+## D-106 — No trip in this system can ever be closed, and the missing piece is one caller
+
+**Raised:** 2026-09-17. **Verified by the lead.** **P3's surface — raised, not fixed.**
+**CLOSED 2026-09-19 by Person 3** (commit `36a7504a`), who shipped
+`POST /transport/trips/{id}/bill/invoiced` and its controller. Verified here by walking a trip
+**delivered → closed** in the browser; `TRP-2026-000034` is closed and `EVT-012 TripClosed`
+fired. `ClosureScope::REACHABLE` is now `true`.
+
+> **What closing it left behind.** Two things the fix did not cover, both written up rather than
+> assumed away:
+>
+> 1. **No UI control calls the new route.** `BillingPanel.jsx` has one button (*Prepare billing*)
+>    and `transportApi.js` has no method for the endpoint, so a trip still cannot get past
+>    *Billable* by clicking. The walk above posted to the route by hand. P3's, raised in
+>    `NOTE-person3-d106-landed-and-the-button-is-missing.md`.
+> 2. **Three of our own comments went stale the moment it landed** — `transportApi.js`,
+>    `ClosurePanel.jsx` and `constants.js` each still said the route did not exist. Corrected.
+>    This is the second time in two days that fixed code left true-sounding false text behind
+>    (the first was the `exceptions` closure control), and it is the argument for treating a
+>    comment that states a *fact about other code* as something that expires.
+
+`STT-012` (`collection_pending → closed`) is the only edge into the terminal state, and
+`collection_pending` is the only state it leaves from. Walking backwards:
+
+| Edge | Built | Owner | Reachable by a user |
+|---|---|---|---|
+| `delivered → pod_verified` (STT-008) | yes | P3 | yes — `POST /trips/{id}/pod/{doc}/verify` |
+| `pod_verified → billable` (STT-009) | yes | P3 | yes — `POST /trips/{id}/bill` |
+| `billable → billed` (STT-010) | **model method only** | Accounts / P3 | **NO** |
+| `billed → collection_pending` (STT-011) | yes | P3 | only via `billed` |
+
+`TripBill::markInvoiced()` (`app/Models/Transport/TripBill.php:89`) is the single door to
+`billed`. **It has no caller.** Every other mention of it in the codebase is a comment.
+
+`TripCollectionService::open()` is honest about the consequence rather than papering over it: it
+guards the move with `TripStatus::canTransition()`, so opening a collection on a `billable` trip
+creates the collection row and correctly declines to advance the status. The trip stays at
+`billable`, and `collection_pending` is unreachable.
+
+### The consequence
+
+**Closure is plumbed, not reachable.** Block 3 builds STT-012 to the registry — API-009,
+CTR-013, PERM-005 including the Dispatcher denial, EVT-012 — and every test passes, and no user
+can get a trip into the state the endpoint requires.
+
+The coverage document marks it **PLUMBED**, never BUILT. That distinction exists for exactly
+this case.
+
+**The ask to P3:** `markInvoiced()` needs a caller and a route. Until it has one, no trip in the
+system can ever close — and `EVT-012 TripClosed`, which P3 has been waiting on since the 16th,
+is on the other side of that one gap. See `docs/transport/REQUEST-person3-invoice-door.md`.
+
+**Not fixed here.** `trip_bills` is P3's table and the standing rule is not to fix another
+developer's file to make our own work reachable.
+
+---
+
+## D-107 — EVT-012's idempotency key names a field that does not exist
+
+`EVT-012 TripClosed` | producer TripEngine | payload `trip_id, closure_timestamp` |
+**idempotency `trip_id+close_version`** | consumers ProfitEngine, ControlRoom | LOCKED.
+
+There is no `close_version` column and no versions table anywhere in the package. This is the
+same shape as **D-65**, where `EVT-004 TripApproved`'s key named an `approval_id` with no
+approvals table, and the ruling was **do not invent one**.
+
+Same answer. Closure is made idempotent by the state machine instead: `closed` is terminal, so a
+second close is refused with a sentence naming who closed it and when. What a version counter
+would add beyond that is response replay, which no consumer needs — and ProfitEngine, the one
+consumer that would care, does not exist either (`trip_profit_snapshots` is not a table).
+
+Recorded rather than invented.
+
+---
+
+## D-108 — Two LOCKED transitions with no API_Registry row
+
+Step 11's API_Registry runs API-001…API-015 and covers create, viability, assign, advance,
+expense, exception, POD, close, bill, collection, control-room, trip detail, GPS and e-way-bill.
+
+**Neither STT-006 (`dispatched → in_transit`) nor STT-007 (`in_transit → delivered`) has a row**,
+though every other trip transition in the machine does — including STT-012, which gets API-009.
+
+So the two edges Block 3 exists to build are the only two with no specified path, method,
+permission key or request contract. Consistent with D-18 (dispatch had no ticket) and D-8/D-21
+(permission keys with no matrix row): the registries thin out precisely where the operational
+middle of the trip lives.
+
+Paths follow the endpoints already beside them — `PATCH /trips/{trip}/depart` and
+`PATCH /trips/{trip}/deliver`, next to `PATCH /trips/{trip}/dispatch`. Recorded as derived, not
+quoted.
+
+---
+
+## D-109 — The Fleet data-move migration is armed, and `php artisan migrate` fires it
+
+**Raised:** 2026-09-17. **By running it myself, by accident.**
+
+### What happened
+
+`php artisan migrate`, run to apply Block 3's two new columns, also applied
+`2027_01_02_000002_move_transport_masters_into_fleet`, which was sitting pending. The owner had
+said explicitly: **do not run that migration yet.**
+
+It is not guarded by anything. It is an ordinary pending migration, so the ordinary command that
+every developer runs after a `git pull` executes it. I did not pass a flag, target a file or opt
+in — I ran the command you run to add a column.
+
+### What it did
+
+It moved `transport_vehicles` and `transport_drivers` into the Fleet masters and **repointed
+every foreign key that referenced them** — `transport_trips.vehicle_id`, `.driver_id` and the
+same two on `trip_assignments`.
+
+The Transport side still reads `transport_vehicles` and `transport_drivers`, so every repointed
+row became an orphan: the demo trip's vehicle and driver both resolved to null. Measured, not
+assumed — 4 trips and 1 assignment across all tenants.
+
+`down()` is deliberately a no-op, so `migrate:rollback` does not undo it.
+
+### How it was repaired
+
+Re-running `TransportDemoSeeder`. The seeder soft-deletes the previous demo and rebuilds it
+through the real services, so the new trips and assignments point at `transport_vehicles` and
+`transport_drivers` again. Verified: **zero orphaned live rows** on all four table/column pairs.
+
+I did **not** delete the rows the migration inserted into `vehicles`, `driver_profiles` and
+`stos_drivers`. Those are Person 2's tables, and the standing rule is that we do not delete
+another developer's data to tidy up after ourselves. Two rows in each, all carrying their
+`legacy_transport_*_id`, so they are identifiable and reversible by whoever owns them.
+
+Three soft-deleted trips still carry Fleet ids. Inert — nothing reads a deleted trip's vehicle —
+and left alone rather than rewritten, for the same reason.
+
+### The actual defect
+
+**Not that I ran it. That anyone can, without meaning to.**
+
+`2027_01_02_000002` will fire on the next `php artisan migrate` on every machine in the team,
+including production, with no prompt and no flag. It is marked run on this dev database now, so
+it will not fire again *here* — which is worse in one way, because the hazard has moved to
+everyone else's machine and mine now looks clean.
+
+This needs a decision from the owner, and it is not mine to take because the migration is P2's:
+
+- **Guard it** — an env flag or a `STOS_FLEET_MIGRATION=1` check, so it is opt-in;
+- **or hold it out of the branch** until the repoint is genuinely wanted;
+- **or run it deliberately, everywhere, once**, with the Transport read paths moved over in the
+  same change — which is D-100, and D-100's measured finding was that Fleet's `vehicles` table
+  reads zero, so that cannot happen yet.
+
+Recorded in `TEAM-CONTRACTS.md` under the never-`migrate:fresh` rule, because it belongs to the
+same family: a routine command with an irreversible effect nobody expects.
+
+---
+
+## D-110 — Container 360's Vehicle and Driver nodes cannot be made clickable yet
+
+**Raised:** 2026-09-18, walking the three finished blocks in a browser.
+**Not fixed — it is blocked on a cross-team gap, and faking it would be worse.**
+
+CTD §71's second chain is `Container → Trip → Vehicle → Driver`, and Container 360 renders all
+four. Order, consignment and trip each carry an **Open** link. **Vehicle and Driver do not.**
+
+That is not an oversight in the page. It is the D-62/D-100 boundary showing through:
+
+- `ContainerPassportService::chain()` reads `transport_vehicles` and `transport_drivers` — P1's
+  placeholder masters (TEAM-CONTRACTS §1a), so the ids it returns are **transport_vehicles.id**
+  and **transport_drivers.id**.
+- The only vehicle and driver screens in the app are P2's — `/transport/vehicles/:id`
+  (`FleetVehiclePassport`) and `/transport/drivers` — and they resolve **Fleet** ids.
+
+The two id spaces are different. Linking `chain.vehicle.id` at P2's route would open the wrong
+vehicle or none at all, and "the wrong truck's history" is exactly the failure mode D-62's own
+migration refuses to risk.
+
+### Why it is left as it is
+
+A link that lands on the wrong record is worse than no link. The nodes still show the
+registration, the type, the driver's name and licence class, so the chain READS correctly end to
+end — only the last two steps are not navigable.
+
+### What would close it
+
+Either of these, and both belong to a conversation rather than to this pass:
+
+1. **P2 exposes a lookup by our id** — a read contract that answers "which Fleet vehicle is
+   `transport_vehicles.id = N`?". `vehicles.legacy_transport_vehicle_id` already holds exactly
+   that mapping for the rows the D-62 migration moved (see D-109), so the data exists.
+2. **The masters are unified** — D-100's repoint, which is measured as not yet possible because
+   Fleet's `vehicles` reads zero through Transport's current paths.
+
+Raised to P2 alongside D-109.
+
+---
+
+## D-111 — The browser/server boundary had two more time bugs, and one is still open
+
+**Raised:** 2026-09-18, sweeping for siblings of the `fromLocalInput` bug on the owner's
+instruction. **One fixed, one reported.**
+
+### Why a sweep was ordered
+
+The `fromLocalInput` defect made Record departure and Record delivery unusable outside UTC and
+silently shifted every dispatch time, with 1311 tests green over the top of it. The owner's
+reading: *"every service test built its times on the server, where there is nothing to get wrong
+— that is a structural blind spot, not bad luck, and it will have siblings."*
+
+It had two.
+
+### Sibling 1 — the order deadline. FIXED.
+
+`TransportOrderForm`'s "Required by" is a `datetime-local` and was submitted **raw**, the only
+one of the module's four such fields with no conversion:
+
+| | |
+|---|---|
+| `components/TransportOrderForm.jsx` | **0 conversions** ← the bug |
+| `components/JourneyPanel.jsx` | 2 |
+| `components/DispatchPanel.jsx` | 2 |
+
+Measured, not inferred:
+
+```
+user types      25 Sep 2026, 09:00   (their clock)
+browser sends   "2026-09-25T09:00"   no zone
+server stores   2026-09-25 09:00 UTC
+shown back      25 Sep 2026, 14:30   ← five and a half hours late
+```
+
+**Every transport order ever created through the UI carries a customer deadline shifted by the
+local offset.** Unlike the transit bug this one never refused anything — it just quietly stored
+the wrong time, which is why nobody saw it.
+
+Fixed by `toTransportOrderPayload()`, which converts on the way out. Verified in the browser:
+typed 09:00, list now reads **09:00 am**.
+
+### Sibling 2 — date-only fields drift by a day west of UTC. REPORTED, NOT FIXED.
+
+`<input type="date">` sends `"2026-09-25"`. The server stores midnight UTC. `fmtDate()` renders
+with `toLocaleDateString`, which converts to the viewer's zone:
+
+```
+Asia/Kolkata      picked 25 Sep  →  displays 25 Sept 2026   correct
+America/New_York  picked 25 Sep  →  displays 24 Sept 2026   OFF BY ONE DAY
+```
+
+A licence expiry, a document validity date or a due date shown one day early is a compliance
+answer that is wrong, and `PretripService` blocks dispatch on exactly those dates.
+
+**Not fixed in this pass, deliberately.** It does not bite today — Sangoé runs in IST, where the
+offset is positive and the date survives — and the correct fix is to render a date-only value
+without any timezone conversion, which means changing `fmtDate` or introducing a `fmtDateOnly`
+across call sites in **P1's, P2's and P3's** panels (`DocumentsPanel`, `DriverForm`,
+`VehicleForm`, `CostsPanel`, `CollectionPanel`, the whole Fleet folder). That is a cross-section
+change, not a fix, and it needs a decision rather than a quiet edit during a defect pass.
+
+**It becomes urgent the day anyone opens Sangoé from a timezone west of Greenwich.**
+
+### The numbers are fine
+
+Checked as part of the same sweep and reported because a sweep that only lists what it found is
+half a sweep. Every numeric field (`approved_freight`, `package_count`, `gross_weight_kg`,
+`volume_cbm`, advances, costs) submits `e.target.value` — a plain string like `"12450.5"` — with
+no locale formatting applied on the way out. `toLocaleString` appears only in DISPLAY paths.
+Nothing round-trips wrong. The one transform on a submit path is `Number(pickedConsignment)` on
+a container attach, which is an integer id.
+
+### The guard
+
+`TransportDateTimeContractTest` fails on the exact shape of the original bug and on a
+`JourneyPanel` that stops letting the server stamp its own clock. Proven by reintroducing the old
+one-liner. It does **not** yet assert that every `datetime-local` in the module is converted —
+that is worth adding the next time this area is touched, and is why sibling 1 survived the first
+fix.
+
+---
+
+## D-112 — Both guards written this week were blind, and the second break found a third hole
+
+**Raised:** 2026-09-18. **Fixed.** Recorded because the lesson outlives the bugs.
+
+Three faults, all in test code, all found by attacking my own guards rather than by running them.
+
+### 1. A comment-stripper that stripped the file
+
+`TransportDateTimeContractTest` and `TripClosureTest` both did:
+
+```php
+preg_replace('#//.*$|/\*.*?\*/#ms', '', $src)
+```
+
+The `/s` flag makes `.` match newlines, so `//.*$` runs greedily **from the file's first comment
+to its last line**. Both guards were scanning an almost-empty string and would have passed on
+anything at all.
+
+Measured:
+
+```
+input   <?php  ·  // a comment  ·  $x = "type=\"datetime-local\"";  ·  // another  ·  $y = 1;
+/ms     '<?php\n'                        ← everything after the first // is gone
+/s + [^\n]*   the whole file, comments removed   ← correct
+```
+
+**The timezone guard passed while the second timezone bug was still live in the file it read.**
+A test that cannot fail converts a gap into confidence, which is worse than no test.
+
+### 2. One probe in one position is not proof
+
+The D-106 caller scan had the identical `/ms` line and nevertheless went red when it was tested.
+The only reason: the probe happened to be inserted **above that file's first comment**, in the
+sliver the broken regex left behind. Re-probed at the end of a different service, it fires
+properly now.
+
+### 3. And the second break found a third hole
+
+With the stripper fixed, the timezone guard was attacked twice more:
+
+| probe | file | mechanism | result |
+|---|---|---|---|
+| **A** | `TransportOrderForm` | renders `type="datetime-local"` directly | **red** — correct |
+| **B** | `DispatchPanel` | renders `type={field.type}` from `DISPATCH_FIELDS` | **GREEN — wrong** |
+
+Removing DispatchPanel's conversion also removed the file's last mention of the literal, so the
+file **dropped out of the guard's scope** and the guard reported success over a real regression.
+
+The scope test now covers both: a file is in scope if it renders a datetime field **or** consumes
+an exported field config that declares one. The config list is read from `constants.js` rather
+than hardcoded, so a new config is covered without anyone remembering this test exists.
+
+Both probes now fire. Both were restored.
+
+### A fourth, caught on the way
+
+The first version of that config scanner used
+`/export const ([A-Z_]+)\s*=\s*\[(.*?)\n\]/s` and reported `PRETRIP_CATEGORY_ORDER` — a list of
+plain strings with no fields in it. The lazy capture ran past its own closing bracket into the
+next declaration. Rewritten to walk the file line by line.
+
+**Three of these four are the same mistake: a pattern matching more than its author pictured.**
+Regexes over source are guard-writing's sharpest tool and its commonest way to be wrong, and the
+only defence that works is to break the guard and watch it go red — twice, in two different ways.
+
+---
+
+## D-113 — The canonical registry has no events table, and two product documents build on one
+
+**Raised:** 2026-09-18, reading the source for `trip_events` on the owner's instruction.
+
+**STOS-DB §37** names the table outright:
+
+> **TRIP EVENT LOG** — "Do not overwrite every historical status. Maintain: `trip_events`."
+> Examples: PLANNED, ASSIGNED, DISPATCHED, STARTED, GATE_IN, PORT_ENTRY, PORT_EXIT, DELIVERED
+
+**STOS-DB §38** makes it the architecture: *"Current status = latest valid state. History =
+events."*
+
+**STOS-CTD** goes further and builds the Digital Passport on it — §31's worked timeline, §32's
+"timeline must combine events from all connected systems", §33's source vocabulary, §34's
+immutability rule, §35's filters, §101's "the Passport should have access to a chronological
+event stream", §133 listing `Events` among the eighteen records the Passport is composed from.
+
+**Step 11's DB_Registry does not contain it.** DB-001…DB-020 cover orders, trips, assignments,
+vehicles, drivers, costs, advances, expenses, documents, exceptions, risks, bills, collections,
+settlements, profit snapshots, rates, customers, suppliers, documents and policies — and no
+events table. There are correspondingly no `DB_Fields` rows, no `API_Registry` row, no
+`Permissions` row and no `Event_Registry` entry for it.
+
+So the registry that is supposed to be canonical is silent about the one table two product
+documents treat as the spine of the Passport.
+
+### Why this one is different from D-38 and D-45
+
+Those recorded entities the registry omitted while some other document defined them in passing.
+This is an entity **STOS-DB names, gives a purpose, gives example values, and states an
+architectural principle for** — and Step 11 still has no row. It is the largest single gap
+between the product documents and the canonical registry found so far.
+
+### How it is handled
+
+The schema in `PLAN-trip-events.md` is derived from **STOS-DB §37 and CTD §§31–35, 101, 133**,
+and every column in it cites the line it comes from. Nothing is invented; where two sections
+disagree — CTD §101's nine categories against §35's seven filters — the divergence is recorded
+and put to the owner rather than silently resolved.
+
+Three further gaps follow from the same silence and are ruled in that plan rather than guessed:
+no locked `event_type` enum exists anywhere (both lists say "Example"), no permission row exists,
+and no API row exists.
+
+
+---
+
+## D-114 — Two blockers cleared and neither of us noticed, for three days
+
+**Raised:** 2026-09-19. **Not a code defect. A process one, and it cost real time.**
+
+The owner asked whether P2 or P3 might have landed something we were waiting on. Both had.
+
+| | | |
+|---|---|---|
+| **16 Sep** | **Zafar** — "a consignment can hold its own paperwork" | `TransportDocumentEntity::CONSIGNMENT` in `ALL` and `ACTIVE`, `DELIVERY_ORDER` in the type enum, `CONSIGNMENT_APPLICABLE`, and both document routes. **Every one of the three changes `REQUEST-person3-document-entity.md` asked for.** |
+| **17 Sep** | **Shivam** — `ReconcileFleetMasters` on master | D-100's blocker (a) closed. |
+
+**Our own walk of MS-001 §14, written on 18 September, recorded step 3 as "PARTIAL — LR/DO
+blocked on P3".** It had not been blocked for two days. The register said it was, the register
+was read instead of the repository, and the document went out saying we were waiting on work
+that was already done.
+
+That is the expensive failure mode: **it sends you to ask somebody for something they have
+already given you.** It nearly did exactly that here.
+
+### What was actually still open — verified against the code, not the register
+
+- `TripBill::markInvoiced()` still has no caller. The only mentions in `app/` and `routes/` are
+  our own comments saying so. **D-106 stands**, closure stays PLUMBED.
+- `FleetResourceGateway` still carries one method. **D-100 (b) and (c) stand**, so the
+  allocation repoint still cannot happen even though (a) is clear.
+- No feedback entity anywhere. **Still P3's, still unspecified.**
+
+### And nobody is at fault
+
+Neither of them announced it. **We did not announce the trip lifecycle to them either**, and
+that landed on the 17th. Three people on one repository, each shipping several times a day, is
+simply a situation where announcements are not a reliable channel — and the answer is to look
+rather than to wait.
+
+Recorded as a standing rule in `TEAM-CONTRACTS.md`: *before every block, and before any message
+saying you are blocked, fetch and check each open blocker against the code.*
+
+### D-100's status, corrected
+
+| | |
+|---|---|
+| ~~(a) no reconciliation for ambiguous plates~~ | **CLEARED 17 Sep** — `ReconcileFleetMasters` is on master |
+| (b) `FleetResourceGateway` has one method | **open** |
+| (c) Fleet's `vehicles` reads zero through Transport's paths | **open** |
+
+Two blockers, not three. The repoint still cannot happen, and for one fewer reason than the
+register said yesterday.
+
+---
+
+## D-115 — Four lifecycle events were never written live, and a backfill hid it
+
+**Raised:** 2026-09-19, during the closure walk. **Ours (P1). Fixed the same day.**
+
+### What was wrong
+
+`trip_events` had ten registered P1 types that **no code emitted**. The four that mattered were
+`trip.created`, `trip.submitted`, `vehicle.allocated` and `pretrip.passed` — the opening half of
+every trip's timeline.
+
+### Why nobody saw it, including the person who walked the screen
+
+`BackfillTripEvents` reconstructs a dozen types from the audit trail. It had been run, so **every
+existing trip already had those rows** and every timeline on screen looked complete. MS-001 §14
+step 14 was walked in a browser on 18 September and marked **WORKS**, correctly — the screen was
+right. The rows behind it were reconstructions.
+
+A trip created after the backfill would simply have been missing four lines. Nothing would have
+failed, nothing would have logged, and the gap would have been noticed whenever somebody
+eventually compared an old trip's timeline with a new one.
+
+It was found by reading trip 43's rows after the closure walk and asking, of each one, *where did
+this come from* — not by any test and not by looking at the screen.
+
+### The fix
+
+Ten live recorder calls, each after its transaction commits, matching the five that already
+existed:
+
+| Type | Where |
+|---|---|
+| `trip.created` | `TransportTripService::createFromOrder` |
+| `trip.submitted` | `TransportTripService::submitForViability` |
+| `trip.returned` | `TransportTripService::reject` |
+| `vehicle.allocated`, `driver.allocated` | `AllocationService::assign` |
+| `crew.released` | `AllocationService::release` |
+| `pretrip.passed` | `PretripService::passPretrip` |
+| `exception.acknowledged` | `TripExceptionService::acknowledge` |
+| `container.created`, `container.attached`, `container.detached` | `ContainerService` |
+| `consignment.created` | `ConsignmentService::create` |
+
+`exception.acknowledged` deserves its own line: `raise` and `resolve` both recorded and this one
+did not, so a timeline showed an exception appearing and disappearing with nothing between — and
+the SLA clock, which starts there, started invisibly.
+
+Confirmed live rather than assumed: `TRP-2026-000036` was created on the dev database and its
+first three events read **LIVE**, not `BACKFILLED`.
+
+### The guard, and what it caught immediately
+
+`TripEventEmissionTest` pins the set of declared-but-unemitted types. It does not forbid the gap —
+declaring P2's telemetry and P3's billing vocabulary before the work lands is deliberate — it
+requires that the unemitted set is **exactly** the documented one, so both a new silent type and a
+deleted emitter go red.
+
+It was broken two ways before being trusted: deleting a live emitter (named `pretrip.passed`) and
+declaring a new type with no emitter (named `trip.rerouted`).
+
+**Two was not enough.** Merging `origin/master` an hour later brought nine emitters — five of P3's
+(`e0077b00`) and four of P2's (`79815f29`) — and **the guard stayed green through all of them.** It
+matched the type only as a FIRST POSITIONAL ARGUMENT, and both of them had used the named form:
+
+```php
+record('trip.closed', trip: $t)         // P1's dialect — seen
+record(type: 'invoice.posted', ...)     // P2's and P3's — invisible
+```
+
+So on the day two sections shipped nine emitters, a test whose entire job was to notice emitters
+reported that none of them existed — and it mis-reported one of **our own** calls the same way,
+`TripEventRecorder::correct()`, which had been emitting `event.corrected` in the named form all
+along. The allow-list built from that scan was wrong about four different people's code, including
+the author's.
+
+Fixed to read both forms and both branches of a ternary (`type: $x ? 'genset.off' : 'genset.on'`
+emits both, and crediting one leaves the other looking silent). Then broken two more ways: deleting
+a named-argument emitter, and gutting one branch of a ternary. Both named the right type.
+
+**The lesson, which is more general than this test: a guard that only recognises the dialect its
+author happens to write is a mirror, not a guard.** Three of this project's guards have now failed
+in this exact shape — the two comment-stripping regexes, the datetime scanner that missed indirect
+config consumption, and this one. Every time, the guard was correct about the code its author had
+in mind and blind to the code somebody else wrote.
+
+It also immediately contradicted the hand-run grep used to write its own allow-list: that grep had
+counted `genset.on` as emitted, because the only occurrence outside the registry is **an example
+in `TripEventRecorder`'s docblock**. The test was right and the grep was wrong.
+
+That is also why `AllocationService` writes its two calls out longhand instead of looping a
+`[$type => $id]` table: **a type assembled from a variable is a type the audit cannot see.**
+
+### The general lesson
+
+*A screen populated by a migration proves nothing about the code that is supposed to populate it.*
+Walking the screen is necessary and was not sufficient here. Where data can arrive by more than one
+route, the question is not "is it there" but "what put it there".
+
+---
+
+## D-116 — Telemetry joins the trip on a raw id across two vehicle namespaces
+
+**Raised:** 2026-09-19, walking MS-001 §14 step 8. **P2's code (`TripTimelinePublisher`). Raised,
+not fixed.** Blocked behind **D-100(c)**.
+
+### What it does
+
+`TripTimelinePublisher::openTripFor()` finds the trip a reading belongs to like this:
+
+```php
+DB::table('transport_trips')
+    ->where('tenant_id', $vehicle->company_id)
+    ->where('vehicle_id', $vehicle->id)          // <- a FLEET vehicle id
+    ->whereIn('status', self::LIVE_TRIP_STATES)
+```
+
+`$vehicle` is `App\Domains\Fleet\Models\Vehicle`. `transport_trips.vehicle_id` holds a
+`transport_vehicles` id — **P1's placeholder table, which is exactly what D-100(c) says has not
+been repointed yet.** The two tables issue ids independently and there is no foreign key on the
+column, so the comparison is two unrelated integers.
+
+### Today it is silent; the day it is not, it is wrong
+
+On the dev database the ranges happen not to overlap — Fleet holds ids 1–2 and
+`transport_vehicles` holds 35–36 — so every reading is dropped by the `if (! $trip) return;`
+branch, which reads as "a truck idling in the yard". **Step 8 is therefore still NOT REACHABLE,
+and not for the reason the walk document gave.** It is not a missing read contract any more; the
+contract is built and joins on the wrong key.
+
+Constructed the collision to see which failure it is. A trip was set `in_transit` with
+`vehicle_id = 1`, and a reading was published for **Fleet** vehicle 1 (`MH12DEMO01`):
+
+```
+gps.activated        —  Tracking active on MH12DEMO01
+temperature.reading  —  4.2°C on MH12DEMO01
+```
+
+Both landed on that trip, **naming a truck that is not the truck the trip's `vehicle_id` refers
+to.** So this is not a "no data yet" defect. It is a silent wrong-join that produces no error, no
+log line and a plausible-looking timeline entry. The rows were removed afterwards and the trip put
+back.
+
+### Why it is worth raising now rather than after the repoint
+
+Because the repoint is what makes the ids collide. Today the mismatch is invisible; the moment
+Transport's allocation starts writing Fleet ids into that column, some trips will carry Fleet ids
+and the older rows will still carry `transport_vehicles` ids, and **both will match something.**
+The safest moment to fix the join is before the two id spaces are mixed in one column.
+
+### Not ours to fix
+
+`TripTimelinePublisher` is P2's file and the standing rule is not to edit another section's code
+to make our step pass. Raised in `NOTE-person2-telemetry-joins-on-the-wrong-vehicle-id.md`.
+
+### P2's fix, same day — better, and still open
+
+`6842b70a` — *"the id finds the candidate, the plate decides"*. The id narrows the candidates, the
+registration decides, and a mismatch fails closed with a logged warning. Right shape. Re-ran the
+collision experiment against it; two findings, and the defect stays open for the second.
+
+**It does not reach the plate check on our data.** The candidate set is the Fleet vehicle's own id
+plus its `legacy_transport_vehicle_id` — 29 and 30 — while the live `transport_vehicles` rows for
+those trucks are 35 and 36, and trips point at 10, 17 and 35. Nothing overlaps, so every reading
+finds no candidate and is dropped. The *correct* case was tested explicitly: a trip on
+`transport_vehicles#35`, genuinely the same truck as Fleet #1, is **blocked**. Step 8 still shows
+nothing. That half is stale data, not code — `stos:reconcile-fleet` reports both vehicles
+unmigrated, which is the same fact from the other end.
+
+**The one case that publishes is the one that should not.** `platesFor()` looks the id up in
+**both** masters and unions the result. When the `transport_vehicles` row is absent, the only plate
+returned is Fleet's own — read with the trip's id — so the check compares the Fleet vehicle's plate
+against itself and always agrees:
+
+```
+platesFor(1) -> ['MH12DEMO01']   (from `vehicles`; transport_vehicles#1 does not exist)
+$plate       ->  'MH12DEMO01'    (the same vehicle)   => true => publish
+```
+
+Not hypothetical: trips 2, 12 and 14 hold `vehicle_id` 10 and 17, neither of which exists in
+`transport_vehicles`. The day Fleet issues an id 10 or 17, that truck's telemetry lands on trips
+that carried different trucks.
+
+Suggested to P2 in `NOTE-person2-d116-nearly-the-plate-check-confirms-itself.md`: resolve the
+candidate's plate **only** in `transport_vehicles` while that is what the column means, and treat a
+missing row as unknown rather than as a match.
+
+### What this does to the repoint
+
+**Held**, on the lead's sequencing call, and this strengthens it. `stos:repoint-trip-fleet-refs`
+(dry run, 19 Sep) reports **0 rows on all four columns**, which reads as "nothing to do" and is not
+that: the stored mapping points at `transport_vehicles` 29 and 30, rows a reseed replaced. A
+repoint today would change nothing **and** leave every trip pointing at the placeholder table.
+
+Order: fix the mapping → P2's plate check starts firing → then repoint.
+
+### FIXED — P2, 2026-09-19, `2edbb24b`
+
+Both halves, plus the thing neither note named: the stale mapping was hiding the **right** trip as
+well as exposing the wrong one, and it hid it through the "idling in the yard" branch, which looks
+identical to a healthy truck on screen. That is why step 8 read as no data rather than as an error.
+
+**The plate is read in one table.** `legacyPlateFor()` resolves only in `transport_vehicles`, which
+is what the column means before the repoint, and a missing row is *unknown* rather than a match.
+P1's suggestion, taken as written.
+
+**The switch is no longer a remembered edit.** The references the repoint cannot map stay in the
+old id space afterwards, so pointing the lookup at Fleet "when the meaning changes" would recreate
+this defect inside repointed data — with trips 2, 12 and 14 as the first three cases.
+`stos:repoint-trip-fleet-refs --apply` now writes a verdict for every reference it looks at, into a
+new Fleet-owned table `fleet_reference_repoints`:
+
+| verdict | meaning |
+|---|---|
+| `to_id` = a Fleet id | moved; this is what the number means now |
+| `to_id` = `NULL` | pointed at a row that is gone; left alone, never matchable |
+| no row | raised after the switch, so already in the new space |
+
+`openTripFor()` asks the ledger first, the company-level switch second, the legacy plate third.
+No schema of P1's changed, and the repoint is now reversible.
+
+**The plate finds candidates as well as confirming them,** so step 8 works before the mapping is
+repaired rather than after it. `transport_vehicles` is unique on (tenant, normalised plate), so it
+adds at most one id.
+
+**`stos:reconcile-fleet` stops calling one match an ambiguity.** Three outcomes — not inserted,
+repairable, genuinely ambiguous — and `--relink` repairs only the middle one, refusing when two
+live legacy rows claim one Fleet vehicle. The dry run no longer prints a clean `0` for both "done"
+and "the map matches nothing", and `--apply` refuses to strand references without `--force`.
+
+**Eight of P2's own tests were passing because of this defect** — `TripTimelineTest` pointed the
+trip at a Fleet id with no legacy row behind it, which is the self-confirming arrangement itself.
+The setup now builds the pre-repoint world, and asserts the two id ranges do not overlap.
+
+Verified against dev data and rolled back: same truck publishes, wrong truck blocks, dangling id
+blocks. Suite 1,438 passing. Reply in `CLOSED-person1-d116-and-the-stale-mapping.md`.
+
+### The general lesson, and it is the same one twice
+
+*Reasoning that something is safe is not the same as making it safe.* D-109 was documented as a
+hazard and shipped armed; D-116 round one was documented as "correct, not a bug" and was luck;
+round two replaced the luck with a check that could not fail. Each time the gap was between an
+argument and a mechanism. **What made the difference both times was P1 constructing the case
+instead of reading the code** — and the second time, doing it to a fix rather than to the original.
+
+---
+
+### VERIFIED BY P1, 2026-09-19 — the code half is closed. The DATA half is not, yet.
+
+Re-ran the collision experiment rather than accepting the closure, because the first D-116 fix was
+also reported closed and was not. **Five cases this time, three before the switch and two after.**
+
+| Trip's `vehicle_id` points at | Want | Got |
+|---|---|---|
+| The same truck (`transport_vehicles#35`) | publish | **publish** ✅ |
+| A different truck (`#36`) | block | **block** ✅ |
+| A dangling id that equals a live Fleet id (`1`) | block | **block** ✅ |
+| *(post-switch)* correctly repointed `35 → 1`, ledger `to_id = 1` | publish | **publish** ✅ |
+| *(post-switch)* unmappable row left in the old space, ledger `to_id = NULL` | block | **block** ✅ |
+
+The last row is the one that matters most, and it is the scenario the repoint was held for. It
+behaves correctly. `legacyPlateFor()` resolves in one table and treats a missing row as unknown —
+P1's suggestion taken as written — and `fleet_reference_repoints` is **read** by the publisher, not
+merely written by the command, which was the first thing checked after D-115.
+
+**The misleading dry run is fixed too.** It no longer says "0 rows" and stops; it now reports
+*"0 to move, 5 pointing at ids that no longer map"* and names the likely cause. That was the
+second half of the original finding.
+
+### What is still open: the mapping itself is stale, and a repoint today still moves nothing
+
+`stos:reconcile-fleet` now diagnoses it precisely instead of advising a fix for a problem that did
+not exist:
+
+```
+· #35 MH 12 DEMO 01 — Fleet #1 (link points at #29, which is gone). Repairable.
+· #36 MH 14 DEMO 02 — Fleet #2 (link points at #30, which is gone). Repairable.
+```
+
+A `--relink` flag now exists to repair it. **It has not been run** — it is a write, and it is not
+in the sequence agreed with the owner. Simulated in a rolled-back transaction, this is exactly what
+it would unlock:
+
+| | After `--relink` |
+|---|---|
+| Mapping | `{35 → 1, 36 → 2}` |
+| `transport_trips.vehicle_id` | **2 would move**, 3 still unmappable |
+| `trip_assignments.vehicle_id` | **3 would move**, 0 unmappable |
+
+Those 3 permanently unmappable trip references are the dangling `10` and `17` on trips 2, 12 and
+14 — the reseed's leftovers, and the same rows that made the original defect dangerous. They are
+handled by design: the ledger records `to_id = NULL` and the publisher refuses to match them,
+which is the fifth row of the table above.
+
+**So: the code is closed and proven; the data is one command away.** A repoint run before that
+command would still move nothing, which is why this is being reported rather than pushed through.
+
+---
+
+## D-117 — CTD names eleven search keys in §4 and nine in §97, and two of them have nowhere to look
+
+**Raised:** 2026-09-19, reading §4 and §5 before proposing the search entry point. **Ours to ask,
+not to decide.**
+
+### The contradiction
+
+| Source | Keys | Notes |
+|---|---|---|
+| **§4 PRIMARY SEARCH KEY** | **11** | Container *(preferred)* + LR, DO, Transport Order, Trip, Customer Reference, Vehicle, Driver, Invoice, **POD**, **Internal Consignment ID** |
+| **§97 SEARCH API** | **9** | The same list **minus POD Number and Internal Consignment ID** |
+| **§150 NON-NEGOTIABLE** | **3** | Only *"Container Number must be a primary search key"* and *"LR and DO must be searchable"* |
+
+The two keys §97 drops are exactly the two that do not resolve today, which suggests the §4 list
+was written as an aspiration and §97 as the buildable subset. Nothing in the package says which
+governs, so this is recorded rather than resolved by picking the convenient one.
+
+### POD Number has no field anywhere
+
+`trip_documents` — the table that actually holds PODs — carries `file_path`, `file_name`,
+`file_mime`, `file_size`, `file_hash`, `status`, `verified_by`, `verified_at` and **no
+`document_number`**. A POD in this system is a file attached to a trip, not a numbered artefact.
+
+`transport_documents` does have a `document_number` and lists `pod` among its types, but PODs are
+not filed there — the POD path is `TripDocumentService` and `trip_documents`.
+
+So "search by POD number" cannot be built without (a) a schema change, (b) a ruling on who issues
+the number, and (c) a format. **None of the three is specified.** §97 and §150 both omit POD, which
+is consistent with it never having been designed as a numbered entity.
+
+**Recommendation: do not invent one.** Say "POD numbers cannot be searched" on screen until
+somebody specifies it. Inventing a numbering scheme here is precisely what Hard Rule 1 forbids.
+
+### Internal Consignment ID already works
+
+Read as `consignment_number`, it resolves today — `CNM-2026-000034` finds its consignment. If the
+document means a different identifier, no section defines one, and that is a question for the
+owner rather than a build.
+
+### Also corrected
+
+`CommandPalette.jsx`'s docblock says §4 lists "nine entry points". It lists eleven. Ours, wrong
+since the palette was written, and to be fixed with whatever ships from
+`PROPOSAL-search-as-the-entry-point.md`.
+
+### RULED 2026-09-19 — the three answers, and the divergence they authorise
+
+**Q1 — a trip number goes to the trip page, not to the passport. APPROVED, with two conditions.**
+
+This is a deliberate departure from §4's letter — *"all relevant search paths must ultimately lead
+to the same Digital Passport"* — and it is recorded here because **an undocumented divergence is
+indistinguishable from an oversight.** The next person to read §4 against the code would otherwise
+"fix" it.
+
+The owner's reasoning, kept verbatim in substance: *§4's intent is traceability — that the whole
+story is always reachable — not that every screen is the same screen. Someone typing
+`TRP-2026-000034` is a dispatcher who wants the working screen, and landing them on a traceability
+view would be answering a question they did not ask.*
+
+| Condition | Status |
+|---|---|
+| The passport must be **one obvious click** from the trip page | **Met.** It was not: "What is being moved" linked to the consignment drawer and read as cargo detail. The trip payload now carries its container and the trip page opens with *"Open the full journey of sgoe-402215-9 → Everything that has happened to this container"*, above the fold. Clicked in a browser; it lands on `/app/transport/containers/23`. |
+| Log the divergence with the reasoning | This entry, plus `test_a_trip_number_deliberately_goes_to_the_trip_and_not_the_passport`, which pins it in the suite so it cannot be silently "corrected". |
+
+**Q2 — Internal Consignment ID = `consignment_number`. CONFIRMED.** Already the established
+reading: `SCHEMA-PROPOSAL-consignment-container.md` cited "CTD §4 Internal Consignment ID" as the
+source for that column on 11 September.
+
+**Q3 — do not invent a POD number. CONFIRMED.** The answer we give is: *"not searchable yet,
+because a POD here is a file attached to a trip rather than a numbered artefact."* Inventing a
+numbering scheme to satisfy a search key would be D-9 for the fifth time. Kept in this entry so
+whoever eventually specifies POD numbering finds the reason it was left alone.
+
+### And one thing the brief attributed to the wrong cause
+
+The proposal records this in full, but it belongs here too: **a vehicle number failing to reach a
+Digital Passport is not caused by D-110/D-116.** The chain
+
+```
+MH12DEMO01 → transport_vehicles #35 → TRP-2026-000034 → consignment 34 → container 23
+```
+
+resolves end to end today, inside our own id namespace. The only reason a plate stops at Fleet's
+list is that `TransportSearchService::vehicle()` returns that path and follows through no further —
+a leftover from D-62, never revisited against §4. What genuinely waits on the repoint is a plate
+held by Fleet and not by our placeholder table.
+
+---
+
+## D-118 — the driver half of the reconcile counts links instead of checking them
+
+**Raised:** 2026-09-19, preparing the repoint. **P2's command. Raised, not fixed.**
+**Blocks the repoint** — found before `--relink` was run, not after.
+
+### The same stale-link damage as vehicles, on drivers, unreported
+
+| | Live rows | What the link says |
+|---|---|---|
+| Vehicles | `transport_vehicles` 35, 36 | `legacy_transport_vehicle_id` 29, 30 — **reported as repairable** ✅ |
+| Drivers | `transport_drivers` 39, 40 | `legacy_transport_driver_id` 33, 34 — **reported as fine** ❌ |
+
+Both were broken the same way by the same reseed. The vehicle side now diagnoses it precisely
+(*"link points at #29, which is gone. Repairable."*). The driver side says:
+
+```
+Drivers: 2 legacy rows — 2 have a Fleet profile.
+```
+
+Which is **true and misleading**. `reconcileDrivers()` counts `driver_profiles` rows whose
+`legacy_transport_driver_id` is not null. It never asks whether that id points at a driver that
+exists. Two profiles do carry a legacy id; neither carries one of the two that are actually there.
+
+### What it costs
+
+`--relink` is vehicle-only by its own help text — *"repair links where exactly one Fleet vehicle
+carries the plate"*. So running it today repairs half the problem and leaves the other half
+looking healthy:
+
+| After `--relink` as it stands | |
+|---|---|
+| `transport_trips.vehicle_id` | 2 move, **0 unmappable** |
+| `transport_trips.driver_id` | 0 move, **2 unmappable** |
+| `trip_assignments.vehicle_id` | 3 move, **0 unmappable** |
+| `trip_assignments.driver_id` | 0 move, **3 unmappable** |
+
+Five driver references would be written into `fleet_reference_repoints` as permanent `to_id = NULL`
+— the ledger entry that means *"this row points at something that no longer exists; never match
+it"*. Permanent, in a ledger, for rows that are repairable in one pass.
+
+### The fix is the exact analogue of the plate, and it is already half-built
+
+`driver_profiles` carries `licence_number` **and `licence_normalized`** — the same shape as the
+vehicle side's plate normalisation. The licences match one-to-one today:
+
+```
+driver_profile #2  RJ14 2019 0011221  ->  transport_drivers #39
+driver_profile #3  MH12 2020 0033445  ->  transport_drivers #40
+```
+
+Simulated in a rolled-back transaction, with the three junk trips cleared and both halves
+relinked:
+
+```
+transport_trips    vehicle_id   2 would move, 0 unmappable
+transport_trips    driver_id    2 would move, 0 unmappable
+trip_assignments   vehicle_id   3 would move, 0 unmappable
+trip_assignments   driver_id    3 would move, 0 unmappable
+```
+
+**Everything reaches zero.** No permanent NULLs in the ledger at all, which is the condition the
+owner set for the repoint going ahead.
+
+### Also found: there is no way to remove a trip through the services
+
+The three junk trips (2, 12, 14 — one of them numbered `TRP-Hyxjpm`, a test fixture) hold
+`vehicle_id` and `driver_id` with **zero assignment rows**, which is a state the services cannot
+produce. `AllocationService::release()` works from a `TripAssignment` and there is none, so it
+cannot reach them; there is no `cancelled` state in `TripStatus`, no delete route and no delete
+method. `TransportTrip` uses `SoftDeletes`, so the model's own mechanism exists — but nothing
+above it does. Recorded because "clear it through the real services" is not currently possible for
+a trip, and that is worth knowing before somebody needs it on real data.

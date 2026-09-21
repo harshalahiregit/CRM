@@ -198,6 +198,7 @@ const TicketThread = lazy(() => import('@/modules/helpdesk/components/TicketThre
 const PublicArticle = lazy(() => import('@/modules/helpdesk/public/PublicArticle'))
 const PublicKb = lazy(() => import('@/modules/helpdesk/public/PublicKb'))
 const PublicTicketView = lazy(() => import('@/modules/helpdesk/public/PublicTicketView'))
+const PublicSupport = lazy(() => import('@/modules/helpdesk/public/PublicSupport'))
 
 // SIRE Module (lazy) -- the engineering defect track. Not the Helpdesk: a ticket
 // closes when the requester is satisfied, a SIRE case when the fix ships verified.
@@ -258,11 +259,13 @@ const PurchaseLayout = lazy(() => import('@/modules/purchase/PurchaseLayout'))
 
 // Sangoe Transport OS (STOS) — SNG-TRN-006 orders, SNG-TRN-007 trips.
 const TransportLayout      = lazy(() => import('@/modules/transport/TransportLayout'))
+const TransportFinder      = lazy(() => import('@/modules/transport/pages/TransportFinder'))
 const TransportOrders      = lazy(() => import('@/modules/transport/pages/TransportOrders'))
 const TransportOrderDetail = lazy(() => import('@/modules/transport/pages/TransportOrderDetail'))
 const TransportTrips       = lazy(() => import('@/modules/transport/pages/TransportTrips'))
 const TransportConsignments = lazy(() => import('@/modules/transport/pages/TransportConsignments'))
 const TransportContainers = lazy(() => import('@/modules/transport/pages/TransportContainers'))
+const ContainerPassport = lazy(() => import('@/modules/transport/pages/ContainerPassport'))
 const TransportTripDetail  = lazy(() => import('@/modules/transport/pages/TransportTripDetail'))
 const TransportVehicles    = lazy(() => import('@/modules/transport/pages/TransportVehicles'))
 const TransportVehicleDetail = lazy(() => import('@/modules/transport/pages/TransportVehicleDetail'))
@@ -912,12 +915,17 @@ export default function AppRoutes() {
         {/* Sangoe Transport OS — orders and trips only; later clusters arrive
             with the tickets that build them. */}
         <Route path="transport" element={<S><TransportLayout /></S>}>
-          <Route index element={<Navigate to="orders" replace />} />
+          {/* CTD §4 — "the preferred entry point". This slot held a redirect to
+              the Orders list, which meant Transport opened on a table and the
+              one search that understands transport identifiers was reachable
+              only from inside the Containers page or from ⌘K. */}
+          <Route index element={<S><TransportFinder /></S>} />
           <Route path="orders" element={<S><TransportOrders /></S>} />
           <Route path="orders/:id" element={<S><TransportOrderDetail /></S>} />
           <Route path="trips" element={<S><TransportTrips /></S>} />
           <Route path="consignments" element={<S><TransportConsignments /></S>} />
           <Route path="containers" element={<S><TransportContainers /></S>} />
+          <Route path="containers/:id" element={<S><ContainerPassport /></S>} />
           <Route path="trips/:id" element={<S><TransportTripDetail /></S>} />
           {/* Fleet (Person 2), merged in 2026-09-17 — D-62.
               P1's placeholder Vehicles/Drivers screens are unrouted here rather
@@ -1141,6 +1149,9 @@ export default function AppRoutes() {
       <Route path="/kb/a/:slug" element={<S><PublicArticle /></S>} />
       <Route path="/kb/:key" element={<S><PublicKb /></S>} />
       <Route path="/ticket/:ref" element={<S><PublicTicketView /></S>} />
+      {/* The shareable support link. Same widget key as /kb/:key and the embed
+          snippet, so one key gives a site its help centre AND its contact form. */}
+      <Route path="/support/:key" element={<S><PublicSupport /></S>} />
 
       {/* Public Web-to-Lead form (no auth) */}
       <Route path="/f/:token" element={<S><PublicLeadForm /></S>} />

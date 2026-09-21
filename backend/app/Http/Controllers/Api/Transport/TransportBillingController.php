@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Transport;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponse;
+use App\Http\Requests\Transport\MarkInvoicedRequest;
 use App\Services\Transport\TransportTripService;
 use App\Services\Transport\TripBillingService;
 use Illuminate\Http\JsonResponse;
@@ -57,6 +58,30 @@ class TransportBillingController extends Controller
         return $this->success(
             $this->billing->prepare($trip, $tenantId, $request->user()),
             'Billing prepared', 201
+        );
+    }
+
+    /**
+     * Accounts has raised the invoice — STT-010, `billable → billed`.
+     *
+     * THE ROUTE THAT WAS MISSING (D-106). `TripBill::markInvoiced()` shipped on
+     * the 17th with no caller and no route, which left `collection_pending`
+     * unreachable and P1's closure work plumbed but dead. A handover is not
+     * complete when the method exists — only when the other side can reach it.
+     *
+     * Records the linkage and moves the trip. It does NOT create an invoice;
+     * EVT-010 `InvoicePosted` is Accounts' to emit. FORBID-002, LOCK-004.
+     */
+    public function invoiced(MarkInvoicedRequest $request, int $tripId): JsonResponse
+    {
+        $tenantId = $request->user()->tenant_id;
+        $trip     = $this->trips->find($tripId, $tenantId);
+
+        return $this->success(
+            $this->billing->markInvoiced(
+                $trip, (int) $request->input('invoice_id'), $tenantId, $request->user()
+            ),
+            'Invoice recorded'
         );
     }
 }

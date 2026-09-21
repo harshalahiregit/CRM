@@ -136,13 +136,26 @@ class TaskCommentTest extends TestCase
      */
     public function test_an_absurdly_large_comment_is_refused_with_a_readable_reason(): void
     {
+        // Restored in `finally`, because PHPUnit runs the whole suite in ONE
+        // process and `ini_set` is never rolled back: without this, every test
+        // that runs after this one inherits the cap. On a CLI default of -1
+        // (unlimited) that LOWERS the ceiling for the rest of the suite, which
+        // is why Person 1 was having to exclude this test to get a clean run.
+        //
+        // `finally` rather than a line after the assertion: this test is about
+        // something failing, and a plain restore never runs when it does.
+        $old = ini_get('memory_limit');
         ini_set('memory_limit', '512M');
 
-        $t = $this->task();
+        try {
+            $t = $this->task();
 
-        $this->comment($t, str_repeat('x', 5_000_001))
-            ->assertStatus(422)
-            ->assertJsonPath('errors.content.0', 'This comment is too large to post. Try fewer or smaller images.');
+            $this->comment($t, str_repeat('x', 5_000_001))
+                ->assertStatus(422)
+                ->assertJsonPath('errors.content.0', 'This comment is too large to post. Try fewer or smaller images.');
+        } finally {
+            ini_set('memory_limit', $old);
+        }
     }
 
     /* ── mentions: the picker's marker ───────────────────────────────────── */

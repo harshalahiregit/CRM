@@ -362,6 +362,57 @@ export default function PurchaseVendorDetailLayout() {
 }
 
 /**
+ * The six onboarding steps, in order, with the current one marked.
+ *
+ * Every step carries the server's own one-line detail ("3/7 uploaded",
+ * "2 rejected"), because "incomplete" on its own does not tell an admin what to
+ * chase. The first step that is not complete is the one to move on, and it is
+ * called out as Next rather than left for the reader to work out.
+ */
+function StepTrail({ steps, current }) {
+  const nextStep = steps.find(s => !s.complete)?.step ?? null
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 8, margin: '0 0 14px' }}>
+      {steps.map(s => {
+        const isNext = s.step === nextStep
+        const tone = s.complete ? '#0ca30c' : isNext ? '#7C3AED' : 'var(--border)'
+        return (
+          <div key={s.step}
+            style={{
+              padding: '9px 11px', borderRadius: 10,
+              border: `1px solid color-mix(in srgb, ${tone} 45%, var(--border))`,
+              background: s.complete || isNext ? `color-mix(in srgb, ${tone} 7%, transparent)` : 'transparent',
+            }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+              <span style={{
+                width: 17, height: 17, borderRadius: '50%', flexShrink: 0,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 9.5, fontWeight: 800,
+                background: s.complete ? '#0ca30c' : isNext ? '#7C3AED' : 'var(--bg-input)',
+                color: s.complete || isNext ? '#fff' : 'var(--text-muted)',
+                border: s.complete || isNext ? 'none' : '1px solid var(--border)',
+              }}>
+                {s.complete ? '✓' : s.step}
+              </span>
+              <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text-h)', lineHeight: 1.2 }}>{s.label}</span>
+            </div>
+            <div style={{ fontSize: 10.5, color: 'var(--text-muted)', paddingLeft: 23, lineHeight: 1.35 }}>
+              {s.detail || (s.complete ? 'Done' : 'Pending')}
+            </div>
+            {isNext && (
+              <div style={{ fontSize: 9.5, fontWeight: 800, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '.05em', paddingLeft: 23, marginTop: 2 }}>
+                Next step
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
  * Prominent Onboarding Decision panel — the Purchase-side mirror of the TPV
  * OnboardingDecisionPanel. Shows Step X/6 + onboarding + account status, and the
  * Approve / Hold / Reject / Send-Back actions.
@@ -379,11 +430,32 @@ function OnboardingDecisionPanel({ vendor, onboarding, onDecision }) {
   const approved = status === 'Approved'
   const accountActive = vendor.status === 'Active'
 
+  /*
+   * The six steps, named, from the server.
+   *
+   * The panel already said "Step 1 of 6", which tells an admin where the vendor
+   * is but not what the steps ARE or which one is next — the whole of
+   * SIR-000006 ("onboarding step are not visible clearly to move to the next
+   * step"). PurchaseOnboardingService::stepStatus already returns every step
+   * with its label, completion and a one-line detail, and the vendor's own
+   * portal has rendered it all along; only the admin side never asked for it.
+   */
+  const [steps, setSteps] = useState(null)
+
   useEffect(() => {
     let alive = true
     purchaseApi.documents.checklist(vendor.id).then(d => { if (alive) setDocs(d) }).catch(() => {})
     return () => { alive = false }
   }, [vendor.id])
+
+  useEffect(() => {
+    if (!onboarding?.id) return undefined
+    let alive = true
+    purchaseApi.onboarding.progress(onboarding.id)
+      .then(p => { if (alive) setSteps(Array.isArray(p?.steps) ? p.steps : null) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [onboarding?.id])
 
   const decidable = ['Submitted', 'Under_Review'].includes(status)
   const rejectedDocs = docs?.summary?.rejected ?? 0
@@ -416,6 +488,9 @@ function OnboardingDecisionPanel({ vendor, onboarding, onDecision }) {
             : decidable ? 'has completed all steps and is waiting for your decision.'
               : 'is still progressing through onboarding.'}
         </p>
+        {/* Where the vendor actually is, step by step. */}
+        {steps && <StepTrail steps={steps} current={step} />}
+
         {approved ? (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 9, padding: '10px 14px', borderRadius: 10, background: 'color-mix(in srgb, #0ca30c 12%, transparent)', border: '1px solid color-mix(in srgb, #0ca30c 30%, transparent)', color: '#0ca30c', fontSize: 12.5, fontWeight: 700 }}>
             <CheckCircle size={16} /> Step 6 — Account Activated. The vendor can now access the active portal.

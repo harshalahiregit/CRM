@@ -80,10 +80,22 @@ final class ExceptionStatus
     /**
      * FRS TRP-P0-012 only, and BR-P0-011's named override ("Owner waiver").
      *
-     * Declared because dropping it would lose the only override the evidence
-     * rule has. Unreachable because a waiver needs an authorising role and an
-     * audited reason, and no ticket in the register builds either — the same
-     * reasoning that keeps PretripReadiness::OVERRIDE_REQUIRED unwired.
+     * ── NOT IN THE VOCABULARY. Ruled 2026-09-18 — D-30 ───────────────────
+     * It used to be in ALL, under the owner's Q2 ruling of 2026-09-10
+     * ("waived declared in the enum, not wired"). The standing Step 9 / Step 11
+     * rule in TEAM-CONTRACTS supersedes that, and cleanly: the vocabulary comes
+     * from Step 9, and `waived` is the one status in this file Step 9 does not
+     * contain. It appears in FRS TRP-P0-012 and BR-P0-011 alone.
+     *
+     * So unlike in_progress, mitigation_planned, verified and closed — which
+     * ARE Step 9's, and therefore stay declared and unreachable — this one is
+     * out of ALL until it has an edge and a gate.
+     *
+     * The CONSTANT stays, because the behaviour is SPECIFIED and we are choosing
+     * not to build it yet. That is a different thing from an override nobody
+     * defined, and it is the same distinction BR-P0-017's waiver carries on the
+     * closure side: a refusal says the waiver is not built YET, never that no
+     * waiver exists. See ExceptionScope::WAIVER_DEFERRED.
      */
     public const WAIVED = 'waived';
 
@@ -96,10 +108,10 @@ final class ExceptionStatus
         self::RESOLVED,
         self::VERIFIED,
         self::CLOSED,
-        self::WAIVED,
     ];
 
-    /** Step 9's list alone, without FRS's addition. Asserted by test. */
+    /** Step 9's list. Identical to ALL since D-30 — kept because a test that
+     *  asserts the two match is what stops them drifting apart again. */
     public const STEP_9 = [
         self::OPEN, self::ACKNOWLEDGED, self::IN_PROGRESS,
         self::MITIGATION_PLANNED, self::RESOLVED, self::VERIFIED, self::CLOSED,
@@ -122,7 +134,9 @@ final class ExceptionStatus
         self::MITIGATION_PLANNED => 'Step 9 only. A mitigation plan is an entity with an owner and a date that no document models.',
         self::VERIFIED           => 'Step 9 only. Verification is STOS-REQ-QC-007 ("Verify CAPA effectiveness", P1) and belongs to the Quality domain, which has no ticket.',
         self::CLOSED             => 'Step 9 marks it terminal and ENUM-004 lists it, but no transition reaches it and no document says what closing adds beyond resolving.',
-        self::WAIVED             => 'FRS TRP-P0-012 and BR-P0-011\'s override. Needs an authorising role and an audited reason; no ticket builds either. Q2.',
+            // NOT listed: `waived` is not in the vocabulary at all (D-30), so
+            // it is not an unreachable member of one. Its deferral is recorded
+            // on the constant above.
     ];
 
     /**
@@ -150,7 +164,7 @@ final class ExceptionStatus
     ];
 
     /** Nothing further is expected. The SLA clock stops here. */
-    public const TERMINAL = [self::RESOLVED, self::VERIFIED, self::CLOSED, self::WAIVED];
+    public const TERMINAL = [self::RESOLVED, self::VERIFIED, self::CLOSED];
 
     public const LABELS = [
         self::OPEN               => 'Open',

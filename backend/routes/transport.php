@@ -5,15 +5,18 @@ use App\Http\Controllers\Api\Transport\TransportAllocationController;
 use App\Http\Controllers\Api\Transport\TransportBillingController;
 use App\Http\Controllers\Api\Transport\TransportCapabilityController;
 use App\Http\Controllers\Api\Transport\TransportCollectionController;
+use App\Http\Controllers\Api\Transport\TransportClosureController;
 use App\Http\Controllers\Api\Transport\TransportConsignmentController;
 use App\Http\Controllers\Api\Transport\TransportContainerController;
 use App\Http\Controllers\Api\Transport\TransportCostController;
 use App\Http\Controllers\Api\Transport\TransportDispatchController;
+use App\Http\Controllers\Api\Transport\TransportExceptionController;
 use App\Http\Controllers\Api\Transport\TransportDriverController;
 use App\Http\Controllers\Api\Transport\TransportOrderController;
 use App\Http\Controllers\Api\Transport\TransportPodController;
 use App\Http\Controllers\Api\Transport\TransportPretripController;
 use App\Http\Controllers\Api\Transport\TransportResourceCommitmentController;
+use App\Http\Controllers\Api\Transport\TransportSearchController;
 use App\Http\Controllers\Api\Transport\TransportTripController;
 use App\Http\Controllers\Api\Transport\TransportVehicleController;
 use App\Support\Transport\TransportPermission;
@@ -172,6 +175,26 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
         Route::post('/trips/{id}/bill', [TransportBillingController::class, 'store'])->whereNumber('id');
     });
 
+    /* ── STT-010, `billable → billed` — THE ROUTE D-106 WAS MISSING ───────
+     *
+     * `TripBill::markInvoiced()` shipped on 2026-09-17 documented as "the one
+     * door Accounts calls", with no caller and no route. Nothing could open it,
+     * so `collection_pending` was unreachable and P1's closure work — STT-012,
+     * EVT-012, the whole control set — was built on a step that had no way in.
+     *
+     * A handover is not complete when the method exists. It is complete when
+     * the other side can reach it. That is now in TEAM-CONTRACTS.
+     *
+     * Narrower than BILLING_PREPARE by exactly one role. Operations may mark a
+     * trip ready to invoice; only finance may say it WAS invoiced.
+     *
+     * Records the linkage and moves the trip. Creates no invoice and writes no
+     * ledger line — EVT-010 InvoicePosted is Accounts' to emit.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::BILLING_INVOICED)->group(function () {
+        Route::post('/trips/{id}/bill/invoiced', [TransportBillingController::class, 'invoiced'])->whereNumber('id');
+    });
+
     /* ── Collections — SNG-TRN-016, API-011 ───────────────────────────────
      *
      * The ageing report and the follow-up queue are tenant-wide, not per-trip,
@@ -325,6 +348,99 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
     Route::middleware('transport.permission:'.TransportPermission::TRIP_DISPATCH)->group(function () {
         Route::patch('/trips/{trip}/dispatch',       [TransportDispatchController::class, 'confirm'])->whereNumber('trip');
         Route::patch('/trips/{trip}/dispatch/amend', [TransportDispatchController::class, 'amend'])->whereNumber('trip');
+
+        /* ── STT-006, `dispatched → in_transit` ──────────────────────────
+         *
+         * NO API_REGISTRY ROW — D-108. STT-006 and STT-007 are the only trip
+         * transitions Step 11 does not give an endpoint; even STT-012 gets
+         * API-009. The path follows the convention already beside it.
+         *
+         * AUTHORISED 2026-09-10 by the owner's Q3 ruling — "wire it as a manual
+         * Record departure action, departed_at and departed_by columns only" —
+         * and unbuilt for a week behind comments that called it blocked (D-105).
+         *
+         * Same permission as dispatch, deliberately. Releasing the trip and
+         * recording that it rolled are one dispatcher's one job.
+         */
+        Route::patch('/trips/{trip}/depart', [TransportDispatchController::class, 'depart'])->whereNumber('trip');
+    });
+
+    /* ── STT-007, `in_transit → delivered` — RTM STOS-REQ-OPS-010, P0 ────
+     *
+     * NO API_REGISTRY ROW either — D-108, same as departure.
+     *
+     * transport.trip.deliver is DERIVED and mirrors PERM-004, NOT PERM-010.
+     * FRS TRP-P0-013 names a driver, but that row is POD capture — P3's, where
+     * the Driver already holds `own`. Confirming a trip is delivered unlocks
+     * billing for everyone downstream; submitting the proof does not.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::TRIP_DELIVER)->group(function () {
+        Route::patch('/trips/{id}/deliver', [TransportTripController::class, 'deliver'])->whereNumber('id');
+    });
+
+    /* ── STT-012, `collection_pending → closed` ──────────────────────────
+     *
+     * API-009 VERBATIM — path, method and permission key are all quoted, which
+     * is true of no other endpoint in this module.
+     *
+     *   API-009 | POST | /api/v1/transport/trips/{trip}/close | Close trip
+     *           | JWT | transport.trip.close | TripClosed | LOCKED
+     *
+     * PERM-005 gives the matrix row and DENIES the Dispatcher, which is tested
+     * as a refusal exactly as PERM-003's denial is.
+     *
+     * ── PLUMBED, NOT REACHABLE — D-106 ───────────────────────────────────
+     * Nothing can reach `collection_pending`: TripBill::markInvoiced() has no
+     * caller and no route, and that is P3's surface. The endpoint is built,
+     * routed and tested; the state it requires is currently unoccupiable. Every
+     * response says so rather than leaving a client to infer it from a 422.
+     *
+     * The GET sits on TRIP_VIEW, not TRIP_CLOSE — reading why a trip is blocked
+     * is not closing it, and TRP-P0-014's acceptance is that a user SEES the
+     * blockers before acting.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::TRIP_VIEW)->group(function () {
+        Route::get('/trips/{trip}/closure', [TransportClosureController::class, 'show'])->whereNumber('trip');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::TRIP_CLOSE)->group(function () {
+        Route::post('/trips/{trip}/close', [TransportClosureController::class, 'close'])->whereNumber('trip');
+    });
+
+    /* ── Exceptions — SNG-TRN-013, API-007 ───────────────────────────────
+     *
+     * API-007 gives the path and the permission key verbatim:
+     *   API-007 | POST | /api/v1/transport/trips/{trip}/exceptions
+     *           | Raise exception | JWT | transport.exception.create
+     *           | TripExceptionRaised | LOCKED
+     *
+     * The two transitions have no API row — Step 11 registers no endpoint for
+     * STT-015 or STT-016 — so their paths follow this module's convention (a
+     * state change is a PATCH on a named verb) and are derived, not quoted.
+     *
+     * They hang off the EXCEPTION rather than the trip, because an exception
+     * may have no trip: OPS §87's transaction field is "trip_id, and optionally
+     * vehicle/driver", and a vehicle breakdown between trips is a real thing.
+     *
+     * Raising is wider than managing, deliberately. transport.exception.create
+     * mirrors PERM-006 and includes the DISPATCHER — the person most likely to
+     * be standing next to the problem; a register nobody on the ground can
+     * write to only ever hears things second-hand. Acknowledging and resolving
+     * mirror PERM-005 and exclude them: raise, but do not sign off. The same
+     * separation POD_SUBMIT and POD_VERIFY already draw. D-31 records that
+     * Step 11 has no Exception permission row at all.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::TRIP_VIEW)->group(function () {
+        Route::get('/trips/{trip}/exceptions', [TransportExceptionController::class, 'index'])->whereNumber('trip');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::EXCEPTION_CREATE)->group(function () {
+        Route::post('/trips/{trip}/exceptions', [TransportExceptionController::class, 'store'])->whereNumber('trip');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::EXCEPTION_MANAGE)->group(function () {
+        Route::patch('/exceptions/{exception}/acknowledge', [TransportExceptionController::class, 'acknowledge'])->whereNumber('exception');
+        Route::patch('/exceptions/{exception}/resolve', [TransportExceptionController::class, 'resolve'])->whereNumber('exception');
     });
 
     /* ── Consignments — STOS-CTD §8 ───────────────────────────────────
@@ -388,6 +504,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
      */
     Route::middleware('transport.permission:'.TransportPermission::TRIP_VIEW)->group(function () {
         Route::get('/resource-commitments', [TransportResourceCommitmentController::class, 'index']);
+        // TM-001 §8 — one box, any Transport identifier. Exact matches only.
+        Route::get('/search', TransportSearchController::class);
     });
 
     /* ── Containers — STOS-CTD §7, §8 ─────────────────────────────────
@@ -420,6 +538,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
         // somebody removing the constraint.
         Route::get('/containers/lookup', [TransportContainerController::class, 'lookup']);
         Route::get('/containers/{id}',   [TransportContainerController::class, 'show'])->whereNumber('id');
+        // Container 360 — the Digital Passport. Read-only, assembled from rows
+        // that already exist. MS-001 §14 step 2.
+        Route::get('/containers/{id}/passport', [TransportContainerController::class, 'passport'])->whereNumber('id');
         // STOS-CTD §8 — a consignment may carry one container or several.
         Route::get('/consignments/{consignment}/containers', [TransportContainerController::class, 'forConsignment'])
             ->whereNumber('consignment');

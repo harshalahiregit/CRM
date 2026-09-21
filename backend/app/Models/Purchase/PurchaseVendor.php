@@ -5,6 +5,7 @@ namespace App\Models\Purchase;
 use App\Models\Traits\Auditable;
 use App\Models\Traits\BelongsToTenant;
 use App\Models\User;
+use App\Support\Purchase\PurchaseOnboardingStatus as OnboardingStatus;
 use App\Support\Purchase\PurchaseRegistrationType as RegistrationType;
 use App\Support\Purchase\PurchaseVendorStatus as Status;
 use Illuminate\Auth\Authenticatable as AuthenticatableTrait;
@@ -84,7 +85,7 @@ class PurchaseVendor extends Model implements AuthenticatableContract
         'email_verification_token', 'password_reset_token',
     ];
 
-    protected $appends = ['status_label', 'registration_type_label', 'validity_countdown'];
+    protected $appends = ['status_label', 'registration_type_label', 'validity_countdown', 'can_register_workers'];
 
     /* ── Portal auth helpers ────────────────────────────────────────────── */
 
@@ -177,6 +178,51 @@ class PurchaseVendor extends Model implements AuthenticatableContract
     public function getStatusLabelAttribute(): string
     {
         return Status::label($this->status);
+    }
+
+    /**
+     * May a workforce be registered against this vendor right now?
+     *
+     * Onboarding first, everything else after. There is no other answer.
+     *
+     * An APPROVED onboarding, or nothing — no exceptions, no fallbacks:
+     *
+     *   no onboarding record     no. Not "activated by hand, so allow it": a
+     *                            vendor with no onboarding has not onboarded.
+     *                            Both portals create the record the moment the
+     *                            vendor opens Onboarding, so this strands
+     *                            nobody — it just makes them start.
+     *   onboarding not Approved  no, whatever the status column says. The two
+     *                            disagree constantly — a vendor can sit Active
+     *                            with its onboarding at step 1 — and reading
+     *                            `status` was what let the reported vendors
+     *                            into the Add Worker picker.
+     *   stopped vendor           no, even with an approved onboarding: a
+     *                            blacklisted company does not keep adding people.
+     *
+     * An earlier pass carved out an exception for workforce categories, on the
+     * reading that their flow puts Workforce before Approvals. It is not needed:
+     * PurchaseOnboardingService::submit requires the company profile and the
+     * documents and nothing else, so no vendor has to register a worker in order
+     * to be approved. The exception only widened the hole.
+     *
+     * Exposed as one boolean so the forms never re-derive it and drift.
+     */
+    public function getCanRegisterWorkersAttribute(): bool
+    {
+        // Stopped outranks everything, including an Approved onboarding: a
+        // blacklisted vendor does not get to keep adding people.
+        if (in_array($this->status, [
+            Status::ON_HOLD, Status::REJECTED, Status::BLACKLISTED, Status::INACTIVE,
+        ], true)) {
+            return false;
+        }
+
+        $onboarding = $this->relationLoaded('onboarding')
+            ? $this->getRelation('onboarding')
+            : $this->onboarding()->first();
+
+        return $onboarding !== null && $onboarding->status === OnboardingStatus::APPROVED;
     }
 
     /**

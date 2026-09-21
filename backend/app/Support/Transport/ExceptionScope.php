@@ -142,12 +142,66 @@ final class ExceptionScope
      * Owner's Q1 ruling: declare Step 9's seven. Owner's Q2 ruling: declare
      * `waived` as well — eight in total — and wire neither it nor the five
      * Step 9 states that Step 11 does not LOCK a transition for.
+     *
+     * ── Q2 SUPERSEDED 2026-09-18 — D-29 AND D-30 BOTH RULED ─────────────
+     * D-29 dissolved without a new decision: the standing Step 9 / Step 11 rule
+     * in TEAM-CONTRACTS already answers it. Vocabulary from Step 9, edges from
+     * Step 11, and Step 11 contradicting ITSELF resolves too — SM-EXC calling
+     * `resolved` terminal is an EDGE claim, ENUM-004 listing `closed` is a
+     * VOCABULARY claim, and both are honoured at once.
+     *
+     * D-30 deferred `waived` the way BR-P0-017's waiver is deferred, and took
+     * it OUT of the vocabulary: it is the one status Step 9 does not contain.
+     * Seven, not eight.
      */
     public const STATE_RULING_SOURCE = 'Step 9 Master Product Constitution — State_Machines, Exception';
-    public const STATE_COUNT_DECLARED = 8;
+    /**
+     * Seven — Step 9's list, and nothing else.
+     *
+     * It was EIGHT until 2026-09-18, under the owner's Q2 ruling ("waived
+     * declared in the enum, not wired"). The standing Step 9 / Step 11 rule
+     * supersedes that: the vocabulary comes from Step 9, and `waived` is in FRS
+     * and BRWM alone. D-30. The RULINGS array below is left exactly as the
+     * owner wrote it — this constant records what the code does now, and the
+     * register records why the two differ.
+     */
+    public const STATE_COUNT_DECLARED = 7;
 
     public const STT_015 = 'STT-015';   // open → acknowledged
     public const STT_016 = 'STT-016';   // acknowledged → resolved
+
+    /* ── Wired 2026-09-18, once D-29 and D-30 were ruled ──────────────── */
+
+    /**
+     * The only source this ships with, and it is API-007's own act.
+     *
+     * AUTOMATIC_SOURCES below lists every rule that would raise an exception
+     * without a person; all three are unreachable. Manual is not a reduced
+     * version of automatic — it is what "Raise exception" means.
+     */
+    public const SOURCE_MANUAL = 'manual';
+
+    /**
+     * BR-P0-011's evidence requirement, in the words a refusal uses.
+     *
+     * The rule: "No critical exception can be marked resolved without
+     * resolution evidence." Q4 made the evidence note-only — BR-P0-011 asks for
+     * "note/photo/document", and photo and document need file upload, which
+     * Transport does not have at all (D-22).
+     */
+    public const BR_011_EVIDENCE = 'BR-P0-011 requires resolution evidence, and a note is the evidence this build can take (photo and document need file upload, which Transport does not have yet).';
+
+    /**
+     * The waiver sentence. D-30, and the same discipline as BR-P0-017's.
+     *
+     * It says NOT BUILT YET. It must never say or imply that no waiver exists:
+     * FRS TRP-P0-012 names `waived` as an outcome and BR-P0-011's override is
+     * "Owner waiver", so a screen claiming otherwise is misleading a user about
+     * their own rule book.
+     */
+    public const WAIVER_MESSAGE = 'BR-P0-011 allows an Owner to waive this requirement. That waiver is specified but not built yet, so there is currently no way to resolve an exception without a note.';
+
+    public const WAIVER_DEFERRED = 'FRS TRP-P0-012 names `waived` as an outcome and BR-P0-011 names the Owner role that may exercise it. Specified, not built. Deferred by the owner 2026-09-18 pending a ticket that authorises and audits one — D-30.';
 
     /* ── OPS §87 — the twelve fields an exception "must contain" ───────── */
 

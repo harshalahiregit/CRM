@@ -1,20 +1,21 @@
-# Three decisions needed before 30 September
+# Four decisions needed before 30 September
 
 **From:** Person 3 (Finance, Documents, Billing, Collections)
-**Date:** 17 September 2026 · **Deadline:** 30 September 2026 — **13 days**
-**Read time:** 3 minutes. Each question has a recommended answer; "yes to all three" is a
+**Raised:** 17 September 2026 · **Updated:** 19 September 2026
+**Deadline:** 30 September 2026 — **11 days**
+**Read time:** 4 minutes. Each question has a recommended answer; "yes to all four" is a
 valid reply.
 
 ---
 
 ## Why this page exists
 
-These three questions are recorded in `registry-defects.md` among **59 entries**. That file
-is the right place to keep evidence and the wrong place to ask for a decision, so the three
+These questions are recorded in `registry-defects.md` among 59+ entries. That file
+is the right place to keep evidence and the wrong place to ask for a decision, so the ones
 that are actually blocking work are pulled out here.
 
 None of them is a developer's call. Each is blocking something, one of them is getting more
-expensive every day, and all three can be answered in a sentence.
+expensive every day, and all four can be answered in a sentence.
 
 ---
 
@@ -120,6 +121,27 @@ tables after a clean week. And one decision inside D-62 still needs an answer fr
 because his board consumes the result: **does an expired driver licence block allocation, or
 only score it down?** Fleet currently offers the vehicle and flags the licence — the truck is
 roadworthy and swapping drivers is the smaller decision — but the spec reads as a hard block.
+
+---
+
+## 4. Is Feedback in scope for 30 September? *(added 19 Sep)*
+
+**Needs:** Product · **Affects:** step 10 of the demonstration script
+
+MS-001 §14 step 10 reads *"Record delivery, feedback and POD."* Delivery and POD are built.
+**Feedback has no entity, no field and no requirement ID anywhere in Step 11 or Step 12** —
+zero occurrences of `feedback`, `complaint` or `CAPA` across every sheet of both. Person 1
+found the same gap independently on 19 September.
+
+TM-001 §8 assigns the domain to Person 3. So it is assigned to a developer, absent from every
+authority document, and on the demonstration script.
+
+**Recommended answer:** *strike "feedback" from step 10 for R1 and record the domain as
+deferred.* Building it means inventing an entity, a vocabulary and an acceptance criterion —
+which is the one thing the developer constitution forbids.
+
+**If left open:** on 30 September it reads as a developer who did not deliver their domain,
+rather than a domain nobody specified.
 
 ---
 

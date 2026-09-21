@@ -71,6 +71,122 @@ class DriverService
     }
 
     /**
+     * Who can legally take a load right now, and who cannot — and why.
+     *
+     * ── WHY THIS EXISTS, AND WHY IT IS NOT ON THE VEHICLE ─────────────────
+     * An expired licence used to be reported against the VEHICLE, as a flag on
+     * the allocation result that scored the truck down. Person 1 pointed out
+     * that this is the wrong object: the truck is roadworthy and nothing about
+     * it has expired. Standing it down over a driver's paperwork means a
+     * dispatcher is offered a worse vehicle to solve a problem that swapping
+     * drivers fixes in seconds.
+     *
+     * So the licence is a HARD BLOCK here, on the person it belongs to, in the
+     * same `blockers[{code, why, owner}]` shape `getEligibleVehicles()` uses —
+     * so one dispatch board can render both with one component, and `owner`
+     * tells the dispatcher whose desk fixes it rather than only that it is
+     * blocked.
+     */
+    public function eligible(int $companyId, array $filters = []): array
+    {
+        $rows = $this->list($companyId, $filters)['drivers'];
+
+        $eligible = [];
+        $excluded = [];
+
+        foreach ($rows as $row) {
+            $blockers = $this->blockersFor($row);
+
+            if ($blockers === []) {
+                $eligible[] = [
+                    ...$row,
+                    'warnings' => $this->warningsFor($row),
+                ];
+
+                continue;
+            }
+
+            $excluded[] = [...$row, 'blockers' => $blockers];
+        }
+
+        // A driver with a licence about to expire is still offered, but last:
+        // a planner given the choice should take the one who will still be
+        // legal when the truck comes back.
+        usort($eligible, function ($a, $b) {
+            return count($a['warnings']) <=> count($b['warnings']);
+        });
+
+        return [
+            'eligible' => $eligible,
+            'excluded' => $excluded,
+            'counts'   => ['eligible' => count($eligible), 'excluded' => count($excluded)],
+        ];
+    }
+
+    /**
+     * What stops this person driving today.
+     *
+     * Every entry names the desk that can clear it. "Blocked" on its own sends
+     * a dispatcher hunting; "the compliance desk holds this one" does not.
+     */
+    private function blockersFor(array $row): array
+    {
+        $blockers = [];
+        $licence = $row['licence']['state'] ?? 'unknown';
+
+        if ($licence === 'expired') {
+            $blockers[] = [
+                'code'  => 'driver_license_expired',
+                'why'   => $row['licence']['message'] ?? 'Licence has expired.',
+                'owner' => 'Fleet compliance desk',
+            ];
+        }
+
+        if ($licence === 'unknown') {
+            // Not the same as expired, and deliberately still a block: nobody
+            // should be dispatched on a licence nobody has seen. It is cleared
+            // by recording one, which is why the owner differs from a renewal.
+            $blockers[] = [
+                'code'  => 'driver_license_unrecorded',
+                'why'   => 'No licence is on file for this driver.',
+                'owner' => 'Fleet compliance desk',
+            ];
+        }
+
+        $status = $row['profile']['status'] ?? null;
+
+        if ($status === null) {
+            $blockers[] = [
+                'code'  => 'driver_not_onboarded',
+                'why'   => 'This person is in the directory but has no driver record yet.',
+                'owner' => 'Fleet office',
+            ];
+        } elseif ($status !== 'available') {
+            $blockers[] = [
+                'code'  => 'driver_unavailable',
+                'why'   => 'This driver is '.str_replace('_', ' ', (string) $status).'.',
+                'owner' => 'Fleet office',
+            ];
+        }
+
+        return $blockers;
+    }
+
+    /** Not blocking, but a planner should see it before choosing. */
+    private function warningsFor(array $row): array
+    {
+        if (($row['licence']['state'] ?? null) !== 'expiring') {
+            return [];
+        }
+
+        return [[
+            'code'  => 'driver_license_expiring',
+            'why'   => $row['licence']['message'] ?? 'Licence expires soon.',
+            'owner' => 'Fleet compliance desk',
+        ]];
+    }
+
+    /**
      * Record what Transport knows about a person from the directory.
      *
      * The person must EXIST in the directory first — an overlay pointing at

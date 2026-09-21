@@ -10,6 +10,7 @@ use App\Models\Purchase\PurchaseWorkerPpeIssue;
 use App\Models\Purchase\PurchaseWorkerTraining;
 use App\Services\Purchase\PurchasePpeService;
 use App\Services\Purchase\PurchaseWorkforceService;
+use App\Support\Medical\DoctorOptions;
 use Illuminate\Http\Request;
 
 /**
@@ -264,9 +265,28 @@ class PurchaseWorkforceAdminController extends Controller
             'size'       => 'nullable|string|max:40',
             'issued_at'  => 'nullable|date',
             'notes'      => 'nullable|string|max:2000',
+            'warehouse_id' => 'nullable|integer',
         ]);
 
-        return response()->json($ppe->issue($worker, $data, $request->user()), 201);
+        /*
+         * The two names have to be reconciled here, and they never were.
+         *
+         * This endpoint speaks the catalogue's language -- ppeCatalogue() returns
+         * `product_id`, so that is what a caller sends. PurchasePpeService::issue
+         * reads `inventory_item_id` and `issued_date`. Neither key was ever
+         * translated, so every admin issue resolved a null product and came back
+         * 404 "That PPE item does not exist in Inventory", and a chosen date was
+         * silently dropped. The route had no test and nothing in the UI called
+         * it, so it stayed broken (SIR-000013).
+         */
+        return response()->json($ppe->issue($worker, [
+            'inventory_item_id' => $data['product_id'],
+            'qty'               => $data['qty'] ?? 1,
+            'size'              => $data['size'] ?? null,
+            'issued_date'       => $data['issued_at'] ?? null,
+            'notes'             => $data['notes'] ?? null,
+            'warehouse_id'      => $data['warehouse_id'] ?? null,
+        ], $request->user()), 201);
     }
 
     /**
@@ -441,7 +461,13 @@ class PurchaseWorkforceAdminController extends Controller
             // Examination depth — vitals, the scored screening, and the §16
             // capture. Recorded as data rather than folded into remarks, so the
             // fitness bands are computed instead of re-read out of a sentence.
-            'exam_type'           => 'nullable|string|max:60',
+            // Which in-house doctor was picked, if any. Everything else about
+            // them (licence, council, clinic) is looked up server-side from the
+            // directory -- never taken from the browser. See DoctorOptions.
+            'doctor_user_id'      => 'nullable|integer',
+            // Constrained, matching TPV's FormRequest. This accepted any
+            // 60-character string, so a typo became a new exam type.
+            'exam_type'           => 'nullable|in:internal,external',
             'clinic_name'         => 'nullable|string|max:150',
             'height_cm'           => 'nullable|numeric|between:100,250',
             'weight_kg'           => 'nullable|numeric|between:20,300',
@@ -476,6 +502,10 @@ class PurchaseWorkforceAdminController extends Controller
         // someone else or claim a different origin.
         $data['recorded_by'] = $request->user()->id;
         $data['system_ip']   = $request->ip();
+
+        // A picked in-house doctor becomes the record's doctor identity, copied
+        // from the directory rather than retyped. See DoctorOptions.
+        $data = DoctorOptions::applyTo($data, (int) $request->user()->tenant_id, 'purchase');
 
         return response()->json($this->service->saveMedical($worker, $data));
     }

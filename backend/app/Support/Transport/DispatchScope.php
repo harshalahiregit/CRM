@@ -69,11 +69,23 @@ final class DispatchScope
      *
      * Under SNG-TRN-010's Q1 ruling, STT-005 is served by Step 9's two edges:
      * its precondition and side effect landed on `allocated → pretrip_ok`, and
-     * its destination lands here. STT-006 (dispatched → in_transit) stays
-     * unwired — that is the Transit half of SNG-TRN-013, which is blocked.
+     * its destination lands here.
+     *
+     * ── STT-006 IS NO LONGER DEFERRED — D-105 ────────────────────────────
+     * This constant said, for a week, that dispatched → in_transit was blocked.
+     * It never was: the owner authorised it on 2026-09-10 in the SAME message
+     * that authorised this scope, and its columns shipped the same day. The
+     * name is kept because it is cited elsewhere; the fact is corrected. See
+     * TransitScope, which owns that edge, and D-105 for how the stale comment
+     * hid an approved piece of work from four different readers.
      */
     public const STT_005 = 'STT-005';
+
+    /** @deprecated D-105 — wired 2026-09-17. Kept because it is cited; see TransitScope::EDGE_DEPARTURE. */
     public const STATE_EDGE_DEFERRED = TripStatus::DISPATCHED.'->'.TripStatus::IN_TRANSIT;
+
+    /** What actually became of it. Asserted by DispatchScopeTest. */
+    public const STATE_EDGE_NOW_WIRED = TransitScope::EDGE_DEPARTURE;
 
     /* ── FRS TRP-P0-006's five fields, and where each one went ────────── */
 
@@ -114,7 +126,7 @@ final class DispatchScope
         'Start reefer monitoring'           => 'no_ticket',  // no reefer/genset model exists
         'Start trip timeline'               => 'built',      // the audit trail already is one
         'Activate trip SLA'                 => 'no_ticket',  // needs a business calendar — D-34
-        'Activate exception monitoring'     => 'blocked',    // SNG-TRN-013, blocked on Q1/Q3
+        'Activate exception monitoring'     => 'blocked',    // trip_exceptions has schema, no model
     ];
 
     /* ── Excluded, with reasons ───────────────────────────────────────── */
@@ -126,7 +138,7 @@ final class DispatchScope
         'notifications'        => 'TRP-P0-006 names customer/ops notification over WhatsApp/SMS. That is SNG-TRN-021, P1/Backlog.',
         'dispatch pack'        => 'TRP-P0-006\'s acceptance mentions a shareable dispatch pack. Transport has no document generation and no file upload at all (D-22).',
         'TAT'                  => self::TAT_DEFERRED,
-        'in_transit'           => 'STT-006 is the Transit half of SNG-TRN-013, blocked on the owner\'s Q1/Q3 ruling. Nothing here writes `in_transit`.',
+        'in_transit'           => 'STT-006 is wired, but by TransitScope and not by this scope — recording dispatch and recording departure are two acts. Nothing HERE writes `in_transit`; DispatchService::recordDeparture() does. D-105.',
     ];
 
     /* ── The rules that bite ──────────────────────────────────────────── */

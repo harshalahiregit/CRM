@@ -56,4 +56,51 @@ class PendingFleetResourceGateway implements FleetResourceGateway
 
         return false;
     }
+
+    /**
+     * STT-006 — added 2026-09-19 when the interface grew it.
+     *
+     * Same contract as above: records the intent, applies nothing, and answers
+     * false so Trip side can say on screen that the fleet was not updated
+     * rather than implying it was.
+     */
+    public function markDeparted(
+        TransportTrip $trip,
+        ?int $vehicleId,
+        int $tenantId,
+        ?User $actor = null,
+    ): bool {
+        Log::channel('transport')->info('Fleet resource update SKIPPED — pending Person 2 gateway', [
+            'rule'       => 'STT-006',
+            'intent'     => 'vehicle -> in transit',
+            'trip_id'    => $trip->id,
+            'vehicle_id' => $vehicleId,
+            'tenant_id'  => $tenantId,
+            'user_id'    => $actor?->id,
+        ]);
+
+        return false;
+    }
+
+    /**
+     * Release — added 2026-09-19 when the interface grew it.
+     *
+     * Worth stating what NOT applying this costs, because it is the one that
+     * compounds: every dispatched vehicle stays committed forever and the fleet
+     * reports no availability at all.
+     */
+    public function markReleased(
+        ?int $vehicleId,
+        ?int $driverId,
+        int $tenantId,
+    ): bool {
+        Log::channel('transport')->info('Fleet resource release SKIPPED — pending Person 2 gateway', [
+            'intent'     => 'vehicle -> available, driver -> available',
+            'vehicle_id' => $vehicleId,
+            'driver_id'  => $driverId,
+            'tenant_id'  => $tenantId,
+        ]);
+
+        return false;
+    }
 }

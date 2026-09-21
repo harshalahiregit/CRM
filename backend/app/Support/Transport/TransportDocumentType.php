@@ -60,6 +60,45 @@ final class TransportDocumentType
     public const DELIVERY_ORDER = 'delivery_order';
 
     /**
+     * ── SECOND APPROVED EXTENSION, 2026-09-19 ─────────────────────────────
+     * Owner approval, on the same footing as `delivery_order` above and for the
+     * reason this file already predicted: ENUM-006 names `insurance`, `permit`
+     * and `fitness` but has no value for RC, PUC or road tax, so those three
+     * could only be filed as the catch-all `vehicle_doc`.
+     *
+     * That ambiguity has a concrete cost. STOS-FLEET gates dispatch on FIVE
+     * statutory dates — registration, insurance, fitness, permit, PUC — and the
+     * verified document is the master for each of them. With RC and PUC both
+     * arriving as `vehicle_doc`, nothing can tell which of the five dates a
+     * given certificate is supposed to update. The gate would be reading a date
+     * nobody could reliably set.
+     *
+     * Grounds recorded per STOS-CMP §25, STOS-FLEET §11 and STOS-DOC §10, all
+     * of which list RC, Insurance, Fitness, Permit, PUC and Tax as distinct
+     * statutory vehicle documents.
+     */
+    public const RC  = 'rc';
+    public const PUC = 'puc';
+    public const TAX = 'tax';
+
+    /**
+     * Driver documents, same approval.
+     *
+     * DRIVER_APPLICABLE previously offered `fitness` and `permit` — both of
+     * which read as VEHICLE documents to anybody using the screen — and the
+     * catch-all `driver_doc`. A driving licence, the one document that actually
+     * stops a driver being dispatched, had no value of its own.
+     *
+     * Recorded per STOS-DOC §9, STOS-CMP §22 and STOS-DB §43.
+     */
+    public const DRIVING_LICENSE      = 'driving_license';
+    public const MEDICAL_CERTIFICATE  = 'medical_certificate';
+    public const POLICE_VERIFICATION  = 'police_verification';
+    public const ID_PROOF             = 'id_proof';
+    public const TRAINING_CERTIFICATE = 'training_certificate';
+    public const CUSTOMER_QUALIFICATION = 'customer_qualification';
+
+    /**
      * ENUM-006 in registry order, then the one approved addition.
      *
      * Do not reorder: the order is the registry's. Do not extend without an
@@ -70,16 +109,50 @@ final class TransportDocumentType
         self::LR, self::EWAYBILL, self::INVOICE, self::POD, self::DRIVER_DOC,
         self::VEHICLE_DOC, self::INSURANCE, self::PERMIT, self::FITNESS, self::OTHER,
         self::DELIVERY_ORDER,
+        // Approved 2026-09-19 — see the note on the constants.
+        self::RC, self::PUC, self::TAX,
+        self::DRIVING_LICENSE, self::MEDICAL_CERTIFICATE, self::POLICE_VERIFICATION,
+        self::ID_PROOF, self::TRAINING_CERTIFICATE, self::CUSTOMER_QUALIFICATION,
     ];
 
     /** Types that may be filed against a vehicle (FLEET §11: RC, insurance, fitness, PUC, permit, tax). */
     public const VEHICLE_APPLICABLE = [
-        self::VEHICLE_DOC, self::INSURANCE, self::PERMIT, self::FITNESS, self::OTHER,
+        self::RC, self::INSURANCE, self::FITNESS, self::PERMIT, self::PUC, self::TAX,
+        self::VEHICLE_DOC, self::OTHER,
+    ];
+
+    /**
+     * The five that gate dispatch, mapped to the date each one sets on the
+     * vehicle. `tax` is a statutory document but is NOT a dispatch gate, so it
+     * is filed and tracked without blocking a truck.
+     */
+    public const GATES_DISPATCH = [
+        self::RC        => 'registration_expiry',
+        self::INSURANCE => 'insurance_expiry',
+        self::FITNESS   => 'fitness_expiry',
+        self::PERMIT    => 'permit_expiry',
+        self::PUC       => 'puc_expiry',
     ];
 
     /** Types that may be filed against a driver (CMP §22: licence, training, medical/fitness). */
     public const DRIVER_APPLICABLE = [
-        self::DRIVER_DOC, self::FITNESS, self::PERMIT, self::OTHER,
+        self::DRIVING_LICENSE, self::MEDICAL_CERTIFICATE, self::POLICE_VERIFICATION,
+        self::ID_PROOF, self::TRAINING_CERTIFICATE, self::CUSTOMER_QUALIFICATION,
+        self::DRIVER_DOC, self::OTHER,
+
+        // DEPRECATED for drivers, still accepted.
+        //
+        // Before the 2026-09-19 approval a driver's medical fitness had to be
+        // filed as `fitness` — the same value a vehicle's fitness certificate
+        // uses — because there was no `medical_certificate`. Tenants have that
+        // configured as a required driver document today, and documents are
+        // already filed under it.
+        //
+        // Removing them would throw "Fitness certificate cannot be required of
+        // a driver" at tenants whose policy was valid when they set it, and
+        // orphan the documents already filed. New uploads should use
+        // `medical_certificate`; these stay readable.
+        self::FITNESS, self::PERMIT,
     ];
 
     /**
@@ -108,6 +181,15 @@ final class TransportDocumentType
         self::VEHICLE_DOC => 'Vehicle document',
         self::INSURANCE   => 'Insurance',
         self::PERMIT      => 'Permit',
+        self::RC          => 'Registration certificate (RC)',
+        self::PUC         => 'Pollution certificate (PUC)',
+        self::TAX         => 'Road tax',
+        self::DRIVING_LICENSE       => 'Driving licence',
+        self::MEDICAL_CERTIFICATE   => 'Medical certificate',
+        self::POLICE_VERIFICATION   => 'Police verification',
+        self::ID_PROOF              => 'ID proof',
+        self::TRAINING_CERTIFICATE  => 'Training certificate',
+        self::CUSTOMER_QUALIFICATION => 'Customer site qualification',
         self::FITNESS     => 'Fitness certificate',
         self::OTHER       => 'Other',
         self::DELIVERY_ORDER => 'Delivery Order',

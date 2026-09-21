@@ -410,13 +410,24 @@ class AuthService
             return User::with('tenant')->where('email', $email)->first();
         }
 
+        /*
+         * "Staff" is the door every employee comes through, and a doctor is an
+         * employee. The login page no longer offers a Doctor entry — an
+         * examining doctor is hired like anybody else and should not have to
+         * know they are a special case to sign in — so `staff` has to admit
+         * them, or the only remaining door would be shut to them.
+         *
+         * `role=doctor` is still accepted by LoginRequest and still works, so
+         * saved links and anything already pointing at it keep working.
+         */
         if ($role === 'staff') {
             return User::with('tenant')
                 ->where('email', $email)
-                ->where(function ($query) {
-                    $query->where('role', 'staff')
-                          ->orWhereIn('role', ['hr_executive', 'hiring_manager']); // Backward compatibility
-                })
+                ->whereIn('role', [
+                    'staff',
+                    'doctor',
+                    'hr_executive', 'hiring_manager',   // Backward compatibility
+                ])
                 ->first();
         }
 

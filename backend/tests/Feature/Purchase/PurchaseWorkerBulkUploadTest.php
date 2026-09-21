@@ -64,12 +64,15 @@ class PurchaseWorkerBulkUploadTest extends TestCase
 
     private function makeVendor(string $name): PurchaseVendor
     {
-        return PurchaseVendor::create([
+        $vendor = PurchaseVendor::create([
             'tenant_id' => self::TENANT, 'company_name' => $name,
             'purchase_vendor_code' => 'PV-'.strtoupper(Str::random(6)),
             'email' => Str::random(5).'@t.local',
             'status' => 'Active', 'portal_status' => 'active',
         ]);
+        $this->markOnboarded($vendor);
+
+        return $vendor->fresh();
     }
 
     /** The template's column order, shared with TPV. */

@@ -37,6 +37,43 @@ class VehicleMasterUnificationTest extends TestCase
     }
 
     /** Re-run the data-move migration against whatever the test just seeded. */
+    /**
+     * Make the Fleet ids start well above the legacy ones.
+     *
+     * Without this the legacy row and its Fleet copy are both id 1 on a fresh
+     * database, and every "did it repoint?" assertion passes by coincidence.
+     */
+    private function pushFleetIdsOutOfTheWay(): void
+    {
+        for ($i = 0; $i < 5; $i++) {
+            DB::table('vehicles')->insert([
+                'company_id' => self::COMPANY,
+                'registration_number' => 'MH99PAD'.$i,
+                'vehicle_type' => 'truck', 'ownership_type' => 'owned',
+                'status' => 'AVAILABLE', 'compliance_status' => 'compliant',
+                'created_at' => now(), 'updated_at' => now(),
+            ]);
+
+            DB::table('driver_profiles')->insert([
+                'company_id' => self::COMPANY, 'source' => 'stos',
+                'source_id' => 90000 + $i, 'status' => 'available',
+                'created_at' => now(), 'updated_at' => now(),
+            ]);
+        }
+    }
+
+    private function legacyDriver(array $over = []): int
+    {
+        return DB::table('transport_drivers')->insertGetId(array_merge([
+            'tenant_id' => self::COMPANY, 'driver_code' => 'DRV-'.random_int(100, 999),
+            'name' => 'Rajesh Kumar', 'mobile' => '98765'.random_int(10000, 99999),
+            'licence_number' => 'MH01201100'.random_int(10000, 99999), 'licence_class' => 'HMV',
+            'licence_valid_until' => now()->addYear()->toDateString(),
+            'status' => 'active', 'availability' => 'available',
+            'created_at' => now(), 'updated_at' => now(),
+        ], $over));
+    }
+
     private function runMover(): void
     {
         $path = database_path('migrations/2027_01_02_000002_move_transport_masters_into_fleet.php');
@@ -164,7 +201,7 @@ class VehicleMasterUnificationTest extends TestCase
         DB::table('vehicles')->insert([
             'company_id' => self::COMPANY, 'registration_number' => 'MH-12-AB-1234',
             'vehicle_type' => 'truck', 'ownership_type' => 'owned',
-            'status' => 'active', 'compliance_status' => 'compliant',
+            'status' => 'AVAILABLE', 'compliance_status' => 'compliant',
             'created_at' => now(), 'updated_at' => now(),
         ]);
         $legacyId = $this->legacyVehicle();
@@ -202,22 +239,227 @@ class VehicleMasterUnificationTest extends TestCase
 
     /* ── Trips must never point at a stale id ───────────────────── */
 
-    public function test_a_trip_follows_its_vehicle_to_the_new_master(): void
+    /**
+     * D-109 — the move must NOT repoint, and this test used to prove the
+     * opposite while asserting nothing.
+     *
+     * It read `assertSame($newVehicleId, $trip->vehicle_id)` on a fresh
+     * database where the legacy row and the Fleet row were BOTH id 1. It passed
+     * whether or not the repoint happened. That false green is how the orphaning
+     * bug reached Person 1's machine.
+     *
+     * The Fleet ids are pushed out of the way first, so the two numbers cannot
+     * coincide and the assertion has to mean something.
+     */
+    public function test_the_move_does_not_repoint_the_trip(): void
     {
-        $legacyId = $this->legacyVehicle(['registration_number' => 'MH20GH7799']);
+        $this->pushFleetIdsOutOfTheWay();
 
+        $legacyId = $this->legacyVehicle(['registration_number' => 'MH20GH7799']);
         $tripId = $this->tripFor(['vehicle_id' => $legacyId]);
 
         $this->runMover();
 
-        $newVehicleId = DB::table('vehicles')->where('legacy_transport_vehicle_id', $legacyId)->value('id');
+        $newVehicleId = (int) DB::table('vehicles')->where('legacy_transport_vehicle_id', $legacyId)->value('id');
         $trip = DB::table('transport_trips')->find($tripId);
 
-        // A trip pointing at a stale id silently reads a different truck.
-        $this->assertSame((int) $newVehicleId, (int) $trip->vehicle_id);
+        // The ids genuinely differ now, so this is a real assertion.
+        $this->assertNotSame($legacyId, $newVehicleId, 'the fixture must make the two ids differ or it proves nothing');
+
+        // Transport still READS transport_vehicles. Repointing here would blank
+        // the vehicle on every trip, silently, with no way back.
+        $this->assertSame($legacyId, (int) $trip->vehicle_id);
     }
 
-    /* ── Drivers: names move to the directory, never into the overlay ── */
+    public function test_the_repoint_command_reports_without_writing_by_default(): void
+    {
+        $this->pushFleetIdsOutOfTheWay();
+
+        $legacyId = $this->legacyVehicle(['registration_number' => 'MH20GH7799']);
+        $tripId = $this->tripFor(['vehicle_id' => $legacyId]);
+        $this->runMover();
+
+        $this->artisan('stos:repoint-trip-fleet-refs')->assertSuccessful();
+
+        // A dry run that writes is worse than no dry run at all.
+        $this->assertSame($legacyId, (int) DB::table('transport_trips')->find($tripId)->vehicle_id);
+    }
+
+    public function test_the_repoint_command_moves_the_trip_when_asked(): void
+    {
+        $this->pushFleetIdsOutOfTheWay();
+
+        $legacyId = $this->legacyVehicle(['registration_number' => 'MH20GH7799']);
+        $tripId = $this->tripFor(['vehicle_id' => $legacyId]);
+        $this->runMover();
+
+        $this->artisan('stos:repoint-trip-fleet-refs --apply')->assertSuccessful();
+
+        $newVehicleId = (int) DB::table('vehicles')->where('legacy_transport_vehicle_id', $legacyId)->value('id');
+        $this->assertSame($newVehicleId, (int) DB::table('transport_trips')->find($tripId)->vehicle_id);
+    }
+
+    public function test_repointing_twice_does_not_move_a_trip_a_second_time(): void
+    {
+        $this->pushFleetIdsOutOfTheWay();
+
+        $legacyId = $this->legacyVehicle(['registration_number' => 'MH20GH7799']);
+        $tripId = $this->tripFor(['vehicle_id' => $legacyId]);
+        $this->runMover();
+
+        $this->artisan('stos:repoint-trip-fleet-refs --apply')->assertSuccessful();
+        $newVehicleId = (int) DB::table('transport_trips')->find($tripId)->vehicle_id;
+
+        // Re-running must be harmless, and it now is for a reason rather than
+        // by luck. The old skip rested on "an already-repointed row no longer
+        // matches any legacy id" — which is only true while the two sequences
+        // happen not to overlap, the same assumption that cost us D-116. The
+        // row is skipped because the ledger already holds a verdict on it.
+        $this->artisan('stos:repoint-trip-fleet-refs --apply')->assertSuccessful();
+
+        $this->assertSame($newVehicleId, (int) DB::table('transport_trips')->find($tripId)->vehicle_id);
+
+        $this->assertSame(1, DB::table('fleet_reference_repoints')
+            ->where('table_name', 'transport_trips')->where('column_name', 'vehicle_id')
+            ->where('row_id', $tripId)->count(), 'one verdict per reference, not one per run');
+    }
+
+    /* ── D-116: what the repoint could not move is written down too ─── */
+
+    public function test_the_repoint_records_what_each_reference_now_means(): void
+    {
+        $this->pushFleetIdsOutOfTheWay();
+
+        $legacyId = $this->legacyVehicle(['registration_number' => 'MH20GH7799']);
+        $tripId = $this->tripFor(['vehicle_id' => $legacyId]);
+        $this->runMover();
+
+        $this->artisan('stos:repoint-trip-fleet-refs --apply')->assertSuccessful();
+
+        $newVehicleId = (int) DB::table('vehicles')->where('legacy_transport_vehicle_id', $legacyId)->value('id');
+
+        $verdict = DB::table('fleet_reference_repoints')
+            ->where('table_name', 'transport_trips')->where('column_name', 'vehicle_id')
+            ->where('row_id', $tripId)->first();
+
+        // Without this, nothing in the row says which id space its number is
+        // in once the switch has happened, and telemetry is back to guessing.
+        $this->assertNotNull($verdict);
+        $this->assertSame($legacyId, (int) $verdict->from_id);
+        $this->assertSame($newVehicleId, (int) $verdict->to_id);
+    }
+
+    public function test_the_repoint_refuses_to_strand_references_unless_told_to(): void
+    {
+        $this->pushFleetIdsOutOfTheWay();
+
+        // One truck migrates; a second trip points at a legacy row that never
+        // did. Repointing now leaves that trip in the old id space for good.
+        $legacyId = $this->legacyVehicle(['registration_number' => 'MH20GH7799']);
+        $this->tripFor(['vehicle_id' => $legacyId]);
+        $this->runMover();
+
+        $orphanTripId = $this->tripFor(['vehicle_id' => 4242]);
+
+        $this->artisan('stos:repoint-trip-fleet-refs --apply')->assertFailed();
+
+        // Nothing was written at all — not the move, not the verdict.
+        $this->assertSame(4242, (int) DB::table('transport_trips')->find($orphanTripId)->vehicle_id);
+        $this->assertSame(0, DB::table('fleet_reference_repoints')->count());
+    }
+
+    public function test_a_stranded_reference_is_recorded_as_unmatchable(): void
+    {
+        $this->pushFleetIdsOutOfTheWay();
+
+        $legacyId = $this->legacyVehicle(['registration_number' => 'MH20GH7799']);
+        $this->tripFor(['vehicle_id' => $legacyId]);
+        $this->runMover();
+
+        $orphanTripId = $this->tripFor(['vehicle_id' => 4242]);
+
+        $this->artisan('stos:repoint-trip-fleet-refs --apply --force')->assertSuccessful();
+
+        $verdict = DB::table('fleet_reference_repoints')->where('row_id', $orphanTripId)
+            ->where('column_name', 'vehicle_id')->first();
+
+        // Left where it is, and marked so that nothing downstream reads its
+        // number as a Fleet id once the rest of the data has moved.
+        $this->assertSame(4242, (int) DB::table('transport_trips')->find($orphanTripId)->vehicle_id);
+        $this->assertNotNull($verdict);
+        $this->assertNull($verdict->to_id);
+    }
+
+    /* ── The mapping itself goes stale, and that reads as "done" ────── */
+
+    public function test_reconcile_calls_one_matching_plate_repairable_rather_than_ambiguous(): void
+    {
+        $this->pushFleetIdsOutOfTheWay();
+
+        $legacyId = $this->legacyVehicle(['registration_number' => 'MH20GH7799']);
+        $this->runMover();
+
+        // What a reseed of the legacy table does: same truck, new legacy id,
+        // and the stored link still pointing at the row that used to be there.
+        DB::table('vehicles')->where('legacy_transport_vehicle_id', $legacyId)
+            ->update(['legacy_transport_vehicle_id' => 999]);
+
+        $this->artisan('stos:reconcile-fleet')
+            ->expectsOutputToContain('Repairable')
+            ->doesntExpectOutputToContain('AMBIGUOUS')
+            ->assertSuccessful();
+    }
+
+    public function test_relink_repairs_a_stale_mapping_so_the_repoint_can_see_it(): void
+    {
+        $this->pushFleetIdsOutOfTheWay();
+
+        $legacyId = $this->legacyVehicle(['registration_number' => 'MH20GH7799']);
+        $tripId = $this->tripFor(['vehicle_id' => $legacyId]);
+        $this->runMover();
+
+        $fleetId = (int) DB::table('vehicles')->where('legacy_transport_vehicle_id', $legacyId)->value('id');
+        DB::table('vehicles')->where('id', $fleetId)->update(['legacy_transport_vehicle_id' => 999]);
+
+        // The symptom Person 1 saw: the dry run reports nothing to do, which
+        // reads as finished and actually means the map matches no live row.
+        $this->artisan('stos:repoint-trip-fleet-refs')
+            ->expectsOutputToContain('Nothing can be moved')
+            ->assertSuccessful();
+
+        $this->artisan('stos:reconcile-fleet --relink')->assertSuccessful();
+
+        $this->assertSame($legacyId, (int) DB::table('vehicles')->find($fleetId)->legacy_transport_vehicle_id);
+
+        $this->artisan('stos:repoint-trip-fleet-refs --apply')->assertSuccessful();
+        $this->assertSame($fleetId, (int) DB::table('transport_trips')->find($tripId)->vehicle_id);
+    }
+
+    public function test_relink_refuses_when_two_live_legacy_rows_want_one_fleet_vehicle(): void
+    {
+        $this->pushFleetIdsOutOfTheWay();
+
+        $firstId = $this->legacyVehicle(['registration_number' => 'MH20GH7799']);
+        $this->runMover();
+
+        $fleetId = (int) DB::table('vehicles')->where('legacy_transport_vehicle_id', $firstId)->value('id');
+
+        // A second legacy row, still live, carrying the same plate.
+        $secondId = DB::table('transport_vehicles')->insertGetId([
+            'tenant_id' => self::COMPANY,
+            'registration_number' => 'MH 20 GH 7799', 'registration_normalized' => 'MH20GH7799',
+            'vehicle_type' => 'REEFER', 'ownership_type' => 'OWNED', 'status' => 'AVAILABLE',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $this->artisan('stos:reconcile-fleet --relink')
+            ->expectsOutputToContain('Needs a person')
+            ->assertSuccessful();
+
+        // A repair is only a repair when there is nothing to decide.
+        $this->assertSame($firstId, (int) DB::table('vehicles')->find($fleetId)->legacy_transport_vehicle_id);
+        $this->assertNotSame($firstId, $secondId);
+    }
 
     public function test_a_driver_moves_without_a_name_landing_in_the_overlay(): void
     {
@@ -246,19 +488,25 @@ class VehicleMasterUnificationTest extends TestCase
         $this->assertFalse(Schema::hasColumn('driver_profiles', 'name'));
     }
 
-    public function test_a_trip_follows_its_driver_too(): void
+    public function test_the_move_does_not_repoint_the_trips_driver_either(): void
     {
-        $legacyId = DB::table('transport_drivers')->insertGetId([
-            'tenant_id' => self::COMPANY, 'driver_code' => 'DRV-2', 'name' => 'Vikram',
-            'status' => 'active', 'created_at' => now(), 'updated_at' => now(),
-        ]);
+        $this->pushFleetIdsOutOfTheWay();
 
+        $legacyId = $this->legacyDriver();
         $tripId = $this->tripFor(['driver_id' => $legacyId]);
 
         $this->runMover();
 
-        $profileId = DB::table('driver_profiles')->where('legacy_transport_driver_id', $legacyId)->value('id');
-        $this->assertSame((int) $profileId, (int) DB::table('transport_trips')->find($tripId)->driver_id);
+        $trip = DB::table('transport_trips')->find($tripId);
+
+        // Same reasoning as the vehicle: Operations still reads the legacy
+        // table, so the key stays put until its readers move.
+        $this->assertSame($legacyId, (int) $trip->driver_id);
+
+        $this->artisan('stos:repoint-trip-fleet-refs --apply')->assertSuccessful();
+
+        $newDriverId = (int) DB::table('driver_profiles')->where('legacy_transport_driver_id', $legacyId)->value('id');
+        $this->assertSame($newDriverId, (int) DB::table('transport_trips')->find($tripId)->driver_id);
     }
 
     public function test_nothing_is_deleted_by_the_move(): void

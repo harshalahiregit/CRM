@@ -5,6 +5,7 @@ namespace App\Services\Transport;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ResourceNotFoundException;
 use App\Models\Transport\TransportConsignment;
+use App\Services\Transport\TripEventRecorder;
 use App\Models\Transport\TransportOrder;
 use App\Models\User;
 use App\Repositories\Transport\TransportConsignmentRepository;
@@ -89,7 +90,7 @@ class ConsignmentService
     {
         $order = $this->assertOrderUsable((int) ($data['order_id'] ?? 0), $tenantId);
 
-        return DB::transaction(function () use ($data, $order, $tenantId, $actor) {
+        $created = DB::transaction(function () use ($data, $order, $tenantId, $actor) {
             /** @var TransportConsignment $consignment */
             $consignment = TransportConsignment::create(array_merge(
                 $this->writable($data),
@@ -134,6 +135,16 @@ class ConsignmentService
 
             return $consignment->fresh();
         });
+
+        // CTD §31, after the commit. Recorded against the consignment and its
+        // order — there is no trip yet, and may never be one. D-115.
+        app(TripEventRecorder::class)->record(
+            'consignment.created', tenantId: $tenantId, actor: $actor,
+            consignmentId: $created->id, orderId: $created->order_id,
+            detail: ['consignment_number' => $created->consignment_number],
+        );
+
+        return $created;
     }
 
     /**

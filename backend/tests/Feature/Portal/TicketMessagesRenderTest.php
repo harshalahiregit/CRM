@@ -66,12 +66,15 @@ class TicketMessagesRenderTest extends TestCase
 
     private function purchaseVendor(): PurchaseVendor
     {
-        return PurchaseVendor::create([
+        $vendor = PurchaseVendor::create([
             'tenant_id' => self::TENANT, 'company_name' => 'Bolt Supplies',
             'purchase_vendor_code' => 'PV-'.Str::random(8),
             'status' => PurchaseVendorStatus::ACTIVE, 'portal_status' => 'active',
             'email' => 'bolt@vendor.test',
         ]);
+        $this->markOnboarded($vendor);
+
+        return $vendor->fresh();
     }
 
     private function ticketFor(User $user): Ticket

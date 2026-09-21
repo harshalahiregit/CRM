@@ -119,6 +119,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::get('/vendors/{vendor}/customers/search',          [\App\Http\Controllers\Api\Vendor\VendorController::class, 'searchCustomers']);
     Route::post('/vendors/{vendor}/customers/link',           [\App\Http\Controllers\Api\Vendor\VendorController::class, 'linkCustomer']);
     Route::post('/vendors/{vendor}/customers',                [\App\Http\Controllers\Api\Vendor\VendorController::class, 'storeCustomer']);
+    // Correcting a linked customer in place. Numeric {client} so this cannot
+    // shadow the static /customers/search route declared above.
+    Route::put('/vendors/{vendor}/customers/{client}',        [\App\Http\Controllers\Api\Vendor\VendorController::class, 'updateCustomer'])->whereNumber('client');
     // Employees (enhancement #2/#9/#10) — the vendor's assignable people. index()
     // feeds the assignee cascade; grant-access provisions a login so an employee
     // can be assigned work and see it. Static segments stay ahead of wildcards.

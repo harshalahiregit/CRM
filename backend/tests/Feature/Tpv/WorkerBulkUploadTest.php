@@ -50,11 +50,14 @@ class WorkerBulkUploadTest extends TestCase
 
     private function vendor(string $name, ?string $email = null): Vendor
     {
-        return Vendor::create([
+        $vendor = Vendor::create([
             'tenant_id' => self::TENANT, 'company_name' => $name,
             'email' => $email ?: strtolower($name).'-'.Str::random(4).'@t.local',
             'status' => 'Active',
         ]);
+        $this->markOnboarded($vendor);
+
+        return $vendor->fresh();
     }
 
     /** The sheet the sample template produces. */

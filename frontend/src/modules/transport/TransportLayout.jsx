@@ -1,5 +1,5 @@
 import ModuleShell from '@/components/layout/ModuleShell'
-import { Package, Truck, Users, Boxes, Container, Wrench,
+import { Package, Truck, Users, Boxes, Container, Wrench, Search,
 } from 'lucide-react'
 
 /**
@@ -43,6 +43,9 @@ import { Package, Truck, Users, Boxes, Container, Wrench,
  * arrives with the ticket that builds it.
  */
 const TRANSPORT_ITEMS = [
+  // CTD §4's "preferred entry point", first on the rail. `end` so it is only
+  // highlighted on /app/transport itself and not on every child route.
+  { label: 'Find',             path: '/app/transport',              icon: Search, end: true },
   { label: 'Transport Orders', path: '/app/transport/orders',       icon: Package },
   { label: 'Trips',            path: '/app/transport/trips',        icon: Truck },
   // STOS-CTD §8 — the commercial shipment, distinct from the container.

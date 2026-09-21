@@ -167,6 +167,9 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access', 'vendor.onboa
     Route::post('/workers/{worker}/medical',              [VendorPortalController::class, 'saveMedical']);
     // Medical module (External Medical Flow) — the vendor uploads third-party
     // certificates, sees the quality team's verdict and answers it.
+    // Who a vendor may name as the examining doctor. Narrow on purpose: a
+    // supplier gets names and licences, never the staff directory.
+    Route::get('/medical/doctor-options',                 [\App\Http\Controllers\Api\Medical\DoctorOptionsController::class, 'tpv']);
     Route::get('/medical',                                [VendorPortalMedicalController::class, 'index']);
     Route::get('/medical/template',                       [VendorPortalMedicalController::class, 'template']);
     Route::get('/medical/batches',                        [VendorPortalMedicalController::class, 'batches']);
@@ -315,6 +318,8 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal', 'vendor.onboarded']
     Route::post('/workers/{worker}/documents',        [PurchasePortalWorkforceController::class, 'uploadDocument']);
     Route::post('/workers/{worker}/medical',          [PurchasePortalWorkforceController::class, 'saveMedical']);
     // Medical module (External Medical Flow) — Purchase mirror.
+    // The Purchase mirror of the TPV picker, fixed to the Purchase module.
+    Route::get('/medical/doctor-options',             [\App\Http\Controllers\Api\Medical\DoctorOptionsController::class, 'purchase']);
     Route::get('/medical',                            [PurchasePortalMedicalController::class, 'index']);
     Route::get('/medical/template',                   [PurchasePortalMedicalController::class, 'template']);
     Route::get('/medical/batches',                    [PurchasePortalMedicalController::class, 'batches']);

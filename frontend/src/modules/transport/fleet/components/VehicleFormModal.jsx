@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { X, Truck, Check, Info } from 'lucide-react'
-import { stosApi, STOS_ACCENT, VEHICLE_TYPE_OPTIONS, EXPIRY_DOCUMENTS } from '@/services/stosApi'
+import { stosApi, STOS_ACCENT, VEHICLE_TYPE_OPTIONS, EXPIRY_DOCUMENTS, FUEL_TYPES } from '@/services/stosApi'
 import Select from '@/components/ui/Select'
 
 /**
@@ -25,6 +25,10 @@ const OWNERSHIPS = [
 const EMPTY = {
   registration_number: '', vehicle_type: 'truck', ownership_type: 'owned',
   chassis_number: '', engine_number: '', gps_device_id: '',
+  fleet_number: '', manufacturer: '', model: '', variant: '',
+  manufacturing_year: '', purchase_date: '', fuel_type: '', branch: '',
+  capacity_tonnes: '', genset_serial: '',
+  service_interval_km: '', service_interval_days: '', last_service_odometer: '', last_service_on: '',
   registration_expiry: '', insurance_expiry: '', fitness_expiry: '', permit_expiry: '', puc_expiry: '',
   compliance_hold: false, compliance_hold_reason: '',
 }
@@ -47,6 +51,19 @@ export default function VehicleFormModal({ open, onClose, vehicle = null, onSave
           chassis_number: vehicle.chassis_number || '',
           engine_number: vehicle.engine_number || '',
           gps_device_id: vehicle.gps_device_id || '',
+          fleet_number: vehicle.fleet_number || '',
+          manufacturer: vehicle.manufacturer || '',
+          model: vehicle.model || '',
+          variant: vehicle.variant || '',
+          manufacturing_year: vehicle.manufacturing_year ?? '',
+          purchase_date: vehicle.purchase_date?.slice(0, 10) || '',
+          fuel_type: vehicle.fuel_type || '',
+          branch: vehicle.branch || '',
+          capacity_tonnes: vehicle.capacity_tonnes ?? '',
+          service_interval_km: vehicle.service_interval_km ?? '',
+          service_interval_days: vehicle.service_interval_days ?? '',
+          last_service_odometer: vehicle.last_service_odometer ?? '',
+          last_service_on: vehicle.last_service_on?.slice(0, 10) || '',
           registration_expiry: vehicle.registration_expiry?.slice(0, 10) || '',
           insurance_expiry: vehicle.insurance_expiry?.slice(0, 10) || '',
           fitness_expiry: vehicle.fitness_expiry?.slice(0, 10) || '',
@@ -72,16 +89,55 @@ export default function VehicleFormModal({ open, onClose, vehicle = null, onSave
         gps_device_id: form.gps_device_id.trim() || null,
         compliance_hold_reason: form.compliance_hold ? form.compliance_hold_reason : null,
       }
+
+      // Blank is "not recorded", never an empty string the API has to coerce.
+      // A blank number sent as '' becomes 0, and a 0-tonne truck is one the
+      // eligibility engine will never match to an order.
+      ;['fleet_number', 'manufacturer', 'model', 'variant', 'fuel_type', 'branch']
+        .forEach((k) => { payload[k] = form[k]?.trim() || null })
+      ;['manufacturing_year', 'capacity_tonnes', 'service_interval_km', 'service_interval_days', 'last_service_odometer']
+        .forEach((k) => { payload[k] = form[k] === '' || form[k] == null ? null : Number(form[k]) })
+      payload.purchase_date = form.purchase_date || null
+      payload.last_service_on = form.last_service_on || null
       // An empty date is "not recorded", not an empty string the API must parse.
       EXPIRY_DOCUMENTS.forEach(({ field }) => { payload[field] = form[field] || null })
-      return editing
-        ? stosApi.fleet.update(vehicle.id, payload)
-        : stosApi.fleet.create(payload)
+      // Not a column on `vehicles` — a genset is its own asset. Stripped from
+      // the vehicle payload and registered separately once the vehicle exists.
+      const gensetSerial = String(payload.genset_serial || '').trim()
+      delete payload.genset_serial
+
+      if (editing) return stosApi.fleet.update(vehicle.id, payload)
+
+      return stosApi.fleet.create(payload).then(async (created) => {
+        if (!gensetSerial) return created
+
+        // Deliberately not fatal: the vehicle is saved either way, and losing
+        // the truck because a serial was a duplicate would be the wrong trade.
+        try {
+          await stosApi.gensets.create({ serial_number: gensetSerial, vehicle_id: created.id, status: 'active' })
+        } catch (e) {
+          created.genset_warning = e?.message || 'The vehicle was saved, but its genset could not be registered.'
+        }
+
+        return created
+      })
     },
     onSuccess: (row) => {
       qc.invalidateQueries({ queryKey: ['stos-fleet'] })
       qc.invalidateQueries({ queryKey: ['stos-vehicle'] })
       qc.invalidateQueries({ queryKey: ['stos-eligible'] })
+      qc.invalidateQueries({ queryKey: ['stos-gensets'] })
+
+      // The vehicle saved but its genset did not. Held open and said out loud
+      // rather than closing on a half-success — otherwise a reefer quietly ends
+      // up with no power unit on record and nobody knows why.
+      if (row?.genset_warning) {
+        setErr(`${row.genset_warning} The vehicle is saved — register its genset from the passport.`)
+        onSaved?.(row)
+
+        return
+      }
+
       onSaved?.(row)
       onClose?.()
     },
@@ -161,18 +217,116 @@ export default function VehicleFormModal({ open, onClose, vehicle = null, onSave
             </Field>
           </div>
 
+          {/* T-01 — identity and payload. These columns arrived with the D-62
+              union and nothing could set them, so every vehicle onboarded here
+              came out blank. `capacity_tonnes` is the one that reaches beyond
+              this screen: Operations matches it against an order's required
+              payload, so a blank one is invisible to allocation. */}
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Make">
+              <input value={form.manufacturer} onChange={(e) => set('manufacturer', e.target.value)}
+                placeholder="Tata" className={inputClass} style={inputStyle} />
+            </Field>
+            <Field label="Model">
+              <input value={form.model} onChange={(e) => set('model', e.target.value)}
+                placeholder="Signa 4825" className={inputClass} style={inputStyle} />
+            </Field>
+            <Field label="Variant">
+              <input value={form.variant} onChange={(e) => set('variant', e.target.value)}
+                className={inputClass} style={inputStyle} />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Payload (tonnes)" error={fieldErrors.capacity_tonnes}
+              hint="Matched against an order's required capacity">
+              <input type="number" step="0.01" inputMode="decimal" value={form.capacity_tonnes}
+                onChange={(e) => set('capacity_tonnes', e.target.value)}
+                placeholder="25.00" className={inputClass} style={inputStyle} />
+            </Field>
+            <Field label="Fuel" error={fieldErrors.fuel_type}>
+              <Select size="sm" value={form.fuel_type} onChange={(v) => set('fuel_type', v)}
+                options={FUEL_TYPES} ariaLabel="Fuel type" />
+            </Field>
+            <Field label="Year" error={fieldErrors.manufacturing_year}>
+              <input type="number" step="1" inputMode="numeric" value={form.manufacturing_year}
+                onChange={(e) => set('manufacturing_year', e.target.value)}
+                placeholder="2021" className={inputClass} style={inputStyle} />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Fleet number" hint="Your own internal number">
+              <input value={form.fleet_number} onChange={(e) => set('fleet_number', e.target.value)}
+                placeholder="TRK-014" className={inputClass} style={inputStyle} />
+            </Field>
+            <Field label="Branch">
+              <input value={form.branch} onChange={(e) => set('branch', e.target.value)}
+                placeholder="Bhiwandi" className={inputClass} style={inputStyle} />
+            </Field>
+            <Field label="Purchased" error={fieldErrors.purchase_date}>
+              <input type="date" value={form.purchase_date}
+                onChange={(e) => set('purchase_date', e.target.value)}
+                className={inputClass} style={inputStyle} />
+            </Field>
+          </div>
+
+          {/* T-04 — the service schedule. Either clock, neither or both: trucks
+              are serviced on distance, trailers often on time. Blank means no
+              schedule, and the passport reports that as "unknown" rather than
+              pretending the truck is freshly serviced. */}
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Service every (km)" error={fieldErrors.service_interval_km}>
+              <input type="number" step="100" inputMode="numeric" value={form.service_interval_km}
+                onChange={(e) => set('service_interval_km', e.target.value)}
+                placeholder="10000" className={inputClass} style={inputStyle} />
+            </Field>
+            <Field label="or every (days)" error={fieldErrors.service_interval_days}>
+              <input type="number" step="1" inputMode="numeric" value={form.service_interval_days}
+                onChange={(e) => set('service_interval_days', e.target.value)}
+                placeholder="180" className={inputClass} style={inputStyle} />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Odometer at last service" error={fieldErrors.last_service_odometer}
+              hint="Without this there is nothing to measure the interval from">
+              <input type="number" step="0.1" inputMode="decimal" value={form.last_service_odometer}
+                onChange={(e) => set('last_service_odometer', e.target.value)}
+                placeholder="100000" className={inputClass} style={inputStyle} />
+            </Field>
+            <Field label="Last serviced on" error={fieldErrors.last_service_on}>
+              <input type="date" value={form.last_service_on}
+                onChange={(e) => set('last_service_on', e.target.value)}
+                className={inputClass} style={inputStyle} />
+            </Field>
+          </div>
+
           <Field label="GPS device id" error={fieldErrors.gps_device_id}
             hint="How telemetry finds this vehicle. One device reports for one truck.">
             <input value={form.gps_device_id} onChange={(e) => set('gps_device_id', e.target.value)}
               placeholder="DEV-0001" className={inputClass} style={inputStyle} />
           </Field>
 
-          {form.vehicle_type === 'reefer' && (
-            <p className="flex items-start gap-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-              <Info size={12} className="shrink-0 mt-0.5" />
-              A reefer reports body temperature and genset state, and raises an excursion when the genset is off
-              above the set point. Fit its genset from the vehicle&apos;s passport once it is saved.
-            </p>
+          {/* T-05 — this used to be a sentence telling people to fit the genset
+              from the passport later. The field is here now, because the moment
+              somebody is registering a reefer is the moment they have the
+              serial in front of them. Still optional: a unit can be bolted on
+              afterwards, and the passport does that. */}
+          {form.vehicle_type === 'reefer' && !editing && (
+            <>
+              <Field label="Genset serial" error={fieldErrors.genset_serial}
+                hint="The power unit fitted to this reefer. Leave blank and fit one from the passport later.">
+                <input value={form.genset_serial} onChange={(e) => set('genset_serial', e.target.value)}
+                  placeholder="GS-0014" className={inputClass} style={inputStyle} />
+              </Field>
+
+              <p className="flex items-start gap-1.5 text-[11px] -mt-1" style={{ color: 'var(--text-muted)' }}>
+                <Info size={12} className="shrink-0 mt-0.5" />
+                A reefer reports body temperature and genset state, and raises an excursion when the genset
+                is off above the set point.
+              </p>
+            </>
           )}
 
           {/* The five statutory papers. The VERDICT is derived from these dates

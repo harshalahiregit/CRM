@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponse;
 use App\Http\Requests\Transport\AmendDispatchRequest;
 use App\Http\Requests\Transport\DispatchTripRequest;
+use App\Http\Requests\Transport\RecordDepartureRequest;
 use App\Services\Transport\DispatchService;
 use App\Services\Transport\PretripService;
 use App\Services\Transport\TransportAuditLogger;
@@ -30,10 +31,15 @@ use Illuminate\Http\Request;
  * transition is a PATCH on a named verb, as PATCH /trips/{id}/submit-viability
  * and PATCH /trips/{trip}/pass-pretrip already are.
  *
- * ── NOTHING HERE REACHES in_transit ───────────────────────────────────────
- * STT-006 is SNG-TRN-013's Transit half, blocked on the owner's Q1/Q3 ruling.
- * The response says which state was actually reached so no client can assume
- * the trip is moving.
+ * ── depart() IS THE SECOND HALF OF THE DISPATCHER'S ACT ──────────────────
+ *   PATCH /transport/trips/{trip}/depart          record that it actually left
+ *
+ * `dispatched` means released; `in_transit` means moving, and they are minutes
+ * to hours apart in real operations. The response says which state was actually
+ * reached so no client can assume a released trip is on the road.
+ *
+ * STT-006 was authorised by the owner's Q3 ruling on 2026-09-10 and sat unbuilt
+ * behind a comment in this very docblock that called it blocked. See D-105.
  *
  * Thin, like every other transport controller. Tenancy is resolved once by
  * TransportTripService::find(), which raises ResourceNotFoundException — 404,
@@ -113,6 +119,37 @@ class TransportDispatchController extends Controller
     }
 
     /** One shape for success and refusal, so a client renders one component. */
+    /**
+     * STT-006 — record that the vehicle actually left.
+     *
+     * PATCH, not POST, matching every other state change in this module
+     * (submit-viability, pass-pretrip, dispatch, approve, reject). D-108 records
+     * that Step 11's API registry has no row for this edge at all, so the path
+     * is derived from the convention rather than quoted.
+     *
+     * Gated on transport.trip.dispatch — no new permission. Recording that the
+     * truck rolled is the same dispatcher's same act, minutes later, and
+     * inventing a second grant matrix for it would be a matrix nobody
+     * specified. See TransitScope::PERMISSION_DEPARTURE.
+     */
+    public function depart(RecordDepartureRequest $request, int $trip): JsonResponse
+    {
+        $tenantId = $request->user()->tenant_id;
+        $record   = $this->trips->find($trip, $tenantId);   // 404, never 403
+
+        try {
+            $moved = $this->dispatch->recordDeparture($record, $request->validated(), $tenantId, $request->user());
+        } catch (ResourceNotFoundException $e) {
+            // MUST precede the BusinessException arm — it extends it, and a 422
+            // on another tenant's id would confirm the record exists.
+            throw $e;
+        } catch (BusinessException $e) {
+            return $this->refusal($e, $record, $tenantId);
+        }
+
+        return $this->success($this->payload($moved, $tenantId), 'Departure recorded');
+    }
+
     private function payload($trip, int $tenantId): array
     {
         return [
@@ -129,9 +166,12 @@ class TransportDispatchController extends Controller
             // success — so a panel never has to guess whether it may offer the
             // action, and so a refusal and a pre-flight read agree by construction.
             'readiness' => $trip->isDispatched() ? null : $this->pretrip->revalidate($trip, $tenantId),
-            // Stated rather than implied: dispatched is not in transit.
-            'in_transit'  => false,
-            'in_transit_note' => 'STT-006 belongs to SNG-TRN-013, which is blocked.',
+            // Stated rather than implied: released is not moving.
+            'in_transit'      => $trip->status === TripStatus::IN_TRANSIT,
+            'departed_at'     => $trip->departed_at,
+            // The action a client may offer next, computed here rather than
+            // inferred from the status string by every caller separately.
+            'can_depart'      => $trip->canTransitionTo(TripStatus::IN_TRANSIT),
             // BRW-050's side effects that did not happen, and why.
             'deferred_effects' => array_keys(array_filter(
                 DispatchScope::BRW_050_DISPOSITION,

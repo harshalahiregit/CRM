@@ -152,11 +152,23 @@ class DispatchTest extends TestCase
         $this->assertSame(DispatchScope::STATE_EDGE_OWNED, TripStatus::PRETRIP_OK.'->'.TripStatus::DISPATCHED);
     }
 
-    public function test_in_transit_stays_unreachable(): void
+    public function test_in_transit_is_now_reachable_but_not_from_here(): void
     {
-        // STT-006 is SNG-TRN-013's Transit half, blocked on Q1/Q3.
-        $this->assertFalse(TripStatus::canTransition(TripStatus::DISPATCHED, TripStatus::IN_TRANSIT));
-        $this->assertSame(DispatchScope::STATE_EDGE_DEFERRED, TripStatus::DISPATCHED.'->'.TripStatus::IN_TRANSIT);
+        // WAS: "in_transit stays unreachable — blocked on Q1/Q3". It was not
+        // blocked. The owner authorised STT-006 on 2026-09-10, in the same
+        // message that authorised this scope, and it sat unbuilt for a week
+        // behind that comment. D-105.
+        $this->assertTrue(TripStatus::canTransition(TripStatus::DISPATCHED, TripStatus::IN_TRANSIT));
+        $this->assertSame(DispatchScope::STATE_EDGE_NOW_WIRED, TripStatus::DISPATCHED.'->'.TripStatus::IN_TRANSIT);
+
+        // But confirming a dispatch does NOT move the trip onto the road. They
+        // are two acts minutes to hours apart, and conflating them would put a
+        // truck "in transit" while it is still being loaded.
+        [$trip] = $this->readyTrip();
+        $moved  = $this->dispatch->confirm($trip, $this->fields(), self::TENANT_A, $this->actor);
+
+        $this->assertSame(TripStatus::DISPATCHED, $moved->status);
+        $this->assertNull($moved->departed_at, 'releasing a trip must not record a departure');
     }
 
     public function test_allocation_still_cannot_jump_to_dispatched(): void
@@ -443,6 +455,12 @@ class DispatchTest extends TestCase
         // Proves the seam works, so Person 2's real service needs no change here.
         $this->app->bind(FleetResourceGateway::class, fn () => new class implements FleetResourceGateway {
             public function markDispatched($trip, ?int $v, ?int $d, int $t, $a = null): bool { return true; }
+        
+            // Added 2026-09-19 when the interface grew a departure and a
+            // release. These fakes only exercise the dispatch edge, so both
+            // answer the same way the fake's markDispatched does.
+            public function markDeparted($trip, ?int $v, int $t, $a = null): bool { return true; }
+            public function markReleased(?int $v, ?int $d, int $t): bool { return true; }
         });
 
         [$trip] = $this->readyTrip();
@@ -462,6 +480,12 @@ class DispatchTest extends TestCase
             public function markDispatched($trip, ?int $v, ?int $d, int $t, $a = null): bool {
                 return false;
             }
+        
+            // Added 2026-09-19 when the interface grew a departure and a
+            // release. These fakes only exercise the dispatch edge, so both
+            // answer the same way the fake's markDispatched does.
+            public function markDeparted($trip, ?int $v, int $t, $a = null): bool { return false; }
+            public function markReleased(?int $v, ?int $d, int $t): bool { return false; }
         });
 
         [$trip] = $this->readyTrip();

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Hash, Building2, MapPin, Truck, FileText } from 'lucide-react'
 import { fetchClientOptions } from '@/services/customerApi'
-import { ORDER_PRIORITIES, ORDER_SOURCES } from '../constants'
+import { ORDER_PRIORITIES, ORDER_SOURCES, fromLocalInput } from '../constants'
 
 /**
  * Transport Order create/edit form (SNG-TRN-006).
@@ -32,6 +32,26 @@ const readonlyStyle = { ...inputStyle, background: 'var(--bg-card)', color: 'var
 const areaStyle = { ...inputStyle, minHeight: 74, resize: 'vertical', fontFamily: 'inherit' }
 
 /** Required-field validation. Returns the first message or null. */
+/**
+ * The form's values, ready to send.
+ *
+ * ── `required_at` USED TO GO OUT AS A WALL CLOCK ─────────────────────────
+ * `<input type="datetime-local">` yields "2026-09-25T09:00" — no zone. The API
+ * runs in UTC, so a customer deadline typed as 9am was stored as 9am UTC and
+ * read back as 2:30pm to the person who typed it. Every order created through
+ * this screen carried a delivery deadline shifted by the local offset.
+ *
+ * Same bug as the one that made Record departure and Record delivery unusable,
+ * in a different form: this one never refused anything, it just quietly stored
+ * the wrong time. Found by sweeping for siblings after fixing that one.
+ *
+ * Conversion belongs HERE rather than at the call site, because the field that
+ * needs it is this form's field and the next caller should not have to know.
+ */
+export function toTransportOrderPayload(v) {
+  return { ...v, required_at: fromLocalInput(v.required_at) }
+}
+
 export function validateTransportOrder(v) {
   if (!v.customer_id) return 'Choose the customer this order is for.'
   if (!v.pickup_location?.address?.trim()) return 'A pickup address is required.'

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Transport;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\ApiResponse;
+use App\Http\Requests\Transport\RecordDeliveryRequest;
 use App\Http\Requests\Transport\RejectTripRequest;
 use App\Http\Requests\Transport\StoreTransportTripRequest;
 use App\Http\Requests\Transport\UpdateTransportTripRequest;
@@ -11,7 +12,10 @@ use App\Services\Transport\TransportAuditLogger;
 use App\Services\Transport\TransportTripService;
 use App\Services\Transport\TripAssignmentService;
 use Illuminate\Http\JsonResponse;
+use App\Models\Transport\TransportContainer;
+use App\Models\Transport\TransportTrip;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Trips (SNG-TRN-007).
@@ -79,7 +83,54 @@ class TransportTripController extends Controller
             'assignment' => $this->assignments->activeForTrip($trip->id, $tenantId)
                 ?->load('vehicle:id,registration_number,vehicle_type,status', 'driver:id,name,driver_code,licence_class,availability'),
             'audit' => $this->audit->forSubject($trip, $tenantId),
+            // CTD §4's destination, reachable from the trip in one click.
+            //
+            // A trip number is the ONE search key that deliberately does not
+            // land on the Digital Passport — somebody typing TRP-2026-000034
+            // is a dispatcher who wants the working screen (D-117). The
+            // condition attached to that ruling is that the passport stays one
+            // obvious click away, and it cannot be if the trip does not know
+            // which container it is carrying.
+            //
+            // Null where the consignment has no container on it — loose cargo
+            // is allowed (§8) and there is genuinely no passport to open.
+            'passport' => $this->passportFor($trip, $tenantId),
         ], 'Trip retrieved');
+    }
+
+    /**
+     * The container this trip is carrying, if it is carrying one.
+     *
+     * Two columns, deliberately. This exists so the screen can offer a link,
+     * not so it can render a container — CTD §9's passport sections are the
+     * passport's own job and duplicating any of them here is how two screens
+     * start disagreeing about one box.
+     *
+     * @return array<string,mixed>|null
+     */
+    private function passportFor(TransportTrip $trip, int $tenantId): ?array
+    {
+        if (! $trip->consignment_id) {
+            return null;
+        }
+
+        $id = DB::table('transport_consignment_containers')
+            ->where('tenant_id', $tenantId)
+            ->where('consignment_id', $trip->consignment_id)
+            ->whereNull('detached_at')
+            ->orderByDesc('id')
+            ->value('container_id');
+
+        if (! $id) {
+            return null;
+        }
+
+        $container = TransportContainer::forTenant($tenantId)->find($id);
+
+        return $container ? [
+            'container_id'     => $container->id,
+            'container_number' => $container->container_number,
+        ] : null;
     }
 
     /** Create a trip from an approved order. */
@@ -149,6 +200,31 @@ class TransportTripController extends Controller
         return $this->success(
             $this->trips->approve($trip, $tenantId, $request->user()),
             'Trip approved. The margin check is not yet enforced.'
+        );
+    }
+
+    /**
+     * STT-007 — record that the load arrived. RTM STOS-REQ-OPS-010, P0.
+     *
+     * PATCH on a named verb, like every other state change here. D-108 records
+     * that Step 11 has no API row for this edge, so the path is derived.
+     *
+     * Gated on transport.trip.deliver, which mirrors PERM-004 — and NOT on
+     * PERM-010's POD row, though FRS TRP-P0-013 names a driver. Confirming a
+     * trip is delivered unlocks billing for everyone downstream; submitting the
+     * proof of it does not. See TransitScope::PERMISSION_DELIVERY.
+     */
+    public function deliver(RecordDeliveryRequest $request, int $id): JsonResponse
+    {
+        $tenantId = $request->user()->tenant_id;
+        $trip     = $this->trips->find($id, $tenantId);   // 404, never 403
+
+        return $this->success(
+            $this->trips->recordDelivery($trip, $request->validated(), $tenantId, $request->user()),
+            // STT-007's side effect, said rather than stored. The trip reaching
+            // `delivered` IS the POD request; this sentence is what makes that
+            // visible to the person who just pressed the button.
+            'Delivery recorded. Proof of delivery is now required before this trip can be billed.'
         );
     }
 

@@ -80,6 +80,22 @@ export default function PurchaseWorkerDetail({ workerId, onBack }) {
     finally { setBusy(false) }
   }
 
+  /*
+   * Hand kit over and record it.
+   *
+   * The endpoint and the service behind it already existed -- the vendor portal
+   * and the admin side both had `POST .../ppe/issue` -- but nothing in the UI
+   * ever called it, so this tab could only ever show kit that had been issued
+   * somewhere else. That is what "PPE list is not showing to select" meant
+   * (SIR-000013): there was no list to select from anywhere.
+   */
+  const issueKit = async (payload) => {
+    setBusy(true); setErr(null)
+    try { await purchaseApi.workforce.issuePpe(workerId, payload); await load(); return true }
+    catch (e) { setErr(e?.response?.data?.message || 'Could not issue this item.'); return false }
+    finally { setBusy(false) }
+  }
+
   const giveBack = async (issueId, condition) => {
     setBusy(true); setErr(null)
     try { await purchaseApi.workforce.returnPpe(issueId, { condition }); await load() }
@@ -214,6 +230,12 @@ export default function PurchaseWorkerDetail({ workerId, onBack }) {
           <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '0 0 12px' }}>
             Issued from the central Inventory — every line below has a matching stock movement.
           </p>
+
+          <IssuePpe onIssue={issueKit} busy={busy} />
+
+          <h3 style={{ margin: '18px 0 10px', fontSize: 13, fontWeight: 800, color: 'var(--text-h)' }}>
+            Issued to this worker
+          </h3>
           {(ppe?.issues ?? []).length === 0 ? (
             <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: 0 }}>Nothing issued to this worker.</p>
           ) : (
@@ -344,6 +366,136 @@ function GateChip({ gate }) {
     </div>
   )
 }
+
+/**
+ * Pick an item off the shelf and issue it.
+ *
+ * The catalogue is tenant-wide stock, so it is loaded once when the tab opens
+ * rather than per render. Out-of-stock rows stay VISIBLE but unselectable: a
+ * store-keeper looking for a harness needs to see that the harness exists and
+ * there are none of it, which a filtered-out row does not tell them.
+ */
+function IssuePpe({ onIssue, busy }) {
+  const [catalogue, setCatalogue] = useState(null)
+  const [loadErr, setLoadErr] = useState(null)
+  const [q, setQ] = useState('')
+  const [productId, setProductId] = useState('')
+  const [qty, setQty] = useState('1')
+  const [size, setSize] = useState('')
+  const [notes, setNotes] = useState('')
+
+  useEffect(() => {
+    let alive = true
+    purchaseApi.workforce.ppeCatalogue()
+      .then(rows => { if (alive) setCatalogue(Array.isArray(rows) ? rows : []) })
+      .catch(e => { if (alive) setLoadErr(e?.response?.data?.message || 'Could not load the PPE catalogue.') })
+    return () => { alive = false }
+  }, [])
+
+  if (loadErr) return <p style={{ fontSize: 12.5, color: '#ef4444', margin: 0 }}>{loadErr}</p>
+  if (!catalogue) return <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: 0 }}>Loading PPE catalogue…</p>
+
+  /*
+   * An empty catalogue is a setup problem, not a fault in this screen -- say
+   * which, and say where to fix it, rather than rendering an empty box.
+   */
+  if (catalogue.length === 0) {
+    return (
+      <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: 0, padding: '10px 12px', borderRadius: 9, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+        No PPE items are set up yet. Add products under a PPE category in
+        Inventory, and they will appear here to issue.
+      </p>
+    )
+  }
+
+  const needle = q.trim().toLowerCase()
+  const rows = needle
+    ? catalogue.filter(c => `${c.name} ${c.sku || ''}`.toLowerCase().includes(needle))
+    : catalogue
+  const chosen = catalogue.find(c => String(c.product_id) === String(productId))
+  const outOfStock = chosen && Number(chosen.available) <= 0
+  const tooMuch = chosen && Number(qty) > Number(chosen.available)
+  const blocked = busy || !productId || outOfStock || tooMuch || !(Number(qty) > 0)
+
+  const submit = async () => {
+    if (!productId) return
+    const ok = await onIssue({
+      product_id: Number(productId),
+      qty: Number(qty) || 1,
+      size: size.trim() || null,
+      notes: notes.trim() || null,
+    })
+    if (ok) { setProductId(''); setQty('1'); setSize(''); setNotes(''); setQ('') }
+  }
+
+  return (
+    <div style={{ padding: 12, borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-h)', marginBottom: 10 }}>Issue PPE</div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10 }}>
+        <label style={{ gridColumn: '1 / -1' }}>
+          <span style={fieldLabel}>Find an item</span>
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search by name or SKU…" style={fieldInput} />
+        </label>
+
+        <label style={{ gridColumn: '1 / -1' }}>
+          <span style={fieldLabel}>Item *</span>
+          <select value={productId} onChange={e => setProductId(e.target.value)} style={fieldInput}>
+            <option value="">Select an item…</option>
+            {rows.map(c => (
+              <option key={c.product_id} value={c.product_id} disabled={Number(c.available) <= 0}>
+                {c.name}{c.sku ? ` · ${c.sku}` : ''} — {Number(c.available) <= 0 ? 'out of stock' : `${c.available} available`}
+              </option>
+            ))}
+          </select>
+          {needle && rows.length === 0 && (
+            <span style={{ ...fieldHint, color: '#f59e0b' }}>Nothing in the catalogue matches that search.</span>
+          )}
+        </label>
+
+        <label>
+          <span style={fieldLabel}>Quantity</span>
+          <input type="number" min="0.001" step="any" value={qty} onChange={e => setQty(e.target.value)} style={fieldInput} />
+        </label>
+
+        <label>
+          <span style={fieldLabel}>Size</span>
+          <input value={size} onChange={e => setSize(e.target.value)} placeholder="e.g. L, 9, XL" style={fieldInput} />
+        </label>
+
+        <label style={{ gridColumn: '1 / -1' }}>
+          <span style={fieldLabel}>Notes</span>
+          <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional — e.g. replacement for a damaged helmet" style={fieldInput} />
+        </label>
+      </div>
+
+      {/* Refused server-side too; said here so it is not a surprise on submit. */}
+      {outOfStock && (
+        <p style={{ ...fieldHint, color: '#ef4444', marginTop: 8 }}>
+          {chosen.name} is out of stock — it cannot be issued until it is replenished.
+        </p>
+      )}
+      {!outOfStock && tooMuch && (
+        <p style={{ ...fieldHint, color: '#f59e0b', marginTop: 8 }}>
+          Only {chosen.available} of {chosen.name} available.
+        </p>
+      )}
+
+      <button
+        type="button"
+        onClick={submit}
+        disabled={blocked}
+        style={{ ...primaryBtn, marginTop: 12, ...(blocked ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+      >
+        {busy ? <Loader2 size={14} /> : <Check size={14} />} Issue to worker
+      </button>
+    </div>
+  )
+}
+
+const fieldLabel = { display: 'block', fontSize: 10.5, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 4 }
+const fieldInput = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-h)', fontSize: 12.5 }
+const fieldHint = { display: 'block', fontSize: 11.5, marginTop: 4 }
 
 function Panel({ title, children }) {
   return (

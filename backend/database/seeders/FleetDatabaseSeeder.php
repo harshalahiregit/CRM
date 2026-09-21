@@ -46,7 +46,7 @@ class FleetDatabaseSeeder extends Seeder
                 'chassis_number'      => 'MAT477050N3K12345',
                 'engine_number'       => 'ENG3K12345',
                 'gps_device_id'       => 'DEV-TEST-0001',
-                'status'              => 'active',
+                'status'              => 'AVAILABLE',
                 'registration_expiry' => now()->addYears(3)->toDateString(),
                 'insurance_expiry'    => now()->addMonths(7)->toDateString(),
                 'fitness_expiry'      => now()->addMonths(5)->toDateString(),
@@ -60,7 +60,7 @@ class FleetDatabaseSeeder extends Seeder
                 'chassis_number'      => 'MAT477050N3K67890',
                 'engine_number'       => 'ENG3K67890',
                 'gps_device_id'       => 'DEV-TEST-0002',
-                'status'              => 'active',
+                'status'              => 'AVAILABLE',
                 // PUC falls due inside the warning window: amber, not blocked.
                 'puc_expiry'          => now()->addDays(12)->toDateString(),
                 'insurance_expiry'    => now()->addMonths(9)->toDateString(),
@@ -70,7 +70,7 @@ class FleetDatabaseSeeder extends Seeder
                 'vehicle_type'        => 'tipper',
                 'ownership_type'      => 'owned',
                 'gps_device_id'       => 'DEV-TEST-0003',
-                'status'              => 'in_maintenance',
+                'status'              => 'UNDER_MAINTENANCE',
                 'compliance_status'   => 'compliant',
             ],
             [
@@ -78,7 +78,7 @@ class FleetDatabaseSeeder extends Seeder
                 'vehicle_type'        => 'truck',
                 'ownership_type'      => 'attached',
                 'gps_device_id'       => null,          // nothing tracking it
-                'status'              => 'active',
+                'status'              => 'AVAILABLE',
                 // Insurance lapsed last month — this is what blocks dispatch.
                 'insurance_expiry'    => now()->subMonth()->toDateString(),
                 'fitness_expiry'      => now()->addMonths(8)->toDateString(),

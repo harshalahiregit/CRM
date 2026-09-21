@@ -29,6 +29,16 @@ export const stosApi = {
     update: (id, data) => api.put(`/v1/fleet/vehicles/${id}`, data).then(unwrap).catch(handleErr),
     // Admin only, and soft — fuel spend and job cards stay attached.
     retire: (id) => api.delete(`/v1/fleet/vehicles/${id}`).then(unwrap).catch(handleErr),
+
+    /**
+     * T-56 — the one hand-driven edge of the asset state machine.
+     *
+     * Only AVAILABLE, IDLE and RETIRED are accepted. Everything else is a
+     * consequence of something happening elsewhere, and the server explains
+     * which — so a 422 here carries a sentence worth showing the user.
+     */
+    setStatus: (id, status) =>
+      api.patch(`/v1/fleet/vehicles/${id}/status`, { status }).then(unwrap).catch(handleErr),
   },
 
   fuel: {
@@ -49,11 +59,55 @@ export const stosApi = {
   // overlay is ours to write.
   drivers: {
     list: (params = {}) => api.get('/v1/fleet/drivers', { params }).then(unwrap).catch(handleErr),
+
+    /** Who can take a load right now, and who cannot — with the reason and whose desk owns it. */
+    eligible: (params = {}) => api.get('/v1/fleet/drivers/eligible', { params }).then(unwrap).catch(handleErr),
     saveProfile: (source, personId, data) =>
       api.put(`/v1/fleet/drivers/${source}/${personId}`, data).then(unwrap).catch(handleErr),
     // The REGULAR assignment the allocation engine reads. Pass null to clear.
     assign: (source, personId, vehicleId) =>
       api.put(`/v1/fleet/drivers/${source}/${personId}/assign`, { vehicle_id: vehicleId }).then(unwrap).catch(handleErr),
+  },
+
+  /**
+   * T-57 — statutory paperwork.
+   *
+   * `file` posts multipart because a driver photographs a certificate at the
+   * roadside; everything else is JSON. Uploading never clears a truck — only
+   * verifying does, which is why `verify` is a separate call and not a
+   * checkbox on the upload.
+   */
+  documents: {
+    forVehicle: (vehicleId) => api.get(`/v1/fleet/vehicles/${vehicleId}/documents`).then(unwrap).catch(handleErr),
+
+    file: (vehicleId, form) => {
+      const body = new FormData()
+      Object.entries(form).forEach(([k, v]) => { if (v !== null && v !== undefined && v !== '') body.append(k, v) })
+
+      return api.post(`/v1/fleet/vehicles/${vehicleId}/documents`, body, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }).then(unwrap).catch(handleErr)
+    },
+
+    renew: (vehicleId, documentId, form) => {
+      const body = new FormData()
+      Object.entries(form).forEach(([k, v]) => { if (v !== null && v !== undefined && v !== '') body.append(k, v) })
+
+      return api.post(`/v1/fleet/vehicles/${vehicleId}/documents/${documentId}/renew`, body, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }).then(unwrap).catch(handleErr)
+    },
+
+    verify: (documentId, verdict, reason = null) =>
+      api.patch(`/v1/fleet/documents/${documentId}/verify`, { verdict, reason }).then(unwrap).catch(handleErr),
+  },
+
+  gensets: {
+    register: (params = {}) => api.get('/v1/fleet/gensets', { params }).then(unwrap).catch(handleErr),
+    create:   (data) => api.post('/v1/fleet/gensets', data).then(unwrap).catch(handleErr),
+    update:   (id, data) => api.put(`/v1/fleet/gensets/${id}`, data).then(unwrap).catch(handleErr),
+    fit:      (id, vehicleId) => api.post(`/v1/fleet/gensets/${id}/fit`, { vehicle_id: vehicleId }).then(unwrap).catch(handleErr),
+    unfit:    (id) => api.post(`/v1/fleet/gensets/${id}/unfit`).then(unwrap).catch(handleErr),
   },
 
   urea: {
@@ -84,9 +138,14 @@ export const stosApi = {
 /**
  * The grid's filter tiles.
  *
- * "Allocated" and "In Transit" are NOT here. Those are trip facts and Dispatch
- * (Developer 1) owns trips — deriving them from telemetry would report a yard
- * shunt as a delivery. They arrive when Dispatch does.
+ * These are TELEMETRY-derived presentation states (moving / idle / offline), not
+ * the vehicle asset state machine in VEHICLE_STATUS_LABELS below. Two different
+ * vocabularies on purpose: one answers "what is this truck doing right now",
+ * the other "what may be done with it".
+ *
+ * Dispatch has since landed, so ALLOCATED and IN_TRANSIT are real asset states —
+ * but they are not filter tiles here until FleetService::grid() can filter on
+ * them. Adding the tile first would give a user a filter that returns nothing.
  */
 export const FLEET_STATES = [
   { value: '',                   label: 'All' },
@@ -98,6 +157,28 @@ export const FLEET_STATES = [
   { value: 'unmonitored',        label: 'Unmonitored' },
   { value: 'retired',            label: 'Retired' },
 ]
+
+/**
+ * The vehicle asset state machine, as ruled 2026-09-19 — Fleet is its sole
+ * authority. See docs/transport/STOS-PROCESS-FLOW-AND-OWNERSHIP.md §4.
+ *
+ * Labelled here so a screen never shows a user `UNDER_MAINTENANCE`. The wire
+ * value is uppercase because it crosses a module boundary; what a person reads
+ * is a sentence.
+ */
+export const VEHICLE_STATUS_LABELS = {
+  AVAILABLE:          'Available',
+  ALLOCATED:          'Allocated to a trip',
+  IN_TRANSIT:         'In transit',
+  UNDER_MAINTENANCE:  'In the workshop',
+  COMPLIANCE_BLOCKED: 'Compliance blocked',
+  IDLE:               'Idle',
+  BREAKDOWN:          'Broken down',
+  RETIRED:            'Retired',
+}
+
+export const vehicleStatusLabel = (status) =>
+  VEHICLE_STATUS_LABELS[status] || String(status || '').replace(/_/g, ' ').toLowerCase()
 
 /** Traffic light. One definition, so no two screens disagree about red. */
 export const TONES = {
@@ -154,15 +235,60 @@ export const TYRE_POSITIONS = [
 
 export const TYRE_POSITION_LABEL = (p) => String(p || '').replace(/_/g, ' ')
 
+/**
+ * T-01 — mirrors `Vehicle::FUEL_TYPES`. The blank first option is deliberate:
+ * fuel type is nullable, and forcing "diesel" on a vehicle nobody recorded
+ * would be a guess written into the register as a fact.
+ */
+export const FUEL_TYPES = [
+  { value: '',         label: 'Not recorded' },
+  { value: 'diesel',   label: 'Diesel' },
+  { value: 'petrol',   label: 'Petrol' },
+  { value: 'cng',      label: 'CNG' },
+  { value: 'lng',      label: 'LNG' },
+  { value: 'electric', label: 'Electric' },
+  { value: 'hybrid',   label: 'Hybrid' },
+]
+
+/** Mirrors `Genset::STATUSES`. */
+export const GENSET_STATUSES = [
+  { value: 'idle',           label: 'In the yard' },
+  { value: 'active',         label: 'In service' },
+  { value: 'in_maintenance', label: 'Under repair' },
+  { value: 'retired',        label: 'Retired' },
+]
+
 export const JOB_STATUSES = [
-  { value: 'open',           label: 'Open' },
-  { value: 'in_progress',    label: 'In progress' },
-  { value: 'awaiting_parts', label: 'Awaiting parts' },
+  { value: 'open',           label: 'Open',           open: true },
+  { value: 'in_progress',    label: 'In progress',    open: true },
+  { value: 'awaiting_parts', label: 'Awaiting parts', open: true },
+  // T-32 — the work is done but nobody has signed it off yet. This is exactly
+  // the window in which a vehicle gets taken, so both still hold it.
+  { value: 'testing',        label: 'Road testing',   open: true },
+  { value: 'qc',             label: 'With QC',        open: true },
   { value: 'completed',      label: 'Completed' },
   { value: 'cancelled',      label: 'Cancelled' },
 ]
 
-export const OPEN_JOB_STATUSES = JOB_STATUSES.slice(0, 3)
+/**
+ * Derived from the flag, not a positional slice.
+ *
+ * This was `JOB_STATUSES.slice(0, 3)`, which silently meant the wrong thing the
+ * moment a status was inserted before `completed` — a vehicle in QC would have
+ * read as released.
+ */
+export const OPEN_JOB_STATUSES = JOB_STATUSES.filter((s) => s.open)
+
+/** One definition of "still in the workshop", so no screen disagrees. */
+export const isJobOpen = (status) => OPEN_JOB_STATUSES.some((s) => s.value === status)
+
+/** T-31 — what QC actually said. CRITICAL_FAIL is not just a louder FAIL: it
+ *  keeps holding the vehicle after this card closes, until a later QC clears it. */
+export const QC_RESULTS = [
+  { value: 'PASS',          label: 'Pass — safe to release' },
+  { value: 'FAIL',          label: 'Fail — rework needed' },
+  { value: 'CRITICAL_FAIL', label: 'Critical fail — vehicle condemned' },
+]
 
 /**
  * The Next-Action Engine's link resolver.

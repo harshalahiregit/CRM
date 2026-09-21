@@ -52,6 +52,15 @@ const ROLES = [
    * so an address already resolves to exactly one account — the selector only
    * ever narrowed a search that could not return two rows. See LoginRequest.
    *
+   * A doctor may also sign in under Staff / Employee: an examining doctor is an
+   * employee who happens to practise medicine, not an outside identity like a
+   * Purchase Vendor with its own table and password, and
+   * AuthService::findUserForLogin admits them under `staff` for that reason.
+   * role=doctor is still accepted by the API, so old deep links and saved
+   * bookmarks keep working. (This paragraph merges the note master added while
+   * this branch was open; master removed Doctor only, this branch removed
+   * Company as well, so both entries stay absent.)
+   *
    * FOLLOW-UP, not done here: the owner's position is that a doctor should be
    * Staff or a vendor, and a company may belong under Client. That is an
    * identity-model migration across two subsystems, not a dropdown edit.

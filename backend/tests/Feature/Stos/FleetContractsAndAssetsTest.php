@@ -62,7 +62,7 @@ class FleetContractsAndAssetsTest extends TestCase
             'registration_number' => 'MH12AB'.random_int(1000, 9999),
             'vehicle_type'        => 'reefer',
             'gps_device_id'       => 'DEV-'.Str::random(6),
-            'status'              => 'active',
+            'status'              => 'AVAILABLE',
             'compliance_status'   => 'compliant',
         ], $over));
 
@@ -182,7 +182,7 @@ class FleetContractsAndAssetsTest extends TestCase
         $vehicle = $this->vehicle();
 
         // 1. status change — raised by the observer, whatever moved the status.
-        $vehicle->update(['status' => 'in_maintenance']);
+        $vehicle->update(['status' => 'UNDER_MAINTENANCE']);
 
         // 2. emergency fuel
         EmergencyFuelIssued::dispatch($vehicle, 1, 5000.0, true, 'Ran dry');
@@ -196,8 +196,8 @@ class FleetContractsAndAssetsTest extends TestCase
 
         // The payload is plain scalars — a consumer must not need our models.
         $status = $heard['fleet.vehicle.status_changed'];
-        $this->assertSame('in_maintenance', $status['status']);
-        $this->assertSame('active', $status['previous_status']);
+        $this->assertSame('UNDER_MAINTENANCE', $status['status']);
+        $this->assertSame('AVAILABLE', $status['previous_status']);
         $this->assertFalse($status['available']);
         $this->assertSame($vehicle->id, $status['vehicle_id']);
     }

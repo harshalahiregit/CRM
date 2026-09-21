@@ -187,7 +187,17 @@ class TelemetryIngestionTest extends TestCase
     {
         config(['stos.ingest.token' => null]);
 
-        $this->ping([], 'anything')->assertStatus(503);
+        // 401, not the 503 this asserted before T-07.
+        //
+        // With per-device tokens, "no shared secret" is the DESIRED end state,
+        // not a broken server: every unit holds its own credential and the
+        // fleet-wide one is gone. Answering 503 would report a healthy fleet as
+        // misconfigured, and would tell anyone probing the endpoint that it is
+        // currently unarmed.
+        //
+        // The property this test exists for is unchanged and is what matters:
+        // an unrecognised caller is refused and nothing is written.
+        $this->ping([], 'anything')->assertStatus(401);
         $this->assertSame(0, TelemetryRecord::count());
     }
 

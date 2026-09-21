@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -230,33 +231,51 @@ return new class extends Migration
     }
 
     /**
-     * Repoint the trips. A trip pointing at a vehicle id that no longer means
-     * anything is worse than no trip at all — it silently reads another truck.
+     * DELIBERATELY DOES NOT REPOINT ANYTHING. Left as a named no-op so the
+     * omission reads as a decision rather than an oversight.
+     *
+     * ── WHY THIS CHANGED (D-109, reported by Person 1, 2026-09-18) ────────
+     * This method used to rewrite `transport_trips.vehicle_id`,
+     * `transport_trips.driver_id` and both `trip_assignments` columns to the
+     * new Fleet ids, in the same breath as moving the rows.
+     *
+     * That was wrong, and the way it was wrong is the worst kind. The Transport
+     * module still READS `transport_vehicles` and `transport_drivers`. Repointing
+     * the keys without repointing the readers turns every one of those rows into
+     * an orphan: a trip silently loses its vehicle and driver on screen. No
+     * error, no warning — the fields just go blank. And `down()` cannot undo it,
+     * because by then the Fleet rows are live masters that may have picked up
+     * history.
+     *
+     * Worse, it fired on an ordinary `php artisan migrate` run to apply two
+     * unrelated columns. Nobody had to do anything wrong to trigger it.
+     *
+     * ── THE ACTUAL RULE ──────────────────────────────────────────────────
+     * Moving the DATA and repointing the KEYS are two different decisions. The
+     * first is safe on its own: the old tables keep their rows, Transport keeps
+     * working, and Fleet gains the masters. The second is only safe at the exact
+     * moment the readers switch, and that is Person 1's change to make, on his
+     * schedule, with his tests.
+     *
+     * So the repoint now lives behind `php artisan stos:repoint-trip-fleet-refs`,
+     * which defaults to a dry run and has to be asked for. The mapping is not
+     * stored anywhere for it: every moved row carries `legacy_transport_vehicle_id`
+     * or `legacy_transport_driver_id`, so the command reconstructs it whenever it
+     * is run.
      */
     private function repointForeignKeys(array $vehicleMap, array $driverMap): void
     {
-        foreach ([['transport_trips', 'vehicle_id', $vehicleMap], ['transport_trips', 'driver_id', $driverMap]] as [$table, $column, $map]) {
-            if (! Schema::hasTable($table) || ! Schema::hasColumn($table, $column) || $map === []) {
-                continue;
-            }
-
-            foreach ($map as $oldId => $newId) {
-                DB::table($table)->where($column, $oldId)->update([$column => $newId]);
-            }
+        if ($vehicleMap === [] && $driverMap === []) {
+            return;
         }
 
-        if (Schema::hasTable('trip_assignments')) {
-            foreach ($vehicleMap as $oldId => $newId) {
-                if (Schema::hasColumn('trip_assignments', 'vehicle_id')) {
-                    DB::table('trip_assignments')->where('vehicle_id', $oldId)->update(['vehicle_id' => $newId]);
-                }
-            }
-            foreach ($driverMap as $oldId => $newId) {
-                if (Schema::hasColumn('trip_assignments', 'driver_id')) {
-                    DB::table('trip_assignments')->where('driver_id', $oldId)->update(['driver_id' => $newId]);
-                }
-            }
-        }
+        Log::channel('stos')->warning('Fleet masters moved; trip foreign keys were NOT repointed', [
+            'defect'   => 'D-109',
+            'vehicles' => count($vehicleMap),
+            'drivers'  => count($driverMap),
+            'why'      => 'Transport still reads transport_vehicles/transport_drivers; repointing now would orphan every trip silently',
+            'next'     => 'php artisan stos:repoint-trip-fleet-refs --dry-run, then --apply, at the moment allocation repoints',
+        ]);
     }
 
     /* ── vocabulary mapping ─────────────────────────────────────── */

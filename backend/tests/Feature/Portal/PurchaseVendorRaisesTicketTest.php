@@ -54,13 +54,16 @@ class PurchaseVendorRaisesTicketTest extends TestCase
             ])->id;
         }
 
-        return PurchaseVendor::create([
+        $vendor = PurchaseVendor::create([
             'tenant_id' => self::TENANT, 'company_name' => $company,
             'purchase_vendor_code' => 'PV-'.Str::random(8),
             'status' => PurchaseVendorStatus::ACTIVE, 'portal_status' => 'active',
             'email' => $email ?? strtolower(Str::slug($company)).'@vendor.test',
             'user_id' => $userId,
         ]);
+        $this->markOnboarded($vendor);
+
+        return $vendor->fresh();
     }
 
     public function test_a_vendor_raises_a_ticket_and_then_sees_it(): void

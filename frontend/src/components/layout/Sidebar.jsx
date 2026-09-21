@@ -58,7 +58,9 @@ const MODULE_SEARCH = [
   { label: 'TPV',        path: '/app/tpv/dashboard',    icon: UserCheck,       kw: 'third party vendor workforce' },
   { label: 'Customers',  path: '/app/customers',        icon: Building2,       kw: 'clients directory accounts' },
   { label: 'Compliance', path: '/app/tpv/compliance',   icon: ShieldCheck,     kw: 'hsse checklists' },
-  { label: 'Transport',  path: '/app/transport/orders', icon: Truck,          kw: 'stos trips orders logistics haulage fleet vehicles drivers workshop telematics' },
+  // CTD §4 — lands on the entry point, not on the Orders list. The module used
+  // to open on a table, which is why nobody could find the search.
+  { label: 'Transport',  path: '/app/transport', icon: Truck,          kw: 'stos trips orders logistics haulage fleet vehicles drivers workshop telematics search container lr' },
 
   // Added to the nav but never to this list, so they were unreachable by
   // search while sitting in plain sight in the sidebar. `when` gates a result
@@ -300,6 +302,8 @@ const TPV_VENDOR_ITEMS = [
 // a nav entry that 404s is worse than a missing one, so later clusters arrive
 // with the tickets that build them.
 const TRANSPORT_SUB_ITEMS = [
+  // First on the rail, because CTD §4 calls it "the preferred entry point".
+  { label: 'Find',             path: '/app/transport',          icon: Search, end: true },
   { label: 'Transport Orders', path: '/app/transport/orders',   icon: Package },
   { label: 'Trips',            path: '/app/transport/trips',    icon: Truck },
   { label: 'Consignments',     path: '/app/transport/consignments', icon: Boxes },
@@ -1068,8 +1072,8 @@ export default function Sidebar({ collapsed, onToggle, openSection, toggleSectio
               were gated by canUseStos when they had a section of their own, and
               folding them in here must not quietly widen who sees them. */}
           {(openSection === 'transport' || collapsed)
-            && TRANSPORT_SUB_ITEMS.filter(({ when }) => !when || when(user)).map(({ label, path, icon: Icon }) => (
-            <NavLink key={path} to={path}>
+            && TRANSPORT_SUB_ITEMS.filter(({ when }) => !when || when(user)).map(({ label, path, icon: Icon, end }) => (
+            <NavLink key={path} to={path} end={end}>
               {({ isActive }) => (
                 <div title={collapsed ? label : ''} className={clsx('nav-3d mb-0.5', isActive && 'nav-3d-active')} style={{ justifyContent: collapsed ? 'center' : undefined, paddingLeft: collapsed ? undefined : '28px' }}>
                   <div className="flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(124,58,237,0.06)' }}>

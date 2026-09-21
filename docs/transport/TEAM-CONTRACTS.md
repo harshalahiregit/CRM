@@ -22,6 +22,356 @@ Structure follows what P1 already built: `app/Models/Transport`,
 `app/Services/Transport`, `app/Http/Controllers/Api/Transport`,
 `app/Support/Transport`. Not a package. One structure, not two.
 
+## Never run `migrate:fresh` on the dev database
+
+**Not for cleanup, not for testing, not "just this once".** `migrate:fresh` and `migrate:refresh`
+drop every table in the application — HR, Purchase, Sales, Helpdesk, TPV, Inventory, Customers,
+Projects, Tasks, users — not only the module you are working in. The dev database is the owner's
+working copy and all three of our modules plus six others live in it.
+
+This happened on **2026-09-17**. A cleanup instruction meaning "remove the Transport demo data" was
+carried out as `migrate:fresh --seed`. Every table was dropped and the owner could not log in. It
+was recovered in full only because a `mysqldump` had been taken minutes earlier — that was luck,
+not a process.
+
+**The rule:** clearing data is scoped to your own module's tables and to one tenant, and you assert
+that it touches nothing outside them. Tests run on their own in-memory sqlite, which is the only
+place `migrate:fresh` belongs.
+
+**And the judgement behind it:** if a cleanup instruction — including one from a lead — would
+destroy anything outside your own section, stop and say so before running it.
+
+---
+
+## A block is not done until it has been walked in a real browser
+
+**Ruled by the owner, 2026-09-18. Standing rule, all three sections.**
+
+Not tested — **walked**, by a person clicking, in a real browser, using the values a user would
+actually use.
+
+This is not a suggestion born of caution. On 2026-09-18 three blocks that were marked done,
+fully tested and merged were walked for the first time. **Six user-visible defects**, including
+two shipped features that **nobody outside UTC could use at all**. The suite was green at 1311
+tests throughout.
+
+A green suite is evidence that the code does what the tests say. It is not evidence that anybody
+can use the product.
+
+---
+
+## First click, default values
+
+**The lazy path is the one everybody takes. Test it.**
+
+Every one of the six defects above failed on the **first click with nothing typed**:
+
+- `Record departure` — pressed with the time field untouched: *"A departure cannot be recorded in
+  the future."*
+- `Record delivery` — same.
+- A free container's passport — opened with no arguments: six cards reading "—".
+- A search that matches nothing — "No containers yet", with three containers on file.
+
+Nobody types a custom value on their first try. They press the button and see what happens. If
+that path is broken the feature is broken, whatever the form does when carefully filled in.
+
+---
+
+## Anything crossing the browser/server boundary needs a contract test
+
+**Dates, times, money, numbers — anything with a format.**
+
+Server-side tests cannot see that boundary **by construction**: they build their values on the
+server, where there is nothing to convert and nothing to get wrong. A suite made entirely of them
+will be green over a feature that cannot be used, and was.
+
+What that blind spot cost, measured:
+
+| | typed | stored | shown back |
+|---|---|---|---|
+| Dispatch ETD | 14:00 | 08:30 UTC | **19:30** |
+| Order "Required by" | 09:00 | 09:00 UTC | **14:30** |
+| Record departure / delivery | *(default: now)* | — | **refused as "in the future"** |
+
+So: when a value is transformed on its way out of the browser, there is a test asserting the
+shape it leaves in. `TransportDateTimeContractTest` is the worked example — it reads the frontend
+source from the PHP suite, because **the PHP suite is what runs**.
+
+**Two things that guard has already taught us:**
+
+1. **Fixing the converter does not fix the callers who never called it.** `TransportOrderForm`
+   had a `datetime-local` and called nothing, and survived the first fix untouched. The guard now
+   asserts that **every** file rendering a `datetime-local` also converts one.
+2. **A guard must read code, not prose.** It first fired on a file whose only offence was a
+   comment explaining the bug — the same trap the D-63 seeder guard fell into. Strip comments,
+   and strip them with `[^\n]*`, not `.*$` with the `/s` flag: with `/s` a line-comment pattern
+   runs greedily to the end of the file and the guard then scans almost nothing and passes on
+   everything. That was true of two guards here until it was measured.
+
+**And prove the guard fires.** Break the thing on purpose, watch it go red, put it back. A guard
+that has never failed is a guard nobody has tested.
+
+---
+
+## Assert on what the user ends up with, not on what you just added
+
+**P1, 2026-09-19. Standing rule for every test on this project.** It has been earned five separate
+times, each one a case where **the code was right, the suite was green, and the outcome was
+wrong.**
+
+| What was added | What was asserted | What the user got |
+|---|---|---|
+| A timezone converter | That the converter converts | A departure stored 5½ hours out, because two callers never called it |
+| Two comment-stripping guards | That the guard runs | Nothing scanned — the regex ate the whole file |
+| Refusal messages with reasons | That the API returns the reason | *"Validation failed"* — the screen read a different key |
+| `trip_events` rows on every trip | That the rows exist | Four types written by nothing; a backfill had filled them in |
+| A search that reaches the passport | That `passport` was attached | Every search landed exactly where it always had |
+
+The last one is the clearest, because it is three characters. `$hit + ['path' => $passport]` —
+PHP's union operator keeps the **left** operand's keys, and `$hit` already had a `path`. The
+passport attached. The trail rendered. Every test passed. Every search went exactly where it had
+gone before. **A finished-looking feature that did nothing.**
+
+**So: write the assertion against the thing the user receives.** Not the flag you set, not the
+field you added, not "the method was called". The path they navigate to, the text on the screen,
+the row in the table, the value in the column.
+
+Ask, before you commit: *if the wiring between my new code and the user were cut, would this test
+still pass?* If it would, it is testing that you wrote some code.
+
+**And when a test that should have broken does not, find out why before moving on.** Changing
+where seven search keys landed should have broken a test that asserts paths. It did not. The
+reason turned out to be legitimate — its fixture never attached a container, so every key
+correctly stopped at its own record — and the test now says so in a docblock naming which half it
+pins. **A test that passes for the wrong reason is a blind guard that has not been caught yet**,
+and the moment to catch it is when it surprises you.
+
+---
+
+## Ask what filled the screen, not whether the screen is filled
+
+**P1, 2026-09-19, from D-115.** Standing rule wherever data can arrive by more than one route —
+a seeder, a backfill, a migration, an import, another team's job.
+
+MS-001 §14 step 14 — *"show the complete timeline"* — was walked in a browser and marked **WORKS**.
+The screen was right. Eleven events, correctly ordered, in English. What it did not show is that
+seven of them had been **reconstructed by a backfill** and that four types
+(`trip.created`, `trip.submitted`, `vehicle.allocated`, `pretrip.passed`) were **emitted by no
+code at all**. Every existing trip looked complete. A trip created the next day would have had
+four holes, silently.
+
+**So: when a screen can be populated by something other than the code under test, walking it is
+not sufficient.** Read a row and ask where it came from. Better, make one from scratch — the fix
+above was confirmed by creating a new trip and checking its first three events said `LIVE` rather
+than `BACKFILLED`.
+
+**Two corollaries, both earned the hard way on the same day:**
+
+1. **Keep the audited token a literal.** `TripEventEmissionTest` audits the event registry by
+   finding type strings in recorder calls. The first version of `AllocationService` looped a
+   `[$type => $id]` table, and the audit could not see either call — a value assembled from a
+   variable is invisible to any scanner. If a test greps for it, write it out longhand.
+
+   **And scan the other sections' code before you trust a green run.** That same test matched the
+   type only as a first positional argument, which is P1's dialect. P2 and P3 both write
+   `record(type: 'x.y', …)`, so on the day they shipped nine emitters between them the guard went
+   green and reported none of them existed — and mis-reported one of P1's own calls too. **A guard
+   that only recognises the dialect its author writes is a mirror, not a guard.** Three guards on
+   this project have now failed in that exact shape.
+2. **Trust the test over your own grep.** The allow-list for that test was drafted from a hand-run
+   `grep` which reported `genset.on` as emitted. The only occurrence outside the registry was **an
+   example inside a docblock.** The test contradicted the grep on its first run and the test was
+   right.
+
+---
+
+## Check a blocker against the code, not against the register
+
+**Ruled by the owner, 2026-09-19, after two of ours had quietly cleared.**
+
+**Before every block, and before any message saying you are blocked:**
+
+```bash
+git fetch origin
+git log --oneline HEAD..origin/master     # what landed since you last looked
+```
+
+Then take each of your open blockers and **look at the thing itself** — the class, the method,
+the route — rather than at what the register says about it.
+
+On 2026-09-19 we found that two of ours had been cleared days earlier and nobody had said so:
+P3 made a consignment a document entity on the 16th, closing every item of
+`REQUEST-person3-document-entity.md`; P2 landed `ReconcileFleetMasters` on the 17th, closing one
+of D-100's three blockers. **A walk of the demonstration written on the 18th still recorded the
+first as "blocked on P3".**
+
+A register that says you are blocked on something that landed three days ago is **worse than no
+register**: it sends you to ask a colleague for work they have already done, and it stops you
+building something that is sitting there unblocked.
+
+**Nobody is at fault for not announcing.** We did not announce the trip lifecycle to them
+either. Three people shipping to one repository several times a day is simply a situation where
+announcements are not a reliable channel. Looking is.
+
+**And when you check, record what is STILL open too** — with how you verified it. D-114 lists
+`markInvoiced()` as still having no caller and `FleetResourceGateway` as still carrying one
+method, each checked in the code, because "I looked and it is still blocked" is worth exactly as
+much as "I looked and it is not".
+
+---
+
+## No guard is trusted until it has been seen to fail on the thing it guards
+
+**Ruled by the owner, 2026-09-18. One line, and it has already paid for itself twice.**
+
+Write the guard, then **break the thing on purpose and watch it go red**, then put it back. A
+guard that has never failed is not a guard — it is a comment that costs CPU.
+
+**Break it a second way, too.** On 2026-09-18 two guards in this module were stripping comments
+with `'#//.*$|/\*.*?\*/#ms'`. The `/s` flag makes `.` match newlines, so `//.*$` ran greedily
+from the file's first comment to its last line and **stripped the entire file**. Both guards were
+scanning an almost-empty string and passing on anything at all.
+
+The newest of them — a timezone contract test — **passed while a second timezone bug was still
+live in the file it was reading.**
+
+The D-106 caller scan had the identical line and *did* fire when it was tested, for one reason:
+the probe happened to be inserted **above that file's first comment**. One probe in one position
+is not proof. Put the probe somewhere else as well.
+
+**This is not hypothetical — the second break found a second hole the same day.** The timezone
+guard checked "does this file render a `datetime-local`". Probe A removed the conversion from a
+file that renders one directly: it went red, correctly. Probe B removed the conversion from
+`DispatchPanel`, which renders `type={field.type}` out of a shared field config — and deleting
+the conversion deleted the file's last mention of the literal, so the file **fell out of the
+guard's scope entirely and the guard stayed green over a real regression.**
+
+Two probes, two positions, two different mechanisms. The first proved the guard worked. The
+second proved it did not.
+
+**A test that cannot fail is worse than no test: it converts a gap into confidence.**
+
+---
+
+## When you sweep a boundary, look for the silent bugs first
+
+**They are the ones that have been running longest.**
+
+The timezone sweep found two faults of the same cause and they behaved completely differently:
+
+| | behaviour | how long it survived |
+|---|---|---|
+| `Record departure` / `Record delivery` | **threw** — "cannot be recorded in the future" | found the first time anyone clicked |
+| Order "Required by" | **stored the wrong time, silently** | every order ever created through the UI |
+
+A bug that throws gets found, by a user if not by us. A bug that quietly writes the wrong value
+does not — there is nothing to notice, and the wrong data accumulates the whole time.
+
+So when sweeping: start with the paths that **succeed**, not the ones that fail. Take a value
+through the full round trip — type it, store it, read it back — and compare it to what was typed.
+"No error" is not the same as "correct".
+
+**And report what was clean, not only what was found.** A sweep that lists only its hits tells
+the reader nothing about what was actually checked.
+
+---
+
+## Always run `migrate:status` before `migrate`
+
+**Read what is pending before you apply it. Every time.**
+
+`php artisan migrate` applies **everything** that is pending, not the migration you just wrote.
+Another developer's migration, sitting unapplied on your branch since a merge you did not look
+at closely, runs on your database the moment you add a column of your own.
+
+This happened on **2026-09-18**. Block 3 added two columns to `transport_trips`;
+`php artisan migrate` also ran `2027_01_02_000002_move_transport_masters_into_fleet`, which the
+owner had said explicitly not to run yet. Nobody opted into it. Nobody passed a flag or named a
+file. Laravel did what Laravel does. See D-109.
+
+**The rule:**
+
+```
+php artisan migrate:status     # read the pending list
+php artisan migrate --pretend  # if anything on it is not yours
+php artisan migrate
+```
+
+**And the judgement behind it:** `migrate` is not a command that applies *your* change. It is a
+command that applies *the branch's* changes, and a pending migration you did not write is
+somebody else's decision executing on your database. A status check is the only thing standing
+between you and the next one.
+
+Same family as the rule above: a routine command with an irreversible effect nobody expects.
+
+---
+
+## `php artisan migrate` currently moves the Fleet masters — D-109
+
+**Added 2026-09-17, after I triggered it by accident.**
+
+`2027_01_02_000002_move_transport_masters_into_fleet` is a pending migration with no guard on
+it. **The ordinary `php artisan migrate` runs it**, and it repoints
+`transport_trips.vehicle_id`, `.driver_id` and the same two columns on `trip_assignments` from
+the Transport masters to the Fleet ones.
+
+Transport still reads `transport_vehicles` and `transport_drivers`, so every repointed row
+becomes an orphan and trips lose their vehicle and driver on screen. `down()` is a deliberate
+no-op, so `migrate:rollback` will not undo it.
+
+**Until it is guarded or withdrawn:**
+
+- check `php artisan migrate --pretend` before running `migrate` on any database you care about;
+- if it has already run on yours, re-running `TransportDemoSeeder` repairs the Transport side
+  (the Fleet rows it inserted are P2's and are left alone);
+- do not delete the rows it created in `vehicles`, `driver_profiles` or `stos_drivers` — they
+  carry `legacy_transport_*_id` and are P2's to reverse.
+
+Same family as the rule above: a routine command with an irreversible effect nobody expects.
+The decision on guarding it belongs to the owner and P2, and is open in D-109.
+
+---
+
+## Which document wins when the state machines disagree
+
+**Ruled by the owner, 2026-09-17. Standing rule — applies to every state machine in
+Transport, not just the Trip.**
+
+> **Vocabulary from Step 9. Edges from Step 11. A Step 9 state becomes reachable only
+> when some document defines something that can gate it.**
+
+Step 9 (Master Product Constitution) is the authority tier and gives the Trip sixteen
+states. Step 11 (Canonical Registries) LOCKS transitions for twelve. Four times, Step 9
+puts a state where Step 11 draws a single edge straight past it. Each of those four was
+being re-argued from scratch by whoever reached it next, which is what this rule ends.
+
+Applying it:
+
+| Step 9 state | Entry gate in any document | Requirement that records it | Data model | Result |
+|---|---|---|---|---|
+| `pretrip_ok` | STT-005's "All checks passed" | OPS-007 pre-trip checklist | yes | **WIRED** (ruled 2026-09-09) |
+| `arrived` | none | none — the RTM runs OPS-008 dispatch → OPS-009 track → OPS-010 delivery with nothing between | n/a | **declared, unreachable** |
+| `pod_pending` | none | none | n/a | **declared, unreachable** |
+| `settlement_pending` | none | TRP-P0-017 exists, but it is SNG-TRN-017 | **`trip_settlements` does not exist** | **declared, unreachable** |
+
+**`arrived`, `pod_pending` and `settlement_pending` stay in the vocabulary and stay
+unreachable.** They remain in `TripStatus::ALL`, `::OPEN` and `::LABELS`, so the token is
+fixed before anything writes to the column and a later ticket that gains a gate can wire
+one without renaming anything. None of them gets an edge until that happens.
+
+**Why the vocabulary and not just the edges.** Dropping a Step 9 state would mean a later
+ticket inventing its own name for the same thing — which is D-9's mistake (a field with no
+defined values) one level up. Keeping it declared costs one line and fixes the word.
+
+**Why not wire them anyway.** A state with no gate is a hidden state change dressed as
+configuration: any caller could move a trip into it, and the state would assert something
+no document defines and nothing checks.
+
+This closes **D-36**, which had asked SNG-TRN-014 to decide `arrived` and which SNG-TRN-014
+shipped without deciding.
+
+---
+
 ## Defect numbering
 
 **P1's `docs/transport/registry-defects.md` is the list.** New findings get a
@@ -308,10 +658,16 @@ authorising role, and **BLK-10** means no CRM account maps to one.
 
 ### C-09 — POD verification is built but cannot fire until Transit is wired
 
-`TripStatus::TRANSITIONS` still has no edge out of `dispatched`. STT-006
+> **CLOSED 2026-09-17 — Block 3 wired both edges. This entry is kept for the record.**
+>
+> The paragraph below was wrong for a week. It said STT-006 was deferred; the owner had
+> already authorised it on 2026-09-10 (Q3) and its columns had already shipped. See
+> **D-105**. P3 needed nothing from this beyond the two edges landing, and they have.
+
+~~`TripStatus::TRANSITIONS` still has no edge out of `dispatched`. STT-006
 (`dispatched → in_transit`) is the Transit half of SNG-TRN-013 and is recorded in the
 code as deferred; STT-007 (`in_transit → delivered`) follows it. **Nothing writes
-`delivered`.**
+`delivered`.**~~
 
 STT-008 (`delivered → pod_verified`) is now implemented on P3's side and is wired into
 `TripDocumentService::verify()`. It is deliberately **conditional**: verifying a POD on
@@ -320,6 +676,9 @@ rather than throwing over a gap that is not the verifier's fault.
 
 **P1: the moment you wire STT-006 and STT-007, the POD edge starts firing with no change
 on P3's side.** Nothing needs coordinating beyond you landing those two edges.
+
+**Both are wired as of 2026-09-17.** `TripDocumentService::verify()` now has trips arriving
+in `delivered` to act on, with no change on P3's side — exactly as this entry predicted.
 
 ---
 
