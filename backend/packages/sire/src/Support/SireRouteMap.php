@@ -15,7 +15,7 @@ namespace Sire\Support;
  * registry. Reconcile it with `node tools/sire-route-audit.mjs <routes-file>`,
  * edit the JAVASCRIPT map, and re-run the generator.
  *
- * 374 routes, 28 modules.
+ * 373 routes, 28 modules.
  */
 final class SireRouteMap
 {
@@ -319,7 +319,6 @@ final class SireRouteMap
         ['pattern' => '/app/settings/notification-preferences', 'module' => 'settings', 'section' => 'notification-preferences', 'screen' => 'notification-preferences'],
         ['pattern' => '/app/settings/numbering', 'module' => 'settings', 'section' => 'numbering', 'screen' => 'numbering'],
         ['pattern' => '/app/settings/recycle-bin', 'module' => 'settings', 'section' => 'recycle-bin', 'screen' => 'recycle-bin'],
-        ['pattern' => '/app/settings/roles', 'module' => 'settings', 'section' => 'roles', 'screen' => 'roles'],
         ['pattern' => '/app/settings/security', 'module' => 'settings', 'section' => 'security', 'screen' => 'security'],
         ['pattern' => '/app/settings/statuses', 'module' => 'settings', 'section' => 'statuses', 'screen' => 'statuses'],
         ['pattern' => '/app/settings/tax-rates', 'module' => 'settings', 'section' => 'tax-rates', 'screen' => 'tax-rates'],
