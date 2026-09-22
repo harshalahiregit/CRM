@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\Hr\InterviewController;
 use App\Http\Controllers\Api\Hr\InterviewQuestionController;
 use App\Http\Controllers\Api\Hr\OfferController;
 use App\Http\Controllers\Api\Hr\OnboardingChecklistController;
+use App\Http\Controllers\Api\Hr\PoshCaseController;
 use App\Http\Controllers\Api\Hr\PoshCommitteeController;
 use App\Http\Controllers\Api\Hr\OnboardingController;
 use App\Http\Controllers\Api\Hr\EmployeeAssetController;
@@ -759,3 +760,27 @@ Route::get('/hr/attendance/{attendance}/selfie/{which}',
     ->whereIn('which', ['in', 'out'])
     ->name('hr.attendance.selfie')
     ->middleware('signed');
+
+/*
+|--------------------------------------------------------------------------
+| POSH cases — members only
+|--------------------------------------------------------------------------
+|
+| Their own group, with NO permission middleware, and that is deliberate.
+|
+| Authorisation is PoshAccessResolver and nothing else: not a permission, not
+| a data scope, not the HR queue, not committee membership, not being an
+| administrator. A harassment complaint may name any of those people, so none
+| of them is a way in.
+|
+| A permission gate here would also answer the wrong question in the wrong
+| way. It refuses with 403 before the resolver runs, and a 403 says "this
+| exists and you may not see it" — which on this data is itself a disclosure.
+| Every refusal has to be the same 404.
+|
+| There is deliberately NO index route. A list is an enumeration surface.
+*/
+Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
+    Route::get('/posh-cases/{id}',         [PoshCaseController::class, 'show'])->whereNumber('id');
+    Route::get('/posh-cases/{id}/members', [PoshCaseController::class, 'members'])->whereNumber('id');
+});
