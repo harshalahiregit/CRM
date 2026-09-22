@@ -11,7 +11,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { Settings2, Save, RotateCcw, Info, ListChecks, ShieldCheck } from 'lucide-react'
+import { Settings2, Save, RotateCcw, Info, ListChecks, ShieldCheck, Scale } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { HrLoading } from '@/components/ui/HrState'
 import { useToast } from '@/components/ui/Toast'
@@ -200,6 +200,22 @@ export default function HrSettings() {
           </span>
         </span>
         <ShieldCheck size={18} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+      </Link>
+
+      {/* Committee composition and quorum. Configuration only — no complaint
+          or case information is reachable from this card. */}
+      <Link to="/app/hr/posh-committees"
+        className="rounded-2xl flex items-center justify-between gap-3"
+        style={{ padding: 18, background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+        <span className="min-w-0">
+          <span className="text-xs font-bold uppercase tracking-wider block" style={{ color: 'var(--text-h)' }}>
+            POSH committees
+          </span>
+          <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            Committee members, their roles and how many must agree.
+          </span>
+        </span>
+        <Scale size={18} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
       </Link>
     </div>
   )

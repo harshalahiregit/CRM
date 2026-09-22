@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\Hr\InterviewController;
 use App\Http\Controllers\Api\Hr\InterviewQuestionController;
 use App\Http\Controllers\Api\Hr\OfferController;
 use App\Http\Controllers\Api\Hr\OnboardingChecklistController;
+use App\Http\Controllers\Api\Hr\PoshCommitteeController;
 use App\Http\Controllers\Api\Hr\OnboardingController;
 use App\Http\Controllers\Api\Hr\EmployeeAssetController;
 use App\Http\Controllers\Api\Hr\EmployeeController;
@@ -654,6 +655,20 @@ Route::middleware(['auth:sanctum', 'permission:hr_attendance,view_global'])->pre
     // The controls that used to be constants — the advance thresholds above all.
     Route::get('/settings',  [HrSettingsController::class, 'index']);
     Route::put('/settings',  [HrSettingsController::class, 'update']);
+
+    // ── POSH committees ─────────────────────────────────────────────────
+    // Committee composition, its own role vocabulary and its members. Gated
+    // on hr_settings inside the controller. CONFIGURATION ONLY — no case data
+    // is reachable here, and case access will never come through this gate.
+    Route::get('/posh-committees',                       [PoshCommitteeController::class, 'index']);
+    Route::post('/posh-committees',                      [PoshCommitteeController::class, 'store']);
+    Route::put('/posh-committees/{id}',                  [PoshCommitteeController::class, 'update'])->whereNumber('id');
+    Route::patch('/posh-committees/{id}/status',         [PoshCommitteeController::class, 'setStatus'])->whereNumber('id');
+    Route::delete('/posh-committees/{id}',               [PoshCommitteeController::class, 'destroy'])->whereNumber('id');
+    Route::post('/posh-committees/{id}/roles',           [PoshCommitteeController::class, 'storeRole'])->whereNumber('id');
+    Route::put('/posh-committees/{id}/roles/{roleId}',   [PoshCommitteeController::class, 'updateRole'])->whereNumber('id')->whereNumber('roleId');
+    Route::delete('/posh-committees/{id}/roles/{roleId}',[PoshCommitteeController::class, 'destroyRole'])->whereNumber('id')->whereNumber('roleId');
+    Route::put('/posh-committees/{id}/members',          [PoshCommitteeController::class, 'setMembers'])->whereNumber('id');
 
     // ── Exit clearance departments ──────────────────────────────────────
     // Who may sign off each department. Gated on hr_settings inside the

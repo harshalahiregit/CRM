@@ -1349,6 +1349,26 @@ export const hrApi = {
   },
 
   /**
+   * POSH committee configuration.
+   *
+   * Configuration only — this surface exposes no complaint or case data, and
+   * case access will never come through it. Each committee reports `blockers`:
+   * what stands between it and being switched on, so the screen can say what
+   * is missing rather than waiting for a failed save to explain it.
+   */
+  poshCommittees: {
+    list:       ()          => api.get('/hr/posh-committees').then(r => r.data?.data),
+    create:     (data)      => api.post('/hr/posh-committees', data).then(r => r.data?.data),
+    update:     (id, data)  => api.put(`/hr/posh-committees/${id}`, data).then(r => r.data?.data),
+    setActive:  (id, active) => api.patch(`/hr/posh-committees/${id}/status`, { is_active: active }).then(r => r.data?.data),
+    remove:     (id)        => api.delete(`/hr/posh-committees/${id}`).then(r => r.data),
+    addRole:    (id, data)  => api.post(`/hr/posh-committees/${id}/roles`, data).then(r => r.data?.data),
+    updateRole: (id, roleId, data) => api.put(`/hr/posh-committees/${id}/roles/${roleId}`, data).then(r => r.data?.data),
+    removeRole: (id, roleId) => api.delete(`/hr/posh-committees/${id}/roles/${roleId}`).then(r => r.data?.data),
+    setMembers: (id, members) => api.put(`/hr/posh-committees/${id}/members`, { members }).then(r => r.data?.data),
+  },
+
+  /**
    * Exit-clearance departments, and who may sign off each of them.
    *
    * list() returns the departments AND the workspace's users and staff roles

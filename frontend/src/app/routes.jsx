@@ -53,6 +53,7 @@ const Corrections   = lazy(() => import('@/modules/hr/pages/Corrections'))
 const HrSettings    = lazy(() => import('@/modules/hr/pages/HrSettings'))
 const OnboardingChecklistSettings = lazy(() => import('@/modules/hr/pages/OnboardingChecklistSettings'))
 const ClearanceDepartmentSettings = lazy(() => import('@/modules/hr/pages/ClearanceDepartmentSettings'))
+const PoshCommitteeSettings = lazy(() => import('@/modules/hr/pages/PoshCommitteeSettings'))
 const ApprovalWorkflows = lazy(() => import('@/modules/hr/pages/ApprovalWorkflows'))
 const DemoRequests  = lazy(() => import('@/modules/hr/pages/DemoRequests'))
 const Holidays            = lazy(() => import('@/modules/hr/pages/Holidays'))
@@ -679,6 +680,7 @@ export default function AppRoutes() {
           <Route path="settings" element={<S><HrSettings /></S>} />
           <Route path="onboarding-checklist" element={<S><OnboardingChecklistSettings /></S>} />
           <Route path="clearance-departments" element={<S><ClearanceDepartmentSettings /></S>} />
+          <Route path="posh-committees" element={<S><PoshCommitteeSettings /></S>} />
           <Route path="approval-workflows" element={<S><ApprovalWorkflows /></S>} />
           <Route path="demo-requests" element={<S><DemoRequests /></S>} />
             <Route path="holidays" element={<S><Holidays /></S>} />
