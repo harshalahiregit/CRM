@@ -32,7 +32,12 @@ class LoanService
     // LoanDeductionService with no actor, which leaves those queries untouched.
     use ScopesEmployeeData;
 
-    public function __construct(private LoanEligibilityService $eligibility)
+    public function __construct(
+        private LoanEligibilityService $eligibility,
+        // Loans notified nobody at any point: not on approval, not on
+        // rejection, not when the money was paid out.
+        private HrEventNotifier $notifier,
+    )
     {
     }
 
@@ -246,7 +251,23 @@ class LoanService
         ]);
         $loan->recordAudit($next === HrEmployeeLoan::APPROVED ? 'Loan Auto-Approved' : 'Loan Submitted', $actor);
 
-        return $this->present($loan->fresh(['employee', 'loanType']), full: true);
+        // After the write, never before: a notification about a submission that
+        // did not happen is worse than none.
+        $fresh = $loan->fresh(['employee', 'loanType']);
+
+        if ($next === HrEmployeeLoan::APPROVED) {
+            // A type that needs no approval is approved on submission, so the
+            // employee is told that rather than that it is being considered.
+            $this->notifier->toEmployee($fresh->employee, 'Loan', 'Approved',
+                ['amount' => $this->money($fresh->principal)], $actor);
+        } else {
+            $this->notifier->toHrQueue((int) $loan->tenant_id, 'Loan', 'Applied', [
+                'employee' => $fresh->employee?->name,
+                'amount'   => $this->money($fresh->principal),
+            ], $actor);
+        }
+
+        return $this->present($fresh, full: true);
     }
 
     public function approve(int $id, int $tenantId, ?User $actor = null): array
@@ -261,7 +282,11 @@ class LoanService
         $loan->recordAudit('Loan Approved', $actor);
         $this->log('Loan approved', $tenantId, $loan->id);
 
-        return $this->present($loan->fresh(['employee', 'loanType']), full: true);
+        $fresh = $loan->fresh(['employee', 'loanType']);
+        $this->notifier->toEmployee($fresh->employee, 'Loan', 'Approved',
+            ['amount' => $this->money($fresh->principal)], $actor);
+
+        return $this->present($fresh, full: true);
     }
 
     public function reject(int $id, string $remarks, int $tenantId, ?User $actor = null): array
@@ -272,7 +297,11 @@ class LoanService
         $loan->update(['status' => HrEmployeeLoan::REJECTED, 'remarks' => $remarks, 'updated_by' => $actor?->id]);
         $loan->recordAudit('Loan Rejected', $actor, $remarks);
 
-        return $this->present($loan->fresh(['employee', 'loanType']), full: true);
+        $fresh = $loan->fresh(['employee', 'loanType']);
+        $this->notifier->toEmployee($fresh->employee, 'Loan', 'Rejected',
+            ['remarks' => trim($remarks)], $actor);
+
+        return $this->present($fresh, full: true);
     }
 
     /**
@@ -339,7 +368,13 @@ class LoanService
         ]);
         $this->log('Loan disbursed', $tenantId, $loan->id);
 
-        return $this->present($loan->fresh(['employee', 'loanType', 'installments']), full: true);
+        // Outside the transaction and after it commits — the money moving is
+        // the important half, and a failed bell must not undo the schedule.
+        $fresh = $loan->fresh(['employee', 'loanType', 'installments']);
+        $this->notifier->toEmployee($fresh->employee, 'Loan', 'Disbursed',
+            ['amount' => $this->money($fresh->principal)], $actor);
+
+        return $this->present($fresh, full: true);
     }
 
     /** Close a loan early. Remaining instalments are skipped, not deleted. */
@@ -616,5 +651,11 @@ class LoanService
     private function log(string $msg, int $tenantId, int $id): void
     {
         Log::channel('hr')->info($msg, ['tenant_id' => $tenantId, 'id' => $id]);
+    }
+
+    /** For notification wording only — nothing computes from this. */
+    private function money(float|string|null $amount): string
+    {
+        return '₹'.number_format((float) $amount, 2);
     }
 }

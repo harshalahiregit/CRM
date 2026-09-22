@@ -32,7 +32,36 @@ class PayrollWorkflowController extends Controller
         private PayrollRunWorkflow $workflow,
         private PayrollService $payroll,
         private ApprovalEngine $engine,
+        // Payroll moved the most money of any module and told nobody: a run was
+        // approved, disbursed and its payslips published in silence.
+        private \App\Services\Hr\HrEventNotifier $notifier,
     ) {
+    }
+
+    /* ── Announcements ────────────────────────────────────────────────── */
+
+    /** One person, about their own pay. */
+    private function notifyPaid(HrPayrollRecord $record, $actor): void
+    {
+        $this->notifier->toEmployee($record->employee, 'Payroll', 'Salary Paid', [
+            'period' => $this->periodLabel($record->run),
+            'amount' => $this->money($record->net_salary),
+        ], $actor);
+    }
+
+    /** "September 2026" — for wording only; nothing computes from it. */
+    private function periodLabel($run): string
+    {
+        if (! $run) {
+            return '';
+        }
+
+        return trim(date('F', mktime(0, 0, 0, (int) $run->payroll_month, 1)).' '.$run->payroll_year);
+    }
+
+    private function money(float|string|null $amount): string
+    {
+        return '₹'.number_format((float) $amount, 2);
     }
 
     /* ── Stage 1: Pre-check ───────────────────────────────────────────── */
@@ -233,12 +262,23 @@ class PayrollWorkflowController extends Controller
         return $this->runDomainAction($run, $tenantId, $actor, $action, $note, $result['request']);
     }
 
-    /** The existing workflow call, unchanged. */
+    /** The existing workflow call, unchanged — plus the announcement after it. */
     private function runDomainAction(HrPayrollRun $run, int $tenantId, $actor, string $action, ?string $note, $approval = null)
     {
         $action === HrApprovalAction::APPROVED
             ? $this->workflow->approve($run, $tenantId, $actor, $note)
             : $this->workflow->reject($run, (string) $note, $actor);
+
+        // Only once the workflow call has returned. A run that failed to
+        // approve must not have announced that it did.
+        $this->notifier->toHrQueue($tenantId, 'Payroll',
+            $action === HrApprovalAction::APPROVED ? 'Run Approved' : 'Run Rejected',
+            [
+                'period'    => $this->periodLabel($run),
+                'employees' => (int) $run->total_employees,
+                'amount'    => $this->money($run->total_payable),
+                'remarks'   => trim((string) $note),
+            ], $actor);
 
         $payload = $this->payroll->showRun($run->id, $tenantId);
 
@@ -288,6 +328,12 @@ class PayrollWorkflowController extends Controller
 
         $this->workflow->markPayment($record, $data['payment_status'], $data['note'] ?? null, $request->user());
 
+        // Only a payment that actually landed on Paid is worth telling somebody
+        // about — marking one Failed or Pending is bookkeeping, not news.
+        if ($data['payment_status'] === 'Paid') {
+            $this->notifyPaid($record, $request->user());
+        }
+
         return response()->json(['message' => 'Payment status updated']);
     }
 
@@ -301,6 +347,14 @@ class PayrollWorkflowController extends Controller
         ]);
 
         $result = $this->workflow->markAllPayments($run, $data['payment_status'], $request->user());
+
+        if ($data['payment_status'] === 'Paid') {
+            // Each person hears about their own pay, not the batch. Re-read
+            // after the call so only the records it actually changed are told.
+            foreach ($run->records()->with('employee')->where('payment_status', 'Paid')->get() as $record) {
+                $this->notifyPaid($record, $request->user());
+            }
+        }
 
         // The counts travel with the run so the screen can say what it actually
         // did — a blanket "all transfers marked Paid" is untrue the moment
@@ -319,6 +373,15 @@ class PayrollWorkflowController extends Controller
         $data = $request->validate(['visible' => 'required|boolean']);
 
         $count = $this->workflow->releasePayslips($run, (bool) $data['visible'], $request->user());
+
+        // Releasing is the moment a payslip becomes readable. Hiding one is not
+        // news anybody wants, so only the release announces itself.
+        if ($data['visible']) {
+            foreach ($run->records()->with('employee')->get() as $record) {
+                $this->notifier->toEmployee($record->employee, 'Payroll', 'Payslip Released',
+                    ['period' => $this->periodLabel($run)], $request->user());
+            }
+        }
 
         return response()->json([
             'message' => $data['visible'] ? 'Payslips released' : 'Payslips hidden',

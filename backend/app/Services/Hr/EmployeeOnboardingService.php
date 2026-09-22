@@ -58,7 +58,12 @@ class EmployeeOnboardingService
         'declaration' => ['declaration_accepted', 'declaration_accepted_at'],
     ];
 
-    public function __construct(private NotificationService $notifications)
+    public function __construct(
+        private NotificationService $notifications,
+        // The engine, beside the raw mail above. Onboarding notified only by
+        // e-mail: no bell, no per-tenant template, no rule, no channel choice.
+        private HrEventNotifier $events,
+    )
     {
     }
 
@@ -233,6 +238,12 @@ class EmployeeOnboardingService
             } catch (\Throwable $e) {
                 Log::channel('hr')->warning('Onboarding start notification failed', ['onboarding_id' => $onboarding->id, 'error' => $e->getMessage()]);
             }
+
+            // ALONGSIDE the e-mails above, not instead of them. Those go out
+            // whether or not the person has a login; this puts the same moment
+            // in the bell, under a per-tenant template and the workspace's own
+            // channel rules, which raw mail has never been able to offer.
+            $this->events->toEmployee($onboarding->employee, 'Onboarding', 'Started', [], $user);
 
             return $onboarding->load('employee');
         });
@@ -574,6 +585,11 @@ class EmployeeOnboardingService
             $this->notifyHr($o, 'Background verification '.$bgv->status.' — '.optional($o->employee)->name,
                 'BGV for '.optional($o->employee)->name.' is '.$bgv->status.'. Vendor: '.($bgv->vendor ?: 'n/a')
                 .', Ref: '.($bgv->reference_number ?: 'n/a').'.', ['event' => 'bgv_'.strtolower(str_replace(' ', '_', $bgv->status))]);
+
+            $this->events->toHrQueue((int) $o->tenant_id, 'Onboarding', 'Verification Complete', [
+                'employee' => optional($o->employee)->name,
+                'status'   => $bgv->status,
+            ], $user);
         }
 
         return $bgv;
@@ -638,6 +654,9 @@ class EmployeeOnboardingService
         $this->notifyHr($o, 'Employee activated — '.$employee->name,
             $employee->name.' ('.$employee->employee_code.') is now Active. Official email: '.$employee->official_email.'.',
             ['event' => 'joining_confirmed']);
+
+        $this->events->toHrQueue((int) $o->tenant_id, 'Onboarding', 'Employee Activated',
+            ['employee' => $employee->name], $user);
 
         return $o->fresh(['employee']);
     }

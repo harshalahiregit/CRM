@@ -97,6 +97,71 @@ return [
         ],
 
         /*
+         | Payroll — the module that moves the most money and told nobody.
+         |
+         | A run was approved, disbursed and its payslips published without a
+         | single notification: an employee found out they had been paid by
+         | opening the app and looking. These are the four moments somebody is
+         | actually affected by, plus the one queue item somebody is blocking.
+         |
+         | 'Approval Pending' is addressed to the hr role, which is the only
+         | role the inbox can currently express — see PayrollApprovalPendingSource.
+         | Distinct Finance/Accounts targeting needs recipient_role matching in
+         | NotificationRepository::visibleTo() and is deliberately NOT done here.
+         */
+        'Payroll' => [
+            'Run Approved'     => ['priority' => 'Success',  'subject' => 'Payroll approved — {{period}}', 'body' => 'The payroll run for {{period}} has been approved ({{employees}} employees, {{amount}}).'],
+            'Run Rejected'     => ['priority' => 'Warning',  'subject' => 'Payroll rejected — {{period}}', 'body' => 'The payroll run for {{period}} was sent back. {{remarks}}'],
+            'Payslip Released' => ['priority' => 'Info',     'subject' => 'Your payslip is ready — {{period}}', 'body' => 'Your payslip for {{period}} is now available.'],
+            'Salary Paid'      => ['priority' => 'Success',  'subject' => 'Salary paid — {{period}}', 'body' => '{{amount}} has been paid to you for {{period}}.'],
+            'Approval Pending' => ['priority' => 'Critical', 'subject' => 'Payroll awaiting approval — {{period}}', 'body' => 'The payroll run for {{period}} is awaiting approval ({{employees}} employees, {{amount}}).', 'reminder' => ['days' => [0], 'repeat' => true, 'escalation' => true]],
+        ],
+
+        /*
+         | Loans — advances got a notifier in an earlier pass; loans never did.
+         |
+         | Somebody borrowed money from the company and heard nothing at any
+         | point: not when it was approved, not when it was refused, not when it
+         | was paid out. Closure and installment waivers are deliberately absent
+         | — they are bookkeeping the employee sees on their statement, not
+         | moments they are waiting on.
+         */
+        'Loan' => [
+            'Applied'          => ['priority' => 'Info',    'subject' => 'Loan applied — {{employee}}', 'body' => '{{employee}} applied for a loan of {{amount}}.'],
+            'Approved'         => ['priority' => 'Success', 'subject' => 'Loan approved — {{amount}}', 'body' => 'Your loan of {{amount}} has been approved.'],
+            'Rejected'         => ['priority' => 'Warning', 'subject' => 'Loan rejected', 'body' => 'Your loan request was rejected. {{remarks}}'],
+            'Disbursed'        => ['priority' => 'Success', 'subject' => 'Loan disbursed — {{amount}}', 'body' => '{{amount}} has been disbursed to you.'],
+            'Approval Pending' => ['priority' => 'Warning', 'subject' => 'Loan awaiting approval — {{employee}}', 'body' => 'A loan request from {{employee}} ({{amount}}) is awaiting approval.', 'reminder' => ['days' => [0], 'repeat' => true, 'escalation' => true]],
+        ],
+
+        /*
+         | Onboarding — already notified, but by raw e-mail only.
+         |
+         | EmployeeOnboardingService mails directly through the channel service,
+         | which means no bell, no per-tenant template, no rule and no channel
+         | preference. These registrations put the same three moments through
+         | the engine as well. The existing e-mails are deliberately LEFT IN
+         | PLACE: removing them would silently stop mail somebody relies on.
+         */
+        'Onboarding' => [
+            'Started'               => ['priority' => 'Info',    'subject' => 'Onboarding started — {{employee}}', 'body' => 'Onboarding has started for {{employee}}.'],
+            'Verification Complete' => ['priority' => 'Info',    'subject' => 'Background verification {{status}} — {{employee}}', 'body' => 'Background verification for {{employee}} is {{status}}.'],
+            'Employee Activated'    => ['priority' => 'Success', 'subject' => 'Employee activated — {{employee}}', 'body' => '{{employee}} has been activated and onboarding is complete.'],
+        ],
+
+        /*
+         | Employee lifecycle — transfer, promotion, demotion, redesignation.
+         |
+         | One event rather than four: the recipient is the same person and the
+         | only thing that differs is the word, which {{type}} carries. A
+         | promotion that nobody tells you about is the clearest example of the
+         | gap this whole block closes.
+         */
+        'Lifecycle' => [
+            'Movement Recorded' => ['priority' => 'Info', 'subject' => '{{type}} recorded — {{employee}}', 'body' => 'A {{type}} has been recorded for {{employee}}, effective {{date}}.'],
+        ],
+
+        /*
          | My Services — what an employee asked for and what happened to it.
          |
          | The '*' entries are the important part. The engine skips silently
