@@ -461,6 +461,126 @@ class VehicleMasterUnificationTest extends TestCase
         $this->assertNotSame($firstId, $secondId);
     }
 
+    /* ── D-118: the driver half counted links instead of checking them ── */
+
+    /*
+     * Person 1 found this holding up the repoint, and the owner found the
+     * symptom first: vehicles and drivers on a trip still come from the legacy
+     * tables, so nothing added in Fleet ever appears.
+     *
+     * The driver reconcile used to be one line —
+     *
+     *     $migrated = DB::table('driver_profiles')->whereNotNull($link)->count();
+     *
+     * — which compares two numbers and never asks whether the ids in those
+     * links point at anything. With profiles linked to drivers 33 and 34 while
+     * the live drivers were 39 and 40, it reported every driver healthy. A
+     * repoint on that mapping writes permanent "unmatchable" verdicts against
+     * live driver references on real trips.
+     */
+
+    public function test_the_driver_reconcile_checks_the_link_rather_than_counting_it(): void
+    {
+        $this->pushFleetIdsOutOfTheWay();
+
+        $legacyId = $this->legacyDriver(['licence_number' => 'MH0120110099999']);
+        $this->runMover();
+
+        $profileId = (int) DB::table('driver_profiles')
+            ->where('legacy_transport_driver_id', $legacyId)->value('id');
+
+        // What a reseed does: same driver, new legacy id, and the stored link
+        // still pointing at the row that used to be there.
+        DB::table('driver_profiles')->where('id', $profileId)
+            ->update(['legacy_transport_driver_id' => 999]);
+
+        $this->assertFalse(DB::table('transport_drivers')->where('id', 999)->exists());
+
+        // A count would still say "1 legacy row — 1 has a Fleet profile".
+        $this->artisan('stos:reconcile-fleet')
+            ->expectsOutputToContain('1 outstanding')
+            ->expectsOutputToContain('Repairable')
+            ->assertSuccessful();
+    }
+
+    public function test_relink_repairs_the_driver_mapping_so_the_repoint_can_move_it(): void
+    {
+        $this->pushFleetIdsOutOfTheWay();
+
+        $legacyId = $this->legacyDriver(['licence_number' => 'MH0120110099999']);
+        $tripId = $this->tripFor(['driver_id' => $legacyId]);
+        $this->runMover();
+
+        $profileId = (int) DB::table('driver_profiles')
+            ->where('legacy_transport_driver_id', $legacyId)->value('id');
+        DB::table('driver_profiles')->where('id', $profileId)
+            ->update(['legacy_transport_driver_id' => 999]);
+
+        // Unrepaired, the repoint cannot see this reference at all — and would
+        // record it as unmatchable for good if it were allowed to run.
+        $this->artisan('stos:repoint-trip-fleet-refs --apply')->assertFailed();
+        $this->assertSame($legacyId, (int) DB::table('transport_trips')->find($tripId)->driver_id);
+
+        $this->artisan('stos:reconcile-fleet --relink')->assertSuccessful();
+        $this->assertSame($legacyId, (int) DB::table('driver_profiles')->find($profileId)->legacy_transport_driver_id);
+
+        $this->artisan('stos:repoint-trip-fleet-refs --apply')->assertSuccessful();
+        $this->assertSame($profileId, (int) DB::table('transport_trips')->find($tripId)->driver_id);
+    }
+
+    public function test_a_driver_with_no_licence_is_reported_rather_than_guessed_at(): void
+    {
+        $this->pushFleetIdsOutOfTheWay();
+
+        // A legacy driver can carry no licence at all. There is then nothing to
+        // match on, and inventing a match puts one person's licence and expiry
+        // on another driver.
+        $legacyId = DB::table('transport_drivers')->insertGetId([
+            'tenant_id' => self::COMPANY, 'driver_code' => 'DRV-NOLIC',
+            'name' => 'Unlicensed Entry', 'mobile' => '9876500000',
+            'licence_number' => null, 'licence_class' => null,
+            'status' => 'active', 'availability' => 'available',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        // Nothing links it, so it stays outstanding rather than being relinked.
+        $this->artisan('stos:reconcile-fleet --relink')
+            ->expectsOutputToContain('no licence recorded')
+            ->assertSuccessful();
+
+        $this->assertSame(0, DB::table('driver_profiles')
+            ->where('legacy_transport_driver_id', $legacyId)->count());
+    }
+
+    public function test_relink_refuses_when_two_live_legacy_drivers_want_one_profile(): void
+    {
+        $this->pushFleetIdsOutOfTheWay();
+
+        $firstId = $this->legacyDriver(['licence_number' => 'MH0120110099999']);
+        $this->runMover();
+
+        $profileId = (int) DB::table('driver_profiles')
+            ->where('legacy_transport_driver_id', $firstId)->value('id');
+
+        // A second live legacy row carrying the same licence, written the way a
+        // person types it.
+        DB::table('transport_drivers')->insert([
+            'tenant_id' => self::COMPANY, 'driver_code' => 'DRV-DUP',
+            'name' => 'Same Licence', 'mobile' => '9876511111',
+            'licence_number' => 'MH-01 2011 0099999', 'licence_class' => 'HMV',
+            'licence_valid_until' => now()->addYear()->toDateString(),
+            'status' => 'active', 'availability' => 'available',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $this->artisan('stos:reconcile-fleet --relink')
+            ->expectsOutputToContain('Needs a person')
+            ->assertSuccessful();
+
+        $this->assertSame($firstId, (int) DB::table('driver_profiles')
+            ->find($profileId)->legacy_transport_driver_id);
+    }
+
     public function test_a_driver_moves_without_a_name_landing_in_the_overlay(): void
     {
         $legacyId = DB::table('transport_drivers')->insertGetId([
