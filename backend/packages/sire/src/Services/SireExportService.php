@@ -180,6 +180,15 @@ class SireExportService
             '',
             'Grouped by the screen it happened on, because one fix usually closes several',
             'of these. Work down a screen, not down the list.',
+            '',
+            '**Sending it back.** Tick `- [ ] Done` under each issue you fixed and write one',
+            'line about what you changed, then upload this file on the issue register. Every',
+            'ticked issue closes, with your line as the reason. You are shown exactly what',
+            'will close before anything does.',
+            '',
+            'Ticking an issue you have not fixed closes it just the same — nothing here',
+            'checks your work. Untouched issues are left alone, so sending the file back',
+            'twice is safe.',
         ];
 
         // Say so when the ceiling was hit. A brief that silently stops at 200 is
@@ -214,6 +223,13 @@ class SireExportService
                 $report->created_at?->diffForHumans() ?? 'unknown',
             ),
         ];
+
+        // The way back. Right under the heading, because it is the thing the
+        // reader does with this issue -- everything below is what they need in
+        // order to do it. A brief that can be sent back is worth more than one
+        // that can only be read.
+        $out[] = '';
+        $out[] = '- [ ] **Done** — say what you changed:';
 
         if ($report->category) {
             $out[] = '';
@@ -310,7 +326,9 @@ class SireExportService
         return [
             '## When these are fixed',
             '',
-            'Send the whole batch back in one call rather than opening each issue:',
+            'Easiest: tick the boxes above and upload this file on the issue register.',
+            '',
+            'If you would rather drive it from a script, the same thing in one call:',
             '',
             '```',
             'POST /api/sire/reports/transitions',

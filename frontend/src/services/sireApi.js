@@ -118,6 +118,18 @@ export const sireApi = {
   exportIssues: (params = {}) =>
     api.get('/sire/export', { params, responseType: 'text' }),
 
+  // The brief, sent back. Previews unless apply is true: the file came from
+  // outside the system, and closing thirty records is not something to discover
+  // the result of afterwards.
+  importBrief: ({ file, text, apply = false }) => {
+    const body = new FormData();
+    if (file) body.append('file', file);
+    if (text) body.append('text', text);
+    if (apply) body.append('apply', '1');
+
+    return api.post('/sire/reports/import', body);
+  },
+
   // Many issues moved in one call. Every entry still runs its own guards and is
   // audited separately -- this saves page loads, not rules.
   bulkTransition: (transitions) =>

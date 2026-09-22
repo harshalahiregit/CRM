@@ -22,7 +22,130 @@ import { sireHostToast } from '../../../lib/sire/host';
 
 const useToast = sireHostToast();
 
-export default function DeveloperExport({ modules = [], scope = 'open' }) {
+/**
+ * The way back: the same file, ticked, returned.
+ *
+ * ALWAYS PREVIEWS FIRST. The file has been outside the system — an editor, a
+ * chat, a coding assistant — and closing thirty defect records is not something
+ * anybody should discover the result of afterwards. The preview runs the real
+ * capability and guard checks, so what it lists is what will happen.
+ */
+function SendItBack({ onDone }) {
+  const toast = useToast();
+
+  const [payload, setPayload] = useState(null);   // { file } or { text }
+  const [preview, setPreview] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const send = async (source, apply) => {
+    setBusy(true);
+    try {
+      const { data } = await sireApi.importBrief({ ...source, apply });
+      setPreview(data?.data ?? data);
+
+      if (apply) {
+        const closed = (data?.data ?? data)?.closed ?? 0;
+        toast?.success?.(closed === 1 ? '1 issue closed.' : `${closed} issues closed.`);
+        onDone?.();
+      }
+    } catch (err) {
+      toast?.error?.(
+        err?.response?.status === 403
+          ? 'You do not have permission to close issues.'
+          : 'That file could not be read.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const pick = (file) => {
+    if (!file) return;
+    setPayload({ file });
+    send({ file }, false);
+  };
+
+  const rows = preview?.results ?? [];
+
+  return (
+    <div className="mt-4 border-t pt-3" style={{ borderColor: 'var(--border)' }}>
+      <p className="text-xs font-medium" style={{ color: 'var(--text-h)' }}>
+        Send it back
+      </p>
+      <p className="mb-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+        Tick <code>- [x] Done</code> under each issue you fixed, then upload the file.
+        You are shown what will close before anything does.
+      </p>
+
+      <input
+        type="file"
+        accept=".md,.markdown,.txt,text/markdown,text/plain"
+        disabled={busy}
+        onChange={(e) => pick(e.target.files?.[0])}
+        className="block w-full text-[11px]"
+        style={{ color: 'var(--text-muted)' }}
+      />
+
+      {preview?.message && (
+        <p className="mt-2 rounded-lg px-2 py-1.5 text-[11px]"
+           style={{ background: 'var(--bg-input)', color: 'var(--text-muted)' }}>
+          {preview.message}
+        </p>
+      )}
+
+      {rows.length > 0 && (
+        <div className="mt-2">
+          <div className="max-h-52 overflow-y-auto rounded-lg" style={{ border: '1px solid var(--border)' }}>
+            {rows.map((r) => (
+              <div
+                key={r.report_number}
+                className="flex items-start gap-2 px-2 py-1.5 text-[11px]"
+                style={{ borderBottom: '1px solid var(--border)' }}
+              >
+                <span
+                  className="mt-0.5 shrink-0 rounded px-1 text-[10px] font-semibold uppercase"
+                  style={{
+                    background: r.state === 'failed' ? 'rgba(239,68,68,0.15)'
+                      : r.state === 'skipped' ? 'rgba(148,163,184,0.15)'
+                        : 'rgba(34,197,94,0.15)',
+                    color: r.state === 'failed' ? '#f87171'
+                      : r.state === 'skipped' ? '#94a3b8' : '#4ade80',
+                  }}
+                >
+                  {r.state === 'ready' ? 'will close' : r.state}
+                </span>
+                <span className="min-w-0 flex-1" style={{ color: 'var(--text-h)' }}>
+                  <strong>{r.report_number}</strong> {r.title ?? ''}
+                  <span className="block" style={{ color: 'var(--text-muted)' }}>
+                    {r.reason
+                      ? r.reason
+                      /* Saying so here is the last chance to go back and write
+                         one, rather than finding the record says nothing later. */
+                      : r.detailed ? r.note : `${r.note} — no detail given`}
+                  </span>
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {preview?.dry_run && preview.ready > 0 && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => send(payload, true)}
+              className="mt-2 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+              style={{ background: '#16a34a', color: '#fff' }}
+            >
+              {busy ? 'Closing…' : `Close ${preview.ready} issue${preview.ready === 1 ? '' : 's'}`}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function DeveloperExport({ modules = [], scope = 'open', onImported }) {
   const toast = useToast();
 
   const [open, setOpen] = useState(false);
@@ -176,6 +299,8 @@ export default function DeveloperExport({ modules = [], scope = 'open' }) {
               </span>
             )}
           </div>
+
+          <SendItBack onDone={onImported} />
         </div>
       )}
     </div>
