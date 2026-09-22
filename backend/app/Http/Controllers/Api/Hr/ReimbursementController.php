@@ -31,9 +31,27 @@ use Illuminate\Http\Request;
  * until the grid started being enforced; a finer split (a reimbursement module of
  * its own, or `edit` for the approve routes) is a later refinement of the same
  * mechanism rather than a different one.
+ *
+ * SCOPE is a separate question from that permission, and this controller used to
+ * answer it with "tenant". The DECISIONS were already scoped — approve() and
+ * decline() pass through ApprovalEngine::assertMayDecide(), whose second gate is
+ * assertCanActOnEmployee() — but reading was not, so a department-scoped user
+ * could list every claim in the workspace, open any of them, hold one, write a
+ * note on it, and download another department's receipts. The boundary was
+ * holding on the verb and leaking on the noun.
+ *
+ * index() is narrowed, and find() asserts. All four of the unscoped paths —
+ * show, hold, note and attachment — go through find(), so the assertion sits
+ * there rather than in each of them, which is also what puts the attachment
+ * download behind exactly the record's own authorisation.
+ *
+ * The engine still runs on the decision paths, unchanged. It refuses with the
+ * same 404 find() now does, so nothing about approving or declining moves.
  */
 class ReimbursementController extends Controller
 {
+    use \App\Repositories\Hr\Concerns\ScopesEmployeeData;
+
     public function __construct(
         private ReimbursementService $claims,
         private RequestThreadService $thread,
@@ -52,7 +70,13 @@ class ReimbursementController extends Controller
         ]);
 
         $claims = HrReimbursement::where('tenant_id', $request->user()->tenant_id)
+            // Whose claims this person may see. A global actor resolves to null
+            // and the query is left exactly as it was.
+            ->tap(fn ($q) => $this->scopeToEmployees($q, $request->user()))
             ->when($data['status'] ?? null, fn ($q, $s) => $q->where('status', $s))
+            // No separate guard on the filter: it intersects with the scope
+            // above, so an out-of-scope employee_id returns nothing rather than
+            // somebody else's claims.
             ->when($data['employee_id'] ?? null, fn ($q, $e) => $q->where('employee_id', $e))
             ->when($data['from'] ?? null, fn ($q, $d) => $q->whereDate('expense_date', '>=', $d))
             ->when($data['to'] ?? null, fn ($q, $d) => $q->whereDate('expense_date', '<=', $d))
@@ -327,9 +351,25 @@ class ReimbursementController extends Controller
         return response()->download($f['path'], $f['filename'], ['Content-Type' => $f['mime']]);
     }
 
+    /**
+     * The one door show, hold, note, attachment and the decision paths share.
+     *
+     * The scope assertion sits here rather than in each of them, so a sixth
+     * caller added later inherits it — and so the attachment download is
+     * behind exactly the authorisation of the claim that owns the file, with
+     * no second rule to keep in step.
+     *
+     * 404, not 403. Refusing with "you may not see this" confirms the claim
+     * exists and belongs to somebody outside your department, which is the
+     * thing being withheld. The same reading the tenant guard beside it takes.
+     */
     private function find(Request $request, int $id): HrReimbursement
     {
-        return HrReimbursement::where('tenant_id', $request->user()->tenant_id)->findOrFail($id);
+        $claim = HrReimbursement::where('tenant_id', $request->user()->tenant_id)->findOrFail($id);
+
+        $this->assertEmployeeInScope($request->user(), $claim->employee_id);
+
+        return $claim;
     }
 
     private function decided(HrReimbursement $claim, string $message)
