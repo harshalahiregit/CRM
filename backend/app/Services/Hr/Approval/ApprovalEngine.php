@@ -7,8 +7,10 @@ use App\Models\Hr\HrApprovalAction;
 use App\Models\Hr\HrApprovalRequest;
 use App\Models\User;
 use App\Services\Auth\ScopeResolver;
+use App\Services\Settings\SettingsService;
 use App\Support\Hr\Approval\ApprovalState;
 use App\Support\Hr\Approval\ApproverType;
+use App\Support\Hr\HrSetting;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 
@@ -21,15 +23,22 @@ use Illuminate\Support\Facades\DB;
  * what lets eleven processes with eleven different status vocabularies share
  * one engine without any of them being rewritten.
  *
- * Three gates guard every decision, and they are independent:
+ * Four gates guard every decision, and they are independent:
  *
  *   1. capability — the caller's own permission check, which stays where it is
  *   2. data scope — ScopeResolver, unchanged, against the SUBJECT's employee
  *   3. the ladder — is this request actually waiting on this person
+ *   4. separation — is this their own request, when the workspace forbids that
  *
  * Being named on a step grants nothing. An approver configured for an employee
  * outside their data scope is refused by gate 2, and the request stays open
  * rather than quietly going through.
+ *
+ * Gate 4 is off by default and each workspace opts in, because turning it on
+ * everywhere would change who can approve what without anybody asking and
+ * would stop approvals outright in a company with one HR person. It only ever
+ * removes permission: with it off, nothing behaves differently from before it
+ * existed.
  */
 class ApprovalEngine
 {
@@ -37,6 +46,7 @@ class ApprovalEngine
         private WorkflowRegistry $registry,
         private ApproverResolver $resolver,
         private ConditionEvaluator $conditions,
+        private RequesterResolver $requesters,
     ) {
     }
 
@@ -123,6 +133,21 @@ class ApprovalEngine
             return false;
         }
 
+        // Nobody decides their own request, when the workspace asks for that.
+        //
+        // ABOVE the approver-type branches deliberately, so it covers every
+        // one of them — including the HR-queue rung below, which is the
+        // reachable case: on a workspace that has configured no ladder, the
+        // fallback step is the HR queue, and an HR executive raising their own
+        // leave or expense claim is a member of it.
+        //
+        // It is a FOURTH guard, not a replacement. Capability, data scope and
+        // the ladder are all still asked, and each still refuses on its own
+        // terms — this only ever removes permission, never grants it.
+        if ($this->isOwnRequest($request, $actor)) {
+            return false;
+        }
+
         if (($step['approver_type'] ?? null) === ApproverType::LEGACY_HR_QUEUE) {
             // Asked of the predicate itself rather than reimplemented, so the
             // compatibility rung cannot drift away from the gate it stands in for.
@@ -132,6 +157,43 @@ class ApprovalEngine
         $resolved = $this->resolver->resolve($step, (int) $request->tenant_id, $request->employee_id);
 
         return in_array((int) $actor->id, $resolved['user_ids'], true);
+    }
+
+    /**
+     * Is this person asking to decide something they asked for?
+     *
+     * False whenever the workspace has not turned the rule on, which is the
+     * default — so existing behaviour is untouched until somebody chooses
+     * otherwise.
+     *
+     * The setting is read against the REQUEST's tenant, not the actor's. They
+     * are the same in every legitimate case, and taking it from the actor
+     * would let a workspace's rule be decided by whoever happened to be
+     * asking.
+     *
+     * There is deliberately no exemption. Not for administrators, not for the
+     * HR queue, not for global data scope, not for being named on the step by
+     * id. Every one of those is a way of being trusted with other people's
+     * records, and none of them is a reason to be trusted with your own.
+     */
+    private function isOwnRequest(HrApprovalRequest $request, User $actor): bool
+    {
+        if (! $this->requiresDistinctApprover((int) $request->tenant_id)) {
+            return false;
+        }
+
+        return in_array(
+            (int) $actor->id,
+            $this->requesters->userIdsFor($request),
+            true
+        );
+    }
+
+    private function requiresDistinctApprover(int $tenantId): bool
+    {
+        return (bool) app(SettingsService::class)->get(
+            $tenantId, HrSetting::GROUP, 'require_distinct_approver'
+        );
     }
 
     /**

@@ -233,6 +233,24 @@ class HrSetting
             'Off by default: app access is granted, never assumed.', 'People',
         ],
 
+        /* ── approvals ───────────────────────────────────────────────── */
+        //
+        // Whether the person who raised a request may also decide it.
+        //
+        // OFF BY DEFAULT, and that is not a recommendation — it is what the
+        // system does today. Turning it on for existing workspaces would
+        // change who can approve what without anybody asking, and in a company
+        // with one HR person it would stop approvals entirely. So the default
+        // preserves current behaviour and each workspace opts in.
+        //
+        // Advances are unaffected: their ladder does not run through the
+        // engine's step gate and has carried its own
+        // advance_require_distinct_approvers for longer.
+        'require_distinct_approver' => [
+            'Approvers must be someone other than the requester', self::TYPE_BOOL, false,
+            'On, the person who raised a request cannot approve it — including when they are the reporting manager, hold the approving role, or manage the HR queue. Leave it off if too few people would be left to approve.', 'Approvals',
+        ],
+
         /* ── POSH ────────────────────────────────────────────────────── */
         //
         // How long a complainant's portal link stays usable. It is a setting
