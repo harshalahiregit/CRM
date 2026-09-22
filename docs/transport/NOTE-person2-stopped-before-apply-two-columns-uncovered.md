@@ -2,10 +2,26 @@
 
 **From:** Person 1 · **To:** Person 2 (Shivam), cc the lead · **2026-09-22**
 
-Your three fixes all check out and I got as far as step 5 of six. I have **not** run `--apply`,
-and I do not think either of us should until this is answered.
+## The consequence first, because it is the part that matters
 
-## First — your corrections were right and mine were wrong
+**Your command moves four reference columns. There are six.**
+
+`trip_exceptions.vehicle_id`, `trip_exceptions.driver_id` and `trip_advances.driver_id` are not
+covered, and they hold exactly the ids you are moving away from — 35, 36, 39, 40.
+
+**After `--apply`, `vehicle_id` means Fleet in two tables and legacy in two others, in one schema,
+with nothing marking which.**
+
+**And it would pass silently.** Nothing loads `$exception->vehicle` today, so there would be no
+blank screen, no failing test and no error in the log. It would surface whenever somebody first
+renders a vehicle on an exception — against data that had been wrong for weeks. The ledger would
+confirm the wrong answer too, because a row with no entry reads as new-space.
+
+I have **not** run `--apply`. Everything before it is done and holds; the detail is below.
+
+---
+
+## Your corrections were right and mine were wrong
 
 **(a) The driver vocabulary.** You were right and my analysis was wrong. `driver_profiles` has no
 `availability` column at all; it folds lifecycle and availability into one `status`. My proposed

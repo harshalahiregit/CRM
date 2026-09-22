@@ -219,16 +219,124 @@ reached through the consignment join. This is CLP's Container 360 with the inter
 Additive to an existing mechanism. Admin / Operations / Finance / Management only — the other two
 are blocked on S-2 and S-3.
 
-**Step 4 — the timeline, filtered.**
-`trip_events` already exists with categories and 39 registered types. A client sees the operational
-and document categories; financial and quality are internal by default. **This is the step I am
-least sure about** and it should be a separate conversation.
+**Step 4 — a plain-language journey view built from what we already emit.**
+Not M01–M14 (§7a: four of its fourteen have no vocabulary anywhere, and it needs a milestone entity
+Step 11 does not have). What we *can* show honestly today is the events we actually emit, in the
+client's language: *allocated · checks passed · dispatched · departed · delivered · POD verified ·
+invoiced · paid · closed*. Nine real moments, all live, none invented.
+
+**Named as an interim in the UI**, because §8's milestone model is the target and a client should
+not be told this is it.
 
 **Not in the foundation, and why:** booking and contract validation (rate card, S-4);
 M01–M14 milestones (no registry — the package's own audit calls this a blocker); telemetry
 (D-116/D-118, and it reaches no trip today); documents (S-3).
 
 ---
+
+## 7a · M01–M14 — answered by CLP §8, and it is not a filter
+
+I read §8 rather than taking the summary. **It is not a view over our timeline — it is a different
+vocabulary**, and our internal states (`dispatched`, `pretrip_ok`, `in_transit`) do not appear in
+it at all.
+
+### Mapped against what we actually emit
+
+| | Milestone | Our position |
+|---|---|---|
+| M01 | Vehicle & Driver Allocation | ✅ `vehicle.allocated` + `driver.allocated`, both live |
+| M02 | Vehicle Documents / Inspection / Yard Departure | ◐ `pretrip.passed` is the inspection; vehicle documents are Fleet's; yard departure is not ours |
+| M03 | Container Yard Arrival | ❌ **no event type registered anywhere** |
+| M04 | Container Inspection & Loading | ❌ **nothing registered** |
+| M05 | Container Yard Departure | ❌ **nothing registered** |
+| M06 | Client Gate Arrival | ○ `gate.in` registered, **never emitted** (P2) |
+| M07 | Loading & Sealing Complete | ❌ **nothing registered** |
+| M08 | Client Premises Departure | ◐ `trip.departed` is *left the pickup point*, which is close but not the same event |
+| M09 | Transit / Port or Destination Gate | ○ `port.entry` / `port.exit` registered, **never emitted** (P2) |
+| M10 | Unloading / Parking / Detention | ◐ `trip.delivered` partly; **detention has nothing registered** |
+| M11 | Physical Documents Collected | ○ `documents.handed_over` registered, **never emitted** (P3) |
+| M12 | Client Feedback | ○ `feedback.requested` / `feedback.received` registered, **never emitted** (P3) |
+| M13 | Sales Bill / Billing | ✅ `billing.ready` + `invoice.posted`, both live |
+| M14 | Payment Received / Trip Closure | ◐ `trip.closed` live; **`collection.recorded` registered, never emitted** (P3) |
+
+**Two of fourteen are fully covered. Four have no vocabulary anywhere. Five are registered types
+nobody emits — and every one of those five is somebody else's to wire.**
+
+### And the shape is wrong, not just the coverage
+
+§8 requires each milestone to carry *"planned/actual time, location, source, actor, evidence,
+remarks, exception and audit trail."* `trip_events` has `occurred_at`, `recorded_at`, `source`,
+`actor_*`, `summary`, `detail` — and **no planned time, no location, no evidence link and no
+exception link.** A milestone is a richer object than an event: it has an expectation as well as a
+fact, which is what makes *"running late"* expressible at all.
+
+### What the mapping costs — the honest size
+
+This is **not** a mapping layer. It is four pieces, and only the first is small:
+
+1. **A translation for the milestones we already emit** — M01, M13, M14 and the partials. Small;
+   a table and a resolver.
+2. **A milestone entity** carrying planned vs actual, location, evidence and an exception link.
+   New table, new registry entries. **Under our own Hard Rule 4 this needs a Step 11 entry or a
+   ruling — and AUTH-REC-001's B-08 already says Step 11 has no milestone registry.**
+3. **Four new event types** (yard arrival, container inspection/loading, yard departure, loading
+   and sealing). Same rule, and these are not renamings — they are *operational acts nobody
+   performs in the system today*. Someone at a yard has to record them.
+4. **Five emitters that are not ours** — P2's gate and port, P3's documents, feedback and
+   collection.
+
+**My estimate: the milestone timeline is larger than the rest of the foundation put together**,
+and most of it is not code. It is a registry decision (B-08), four new capture points that change
+what somebody does at a yard, and five emitters owned by two other people.
+
+**So I would not put M01–M14 in the foundation at all.** It is its own piece of work with its own
+blockers, and the foundation does not depend on it.
+
+## 7b · Whether the portal resembles our screens — CLP §27 answers it
+
+§27, read directly:
+
+> *Status must be understandable without technical language. Clear progress indicators and
+> milestone timelines. Exceptions and required actions prominent. Search by container/order/trip/
+> client reference. **Single Trip/Container 360 view.** Responsive web design for gate/warehouse
+> users. Confirmation for irreversible actions. Do not force clients to manually update
+> information STOS can derive from system/GPS/geofence/telemetry/workflow.*
+
+So it is neither of the two things I was unsure between. **It is the same 360 concept, in plain
+language, on a phone.** Not a different screen, and not ours with columns removed.
+
+Three consequences worth stating, because they change the work:
+
+- **"Single Trip/Container 360 view"** is the same idea we just rebuilt. The redesign moved the
+  timeline to the top, cut the repeated category words and replaced nine machine phrases with
+  plain ones — **that work transfers**, and it is the reason the portal view is not a fresh design.
+- **"Responsive for gate/warehouse users"** is the real constraint and our screens do not meet it.
+  Container 360 is a 1440px two-column layout. A gate user is on a phone in a yard.
+- **"Do not force clients to manually update what STOS can derive"** rules out asking a client to
+  confirm milestones — which is the other reason M01–M14 is expensive: §8 wants those timestamps
+  from GPS, geofence and workflow, and ours would have to come from someone typing.
+
+## 7c · The whitelist through nested payloads — my answer
+
+This was the third thing I was unsure about and it is mine to answer.
+
+**The leak is real and predictable.** A trip carries an assignment, an assignment carries a driver,
+and a driver carries `licence_number`, `licence_class`, `driver_code` and `availability`. A
+whitelist applied at the top level and a `->load()` two levels down is exactly how a field escapes.
+
+**My answer: the portal must not serve models at all, at any depth.** Not "a whitelist on the
+response" — a **presenter per resource** that takes a model and returns a literal array, calling
+other presenters for nested things. A model that reaches a portal response is a bug by
+construction, because there is no code path that can put one there.
+
+Concretely: `ClientTripPresenter` returns `['trip_number' => …, 'status' => …, 'vehicle' =>
+ClientVehiclePresenter::from($a->vehicle)]`, and `ClientVehiclePresenter` returns the registration
+and nothing else. There is no `->toArray()`, no `->only()`, no `makeHidden()` — all three are
+blacklists wearing a whitelist's clothes, because they start from the full row.
+
+**And one test that reads every portal response and fails on any key from the sensitive list**,
+broken deliberately both ways: a field added to a top-level presenter, and a field added two levels
+down. The second is the one that matters.
 
 ## 8 · Honest estimate, and where I am not confident
 
@@ -243,11 +351,13 @@ M01–M14 milestones (no registry — the package's own audit calls this a block
 - **How much the field whitelist grows.** Six tables is what I measured; nested payloads (an
   assignment inside a trip inside a passport) are where whitelists usually leak, and I have not
   traced every nesting.
-- **Step 4, the timeline.** Which event categories a client may see is a judgement CLP does not
-  make. I would not start it on my own reading.
-- **Whether the owner wants the portal to look like the internal screens at all.** I have assumed
-  "the same data, less of it". A genuinely client-facing design may be a different screen, and that
-  is a design conversation I have not had.
+- ~~Which event categories a client may see.~~ **Answered** — §8 gives a milestone vocabulary,
+  not a filter, and §7a sizes it. I am confident it does not belong in the foundation.
+- ~~Whether the portal resembles the internal screens.~~ **Answered by §27** — same 360 concept,
+  plain language, responsive. The redesign work transfers; the phone layout does not exist.
+- **Still not confident: the responsive requirement.** §27 wants gate and warehouse users on a
+  phone. Container 360 is a 1440px two-column page and the trip page is worse. I have not costed
+  a phone layout and I would not guess at it.
 
 **What I am confident is *not* true:** the earlier framing that this is "a building". That
 measurement returned 0 READY because the door and the scoping were assumed missing. The door

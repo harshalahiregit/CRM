@@ -4213,3 +4213,61 @@ write one column each); vehicles and drivers are now correctly mapped `{35→1, 
 `{39→2, 40→3}`, and the dry run reports **2 + 2 + 4 + 4 rows to move with every unmappable row a
 soft-deleted junk trip** — no live reference would be lost. The repoint is ready in every respect
 except this one.
+
+---
+
+## D-121 — CLP's M01–M14 is a second vocabulary, not a view, and four of them have no words at all
+
+**Raised:** 2026-09-22, sizing the client portal foundation. **Ours under MS-001 v1.1 §4** (the
+trip/milestone APIs are Person 1's). **Blocked on AUTH-REC-001 B-08.**
+
+### It is not a filter over `trip_events`
+
+CLP §8 defines fourteen client milestones. **Our internal states do not appear in it** —
+`dispatched`, `pretrip_ok` and `in_transit` are not milestones, and M03 *Container Yard Arrival* is
+not a state we have. It is a parallel vocabulary describing the same journey from the client's side.
+
+### Measured against what we emit
+
+| Covered | Count | Which |
+|---|---|---|
+| **Fully live** | 2 | M01 allocation, M13 billing |
+| Partly | 4 | M02, M08, M10, M14 |
+| **Registered, never emitted** | 5 | M06 `gate.in`, M09 `port.entry/exit` *(P2)*; M11 `documents.handed_over`, M12 `feedback.*`, M14 `collection.recorded` *(P3)* |
+| **No vocabulary anywhere** | **4** | M03 container yard arrival · M04 container inspection & loading · M05 container yard departure · M07 loading & sealing complete |
+
+Also unregistered: **detention** (part of M10), which §8 wants as a *"contractual detention
+calculation"* — a commercial rule nobody has specified.
+
+### The shape is wrong too, not only the coverage
+
+§8 requires each milestone to carry *"planned/actual time, location, source, actor, evidence,
+remarks, exception and audit trail."*
+
+`trip_events` has `occurred_at`, `recorded_at`, `source`, `actor_*`, `summary`, `detail` — and
+**no planned time, no location, no evidence link, no exception link.** A milestone is a richer
+object than an event: it carries an expectation as well as a fact, which is what makes *"running
+late"* expressible. An event cannot be late.
+
+### Why this is not a mapping job
+
+1. A **milestone entity** with planned vs actual, location and evidence — a new table, and
+   **B-08 already records that Step 11 has no milestone registry.**
+2. **Four new event types**, which under Hard Rule 4 need a Step 11 entry or a ruling — and they
+   are not renamings of things we do. *Container yard arrival* and *loading and sealing complete*
+   are **operational acts nobody performs in the system today**; somebody at a yard has to record
+   them.
+3. **Five emitters owned by other people** — two P2's, three P3's.
+4. §27 forbids the cheap way out: *"do not force clients to manually update information STOS can
+   derive from system/GPS/geofence/telemetry/workflow."* So the timestamps are supposed to come
+   from telemetry and geofencing, which is D-116's territory and reaches no trip today.
+
+### Estimate
+
+**Larger than the rest of the client portal foundation put together, and most of it is not code.**
+It is a registry decision, four new capture points that change what somebody does at a yard, five
+emitters we do not own, and a detention rule nobody has written.
+
+**Recommendation: keep M01–M14 out of the foundation entirely.** The portal does not depend on it.
+A plain-language journey built from the nine moments we already emit is honest, buildable now, and
+should be labelled as an interim so nobody mistakes it for §8's model.
