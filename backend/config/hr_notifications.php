@@ -109,6 +109,30 @@ return [
          | Distinct Finance/Accounts targeting needs recipient_role matching in
          | NotificationRepository::visibleTo() and is deliberately NOT done here.
          */
+        /*
+         | POSH — existence only, and user-addressed only.
+         |
+         | Every body here names the case REFERENCE and what is wanted, and
+         | nothing else. No complainant, no respondent, no narrative, no
+         | evidence, no finding. A notification is read on a lock screen and
+         | forwarded without thinking, so it carries the least that is still
+         | useful.
+         |
+         | There is deliberately no '*' catch-all and no reminder spec: a
+         | mistyped event must stay silent rather than deliver under a
+         | wildcard, and no statutory timeline exists to remind anybody of.
+         |
+         | Role addressing is NOT used. The recipients are explicit user ids
+         | taken from the case's own membership; a role would be a population
+         | resolved somewhere other than PoshAccessResolver.
+         */
+        'Posh' => [
+            'Member Added'      => ['priority' => 'Info',     'subject' => 'You have been added to a case', 'body' => 'You now have access to {{reference}}.'],
+            'Inquiry Opened'    => ['priority' => 'Warning',  'subject' => 'Inquiry opened — {{reference}}', 'body' => 'An inquiry has been opened on {{reference}}.'],
+            'Decision Required' => ['priority' => 'Critical', 'subject' => 'Your decision is needed — {{reference}}', 'body' => '{{reference}} is waiting on your decision.'],
+            'Inquiry Concluded' => ['priority' => 'Info',     'subject' => 'Inquiry concluded — {{reference}}', 'body' => 'The inquiry on {{reference}} has concluded.'],
+        ],
+
         'Payroll' => [
             'Run Approved'     => ['priority' => 'Success',  'subject' => 'Payroll approved — {{period}}', 'body' => 'The payroll run for {{period}} has been approved ({{employees}} employees, {{amount}}).'],
             'Run Rejected'     => ['priority' => 'Warning',  'subject' => 'Payroll rejected — {{period}}', 'body' => 'The payroll run for {{period}} was sent back. {{remarks}}'],

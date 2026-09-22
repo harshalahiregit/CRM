@@ -32,6 +32,11 @@ class PoshCaseReadAuditor
 {
     public const SURFACE_SHOW = 'case.show';
     public const SURFACE_MEMBERS = 'case.members';
+    public const SURFACE_THREAD = 'case.thread';
+    public const SURFACE_ATTACHMENTS = 'case.attachment';
+    public const SURFACE_DOWNLOAD = 'case.attachment.download';
+    public const SURFACE_INQUIRY = 'case.inquiry';
+    public const SURFACE_FINDINGS = 'case.findings';
 
     /**
      * Write one read.

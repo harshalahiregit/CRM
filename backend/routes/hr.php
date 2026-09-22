@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\Hr\InterviewQuestionController;
 use App\Http\Controllers\Api\Hr\OfferController;
 use App\Http\Controllers\Api\Hr\OnboardingChecklistController;
 use App\Http\Controllers\Api\Hr\PoshCaseController;
+use App\Http\Controllers\Api\Hr\PoshCaseWorkController;
 use App\Http\Controllers\Api\Hr\PoshCommitteeController;
 use App\Http\Controllers\Api\Hr\OnboardingController;
 use App\Http\Controllers\Api\Hr\EmployeeAssetController;
@@ -783,4 +784,36 @@ Route::get('/hr/attendance/{attendance}/selfie/{which}',
 Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/posh-cases/{id}',         [PoshCaseController::class, 'show'])->whereNumber('id');
     Route::get('/posh-cases/{id}/members', [PoshCaseController::class, 'members'])->whereNumber('id');
+
+    // Intake. The ONE route here that is not gated on case membership,
+    // because there is no case yet to be a member of. hr_posh_intake, which
+    // is not admin, not hr_settings and not the HR queue — and which grants
+    // no access to what it creates.
+    Route::post('/posh-cases', [PoshCaseWorkController::class, 'store']);
+
+    // Everything below resolves the case through PoshAccessResolver first.
+    Route::patch('/posh-cases/{id}/acknowledge', [PoshCaseWorkController::class, 'acknowledge'])->whereNumber('id');
+    Route::patch('/posh-cases/{id}/withdraw',    [PoshCaseWorkController::class, 'withdraw'])->whereNumber('id');
+    Route::patch('/posh-cases/{id}/close',       [PoshCaseWorkController::class, 'close'])->whereNumber('id');
+
+    Route::get('/posh-cases/{id}/thread',   [PoshCaseWorkController::class, 'thread'])->whereNumber('id');
+    Route::post('/posh-cases/{id}/messages', [PoshCaseWorkController::class, 'message'])->whereNumber('id');
+    Route::post('/posh-cases/{id}/notes',    [PoshCaseWorkController::class, 'note'])->whereNumber('id');
+
+    Route::get('/posh-cases/{id}/attachments',      [PoshCaseWorkController::class, 'attachments'])->whereNumber('id');
+    Route::post('/posh-cases/{id}/attachments',     [PoshCaseWorkController::class, 'upload'])->whereNumber('id');
+    Route::get('/posh-cases/{id}/attachments/{attachmentId}', [PoshCaseWorkController::class, 'download'])
+        ->whereNumber('id')->whereNumber('attachmentId');
+
+    Route::get('/posh-cases/{id}/inquiry',         [PoshCaseWorkController::class, 'inquiry'])->whereNumber('id');
+    Route::post('/posh-cases/{id}/inquiry',        [PoshCaseWorkController::class, 'openInquiry'])->whereNumber('id');
+    Route::post('/posh-cases/{id}/inquiry/decide', [PoshCaseWorkController::class, 'decide'])->whereNumber('id');
+
+    Route::get('/posh-cases/{id}/findings',          [PoshCaseWorkController::class, 'findings'])->whereNumber('id');
+    Route::put('/posh-cases/{id}/findings',          [PoshCaseWorkController::class, 'saveFindings'])->whereNumber('id');
+    Route::post('/posh-cases/{id}/findings/record',  [PoshCaseWorkController::class, 'recordFindings'])->whereNumber('id');
+    Route::post('/posh-cases/{id}/findings/publish', [PoshCaseWorkController::class, 'publishFindings'])->whereNumber('id');
+
+    // hr_settings authority, and it grants NO case-content access.
+    Route::post('/posh-cases/{id}/reconstitute', [PoshCaseWorkController::class, 'reconstitute'])->whereNumber('id');
 });

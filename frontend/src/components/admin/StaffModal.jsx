@@ -68,6 +68,12 @@ const PERMISSION_MODULES = [
   { key:'hr_manpower_l1',  label:'Manpower Approval (L1)', actions:['view_global'] },
   { key:'hr_manpower_l2',  label:'Manpower Approval (L2)', actions:['view_global'] },
   { key:'hr_ai_jd',        label:'AI Job Descriptions',   actions:['view_global'] },
+  // Raising a POSH complaint, and nothing else. It grants NO access to any
+  // case — not even the one the holder just raised — so it is safe to give to
+  // whoever takes complaints at the door. Deliberately not implied by admin,
+  // HR Settings or the HR queue, which is why it needs its own box: without
+  // one, nobody could raise a case at all.
+  { key:'hr_posh_intake',  label:'POSH Complaint Intake', actions:['view_global'] },
 ]
 
 const ACTION_LABELS = {
@@ -143,7 +149,7 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
     { label:'CRM Core',     keys:['contacts','deals','tasks','projects','customers','vendors'] },
     { label:'Finance',      keys:['invoices','estimates','expenses','credit_notes','delivery_notes'] },
     { label:'Operations',   keys:['appointments','tickets','inventory','goals','surveys'] },
-    { label:'HR Module',    keys:['hr_recruitment','hr_checklists','hr_settings','hr_attendance','hr_employees','hr_payroll','hr_leave','hr_exit','hr_onboarding','hr_manpower_l1','hr_manpower_l2','hr_ai_jd'] },
+    { label:'HR Module',    keys:['hr_recruitment','hr_checklists','hr_settings','hr_attendance','hr_employees','hr_payroll','hr_leave','hr_exit','hr_onboarding','hr_manpower_l1','hr_manpower_l2','hr_ai_jd','hr_posh_intake'] },
     { label:'System',       keys:['reports','email_templates','affiliates','staff_mgmt'] },
     { label:'Personal',     keys:['self'] },
   ]

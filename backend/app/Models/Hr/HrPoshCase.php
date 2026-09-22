@@ -45,12 +45,22 @@ class HrPoshCase extends Model
         'respondent_employee_id', 'respondent_label',
         'incident_at', 'incident_place', 'narrative',
         'status', 'outcome', 'findings_published_at',
+        // The procedural clock. Dates, never deadlines: the statute's timings
+        // vary by how a workspace counts them, so the product records what
+        // happened and when, and leaves the arithmetic to the people who are
+        // accountable for it.
+        'complaint_received_at', 'acknowledged_at',
+        'inquiry_started_at', 'inquiry_completed_at',
         'retention_policy_id', 'anonymised_at', 'created_by', 'updated_by',
     ];
 
     protected $casts = [
         'incident_at'           => 'datetime',
         'findings_published_at' => 'datetime',
+        'complaint_received_at' => 'datetime',
+        'acknowledged_at'       => 'datetime',
+        'inquiry_started_at'    => 'datetime',
+        'inquiry_completed_at'  => 'datetime',
         'anonymised_at'         => 'datetime',
     ];
 
@@ -68,6 +78,24 @@ class HrPoshCase extends Model
     public function reads()
     {
         return $this->hasMany(HrPoshCaseRead::class, 'case_id');
+    }
+
+    /**
+     * Evidence and documents.
+     *
+     * Storage is the shared attachments table; AUTHORISATION is not shared.
+     * AttachmentService performs no checks of its own, so every POSH
+     * attachment route resolves the case through PoshAccessResolver first and
+     * looks the file up within that case — never by bare id.
+     */
+    public function attachments()
+    {
+        return $this->morphMany(\App\Models\Shared\Attachment::class, 'attachable');
+    }
+
+    public function findings()
+    {
+        return $this->hasMany(HrPoshFinding::class, 'case_id');
     }
 
     /**

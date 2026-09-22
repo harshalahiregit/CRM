@@ -85,6 +85,17 @@ final class StaffPermission
          | record from the reporting line, which no permission can express.
          */
         'hr_onboarding', 'hr_manpower_l1', 'hr_manpower_l2', 'hr_ai_jd',
+
+        /*
+         | Raising a POSH complaint, and nothing else.
+         |
+         | Kept apart from every other key on purpose. It is not admin, not
+         | hr_settings, not the HR queue and not can_manage_case. Somebody who
+         | takes complaints at the door needs none of those, and none of them
+         | should imply this — least of all on a module where the person who
+         | logs a case is deliberately not entitled to read it afterwards.
+         */
+        'hr_posh_intake',
     ];
 
     public static function isModule(string $module): bool
