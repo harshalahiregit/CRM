@@ -84,6 +84,10 @@ export const clientPortalApi = {
   proposals: () => get('/portal/client/proposals'),
   contracts: () => get('/portal/client/contracts'),
   projects: () => get('/portal/client/projects'),
+
+  // STOS-CLP §28 step 7. No client id — the contact's own client comes off the
+  // token, like every other call in this file.
+  shipments: () => get('/portal/client/transport/shipments'),
   tickets: () => get('/portal/client/tickets'),
   // Raising goes through Helpdesk's intake contract server-side, never a direct
   // insert — so numbering, SLA, routing and the acknowledgement email all apply.

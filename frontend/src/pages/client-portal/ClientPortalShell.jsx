@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   Building2, LayoutDashboard, Receipt, CreditCard, FileX, Wallet, ClipboardList,
   FileText, FileSignature, FolderKanban, LifeBuoy, Paperclip, StickyNote,
-  Users2, UserCircle2, LogOut, MessageSquareHeart,
+  Users2, UserCircle2, LogOut, MessageSquareHeart, Truck,
 } from 'lucide-react'
 import { clientPortalApi } from '@/lib/clientPortalApi'
 
@@ -38,6 +38,12 @@ const SECTIONS = [
   { group: 'Work', items: [
     { to: '/portal/projects', label: 'Projects', icon: FolderKanban, perm: 'project' },
     { to: '/portal/tickets',  label: 'Support',  icon: LifeBuoy,     perm: 'support' },
+  ]},
+  { group: 'Transport', items: [
+    // Gated on `transport`, which no contact holds yet — step 3 grants it. Until
+    // then this renders nothing at all, which is the correct behaviour and not a
+    // bug to work around: the server refuses the endpoint for the same reason.
+    { to: '/portal/shipments', label: 'Shipments', icon: Truck, perm: 'transport' },
   ]},
   { group: 'Your say', items: [
     // §10 — the customer answers the survey themselves. No permission gate:

@@ -1266,7 +1266,7 @@ export default function AppRoutes() {
         <Route path="feedback" element={<S><ClientPortalFeedback /></S>} />
         <Route path="agreements"   element={<S><PortalContractsClient /></S>} />
         {['invoices', 'payments', 'credit-notes', 'estimates', 'proposals',
-          'contracts', 'projects', 'tickets', 'files', 'notes', 'contacts'].map(v => (
+          'contracts', 'projects', 'tickets', 'shipments', 'files', 'notes', 'contacts'].map(v => (
           <Route key={v} path={v} element={<S><ClientPortalRecords view={v} /></S>} />
         ))}
       </Route>
