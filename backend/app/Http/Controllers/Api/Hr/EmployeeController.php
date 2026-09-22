@@ -119,8 +119,20 @@ class EmployeeController extends Controller
             'dob'                    => 'nullable|date',
             'gender'                 => 'nullable|in:Male,Female,Other,Prefer not to say',
             'address'                => 'nullable|string',
-            'department'             => 'sometimes|required|string',
-            'designation'            => 'sometimes|required|string',
+            // See StoreEmployeeRequest: the master record, not a typed string,
+            // and tenant-scoped so another workspace's department cannot be
+            // assigned. `sometimes` because an edit that touches neither must
+            // leave both exactly as they are.
+            'department_id'          => [
+                'sometimes', 'required', 'integer',
+                \Illuminate\Validation\Rule::exists('hr_departments', 'id')
+                    ->where('tenant_id', $request->user()->tenant_id),
+            ],
+            'designation_id'         => [
+                'sometimes', 'required', 'integer',
+                \Illuminate\Validation\Rule::exists('hr_designations', 'id')
+                    ->where('tenant_id', $request->user()->tenant_id),
+            ],
             // See StoreEmployeeRequest for why both exist. The service rejects a
             // self-reference and a cycle; existence and tenant are checked here.
             'reporting_manager_id'   => [

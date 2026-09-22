@@ -68,10 +68,22 @@ class ReportingManagerAtHireTest extends TestCase
         ]);
     }
 
+    /** The org masters the hire form now submits by id. */
+    private function orgMasters(): array
+    {
+        return [
+            'department_id' => \App\Models\Hr\HrDepartment::firstOrCreate(
+                ['tenant_id' => $this->tenant->id, 'name' => 'Ops'], ['is_active' => true])->id,
+            'designation_id' => \App\Models\Hr\HrDesignation::firstOrCreate(
+                ['tenant_id' => $this->tenant->id, 'name' => 'Analyst'], ['is_active' => true])->id,
+        ];
+    }
+
     private function hirePayload(array $overrides = []): array
     {
         return array_merge([
-            'name' => 'New Joiner', 'department' => 'Ops', 'designation' => 'Analyst',
+            'name' => 'New Joiner',
+        ] + $this->orgMasters() + [
             'joining_date' => '2026-01-01', 'status' => 'Active', 'work_state' => 'Maharashtra',
             'skip_probation' => true, 'probation_skip_reason' => 'not applicable',
         ], $overrides);
@@ -255,7 +267,11 @@ class ReportingManagerAtHireTest extends TestCase
     {
         $person = $this->employee('UNR-1', 'Unrelated', $this->manager->id);
 
-        $this->putJson("/api/hr/employees/{$person->id}", ['designation' => 'Senior Analyst'])->assertOk();
+        $senior = \App\Models\Hr\HrDesignation::create([
+            'tenant_id' => $this->tenant->id, 'name' => 'Senior Analyst', 'is_active' => true,
+        ]);
+
+        $this->putJson("/api/hr/employees/{$person->id}", ['designation_id' => $senior->id])->assertOk();
 
         $fresh = $person->fresh();
         $this->assertSame('Senior Analyst', $fresh->designation);

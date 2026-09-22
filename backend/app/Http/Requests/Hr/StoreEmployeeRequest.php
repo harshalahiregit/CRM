@@ -22,8 +22,27 @@ class StoreEmployeeRequest extends FormRequest
             'dob'                    => 'nullable|date',
             'gender'                 => 'nullable|in:Male,Female,Other,Prefer not to say',
             'address'                => 'nullable|string',
-            'department'             => 'required|string',
-            'designation'            => 'required|string',
+            // The MASTER RECORD, not a typed string.
+            //
+            // hr_employees has carried department_id and designation_id since
+            // the organization tables shipped, and this form wrote neither —
+            // it stored whatever text arrived, so the same department existed
+            // under several spellings and the org chart, which reads the FK,
+            // saw almost nobody. The name is no longer accepted here at all:
+            // EmployeeService copies it from the master it resolves, so there
+            // is one editable source instead of two that drifted.
+            //
+            // Scoped to the caller's tenant the same way reporting_manager_id
+            // below is — a bare exists: rule admits another workspace's
+            // department and turns an authorisation problem into a 422.
+            'department_id'          => [
+                'required', 'integer',
+                Rule::exists('hr_departments', 'id')->where('tenant_id', $this->user()?->tenant_id),
+            ],
+            'designation_id'         => [
+                'required', 'integer',
+                Rule::exists('hr_designations', 'id')->where('tenant_id', $this->user()?->tenant_id),
+            ],
             // Two fields, on purpose, and they are not duplicates of each other.
             //
             // reporting_manager_id is the IDENTITY, and it is what every feature

@@ -5,7 +5,7 @@ import { useTheme } from '@/context/ThemeContext'
 import { useAuth } from '@/context/AuthContext'
 import { Search, Building2, Plus, X, LayoutGrid, List, Eye, Pencil } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
-import { useMasterData, withInactive } from '@/modules/hr/useMasterData'
+import { useMasterData, withInactiveById } from '@/modules/hr/useMasterData'
 import { canManageHrQueue } from '@/modules/hr/constants'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import Modal from '@/components/ui/Modal'
@@ -17,7 +17,7 @@ const initials = n => (n||'').split(' ').slice(0,2).map(x=>x[0]).join('').toUppe
 const fmtDate  = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'
 const deptColor = d => DEPT_COLORS[d]||'#7C3AED'
 
-const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', gender:'', address:'', department:'', designation:'', reporting_manager_id:'', reporting_manager_name:'', work_state:'', joining_date:'', probation_end_date:'', confirmation_date:'', status:'Active',
+const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', gender:'', address:'', department:'', designation:'', department_id:'', designation_id:'', reporting_manager_id:'', reporting_manager_name:'', work_state:'', joining_date:'', probation_end_date:'', confirmation_date:'', status:'Active',
   // #36 — probation must be set when adding an employee, or the hire explicitly exempted.
   probation_policy_id:'', skip_probation:false, probation_skip_reason:'',
   // #29 — what this person is, and the comment's explicit "option to consider
@@ -87,12 +87,15 @@ export default function Employees() {
   const canManageHr = canManageHrQueue(user)
   // Department / Designation / Reporting Manager all come from Org Setup master data
   // (single source of truth, active-only). No hardcoded lists; a saved-but-inactive
-  // value stays visible and marked via withInactive().
+  // value stays visible and marked via withInactiveById().
   const { masters } = useMasterData()
   const deptNames    = (masters.departments  || []).map(d => d.name)
   const desigNames   = (masters.designations || []).map(d => d.name)
-  const deptOptions    = (f) => withInactive(deptNames,    f?.department)
-  const desigOptions   = (f) => withInactive(desigNames,   f?.designation)
+  // Chosen by ID: the employee points at the master record, not at a copy of
+  // its name. The saved name is passed only so a since-retired master still
+  // has something to be called in the list.
+  const deptOptions    = (f) => withInactiveById(masters.departments,  f?.department_id,  f?.department)
+  const desigOptions   = (f) => withInactiveById(masters.designations, f?.designation_id, f?.designation)
   // Managers are picked by ID, not by name. masters.managers already carries
   // {id, name, employee_code}; the name was the only part being used, so the
   // hierarchy every other feature reads — org chart, advance approvals, the
@@ -216,7 +219,7 @@ export default function Employees() {
   const openProfile = (id) => navigate(`/app/hr/employees/${id}`)
 
   const handleSave = async () => {
-    if (!form.name||!form.department||!form.designation||!form.joining_date) return showToast('Name, department, designation & joining date required','error')
+    if (!form.name||!form.department_id||!form.designation_id||!form.joining_date) return showToast('Name, department, designation & joining date required','error')
     setSaving(true)
     try {
       if (editingId) {
@@ -505,7 +508,7 @@ export default function Employees() {
               <div><label className="label">Address</label><textarea rows={2} className="input-3d text-sm resize-none" value={form.address||''} onChange={e=>setForm({...form,address:e.target.value})}/></div>
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="label">Department *</label>
-                  <select className="input-3d text-sm" value={form.department} onChange={e=>setForm({...form,department:e.target.value})}>
+                  <select className="input-3d text-sm" value={form.department_id||''} onChange={e=>setForm({...form,department_id:e.target.value})}>
                     <option value="">{deptNames.length ? 'Select...' : 'No departments defined yet'}</option>
                     {deptOptions(form).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
@@ -525,7 +528,7 @@ export default function Employees() {
                   </button>
                 </div>
                 <div><label className="label">Designation *</label>
-                  <select className="input-3d text-sm" value={form.designation} onChange={e=>setForm({...form,designation:e.target.value})}>
+                  <select className="input-3d text-sm" value={form.designation_id||''} onChange={e=>setForm({...form,designation_id:e.target.value})}>
                     <option value="">{desigNames.length ? 'Select...' : 'No designations defined yet'}</option>
                     {desigOptions(form).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>

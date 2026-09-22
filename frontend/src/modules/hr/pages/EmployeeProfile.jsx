@@ -15,7 +15,7 @@ import EmployeeDetailPanel from '../components/EmployeeDetailPanel'
 import EmployeeScoreCard from '../components/EmployeeScoreCard'
 import EmployeeSkillsPanel from '../components/EmployeeSkillsPanel'      // #43
 import EmployeeAttendancePanel from '../components/EmployeeAttendancePanel' // #38
-import { useMasterData, withInactive } from '@/modules/hr/useMasterData'
+import { useMasterData, withInactive, withInactiveById } from '@/modules/hr/useMasterData'
 import { offerPortalApi } from '@/services/offerPortalApi'
 import AuditTimeline from '@/components/ui/AuditTimeline'
 import EmployeeNotifications from '@/modules/notifications/EmployeeNotifications'
@@ -1166,14 +1166,16 @@ const IntegrationNote = ({ icon:Icon, title, subtitle, hint, chips, big }) => (
 
 // ── Edit modal (unchanged behaviour — same fields, same update API) ──
 function EditModal({ employee, onClose, onSaved, showToast }) {
-  const F = ['name','email','phone','department','designation','reporting_manager_name','joining_date','probation_end_date','confirmation_date','status']
+  // department_id / designation_id are what is SUBMITTED; the two names ride
+  // along only so a since-retired master still has a label in the dropdown.
+  const F = ['name','email','phone','department','designation','department_id','designation_id','reporting_manager_name','joining_date','probation_end_date','confirmation_date','status']
   const [form, setForm] = useState(Object.fromEntries(F.map(k=>[k, employee[k] ?? (k==='status'?'Active':'')])))
   const [saving, setSaving] = useState(false)
   // Department / Designation / Reporting Manager from Org Setup master data (single
   // source, active-only). No hardcoded lists; saved-but-inactive values stay marked.
   const { masters } = useMasterData()
-  const deptOptions    = withInactive((masters.departments  || []).map(d => d.name), form.department)
-  const desigOptions   = withInactive((masters.designations || []).map(d => d.name), form.designation)
+  const deptOptions    = withInactiveById(masters.departments,  form.department_id,  form.department)
+  const desigOptions   = withInactiveById(masters.designations, form.designation_id, form.designation)
   const managerOptions = withInactive((masters.managers     || []).map(m => m.name), form.reporting_manager_name)
   const save = async () => {
     setSaving(true)
@@ -1193,12 +1195,12 @@ function EditModal({ employee, onClose, onSaved, showToast }) {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Department</label>
-              <select className="input-3d text-sm" value={form.department} onChange={e=>set('department',e.target.value)}>
+              <select className="input-3d text-sm" value={form.department_id||''} onChange={e=>set('department_id',e.target.value)}>
                 <option value="">Select...</option>{deptOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
             <div><label className="label">Designation</label>
-              <select className="input-3d text-sm" value={form.designation} onChange={e=>set('designation',e.target.value)}>
+              <select className="input-3d text-sm" value={form.designation_id||''} onChange={e=>set('designation_id',e.target.value)}>
                 <option value="">Select...</option>{desigOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
