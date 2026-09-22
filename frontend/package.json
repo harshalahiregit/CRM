@@ -13,7 +13,8 @@
     "check:selects": "node scripts/searchable-selects.check.mjs",
     "check:login-roles": "node scripts/login-roles.check.mjs",
     "check:sire": "node scripts/sire-context.check.mjs",
-    "check:vendor-lock": "node scripts/vendor-lock.check.mjs"
+    "check:vendor-lock": "node scripts/vendor-lock.check.mjs",
+    "check:tasks": "node scripts/task-assignment.check.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",

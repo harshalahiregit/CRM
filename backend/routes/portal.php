@@ -482,3 +482,20 @@ Route::middleware(['auth:sanctum', 'client.portal'])->prefix('portal/client')->g
     Route::get('/contacts',      [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'contacts']);
 });
 
+
+// ── "Assigned to me", for people who are not staff ──────────────────────
+//
+// One endpoint for all three portals — client contact, purchase vendor, TPV —
+// because the rule is one rule and splitting it per portal is how it drifts.
+//
+// auth:sanctum ALONE, with no role: guard, and that is deliberate: the three
+// callers authenticate as three different things (a ClientContact, a
+// PurchaseVendor, a User with role third_party_vendor) and no role list can name
+// the first two. The gate is identity — PortalAssignedTaskController refuses
+// anyone PartyAssignmentService cannot resolve to a party, which is everybody else
+// including staff.
+Route::middleware('auth:sanctum')->prefix('portal')->group(function () {
+    Route::get('/assigned-tasks', [\App\Http\Controllers\Api\Portal\PortalAssignedTaskController::class, 'index']);
+    Route::get('/assigned-tasks/{task}', [\App\Http\Controllers\Api\Portal\PortalAssignedTaskController::class, 'show'])
+        ->whereNumber('task');
+});

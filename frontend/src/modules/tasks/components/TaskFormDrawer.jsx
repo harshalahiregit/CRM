@@ -597,11 +597,15 @@ export default function TaskFormDrawer({
         title={`Add a ${(REL_TYPE_LABEL[addRelType] || addRelType).toLowerCase()} link`} subtitle="Search by name — the task can link to several things."
         emptyText={`No ${(REL_TYPE_LABEL[addRelType] || addRelType).toLowerCase()}s found.`} accent={TASK_ACCENT}
       />
+      {/* Multi-select. Staffing a new task is almost never one person, and one
+          pick per person meant reopening this three or four times before the
+          task even existed. */}
       <SearchPicker
+        multi confirmLabel="Assign"
         open={picker === 'assignee'} onClose={() => setPicker(null)}
-        onPick={it => it && !form.assignee_ids.includes(it.id) && sf('assignee_ids', [...form.assignee_ids, it.id])}
+        onConfirm={picked => sf('assignee_ids', [...new Set([...form.assignee_ids, ...picked.map(p => p.id)])])}
         items={staff.filter(s => !form.assignee_ids.includes(s.id)).map(s => ({ id: s.id, label: s.name, sublabel: s.role }))}
-        title="Assign to" subtitle="Staff member doing the work." emptyText="Everyone is already assigned." accent={TASK_ACCENT}
+        title="Assign to" subtitle="Tick everyone doing the work." emptyText="Everyone is already assigned." accent={TASK_ACCENT}
       />
       {/* TPV assignee = a two-stage cascade (enhancement #9): pick the vendor,
           then ONLY its employees. Selecting an employee provisions a login if
@@ -611,13 +615,22 @@ export default function TaskFormDrawer({
         open={picker === 'tpv'} onClose={() => setPicker(null)} accent={TASK_ACCENT}
         excludeIds={form.assignee_ids}
         onPick={({ user_id }) => {
-          if (user_id && !form.assignee_ids.includes(user_id)) sf('assignee_ids', [...form.assignee_ids, user_id])
+          // setForm's UPDATER form, not sf(). The picker now calls this once per
+          // employee, and sf() takes a value computed from the render-time
+          // `form` — so three calls in one tick would each start from the same
+          // stale array and only the last would survive.
+          if (user_id) {
+            setForm(p => p.assignee_ids.includes(user_id)
+              ? p
+              : { ...p, assignee_ids: [...p.assignee_ids, user_id] })
+          }
           qc.invalidateQueries({ queryKey: ['task-vendors', 'tpv'] })
         }}
       />
       <SearchPicker
+        multi confirmLabel="Follow"
         open={picker === 'follower'} onClose={() => setPicker(null)}
-        onPick={it => it && !form.follower_ids.includes(it.id) && sf('follower_ids', [...form.follower_ids, it.id])}
+        onConfirm={picked => sf('follower_ids', [...new Set([...form.follower_ids, ...picked.map(p => p.id)])])}
         items={staff.filter(s => !form.follower_ids.includes(s.id)).map(s => ({ id: s.id, label: s.name, sublabel: s.role }))}
         title="Add follower" subtitle="Followers get updates but aren't doing the work." emptyText="Everyone is already following." accent={TASK_ACCENT}
       />

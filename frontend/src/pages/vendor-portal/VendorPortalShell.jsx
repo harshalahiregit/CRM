@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { HardHat, Gavel, HelpCircle, FileSignature, ShieldCheck } from 'lucide-react'
+import { HardHat, Gavel, HelpCircle, FileSignature, ShieldCheck, ListChecks } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { portalApi } from '@/services/portalApi'
 import TemporaryAccessBanner from '@/modules/tpv/components/TemporaryAccessBanner'
@@ -75,6 +75,12 @@ export default function VendorPortalShell() {
             // working under both engines saw the same feature twice over with
             // different words on it.
             { key: 'agreements', label: 'Agreements',      icon: FileSignature, to: 'agreements' },
+            // Distinct from the "Tasks" list under Execution, which is what was
+            // assigned to THIS LOGIN as a user. This is what was assigned by
+            // name to the vendor's contacts, who have no login of their own —
+            // two different kinds of assignment, so two lists rather than one
+            // pretending to be the other.
+            { key: 'team-tasks', label: 'Team Tasks',      icon: ListChecks, to: 'team-tasks' },
             // Where their registration stands. The page existed and was only
             // reachable from a link inside Support, while the Purchase portal
             // had it in the nav — same information, two levels apart.

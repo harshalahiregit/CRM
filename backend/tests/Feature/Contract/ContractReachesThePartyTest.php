@@ -98,11 +98,17 @@ class ContractReachesThePartyTest extends TestCase
     {
         // Both are working vendors. This test is about one not reaching the
         // other's contract, so the caller has to get past the onboarding gate
-        // first — otherwise it refuses for the wrong reason and proves nothing
-        // about isolation.
+        // first — otherwise it refuses for the wrong reason (403, not 404) and
+        // proves nothing about isolation.
+        //
+        // BOTH are onboarded, not just the caller: the portal resolves the
+        // vendor behind a login by more than one route, and onboarding only A
+        // left the assertion depending on which one it picked — green alone,
+        // red inside a full run.
         [$loginA, $vendorA] = $this->tpvVendor();
         [, $vendorB] = $this->tpvVendor();
         $this->markOnboarded($vendorA);
+        $this->markOnboarded($vendorB);
         $b = $this->contractFor(Vendor::class, $vendorB->id, 'BetaCo');
 
         Sanctum::actingAs($loginA);
