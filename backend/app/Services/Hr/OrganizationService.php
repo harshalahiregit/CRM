@@ -360,8 +360,45 @@ class OrganizationService
         ];
     }
 
-    /** Enum masters that have no dedicated table — defined ONCE here (single source). */
-    public const SHIFTS = ['Day', 'Night', 'Rotational', 'Flexible'];
+    /**
+     * The shift names recruitment offers when a workspace has configured none.
+     *
+     * NOT the master. hr_shifts is, and it has had a full editor behind
+     * HR Settings since the shift module landed — this list used to be handed
+     * to the recruitment dropdown unconditionally, so a shift somebody created
+     * in Settings could never appear on a requisition, and the manpower
+     * validation rule hardcoded these same four strings inline, which meant it
+     * could not have been saved even if it had been offered.
+     *
+     * Kept only as the fallback for a workspace with no shifts yet, so a fresh
+     * tenant gets a usable field instead of an empty one. The same shape
+     * AttendanceService already uses for its own presets.
+     */
+    public const LEGACY_SHIFTS = ['Day', 'Night', 'Rotational', 'Flexible'];
+
+    /** @deprecated Read shiftOptions() — this is the fallback, not the master. */
+    public const SHIFTS = self::LEGACY_SHIFTS;
+
+    /**
+     * The shift names valid for this workspace, master first.
+     *
+     * One resolver, read by the master-data payload the dropdown renders AND by
+     * the validation rule that accepts what it offers. They were two separate
+     * hardcoded lists, which is how the dropdown and the validator came to
+     * disagree in the first place.
+     *
+     * @return array<int, string>
+     */
+    public static function shiftOptions(int $tenantId): array
+    {
+        $configured = \App\Models\Hr\HrShift::where('tenant_id', $tenantId)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->pluck('name')
+            ->all();
+
+        return $configured !== [] ? $configured : self::LEGACY_SHIFTS;
+    }
 
     public const EMPLOYEE_LEVELS = ['Intern', 'Junior', 'Mid-level', 'Senior', 'Lead', 'Manager', 'Director'];
 
@@ -389,8 +426,10 @@ class OrganizationService
             // active-only). No duplicate project store; included here so every HR
             // dropdown reads it from the one cached master payload.
             'projects'        => app(\App\Services\Project\ProjectService::class)->options($tenantId),
-            // Fixed enums with no table — defined once above.
-            'shifts'          => self::SHIFTS,
+            // Shifts come from the hr_shifts master this workspace configured,
+            // falling back to the legacy names only when it has none.
+            'shifts'          => self::shiftOptions($tenantId),
+            // Still a fixed enum — there is no master table behind this one.
             'employee_levels' => self::EMPLOYEE_LEVELS,
         ];
     }

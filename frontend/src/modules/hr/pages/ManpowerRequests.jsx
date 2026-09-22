@@ -32,8 +32,9 @@ const EMPTY_FORM = {
 // Job Requisition criticality (Doc 3 Module 2)
 const CRITICALITY = ['Low', 'Medium', 'High', 'Business Critical']
 // Enterprise enums (SPK-1) — match the backend `in:` validation lists.
+// Shifts are NOT here: they come from the hr_shifts master this workspace
+// configured, and arrive on masters.shifts with the rest of the dropdowns.
 const WORK_MODES = ['Onsite', 'Remote', 'Hybrid']
-const SHIFTS = ['Day', 'Night', 'Rotational', 'Flexible']
 const HIRING_REASONS = ['New Position', 'Replacement', 'Expansion', 'Contract']
 
 const labelStyle = { display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }

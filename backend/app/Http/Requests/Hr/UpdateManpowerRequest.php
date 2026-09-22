@@ -41,7 +41,14 @@ class UpdateManpowerRequest extends FormRequest
             // Enterprise fields (SPK-1) — all optional, backward compatible.
             'hiring_manager_id'      => 'nullable|exists:hr_employees,id',
             'work_mode'              => 'nullable|in:Onsite,Remote,Hybrid',
-            'shift'                  => 'nullable|in:Day,Night,Rotational,Flexible',
+            // As the store rule, plus whatever this requisition already holds.
+            //
+            // Existing rows carry the legacy names, and a workspace that has
+            // since configured its own shifts would otherwise be unable to save
+            // ANY edit to an old requisition — the untouched shift field would
+            // fail validation and take the whole update down with it. The rule
+            // applies to a shift being changed, not to one being carried.
+            'shift'                  => ['nullable', Rule::in($this->allowedShifts())],
             'budget'                 => 'nullable|numeric|min:0',
             'certifications'         => 'nullable|array',
             'certifications.*'       => 'string|max:100',
@@ -49,6 +56,30 @@ class UpdateManpowerRequest extends FormRequest
             'replacement_employee_id' => 'nullable|required_if:hiring_reason,Replacement|exists:hr_employees,id',
             'cost_center'            => 'nullable|string|max:100',
         ];
+    }
+
+    /**
+     * The shift names this particular update may save.
+     *
+     * The workspace's configured shifts, plus the value already stored on the
+     * requisition being edited so an existing row stays editable. Nothing is
+     * backfilled and nothing already saved is invalidated — the old value
+     * remains valid for the row that holds it, and for no other.
+     *
+     * @return array<int, string>
+     */
+    private function allowedShifts(): array
+    {
+        $allowed = \App\Services\Hr\OrganizationService::shiftOptions((int) $this->user()->tenant_id);
+
+        $current = $this->route('manpowerRequest');
+        $stored  = is_object($current) ? $current->shift : null;
+
+        if ($stored !== null && $stored !== '' && ! in_array($stored, $allowed, true)) {
+            $allowed[] = $stored;
+        }
+
+        return $allowed;
     }
 
     public function messages(): array
