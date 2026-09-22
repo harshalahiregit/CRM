@@ -10,7 +10,8 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { Settings2, Save, RotateCcw, Info } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Settings2, Save, RotateCcw, Info, ListChecks } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { HrLoading } from '@/components/ui/HrState'
 import { useToast } from '@/components/ui/Toast'
@@ -167,6 +168,23 @@ export default function HrSettings() {
           )}
         </section>
       ))}
+
+      {/* Not a key/value setting: the checklist is a list somebody orders and
+          edits, so it has its own screen rather than being crammed into the
+          schema-driven form above. */}
+      <Link to="/app/hr/onboarding-checklist"
+        className="rounded-2xl flex items-center justify-between gap-3"
+        style={{ padding: 18, background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+        <span className="min-w-0">
+          <span className="text-xs font-bold uppercase tracking-wider block" style={{ color: 'var(--text-h)' }}>
+            Onboarding checklist
+          </span>
+          <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            The tasks every new joiner receives — add, reorder, disable or remove them.
+          </span>
+        </span>
+        <ListChecks size={18} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+      </Link>
     </div>
   )
 }

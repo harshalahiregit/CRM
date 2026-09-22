@@ -63,6 +63,9 @@ class EmployeeOnboardingService
         // The engine, beside the raw mail above. Onboarding notified only by
         // e-mail: no bell, no per-tenant template, no rule, no channel choice.
         private HrEventNotifier $events,
+        // The workspace's own checklist, which used to be 27 tasks in a PHP
+        // constant that nobody could change without a deploy.
+        private OnboardingChecklistService $checklist,
     )
     {
     }
@@ -249,22 +252,34 @@ class EmployeeOnboardingService
         });
     }
 
+    /**
+     * Copy the workspace's checklist onto this onboarding.
+     *
+     * The list comes from the tenant's own master now rather than from
+     * OnboardingTaskCategory::DEFAULT_TASKS, which meant a company wanting one
+     * extra induction step — or not issuing laptops — needed a developer.
+     * A workspace that has configured nothing still gets those 27, so this
+     * changed where the rows come from and nothing about what is written.
+     *
+     * Still a COPY, and that is the point. Each task carries its own title,
+     * category and order, so an administrator editing the master afterwards
+     * cannot rename, reorder or remove anything on a checklist somebody is
+     * already working through.
+     */
     private function seedTasks(HrEmployeeOnboarding $onboarding, int $tenantId): void
     {
         $sort = 0;
-        foreach (TaskCat::DEFAULT_TASKS as $category => $rows) {
-            foreach ($rows as $row) {
-                $onboarding->tasks()->create([
-                    'tenant_id'    => $tenantId,
-                    'category'     => $category,
-                    'title'        => $row['title'],
-                    'status'       => TaskCat::STATUS_PENDING,
-                    'is_mandatory' => $row['is_mandatory'],
-                    'owner_role'   => $row['owner_role'],
-                    'source'       => 'System',
-                    'sort_order'   => $sort++,
-                ]);
-            }
+        foreach ($this->checklist->applicableFor($tenantId) as $row) {
+            $onboarding->tasks()->create([
+                'tenant_id'    => $tenantId,
+                'category'     => $row['category'],
+                'title'        => $row['title'],
+                'status'       => TaskCat::STATUS_PENDING,
+                'is_mandatory' => $row['is_mandatory'],
+                'owner_role'   => $row['owner_role'],
+                'source'       => 'System',
+                'sort_order'   => $sort++,
+            ]);
         }
     }
 

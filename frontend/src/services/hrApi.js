@@ -1349,6 +1349,24 @@ export const hrApi = {
   },
 
   /**
+   * The onboarding checklist every new joiner receives.
+   *
+   * list() returns the items AND the vocabulary the form renders from
+   * (categories, owner roles), so the screen keeps no copy of either. The
+   * items are a TEMPLATE: an onboarding already under way holds its own copy
+   * and is unaffected by anything edited here.
+   */
+  onboardingChecklist: {
+    list:      ()          => api.get('/hr/onboarding-checklist').then(r => r.data?.data),
+    create:    (data)      => api.post('/hr/onboarding-checklist', data).then(r => r.data?.data),
+    update:    (id, data)  => api.put(`/hr/onboarding-checklist/${id}`, data).then(r => r.data?.data),
+    setActive: (id, active) => api.patch(`/hr/onboarding-checklist/${id}/status`, { is_active: active }).then(r => r.data?.data),
+    remove:    (id)        => api.delete(`/hr/onboarding-checklist/${id}`).then(r => r.data),
+    reorder:   (ids)       => api.post('/hr/onboarding-checklist/reorder', { ids }).then(r => r.data?.data),
+    adoptDefaults: ()      => api.post('/hr/onboarding-checklist/adopt-defaults').then(r => r.data?.data),
+  },
+
+  /**
    * Approval workflows — who approves what, in what order.
    *
    * show() returns the ladder AND the options the form renders from (approver

@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\Hr\ResumeController;
 use App\Http\Controllers\Api\Hr\InterviewController;
 use App\Http\Controllers\Api\Hr\InterviewQuestionController;
 use App\Http\Controllers\Api\Hr\OfferController;
+use App\Http\Controllers\Api\Hr\OnboardingChecklistController;
 use App\Http\Controllers\Api\Hr\OnboardingController;
 use App\Http\Controllers\Api\Hr\EmployeeAssetController;
 use App\Http\Controllers\Api\Hr\EmployeeController;
@@ -652,6 +653,18 @@ Route::middleware(['auth:sanctum', 'permission:hr_attendance,view_global'])->pre
     // The controls that used to be constants — the advance thresholds above all.
     Route::get('/settings',  [HrSettingsController::class, 'index']);
     Route::put('/settings',  [HrSettingsController::class, 'update']);
+
+    // ── Onboarding checklist master ─────────────────────────────────────
+    // The 27 tasks that used to be a PHP constant. Gated on hr_settings
+    // inside the controller, like the approval workflows below: configuring
+    // what everybody must do is not the same authority as doing it.
+    Route::get('/onboarding-checklist',                  [OnboardingChecklistController::class, 'index']);
+    Route::post('/onboarding-checklist',                 [OnboardingChecklistController::class, 'store']);
+    Route::post('/onboarding-checklist/reorder',         [OnboardingChecklistController::class, 'reorder']);
+    Route::post('/onboarding-checklist/adopt-defaults',  [OnboardingChecklistController::class, 'adoptDefaults']);
+    Route::put('/onboarding-checklist/{id}',             [OnboardingChecklistController::class, 'update'])->whereNumber('id');
+    Route::patch('/onboarding-checklist/{id}/status',    [OnboardingChecklistController::class, 'setStatus'])->whereNumber('id');
+    Route::delete('/onboarding-checklist/{id}',          [OnboardingChecklistController::class, 'destroy'])->whereNumber('id');
 
     // ── Approval workflows ──────────────────────────────────────────────
     // Who approves what, in what order. Gated on hr_settings inside the
