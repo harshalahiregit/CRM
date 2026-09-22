@@ -251,6 +251,23 @@ class HrSetting
             'On, the person who raised a request cannot approve it — including when they are the reporting manager, hold the approving role, or manage the HR queue. Leave it off if too few people would be left to approve.', 'Approvals',
         ],
 
+        /* ── candidate portal ────────────────────────────────────────── */
+        //
+        // How long a candidate's onboarding link stays usable.
+        //
+        // A setting rather than a constant because the window companies give a
+        // candidate genuinely differs — some expect documents within the week,
+        // others leave a month while notice periods run. The value is read
+        // ONLY at issuance and frozen onto the record, so editing it moves
+        // nothing already sent.
+        //
+        // The generic integer rule below admits 0 and null. OnboardingPortalToken
+        // refuses both rather than treating them as "no expiry".
+        'onboarding_link_ttl_days' => [
+            'Onboarding link validity', self::TYPE_INT, 30,
+            'Days a candidate\'s onboarding portal link stays usable. Applies to links issued from now on; links already sent keep the validity they were given.', 'Candidate portal',
+        ],
+
         /* ── POSH ────────────────────────────────────────────────────── */
         //
         // How long a complainant's portal link stays usable. It is a setting

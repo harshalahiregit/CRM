@@ -28,6 +28,7 @@ class OnboardingService
         private EmployeeService $employeeService,
         private CandidateService $candidateService,
         private EmployeeDetailService $employeeDetails,
+        private OnboardingPortalToken $portalToken,
     ) {
     }
 
@@ -76,7 +77,6 @@ class OnboardingService
             // post-interview transition. HR sets the real title on the offer.
             'position'            => optional($candidate->jobPosting)->title ?? 'To Be Assigned',
             'department'          => optional($candidate->jobPosting)->department,
-            'access_token'        => Str::random(48),
             'status'              => 'Pending',
             'verification_status' => 'Pending',
             'invited_at'          => now(),
@@ -86,7 +86,11 @@ class OnboardingService
         $candidate->update(['final_decision' => 'Selected', 'stage' => 'Offer']);
         $candidate->recordAudit('Selected — Onboarding Started', null, null, ['onboarding_id' => $onboarding->id]);
 
-        $link = $this->portalLink($onboarding);
+        // The raw token exists here and in the e-mail below, and nowhere else.
+        // It is not stored, not audited and not logged — only its hash is kept,
+        // so this link cannot be recovered afterwards. Losing it means issuing
+        // a new one, which revokes this.
+        $link = $this->portalLink($this->portalToken->issue($onboarding));
 
         // Congratulations Email (best-effort).
         if ($candidate->email) {
@@ -109,10 +113,23 @@ class OnboardingService
         return $onboarding->load('candidate');
     }
 
-    /** Resolve an onboarding by its public portal token. */
+    /**
+     * Resolve an onboarding by its public portal token.
+     *
+     * THE ONE DOOR. Every public portal route — the dashboard, each form
+     * section, the child collections, document upload and final submission —
+     * comes through here, so expiry and revocation are enforced for all of
+     * them by enforcing them once. A route that resolved a record any other
+     * way would be outside the lifecycle entirely, which is why there is no
+     * other lookup.
+     *
+     * The refusal is deliberately identical for every cause: unknown,
+     * malformed, expired and revoked all read the same. Saying which would
+     * confirm that a token was once real.
+     */
     public function byToken(string $token): HrOnboarding
     {
-        $onboarding = HrOnboarding::where('access_token', $token)->with(['candidate', 'documents'])->first();
+        $onboarding = $this->portalToken->resolve($token);
 
         if (! $onboarding) {
             throw new BusinessException('Onboarding link is invalid or has expired.', 404);
@@ -563,9 +580,16 @@ class OnboardingService
         return $employee;
     }
 
-    private function portalLink(HrOnboarding $onboarding): string
+    /**
+     * The portal URL for a token that was just issued.
+     *
+     * Takes the RAW token as an argument rather than reading it off the
+     * record, because the record no longer holds it — only its hash. That is
+     * what makes the link unrecoverable once it has been sent.
+     */
+    public function portalLink(string $rawToken): string
     {
-        return rtrim(config('hr_publishing.onboarding_portal_url'), '/').'/'.$onboarding->access_token;
+        return rtrim(config('hr_publishing.onboarding_portal_url'), '/').'/'.$rawToken;
     }
 
     /* ─────────────────────────────────────────────────────────────────────

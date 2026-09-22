@@ -222,6 +222,12 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/onboarding/{onboarding}/documents/{document}', [OnboardingController::class, 'downloadDocument']);
     Route::patch('/onboarding/{onboarding}/documents/{document}/verify', [OnboardingController::class, 'verifyDocument']);
     Route::patch('/onboarding/{onboarding}/step',       [OnboardingController::class, 'toggleStep']);
+    // The candidate's portal credential. Issuing returns the raw link ONCE and
+    // revokes whatever was live before it; there is deliberately no GET, because
+    // the raw value is not stored and cannot be handed back a second time.
+    Route::post('/onboarding/{onboarding}/portal-link',   [OnboardingController::class, 'issuePortalLink']);
+    Route::delete('/onboarding/{onboarding}/portal-link', [OnboardingController::class, 'revokePortalLink']);
+
     Route::delete('/onboarding/{onboarding}',           [OnboardingController::class, 'destroy']);
 
     // #37 — the employee's Projects / Tasks / Tickets / KB, with jump links.
