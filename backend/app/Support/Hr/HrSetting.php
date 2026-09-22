@@ -204,20 +204,28 @@ class HrSetting
             'Off lets one person move an advance through several stages — quicker, and much weaker.', 'Advances',
         ],
 
-        /* ── leave ───────────────────────────────────────────────────── */
-        'leave_paid_days' => [
-            'Paid leave a year', self::TYPE_DECIMAL, 12,
-            'Used when setting up a new employee.', 'Leave',
-        ],
-        'leave_casual_days' => [
-            'Casual leave a year', self::TYPE_DECIMAL, 12, '', 'Leave',
-        ],
-        'leave_unpaid_days' => [
-            'Unpaid leave a year', self::TYPE_DECIMAL, 0, '', 'Leave',
-        ],
-        'leave_comp_off_days' => [
-            'Comp-off a year', self::TYPE_DECIMAL, 0, '', 'Leave',
-        ],
+        /*
+         | ── leave ────────────────────────────────────────────────────
+         |
+         | There is deliberately nothing here any more.
+         |
+         | leave_paid_days, leave_casual_days, leave_unpaid_days and
+         | leave_comp_off_days used to live in this section and are gone. They
+         | predated the Leave Types master and duplicated its Yearly Limit,
+         | which is the box people actually edit — and because
+         | SettingsService::getGroup() fills every registered key from the
+         | registry defaults, these always had a value and always won. The
+         | Leave Types screen therefore had no effect on Casual, Earned or
+         | Unpaid allocation while appearing to.
+         |
+         | How much leave a type is worth is configured on the Leave Types
+         | screen. Removing these leaves ONE editable number instead of two
+         | that disagreed silently.
+         |
+         | Rows already stored under these keys are harmless and are left
+         | alone: getGroup() only returns keys the registry still knows, so
+         | they are inert. No destructive cleanup for values nothing reads.
+         */
 
         /* ── people ──────────────────────────────────────────────────── */
         'employee_prefix' => [

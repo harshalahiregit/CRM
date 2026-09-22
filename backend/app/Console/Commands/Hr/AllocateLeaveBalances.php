@@ -7,17 +7,18 @@ use App\Models\Hr\HrEmployeeLeaveBalance;
 use App\Models\Hr\HrLeavePolicy;
 use App\Models\Hr\HrLeaveType;
 use App\Models\Tenant;
-use App\Services\Settings\SettingsService;
-use App\Support\Hr\HrSetting;
 use Illuminate\Console\Command;
 
 /**
  * Giving employees the leave they are entitled to.
  *
- * Leave types and the yearly-day settings both existed, and nothing turned them
- * into per-employee balances — so `My Leave` showed no balances at all and its
- * apply form had exactly one option, "No leave allocated to you yet". Nobody
- * could book leave, in the CRM or the app.
+ * Leave types existed and nothing turned them into per-employee balances — so
+ * `My Leave` showed no balances at all and its apply form had exactly one
+ * option, "No leave allocated to you yet". Nobody could book leave, in the CRM
+ * or the app.
+ *
+ * Each type's own yearly_limit is the figure, and the only figure. See
+ * daysFor() for what used to sit in front of it and why it had to go.
  *
  * A command rather than something automatic: how much leave somebody gets is a
  * company's decision, and quietly granting it on first login would be inventing
@@ -30,9 +31,9 @@ class AllocateLeaveBalances extends Command
         {--employee= : Restrict to one employee id}
         {--commit : Actually write. Without this nothing is changed}';
 
-    protected $description = 'Create leave balances for employees who have none, from the leave types and the yearly-day settings';
+    protected $description = 'Create leave balances for employees who have none, from each leave type\'s yearly limit';
 
-    public function handle(SettingsService $settings): int
+    public function handle(): int
     {
         $commit = (bool) $this->option('commit');
 
@@ -53,7 +54,6 @@ class AllocateLeaveBalances extends Command
             }
 
             $policy = $commit ? $this->policyFor((int) $tenant->id) : null;
-            $s      = $settings->getGroup((int) $tenant->id, HrSetting::GROUP);
 
             $employees = HrEmployee::where('tenant_id', $tenant->id)
                 ->when($this->option('employee'), fn ($q, $e) => $q->whereKey((int) $e))
@@ -70,7 +70,7 @@ class AllocateLeaveBalances extends Command
                         continue;
                     }
 
-                    $days = $this->daysFor($type, $s);
+                    $days = $this->daysFor($type);
 
                     if (! $commit) {
                         $rows[] = [$tenant->id, $employee->employee_code, $type->name, "would allocate {$days}"];
@@ -125,23 +125,32 @@ class AllocateLeaveBalances extends Command
     }
 
     /**
-     * The yearly figure for a type.
+     * The yearly figure for a type: what the type itself says it is worth.
      *
-     * The settings carry four named allowances; a type outside those falls back
-     * to its own yearly_limit, which is what the type itself says it is worth.
+     * THE LEAVE TYPE IS THE ONLY SOURCE. It used to be one of three. Four
+     * named allowances in HR Settings — leave_casual_days, leave_paid_days,
+     * leave_unpaid_days, leave_comp_off_days — were consulted first, and the
+     * `?? $type->yearly_limit` beside each of them looked like a fallback but
+     * could never fire: SettingsService::getGroup() starts from the registry
+     * defaults, so every one of those keys is always present with a value.
+     *
+     * So yearly_limit was not merely overridden, it was unreachable for those
+     * categories, and the Yearly Limit box on the Leave Types screen did
+     * nothing for Casual, Earned or Unpaid while working normally for Sick.
+     * Out of the box that shipped Earned Leave at the setting's 12 rather than
+     * the seeded 15, with nothing to indicate it.
+     *
+     * The comp-off branch matched on the display NAME containing "comp", which
+     * quietly allocated zero days to a type called Compassionate Leave. It is
+     * gone with the rest: there is no Comp-Off category in
+     * HrLeaveType::CATEGORIES to classify by, and inventing one would be a new
+     * vocabulary rather than a fix. With every type reading its own
+     * yearly_limit, no classification is needed and nothing can be
+     * misclassified.
      */
-    private function daysFor(HrLeaveType $type, array $s): float
+    private function daysFor(HrLeaveType $type): float
     {
-        $category = strtolower((string) $type->category);
-        $name     = strtolower((string) $type->name);
-
-        return (float) match (true) {
-            str_contains($name, 'comp')  => $s['leave_comp_off_days'] ?? $type->yearly_limit,
-            $category === 'casual'       => $s['leave_casual_days'] ?? $type->yearly_limit,
-            $category === 'unpaid'       => $s['leave_unpaid_days'] ?? $type->yearly_limit,
-            $category === 'earned'       => $s['leave_paid_days'] ?? $type->yearly_limit,
-            default                      => $type->yearly_limit,
-        };
+        return (float) $type->yearly_limit;
     }
 
     /** One shared default policy per tenant, created once. */
