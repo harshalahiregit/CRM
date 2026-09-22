@@ -1349,6 +1349,29 @@ export const hrApi = {
   },
 
   /**
+   * Exit-clearance departments, and who may sign off each of them.
+   *
+   * list() returns the departments AND the workspace's users and staff roles
+   * to choose from, so the screen keeps no copy of either. Each department
+   * reports its own `authorization`:
+   *
+   *   fallback      nobody configured — anyone on the HR queue may act
+   *   configured    only the named users and role members may act
+   *   misconfigured somebody is configured but none of them can currently act
+   */
+  clearanceDepartments: {
+    list:        ()          => api.get('/hr/clearance-departments').then(r => r.data?.data),
+    create:      (data)      => api.post('/hr/clearance-departments', data).then(r => r.data?.data),
+    update:      (id, data)  => api.put(`/hr/clearance-departments/${id}`, data).then(r => r.data?.data),
+    setActive:   (id, active) => api.patch(`/hr/clearance-departments/${id}/status`, { is_active: active }).then(r => r.data?.data),
+    remove:      (id)        => api.delete(`/hr/clearance-departments/${id}`).then(r => r.data),
+    reorder:     (ids)       => api.post('/hr/clearance-departments/reorder', { ids }).then(r => r.data?.data),
+    authorities: (id, userIds, roleIds) =>
+      api.put(`/hr/clearance-departments/${id}/authorities`,
+        { user_ids: userIds, staff_role_ids: roleIds }).then(r => r.data?.data),
+  },
+
+  /**
    * The onboarding checklist every new joiner receives.
    *
    * list() returns the items AND the vocabulary the form renders from

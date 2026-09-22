@@ -3,6 +3,7 @@
 namespace App\Services\Hr;
 
 use App\Exceptions\BusinessException;
+use App\Models\Hr\HrClearanceDepartment;
 use App\Models\Hr\HrExitClearance;
 use App\Models\Hr\HrExitClearanceItem;
 use App\Models\Hr\HrExitRequest;
@@ -23,8 +24,12 @@ use Illuminate\Support\Facades\Log;
  */
 class ExitClearanceService
 {
-    public function __construct(private ClearanceRepository $repo)
-    {
+    public function __construct(
+        private ClearanceRepository $repo,
+        // Who may act for a given department. One canManageHrQueue() check
+        // used to cover all five, so anybody on the HR queue could clear IT.
+        private \App\Services\Hr\Clearance\ClearanceAuthorityResolver $authority,
+    ) {
     }
 
     public function queue(int $tenantId, array $f, ?User $actor = null): array
@@ -63,7 +68,7 @@ class ExitClearanceService
     {
         $clearance = $this->find($clearanceId, $tenantId, $actor);
         $this->assertNotReadOnly($clearance);
-        $item = $this->item($clearance, $itemId);
+        $item = $this->item($clearance, $itemId, $actor);
 
         if ($item->status !== HrExitClearanceItem::PENDING) {
             throw new BusinessException("{$item->department} clearance has already been started.");
@@ -86,7 +91,7 @@ class ExitClearanceService
     {
         $clearance = $this->find($clearanceId, $tenantId, $actor);
         $this->assertNotReadOnly($clearance);
-        $item = $this->item($clearance, $itemId);
+        $item = $this->item($clearance, $itemId, $actor);
         $this->assertDecidable($item);
 
         $item->update([
@@ -106,7 +111,7 @@ class ExitClearanceService
     {
         $clearance = $this->find($clearanceId, $tenantId, $actor);
         $this->assertNotReadOnly($clearance);
-        $item = $this->item($clearance, $itemId);
+        $item = $this->item($clearance, $itemId, $actor);
         $this->assertDecidable($item);
 
         $item->update([
@@ -126,7 +131,7 @@ class ExitClearanceService
     {
         $clearance = $this->find($clearanceId, $tenantId, $actor);
         $this->assertNotReadOnly($clearance);
-        $item = $this->item($clearance, $itemId);
+        $item = $this->item($clearance, $itemId, $actor);
         if (in_array($item->status, [HrExitClearanceItem::CLEARED, HrExitClearanceItem::REJECTED], true)) {
             throw new BusinessException("{$item->department} clearance is already decided and cannot be edited.");
         }
@@ -152,14 +157,14 @@ class ExitClearanceService
                     'created_by' => $actor?->id,
                     'updated_by' => $actor?->id,
                 ]);
-                foreach (HrExitClearanceItem::DEPARTMENTS as $dept) {
+                foreach ($this->departmentsFor($tenantId) as $dept) {
                     HrExitClearanceItem::create([
                         'tenant_id' => $tenantId,
                         'clearance_id' => $clearance->id,
-                        'department' => $dept,
-                        'is_mandatory' => true,
+                        'department' => $dept['name'],
+                        'is_mandatory' => $dept['is_mandatory'],
                         'status' => HrExitClearanceItem::PENDING,
-                        'assigned_to' => $dept === 'Reporting Manager' ? ($exit->employee?->reporting_manager_name ?: null) : null,
+                        'assigned_to' => $dept['name'] === 'Reporting Manager' ? ($exit->employee?->reporting_manager_name ?: null) : null,
                         'created_by' => $actor?->id,
                         'updated_by' => $actor?->id,
                     ]);
@@ -224,7 +229,22 @@ class ExitClearanceService
 
     private function present(HrExitClearance $c, bool $full = false): array
     {
-        $items = $c->items->sortBy(fn ($i) => array_search($i->department, HrExitClearanceItem::DEPARTMENTS))->values();
+        // Three tiers: the workspace's configured order, then the original
+        // five for a legacy value the master no longer carries, then the name.
+        // array_search returning false for an unknown department is why this
+        // is not a one-liner any more — false sorts as 0 and would silently
+        // put a retired department first.
+        $order = $this->departmentOrder((int) $c->tenant_id);
+        $items = $c->items->sortBy(function ($i) use ($order) {
+            $at = array_search($i->department, $order, true);
+            if ($at !== false) {
+                return sprintf('1%06d', $at);
+            }
+
+            $legacy = array_search($i->department, HrExitClearanceItem::DEPARTMENTS, true);
+
+            return $legacy !== false ? sprintf('2%06d', $legacy) : '3'.$i->department;
+        })->values();
         $mandatory = $items->where('is_mandatory', true);
         $clearedCount = $mandatory->where('status', HrExitClearanceItem::CLEARED)->count();
         $current = $items->first(fn ($i) => $i->status !== HrExitClearanceItem::CLEARED);
@@ -257,6 +277,11 @@ class ExitClearanceService
                 'status' => $i->status, 'assigned_to' => $i->assigned_to, 'remarks' => $i->remarks,
                 'started_at' => optional($i->started_at)->toIso8601String(),
                 'decided_at' => optional($i->decided_at)->toIso8601String(),
+                // How this department is authorised, so the screen can say
+                // "HR queue fallback" or "nobody is configured" without a
+                // second call. The MODE only — never the user list, which is
+                // configuration and has no business in a clearance payload.
+                'authorization' => $this->authority->mode((int) $c->tenant_id, (string) $i->department),
             ])->all(),
         ];
 
@@ -282,11 +307,78 @@ class ExitClearanceService
         return $clearance;
     }
 
-    private function item(HrExitClearance $clearance, int $itemId): HrExitClearanceItem
+    /**
+     * The departments a NEW clearance is opened with.
+     *
+     * From the workspace's own master, falling back to the original five when
+     * it has configured none — a tenant created after the master arrived, or
+     * one restored from a soft delete, still opens a usable clearance rather
+     * than an empty one. The same shape the onboarding checklist uses.
+     *
+     * Only the ACTIVE departments are seeded: deactivating one stops it
+     * appearing on new clearances without touching any that already exist.
+     *
+     * @return array<int, array{name:string, is_mandatory:bool}>
+     */
+    private function departmentsFor(int $tenantId): array
+    {
+        $configured = HrClearanceDepartment::where('tenant_id', $tenantId)
+            ->active()
+            ->orderBy('sort_order')->orderBy('id')
+            ->get(['name', 'is_mandatory']);
+
+        if ($configured->isNotEmpty()) {
+            return $configured->map(fn ($d) => [
+                'name' => $d->name, 'is_mandatory' => (bool) $d->is_mandatory,
+            ])->all();
+        }
+
+        return array_map(
+            fn ($name) => ['name' => $name, 'is_mandatory' => true],
+            HrExitClearanceItem::DEPARTMENTS
+        );
+    }
+
+    /**
+     * Where an item sits in the list.
+     *
+     * Three tiers, because a clearance can outlive the configuration it was
+     * opened under. The workspace's own order first; then the original five,
+     * so a legacy item keeps the position it has always had; then the name, so
+     * a department retired long ago still sorts somewhere predictable instead
+     * of wherever array_search's `false` happens to land it.
+     */
+    private function departmentOrder(int $tenantId): array
+    {
+        $configured = HrClearanceDepartment::where('tenant_id', $tenantId)
+            ->orderBy('sort_order')->orderBy('id')
+            ->pluck('name')->all();
+
+        return $configured ?: HrExitClearanceItem::DEPARTMENTS;
+    }
+
+    /**
+     * The one door every clearance mutation goes through.
+     *
+     * start, clear, reject and remarks all arrive here, so the departmental
+     * authority check sits here rather than in four places — and a fifth
+     * mutation added later inherits it instead of being forgotten.
+     *
+     * The order is deliberate. Tenancy and employee data scope have already
+     * run in find(), and answer "may you see this clearance at all" with a 404.
+     * This answers the separate question "may you act for THIS department",
+     * and answers it with a 403: the clearance is legitimately visible to this
+     * person, so pretending it is absent would be the wrong story.
+     */
+    private function item(HrExitClearance $clearance, int $itemId, ?User $actor = null): HrExitClearanceItem
     {
         $item = $clearance->items->firstWhere('id', $itemId);
         if (! $item) {
             throw new BusinessException('Clearance department not found for this exit.', 404);
+        }
+
+        if ($actor) {
+            $this->authority->assertMayAct($actor, (string) $item->department);
         }
 
         return $item;

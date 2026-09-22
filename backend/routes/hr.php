@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\Hr\AdvanceController;
 use App\Http\Controllers\Api\Hr\AttendanceReportController;
 use App\Http\Controllers\Api\Hr\MyAdvanceController;
 use App\Http\Controllers\Api\Hr\ApprovalWorkflowController;
+use App\Http\Controllers\Api\Hr\ClearanceDepartmentController;
 use App\Http\Controllers\Api\Hr\AttendanceCorrectionController;
 use App\Http\Controllers\Api\Hr\MyAttendanceCorrectionController;
 use App\Http\Controllers\Api\Hr\DemoRequestController;
@@ -653,6 +654,18 @@ Route::middleware(['auth:sanctum', 'permission:hr_attendance,view_global'])->pre
     // The controls that used to be constants — the advance thresholds above all.
     Route::get('/settings',  [HrSettingsController::class, 'index']);
     Route::put('/settings',  [HrSettingsController::class, 'update']);
+
+    // ── Exit clearance departments ──────────────────────────────────────
+    // Who may sign off each department. Gated on hr_settings inside the
+    // controller: actioning clearances must not confer the right to decide
+    // who actions them.
+    Route::get('/clearance-departments',                 [ClearanceDepartmentController::class, 'index']);
+    Route::post('/clearance-departments',                [ClearanceDepartmentController::class, 'store']);
+    Route::post('/clearance-departments/reorder',        [ClearanceDepartmentController::class, 'reorder']);
+    Route::put('/clearance-departments/{id}',            [ClearanceDepartmentController::class, 'update'])->whereNumber('id');
+    Route::patch('/clearance-departments/{id}/status',   [ClearanceDepartmentController::class, 'setStatus'])->whereNumber('id');
+    Route::put('/clearance-departments/{id}/authorities',[ClearanceDepartmentController::class, 'authorities'])->whereNumber('id');
+    Route::delete('/clearance-departments/{id}',         [ClearanceDepartmentController::class, 'destroy'])->whereNumber('id');
 
     // ── Onboarding checklist master ─────────────────────────────────────
     // The 27 tasks that used to be a PHP constant. Gated on hr_settings

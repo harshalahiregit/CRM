@@ -8,8 +8,22 @@ use Illuminate\Http\Request;
 
 /**
  * Exit Management → Clearance (Phase 4). Thin: validate, delegate, return JSON.
- * Reads open to HR users; departmental actions require HR-queue management.
  * Tenant-scoped, audited.
+ *
+ * DEPARTMENTAL ACTIONS are authorised per department, not by one blanket check.
+ * This controller used to call canManageHrQueue() before all four mutations,
+ * identically for every department, so anybody on the HR queue could clear IT,
+ * Finance or the reporting manager's item.
+ *
+ * That check is gone from here and lives in ExitClearanceService::item(), which
+ * is the one door start, clear, reject and remarks all pass through — and the
+ * only place that knows WHICH department is being actioned, which the old
+ * check never did. A department with nobody configured still falls back to the
+ * HR queue, so nothing that worked before stops working.
+ *
+ * Reads are unchanged in this pass, deliberately: they are scoped by
+ * ClearanceRepository and their permission gating is a separate question from
+ * who may act on a department.
  */
 class ExitClearanceController extends Controller
 {
@@ -40,7 +54,6 @@ class ExitClearanceController extends Controller
 
     public function start(Request $request, int $id, int $item)
     {
-        $this->can($request);
         $data = $request->validate(['assigned_to' => 'nullable|string|max:150', 'remarks' => 'nullable|string']);
 
         return response()->json($this->service->startItem($id, $item, $data, $this->tenant($request), $request->user()));
@@ -48,7 +61,6 @@ class ExitClearanceController extends Controller
 
     public function clear(Request $request, int $id, int $item)
     {
-        $this->can($request);
         $data = $request->validate(['remarks' => 'nullable|string']);
 
         return response()->json($this->service->clearItem($id, $item, $data, $this->tenant($request), $request->user()));
@@ -56,7 +68,6 @@ class ExitClearanceController extends Controller
 
     public function reject(Request $request, int $id, int $item)
     {
-        $this->can($request);
         $data = $request->validate(['remarks' => 'nullable|string']);
 
         return response()->json($this->service->rejectItem($id, $item, $data, $this->tenant($request), $request->user()));
@@ -64,7 +75,6 @@ class ExitClearanceController extends Controller
 
     public function remarks(Request $request, int $id, int $item)
     {
-        $this->can($request);
         $data = $request->validate(['remarks' => 'nullable|string', 'assigned_to' => 'nullable|string|max:150']);
 
         return response()->json($this->service->updateItemRemarks($id, $item, $data, $this->tenant($request), $request->user()));
@@ -73,10 +83,5 @@ class ExitClearanceController extends Controller
     private function tenant(Request $request): int
     {
         return (int) $request->user()->tenant_id;
-    }
-
-    private function can(Request $request): void
-    {
-        abort_unless($request->user()->canManageHrQueue(), 403, 'You are not authorised to action exit clearances');
     }
 }
