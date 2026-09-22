@@ -477,6 +477,10 @@ Route::middleware(['auth:sanctum', 'client.portal'])->prefix('portal/client')->g
     // a score they were told on the phone.
     Route::get('/feedback',      [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'myFeedback']);
     Route::post('/feedback',     [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'submitFeedback']);
+    // STOS-CLP §28 step 7. No client id in the path — the contact's own client
+    // comes off the token, like every route in this group.
+    Route::get('/transport/shipments', [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'transportShipments']);
+
     Route::get('/notes',         [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'notes']);
     Route::get('/files',         [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'files']);
     Route::get('/contacts',      [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'contacts']);
