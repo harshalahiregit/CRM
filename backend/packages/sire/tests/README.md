@@ -8,7 +8,7 @@ proves things that would be expensive to discover in production.
 node --test tests/*.test.mjs      # from the package root
 ```
 
-**407 checks across 28 suites. No database, no browser, no framework, no
+**414 checks across 29 suites. No database, no browser, no framework, no
 `npm install`.** They read the source in `` and `resources/js/` directly, so
 they work from this ZIP as-is.
 

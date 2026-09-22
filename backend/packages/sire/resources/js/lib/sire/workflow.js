@@ -62,7 +62,7 @@ export function decorateTransitions(available = []) {
         tone: STATES[def.to]?.tone ?? 'gray',
         requires: def.requires ?? [],
         destructive: ['reject', 'wont_fix', 'mark_duplicate', 'cannot_reproduce'].includes(action),
-        primary: ['start_development', 'mark_ready_for_qa', 'start_qa', 'qa_pass', 'release', 'close'].includes(action),
+        primary: ['start_development', 'mark_ready_for_qa', 'start_qa', 'qa_pass', 'release', 'close', 'close_directly'].includes(action),
       };
     })
     .filter(Boolean)
