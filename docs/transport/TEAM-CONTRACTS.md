@@ -133,10 +133,14 @@ appear in a response at any depth, under any key. A value travels even when the 
 **So: when a guard asserts an absence, ask what a rename does to it.** If renaming defeats it,
 the guard is checking spelling rather than substance.
 
-**And the general lesson, which is why this is here rather than only in the test:** *stopping at
-the break that worked is how a blind guard is born.* Two breaks went red and the third — the one
-the reviewer had specifically warned about — went green. That third case only existed because it
-was tried after the guard already looked finished.
+**And the general lesson, which is why this is here rather than only in the test:**
+
+> **Stopping at the break that worked is how a blind guard is born.**
+
+Two breaks went red and the third — the one the reviewer had specifically warned about — went
+green. That third case only existed because it was tried after the guard already looked finished.
+Six blind guards on this project now, every one written carefully by somebody who believed it
+worked.
 
 ---
 
