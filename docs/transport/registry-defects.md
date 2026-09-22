@@ -4127,3 +4127,89 @@ driver is judged separately and still comes free.
 
 Not by hand: `releaseOnDelivery()` was run over the finished trips, which released
 `TRP-2026-000035`'s assignment and left all four demo resources available.
+
+---
+
+## D-120 — the repoint moves four reference columns and there are six
+
+**Raised:** 2026-09-22, at step 5 of the repoint, **before `--apply` was run.** **P1 found it,
+P2's command.** **BLOCKS `--apply`.**
+
+### What is wrong
+
+`stos:repoint-trip-fleet-refs` moves exactly four columns:
+
+```
+transport_trips    vehicle_id, driver_id
+trip_assignments   vehicle_id, driver_id
+```
+
+**Two more exist and are not covered:**
+
+| Table | Columns | Live references |
+|---|---|---|
+| `trip_exceptions` | `vehicle_id`, `driver_id` | **4** |
+| `trip_advances` | `driver_id` | 1 |
+
+And they hold precisely the ids the repoint is moving away from:
+
+```
+trip_exceptions #2  EXC-2026-000001  vehicle_id=35  driver_id=39
+trip_exceptions #4  EXC-2026-000003  vehicle_id=36  driver_id=40
+```
+
+`35, 36` are the legacy vehicles and `39, 40` the legacy drivers. After `--apply`, trips and
+assignments would hold Fleet's `1, 2` and `2, 3` while these two tables still hold `35, 36, 39,
+40` — **the same column name meaning two different things in one schema, with nothing marking
+which.**
+
+### Why it matters, and why it is D-116's shape again
+
+There are **seven** relations across **four** models, all resolving these columns against the
+legacy master:
+
+| Model | Relations |
+|---|---|
+| `TransportTrip` | `vehicle()`, `driver()` |
+| `TripAssignment` | `vehicle()`, `driver()` |
+| **`TripException`** | **`vehicle()`, `driver()`** |
+| **`TripAdvance`** | **`driver()`** |
+
+*(I found these independently rather than working from the count in P2's reply, as instructed. It
+is seven, and the two models I had missed in my own coupling list are the two the repoint does not
+cover — which is what makes this a defect rather than a tidying job.)*
+
+So the reader swap has no correct answer for those three relations:
+
+- **Repoint them** → they resolve legacy ids against Fleet: **blank today, a different truck the
+  day the ranges overlap.** That is D-116 exactly, in a place neither of us had a guard.
+- **Leave them** → `vehicle_id` means Fleet in two tables and legacy in two others, permanently,
+  with no marker. The next person to write a join has a one-in-two chance.
+
+### Why it is not visible yet, which makes it worse
+
+Neither relation is loaded anywhere today — no service or controller reads
+`$exception->vehicle` or `$advance->driver`. So **nothing would break at `--apply`**, no screen
+would go blank, no test would fail. It would be discovered by whoever first renders a vehicle on an
+exception, against data that has been wrong for however long.
+
+### The ledger does not cover it either
+
+`fleet_reference_repoints` records a verdict per row **for the four columns the command processes**.
+The uncovered two get no entry at all — so the "a row with no entry was created after the switch
+and is therefore in the new space" rule would read these legacy rows as new-space rows. The ledger
+would confirm the wrong answer.
+
+### Also found: one reference is not an id
+
+`trip_advances #2` carries `driver_id = 1212010`. There is no such driver; the live ids are 39 and
+40. Whatever that value is, it is not a foreign key, and it should not be carried through a
+migration as though it were.
+
+### What I did not do
+
+**`--apply` has not run.** The reconcile and both `--relink` passes have (they are authorised and
+write one column each); vehicles and drivers are now correctly mapped `{35→1, 36→2}` and
+`{39→2, 40→3}`, and the dry run reports **2 + 2 + 4 + 4 rows to move with every unmappable row a
+soft-deleted junk trip** — no live reference would be lost. The repoint is ready in every respect
+except this one.
