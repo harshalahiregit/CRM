@@ -38,6 +38,12 @@ class PoshCaseReadAuditor
     public const SURFACE_INQUIRY = 'case.inquiry';
     public const SURFACE_FINDINGS = 'case.findings';
 
+    // The complainant's own link. Kept distinct from the case.* surfaces so
+    // "who on the committee opened this file" and "the complainant checked on
+    // it" never have to be told apart by guessing.
+    public const SURFACE_PORTAL_SHOW = 'portal.show';
+    public const SURFACE_PORTAL_THREAD = 'portal.thread';
+
     /**
      * Write one read.
      *
@@ -51,15 +57,33 @@ class PoshCaseReadAuditor
      */
     public function record(HrPoshCase $case, ?User $actor, string $surface, ?string $ip = null): void
     {
+        $this->write($case, $actor?->id, $actor?->name ?: 'unknown', $surface, $ip);
+    }
+
+    /**
+     * A read by somebody who is not a User at all.
+     *
+     * The token complainant the nullable actor_id column was created for. They
+     * hold no account and no membership, so there is no id to record and the
+     * label carries the whole identity. The label comes from the token row and
+     * is the case reference — never the complainant's name, and never any part
+     * of the token.
+     */
+    public function recordAnonymous(HrPoshCase $case, string $label, string $surface, ?string $ip = null): void
+    {
+        $this->write($case, null, $label, $surface, $ip);
+    }
+
+    private function write(HrPoshCase $case, ?int $actorId, string $label, string $surface, ?string $ip): void
+    {
         try {
             HrPoshCaseRead::create([
                 'tenant_id'   => $case->tenant_id,
                 'case_id'     => $case->id,
-                'actor_id'    => $actor?->id,
-                // Always written, so the trail is never anonymous. A later
-                // phase's token complainant has no user id and will be
-                // identified here by label alone.
-                'actor_label' => $actor?->name ?: 'unknown',
+                'actor_id'    => $actorId,
+                // Always written, so the trail is never anonymous even when
+                // the reader has no account.
+                'actor_label' => $label,
                 'surface'     => $surface,
                 'ip'          => $ip,
                 'read_at'     => now(),

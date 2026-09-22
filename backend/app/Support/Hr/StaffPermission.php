@@ -96,6 +96,21 @@ final class StaffPermission
          | logs a case is deliberately not entitled to read it afterwards.
          */
         'hr_posh_intake',
+
+        /*
+         | POSH aggregate statistics — counts by period, status and outcome.
+         |
+         | A DIFFERENT QUESTION FROM CASE ACCESS. "How many complaints were
+         | upheld last quarter" is fair for a board or a compliance officer to
+         | ask without being entitled to open a single file, so unlike
+         | hr_posh_intake this one behaves like every other capability,
+         | administrator bypass included.
+         |
+         | It must never be read by PoshAccessResolver, PoshCaseAuthority or any
+         | case-content service. A test asserts the string does not appear in
+         | them.
+         */
+        'hr_posh_reports',
     ];
 
     public static function isModule(string $module): bool

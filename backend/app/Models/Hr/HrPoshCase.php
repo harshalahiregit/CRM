@@ -39,6 +39,21 @@ class HrPoshCase extends Model
     public const STATUS_CLOSED = 'closed';
     public const STATUS_WITHDRAWN = 'withdrawn';
 
+    /**
+     * The lifecycle, in order.
+     *
+     * Declaration order is load-bearing for aggregate reporting: it is what
+     * makes the choice of a secondary suppressed cell deterministic, so the
+     * same data always produces the same report.
+     */
+    public const STATUSES = [
+        self::STATUS_RECEIVED,
+        self::STATUS_UNDER_INQUIRY,
+        self::STATUS_INQUIRY_COMPLETE,
+        self::STATUS_CLOSED,
+        self::STATUS_WITHDRAWN,
+    ];
+
     protected $fillable = [
         'tenant_id', 'reference', 'committee_id',
         'complainant_type', 'complainant_employee_id', 'complainant_label',

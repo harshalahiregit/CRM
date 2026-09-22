@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\Hr\OfferController;
 use App\Http\Controllers\Api\Hr\OnboardingChecklistController;
 use App\Http\Controllers\Api\Hr\PoshCaseController;
 use App\Http\Controllers\Api\Hr\PoshCaseWorkController;
+use App\Http\Controllers\Api\Hr\PoshReportController;
 use App\Http\Controllers\Api\Hr\PoshCommitteeController;
 use App\Http\Controllers\Api\Hr\OnboardingController;
 use App\Http\Controllers\Api\Hr\EmployeeAssetController;
@@ -814,6 +815,34 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::post('/posh-cases/{id}/findings/record',  [PoshCaseWorkController::class, 'recordFindings'])->whereNumber('id');
     Route::post('/posh-cases/{id}/findings/publish', [PoshCaseWorkController::class, 'publishFindings'])->whereNumber('id');
 
+    // The complainant's link. Issuing is can_manage_case + active membership,
+    // exactly like running the case — NOT hr_posh_intake, which would put the
+    // credential in the hands of whoever takes complaints at the door, and not
+    // hr_settings or admin, neither of which can reach the case at all.
+    //
+    // There is deliberately no GET: a token list would be an inventory of live
+    // credentials, and the raw values are unrecoverable in any case.
+    Route::post('/posh-cases/{id}/tokens', [PoshCaseWorkController::class, 'issueToken'])->whereNumber('id');
+    Route::delete('/posh-cases/{id}/tokens/{tokenId}', [PoshCaseWorkController::class, 'revokeToken'])
+        ->whereNumber('id')->whereNumber('tokenId');
+
     // hr_settings authority, and it grants NO case-content access.
     Route::post('/posh-cases/{id}/reconstitute', [PoshCaseWorkController::class, 'reconstitute'])->whereNumber('id');
+});
+
+/*
+| POSH aggregate reporting.
+|
+| Counts only — period, status, outcome — and gated on its own capability.
+| Sits apart from the case routes above because it answers a different
+| question: how many complaints, in what state. hr_posh_reports grants no
+| access to a single case and is never consulted by the access resolver.
+|
+| auth:sanctum ONLY, with the capability checked inside the controller. The
+| main HR group requires hr_attendance, and sitting inside it would mean a
+| compliance officer needed attendance permission to read a complaint count —
+| two unrelated authorities welded together, and a 403 from the wrong gate.
+*/
+Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
+    Route::get('/posh-reports/summary', [PoshReportController::class, 'summary']);
 });

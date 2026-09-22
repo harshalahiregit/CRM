@@ -1162,6 +1162,108 @@ class PoshCaseWorkflowTest extends TestCase
         }
     }
 
+    public function test_every_lifecycle_moment_notifies_the_members(): void
+    {
+        [$case, $people] = $this->raise(2);
+
+        Sanctum::actingAs($this->chair($people));
+        $this->patchJson("/api/hr/posh-cases/{$case->id}/acknowledge")->assertOk();
+        $this->postJson("/api/hr/posh-cases/{$case->id}/inquiry")->assertOk();
+
+        foreach ($people as $m) {
+            Sanctum::actingAs($m);
+            $this->postJson("/api/hr/posh-cases/{$case->id}/inquiry/decide", ['decision' => Decision::APPROVED])->assertOk();
+        }
+
+        Sanctum::actingAs($this->chair($people));
+        $this->putJson("/api/hr/posh-cases/{$case->id}/findings", ['summary' => 'THE-FINDING-TEXT'])->assertOk();
+        $this->postJson("/api/hr/posh-cases/{$case->id}/findings/record")->assertOk();
+        $this->postJson("/api/hr/posh-cases/{$case->id}/findings/publish")->assertOk();
+        $this->patchJson("/api/hr/posh-cases/{$case->id}/close", ['note' => 'Done.'])->assertOk();
+
+        $events = HrNotification::where('module', 'Posh')->pluck('event')->unique()->values()->all();
+
+        foreach ([
+            'Member Added', 'Case Acknowledged', 'Inquiry Opened', 'Decision Required',
+            'Inquiry Concluded', 'Findings Published', 'Case Closed',
+        ] as $expected) {
+            $this->assertContains($expected, $events, "{$expected} was never dispatched");
+        }
+
+        // Not one of them carries anything from inside the case.
+        foreach (HrNotification::where('module', 'Posh')->get() as $row) {
+            $encoded = json_encode($row->getAttributes());
+            foreach (['What happened.', 'Respondent', 'THE-FINDING-TEXT'] as $secret) {
+                $this->assertStringNotContainsString($secret, $encoded);
+            }
+            $this->assertNull($row->recipient_role, 'POSH addressed a role');
+            $this->assertNotNull($row->recipient_user_id);
+        }
+    }
+
+    public function test_withdrawal_notifies_without_repeating_the_reason(): void
+    {
+        [$case, $people] = $this->raise(2);
+
+        Sanctum::actingAs($this->chair($people));
+        $this->patchJson("/api/hr/posh-cases/{$case->id}/withdraw", [
+            'reason' => 'NAMED-A-COLLEAGUE-IN-THE-REASON',
+        ])->assertOk();
+
+        $rows = HrNotification::where('event', 'Case Withdrawn')->get();
+
+        $this->assertCount(2, $rows);
+        foreach ($rows as $row) {
+            // The reason is written by a committee member about a complaint
+            // and can name anybody.
+            $this->assertStringNotContainsString('NAMED-A-COLLEAGUE', json_encode($row->getAttributes()));
+        }
+    }
+
+    public function test_decision_required_goes_only_to_undecided_seats(): void
+    {
+        [$case, $people] = $this->raise(3);
+
+        Sanctum::actingAs($this->chair($people));
+        $this->postJson("/api/hr/posh-cases/{$case->id}/inquiry")->assertOk();
+
+        // Opening asks all three.
+        $this->assertSame(3, HrNotification::where('event', 'Decision Required')->count());
+
+        // Clear the slate so what follows is unambiguously the second round of
+        // nudges rather than a suffix of the first.
+        HrNotification::query()->delete();
+
+        // The chair answers. The next nudge must not include them.
+        $this->postJson("/api/hr/posh-cases/{$case->id}/inquiry/decide", ['decision' => Decision::APPROVED])->assertOk();
+
+        $asked = HrNotification::where('event', 'Decision Required')
+            ->pluck('recipient_user_id')->map(fn ($i) => (int) $i)->sort()->values()->all();
+
+        $this->assertSame([$people[1]->id, $people[2]->id], $asked,
+            'The nudge did not go to exactly the seats still outstanding');
+    }
+
+    public function test_a_removed_member_stops_being_notified(): void
+    {
+        [$case, $people] = $this->raise(3);
+
+        Sanctum::actingAs($this->chair($people));
+        $this->postJson("/api/hr/posh-cases/{$case->id}/inquiry")->assertOk();
+
+        HrPoshCaseMember::revoke($case, $people[2]->id, $this->chair($people), 'Recused.');
+        HrNotification::query()->delete();
+
+        // Their historical seat survives on the round; their inbox does not.
+        Sanctum::actingAs($people[1]);
+        $this->postJson("/api/hr/posh-cases/{$case->id}/inquiry/decide", ['decision' => Decision::APPROVED])->assertOk();
+
+        $this->assertNotContains(
+            $people[2]->id,
+            HrNotification::pluck('recipient_user_id')->map(fn ($i) => (int) $i)->all()
+        );
+    }
+
     /* ── tenant isolation ─────────────────────────────────────────────── */
 
     public function test_every_case_route_refuses_another_tenant(): void

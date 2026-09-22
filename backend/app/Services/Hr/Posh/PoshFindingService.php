@@ -33,6 +33,7 @@ class PoshFindingService
     public function __construct(
         private PoshAccessResolver $access,
         private PoshCaseAuthority $authority,
+        private PoshNotifier $notifier,
     ) {
     }
 
@@ -177,6 +178,9 @@ class PoshFindingService
 
         $finding->recordAudit('POSH Finding Published', $actor);
         $case->recordAudit('POSH Findings Published', $actor);
+
+        // That it happened, never what it says.
+        $this->notifier->findingsPublished($case, $this->access->activeMemberIds($case), $actor);
 
         return $this->present($finding->fresh());
     }

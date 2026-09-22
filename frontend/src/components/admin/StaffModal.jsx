@@ -74,6 +74,10 @@ const PERMISSION_MODULES = [
   // HR Settings or the HR queue, which is why it needs its own box: without
   // one, nobody could raise a case at all.
   { key:'hr_posh_intake',  label:'POSH Complaint Intake', actions:['view_global'] },
+  // Aggregate counts only — by period, status and outcome. It opens no case
+  // and never will: case access comes from committee membership on that case
+  // and from nothing else.
+  { key:'hr_posh_reports', label:'POSH Reports',          actions:['view_global'] },
 ]
 
 const ACTION_LABELS = {
@@ -149,7 +153,7 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
     { label:'CRM Core',     keys:['contacts','deals','tasks','projects','customers','vendors'] },
     { label:'Finance',      keys:['invoices','estimates','expenses','credit_notes','delivery_notes'] },
     { label:'Operations',   keys:['appointments','tickets','inventory','goals','surveys'] },
-    { label:'HR Module',    keys:['hr_recruitment','hr_checklists','hr_settings','hr_attendance','hr_employees','hr_payroll','hr_leave','hr_exit','hr_onboarding','hr_manpower_l1','hr_manpower_l2','hr_ai_jd','hr_posh_intake'] },
+    { label:'HR Module',    keys:['hr_recruitment','hr_checklists','hr_settings','hr_attendance','hr_employees','hr_payroll','hr_leave','hr_exit','hr_onboarding','hr_manpower_l1','hr_manpower_l2','hr_ai_jd','hr_posh_intake','hr_posh_reports'] },
     { label:'System',       keys:['reports','email_templates','affiliates','staff_mgmt'] },
     { label:'Personal',     keys:['self'] },
   ]

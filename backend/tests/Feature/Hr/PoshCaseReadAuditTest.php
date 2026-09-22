@@ -215,9 +215,25 @@ class PoshCaseReadAuditTest extends TestCase
     {
         // The value of the table is that it cannot be tidied up afterwards, so
         // there is deliberately no method that could.
-        $methods = get_class_methods(PoshCaseReadAuditor::class);
+        //
+        // Two ways IN, both appends: record() for a User, recordAnonymous()
+        // for a token complainant who has no account. Listing them by name
+        // rather than counting them means a third method has to be added here
+        // deliberately, and a mutator cannot arrive by being overlooked.
+        $methods = array_values(array_diff(
+            get_class_methods(PoshCaseReadAuditor::class), ['__construct']
+        ));
 
-        $this->assertSame(['record'], array_values(array_diff($methods, ['__construct'])));
+        sort($methods);
+
+        $this->assertSame(['record', 'recordAnonymous'], $methods);
+
+        // Said again as a property rather than a list, so the intent survives
+        // whatever the append methods end up being called.
+        foreach ($methods as $method) {
+            $this->assertStringStartsWith('record', $method,
+                "{$method} is not an append — this table is written once and never changed");
+        }
     }
 
     /* ── kept out of every generic surface ────────────────────────────── */

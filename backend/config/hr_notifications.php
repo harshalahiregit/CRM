@@ -131,6 +131,11 @@ return [
             'Inquiry Opened'    => ['priority' => 'Warning',  'subject' => 'Inquiry opened — {{reference}}', 'body' => 'An inquiry has been opened on {{reference}}.'],
             'Decision Required' => ['priority' => 'Critical', 'subject' => 'Your decision is needed — {{reference}}', 'body' => '{{reference}} is waiting on your decision.'],
             'Inquiry Concluded' => ['priority' => 'Info',     'subject' => 'Inquiry concluded — {{reference}}', 'body' => 'The inquiry on {{reference}} has concluded.'],
+            'Case Acknowledged' => ['priority' => 'Info',     'subject' => 'Complaint acknowledged — {{reference}}', 'body' => '{{reference}} has been acknowledged.'],
+            'Findings Published' => ['priority' => 'Info',    'subject' => 'Findings published — {{reference}}', 'body' => 'The findings on {{reference}} have been published.'],
+            'Case Withdrawn'    => ['priority' => 'Info',     'subject' => 'Case withdrawn — {{reference}}', 'body' => '{{reference}} has been withdrawn.'],
+            'Case Closed'       => ['priority' => 'Info',     'subject' => 'Case closed — {{reference}}', 'body' => '{{reference}} has been closed.'],
+            'Membership Changed' => ['priority' => 'Warning', 'subject' => 'Committee changed — {{reference}}', 'body' => 'The committee on {{reference}} has changed.'],
         ],
 
         'Payroll' => [

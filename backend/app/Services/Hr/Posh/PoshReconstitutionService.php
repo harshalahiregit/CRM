@@ -126,7 +126,9 @@ class PoshReconstitutionService
                 'self_nomination_dropped' => $selfExcluded ? (int) $actor->id : null,
             ]);
 
-            $this->notifier->membersAdded($case, $this->access->activeMemberIds($case->fresh()), $actor);
+            // Everyone on the case now, not only the arrivals: somebody who
+            // stayed needs to know the committee around them has changed.
+            $this->notifier->membershipChanged($case, $this->access->activeMemberIds($case->fresh()), $actor);
 
             return $this->rosterSnapshot($case->fresh());
         });

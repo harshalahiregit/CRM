@@ -13,6 +13,7 @@ use App\Services\Hr\Posh\PoshCaseService;
 use App\Services\Hr\Posh\PoshFindingService;
 use App\Services\Hr\Posh\PoshInquiryService;
 use App\Services\Hr\Posh\PoshReconstitutionService;
+use App\Services\Hr\Posh\PoshTokenService;
 use App\Services\Hr\RequestThreadService;
 use App\Services\Shared\AttachmentService;
 use App\Support\Hr\StaffPermission;
@@ -46,6 +47,7 @@ class PoshCaseWorkController extends Controller
         private PoshInquiryService $inquiry,
         private PoshFindingService $findings,
         private PoshReconstitutionService $reconstitution,
+        private PoshTokenService $tokens,
         private RequestThreadService $thread,
         private AttachmentService $attachments,
     ) {
@@ -290,6 +292,47 @@ class PoshCaseWorkController extends Controller
         $case = $this->resolve($request, $id);
 
         return response()->json(['data' => $this->findings->publish($case, $request->user())]);
+    }
+
+    /* ── the complainant's link ───────────────────────────────────────── */
+
+    /**
+     * Mint a link, or replace the one already out there.
+     *
+     * The raw token is in this response and nowhere else, ever. It is not
+     * stored, not logged, not audited and not notified — so if the person who
+     * asked for it loses it, the only remedy is to issue another, which
+     * revokes this one. That is the intended trade: a credential that can be
+     * looked up again is a credential everybody with database access holds.
+     *
+     * Issuing is NOT part of intake. hr_posh_intake creates a case and grants
+     * nothing; the link belongs to the committee running the case.
+     */
+    public function issueToken(Request $request, int $id)
+    {
+        $case = $this->resolve($request, $id);
+
+        $issued = $this->tokens->issue($case, $request->user());
+
+        return response()->json(['data' => [
+            'id'         => $issued['id'],
+            'reference'  => $case->reference,
+            // Shown once. There is no endpoint that will return it again.
+            'token'      => $issued['token'],
+            'expires_at' => $issued['expires_at'],
+            'notice'     => 'This link is shown once and cannot be retrieved again. '
+                .'Anyone holding it can see the complainant\'s view of this case.',
+        ]], 201);
+    }
+
+    public function revokeToken(Request $request, int $id, int $tokenId)
+    {
+        $case = $this->resolve($request, $id);
+        $data = $request->validate(['reason' => 'nullable|string|max:255']);
+
+        $this->tokens->revoke($case, $tokenId, $request->user(), $data['reason'] ?? null);
+
+        return response()->json(['message' => 'Link revoked']);
     }
 
     /* ── reconstitution ───────────────────────────────────────────────── */

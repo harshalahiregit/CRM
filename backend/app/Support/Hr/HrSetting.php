@@ -232,6 +232,24 @@ class HrSetting
             'New employees can use the attendance app', self::TYPE_BOOL, false,
             'Off by default: app access is granted, never assumed.', 'People',
         ],
+
+        /* ── POSH ────────────────────────────────────────────────────── */
+        //
+        // How long a complainant's portal link stays usable. It is a setting
+        // rather than a constant because the right answer depends on how a
+        // workspace runs its committee, and nothing in the statute that we
+        // have verified fixes a number.
+        //
+        // The value is read ONLY at issuance and frozen onto the token, so
+        // editing this moves nothing that has already been handed out.
+        //
+        // The generic integer rule below admits 0 and null. PoshTokenService
+        // refuses both rather than treating them as "no expiry" — see the
+        // fail-closed note there.
+        'posh_token_ttl_days' => [
+            'POSH complainant link validity', self::TYPE_INT, 30,
+            'Days a complainant\'s portal link stays usable. Applies to links issued from now on; existing links keep the validity they were given.', 'POSH',
+        ],
     ];
 
     public static function keys(): array

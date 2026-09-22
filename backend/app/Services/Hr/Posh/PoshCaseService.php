@@ -164,6 +164,11 @@ class PoshCaseService
 
             $case->recordAudit('POSH Case Withdrawn', $actor, trim($reason));
 
+            // The reason is deliberately not carried into the notification: it
+            // is written by a committee member about a complaint and can name
+            // anybody.
+            $this->notifier->caseWithdrawn($case, $this->access->activeMemberIds($case), $actor);
+
             return $case->fresh();
         });
     }
@@ -190,6 +195,8 @@ class PoshCaseService
         $case->update(['status' => HrPoshCase::STATUS_CLOSED, 'updated_by' => $actor->id]);
         $case->recordAudit('POSH Case Closed', $actor, $note);
 
+        $this->notifier->caseClosed($case, $this->access->activeMemberIds($case), $actor);
+
         return $case->fresh();
     }
 
@@ -204,6 +211,8 @@ class PoshCaseService
 
         $case->update(['acknowledged_at' => now(), 'updated_by' => $actor->id]);
         $case->recordAudit('POSH Case Acknowledged', $actor);
+
+        $this->notifier->caseAcknowledged($case, $this->access->activeMemberIds($case), $actor);
 
         return $case->fresh();
     }

@@ -51,6 +51,38 @@ class PoshNotifier
         $this->send($case, $userIds, 'Inquiry Concluded', $actor);
     }
 
+    public function caseAcknowledged(HrPoshCase $case, array $userIds, ?User $actor = null): void
+    {
+        $this->send($case, $userIds, 'Case Acknowledged', $actor);
+    }
+
+    /**
+     * The findings went out.
+     *
+     * The event, never the finding. A committee's conclusion is the single
+     * most sensitive sentence on the case, and a notification is read on a
+     * lock screen.
+     */
+    public function findingsPublished(HrPoshCase $case, array $userIds, ?User $actor = null): void
+    {
+        $this->send($case, $userIds, 'Findings Published', $actor);
+    }
+
+    public function caseWithdrawn(HrPoshCase $case, array $userIds, ?User $actor = null): void
+    {
+        $this->send($case, $userIds, 'Case Withdrawn', $actor);
+    }
+
+    public function caseClosed(HrPoshCase $case, array $userIds, ?User $actor = null): void
+    {
+        $this->send($case, $userIds, 'Case Closed', $actor);
+    }
+
+    public function membershipChanged(HrPoshCase $case, array $userIds, ?User $actor = null): void
+    {
+        $this->send($case, $userIds, 'Membership Changed', $actor);
+    }
+
     /**
      * One notification, to named people.
      *

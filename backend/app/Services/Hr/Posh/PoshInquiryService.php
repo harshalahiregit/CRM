@@ -92,6 +92,11 @@ class PoshInquiryService
 
             $this->notifier->inquiryOpened($case, $this->access->activeMemberIds($case), $actor);
 
+            // Everybody holds an undecided seat at this point, but it is asked
+            // for the same way it is asked later, so there is one definition of
+            // "still waiting on you" rather than two.
+            $this->notifier->decisionRequired($case, $this->undecided($case, $round), $actor);
+
             return $this->inspect($case->fresh());
         });
     }
@@ -131,6 +136,10 @@ class PoshInquiryService
         if ($fresh->state === Decision::STATE_DECIDED) {
             $case = $this->cases->applyInquiryOutcome($case, $fresh, $actor);
             $this->findings->openDraft($case, $fresh, $actor);
+        } else {
+            // Still open. Only the people it is actually waiting on are told,
+            // so a nudge means "you" rather than "somebody".
+            $this->notifier->decisionRequired($case, $this->undecided($case, $fresh), $actor);
         }
 
         return $this->inspect($case->fresh());
@@ -151,6 +160,28 @@ class PoshInquiryService
     }
 
     /* ── internals ────────────────────────────────────────────────────── */
+
+    /**
+     * The people a round is still waiting on.
+     *
+     * Seats with no decision recorded, intersected with CURRENT active case
+     * membership. Both halves matter: a seat that has answered needs no nudge,
+     * and somebody removed from the case since the round opened keeps their
+     * historical seat but must stop being written to.
+     *
+     * @return array<int, int> user ids
+     */
+    private function undecided(HrPoshCase $case, $round): array
+    {
+        $members = $this->access->activeMemberIds($case);
+
+        return HrDecisionParticipant::where('round_id', $round->id)
+            ->whereNull('decision')
+            ->pluck('slot_key')
+            ->map(fn ($k) => (int) $k)
+            ->filter(fn ($id) => in_array($id, $members, true))
+            ->values()->all();
+    }
 
     /**
      * One seat per active case member.
