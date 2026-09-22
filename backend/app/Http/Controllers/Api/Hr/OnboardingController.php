@@ -140,9 +140,25 @@ class OnboardingController extends Controller
 
         $validated = $request->validate([
             'step' => 'required|in:doc_verification,joining_confirmed,emp_id_generated,dept_assigned,manager_assigned,record_created',
+            // Carried on the manager_assigned step rather than on a route of its
+            // own, because "Reporting Manager Assigned" is already a step in this
+            // flow — it was just a checkbox with no record of WHO. Tenant-scoped
+            // for the reason StoreOnboardingRequest spells out: a bare exists:
+            // rule admits another tenant's row and turns a 422 into a 500.
+            'reporting_manager_id' => [
+                'nullable', 'integer',
+                \Illuminate\Validation\Rule::exists('hr_employees', 'id')
+                    ->where('tenant_id', $request->user()->tenant_id),
+            ],
         ]);
 
-        return response()->json($this->onboardingService->toggleStep($onboarding, $validated['step']));
+        return response()->json($this->onboardingService->toggleStep(
+            $onboarding,
+            $validated['step'],
+            // array_key_exists, not ??: sending an explicit null is how the step
+            // is cleared, and that has to be distinguishable from not sending it.
+            array_key_exists('reporting_manager_id', $validated) ? $validated['reporting_manager_id'] : false,
+        ));
     }
 
     public function destroy(Request $request, HrOnboarding $onboarding)

@@ -3,72 +3,33 @@
 namespace App\Http\Controllers\Api\Settings;
 
 use App\Http\Controllers\Controller;
-use App\Models\Access\AccessRole;
 use App\Models\Access\Department;
 use App\Services\Access\AccessCatalogService;
 use Illuminate\Http\Request;
 
 /**
- * Roles and departments, maintained from Settings.
+ * Departments, maintained from Settings.
  *
- * Admin-only, and tenant-scoped on every read and write — a role or department
- * is looked up THROUGH the tenant, so an id from another workspace resolves to
+ * Admin-only, and tenant-scoped on every read and write — a department is
+ * looked up THROUGH the tenant, so an id from another workspace resolves to
  * nothing rather than to someone else's record.
+ *
+ * ROLES WERE REMOVED FROM HERE. This class used to maintain a second staff-role
+ * catalogue in access_roles, alongside the live one in staff_roles. Two tables
+ * wrote the same column (users.internal_role) and only one of them carried
+ * permissions, so the other could never be the authority — it was a role
+ * manager that granted nothing. staff_roles owns the vocabulary now, and the
+ * two names this path uniquely defined — `hr` and `manager`, which
+ * routes/sangoetrack.php gates on — are vocabulary-only rows in
+ * StaffRoleTemplate. The access_roles table is untouched.
+ *
+ * The departments half is the SAME duplication one table over
+ * (access_departments, 0 rows, versus hr_departments, read by 21 files) and is
+ * deliberately left alone: it is its own cleanup with its own blast radius.
  */
 class AccessCatalogController extends Controller
 {
     public function __construct(private AccessCatalogService $catalog) {}
-
-    /* ── Roles ──────────────────────────────────────────────────────────── */
-
-    public function roles(Request $request)
-    {
-        return response()->json([
-            'data' => $this->catalog->roles($request->user()->tenant_id),
-            // Shown read-only beside the editable list: each account type is a
-            // separate portal with its own login, so the UI can explain why
-            // these are not editable rather than leaving a confusing gap.
-            'account_types' => AccessCatalogService::ACCOUNT_TYPES,
-        ]);
-    }
-
-    public function storeRole(Request $request)
-    {
-        $data = $request->validate([
-            'name'        => 'required|string|max:100',
-            // Optional: derived from the name when omitted. This is what a route
-            // guard spells, so it is fixed at creation and never editable after.
-            'slug'        => 'nullable|string|max:80|regex:/^[a-zA-Z0-9_\- ]+$/',
-            'description' => 'nullable|string|max:500',
-            'is_active'   => 'nullable|boolean',
-        ]);
-
-        return response()->json([
-            'message' => 'Role created.',
-            'data'    => $this->catalog->createRole($request->user()->tenant_id, $data),
-        ], 201);
-    }
-
-    public function updateRole(Request $request, int $role)
-    {
-        $data = $request->validate([
-            'name'        => 'sometimes|string|max:100',
-            'description' => 'nullable|string|max:500',
-            'is_active'   => 'sometimes|boolean',
-        ]);
-
-        return response()->json([
-            'message' => 'Role updated.',
-            'data'    => $this->catalog->updateRole($this->findRole($request, $role), $data),
-        ]);
-    }
-
-    public function destroyRole(Request $request, int $role)
-    {
-        $this->catalog->deleteRole($this->findRole($request, $role));
-
-        return response()->json(['message' => 'Role deleted.']);
-    }
 
     /* ── Departments ────────────────────────────────────────────────────── */
 
@@ -117,14 +78,6 @@ class AccessCatalogController extends Controller
     }
 
     /* ── Internals ──────────────────────────────────────────────────────── */
-
-    private function findRole(Request $request, int $id): AccessRole
-    {
-        $row = AccessRole::forTenant($request->user()->tenant_id)->find($id);
-        abort_unless($row, 404, 'Role not found.');
-
-        return $row;
-    }
 
     private function findDepartment(Request $request, int $id): Department
     {

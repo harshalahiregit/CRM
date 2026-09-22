@@ -18,6 +18,37 @@ const api = axios.create({ baseURL: BASE })
 attachMediaCompression(api)
 
 /**
+ * Post a clock-in or clock-out, with whatever evidence the browser could gather.
+ *
+ * Multipart only when there is actually a file: a plain JSON body is cheaper and
+ * far easier to read in a network log, and most punches carry no photo.
+ *
+ * `evidence` is { latitude, longitude, address, selfie (Blob), verificationNote }
+ * and every key is optional — a punch with none of them is still a valid punch.
+ */
+function punch(action, evidence = {}) {
+  const { latitude, longitude, address, selfie, verificationNote } = evidence
+  const url = `/hr/me/attendance/${action}`
+
+  if (selfie) {
+    const fd = new FormData()
+    if (latitude != null) fd.append('latitude', String(latitude))
+    if (longitude != null) fd.append('longitude', String(longitude))
+    if (address) fd.append('address', address)
+    if (verificationNote) fd.append('verification_note', verificationNote)
+    fd.append('selfie', selfie, 'punch.jpg')
+    return api.post(url, fd, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data)
+  }
+
+  const body = {}
+  if (latitude != null) body.latitude = String(latitude)
+  if (longitude != null) body.longitude = String(longitude)
+  if (address) body.address = address
+  if (verificationNote) body.verification_note = verificationNote
+  return api.post(url, body).then(r => r.data)
+}
+
+/**
  * Fields plus files as multipart.
  *
  * `files[]` — the brackets matter: Laravel reads `files` as an array from that
@@ -240,7 +271,12 @@ export const hrApi = {
     list:           (params={})   => api.get('/hr/onboarding', { params }).then(r => r.data),
     get:            (id)          => api.get(`/hr/onboarding/${id}`).then(r => r.data),
     start:          (data)        => api.post('/hr/onboarding', data).then(r => r.data),
-    toggleStep:     (id, step)    => api.patch(`/hr/onboarding/${id}/step`, { step }).then(r => r.data),
+    // reportingManagerId is only meaningful on the 'manager_assigned' step, and
+    // is sent ONLY when supplied — an explicit null clears the manager, whereas
+    // omitting the key leaves it alone and plain-toggles the step as before.
+    toggleStep:     (id, step, reportingManagerId) => api.patch(`/hr/onboarding/${id}/step`,
+      reportingManagerId === undefined ? { step } : { step, reporting_manager_id: reportingManagerId || null }
+    ).then(r => r.data),
     updateChecklist:(id, checklist)=> api.patch(`/hr/onboarding/${id}/step`, { checklist }).then(r => r.data),
     verify:         (id, data)    => api.patch(`/hr/onboarding/${id}/verify`, data).then(r => r.data),
     documentUrl:    (id, docId)   => `${BASE}/hr/onboarding/${id}/documents/${docId}`,
@@ -951,8 +987,12 @@ export const hrApi = {
       // they can only ever touch the caller's own record.
       me: {
         today:      () => api.get('/hr/me/attendance/today').then(r => r.data),
-        checkIn:    () => api.post('/hr/me/attendance/check-in').then(r => r.data),
-        checkOut:   () => api.post('/hr/me/attendance/check-out').then(r => r.data),
+        // A punch may carry evidence: coordinates, a selfie, and a note saying
+        // why either is missing. All optional — the server never refuses a punch
+        // for want of them — so `punch` is what both the header button and the
+        // HR card post, with or without anything in it.
+        checkIn:    (evidence) => punch('check-in', evidence),
+        checkOut:   (evidence) => punch('check-out', evidence),
         breakStart: () => api.post('/hr/me/attendance/break-start').then(r => r.data),
         breakEnd:   () => api.post('/hr/me/attendance/break-end').then(r => r.data),
       },

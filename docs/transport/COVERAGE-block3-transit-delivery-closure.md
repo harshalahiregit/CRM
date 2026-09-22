@@ -10,6 +10,19 @@ same day. Checked three ways, as ruled.
 > this side, exactly as §2 predicted. A trip has since been walked `delivered → closed` by
 > clicking, so this is observed, not inferred. §2 is kept below as written, because the useful
 > part of it is the argument, and the argument was tested by events.
+>
+> **Updated 2026-09-21.** Closure is now BUILT *by clicking*, which is a stronger claim than the
+> one made on the 19th. That walk reached `billed` by posting to the route by hand, because no UI
+> control called it. Person 3 shipped the *Record invoice* button on the 21st and
+> `TRP-2026-000035` was taken **delivered → POD verified → ready to invoice → invoiced →
+> collection → closed entirely from the screen.** Nothing in the closure code changed for either
+> step.
+>
+> The walk also produced the best evidence this block has: **the close was refused.** A trip that
+> was delivered, POD-verified, invoiced and paid in full was told *"1 critical exception is still
+> open on this trip — TRP-P0-014"*, and stayed at `collection_pending` until the exception was
+> resolved through the panel. The control that spent a day claiming it could not run has now
+> stopped a real close.
 
 ---
 

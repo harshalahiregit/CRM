@@ -6,7 +6,10 @@ use App\Models\Hr\HrAdvance;
 use App\Models\Hr\HrAttendance;
 use App\Models\Hr\HrEmployee;
 use App\Models\Hr\HrReimbursement;
+use App\Models\User;
+use App\Services\Auth\ScopeResolver;
 use App\Support\Hr\AdvanceStage;
+use App\Support\Hr\DataScope;
 use App\Support\Hr\ReimbursementStatus;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -47,13 +50,42 @@ class AttendanceReportService
     /**
      * One row per employee for a month.
      *
+     * THE ACTOR IS THE LAST PARAMETER AND DEFAULTS TO NULL, DELIBERATELY.
+     *
+     * This service is shared: the CRM's own report controller calls it, and so
+     * does the mobile Attendance App through HrmAdminController, which passes
+     * two positional arguments and must keep working exactly as it does. A
+     * trailing nullable parameter leaves those call sites untouched, and null
+     * means unscoped — ScopeResolver::applyToQuery() returns the query
+     * unmodified — so the app's behaviour is not merely similar but identical.
+     * The app already scopes its own decisions by reporting line in
+     * HrmAdminController::denyDecisionFor(); this does not second-guess it.
+     *
+     * Scoping here is enough to scope the whole report. This is the ONE place
+     * employees are selected: $ids below feeds attendanceByEmployee(),
+     * reimbursedByEmployee() and outstandingByEmployee(), and $rows feeds
+     * totals(), so the days, the hours, the money and every total narrow with
+     * it. byDepartment() groups these same rows.
+     *
+     * Applied BEFORE the department and employee_id filters, so a filter can
+     * only narrow within the scope — asking for another department returns
+     * nothing rather than reaching it.
+     *
+     * BRANCH is excluded as in Phase 1: free text, no master, no data.
+     *
      * @param  string  $month  YYYY-MM
+     * @param  User|null  $actor  null = unscoped (mobile app, jobs, console).
      */
-    public function monthly(int $tenantId, string $month, ?string $department = null, ?int $employeeId = null): array
+    public function monthly(int $tenantId, string $month, ?string $department = null, ?int $employeeId = null, ?User $actor = null): array
     {
         [$from, $to] = $this->bounds($month);
 
-        $employees = HrEmployee::where('tenant_id', $tenantId)
+        $employees = app(ScopeResolver::class)->applyToQuery(
+            HrEmployee::where('tenant_id', $tenantId),
+            $actor,
+            'id',
+            [DataScope::OWN, DataScope::DEPARTMENT, DataScope::TEAM],
+        )
             ->when($department, fn ($q, $d) => $q->where('department', $d))
             ->when($employeeId, fn ($q, $id) => $q->whereKey($id))
             ->orderBy('name')
@@ -109,11 +141,19 @@ class AttendanceReportService
      * One employee, day by day — the view somebody opens when a monthly figure
      * looks wrong and they need to see which day caused it.
      */
-    public function forEmployee(int $tenantId, int $employeeId, string $month): array
+    public function forEmployee(int $tenantId, int $employeeId, string $month, ?User $actor = null): array
     {
         [$from, $to] = $this->bounds($month);
 
-        $employee = HrEmployee::where('tenant_id', $tenantId)->findOrFail($employeeId);
+        // The scope goes on the lookup rather than after it, so an employee
+        // outside it fails findOrFail and answers 404 — the same response as an
+        // employee who does not exist. Naming them would confirm they do.
+        $employee = app(ScopeResolver::class)->applyToQuery(
+            HrEmployee::where('tenant_id', $tenantId),
+            $actor,
+            'id',
+            [DataScope::OWN, DataScope::DEPARTMENT, DataScope::TEAM],
+        )->findOrFail($employeeId);
 
         $days = HrAttendance::where('tenant_id', $tenantId)
             ->where('employee_id', $employeeId)
@@ -125,7 +165,7 @@ class AttendanceReportService
             ->orderBy('date')
             ->get(['id', 'date', 'shift', 'check_in', 'check_out', 'working_hours', 'overtime_hours', 'status', 'remarks']);
 
-        $summary = $this->monthly($tenantId, $month, null, $employeeId);
+        $summary = $this->monthly($tenantId, $month, null, $employeeId, $actor);
 
         return [
             'month'    => $month,
@@ -136,9 +176,11 @@ class AttendanceReportService
     }
 
     /** Rolled up by department, for the month. */
-    public function byDepartment(int $tenantId, string $month): array
+    public function byDepartment(int $tenantId, string $month, ?User $actor = null): array
     {
-        $monthly = $this->monthly($tenantId, $month);
+        // Both the per-department rows and the grand totals come out of this
+        // one call, so they cannot describe different populations.
+        $monthly = $this->monthly($tenantId, $month, null, null, $actor);
 
         $grouped = collect($monthly['rows'])
             ->groupBy(fn ($r) => $r['department'] ?: 'Unassigned')

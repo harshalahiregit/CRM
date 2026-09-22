@@ -62,6 +62,10 @@ class StaffRoleService
                 'slug'        => $slug,
                 'permissions' => StaffPermission::sanitise($def['permissions']),
                 'is_system'   => true,
+                // A template may declare itself vocabulary-only — a legal name
+                // for internal_role that grants nothing. Absent means an
+                // ordinary role, which is every template that predates this.
+                'is_vocabulary_only' => (bool) ($def['is_vocabulary_only'] ?? false),
             ]);
 
             $added++;

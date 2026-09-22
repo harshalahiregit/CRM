@@ -235,8 +235,17 @@ class TripAssignmentService
      * and driver because the generated columns that carry the unique indexes go
      * NULL the moment status leaves the active set.
      */
-    public function release(TripAssignment $assignment, int $tenantId, ?User $actor = null, ?string $reason = null): TripAssignment
-    {
+    /**
+     * @param  bool  $clearTripPointers  false when the trip FINISHED rather than
+     *   lost its crew. See the comment at the clear itself.
+     */
+    public function release(
+        TripAssignment $assignment,
+        int $tenantId,
+        ?User $actor = null,
+        ?string $reason = null,
+        bool $clearTripPointers = true,
+    ): TripAssignment {
         $this->assertTenant($assignment, $tenantId);
 
         if (! $assignment->canTransitionTo(AssignmentStatus::RELEASED)) {
@@ -246,7 +255,7 @@ class TripAssignmentService
             );
         }
 
-        return DB::transaction(function () use ($assignment, $tenantId, $actor, $reason) {
+        return DB::transaction(function () use ($assignment, $tenantId, $actor, $reason, $clearTripPointers) {
             $from = $assignment->status;
 
             $assignment->forceFill([
@@ -266,8 +275,23 @@ class TripAssignmentService
             // The trip's denormalised pointers are cleared with it — a released
             // assignment must not leave the trip claiming a vehicle it no longer
             // holds.
-            $trip = TransportTrip::forTenant($tenantId)->find($assignment->trip_id);
-            $trip?->forceFill(['vehicle_id' => null, 'driver_id' => null, 'updated_by' => $actor?->id])->save();
+            //
+            // EXCEPT when the trip is FINISHED. D-119 releases the crew at
+            // delivery, and clearing the pointers there does not correct a false
+            // claim — it destroys the record of which truck ran the trip. The
+            // damage was measured rather than guessed: after one delivery,
+            // Container 360 lost its vehicle and driver, a plate search answered
+            // "no trip has run on this vehicle yet" about a truck that had just
+            // delivered one, and the repoint dry run fell from 2 rows to move to
+            // 0 — it would have run, moved nothing and looked finished.
+            //
+            // A finished trip's vehicle_id is history, not a claim. What the
+            // vehicle is doing NOW is carried by its own status, which
+            // freeResources() sets to AVAILABLE.
+            if ($clearTripPointers) {
+                $trip = TransportTrip::forTenant($tenantId)->find($assignment->trip_id);
+                $trip?->forceFill(['vehicle_id' => null, 'driver_id' => null, 'updated_by' => $actor?->id])->save();
+            }
 
             Log::channel('transport')->info('Trip assignment released', [
                 'assignment_id' => $assignment->id, 'trip_id' => $assignment->trip_id,

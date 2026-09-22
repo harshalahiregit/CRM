@@ -251,11 +251,30 @@ export const EMPLOYEE_LEVELS = ['Intern', 'Junior', 'Mid-level', 'Senior', 'Lead
 export const EMPLOYMENT_TYPES = ['Full-time', 'Part-time', 'Contract', 'Internship']
 export const PRIORITIES = ['Low', 'Medium', 'High', 'Critical']
 
-// Frontend role gating — mirrors User::canApproveL1/L2/canManageHrQueue on the
-// backend (the backend is the source of truth; this only hides buttons).
-export const canApproveL1 = (u) => u?.role === 'admin' || ['department_head', 'hiring_manager'].includes(u?.internal_role)
-export const canApproveL2 = (u) => u?.role === 'admin' || ['project_manager', 'senior_executive'].includes(u?.internal_role)
-export const canManageHrQueue = (u) => u?.role === 'admin' || u?.internal_role === 'hr_executive' || ['hr_recruiter', 'hr_executive'].includes(u?.internal_role)
+// Frontend gating for the three HR authority questions. The backend remains the
+// source of truth; these only decide whether a button is worth showing.
+//
+// They used to REBUILD the rules here from role strings, which was a fair copy
+// when written and stopped being one twice over:
+//
+//   • canManageHrQueue gained a fourth clause — hr_employees:view_global — so a
+//     CUSTOM ROLE configured in HR Settings passed the server while this hid the
+//     buttons. A role you can create but not use is worse than no roles at all.
+//   • canApproveL1/L2 gained the account-type guard, so a portal login carrying
+//     'department_head' was still offered approval buttons it would be refused.
+//
+// So they now read the server's own answer, sent on /auth/me as
+// permissions.capabilities. The signature is unchanged — every existing call
+// site still passes the user object — and a new role works with no deploy.
+//
+// Undefined until /auth/me returns, which coerces to false: the closed state
+// shows first, because a button that appears and then vanishes is worse than one
+// that appears a moment late.
+const capability = (u, key) => !!u?.permissions?.capabilities?.[key]
+
+export const canApproveL1 = (u) => capability(u, 'approve_l1')
+export const canApproveL2 = (u) => capability(u, 'approve_l2')
+export const canManageHrQueue = (u) => capability(u, 'hr_manage')
 
 // Job identifier + apply links (SPK-1) — shared by the card and table views
 // so the same job always reads identically in both.

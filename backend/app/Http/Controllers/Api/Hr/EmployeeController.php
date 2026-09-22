@@ -24,12 +24,24 @@ class EmployeeController extends Controller
     public function index(Request $request)
     {
         return response()->json(
-            $this->employeeService->list($request->user()->tenant_id, $request->only(['status', 'department', 'designation', 'joined_from', 'search', 'per_page']))
+            $this->employeeService->list(
+                $request->user()->tenant_id,
+                $request->only(['status', 'department', 'designation', 'joined_from', 'search', 'per_page']),
+                // Passing the actor is what lets a non-global role narrow this
+                // list. A global role — which is every role today — is unchanged.
+                $request->user(),
+            )
         );
     }
 
+    /**
+     * Gated like update() twelve lines below, which it always should have been:
+     * creating a person is at least as much authority as renaming one.
+     */
     public function store(StoreEmployeeRequest $request)
     {
+        $this->assertCanManage($request);
+
         $employee = $this->employeeService->create($request->validated(), $request->user()->tenant_id);
 
         return response()->json($employee, 201);
@@ -59,9 +71,24 @@ class EmployeeController extends Controller
         ]);
     }
 
+    /**
+     * HR-only, and the gate goes BEFORE the write.
+     *
+     * This is the record holding bank account, IFSC, PAN and Aadhaar. It had the
+     * tenant check but no authority check, so any signed-in staff member could
+     * rewrite another person's payment and identity details — verified, and the
+     * audit line then named them as the author. read (detail()) is left as it
+     * was; only the write is gated, so nothing that merely displays the form
+     * changes behaviour.
+     *
+     * Deliberately NOT an "or it's my own record" exemption: self-service edits
+     * belong on a /me route with their own rules about which fields a person may
+     * change, not on an endpoint that takes an arbitrary {employee}.
+     */
     public function updateDetail(UpdateEmployeeDetailRequest $request, HrEmployee $employee)
     {
         $this->assertTenant($request, $employee);
+        $this->assertCanManage($request);
 
         $this->details->save($employee, $request->validated(), $request->user());
 
@@ -94,6 +121,13 @@ class EmployeeController extends Controller
             'address'                => 'nullable|string',
             'department'             => 'sometimes|required|string',
             'designation'            => 'sometimes|required|string',
+            // See StoreEmployeeRequest for why both exist. The service rejects a
+            // self-reference and a cycle; existence and tenant are checked here.
+            'reporting_manager_id'   => [
+                'nullable', 'integer',
+                \Illuminate\Validation\Rule::exists('hr_employees', 'id')
+                    ->where('tenant_id', $request->user()->tenant_id),
+            ],
             'reporting_manager_name' => 'nullable|string',
             'work_state'             => ['nullable', 'string', 'max:80', new ValidWorkState],
             'joining_date'           => 'nullable|date',
@@ -140,9 +174,27 @@ class EmployeeController extends Controller
         return response()->json(['data' => WorkStates::options()]);
     }
 
+    /**
+     * Two boundaries, both answered with 404, and both before anything is read.
+     *
+     * The tenant check is the older one. The scope check is the second half of
+     * the data boundary the role's scope draws: narrowing the LIST while leaving
+     * show/detail/update open means the boundary holds right up until somebody
+     * types an id into the URL, which is the first thing anyone tries.
+     *
+     * 404 rather than 403 on purpose — "you may not see employee 41" confirms
+     * that 41 exists and sits outside your department, which is the thing being
+     * withheld. Out of scope should look like not there.
+     *
+     * A global actor is unaffected, which is every role on every existing
+     * database.
+     */
     private function assertTenant(Request $request, HrEmployee $employee): void
     {
         abort_unless((int) $employee->tenant_id === (int) $request->user()->tenant_id, 404, 'Employee not found');
+
+        app(\App\Services\Auth\ScopeResolver::class)
+            ->assertCanActOnEmployee($request->user(), $employee->id);
     }
 
     private function assertCanManage(Request $request): void

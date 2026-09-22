@@ -82,12 +82,17 @@ export const TRIP_STATUS_LABEL = {
   in_transit: 'In transit',
   arrived: 'Arrived',
   delivered: 'Delivered',
-  pod_pending: 'POD pending',
-  pod_verified: 'POD verified',
-  billable: 'Billable',
-  billed: 'Billed',
-  collection_pending: 'Collection pending',
-  settlement_pending: 'Settlement pending',
+  pod_pending: 'Waiting for proof of delivery',
+  pod_verified: 'Proof of delivery verified',
+  // `Billable` and `Collection pending` were the machine's own words on the
+  // screen. They are the two that leaked furthest — they appeared on the status
+  // chip, in the tracker and in refusal messages — and the tracker's blurbs
+  // already carried the plain equivalents, so these are those words, not new
+  // ones invented to fill a gap.
+  billable: 'Ready to invoice',
+  billed: 'Invoiced',
+  collection_pending: 'Waiting for payment',
+  settlement_pending: 'Waiting on supplier settlement',
   closed: 'Closed',
 }
 
@@ -155,7 +160,13 @@ export const TRIP_JOURNEY = [
   },
   {
     key: 'delivery',
-    label: 'Delivered',
+    // "Delivered" until 21 Sep, and the label was the only part that lied: the
+    // blurb, the `active` state and the `states` list all describe POD, not
+    // arrival. It also collided with the delivery drawer's own outcome line, so
+    // the page read "On the road: Delivered 19 Sept" while a pip called
+    // "Delivered" sat unlit. The pip is about evidence; the drawer is about the
+    // event, and naming them differently is what lets both be true.
+    label: 'Proof of delivery',
     blurb: 'The load has arrived and proof of delivery is on file.',
     states: ['pod_verified', 'billable', 'billed', 'collection_pending', 'closed'],
     active: ['delivered'],

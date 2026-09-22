@@ -2,27 +2,32 @@
 
 namespace Tests\Feature\Settings;
 
-use App\Models\Access\AccessRole;
 use App\Models\Access\Department;
 use App\Models\Tenant;
 use App\Models\User;
-use App\Services\Access\AccessCatalogService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 /**
- * Roles and departments can be created from the UI, without breaking access.
+ * Departments can be created from the UI, without breaking anything in use.
  *
- * The brief asked for "direct creation of roles and departments through UI
- * settings pages to eliminate backend developer dependencies". The risk in
- * granting that is obvious: a settings screen that can rewrite what a route
- * guard checks can lock the whole company out of the system.
+ * ROLES WERE REMOVED FROM THIS FILE. This used to cover a second staff-role
+ * catalogue (access_roles) alongside the live one in staff_roles. Both wrote
+ * users.internal_role and only staff_roles carried permissions, so the second
+ * could never be the authority. That path has been retired; the rules it
+ * enforced — a slug is fixed once set, a system role cannot be deleted, nothing
+ * in use can be removed — are enforced on staff_roles and covered by
+ * StaffRoleArchitectureTest and the existing role/permission tests.
  *
- * So the guards are untouched, and these tests pin the three rules that keep it
- * safe — a slug is fixed once set, a system role cannot be deleted, and nothing
- * in use can be removed.
+ * The two slugs that existed only there, `hr` and `manager`, are now
+ * vocabulary-only staff_roles entries so that routes/sangoetrack.php keeps
+ * working unchanged. StaffRoleArchitectureTest covers that.
+ *
+ * What remains here is the departments half, which is the SAME duplication one
+ * table over (access_departments versus hr_departments) and is deliberately
+ * untouched for now — its own cleanup, with its own blast radius.
  */
 class AccessCatalogTest extends TestCase
 {
@@ -52,128 +57,6 @@ class AccessCatalogTest extends TestCase
         Sanctum::actingAs($admin);
 
         return $admin;
-    }
-
-    /* ── Roles ──────────────────────────────────────────────────────────── */
-
-    public function test_the_built_in_roles_appear_without_being_created(): void
-    {
-        // internal_role was an ad-hoc string with no catalogue anywhere: nothing
-        // listed the roles the code already checks for, so an admin had no way
-        // to know what to type. They are seeded on first read.
-        $this->asAdmin();
-
-        $slugs = collect($this->getJson('/api/settings/roles')->assertOk()->json('data'))->pluck('slug');
-
-        foreach (array_keys(AccessCatalogService::SYSTEM_ROLES) as $expected) {
-            $this->assertContains($expected, $slugs->all(), "{$expected} should be seeded");
-        }
-    }
-
-    public function test_an_admin_can_create_a_role(): void
-    {
-        $this->asAdmin();
-
-        $this->postJson('/api/settings/roles', ['name' => 'Site Supervisor'])
-            ->assertCreated()
-            ->assertJsonPath('data.slug', 'site_supervisor');
-
-        $this->assertDatabaseHas('access_roles', ['slug' => 'site_supervisor', 'is_system' => false]);
-    }
-
-    public function test_a_role_created_here_is_what_a_route_guard_reads(): void
-    {
-        // The point of the whole exercise: a role created in Settings must be
-        // usable by the guards that already exist, with no code change. The
-        // guard compares users.internal_role as a plain string, and the slug is
-        // exactly what goes in that column.
-        $admin = $this->asAdmin();
-        $slug = $this->postJson('/api/settings/roles', ['name' => 'Site Supervisor'])
-            ->assertCreated()->json('data.slug');
-
-        $staff = $this->user('staff', ['internal_role' => $slug]);
-
-        $this->assertSame('site_supervisor', $staff->fresh()->internal_role);
-        $this->assertSame(1, AccessRole::where('slug', $slug)->first()->user_count);
-    }
-
-    public function test_a_built_in_role_cannot_be_shadowed_before_it_is_seeded(): void
-    {
-        // The built-ins are created on first READ. Without seeding on create
-        // too, a workspace that had never opened the roles screen could create
-        // "Manager" as an ordinary role — and the real, code-referenced Manager
-        // could then never be seeded beside it.
-        $this->asAdmin();
-
-        $this->postJson('/api/settings/roles', ['name' => 'Manager'])->assertStatus(422);
-    }
-
-    public function test_the_slug_cannot_be_changed_after_creation(): void
-    {
-        // The slug is the credential. Renaming it would strip access from
-        // everyone holding it, silently, so only the label may be edited.
-        $this->asAdmin();
-        $id = $this->postJson('/api/settings/roles', ['name' => 'Site Supervisor'])->json('data.id');
-
-        $this->putJson("/api/settings/roles/{$id}", ['name' => 'Area Supervisor', 'slug' => 'something_else'])
-            ->assertOk()->assertJsonPath('data.name', 'Area Supervisor');
-
-        $this->assertSame('site_supervisor', AccessRole::find($id)->slug, 'the slug is fixed once set');
-    }
-
-    public function test_a_system_role_cannot_be_deleted(): void
-    {
-        $this->asAdmin();
-        $this->getJson('/api/settings/roles');   // seeds them
-
-        $hr = AccessRole::where('slug', 'hr_executive')->firstOrFail();
-
-        $this->deleteJson("/api/settings/roles/{$hr->id}")->assertStatus(422);
-        $this->assertDatabaseHas('access_roles', ['id' => $hr->id]);
-    }
-
-    public function test_a_role_somebody_holds_cannot_be_deleted(): void
-    {
-        // Deleting it would leave those people with an internal_role matching
-        // nothing — which reads as "no access", with no explanation anywhere.
-        $this->asAdmin();
-        $id = $this->postJson('/api/settings/roles', ['name' => 'Site Supervisor'])->json('data.id');
-        $this->user('staff', ['internal_role' => 'site_supervisor']);
-
-        $this->deleteJson("/api/settings/roles/{$id}")->assertStatus(422);
-        $this->assertDatabaseHas('access_roles', ['id' => $id]);
-    }
-
-    public function test_an_unused_custom_role_can_be_deleted(): void
-    {
-        $this->asAdmin();
-        $id = $this->postJson('/api/settings/roles', ['name' => 'Temporary'])->json('data.id');
-
-        $this->deleteJson("/api/settings/roles/{$id}")->assertOk();
-        $this->assertDatabaseMissing('access_roles', ['id' => $id]);
-    }
-
-    public function test_a_role_cannot_impersonate_an_account_type(): void
-    {
-        // A job role slugged "admin" would be read as the admin ACCOUNT TYPE by
-        // the guard, handing out access nobody granted.
-        $this->asAdmin();
-
-        $this->postJson('/api/settings/roles', ['name' => 'Admin'])->assertStatus(422);
-        $this->postJson('/api/settings/roles', ['name' => 'Doctor'])->assertStatus(422);
-    }
-
-    public function test_account_types_are_listed_but_not_editable(): void
-    {
-        // Shown so an admin sees the whole picture and understands why these
-        // cannot be created here — each is a portal, not a settings row.
-        $this->asAdmin();
-
-        $types = $this->getJson('/api/settings/roles')->assertOk()->json('account_types');
-
-        $this->assertArrayHasKey('admin', $types);
-        $this->assertArrayHasKey('doctor', $types);
-        $this->assertArrayHasKey('third_party_vendor', $types);
     }
 
     /* ── Departments ────────────────────────────────────────────────────── */
@@ -231,22 +114,33 @@ class AccessCatalogTest extends TestCase
     {
         Sanctum::actingAs($this->user('staff'));
 
-        $this->getJson('/api/settings/roles')->assertForbidden();
-        $this->postJson('/api/settings/roles', ['name' => 'Anything'])->assertForbidden();
         $this->postJson('/api/settings/departments', ['name' => 'Anything'])->assertForbidden();
     }
 
-    public function test_another_tenants_role_is_not_reachable(): void
+    /**
+     * The retired role endpoints must stay gone, not come back quietly as a
+     * second place to create roles.
+     *
+     * GET answers 404 and the write verbs answer 405, because a catch-all GET
+     * fallback matches any unrouted URI — so Laravel finds a route for the URI
+     * but not for the method. Both mean "not routed"; what matters is that none
+     * of them succeeds, so that is what is asserted rather than one code that
+     * happens to be right for one verb.
+     */
+    public function test_the_retired_role_endpoints_are_no_longer_routed(): void
     {
-        (new Tenant)->forceFill([
-            'id' => 2, 'name' => 'T2', 'slug' => 't2', 'subdomain' => 't2', 'status' => 'active',
-        ])->save();
-        $theirs = AccessRole::create([
-            'tenant_id' => 2, 'name' => 'Theirs', 'slug' => 'theirs', 'is_active' => true, 'is_system' => false,
-        ]);
-
         $this->asAdmin();
-        $this->putJson("/api/settings/roles/{$theirs->id}", ['name' => 'Hijacked'])->assertStatus(404);
-        $this->deleteJson("/api/settings/roles/{$theirs->id}")->assertStatus(404);
+
+        $calls = [
+            $this->getJson('/api/settings/roles'),
+            $this->postJson('/api/settings/roles', ['name' => 'Anything']),
+            $this->putJson('/api/settings/roles/1', ['name' => 'Anything']),
+            $this->deleteJson('/api/settings/roles/1'),
+        ];
+
+        foreach ($calls as $response) {
+            $this->assertContains($response->status(), [404, 405],
+                'A retired role endpoint answered '.$response->status().' — it is routed again.');
+        }
     }
 }

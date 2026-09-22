@@ -2,6 +2,7 @@
 
 namespace App\Services\Hr;
 
+use App\Models\User;
 use App\Repositories\Hr\PayrollReportRepository;
 use Illuminate\Support\Carbon;
 
@@ -19,9 +20,9 @@ class PayrollReportService
     }
 
     /** KPI cards. */
-    public function summary(int $tenantId, array $filters): array
+    public function summary(int $tenantId, array $filters, ?User $actor = null): array
     {
-        $s = $this->repo->summary($tenantId, $filters);
+        $s = $this->repo->summary($tenantId, $filters, $actor);
         $employees = (int) $s->employees;
 
         return [
@@ -31,14 +32,17 @@ class PayrollReportService
             'total_earnings'     => round((float) $s->gross, 2),
             'total_deductions'   => round((float) $s->deductions, 2),
             'total_benefits'     => round((float) $s->benefits, 2),
+            // Statutory contributions the COMPANY pays on top of pay — never
+            // withheld from anybody, so reported apart from total_deductions.
+            'employer_contributions' => round((float) $s->employer_contributions, 2),
             'total_ctc'          => round((float) $s->gross + (float) $s->benefits, 2),
             'filters'            => $this->echoFilters($filters),
         ];
     }
 
-    public function employees(int $tenantId, array $filters): array
+    public function employees(int $tenantId, array $filters, ?User $actor = null): array
     {
-        return $this->repo->employees($tenantId, $filters)->map(fn ($r) => [
+        return $this->repo->employees($tenantId, $filters, $actor)->map(fn ($r) => [
             'employee_name'    => $r->name,
             'employee_code'    => $r->employee_code,
             'department'       => $r->department,
@@ -49,33 +53,54 @@ class PayrollReportService
             'total_deductions' => (float) $r->total_deductions,
             'net_salary'       => (float) $r->net_salary,
 
-            // The period figures that net_salary excludes, and the figure that
-            // actually reaches the bank. Same arithmetic as
-            // PayrollService::presentRecord — kept identical deliberately, so the
-            // payroll screen and this report can never disagree about someone's pay.
+            // The period figures that the structure snapshot above excludes.
+            //
+            // net_payable is NOT re-derived here any more. This re-spelled the
+            // formula and had fallen behind it: overtime, late-mark deductions
+            // and this month's adjustments were all missing, so a report could
+            // show a different take-home from the payslip for the same person in
+            // the same month. It now comes from the repository, which uses the
+            // same expression as HrPayrollRecord::netPayable().
             'statutory_deductions' => (float) $r->statutory_deductions,
             'loan_deduction'       => (float) $r->loan_deduction,
             'variable_earnings'    => (float) $r->variable_earnings,
-            'net_payable'          => round(
-                (float) $r->net_salary + (float) $r->variable_earnings
-                - (float) $r->statutory_deductions - (float) $r->loan_deduction,
-                2
-            ),
+            'overtime_amount'      => (float) $r->overtime_amount,
+            'late_mark_deduction'  => (float) $r->late_mark_deduction,
+            'adjustment_total'     => (float) $r->adjustment_total,
+            'period_gross'         => (float) $r->period_gross,
+            'period_deductions'    => (float) $r->period_deductions,
+            'employer_contributions' => (float) $r->employer_contributions,
+            'net_payable'          => (float) $r->net_payable,
 
             'payslip_status'   => $r->payslip_status,
             'period'           => $this->periodLabel((int) $r->payroll_year, (int) $r->payroll_month),
         ])->all();
     }
 
-    public function departments(int $tenantId, array $filters): array
+    /**
+     * Department aggregates.
+     *
+     * The KEYS here are period-level despite their structure-sounding names:
+     * `gross_salary` is periodGross summed, `total_deductions` is the employee's
+     * period deductions, `net_payroll_cost` is net payable. They are aliased that
+     * way in PayrollReportRepository and the names are kept because
+     * PayrollReports.jsx reads them — renaming the contract is a separate change
+     * with a frontend half, not a naming tidy-up.
+     *
+     * Where the ambiguity actually reaches a human — the CSV/PDF headers — the
+     * period vocabulary is used. `employer_contributions` is available on the
+     * row and is deliberately not folded into `total_deductions`.
+     */
+    public function departments(int $tenantId, array $filters, ?User $actor = null): array
     {
-        return $this->repo->departments($tenantId, $filters)->map(fn ($r) => [
+        return $this->repo->departments($tenantId, $filters, $actor)->map(fn ($r) => [
             'department'       => $r->department,
             'employees'        => (int) $r->employees,
-            'gross_salary'     => (float) $r->gross,
-            'total_benefits'   => (float) $r->benefits,
-            'total_deductions' => (float) $r->deductions,
-            'net_payroll_cost' => (float) $r->net,
+            'gross_salary'     => (float) $r->gross,              // period gross
+            'total_benefits'   => (float) $r->benefits,           // employer benefits (structure)
+            'total_deductions' => (float) $r->deductions,         // EMPLOYEE deductions, period
+            'employer_contributions' => (float) $r->employer_contributions,
+            'net_payroll_cost' => (float) $r->net,                // net payable
         ])->all();
     }
 
@@ -84,10 +109,10 @@ class PayrollReportService
      * each component by name + type; percentage is of the grand total of all
      * component amounts. No recalculation.
      */
-    public function components(int $tenantId, array $filters): array
+    public function components(int $tenantId, array $filters, ?User $actor = null): array
     {
         $agg = [];
-        foreach ($this->repo->payslipBreakdowns($tenantId, $filters) as $json) {
+        foreach ($this->repo->payslipBreakdowns($tenantId, $filters, $actor) as $json) {
             $bd = is_array($json) ? $json : (json_decode((string) $json, true) ?: []);
             foreach (['earnings' => 'Earning', 'benefits' => 'Benefit', 'deductions' => 'Deduction'] as $key => $type) {
                 foreach ($bd[$key] ?? [] as $row) {
@@ -130,9 +155,9 @@ class PayrollReportService
         ])->all();
     }
 
-    public function filterOptions(int $tenantId): array
+    public function filterOptions(int $tenantId, ?User $actor = null): array
     {
-        return $this->repo->filterOptions($tenantId);
+        return $this->repo->filterOptions($tenantId, $actor);
     }
 
     /*
@@ -140,37 +165,58 @@ class PayrollReportService
     | Export rows (CSV / PDF share the same shaped data)
     |--------------------------------------------------------------------------
     */
-    public function exportRows(string $report, int $tenantId, array $filters): array
+    public function exportRows(string $report, int $tenantId, array $filters, ?User $actor = null): array
     {
         return match ($report) {
             'departments' => [
                 'title'   => 'Department Payroll Report',
-                'headers' => ['Department', 'Employees', 'Gross', 'Benefits', 'Deductions', 'Net Payroll Cost'],
+                // Period vocabulary. The figures were already period-level (the
+                // repository aliases them); the headers said "Gross" and
+                // "Deductions" without saying gross or deductions OF WHAT, which
+                // is the ambiguity that let the structure snapshot masquerade as
+                // the period figure in the first place.
+                'headers' => ['Department', 'Employees', 'Period Gross', 'Employer Benefits', 'Employee Deductions', 'Net Payable'],
                 'rows'    => array_map(fn ($d) => [
                     $d['department'], $d['employees'], $d['gross_salary'], $d['total_benefits'], $d['total_deductions'], $d['net_payroll_cost'],
-                ], $this->departments($tenantId, $filters)),
+                ], $this->departments($tenantId, $filters, $actor)),
             ],
             'components' => [
                 'title'   => 'Salary Component Analysis',
                 'headers' => ['Component', 'Type', 'Total Amount', 'Employees', 'Contribution %'],
                 'rows'    => array_map(fn ($c) => [
                     $c['component'], $c['type'], $c['total_amount'], $c['employee_count'], $c['percentage'].'%',
-                ], $this->components($tenantId, $filters)['components']),
+                ], $this->components($tenantId, $filters, $actor)['components']),
             ],
             default => [ // summary = employee-wise report
                 'title'   => 'Payroll Summary Report',
-                // 'Net' alone was misleading here: it showed the frozen structural
-                // net, so an export used to decide payments understated statutory
-                // deductions and loan recovery and ignored variable earnings. The
-                // components are now beside it and the final column is what is
-                // actually payable.
-                'headers' => ['Employee', 'Code', 'Department', 'Designation', 'Structure', 'Gross', 'Benefits', 'Deductions', 'Net (structural)', 'Statutory', 'Loan', 'Variable', 'Net Payable', 'Payslip'],
+                // Two kinds of money, named as such.
+                //
+                // The columns headed "Gross" and "Deductions" used to carry
+                // gross_salary and total_deductions — the frozen salary-STRUCTURE
+                // snapshot. Deductions was therefore 0 on every row of every
+                // export, next to a Statutory column that was not. The period
+                // figures are the ones an export is for, so they lead; the
+                // structure figure is kept but labelled as what it is.
+                //
+                // Employer contributions are their own column and are never part
+                // of Employee Deductions: they are company cost, not money
+                // withheld from anybody.
+                'headers' => [
+                    'Employee', 'Code', 'Department', 'Designation', 'Structure',
+                    'Structure Gross', 'Period Gross',
+                    'Statutory', 'Loan', 'Late Mark', 'Overtime', 'Variable', 'Adjustments',
+                    'Employee Deductions', 'Net Payable',
+                    'Employer Benefits', 'Employer Contributions', 'Payslip',
+                ],
                 'rows'    => array_map(fn ($e) => [
                     $e['employee_name'], $e['employee_code'], $e['department'], $e['designation'], $e['structure_name'],
-                    $e['gross_salary'], $e['total_benefits'], $e['total_deductions'], $e['net_salary'],
-                    $e['statutory_deductions'], $e['loan_deduction'], $e['variable_earnings'], $e['net_payable'],
+                    $e['gross_salary'], $e['period_gross'],
+                    $e['statutory_deductions'], $e['loan_deduction'], $e['late_mark_deduction'],
+                    $e['overtime_amount'], $e['variable_earnings'], $e['adjustment_total'],
+                    $e['period_deductions'], $e['net_payable'],
+                    $e['total_benefits'], $e['employer_contributions'],
                     $e['payslip_status'],
-                ], $this->employees($tenantId, $filters)),
+                ], $this->employees($tenantId, $filters, $actor)),
             ],
         };
     }

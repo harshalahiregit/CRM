@@ -9,9 +9,26 @@ use Illuminate\Database\Eloquent\Collection;
 class LeaveApplicationRepository
 {
     /** Applications list with the common filters (used by both apply + approval views). */
-    public function filtered(int $tenantId, array $f): Collection
+    /**
+     * @param  \App\Models\User|null  $actor  Whose view this is. Null is
+     *         unscoped, so existing callers are unaffected.
+     */
+    public function filtered(int $tenantId, array $f, ?\App\Models\User $actor = null): Collection
     {
-        return HrLeaveApplication::where('tenant_id', $tenantId)
+        // One call, a different column: leave rows carry employee_id, the
+        // directory carries id. That is the whole adoption surface — the
+        // hierarchy walk lives in the resolver, not here.
+        //
+        // BRANCH omitted for the same reason as the employee directory: the
+        // column exists, the data does not.
+        $scoped = app(\App\Services\Auth\ScopeResolver::class)->applyToQuery(
+            HrLeaveApplication::where('tenant_id', $tenantId),
+            $actor,
+            'employee_id',
+            [\App\Support\Hr\DataScope::OWN, \App\Support\Hr\DataScope::DEPARTMENT, \App\Support\Hr\DataScope::TEAM],
+        );
+
+        return $scoped
             // user_id for the same reason as find(): anything that notifies from
             // one of these rows needs employee->user to resolve.
             ->with(['employee:id,tenant_id,user_id,name,employee_code,department,designation', 'leaveType:id,name,code,color', 'policy:id,name'])

@@ -4,6 +4,8 @@ import {
   Ban, Unlock, Search, Receipt, Home, Briefcase,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { useAuth } from '@/context/AuthContext'
+import { canManageHrQueue } from '@/modules/hr/constants'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 
 const GRAD = 'linear-gradient(135deg,#7C3AED,#5b21b6)'
@@ -170,6 +172,13 @@ export default function TaxDeclarations({ showToast }) {
    The declaration itself
    ──────────────────────────────────────────────────────────────────────── */
 function DeclarationDrawer({ declaration, meta, onClose, onSaved, showToast }) {
+  // PUT /hr/payroll/declarations/{id} and its /submit are both gated on
+  // canManageHrQueue(). A declaration decides how much tax is withheld, so this
+  // is an HR screen for now — an employee filling in their OWN would be a /me
+  // route with its own rules, and does not exist yet.
+  const { user } = useAuth()
+  const canManageHr = canManageHrQueue(user)
+
   const [d, setD]         = useState(declaration)
   const [saving, setSaving] = useState(false)
   const editable = d.status === 'Draft'
@@ -341,8 +350,18 @@ function DeclarationDrawer({ declaration, meta, onClose, onSaved, showToast }) {
         {/* Actions */}
         <div className="flex gap-2 pt-5 flex-wrap">
           {editable && <>
-            <button onClick={save} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:GRAD, opacity:saving?0.7:1 }}>{saving?'Saving…':'Save Draft'}</button>
-            <button onClick={submit} disabled={saving} className="flex items-center justify-center gap-1.5 flex-1 py-2.5 rounded-xl text-sm font-bold" style={{ background:'rgba(251,191,36,0.15)', color:'#fbbf24' }}><Send size={14}/> Submit</button>
+            {canManageHr ? (
+              <>
+                <button onClick={save} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:GRAD, opacity:saving?0.7:1 }}>{saving?'Saving…':'Save Draft'}</button>
+                <button onClick={submit} disabled={saving} className="flex items-center justify-center gap-1.5 flex-1 py-2.5 rounded-xl text-sm font-bold" style={{ background:'rgba(251,191,36,0.15)', color:'#fbbf24' }}><Send size={14}/> Submit</button>
+              </>
+            ) : (
+              // Said, not just hidden. A panel whose buttons have silently gone
+              // reads as broken; this reads as "not yours to change".
+              <p className="flex-1 text-xs py-2.5 text-center" style={{ color:'var(--text-muted)' }}>
+                Declarations are maintained by HR — you can view this, but not change it.
+              </p>
+            )}
           </>}
           {d.status === 'Submitted' && <>
             <button onClick={verify} disabled={saving} className="flex items-center justify-center gap-1.5 flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:'linear-gradient(135deg,#10b981,#059669)' }}><CheckCircle2 size={14}/> Verify</button>

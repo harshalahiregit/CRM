@@ -117,6 +117,19 @@ class TransportSearchTest extends TestCase
 
     /* ══════════ the other identifiers — TM-001 §8 ══════════ */
 
+    /**
+     * Each key finds ITS OWN record when there is no container to go on to.
+     *
+     * This test predates the §4 follow-through and still passes, which is worth
+     * explaining rather than leaving as a coincidence: `chain()` deliberately
+     * does not attach a container, so every key here falls into the
+     * "this consignment has no container" branch and stops at the record it
+     * named. That is the correct behaviour for loose cargo (§8).
+     *
+     * So this pins the WITHOUT-a-container half, and
+     * test_every_key_lands_on_the_same_container_passport pins the with-one
+     * half. Neither alone says what the resolver does.
+     */
     public function test_every_supported_identifier_resolves_to_its_own_record(): void
     {
         $c = $this->chain();
@@ -252,5 +265,153 @@ class TransportSearchTest extends TestCase
         Sanctum::actingAs($this->user(self::TENANT_A, 'client'));
 
         $this->getJson('/api/transport/search?q=anything')->assertForbidden();
+    }
+
+    /* ══════════ CTD §4 — every path ends at the same passport ══════════ */
+
+    /**
+     * §4's closing sentence, which the build did not meet until 2026-09-19:
+     * "All relevant search paths must ultimately lead to the same Digital
+     * Passport."
+     *
+     * Four different keys, one destination. This is the whole requirement in
+     * one assertion, and it is written against the PATH rather than against a
+     * flag, because the path is what the palette and the landing page actually
+     * navigate to — a `passport` key that is present while `path` still points
+     * at a list would pass a weaker test and ship the old behaviour.
+     */
+    public function test_every_key_lands_on_the_same_container_passport(): void
+    {
+        $c = $this->chain();
+        app(ContainerService::class)->attach($c['container'], $c['consignment'], self::TENANT_A, $c['actor']);
+
+        $expected = '/app/transport/containers/'.$c['container']->id;
+
+        foreach ([
+            'container number'   => $c['container']->container_number,
+            'transport order'    => $c['order']->order_number,
+            'consignment number' => $c['consignment']->consignment_number,
+            'customer reference' => $c['consignment']->customer_reference,
+        ] as $key => $term) {
+            $hit = $this->search->resolve($term, self::TENANT_A);
+
+            $this->assertNotNull($hit, "$key did not resolve at all");
+            $this->assertSame($expected, $hit['path'],
+                "$key resolved but did not lead to the container passport");
+        }
+    }
+
+    /**
+     * The one deliberate departure from §4's letter — ruled 2026-09-19, D-117.
+     *
+     * A trip number keeps going to the trip page, because somebody typing it is
+     * a dispatcher who wants the working screen. Pinned as a test so the next
+     * person to read §4 does not "fix" it: an undocumented divergence is
+     * indistinguishable from an oversight.
+     */
+    public function test_a_trip_number_deliberately_goes_to_the_trip_and_not_the_passport(): void
+    {
+        $c = $this->chain();
+        app(ContainerService::class)->attach($c['container'], $c['consignment'], self::TENANT_A, $c['actor']);
+
+        $hit = $this->search->resolve($c['trip']->trip_number, self::TENANT_A);
+
+        $this->assertSame('trip', $hit['type']);
+        $this->assertSame('/app/transport/trips/'.$c['trip']->id, $hit['path']);
+        $this->assertArrayNotHasKey('passport', $hit);
+    }
+
+    /**
+     * A vehicle reaches the passport of what it is carrying.
+     *
+     * This was assumed to be blocked on the Fleet repoint and is not:
+     * `transport_trips.vehicle_id` and `TransportVehicle.id` are one id space,
+     * so the walk resolves inside our own tables.
+     */
+    public function test_a_vehicle_registration_reaches_the_passport_of_what_it_carries(): void
+    {
+        $c = $this->chain();
+        app(ContainerService::class)->attach($c['container'], $c['consignment'], self::TENANT_A, $c['actor']);
+
+        $v = TransportVehicle::create([
+            'tenant_id' => self::TENANT_A, 'registration_number' => 'MH 12 AB '.self::uniqueSeq(4),
+            'vehicle_type' => 'Trailer', 'status' => 'available',
+        ]);
+        $c['trip']->forceFill(['vehicle_id' => $v->id])->save();
+
+        $hit = $this->search->resolve($v->registration_number, self::TENANT_A);
+
+        $this->assertSame('vehicle', $hit['type']);
+        $this->assertSame('/app/transport/containers/'.$c['container']->id, $hit['path']);
+        $this->assertSame($c['container']->container_number, $hit['passport']['container_number']);
+        $this->assertContains($c['trip']->trip_number, $hit['via'],
+            'the chain it walked should be shown, not hidden');
+    }
+
+    /**
+     * Several journeys — a truck that has run more than one trip.
+     *
+     * Going straight through here would pick one journey out of many, which is
+     * guessing dressed as an answer. The list is returned instead, and every
+     * row still offers a passport so it stays a set of routes to §4's
+     * destination rather than a dead end with extra steps.
+     */
+    public function test_a_vehicle_with_several_trips_returns_the_list_rather_than_guessing(): void
+    {
+        $one = $this->chain();
+        $two = $this->chain();
+        app(ContainerService::class)->attach($one['container'], $one['consignment'], self::TENANT_A, $one['actor']);
+        app(ContainerService::class)->attach($two['container'], $two['consignment'], self::TENANT_A, $two['actor']);
+
+        $v = TransportVehicle::create([
+            'tenant_id' => self::TENANT_A, 'registration_number' => 'MH 14 CD '.self::uniqueSeq(4),
+            'vehicle_type' => 'Trailer', 'status' => 'available',
+        ]);
+        $one['trip']->forceFill(['vehicle_id' => $v->id])->save();
+        $two['trip']->forceFill(['vehicle_id' => $v->id])->save();
+
+        $hit = $this->search->resolve($v->registration_number, self::TENANT_A);
+
+        $this->assertArrayHasKey('options', $hit);
+        $this->assertCount(2, $hit['options']['items']);
+        $this->assertArrayNotHasKey('passport', $hit, 'it must not pick one of the two');
+
+        foreach ($hit['options']['items'] as $row) {
+            $this->assertStringStartsWith('/app/transport/containers/', $row['path'],
+                'each journey should still offer its own passport');
+        }
+    }
+
+    /** A truck that has never run. Says so, and does not pretend to trace. */
+    public function test_a_vehicle_with_no_trips_says_so_instead_of_failing_silently(): void
+    {
+        $this->chain();
+
+        $v = TransportVehicle::create([
+            'tenant_id' => self::TENANT_A, 'registration_number' => 'MH 16 EF '.self::uniqueSeq(4),
+            'vehicle_type' => 'Trailer', 'status' => 'available',
+        ]);
+
+        $hit = $this->search->resolve($v->registration_number, self::TENANT_A);
+
+        $this->assertArrayNotHasKey('passport', $hit);
+        $this->assertStringContainsString('No trip has run on this vehicle', $hit['note']);
+    }
+
+    /**
+     * Loose cargo — §8 allows a consignment with "other cargo references" and
+     * no container. There is genuinely no passport, so the walk stops at the
+     * consignment and names the hop that ran out.
+     */
+    public function test_a_consignment_with_no_container_explains_itself(): void
+    {
+        $c = $this->chain();    // deliberately not attached
+
+        $hit = $this->search->resolve($c['consignment']->consignment_number, self::TENANT_A);
+
+        $this->assertArrayNotHasKey('passport', $hit);
+        $this->assertStringContainsString('no container on it', $hit['note']);
+        $this->assertStringContainsString('/app/transport/consignments', $hit['path'],
+            'the last real record stays reachable');
     }
 }

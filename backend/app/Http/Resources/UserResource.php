@@ -48,7 +48,7 @@ class UserResource extends JsonResource
     }
 
     /**
-     * @return array{scope: array<string,string>, can: array<string,array<string>>, is_admin: bool}
+     * @return array{scope: array<string,string>, can: array<string,array<string>>, is_admin: bool, capabilities: array<string,bool>}
      */
     private function resolvePermissions(): array
     {
@@ -81,6 +81,30 @@ class UserResource extends JsonResource
             // Stated rather than inferred from the lists: an admin bypasses the
             // grid, so "has every module" and "is an admin" are different facts.
             'is_admin' => $service->bypasses($user),
+
+            /*
+             | Server-computed answers, for the three rules the frontend had been
+             | REBUILDING from role strings in modules/hr/constants.js:
+             |
+             |   canManageHrQueue = role==='admin' || internal_role==='hr_executive'
+             |                      || ['hr_recruiter','hr_executive'].includes(...)
+             |
+             | Ten call sites across nine screens asked that. It was a fair copy
+             | of the backend when it was written and is no longer one: it has no
+             | hr_employees:view_global clause, so a CUSTOM ROLE configured in HR
+             | Settings passes the server and is hidden by the screen — the exact
+             | failure the configurable-role work exists to prevent. The approval
+             | pair likewise predates the account-type guard.
+             |
+             | None of these is a new permission. Each is an existing backend
+             | capability the frontend had no way to ask about, so it guessed.
+             | Sending the ANSWER is what stops the two drifting again.
+             */
+            'capabilities' => [
+                'hr_manage'  => $user->canManageHrQueue(),
+                'approve_l1' => $user->canApproveL1(),
+                'approve_l2' => $user->canApproveL2(),
+            ],
         ];
     }
 }

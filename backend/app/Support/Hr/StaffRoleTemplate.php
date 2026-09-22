@@ -66,6 +66,8 @@ class StaffRoleTemplate
                 'appointments' => ['view_global', 'create', 'edit'],
                 'tickets' => ['view_own', 'view_global', 'create', 'edit'],
                 'self' => ['view_own', 'create', 'edit'],
+                // canApproveL2's hardcoded list, said in permissions.
+                'hr_manpower_l2' => ['view_global'],
             ],
         ],
         'project_manager' => [
@@ -84,6 +86,8 @@ class StaffRoleTemplate
                 'goals' => ['view_global', 'create', 'edit'],
                 'surveys' => ['view_global'],
                 'self' => ['view_own', 'create', 'edit'],
+                // canApproveL2's hardcoded list, said in permissions.
+                'hr_manpower_l2' => ['view_global'],
             ],
         ],
         'department_head' => [
@@ -107,6 +111,11 @@ class StaffRoleTemplate
                 'surveys' => ['view_global', 'create'],
                 'staff_mgmt' => ['view_global'],
                 'self' => ['view_own', 'create', 'edit'],
+                // The authority this role already had through canApproveL1's
+                // hardcoded slug list, now said in permissions so a custom role
+                // can hold it too. The slug clause remains, so nothing changes
+                // for anyone already holding this role.
+                'hr_manpower_l1' => ['view_global'],
             ],
         ],
         'hr_recruiter' => [
@@ -122,6 +131,11 @@ class StaffRoleTemplate
                 'goals' => ['view_global'],
                 'self' => ['view_own', 'create', 'edit'],
                 'hr_attendance' => ['view_own', 'view_global', 'create', 'edit', 'delete'],
+                // The two authorities this role already had through
+                // canManageOnboarding's and canGenerateAiJd's hardcoded slug
+                // lists, now said in permissions.
+                'hr_onboarding' => ['view_global'],
+                'hr_ai_jd' => ['view_global'],
             ],
         ],
         'hr_executive' => [
@@ -139,6 +153,10 @@ class StaffRoleTemplate
                 'goals' => ['view_global', 'create'],
                 'self' => ['view_own', 'create', 'edit'],
                 'hr_attendance' => ['view_own', 'view_global', 'create', 'edit', 'delete'],
+                // canManageOnboarding's hardcoded list, said in permissions.
+                // NOT hr_ai_jd: canGenerateAiJd admits hr_recruiter and
+                // hr_manager only, and an HR Executive was never on that list.
+                'hr_onboarding' => ['view_global'],
             ],
         ],
         'hiring_manager' => [
@@ -151,6 +169,8 @@ class StaffRoleTemplate
                 'reports' => ['view_global'],
                 'appointments' => ['view_global', 'create', 'edit'],
                 'self' => ['view_own', 'create', 'edit'],
+                // canApproveL1's hardcoded list, said in permissions.
+                'hr_manpower_l1' => ['view_global'],
             ],
         ],
         // These two existed nowhere, which is why the advance ladder had no
@@ -169,6 +189,34 @@ class StaffRoleTemplate
                 'self' => ['view_own', 'create', 'edit'],
             ],
         ],
+        /*
+         | VOCABULARY ONLY — a legal name for users.internal_role, granting
+         | nothing.
+         |
+         | routes/sangoetrack.php gates 32 routes on role:admin,hr,manager, and
+         | EnsureUserHasRole matches those names against users.internal_role as
+         | plain strings. Neither was a staff_roles slug, so the only place they
+         | were written down was access_roles — a table with no rows and no
+         | reader, which is how a gate came to reference a vocabulary nothing
+         | defined.
+         |
+         | Their permission sets are EMPTY and must stay empty. They exist so the
+         | legal vocabulary is explicit and an admin can assign them deliberately;
+         | they are not a way to grant HR access, and `hr` is deliberately NOT a
+         | coarse synonym for hr_executive here. Anyone who needs HR authority
+         | gets a role that carries it.
+         */
+        'hr' => [
+            'label'              => 'HR (SangoeTrack)',
+            'permissions'        => [],
+            'is_vocabulary_only' => true,
+        ],
+        'manager' => [
+            'label'              => 'Manager (SangoeTrack)',
+            'permissions'        => [],
+            'is_vocabulary_only' => true,
+        ],
+
         'director' => [
             'label'       => 'Director',
             'permissions' => [

@@ -126,7 +126,6 @@ const Commission = lazy(() => import('@/modules/sales/pages/Commission'))
 const SettingsLayout = lazy(() => import('@/modules/settings/SettingsLayout'))
 // Roles and departments as data — created from Settings rather than by a
 // developer. Staff JOB roles only; account types stay in code (each is a portal).
-const RolesSettings = lazy(() => import('@/modules/settings/pages/RolesSettings'))
 const DepartmentsSettings = lazy(() => import('@/modules/settings/pages/DepartmentsSettings'))
 const GeneralBrandingSettings = lazy(() => import('@/modules/settings/pages/GeneralBrandingSettings'))
 const LocalizationSettings = lazy(() => import('@/modules/settings/pages/LocalizationSettings'))
@@ -260,6 +259,7 @@ const PurchaseLayout = lazy(() => import('@/modules/purchase/PurchaseLayout'))
 
 // Sangoe Transport OS (STOS) — SNG-TRN-006 orders, SNG-TRN-007 trips.
 const TransportLayout      = lazy(() => import('@/modules/transport/TransportLayout'))
+const TransportFinder      = lazy(() => import('@/modules/transport/pages/TransportFinder'))
 const TransportOrders      = lazy(() => import('@/modules/transport/pages/TransportOrders'))
 const TransportOrderDetail = lazy(() => import('@/modules/transport/pages/TransportOrderDetail'))
 const TransportTrips       = lazy(() => import('@/modules/transport/pages/TransportTrips'))
@@ -919,7 +919,11 @@ export default function AppRoutes() {
         {/* Sangoe Transport OS — orders and trips only; later clusters arrive
             with the tickets that build them. */}
         <Route path="transport" element={<S><TransportLayout /></S>}>
-          <Route index element={<Navigate to="orders" replace />} />
+          {/* CTD §4 — "the preferred entry point". This slot held a redirect to
+              the Orders list, which meant Transport opened on a table and the
+              one search that understands transport identifiers was reachable
+              only from inside the Containers page or from ⌘K. */}
+          <Route index element={<S><TransportFinder /></S>} />
           <Route path="orders" element={<S><TransportOrders /></S>} />
           <Route path="orders/:id" element={<S><TransportOrderDetail /></S>} />
           <Route path="trips" element={<S><TransportTrips /></S>} />
@@ -1130,7 +1134,10 @@ export default function AppRoutes() {
           <Route path="notification-preferences" element={<S><NotificationPreferences /></S>} />
           <Route path="recycle-bin" element={<S><RecycleBinSettings /></S>} />
           <Route path="statuses" element={<S><StatusManager /></S>} />
-          <Route path="roles" element={<S><RolesSettings /></S>} />
+          {/* /settings/roles retired: it managed a second staff-role catalogue
+              (access_roles) beside the live one. staff_roles owns the vocabulary,
+              permissions and scope together, and is maintained in Staff
+              Management at /admin/roles. */}
           <Route path="departments" element={<S><DepartmentsSettings /></S>} />
           {/* Each module's own settings, reachable from the one Setup panel as
               well as from inside the module. Same component either way, so the

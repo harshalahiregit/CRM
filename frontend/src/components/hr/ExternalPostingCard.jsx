@@ -1,9 +1,22 @@
 import React, { useState } from 'react';
 import { ExternalLink, Copy, CheckCircle, AlertCircle } from 'lucide-react';
 import { hrApi } from '../../services/hrApi';
+import { useAuth } from '@/context/AuthContext';
+import { canManageHrQueue } from '@/modules/hr/constants';
 import { useToast } from '@/hooks/useToast'
 
+/**
+ * NOTE: this component is not currently rendered anywhere — nothing imports it.
+ * The gate below is here so the mismatch cannot ship the day somebody wires it
+ * up, not because it is fixing something a user can see today.
+ */
 export default function ExternalPostingCard({ job, onUpdate }) {
+  // updateExternalId() is authorize($user->canManageHrQueue())'d in
+  // JobPostingService, alongside update/duplicate/destroy and everything routed
+  // through transition().
+  const { user } = useAuth();
+  const canManageHr = canManageHrQueue(user);
+
   const toast = useToast()
   const [externalIds, setExternalIds] = useState(job.external_job_ids || {});
   const [showIdInput, setShowIdInput] = useState(null);
@@ -202,7 +215,8 @@ ${job.requirements || 'No requirements specified'}
                             const input = e.target.previousElementSibling;
                             saveExternalId(platform.id, input.value);
                           }}
-                          disabled={saving}
+                          disabled={saving || !canManageHr}
+                          title={canManageHr ? undefined : 'Only HR can change a job posting'}
                           className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
                         >
                           {saving ? 'Saving...' : 'Save'}

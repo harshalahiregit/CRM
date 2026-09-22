@@ -19,25 +19,6 @@ import sangoeFull from '@/assets/sangoe-full.png'
 const ROLES = [
   { value: 'admin',               label: 'Admin',                icon: '🛡️' },
   { value: 'staff',               label: 'Staff / Employee',     icon: '👔' },
-  /*
-   * There is deliberately no "Doctor" option.
-   *
-   * An examining doctor is an employee of this company who happens to practise
-   * medicine — not an outside identity like a Purchase Vendor, which has its own
-   * table and its own password. They are an ordinary User, hired like anybody
-   * else, so they sign in under Staff / Employee with their own credentials.
-   *
-   * Nothing is lost by removing the option, because the option never decided
-   * anything: the landing page is chosen from the role the SERVER returns
-   * (see roleHome(result.role) below), so a doctor still lands on the doctor
-   * portal. All the entry did was ask a doctor to know they were a special case
-   * before they could type their password — and get it wrong, because "Doctor"
-   * and "Staff" both read as true.
-   *
-   * AuthService::findUserForLogin admits a doctor under `staff` for this
-   * reason; role=doctor is still accepted by the API so old deep links and
-   * saved bookmarks keep working.
-   */
   { value: 'purchase_vendor',     label: 'Purchase Vendor',      icon: '📦', purchaseVendor: true },
   { value: 'third_party_vendor',  label: 'Third-Party Vendor',   icon: '🤝' },
   /*
@@ -55,7 +36,35 @@ const ROLES = [
    * they have been retired.
    */
   { value: 'client',              label: 'Client / Customer',    icon: '👤', clientPortal: true },
-  { value: 'company',             label: 'Company',              icon: '🏢' },
+  /*
+   * Doctor and Company are deliberately ABSENT from this selector, and their
+   * accounts still sign in here.
+   *
+   * Neither is an HR role, and offering them made the login screen ask a
+   * question most people could not answer. Both are, however, real Users with
+   * real portals — `doctor` for routes/medical.php, `company` for the external
+   * hiring portal (routes/company_portal.php, CompanyRole, hr_hiring_requests).
+   * Removing them from the BACKEND would lock the only door into two working
+   * subsystems, so nothing server-side changed: LoginRequest still accepts both.
+   *
+   * They reach their portal by leaving this selector on "Access role (optional)".
+   * That works because the role is optional and users.email is globally unique,
+   * so an address already resolves to exactly one account — the selector only
+   * ever narrowed a search that could not return two rows. See LoginRequest.
+   *
+   * A doctor may also sign in under Staff / Employee: an examining doctor is an
+   * employee who happens to practise medicine, not an outside identity like a
+   * Purchase Vendor with its own table and password, and
+   * AuthService::findUserForLogin admits them under `staff` for that reason.
+   * role=doctor is still accepted by the API, so old deep links and saved
+   * bookmarks keep working. (This paragraph merges the note master added while
+   * this branch was open; master removed Doctor only, this branch removed
+   * Company as well, so both entries stay absent.)
+   *
+   * FOLLOW-UP, not done here: the owner's position is that a doctor should be
+   * Staff or a vendor, and a company may belong under Client. That is an
+   * identity-model migration across two subsystems, not a dropdown edit.
+   */
 ]
 
 const schema = z.object({

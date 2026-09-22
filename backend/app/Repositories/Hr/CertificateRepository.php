@@ -73,10 +73,26 @@ class CertificateRepository
     }
 
     /* ── Completion (derived; merged in the service) ──────── */
-    public function assignmentsForCompletion(int $tenantId, array $f): Collection
+    /**
+     * @param  \App\Models\User|null  $actor  Scopes the rows when supplied.
+     *
+     * The completion maps beside this one (attendance, assessment, quiz,
+     * certificate) are keyed by ASSIGNMENT id and are only ever read for
+     * assignments present in these rows, so scoping here is enough to scope the
+     * whole completion payload — they cannot surface a row this does not return.
+     */
+    public function assignmentsForCompletion(int $tenantId, array $f, ?\App\Models\User $actor = null): Collection
     {
-        return HrEmployeeTraining::where('tenant_id', $tenantId)
-            ->with(['employee:id,name,employee_code,department,designation', 'program:id,program_name,program_code', 'session:id,title,trainer_name,start_at'])
+        $q = HrEmployeeTraining::where('tenant_id', $tenantId)
+            ->with(['employee:id,name,employee_code,department,designation', 'program:id,program_name,program_code', 'session:id,title,trainer_name,start_at']);
+
+        $q = app(\App\Services\Auth\ScopeResolver::class)->applyToQuery($q, $actor, 'employee_id', [
+            \App\Support\Hr\DataScope::OWN,
+            \App\Support\Hr\DataScope::DEPARTMENT,
+            \App\Support\Hr\DataScope::TEAM,
+        ]);
+
+        return $q
             ->when(! empty($f['employee_id']), fn ($q) => $q->where('employee_id', $f['employee_id']))
             ->when(! empty($f['training_program_id']), fn ($q) => $q->where('training_program_id', $f['training_program_id']))
             ->when(! empty($f['department']) && $f['department'] !== 'All', fn ($q) => $q->whereHas('employee', fn ($e) => $e->where('department', $f['department'])))

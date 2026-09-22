@@ -82,11 +82,27 @@ export default function ContainerPassport() {
             <h1 className="text-2xl font-black" style={{ color: 'var(--text-h)' }}>{container.container_number}</h1>
             <StatusChip label={status.label} />
           </div>
-          {/* §7 — the entered value and the key it matched, when they differ. */}
+          {/* ── WHERE IS IT, IN ONE LINE ────────────────────────────────
+              CTD §5's own search example is identity and status first, and
+              short: container, status, customer, vehicle, driver. The customer
+              and the crew used to be five and eight rows down inside the chain,
+              so the one question a person arrives with was answered by scrolling.
+
+              "matched as SGOE7710402" used to lead this line. It is §7's
+              normalised key and it means nothing to a reader — matched against
+              what? It is now last, in plain words, and only when it differs
+              from what is printed above it. */}
+          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+            {[
+              container.container_type,
+              chain.customer?.name,
+              chain.vehicle?.registration,
+              chain.driver?.name,
+            ].filter(Boolean).join(' · ')}
+          </p>
           {container.container_number_normalized !== container.container_number && (
-            <p className="text-xs mt-0.5" style={{ color: 'var(--text-faint)' }}>
-              matched as {container.container_number_normalized}
-              {container.container_type ? ` · ${container.container_type}` : ''}
+            <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-faint)' }}>
+              also written {container.container_number_normalized}
             </p>
           )}
         </div>
@@ -101,13 +117,65 @@ export default function ContainerPassport() {
         </p>
       </div>
 
+      {/* ── THE STORY COMES FIRST ──────────────────────────────────────
+          This screen is a Digital Passport and CTD's whole argument for it is
+          the story: one number, the whole history. It used to sit at 1245px on
+          a 2113px page — 59% down, behind a five-row block of identifiers — so
+          the thing the screen exists for was the last thing on it. */}
+      {/* ── CTD-021, §31–§35: one chronological view, filterable by source ── */}
+      <Section title="Everything that has happened" icon={History}>
+        {categories.length > 1 && (
+          <div className="flex gap-1.5 flex-wrap mb-3">
+            {['all', ...categories].map((s) => (
+              <button key={s} onClick={() => setFilter(s)}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-bold"
+                style={filter === s
+                  ? { background: 'rgba(124,58,237,0.16)', color: 'var(--accent)', border: '1px solid var(--accent)' }
+                  : { background: 'var(--bg-input)', color: 'var(--text-body)', border: '1px solid var(--border)' }}>
+                {s === 'all' ? 'Everything' : (CATEGORY_LABEL[s] || s)}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="space-y-1.5">
+          {rows.map((r, i) => (
+            <div key={i} className="flex gap-3 py-1.5 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
+              <span className="text-[11px] shrink-0 w-36" style={{ color: 'var(--text-muted)' }}>{fmtDateTime(r.at)}</span>
+              {/* The category is carried by a COLOUR, not a word.
+                  It used to print CATEGORY_LABEL on every row — so the six
+                  category names appeared 23 times down a 2,100px page while the
+                  chips above named the same six. The filing system was stated
+                  twice and the events themselves came third. The chips filter;
+                  the dot says which kind without spending a column on it.
+                  Title attribute so the meaning is still one hover away. */}
+              <span className="shrink-0 rounded-full" title={CATEGORY_LABEL[r.category] || r.category}
+                style={{ width: 7, height: 7, marginTop: 6, background: CATEGORY_DOT[r.category] || 'var(--text-faint)' }} />
+              <span className="text-xs flex-1" style={{ color: 'var(--text-h)' }}>
+                {r.label}
+                {/* WHICH change it was. A walked trip produced seven identical
+                    "Trip status changed" rows before this — a timeline nobody
+                    could read. Labels, never the stored codes. */}
+                {r.from && r.to && (
+                  <span style={{ color: 'var(--text-muted)' }}>
+                    {' — '}{TRIP_STATUS_LABEL[r.from] || r.from} → {TRIP_STATUS_LABEL[r.to] || r.to}
+                  </span>
+                )}
+              </span>
+              {r.actor && <span className="text-[11px] shrink-0" style={{ color: 'var(--text-muted)' }}>{r.actor}</span>}
+            </div>
+          ))}
+        </div>
+      </Section>
+
       {/* ── CTD §71: the two chains, every node clickable ──
           Hidden entirely when the container is on nothing: a section whose only
           row is "you are here" tells the reader less than the status sentence
           above it already did. */}
+      {/* Navigation, not the headline. A wrapping strip of chips instead of
+          nine stacked rows — same values, a fraction of the height. */}
       {(chain.customer || chain.order || chain.consignment || chain.trip) && (
       <Section title="Where this container sits" icon={Link2}>
-        <div className="grid gap-2">
+        <div className="flex flex-wrap gap-2">
           <ChainRow icon={Building2} label="Customer" value={chain.customer?.name} />
           <ChainRow icon={Package} label="Transport order" value={chain.order?.number}
             hint={chain.order?.service_type}
@@ -145,7 +213,7 @@ export default function ContainerPassport() {
               {readiness.status_label}
             </span>
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              {readiness.completed} of {readiness.total} checks confirmed
+              {readiness.completed} of {readiness.total} pre-trip checks confirmed
             </span>
           </div>
           {(readiness.blockers ?? []).length > 0 && (
@@ -173,7 +241,8 @@ export default function ContainerPassport() {
             {linked.billing && <Pill
               label={linked.billing.invoiced ? 'Invoiced' : 'Ready to invoice'}
               sub={linked.billing.invoiced ? 'Accounts have posted it' : 'Handed to Accounts, not yet posted'} />}
-            {linked.collections && <Pill label={`${linked.collections.total} collection(s)`} />}
+            {/* "1 collection(s)" was a developer's plural on a customer-facing count. */}
+            {linked.collections && <Pill label={`${linked.collections.total} payment${linked.collections.total === 1 ? '' : 's'} recorded`} />}
           </div>
           {chain.trip && (
             <button onClick={() => navigate(`/app/transport/trips/${chain.trip.id}`)}
@@ -198,46 +267,6 @@ export default function ContainerPassport() {
         )}
       </Section>
 
-      {/* ── CTD-021, §31–§35: one chronological view, filterable by source ── */}
-      <Section title="Everything that has happened" icon={History}>
-        {categories.length > 1 && (
-          <div className="flex gap-1.5 flex-wrap mb-3">
-            {['all', ...categories].map((s) => (
-              <button key={s} onClick={() => setFilter(s)}
-                className="px-2.5 py-1 rounded-lg text-[11px] font-bold"
-                style={filter === s
-                  ? { background: 'rgba(124,58,237,0.16)', color: 'var(--accent)', border: '1px solid var(--accent)' }
-                  : { background: 'var(--bg-input)', color: 'var(--text-body)', border: '1px solid var(--border)' }}>
-                {s === 'all' ? 'Everything' : (CATEGORY_LABEL[s] || s)}
-              </button>
-            ))}
-          </div>
-        )}
-        <div className="space-y-1.5">
-          {rows.map((r, i) => (
-            <div key={i} className="flex gap-3 py-1.5 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
-              <span className="text-[11px] shrink-0 w-36" style={{ color: 'var(--text-muted)' }}>{fmtDateTime(r.at)}</span>
-              {/* CTD §32: "each event should identify its source." The
-                  category is the filter; the source is who said it. */}
-              <span className="text-[10px] font-bold uppercase shrink-0 w-24" style={{ color: 'var(--text-faint)' }}>
-                {CATEGORY_LABEL[r.category] || r.category}
-              </span>
-              <span className="text-xs flex-1" style={{ color: 'var(--text-h)' }}>
-                {r.label}
-                {/* WHICH change it was. A walked trip produced seven identical
-                    "Trip status changed" rows before this — a timeline nobody
-                    could read. Labels, never the stored codes. */}
-                {r.from && r.to && (
-                  <span style={{ color: 'var(--text-muted)' }}>
-                    {' — '}{TRIP_STATUS_LABEL[r.from] || r.from} → {TRIP_STATUS_LABEL[r.to] || r.to}
-                  </span>
-                )}
-              </span>
-              {r.actor && <span className="text-[11px] shrink-0" style={{ color: 'var(--text-muted)' }}>{r.actor}</span>}
-            </div>
-          ))}
-        </div>
-      </Section>
     </div>
   )
 }
@@ -250,6 +279,25 @@ export default function ContainerPassport() {
  * are what a dispatcher calls these; `document` and `quality` are what the
  * document calls them.
  */
+/**
+ * One colour per category — the word's replacement, not its decoration.
+ *
+ * Tokens only, so both themes follow. `--text-faint` is the fallback for a
+ * category the registry gains before this map does: an unknown kind gets a
+ * neutral dot rather than no dot, which keeps the rows aligned.
+ */
+const CATEGORY_DOT = {
+  commercial:  'var(--accent)',
+  operational: 'var(--color-info-500, #38bdf8)',
+  document:    'var(--color-warning-500, #f59e0b)',
+  financial:   'var(--color-success-500, #22c55e)',
+  compliance:  'var(--color-info-500, #38bdf8)',
+  quality:     'var(--color-danger-500, #f87171)',
+  temperature: 'var(--color-danger-500, #f87171)',
+  gps:         'var(--color-info-500, #38bdf8)',
+  customer:    'var(--accent)',
+}
+
 const CATEGORY_LABEL = {
   commercial: 'Commercial',
   operational: 'Operations',
@@ -282,22 +330,40 @@ function Section({ title, icon: Icon, children }) {
  * is not an answer to "where is this container"; the surrounding sentence
  * already gives the real one ("This container is free").
  */
+/**
+ * One link in the chain, as a chip rather than a row.
+ *
+ * This was a full-width row with an icon, a 32-unit uppercase label, a value, a
+ * hint on its own line and an Open button — nine of them stacked, which made
+ * the chain the tallest and most prominent block on the page. Nobody opens a
+ * passport to read nine identifiers; they are how you LEAVE this screen, not
+ * what it is for.
+ *
+ * So: the noun and the number on one line, the whole chip clickable where there
+ * is somewhere to go, and the hint kept as a tooltip rather than a second line.
+ * Every value that was here is still here — including the LR and the delivery
+ * order, which CTD §150 makes non-negotiable.
+ */
 function ChainRow({ icon: Icon, label, value, hint, onOpen }) {
   if (!value) return null
 
-  return (
-    <div className="flex items-center gap-3 py-1.5 border-b last:border-0" style={{ borderColor: 'var(--border)' }}>
-      <Icon size={13} className="shrink-0" style={{ color: 'var(--text-muted)' }} />
-      <span className="text-[11px] uppercase font-bold w-32 shrink-0" style={{ color: 'var(--text-muted)' }}>{label}</span>
-      <div className="flex-1 min-w-0">
-        <span className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>{value}</span>
-        {hint && <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{hint}</div>}
-      </div>
-      {onOpen && (
-        <button onClick={onOpen} className="text-[11px] font-bold shrink-0" style={{ color: 'var(--accent)' }}>Open</button>
-      )}
-    </div>
+  const body = (
+    <>
+      <Icon size={12} className="shrink-0" style={{ color: 'var(--text-muted)' }} />
+      <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{label}</span>
+      <span className="text-[12.5px] font-bold" style={{ color: onOpen ? 'var(--accent)' : 'var(--text-h)' }}>{value}</span>
+    </>
   )
+
+  const style = {
+    display: 'inline-flex', alignItems: 'center', gap: 6,
+    padding: '5px 10px', borderRadius: 999,
+    background: 'var(--bg-input)', border: '1px solid var(--border)',
+  }
+
+  return onOpen
+    ? <button type="button" onClick={onOpen} title={hint || undefined} style={{ ...style, cursor: 'pointer' }}>{body}</button>
+    : <span title={hint || undefined} style={style}>{body}</span>
 }
 
 function Attachment({ a, current }) {
