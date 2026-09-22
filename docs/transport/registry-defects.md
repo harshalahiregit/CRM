@@ -4271,3 +4271,89 @@ emitters we do not own, and a detention rule nobody has written.
 **Recommendation: keep M01–M14 out of the foundation entirely.** The portal does not depend on it.
 A plain-language journey built from the nine moments we already emit is honest, buildable now, and
 should be labelled as an interim so nobody mistakes it for §8's model.
+
+---
+
+## D-122 — the client portal table has no pagination, and one customer already has 35 rows
+
+**Raised:** 2026-09-22, walking the Shipments screen. **P3's component** (`ClientPortalRecords`).
+**Not ours to fix — logged and raised.**
+
+### What it is
+
+`ClientPortalRecords.jsx` is one generic table serving **all eleven portal sections**, and it
+offers **no sort, no filter and no pagination**. It fetches, and it renders every row it received:
+
+```
+rows.length === 0 ? "Nothing here yet." : <table> … rows.map(…) </table>
+```
+
+The only filtering that exists anywhere is a `?filter=` URL parameter passed through to the fetch,
+used by Invoices for `overdue`. There is no control for it on screen.
+
+### Why it matters now rather than later
+
+It is correct today and will not be for long. Measured: the busiest customer already has **35
+transport orders**, and shipments accumulate for the life of the relationship — unlike invoices,
+where the same customer has one. A haulage customer running five trips a week reaches two hundred
+rows inside a year, and the screen will render all two hundred into one scrolling table with no
+way to find last Tuesday's.
+
+### Not fixed here, deliberately
+
+Adding paging to the shared component for the benefit of one section is how a house style
+fractures: the other ten sections would inherit a behaviour their owner did not choose, and the
+next person would find two conventions where there was one. It belongs to whoever owns the
+component.
+
+Raised with P3 in `NOTE-person3-the-portal-table-will-not-scale.md`. Our Shipments section follows
+the house style exactly and will inherit whatever is decided.
+
+---
+
+## D-123 — "Issue reported" tells a customer that something went wrong, not what
+
+**Raised:** 2026-09-22, walking the journey view as the client. **P1.** **Needs a business ruling.**
+
+### What it is
+
+The journey view sends `event_type` and `occurred_at` and nothing else. `trip_events.detail` and
+the actor are deliberately withheld — they are internal, and the leak guard asserts they never
+appear. So an exception reaches the customer as exactly two words.
+
+On the demo trip, that reads:
+
+```
+19 Sept 2026, 08:14 am   Issue reported
+19 Sept 2026, 08:14 am   Issue resolved
+…
+19 Sept 2026, 11:38 am   Issue reported
+21 Sept 2026, 08:04 am   Issue resolved     ← after delivery, after the invoice
+```
+
+A customer sees that an issue was raised on their pharma load and stayed open past delivery, and
+has no way to learn whether it was a delay, a temperature excursion, or a paperwork correction.
+The natural next action is a phone call — which is the opposite of what a portal is for.
+
+### Why it is not being fixed by guessing
+
+There is no recorded rule about what a customer may be told about an exception. `trip_events.detail`
+is free text written by dispatchers for dispatchers; publishing it unread would put internal
+wording, names and speculation in front of the customer. Picking a safe subset — exception *type*
+but not detail — would be inventing a disclosure rule, which Hard Rule 1 forbids.
+
+### What a ruling would need to say
+
+1. Does the customer see the exception **category** (delay / damage / temperature / document), or
+   only that one exists?
+2. If a category is shown, which categories are customer-visible at all? Some are commercially
+   sensitive (a detention charge dispute) and some are not (a road closure).
+3. Is a resolution **note** ever published, and if so who writes the customer-facing wording — the
+   dispatcher raising it, or someone reviewing it afterwards?
+
+Until then the two words stand. They are honest and they leak nothing; they are just thin.
+
+### Related
+
+Feeds [D-121](#d-121--clps-m01m14-is-a-second-vocabulary-not-a-view-and-four-of-them-have-no-words-at-all)
+— CLP §8's milestone model has no exception milestone either, so this gap survives that mapping.

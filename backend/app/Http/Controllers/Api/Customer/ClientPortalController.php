@@ -262,6 +262,100 @@ class ClientPortalController extends Controller
         ])->all());
     }
 
+    /**
+     * One shipment — STOS-CLP §28 step 7, and §27's "single Trip/Container 360
+     * view" in the customer's own language.
+     *
+     * ── THIS ROUTE TAKES AN ID, AND THAT IS NEW ─────────────────────────
+     * Every other portal route takes none, which is what makes "show me another
+     * customer" inexpressible. This one needs a trip id, so the guarantee has to
+     * be made a different way: the id is CONSTRAINED BY THE SAME WHERE CLAUSE
+     * rather than checked after the fact. A trip belonging to somebody else does
+     * not fail an ownership test — it does not match, and the reply is 404.
+     *
+     * 404 rather than 403 on purpose. A 403 would confirm the trip exists, which
+     * turns this route into an oracle for guessing other customers' trip ids.
+     *
+     * ── THE TIMELINE IS AN ALLOW LIST ───────────────────────────────────
+     * ClientVisibleFields::CLIENT_EVENTS names the eleven moments a customer may
+     * see; anything else — internal approvals, crew housekeeping — is not shown
+     * because it is not named, rather than because somebody remembered to hide
+     * it. The vocabulary is INTERIM and is not CLP §8's M01–M14: see D-121 and
+     * the comment on that constant.
+     *
+     * ── NO DOCUMENTS ────────────────────────────────────────────────────
+     * Which document types a customer may open is undefined (raised, unruled),
+     * and STOS-SEC-002 forbids exposing storage paths, so a document endpoint is
+     * its own work with its own decision. Not here.
+     */
+    public function transportShipment(Request $r, int $id)
+    {
+        $this->portal->assertCan($this->contact($r), 'transport');
+        $c = $this->client($r);
+
+        if (! Schema::hasTable('transport_trips')) {
+            abort(404);
+        }
+
+        $trip = DB::table('transport_trips as t')
+            ->leftJoin('transport_consignments as c', 'c.id', '=', 't.consignment_id')
+            ->whereNull('t.deleted_at')
+            ->where('t.tenant_id', $c->tenant_id)
+            ->where('t.customer_id', $c->id)     // ← the ownership guarantee
+            ->where('t.id', $id)
+            ->first(ClientVisibleFields::JOURNEY_COLUMNS);
+
+        if (! $trip) {
+            abort(404);
+        }
+
+        return response()->json([
+            'trip_number'          => $trip->trip_number,
+            'status'               => ClientVisibleFields::statusWord($trip->status),
+            'route'                => $trip->route,
+            'planned_departure_at' => $trip->planned_departure_at,
+            'planned_arrival_at'   => $trip->planned_arrival_at,
+            'departed_at'          => $trip->departed_at,
+            'delivered_at'         => $trip->delivered_at,
+            'consignment_number'   => $trip->consignment_number,
+            'customer_reference'   => $trip->customer_reference,
+            'cargo_description'    => $trip->cargo_description,
+            'package_count'        => $trip->package_count,
+            'gross_weight_kg'      => $trip->gross_weight_kg,
+            'journey'              => $this->shipmentJourney($trip->id, $c->tenant_id),
+        ]);
+    }
+
+    /**
+     * The moments, oldest first.
+     *
+     * Oldest first because this is a story rather than a feed: a customer reads
+     * it to follow what happened, not to see what changed since they last
+     * looked. Our internal timeline is newest-first for the opposite reason.
+     *
+     * Only `occurred_at` and the type are selected. Not the actor — a customer
+     * does not need our dispatcher's name — and not `detail`, which is a free
+     * JSON column and therefore the one field on this table nobody can promise
+     * the contents of.
+     */
+    private function shipmentJourney(int $tripId, int $tenantId): array
+    {
+        if (! Schema::hasTable('trip_events')) {
+            return [];
+        }
+
+        return DB::table('trip_events')
+            ->where('tenant_id', $tenantId)
+            ->where('trip_id', $tripId)
+            ->whereIn('event_type', array_keys(ClientVisibleFields::CLIENT_EVENTS))
+            ->orderBy('occurred_at')
+            ->get(['event_type', 'occurred_at'])
+            ->map(fn ($e) => [
+                'at'   => $e->occurred_at,
+                'what' => ClientVisibleFields::eventWord($e->event_type),
+            ])->all();
+    }
+
     public function tickets(Request $r)
     {
         $this->portal->assertCan($this->contact($r), 'support');

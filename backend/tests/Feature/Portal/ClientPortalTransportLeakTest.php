@@ -10,6 +10,7 @@ use App\Models\Transport\TransportOrder;
 use App\Models\Transport\TransportTrip;
 use App\Support\Transport\ClientVisibleFields;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
@@ -68,6 +69,8 @@ class ClientPortalTransportLeakTest extends TestCase
 
     private ClientContact $contact;
 
+    private int $tripId;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -97,16 +100,41 @@ class ClientPortalTransportLeakTest extends TestCase
 
         // A trip carrying every kind of thing a customer must not see: a price,
         // a closure reason, and a crew.
-        TransportTrip::create([
+        $trip = TransportTrip::create([
             'tenant_id' => $tenant->id, 'order_id' => $order->id, 'customer_id' => $client->id,
             'trip_number' => 'TRP-LEAKCHECK-1',
-        ])->forceFill([
+        ]);
+        $this->tripId = $trip->id;
+        $trip->forceFill([
             'approved_freight' => self::SENTINELS['freight'],
             'closure_reason'   => self::SENTINELS['closure'],
             'rejection_reason' => self::SENTINELS['rejection'],
             'route'            => 'Mundra → Pune',
             'driver_id'        => $driver->id,
         ])->save();
+
+        // Moments on the timeline: two a customer may see, and two they may not.
+        // The internal pair is the point — without them the allow-list is never
+        // exercised and the vocabulary guard would pass by having nothing to
+        // reject.
+        foreach ([
+            ['vehicle.allocated', '-3 hours'],
+            ['trip.delivered',    '-1 hour'],
+            ['trip.submitted',    '-4 hours'],   // internal workflow
+            ['crew.released',     '-30 minutes'], // fleet housekeeping
+        ] as [$type, $when]) {
+            DB::table('trip_events')->insert([
+                'tenant_id'   => $tenant->id,
+                'trip_id'     => $this->tripId,
+                'event_type'  => $type,
+                'category'    => 'operational',
+                'source'      => 'user',
+                'summary'     => $type,
+                'occurred_at' => now()->modify($when),
+                'recorded_at' => now(),
+                'created_at'  => now(),
+            ]);
+        }
 
         $this->contact = ClientContact::create([
             'tenant_id' => $tenant->id, 'client_id' => $client->id,
@@ -140,8 +168,21 @@ class ClientPortalTransportLeakTest extends TestCase
 
     public function test_there_are_portal_transport_routes_to_check(): void
     {
-        $this->assertNotEmpty($this->transportRoutes(),
+        $routes = $this->transportRoutes();
+
+        $this->assertNotEmpty($routes,
             'No portal transport routes found — this guard would pass by checking nothing.');
+
+        // Every registered portal transport route must be reachable by this
+        // guard. A route it cannot build a URL for is a route it silently skips.
+        $registered = collect(Route::getRoutes())
+            ->filter(fn ($r) => in_array('GET', $r->methods(), true)
+                && str_starts_with($r->uri(), 'api/portal/client/transport'))
+            ->count();
+
+        $this->assertCount($registered, $routes,
+            'Some portal transport routes could not be turned into a URL and were skipped. '
+            .'Add their parameter to the substitution in transportRoutes().');
     }
 
     public function test_no_portal_transport_endpoint_returns_an_internal_field(): void
@@ -210,10 +251,18 @@ class ClientPortalTransportLeakTest extends TestCase
         return collect(Route::getRoutes())
             ->filter(fn ($r) => in_array('GET', $r->methods(), true)
                 && str_starts_with($r->uri(), 'api/portal/client/transport'))
-            // A route with a parameter needs a subject; none exists yet, and
-            // when one does it gets its own case rather than a guessed id.
-            ->reject(fn ($r) => str_contains($r->uri(), '{'))
             ->map(fn ($r) => $r->uri())
+            // A route with a parameter is given the FIXTURE'S OWN subject, so it
+            // answers 200 and is really inspected.
+            //
+            // This used to reject parameterised routes with a note saying none
+            // existed yet. One did, three days later — the journey view — and it
+            // would have been silently unguarded: the guard would still have
+            // passed, still have reported inspecting an endpoint, and never have
+            // looked at the one with the joins. A guard that skips what it does
+            // not recognise is a guard with a blind spot it announces to nobody.
+            ->map(fn ($uri) => str_replace(['{id}', '{trip}'], (string) $this->tripId, $uri))
+            ->reject(fn ($uri) => str_contains($uri, '{'))
             ->values()->all();
     }
 
@@ -244,5 +293,54 @@ class ClientPortalTransportLeakTest extends TestCase
         }
 
         return $keys;
+    }
+
+    /**
+     * A customer never sees one of our event names, or a moment we did not mean
+     * to show them.
+     *
+     * The leak check above guards FIELDS and VALUES. It does not guard
+     * VOCABULARY — found by breaking it: deleting the allow-list from the
+     * journey query left the guard green while the response carried
+     * `trip.submitted` and `crew.released`, which are our internal workflow in
+     * our own tokens. Both failures CLP §27 rules out, neither a denied field.
+     *
+     * So this asserts the other direction: every moment a customer is shown must
+     * be one of the phrases we chose. A raw type reaching the screen is a
+     * missing allow-list; an unrecognised phrase is somebody adding a moment
+     * without deciding what to call it.
+     */
+    public function test_a_customer_only_ever_sees_the_agreed_journey_words(): void
+    {
+        $allowed = array_values(ClientVisibleFields::CLIENT_EVENTS);
+        $problems = [];
+        $moments = 0;
+
+        foreach ($this->transportRoutes() as $uri) {
+            $response = $this->getJson('/'.$uri);
+
+            if ($response->status() !== 200) {
+                continue;
+            }
+
+            foreach ((array) ($response->json('journey') ?? []) as $moment) {
+                $moments++;
+                $what = $moment['what'] ?? null;
+
+                if (! in_array($what, $allowed, true)) {
+                    $problems[] = sprintf(
+                        '%s showed a customer "%s". That is not one of the phrases in '
+                        .'ClientVisibleFields::CLIENT_EVENTS — either the allow-list is missing '
+                        .'from the query, or a moment was added without deciding what to call it '
+                        .'in the customer\'s language.',
+                        $uri, is_string($what) ? $what : gettype($what)
+                    );
+                }
+            }
+        }
+
+        $this->assertSame([], $problems, "\n  ".implode("\n  ", $problems)."\n");
+        $this->assertGreaterThan(0, $moments,
+            'No journey moments were inspected — this check read nothing.');
     }
 }

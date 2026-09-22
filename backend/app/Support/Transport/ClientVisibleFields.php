@@ -140,4 +140,95 @@ final class ClientVisibleFields
     {
         return self::STATUS_WORDS[$status] ?? 'In progress';
     }
+
+    /* ══════════════════ THE JOURNEY, AS A CUSTOMER READS IT ══════════════════ */
+
+    /**
+     * ⚠ THIS IS AN INTERIM MODEL. IT IS NOT CLP §8's M01–M14.
+     *
+     * The specified client milestone model is **STOS-CLP §8, M01–M14** — vehicle
+     * allocation, yard arrival, inspection and loading, gate arrival, sealing,
+     * detention, document return, feedback, billing, payment. **This is not
+     * that**, and nobody should land here in a month believing the mapping is
+     * done.
+     *
+     * M01–M14 is deferred under **D-121**, on measured grounds: two of the
+     * fourteen are fully live in our system, FOUR have no event type registered
+     * anywhere (container yard arrival, inspection and loading, yard departure,
+     * loading and sealing), five are registered types that only P2 or P3 can
+     * emit, and §8 wants planned-versus-actual time, location and evidence per
+     * milestone, which `trip_events` does not carry. Building it would also have
+     * required two guesses nobody is entitled to make — which of our events is
+     * M02, and whether M08 "Client Premises Departure" is our `trip.departed`,
+     * which means "left the pickup point" and is only the same event when the
+     * pickup IS the client's premises.
+     *
+     * So this shows the moments we GENUINELY EMIT, in plain words. Nothing here
+     * is inferred, estimated or invented: every line corresponds to something
+     * that actually happened and was recorded at the time.
+     *
+     * ── IT IS AN ALLOW LIST, NOT A FILTER ────────────────────────────────
+     * An event type absent from this map is NOT shown. A new internal event
+     * added tomorrow — a cost, an approval, an override — does not reach a
+     * customer's screen because somebody forgot to exclude it. Same direction
+     * as the column whitelist above, for the same reason.
+     *
+     * ── WHAT IS DELIBERATELY ABSENT ──────────────────────────────────────
+     *   trip.created / submitted / approved  our internal acceptance workflow
+     *   crew.released                        fleet housekeeping; means nothing
+     *                                        to a customer and invites "why did
+     *                                        my driver leave?"
+     *   pod.uploaded                         pod.verified is the moment that
+     *                                        matters; two near-identical lines
+     *                                        read as a system talking to itself
+     *   exception.acknowledged               an internal handling step between
+     *                                        two moments the customer can see
+     */
+    public const CLIENT_EVENTS = [
+        'vehicle.allocated'  => 'Vehicle assigned',
+        'driver.allocated'   => 'Driver assigned',
+        'pretrip.passed'     => 'Vehicle checks completed',
+        'trip.dispatched'    => 'Ready to leave',
+        'trip.departed'      => 'Collected and on the way',
+        'trip.delivered'     => 'Delivered',
+        'pod.verified'       => 'Delivery confirmed',
+        'invoice.posted'     => 'Invoiced',
+        'trip.closed'        => 'Completed',
+        // CLP §27 — "exceptions and required actions prominent". A customer is
+        // entitled to know something went wrong on their shipment and that it
+        // was put right; they are not entitled to who was blamed, which is why
+        // trip_exceptions.resolution_note is on the deny list above.
+        'exception.raised'   => 'Issue reported',
+        'exception.resolved' => 'Issue resolved',
+    ];
+
+    public static function isClientEvent(string $type): bool
+    {
+        return isset(self::CLIENT_EVENTS[$type]);
+    }
+
+    public static function eventWord(string $type): string
+    {
+        return self::CLIENT_EVENTS[$type] ?? $type;
+    }
+
+    /**
+     * The one shipment view. `t.id` is needed to scope the timeline query and is
+     * not sent on; everything else here is shown.
+     */
+    public const JOURNEY_COLUMNS = [
+        't.id',
+        't.trip_number',
+        't.status',
+        't.route',
+        't.planned_departure_at',
+        't.planned_arrival_at',
+        't.departed_at',
+        't.delivered_at',
+        'c.consignment_number',
+        'c.customer_reference',
+        'c.cargo_description',
+        'c.package_count',
+        'c.gross_weight_kg',
+    ];
 }

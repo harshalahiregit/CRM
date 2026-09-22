@@ -380,6 +380,7 @@ const ClientPortalRecords = lazy(() => import('@/pages/client-portal/ClientPorta
 const ClientPortalProfile = lazy(() => import('@/pages/client-portal/ClientPortalProfile'))
 const ClientPortalFeedback = lazy(() => import('@/pages/client-portal/ClientPortalFeedback'))
 const ClientPortalStatement = lazy(() => import('@/pages/client-portal/ClientPortalStatement'))
+const ClientPortalShipment = lazy(() => import('@/pages/client-portal/ClientPortalShipment'))
 const PurchaseVendorPortalGuard = lazy(() => import('@/pages/purchase-portal/PurchaseVendorPortalGuard'))
 
 // TPV Module (lazy) — pages land here as they're built
@@ -1269,6 +1270,10 @@ export default function AppRoutes() {
           'contracts', 'projects', 'tickets', 'shipments', 'files', 'notes', 'contacts'].map(v => (
           <Route key={v} path={v} element={<S><ClientPortalRecords view={v} /></S>} />
         ))}
+        {/* One shipment. A page of its own rather than a row-expand, because the
+            shared records table is a table — giving it a detail mode for one
+            screen changes it for the other eleven. */}
+        <Route path="shipments/:id" element={<S><ClientPortalShipment /></S>} />
       </Route>
       <Route path="/purchase-portal/verify-email"    element={<S><PurchaseVendorVerifyEmail /></S>} />
 

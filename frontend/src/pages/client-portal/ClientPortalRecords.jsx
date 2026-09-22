@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, Link } from 'react-router-dom'
 import { clientPortalApi } from '@/lib/clientPortalApi'
 
 /**
@@ -87,7 +87,14 @@ export const RECORD_VIEWS = {
    * customer_reference, and no header naming a state machine at all.
    */
   shipments: { title: 'Shipments', fetch: () => clientPortalApi.shipments(), cols: [
-    { k: 'trip_number', h: 'Shipment', bold: true },
+    // The way into the journey view. Done here, in this screen's own column
+    // definition, rather than by teaching the shared table to open rows: a cell
+    // renders whatever its `fmt` returns, so one screen can be clickable
+    // without changing what the other eleven do.
+    { k: 'trip_number', h: 'Shipment', bold: true,
+      fmt: (v, r) => (r.id
+        ? <Link to={`/portal/shipments/${r.id}`} style={{ color: '#a78bfa', textDecoration: 'none' }}>{v || '—'}</Link>
+        : (v || '—')) },
     { k: 'consignment_number', h: 'Consignment' },
     { k: 'route', h: 'Route' },
     { k: 'customer_reference', h: 'Your reference' },
