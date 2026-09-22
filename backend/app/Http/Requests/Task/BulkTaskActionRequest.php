@@ -22,7 +22,10 @@ class BulkTaskActionRequest extends FormRequest
             'action'     => 'required|in:delete,status,priority,assign',
             'task_ids'   => 'required|array|min:1|max:500',
             'task_ids.*' => 'integer|min:1',
+            // One value, or — for 'assign' — a list of user ids. Still untyped
+            // here for the same reason: only the action knows what it means.
             'value'      => 'nullable|required_unless:action,delete',
+            'value.*'    => 'integer|min:1',
         ];
     }
 }

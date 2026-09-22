@@ -46,6 +46,13 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('projects')->gro
     // Members
     Route::post('/{project}/members',  [ProjectController::class, 'members']);
 
+    // People at a client, a vendor or a TPV who are on this project — the same
+    // engine as the task side, so the rules about who may be assigned are one
+    // set of rules. The directory the picker walks lives at /tasks/parties/*;
+    // only the write is project-specific.
+    Route::get('/{project}/party-assignees',  [\App\Http\Controllers\Api\Project\ProjectPartyController::class, 'index']);
+    Route::post('/{project}/party-assignees', [\App\Http\Controllers\Api\Project\ProjectPartyController::class, 'sync']);
+
     // Notes / Activity / Timesheets tabs
     Route::get('/{project}/notes',          [ProjectController::class, 'notes']);
     Route::post('/{project}/notes',         [ProjectController::class, 'storeNote']);

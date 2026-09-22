@@ -12,6 +12,15 @@ export const projectApi = {
   meta: () => api.get('/projects/meta').then(unwrap).catch(handleErr),
   list: (params = {}) => api.get('/projects', { params }).then(unwrap).catch(handleErr),
   get: (id) => api.get(`/projects/${id}`).then(unwrap).catch(handleErr),
+
+  // People at a client, a vendor or a TPV who are on this project. Same engine
+  // and same directory as the task side — the picker walks /tasks/parties/*,
+  // only the write is project-specific.
+  parties: {
+    list: (id) => api.get(`/projects/${id}/party-assignees`).then(unwrap).catch(handleErr),
+    // `parties` is the list to END UP with — an empty array clears them.
+    sync: (id, parties) => api.post(`/projects/${id}/party-assignees`, { parties }).then(unwrap).catch(handleErr),
+  },
   // Project expenses for one vendor, across every project it is linked to.
   // The vendor is resolved to projects server-side — this never sends project ids.
   // vendorType names the party type ('tpv_vendor' | 'purchase_vendor'); the same
