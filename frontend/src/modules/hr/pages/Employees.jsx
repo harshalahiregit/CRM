@@ -5,7 +5,7 @@ import { useTheme } from '@/context/ThemeContext'
 import { useAuth } from '@/context/AuthContext'
 import { Search, Building2, Plus, X, LayoutGrid, List, Eye, Pencil } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
-import { useMasterData, withInactive } from '@/modules/hr/useMasterData'
+import { useMasterData, withInactiveById } from '@/modules/hr/useMasterData'
 import { canManageHrQueue } from '@/modules/hr/constants'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import Modal from '@/components/ui/Modal'
@@ -17,7 +17,7 @@ const initials = n => (n||'').split(' ').slice(0,2).map(x=>x[0]).join('').toUppe
 const fmtDate  = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'
 const deptColor = d => DEPT_COLORS[d]||'#7C3AED'
 
-const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', gender:'', address:'', department:'', designation:'', reporting_manager_id:'', reporting_manager_name:'', work_state:'', joining_date:'', probation_end_date:'', confirmation_date:'', status:'Active',
+const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', gender:'', address:'', department:'', designation:'', department_id:'', designation_id:'', employment_type_id:'', reporting_manager_id:'', reporting_manager_name:'', work_state:'', joining_date:'', probation_end_date:'', confirmation_date:'', notice_days:'', status:'Active',
   // #36 — probation must be set when adding an employee, or the hire explicitly exempted.
   probation_policy_id:'', skip_probation:false, probation_skip_reason:'',
   // #29 — what this person is, and the comment's explicit "option to consider
@@ -87,12 +87,19 @@ export default function Employees() {
   const canManageHr = canManageHrQueue(user)
   // Department / Designation / Reporting Manager all come from Org Setup master data
   // (single source of truth, active-only). No hardcoded lists; a saved-but-inactive
-  // value stays visible and marked via withInactive().
+  // value stays visible and marked via withInactiveById().
   const { masters } = useMasterData()
   const deptNames    = (masters.departments  || []).map(d => d.name)
   const desigNames   = (masters.designations || []).map(d => d.name)
-  const deptOptions    = (f) => withInactive(deptNames,    f?.department)
-  const desigOptions   = (f) => withInactive(desigNames,   f?.designation)
+  // Chosen by ID: the employee points at the master record, not at a copy of
+  // its name. The saved name is passed only so a since-retired master still
+  // has something to be called in the list.
+  const deptOptions    = (f) => withInactiveById(masters.departments,  f?.department_id,  f?.department)
+  const desigOptions   = (f) => withInactiveById(masters.designations, f?.designation_id, f?.designation)
+  // Employment type carries no name column on the employee, so a since-retired
+  // master has no label to fall back on — withInactiveById prints "Current"
+  // for that case rather than dropping the value and losing it on save.
+  const empTypeOptions = (f) => withInactiveById(masters.employment_types, f?.employment_type_id, f?.employment_type?.name)
   // Managers are picked by ID, not by name. masters.managers already carries
   // {id, name, employee_code}; the name was the only part being used, so the
   // hierarchy every other feature reads — org chart, advance approvals, the
@@ -183,6 +190,23 @@ export default function Employees() {
   useEffect(()=>{ hrApi.employees.workStates().then(setWorkStates).catch(()=>{}) },[])
   useEffect(()=>{ hrApi.probation.policies.list({ status:'Active' }).then(r=>setProbationPolicies(r?.data ?? r ?? [])).catch(()=>{}) },[])
 
+  /*
+   * These two drive the FILTER BAR, and they are deliberately derived from the
+   * employees on screen rather than from the masters — filtering by a value
+   * nobody holds would only ever return an empty table.
+   *
+   * They are NOT the designation and department masters. The form further down
+   * uses those (deptOptions / desigOptions, from useMasterData), and the two
+   * lists differ: this tenant has 15 designations on record while only 8 are in
+   * use, so the filter legitimately shows the shorter list.
+   *
+   * Both controls used to be labelled plain "Department" and "Designation" on
+   * the same screen, which read as one list contradicting the other — an
+   * administrator checking whether "Manager" existed found it absent here and
+   * concluded it could not be created, when it was already in the master and
+   * already offered by the form. Hence the "Filter by …" labels below: the
+   * names now say which question each control answers.
+   */
   const departments = useMemo(()=>['All', ...new Set(optionsList.map(e=>e.department).filter(Boolean))], [optionsList])
   const designations = useMemo(()=>['All', ...new Set(optionsList.map(e=>e.designation).filter(Boolean))], [optionsList])
 
@@ -199,7 +223,7 @@ export default function Employees() {
   const openProfile = (id) => navigate(`/app/hr/employees/${id}`)
 
   const handleSave = async () => {
-    if (!form.name||!form.department||!form.designation||!form.joining_date) return showToast('Name, department, designation & joining date required','error')
+    if (!form.name||!form.department_id||!form.designation_id||!form.joining_date) return showToast('Name, department, designation & joining date required','error')
     setSaving(true)
     try {
       if (editingId) {
@@ -308,11 +332,11 @@ export default function Employees() {
             <input className="input-3d pl-9 text-sm" placeholder="Name, Employee ID, email, department…" value={search} onChange={e=>setSearch(e.target.value)}/>
           </div>
           <div className="min-w-[140px]">
-            <label className="label">Department</label>
+            <label className="label">Filter by department</label>
             <select className="input-3d text-sm" value={deptF} onChange={e=>setDeptF(e.target.value)}>{departments.map(d=><option key={d}>{d}</option>)}</select>
           </div>
           <div className="min-w-[140px]">
-            <label className="label">Designation</label>
+            <label className="label">Filter by designation</label>
             <select className="input-3d text-sm" value={desigF} onChange={e=>setDesigF(e.target.value)}>{designations.map(d=><option key={d}>{d}</option>)}</select>
           </div>
           <div className="min-w-[120px]">
@@ -488,31 +512,34 @@ export default function Employees() {
               <div><label className="label">Address</label><textarea rows={2} className="input-3d text-sm resize-none" value={form.address||''} onChange={e=>setForm({...form,address:e.target.value})}/></div>
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="label">Department *</label>
-                  <select className="input-3d text-sm" value={form.department} onChange={e=>setForm({...form,department:e.target.value})}>
+                  <select className="input-3d text-sm" value={form.department_id||''} onChange={e=>setForm({...form,department_id:e.target.value})}>
                     <option value="">{deptNames.length ? 'Select...' : 'No departments defined yet'}</option>
                     {deptOptions(form).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                   {/* Both lists come from Organization Setup, and both fields are required —
                       so an empty workspace could not create an employee at all and gave no
-                      hint why. Say where they come from, and offer the way there. */}
-                  {!deptNames.length && (
-                    <button type="button" onClick={()=>navigate('/app/hr/organization-setup')}
-                      className="text-[10px] mt-1 underline" style={{ color:'#a78bfa' }}>
-                      Add departments in Organization Setup
-                    </button>
-                  )}
+                      hint why. Say where they come from, and offer the way there.
+
+                      The link is shown ALWAYS, not only when the list is empty. A
+                      missing-but-wanted entry looks exactly like a full list to
+                      the person who wants it: somebody checking for a designation
+                      that was not there found no way to add one and concluded the
+                      master was fixed. The empty case only ever needed the loudest
+                      version of a signpost every case needs. */}
+                  <button type="button" onClick={()=>navigate('/app/hr/organization-setup')}
+                    className="text-[10px] mt-1 underline" style={{ color:'#a78bfa' }}>
+                    {deptNames.length ? 'Manage departments in Organization Setup' : 'Add departments in Organization Setup'}
+                  </button>
                 </div>
                 <div><label className="label">Designation *</label>
-                  <select className="input-3d text-sm" value={form.designation} onChange={e=>setForm({...form,designation:e.target.value})}>
+                  <select className="input-3d text-sm" value={form.designation_id||''} onChange={e=>setForm({...form,designation_id:e.target.value})}>
                     <option value="">{desigNames.length ? 'Select...' : 'No designations defined yet'}</option>
                     {desigOptions(form).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
-                  {!desigNames.length && (
-                    <button type="button" onClick={()=>navigate('/app/hr/organization-setup')}
-                      className="text-[10px] mt-1 underline" style={{ color:'#a78bfa' }}>
-                      Add designations in Organization Setup
-                    </button>
-                  )}
+                  <button type="button" onClick={()=>navigate('/app/hr/organization-setup')}
+                    className="text-[10px] mt-1 underline" style={{ color:'#a78bfa' }}>
+                    {desigNames.length ? 'Manage designations in Organization Setup' : 'Add designations in Organization Setup'}
+                  </button>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -527,6 +554,38 @@ export default function Employees() {
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="label">Probation End Date</label><input type="date" className="input-3d text-sm" value={form.probation_end_date||''} onChange={e=>setForm({...form,probation_end_date:e.target.value})}/></div>
                 <div><label className="label">Confirmation Date</label><input type="date" className="input-3d text-sm" value={form.confirmation_date||''} onChange={e=>setForm({...form,confirmation_date:e.target.value})}/></div>
+              </div>
+              {/* A standing notice period for this person.
+                  BLANK IS NOT ZERO, and the hint says so because the difference
+                  is invisible otherwise: blank inherits the exit policy matched
+                  to their grade and then the exit type's default, while 0 means
+                  they genuinely serve none. Sending '' clears the override —
+                  the field is normalised to null on save for that reason. */}
+              {/* Optional: a workspace that has configured no employment types
+                  must still be able to hire, so this never blocks a save. */}
+              <div>
+                <label className="label">Employment Type</label>
+                <select className="input-3d text-sm" value={form.employment_type_id||''}
+                  onChange={e=>setForm({...form,employment_type_id:e.target.value})}>
+                  <option value="">{(masters.employment_types||[]).length ? 'Select…' : 'No employment types defined yet'}</option>
+                  {empTypeOptions(form).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+                <button type="button" onClick={()=>navigate('/app/hr/organization-setup')}
+                  className="text-[10px] mt-1 underline" style={{ color:'#a78bfa' }}>
+                  {(masters.employment_types||[]).length ? 'Manage employment types in Organization Setup' : 'Add employment types in Organization Setup'}
+                </button>
+              </div>
+              <div>
+                <label className="label">Notice Period (days)</label>
+                <input type="number" min="0" max="365" className="input-3d text-sm"
+                  placeholder="Leave blank to inherit from grade / exit type"
+                  value={form.notice_days ?? ''}
+                  onChange={e=>setForm({...form,notice_days:e.target.value})}/>
+                <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+                  {form.notice_days === '' || form.notice_days === null || form.notice_days === undefined
+                    ? 'Inheriting — the exit policy for this grade, otherwise the exit type default.'
+                    : `Overridden for this employee: ${Number(form.notice_days)} day(s).`}
+                </p>
               </div>
               {/* #36 — probation must be set when adding an employee. Shown only on
                   create: an existing employee's probation is managed in its own module. */}
@@ -606,6 +665,36 @@ export default function Employees() {
                   </span>
                 </label>
               </div>
+
+              {/*
+                This form says who somebody IS. It does not say what they may
+                OPEN — that is a staff account with a role, a module permission
+                grid and a data scope, and it is edited in Staff Management.
+                The two were only distinguishable by knowing already, which is
+                why an administrator looking for "who can access which HR
+                module" searched this screen and found employment fields.
+
+                Admins only, from the SERVER's own answer: isAdmin is
+                permissions.is_admin on the /me payload, which the backend
+                computes as StaffPermissionService::bypasses() — and
+                BYPASS_ROLES is exactly ['admin'], the same test role:admin
+                applies to /api/admin/*. Reading the server's verdict rather
+                than re-deriving one here is what keeps the link honest if that
+                rule ever changes.
+              */}
+              {isAdmin && (
+                <button type="button" onClick={()=>navigate('/app/admin/staff')}
+                  className="w-full text-left rounded-xl px-3 py-2.5"
+                  style={{ background:'var(--bg-input)', border:'1px dashed var(--border)' }}>
+                  <span className="text-xs font-bold block" style={{ color:'var(--text-h)' }}>
+                    Looking for CRM access and permissions?
+                  </span>
+                  <span className="text-[11px]" style={{ color:'var(--text-muted)' }}>
+                    This form holds employment details. Roles, module permissions and data scope
+                    live in <span className="underline" style={{ color:'#a78bfa' }}>Staff Management</span>.
+                  </span>
+                </button>
+              )}
 
               {/* Work State drives Professional Tax. A saved value that is not in the
                   master list stays selectable rather than silently resetting to blank. */}

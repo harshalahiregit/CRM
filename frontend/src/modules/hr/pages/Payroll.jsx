@@ -835,7 +835,9 @@ function ManageSalary({ employee, structures, onClose, onChanged, showToast }) {
                     <Row k="Gross Salary" v={inr(cur.gross_salary)} accent="#10b981"/>
                     <Row k="Benefits" v={inr(cur.total_benefits)} accent="#3b82f6"/>
                     <Row k="Deductions" v={inr(cur.total_deductions)} accent="#f87171"/>
-                    <Row k="Net Salary" v={inr(cur.net_salary)}/>
+                    {/* Structure figures, under "Current Salary" — the payroll
+                        month's take-home is Net Payable in the run list. */}
+                    <Row k="Structure Net" v={inr(cur.net_salary)}/>
                   </div>
                 ) : <p className="text-xs px-3 py-4 rounded-xl" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>No salary assigned yet.</p>}
               </div>
@@ -1301,7 +1303,20 @@ function RecordRow({ r }) {
         </td>
         <td className="px-3 py-2.5" style={{ color:'#10b981' }}>{inr(r.gross_salary)}</td>
         <td className="px-3 py-2.5" style={{ color:'#f87171' }}>{inr(st?.total_deductions)}</td>
-        <td className="px-3 py-2.5" style={{ color:'#f87171' }}>{inr(r.total_deductions)}</td>
+        {/*
+          The "Deductions" column. It showed r.total_deductions, which is the
+          frozen SALARY-STRUCTURE figure — zero for every structure that defines
+          no deductions of its own, i.e. all of them, because PF, ESIC, PT and
+          TDS are statutory and resolved per period. So this column read ₹0 for
+          everybody, beside a Net of ₹14,000, while ₹360 had actually been
+          withheld and ₹13,640 reached the bank.
+
+          period_deductions is what the employee actually lost this month, and
+          the API has always sent it — PayrollService notes it is "the one to
+          show a human". Nothing about the payroll calculation changes here;
+          the row simply reads the field that was already there.
+        */}
+        <td className="px-3 py-2.5" style={{ color:'#f87171' }}>{inr(r.period_deductions ?? r.total_deductions)}</td>
         {/* #38 — the instalment payroll actually collected. Dashed when there is
             no loan, so a blank cell never reads as an unrecovered one. */}
         <td className="px-3 py-2.5" style={{ color: r.loan_deduction > 0 ? '#f59e0b' : 'var(--text-muted)' }}>

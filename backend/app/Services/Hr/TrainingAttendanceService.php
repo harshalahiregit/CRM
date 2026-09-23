@@ -23,21 +23,22 @@ class TrainingAttendanceService
     {
     }
 
-    public function list(int $tenantId, array $f): array
+    public function list(int $tenantId, array $f, ?User $actor = null): array
     {
         return [
-            'data'  => $this->repo->attendance($tenantId, $f)->map(fn ($a) => $this->present($a))->all(),
-            'stats' => $this->repo->attendanceStats($tenantId, $f),
+            'data'  => $this->repo->attendance($tenantId, $f, $actor)->map(fn ($a) => $this->present($a))->all(),
+            // Counted over the same population as the rows above it.
+            'stats' => $this->repo->attendanceStats($tenantId, $f, $actor),
         ];
     }
 
-    public function show(int $id, int $tenantId): array
+    public function show(int $id, int $tenantId, ?User $actor = null): array
     {
-        return $this->presentFull($this->find($id, $tenantId));
+        return $this->presentFull($this->find($id, $tenantId, $actor));
     }
 
     /** Assigned roster for a session with each employee's current attendance status. */
-    public function roster(int $sessionId, int $tenantId): array
+    public function roster(int $sessionId, int $tenantId, ?User $actor = null): array
     {
         $session = HrTrainingSession::where('tenant_id', $tenantId)->find($sessionId);
         if (! $session) {
@@ -48,7 +49,7 @@ class TrainingAttendanceService
 
         return [
             'session' => ['id' => $session->id, 'title' => $session->title, 'status' => $session->status, 'trainer_name' => $session->trainer_name],
-            'roster' => $this->repo->roster($sessionId, $tenantId)->map(function ($a) use ($existing) {
+            'roster' => $this->repo->roster($sessionId, $tenantId, $actor)->map(function ($a) use ($existing) {
                 $att = $existing->get($a->id);
 
                 return [
@@ -80,7 +81,7 @@ class TrainingAttendanceService
 
         $record = $this->markOne($data, $tenantId, $actor, false);
 
-        return $this->presentFull($this->find($record->id, $tenantId));
+        return $this->presentFull($this->find($record->id, $tenantId, $actor));
     }
 
     private function markOne(array $data, int $tenantId, ?User $actor, bool $upsert): HrTrainingAttendance
@@ -123,7 +124,7 @@ class TrainingAttendanceService
 
     public function update(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $record = $this->find($id, $tenantId);
+        $record = $this->find($id, $tenantId, $actor);
         $this->assertEditable($record);
         $attrs = ['updated_by' => $actor?->id];
         if (array_key_exists('attendance_status', $data)) {
@@ -137,7 +138,7 @@ class TrainingAttendanceService
         $record->update($attrs);
         $record->recordAudit('Training Attendance Updated', $actor, null, ['status' => $record->attendance_status]);
 
-        return $this->presentFull($this->find($id, $tenantId));
+        return $this->presentFull($this->find($id, $tenantId, $actor));
     }
 
     /* ── Helpers ──────────────────────────────────────────── */
@@ -191,9 +192,9 @@ class TrainingAttendanceService
         ];
     }
 
-    private function find(int $id, int $tenantId): HrTrainingAttendance
+    private function find(int $id, int $tenantId, ?User $actor = null): HrTrainingAttendance
     {
-        $record = $this->repo->findAttendance($id, $tenantId);
+        $record = $this->repo->findAttendance($id, $tenantId, $actor);
         if (! $record) {
             throw new BusinessException('Attendance record not found', 404);
         }

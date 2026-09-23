@@ -3,9 +3,12 @@
 namespace App\Http\Controllers\Api\Hr;
 
 use App\Http\Controllers\Controller;
+use App\Models\Hr\HrApprovalAction;
 use App\Models\Hr\HrEmployeeLoan;
+use App\Services\Hr\Approval\ApprovalEngine;
 use App\Services\Hr\LoanEligibilityService;
 use App\Services\Hr\LoanService;
+use App\Support\Hr\Approval\ApprovalProcess;
 use Illuminate\Http\Request;
 
 /**
@@ -19,6 +22,7 @@ class LoanController extends Controller
     public function __construct(
         private LoanService $service,
         private LoanEligibilityService $eligibility,
+        private ApprovalEngine $engine,
     ) {
     }
 
@@ -34,7 +38,10 @@ class LoanController extends Controller
      * Affordability for a proposed EMI, before anything is saved.
      *
      * Read-only, so no permission gate — the UI calls it as figures are typed to
-     * show the warning before a submit is rejected.
+     * show the warning before a submit is rejected. Read-only is not the same as
+     * harmless, though: the answer carries the employee's net_salary and their
+     * existing EMI commitments, for an employee id named in the request body.
+     * So the data scope applies even where the permission gate does not.
      */
     public function checkEligibility(Request $request)
     {
@@ -43,6 +50,8 @@ class LoanController extends Controller
             'emi'             => 'required|numeric|min:0',
             'exclude_loan_id' => 'nullable|integer',
         ]);
+
+        $this->assertEmployeeInScope($request, (int) $data['employee_id']);
 
         return response()->json($this->eligibility->evaluate(
             (int) $data['employee_id'], $this->tenant($request),
@@ -94,18 +103,19 @@ class LoanController extends Controller
     {
         return response()->json([
             'data' => $this->service->list($this->tenant($request),
-                $request->only(['status', 'employee_id', 'loan_type_id', 'is_advance'])),
+                $request->only(['status', 'employee_id', 'loan_type_id', 'is_advance']),
+                $request->user()),
         ]);
     }
 
     public function stats(Request $request)
     {
-        return response()->json($this->service->stats($this->tenant($request)));
+        return response()->json($this->service->stats($this->tenant($request), $request->user()));
     }
 
     public function show(Request $request, int $id)
     {
-        return response()->json($this->service->show($id, $this->tenant($request)));
+        return response()->json($this->service->show($id, $this->tenant($request), $request->user()));
     }
 
     /**
@@ -170,11 +180,20 @@ class LoanController extends Controller
         return response()->json($this->service->submit($id, $this->tenant($request), $request->user()));
     }
 
+    /**
+     * Approve — through the configured ladder.
+     *
+     * Only approve and reject go through the engine. submit(), disburse(),
+     * close() and cancel() are not approvals: submit moves a draft into the
+     * queue, and the other three are what happens to a loan that has ALREADY
+     * been approved. Routing them through a ladder would ask for a second
+     * approval of a decision already taken.
+     */
     public function approve(Request $request, int $id)
     {
         $this->assertCanManage($request);
 
-        return response()->json($this->service->approve($id, $this->tenant($request), $request->user()));
+        return $this->decide($request, $id, HrApprovalAction::APPROVED, null);
     }
 
     public function reject(Request $request, int $id)
@@ -182,7 +201,89 @@ class LoanController extends Controller
         $this->assertCanManage($request);
         $data = $request->validate(['remarks' => 'required|string|max:1000']);
 
-        return response()->json($this->service->reject($id, $data['remarks'], $this->tenant($request), $request->user()));
+        return $this->decide($request, $id, HrApprovalAction::REJECTED, $data['remarks']);
+    }
+
+    /**
+     * One decision, through the engine, for both verbs.
+     *
+     * The three gates stay separate: assertCanManage() above is the capability,
+     * the engine re-asserts data scope against the loan's employee, and the
+     * ladder decides whether this request is waiting on this person. Only the
+     * last rung calls LoanService, which still owns the status transition, the
+     * audit line and every existing guard on them.
+     */
+    private function decide(Request $request, int $id, string $action, ?string $remarks)
+    {
+        $tenantId = $this->tenant($request);
+        $actor    = $request->user();
+
+        // Scoped read, so an out-of-scope loan is absent here exactly as it is
+        // inside LoanService::find() and the ladder never sees it.
+        $loan = $this->service->findForDecision($id, $tenantId, $actor);
+        abort_unless($loan, 404, 'Loan not found');
+
+        $approval = $this->engine->requestFor(
+            $loan,
+            ApprovalProcess::LOAN,
+            $tenantId,
+            (int) $loan->employee_id,
+            (float) $loan->principal,
+        );
+
+        /*
+         | Anything other than Submitted is not the ladder's business.
+         |
+         | That includes the auto-approved path: a loan type with
+         | requires_approval = false moves straight from Draft to Approved on
+         | submit. It is existing type-level configuration meaning "this needs
+         | no approval", so the engine closes its view rather than demanding
+         | one, and the service raises its own message unchanged.
+         */
+        if ($loan->status !== HrEmployeeLoan::SUBMITTED) {
+            $this->engine->supersede($approval);
+
+            return response()->json(
+                $action === HrApprovalAction::APPROVED
+                    ? $this->service->approve($id, $tenantId, $actor)
+                    : $this->service->reject($id, (string) $remarks, $tenantId, $actor)
+            );
+        }
+
+        $inspection = $this->engine->inspect($approval);
+        if (! $inspection['resolvable']) {
+            $this->engine->block($approval, $inspection['describe']);
+            abort(409, 'This loan cannot be approved yet: '.$inspection['describe'].'.');
+        }
+
+        $this->engine->assertMayDecide($approval, $actor);
+
+        $result = $this->engine->decide($approval, $actor, $action, $remarks);
+
+        if (! $result['final']) {
+            // Still climbing. The loan stays Submitted and no money moves.
+            return response()->json([
+                'approval' => $this->approvalPayload($result['request']),
+                'data'     => $this->service->show($id, $tenantId, $actor),
+            ]);
+        }
+
+        $payload = $action === HrApprovalAction::APPROVED
+            ? $this->service->approve($id, $tenantId, $actor)
+            : $this->service->reject($id, (string) $remarks, $tenantId, $actor);
+
+        return response()->json($payload + ['approval' => $this->approvalPayload($result['request'])]);
+    }
+
+    /** What the UI needs to draw the ladder's current position. */
+    private function approvalPayload($approval): array
+    {
+        return [
+            'state'        => $approval->state,
+            'current_step' => $approval->current_step,
+            'total_steps'  => count($approval->steps_snapshot ?: []),
+            'steps'        => $approval->steps_snapshot ?: [],
+        ];
     }
 
     public function disburse(Request $request, int $id)
@@ -230,5 +331,19 @@ class LoanController extends Controller
     private function assertCanManage(Request $request): void
     {
         abort_unless($request->user()->canManageHrQueue(), 403, 'You are not authorised to manage loans');
+    }
+
+    /**
+     * Whose employee is this?
+     *
+     * Separate from assertCanManage() above on purpose: that asks whether they
+     * may touch loans at all, this asks whose. The loan actions reached by id
+     * are scoped inside LoanService::find(); this is for the endpoints that take
+     * an employee id directly instead.
+     */
+    private function assertEmployeeInScope(Request $request, int $employeeId): void
+    {
+        app(\App\Services\Auth\ScopeResolver::class)
+            ->assertCanActOnEmployee($request->user(), $employeeId);
     }
 }

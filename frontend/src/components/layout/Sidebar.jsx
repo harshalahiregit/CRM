@@ -133,6 +133,14 @@ const HR_LIFECYCLE_ITEMS = [
 ]
 
 const HR_ORG_ITEMS = [
+  /*
+   * First, because it is the answer to the question the other three only
+   * partly answer. The HR masters are spread across seven screens — leave
+   * types under Leave Management, shifts under HR Operations, and so on —
+   * which is fine once you know, and a dead end when you do not. This entry
+   * is the index; it moves nothing.
+   */
+  { label: 'HR Configuration',   path: '/app/hr/configuration',      icon: SlidersHorizontal },
   { label: 'Organization Setup', path: '/app/hr/organization-setup', icon: FolderOpen },
   { label: 'Organization Chart', path: '/app/hr/org-chart',          icon: Network },
   { label: 'HR Operations',      path: '/app/hr/operations',         icon: Settings2 },

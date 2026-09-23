@@ -75,6 +75,12 @@ return [
             'Approval Pending'   => ['priority' => 'Warning', 'subject' => 'Exit approval pending — {{employee}}', 'body' => 'The exit request for {{employee}} is awaiting approval.', 'reminder' => ['days' => [0], 'repeat' => true, 'escalation' => true]],
             'Clearance Pending'  => ['priority' => 'Warning', 'subject' => 'Exit clearance pending — {{employee}}', 'body' => 'Departmental clearance for {{employee}} is pending.', 'reminder' => ['days' => [0], 'repeat' => true]],
             'Settlement Pending' => ['priority' => 'Warning', 'subject' => 'Full & Final pending — {{employee}}', 'body' => 'The full & final settlement for {{employee}} is pending.', 'reminder' => ['days' => [0], 'repeat' => true]],
+
+            // The OUTCOME. Everything above announces that somebody must act;
+            // nothing told the person waiting what was decided, so an exit was
+            // approved or refused in silence.
+            'Approved' => ['priority' => 'Success', 'subject' => 'Exit request approved', 'body' => 'Your exit request has been approved. Last working day: {{date}}. {{remarks}}'],
+            'Rejected' => ['priority' => 'Warning', 'subject' => 'Exit request rejected', 'body' => 'Your exit request was not approved. {{remarks}}'],
         ],
 
         'Learning' => [
@@ -89,11 +95,139 @@ return [
             'Extension Pending'    => ['priority' => 'Warning',  'subject' => 'Probation extension pending — {{employee}}', 'body' => 'An extension request for {{employee}} is awaiting approval.', 'reminder' => ['days' => [0], 'repeat' => true, 'escalation' => true]],
             'Confirmation Pending' => ['priority' => 'Critical', 'subject' => 'Probation confirmation due — {{employee}}', 'body' => 'The probation for {{employee}} ends on {{date}} ({{remaining_days}} days) — confirmation is due.', 'reminder' => ['days' => [30, 15, 7, 2, 0], 'repeat' => false, 'escalation' => true]],
             'Confirmed'            => ['priority' => 'Success',  'subject' => 'Employee confirmed — {{employee}}', 'body' => '{{employee}} has been confirmed effective {{date}}.'],
+
+            // Confirmation had a success event and no failure one, so a refused
+            // confirmation — the outcome somebody most needs to hear — said
+            // nothing at all.
+            'Confirmation Approved' => ['priority' => 'Success', 'subject' => 'Probation confirmation approved — {{employee}}', 'body' => 'The confirmation for {{employee}} has been approved. {{remarks}}'],
+            'Confirmation Rejected' => ['priority' => 'Warning', 'subject' => 'Probation confirmation rejected — {{employee}}', 'body' => 'The confirmation for {{employee}} was not approved. {{remarks}}'],
         ],
 
         'Performance' => [
             'Review Pending' => ['priority' => 'Warning', 'subject' => 'Performance review pending — {{employee}}', 'body' => 'A performance review for {{employee}} is pending.', 'reminder' => ['days' => [7, 3, 0], 'repeat' => false]],
             'Goal Due'       => ['priority' => 'Warning', 'subject' => 'Goal due — {{employee}}', 'body' => 'A goal for {{employee}} is due on {{date}}.', 'reminder' => ['days' => [7, 1, 0], 'repeat' => false]],
+        ],
+
+        /*
+         | Payroll — the module that moves the most money and told nobody.
+         |
+         | A run was approved, disbursed and its payslips published without a
+         | single notification: an employee found out they had been paid by
+         | opening the app and looking. These are the four moments somebody is
+         | actually affected by, plus the one queue item somebody is blocking.
+         |
+         | 'Approval Pending' is addressed to the hr role, which is the only
+         | role the inbox can currently express — see PayrollApprovalPendingSource.
+         | Distinct Finance/Accounts targeting needs recipient_role matching in
+         | NotificationRepository::visibleTo() and is deliberately NOT done here.
+         */
+        /*
+         | POSH — existence only, and user-addressed only.
+         |
+         | Every body here names the case REFERENCE and what is wanted, and
+         | nothing else. No complainant, no respondent, no narrative, no
+         | evidence, no finding. A notification is read on a lock screen and
+         | forwarded without thinking, so it carries the least that is still
+         | useful.
+         |
+         | There is deliberately no '*' catch-all and no reminder spec: a
+         | mistyped event must stay silent rather than deliver under a
+         | wildcard, and no statutory timeline exists to remind anybody of.
+         |
+         | Role addressing is NOT used. The recipients are explicit user ids
+         | taken from the case's own membership; a role would be a population
+         | resolved somewhere other than PoshAccessResolver.
+         */
+        'Posh' => [
+            'Member Added'      => ['priority' => 'Info',     'subject' => 'You have been added to a case', 'body' => 'You now have access to {{reference}}.'],
+            'Inquiry Opened'    => ['priority' => 'Warning',  'subject' => 'Inquiry opened — {{reference}}', 'body' => 'An inquiry has been opened on {{reference}}.'],
+            'Decision Required' => ['priority' => 'Critical', 'subject' => 'Your decision is needed — {{reference}}', 'body' => '{{reference}} is waiting on your decision.'],
+            'Inquiry Concluded' => ['priority' => 'Info',     'subject' => 'Inquiry concluded — {{reference}}', 'body' => 'The inquiry on {{reference}} has concluded.'],
+            'Case Acknowledged' => ['priority' => 'Info',     'subject' => 'Complaint acknowledged — {{reference}}', 'body' => '{{reference}} has been acknowledged.'],
+            'Findings Published' => ['priority' => 'Info',    'subject' => 'Findings published — {{reference}}', 'body' => 'The findings on {{reference}} have been published.'],
+            'Case Withdrawn'    => ['priority' => 'Info',     'subject' => 'Case withdrawn — {{reference}}', 'body' => '{{reference}} has been withdrawn.'],
+            'Case Closed'       => ['priority' => 'Info',     'subject' => 'Case closed — {{reference}}', 'body' => '{{reference}} has been closed.'],
+            'Membership Changed' => ['priority' => 'Warning', 'subject' => 'Committee changed — {{reference}}', 'body' => 'The committee on {{reference}} has changed.'],
+        ],
+
+        'Payroll' => [
+            'Run Approved'     => ['priority' => 'Success',  'subject' => 'Payroll approved — {{period}}', 'body' => 'The payroll run for {{period}} has been approved ({{employees}} employees, {{amount}}).'],
+            'Run Rejected'     => ['priority' => 'Warning',  'subject' => 'Payroll rejected — {{period}}', 'body' => 'The payroll run for {{period}} was sent back. {{remarks}}'],
+            'Payslip Released' => ['priority' => 'Info',     'subject' => 'Your payslip is ready — {{period}}', 'body' => 'Your payslip for {{period}} is now available.'],
+            'Salary Paid'      => ['priority' => 'Success',  'subject' => 'Salary paid — {{period}}', 'body' => '{{amount}} has been paid to you for {{period}}.'],
+            'Approval Pending' => ['priority' => 'Critical', 'subject' => 'Payroll awaiting approval — {{period}}', 'body' => 'The payroll run for {{period}} is awaiting approval ({{employees}} employees, {{amount}}).', 'reminder' => ['days' => [0], 'repeat' => true, 'escalation' => true]],
+        ],
+
+        /*
+         | Loans — advances got a notifier in an earlier pass; loans never did.
+         |
+         | Somebody borrowed money from the company and heard nothing at any
+         | point: not when it was approved, not when it was refused, not when it
+         | was paid out. Closure and installment waivers are deliberately absent
+         | — they are bookkeeping the employee sees on their statement, not
+         | moments they are waiting on.
+         */
+        'Loan' => [
+            'Applied'          => ['priority' => 'Info',    'subject' => 'Loan applied — {{employee}}', 'body' => '{{employee}} applied for a loan of {{amount}}.'],
+            'Approved'         => ['priority' => 'Success', 'subject' => 'Loan approved — {{amount}}', 'body' => 'Your loan of {{amount}} has been approved.'],
+            'Rejected'         => ['priority' => 'Warning', 'subject' => 'Loan rejected', 'body' => 'Your loan request was rejected. {{remarks}}'],
+            'Disbursed'        => ['priority' => 'Success', 'subject' => 'Loan disbursed — {{amount}}', 'body' => '{{amount}} has been disbursed to you.'],
+            'Approval Pending' => ['priority' => 'Warning', 'subject' => 'Loan awaiting approval — {{employee}}', 'body' => 'A loan request from {{employee}} ({{amount}}) is awaiting approval.', 'reminder' => ['days' => [0], 'repeat' => true, 'escalation' => true]],
+        ],
+
+        /*
+         | Variable earnings — commissions, incentives, bonuses.
+         |
+         | An approval process on the engine since it was built, and the only
+         | one of the nine whose decisions reached nobody. The figure goes into
+         | somebody's pay, so being told it was approved or refused is not a
+         | nicety.
+         */
+        'VariableEarning' => [
+            'Submitted' => ['priority' => 'Info',    'subject' => 'Variable earning submitted — {{employee}}', 'body' => '{{amount}} has been raised for {{employee}} and is awaiting approval.'],
+            'Approved'  => ['priority' => 'Success', 'subject' => 'Variable earning approved — {{amount}}', 'body' => 'A variable earning of {{amount}} has been approved and will be paid with your salary.'],
+            'Rejected'  => ['priority' => 'Warning', 'subject' => 'Variable earning rejected', 'body' => 'A variable earning of {{amount}} was not approved. {{remarks}}'],
+        ],
+
+        /*
+         | Investment declarations — VERIFICATION rather than approval.
+         |
+         | The domain word is deliberate and matches ApprovalProcess: a
+         | declaration is Verified, not Approved. A rejected declaration changes
+         | the tax deducted from somebody's salary, so silence here is felt in
+         | the payslip.
+         */
+        'Investment' => [
+            'Submitted' => ['priority' => 'Info',    'subject' => 'Investment declaration submitted — {{employee}}', 'body' => '{{employee}} submitted an investment declaration for {{fy}}.'],
+            'Verified'  => ['priority' => 'Success', 'subject' => 'Investment declaration verified — {{fy}}', 'body' => 'Your investment declaration for {{fy}} has been verified. {{remarks}}'],
+            'Rejected'  => ['priority' => 'Warning', 'subject' => 'Investment declaration rejected — {{fy}}', 'body' => 'Your investment declaration for {{fy}} was not accepted. {{remarks}}'],
+        ],
+
+        /*
+         | Onboarding — already notified, but by raw e-mail only.
+         |
+         | EmployeeOnboardingService mails directly through the channel service,
+         | which means no bell, no per-tenant template, no rule and no channel
+         | preference. These registrations put the same three moments through
+         | the engine as well. The existing e-mails are deliberately LEFT IN
+         | PLACE: removing them would silently stop mail somebody relies on.
+         */
+        'Onboarding' => [
+            'Started'               => ['priority' => 'Info',    'subject' => 'Onboarding started — {{employee}}', 'body' => 'Onboarding has started for {{employee}}.'],
+            'Verification Complete' => ['priority' => 'Info',    'subject' => 'Background verification {{status}} — {{employee}}', 'body' => 'Background verification for {{employee}} is {{status}}.'],
+            'Employee Activated'    => ['priority' => 'Success', 'subject' => 'Employee activated — {{employee}}', 'body' => '{{employee}} has been activated and onboarding is complete.'],
+        ],
+
+        /*
+         | Employee lifecycle — transfer, promotion, demotion, redesignation.
+         |
+         | One event rather than four: the recipient is the same person and the
+         | only thing that differs is the word, which {{type}} carries. A
+         | promotion that nobody tells you about is the clearest example of the
+         | gap this whole block closes.
+         */
+        'Lifecycle' => [
+            'Movement Recorded' => ['priority' => 'Info', 'subject' => '{{type}} recorded — {{employee}}', 'body' => 'A {{type}} has been recorded for {{employee}}, effective {{date}}.'],
         ],
 
         /*

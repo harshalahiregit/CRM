@@ -19,12 +19,12 @@ class PerformanceController extends Controller
 
     public function dashboard(Request $request)
     {
-        return response()->json($this->service->dashboard($this->tenant($request)));
+        return response()->json($this->service->dashboard($this->tenant($request), $request->user()));
     }
 
     public function timeline(Request $request, int $employeeId)
     {
-        return response()->json($this->service->timeline($employeeId, $this->tenant($request)));
+        return response()->json($this->service->timeline($employeeId, $this->tenant($request), $request->user()));
     }
 
     /* ── KPIs ── */
@@ -100,7 +100,7 @@ class PerformanceController extends Controller
     /* ── Assignments ── */
     public function assignments(Request $request)
     {
-        return response()->json($this->service->listEmployeeGoals($this->tenant($request), $request->only(['employee_id', 'status'])));
+        return response()->json($this->service->listEmployeeGoals($this->tenant($request), $request->only(['employee_id', 'status']), $request->user()));
     }
 
     public function assignGoal(Request $request)

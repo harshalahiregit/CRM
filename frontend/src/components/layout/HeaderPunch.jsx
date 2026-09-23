@@ -4,6 +4,7 @@ import { hrApi } from '@/services/hrApi'
 import { useAuth } from '@/context/AuthContext'
 import { useToast } from '@/components/ui/Toast'
 import { getLocation, buildNote } from '@/lib/punchEvidence'
+import { hrTime } from '@/modules/hr/constants'
 import SelfieCapture from '@/modules/hr/components/SelfieCapture'
 
 /**
@@ -138,7 +139,9 @@ export default function HeaderPunch() {
     return h > 0 ? `${h}h ${mins % 60}m` : `${mins}m`
   }
 
-  const hhmm = (v) => (v ? String(v).slice(11, 16) : '—')
+  // Same UTC substring bug as the dashboard card — the punch you just made
+  // read back 5h30m earlier than the register showed it.
+  const hhmm = hrTime
 
   // Three visual states: not started (green, inviting), running (purple, live),
   // done for the day (muted — nothing left to do, but the record is still there).

@@ -14,6 +14,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { PenLine, Plus, Send, X, AlertTriangle, Clock } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { hrTime } from '@/modules/hr/constants'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import { useToast } from '@/components/ui/Toast'
 import RequestThread from '../components/RequestThread'
@@ -25,7 +26,10 @@ const STATUS = {
   rejected: { fg: '#f87171', bg: 'rgba(248,113,113,0.12)', label: 'Rejected' },
 }
 
-const hhmm = t => (t ? String(t).slice(11, 16) || String(t).slice(0, 5) : '—')
+// Used on existing.check_in / check_out, which are stored TIMESTAMPS — the
+// substring showed those in UTC. hrTime also leaves the bare `time` values
+// below (requested_*) alone, which is why one helper can serve both.
+const hhmm = hrTime
 const day  = d => (d ? String(d).slice(0, 10) : '—')
 
 function Pill({ status }) {

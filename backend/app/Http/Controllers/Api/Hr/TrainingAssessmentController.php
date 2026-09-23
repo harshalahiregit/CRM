@@ -18,12 +18,12 @@ class TrainingAssessmentController extends Controller
 
     public function index(Request $request)
     {
-        return response()->json($this->service->list($this->tenant($request), $request->only(['employee_training_id', 'employee_id', 'result'])));
+        return response()->json($this->service->list($this->tenant($request), $request->only(['employee_training_id', 'employee_id', 'result']), $request->user()));
     }
 
     public function show(Request $request, int $id)
     {
-        return response()->json($this->service->show($id, $this->tenant($request)));
+        return response()->json($this->service->show($id, $this->tenant($request), $request->user()));
     }
 
     public function store(Request $request)

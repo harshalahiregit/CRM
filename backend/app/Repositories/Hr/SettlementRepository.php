@@ -5,10 +5,14 @@ namespace App\Repositories\Hr;
 use App\Models\Hr\HrExitClearance;
 use App\Models\Hr\HrExitSettlement;
 use Illuminate\Database\Eloquent\Collection;
+use App\Models\User;
+use App\Repositories\Hr\Concerns\ScopesEmployeeData;
 
 /** Read queries for Exit Full & Final Settlement (Phase 5). Tenant-scoped; no writes. */
 class SettlementRepository
 {
+    use ScopesEmployeeData;
+
     private const EAGER = [
         // `joining_date` drives the tenure gratuity is computed from. It was missing
         // from this constrained list, so the attribute read back as NULL, tenure
@@ -21,9 +25,9 @@ class SettlementRepository
     ];
 
     /** Completed clearances whose exit has no settlement yet — need lazy init. */
-    public function completedClearancesNeedingSettlement(int $tenantId): Collection
+    public function completedClearancesNeedingSettlement(int $tenantId, ?User $actor = null): Collection
     {
-        return HrExitClearance::where('tenant_id', $tenantId)
+        return $this->scopeToEmployees(HrExitClearance::where('tenant_id', $tenantId), $actor)
             ->where('status', HrExitClearance::COMPLETED)
             ->whereNotExists(function ($q) {
                 $q->selectRaw('1')->from('hr_exit_settlements')
@@ -33,9 +37,9 @@ class SettlementRepository
             ->get();
     }
 
-    public function queue(int $tenantId, array $f): Collection
+    public function queue(int $tenantId, array $f, ?User $actor = null): Collection
     {
-        return HrExitSettlement::where('tenant_id', $tenantId)
+        return $this->scopeToEmployees(HrExitSettlement::where('tenant_id', $tenantId), $actor)
             ->with(self::EAGER)
             ->when(! empty($f['employee_id']), fn ($q) => $q->where('employee_id', $f['employee_id']))
             ->when(! empty($f['status']) && $f['status'] !== 'All', fn ($q) => $q->where('status', $f['status']))
@@ -48,33 +52,35 @@ class SettlementRepository
             ->orderByDesc('id')->get();
     }
 
-    public function find(int $id, int $tenantId): ?HrExitSettlement
+    public function find(int $id, int $tenantId, ?User $actor = null): ?HrExitSettlement
     {
-        return HrExitSettlement::where('tenant_id', $tenantId)
+        return $this->scopeToEmployees(HrExitSettlement::where('tenant_id', $tenantId), $actor)
             ->with([...self::EAGER, 'exitRequest.policy:id,name,buyout_allowed,recovery_allowed,leave_encashment,gratuity_applicable', 'auditLogs'])
             ->find($id);
     }
 
-    public function findByEmployee(int $employeeId, int $tenantId): ?HrExitSettlement
+    public function findByEmployee(int $employeeId, int $tenantId, ?User $actor = null): ?HrExitSettlement
     {
+        $this->assertEmployeeInScope($actor, $employeeId);
+
         return HrExitSettlement::where('tenant_id', $tenantId)
             ->where('employee_id', $employeeId)
             ->with([...self::EAGER, 'auditLogs'])
             ->orderByDesc('id')->first();
     }
 
-    public function history(int $tenantId, array $f): Collection
+    public function history(int $tenantId, array $f, ?User $actor = null): Collection
     {
-        return HrExitSettlement::where('tenant_id', $tenantId)
+        return $this->scopeToEmployees(HrExitSettlement::where('tenant_id', $tenantId), $actor)
             ->whereIn('status', [HrExitSettlement::APPROVED, HrExitSettlement::SETTLED])
             ->with(self::EAGER)
             ->when(! empty($f['employee_id']), fn ($q) => $q->where('employee_id', $f['employee_id']))
             ->orderByDesc('settled_at')->orderByDesc('id')->get();
     }
 
-    public function stats(int $tenantId): array
+    public function stats(int $tenantId, ?User $actor = null): array
     {
-        $base = fn () => HrExitSettlement::where('tenant_id', $tenantId);
+        $base = fn () => $this->scopeToEmployees(HrExitSettlement::where('tenant_id', $tenantId), $actor);
 
         return [
             'pending'   => (int) $base()->where('status', HrExitSettlement::PENDING)->count(),
@@ -86,9 +92,11 @@ class SettlementRepository
     }
 
     /** Distinct settlement months present, for the filter dropdown. */
-    public function months(int $tenantId): array
+    public function months(int $tenantId, ?User $actor = null): array
     {
-        return HrExitSettlement::where('tenant_id', $tenantId)
+        // Which months have settlements is itself derived from rows, so it
+        // narrows with them.
+        return $this->scopeToEmployees(HrExitSettlement::where('tenant_id', $tenantId), $actor)
             ->whereNotNull('settlement_month')
             ->distinct()->orderByDesc('settlement_month')->pluck('settlement_month')->all();
     }

@@ -11,6 +11,11 @@ const fmtDateTime = (d) => d ? new Date(d).toLocaleString('en-IN', { dateStyle: 
 const fmtSalary = (f, t) => (!f && !t) ? null : `₹${f ? (f / 100000).toFixed(1) : '0'}–${t ? (t / 100000).toFixed(1) : '0'} LPA`
 const fmtCTC = (v) => v == null || v === '' ? null : `₹${(Number(v) / 100000).toFixed(1)} LPA`
 
+// Offer statuses that can still be answered — the two the emailed offer portal
+// accepts a response at. Used only to decide whether to point the candidate at
+// that link; this page never responds for them.
+const OPEN_STATUSES = ['Sent', 'Viewed']
+
 // Candidate-facing labels for each pipeline stage.
 const STAGE_META = {
   Applied:    { label: 'Application Submitted', color: '#2563EB' },
@@ -129,7 +134,9 @@ export default function CareerJobDetails() {
         </div>
 
         {/* Application tracking card */}
-        {applied && <TrackingCard app={application} slug={slug} jobId={id} email={appEmail} accent={accent} onChange={setApplication} />}
+        {/* slug / jobId / email / onChange are no longer passed: they existed only
+            to feed the dead respond() call. The card displays, it does not act. */}
+        {applied && <TrackingCard app={application} accent={accent} />}
 
         {/* Facts */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12, margin: '16px 0' }}>
@@ -168,22 +175,17 @@ const Section = ({ title, text }) => (
 )
 
 // ── Application status / tracking card ───────────────────────────────────────
-function TrackingCard({ app, slug, jobId, email, accent, onChange }) {
-  const [busy, setBusy] = useState(false)
+function TrackingCard({ app, accent }) {
   const meta = stageMeta(app.stage)
   const iv = app.interview
   const offer = app.offer
 
-  const respond = async (action) => {
-    let reason = null
-    if (action === 'decline') { reason = window.prompt('Optionally, let us know why you are declining:') ; if (reason === null) return }
-    setBusy(true)
-    try {
-      const s = await careersApi.respondOffer(slug, jobId, { email, action, reason: reason || undefined })
-      onChange(s)
-    } catch (e) { alert(e?.response?.data?.message || 'Could not update the offer. Please try again.') }
-    finally { setBusy(false) }
-  }
+  // READ-ONLY, AND THAT IS THE DESIGN. A respond() lived here that built an
+  // accept/decline call without the offer token its endpoint requires — it was
+  // wired to no button and could never have succeeded. It is gone rather than
+  // fixed: this page has no token and must not acquire one. Responding happens
+  // on the private link the candidate was emailed, which the message below
+  // points them to.
 
   return (
     <div id="track" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 24, marginTop: 16 }}>
@@ -227,13 +229,25 @@ function TrackingCard({ app, slug, jobId, email, accent, onChange }) {
             {offer.joining_date && <Info label="Joining Date" value={fmtDate(offer.joining_date)} />}
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-            {(offer.can_respond || offer.can_download) && (
+            {/* Shown while the offer is still open to a response. Keyed on the
+                statuses the emailed portal accepts — Sent and Viewed — rather
+                than on can_respond, which reports what the Careers respond
+                endpoint would do and stops at Sent. The candidate answers on
+                their private link, so the message has to follow that link's
+                rules, not this page's. */}
+            {OPEN_STATUSES.includes(offer.status) && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: '#047857', fontWeight: 600, lineHeight: 1.5 }}>
                 <FileText size={14} /> To view, download and respond to your offer securely, please use the private offer link we emailed to you.
               </span>
             )}
+            {/* The outcomes. 'Declined' is the real status — this branch used to
+                read 'Rejected', which no offer is ever set to, so it never once
+                rendered. */}
             {offer.status === 'Accepted' && <span style={{ color: '#047857', fontWeight: 700, fontSize: 13 }}>🎉 You accepted this offer.</span>}
-            {offer.status === 'Rejected' && <span style={{ color: '#b91c1c', fontWeight: 700, fontSize: 13 }}>You declined this offer.</span>}
+            {offer.status === 'Declined' && <span style={{ color: '#b91c1c', fontWeight: 700, fontSize: 13 }}>You declined this offer.</span>}
+            {offer.status === 'Expired' && <span style={{ color: '#b45309', fontWeight: 700, fontSize: 13 }}>This offer has passed its validity date. Please contact the hiring team if you would still like to proceed.</span>}
+            {offer.status === 'Withdrawn' && <span style={{ color: '#4b5563', fontWeight: 700, fontSize: 13 }}>This offer has been withdrawn by the hiring team.</span>}
+            {offer.status === 'Completed' && <span style={{ color: '#047857', fontWeight: 700, fontSize: 13 }}>🎉 Welcome aboard — your joining has been confirmed.</span>}
           </div>
         </div>
       )}

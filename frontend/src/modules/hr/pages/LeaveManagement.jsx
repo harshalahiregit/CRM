@@ -150,7 +150,16 @@ function LeaveTypes({ showToast }) {
             <div><label className="label">Code *</label><input className="input-3d text-sm" value={modal.form.code} onChange={e=>setModal(m=>({...m,form:{...m.form,code:e.target.value}}))}/></div>
             <div><label className="label">Category</label><select className="input-3d text-sm" value={modal.form.category} onChange={e=>setModal(m=>({...m,form:{...m.form,category:e.target.value}}))}>{CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></div>
             <div><label className="label">Color</label><input type="color" className="input-3d text-sm h-[42px] p-1" value={modal.form.color} onChange={e=>setModal(m=>({...m,form:{...m.form,color:e.target.value}}))}/></div>
-            <div><label className="label">Yearly Limit</label><input type="number" min="0" className="input-3d text-sm" value={modal.form.yearly_limit} onChange={e=>setModal(m=>({...m,form:{...m.form,yearly_limit:e.target.value}}))}/></div>
+            <div>
+              <label className="label">Yearly Limit</label>
+              <input type="number" min="0" className="input-3d text-sm" value={modal.form.yearly_limit} onChange={e=>setModal(m=>({...m,form:{...m.form,yearly_limit:e.target.value}}))}/>
+              {/* The number here is the FULL year. If first-year proration is
+                  switched on in HR Settings, somebody joining part-way through
+                  the year receives a share of it — this figure does not change. */}
+              <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+                A full year&rsquo;s entitlement. If first-year proration is on in HR Settings, a mid-year joiner receives a share of this in their joining year.
+              </p>
+            </div>
             <div><label className="label">Max Carry Forward</label><input type="number" min="0" className="input-3d text-sm" value={modal.form.max_carry_forward} onChange={e=>setModal(m=>({...m,form:{...m.form,max_carry_forward:e.target.value}}))}/></div>
             <div className="col-span-2 grid grid-cols-2 gap-2">
               {[['paid','Paid'],['carry_forward','Carry Forward'],['requires_attachment','Requires Attachment'],['requires_approval','Requires Approval']].map(([k,l])=>(
@@ -263,6 +272,14 @@ function LeavePolicies({ showToast }) {
                 {m && <>
                   <div className="flex items-center gap-1"><span className="text-[10px]" style={{ color:'var(--text-muted)' }}>Alloc</span><input type="number" min="0" className="input-3d text-xs" style={{ width:70, padding:'6px 8px' }} value={m.yearly_allocation} onChange={e=>setTypeVal(t.id,'yearly_allocation',e.target.value)}/></div>
                   <div className="flex items-center gap-1"><span className="text-[10px]" style={{ color:'var(--text-muted)' }}>CF≤</span><input type="number" min="0" className="input-3d text-xs" style={{ width:60, padding:'6px 8px' }} value={m.carry_forward_limit} onChange={e=>setTypeVal(t.id,'carry_forward_limit',e.target.value)}/></div>
+                  {/* Two ceilings apply and the tighter one binds, so a policy
+                      cannot carry more than the type itself allows. Said here
+                      because the number above looks like the only limit. */}
+                  <span className="w-full text-[10px]" style={{ color:'var(--text-muted)' }}>
+                    {t.carry_forward
+                      ? `Type allows ≤ ${Number(t.max_carry_forward)} — whichever is lower applies.`
+                      : 'This type does not carry forward, so nothing will carry regardless of this limit.'}
+                  </span>
                 </>}
               </div>
             )})}

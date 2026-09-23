@@ -107,7 +107,7 @@ class ShiftController extends Controller
 
     public function roster(Request $request)
     {
-        return response()->json(['data' => $this->service->roster($this->tenant($request), $request->only(['shift_id']))]);
+        return response()->json(['data' => $this->service->roster($this->tenant($request), $request->only(['shift_id']), $request->user())]);
     }
 
     public function assign(Request $request)
@@ -126,12 +126,19 @@ class ShiftController extends Controller
 
     public function history(Request $request, int $employeeId)
     {
-        return response()->json(['data' => $this->service->history($employeeId, $this->tenant($request))]);
+        return response()->json(['data' => $this->service->history($employeeId, $this->tenant($request), $request->user())]);
     }
 
     /** Which shift applies on a given date, and whether it is a weekly off. */
     public function forDate(Request $request, int $employeeId)
     {
+        // shiftForDate() itself stays unscoped — AttendanceService calls it
+        // inside a punch, where there is no viewer. This is the HTTP surface on
+        // top of it, where an employee id arrives from the URL, so the check
+        // belongs here rather than in the resolver everything shares.
+        app(\App\Services\Auth\ScopeResolver::class)
+            ->assertCanActOnEmployee($request->user(), $employeeId);
+
         $date = $request->query('date', now()->toDateString());
         $result = $this->service->shiftForDate($employeeId, $this->tenant($request), $date);
 

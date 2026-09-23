@@ -4,10 +4,14 @@ namespace App\Repositories\Hr;
 
 use App\Models\Hr\HrEmployeeTraining;
 use Illuminate\Database\Eloquent\Collection;
+use App\Models\User;
+use App\Repositories\Hr\Concerns\ScopesEmployeeData;
 
 /** Read queries for Employee Training Assignments (L&D Phase 4). Tenant-scoped; no writes. */
 class EmployeeTrainingRepository
 {
+    use ScopesEmployeeData;
+
     private const EAGER = [
         'employee:id,name,employee_code,department,designation',
         'program:id,program_name,program_code',
@@ -15,9 +19,9 @@ class EmployeeTrainingRepository
         'session.provider:id,name',
     ];
 
-    public function assignments(int $tenantId, array $f): Collection
+    public function assignments(int $tenantId, array $f, ?User $actor = null): Collection
     {
-        return HrEmployeeTraining::where('tenant_id', $tenantId)
+        return $this->scopeToEmployees(HrEmployeeTraining::where('tenant_id', $tenantId), $actor)
             ->with(self::EAGER)
             ->when(! empty($f['employee_id']), fn ($q) => $q->where('employee_id', $f['employee_id']))
             ->when(! empty($f['training_program_id']), fn ($q) => $q->where('training_program_id', $f['training_program_id']))
@@ -30,9 +34,9 @@ class EmployeeTrainingRepository
             ->orderByDesc('id')->get();
     }
 
-    public function find(int $id, int $tenantId): ?HrEmployeeTraining
+    public function find(int $id, int $tenantId, ?User $actor = null): ?HrEmployeeTraining
     {
-        return HrEmployeeTraining::where('tenant_id', $tenantId)->with([...self::EAGER, 'auditLogs'])->find($id);
+        return $this->scopeToEmployees(HrEmployeeTraining::where('tenant_id', $tenantId), $actor)->with([...self::EAGER, 'auditLogs'])->find($id);
     }
 
     /**
@@ -76,17 +80,19 @@ class EmployeeTrainingRepository
             ])->all();
     }
 
-    public function forEmployee(int $employeeId, int $tenantId): Collection
+    public function forEmployee(int $employeeId, int $tenantId, ?User $actor = null): Collection
     {
+        $this->assertEmployeeInScope($actor, $employeeId);
+
         return HrEmployeeTraining::where('tenant_id', $tenantId)
             ->where('employee_id', $employeeId)
             ->with(self::EAGER)
             ->orderByDesc('id')->get();
     }
 
-    public function history(int $tenantId, array $f): Collection
+    public function history(int $tenantId, array $f, ?User $actor = null): Collection
     {
-        return HrEmployeeTraining::where('tenant_id', $tenantId)
+        return $this->scopeToEmployees(HrEmployeeTraining::where('tenant_id', $tenantId), $actor)
             ->whereIn('status', [HrEmployeeTraining::COMPLETED, HrEmployeeTraining::CANCELLED])
             ->with(self::EAGER)
             ->when(! empty($f['employee_id']), fn ($q) => $q->where('employee_id', $f['employee_id']))
@@ -112,9 +118,9 @@ class EmployeeTrainingRepository
             ->exists();
     }
 
-    public function stats(int $tenantId): array
+    public function stats(int $tenantId, ?User $actor = null): array
     {
-        $rows = HrEmployeeTraining::where('tenant_id', $tenantId)
+        $rows = $this->scopeToEmployees(HrEmployeeTraining::where('tenant_id', $tenantId), $actor)
             ->selectRaw('status, count(*) as c')->groupBy('status')->pluck('c', 'status')->all();
         $total = (int) array_sum($rows);
         $completed = (int) ($rows[HrEmployeeTraining::COMPLETED] ?? 0);

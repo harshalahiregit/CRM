@@ -15,8 +15,7 @@ import EmployeeDetailPanel from '../components/EmployeeDetailPanel'
 import EmployeeScoreCard from '../components/EmployeeScoreCard'
 import EmployeeSkillsPanel from '../components/EmployeeSkillsPanel'      // #43
 import EmployeeAttendancePanel from '../components/EmployeeAttendancePanel' // #38
-import { useMasterData, withInactive } from '@/modules/hr/useMasterData'
-import { offerPortalApi } from '@/services/offerPortalApi'
+import { useMasterData, withInactive, withInactiveById } from '@/modules/hr/useMasterData'
 import AuditTimeline from '@/components/ui/AuditTimeline'
 import EmployeeNotifications from '@/modules/notifications/EmployeeNotifications'
 import EmployeeSalarySection from '@/modules/hr/components/EmployeeSalarySection'
@@ -205,7 +204,19 @@ export default function EmployeeProfile() {
     try { const blob = await hrApi.onboarding.documentBlob(data.onboarding_id, docId); const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name||'document'; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1500) }
     catch { showToast('Failed to download','error') }
   }
-  const offerLetterUrl = data.offer?.access_token ? offerPortalApi.letterUrl(data.offer.access_token) : null
+  // The offer letter now comes down the authenticated HR route as a blob. It
+  // used to be an <a href> pointing at the CANDIDATE's public portal URL, built
+  // from their bearer token — which is why that token had to be shipped in this
+  // screen's API payload at all. It no longer is.
+  const hasOfferLetter = !!data.offer?.id
+  const viewOfferLetter = async () => {
+    try {
+      const blob = await hrApi.offers.letterBlob(data.offer.id)
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener')
+      setTimeout(() => URL.revokeObjectURL(url), 30000)
+    } catch { showToast('Failed to open the offer letter', 'error') }
+  }
 
   const deactivate = async () => {
     if (e.status==='Inactive') return
@@ -471,8 +482,8 @@ export default function EmployeeProfile() {
                         <button onClick={()=>viewDoc(doc.id)} className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded" style={{ background:'rgba(59,130,246,0.1)', color:'#60a5fa' }}><Eye size={11}/> View</button>
                         <button onClick={()=>downloadDoc(doc.id, doc.original_name)} className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded" style={{ background:'var(--bg-card)', color:'var(--text-muted)', border:'1px solid var(--border)' }}><Download size={11}/> Download</button>
                       </>
-                    ) : isOffer && offerLetterUrl ? (
-                      <a href={offerLetterUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded" style={{ background:'rgba(59,130,246,0.1)', color:'#60a5fa' }}><Eye size={11}/> View</a>
+                    ) : isOffer && hasOfferLetter ? (
+                      <button onClick={viewOfferLetter} className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded" style={{ background:'rgba(59,130,246,0.1)', color:'#60a5fa' }}><Eye size={11}/> View</button>
                     ) : (
                       <span className="text-[10px] font-semibold" style={{ color:'var(--text-muted)' }}>Not available</span>
                     )}
@@ -523,7 +534,9 @@ export default function EmployeeProfile() {
                   <Field k="Gross Salary" v={money(salary.current.gross_salary)}/>
                   <Field k="Benefits" v={money(salary.current.total_benefits)}/>
                   <Field k="Deductions" v={money(salary.current.total_deductions)}/>
-                  <Field k="Net Salary" v={money(salary.current.net_salary)}/>
+                  {/* The structure's net, not the month's take-home — see
+                      EmployeeSalarySection for why the distinction matters. */}
+                  <Field k="Structure Net" v={money(salary.current.net_salary)}/>
                 </Grid>
                 {salary.history?.length > 1 && (
                   <>
@@ -1164,14 +1177,16 @@ const IntegrationNote = ({ icon:Icon, title, subtitle, hint, chips, big }) => (
 
 // ── Edit modal (unchanged behaviour — same fields, same update API) ──
 function EditModal({ employee, onClose, onSaved, showToast }) {
-  const F = ['name','email','phone','department','designation','reporting_manager_name','joining_date','probation_end_date','confirmation_date','status']
+  // department_id / designation_id are what is SUBMITTED; the two names ride
+  // along only so a since-retired master still has a label in the dropdown.
+  const F = ['name','email','phone','department','designation','department_id','designation_id','reporting_manager_name','joining_date','probation_end_date','confirmation_date','notice_days','status']
   const [form, setForm] = useState(Object.fromEntries(F.map(k=>[k, employee[k] ?? (k==='status'?'Active':'')])))
   const [saving, setSaving] = useState(false)
   // Department / Designation / Reporting Manager from Org Setup master data (single
   // source, active-only). No hardcoded lists; saved-but-inactive values stay marked.
   const { masters } = useMasterData()
-  const deptOptions    = withInactive((masters.departments  || []).map(d => d.name), form.department)
-  const desigOptions   = withInactive((masters.designations || []).map(d => d.name), form.designation)
+  const deptOptions    = withInactiveById(masters.departments,  form.department_id,  form.department)
+  const desigOptions   = withInactiveById(masters.designations, form.designation_id, form.designation)
   const managerOptions = withInactive((masters.managers     || []).map(m => m.name), form.reporting_manager_name)
   const save = async () => {
     setSaving(true)
@@ -1191,15 +1206,28 @@ function EditModal({ employee, onClose, onSaved, showToast }) {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Department</label>
-              <select className="input-3d text-sm" value={form.department} onChange={e=>set('department',e.target.value)}>
+              <select className="input-3d text-sm" value={form.department_id||''} onChange={e=>set('department_id',e.target.value)}>
                 <option value="">Select...</option>{deptOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
             <div><label className="label">Designation</label>
-              <select className="input-3d text-sm" value={form.designation} onChange={e=>set('designation',e.target.value)}>
+              <select className="input-3d text-sm" value={form.designation_id||''} onChange={e=>set('designation_id',e.target.value)}>
                 <option value="">Select...</option>{desigOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
+          </div>
+          {/* Blank inherits the grade's exit policy and then the exit type
+              default; 0 means this person serves no notice. */}
+          <div>
+            <label className="label">Notice Period (days)</label>
+            <input type="number" min="0" max="365" className="input-3d text-sm"
+              placeholder="Leave blank to inherit from grade / exit type"
+              value={form.notice_days ?? ''} onChange={e=>set('notice_days',e.target.value)}/>
+            <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+              {form.notice_days === '' || form.notice_days === null || form.notice_days === undefined
+                ? 'Inheriting from grade / exit type.'
+                : `Overridden: ${Number(form.notice_days)} day(s).`}
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Reporting Manager</label>

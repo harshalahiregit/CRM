@@ -41,7 +41,7 @@ class LeaveApprovalService
     {
         return [
             'data'  => $this->repo->filtered($tenantId, $f, $actor)->map(fn ($a) => $this->present($a))->all(),
-            'stats' => $this->repo->statusCounts($tenantId),
+            'stats' => $this->repo->statusCounts($tenantId, $actor),
         ];
     }
 

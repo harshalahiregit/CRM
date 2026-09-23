@@ -10,7 +10,7 @@ import { hrApi } from '@/services/hrApi'
  * Organization Setup OR Project CRUD so every mounted consumer re-reads the masters.
  */
 const EMPTY = {
-  departments: [], designations: [], grades: [], roles: [],
+  departments: [], designations: [], grades: [], roles: [], employment_types: [],
   shifts: [], business_units: [], employee_levels: [], managers: [], locations: [],
   projects: [], // sourced from the Project module (single source of truth), active-only
 }
@@ -43,6 +43,29 @@ export function withInactive(names, saved) {
   const list = (names || []).map((n) => ({ value: n, label: n }))
   if (saved && !list.some((o) => o.value === saved)) {
     list.unshift({ value: saved, label: `${saved} · Inactive` })
+  }
+  return list
+}
+
+/**
+ * The same rule, for masters chosen by ID.
+ *
+ * Department and Designation are now submitted as `department_id` /
+ * `designation_id` so an employee points at the authoritative record instead
+ * of a typed string. The master feed is active-only, so an employee sitting in
+ * a department that was since retired would otherwise find their own value
+ * missing from the dropdown and silently lose it on the next save.
+ *
+ * `savedId` keeps that option present and `savedName` is what to call it —
+ * taken from the employee's own stored name, because the master list cannot
+ * supply a label for a record it no longer returns.
+ */
+export function withInactiveById(records, savedId, savedName) {
+  const list = (records || []).map((r) => ({ value: String(r.id), label: r.name }))
+  const saved = savedId ? String(savedId) : ''
+
+  if (saved && !list.some((o) => o.value === saved)) {
+    list.unshift({ value: saved, label: `${savedName || 'Current'} · Inactive` })
   }
   return list
 }

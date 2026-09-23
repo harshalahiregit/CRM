@@ -19,7 +19,7 @@ class EmployeeSalaryController extends Controller
 
     public function show(Request $request, int $employeeId)
     {
-        return response()->json($this->service->forEmployee($employeeId, $this->tenant($request)));
+        return response()->json($this->service->forEmployee($employeeId, $this->tenant($request), $request->user()));
     }
 
     /** Read-only salary revision ledger for one employee. */

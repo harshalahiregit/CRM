@@ -16,8 +16,10 @@ class ReminderSourceRegistry
         ProbationConfirmationSource $probation,
         LeavePendingApprovalSource $leave,
         LearningCertificateExpirySource $learning,
+        PayrollApprovalPendingSource $payroll,
+        LoanApprovalPendingSource $loan,
     ) {
-        $this->sources = [$probation, $leave, $learning];
+        $this->sources = [$probation, $leave, $learning, $payroll, $loan];
     }
 
     public function for(string $module, string $event): ?ReminderSource

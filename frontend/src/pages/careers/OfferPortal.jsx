@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom'
 import {
   FileText, Download, CheckCircle2, XCircle, Clock, HelpCircle, ShieldCheck, Upload, Check,
 } from 'lucide-react'
-import { offerPortalApi } from '@/services/offerPortalApi'
+import { offerPortalApi, onboardingOfferApi } from '@/services/offerPortalApi'
 
 const accent = '#7C3AED'
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'
@@ -18,10 +18,18 @@ const STATUS = (s) => ({
  * Also embedded inside the candidate Onboarding Portal's "Offer Letter" tab.
  * Pass `token` to render it in place; without it the token comes from the route,
  * so the standalone /offer/{token} page is unchanged.
+ *
+ * `via="onboarding"` says that `token` is the candidate's ONBOARDING token
+ * rather than an offer token, and swaps the calls to /onboarding/{token}/offer.
+ * That is what the embedded tab passes now: it used to be given the offer's own
+ * raw token, which meant the onboarding page carried a second bearer credential
+ * for no reason. Everything the component renders is identical either way —
+ * only the URL the calls go to differs.
  */
-export default function OfferPortal({ token: tokenProp, embedded = false }) {
+export default function OfferPortal({ token: tokenProp, embedded = false, via = 'offer' }) {
   const { token: routeToken } = useParams()
   const token = tokenProp || routeToken
+  const portal = via === 'onboarding' ? onboardingOfferApi : offerPortalApi
   const [offer, setOffer] = useState(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
@@ -32,8 +40,8 @@ export default function OfferPortal({ token: tokenProp, embedded = false }) {
   const [msg, setMsg] = useState('')
 
   const load = useCallback(async () => {
-    try { setOffer(await offerPortalApi.get(token)) } catch { setNotFound(true) } finally { setLoading(false) }
-  }, [token])
+    try { setOffer(await portal.get(token)) } catch { setNotFound(true) } finally { setLoading(false) }
+  }, [token, portal])
   useEffect(() => { load() }, [load])
 
   const act = async (fn, key) => {
@@ -43,9 +51,9 @@ export default function OfferPortal({ token: tokenProp, embedded = false }) {
     finally { setBusy('') }
   }
 
-  const accept = () => act(() => offerPortalApi.accept(token, { full_name: fullName.trim(), signature: signature || undefined }), 'accept')
-  const decline = () => { const reason = window.prompt('Optionally, tell us why you are declining:'); if (reason === null) return; act(() => offerPortalApi.decline(token, reason || undefined), 'decline') }
-  const clarify = () => { const m = window.prompt('What would you like clarified about this offer?'); if (!m) return; act(() => offerPortalApi.clarify(token, m), 'clarify') }
+  const accept = () => act(() => portal.accept(token, { full_name: fullName.trim(), signature: signature || undefined }), 'accept')
+  const decline = () => { const reason = window.prompt('Optionally, tell us why you are declining:'); if (reason === null) return; act(() => portal.decline(token, reason || undefined), 'decline') }
+  const clarify = () => { const m = window.prompt('What would you like clarified about this offer?'); if (!m) return; act(() => portal.clarify(token, m), 'clarify') }
 
   if (loading) return <Center>Loading your offer…</Center>
   if (notFound || !offer) return <Center><h1 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a' }}>This offer link is invalid or has expired.</h1></Center>
@@ -140,7 +148,7 @@ export default function OfferPortal({ token: tokenProp, embedded = false }) {
                 </div>
               </div>
             )}
-            {offer.pre_joining && <PreJoining token={token} pj={offer.pre_joining} onChanged={setOffer} />}
+            {offer.pre_joining && <PreJoining token={token} portal={portal} pj={offer.pre_joining} onChanged={setOffer} />}
           </>
         )}
       </div>
@@ -148,14 +156,14 @@ export default function OfferPortal({ token: tokenProp, embedded = false }) {
   )
 }
 
-function PreJoining({ token, pj, onChanged }) {
+function PreJoining({ token, portal, pj, onChanged }) {
   const [busyKey, setBusyKey] = useState('')
   const [values, setValues] = useState(Object.fromEntries(pj.items.map(i => [i.key, i.value || ''])))
   const refs = useRef({})
 
   const submit = async (key, value, file) => {
     setBusyKey(key)
-    try { const r = await offerPortalApi.task(token, key, value, file); if (r?.offer) onChanged(r.offer) }
+    try { const r = await portal.task(token, key, value, file); if (r?.offer) onChanged(r.offer) }
     catch { /* ignore */ } finally { setBusyKey('') }
   }
 

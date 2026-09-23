@@ -217,6 +217,79 @@ class StaffRoleTemplate
             'is_vocabulary_only' => true,
         ],
 
+        /*
+         | The two standard roles the product named and the templates did not
+         | carry.
+         |
+         | HR Executive and HR Recruiter both existed, but neither is the person
+         | who ADMINISTERS HR — who configures the module, edits anybody's
+         | employee record and owns leave and exit. And nothing anywhere
+         | described somebody who runs payroll without also running recruitment:
+         | 'accounts' is the finance role, scoped to invoices and expenses, and
+         | it grants no HR module at all.
+         |
+         | Both are built from the existing permission vocabulary. No new
+         | capability, module or scope is introduced for them.
+         */
+        'hr_admin' => [
+            'label'       => 'HR Admin',
+            'permissions' => [
+                // The whole HR module, including the settings that configure it.
+                'hr_employees' => ['view_own', 'view_global', 'create', 'edit', 'delete'],
+                'hr_attendance' => ['view_own', 'view_global', 'create', 'edit', 'delete'],
+                'hr_leave' => ['view_own', 'view_global', 'create', 'edit', 'delete'],
+                'hr_exit' => ['view_own', 'view_global', 'create', 'edit', 'delete'],
+                'hr_recruitment' => ['view_own', 'view_global', 'create', 'edit', 'delete'],
+                'hr_checklists' => ['view_own', 'view_global', 'create', 'edit', 'delete'],
+                'hr_settings' => ['view_global', 'create', 'edit'],
+                'staff_mgmt' => ['view_global'],
+                'reports' => ['view_global'],
+                'appointments' => ['view_global', 'create', 'edit'],
+                'surveys' => ['view_global', 'create'],
+                'goals' => ['view_global', 'create'],
+                'self' => ['view_own', 'create', 'edit'],
+
+                // DELIBERATELY ABSENT: hr_payroll. Administering HR and running
+                // payroll are different jobs, and a workspace that wants one
+                // person doing both gives them both roles rather than having
+                // that decided here. Also absent: hr_posh_intake and
+                // hr_posh_reports, which are granted deliberately and never by
+                // inheritance — the person who takes a POSH complaint is
+                // deliberately not entitled to read the file afterwards.
+                //
+                // And absent for a reason found rather than chosen:
+                // hr_onboarding. HrCapabilityGrantTest pins that capability to
+                // exactly the roles canManageOnboarding()'s old hardcoded list
+                // named — hr_executive and hr_recruiter — and adding a third
+                // holder broke it. Widening who may run onboarding is a product
+                // decision, not something a new role template should make on
+                // the way past, so the pinned set is left exactly as it was.
+            ],
+        ],
+        'payroll_admin' => [
+            'label'       => 'Payroll Admin',
+            'permissions' => [
+                // Payroll itself, and the reads it cannot run without.
+                'hr_payroll' => ['view_own', 'view_global', 'create', 'edit', 'delete'],
+                // Payroll is calculated FROM attendance and leave, so both are
+                // readable — and neither is writable, because correcting an
+                // attendance record is the HR queue's decision and not
+                // something the person running the numbers should do to their
+                // own inputs.
+                'hr_attendance' => ['view_own', 'view_global'],
+                'hr_leave' => ['view_own', 'view_global'],
+                // Read-only on employees: payroll needs the establishment, not
+                // the ability to edit somebody's record.
+                'hr_employees' => ['view_own', 'view_global'],
+                'reports' => ['view_global'],
+                'self' => ['view_own', 'create', 'edit'],
+
+                // DELIBERATELY ABSENT: hr_settings. Payroll reads the statutory
+                // rules and HR settings; it does not get to change the rules it
+                // is measured by.
+            ],
+        ],
+
         'director' => [
             'label'       => 'Director',
             'permissions' => [

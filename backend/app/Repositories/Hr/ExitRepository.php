@@ -7,10 +7,14 @@ use App\Models\Hr\HrExitRequest;
 use App\Models\Hr\HrExitType;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
+use App\Models\User;
+use App\Repositories\Hr\Concerns\ScopesEmployeeData;
 
 /** Read queries for Exit Management masters (Phase 1) + requests (Phase 2). Tenant-scoped; no writes. */
 class ExitRepository
 {
+    use ScopesEmployeeData;
+
     /* ── Exit Types ───────────────────────────────────────── */
     public function types(int $tenantId, array $f): Collection
     {
@@ -86,9 +90,11 @@ class ExitRepository
     }
 
     /* ── Exit Requests (Phase 2) + Approval (Phase 3) ─────── */
-    public function requests(int $tenantId, array $f): Collection
+    public function requests(int $tenantId, array $f, ?User $actor = null): Collection
     {
-        return HrExitRequest::where('tenant_id', $tenantId)
+        // Requests are employee-owned. types()/policies() above are NOT — they
+        // have no employee_id and are the company's exit configuration.
+        return $this->scopeToEmployees(HrExitRequest::where('tenant_id', $tenantId), $actor)
             ->with(['employee:id,name,employee_code,department,designation', 'exitType:id,name,code', 'policy:id,name,notice_days,buyout_allowed'])
             ->when(! empty($f['employee_id']), fn ($q) => $q->where('employee_id', $f['employee_id']))
             ->when(! empty($f['exit_type_id']), fn ($q) => $q->where('exit_type_id', $f['exit_type_id']))
@@ -102,9 +108,12 @@ class ExitRepository
     }
 
     /** Approval KPI counters (Phase 3). Pending = Submitted awaiting review. */
-    public function approvalStats(int $tenantId): array
+    public function approvalStats(int $tenantId, ?User $actor = null): array
     {
-        $base = fn () => HrExitRequest::where('tenant_id', $tenantId);
+        // Every counter is built from $base, so scoping it here scopes all of
+        // them — a tile reading "12 pending" to somebody who can open two of
+        // them is a disclosure in its own right.
+        $base = fn () => $this->scopeToEmployees(HrExitRequest::where('tenant_id', $tenantId), $actor);
         $monthStart = Carbon::today()->startOfMonth()->toDateString();
         $monthEnd = Carbon::today()->endOfMonth()->toDateString();
 
@@ -120,25 +129,27 @@ class ExitRepository
     }
 
     /** Decided requests (Approved / Rejected) — the approval history log. */
-    public function approvalHistory(int $tenantId, array $f): Collection
+    public function approvalHistory(int $tenantId, array $f, ?User $actor = null): Collection
     {
-        return HrExitRequest::where('tenant_id', $tenantId)
+        return $this->scopeToEmployees(HrExitRequest::where('tenant_id', $tenantId), $actor)
             ->whereIn('status', [HrExitRequest::APPROVED, HrExitRequest::REJECTED])
             ->with(['employee:id,name,employee_code,department,designation', 'exitType:id,name,code', 'policy:id,name'])
             ->when(! empty($f['employee_id']), fn ($q) => $q->where('employee_id', $f['employee_id']))
             ->orderByDesc('decided_at')->orderByDesc('id')->get();
     }
 
-    public function findRequest(int $id, int $tenantId): ?HrExitRequest
+    public function findRequest(int $id, int $tenantId, ?User $actor = null): ?HrExitRequest
     {
-        return HrExitRequest::where('tenant_id', $tenantId)
+        return $this->scopeToEmployees(HrExitRequest::where('tenant_id', $tenantId), $actor)
             ->with(['employee:id,name,employee_code,department,designation', 'exitType:id,name,code', 'policy:id,name,notice_days,buyout_allowed', 'auditLogs'])
             ->find($id);
     }
 
     /** Latest non-withdrawn request for an employee — the profile's "current" exit. */
-    public function currentRequestForEmployee(int $employeeId, int $tenantId): ?HrExitRequest
+    public function currentRequestForEmployee(int $employeeId, int $tenantId, ?User $actor = null): ?HrExitRequest
     {
+        $this->assertEmployeeInScope($actor, $employeeId);
+
         return HrExitRequest::where('tenant_id', $tenantId)
             ->where('employee_id', $employeeId)
             ->where('status', '!=', HrExitRequest::WITHDRAWN)
@@ -147,9 +158,9 @@ class ExitRepository
     }
 
     /** KPI counters: statuses, employees currently within notice, exits this month. */
-    public function requestStats(int $tenantId): array
+    public function requestStats(int $tenantId, ?User $actor = null): array
     {
-        $base = fn () => HrExitRequest::where('tenant_id', $tenantId);
+        $base = fn () => $this->scopeToEmployees(HrExitRequest::where('tenant_id', $tenantId), $actor);
         $today = Carbon::today()->toDateString();
         $monthStart = Carbon::today()->startOfMonth()->toDateString();
         $monthEnd = Carbon::today()->endOfMonth()->toDateString();

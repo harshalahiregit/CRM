@@ -8,6 +8,8 @@ use App\Models\Hr\HrEmployeeLoan;
 use App\Models\Hr\HrLoanInstallment;
 use App\Models\Hr\HrPayrollRecord;
 use App\Models\Hr\HrPayrollRun;
+use App\Models\User;
+use App\Repositories\Hr\Concerns\ScopesEmployeeData;
 
 /**
  * Review comment #38 — "Employee loan, advance, and sangoe track integration".
@@ -30,12 +32,20 @@ use App\Models\Hr\HrPayrollRun;
  */
 class LoanRecoveryService
 {
+    // Read-only, but what it reads is who owes what. This service is a second
+    // route to the same loan rows LoanService serves, reached from the employee
+    // profile rather than the loan queue, so it takes the same boundary — a
+    // scoped surface with an unscoped twin is not scoped.
+    use ScopesEmployeeData;
+
     /** Recovery status for one loan: scheduled vs collected, and by which run. */
-    public function forLoan(int $loanId, int $tenantId): array
+    public function forLoan(int $loanId, int $tenantId, ?User $actor = null): array
     {
-        $loan = HrEmployeeLoan::forTenant($tenantId)
-            ->with(['employee:id,name,employee_code', 'loanType:id,name,is_advance', 'installments'])
-            ->find($loanId);
+        $loan = $this->scopeToEmployees(
+            HrEmployeeLoan::forTenant($tenantId)
+                ->with(['employee:id,name,employee_code', 'loanType:id,name,is_advance', 'installments']),
+            $actor
+        )->find($loanId);
 
         if (! $loan) {
             throw new BusinessException('Loan not found', 404);
@@ -103,8 +113,11 @@ class LoanRecoveryService
      * A summary, not the schedule: the profile answers "does this person owe
      * anything, and is it on track?", and the Loans screen answers the rest.
      */
-    public function forEmployee(int $employeeId, int $tenantId): array
+    public function forEmployee(int $employeeId, int $tenantId, ?User $actor = null): array
     {
+        // The employee id arrives from the URL, so a list filter is not enough.
+        $this->assertEmployeeInScope($actor, $employeeId);
+
         $loans = HrEmployeeLoan::forTenant($tenantId)
             ->where('employee_id', $employeeId)
             ->whereIn('status', [HrEmployeeLoan::DISBURSED, HrEmployeeLoan::CLOSED])
@@ -145,11 +158,14 @@ class LoanRecoveryService
     }
 
     /** Every employee with an outstanding loan — the recovery queue. */
-    public function outstanding(int $tenantId, array $filters = []): array
+    public function outstanding(int $tenantId, array $filters = [], ?User $actor = null): array
     {
-        $q = HrEmployeeLoan::forTenant($tenantId)
-            ->where('status', HrEmployeeLoan::DISBURSED)
-            ->with(['employee:id,name,employee_code,department', 'loanType:id,name,is_advance']);
+        $q = $this->scopeToEmployees(
+            HrEmployeeLoan::forTenant($tenantId)
+                ->where('status', HrEmployeeLoan::DISBURSED)
+                ->with(['employee:id,name,employee_code,department', 'loanType:id,name,is_advance']),
+            $actor
+        );
 
         if (! empty($filters['employee_id'])) {
             $q->where('employee_id', (int) $filters['employee_id']);
@@ -194,18 +210,24 @@ class LoanRecoveryService
      * Reads the frozen records, so a run's recovery figure never changes after the
      * fact — the same principle the rest of payroll follows.
      */
-    public function forRun(int $runId, int $tenantId): array
+    public function forRun(int $runId, int $tenantId, ?User $actor = null): array
     {
         $run = HrPayrollRun::where('tenant_id', $tenantId)->find($runId);
         if (! $run) {
             throw new BusinessException('Payroll run not found', 404);
         }
 
-        $records = HrPayrollRecord::where('tenant_id', $tenantId)
-            ->where('payroll_run_id', $runId)
-            ->where('loan_deduction', '>', 0)
-            ->with('employee:id,name,employee_code')
-            ->get();
+        // The run itself is tenant-level and stays visible; its per-employee
+        // rows are not. total_recovered and employees_count below are derived
+        // from this same collection, so they follow it rather than being
+        // counted separately and disagreeing with the rows underneath.
+        $records = $this->scopeToEmployees(
+            HrPayrollRecord::where('tenant_id', $tenantId)
+                ->where('payroll_run_id', $runId)
+                ->where('loan_deduction', '>', 0)
+                ->with('employee:id,name,employee_code'),
+            $actor
+        )->get();
 
         $installments = HrLoanInstallment::forTenant($tenantId)
             ->whereIn('payroll_record_id', $records->pluck('id'))

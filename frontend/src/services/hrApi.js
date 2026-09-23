@@ -262,8 +262,20 @@ export const hrApi = {
     extend:        (id, validity) => api.patch(`/hr/offers/${id}/extend`, { validity_date: validity }).then(r => r.data),
     revisions:     (id)          => api.get(`/hr/offers/${id}/revisions`).then(r => r.data),
     delete:        (id)          => api.delete(`/hr/offers/${id}`).then(r => r.data),
-    // Public candidate offer-portal link built from the stored token.
-    portalUrl:     (token)       => `${window.location.origin}/offer/${token}`,
+
+    // The offer letter, for staff. Authenticated and tenant-scoped, so it goes
+    // through the axios instance as a blob rather than being an <a href>.
+    // HR screens used to read this PDF through the CANDIDATE's public portal
+    // URL, which is why the candidate's bearer token had to be published in
+    // ordinary API payloads. It is not published any more, and this is what
+    // replaced it.
+    letterBlob:    (id)          => api.get(`/hr/offers/${id}/letter`, { responseType: 'blob' }).then(r => r.data),
+
+    // Mint a candidate portal link. The raw token comes back exactly once, in
+    // this response, and any previously issued link stops working. There is
+    // deliberately no "read the current link" call — only a hash is stored.
+    issuePortalLink: (id)        => api.post(`/hr/offers/${id}/portal-link`).then(r => r.data),
+    revokePortalLink:(id, reason) => api.delete(`/hr/offers/${id}/portal-link`, { data: { reason } }).then(r => r.data),
   },
 
   // ── Onboarding ──────────────────────────────────────────────────────
@@ -283,6 +295,13 @@ export const hrApi = {
     documentBlob:   (id, docId)   => api.get(`/hr/onboarding/${id}/documents/${docId}`, { responseType: 'blob' }).then(r => r.data),
     verifyDocument: (id, docId, data) => api.patch(`/hr/onboarding/${id}/documents/${docId}/verify`, data).then(r => r.data),
     delete:         (id)          => api.delete(`/hr/onboarding/${id}`).then(r => r.data),
+
+    // Mint a candidate portal link. The raw token comes back exactly once, in
+    // this response, and any previously issued link stops working. There is
+    // deliberately no "read the current link" call — only a hash is stored, so
+    // seeing the link again means replacing it. Mirrors offers.issuePortalLink.
+    issuePortalLink: (id)         => api.post(`/hr/onboarding/${id}/portal-link`).then(r => r.data),
+    revokePortalLink:(id, reason) => api.delete(`/hr/onboarding/${id}/portal-link`, { data: { reason } }).then(r => r.data),
   },
 
   // ── Employees ───────────────────────────────────────────────────────
@@ -380,6 +399,14 @@ export const hrApi = {
       create: (data)       => api.post('/hr/org-roles', data).then(r => r.data),
       update: (id, data)   => api.put(`/hr/org-roles/${id}`, data).then(r => r.data),
       delete: (id)         => api.delete(`/hr/org-roles/${id}`).then(r => r.data),
+    },
+    // Permanent, Contract, Intern — whatever this company calls them. Nothing
+    // is seeded; the list is entirely the workspace's own.
+    employmentTypes: {
+      list:   ()           => api.get('/hr/employment-types').then(r => r.data),
+      create: (data)       => api.post('/hr/employment-types', data).then(r => r.data),
+      update: (id, data)   => api.put(`/hr/employment-types/${id}`, data).then(r => r.data),
+      delete: (id)         => api.delete(`/hr/employment-types/${id}`).then(r => r.data),
     },
   },
 
@@ -1346,6 +1373,81 @@ export const hrApi = {
     save:   (values) => api.put('/hr/settings', values).then(r => r.data?.data),
     // The short allowlist an employee's own screens may read.
     mine:   ()       => api.get('/hr/me/settings').then(r => r.data?.data ?? {}),
+  },
+
+  /**
+   * POSH committee configuration.
+   *
+   * Configuration only — this surface exposes no complaint or case data, and
+   * case access will never come through it. Each committee reports `blockers`:
+   * what stands between it and being switched on, so the screen can say what
+   * is missing rather than waiting for a failed save to explain it.
+   */
+  poshCommittees: {
+    list:       ()          => api.get('/hr/posh-committees').then(r => r.data?.data),
+    create:     (data)      => api.post('/hr/posh-committees', data).then(r => r.data?.data),
+    update:     (id, data)  => api.put(`/hr/posh-committees/${id}`, data).then(r => r.data?.data),
+    setActive:  (id, active) => api.patch(`/hr/posh-committees/${id}/status`, { is_active: active }).then(r => r.data?.data),
+    remove:     (id)        => api.delete(`/hr/posh-committees/${id}`).then(r => r.data),
+    addRole:    (id, data)  => api.post(`/hr/posh-committees/${id}/roles`, data).then(r => r.data?.data),
+    updateRole: (id, roleId, data) => api.put(`/hr/posh-committees/${id}/roles/${roleId}`, data).then(r => r.data?.data),
+    removeRole: (id, roleId) => api.delete(`/hr/posh-committees/${id}/roles/${roleId}`).then(r => r.data?.data),
+    setMembers: (id, members) => api.put(`/hr/posh-committees/${id}/members`, { members }).then(r => r.data?.data),
+  },
+
+  /**
+   * Exit-clearance departments, and who may sign off each of them.
+   *
+   * list() returns the departments AND the workspace's users and staff roles
+   * to choose from, so the screen keeps no copy of either. Each department
+   * reports its own `authorization`:
+   *
+   *   fallback      nobody configured — anyone on the HR queue may act
+   *   configured    only the named users and role members may act
+   *   misconfigured somebody is configured but none of them can currently act
+   */
+  clearanceDepartments: {
+    list:        ()          => api.get('/hr/clearance-departments').then(r => r.data?.data),
+    create:      (data)      => api.post('/hr/clearance-departments', data).then(r => r.data?.data),
+    update:      (id, data)  => api.put(`/hr/clearance-departments/${id}`, data).then(r => r.data?.data),
+    setActive:   (id, active) => api.patch(`/hr/clearance-departments/${id}/status`, { is_active: active }).then(r => r.data?.data),
+    remove:      (id)        => api.delete(`/hr/clearance-departments/${id}`).then(r => r.data),
+    reorder:     (ids)       => api.post('/hr/clearance-departments/reorder', { ids }).then(r => r.data?.data),
+    authorities: (id, userIds, roleIds) =>
+      api.put(`/hr/clearance-departments/${id}/authorities`,
+        { user_ids: userIds, staff_role_ids: roleIds }).then(r => r.data?.data),
+  },
+
+  /**
+   * The onboarding checklist every new joiner receives.
+   *
+   * list() returns the items AND the vocabulary the form renders from
+   * (categories, owner roles), so the screen keeps no copy of either. The
+   * items are a TEMPLATE: an onboarding already under way holds its own copy
+   * and is unaffected by anything edited here.
+   */
+  onboardingChecklist: {
+    list:      ()          => api.get('/hr/onboarding-checklist').then(r => r.data?.data),
+    create:    (data)      => api.post('/hr/onboarding-checklist', data).then(r => r.data?.data),
+    update:    (id, data)  => api.put(`/hr/onboarding-checklist/${id}`, data).then(r => r.data?.data),
+    setActive: (id, active) => api.patch(`/hr/onboarding-checklist/${id}/status`, { is_active: active }).then(r => r.data?.data),
+    remove:    (id)        => api.delete(`/hr/onboarding-checklist/${id}`).then(r => r.data),
+    reorder:   (ids)       => api.post('/hr/onboarding-checklist/reorder', { ids }).then(r => r.data?.data),
+    adoptDefaults: ()      => api.post('/hr/onboarding-checklist/adopt-defaults').then(r => r.data?.data),
+  },
+
+  /**
+   * Approval workflows — who approves what, in what order.
+   *
+   * show() returns the ladder AND the options the form renders from (approver
+   * types, this workspace's roles and users, the conditions this process
+   * understands), so the screen keeps no copy of the vocabulary.
+   */
+  approvalWorkflows: {
+    list:      ()                => api.get('/hr/approval-workflows').then(r => r.data?.data ?? []),
+    show:      (process)         => api.get(`/hr/approval-workflows/${process}`).then(r => r.data),
+    save:      (process, data)   => api.put(`/hr/approval-workflows/${process}`, data).then(r => r.data),
+    setStatus: (process, active) => api.patch(`/hr/approval-workflows/${process}/status`, { is_active: active }).then(r => r.data),
   },
 
   /** Inbound demo enquiries. */

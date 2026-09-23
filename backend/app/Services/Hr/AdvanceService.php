@@ -8,6 +8,7 @@ use App\Models\Hr\HrAdvanceSettlement;
 use App\Models\Hr\HrEmployee;
 use App\Models\User;
 use App\Support\Hr\AdvanceStage;
+use App\Support\Hr\Approval\ApprovalState;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -59,6 +60,18 @@ class AdvanceService
                 'expected_settlement_date' => $data['expected_settlement_date'] ?? null,
                 'status'                   => AdvanceStage::PENDING,
             ]);
+
+            /*
+             | Freeze the approval thresholds for THIS request.
+             |
+             | ladderFor() used to read live settings on every call, so raising
+             | advance_manager_limit while a request sat at the manager rung
+             | silently shortened its ladder and that manager's approval became
+             | final on an amount two more people were meant to see. The
+             | snapshot records the policy as it stood when the advance was
+             | raised; the amount still re-shapes the ladder within it.
+             */
+            $this->tiers->snapshotLadder($advance, $actor);
 
             $this->thread->event(
                 $advance,
@@ -142,6 +155,7 @@ class AdvanceService
 
         return DB::transaction(function () use ($advance, $actor) {
             $advance->update(['status' => AdvanceStage::CANCELLED, 'held_from' => null, 'proposed_amount' => null]);
+            $this->tiers->closeLadder($advance, ApprovalState::CANCELLED);
             $this->thread->event($advance, 'cancelled', 'The employee withdrew this request.', $actor);
 
             return $advance->fresh();
@@ -206,6 +220,12 @@ class AdvanceService
                     . ($complete ? ' The request is ready to disburse.' : ''),
                 $actor, ['tier' => $tier, 'amount' => $final]);
 
+            // The ladder is finished: close the round so the frozen
+            // thresholds stop applying to a request nobody is deciding.
+            if ($complete) {
+                $this->tiers->closeLadder($advance);
+            }
+
             $this->notifier->tell($advance->employee, 'Advance',
                 $complete ? 'approved' : 'part-approved',
                 $complete
@@ -240,6 +260,9 @@ class AdvanceService
                 'decided_by'      => $actor->id,
                 'decided_at'      => now(),
             ]);
+
+            // Declining ends the ladder, so the round closes with it.
+            $this->tiers->closeLadder($advance, ApprovalState::REJECTED);
 
             $this->thread->event($advance, 'declined', 'Declined. Reason: ' . trim($reason), $actor, ['reason' => trim($reason)]);
 

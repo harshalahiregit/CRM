@@ -29,13 +29,13 @@ class ExitSettlementController extends Controller
 
     public function history(Request $request)
     {
-        return response()->json($this->service->history($this->tenant($request), $request->only(['employee_id'])));
+        return response()->json($this->service->history($this->tenant($request), $request->only(['employee_id']), $request->user()));
     }
 
     /** Employee Profile → Exit tab: read-only settlement summary. */
     public function forEmployee(Request $request, int $employee)
     {
-        return response()->json($this->service->forEmployee($employee, $this->tenant($request)));
+        return response()->json($this->service->forEmployee($employee, $this->tenant($request), $request->user()));
     }
 
     public function generate(Request $request, int $id)

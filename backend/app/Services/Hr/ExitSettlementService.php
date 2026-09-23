@@ -93,28 +93,28 @@ class ExitSettlementService
         $this->ensureForCompletedClearance($tenantId, $actor);
 
         return [
-            'stats'  => $this->repo->stats($tenantId),
-            'months' => $this->repo->months($tenantId),
-            'rows'   => $this->repo->queue($tenantId, $f)->map(fn ($s) => $this->present($s))->all(),
+            'stats'  => $this->repo->stats($tenantId, $actor),
+            'months' => $this->repo->months($tenantId, $actor),
+            'rows'   => $this->repo->queue($tenantId, $f, $actor)->map(fn ($s) => $this->present($s))->all(),
         ];
     }
 
     public function show(int $id, int $tenantId, ?User $actor = null): array
     {
-        $settlement = $this->find($id, $tenantId);
+        $settlement = $this->find($id, $tenantId, $actor);
         $settlement->recordAudit('Settlement Viewed', $actor);
 
         return $this->present($settlement, true);
     }
 
-    public function history(int $tenantId, array $f): array
+    public function history(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->history($tenantId, $f)->map(fn ($s) => $this->present($s))->all();
+        return $this->repo->history($tenantId, $f, $actor)->map(fn ($s) => $this->present($s))->all();
     }
 
-    public function forEmployee(int $employeeId, int $tenantId): ?array
+    public function forEmployee(int $employeeId, int $tenantId, ?User $actor = null): ?array
     {
-        $settlement = $this->repo->findByEmployee($employeeId, $tenantId);
+        $settlement = $this->repo->findByEmployee($employeeId, $tenantId, $actor);
 
         return $settlement ? $this->present($settlement, true) : null;
     }
@@ -123,7 +123,7 @@ class ExitSettlementService
 
     public function generate(int $id, array $inputs, int $tenantId, ?User $actor = null): array
     {
-        $settlement = $this->find($id, $tenantId);
+        $settlement = $this->find($id, $tenantId, $actor);
         if ($settlement->status !== HrExitSettlement::PENDING) {
             throw new BusinessException('This settlement has already been generated.');
         }
@@ -151,7 +151,7 @@ class ExitSettlementService
         $settlement->recordAudit('Settlement Generated', $actor, null, ['net' => $snapshot['totals']['net_settlement'], 'employee' => $settlement->employee?->name]);
         $this->log('Settlement generated', $tenantId, $settlement->id);
 
-        return $this->present($this->find($id, $tenantId), true);
+        return $this->present($this->find($id, $tenantId, $actor), true);
     }
 
     public function review(int $id, int $tenantId, ?User $actor = null): array
@@ -171,7 +171,7 @@ class ExitSettlementService
 
     private function transition(int $id, int $tenantId, string $from, string $to, string $tsCol, string $byCol, string $audit, string $error, ?User $actor): array
     {
-        $settlement = $this->find($id, $tenantId);
+        $settlement = $this->find($id, $tenantId, $actor);
         if ($settlement->status === HrExitSettlement::SETTLED) {
             throw new BusinessException('This settlement is settled and is now read-only.');
         }
@@ -182,7 +182,7 @@ class ExitSettlementService
         $settlement->recordAudit($audit, $actor);
         $this->log($audit, $tenantId, $settlement->id);
 
-        return $this->present($this->find($id, $tenantId), true);
+        return $this->present($this->find($id, $tenantId, $actor), true);
     }
 
     /* ── Snapshot computation (READ-ONLY on payroll) ──────── */
@@ -374,9 +374,9 @@ class ExitSettlementService
         return $out;
     }
 
-    private function find(int $id, int $tenantId): HrExitSettlement
+    private function find(int $id, int $tenantId, ?User $actor = null): HrExitSettlement
     {
-        $settlement = $this->repo->find($id, $tenantId);
+        $settlement = $this->repo->find($id, $tenantId, $actor);
         if (! $settlement) {
             throw new BusinessException('Settlement not found', 404);
         }

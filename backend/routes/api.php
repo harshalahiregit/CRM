@@ -39,6 +39,10 @@ require __DIR__.'/careers.php';
 require __DIR__.'/onboarding.php';
 require __DIR__.'/offer.php';
 
+// POSH: the complainant's read-only view of their own case, reached by a
+// token because a complainant is never a case member and never a User.
+require __DIR__.'/posh_portal.php';
+
 // Vendor master + third-party-vendor (TPV) module and its shared engines.
 require __DIR__.'/vendors.php';
 require __DIR__.'/tpv.php';

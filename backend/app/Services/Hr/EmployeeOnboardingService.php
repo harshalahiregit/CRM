@@ -8,6 +8,7 @@ use App\Models\Hr\HrEmployee;
 use App\Models\Hr\HrEmployeeOnboarding;
 use App\Models\Hr\HrEmployeeOnboardingTask;
 use App\Models\User;
+use App\Repositories\Hr\Concerns\ScopesEmployeeData;
 use App\Services\Notifications\NotificationService;
 use App\Support\Hr\EmployeeOnboardingStage as Stage;
 use App\Support\Hr\EmployeeOnboardingStatus as Status;
@@ -28,6 +29,13 @@ use Illuminate\Support\Facades\Log;
  */
 class EmployeeOnboardingService
 {
+    // Onboarding is the one table here whose employee link is legitimately
+    // null, so the list and dashboard below use the "or unassigned" shape:
+    // candidate rows stay visible to anyone permitted, employee rows scope
+    // normally. createFromEmployee() and the candidate portal paths take no
+    // actor and are unaffected.
+    use ScopesEmployeeData;
+
     /** Profile columns owned by each editable 1:1 section. */
     private const SECTION_FIELDS = [
         'personal'   => ['first_name', 'middle_name', 'last_name', 'dob', 'gender', 'marital_status', 'blood_group', 'father_name', 'mother_name', 'nationality', 'religion'],
@@ -50,14 +58,26 @@ class EmployeeOnboardingService
         'declaration' => ['declaration_accepted', 'declaration_accepted_at'],
     ];
 
-    public function __construct(private NotificationService $notifications)
+    public function __construct(
+        private NotificationService $notifications,
+        // The engine, beside the raw mail above. Onboarding notified only by
+        // e-mail: no bell, no per-tenant template, no rule, no channel choice.
+        private HrEventNotifier $events,
+        // The workspace's own checklist, which used to be 27 tasks in a PHP
+        // constant that nobody could change without a deploy.
+        private OnboardingChecklistService $checklist,
+    )
     {
     }
 
     /* ─────────────────────────────────── Dashboard ─────────────────────────────────── */
-    public function dashboard(int $tenantId): array
+    public function dashboard(int $tenantId, ?User $actor = null): array
     {
-        $base = HrEmployeeOnboarding::where('tenant_id', $tenantId);
+        // Every card, list and the average below derive from $base, so scoping
+        // it once keeps the tiles agreeing with the rows under them.
+        $base = $this->scopeToEmployeesOrUnassigned(
+            HrEmployeeOnboarding::where('tenant_id', $tenantId), $actor
+        );
         $today = Carbon::today();
 
         $byStatus = fn (string $s) => (clone $base)->where('status', $s)->count();
@@ -71,7 +91,10 @@ class EmployeeOnboardingService
         return [
             'cards' => [
                 'total'             => (clone $base)->count(),
-                'total_employees'   => HrEmployee::where('tenant_id', $tenantId)->count(),
+                // On hr_employees the employee id IS the primary key.
+                'total_employees'   => $this->scopeToEmployees(
+                    HrEmployee::where('tenant_id', $tenantId), $actor, 'id'
+                )->count(),
                 'pending'           => $byStatus(Status::PENDING),
                 'in_progress'       => $byStatus(Status::IN_PROGRESS),
                 'waiting_documents' => $byStatus(Status::WAITING_DOCUMENTS),
@@ -103,7 +126,7 @@ class EmployeeOnboardingService
     }
 
     /* ─────────────────────────────────── List (paginated) ─────────────────────────────────── */
-    public function list(int $tenantId, array $filters = [])
+    public function list(int $tenantId, array $filters = [], ?User $actor = null)
     {
         $perPage = min((int) ($filters['per_page'] ?? 12), 100);
         $sort    = $filters['sort'] ?? 'created_at';
@@ -111,7 +134,9 @@ class EmployeeOnboardingService
         $sortable = ['created_at', 'joining_date', 'progress_percent', 'status', 'current_stage'];
         $sort = in_array($sort, $sortable, true) ? $sort : 'created_at';
 
-        return HrEmployeeOnboarding::where('tenant_id', $tenantId)
+        return $this->scopeToEmployeesOrUnassigned(
+            HrEmployeeOnboarding::where('tenant_id', $tenantId), $actor
+        )
             ->when(! empty($filters['status']) && $filters['status'] !== 'All', fn ($q) => $q->where('status', $filters['status']))
             ->when(! empty($filters['stage']) && $filters['stage'] !== 'All', fn ($q) => $q->where('current_stage', $filters['stage']))
             ->when(! empty($filters['search']), function ($q) use ($filters) {
@@ -217,26 +242,44 @@ class EmployeeOnboardingService
                 Log::channel('hr')->warning('Onboarding start notification failed', ['onboarding_id' => $onboarding->id, 'error' => $e->getMessage()]);
             }
 
+            // ALONGSIDE the e-mails above, not instead of them. Those go out
+            // whether or not the person has a login; this puts the same moment
+            // in the bell, under a per-tenant template and the workspace's own
+            // channel rules, which raw mail has never been able to offer.
+            $this->events->toEmployee($onboarding->employee, 'Onboarding', 'Started', [], $user);
+
             return $onboarding->load('employee');
         });
     }
 
+    /**
+     * Copy the workspace's checklist onto this onboarding.
+     *
+     * The list comes from the tenant's own master now rather than from
+     * OnboardingTaskCategory::DEFAULT_TASKS, which meant a company wanting one
+     * extra induction step — or not issuing laptops — needed a developer.
+     * A workspace that has configured nothing still gets those 27, so this
+     * changed where the rows come from and nothing about what is written.
+     *
+     * Still a COPY, and that is the point. Each task carries its own title,
+     * category and order, so an administrator editing the master afterwards
+     * cannot rename, reorder or remove anything on a checklist somebody is
+     * already working through.
+     */
     private function seedTasks(HrEmployeeOnboarding $onboarding, int $tenantId): void
     {
         $sort = 0;
-        foreach (TaskCat::DEFAULT_TASKS as $category => $rows) {
-            foreach ($rows as $row) {
-                $onboarding->tasks()->create([
-                    'tenant_id'    => $tenantId,
-                    'category'     => $category,
-                    'title'        => $row['title'],
-                    'status'       => TaskCat::STATUS_PENDING,
-                    'is_mandatory' => $row['is_mandatory'],
-                    'owner_role'   => $row['owner_role'],
-                    'source'       => 'System',
-                    'sort_order'   => $sort++,
-                ]);
-            }
+        foreach ($this->checklist->applicableFor($tenantId) as $row) {
+            $onboarding->tasks()->create([
+                'tenant_id'    => $tenantId,
+                'category'     => $row['category'],
+                'title'        => $row['title'],
+                'status'       => TaskCat::STATUS_PENDING,
+                'is_mandatory' => $row['is_mandatory'],
+                'owner_role'   => $row['owner_role'],
+                'source'       => 'System',
+                'sort_order'   => $sort++,
+            ]);
         }
     }
 
@@ -557,6 +600,11 @@ class EmployeeOnboardingService
             $this->notifyHr($o, 'Background verification '.$bgv->status.' — '.optional($o->employee)->name,
                 'BGV for '.optional($o->employee)->name.' is '.$bgv->status.'. Vendor: '.($bgv->vendor ?: 'n/a')
                 .', Ref: '.($bgv->reference_number ?: 'n/a').'.', ['event' => 'bgv_'.strtolower(str_replace(' ', '_', $bgv->status))]);
+
+            $this->events->toHrQueue((int) $o->tenant_id, 'Onboarding', 'Verification Complete', [
+                'employee' => optional($o->employee)->name,
+                'status'   => $bgv->status,
+            ], $user);
         }
 
         return $bgv;
@@ -621,6 +669,9 @@ class EmployeeOnboardingService
         $this->notifyHr($o, 'Employee activated — '.$employee->name,
             $employee->name.' ('.$employee->employee_code.') is now Active. Official email: '.$employee->official_email.'.',
             ['event' => 'joining_confirmed']);
+
+        $this->events->toHrQueue((int) $o->tenant_id, 'Onboarding', 'Employee Activated',
+            ['employee' => $employee->name], $user);
 
         return $o->fresh(['employee']);
     }

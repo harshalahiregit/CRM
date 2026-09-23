@@ -7,6 +7,8 @@ use App\Models\Hr\HrTrainingAssessment;
 use App\Models\Hr\HrTrainingAttendance;
 use App\Models\Hr\HrTrainingQuiz;
 use Illuminate\Database\Eloquent\Collection;
+use App\Models\User;
+use App\Repositories\Hr\Concerns\ScopesEmployeeData;
 
 /**
  * Read queries for Training records — Attendance / Assessment / Quiz (L&D Phase 5).
@@ -14,6 +16,8 @@ use Illuminate\Database\Eloquent\Collection;
  */
 class TrainingRecordRepository
 {
+    use ScopesEmployeeData;
+
     private const ASSIGN_EAGER = [
         'assignment:id,employee_id,training_program_id,training_session_id,status',
         'assignment.employee:id,name,employee_code,department,designation',
@@ -22,9 +26,9 @@ class TrainingRecordRepository
     ];
 
     /* ── Attendance ───────────────────────────────────────── */
-    public function attendance(int $tenantId, array $f): Collection
+    public function attendance(int $tenantId, array $f, ?User $actor = null): Collection
     {
-        return HrTrainingAttendance::where('tenant_id', $tenantId)
+        return $this->scopeToEmployees(HrTrainingAttendance::where('tenant_id', $tenantId), $actor)
             ->with([
                 'session:id,title,trainer_name,start_at',
                 'employee:id,name,employee_code,department,designation',
@@ -37,11 +41,15 @@ class TrainingRecordRepository
             ->orderByDesc('id')->get();
     }
 
-    public function findAttendance(int $id, int $tenantId): ?HrTrainingAttendance
+    public function findAttendance(int $id, int $tenantId, ?User $actor = null): ?HrTrainingAttendance
     {
-        return HrTrainingAttendance::where('tenant_id', $tenantId)
-            ->with(['session:id,title,trainer_name,start_at,status', 'employee:id,name,employee_code,department', 'assignment:id,training_program_id,status', 'assignment.program:id,program_name', 'auditLogs'])
-            ->find($id);
+        // hr_training_attendance carries its own employee_id, so this one is a
+        // plain column scope rather than a reach through the assignment.
+        return $this->scopeToEmployees(
+            HrTrainingAttendance::where('tenant_id', $tenantId)
+                ->with(['session:id,title,trainer_name,start_at,status', 'employee:id,name,employee_code,department', 'assignment:id,training_program_id,status', 'assignment.program:id,program_name', 'auditLogs']),
+            $actor
+        )->find($id);
     }
 
     public function attendanceForAssignment(int $employeeTrainingId, int $tenantId): ?HrTrainingAttendance
@@ -50,25 +58,31 @@ class TrainingRecordRepository
     }
 
     /** Assigned employees for a session + their attendance (for the roster / bulk marking). */
-    public function roster(int $sessionId, int $tenantId): Collection
+    public function roster(int $sessionId, int $tenantId, ?User $actor = null): Collection
     {
-        return HrEmployeeTraining::where('tenant_id', $tenantId)
+        // A roster names people, so it narrows like any other employee list.
+        return $this->scopeToEmployees(HrEmployeeTraining::where('tenant_id', $tenantId), $actor)
             ->where('training_session_id', $sessionId)
             ->whereIn('status', HrEmployeeTraining::ACTIVE + [HrEmployeeTraining::COMPLETED])
             ->with(['employee:id,name,employee_code,department,designation'])
             ->get();
     }
 
-    public function attendanceStats(int $tenantId, array $f): array
+    public function attendanceStats(int $tenantId, array $f, ?User $actor = null): array
     {
         // Assigned universe (optionally scoped to a session) vs marked present/absent.
-        $assignBase = HrEmployeeTraining::where('tenant_id', $tenantId)->whereIn('status', HrEmployeeTraining::ACTIVE + [HrEmployeeTraining::COMPLETED]);
+        // Both sides take the same employee scope, otherwise the ratio is built
+        // from two different populations and the percentage is meaningless.
+        $assignBase = $this->scopeToEmployees(
+            HrEmployeeTraining::where('tenant_id', $tenantId)->whereIn('status', HrEmployeeTraining::ACTIVE + [HrEmployeeTraining::COMPLETED]),
+            $actor
+        );
         if (! empty($f['training_session_id'])) {
             $assignBase->where('training_session_id', $f['training_session_id']);
         }
         $assigned = (clone $assignBase)->count();
 
-        $attBase = HrTrainingAttendance::where('tenant_id', $tenantId);
+        $attBase = $this->scopeToEmployees(HrTrainingAttendance::where('tenant_id', $tenantId), $actor);
         if (! empty($f['training_session_id'])) {
             $attBase->where('training_session_id', $f['training_session_id']);
         }
@@ -86,9 +100,11 @@ class TrainingRecordRepository
     }
 
     /* ── Assessment ───────────────────────────────────────── */
-    public function assessments(int $tenantId, array $f): Collection
+    public function assessments(int $tenantId, array $f, ?User $actor = null): Collection
     {
-        return HrTrainingAssessment::where('tenant_id', $tenantId)
+        // hr_training_assessments has no employee_id — it reaches one through
+        // the assignment, so the scope is applied via that relation.
+        return $this->scopeAssignment(HrTrainingAssessment::where('tenant_id', $tenantId), $actor)
             ->with(self::ASSIGN_EAGER)
             ->when(! empty($f['employee_training_id']), fn ($q) => $q->where('employee_training_id', $f['employee_training_id']))
             ->when(! empty($f['result']) && $f['result'] !== 'All', fn ($q) => $q->where('result', $f['result']))
@@ -96,14 +112,17 @@ class TrainingRecordRepository
             ->orderByDesc('id')->get();
     }
 
-    public function findAssessment(int $id, int $tenantId): ?HrTrainingAssessment
+    public function findAssessment(int $id, int $tenantId, ?User $actor = null): ?HrTrainingAssessment
     {
-        return HrTrainingAssessment::where('tenant_id', $tenantId)->with([...self::ASSIGN_EAGER, 'auditLogs'])->find($id);
+        return $this->scopeAssignment(
+            HrTrainingAssessment::where('tenant_id', $tenantId)->with([...self::ASSIGN_EAGER, 'auditLogs']),
+            $actor
+        )->find($id);
     }
 
-    public function assessmentStats(int $tenantId): array
+    public function assessmentStats(int $tenantId, ?User $actor = null): array
     {
-        $rows = HrTrainingAssessment::where('tenant_id', $tenantId)
+        $rows = $this->scopeAssignment(HrTrainingAssessment::where('tenant_id', $tenantId), $actor)
             ->selectRaw("SUM(CASE WHEN result='Pass' THEN 1 ELSE 0 END) as passed,
                 SUM(CASE WHEN result='Fail' THEN 1 ELSE 0 END) as failed,
                 COUNT(*) as total, AVG(percentage) as avg_pct")->first();
@@ -117,9 +136,9 @@ class TrainingRecordRepository
     }
 
     /* ── Quiz ─────────────────────────────────────────────── */
-    public function quizzes(int $tenantId, array $f): Collection
+    public function quizzes(int $tenantId, array $f, ?User $actor = null): Collection
     {
-        return HrTrainingQuiz::where('tenant_id', $tenantId)
+        return $this->scopeAssignment(HrTrainingQuiz::where('tenant_id', $tenantId), $actor)
             ->with(self::ASSIGN_EAGER)
             ->when(! empty($f['employee_training_id']), fn ($q) => $q->where('employee_training_id', $f['employee_training_id']))
             ->when(isset($f['passed']) && $f['passed'] !== '' && $f['passed'] !== 'All', fn ($q) => $q->where('passed', $f['passed'] === 'Passed' || $f['passed'] === '1' || $f['passed'] === true))
@@ -127,14 +146,17 @@ class TrainingRecordRepository
             ->orderByDesc('id')->get();
     }
 
-    public function findQuiz(int $id, int $tenantId): ?HrTrainingQuiz
+    public function findQuiz(int $id, int $tenantId, ?User $actor = null): ?HrTrainingQuiz
     {
-        return HrTrainingQuiz::where('tenant_id', $tenantId)->with([...self::ASSIGN_EAGER, 'auditLogs'])->find($id);
+        return $this->scopeAssignment(
+            HrTrainingQuiz::where('tenant_id', $tenantId)->with([...self::ASSIGN_EAGER, 'auditLogs']),
+            $actor
+        )->find($id);
     }
 
-    public function quizStats(int $tenantId): array
+    public function quizStats(int $tenantId, ?User $actor = null): array
     {
-        $rows = HrTrainingQuiz::where('tenant_id', $tenantId)
+        $rows = $this->scopeAssignment(HrTrainingQuiz::where('tenant_id', $tenantId), $actor)
             ->selectRaw('SUM(CASE WHEN passed=1 THEN 1 ELSE 0 END) as passed, COUNT(*) as total, AVG(percentage) as avg_pct')->first();
         $total = (int) ($rows->total ?? 0);
         $passed = (int) ($rows->passed ?? 0);
@@ -145,5 +167,29 @@ class TrainingRecordRepository
             'failed'    => $total - $passed,
             'avg_pct'   => round((float) ($rows->avg_pct ?? 0), 1),
         ];
+    }
+
+    /**
+     * Scope a row that owns no employee_id of its own.
+     *
+     * Assessments and quizzes hang off hr_employee_trainings, which is where the
+     * employee lives. whereHas keeps the restriction inside the query rather
+     * than filtering a fetched collection.
+     */
+    private function scopeAssignment($query, ?User $actor)
+    {
+        $ids = app(\App\Services\Auth\ScopeResolver::class)->visibleEmployeeIds($actor ?? new User, [
+            \App\Support\Hr\DataScope::OWN,
+            \App\Support\Hr\DataScope::DEPARTMENT,
+            \App\Support\Hr\DataScope::TEAM,
+        ]);
+
+        if (! $actor || $ids === null) {
+            return $query;
+        }
+
+        return $ids === []
+            ? $query->whereRaw('1 = 0')
+            : $query->whereHas('assignment', fn ($a) => $a->whereIn('employee_id', $ids));
     }
 }
