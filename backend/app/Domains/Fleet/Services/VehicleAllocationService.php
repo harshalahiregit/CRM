@@ -29,7 +29,7 @@ class VehicleAllocationService
     }
 
     /**
-     * @param  array  $filters  vehicle_type, pickup_lat, pickup_lng
+     * @param  array  $filters  vehicle_type, required_capacity_tonnes, pickup_lat, pickup_lng
      * @return array{eligible: array, excluded: array, weights: array}
      */
     public function eligible(int $companyId, array $filters = []): array
@@ -66,12 +66,20 @@ class VehicleAllocationService
         $pickupLat = isset($filters['pickup_lat']) ? (float) $filters['pickup_lat'] : null;
         $pickupLng = isset($filters['pickup_lng']) ? (float) $filters['pickup_lng'] : null;
 
+        // PLN-001 — the order's payload. Nothing matched this before: both
+        // `vehicles.capacity_tonnes` and `transport_orders.required_capacity_tonnes`
+        // existed and no code compared them, so a 9-tonne load could be
+        // recommended a 2-tonne van and only the loading bay would find out.
+        $required = isset($filters['required_capacity_tonnes']) && $filters['required_capacity_tonnes'] !== ''
+            ? (float) $filters['required_capacity_tonnes']
+            : null;
+
         $eligible = [];
         $excluded = [];
 
         foreach ($vehicles as $vehicle) {
             $l = $live[$vehicle->id] ?? null;
-            $blockers = $this->blockersFor($vehicle, $l, (int) ($blockingJobs[$vehicle->id] ?? 0));
+            $blockers = $this->blockersFor($vehicle, $l, (int) ($blockingJobs[$vehicle->id] ?? 0), $required);
 
             if ($blockers !== []) {
                 // Excluded vehicles are RETURNED, not silently dropped. A planner
@@ -105,6 +113,10 @@ class VehicleAllocationService
                 $flags[] = $serviceFlag;
             }
 
+            if ($capacityFlag = $this->capacityFlag($vehicle, $required)) {
+                $flags[] = $capacityFlag;
+            }
+
             $scores = [
                 'proximity'   => $this->proximityScore($distanceKm),
                 'efficiency'  => $this->efficiencyScore($vehicle, $kmpl),
@@ -120,6 +132,10 @@ class VehicleAllocationService
                 'registration_number' => $vehicle->registration_number,
                 'vehicle_type'        => $vehicle->vehicle_type,
                 'ownership_type'      => $vehicle->ownership_type,
+                // Shown whether or not an order asked for a payload: a planner
+                // choosing between two trucks wants the number, and a null here
+                // is the prompt to go and record it.
+                'capacity_tonnes'     => $vehicle->capacity_tonnes === null ? null : (float) $vehicle->capacity_tonnes,
                 'compliance_status'   => $vehicle->compliance_status,
                 'open_jobs'           => (int) ($openJobs[$vehicle->id] ?? 0),
                 'live'                => $l ? [
@@ -167,9 +183,31 @@ class VehicleAllocationService
      * evaluator's issues, so the allocation modal and the fleet board explain
      * a block identically.
      */
-    private function blockersFor(Vehicle $vehicle, ?object $live, int $safetyJobs): array
+    private function blockersFor(Vehicle $vehicle, ?object $live, int $safetyJobs, ?float $required = null): array
     {
         $blockers = [];
+
+        // ── CAPACITY IS ORDER-RELATIVE, WHICH IS WHY IT LIVES HERE ────────
+        // Every other blocker is a fact about the truck; this one is a fact
+        // about the truck AND this job. A 9-tonne vehicle is not "blocked" —
+        // it is simply too small for THIS load and fine for the next one. So
+        // it excludes the vehicle from this answer and touches nothing on the
+        // row, exactly as `status` must not be written for a condition.
+        //
+        // An unknown capacity does NOT block. Most of the fleet predates the
+        // column being filled, and excluding every unmeasured truck would
+        // empty the list while looking like a considered verdict — the same
+        // silent-empty shape as D-116. It warns instead; see `capacityFlag()`.
+        if ($required !== null && $vehicle->capacity_tonnes !== null
+            && (float) $vehicle->capacity_tonnes < $required) {
+            $blockers[] = $this->blocker(
+                'below_required_capacity',
+                'Too small for this load.',
+                'Carries '.rtrim(rtrim(number_format((float) $vehicle->capacity_tonnes, 2), '0'), '.')
+                    .' t; the order needs '.rtrim(rtrim(number_format($required, 2), '0'), '.').' t.',
+                'Operations planner'
+            );
+        }
 
         if ($vehicle->status === Vehicle::STATUS_RETIRED) {
             $blockers[] = $this->blocker('retired', 'Retired from the fleet.', 'It is no longer an operating asset.', 'Fleet manager');
@@ -239,6 +277,25 @@ class VehicleAllocationService
     private function blocker(string $code, string $why, string $missing, string $owner): array
     {
         return ['code' => $code, 'why' => $why, 'missing' => $missing, 'owner' => $owner];
+    }
+
+    /**
+     * A truck offered for a load nobody has measured it against.
+     *
+     * The honest thing to say is "we do not know", not silence and not a
+     * refusal. Silence lets a planner assume it fits; a refusal takes a
+     * perfectly good truck off the list over a missing number. So the vehicle
+     * stays eligible and carries the doubt with it.
+     *
+     * Lower-case snake_case, per the ruled naming standard for machine reasons.
+     */
+    private function capacityFlag(Vehicle $vehicle, ?float $required): ?string
+    {
+        if ($required === null || $vehicle->capacity_tonnes !== null) {
+            return null;
+        }
+
+        return 'capacity_unknown';
     }
 
 

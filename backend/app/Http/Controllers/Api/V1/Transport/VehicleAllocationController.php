@@ -31,6 +31,14 @@ class VehicleAllocationController extends Controller
 
         $filters = $request->validate([
             'vehicle_type' => 'nullable|string|max:30',
+            // PLN-001 — the order's payload. Optional, because a planner may
+            // browse the fleet without an order in front of them; supplied, it
+            // excludes anything that cannot carry the load.
+            //
+            // `gt:0` rather than `min:0`: a zero here would mean "every vehicle
+            // qualifies", which is what an empty box already means, and the two
+            // must not be spelled differently.
+            'required_capacity_tonnes' => 'nullable|numeric|gt:0|max:999999',
             // Optional: without a pickup, proximity simply is not scored rather
             // than being guessed at.
             'pickup_lat'   => 'nullable|numeric|between:-90,90',
