@@ -312,7 +312,7 @@ stale. The overlay holds a reference (`crm_tpv_worker:17`) plus what only Transp
 - [x] **T-40** Licence verdict drives allocation scoring and flags · *DriverAllocationLinkTest*
 - [ ] **T-41** Add `medical_expiry`, judge it exactly like the licence, and surface it on the driver card and the compliance tab
 - [ ] **T-42** Rename `inactive` → `ON_LEAVE` (or add both; "on leave" and "no longer with us" are different facts)
-- [ ] **T-43** Driver documents: licence scan upload on the private disk, like the fuel receipt
+- [x] **T-43** Driver documents — filed through STOS-DOC's service at `/v1/fleet/drivers/{source}/{person}/documents`, with a VERIFIED `driving_license` projected onto `licence_expiry`. An upload does not clear a driver. Medical is filed but gates nothing until T-41 adds the column. **Unblocks P1's driver-controller deletion.**
 
 ---
 

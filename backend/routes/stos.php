@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\Transport\DeviceTokenController;
 use App\Http\Controllers\Api\V1\Transport\GensetController;
 use App\Http\Controllers\Api\V1\Transport\DriverController;
+use App\Http\Controllers\Api\V1\Transport\DriverDocumentController;
 use App\Http\Controllers\Api\V1\Transport\FleetController;
 use App\Http\Controllers\Api\V1\Transport\FuelController;
 use App\Http\Controllers\Api\V1\Transport\MaintenanceController;
@@ -108,6 +109,22 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('v1/fleet')->gro
         ->where('source', '[a-z_]+')->where('person', '[0-9]+');
     Route::put('/drivers/{source}/{person}/assign', [DriverController::class, 'assign'])
         ->where('source', '[a-z_]+')->where('person', '[0-9]+');
+
+    // ── A driver's paperwork (T-43) ─────────────────────────────────────
+    // Absorbs Dev 1's retiring `/api/transport/drivers/{id}/documents`. The
+    // `{source}` constraint keeps "eligible" from ever matching these: it is a
+    // word, and these routes want a directory name.
+    Route::get('/drivers/{source}/{person}/documents', [DriverDocumentController::class, 'index'])
+        ->where('source', '[a-z_]+')->where('person', '[0-9]+');
+    Route::post('/drivers/{source}/{person}/documents', [DriverDocumentController::class, 'store'])
+        ->where('source', '[a-z_]+')->where('person', '[0-9]+');
+    Route::post('/drivers/{source}/{person}/documents/{document}/renew', [DriverDocumentController::class, 'renew'])
+        ->where('source', '[a-z_]+')->where('person', '[0-9]+')->where('document', '[0-9]+');
+    // Verification is by document id — the verdict is about the evidence, not
+    // about whose it is. Separate path from the vehicle one so neither has to
+    // guess which kind it was handed.
+    Route::patch('/driver-documents/{document}/verify', [DriverDocumentController::class, 'verify'])
+        ->where('document', '[0-9]+');
 
     // ── Urea / AdBlue (STOS-COST) ───────────────────────────────────────
     Route::post('/vehicles/{vehicle}/urea', [OperatingCostController::class, 'storeUrea'])->where('vehicle', '[0-9]+');

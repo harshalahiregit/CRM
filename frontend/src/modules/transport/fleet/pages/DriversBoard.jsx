@@ -4,6 +4,7 @@ import { UserRound, Search, Database, IdCard, X, Check, Info, Building2 } from '
 import { stosApi, STOS_ACCENT, LICENCE_CLASSES, DRIVER_STATUSES } from '@/services/stosApi'
 import Select from '@/components/ui/Select'
 import HealthChip from '../components/HealthChip'
+import DriverDocumentsPanel from '../components/DriverDocumentsPanel'
 
 /**
  * Drivers — read live from the customer/vendor directory, never re-entered.
@@ -270,10 +271,12 @@ function LicenceDialog({ driver, onClose }) {
   if (!driver) return null
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 pt-[12vh] bg-black/50">
-      <form onSubmit={(e) => { e.preventDefault(); setErr(''); save.mutate() }}
-        className="w-full max-w-sm rounded-2xl overflow-hidden"
-        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
+    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 pt-[8vh] bg-black/50">
+      {/* The documents panel is a SIBLING of the form, not a child: it has its
+          own buttons and a nested form would submit this one. */}
+      <div
+        className="w-full max-w-md rounded-2xl overflow-hidden flex flex-col"
+        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', maxHeight: '84vh' }}
         onKeyDown={(e) => { if (e.key === 'Escape') onClose?.() }}>
         <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
           <div>
@@ -287,6 +290,7 @@ function LicenceDialog({ driver, onClose }) {
           </button>
         </div>
 
+        <form onSubmit={(e) => { e.preventDefault(); setErr(''); save.mutate() }} className="overflow-y-auto">
         <div className="px-5 py-4 space-y-3">
           <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
             Name, phone and employer come from the directory and are edited there. Only the licence and availability
@@ -332,7 +336,16 @@ function LicenceDialog({ driver, onClose }) {
             <Check size={13} /> {save.isPending ? 'Saving…' : 'Save'}
           </button>
         </div>
-      </form>
+        </form>
+
+        {/* T-43. The dates above are what Transport gates on today; these are
+            the evidence behind them, and a verified licence sets the expiry
+            rather than somebody retyping it. */}
+        <div className="px-5 py-4 overflow-y-auto" style={{ borderTop: '1px solid var(--border)' }}>
+          <p className="text-[11px] font-bold mb-2" style={{ color: 'var(--text-muted)' }}>Paperwork</p>
+          <DriverDocumentsPanel driver={driver} onChanged={() => qc.invalidateQueries({ queryKey: ['stos-drivers'] })} />
+        </div>
+      </div>
     </div>
   )
 }

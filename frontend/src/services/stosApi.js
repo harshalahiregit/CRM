@@ -102,6 +102,40 @@ export const stosApi = {
       api.patch(`/v1/fleet/documents/${documentId}/verify`, { verdict, reason }).then(unwrap).catch(handleErr),
   },
 
+  /**
+   * A driver's paperwork (T-43).
+   *
+   * Addressed by `{source}/{person}` like the rest of the drivers board — Fleet
+   * holds no names, so the person is the directory entry and the profile hangs
+   * off it. Verification is by document id on its own path, because the verdict
+   * is about the evidence and not about whose it is.
+   */
+  driverDocuments: {
+    forDriver: (source, personId) =>
+      api.get(`/v1/fleet/drivers/${source}/${personId}/documents`).then(unwrap).catch(handleErr),
+
+    file: (source, personId, form) => {
+      const body = new FormData()
+      Object.entries(form).forEach(([k, v]) => { if (v !== null && v !== undefined && v !== '') body.append(k, v) })
+
+      return api.post(`/v1/fleet/drivers/${source}/${personId}/documents`, body, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }).then(unwrap).catch(handleErr)
+    },
+
+    renew: (source, personId, documentId, form) => {
+      const body = new FormData()
+      Object.entries(form).forEach(([k, v]) => { if (v !== null && v !== undefined && v !== '') body.append(k, v) })
+
+      return api.post(`/v1/fleet/drivers/${source}/${personId}/documents/${documentId}/renew`, body, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }).then(unwrap).catch(handleErr)
+    },
+
+    verify: (documentId, verdict, reason = null) =>
+      api.patch(`/v1/fleet/driver-documents/${documentId}/verify`, { verdict, reason }).then(unwrap).catch(handleErr),
+  },
+
   gensets: {
     register: (params = {}) => api.get('/v1/fleet/gensets', { params }).then(unwrap).catch(handleErr),
     create:   (data) => api.post('/v1/fleet/gensets', data).then(unwrap).catch(handleErr),
