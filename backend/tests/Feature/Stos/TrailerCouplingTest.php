@@ -396,6 +396,19 @@ class TrailerCouplingTest extends TestCase
         $this->assertTrue($history[0]['open']);
     }
 
+    public function test_a_puc_date_is_refused_rather_than_quietly_ignored(): void
+    {
+        // Laravel ignores keys it was not asked about, so this used to answer
+        // 201 and the caller assumed it had saved. On a trailer that is exactly
+        // the confusion the whole design exists to prevent: there is no engine,
+        // so there is no certificate to record.
+        $this->actingAs($this->user())
+            ->postJson('/api/v1/fleet/trailers', [
+                'trailer_number' => 'MH12TRPUC1', 'trailer_type' => 'flatbed',
+                'puc_expiry' => '2027-01-01',
+            ])->assertStatus(422);
+    }
+
     public function test_history_is_a_word_and_not_a_trailer_id(): void
     {
         // `/trailers/history` sits beside `/trailers/{trailer}`. The route

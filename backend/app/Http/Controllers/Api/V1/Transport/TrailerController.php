@@ -154,9 +154,15 @@ class TrailerController extends Controller
             'purchase_date'      => ['nullable', 'date'],
             'chassis_number'     => ['nullable', 'string', 'max:100'],
 
-            // Four, not five. A trailer has no engine, so no PUC — offering the
-            // field would invite somebody to record a certificate that cannot
-            // exist for it.
+            // Four, not five. A trailer has no engine, so no PUC.
+            //
+            // `prohibited` rather than simply unlisted: Laravel ignores keys it
+            // was not asked about, so a caller sending `puc_expiry` got a 201
+            // and assumed it had been saved. Silently accepting a field that
+            // can never be stored is worse than refusing it, and on a trailer
+            // it is exactly the confusion this design exists to prevent.
+            'puc_expiry' => ['prohibited'],
+
             'registration_expiry' => ['nullable', 'date'],
             'fitness_expiry'      => ['nullable', 'date'],
             'insurance_expiry'    => ['nullable', 'date'],
