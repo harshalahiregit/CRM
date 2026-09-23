@@ -10,6 +10,7 @@ import InternalDoctorSelect from '@/components/medical/InternalDoctorSelect'
 import { useVendorModule } from '@/modules/tpv/useVendorModule'
 import { useAuth } from '@/context/AuthContext'
 import AuditTimeline from '@/components/ui/AuditTimeline'
+import Select from '@/components/ui/Select'
 import { canApprovePR, canManagePR, fmtDate } from '../constants'
 import {
   KIT3D_STYLE, labelStyle, inputStyle, Overlay, ModalFooter, InfoBox,
@@ -1954,12 +1955,22 @@ const PPE_TONE = {
 }
 
 /** Return / lost / damaged, with a quantity so partial returns are possible. */
+/** In stock / low / out — the same three states the Inventory screen shows. */
+const PPE_STOCK_DOT = { in_stock: '#0ca30c', low_stock: '#f59e0b', out_of_stock: '#d03b3b' }
+
 /**
  * Pick an item and give it to the worker.
  *
  * Out-of-stock items are shown and disabled rather than hidden: "the helmet is
  * not on the list" and "the helmet has run out" are different problems, and
  * only one of them is solved by looking somewhere else.
+ *
+ * TYPE TO SEARCH, not just a dropdown. A native <select> makes you read the
+ * whole list, and this one is as long as the tenant's PPE category -- six items
+ * on a new workspace and a hundred-odd on a real one, where a store-keeper at
+ * the gate with a queue in front of them is scrolling for "gloves". The filter
+ * matches the SKU as well as the name, and the SKU is kept OUT of the label so
+ * it can be searched without making every row twice as long to read.
  */
 function IssuePpeForm({ catalogue, busy, onIssue }) {
   const [productId, setProductId] = useState('')
@@ -1992,15 +2003,24 @@ function IssuePpeForm({ catalogue, busy, onIssue }) {
         Issue an item
       </p>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-        <select value={productId} onChange={e => setProductId(e.target.value)}
-          style={{ ...ppeInp, flex: 1, minWidth: 210 }}>
-          <option value="">Choose PPE…</option>
-          {catalogue.map(c => (
-            <option key={c.product_id} value={c.product_id} disabled={Number(c.available) <= 0}>
-              {c.name} · {Number(c.available) > 0 ? `${c.available} available` : 'out of stock'}
-            </option>
-          ))}
-        </select>
+        <div style={{ flex: 1, minWidth: 230 }}>
+          <Select
+            value={productId}
+            onChange={setProductId}
+            /* Always on. `auto` only shows the box past eight options, and a
+               fresh workspace has six -- the one place the list is short is the
+               one place somebody is learning where things are. */
+            searchable
+            placeholder="Search PPE by name or SKU…"
+            options={catalogue.map(c => ({
+              value: String(c.product_id),
+              label: `${c.name} · ${Number(c.available) > 0 ? `${c.available} available` : 'out of stock'}`,
+              keywords: c.sku ?? '',
+              disabled: Number(c.available) <= 0,
+              dot: PPE_STOCK_DOT[c.status],
+            }))}
+          />
+        </div>
         <input type="number" min="1" value={qty} onChange={e => setQty(e.target.value)}
           title="Quantity" style={{ ...ppeInp, width: 74, textAlign: 'right' }} />
         <input value={size} onChange={e => setSize(e.target.value)} placeholder="Size"
