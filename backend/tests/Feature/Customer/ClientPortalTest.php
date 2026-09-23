@@ -146,14 +146,98 @@ class ClientPortalTest extends TestCase
         $this->assertSame('Shared with you', $body[0]['content']);
     }
 
-    /** There is no endpoint that takes a client id, so this is the proof. */
-    public function test_no_portal_route_accepts_a_client_id(): void
+    /**
+     * No portal route lets the caller name WHOSE data they get.
+     *
+     * ── WHY THIS WAS NARROWED ────────────────────────────────────────────────
+     * It used to assert that no route under api/portal/client contained `{` at
+     * all, with the comment "there is no endpoint that takes a client id, so
+     * this is the proof". That was true when written, and the blanket check was
+     * the cheapest way to prove it — the two were equivalent because the client
+     * portal had no detail endpoint of any kind.
+     *
+     * They are not equivalent, and the assertion outgrew its own name. 125
+     * routes across the vendor and purchase portals already take a resource id
+     * in the path and scope the owner off the token; the client portal was the
+     * outlier, not the convention. Read literally, this test banned the shape
+     * the rest of the product had already settled on, and it blocked P1's
+     * shipment journey view for a property that route does not violate.
+     *
+     * So it now asserts the thing it always claimed to: an identifier may name
+     * a RESOURCE, never an OWNER. A trip id is a resource — which trip — and
+     * the customer still comes off the token. A client id would be a selector,
+     * and that is what must never be accepted from the caller.
+     *
+     * Deliberately product-wide rather than client-only: the same rule should
+     * hold for every portal, and scoping it to one prefix is how the previous
+     * version let /api/portal/assigned-tasks/{task} past on a technicality
+     * rather than on merit.
+     */
+    public function test_no_portal_route_lets_the_caller_name_an_owner(): void
     {
-        $routes = collect(app('router')->getRoutes()->getRoutes())
-            ->filter(fn ($r) => str_starts_with($r->uri(), 'api/portal/client'))
-            ->filter(fn ($r) => str_contains($r->uri(), '{'));
+        // Names that select whose records you see. None is in use today; this
+        // stops the first one from arriving unnoticed.
+        $owners = ['client', 'client_id', 'customer', 'customer_id', 'contact_id',
+            'tenant', 'tenant_id', 'company', 'company_id', 'account', 'account_id'];
 
-        $this->assertCount(0, $routes, 'portal routes must not take an id from the caller');
+        $offenders = collect(app('router')->getRoutes()->getRoutes())
+            ->filter(fn ($r) => str_starts_with($r->uri(), 'api/portal'))
+            ->filter(function ($r) use ($owners) {
+                preg_match_all('/\{(\w+)\??\}/', $r->uri(), $m);
+
+                return (bool) array_intersect(
+                    array_map('strtolower', $m[1]),
+                    $owners,
+                );
+            })
+            ->map(fn ($r) => $r->uri())
+            ->values();
+
+        $this->assertSame(
+            [],
+            $offenders->all(),
+            'a portal route takes an owner id from the caller — the owner must come off the token',
+        );
+    }
+
+    /**
+     * Any id the client portal does accept has to be a number.
+     *
+     * The companion to the rule above, and the reason it is safe to relax the
+     * blanket ban. An unconstrained `{id}` will match a slug, a path segment or
+     * an encoded traversal, and a controller that scopes correctly can still be
+     * handed something it was never meant to look up. Constraining it at the
+     * route means a foreign or malformed id fails to match before any code runs
+     * — which is what makes "a foreign id 404s" a property of the route rather
+     * than a promise about the controller.
+     *
+     * Scoped to the client portal because that is the surface this file owns.
+     * Nothing here today, so it costs nothing; it is a bar for what comes next.
+     */
+    public function test_every_client_portal_id_is_numerically_constrained(): void
+    {
+        $unconstrained = collect(app('router')->getRoutes()->getRoutes())
+            ->filter(fn ($r) => str_starts_with($r->uri(), 'api/portal/client'))
+            ->filter(fn ($r) => str_contains($r->uri(), '{'))
+            ->filter(function ($r) {
+                preg_match_all('/\{(\w+)\??\}/', $r->uri(), $m);
+                foreach ($m[1] as $param) {
+                    $pattern = $r->wheres[$param] ?? null;
+                    if ($pattern === null || ! preg_match('/0-9|\\\\d/', $pattern)) {
+                        return true;
+                    }
+                }
+
+                return false;
+            })
+            ->map(fn ($r) => $r->uri())
+            ->values();
+
+        $this->assertSame(
+            [],
+            $unconstrained->all(),
+            'a client portal route takes an id with no numeric constraint — add ->whereNumber()',
+        );
     }
 
     public function test_a_contact_cannot_change_their_own_email(): void

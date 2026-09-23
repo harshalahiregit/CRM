@@ -4314,3 +4314,86 @@ Fixed with the change that made it findable. Both sides now use `Vehicle::STATUS
 *A test written from the same assumption as the code under test verifies the assumption, not the
 code.* Both of these were caught by changing the vocabulary underneath them — which is an argument
 for doing the rename rather than living with two spellings, not just for tidiness.
+
+---
+
+## D-300 — M06/M07/M08 have two applications writing one milestone, and no rule for who wins
+
+**Raised:** 2026-09-23, P3, while mapping the cross-app data flow. **Nobody's code yet — and that
+is the point.** Numbered in the P3 band (D-300+) under the banding agreed after the D-58..D-61
+collision.
+
+### What it is
+
+Two specifications hand the same three milestones to two different people:
+
+| | Arrival (M06) | Loading & sealing (M07) | Departure (M08) |
+|---|---|---|---|
+| **CLP §3** | Client Warehouse/Gate role confirms | confirms | confirms |
+| **DVR §9** | Driver confirms | captures evidence | captures evidence |
+
+Both are written as the authority. Neither defers to the other.
+
+### Why it is worse than a duplicate
+
+A gate clerk and a driver standing in the same yard will not click at the same moment, and they
+will not always agree. So this is not "two ways to record one fact" — it is two facts, arriving
+out of order, with no rule for which one the trip keeps.
+
+And there is nothing underneath to arbitrate it: Step 11 registers no milestone table, no
+milestone event and no milestone endpoint. The words `milestone`, `container`, `portal`,
+`feedback` and `geofence` appear **zero times** in the canonical registry, against `trip` 84 and
+`POD` 14 by my count — P1 counted across every XML part of the workbook and got higher numbers
+with the same zeros. So there is no canonical place for the answer even once someone gives it.
+
+CLP §27 says milestones should be derived from gate scan, geofence or telemetry rather than typed
+by a person. If that is honoured, both of these become fallbacks rather than sources, and the
+conflict is bounded. That is a ruling, not a reading.
+
+### Why it needs deciding before anyone builds
+
+The milestone APIs are P1's under MS-001 v1.1 §4, the driver half is P2's, the client half is P3's.
+All three implement whatever is decided. A ruling after two of the three have built is a rewrite of
+two modules, which is the expensive order to do this in.
+
+### Status
+
+**Open — escalated for an owner ruling.** Independently reached from two directions: P1 raised the
+same gap from the milestone-API side. Not started by anyone, deliberately.
+
+---
+
+## D-301 — M12 feedback has two producers, no table, no event and no endpoint
+
+**Raised:** 2026-09-23, P3, same pass as D-300. **P3's to build once ruled.**
+
+### What it is
+
+CLP puts client feedback at M12. DVR §20 puts driver feedback at final handover, and adds that
+negative feedback can open a customer/service concern. So "M12 Feedback" names two different
+things collected from two different people at roughly the same moment, and the spine lists it once.
+
+Underneath it there is nothing at all: no `feedback` table in Step 11, no event in the registry,
+no endpoint in the API list. The word does not appear in the canonical registry.
+
+### Why it is not simply buildable
+
+CLP §20 describes the client half in enough detail to build from, and B-09 forbids building from
+CLP narrative without a Step 12 ticket — which is exactly the rule that stops one developer's
+reading of a specification becoming the product's behaviour. Two producers with no ruled owner is
+the case that rule exists for.
+
+There is a related asymmetry worth stating: `client_feedback` already exists on the CRM side and
+the client portal already has `GET/POST /api/portal/client/feedback`. So the client half has a
+home and the driver half does not, and "reuse what exists" would quietly decide the question by
+picking the half that is easier — which is how a specification gets settled by convenience.
+
+### What is needed
+
+One ruling covering: whether M12 is one milestone or two, who owns each, whether the driver's
+feedback is the same record as the client's, and what a negative response opens. Then a Step 12
+ticket.
+
+### Status
+
+**Open — blocked on a ruling, not on effort.** P1 raised the same gap independently.
