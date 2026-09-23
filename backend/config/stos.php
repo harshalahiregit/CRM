@@ -115,6 +115,11 @@ return [
     |                  standalone without a build flag.
     |   'crm'        — force the CRM directories.
     |   'standalone' — force the STOS register, even inside the CRM.
+    |   'both'       — ask both and concatenate. D-134: after the D-62 move a
+    |                  CRM installation legitimately holds drivers in the local
+    |                  register too, so the two sources stopped being
+    |                  alternatives. `auto` now resolves here when the CRM is
+    |                  present AND `stos_drivers` has rows.
     |
     | `driver_keywords` drives the "drivers only" filter. Designation is FREE
     | TEXT in every one of the CRM's people registers, so this is a keyword

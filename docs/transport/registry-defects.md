@@ -4663,7 +4663,7 @@ patch. Raised with him.
 ## D-134 — after the repoint, no driver can be allocated: our binding picks one directory and there are now two
 
 **Raised:** 2026-09-23, walking the allocation screen after `--apply`.
-**OWNER: P1 — ours, in our own files.** **BLOCKING the driver half. Proposal below, not built.**
+**OWNER: P1 — ours, in our own files.** **FIXED 2026-09-23 — composite built and approved.**
 
 > **Ownership corrected, 2026-09-23.** This entry first named P2 and said "waiting on you". That was
 > wrong, and it was wrong in the laziest way: I assigned it to the module where the *symptom*
@@ -4747,10 +4747,34 @@ its own docblock says *"Swapping the implementation swaps the source. Nothing ab
 know which one is in use."* The refs are already namespaced (`stos:` vs `crm_*:`), so a merge cannot
 collide, and each implementation already returns null for refs it does not own.
 
-It would become a fourth mode (`auto` | `crm` | `standalone` | `both`), with `auto` resolving to
-`both` when the CRM is present **and** `stos_drivers` is non-empty.
+It became a fourth mode (`auto` | `crm` | `standalone` | `both`), with `auto` resolving to `both`
+when the CRM is present **and** `stos_drivers` is non-empty.
 
-**Awaiting a decision before building.** No code written.
+### Built and verified
+
+`CompositeDriverDirectory` — `people()` concatenates and sorts by name, `find()` **dispatches on the
+source prefix** rather than trying both, `describe()` names both registers. Neither underlying
+directory was touched.
+
+The picker went from one candidate to three:
+
+```
+#1  eligible=no   No licence is on file for this driver. (Fleet compliance desk)
+#2  eligible=yes  Cleared by Fleet
+#3  eligible=yes  Cleared by Fleet
+```
+
+`CompositeDriverDirectoryTest` — five tests, and one of them guards the property the namespacing
+buys: **each register must keep REFUSING the other's handles.** `find()` dispatches instead of
+trying both precisely so a refusal can never silently become a fallback; if it did, two registers
+could answer for one handle and a ref would stop naming one person.
+
+Broken two ways before it was trusted: reverted to CRM-only → **red**, naming the invisible driver;
+made the CRM directory answer for a `stos:` handle → **red** on the refusal guard.
+
+One test passed *vacuously* on the first run — the CRM register was empty in the fixture, so its
+loop iterated nothing and showed a tick. Fixed by seeding a CRM contact and asserting the list is
+non-empty first.
 
 ---
 

@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Domains\Fleet\Contracts\DriverDirectory;
 use App\Domains\Fleet\Integration\TransportFleetResourceGateway;
+use App\Domains\Fleet\Directory\CompositeDriverDirectory;
 use App\Domains\Fleet\Directory\CrmDriverDirectory;
 use App\Domains\Fleet\Directory\StandaloneDriverDirectory;
 use App\Domains\Fleet\Events\EmergencyFuelIssued;
@@ -13,6 +14,7 @@ use App\Domains\Fleet\Observers\VehicleStatusObserver;
 use App\Domains\Integration\Events\TelemetryExcursionDetected;
 use App\Domains\Integration\Listeners\LogTemperatureExcursion;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 
@@ -80,9 +82,30 @@ class StosServiceProvider extends ServiceProvider
                 return new CrmDriverDirectory();
             }
 
+            if ($mode === 'both') {
+                return new CompositeDriverDirectory(new CrmDriverDirectory(), new StandaloneDriverDirectory());
+            }
+
+            // ── `auto`, corrected 2026-09-23 — D-134 ─────────────────────
+            // This used to choose ONE, on the assumption that the two sources
+            // are alternatives. The D-62 move made them simultaneous: it put
+            // the drivers it found into `stos_drivers` and pointed their
+            // profiles at it, correctly, because there was no CRM person to
+            // point at. A CRM installation can now hold people in both.
+            //
+            // So `auto` asks a second question. Choosing the CRM alone hid the
+            // migrated drivers from allocation entirely; choosing standalone
+            // alone would have hidden every CRM-sourced one instead.
             $crmPresent = Schema::hasTable('tpv_workers')
                 || Schema::hasTable('purchase_workers')
                 || Schema::hasTable('client_contacts');
+
+            $localPresent = Schema::hasTable('stos_drivers')
+                && DB::table('stos_drivers')->whereNull('deleted_at')->exists();
+
+            if ($crmPresent && $localPresent) {
+                return new CompositeDriverDirectory(new CrmDriverDirectory(), new StandaloneDriverDirectory());
+            }
 
             return $crmPresent ? new CrmDriverDirectory() : new StandaloneDriverDirectory();
         });
