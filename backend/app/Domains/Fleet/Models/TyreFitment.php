@@ -50,7 +50,7 @@ class TyreFitment extends Model
     public const MIN_TREAD_MM = 1.6;
 
     protected $fillable = [
-        'company_id', 'tyre_id', 'vehicle_id', 'position', 'status',
+        'company_id', 'tyre_id', 'tyre_master_id', 'vehicle_id', 'trailer_id', 'position', 'status',
         'tread_depth', 'odometer_at_fitment', 'odometer_at_removal',
         'fitted_on', 'removed_on', 'inspected_on', 'note',
     ];
@@ -85,4 +85,15 @@ class TyreFitment extends Model
     {
         return $this->tread_depth !== null && (float) $this->tread_depth <= self::MIN_TREAD_MM;
     }
+    public function master()
+    {
+        return $this->belongsTo(TyreMaster::class, 'tyre_master_id');
+    }
+
+    /** T-54 made trailers real, and trailers wear tyres. */
+    public function trailer()
+    {
+        return $this->belongsTo(Trailer::class, 'trailer_id');
+    }
+
 }

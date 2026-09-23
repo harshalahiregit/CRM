@@ -286,9 +286,9 @@ answer — T-07.
 
 - [x] **T-34** `tyre_fitments` as a **chain** — fitting opens a row, removing closes it, so a casing's distance survives being moved between trucks · *FleetContractsAndAssetsTest*
 - [x] **T-35** Fitting a casing already on another vehicle moves it; fitting over an occupied position removes the incumbent; a casing at or below 1.6 mm is flagged
-- [ ] **T-36** `tyre_masters` (serial, brand, size, purchase cost, status `IN_STOCK/FITTED/RETREADED/SCRAPPED`) with fitments pointing at it — gives cost-per-km per casing and a stock list
-- [ ] **T-37** Rotation action (swap two fitted positions in one operation) and a retread cycle count
-- [ ] **T-38** Tread-wear forecast: mm lost per 10,000 km, projecting the replacement date
+- [x] **T-36** `tyre_masters` + `tyre_fitments.tyre_master_id`, backfilled from the existing serial strings with nothing lost. Cost-per-km spans every truck a casing has been on AND every retread — a casing on its third life has been paid for three times. Distance is DERIVED from the fitments, never cached. Fitting an unregistered casing registers it rather than refusing a yard at six in the morning. **Fitments can now point at a trailer as well as a vehicle** (T-54 made trailers real and they wear tyres; the old `trailer_1` position recorded *some* trailer, not which one).
+- [x] **T-37** `POST /tyres/rotate` closes and reopens both fitments in ONE transaction at ONE odometer. Recording it as four separate acts would write two rows that are lies — the casings never went to the rack — and cost-per-km would count a swap as a new fitting. Tread is carried across, because a tyre does not grow tread by changing axle. Retread increments the count and adds its cost.
+- [x] **T-38** mm per 10,000 km from two measurements and the distance between them — deliberately checkable on a clipboard, because a projection nobody can verify is one nobody acts on. Thin evidence is NAMED (`one_measurement`, `no_scrap_depth_set`, `at_or_below_floor`, `beyond_horizon`) rather than guessed, and the projection is capped at 200,000 km: extrapolating 800,000 km from two readings a fortnight apart is arithmetic, not a forecast.
 
 ---
 
