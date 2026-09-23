@@ -74,6 +74,13 @@ final class ClientVisibleFields
             'approved_freight', 'closure_reason', 'rejection_reason',
             'dispatched_by', 'departed_by', 'delivered_by', 'closed_by',
             'approved_by', 'created_by', 'updated_by',
+            // Added 2026-09-23 by the same sweep. These three are free text a
+            // reader building "where is it going" or "who do we call" would
+            // reach for, and they are written for our own dispatcher: the
+            // instructions are addressed to the driver, and the pickup contact
+            // is a named person with a phone number. `route` is the sanctioned
+            // field for the journey's shape.
+            'dispatch_instructions', 'pickup_contact', 'dispatch_destination',
         ],
         'transport_orders' => ['rate_reference', 'created_by', 'updated_by'],
         'trip_assignments' => ['reason', 'override_reason', 'approved_by', 'created_by', 'updated_by'],
@@ -85,6 +92,22 @@ final class ClientVisibleFields
         'trip_collections' => ['blocker_reason', 'notes', 'last_followed_up_by'],
         'trip_exceptions'  => ['resolution_note', 'raised_by', 'acknowledged_by', 'resolved_by'],
         'trip_documents'   => ['file_path', 'file_hash', 'rejection_reason', 'notes', 'uploaded_by', 'verified_by'],
+
+        // The journey view reads this table, and until 2026-09-23 it had NO
+        // entry here at all — so `detail`, the actor columns and the internal
+        // classifiers were held back by the whitelist select and by nothing
+        // else. Adding `->addSelect('e.detail')` would have left the leak guard
+        // green. Found by deriving every column of the joined tables and asking
+        // which were in neither the select nor this list; seven were.
+        //
+        // `detail` is dispatcher-to-dispatcher free text. The actor columns name
+        // our own staff. `summary`, `category` and `source` are internal
+        // classifiers — a customer reading "source: system" learns nothing and
+        // may learn that a human did not check.
+        'trip_events'      => [
+            'detail', 'summary', 'category', 'source',
+            'actor_id', 'actor_name', 'actor_role', 'corrects_event_id',
+        ],
         // Internal in their entirety — no column on either is client-visible.
         'trip_costs'       => ['*'],
         'trip_advances'    => ['*'],
@@ -112,23 +135,61 @@ final class ClientVisibleFields
      * CLP §27 — "status must be understandable without technical language."
      * `billable` and `collection_pending` are the state machine's words, not a
      * customer's, and they were the two that leaked furthest on our internal
-     * screens before the September redesign. These are the same plain phrases
-     * that redesign settled on, so the portal and the office say one thing.
+     * screens before the September redesign.
+     *
+     * ── ONE VOCABULARY, DERIVED — NOT TWO LISTS THAT AGREE TODAY ─────────
+     * This was a second hand-written list beside CLIENT_EVENTS, and the two had
+     * already drifted in three places: a POD-verified trip read "Delivered"
+     * while its journey said "Delivery confirmed", `pretrip_ok` read "Ready to
+     * leave" while the journey called it "Vehicle checks completed", and
+     * `in_transit` said "On the way" against "Collected and on the way". One
+     * moment, two words, on one screen.
+     *
+     * So a status that a customer-visible moment produced now takes ITS word,
+     * resolved through eventWord(). The status is "the last moment reached",
+     * by construction rather than by both lists being edited together — and
+     * StatusAndJourneySpeakOneLanguageTest asserts it stays that way.
+     *
+     * Only the states BEFORE the journey starts keep words of their own, below:
+     * nothing a customer may see has happened yet, so there is no moment to
+     * borrow from.
      */
     public const STATUS_WORDS = [
-        TripStatus::DRAFT              => 'Being prepared',
-        TripStatus::VIABILITY_PENDING  => 'Being prepared',
-        TripStatus::APPROVED           => 'Accepted',
-        TripStatus::ALLOCATED          => 'Vehicle assigned',
-        TripStatus::PRETRIP_OK         => 'Ready to leave',
-        TripStatus::DISPATCHED         => 'Ready to leave',
-        TripStatus::IN_TRANSIT         => 'On the way',
-        TripStatus::DELIVERED          => 'Delivered',
-        TripStatus::POD_VERIFIED       => 'Delivered',
-        TripStatus::BILLABLE           => 'Delivered',
-        TripStatus::BILLED             => 'Invoiced',
-        TripStatus::COLLECTION_PENDING => 'Invoiced',
-        TripStatus::CLOSED             => 'Completed',
+        TripStatus::DRAFT             => 'Being prepared',
+        TripStatus::VIABILITY_PENDING => 'Being prepared',
+        TripStatus::APPROVED          => 'Accepted',
+
+        // `arrived` has no event type anywhere — see D-125. The state is real
+        // and a customer plainly wants it, so it is named here rather than
+        // falling through to "In progress"; it is simply a state the journey
+        // cannot show a row for, because nothing emits one.
+        TripStatus::ARRIVED           => 'Arrived at destination',
+    ];
+
+    /**
+     * Which customer-visible moment each remaining status represents.
+     *
+     * Two statuses may share a moment — `pod_verified` and `billable` are one
+     * event and one internal consequence of it — and that is correct: the
+     * customer's journey has not moved, so their word must not either.
+     */
+    public const STATUS_EVENT = [
+        TripStatus::ALLOCATED          => 'vehicle.allocated',
+        TripStatus::PRETRIP_OK         => 'pretrip.passed',
+        TripStatus::DISPATCHED         => 'trip.dispatched',
+        TripStatus::IN_TRANSIT         => 'trip.departed',
+        TripStatus::DELIVERED          => 'trip.delivered',
+        // Waiting for the POD is our work, not theirs: the last thing that
+        // happened to their shipment is still the delivery.
+        TripStatus::POD_PENDING        => 'trip.delivered',
+        TripStatus::POD_VERIFIED       => 'pod.verified',
+        TripStatus::BILLABLE           => 'pod.verified',
+        TripStatus::BILLED             => 'invoice.posted',
+        TripStatus::COLLECTION_PENDING => 'invoice.posted',
+        // Settlement is between us and the transporter. Nothing has moved on
+        // the customer's side since the invoice.
+        TripStatus::SETTLEMENT_PENDING => 'invoice.posted',
+        TripStatus::CLOSED             => 'trip.closed',
     ];
 
     /**
@@ -138,7 +199,15 @@ final class ClientVisibleFields
      */
     public static function statusWord(?string $status): string
     {
-        return self::STATUS_WORDS[$status] ?? 'In progress';
+        if (isset(self::STATUS_WORDS[$status])) {
+            return self::STATUS_WORDS[$status];
+        }
+
+        if (isset(self::STATUS_EVENT[$status])) {
+            return self::eventWord(self::STATUS_EVENT[$status]);
+        }
+
+        return 'In progress';
     }
 
     /* ══════════════════ THE JOURNEY, AS A CUSTOMER READS IT ══════════════════ */
@@ -183,6 +252,12 @@ final class ClientVisibleFields
      *                                        read as a system talking to itself
      *   exception.acknowledged               an internal handling step between
      *                                        two moments the customer can see
+     *
+     * ── THESE PHRASES ARE ALSO THE STATUS WORDS ──────────────────────────
+     * STATUS_EVENT above maps each trip state to the moment that produced it,
+     * and statusWord() resolves it through here. So editing a phrase changes
+     * BOTH the journey row and the status chip — which is the point, and is
+     * why they can no longer drift apart.
      */
     public const CLIENT_EVENTS = [
         'vehicle.allocated'  => 'Vehicle assigned',
@@ -193,7 +268,15 @@ final class ClientVisibleFields
         'trip.delivered'     => 'Delivered',
         'pod.verified'       => 'Delivery confirmed',
         'invoice.posted'     => 'Invoiced',
-        'trip.closed'        => 'Completed',
+        // NOT "Completed", and NOT "Closed" either — D-124. CLP §8's M14 is
+        // "Payment Received / Trip Closure", whose minimum control is "payment
+        // recorded and commercial closure". So §8 claims BOTH words for a state
+        // that additionally requires the customer's own payment, which our
+        // `trip.closed` does not. Either word would move later when M01–M14
+        // lands and would start implicitly reporting on whether the customer
+        // had paid. "Finished" appears nowhere in §8, so it is ours to use and
+        // both of §8's words stay free for M14 to define.
+        'trip.closed'        => 'Shipment finished',
         // CLP §27 — "exceptions and required actions prominent". A customer is
         // entitled to know something went wrong on their shipment and that it
         // was put right; they are not entitled to who was blamed, which is why

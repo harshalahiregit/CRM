@@ -28,8 +28,12 @@ const STATUS_TONE = {
   // the trip's raw state — `Accepted` is already above and means the same
   // thing here. An unmapped value falls through to the neutral tone, which is
   // why a missing one is a dull chip rather than a broken screen.
-  Completed: '#10b981', Delivered: '#10b981',
-  'On the way': '#3b82f6', 'Ready to leave': '#3b82f6', 'Vehicle assigned': '#3b82f6',
+  // Kept in step with ClientVisibleFields::CLIENT_EVENTS — the status word IS
+  // the journey word now, so these are the same eleven phrases.
+  'Shipment finished': '#10b981', Delivered: '#10b981', 'Delivery confirmed': '#10b981',
+  'Collected and on the way': '#3b82f6', 'Ready to leave': '#3b82f6',
+  'Vehicle assigned': '#3b82f6', 'Driver assigned': '#3b82f6',
+  'Vehicle checks completed': '#3b82f6',
   Invoiced: '#f59e0b',
   'Being prepared': '#9ca3af', 'In progress': '#9ca3af',
 }

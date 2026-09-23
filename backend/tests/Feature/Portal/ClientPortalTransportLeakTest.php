@@ -65,6 +65,13 @@ class ClientPortalTransportLeakTest extends TestCase
         'closure'   => 'SENTINEL-CLOSURE-REASON-8F2A',
         'rejection' => 'SENTINEL-REJECTION-8F2A',
         'freight'   => 987654.31,
+
+        // The journey view reads `trip_events`, and a key-name guard would not
+        // have stopped `->addSelect('e.detail as note')`. The detail is the
+        // dispatcher's own words and the actor is our own staff member, so both
+        // get a value nothing else could produce.
+        'detail'    => 'SENTINEL-EVENT-DETAIL-8F2A',
+        'actor'     => 'SENTINEL-ACTOR-NAME-8F2A',
     ];
 
     private ClientContact $contact;
@@ -130,6 +137,12 @@ class ClientPortalTransportLeakTest extends TestCase
                 'category'    => 'operational',
                 'source'      => 'user',
                 'summary'     => $type,
+                // Seeded on EVERY moment, the two a customer may see included:
+                // a break that exposes only the visible rows' detail is still a
+                // break, and seeding the internal pair alone would miss it.
+                'detail'      => self::SENTINELS['detail'],
+                'actor_name'  => self::SENTINELS['actor'],
+                'actor_role'  => 'dispatcher',
                 'occurred_at' => now()->modify($when),
                 'recorded_at' => now(),
                 'created_at'  => now(),

@@ -11,6 +11,14 @@ durable place for a Critical-severity registry defect (found by audit, 2026-09-0
 Authority for who rules on what: the Conflict Resolution matrix in
 `Sangoe_Transport_OS_Master_Developer_Handover_Document_Authority_Register_2026.xlsx`.
 
+**Recorded rulings and suspensions** also live here, prefixed `RULING-`, for the same reason the
+defects do: a rule consciously set aside needs to be as findable as a rule broken by accident, and
+a verbal approval is not an artefact.
+
+- [RULING-001](#ruling-001--the-client-portal-is-being-built-without-step-12-tickets) — the client
+  portal is being built without Step 12 tickets (B-09). Two endpoints, one permission value.
+  Retroactive ticket outstanding.
+
 | ID | Area | Severity | Owner | Status |
 |----|------|----------|-------|--------|
 | D-1 | Ticket traceability | High | Step 12 maintainer | Open |
@@ -4357,3 +4365,138 @@ Until then the two words stand. They are honest and they leak nothing; they are 
 
 Feeds [D-121](#d-121--clps-m01m14-is-a-second-vocabulary-not-a-view-and-four-of-them-have-no-words-at-all)
 — CLP §8's milestone model has no exception milestone either, so this gap survives that mapping.
+
+---
+
+## D-124 — the client portal spent a word CLP §8 will want back
+
+**Raised:** 2026-09-23, auditing our own portal work against §8. **P1.** **Fixed the same day.**
+
+### What it was
+
+`trip.closed` reached the customer as **"Completed"**, and `closed` showed as the status word
+"Completed" too. CLP §8's M14 is:
+
+| ID | Milestone | Minimum control |
+|---|---|---|
+| M14 | **Payment Received / Trip Closure** | Payment recorded and commercial closure |
+
+Our `trip.closed` does not require payment. So the same word would have moved later when M01–M14
+lands, and would have changed from *"we have finished"* to *"you have paid"* — a word that
+quietly starts reporting on the customer's own behaviour. A customer who learns a word and then
+has it redefined is worse off than one who never learned it.
+
+### "Closed" was not the answer either
+
+The obvious replacement collides just as hard: M14's own title is *"Payment Received / **Trip
+Closure**"*. §8 claims both halves. Anything meaning *completed* or *closed* is spoken for.
+
+**Chosen: "Shipment finished."** "Finished" appears nowhere in §8, so it is ours to use, and both
+of §8's words stay free for M14 to define when it arrives.
+
+`test_closure_does_not_use_a_word_m14_claims` rejects *completed*, *closed*, *closure*, *paid* and
+*payment* in that phrase, so the next person to reach for the obvious word is told why not.
+
+### The wider rule this is an instance of
+
+An interim vocabulary must not spend words the specified vocabulary will need. Where our interim
+word and §8's milestone describe the same moment, the words should already agree (they do for
+**Invoiced/M13** and **Vehicle assigned/M01**). Where they describe *different* moments, the
+interim word must be one §8 does not use — otherwise the interim silently pre-empts the spec.
+
+Related: [D-121](#d-121--clps-m01m14-is-a-second-vocabulary-not-a-view-and-four-of-them-have-no-words-at-all).
+
+---
+
+## D-125 — `arrived` is a state a customer can see with no event behind it
+
+**Raised:** 2026-09-23, writing the one-vocabulary test. **P1.** **Named, not fixed.**
+
+`TripStatus::ARRIVED` exists and trips pass through it, but `TripEventType` registers **no arrival
+event at all** — `grep arrived` over the registry returns nothing. So the status changes and the
+journey shows no row for it.
+
+The status word is now *"Arrived at destination"* rather than the bare *"In progress"* it fell
+through to before, which is honest. But it is the only customer-visible state whose journey cannot
+show the moment that produced it.
+
+Emitting `trip.arrived` is a **new event type**, which under Hard Rule 4 needs a Step 11 entry or a
+ruling — and Step 11 registers no arrival either. Raised rather than added.
+
+Two smaller states were unmapped for the same reason and are now covered without a new event:
+`pod_pending` reads as *"Delivered"* (waiting for the POD is our work, not the customer's) and
+`settlement_pending` reads as *"Invoiced"* (settlement is between us and the transporter). Both
+correctly show the last moment the customer's shipment actually reached.
+
+---
+
+## RULING-001 — the client portal is being built without Step 12 tickets
+
+**Not a defect. A recorded suspension of a standing rule**, written down because a verbal approval
+is not an artefact and a commit message is not a durable place.
+
+**Recorded:** 2026-09-23, by Person 1, after auditing our own portal work.
+
+### The rule being suspended
+
+**STOS-AUTH-REC-001, finding B-09:**
+
+> *"Step 12's 30-ticket pack contains no dedicated Client Portal ticket set… Do not implement from
+> CLP narrative alone."*
+
+Step 10 makes implementation ticket-driven and Step 12 is the approved executable scope. **There is
+no approved ticket authorising a single line of the client portal.** Step 11 — which outranks CLP —
+contains the term *portal* **zero times**; all 20 tables are internal and all 15 endpoints are
+`/api/v1/transport/*`. Verified from the Step 11 XLSX directly, not from a summary of it.
+
+### Who authorised it, and when
+
+The owner, verbally, relayed through the technical lead, across the sequence of instructions that
+began *"START THE CLIENT PORTAL FOUNDATION"* (2026-09-21) and ran through
+*"GIVE ME A WORKING CLIENT LOGIN FIRST, THEN BUILD THE SHIPMENTS LIST STEP BY STEP"* (2026-09-22).
+Each step was reviewed and accepted individually.
+
+**No written ticket exists.** This entry is not a ticket and does not pretend to be one.
+
+### What was built under it
+
+| Surface | Detail | Hard Rule 4 class |
+|---|---|---|
+| `GET /api/portal/client/transport/shipments` | the customer's own trips, read-only | **new API** |
+| `GET /api/portal/client/transport/shipments/{id}` | one shipment and its journey, read-only | **new API** |
+| `'transport'` in `ClientContact::MODULES` | a portal permission, additive, default off | **new permission** |
+
+And what was **not**: no new table, no new field, no new state, no new event, no change to
+`TransportPermission::MATRIX` or `ROLE_MAP`. Both endpoints write nothing. Scope comes off the
+contact's token, never a request parameter. Every field is whitelisted and the whitelist is guarded
+by `ClientPortalTransportLeakTest` by value as well as by key.
+
+### The distinction that matters, stated honestly
+
+B-09 makes two claims and only one of them is breached.
+
+- *"Do not implement from CLP narrative alone"* — **not breached.** The columns came from auditing
+  our own tables and the journey phrases from our own `TripEventType` registry. Where CLP specified
+  something with no table behind it — M01–M14 — it was measured and refused ([D-121](#d-121--clps-m01m14-is-a-second-vocabulary-not-a-view-and-four-of-them-have-no-words-at-all)).
+- *"No approved ticket authorises the portal"* — **breached.** Two endpoints and one permission
+  value exist with no Step 12 ticket.
+
+### What is outstanding
+
+1. **A retroactive Step 12 ticket** covering the two endpoints and the permission value. Owed.
+2. **The `{id}` route convention.** `ClientPortalTest::test_no_portal_route_accepts_a_client_id`
+   (Zafar, 2026-08-21) asserts no route under `api/portal/client` contains `{`, and ours does. That
+   test is red on master because of us. Raised with its owner; **the portal is paused until he
+   rules**, and his test has not been touched.
+
+### Why this entry exists at all
+
+The remedy was written down before the breach and then not followed. From
+`REPORT-new-package-v2.0-assessment.md`, question 3, 2026-09-21:
+
+> *"B-09 — are we authorised to build the portal without Step 12 tickets? The package says no. If
+> the answer is yes, that is a conscious suspension of Step 10's ticket-driven rule and should be
+> recorded as one."*
+
+An "APPROVED" was allowed to stand in for the artefact. **Not defensible; correctable.** This is
+the correction.
