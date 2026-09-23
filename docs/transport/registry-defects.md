@@ -4287,6 +4287,15 @@ should be labelled as an interim so nobody mistakes it for §8's model.
 
 ## D-121 — A genset could be fitted to a retired vehicle, and the guard against it had never fired
 
+> **Numbering note (P1, 2026-09-23).** This number was used twice. P1 had also written a D-121
+> locally, and **conceded the number** on the tie-break that published beats unpublished — P1's
+> entries renumbered to D-126…D-130, with every cross-reference in code and docs following.
+>
+> **The band was breached, though, and that is the thing to fix.** The register is banded per
+> developer — **P1 is D-100+, P2 is D-200+, P3 is D-300+** — precisely so two people cannot collide.
+> D-121 is inside P1's band. Recorded here rather than sent: nothing is blocked by it, and it is
+> worth one sentence when we are next in contact, not a message of its own.
+
 **Raised and fixed:** 2026-09-22, P2, while converting the last lowercase enums (T-58). **P2's code.**
 
 ### What it was
@@ -4523,9 +4532,12 @@ So this waits for a block of its own, after `--apply`.
 
 ### The half that is not ours
 
-`trip_advances` belongs to Person 3. This entry names the defect; **the fix is a written request to
-him, not an edit by us.** We have not touched the table, and advance #2 is recorded in our ledger
-and left exactly as it is so he can see the evidence rather than a repaired row.
+`trip_advances` belongs to Person 3, and he is the owner of that half. This entry **is** the whole
+record: nothing has been sent to him and his table has not been edited. Advance #2 is recorded in
+our ledger and left exactly as it is, so he sees the evidence rather than a repaired row.
+
+**Nothing of his is blocked by this**, so it waits until we are next in contact rather than
+interrupting him. Raise it then.
 
 ### The general rule underneath
 
@@ -4596,9 +4608,22 @@ what `000004` means. The swap is now attempted and allowed to fail with a commen
 ### Why P1 edited P2's files
 
 Normally this would be a written request. These blocked the entire migration chain on MySQL, and
-the database was already half-converted — leaving it there was the worse option. Both edits are
-minimal and change no intent: one backtick, and guards around steps that were already written.
-**Sent to P2 for review; if he prefers the reorder, it is his call.**
+the database was already half-converted — leaving it there was the worse option.
+
+**And it was not optional.** The crash is what left `vehicles.status` uppercase against
+`driver_profiles.status` lowercase, and that mismatch is exactly what makes an allocation silently
+skip a resource. The repoint could not be walked at all until the chain completed.
+
+| File | Change | Effect on behaviour |
+|---|---|---|
+| `adopt_uppercase_fleet_enums` | one identifier backticked | none — the query already meant this |
+| `generalise_party_assignees` | each step wrapped in an existence check; the index swap allowed to fail with a comment | none on a clean run; a **crashed** run becomes re-runnable |
+
+No order changed, no step added or removed, no intent altered.
+
+**Status: changed in P1's tree, unpushed, awaiting P2's review. Nothing has been sent** — nothing of
+his is blocked, so it goes to him when we are next in contact. If he prefers the reorder over the
+guards, it is his file and his call.
 
 ### The general point
 
@@ -4635,10 +4660,15 @@ patch. Raised with him.
 
 ---
 
-## D-134 — after the repoint, no driver can be allocated: Fleet's directory does not list them
+## D-134 — after the repoint, no driver can be allocated: our binding picks one directory and there are now two
 
-**Raised:** 2026-09-23, walking the allocation screen after `--apply`. **P2's component.**
-**BLOCKING — the driver half of the repoint cannot complete without a ruling.**
+**Raised:** 2026-09-23, walking the allocation screen after `--apply`.
+**OWNER: P1 — ours, in our own files.** **BLOCKING the driver half. Proposal below, not built.**
+
+> **Ownership corrected, 2026-09-23.** This entry first named P2 and said "waiting on you". That was
+> wrong, and it was wrong in the laziest way: I assigned it to the module where the *symptom*
+> appeared instead of reading where the *choice* is made. The choice is `StosServiceProvider.php:72`
+> and `config/stos.php` — both ours. Nothing of P2's needs to change. Nothing was sent to him.
 
 ### What happens
 
@@ -4651,44 +4681,76 @@ CANNOT BE USED RIGHT NOW · 1
   No licence is on file for this driver. (Fleet compliance desk)
 ```
 
-**One person, correctly blocked. The two real drivers are not there at all** — not listed, not shown
+One person, correctly blocked. **The two real drivers are not there at all** — not listed, not shown
 as ineligible, absent.
 
-### Why
+### Where the choice is actually made — ours
 
-`DriverService::list()` starts from `DriverDirectory::people()` and attaches profiles keyed by
-`source:source_id`. The bound implementation is `CrmDriverDirectory`, which describes itself as:
+```php
+// app/Providers/StosServiceProvider.php:72   ← P1's file
+$mode = config('stos.directory.driver', 'auto');   // ← P1's config
+...
+$crmPresent = Schema::hasTable('tpv_workers')
+    || Schema::hasTable('purchase_workers')
+    || Schema::hasTable('client_contacts');
 
-> *"Read live from TPV workforce, Purchase workforce, Vendor contacts, Customer contacts."*
-
-It returns exactly one person: `crm_client_contact:1`. But the two migrated profiles carry
-**`source = 'stos'`** — written by the D-62 move migration — and only `StandaloneDriverDirectory`
-resolves that source. So a profile whose licence and expiry are both present and valid until 2029
-is invisible to the picker.
-
-```
-driver_profiles
-  1  crm_client_contact:1   licence NULL        AVAILABLE   ← the only one offered
-  2  stos:1   RJ14 2019 0011221  exp 2029-09-17  AVAILABLE   ← invisible
-  3  stos:2   MH12 2020 0033445  exp 2029-09-17  AVAILABLE   ← invisible
+return $crmPresent ? new CrmDriverDirectory() : new StandaloneDriverDirectory();
 ```
 
-### Not a data problem
+`client_contacts` exists, so `auto` resolves to CRM, and `CrmDriverDirectory` cannot resolve a
+`stos:` ref. Our binding's choice.
 
-The licences are in Fleet and they are valid. The migration did its job. The gap is that the
-directory reading people and the migration writing profiles disagree about what a `source` may be,
-and nothing reconciles them.
+### The data is correct — all of it
 
-### What a ruling has to decide
+The D-62 move migration did exactly the right thing, and says so in its own comment: *"The name lives
+in a directory, never in driver_profiles. With no CRM person to point at, the standalone register is
+the directory — which is what it exists for."* It inserted the people into `stos_drivers` **and**
+the profiles pointing at them.
 
-1. Should `CrmDriverDirectory` also resolve `stos`-sourced profiles — a person who drives for us but
-   is not a TPV, purchase, vendor or customer contact?
-2. Or should the D-62 migration have created those people in the CRM directory first, making
-   `source = 'stos'` a state that should not exist?
-3. Either way, what happens to the profiles that carry it **today**?
+Measured, both directories asked directly:
 
-**The vehicle half of the repoint is unaffected and works end to end** — see the walk in
-RULING-002's companion note. This is the driver half only.
+```
+STANDALONE — "Read from the STOS driver register (standalone mode)."
+   stos:1 — SANGOE DEMO Ramesh Kumar
+   stos:2 — SANGOE DEMO Suresh Patil
+CRM — "Read live from TPV workforce, Purchase workforce, Vendor contacts, Customer contacts."
+   crm_client_contact:1 — Rajesh Kumar
+
+crm->find(1,'stos',1)               → NULL
+std->find(1,'crm_client_contact',1) → NULL
+```
+
+Three real people, two directories, **no overlap**, and each directory correctly refuses the other's
+refs.
+
+### The actual defect, in one sentence
+
+**`auto` assumes the two sources are alternatives — integrated *or* standalone — and after the D-62
+move they are simultaneous.** The config comment says so in its own words: *"use the CRM's
+directories when they are present, and the STOS-local register when they are not."* That was true
+until a migration put real people in the local register *inside* a CRM installation.
+
+### Why not just set the mode to `standalone`
+
+Because it trades one blank picker for another. `crm_client_contact:1` — Rajesh Kumar, profile 1 —
+would then be the invisible one. Every CRM-sourced driver would disappear to reveal ours. **Not
+done.**
+
+### Proposed, NOT built
+
+A `CompositeDriverDirectory` in **our** tree implementing `App\Domains\Fleet\Contracts\DriverDirectory`:
+`people()` concatenates both sources, `find()` dispatches on the `source` prefix, `describe()` names
+both.
+
+Implementing P2's interface is not editing P2's code — the contract exists precisely for this, and
+its own docblock says *"Swapping the implementation swaps the source. Nothing above this line has to
+know which one is in use."* The refs are already namespaced (`stos:` vs `crm_*:`), so a merge cannot
+collide, and each implementation already returns null for refs it does not own.
+
+It would become a fourth mode (`auto` | `crm` | `standalone` | `both`), with `auto` resolving to
+`both` when the CRM is present **and** `stos_drivers` is non-empty.
+
+**Awaiting a decision before building.** No code written.
 
 ---
 

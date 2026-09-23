@@ -85,55 +85,41 @@ reorder, take it.**
 
 ---
 
-## 5 · THE ONE THAT IS YOURS — D-134, and it blocks the driver half
+## 5 · D-134 — I nearly sent you this one. It was ours.
 
-With allocation reading Fleet, the driver picker on an approved trip says:
+The driver half of the repoint is blocked: with allocation reading Fleet, the picker shows one
+person, correctly blocked for having no licence, and **the two real drivers are absent entirely.**
 
-```
-None ready for TRP-2026-000036
-CANNOT BE USED RIGHT NOW · 1
-  Rajesh Kumar  HMV  — Not eligible
-  No licence is on file for this driver. (Fleet compliance desk)
-```
+I had this written up as yours, on the grounds that `CrmDriverDirectory` does not resolve a `stos:`
+ref. Then I checked where the choice is actually made, and it is `StosServiceProvider.php:72` and
+`config/stos.php` — **both mine.** `auto` resolves to CRM because `client_contacts` exists, and that
+is my binding's decision, not a gap in your directory.
 
-One person, correctly blocked. **The two real drivers are not there at all.** Not listed, not shown
-as ineligible — absent.
-
-`DriverService::list()` starts from `DriverDirectory::people()`. The bound implementation is
-`CrmDriverDirectory`: *"Read live from TPV workforce, Purchase workforce, Vendor contacts, Customer
-contacts."* It returns one person. The two migrated profiles carry **`source = 'stos'`**, written by
-the D-62 move migration, and only `StandaloneDriverDirectory` resolves that source.
+Your side is right, and so is the D-62 migration: it put the two people in `stos_drivers` **and**
+the profiles pointing at them, exactly as its comment says it should. Asked directly, both
+directories behave correctly and neither claims the other's refs:
 
 ```
-driver_profiles
-  1  crm_client_contact:1   licence NULL         AVAILABLE   ← the only one offered
-  2  stos:1   RJ14 2019 0011221   exp 2029-09-17  AVAILABLE   ← invisible
-  3  stos:2   MH12 2020 0033445   exp 2029-09-17  AVAILABLE   ← invisible
+STANDALONE   stos:1 — SANGOE DEMO Ramesh Kumar · stos:2 — SANGOE DEMO Suresh Patil
+CRM          crm_client_contact:1 — Rajesh Kumar
+crm->find(1,'stos',1) → NULL        std->find(1,'crm_client_contact',1) → NULL
 ```
 
-This is not a data problem. The licences are in Fleet and valid until 2029. The migration did its
-job. The directory that reads people and the migration that writes profiles disagree about what a
-`source` may be, and nothing reconciles them.
+The defect is that `auto` assumes the two sources are **alternatives**, and after the D-62 move they
+are **simultaneous**. My fix, in my tree: a composite implementation of your `DriverDirectory`
+contract that asks both. Nothing of yours changes — that is what the interface is for, and your
+docblock already says so.
 
-**What has to be decided (yours):**
+Recorded as **D-134**, owner P1. Nothing needed from you.
 
-1. Should `CrmDriverDirectory` also resolve `stos`-sourced profiles — someone who drives for us but
-   is not a TPV, purchase, vendor or customer contact?
-2. Or should the D-62 migration have created those people in the CRM directory first, making
-   `source = 'stos'` a state that should not exist?
-3. Either way — what happens to the profiles carrying it today?
+---
 
-**The vehicle half is unaffected and works end to end.** The Fleet page finally shows MH12DEMO01
-and MH14DEMO02, and trip 44 reads its crew from Fleet. For the allocation itself I checked the
-service rather than the screen, because the screen misled me first: the trip page showed
-"MH14DEMO02 — Vehicle and driver assigned", which was a **released** assignment from 21 September
-rendered with repointed ids, and I nearly reported it as a successful allocation.
+## 6 · Nothing in this note needs an answer today
 
-What is actually proven: `VehicleEligibilityService::candidatesFor()` returns both trucks with
-`status: "AVAILABLE"` matched and `eligible: true`, and `AllocationService::assign()` on trip 45
-wrote `vehicle_id = 1` and moved Fleet vehicle 1 to `ALLOCATED`. Trip 45 is deliberately left in
-that state — a vehicle, no driver — because of the blocker below. Your gateway's wording carried through untouched, and
-so did `DriverService`'s blockers — *"No licence is on file for this driver. (Fleet compliance desk)"*
-is your sentence, and it reached the dispatcher's screen exactly as you wrote it, naming the desk.
+D-132's two migration repairs are in my tree, unpushed, and waiting on your review when we are next
+in contact — not urgent, nothing of yours is blocked. Same for the D-120 test's `tenant_id`
+blind spot and D-133's polymorphic reference: both are notes for when you are next in this code, not
+requests.
 
-I have not touched the directory or the binding. Waiting on you.
+The repoint itself is done and reversible. The vehicle half works; the driver half is mine to
+finish.
