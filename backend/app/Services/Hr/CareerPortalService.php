@@ -12,7 +12,6 @@ use App\Support\Hr\JobPostingStatus;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * Public Career Portal — unauthenticated. The tenant is resolved from the URL
@@ -22,6 +21,24 @@ use Illuminate\Support\Facades\Storage;
  */
 class CareerPortalService
 {
+    /**
+     * The offer statuses the candidate has already been told about.
+     *
+     * This list replaces ['Sent', 'Accepted', 'Rejected'], which was stale in
+     * both directions. 'Rejected' is NOT an offer status at all — declining
+     * writes 'Declined' and 'Rejected' is a candidate DECISION value — so that
+     * entry matched nothing and the branch keyed on it was unreachable. And
+     * 'Viewed' was missing, which mattered far more: the offer portal flips
+     * Sent → Viewed the instant the candidate opens their emailed link, so on
+     * the most ordinary path imaginable — read the offer, then come back to the
+     * tracker — their offer silently vanished from this page. Declining,
+     * expiring, being withdrawn and joining all did the same.
+     *
+     * Everything before Sent is deliberately absent: a Draft or an offer still
+     * waiting on internal approval is not the candidate's business yet.
+     */
+    private const INFORMED_STATUSES = ['Sent', 'Viewed', 'Accepted', 'Declined', 'Expired', 'Withdrawn', 'Completed'];
+
     public function __construct(
         private ResumeService $resumeService,
         private CandidateRepository $candidateRepository,
@@ -204,12 +221,19 @@ class CareerPortalService
         ], fn ($v) => $v !== null && $v !== '');
     }
 
-    /** Candidate's offer, only once it has actually been sent to them. */
+    /**
+     * Candidate's offer, once it has actually been sent to them.
+     *
+     * A SUMMARY, NOT A CONTROL SURFACE. Careers is a read-only tracker: it
+     * shows where the offer has got to and points the candidate at the private
+     * link they were emailed. Nothing here is a button, and the two booleans
+     * below describe what the SERVER will do, not what this page offers.
+     */
     private function publicOffer(HrCandidate $candidate): ?array
     {
         $offer = $candidate->offer;
 
-        if (! $offer || ! in_array($offer->status, ['Sent', 'Accepted', 'Rejected'], true)) {
+        if (! $offer || ! in_array($offer->status, self::INFORMED_STATUSES, true)) {
             return null;
         }
 
@@ -218,8 +242,23 @@ class CareerPortalService
             'position'     => $offer->position,
             'offered_ctc'  => $offer->offered_ctc,
             'joining_date' => optional($offer->joining_date)->toDateString(),
+
+            // Whether THIS SERVICE's respond endpoint would accept a response
+            // right now — its guard is `status === 'Sent'` and this mirrors it
+            // exactly. It is deliberately not widened to match the offer
+            // portal, which also accepts 'Viewed': that endpoint's behaviour is
+            // not being changed here, so neither is the flag that reports it.
+            //
+            // It does NOT mean "Careers can respond". Careers has no response
+            // control and no token to drive one with.
             'can_respond'  => $offer->status === 'Sent',
-            'can_download' => ! empty($offer->letter_path),
+
+            // Whether the letter can actually be fetched — the FILE, not just a
+            // path column. This used to read `! empty($offer->letter_path)`,
+            // which was true for every generated offer while the download
+            // itself 404'd, so the tracker advertised a document it could not
+            // produce. offerLetterFile() is the same check the download runs.
+            'can_download' => $this->offerService->offerLetterFile($offer) !== null,
         ];
     }
 
@@ -282,29 +321,49 @@ class CareerPortalService
         return $this->applicationStatus($tenant, $jobId, $email, null);
     }
 
-    /** Resolve the candidate's offer letter file for download (portal-safe). */
+    /**
+     * Resolve the candidate's offer letter file for download (portal-safe).
+     *
+     * IT LOOKS WHERE THE FILE ACTUALLY IS NOW. This probed the `local` disk and
+     * then `public`, and neither has ever held an offer letter: OfferService
+     * renders onto hr_documents, which is rooted at storage/app/private/hr/
+     * documents, while the stored path repeats that prefix — so the real file
+     * sits a level below where either probe looked. Careers could therefore
+     * never find a letter, for any offer, and every request 404'd as though
+     * the document did not exist.
+     *
+     * The probes are removed rather than corrected. `git log -L` over
+     * renderLetter() shows exactly one version ever written and DOC_DISK has
+     * had one value since it shipped, so nothing has ever been written to
+     * local or public and there are no legacy files for a fallback to support.
+     *
+     * offerLetterFile() is reused rather than reimplemented: it already knows
+     * the disk, already confirms the file is really on it, and already returns
+     * the {path, filename} this method's caller expects. One consequence worth
+     * naming: the download is now named after the offer rather than the
+     * candidate, because that is how the shared helper names it.
+     *
+     * Unchanged: the token requirement, the email second factor, the tenant
+     * scope, and the single 404 message used for every unavailable reason.
+     */
     public function offerLetter(Tenant $tenant, int $jobId, string $email, ?string $token = null): array
     {
         $candidate = $this->candidateRepository->findApplicationForJob($email, null, $jobId, $tenant->id);
         $offer     = $candidate?->offer;
 
-        if (! $offer || empty($offer->letter_path) || ! in_array($offer->status, ['Sent', 'Accepted', 'Rejected'], true)) {
+        if (! $offer || ! in_array($offer->status, self::INFORMED_STATUSES, true)) {
             throw new BusinessException('Offer letter is not available.', 404);
         }
         // Same out-of-band token requirement as respondToOffer — the letter contains CTC.
         $this->assertOfferToken($offer, $token);
 
-        $disk = Storage::disk('local')->exists($offer->letter_path) ? 'local'
-            : (Storage::disk('public')->exists($offer->letter_path) ? 'public' : null);
+        $file = $this->offerService->offerLetterFile($offer);
 
-        if (! $disk) {
+        if (! $file) {
             throw new BusinessException('Offer letter is not available.', 404);
         }
 
-        return [
-            'path'     => Storage::disk($disk)->path($offer->letter_path),
-            'filename' => 'Offer-Letter-'.$candidate->id.'.'.pathinfo($offer->letter_path, PATHINFO_EXTENSION),
-        ];
+        return $file;
     }
 
     /** Base query: this tenant's jobs that are live AND on the career portal. */
