@@ -49,9 +49,13 @@ class HrEventNotifier
         ?User $actor = null,
         array $opts = [],
     ): void {
-        $userId = $employee?->user_id;
+        if (! $employee) {
+            return;
+        }
 
-        if (! $employee || ! $userId) {
+        $userId = $this->loginFor($employee);
+
+        if (! $userId) {
             return;
         }
 
@@ -83,6 +87,36 @@ class HrEventNotifier
             'recipient_roles' => ['hr'],
             'context'         => $context,
         ] + $opts, $actor);
+    }
+
+    /**
+     * The employee's login id, even when the caller handed us a partial model.
+     *
+     * HR repositories eager-load employees with an explicit column list —
+     * `with('employee:id,name,employee_code,department')` and a dozen
+     * variations of it. Any column left off that list is simply ABSENT from
+     * the hydrated model, and reading it gives null. user_id is off every one
+     * of them, so a notification raised from a repository-loaded record found
+     * no recipient and returned here in silence: the send never happened and
+     * nothing anywhere said so.
+     *
+     * The distinction this relies on is exact. A column that was not selected
+     * leaves no key in the attribute bag; an employee who genuinely has no
+     * login has the key, holding null. So the extra read fires only for the
+     * partial-model case and never for somebody who simply is not on the app.
+     *
+     * Fixing it here rather than in twenty eager loads: the guard belongs
+     * where the assumption is made, and any future caller gets it free.
+     */
+    private function loginFor(HrEmployee $employee): ?int
+    {
+        if (array_key_exists('user_id', $employee->getAttributes())) {
+            return $employee->user_id ? (int) $employee->user_id : null;
+        }
+
+        $userId = HrEmployee::whereKey($employee->getKey())->value('user_id');
+
+        return $userId ? (int) $userId : null;
     }
 
     private function send(int $tenantId, string $module, string $event, array $opts, ?User $actor): void

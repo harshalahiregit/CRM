@@ -36,8 +36,10 @@ class InvestmentDeclarationService
     // service rather than on the controller.
     use ScopesEmployeeData;
 
-    public function __construct(private SettingsService $settings)
-    {
+    public function __construct(
+        private SettingsService $settings,
+        private HrEventNotifier $notifier,
+    ) {
     }
 
     public function fyStartMonth(int $tenantId): int
@@ -220,6 +222,12 @@ class InvestmentDeclarationService
             ['verified_total' => $declaration->fresh()->verified_total]);
         $this->log('Declaration verified', $tenantId, $declaration->id);
 
+        // Outside the transaction above, deliberately: a notification that
+        // fails must not roll back the verification it is announcing.
+        $this->notifier->toEmployee($declaration->employee, 'Investment', 'Verified', [
+            'fy' => (string) $declaration->financial_year, 'remarks' => '',
+        ], $actor);
+
         return $this->present($this->find($id, $tenantId, $actor), full: true);
     }
 
@@ -236,6 +244,12 @@ class InvestmentDeclarationService
             'remarks' => $remarks, 'updated_by' => $actor?->id,
         ]);
         $declaration->recordAudit('Declaration Rejected', $actor, $remarks);
+
+        // A rejected declaration changes the tax deducted from somebody's
+        // salary, so silence here is felt in the payslip.
+        $this->notifier->toEmployee($declaration->employee, 'Investment', 'Rejected', [
+            'fy' => (string) $declaration->financial_year, 'remarks' => $remarks,
+        ], $actor);
 
         return $this->present($this->find($id, $tenantId, $actor), full: true);
     }

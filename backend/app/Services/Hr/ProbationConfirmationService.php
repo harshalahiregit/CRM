@@ -22,8 +22,10 @@ class ProbationConfirmationService
 {
     private const ELIGIBLE = [HrEmployeeProbation::ACTIVE, HrEmployeeProbation::EXTENDED];
 
-    public function __construct(private ProbationConfirmationRepository $repo)
-    {
+    public function __construct(
+        private ProbationConfirmationRepository $repo,
+        private HrEventNotifier $notifier,
+    ) {
     }
 
     public function list(int $tenantId, array $f, ?User $actor = null): array
@@ -144,6 +146,12 @@ class ProbationConfirmationService
             'updated_by' => $actor?->id,
         ]);
         $conf->recordAudit('Probation Confirmation Approved', $actor, $data['hr_comments'] ?? null);
+
+        // Confirmation had a 'Confirmed' event and no decision events, so the
+        // approval itself reached nobody.
+        $this->notifier->toEmployee($conf->employee, 'Probation', 'Confirmation Approved', [
+            'remarks' => $data['hr_comments'] ?? '',
+        ], $actor);
         $this->log('Probation confirmation approved', $tenantId, $conf->id);
 
         return $this->present($this->find($id, $tenantId, $actor), true);
@@ -162,6 +170,12 @@ class ProbationConfirmationService
             'updated_by' => $actor?->id,
         ]);
         $conf->recordAudit('Probation Confirmation Rejected', $actor, $data['hr_comments'] ?? null);
+
+        // The outcome somebody most needs to hear, and the one that said
+        // nothing at all.
+        $this->notifier->toEmployee($conf->employee, 'Probation', 'Confirmation Rejected', [
+            'remarks' => $data['hr_comments'] ?? '',
+        ], $actor);
         $this->log('Probation confirmation rejected', $tenantId, $conf->id);
 
         return $this->present($this->find($id, $tenantId, $actor), true);

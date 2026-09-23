@@ -21,6 +21,7 @@ class ExitApprovalService
     public function __construct(
         private ExitRepository $repo,
         private ExitRequestService $requests,
+        private HrEventNotifier $notifier,
     ) {
     }
 
@@ -94,6 +95,14 @@ class ExitApprovalService
             'updated_by'       => $actor?->id,
         ]);
         $request->recordAudit('Exit Approved', $actor, $data['remarks'] ?? null, ['employee' => $request->employee?->name]);
+
+        // The person leaving is told the outcome. Until now every Exit event
+        // announced that somebody had to ACT; none said what was decided.
+        $this->notifier->toEmployee($request->employee, 'Exit', 'Approved', [
+            'date'    => optional($request->last_working_date)->toDateString() ?? '—',
+            'remarks' => $data['remarks'] ?? '',
+        ], $actor);
+
         $this->log('Exit approved', $tenantId, $request->id);
 
         return $this->requests->present($this->find($id, $tenantId, $actor), true);
@@ -111,6 +120,11 @@ class ExitApprovalService
             'updated_by'       => $actor?->id,
         ]);
         $request->recordAudit('Exit Rejected', $actor, $data['remarks'] ?? null, ['employee' => $request->employee?->name]);
+
+        $this->notifier->toEmployee($request->employee, 'Exit', 'Rejected', [
+            'remarks' => $data['remarks'] ?? '',
+        ], $actor);
+
         $this->log('Exit rejected', $tenantId, $request->id);
 
         return $this->requests->present($this->find($id, $tenantId, $actor), true);

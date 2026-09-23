@@ -75,6 +75,12 @@ return [
             'Approval Pending'   => ['priority' => 'Warning', 'subject' => 'Exit approval pending — {{employee}}', 'body' => 'The exit request for {{employee}} is awaiting approval.', 'reminder' => ['days' => [0], 'repeat' => true, 'escalation' => true]],
             'Clearance Pending'  => ['priority' => 'Warning', 'subject' => 'Exit clearance pending — {{employee}}', 'body' => 'Departmental clearance for {{employee}} is pending.', 'reminder' => ['days' => [0], 'repeat' => true]],
             'Settlement Pending' => ['priority' => 'Warning', 'subject' => 'Full & Final pending — {{employee}}', 'body' => 'The full & final settlement for {{employee}} is pending.', 'reminder' => ['days' => [0], 'repeat' => true]],
+
+            // The OUTCOME. Everything above announces that somebody must act;
+            // nothing told the person waiting what was decided, so an exit was
+            // approved or refused in silence.
+            'Approved' => ['priority' => 'Success', 'subject' => 'Exit request approved', 'body' => 'Your exit request has been approved. Last working day: {{date}}. {{remarks}}'],
+            'Rejected' => ['priority' => 'Warning', 'subject' => 'Exit request rejected', 'body' => 'Your exit request was not approved. {{remarks}}'],
         ],
 
         'Learning' => [
@@ -89,6 +95,12 @@ return [
             'Extension Pending'    => ['priority' => 'Warning',  'subject' => 'Probation extension pending — {{employee}}', 'body' => 'An extension request for {{employee}} is awaiting approval.', 'reminder' => ['days' => [0], 'repeat' => true, 'escalation' => true]],
             'Confirmation Pending' => ['priority' => 'Critical', 'subject' => 'Probation confirmation due — {{employee}}', 'body' => 'The probation for {{employee}} ends on {{date}} ({{remaining_days}} days) — confirmation is due.', 'reminder' => ['days' => [30, 15, 7, 2, 0], 'repeat' => false, 'escalation' => true]],
             'Confirmed'            => ['priority' => 'Success',  'subject' => 'Employee confirmed — {{employee}}', 'body' => '{{employee}} has been confirmed effective {{date}}.'],
+
+            // Confirmation had a success event and no failure one, so a refused
+            // confirmation — the outcome somebody most needs to hear — said
+            // nothing at all.
+            'Confirmation Approved' => ['priority' => 'Success', 'subject' => 'Probation confirmation approved — {{employee}}', 'body' => 'The confirmation for {{employee}} has been approved. {{remarks}}'],
+            'Confirmation Rejected' => ['priority' => 'Warning', 'subject' => 'Probation confirmation rejected — {{employee}}', 'body' => 'The confirmation for {{employee}} was not approved. {{remarks}}'],
         ],
 
         'Performance' => [
@@ -161,6 +173,34 @@ return [
             'Rejected'         => ['priority' => 'Warning', 'subject' => 'Loan rejected', 'body' => 'Your loan request was rejected. {{remarks}}'],
             'Disbursed'        => ['priority' => 'Success', 'subject' => 'Loan disbursed — {{amount}}', 'body' => '{{amount}} has been disbursed to you.'],
             'Approval Pending' => ['priority' => 'Warning', 'subject' => 'Loan awaiting approval — {{employee}}', 'body' => 'A loan request from {{employee}} ({{amount}}) is awaiting approval.', 'reminder' => ['days' => [0], 'repeat' => true, 'escalation' => true]],
+        ],
+
+        /*
+         | Variable earnings — commissions, incentives, bonuses.
+         |
+         | An approval process on the engine since it was built, and the only
+         | one of the nine whose decisions reached nobody. The figure goes into
+         | somebody's pay, so being told it was approved or refused is not a
+         | nicety.
+         */
+        'VariableEarning' => [
+            'Submitted' => ['priority' => 'Info',    'subject' => 'Variable earning submitted — {{employee}}', 'body' => '{{amount}} has been raised for {{employee}} and is awaiting approval.'],
+            'Approved'  => ['priority' => 'Success', 'subject' => 'Variable earning approved — {{amount}}', 'body' => 'A variable earning of {{amount}} has been approved and will be paid with your salary.'],
+            'Rejected'  => ['priority' => 'Warning', 'subject' => 'Variable earning rejected', 'body' => 'A variable earning of {{amount}} was not approved. {{remarks}}'],
+        ],
+
+        /*
+         | Investment declarations — VERIFICATION rather than approval.
+         |
+         | The domain word is deliberate and matches ApprovalProcess: a
+         | declaration is Verified, not Approved. A rejected declaration changes
+         | the tax deducted from somebody's salary, so silence here is felt in
+         | the payslip.
+         */
+        'Investment' => [
+            'Submitted' => ['priority' => 'Info',    'subject' => 'Investment declaration submitted — {{employee}}', 'body' => '{{employee}} submitted an investment declaration for {{fy}}.'],
+            'Verified'  => ['priority' => 'Success', 'subject' => 'Investment declaration verified — {{fy}}', 'body' => 'Your investment declaration for {{fy}} has been verified. {{remarks}}'],
+            'Rejected'  => ['priority' => 'Warning', 'subject' => 'Investment declaration rejected — {{fy}}', 'body' => 'Your investment declaration for {{fy}} was not accepted. {{remarks}}'],
         ],
 
         /*

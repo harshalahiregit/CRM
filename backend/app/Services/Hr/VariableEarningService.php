@@ -27,6 +27,10 @@ class VariableEarningService
     // them would underpay somebody.
     use ScopesEmployeeData;
 
+    public function __construct(private HrEventNotifier $notifier)
+    {
+    }
+
     /** Raise or amend a commission/incentive for one employee and period. */
     public function save(array $data, int $tenantId, ?User $actor = null): HrEmployeeVariableEarning
     {
@@ -111,6 +115,11 @@ class VariableEarningService
         ]);
         $earning->recordAudit('Variable earning approved', $actor);
 
+        // The figure goes into somebody's pay — being told is not a nicety.
+        $this->notifier->toEmployee($earning->employee, 'VariableEarning', 'Approved', [
+            'amount' => (string) $earning->amount,
+        ], $actor);
+
         return $earning->fresh();
     }
 
@@ -124,6 +133,10 @@ class VariableEarningService
 
         $earning->update(['status' => HrEmployeeVariableEarning::REJECTED, 'remarks' => $remarks]);
         $earning->recordAudit('Variable earning rejected', $actor, $remarks);
+
+        $this->notifier->toEmployee($earning->employee, 'VariableEarning', 'Rejected', [
+            'amount' => (string) $earning->amount, 'remarks' => $remarks,
+        ], $actor);
 
         return $earning->fresh();
     }
