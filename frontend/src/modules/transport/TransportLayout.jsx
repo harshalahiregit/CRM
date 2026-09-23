@@ -56,6 +56,9 @@ const TRANSPORT_ITEMS = [
   // TEAM-CONTRACTS §1a; Fleet's screens replace them at the same rail position
   // so the nav a user learned does not move under them.
   { label: 'Fleet',            path: '/app/transport/fleet',        icon: Truck },
+  // T-54 — its own rail entry because a trailer is its own master, not a kind
+  // of vehicle. Putting it inside Fleet would say the opposite.
+  { label: 'Trailers',         path: '/app/transport/trailers',     icon: Container },
   { label: 'Drivers',          path: '/app/transport/drivers',      icon: Users },
   { label: 'Workshop',         path: '/app/transport/workshop',     icon: Wrench },
 ]
