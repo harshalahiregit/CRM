@@ -295,6 +295,13 @@ export const hrApi = {
     documentBlob:   (id, docId)   => api.get(`/hr/onboarding/${id}/documents/${docId}`, { responseType: 'blob' }).then(r => r.data),
     verifyDocument: (id, docId, data) => api.patch(`/hr/onboarding/${id}/documents/${docId}/verify`, data).then(r => r.data),
     delete:         (id)          => api.delete(`/hr/onboarding/${id}`).then(r => r.data),
+
+    // Mint a candidate portal link. The raw token comes back exactly once, in
+    // this response, and any previously issued link stops working. There is
+    // deliberately no "read the current link" call — only a hash is stored, so
+    // seeing the link again means replacing it. Mirrors offers.issuePortalLink.
+    issuePortalLink: (id)         => api.post(`/hr/onboarding/${id}/portal-link`).then(r => r.data),
+    revokePortalLink:(id, reason) => api.delete(`/hr/onboarding/${id}/portal-link`, { data: { reason } }).then(r => r.data),
   },
 
   // ── Employees ───────────────────────────────────────────────────────

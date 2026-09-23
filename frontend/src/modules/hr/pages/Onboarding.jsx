@@ -1,17 +1,36 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '@/context/ThemeContext'
-import { Plus, X, Check, Download, FileText, ShieldCheck, ExternalLink, Copy, Eye, Send } from 'lucide-react'
+import { Plus, X, Check, Download, FileText, ShieldCheck, ExternalLink, Copy, Eye, Send, Ban } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { useMasterData } from '@/modules/hr/useMasterData'
 import { DOC_LABEL, mandatoryDocKeys, isDocMandatory } from '@/config/onboardingDocs'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import WorkflowProgress from '@/components/ui/WorkflowProgress'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import { ONBOARDING_DOC_ITEMS, ONBOARDING_DOC_LABELS, computeOnboardingChecklist } from '@/modules/hr/constants'
 
-// Build the public candidate-portal URL from the token already stored in
-// hr_onboarding — never generates a new token.
-const portalUrl = (token) => `${window.location.origin}/onboarding/${token}`
+/**
+ * What state the candidate's portal credential is in.
+ *
+ * Derived from the three lifecycle timestamps the list response already
+ * carries. It used to read the raw access_token straight out of that response
+ * and treat "there is a string here" as "there is a link" — but only a sha256
+ * hash is stored now, the column is hidden from every payload, and the key is
+ * absent rather than null. So the old test was false for EVERY row and these
+ * buttons have rendered as a disabled "Portal link not available." since the
+ * onboarding token was hardened.
+ *
+ * 'live' is the only state where issuing destroys something.
+ */
+const linkState = (r) => {
+  if (! r.token_issued_at) return 'none'
+  if (r.token_revoked_at) return 'revoked'
+  if (r.token_expires_at && new Date(r.token_expires_at) <= new Date()) return 'expired'
+  return 'live'
+}
+
+const LINK_LABEL = { none: 'Issue Portal Link', revoked: 'Issue New Link', expired: 'Issue New Link', live: 'New Portal Link' }
 
 const VERIF_STYLE = (s) => s === 'Approved' ? { c: '#10b981', bg: 'rgba(16,185,129,0.12)' }
   : s === 'Submitted' ? { c: '#a78bfa', bg: 'rgba(124,58,237,0.12)' }
@@ -335,6 +354,10 @@ export default function Onboarding() {
   const [toast, setToast] = useState(null)
   const [approved, setApproved] = useState(null)      // { candidateName, offer } — success modal after approval
   const [sendingOffer, setSendingOffer] = useState(false)
+  // Pending portal-link confirmation: { kind: 'issue'|'revoke', record, then? }.
+  // Holds the RECORD, never a link — the raw link does not exist until the
+  // action is confirmed and is gone again the moment it has been used.
+  const [linkConfirm, setLinkConfirm] = useState(null)
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type })
@@ -370,13 +393,55 @@ export default function Onboarding() {
       .catch(() => setCandidates([]))
   }, [])
 
-  // Open / copy the candidate onboarding portal using the existing token.
-  const openPortal = (token) => window.open(portalUrl(token), '_blank', 'noopener,noreferrer')
-  const copyLink = async (token) => {
-    const url = portalUrl(token)
-    try { await navigator.clipboard.writeText(url) } catch { /* fallback below */ }
-    showToast('Candidate portal link copied!')
+  /**
+   * Issue a candidate portal link and hand it straight to the action.
+   *
+   * THE RAW LINK LIVES IN THIS FUNCTION AND NOWHERE ELSE. It is opened or
+   * copied and then goes out of scope — it is never written into `records`,
+   * never into component state, never into storage, and never logged. It
+   * cannot be recovered afterwards because only its hash is kept, which is
+   * exactly why there is no "show me the current link" call to make instead.
+   *
+   * The URL is taken from the response as the server built it; the page does
+   * not assemble one from a token.
+   */
+  const runIssueLink = async ({ record, then }) => {
+    setLinkConfirm(null)
+    try {
+      const res = await hrApi.onboarding.issuePortalLink(record.id)
+      then(res?.data?.link)
+      // Refresh so token_issued_at / revoked_at reflect what just happened.
+      fetchData()
+    } catch (e) {
+      showToast(e.response?.data?.message || 'Could not issue a portal link', 'error')
+    }
   }
+
+  // Replacing a LIVE link destroys the one the candidate is holding, so that
+  // case asks first. A link that was never issued, or is already revoked or
+  // expired, has nothing to destroy and goes straight through.
+  const issueLink = (record, then) =>
+    linkState(record) === 'live'
+      ? setLinkConfirm({ kind: 'issue', record, then })
+      : runIssueLink({ record, then })
+
+  const openPortal = (record) => issueLink(record, (link) => window.open(link, '_blank', 'noopener,noreferrer'))
+  const copyLink = (record) => issueLink(record, async (link) => {
+    try { await navigator.clipboard.writeText(link) } catch { /* clipboard blocked — the toast still confirms it */ }
+    showToast('Candidate portal link copied!')
+  })
+
+  const runRevokeLink = async (record) => {
+    setLinkConfirm(null)
+    try {
+      await hrApi.onboarding.revokePortalLink(record.id)
+      showToast('Candidate portal link revoked')
+      fetchData()
+    } catch (e) {
+      showToast(e.response?.data?.message || 'Could not revoke the portal link', 'error')
+    }
+  }
+  const revokeLink = (record) => setLinkConfirm({ kind: 'revoke', record })
 
   // Shared with the Candidate 360° onboarding stage — one definition, one source.
   const DOC_ITEMS = ONBOARDING_DOC_ITEMS
@@ -468,6 +533,29 @@ export default function Onboarding() {
         >
           {toast.msg}
         </div>
+      )}
+
+      {/* Issuing is not a lookup — it replaces the link the candidate already
+          holds — and revoking takes theirs away. Both are confirmed first. */}
+      {linkConfirm && linkConfirm.kind === 'issue' && (
+        <ConfirmDialog
+          title="Issue a new onboarding link?"
+          message={`The link already sent to ${linkConfirm.record.candidate_name || 'this candidate'} will stop working immediately, and the new one is shown only once. Send it on to them after issuing.`}
+          confirmLabel="Issue new link"
+          cancelLabel="Keep the current link"
+          onConfirm={() => runIssueLink(linkConfirm)}
+          onCancel={() => setLinkConfirm(null)}
+        />
+      )}
+      {linkConfirm && linkConfirm.kind === 'revoke' && (
+        <ConfirmDialog
+          title="Revoke this onboarding link?"
+          message={`${linkConfirm.record.candidate_name || 'This candidate'} will no longer be able to open their onboarding portal. Nothing else about their onboarding changes, and you can issue a replacement link at any time.`}
+          confirmLabel="Revoke link"
+          cancelLabel="Leave it working"
+          onConfirm={() => runRevokeLink(linkConfirm.record)}
+          onCancel={() => setLinkConfirm(null)}
+        />
       )}
 
       {/* Approval success modal — offer auto-generated, prompt to send */}
@@ -594,30 +682,44 @@ export default function Onboarding() {
                     <span className="text-[10px] font-bold px-2.5 py-1 rounded-xl" style={{ background: ss.bg, color: ss.c }}>
                       {r.status}
                     </span>
-                    {/* Candidate Portal — reuses the token already in hr_onboarding */}
-                    {r.access_token ? (
-                      <>
-                        <button
-                          onClick={() => openPortal(r.access_token)}
-                          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl font-bold text-white"
-                          style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}
-                          title="Open the candidate's onboarding portal in a new tab"
-                        >
-                          <ExternalLink size={12} /> Open Candidate Portal
-                        </button>
-                        <button
-                          onClick={() => copyLink(r.access_token)}
-                          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl font-semibold"
-                          style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
-                          title="Copy the onboarding link to share via email/WhatsApp"
-                        >
-                          <Copy size={12} /> Copy Link
-                        </button>
-                      </>
-                    ) : (
-                      <button disabled className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl font-semibold" style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)', opacity: 0.55, cursor: 'not-allowed' }} title="This onboarding has no candidate portal token">
-                        Portal link not available.
+                    {/* Candidate Portal. Opening or copying ISSUES a link — the
+                        one that was mailed cannot be read back, only replaced —
+                        so the label says so and a live link is confirmed first. */}
+                    <button
+                      onClick={() => openPortal(r)}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl font-bold text-white"
+                      style={{ background: 'linear-gradient(135deg,#7C3AED,#5b21b6)' }}
+                      title={linkState(r) === 'live'
+                        ? "Issue a new onboarding link and open it — the link already sent to the candidate stops working"
+                        : "Issue an onboarding link and open the candidate's portal in a new tab"}
+                    >
+                      <ExternalLink size={12} /> {LINK_LABEL[linkState(r)]}
+                    </button>
+                    <button
+                      onClick={() => copyLink(r)}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl font-semibold"
+                      style={{ background: 'var(--bg-input)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+                      title={linkState(r) === 'live'
+                        ? 'Issue a new onboarding link and copy it — the link already sent to the candidate stops working'
+                        : 'Issue an onboarding link and copy it to share via email/WhatsApp'}
+                    >
+                      <Copy size={12} /> Copy Link
+                    </button>
+                    {linkState(r) === 'live' && (
+                      <button
+                        onClick={() => revokeLink(r)}
+                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl font-semibold"
+                        style={{ background: 'var(--bg-input)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)' }}
+                        title="Stop the candidate's current onboarding link working, without issuing a replacement"
+                      >
+                        <Ban size={12} /> Revoke Link
                       </button>
+                    )}
+                    {linkState(r) === 'revoked' && (
+                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-xl" style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171' }}>Link revoked</span>
+                    )}
+                    {linkState(r) === 'expired' && (
+                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-xl" style={{ background: 'rgba(245,158,11,0.12)', color: '#fbbf24' }}>Link expired</span>
                     )}
                     <button
                       onClick={() => setExpanded(expanded === r.id ? null : r.id)}
