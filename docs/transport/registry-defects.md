@@ -4800,6 +4800,162 @@ than by name, which is honest but worse, and it is recorded here rather than lef
 
 ---
 
+## D-136 — the double-booking lock was taken on a table nobody was competing for
+
+**Raised and fixed:** 2026-09-23, sweeping the readers after the repoint. **P1.**
+
+### What it was
+
+`TripAssignmentService::lockResources()` — BR-P0-003's half of the guard — locked
+`transport_vehicles` and `transport_drivers` by id. After the repoint `$vehicleId` is a **Fleet**
+id, so it locked whichever legacy row happened to carry that number, and for a vehicle created
+through Fleet's own screen there is no legacy row at all: `first()` returned null and it locked
+**nothing**.
+
+### What it did NOT break, stated before what it did
+
+**It did not let two dispatchers take the same truck.** That was the first framing of this entry,
+and the measurement disproved it. Raced three ways in a container, two processes, one vehicle, two
+trips, same instant:
+
+| lock | winner | loser | active assignments |
+|---|---|---|---|
+| on Fleet (**fixed**) | OK | `BusinessException` — *"already assigned to trip #50"* | 1 |
+| on legacy (**as it was**) | OK | `QueryException: Deadlock found` | 1 |
+| **none at all** | OK | `QueryException: Deadlock found` | 1 |
+
+No vehicle was double-booked in any configuration. **What broke is which refusal the loser is
+shown**: QA-003's designed, actionable message was replaced by a raw database error. A dispatcher
+saw `SQLSTATE[40001]: Serialization failure: 1213 Deadlock found` instead of a sentence naming the
+trip to release.
+
+**The broken lock was indistinguishable from no lock.** That is the finding, and it is why nothing
+went red.
+
+### What actually held, and why that is not reassuring
+
+MySQL's deadlock detection and the unique indexes over `trip_assignments`' generated columns.
+**Neither was designed for this job** — the belt-and-braces note in this service's docblock names
+the index as the backstop, not the mechanism. The braces held while the belt was cut.
+
+**It was not correct, it was lucky.** And three runs measure three interleavings, not every
+interleaving: this entry claims what was observed, not that the data was safe under all of them.
+
+### Why the suite could never have caught it
+
+A guard against a race is not proven by a test that does not race, and the suite runs on in-memory
+SQLite with one connection. `tests/concurrency/race-allocation.sh` is the real proof — two PHP
+processes against MySQL in a throwaway container. `AllocationLockTargetsFleetTest` holds the part
+SQLite can prove: that the lock names the table the allocation writes.
+
+### One thing added that was not a repoint
+
+A missing resource row now throws `ResourceNotFoundException` instead of locking nothing and
+carrying on. **This is new behaviour in the allocation path and it should have been proposed before
+it was written** — "propose before building" exists for exactly a new way for an operation to fail.
+Checked before keeping it: all three drivers the composite returns have a `driver_profiles` row, so
+no legitimate allocation is refused by it.
+
+---
+
+## D-137 — we ran a race harness against the shared dev database
+
+**Raised:** 2026-09-23. **P1 — our own discipline break, logged in our own name.**
+
+### What happened
+
+Proving D-136 needed a real concurrent allocation. The first harness ran against **the shared dev
+database**, and seeded itself with raw SQL:
+
+```sql
+INSERT INTO transport_orders ...        -- two orders
+INSERT INTO transport_trips ...         -- trips 47 and 48
+DELETE FROM trip_assignments ...
+UPDATE transport_trips SET vehicle_id=NULL ...
+UPDATE vehicles SET status='AVAILABLE' WHERE id=3;   -- P2's table
+```
+
+Every statement went past the services, past the audit trail, past the events, and past Fleet's own
+status observer. The last one wrote directly into another developer's table.
+
+### What it left behind
+
+Trip 48 holding vehicle 3 under a live assignment, while vehicle 3 read `AVAILABLE`. **A truck
+recorded as free while it was out** — the same shape we log against the junk trips, *"not merely
+empty, inconsistent"*, except this one we created.
+
+### The right venue existed and was already proven
+
+In the same block, the pre-repoint backup was verified by restoring it into a throwaway `mysql:8.0`
+container and tearing it down. **That container is where a race harness goes.** Same tool, same
+afternoon, not reached for.
+
+### Put right
+
+- The assignment was released **through `AllocationService::release()`**, not with SQL, so the
+  vehicle's status moved the way a release moves it. Verified: assignment `released`, vehicle 3
+  `AVAILABLE`, trip 48 `vehicle_id` null — consistent.
+- `tests/concurrency/race-allocation.sh` now builds its own container, loads a **structure-only**
+  schema, seeds **through the real services** (`VehicleService`, `TransportOrderService`,
+  `TransportTripService`) and destroys the container. Dev verified untouched afterwards.
+- The two `TO-RACE` orders and their trips **could not be removed** — see D-138. They remain, in a
+  consistent state, declared rather than deleted with SQL, which would repeat the original error.
+
+### The rule
+
+**A test that needs its own data needs its own database.** Convenience is the whole reason this
+happened: dev was already migrated and seeded. A rule broken quietly once is a rule that is gone.
+
+---
+
+## D-138 — a trip or an order can never be cancelled or removed
+
+**Raised:** 2026-09-23, cleaning up after D-137. **P1.** **Needs a business ruling.**
+
+Cleaning up two trips created in error, the correct route turned out not to exist:
+
+- No `cancel` or `delete` on `TransportTripService` or `TransportOrderService`. Both have `create`.
+- No `DELETE` route for a trip or an order (`trips/{trip}/assign` is the only allocation delete).
+- `TripStatus` has **no cancelled or rejected state at all.** From `approved` the only transition is
+  `allocated`. The one terminal state is `closed`.
+
+So an order or trip raised by mistake — a duplicate, a wrong customer, a test — can only be driven
+forward to closure or left sitting in the list forever. There is no way to say *"this should not
+exist"*.
+
+Consignments, documents, drivers and vehicles all have a `delete`. Trips and orders, the two things
+an operator creates most often, do not.
+
+**Not invented here.** What a cancelled trip means commercially — whether it keeps its number,
+whether it appears in reports, what happens to an order already invoiced — is a business rule
+nobody has written. Raised, not guessed.
+
+---
+
+## D-139 — the database cannot be built from scratch on MySQL
+
+**Raised:** 2026-09-23, building the D-137 container. **Not ours — HR module.** **Logged only.**
+
+`php artisan migrate` against an empty MySQL database fails:
+
+```
+2026_08_31_000003_add_app_login_to_hr_employees .......... FAIL
+SQLSTATE[42S22]: Unknown column 'sangoetrack_synced_at' in 'hr_employees'
+  (SQL: alter table `hr_employees` add `app_login_enabled` ... after `sangoetrack_synced_at`)
+```
+
+The migration positions a column `after` one that a **later** migration adds. Dev and production
+were built incrementally, so the column exists there and nobody has noticed.
+
+**What it costs:** a new developer cannot build this database, and neither can CI. It is invisible
+to the suite because the suite runs on SQLite, where `after` is ignored. Same family as D-132 — the
+two drivers disagree and only one of them is tested.
+
+Worked around in `race-allocation.sh` by loading a structure-only dump instead of migrating.
+Nothing of ours depends on it. Raised for whoever owns HR.
+
+---
+
 ## RULING-001 — the client portal is being built without Step 12 tickets
 
 **Not a defect. A recorded suspension of a standing rule**, written down because a verbal approval
