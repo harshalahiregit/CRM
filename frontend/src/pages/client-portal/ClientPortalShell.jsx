@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
-  Building2, LayoutDashboard, Receipt, CreditCard, FileX, Wallet, ClipboardList,
+  Building2, LayoutDashboard, Receipt, CreditCard, FileX, Wallet, ClipboardList, ListChecks,
   FileText, FileSignature, FolderKanban, LifeBuoy, Paperclip, StickyNote,
   Users2, UserCircle2, LogOut, MessageSquareHeart, Truck,
 } from 'lucide-react'
@@ -37,6 +37,10 @@ const SECTIONS = [
   ]},
   { group: 'Work', items: [
     { to: '/portal/projects', label: 'Projects', icon: FolderKanban, perm: 'project' },
+    // Work assigned to THIS contact by name. No permission gate: being told
+    // what you have been asked to do is not a privilege somebody grants you,
+    // and the screen shows nothing except what is already addressed to them.
+    { to: '/portal/my-tasks', label: 'My Tasks', icon: ListChecks, perm: null },
     { to: '/portal/tickets',  label: 'Support',  icon: LifeBuoy,     perm: 'support' },
   ]},
   { group: 'Transport', items: [

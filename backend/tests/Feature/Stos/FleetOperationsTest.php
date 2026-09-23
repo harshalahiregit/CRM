@@ -102,6 +102,113 @@ class FleetOperationsTest extends TestCase
         $this->assertNotEmpty($excluded['blockers'][0]['owner']);
     }
 
+    /* ── PLN-001: the order's payload ───────────────────────────── */
+
+    /*
+     * `vehicles.capacity_tonnes` and `transport_orders.required_capacity_tonnes`
+     * both existed and nothing compared them, so a 9-tonne load could be
+     * RECOMMENDED a 2-tonne van and the loading bay would be the first to know.
+     *
+     * Capacity is the one blocker that is not a fact about the truck: it is a
+     * fact about the truck AND this job. A small van is not "blocked" — it is
+     * wrong for this load and right for the next one. So it excludes from this
+     * answer and writes nothing on the row.
+     */
+
+    public function test_a_vehicle_too_small_for_the_load_is_excluded_with_the_numbers(): void
+    {
+        $big = $this->vehicle(['registration_number' => 'MH12BIG1', 'capacity_tonnes' => 25]);
+        $small = $this->vehicle(['registration_number' => 'MH12SML1', 'capacity_tonnes' => 2.5]);
+
+        $data = $this->actingAs($this->user())
+            ->getJson('/api/v1/fleet/vehicles/eligible?required_capacity_tonnes=9')
+            ->assertOk()->json('data');
+
+        $this->assertTrue(collect($data['eligible'])->pluck('id')->contains($big->id));
+
+        $excluded = collect($data['excluded'])->firstWhere('id', $small->id);
+        $this->assertNotNull($excluded, 'a van too small for the load must not be recommended');
+        $this->assertSame('below_required_capacity', $excluded['blockers'][0]['code']);
+
+        // The planner gets both numbers, not "not eligible".
+        $this->assertStringContainsString('2.5', $excluded['blockers'][0]['missing']);
+        $this->assertStringContainsString('9', $excluded['blockers'][0]['missing']);
+    }
+
+    public function test_exactly_enough_capacity_is_enough(): void
+    {
+        // The boundary, because "at least" and "more than" are one keystroke
+        // apart and a 9-tonne truck refusing a 9-tonne load is nonsense.
+        $exact = $this->vehicle(['registration_number' => 'MH12EXA1', 'capacity_tonnes' => 9]);
+
+        $data = $this->actingAs($this->user())
+            ->getJson('/api/v1/fleet/vehicles/eligible?required_capacity_tonnes=9')
+            ->assertOk()->json('data');
+
+        $this->assertTrue(collect($data['eligible'])->pluck('id')->contains($exact->id));
+    }
+
+    public function test_an_unmeasured_vehicle_is_flagged_rather_than_hidden(): void
+    {
+        // Most of the fleet predates the column being filled. Excluding every
+        // unmeasured truck would empty the list while looking like a considered
+        // verdict — so it stays, carrying the doubt.
+        $unknown = $this->vehicle(['registration_number' => 'MH12UNK1', 'capacity_tonnes' => null]);
+
+        $data = $this->actingAs($this->user())
+            ->getJson('/api/v1/fleet/vehicles/eligible?required_capacity_tonnes=9')
+            ->assertOk()->json('data');
+
+        $row = collect($data['eligible'])->firstWhere('id', $unknown->id);
+        $this->assertNotNull($row, 'a missing number must not take a working truck off the road');
+        $this->assertContains('capacity_unknown', $row['flags']);
+        $this->assertNull($row['capacity_tonnes']);
+    }
+
+    public function test_without_an_order_capacity_neither_blocks_nor_flags(): void
+    {
+        $small = $this->vehicle(['registration_number' => 'MH12SML2', 'capacity_tonnes' => 2.5]);
+        $unknown = $this->vehicle(['registration_number' => 'MH12UNK2', 'capacity_tonnes' => null]);
+
+        $data = $this->actingAs($this->user())
+            ->getJson('/api/v1/fleet/vehicles/eligible')->assertOk()->json('data');
+
+        $ids = collect($data['eligible'])->pluck('id');
+        $this->assertTrue($ids->contains($small->id));
+        $this->assertTrue($ids->contains($unknown->id));
+
+        // Nothing to compare against is not a doubt worth raising.
+        $row = collect($data['eligible'])->firstWhere('id', $unknown->id);
+        $this->assertNotContains('capacity_unknown', $row['flags']);
+    }
+
+    public function test_the_payload_is_shown_even_when_no_order_asked_for_it(): void
+    {
+        // A planner choosing between two trucks wants the number in front of
+        // them, and a null is the prompt to go and record it.
+        $v = $this->vehicle(['registration_number' => 'MH12CAP1', 'capacity_tonnes' => 25]);
+
+        $data = $this->actingAs($this->user())
+            ->getJson('/api/v1/fleet/vehicles/eligible')->assertOk()->json('data');
+
+        // JSON has no float/int distinction, so 25.0 arrives as 25. Compared as
+        // a number rather than asserting a type the wire cannot carry.
+        $row = collect($data['eligible'])->firstWhere('id', $v->id);
+        $this->assertSame(25.0, (float) $row['capacity_tonnes']);
+    }
+
+    public function test_a_zero_payload_is_refused_rather_than_meaning_everything(): void
+    {
+        $this->vehicle(['capacity_tonnes' => 2.5]);
+
+        // Zero would silently mean "every vehicle qualifies", which is what an
+        // empty box already means. Two spellings of one intent is how a filter
+        // stops being trusted.
+        $this->actingAs($this->user())
+            ->getJson('/api/v1/fleet/vehicles/eligible?required_capacity_tonnes=0')
+            ->assertStatus(422);
+    }
+
     public function test_a_non_safety_job_does_not_block_allocation(): void
     {
         $v = $this->vehicle();

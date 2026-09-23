@@ -14,12 +14,22 @@
  *   entityParam  optional — which captured param holds the id (default 'id')
  *   *Label       optional — overrides the auto-titleised label
  *
- * !! SEEDED, NOT VERIFIED !!
- * These paths were inferred from the module inventory in the discovery report,
- * not read out of src/app/routes.jsx. Run `node tools/sire-route-audit.mjs
- * <path-to>/src/app/routes.jsx` inside the repo: it prints every real route with
- * no entry here, and every entry here that matches no real route. Fixing the map
- * is a one-file edit and touches nothing else.
+ * VERIFIED AGAINST THE ROUTER, AND KEPT THAT WAY.
+ * Every reportable page in src/app/routes.jsx has an entry here, and a test
+ * fails the build when a new page arrives without one -- because the failure
+ * mode is silent: Report Issue simply shows a blank SECTION and RECORD, and the
+ * reporter has no way to know the form was supposed to fill them in.
+ *
+ * To see the current state:
+ *   node tools/sire-route-audit.mjs <path-to>/src/app/routes.jsx
+ *
+ * It lists pages with no entry, pages whose URL names a record the map does not
+ * capture, and entries matching no real route. Fixing the map is a one-file
+ * edit and touches nothing else.
+ *
+ * ONLY /app IS REPORTABLE. Report Issue is mounted in AppShell, so the public
+ * portals (/vendor-portal, /purchase-portal, /portal, /auth, token links) can
+ * never open it. Entries for those would be data nothing reads.
  */
 
 export const MODULE_LABELS = {
@@ -49,8 +59,8 @@ export const MODULE_LABELS = {
   profile: 'Profile',
   sessions: 'Sessions',
   tickets: 'Tickets',
+  transport: 'Transport',
   sire: 'SIRE',
-  dashboard: 'Dashboard',
 };
 
 /**
@@ -67,6 +77,10 @@ export const ENTITY_LABELS = {
   sire_report: 'SIRE Case',
   compliance_checklist: 'Checklist',
   kickoff_meeting: 'Kickoff Meeting',
+  transport_order: 'Transport Order',
+  bank_account: 'Bank Account',
+  proposal_template: 'Proposal Template',
+  workforce_vendor: 'Vendor',
 };
 
 export const ROUTE_CONTEXT_MAP = [
@@ -142,6 +156,27 @@ export const ROUTE_CONTEXT_MAP = [
   { pattern: '/app/purchase/grn', module: 'purchase', section: 'grn', screen: 'grn-list', sectionLabel: 'Goods Receipt' },
   { pattern: '/app/purchase/vendors/:id', module: 'purchase', section: 'vendors', screen: 'vendor-details', entityType: 'purchase_vendor' },
 
+  // ---- transport (STOS) --------------------------------------------------
+  // The whole module was absent from this map, so Report Issue could not even
+  // name the module on any of its pages.
+  { pattern: '/app/transport', module: 'transport', section: 'orders', screen: 'transport-overview' },
+  { pattern: '/app/transport/orders', module: 'transport', section: 'orders', screen: 'order-list' },
+  { pattern: '/app/transport/orders/:id', module: 'transport', section: 'orders', screen: 'order-details', entityType: 'transport_order' },
+  { pattern: '/app/transport/trips', module: 'transport', section: 'trips', screen: 'trip-list' },
+  { pattern: '/app/transport/trips/:id', module: 'transport', section: 'trips', screen: 'trip-details', entityType: 'trip' },
+  { pattern: '/app/transport/consignments', module: 'transport', section: 'consignments', screen: 'consignment-list' },
+  { pattern: '/app/transport/containers', module: 'transport', section: 'containers', screen: 'container-list' },
+  { pattern: '/app/transport/containers/:id', module: 'transport', section: 'containers', screen: 'container-passport', entityType: 'container' },
+  { pattern: '/app/transport/fleet', module: 'transport', section: 'fleet', screen: 'fleet-overview' },
+  { pattern: '/app/transport/fleet/vehicles/:id', module: 'transport', section: 'fleet', screen: 'vehicle-passport', entityType: 'vehicle' },
+  { pattern: '/app/transport/workshop', module: 'transport', section: 'fleet', screen: 'workshop' },
+  // 'vehicles' and 'drivers' render the same Fleet screens as above -- kept so
+  // an existing bookmark still reports against the screen it actually shows.
+  { pattern: '/app/transport/vehicles', module: 'transport', section: 'fleet', screen: 'fleet-overview' },
+  { pattern: '/app/transport/vehicles/:id', module: 'transport', section: 'fleet', screen: 'vehicle-passport', entityType: 'vehicle' },
+  { pattern: '/app/transport/drivers', module: 'transport', section: 'drivers', screen: 'driver-list' },
+  { pattern: '/app/transport/drivers/:id', module: 'transport', section: 'drivers', screen: 'driver-details', entityType: 'driver' },
+
   // ---- tpv / hsse --------------------------------------------------------
   { pattern: '/app/tpv/vendors', module: 'tpv', section: 'vendors', screen: 'vendor-list' },
   { pattern: '/app/tpv/vendors/:id', module: 'tpv', section: 'vendors', screen: 'vendor-details', entityType: 'tpv_vendor' },
@@ -180,7 +215,7 @@ export const ROUTE_CONTEXT_MAP = [
   // Regenerate after adding routes; hand-written entries above always win.
   { pattern: '/app/accounts', module: 'accounts', section: 'accounts', screen: 'accounts-list' },
   { pattern: '/app/accounts/banking', module: 'accounts', section: 'banking', screen: 'banking' },
-  { pattern: '/app/accounts/banking/:bankId/reconcile', module: 'accounts', section: 'banking', screen: 'banking-reconcile' },
+  { pattern: '/app/accounts/banking/:bankId/reconcile', module: 'accounts', section: 'banking', screen: 'banking-reconcile', entityType: 'bank_account', entityParam: 'bankId' },
   { pattern: '/app/accounts/bills', module: 'accounts', section: 'bills', screen: 'bills' },
   { pattern: '/app/accounts/budgets', module: 'accounts', section: 'budgets', screen: 'budgets' },
   { pattern: '/app/accounts/budgets/:id', module: 'accounts', section: 'budgets', screen: 'budgets-details', entityType: 'budget' },
@@ -210,7 +245,7 @@ export const ROUTE_CONTEXT_MAP = [
   { pattern: '/app/contacts/new', module: 'contacts', section: 'new', screen: 'new' },
   { pattern: '/app/contracts', module: 'contracts', section: 'contracts', screen: 'contracts-list' },
   { pattern: '/app/contracts/:id', module: 'contracts', section: 'contracts', screen: 'contracts-details', entityType: 'contract' },
-  { pattern: '/app/contracts/:id/edit', module: 'contracts', section: 'edit', screen: 'edit' },
+  { pattern: '/app/contracts/:id/edit', module: 'contracts', section: 'contracts', screen: 'contracts-edit', entityType: 'contract' },
   { pattern: '/app/contracts/new', module: 'contracts', section: 'new', screen: 'new' },
   { pattern: '/app/customers', module: 'customers', section: 'customers', screen: 'customers-list' },
   { pattern: '/app/customers/:id', module: 'customers', section: 'customers', screen: 'customers-details', entityType: 'customer' },
@@ -235,7 +270,7 @@ export const ROUTE_CONTEXT_MAP = [
   { pattern: '/app/hr/demo-requests', module: 'hr', section: 'demo-requests', screen: 'demo-requests' },
   { pattern: '/app/hr/employee-onboarding', module: 'hr', section: 'employee-onboarding', screen: 'employee-onboarding' },
   { pattern: '/app/hr/employee-onboarding/:id', module: 'hr', section: 'employee-onboarding', screen: 'employee-onboarding-details', entityType: 'employee_onboarding' },
-  { pattern: '/app/hr/employees/:id/exit-interview', module: 'hr', section: 'employees', screen: 'employees-exit-interview' },
+  { pattern: '/app/hr/employees/:id/exit-interview', module: 'hr', section: 'employees', screen: 'employees-exit-interview', entityType: 'employee' },
   { pattern: '/app/hr/exit-management', module: 'hr', section: 'exit-management', screen: 'exit-management' },
   { pattern: '/app/hr/expense-claims', module: 'hr', section: 'expense-claims', screen: 'expense-claims' },
   { pattern: '/app/hr/holidays', module: 'hr', section: 'holidays', screen: 'holidays' },
@@ -287,7 +322,7 @@ export const ROUTE_CONTEXT_MAP = [
   { pattern: '/app/medical/general/report', module: 'medical', section: 'general', screen: 'general-report' },
   { pattern: '/app/meetings', module: 'meetings', section: 'meetings', screen: 'meetings-list' },
   { pattern: '/app/meetings/:id', module: 'meetings', section: 'meetings', screen: 'meetings-details', entityType: 'meeting' },
-  { pattern: '/app/meetings/:id/edit', module: 'meetings', section: 'edit', screen: 'edit' },
+  { pattern: '/app/meetings/:id/edit', module: 'meetings', section: 'meetings', screen: 'meetings-edit', entityType: 'meeting' },
   { pattern: '/app/meetings/new', module: 'meetings', section: 'new', screen: 'new' },
   { pattern: '/app/modules', module: 'modules', section: 'modules', screen: 'modules-list' },
   { pattern: '/app/profile', module: 'profile', section: 'profile', screen: 'profile-list' },
@@ -315,7 +350,7 @@ export const ROUTE_CONTEXT_MAP = [
   { pattern: '/app/purchase/invoices', module: 'purchase', section: 'invoices', screen: 'invoices' },
   { pattern: '/app/purchase/kickoff', module: 'purchase', section: 'kickoff', screen: 'kickoff' },
   { pattern: '/app/purchase/kickoff/:id', module: 'purchase', section: 'kickoff', screen: 'kickoff-details', entityType: 'kickoff' },
-  { pattern: '/app/purchase/kickoff/:id/edit', module: 'purchase', section: 'kickoff', screen: 'kickoff-edit' },
+  { pattern: '/app/purchase/kickoff/:id/edit', module: 'purchase', section: 'kickoff', screen: 'kickoff-edit', entityType: 'kickoff' },
   { pattern: '/app/purchase/kickoff/new', module: 'purchase', section: 'kickoff', screen: 'kickoff-new' },
   { pattern: '/app/purchase/medical', module: 'purchase', section: 'medical', screen: 'medical' },
   { pattern: '/app/purchase/medical/doctors', module: 'purchase', section: 'medical', screen: 'medical-doctors' },
@@ -365,9 +400,9 @@ export const ROUTE_CONTEXT_MAP = [
   { pattern: '/app/sales/payments', module: 'sales', section: 'payments', screen: 'payments' },
   { pattern: '/app/sales/proforma-invoices', module: 'sales', section: 'proforma-invoices', screen: 'proforma-invoices' },
   { pattern: '/app/sales/proposal-templates', module: 'sales', section: 'proposal-templates', screen: 'proposal-templates' },
-  { pattern: '/app/sales/proposal-templates/:id/edit', module: 'sales', section: 'proposal-templates', screen: 'proposal-templates-edit' },
+  { pattern: '/app/sales/proposal-templates/:id/edit', module: 'sales', section: 'proposal-templates', screen: 'proposal-templates-edit', entityType: 'proposal_template' },
   { pattern: '/app/sales/proposal-templates/new', module: 'sales', section: 'proposal-templates', screen: 'proposal-templates-new' },
-  { pattern: '/app/sales/proposals/:id/edit', module: 'sales', section: 'proposals', screen: 'proposals-edit' },
+  { pattern: '/app/sales/proposals/:id/edit', module: 'sales', section: 'proposals', screen: 'proposals-edit', entityType: 'proposal' },
   { pattern: '/app/sales/proposals/new', module: 'sales', section: 'proposals', screen: 'proposals-new' },
   { pattern: '/app/sales/reports', module: 'sales', section: 'reports', screen: 'reports' },
   { pattern: '/app/sales/retainer-invoices', module: 'sales', section: 'retainer-invoices', screen: 'retainer-invoices' },
@@ -391,7 +426,6 @@ export const ROUTE_CONTEXT_MAP = [
   { pattern: '/app/settings/notification-preferences', module: 'settings', section: 'notification-preferences', screen: 'notification-preferences' },
   { pattern: '/app/settings/numbering', module: 'settings', section: 'numbering', screen: 'numbering' },
   { pattern: '/app/settings/recycle-bin', module: 'settings', section: 'recycle-bin', screen: 'recycle-bin' },
-  { pattern: '/app/settings/roles', module: 'settings', section: 'roles', screen: 'roles' },
   { pattern: '/app/settings/security', module: 'settings', section: 'security', screen: 'security' },
   { pattern: '/app/settings/statuses', module: 'settings', section: 'statuses', screen: 'statuses' },
   { pattern: '/app/settings/tax-rates', module: 'settings', section: 'tax-rates', screen: 'tax-rates' },
@@ -429,7 +463,7 @@ export const ROUTE_CONTEXT_MAP = [
   { pattern: '/app/tpv/inspections', module: 'tpv', section: 'inspections', screen: 'inspections' },
   { pattern: '/app/tpv/kickoff', module: 'tpv', section: 'kickoff', screen: 'kickoff' },
   { pattern: '/app/tpv/kickoff/:id', module: 'tpv', section: 'kickoff', screen: 'kickoff-details', entityType: 'kickoff' },
-  { pattern: '/app/tpv/kickoff/:id/edit', module: 'tpv', section: 'kickoff', screen: 'kickoff-edit' },
+  { pattern: '/app/tpv/kickoff/:id/edit', module: 'tpv', section: 'kickoff', screen: 'kickoff-edit', entityType: 'kickoff' },
   { pattern: '/app/tpv/kickoff/new', module: 'tpv', section: 'kickoff', screen: 'kickoff-new' },
   { pattern: '/app/tpv/medical', module: 'tpv', section: 'medical', screen: 'medical' },
   { pattern: '/app/tpv/medical/doctors', module: 'tpv', section: 'medical', screen: 'medical-doctors' },
@@ -460,11 +494,11 @@ export const ROUTE_CONTEXT_MAP = [
   { pattern: '/app/tpv/workforce', module: 'tpv', section: 'workforce', screen: 'workforce' },
   { pattern: '/app/tpv/workforce/:id', module: 'tpv', section: 'workforce', screen: 'workforce-details', entityType: 'workforce' },
   { pattern: '/app/tpv/workforce/vendor/:vendorId', module: 'tpv', section: 'workforce', screen: 'workforce-vendor-details', entityType: 'workforce_vendor', entityParam: 'vendorId' },
-  { pattern: '/app/tpv/workforce/vendor/:vendorId/attendance', module: 'tpv', section: 'workforce', screen: 'workforce-vendor-attendance' },
-  { pattern: '/app/tpv/workforce/vendor/:vendorId/dashboard', module: 'tpv', section: 'workforce', screen: 'workforce-vendor-dashboard' },
-  { pattern: '/app/tpv/workforce/vendor/:vendorId/gate-log', module: 'tpv', section: 'workforce', screen: 'workforce-vendor-gate-log' },
-  { pattern: '/app/tpv/workforce/vendor/:vendorId/ppe', module: 'tpv', section: 'workforce', screen: 'workforce-vendor-ppe' },
-  { pattern: '/app/tpv/workforce/vendor/:vendorId/strikes', module: 'tpv', section: 'workforce', screen: 'workforce-vendor-strikes' },
-  { pattern: '/app/tpv/workforce/vendor/:vendorId/workers', module: 'tpv', section: 'workforce', screen: 'workforce-vendor-workers' },
+  { pattern: '/app/tpv/workforce/vendor/:vendorId/attendance', module: 'tpv', section: 'workforce', screen: 'workforce-vendor-attendance', entityType: 'workforce_vendor', entityParam: 'vendorId' },
+  { pattern: '/app/tpv/workforce/vendor/:vendorId/dashboard', module: 'tpv', section: 'workforce', screen: 'workforce-vendor-dashboard', entityType: 'workforce_vendor', entityParam: 'vendorId' },
+  { pattern: '/app/tpv/workforce/vendor/:vendorId/gate-log', module: 'tpv', section: 'workforce', screen: 'workforce-vendor-gate-log', entityType: 'workforce_vendor', entityParam: 'vendorId' },
+  { pattern: '/app/tpv/workforce/vendor/:vendorId/ppe', module: 'tpv', section: 'workforce', screen: 'workforce-vendor-ppe', entityType: 'workforce_vendor', entityParam: 'vendorId' },
+  { pattern: '/app/tpv/workforce/vendor/:vendorId/strikes', module: 'tpv', section: 'workforce', screen: 'workforce-vendor-strikes', entityType: 'workforce_vendor', entityParam: 'vendorId' },
+  { pattern: '/app/tpv/workforce/vendor/:vendorId/workers', module: 'tpv', section: 'workforce', screen: 'workforce-vendor-workers', entityType: 'workforce_vendor', entityParam: 'vendorId' },
   { pattern: '/app/tpv/workforce/vendor/:vendorId/workers/:id', module: 'tpv', section: 'workforce', screen: 'workforce-vendor-workers-details', entityType: 'workforce_vendor_worker' },
 ];

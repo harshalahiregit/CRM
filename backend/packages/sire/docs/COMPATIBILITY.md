@@ -156,7 +156,7 @@ proactive warning/breach notices are lost.
 | | Status |
 |---|---|
 | SIRE's own logic | **VERIFIED** — 407 automated checks |
-| PHP syntax, all files | **VERIFIED** — 272 files lint clean |
+| PHP syntax, all files | **VERIFIED** — 274 files lint clean |
 | Role classification across 3 host shapes | **VERIFIED** — reference fixtures |
 | Architecture is CRM-agnostic | **VERIFIED** — `sire:architecture` |
 | Installing into a real CRM | **NOT VERIFIED** — needs a real application |

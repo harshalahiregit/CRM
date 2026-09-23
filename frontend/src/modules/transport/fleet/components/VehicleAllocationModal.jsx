@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { X, Truck, Sparkles, AlertCircle, Check, Snowflake, Zap } from 'lucide-react'
+import { X, Truck, Sparkles, AlertCircle, Check, Snowflake, Zap, Weight } from 'lucide-react'
 import { stosApi, STOS_ACCENT, VEHICLE_TYPE_LABELS, VEHICLE_TYPE_OPTIONS, fmtAgo } from '@/services/stosApi'
 import Select from '@/components/ui/Select'
 import HealthChip from './HealthChip'
@@ -16,14 +16,22 @@ import HealthChip from './HealthChip'
  *
  * Closes only via ✕ or Cancel — never a backdrop click.
  */
-export default function VehicleAllocationModal({ open, onClose, onSelect, vehicleType = '', pickup = null }) {
+export default function VehicleAllocationModal({
+  open, onClose, onSelect, vehicleType = '', pickup = null, requiredCapacityTonnes = null,
+}) {
   const [type, setType] = useState(vehicleType)
   const [picked, setPicked] = useState(null)
   const [reason, setReason] = useState('')
   const [err, setErr] = useState('')
 
+  // PLN-001 — the order's payload. Sent only when there is one, because zero
+  // and absent must not be two spellings of "no limit"; the server refuses a
+  // zero for the same reason.
+  const required = Number(requiredCapacityTonnes) > 0 ? Number(requiredCapacityTonnes) : null
+
   const params = {
     ...(type ? { vehicle_type: type } : {}),
+    ...(required ? { required_capacity_tonnes: required } : {}),
     ...(pickup?.lat ? { pickup_lat: pickup.lat, pickup_lng: pickup.lng } : {}),
   }
 
@@ -113,7 +121,7 @@ export default function VehicleAllocationModal({ open, onClose, onSelect, vehicl
           )}
 
           {eligible.map((v) => (
-            <VehicleCard key={v.id} vehicle={v} selected={picked === v.id}
+            <VehicleCard key={v.id} vehicle={v} selected={picked === v.id} required={required}
               onPick={() => { setPicked(v.id); setErr('') }} />
           ))}
 
@@ -184,8 +192,9 @@ export default function VehicleAllocationModal({ open, onClose, onSelect, vehicl
   )
 }
 
-function VehicleCard({ vehicle: v, selected, onPick }) {
+function VehicleCard({ vehicle: v, selected, onPick, required = null }) {
   const recommended = Boolean(v.recommended)
+  const capacityUnknown = (v.flags ?? []).includes('capacity_unknown')
 
   return (
     <button
@@ -222,7 +231,27 @@ function VehicleCard({ vehicle: v, selected, onPick }) {
                 <Zap size={9} /> {v.open_jobs} minor job{v.open_jobs === 1 ? '' : 's'}
               </span>
             )}
+
+            {/* The payload, whether or not an order asked for one — a planner
+                choosing between two trucks wants the number in front of them. */}
+            {v.capacity_tonnes != null && (
+              <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded"
+                style={{ background: 'var(--bg-card)', color: 'var(--text-muted)' }}>
+                <Weight size={9} /> {Number(v.capacity_tonnes)} t
+              </span>
+            )}
           </div>
+
+          {/* Eligible, but not actually checked against the load. Said out loud
+              rather than left to look like a pass. */}
+          {capacityUnknown && (
+            <p className="text-[10px] mt-1 flex items-start gap-1.5" style={{ color: 'var(--color-warning-500, #f59e0b)' }}>
+              <AlertCircle size={10} className="shrink-0 mt-0.5" />
+              <span>
+                No payload recorded, so it has not been checked against the {required} t this order needs.
+              </span>
+            </p>
+          )}
 
           <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
             {v.reasons.join(' · ')}

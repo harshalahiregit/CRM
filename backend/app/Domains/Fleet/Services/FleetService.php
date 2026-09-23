@@ -58,6 +58,11 @@ class FleetService
     {
         return $this->allocation->eligible($companyId, array_filter([
             'vehicle_type' => $vehicleType,
+            // PLN-001. Pass the order's `required_capacity_tonnes` straight
+            // through — a vehicle that cannot carry the load is excluded with
+            // `below_required_capacity`, and one with no payload recorded is
+            // kept but flagged `capacity_unknown`.
+            'required_capacity_tonnes' => $context['required_capacity_tonnes'] ?? null,
             'pickup_lat'   => $context['pickup_lat'] ?? null,
             'pickup_lng'   => $context['pickup_lng'] ?? null,
         ], fn ($v) => $v !== null && $v !== ''));

@@ -8,6 +8,7 @@ import { taskApi, fmtDuration } from '@/services/taskApi'
 import { exportCsv, stampedName } from '@/lib/exportCsv'
 import { RICH_MODULES, RICH_FORMATS } from '@/lib/quillConfig'
 import { ConfirmModal } from '@/components/ui/SearchPicker'
+import PartyPicker from '@/components/ui/PartyPicker'
 import EditorActionBar from '@/components/editor/EditorActionBar'
 import CloudImport from '@/components/ui/CloudImport'
 
@@ -500,6 +501,20 @@ export function VendorTab({ project }) {
   const { data: vendors = [] } = useQuery({ queryKey: ['task-vendors', 'vendor'], queryFn: () => taskApi.vendors('vendor') })
   const { data: tpvs = [] } = useQuery({ queryKey: ['task-vendors', 'tpv'], queryFn: () => taskApi.vendors('tpv') })
 
+  // People put on the PROJECT itself, as opposed to derived from its tasks.
+  const qc = useQueryClient()
+  const [picking, setPicking] = useState(false)
+  const { data: people = [] } = useQuery({
+    queryKey: ['project-parties', projectId], queryFn: () => projectApi.parties.list(projectId),
+  })
+  const syncParties = useMutation({
+    mutationFn: (parties) => projectApi.parties.sync(projectId, parties),
+    onSuccess: (rows) => qc.setQueryData(['project-parties', projectId], rows ?? []),
+  })
+  const sendWithout = (p) => syncParties.mutate(
+    people.filter(x => !(x.party_type === p.party_type && x.party_id === p.party_id))
+      .map(x => ({ party_type: x.party_type, party_id: x.party_id })))
+
   const dir = useMemo(() => {
     const m = {}
     vendors.forEach(v => { m[v.id] = { ...v, kind: 'vendor' } })
@@ -543,8 +558,58 @@ export function VendorTab({ project }) {
         <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>This project isn't linked to a vendor or third-party vendor.</p>
       )}
 
-      {/* Everyone external working on the project's tasks */}
-      <p className="text-[10px] font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>Working on this project</p>
+      {/* Vendors ON THE PROJECT.
+
+          This tab could only ever DERIVE who was involved, by reading the
+          assignees off the project's tasks. A vendor engaged for the project as
+          a whole — before a single task exists, which is the normal order —
+          appeared nowhere, so the tab read "no vendors are assigned to this
+          project's tasks yet" on a project with three vendors on site.
+
+          Same picker, same directory and same server rules as the task side. */}
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+          On this project
+        </p>
+        <button onClick={() => setPicking(true)}
+          className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg"
+          style={{ border: '1px dashed var(--border)', color: 'var(--text-muted)' }}>
+          <UserPlus size={11} /> Assign vendors
+        </button>
+      </div>
+
+      {people.length === 0 ? (
+        <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+          Nobody from a client, vendor or third-party vendor is on this project yet.
+        </p>
+      ) : (
+        <div className="flex flex-wrap items-center gap-1.5 mb-4">
+          {people.map(p => (
+            <span key={`${p.party_type}:${p.party_id}`}
+              title={`${p.name}${p.email ? ` · ${p.email}` : ''} — ${p.org_label}`}
+              className="flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-lg"
+              style={{ background: `color-mix(in srgb, ${PROJECT_ACCENT} 14%, transparent)`, color: PROJECT_ACCENT }}>
+              {p.name}
+              <span style={{ opacity: 0.65 }}>· {p.org_label}</span>
+              <button type="button" aria-label={`Remove ${p.name}`}
+                onClick={() => sendWithout(p)} className="hover:opacity-60">
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {syncParties.isError && (
+        <p className="text-xs mb-3" style={{ color: 'var(--color-danger-500)' }}>
+          {syncParties.error?.message || 'Those people could not be saved.'}
+        </p>
+      )}
+
+      {/* Everyone external working on the project's TASKS — derived, and kept
+          separate because being on the project and doing a task on it are two
+          different statements. */}
+      <p className="text-[10px] font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>Working on this project's tasks</p>
       {groups.length === 0 && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>No vendors or third-party vendors are assigned to this project's tasks yet.</p>}
       <ul className="space-y-2">
         {groups.map(({ person, tasks: ts }) => (
@@ -567,6 +632,16 @@ export function VendorTab({ project }) {
           </li>
         ))}
       </ul>
+
+      <PartyPicker
+        multi accent={PROJECT_ACCENT}
+        open={picking} onClose={() => setPicking(false)}
+        chosen={people}
+        onPick={picked => syncParties.mutate([
+          ...people.map(x => ({ party_type: x.party_type, party_id: x.party_id })),
+          ...picked.map(p => ({ party_type: p.party_type, party_id: p.party_id })),
+        ])}
+      />
     </section>
   )
 }

@@ -69,6 +69,7 @@ class SireServiceProvider extends ServiceProvider
         Console\Commands\SireDiscover::class,
         Console\Commands\SireCompatibility::class,
         Console\Commands\SireInstall::class,
+        Console\Commands\SireCloseFromCommits::class,
         Console\Commands\SireSeedDefaults::class,
         Console\Commands\SireDoctor::class,
         Console\Commands\SireArchitecture::class,

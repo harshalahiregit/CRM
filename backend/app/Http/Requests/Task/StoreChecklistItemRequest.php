@@ -17,7 +17,11 @@ class StoreChecklistItemRequest extends FormRequest
             'description' => 'required|string|max:500',
             // A checklist item can be handed to a staff member, vendor or TPV —
             // all three are Users, so a single FK covers every case.
-            'assigned_to' => 'nullable|integer|exists:users,id',
+            // One id or a list of them. The endpoint took a single integer
+            // before checklist lines could be shared, and old callers still send
+            // one, so both shapes are accepted and normalised in the service.
+            'assigned_to'   => 'nullable',
+            'assigned_to.*' => 'integer|exists:users,id',
         ];
     }
 }

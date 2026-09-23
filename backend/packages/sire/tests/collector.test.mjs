@@ -49,11 +49,19 @@ test('user correction beats everything and is marked as such', () => {
   assert.equal(c.context_confidence, 'high');
 });
 
-test('unmapped route still identifies the module, flagged for correction', () => {
+test('unmapped route inherits its mapped parent, flagged for correction', () => {
   const c = collect({ pathname: '/app/inventory/brand-new-screen' });
   assert.equal(c.module, 'inventory');
+  assert.equal(c.screen, 'inventory-brand-new-screen');
+  assert.equal(c.context_confidence, 'medium'); // -> the modal shows "Not right? Correct it"
+  assert.equal(c.context_source, 'route-prefix');
+});
+
+test('a module with no mapped parent still reports the module alone', () => {
+  const c = collect({ pathname: '/app/shared/brand-new-screen' });
+  assert.equal(c.module, 'shared');
   assert.equal(c.screen, null);
-  assert.equal(c.context_confidence, 'low');   // -> the modal shows "Not right? Correct it"
+  assert.equal(c.context_confidence, 'low');
   assert.equal(c.context_source, 'module-prefix');
 });
 

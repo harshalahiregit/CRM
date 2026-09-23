@@ -75,7 +75,6 @@ class BannedPatternsTest extends TestCase
             'modules/purchase/pages/PurchaseWorkers.jsx' => 14,
             'modules/purchase/pages/vendor-detail/PurchaseVendorDetailLayout.jsx' => 2,
             'modules/purchase/pages/vendor-detail/vendorDetailTabs.jsx' => 2,
-            'modules/tasks/components/VendorEmployeeCascadePicker.jsx' => 2,
             'modules/tpv/components/TpvVendorContacts.jsx' => 7,
             'modules/tpv/components/TpvVendorDocuments.jsx' => 3,
             'modules/tpv/components/VendorAttachmentsPanel.jsx' => 5,

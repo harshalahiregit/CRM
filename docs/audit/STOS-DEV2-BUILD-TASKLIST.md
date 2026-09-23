@@ -77,7 +77,7 @@ billing, QC/CAPA (Dev 3), and the people directory (the CRM already owns personh
 | Ownership type | Dropdown: `OWNED`, `FINANCED`, `LEASED`, `CONTRACTED`, `ATTACHED` | 🟡 `FINANCED` and `CONTRACTED` missing; extra `market` — see T-03 |
 | Chassis number | `VARCHAR(100)`, optional, unique per company when present | 🟡 column is `VARCHAR(50)` |
 | Engine number | `VARCHAR(100)`, optional | 🟡 column is `VARCHAR(50)` |
-| **Capacity / payload** | `DECIMAL(8,2)`, tons | ⬜ **column does not exist** — T-01 |
+| **Capacity / payload** | `DECIMAL(8,2)`, tons | ✅ column, form field, passport, **and matched against the order** (PLN-001) — T-01 |
 | GPS device id | `VARCHAR(100)`, unique per company — one device reports for one vehicle | 🟡 column is `VARCHAR(64)` |
 | **Genset serial number** | `VARCHAR(50)`, shown only when type = REEFER | ⬜ table exists, no form field and no endpoint — T-05 |
 | `registration_expiry` | Date | ✅ |

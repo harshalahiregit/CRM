@@ -21,13 +21,44 @@ export default function SearchPicker({
   allowClear = false,
   clearLabel = 'Clear selection',
   accent = 'var(--color-support-500)',
+  // Opt-in: tick several, send once. Off by default so the twenty-odd existing
+  // callers behave exactly as before.
+  //
+  // Assigning four people used to be four picks, four requests and four full
+  // refetches of the board, with the picker reopening between each — which is
+  // most of why this screen felt slow. One confirm is one request.
+  multi = false,
+  onConfirm,
+  confirmLabel = 'Add',
+  preselected = [],
 }) {
   const [q, setQ] = useState('')
   const [active, setActive] = useState(0)
+  const [chosen, setChosen] = useState(() => new Set())
   const inputRef = useRef(null)
   const listRef = useRef(null)
 
-  useEffect(() => { if (open) { setQ(''); setActive(0); setTimeout(() => inputRef.current?.focus(), 30) } }, [open])
+  useEffect(() => {
+    if (!open) return
+    setQ(''); setActive(0)
+    setChosen(new Set(preselected))
+    setTimeout(() => inputRef.current?.focus(), 30)
+    // preselected is a fresh array on every render from most callers; keying the
+    // reset on `open` alone is what stops it wiping the ticks mid-session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  const toggle = (it) => setChosen((s) => {
+    const next = new Set(s)
+    next.has(it.id) ? next.delete(it.id) : next.add(it.id)
+    return next
+  })
+
+  const confirm = () => {
+    if (!chosen.size) return
+    onConfirm?.(items.filter((i) => chosen.has(i.id)))
+    onClose?.()
+  }
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase()
@@ -51,11 +82,26 @@ export default function SearchPicker({
     if (e.key === 'Escape') { e.preventDefault(); onClose?.() }
     else if (e.key === 'ArrowDown') { e.preventDefault(); setActive(i => Math.min(filtered.length - 1, i + 1)) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(i => Math.max(0, i - 1)) }
-    else if (e.key === 'Enter') { e.preventDefault(); if (filtered[active]) { onPick?.(filtered[active]); onClose?.() } }
+    else if (e.key === 'Enter') {
+      e.preventDefault()
+      if (!filtered[active]) return
+      // In multi mode Enter TICKS the row and leaves the list open — confirming
+      // on Enter would make picking a second person impossible from the keyboard.
+      if (multi) {
+        if (e.metaKey || e.ctrlKey) confirm()
+        else toggle(filtered[active])
+        return
+      }
+      onPick?.(filtered[active]); onClose?.()
+    }
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-start justify-center p-4 pt-[12vh] bg-black/50" onClick={onClose}>
+    /* No onClick={onClose} on the backdrop. A stray click outside used to throw
+       the picker away, which in multi mode would discard every tick made so far
+       — and popups in this product close on the X or Cancel, never the
+       backdrop. Esc still works, from onKeyDown below. */
+    <div className="fixed inset-0 z-[60] flex items-start justify-center p-4 pt-[12vh] bg-black/50">
       <div
         className="w-full max-w-lg rounded-2xl overflow-hidden"
         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)' }}
@@ -99,14 +145,26 @@ export default function SearchPicker({
               <button
                 type="button"
                 onMouseEnter={() => setActive(i)}
-                onClick={() => { onPick?.(it); onClose?.() }}
+                onClick={() => { if (multi) { toggle(it) } else { onPick?.(it); onClose?.() } }}
                 className="w-full flex items-center gap-3 text-left transition-colors"
                 style={{
                   padding: '11px 20px',
-                  background: active === i ? `color-mix(in srgb, ${accent} 10%, transparent)` : 'transparent',
+                  background: chosen.has(it.id)
+                    ? `color-mix(in srgb, ${accent} 16%, transparent)`
+                    : active === i ? `color-mix(in srgb, ${accent} 10%, transparent)` : 'transparent',
                   borderBottom: '1px solid var(--border)',
                 }}
               >
+                {multi && (
+                  <span className="flex items-center justify-center shrink-0"
+                    style={{
+                      width: 16, height: 16, borderRadius: 4,
+                      border: `1.5px solid ${chosen.has(it.id) ? accent : 'var(--border)'}`,
+                      background: chosen.has(it.id) ? accent : 'transparent',
+                    }}>
+                    {chosen.has(it.id) && <Check size={11} style={{ color: '#fff' }} strokeWidth={3} />}
+                  </span>
+                )}
                 {it.dot && <span style={{ width: 8, height: 8, borderRadius: '50%', background: it.dot, flexShrink: 0 }} />}
                 <span className="flex-1 min-w-0">
                   <span className="block truncate" style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-h)' }}>{it.label}</span>
@@ -119,8 +177,39 @@ export default function SearchPicker({
         </ul>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-5 py-3" style={{ background: 'var(--bg-input)', borderTop: '1px solid var(--border)' }}>
-          <span className="text-[11px]" style={{ color: 'var(--text-muted)', opacity: 0.8 }}>↑↓ navigate · ↵ select · esc close</span>
+        <div className="flex items-center justify-between gap-3 px-5 py-3" style={{ background: 'var(--bg-input)', borderTop: '1px solid var(--border)' }}>
+          <span className="text-[11px]" style={{ color: 'var(--text-muted)', opacity: 0.8 }}>
+            {multi ? '↑↓ navigate · ↵ tick · esc close' : '↑↓ navigate · ↵ select · esc close'}
+          </span>
+
+          {multi && (
+            <span className="flex items-center gap-2">
+              {/* The count is the thing being confirmed, so it is ON the button
+                  rather than beside it — "Add" with nothing ticked is a button
+                  that looks like it should do something and cannot. */}
+              <button
+                onClick={onClose}
+                className="text-xs font-semibold px-3 py-1.5 rounded-lg"
+                style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirm}
+                disabled={!chosen.size}
+                className="text-xs font-bold px-3 py-1.5 rounded-lg"
+                style={{
+                  background: chosen.size ? accent : 'var(--bg-card)',
+                  color: chosen.size ? '#fff' : 'var(--text-muted)',
+                  border: '1px solid var(--border)',
+                  cursor: chosen.size ? 'pointer' : 'not-allowed',
+                }}
+              >
+                {chosen.size ? `${confirmLabel} ${chosen.size}` : confirmLabel}
+              </button>
+            </span>
+          )}
+
           {allowClear && (
             <button
               onClick={() => { onPick?.(null); onClose?.() }}
@@ -141,7 +230,7 @@ export function ConfirmModal({ open, onClose, onConfirm, title, message, confirm
   if (!open) return null
   const tone = danger ? 'var(--color-danger-500)' : accent
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 pt-[18vh] bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 pt-[18vh] bg-black/50">
       <div
         className="w-full max-w-sm rounded-2xl overflow-hidden"
         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)' }}
@@ -170,7 +259,7 @@ export function InputModal({ open, onClose, onSubmit, title, subtitle, placehold
   const submit = (e) => { e?.preventDefault?.(); const t = v.trim(); if (t) { onSubmit?.(t); onClose?.() } }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-start justify-center p-4 pt-[16vh] bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-start justify-center p-4 pt-[16vh] bg-black/50">
       <form
         onSubmit={submit}
         className="w-full max-w-md rounded-2xl overflow-hidden"

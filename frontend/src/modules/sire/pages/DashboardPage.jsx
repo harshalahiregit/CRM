@@ -9,7 +9,7 @@
  * tile and the rows behind it are the same query.
  */
 import { useCallback, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { sireApi, toPage } from '../../../services/sireApi';
 import { toQueryParams } from '../../../lib/sire/dashboardFilters';
 import DashboardTiles from '../components/DashboardTiles';
@@ -21,6 +21,7 @@ import DeveloperExport from '../components/DeveloperExport';
 const EMPTY = {};
 
 export default function DashboardPage() {
+  const queryClient = useQueryClient();
   const [filters, setFilters] = useState(EMPTY);
   const [scope, setScope] = useState('open');
   const [pageNo, setPageNo] = useState(1);
@@ -99,7 +100,13 @@ export default function DashboardPage() {
 
         {/* Take the whole filtered backlog out as one brief. Sits with the
             filters because what it exports IS what the filters are showing. */}
-        <DeveloperExport modules={optionsQuery.data?.modules ?? []} scope={scope} />
+        <DeveloperExport
+          modules={optionsQuery.data?.modules ?? []}
+          scope={scope}
+          // Closing from the file changes the very rows behind this page;
+          // leaving them on screen would show a backlog that is no longer there.
+          onImported={() => queryClient.invalidateQueries({ queryKey: ['sire'] })}
+        />
       </div>
 
       <div

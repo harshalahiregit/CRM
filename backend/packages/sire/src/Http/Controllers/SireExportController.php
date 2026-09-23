@@ -12,6 +12,7 @@ use Sire\Http\Controllers\Concerns\SireApiResponse;
 use Sire\Http\Requests\DashboardFilterRequest;
 use Sire\Models\Report;
 use Sire\Services\SireAccessService;
+use Sire\Services\SireBriefImporter;
 use Sire\Services\SireExportService;
 use Sire\Services\SireWorkflowService;
 
@@ -38,6 +39,7 @@ class SireExportController
         private readonly SireExportService $export,
         private readonly SireWorkflowService $workflow,
         private readonly SireAccessService $access,
+        private readonly SireBriefImporter $importer,
     ) {
     }
 
@@ -81,6 +83,65 @@ class SireExportController
         }
 
         return response($body, 200, $headers);
+    }
+
+    /**
+     * POST /sire/reports/import — the brief, sent back.
+     *
+     * Takes the markdown file (uploaded, or pasted as text) and closes every
+     * issue whose box is ticked, using the line beside it as the reason.
+     *
+     * PREVIEWS BY DEFAULT. `apply` must be sent explicitly. The file came from
+     * outside this system -- an editor, a chat, a coding assistant -- and
+     * closing thirty defect records is not something anybody should discover the
+     * result of afterwards. The preview runs the same capability and guard
+     * checks as the real thing, so what it shows is what will happen.
+     */
+    public function import(Request $request): JsonResponse
+    {
+        $user = $this->sireUser();
+
+        // Closing is the act; the file is only how the list arrived.
+        $this->access->assert($user, 'sire.report.close');
+
+        $data = $request->validate([
+            // A brief with screenshots embedded runs to a few MB. The parser
+            // strips them before reading, but the upload still has to arrive.
+            'file'  => ['nullable', 'file', 'max:8192', 'mimetypes:text/plain,text/markdown,application/octet-stream'],
+            'text'  => ['nullable', 'string', 'max:8388608'],
+            'apply' => ['nullable', 'boolean'],
+        ]);
+
+        $markdown = $request->hasFile('file')
+            ? (string) file_get_contents($request->file('file')->getRealPath())
+            : (string) ($data['text'] ?? '');
+
+        if (trim($markdown) === '') {
+            return $this->success([
+                'dry_run' => true, 'ready' => 0, 'closed' => 0, 'skipped' => 0, 'failed' => 0,
+                'results' => [],
+                'message' => 'No file or text was sent.',
+            ]);
+        }
+
+        $entries = $this->importer->parse($markdown);
+
+        if ($entries === []) {
+            return $this->success([
+                'dry_run' => true, 'ready' => 0, 'closed' => 0, 'skipped' => 0, 'failed' => 0,
+                'results' => [],
+                // The most likely reason by far, and the least obvious one.
+                'message' => 'Nothing is ticked in that file. Change `- [ ] Done` to `- [x] Done` '
+                    .'under each issue you fixed.',
+            ]);
+        }
+
+        return $this->success($this->importer->apply(
+            (int) $user->tenantId,
+            $user,
+            $entries,
+            ! $request->boolean('apply'),
+        ));
     }
 
     /**
