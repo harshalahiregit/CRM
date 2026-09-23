@@ -51,6 +51,16 @@ class FuelTransaction extends Model
         'variance_note',
     ];
 
+    /**
+     * T-17 — the spec's figure travels with the stored one.
+     *
+     * Appended rather than added to every presenter: a fill is serialised from
+     * the register, the exception queue, the passport and the trip cost feed,
+     * and four places remembering to compute one derived number is three
+     * chances to forget.
+     */
+    protected $appends = ['litres_per_km'];
+
     protected $casts = [
         'company_id'     => 'integer',
         'vehicle_id'     => 'integer',
@@ -67,6 +77,32 @@ class FuelTransaction extends Model
         'fuel_exception' => 'boolean',
         'customer_recoverable' => 'boolean',
     ];
+
+    /**
+     * Litres per kilometre — T-17, the figure STOS-COST actually specifies.
+     *
+     * DERIVED, never stored. It is `1 ÷ efficiency_kmpl` exactly; a column
+     * would be a second copy of one fact and the two would eventually disagree
+     * after a correction — the same reason there is no `vehicles.genset_serial`.
+     *
+     * Both figures are exposed because both are quoted. A workshop and a driver
+     * talk in km/l ("mileage"); the specification and anyone costing a route
+     * talk in litres per kilometre, and making a reader invert a number in
+     * their head is how the wrong one ends up in a quote.
+     *
+     * Four decimals because the honest values are small — 3.5 km/l is 0.2857
+     * L/km, and two decimals would round three different trucks to 0.29.
+     */
+    public function getLitresPerKmAttribute(): ?float
+    {
+        $kmpl = $this->efficiency_kmpl === null ? null : (float) $this->efficiency_kmpl;
+
+        if ($kmpl === null || $kmpl <= 0) {
+            return null;
+        }
+
+        return round(1 / $kmpl, 4);
+    }
 
     public function vehicle()
     {
