@@ -79,6 +79,21 @@ class Vehicle extends Model
      */
     public const ON_TRIP_STATES = [self::STATUS_ALLOCATED, self::STATUS_IN_TRANSIT];
 
+    /**
+     * States a vehicle may hold and still be considered for a trip (PLN-002).
+     *
+     * The Fleet-side twin of `Support\Transport\VehicleStatus::ALLOCATABLE`,
+     * which is `['available','idle']` and therefore matches nothing on this
+     * table. Person 1's allocation reader points here when it swaps onto the
+     * Fleet master, so neither side has to carry a literal — the coupling he
+     * named as (a) in D-100 is a constant rather than a rename.
+     *
+     * Being allocatable is not the same as being eligible: a vehicle in one of
+     * these states can still be refused by a blocker. This narrows the query;
+     * `VehicleAllocationService::blockersFor()` decides.
+     */
+    public const ALLOCATABLE = [self::STATUS_AVAILABLE, self::STATUS_IDLE];
+
     /** States in which the vehicle is off the road and cannot be dispatched. */
     public const OFF_ROAD_STATES = [
         self::STATUS_UNDER_MAINTENANCE,

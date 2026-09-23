@@ -45,7 +45,7 @@ class IngestTelemetryBatchRequest extends FormRequest
             'readings.*.ignition'    => 'nullable|boolean',
             'readings.*.temperature' => 'nullable|numeric|between:-60,80',
 
-            'readings.*.generator_status' => ['nullable', Rule::in(VehicleLiveStatus::GENERATOR_STATES)],
+            'readings.*.generator_status' => ['nullable', Rule::in(array_keys(VehicleLiveStatus::GENERATOR_INPUT))],
         ];
     }
 

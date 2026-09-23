@@ -79,7 +79,7 @@ billing, QC/CAPA (Dev 3), and the people directory (the CRM already owns personh
 | Engine number | `VARCHAR(100)`, optional | 🟡 column is `VARCHAR(50)` |
 | **Capacity / payload** | `DECIMAL(8,2)`, tons | ✅ column, form field, passport, **and matched against the order** (PLN-001) — T-01 |
 | GPS device id | `VARCHAR(100)`, unique per company — one device reports for one vehicle | 🟡 column is `VARCHAR(64)` |
-| **Genset serial number** | `VARCHAR(50)`, shown only when type = REEFER | ⬜ table exists, no form field and no endpoint — T-05 |
+| **Genset serial number** | `VARCHAR(50)`, shown only when type = REEFER | ✅ **derived, not stored** — T-05. `gensets` is the master and carries `vehicle_id`; the passport returns the fitted unit with its serial. A `vehicles.genset_serial` column would be a second copy of one fact, which golden rule 3 forbids. |
 | `registration_expiry` | Date | ✅ |
 | `insurance_expiry` | Date | ✅ |
 | `fitness_expiry` | Date | ✅ |
@@ -150,7 +150,7 @@ answer — T-07.
 - [x] **T-09** Replayed buffers (a unit leaving a tunnel) are kept in history but never drag the live row backwards
 - [x] **T-10** Excursion rule — genset OFF ∧ speed > 0 ∧ temp > −18 °C → `telemetry.temperature_excursion.detected`
 - [x] **T-11** `GET /v1/fleet/vehicles/{id}/live-status` with three-state GPS health (`active` / `degraded` / `offline`)
-- [ ] **T-06** Align `generator_status` values with the spec, or document the mapping in `STOS-API`
+- [x] **T-06** Both, and that was the point. Stored UPPERCASE per 12.S11 (which STOS-API already spelled that way), but NOT collapsed to `ON/OFF/UNKNOWN` — a genset in FAULT is not one somebody switched OFF. Devices keep sending lowercase and `normaliseGeneratorState()` maps at the boundary; `UNKNOWN` → null, never OFF. **Fixed a misreport:** a FAULTED genset was publishing `genset.on` to the timeline, so a unit that had failed read as running.
 - [x] **T-07** Per-device tokens — issue / rotate / revoke, SHA-256 hashed, plaintext shown once, `stos_dev_` prefix so a leaked one is identifiable on sight. **It also fixes the 409:** a token carries its company, so a device id held by two companies now resolves instead of being refused. The fleet-wide secret still works and is deprecated; the listing names every unit still relying on it, which is the migration checklist. Rotation issues before revoking, so re-flashing a unit is not an outage · *DeviceTokenTest*
 - [x] **T-12** Ingest is idempotent. **Decision taken: dedupe on write**, enforced by a unique index on `(company_id, device_id, recorded_at)` — one device has one clock, so the same instant is the same reading. Keep-all-and-dedupe-on-read was rejected because it makes every future consumer of the trail responsible for de-duplicating forever, and the first one that forgets double-counts a journey. A retry is answered 201 with `duplicate: true`, never 409: a device told 409 by a retry it could not avoid either retries forever or drops its buffer · *TelemetryIdempotencyAndBatchTest*
 - [x] **T-13** Batch ingest — `POST /v1/telemetry/ingest/batch`, up to 500 readings. Sorted by the device's own clock before writing, because the live row only moves forward; and one bad reading is rejected on its own line rather than failing the batch, because a device cannot resend just the good ones · *TelemetryIdempotencyAndBatchTest*

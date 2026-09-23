@@ -3,6 +3,7 @@
 namespace App\Domains\Fleet\Integration;
 
 use App\Domains\Fleet\Models\Vehicle;
+use App\Domains\Fleet\Models\VehicleLiveStatus;
 use App\Models\Transport\TransportTrip;
 use App\Services\Transport\TripEventRecorder;
 use Illuminate\Support\Facades\DB;
@@ -122,14 +123,25 @@ class TripTimelinePublisher
             return;
         }
 
+        // T-06 — the registry has two genset types and the device reports four
+        // states, so the mapping is by MEANING, not by name: OFF and FAULT both
+        // mean the load is not being cooled. A faulted unit published as
+        // `genset.on` is how a spoiled load goes unnoticed, and inventing a
+        // third event type is not ours to do — Step 11 registers the types.
+        //
+        // The state itself is never lost: it is in the summary a person reads
+        // and in the detail a query can filter on.
+        $notCooling = in_array($now, VehicleLiveStatus::GENSET_NOT_COOLING, true);
+
         $this->recorder()->record(
-            type: $now === 'off' ? 'genset.off' : 'genset.on',
+            type: $notCooling ? 'genset.off' : 'genset.on',
             trip: $trip,
             occurredAt: $recordedAt,
             summary: 'Genset '.$now.' on '.$vehicle->registration_number,
             detail: [
                 'vehicle_id' => $vehicle->id,
                 'from' => $before, 'to' => $now,
+                'cooling' => ! $notCooling,
                 'temperature' => $reading['temperature'] ?? null,
             ],
         );

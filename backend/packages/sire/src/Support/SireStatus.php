@@ -52,6 +52,22 @@ final class SireStatus
     ];
 
     /**
+     * The fix exists. These are not TERMINAL -- the issue is still open, and it
+     * still belongs on a work queue, because somebody owes it a QA pass, a
+     * release or a validation.
+     *
+     * They are a different question from "what do I have to write code for",
+     * and conflating the two is what made the developer brief carry issues that
+     * were already fixed, already shipped, even already validated in production.
+     * NOT-TERMINAL was standing in for NOT-DONE, and the two parted company the
+     * moment a fix was submitted.
+     */
+    public const FIX_SUBMITTED = [
+        self::READY_FOR_QA, self::QA_IN_PROGRESS, self::QA_PASSED,
+        self::READY_FOR_RELEASE, self::RELEASED, self::PRODUCTION_VALIDATED,
+    ];
+
+    /**
      * The resolve clock stops while the issue is parked or waiting on a release
      * train. It keeps running through development and QA — that time is the
      * team's own and hiding it would defeat the point of measuring it.
@@ -90,5 +106,11 @@ final class SireStatus
     public static function pausesSla(string $status): bool
     {
         return in_array($status, self::SLA_PAUSED, true);
+    }
+
+    /** True once a fix has been submitted, whatever is left to verify. */
+    public static function hasFix(string $status): bool
+    {
+        return in_array($status, self::FIX_SUBMITTED, true);
     }
 }
