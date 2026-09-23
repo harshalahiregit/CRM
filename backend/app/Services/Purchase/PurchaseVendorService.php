@@ -393,14 +393,60 @@ class PurchaseVendorService
     }
 
     /**
-     * The single source of Purchase Vendor codes (PV-####).
+     * The single source of Purchase Vendor codes.
      *
-     * Public so every creation path — admin create, portal self-registration and
-     * the /auth/register/vendor flow — mints codes the same way instead of each
-     * re-implementing the format. Skips codes already taken (soft-deleted rows
-     * included), so a deleted or concurrently-created row can't cause a clash.
+     * The FORMAT comes from Settings -> Numbering, where `purchase_vendor` has
+     * been a configurable type all along: prefix, padding, the date parts and
+     * the reset rule. This method used to hard-code 'PV-0001' and ignore every
+     * one of those settings, so the answer to "how do I set the vendor code
+     * number?" was that you could, the screen saved it, and nothing read it.
+     *
+     * Public so every creation path -- admin create, portal self-registration
+     * and /auth/register/vendor -- mints codes the same way.
+     *
+     * The uniqueness loop stays. Numbering hands out the next sequence, but a
+     * soft-deleted vendor still occupies its code and the column is unique, so a
+     * generated code is checked and skipped rather than trusted.
      */
     public function nextVendorCode(int $tenantId): string
+    {
+        $numbers = app(\App\Services\Numbering\DocumentNumberServiceInterface::class);
+
+        for ($attempt = 0; $attempt < 25; $attempt++) {
+            try {
+                $code = $numbers->generate($tenantId, 'purchase_vendor');
+            } catch (\App\Exceptions\BusinessException) {
+                // Numbering is opt-in per workspace, and most have never turned
+                // this type on. A workspace that has not configured a format has
+                // not asked for one -- it should keep getting PV-0001, not a
+                // failure to create a vendor. Turning it on in Settings is what
+                // switches this over.
+                return $this->sequentialCode($tenantId);
+            }
+
+            $taken = PurchaseVendor::withTrashed()
+                ->where('tenant_id', $tenantId)
+                ->where('purchase_vendor_code', $code)
+                ->exists();
+
+            if (! $taken) {
+                return $code;
+            }
+        }
+
+        // Twenty-five collisions in a row means the configured format cannot
+        // produce a new code -- a fixed prefix with no sequence placeholder,
+        // most likely. Fall back to something unique so a vendor can still be
+        // created while the setting is corrected.
+        return 'PV-'.strtoupper(\Illuminate\Support\Str::random(8));
+    }
+
+    /**
+     * The original PV-#### scheme, for workspaces that have not configured a
+     * format. Counts existing vendors (soft-deleted included) and skips anything
+     * already taken, so a deleted or concurrently-created row cannot clash.
+     */
+    private function sequentialCode(int $tenantId): string
     {
         $seq = PurchaseVendor::withTrashed()->where('tenant_id', $tenantId)->count() + 1;
 

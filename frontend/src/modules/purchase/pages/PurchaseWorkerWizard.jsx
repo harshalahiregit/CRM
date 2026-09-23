@@ -568,7 +568,9 @@ function StepProfile({ worker, editable, onCreated, onSaved, onNext, registerFlu
  * the badge gate reads, so it carries the truthful outcome and nothing else.
  */
 function Step2Medical({ worker, editable, onSaved, onNext }) {
-  const { api } = useVendorModule()
+  // portal, because the doctor picker below narrows to this vendor's own
+  // doctors when a vendor is driving it rather than staff.
+  const { api, portal: isPortal } = useVendorModule()
 
   // Newest first — the top row is the current fitness the readiness gate reads.
   const history = useMemo(() => sortMedicals(worker.medicals), [worker.medicals])
@@ -1772,6 +1774,34 @@ function StepPpe({ worker, manage, onChanged, onNext }) {
   }, [worker.id])
   useEffect(() => { load() }, [load])
 
+  /*
+   * Issue a kit.
+   *
+   * This step could only ever RETURN PPE and show what was held — there was no
+   * way to give a worker anything, so "PPE list is not showing to select" was
+   * literally true: no list was rendered here at all, and step 4 could never be
+   * cleared from the screen that owns it.
+   */
+  const [catalogue, setCatalogue] = useState([])
+  useEffect(() => {
+    if (!manage) return
+    api.workforce.ppeCatalogue()
+      .then(rows => setCatalogue(Array.isArray(rows) ? rows : rows?.data ?? []))
+      .catch(() => setCatalogue([]))
+  }, [manage]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const issueKit = async (payload) => {
+    setBusy(true); setErr(null)
+    try {
+      await api.workforce.issuePpe(worker.id, payload)
+      load()
+      // Issuing writes current_step 4, which is what the badge step checks.
+      onChanged()
+    } catch (e) {
+      setErr(apiError(e, 'Could not issue that item.'))
+    } finally { setBusy(false) }
+  }
+
   const giveBack = async (issueId, condition, qty) => {
     setBusy(true); setErr(null)
     try {
@@ -1818,6 +1848,8 @@ function StepPpe({ worker, manage, onChanged, onNext }) {
       </div>
 
       {err && <InfoBox tone="danger">{err}</InfoBox>}
+
+      {manage && <IssuePpeForm catalogue={catalogue} busy={busy} onIssue={issueKit} />}
 
       {/* What the worker is currently holding — the list the gate's PPE check reads. */}
       {compliance && (
@@ -1922,6 +1954,83 @@ const PPE_TONE = {
 }
 
 /** Return / lost / damaged, with a quantity so partial returns are possible. */
+/**
+ * Pick an item and give it to the worker.
+ *
+ * Out-of-stock items are shown and disabled rather than hidden: "the helmet is
+ * not on the list" and "the helmet has run out" are different problems, and
+ * only one of them is solved by looking somewhere else.
+ */
+function IssuePpeForm({ catalogue, busy, onIssue }) {
+  const [productId, setProductId] = useState('')
+  const [qty, setQty] = useState(1)
+  const [size, setSize] = useState('')
+  const [notes, setNotes] = useState('')
+
+  const chosen = catalogue.find(c => String(c.product_id) === String(productId))
+  const short = chosen && Number(qty) > Number(chosen.available)
+
+  const submit = (e) => {
+    e.preventDefault()
+    if (!productId || busy) return
+    onIssue({ product_id: Number(productId), qty: Number(qty) || 1, size: size || null, notes: notes || null })
+    setProductId(''); setQty(1); setSize(''); setNotes('')
+  }
+
+  if (!catalogue.length) {
+    return (
+      <InfoBox tone="info">
+        No PPE items are set up in Inventory yet, so there is nothing to issue.
+        Add them under Inventory → Products with a PPE category.
+      </InfoBox>
+    )
+  }
+
+  return (
+    <form onSubmit={submit} style={{ padding: '12px 16px', borderRadius: 10, marginBottom: 18, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+      <p style={{ margin: '0 0 8px', fontSize: 10.5, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+        Issue an item
+      </p>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        <select value={productId} onChange={e => setProductId(e.target.value)}
+          style={{ ...ppeInp, flex: 1, minWidth: 210 }}>
+          <option value="">Choose PPE…</option>
+          {catalogue.map(c => (
+            <option key={c.product_id} value={c.product_id} disabled={Number(c.available) <= 0}>
+              {c.name} · {Number(c.available) > 0 ? `${c.available} available` : 'out of stock'}
+            </option>
+          ))}
+        </select>
+        <input type="number" min="1" value={qty} onChange={e => setQty(e.target.value)}
+          title="Quantity" style={{ ...ppeInp, width: 74, textAlign: 'right' }} />
+        <input value={size} onChange={e => setSize(e.target.value)} placeholder="Size"
+          style={{ ...ppeInp, width: 90 }} />
+        <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Note (optional)"
+          style={{ ...ppeInp, flex: 1, minWidth: 140 }} />
+        <button type="submit" disabled={!productId || busy}
+          style={{
+            padding: '8px 14px', borderRadius: 9, border: 'none', cursor: productId && !busy ? 'pointer' : 'not-allowed',
+            background: productId && !busy ? 'linear-gradient(135deg,#f59e0b,#d97706)' : 'var(--bg-card)',
+            color: productId && !busy ? '#fff' : 'var(--text-muted)', fontWeight: 800, fontSize: 12.5,
+          }}>
+          {busy ? 'Issuing…' : 'Issue'}
+        </button>
+      </div>
+      {short && (
+        <p style={{ margin: '8px 0 0', fontSize: 11.5, color: '#f59e0b' }}>
+          Only {chosen.available} in stock — issuing more will take the item below zero.
+        </p>
+      )}
+    </form>
+  )
+}
+
+const ppeInp = {
+  padding: '8px 10px', borderRadius: 8, fontSize: 12.5,
+  background: 'var(--bg-card)', border: '1px solid var(--border)',
+  color: 'var(--text-h)', outline: 'none',
+}
+
 function PpeReturnDialog({ row, outstanding, busy, onClose, onConfirm }) {
   const [qty, setQty] = useState(outstanding)
   const [condition, setCondition] = useState('returned')

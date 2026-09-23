@@ -78,7 +78,7 @@ export default function PurchasePortalShell() {
             // Tasks assigned by name to this vendor's own contacts. There is no
             // per-contact login on this portal — the vendor signs in as the
             // company — so it is the team's work, each row naming whose it is.
-            { key: 'tasks',      label: 'Assigned Tasks',  icon: ListChecks, to: 'tasks' },
+            { key: 'tasks',      label: 'Team Tasks',      icon: ListChecks, to: 'tasks' },
             { key: 'approval',   label: 'Approval Status', icon: ShieldCheck, to: 'approval' },
             { key: 'support',    label: 'Support',         icon: HelpCircle,  to: 'support' },
           ],

@@ -10,6 +10,27 @@ import api from '@/lib/api'
 const upload = (url, formData) =>
   api.post(url, formData, { headers: { 'Content-Type': undefined } }).then(r => r.data)
 
+/*
+ * Endpoints that answer through the ApiResponse trait wrap their payload one
+ * level deeper: { status, message, data: { ... } }. Most of this file predates
+ * that trait and reads `r.data`, so the two shapes are unwrapped separately
+ * rather than by guessing per call.
+ */
+const unwrap = (r) => r.data?.data ?? r.data
+
+/*
+ * Rethrow with the SERVER's message.
+ *
+ * An axios error's own `.message` is "Request failed with status code 422",
+ * which tells the person nothing. These endpoints refuse a save by naming the
+ * question at fault — "Every answer to 'Turnover' scores the same" — and that
+ * sentence is the whole value of the response.
+ */
+const handleErr = (e) => {
+  const said = e?.response?.data?.message || e?.response?.data?.error
+  throw said ? Object.assign(new Error(said), { response: e.response }) : e
+}
+
 export const purchaseApi = {
   // ── Unified procure-to-pay dashboard ────────────────────────────────
   dashboard: {
@@ -161,6 +182,14 @@ export const purchaseApi = {
 
   // ── Purchase Vendor master — the Purchase-owned entity (/purchase/vendors) ─
   // Fully independent of the shared /vendors table and of TPV.
+  // The prequalification questionnaire itself — the questions and the
+  // drop-down answers on the vendor form. Admin-only, enforced server-side.
+  prequalificationCatalogue: {
+    get:   () => api.get('/purchase/settings/prequalification').then(unwrap).catch(handleErr),
+    save:  (sections) => api.put('/purchase/settings/prequalification', { sections }).then(unwrap).catch(handleErr),
+    reset: () => api.post('/purchase/settings/prequalification/reset').then(unwrap).catch(handleErr),
+  },
+
   vendors: {
     list:      (params = {}) => api.get('/purchase/vendors', { params }).then(r => r.data),
     stats:     ()            => api.get('/purchase/vendors/stats').then(r => r.data),

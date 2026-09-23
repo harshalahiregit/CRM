@@ -16,21 +16,30 @@ use App\Support\Purchase\PurchaseQualificationStatus;
  */
 class PurchasePrequalificationService
 {
-    /** The questionnaire catalogue (sections → questions → options). */
-    public function catalogue(): array
+    /**
+     * The questionnaire catalogue (sections → questions → options).
+     *
+     * A tenant's own if it has edited one, otherwise the shipped default. It
+     * used to read the config file directly, which is why there was no way to
+     * change a question without a deploy.
+     */
+    public function catalogue(int $tenantId): array
     {
-        return config('purchase_prequalification.sections', []);
+        return \App\Support\Purchase\PrequalificationCatalogue::forTenant($tenantId);
     }
 
     /**
      * Score a set of answers.
      *
+     * Scored against THIS TENANT's questionnaire — a workspace that removed a
+     * question must not keep being scored out of a maximum that includes it.
+     *
      * @param  array<string,string>  $answers  question key => chosen option value
      * @return array{score:int, status:string, sections:array}
      */
-    public function compute(array $answers): array
+    public function compute(array $answers, int $tenantId): array
     {
-        $sections  = config('purchase_prequalification.sections', []);
+        $sections  = $this->catalogue($tenantId);
         $sum       = 0;
         $max       = 0;
         $breakdown = [];
@@ -86,7 +95,9 @@ class PurchasePrequalificationService
     public function assess(PurchaseVendor $vendor, array $answers, ?string $notes, User $actor): PurchaseVendor
     {
         $clean = [];
-        foreach (config('purchase_prequalification.sections', []) as $section) {
+        // The tenant's own questionnaire, so an answer to a question they
+        // removed is dropped rather than scored.
+        foreach ($this->catalogue((int) $vendor->tenant_id) as $section) {
             foreach ($section['questions'] ?? [] as $qKey => $q) {
                 $val = $answers[$qKey] ?? null;
                 if ($val !== null && isset($q['options'][$val])) {
@@ -95,7 +106,7 @@ class PurchasePrequalificationService
             }
         }
 
-        $c = $this->compute($clean);
+        $c = $this->compute($clean, (int) $vendor->tenant_id);
 
         $vendor->update([
             'qualification_status'    => $c['status'],
@@ -116,7 +127,7 @@ class PurchasePrequalificationService
     public function snapshot(PurchaseVendor $vendor): array
     {
         $answers  = $vendor->qualification_responses ?? [];
-        $computed = $this->compute($answers);
+        $computed = $this->compute($answers, (int) $vendor->tenant_id);
 
         return [
             'assessed'     => $vendor->qualified_at !== null,
@@ -129,7 +140,7 @@ class PurchasePrequalificationService
             'notes'        => $vendor->qualification_notes,
             'assessed_at'  => $vendor->qualified_at,
             'assessed_by'  => optional($vendor->qualificationAssessor)->name,
-            'catalogue'    => config('purchase_prequalification.sections', []),
+            'catalogue'    => $this->catalogue((int) $vendor->tenant_id),
             'outcomes'     => config('purchase_prequalification.outcomes', []),
         ];
     }
