@@ -284,24 +284,30 @@ export const FUEL_TYPES = [
   { value: 'hybrid',   label: 'Hybrid' },
 ]
 
-/** Mirrors `Genset::STATUSES`. */
+/**
+ * Mirrors `Genset::STATUSES` — UPPERCASE since T-58.
+ *
+ * Database enums and state-machine states are UPPERCASE; API blocker codes and
+ * machine reasons are lowercase snake_case (spec 12.S11). These are the former,
+ * so the value is what the column holds and only the label is for reading.
+ */
 export const GENSET_STATUSES = [
-  { value: 'idle',           label: 'In the yard' },
-  { value: 'active',         label: 'In service' },
-  { value: 'in_maintenance', label: 'Under repair' },
-  { value: 'retired',        label: 'Retired' },
+  { value: 'IDLE',           label: 'In the yard' },
+  { value: 'ACTIVE',         label: 'In service' },
+  { value: 'IN_MAINTENANCE', label: 'Under repair' },
+  { value: 'RETIRED',        label: 'Retired' },
 ]
 
 export const JOB_STATUSES = [
-  { value: 'open',           label: 'Open',           open: true },
-  { value: 'in_progress',    label: 'In progress',    open: true },
-  { value: 'awaiting_parts', label: 'Awaiting parts', open: true },
+  { value: 'OPEN',           label: 'Open',           open: true },
+  { value: 'IN_PROGRESS',    label: 'In progress',    open: true },
+  { value: 'AWAITING_PARTS', label: 'Awaiting parts', open: true },
   // T-32 — the work is done but nobody has signed it off yet. This is exactly
   // the window in which a vehicle gets taken, so both still hold it.
-  { value: 'testing',        label: 'Road testing',   open: true },
-  { value: 'qc',             label: 'With QC',        open: true },
-  { value: 'completed',      label: 'Completed' },
-  { value: 'cancelled',      label: 'Cancelled' },
+  { value: 'TESTING',        label: 'Road testing',   open: true },
+  { value: 'QC',             label: 'With QC',        open: true },
+  { value: 'COMPLETED',      label: 'Completed' },
+  { value: 'CANCELLED',      label: 'Cancelled' },
 ]
 
 /**

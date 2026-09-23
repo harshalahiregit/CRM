@@ -178,7 +178,7 @@ class FleetBaselineSchemaTest extends TestCase
         $vehicle = $this->vehicle();
         $genset = Genset::create([
             'company_id' => self::COMPANY, 'serial_number' => 'GEN-4471',
-            'vehicle_id' => $vehicle->id, 'status' => 'active',
+            'vehicle_id' => $vehicle->id, 'status' => 'ACTIVE',
         ]);
 
         $this->assertTrue($genset->vehicle->is($vehicle));

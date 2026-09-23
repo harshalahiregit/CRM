@@ -26,10 +26,34 @@ class MaintenanceJob extends Model
      * been cleared, and that is precisely the window in which somebody is
      * tempted to take the vehicle. Both are OPEN states for that reason.
      */
-    public const STATUSES = ['open', 'in_progress', 'awaiting_parts', 'testing', 'qc', 'completed', 'cancelled'];
+    public const OPEN           = 'OPEN';
+    public const IN_PROGRESS    = 'IN_PROGRESS';
+    public const AWAITING_PARTS = 'AWAITING_PARTS';
+    public const TESTING        = 'TESTING';
+    public const QC             = 'QC';
+    public const COMPLETED      = 'COMPLETED';
+    public const CANCELLED      = 'CANCELLED';
 
-    /** States that still hold the vehicle in the workshop. */
-    public const OPEN_STATES = ['open', 'in_progress', 'awaiting_parts', 'testing', 'qc'];
+    public const STATUSES = [
+        self::OPEN, self::IN_PROGRESS, self::AWAITING_PARTS,
+        self::TESTING, self::QC, self::COMPLETED, self::CANCELLED,
+    ];
+
+    /**
+     * States that still hold the vehicle in the workshop.
+     *
+     * The ONE definition of an open job. `FleetService` used to carry its own,
+     * missing TESTING and QC, so a truck in quality control showed "0 open
+     * jobs" on the grid while the workshop refused to release it. Two copies of
+     * a rule is how one of them stops being the rule — the same defect shape as
+     * D-118, found while renaming these.
+     */
+    public const OPEN_STATES = [
+        self::OPEN, self::IN_PROGRESS, self::AWAITING_PARTS, self::TESTING, self::QC,
+    ];
+
+    /** A card that is finished with, either way. */
+    public const CLOSED_STATES = [self::COMPLETED, self::CANCELLED];
 
     /* T-31 — what QC actually said. */
     public const QC_PASS = 'PASS';

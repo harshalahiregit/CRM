@@ -149,7 +149,7 @@ class FleetControlTowerTest extends TestCase
 
         MaintenanceJob::create([
             'company_id' => self::COMPANY, 'vehicle_id' => $v->id,
-            'job_card_number' => 'JC-1', 'status' => 'awaiting_parts',
+            'job_card_number' => 'JC-1', 'status' => 'AWAITING_PARTS',
             'parts_cost' => '100.00', 'labour_cost' => '50.00', 'total_cost' => '150.00',
         ]);
 

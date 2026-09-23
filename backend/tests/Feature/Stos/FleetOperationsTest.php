@@ -84,7 +84,7 @@ class FleetOperationsTest extends TestCase
         $safety = $this->vehicle(['registration_number' => 'MH12AB0003']);
         MaintenanceJob::create([
             'company_id' => self::COMPANY, 'vehicle_id' => $safety->id,
-            'job_card_number' => 'JC-S1', 'status' => 'open', 'is_safety_critical' => true,
+            'job_card_number' => 'JC-S1', 'status' => 'OPEN', 'is_safety_critical' => true,
         ]);
 
         $data = $this->actingAs($this->user())
@@ -214,7 +214,7 @@ class FleetOperationsTest extends TestCase
         $v = $this->vehicle();
         MaintenanceJob::create([
             'company_id' => self::COMPANY, 'vehicle_id' => $v->id,
-            'job_card_number' => 'JC-MINOR', 'status' => 'open', 'is_safety_critical' => false,
+            'job_card_number' => 'JC-MINOR', 'status' => 'OPEN', 'is_safety_critical' => false,
         ]);
 
         $data = $this->actingAs($this->user())
@@ -411,7 +411,7 @@ class FleetOperationsTest extends TestCase
                 'parts_cost' => 18500, 'labour_cost' => 4200,
             ])->assertOk();
 
-        $this->assertSame('completed', $response->json('data.job.status'));
+        $this->assertSame('COMPLETED', $response->json('data.job.status'));
         $this->assertSame('22700.00', $response->json('data.job.total_cost'));
         $this->assertTrue($response->json('data.release.released'));
         $this->assertSame('AVAILABLE', $v->fresh()->status);

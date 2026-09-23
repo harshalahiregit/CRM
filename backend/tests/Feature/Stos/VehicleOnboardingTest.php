@@ -190,7 +190,7 @@ class VehicleOnboardingTest extends TestCase
         $id = $this->onboard()->json('data.id');
         MaintenanceJob::create([
             'company_id' => self::COMPANY, 'vehicle_id' => $id,
-            'job_card_number' => 'JC-1', 'status' => 'in_progress',
+            'job_card_number' => 'JC-1', 'status' => 'IN_PROGRESS',
         ]);
 
         $this->actingAs($this->user('admin'))->deleteJson("/api/v1/fleet/vehicles/{$id}")->assertStatus(422);

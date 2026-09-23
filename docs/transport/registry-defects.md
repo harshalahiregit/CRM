@@ -4271,3 +4271,46 @@ emitters we do not own, and a detention rule nobody has written.
 **Recommendation: keep M01–M14 out of the foundation entirely.** The portal does not depend on it.
 A plain-language journey built from the nine moments we already emit is honest, buildable now, and
 should be labelled as an interim so nobody mistakes it for §8's model.
+
+---
+
+## D-121 — A genset could be fitted to a retired vehicle, and the guard against it had never fired
+
+**Raised and fixed:** 2026-09-22, P2, while converting the last lowercase enums (T-58). **P2's code.**
+
+### What it was
+
+`GensetService::fit()` refuses to put a working unit on a scrapped truck, because the unit would
+read as in service on a vehicle that never moves again:
+
+```php
+if ($vehicle->status === 'retired') {
+    throw new BusinessException('That vehicle is retired — fitting a working genset to it would strand the unit.');
+}
+```
+
+`vehicles.status` has held **`RETIRED`** since `2027_01_07_000001` adopted the ruled uppercase
+vocabulary. So that comparison has been false on every call it has ever handled. No error, no log
+line, no refusal — the fit simply succeeded.
+
+### Why it survived a test suite
+
+`test_a_working_unit_is_not_fitted_to_a_retired_truck` passed the whole time. Its fixture set the
+vehicle to `'retired'` — **the same misspelling the guard used** — so the test and the bug agreed
+with each other and neither agreed with the database. The fixture now uses
+`Vehicle::STATUS_RETIRED`, and the test fails against the old guard.
+
+That is the second time in this module a green test has been found asserting a defect rather than
+the behaviour: `TripTimelineTest` did the same for D-116, where eight cases passed because the
+fixture reproduced the wrong id space.
+
+### What was done
+
+Fixed with the change that made it findable. Both sides now use `Vehicle::STATUS_RETIRED` and
+`Genset::RETIRED` rather than string literals, so a future rename moves both or neither.
+
+### The general lesson
+
+*A test written from the same assumption as the code under test verifies the assumption, not the
+code.* Both of these were caught by changing the vocabulary underneath them — which is an argument
+for doing the rename rather than living with two spellings, not just for tidiness.

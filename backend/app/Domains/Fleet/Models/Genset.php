@@ -18,7 +18,12 @@ class Genset extends Model
 
     protected $table = 'gensets';
 
-    public const STATUSES = ['active', 'in_maintenance', 'idle', 'retired'];
+    public const ACTIVE         = 'ACTIVE';
+    public const IN_MAINTENANCE = 'IN_MAINTENANCE';
+    public const IDLE           = 'IDLE';
+    public const RETIRED        = 'RETIRED';
+
+    public const STATUSES = [self::ACTIVE, self::IN_MAINTENANCE, self::IDLE, self::RETIRED];
 
     protected $fillable = [
         'company_id',

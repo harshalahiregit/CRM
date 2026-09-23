@@ -35,7 +35,7 @@ class TyreService
 
         return DB::transaction(function () use ($existing, $vehicle, $companyId, $data, $tyreId, $userId) {
             if ($existing) {
-                $this->closeFitment($existing, $data['odometer_at_fitment'] ?? null, 'removed', 'Moved to '.$vehicle->registration_number);
+                $this->closeFitment($existing, $data['odometer_at_fitment'] ?? null, TyreFitment::REMOVED, 'Moved to '.$vehicle->registration_number);
             }
 
             // Whatever currently occupies the target position comes off too.
@@ -46,7 +46,7 @@ class TyreService
                 ->first();
 
             if ($occupant && $occupant->tyre_id !== $tyreId) {
-                $this->closeFitment($occupant, $data['odometer_at_fitment'] ?? null, 'removed', 'Replaced by '.$tyreId);
+                $this->closeFitment($occupant, $data['odometer_at_fitment'] ?? null, TyreFitment::REMOVED, 'Replaced by '.$tyreId);
             }
 
             $fitment = TyreFitment::create([
@@ -54,7 +54,7 @@ class TyreService
                 'tyre_id'             => $tyreId,
                 'vehicle_id'          => $vehicle->id,
                 'position'            => $data['position'],
-                'status'              => 'fitted',
+                'status'              => TyreFitment::FITTED,
                 'tread_depth'         => $data['tread_depth'] ?? null,
                 'odometer_at_fitment' => $data['odometer_at_fitment'] ?? null,
                 'fitted_on'           => $data['fitted_on'] ?? now()->toDateString(),
@@ -112,9 +112,9 @@ class TyreService
             throw new BusinessException('That tyre is not currently fitted.');
         }
 
-        $outcome = $data['status'] ?? 'removed';
+        $outcome = $data['status'] ?? TyreFitment::REMOVED;
 
-        if (! in_array($outcome, ['removed', 'retreaded', 'scrapped', 'in_stock'], true)) {
+        if (! in_array($outcome, TyreFitment::OUTCOMES, true)) {
             throw new BusinessException('A removed tyre goes to stock, to a retread, or to scrap.');
         }
 
