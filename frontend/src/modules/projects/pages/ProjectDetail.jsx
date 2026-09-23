@@ -4,7 +4,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, RefreshCw, Plus, Users, Flag, Paperclip, Trash2, ListTodo, LifeBuoy,
   Pencil, Copy, Pin, PinOff, MoreHorizontal, Download, Upload, ExternalLink, Check, FileText,
-  Play, Search, Clock, GitBranch, X, Receipt,
+  Play, Search, Clock, GitBranch, X, Receipt, UserPlus,
 } from 'lucide-react'
 import { projectApi, PROJECT_STATUS, PROJECT_ACCENT } from '@/services/projectApi'
 import { useDiscardGuard } from '@/lib/confirmClose'
@@ -14,6 +14,7 @@ import { useStatuses, statusOptions } from '@/hooks/useStatuses'
 import { taskApi, TASK_PRIORITY, TASK_ACCENT } from '@/services/taskApi'
 import Select from '@/components/ui/Select'
 import SearchPicker, { ConfirmModal } from '@/components/ui/SearchPicker'
+import PartyPicker from '@/components/ui/PartyPicker'
 import { TagChips } from '@/components/ui/TagInput'
 import ProjectFormDrawer from '../components/ProjectFormDrawer'
 import { TimesheetsTab, NotesTab, ActivityTab, ExpensesTab, VendorTab } from '../components/ProjectTabs'
@@ -142,6 +143,48 @@ export default function ProjectDetail() {
 
   const setStatus = useMutation({ mutationFn: (s) => projectApi.setStatus(id, s), onSuccess: () => { setErr(''); invalidate() }, onError: onErr })
   const pin = useMutation({ mutationFn: () => projectApi.pin(id), onSuccess: invalidate, onError: onErr })
+
+  /*
+   * Members, from the dashboard.
+   *
+   * The card said "add them via Edit Project" — a nine-field drawer to put one
+   * name on a project, from the screen where you are already looking at who is
+   * on it. Both kinds are added here now: staff, who are users, and people at a
+   * client, vendor or TPV, who are not (see PartyAssignmentService).
+   */
+  const [picking, setPicking] = useState(null)   // 'staff' | 'party'
+  // The task whose assignees are being edited from the table, if any.
+  const [assignTask, setAssignTask] = useState(null)
+  const memberIds = (project?.members || []).map(m => m.user_id ?? m.user?.id).filter(Boolean)
+
+  const syncMembers = useMutation({
+    mutationFn: (ids) => projectApi.members(id, ids),
+    onSuccess: () => { setErr(''); invalidate() }, onError: onErr,
+  })
+
+  const { data: projectStaff = [] } = useQuery({
+    queryKey: ['project-staff'], queryFn: projectApi.staff,
+    // Needed by the member picker AND the per-row task picker, so it is not
+    // gated on either being open — one small list, fetched once.
+    enabled: picking === 'staff' || !!assignTask,
+  })
+
+  const { data: projectParties = [] } = useQuery({
+    queryKey: ['project-parties', id], queryFn: () => projectApi.parties.list(id),
+  })
+  const syncParties = useMutation({
+    mutationFn: (parties) => projectApi.parties.sync(id, parties),
+    onSuccess: (rows) => { setErr(''); qc.setQueryData(['project-parties', id], rows ?? []) },
+    onError: onErr,
+  })
+
+  // Assigning from the task table. Invalidates the project's task list rather
+  // than the whole project: the table is the only thing on screen that changed.
+  const assignFromTable = useMutation({
+    mutationFn: ({ taskId, userIds }) => taskApi.assignees(taskId, userIds),
+    onSuccess: () => { setErr(''); qc.invalidateQueries({ queryKey: ['tasks'] }) },
+    onError: onErr,
+  })
   // PR2 — build a Sales Proforma Invoice from this project's billable tasks, then open it.
   const convertPI = useMutation({
     mutationFn: () => projectApi.convertToProforma(id),
@@ -302,8 +345,14 @@ export default function ProjectDetail() {
         ))}
       </div>
 
-      {tab === 'overview' && <Overview project={project} prog={prog} onRecalc={() => refetchProg()} busy={progBusy} />}
-      {tab === 'tasks' && <TasksTab projectId={id} navigate={navigate} onNewTask={() => setCreatingTask(true)} />}
+      {tab === 'overview' && (
+        <Overview
+          project={project} prog={prog} onRecalc={() => refetchProg()} busy={progBusy}
+          canManage={canManage} memberIds={memberIds} syncMembers={syncMembers}
+          projectParties={projectParties} syncParties={syncParties} setPicking={setPicking}
+        />
+      )}
+      {tab === 'tasks' && <TasksTab projectId={id} navigate={navigate} onNewTask={() => setCreatingTask(true)} setAssignTask={setAssignTask} />}
       {tab === 'milestones' && <MilestonesTab project={project} onChange={invalidate} onErr={onErr} canManage={canManage} />}
       {tab === 'gantt' && <ProjectGantt projectId={id} milestones={project.milestones || []} />}
       {tab === 'meeting' && <MeetingsTab projectId={id} canManage={canManage} />}
@@ -317,6 +366,49 @@ export default function ProjectDetail() {
       {tab === 'tickets' && <TicketsTab projectId={id} navigate={navigate} />}
 
       <ProjectFormDrawer open={editing} onClose={() => setEditing(false)} project={project} onSaved={invalidate} />
+
+      {/* Members, added from the dashboard rather than from a nine-field drawer.
+          Both pickers are multi-select: a project is staffed in one go, not one
+          name per round trip. */}
+      <SearchPicker
+        multi confirmLabel="Add"
+        open={picking === 'staff'} onClose={() => setPicking(null)}
+        onConfirm={picked => syncMembers.mutate([...new Set([...memberIds, ...picked.map(p => p.id)])])}
+        items={(Array.isArray(projectStaff) ? projectStaff : projectStaff?.data ?? [])
+          .filter(st => !memberIds.includes(st.id))
+          .map(st => ({ id: st.id, label: st.name, sublabel: st.role || st.email }))}
+        title="Add members" subtitle="Tick everyone working on this project."
+        emptyText="Everyone is already a member." accent={PROJECT_ACCENT}
+      />
+
+      {/* Assigning a task from the table, without opening it. */}
+      <SearchPicker
+        multi confirmLabel="Assign"
+        open={!!assignTask} onClose={() => setAssignTask(null)}
+        onConfirm={picked => {
+          const already = (assignTask?.assignees || []).map(a => a.user_id ?? a.user?.id).filter(Boolean)
+          assignFromTable.mutate({
+            taskId: assignTask.id,
+            userIds: [...new Set([...already, ...picked.map(p => p.id)])],
+          })
+        }}
+        items={(Array.isArray(projectStaff) ? projectStaff : projectStaff?.data ?? [])
+          .filter(st => !(assignTask?.assignees || []).some(a => (a.user_id ?? a.user?.id) === st.id))
+          .map(st => ({ id: st.id, label: st.name, sublabel: st.role || st.email }))}
+        title={assignTask ? `Assign "${assignTask.name}"` : 'Assign'}
+        subtitle="They are added to whoever is already on it."
+        emptyText="Everyone is already assigned." accent={PROJECT_ACCENT}
+      />
+
+      <PartyPicker
+        multi accent={PROJECT_ACCENT}
+        open={picking === 'party'} onClose={() => setPicking(null)}
+        chosen={projectParties}
+        onPick={picked => syncParties.mutate([
+          ...projectParties.map(x => ({ party_type: x.party_type, party_id: x.party_id })),
+          ...picked.map(pp => ({ party_type: pp.party_type, party_id: pp.party_id })),
+        ])}
+      />
 
       <ProjectInvoiceModal open={invoicing} onClose={() => setInvoicing(false)} projectId={id} canManage={canManage} />
 
@@ -340,7 +432,16 @@ export default function ProjectDetail() {
 
 /* ── Overview ─────────────────────────────────────────────────── */
 
-function Overview({ project, prog, onRecalc, busy }) {
+/*
+ * The Members card reads and writes the project's people, so everything it
+ * needs is passed in rather than reached for. It renders inside Overview but
+ * the state lives in ProjectDetail — the mutations have to invalidate the same
+ * queries the rest of the page reads, and a second copy here would drift.
+ */
+function Overview({
+  project, prog, onRecalc, busy,
+  canManage = false, memberIds = [], syncMembers, projectParties = [], syncParties, setPicking,
+}) {
   const pct = prog?.progress ?? project.progress ?? 0
   return (
     <div className="space-y-4">
@@ -382,14 +483,67 @@ function Overview({ project, prog, onRecalc, busy }) {
           <h2 className="font-bold text-xs mb-3 flex items-center gap-1.5" style={{ color: 'var(--text-h)' }}>
             <Users size={14} style={{ color: PROJECT_ACCENT }} /> Members
           </h2>
-          <div className="flex flex-wrap gap-1.5">
+
+          {/* ── Staff ───────────────────────────────────────────── */}
+          <p className="text-[10px] font-bold uppercase tracking-wide mb-1.5" style={{ color: 'var(--text-muted)' }}>Our staff</p>
+          <div className="flex flex-wrap items-center gap-1.5">
             {(project.members || []).map(m => (
-              <span key={m.id} className="text-[11px] font-semibold px-2 py-1 rounded-lg"
+              <span key={m.id} className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg"
                 style={{ background: `color-mix(in srgb, ${PROJECT_ACCENT} 12%, transparent)`, color: PROJECT_ACCENT }}>
                 {m.user?.name}
+                {canManage && (
+                  <button type="button" aria-label={`Remove ${m.user?.name}`} className="hover:opacity-60"
+                    onClick={() => syncMembers.mutate(memberIds.filter(x => x !== (m.user_id ?? m.user?.id)))}>
+                    <X size={11} />
+                  </button>
+                )}
               </span>
             ))}
-            {(project.members || []).length === 0 && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>No members yet — add them via Edit Project.</span>}
+            {canManage ? (
+              <button type="button" onClick={() => setPicking('staff')}
+                className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg"
+                style={{ border: '1px dashed var(--border)', color: 'var(--text-muted)' }}>
+                <UserPlus size={11} /> Add staff
+              </button>
+            ) : (project.members || []).length === 0 && (
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>No members yet.</span>
+            )}
+          </div>
+
+          {/* ── Vendors, TPVs and clients ───────────────────────── */}
+          {/* Same engine as the Vendors/TPV tab and the task side — one table,
+              one set of rules about who may be assigned. Shown here as well
+              because "who is on this project" is a dashboard question, and the
+              answer was split across two screens. */}
+          <p className="text-[10px] font-bold uppercase tracking-wide mt-4 mb-1.5" style={{ color: 'var(--text-muted)' }}>
+            Vendors, third-party vendors &amp; clients
+          </p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {projectParties.map(pp => (
+              <span key={`${pp.party_type}:${pp.party_id}`} title={`${pp.name} — ${pp.org_label}`}
+                className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg"
+                style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-body)' }}>
+                {pp.name}
+                <span style={{ opacity: 0.6 }}>· {pp.org_label}</span>
+                {canManage && (
+                  <button type="button" aria-label={`Remove ${pp.name}`} className="hover:opacity-60"
+                    onClick={() => syncParties.mutate(projectParties
+                      .filter(x => !(x.party_type === pp.party_type && x.party_id === pp.party_id))
+                      .map(x => ({ party_type: x.party_type, party_id: x.party_id })))}>
+                    <X size={11} />
+                  </button>
+                )}
+              </span>
+            ))}
+            {canManage ? (
+              <button type="button" onClick={() => setPicking('party')}
+                className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg"
+                style={{ border: '1px dashed var(--border)', color: 'var(--text-muted)' }}>
+                <UserPlus size={11} /> Add vendor / TPV
+              </button>
+            ) : projectParties.length === 0 && (
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Nobody external on this project.</span>
+            )}
           </div>
         </section>
       </div>
@@ -423,7 +577,9 @@ const taskInitials = (n) => n ? n.split(' ').map(w => w[0]).join('').toUpperCase
  * table with inline status change and a per-row Start Timer. Clicking a task
  * opens the full task workspace (checklist, attachments, comments, reminders…).
  */
-function TasksTab({ projectId, navigate, onNewTask }) {
+// onAssign opens the row picker, whose modal lives in ProjectDetail — the task
+// list and the project header both have to refetch once it saves.
+function TasksTab({ projectId, navigate, onNewTask, setAssignTask = () => {} }) {
   const qc = useQueryClient()
   const { user } = useAuth()
   const { list: taskStatusList, map: taskStatusMap } = useStatuses('task')
@@ -565,18 +721,38 @@ function TasksTab({ projectId, navigate, onNewTask }) {
                   </td>
                   <td style={{ padding: '9px 12px', fontSize: 12, color: 'var(--text-body)', whiteSpace: 'nowrap' }}>{fmtDate(t.start_date)}</td>
                   <td style={{ padding: '9px 12px', fontSize: 12, color: 'var(--text-body)', whiteSpace: 'nowrap' }}>{t.due_date ? fmtDate(t.due_date) : '—'}</td>
+                  {/* Assign from the row.
+
+                      The cell showed who was on a task and gave no way to change
+                      it — every reassignment meant opening the task, and the
+                      table is where you can see that three of them are on nobody.
+                      The picker is multi-select and adds to whoever is already
+                      there; the whole cell is the button, so there is no
+                      hit-target to hunt for. */}
                   <td style={{ padding: '9px 12px' }}>
-                    {assignees.length === 0 ? <span className="text-xs" style={{ color: 'var(--text-muted)' }}>—</span> : (
-                      <div className="flex items-center gap-1">
-                        {assignees.slice(0, 3).map(a => (
-                          <span key={a.user_id || a.user?.id} title={a.user?.name} className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold"
-                            style={{ background: `linear-gradient(135deg,var(--color-primary-400),var(--color-primary-600))`, color: '#fff', border: '1px solid var(--border)' }}>
-                            {taskInitials(a.user?.name)}
-                          </span>
-                        ))}
-                        {assignees.length > 3 && <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>+{assignees.length - 3}</span>}
-                      </div>
-                    )}
+                    <button type="button" onClick={(e) => { e.stopPropagation(); setAssignTask(t) }}
+                      title={assignees.length
+                        ? `${assignees.map(a => a.user?.name).filter(Boolean).join(', ')} — click to change`
+                        : 'Assign this task'}
+                      className="flex items-center gap-1 rounded-lg px-1 py-0.5 hover:opacity-75"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                      {assignees.length === 0 ? (
+                        <span className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-1 rounded-lg"
+                          style={{ border: '1px dashed var(--border)', color: 'var(--text-muted)' }}>
+                          <UserPlus size={11} /> Assign
+                        </span>
+                      ) : (
+                        <>
+                          {assignees.slice(0, 3).map(a => (
+                            <span key={a.user_id || a.user?.id} title={a.user?.name} className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold"
+                              style={{ background: `linear-gradient(135deg,var(--color-primary-400),var(--color-primary-600))`, color: '#fff', border: '1px solid var(--border)' }}>
+                              {taskInitials(a.user?.name)}
+                            </span>
+                          ))}
+                          {assignees.length > 3 && <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>+{assignees.length - 3}</span>}
+                        </>
+                      )}
+                    </button>
                   </td>
                   <td style={{ padding: '9px 12px' }}>
                     <div className="flex flex-wrap gap-1">
@@ -648,6 +824,21 @@ function MilestonesTab({ project, onChange, onErr, canManage = true }) {
   })
   const del = useMutation({ mutationFn: (mid) => projectApi.deleteMilestone(mid), onSuccess: onChange, onError: onErr })
 
+  /*
+   * Import a plan instead of retyping it.
+   *
+   * The result is kept on screen rather than toasted away: a sheet of twenty
+   * imports nineteen and says what happened to the other, and that sentence is
+   * the whole point of the feature.
+   */
+  const fileRef = useRef(null)
+  const [imported, setImported] = useState(null)
+  const importSheet = useMutation({
+    mutationFn: (file) => projectApi.importMilestones(project.id, file),
+    onSuccess: (res) => { setImported(res); onChange() },
+    onError: (e) => { setImported(null); onErr(e) },
+  })
+
   const milestones = project.milestones || []
 
   return (
@@ -657,12 +848,51 @@ function MilestonesTab({ project, onChange, onErr, canManage = true }) {
           <Flag size={14} style={{ color: PROJECT_ACCENT }} /> Milestones
         </h2>
         {canManage && (
-          <button onClick={() => setFormFor('new')} className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-lg"
-            style={{ background: PROJECT_ACCENT, color: '#fff' }}>
-            <Plus size={12} /> New milestone
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Column order is named on the button's title and in the note
+                below, because a sheet uploaded in the wrong order imports
+                twenty wrong milestones and reports success. */}
+            <input ref={fileRef} type="file" accept=".csv,.xls,.xlsx,text/csv" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) importSheet.mutate(f); e.target.value = '' }} />
+            <button onClick={() => fileRef.current?.click()} disabled={importSheet.isPending}
+              title="Columns: name, start date, due date, description, colour"
+              className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-lg disabled:opacity-50"
+              style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-body)' }}>
+              <Upload size={12} /> {importSheet.isPending ? 'Importing…' : 'Import sheet'}
+            </button>
+            <button onClick={() => setFormFor('new')} className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-lg"
+              style={{ background: PROJECT_ACCENT, color: '#fff' }}>
+              <Plus size={12} /> New milestone
+            </button>
+          </div>
         )}
       </div>
+
+      {canManage && (
+        <p className="text-[10px] mb-3" style={{ color: 'var(--text-muted)' }}>
+          Import a .csv, .xls or .xlsx with one milestone per row:
+          <span style={{ color: 'var(--text-body)' }}> name, start date, due date, description, colour</span>.
+          Only the name is required; the first row is treated as a header.
+        </p>
+      )}
+
+      {imported && (
+        <div className="mb-3 rounded-xl px-3 py-2 text-[11px]"
+          style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-body)' }}>
+          <div className="flex items-center justify-between gap-2">
+            <span>
+              <strong>{imported.created}</strong> milestone{imported.created === 1 ? '' : 's'} imported
+              {imported.skipped > 0 && <> · <strong>{imported.skipped}</strong> skipped</>}
+            </span>
+            <button onClick={() => setImported(null)} className="hover:opacity-60" aria-label="Dismiss"><X size={12} /></button>
+          </div>
+          {imported.errors?.length > 0 && (
+            <ul className="mt-1.5 space-y-0.5" style={{ color: 'var(--color-danger-500)' }}>
+              {imported.errors.map((msg, i) => <li key={i}>• {msg}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
       <ul className="space-y-1.5">
         {milestones.map(m => {
           const health = milestoneHealth(m)
