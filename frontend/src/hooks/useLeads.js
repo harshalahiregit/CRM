@@ -30,7 +30,12 @@ export function useLeadSummary() {
   })
 }
 
-function useInvalidateLeads() {
+/**
+ * Exported so a component that writes through leadApi directly — rather than
+ * through one of the mutations below — can still refresh the cache. Duplicating
+ * the ['leads'] key at the call site is how one of them ends up stale.
+ */
+export function useInvalidateLeads() {
   const queryClient = useQueryClient()
   return () => queryClient.invalidateQueries({ queryKey: ['leads'] })
 }
