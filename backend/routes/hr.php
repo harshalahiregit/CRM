@@ -212,6 +212,12 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::patch('/offers/{offer}/revise',          [OfferController::class, 'revise']);
     Route::patch('/offers/{offer}/extend',          [OfferController::class, 'extend']);
     Route::get('/offers/{offer}/revisions',         [OfferController::class, 'revisions']);
+    // Authenticated, tenant-scoped offer letter for HR — replaces staff reading
+    // the candidate's public /api/offer/{token}/letter route.
+    Route::get('/offers/{offer}/letter',            [OfferController::class, 'letter']);
+    // Controlled reissue / revocation of the candidate's portal credential.
+    Route::post('/offers/{offer}/portal-link',      [OfferController::class, 'issuePortalLink']);
+    Route::delete('/offers/{offer}/portal-link',    [OfferController::class, 'revokePortalLink']);
     Route::delete('/offers/{offer}',                [OfferController::class, 'destroy']);
 
     // Onboarding

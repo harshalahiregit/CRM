@@ -262,8 +262,20 @@ export const hrApi = {
     extend:        (id, validity) => api.patch(`/hr/offers/${id}/extend`, { validity_date: validity }).then(r => r.data),
     revisions:     (id)          => api.get(`/hr/offers/${id}/revisions`).then(r => r.data),
     delete:        (id)          => api.delete(`/hr/offers/${id}`).then(r => r.data),
-    // Public candidate offer-portal link built from the stored token.
-    portalUrl:     (token)       => `${window.location.origin}/offer/${token}`,
+
+    // The offer letter, for staff. Authenticated and tenant-scoped, so it goes
+    // through the axios instance as a blob rather than being an <a href>.
+    // HR screens used to read this PDF through the CANDIDATE's public portal
+    // URL, which is why the candidate's bearer token had to be published in
+    // ordinary API payloads. It is not published any more, and this is what
+    // replaced it.
+    letterBlob:    (id)          => api.get(`/hr/offers/${id}/letter`, { responseType: 'blob' }).then(r => r.data),
+
+    // Mint a candidate portal link. The raw token comes back exactly once, in
+    // this response, and any previously issued link stops working. There is
+    // deliberately no "read the current link" call — only a hash is stored.
+    issuePortalLink: (id)        => api.post(`/hr/offers/${id}/portal-link`).then(r => r.data),
+    revokePortalLink:(id, reason) => api.delete(`/hr/offers/${id}/portal-link`, { data: { reason } }).then(r => r.data),
   },
 
   // ── Onboarding ──────────────────────────────────────────────────────

@@ -6,13 +6,16 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Hr\StoreOfferRequest;
 use App\Http\Requests\Hr\UpdateOfferStatusRequest;
 use App\Models\Hr\HrOffer;
+use App\Services\Hr\OfferPortalToken;
 use App\Services\Hr\OfferService;
 use Illuminate\Http\Request;
 
 class OfferController extends Controller
 {
-    public function __construct(private OfferService $offerService)
-    {
+    public function __construct(
+        private OfferService $offerService,
+        private OfferPortalToken $portalToken,
+    ) {
     }
 
     public function index(Request $request)
@@ -161,6 +164,83 @@ class OfferController extends Controller
         $this->offerService->destroy($offer, $request->user());
 
         return response()->json(['message' => 'Deleted']);
+    }
+
+    /**
+     * GET /api/hr/offers/{offer}/letter — the offer letter, for HR.
+     *
+     * NEW, AND IT HAD TO BE. Until now there was no authenticated way for staff
+     * to read an offer letter: the Employee and Candidate screens took the
+     * candidate's public portal token out of the API payload and pointed the
+     * browser at /api/offer/{token}/letter. That is what forced a bearer
+     * credential into internal responses, so removing the credential without
+     * providing this would simply have broken both screens.
+     *
+     * Reads only — it does not expire, mark viewed, or touch the offer in any
+     * way, because HR opening a PDF is not the candidate opening their portal.
+     * The candidate's own public route is untouched and still separate.
+     *
+     * Authorised with the existing HR model: same tenant guard as every other
+     * method here, and the same canManageHrQueue() capability the rest of the
+     * offer surface uses. No new permission vocabulary.
+     */
+    public function letter(Request $request, HrOffer $offer)
+    {
+        $this->assertTenant($request, $offer);
+        $this->assertCanManage($request);
+
+        $file = $this->offerService->offerLetterFile($offer);
+
+        abort_if(! $file, 404, 'Offer letter file is not available for download.');
+
+        return response()->download($file['path'], $file['filename']);
+    }
+
+    /**
+     * POST /api/hr/offers/{offer}/portal-link — mint a link, shown once.
+     *
+     * The controlled reissue action that replaces "copy the token out of the
+     * list response". HR asks for a link, gets it in this response and nowhere
+     * else, and any link issued earlier stops working immediately.
+     *
+     * Deliberately NOT a read. There is no endpoint that returns the current
+     * link, because there is no current link to return — only a hash. Wanting
+     * to see it again means issuing a new one, and that is a decision with a
+     * consequence rather than a lookup.
+     */
+    public function issuePortalLink(Request $request, HrOffer $offer)
+    {
+        $this->assertTenant($request, $offer);
+        $this->assertCanManage($request);
+
+        $raw = $this->portalToken->issue($offer, $request->user());
+
+        return response()->json(['data' => [
+            'link'   => $this->offerService->portalLink($raw),
+            'notice' => 'This link is shown once and cannot be retrieved again. '
+                .'Any link issued earlier has stopped working.',
+        ]], 201);
+    }
+
+    /**
+     * DELETE /api/hr/offers/{offer}/portal-link — stop the current link working.
+     *
+     * A CREDENTIAL ACTION ONLY. It does not withdraw, decline or expire the
+     * offer: status, validity date and state machine are untouched, and HR can
+     * issue a fresh link a moment later. This is what to reach for when a link
+     * has been forwarded to the wrong person — not Withdraw, which is a
+     * commercial decision the candidate is told about.
+     */
+    public function revokePortalLink(Request $request, HrOffer $offer)
+    {
+        $this->assertTenant($request, $offer);
+        $this->assertCanManage($request);
+
+        $data = $request->validate(['reason' => 'nullable|string|max:255']);
+
+        $this->portalToken->revoke($offer, $request->user(), $data['reason'] ?? null);
+
+        return response()->json(['message' => 'Offer portal link revoked']);
     }
 
     /** Only HR-queue managers may act on offers. */

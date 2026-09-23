@@ -7,6 +7,7 @@ import { useMasterData } from '@/modules/hr/useMasterData'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import GenerateOfferDrawer from '@/modules/hr/components/GenerateOfferDrawer'
 import WorkflowProgress from '@/components/ui/WorkflowProgress'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 
 const STATUS_COLORS = {
   Draft: '#94a3b8', 'Pending Approval': '#f59e0b', Approved: '#06b6d4',
@@ -40,6 +41,8 @@ export default function OfferLetters() {
   const [buckets, setBuckets]     = useState(null)
   const [history, setHistory]     = useState({ open:false, offer:null, revisions:[] })
   const [reviseOffer, setReviseOffer] = useState(null)  // offer being revised (reuses the offer drawer)
+  // Pending "issue a new portal link" confirmation: { offer, then }.
+  const [linkConfirm, setLinkConfirm] = useState(null)
   const openRevise = (offer) => { setReviseOffer(offer); setGenFor(null); setShowModal(true) }
 
   const showToast = (msg, type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3000) }
@@ -63,8 +66,34 @@ export default function OfferLetters() {
   useEffect(()=>{ fetchData() },[mgrF])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const patchOffer = (id, updated) => setOffers(prev => prev.map(o => o.id === id ? updated : o))
-  const openPortal = (token) => window.open(hrApi.offers.portalUrl(token), '_blank', 'noopener,noreferrer')
-  const copyLink = async (token) => { try { await navigator.clipboard.writeText(hrApi.offers.portalUrl(token)) } catch { /* */ } showToast('Offer portal link copied!') }
+  /**
+   * Issue a fresh candidate portal link.
+   *
+   * These two buttons used to read `offer.access_token` straight out of the
+   * list response and build the URL in the browser. Only a hash of that token
+   * is stored now, so there is no existing link to copy — asking for one MINTS
+   * one, and the link that was mailed before stops working. That is a decision
+   * rather than a lookup, hence the confirmation.
+   *
+   * The raw link comes back exactly once, in this response. Nothing keeps it.
+   */
+  const runIssueLink = async ({ offer, then }) => {
+    setLinkConfirm(null)
+    try {
+      const res = await hrApi.offers.issuePortalLink(offer.id)
+      then(res?.data?.link)
+      fetchData()
+    } catch (e) { showToast(e.response?.data?.message || 'Could not issue a portal link', 'error') }
+  }
+  // An offer that has never had a link needs no warning; replacing a live one does.
+  const issueLink = (offer, then) =>
+    offer.token_issued_at ? setLinkConfirm({ offer, then }) : runIssueLink({ offer, then })
+
+  const openPortal = (offer) => issueLink(offer, (link) => window.open(link, '_blank', 'noopener,noreferrer'))
+  const copyLink = (offer) => issueLink(offer, async (link) => {
+    try { await navigator.clipboard.writeText(link) } catch { /* clipboard blocked — the toast still confirms it */ }
+    showToast('New offer portal link copied. The previous link no longer works.')
+  })
   const handleConfirmJoining = async (id) => {
     // Offer becomes Completed → it leaves the active list, so refetch both lists.
     try { await hrApi.offers.confirmJoining(id); showToast('Joining confirmed — employee created!'); fetchData() }
@@ -170,6 +199,19 @@ export default function OfferLetters() {
   return (
     <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]">
       {toast && <div className="fixed top-5 right-5 z-[9999] px-5 py-3 rounded-2xl text-sm font-semibold text-white shadow-2xl" style={{ background:toast.type==='success'?'linear-gradient(135deg,#10b981,#059669)':'linear-gradient(135deg,#f87171,#ef4444)' }}>{toast.msg}</div>}
+
+      {/* Issuing a link is not a lookup — it replaces the one the candidate
+          already has, so it is confirmed before anything is minted. */}
+      {linkConfirm && (
+        <ConfirmDialog
+          title="Issue a new portal link?"
+          message={`The link already sent to ${linkConfirm.offer.candidate?.name || 'this candidate'} will stop working immediately, and the new one is shown only once. Send it on to them after issuing.`}
+          confirmLabel="Issue new link"
+          cancelLabel="Keep the current link"
+          onConfirm={() => runIssueLink(linkConfirm)}
+          onCancel={() => setLinkConfirm(null)}
+        />
+      )}
 
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div><p className="label-caps mb-1">HR Module</p><h1 className="font-black" style={{ fontSize:'clamp(1.3rem,2vw,1.7rem)', color:'var(--text-h)', letterSpacing:'-0.02em' }}>Offer <span className="text-gradient">Letters</span></h1></div>
@@ -294,11 +336,14 @@ export default function OfferLetters() {
                   )}
                   {['Generated','Approved'].includes(offer.status) && <button onClick={()=>handleSend(offer.id)} className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}><Send size={11}/> Send Offer</button>}
 
-                  {/* Sent / Viewed / Accepted → the candidate acts on the secure portal */}
-                  {offer.access_token && ['Sent','Viewed','Accepted'].includes(offer.status) && (
+                  {/* Sent / Viewed / Accepted → the candidate acts on the secure portal.
+                      Gated on status alone: there is no token in this response to
+                      check for, and both buttons issue a new link rather than
+                      reading an existing one. */}
+                  {['Sent','Viewed','Accepted'].includes(offer.status) && (
                     <div className="flex gap-1.5">
-                      <button onClick={()=>openPortal(offer.access_token)} className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-[11px] font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}><ExternalLink size={11}/> Offer Portal</button>
-                      <button onClick={()=>copyLink(offer.access_token)} title="Copy link" className="px-2.5 py-2 rounded-xl text-[11px] font-semibold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}><Copy size={12}/></button>
+                      <button onClick={()=>openPortal(offer)} title="Issue a new portal link and open it — the previously sent link stops working" className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-[11px] font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}><ExternalLink size={11}/> New Portal Link</button>
+                      <button onClick={()=>copyLink(offer)} title="Issue a new portal link and copy it — the previously sent link stops working" className="px-2.5 py-2 rounded-xl text-[11px] font-semibold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}><Copy size={12}/></button>
                     </div>
                   )}
 

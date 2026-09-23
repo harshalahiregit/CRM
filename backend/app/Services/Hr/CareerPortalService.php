@@ -28,6 +28,7 @@ class CareerPortalService
         private InterviewService $interviewService,
         private OfferService $offerService,
         private CandidateService $candidateService,
+        private OfferPortalToken $portalToken,
     ) {
     }
 
@@ -223,13 +224,28 @@ class CareerPortalService
     }
 
     /**
-     * Require the offer's out-of-band secure token (48-char access_token from the offer
-     * email) for any portal offer action — email alone must never be sufficient.
-     * Matched in constant time to avoid timing oracles.
+     * Require the offer's out-of-band secure token for any portal offer action —
+     * email alone must never be sufficient.
+     *
+     * THE SECOND FACTOR IS UNCHANGED, and so is the 403 and its wording. What
+     * changed is only how the token becomes an offer: this used to run its own
+     * hash_equals() against the plaintext column, a second implementation of
+     * token checking living beside OfferService::byToken(). Both are now the
+     * one resolver, so there is exactly one place that understands how a raw
+     * token maps to a row.
+     *
+     * The check is still identity, not merely validity: the token has to
+     * resolve to THIS offer — the one reached from this email and this job —
+     * so a candidate holding their own valid link cannot use it against
+     * somebody else's application. Constant-time comparison is no longer
+     * needed here because the lookup is a hash match on an indexed column;
+     * there is nothing left to compare byte by byte.
      */
     private function assertOfferToken($offer, ?string $token): void
     {
-        if (! $token || ! $offer->access_token || ! hash_equals((string) $offer->access_token, (string) $token)) {
+        $resolved = $token ? $this->portalToken->resolve($token) : null;
+
+        if (! $resolved || (int) $resolved->id !== (int) $offer->id) {
             throw new BusinessException('A valid secure offer link is required. Please use the link that was sent to your email.', 403);
         }
     }

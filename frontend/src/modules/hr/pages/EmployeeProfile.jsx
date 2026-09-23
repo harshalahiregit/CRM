@@ -16,7 +16,6 @@ import EmployeeScoreCard from '../components/EmployeeScoreCard'
 import EmployeeSkillsPanel from '../components/EmployeeSkillsPanel'      // #43
 import EmployeeAttendancePanel from '../components/EmployeeAttendancePanel' // #38
 import { useMasterData, withInactive, withInactiveById } from '@/modules/hr/useMasterData'
-import { offerPortalApi } from '@/services/offerPortalApi'
 import AuditTimeline from '@/components/ui/AuditTimeline'
 import EmployeeNotifications from '@/modules/notifications/EmployeeNotifications'
 import EmployeeSalarySection from '@/modules/hr/components/EmployeeSalarySection'
@@ -205,7 +204,19 @@ export default function EmployeeProfile() {
     try { const blob = await hrApi.onboarding.documentBlob(data.onboarding_id, docId); const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name||'document'; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1500) }
     catch { showToast('Failed to download','error') }
   }
-  const offerLetterUrl = data.offer?.access_token ? offerPortalApi.letterUrl(data.offer.access_token) : null
+  // The offer letter now comes down the authenticated HR route as a blob. It
+  // used to be an <a href> pointing at the CANDIDATE's public portal URL, built
+  // from their bearer token — which is why that token had to be shipped in this
+  // screen's API payload at all. It no longer is.
+  const hasOfferLetter = !!data.offer?.id
+  const viewOfferLetter = async () => {
+    try {
+      const blob = await hrApi.offers.letterBlob(data.offer.id)
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener')
+      setTimeout(() => URL.revokeObjectURL(url), 30000)
+    } catch { showToast('Failed to open the offer letter', 'error') }
+  }
 
   const deactivate = async () => {
     if (e.status==='Inactive') return
@@ -471,8 +482,8 @@ export default function EmployeeProfile() {
                         <button onClick={()=>viewDoc(doc.id)} className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded" style={{ background:'rgba(59,130,246,0.1)', color:'#60a5fa' }}><Eye size={11}/> View</button>
                         <button onClick={()=>downloadDoc(doc.id, doc.original_name)} className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded" style={{ background:'var(--bg-card)', color:'var(--text-muted)', border:'1px solid var(--border)' }}><Download size={11}/> Download</button>
                       </>
-                    ) : isOffer && offerLetterUrl ? (
-                      <a href={offerLetterUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded" style={{ background:'rgba(59,130,246,0.1)', color:'#60a5fa' }}><Eye size={11}/> View</a>
+                    ) : isOffer && hasOfferLetter ? (
+                      <button onClick={viewOfferLetter} className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded" style={{ background:'rgba(59,130,246,0.1)', color:'#60a5fa' }}><Eye size={11}/> View</button>
                     ) : (
                       <span className="text-[10px] font-semibold" style={{ color:'var(--text-muted)' }}>Not available</span>
                     )}

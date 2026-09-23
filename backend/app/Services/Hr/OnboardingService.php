@@ -184,14 +184,22 @@ class OnboardingService
             'progress'            => $this->progressSteps($candidate, $onboarding),
             'verification_status' => $onboarding->verification_status,
             // Existing offer surfaced read-only so the candidate never has to leave the
-            // portal. Every value already lives on hr_offers — nothing new is stored and
-            // no new endpoint is introduced; the Offer tab reuses /offer/{token}.
+            // portal. Every value already lives on hr_offers — nothing new is stored.
+            //
+            // NO OFFER TOKEN IS HANDED OVER HERE ANY MORE. This used to return
+            // the offer's raw access_token and a ready-made public letter URL
+            // built from it, so the candidate's onboarding session leaked a
+            // second, separate bearer credential into the browser — and the
+            // onboarding portal is exactly where a leaked credential does the
+            // most damage, since it is reached by a link too.
+            //
+            // The Offer tab now runs on the onboarding token the candidate is
+            // already holding, through /api/onboarding/{token}/offer/*. Same
+            // person, same credential, one fewer secret in flight.
             'offer' => $offer ? [
                 'exists'               => true,
                 'id'                   => $offer->id,
-                'token'                => $offer->access_token,
                 'status'               => $offer->status,
-                'letter_url'           => $offer->access_token ? url('/api/offer/'.$offer->access_token.'/letter') : null,
                 'generated_at'         => optional($offer->generated_at)->toIso8601String(),
                 'sent_at'              => optional($offer->sent_at)->toIso8601String(),
                 'viewed_at'            => optional($offer->viewed_at)->toIso8601String(),

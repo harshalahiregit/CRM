@@ -313,7 +313,12 @@ class EmployeeService
                 'joining_date'     => optional($offer->joining_date)->toDateString(),
                 'probation_period' => $offer->probation_period,
                 'notice_period'    => $offer->notice_period,
-                'access_token'     => $offer->access_token,
+                // The offer id, so HR can fetch the letter through the
+                // authenticated, tenant-scoped endpoint. The candidate's portal
+                // token used to be handed over here instead, purely so the
+                // screen could build a public URL — an HR convenience that put
+                // a candidate's bearer credential into an internal API payload.
+                'id'               => $offer->id,
                 'accepted_at'      => optional($offer->accepted_at)->toIso8601String(),
             ] : null,
             'submission' => [
