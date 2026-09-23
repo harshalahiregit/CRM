@@ -282,6 +282,26 @@ class HrSetting
             'Leave',
         ],
 
+        /* ── offers ──────────────────────────────────────────────────── */
+        //
+        // How long an offer stays open when nobody names a date.
+        //
+        // Seven days was hardcoded in three places — the auto-generated offer
+        // raised from onboarding, regenerating an offer, and extending one —
+        // so a company that gives candidates a fortnight had to retype the
+        // date every time or accept a week.
+        //
+        // IT IS A DEFAULT, NOT A RULE. An explicit validity_date always wins,
+        // and an offer deliberately created with none still has none: a blank
+        // validity means an offer with no deadline, which is a supported state
+        // and not something this setting quietly fills in. Only the three
+        // places that already invented a date consult it.
+        'offer_validity_days' => [
+            'Offer validity', self::TYPE_INT, 7,
+            'Days an offer stays open when no validity date is given. Used when an offer is generated automatically, regenerated or extended; typing a date always overrides it, and an offer created with no date deliberately keeps none.',
+            'Offers',
+        ],
+
         /* ── candidate portal ────────────────────────────────────────── */
         //
         // How long a candidate's onboarding link stays usable.

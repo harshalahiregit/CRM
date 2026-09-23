@@ -91,7 +91,8 @@ class OnboardingController extends Controller
                 'department'       => $onboarding->department ?? optional($job)->department,
                 'offered_ctc'      => $ctc,
                 'joining_date'     => now()->addDays(30)->toDateString(),
-                'validity_date'    => now()->addDays(7)->toDateString(),
+                // The tenant's configured offer validity, not a fixed week.
+                'validity_date'    => now()->addDays($this->offerValidityDays($tenantId))->toDateString(),
                 'probation_period' => '3 months',
                 'notice_period'    => '1 month',
             ], $tenantId);
@@ -212,6 +213,20 @@ class OnboardingController extends Controller
         $this->portalToken->revoke($onboarding, $request->user(), $data['reason'] ?? null);
 
         return response()->json(['message' => 'Portal link revoked']);
+    }
+
+    /**
+     * Days an auto-generated offer stays open — the tenant's setting.
+     *
+     * Mirrors OfferService::validityDays(), including the guard: an unusable
+     * value falls back to the seven days that were hardcoded here before.
+     */
+    private function offerValidityDays(int $tenantId): int
+    {
+        $days = app(\App\Services\Settings\SettingsService::class)
+            ->get($tenantId, \App\Support\Hr\HrSetting::GROUP, 'offer_validity_days');
+
+        return (is_numeric($days) && (int) $days >= 1) ? (int) $days : 7;
     }
 
     private function assertTenant(Request $request, HrOnboarding $onboarding): void

@@ -26,6 +26,9 @@ class OfferService
 {
     public const DOC_DISK = 'hr_documents';
 
+    /** The fallback when offer_validity_days is unset or unusable. */
+    private const DEFAULT_VALIDITY_DAYS = 7;
+
     public function __construct(
         private CandidateService $candidateService,
         private OnboardingService $onboardingService,
@@ -370,7 +373,7 @@ class OfferService
 
         $offer->update([
             'status'        => 'Generated',
-            'validity_date' => $validityDate ?: optional($offer->validity_date)->addDays(7) ?? now()->addDays(7),
+            'validity_date' => $validityDate ?: optional($offer->validity_date)->addDays($this->validityDays((int) $offer->tenant_id)) ?? now()->addDays($this->validityDays((int) $offer->tenant_id)),
             'generated_at'  => now(),
             'sent_at'       => null, 'viewed_at' => null, 'accepted_at' => null,
             'declined_at'   => null, 'expired_at' => null,
@@ -537,7 +540,7 @@ class OfferService
             throw new BusinessException('Only a sent or expired offer can be extended.', 422);
         }
 
-        $newValidity = $validityDate ?: now()->addDays(7)->toDateString();
+        $newValidity = $validityDate ?: now()->addDays($this->validityDays((int) $offer->tenant_id))->toDateString();
         $wasExpired  = $offer->status === 'Expired';
         $offer->update([
             'validity_date' => $newValidity,
@@ -836,6 +839,31 @@ class OfferService
      *
      * Public because the reissue endpoint needs it to show HR the link once.
      */
+    /**
+     * How many days an offer stays open when nobody names a date.
+     *
+     * Seven was written into three separate expressions — the offer raised
+     * automatically from onboarding, regenerating one, and extending one — so a
+     * company that gives candidates a fortnight had to retype the date every
+     * time or accept a week.
+     *
+     * A DEFAULT, NOT A RULE. An explicit validity_date always wins, and an
+     * offer deliberately created without one still has none: a blank validity
+     * is a supported state and this does not quietly fill it in. Only the three
+     * places that already invented a date consult it.
+     *
+     * Guarded rather than trusted: a zero or negative setting would mint an
+     * offer that expired before it was sent, so an unusable value falls back to
+     * the seven days that were there before.
+     */
+    private function validityDays(int $tenantId): int
+    {
+        $days = app(\App\Services\Settings\SettingsService::class)
+            ->get($tenantId, \App\Support\Hr\HrSetting::GROUP, 'offer_validity_days');
+
+        return (is_numeric($days) && (int) $days >= 1) ? (int) $days : self::DEFAULT_VALIDITY_DAYS;
+    }
+
     public function portalLink(string $rawToken): string
     {
         return rtrim(config('hr_publishing.offer_portal_url'), '/').'/'.$rawToken;
