@@ -53,7 +53,13 @@ export default function DashboardPage() {
   }, []);
 
   const changeScope = useCallback((next) => {
-    setScope(next ?? 'all');
+    // Clicking a lit tile again clears it, and clearing it used to mean `all`:
+    // no status filter at all, so closed, rejected, duplicate and won't-fix
+    // issues came back. Nothing said so -- no tile is lit either way -- and the
+    // export takes this same scope, which is how a brief ended up carrying
+    // issues that had already been closed. Clearing a tile returns to the
+    // default view. `all` is still reachable, but only by asking for it.
+    setScope(next ?? 'open');
     setPageNo(1);
   }, []);
 
