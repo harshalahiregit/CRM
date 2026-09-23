@@ -34,7 +34,7 @@ class IngestTelemetryRequest extends FormRequest
             'speed'     => 'nullable|numeric|between:0,400',
             'ignition'  => 'nullable|boolean',
 
-            'generator_status' => ['nullable', Rule::in(VehicleLiveStatus::GENERATOR_STATES)],
+            'generator_status' => ['nullable', Rule::in(array_keys(VehicleLiveStatus::GENERATOR_INPUT))],
 
             // A reefer body runs to -40; an engine bay reads high. Anything
             // outside this is a faulty probe, not a reading.

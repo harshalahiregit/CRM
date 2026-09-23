@@ -1,5 +1,5 @@
 import { Gauge, Power, Navigation, Clock, Satellite, AlertTriangle, Key } from 'lucide-react'
-import { STOS_ACCENT, SIGNALS, toneOf, fmtAgo, fmtWhen } from '@/services/stosApi'
+import { STOS_ACCENT, SIGNALS, toneOf, fmtAgo, fmtWhen, GENSET_NOT_COOLING, GENSET_STATE_LABELS } from '@/services/stosApi'
 
 /**
  * Live telemetry: the reefer dial, the genset, the speedometer and the signal.
@@ -28,7 +28,9 @@ export default function LiveTelemetryGauge({ live, signal = 'active', size = 'md
   const target = live.target_temperature === null || live.target_temperature === undefined
     ? null : Number(live.target_temperature)
   const actual = live.temperature === null || live.temperature === undefined ? null : Number(live.temperature)
-  const gensetOff = live.generator_status === 'off'
+  // T-06 — OFF and FAULT both mean the load is not being cooled. A faulted
+  // unit treated as running is how a breach goes unannounced on this gauge.
+  const gensetOff = GENSET_NOT_COOLING.includes(live.generator_status)
   const breach = live.is_reefer && actual !== null && gensetOff && target !== null && actual > target
 
   const sig = SIGNALS[signal] || SIGNALS.active
@@ -67,7 +69,7 @@ export default function LiveTelemetryGauge({ live, signal = 'active', size = 'md
           {live.is_reefer && (
             <Cell icon={Power} label="Genset" compact={compact}
               tone={gensetOff ? 'var(--color-danger-500)' : 'var(--color-success-500)'}
-              value={live.generator_status ? live.generator_status.toUpperCase() : '—'} />
+              value={GENSET_STATE_LABELS[live.generator_status] || '—'} />
           )}
 
           <Cell icon={Key} label="Ignition" tone={STOS_ACCENT} compact={compact}
