@@ -269,6 +269,9 @@ export default function VehiclePassportView() {
                           {Number(f.litres).toFixed(1)} L @ {fmtMoney(f.rate_per_litre)}
                           {f.odometer ? ` · ${Number(f.odometer).toLocaleString('en-IN')} km` : ''}
                           {f.efficiency_kmpl ? ` · ${Number(f.efficiency_kmpl).toFixed(2)} km/l` : ''}
+                          {/* T-17 — the figure STOS-COST specifies, beside the one
+                              a workshop quotes, so nobody inverts it by hand. */}
+                          {f.litres_per_km ? ` (${Number(f.litres_per_km).toFixed(3)} L/km)` : ''}
                         </p>
                       </div>
                       {f.is_emergency && <Flag tone="var(--color-warning-500, #f59e0b)">emergency</Flag>}

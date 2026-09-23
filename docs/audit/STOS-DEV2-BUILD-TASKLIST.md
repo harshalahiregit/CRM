@@ -195,9 +195,9 @@ answer — T-07.
 - [x] **T-14** Fuel entry, odometer guard, variance flag, receipt upload · *FleetOperationsTest*
 - [x] **T-15** `fuel.emergency_issued` published on an emergency fill
 - [x] **T-16** `GET /v1/fleet/fuel/exceptions` — the variance and emergency register
-- [ ] **T-17** Report **L/KM** as the spec defines it (`litres ÷ km`) beside the stored km/l. Both are the same fact inverted, but the spec's figure is the one people quote — expose it explicitly rather than making a reader invert it
+- [x] **T-17** `litres_per_km` appended to every fill — DERIVED, never stored, because it is `1 ÷ efficiency_kmpl` exactly and a column would be a second copy of one fact. Four decimals, since 3.5 km/l is 0.2857 L/km and two would round three different trucks to 0.29.
 - [ ] **T-18** ⚠️ `recovery_status` vocabulary: spec `NOT_REVIEWED / BILLABLE / NON_BILLABLE / BILLED` vs built `not_applicable / pending / billable / recovered / waived`. **`BILLED` is Dev 3's to set** — agree who owns the transition before renaming
-- [ ] **T-19** Per-vehicle fuel benchmark overriding the per-type default in `config/stos.php`
+- [x] **T-19** `vehicles.benchmark_kmpl`, nullable — null means *nobody has measured this truck*, which is a different fact from a bad figure, so zero is refused. The variance note now names WHOSE benchmark was missed (“this vehicle's” vs “the reefer”), because a driver disputing a flag needs to know which.
 
 ---
 

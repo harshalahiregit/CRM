@@ -301,6 +301,77 @@ class FleetOperationsTest extends TestCase
         $this->assertFalse($second->json('data.fuel_exception'));
     }
 
+    /* ── T-17 / T-19: the spec's figure, and whose benchmark ────── */
+
+    public function test_litres_per_km_travels_beside_the_stored_km_per_litre(): void
+    {
+        // STOS-COST specifies litres ÷ km. A workshop and a driver quote km/l;
+        // the spec and anyone costing a route quote L/km, and making a reader
+        // invert a number in their head is how the wrong one reaches a quote.
+        $v = $this->vehicle(['vehicle_type' => 'reefer']);
+
+        $this->fill($v, ['odometer' => 1000])->assertStatus(201);
+        $second = $this->fill($v, ['odometer' => 1300, 'litres' => 100])->assertStatus(201);
+
+        // 3.00 km/l is 0.3333 L/km. Derived, never stored — a column would be a
+        // second copy of one fact and they would disagree after a correction.
+        $this->assertSame('3.00', $second->json('data.efficiency_kmpl'));
+        $this->assertSame(0.3333, $second->json('data.litres_per_km'));
+    }
+
+    public function test_a_fill_with_nothing_to_measure_has_no_litres_per_km_either(): void
+    {
+        $v = $this->vehicle();
+
+        $this->fill($v)->assertStatus(201)
+            ->assertJsonPath('data.efficiency_kmpl', null)
+            ->assertJsonPath('data.litres_per_km', null);
+    }
+
+    public function test_a_vehicles_own_benchmark_overrides_the_type_default(): void
+    {
+        // A ten-year-old tipper and last year's do not return the same km/l.
+        // Flagging the old one on every fill teaches people to ignore the
+        // exception queue, which is the only thing that catches real theft.
+        $v = $this->vehicle(['vehicle_type' => 'reefer', 'benchmark_kmpl' => 1.4]);
+
+        $this->fill($v, ['odometer' => 1000])->assertStatus(201);
+        // 1.5 km/l — below the 2.8 type default, ABOVE this truck's own 1.4.
+        $second = $this->fill($v, ['odometer' => 1150, 'litres' => 100])->assertStatus(201);
+
+        $this->assertFalse($second->json('data.fuel_exception'));
+    }
+
+    public function test_the_note_says_whose_benchmark_it_failed(): void
+    {
+        // A driver disputing a flag needs to know whether the number came from
+        // this vehicle's history or from a table of type averages — those two
+        // are answered in completely different ways.
+        $own = $this->vehicle(['vehicle_type' => 'reefer', 'benchmark_kmpl' => 5.0]);
+        $this->fill($own, ['odometer' => 1000])->assertStatus(201);
+        $flagged = $this->fill($own, ['odometer' => 1150, 'litres' => 100])->assertStatus(201);
+
+        $this->assertTrue($flagged->json('data.fuel_exception'));
+        $this->assertStringContainsString("this vehicle's benchmark", $flagged->json('data.variance_note'));
+
+        $typed = $this->vehicle(['vehicle_type' => 'reefer']);
+        $this->fill($typed, ['odometer' => 1000])->assertStatus(201);
+        $other = $this->fill($typed, ['odometer' => 1150, 'litres' => 100])->assertStatus(201);
+
+        $this->assertStringContainsString('the reefer benchmark', $other->json('data.variance_note'));
+    }
+
+    public function test_a_zero_benchmark_is_refused_so_unmeasured_stays_tellable(): void
+    {
+        // Null means "nobody has measured it". Zero would mean "measured at
+        // zero", which is not a thing, and the two must stay tellable apart.
+        $this->actingAs($this->user())
+            ->postJson('/api/v1/fleet/vehicles', [
+                'registration_number' => 'MH12BENCH1', 'vehicle_type' => 'reefer',
+                'benchmark_kmpl' => 0,
+            ])->assertStatus(422);
+    }
+
     public function test_a_thirsty_fill_is_flagged_with_an_explanation(): void
     {
         $v = $this->vehicle(['vehicle_type' => 'reefer']);

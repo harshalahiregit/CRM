@@ -27,7 +27,7 @@ const EMPTY = {
   chassis_number: '', engine_number: '', gps_device_id: '',
   fleet_number: '', manufacturer: '', model: '', variant: '',
   manufacturing_year: '', purchase_date: '', fuel_type: '', branch: '',
-  capacity_tonnes: '', genset_serial: '',
+  capacity_tonnes: '', benchmark_kmpl: '', genset_serial: '',
   service_interval_km: '', service_interval_days: '', last_service_odometer: '', last_service_on: '',
   registration_expiry: '', insurance_expiry: '', fitness_expiry: '', permit_expiry: '', puc_expiry: '',
   compliance_hold: false, compliance_hold_reason: '',
@@ -60,6 +60,7 @@ export default function VehicleFormModal({ open, onClose, vehicle = null, onSave
           fuel_type: vehicle.fuel_type || '',
           branch: vehicle.branch || '',
           capacity_tonnes: vehicle.capacity_tonnes ?? '',
+          benchmark_kmpl: vehicle.benchmark_kmpl ?? '',
           service_interval_km: vehicle.service_interval_km ?? '',
           service_interval_days: vehicle.service_interval_days ?? '',
           last_service_odometer: vehicle.last_service_odometer ?? '',
@@ -95,7 +96,7 @@ export default function VehicleFormModal({ open, onClose, vehicle = null, onSave
       // eligibility engine will never match to an order.
       ;['fleet_number', 'manufacturer', 'model', 'variant', 'fuel_type', 'branch']
         .forEach((k) => { payload[k] = form[k]?.trim() || null })
-      ;['manufacturing_year', 'capacity_tonnes', 'service_interval_km', 'service_interval_days', 'last_service_odometer']
+      ;['manufacturing_year', 'capacity_tonnes', 'benchmark_kmpl', 'service_interval_km', 'service_interval_days', 'last_service_odometer']
         .forEach((k) => { payload[k] = form[k] === '' || form[k] == null ? null : Number(form[k]) })
       payload.purchase_date = form.purchase_date || null
       payload.last_service_on = form.last_service_on || null
@@ -237,12 +238,20 @@ export default function VehicleFormModal({ open, onClose, vehicle = null, onSave
             </Field>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <Field label="Payload (tonnes)" error={fieldErrors.capacity_tonnes}
               hint="Matched against an order's required capacity">
               <input type="number" step="0.01" inputMode="decimal" value={form.capacity_tonnes}
                 onChange={(e) => set('capacity_tonnes', e.target.value)}
                 placeholder="25.00" className={inputClass} style={inputStyle} />
+            </Field>
+            {/* T-19 — blank means "nobody has measured this truck", which is a
+                different fact from a bad figure and has to stay tellable apart. */}
+            <Field label="Benchmark (km/l)" error={fieldErrors.benchmark_kmpl}
+              hint="Leave blank to use the type default">
+              <input type="number" step="0.01" inputMode="decimal" value={form.benchmark_kmpl}
+                onChange={(e) => set('benchmark_kmpl', e.target.value)}
+                placeholder="type default" className={inputClass} style={inputStyle} />
             </Field>
             <Field label="Fuel" error={fieldErrors.fuel_type}>
               <Select size="sm" value={form.fuel_type} onChange={(v) => set('fuel_type', v)}
