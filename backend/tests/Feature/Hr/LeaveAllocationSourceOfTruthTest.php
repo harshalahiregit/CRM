@@ -358,6 +358,185 @@ class LeaveAllocationSourceOfTruthTest extends TestCase
         $this->assertNull($this->allocatedFor($employee, $type));
     }
 
+    /* ── the Standard policy is internally complete ───────────────────── */
+
+    /**
+     * The default policy governs the types it is stamped on.
+     *
+     * It was created and written onto every balance while
+     * hr_leave_policy_types stayed empty — so the one policy every balance
+     * pointed at was the one policy assignPolicy() refuses, because it throws
+     * "This policy has no mapped leave types to allocate" on an unmapped one.
+     */
+    public function test_the_standard_policy_is_mapped_to_the_active_leave_types(): void
+    {
+        $this->employee();
+        $casual = $this->type('Casual Leave', 'Casual', 9);
+        $earned = $this->type('Earned Leave', 'Earned', 15);
+
+        $this->allocate();
+
+        $policy = \App\Models\Hr\HrLeavePolicy::where('tenant_id', $this->tenant->id)
+            ->where('name', 'Standard')->firstOrFail();
+
+        $mapped = \App\Models\Hr\HrLeavePolicyType::where('policy_id', $policy->id)
+            ->pluck('yearly_allocation', 'leave_type_id');
+
+        $this->assertCount(2, $mapped);
+        // The figures come from each type, so the policy says what the Leave
+        // Types screen says rather than inventing a second set of numbers.
+        $this->assertSame(9.0, (float) $mapped[$casual->id]);
+        $this->assertSame(15.0, (float) $mapped[$earned->id]);
+    }
+
+    public function test_the_mapping_carries_each_types_own_carry_forward_rule(): void
+    {
+        $this->employee();
+        $carries = $this->type('Earned Leave', 'Earned', 15);
+        $carries->update(['carry_forward' => true, 'max_carry_forward' => 5]);
+        // A LEFTOVER ceiling: carry-forward was switched off but the number
+        // stayed behind. Without it both branches write 0 and the gate cannot
+        // be told from its absence.
+        $doesNot = $this->type('Casual Leave', 'Casual', 9);
+        $doesNot->update(['carry_forward' => false, 'max_carry_forward' => 8]);
+
+        $this->allocate();
+
+        $policy = \App\Models\Hr\HrLeavePolicy::where('tenant_id', $this->tenant->id)
+            ->where('name', 'Standard')->firstOrFail();
+        $limits = \App\Models\Hr\HrLeavePolicyType::where('policy_id', $policy->id)
+            ->pluck('carry_forward_limit', 'leave_type_id');
+
+        $this->assertSame(5.0, (float) $limits[$carries->id]);
+        // "—" on the Leave Types screen becomes a limit of zero here, and the
+        // stale 8 is not carried into the policy.
+        $this->assertSame(0.0, (float) $limits[$doesNot->id]);
+    }
+
+    public function test_an_inactive_type_is_not_mapped(): void
+    {
+        $this->employee();
+        $live = $this->type('Casual Leave', 'Casual', 9);
+        $retired = $this->type('Retired Leave', 'Casual', 9);
+        $retired->update(['is_active' => false]);
+
+        $this->allocate();
+
+        $policy = \App\Models\Hr\HrLeavePolicy::where('tenant_id', $this->tenant->id)
+            ->where('name', 'Standard')->firstOrFail();
+        $mapped = \App\Models\Hr\HrLeavePolicyType::where('policy_id', $policy->id)
+            ->pluck('leave_type_id')->map(fn ($i) => (int) $i)->all();
+
+        $this->assertSame([$live->id], $mapped);
+    }
+
+    public function test_rerunning_the_command_creates_no_duplicate_mappings(): void
+    {
+        $this->employee();
+        $this->type('Casual Leave', 'Casual', 9);
+
+        $this->allocate();
+        $this->allocate();
+        $this->allocate();
+
+        $policy = \App\Models\Hr\HrLeavePolicy::where('tenant_id', $this->tenant->id)
+            ->where('name', 'Standard')->firstOrFail();
+
+        $this->assertSame(1, \App\Models\Hr\HrLeavePolicy::where('tenant_id', $this->tenant->id)->count());
+        $this->assertSame(1, \App\Models\Hr\HrLeavePolicyType::where('policy_id', $policy->id)->count());
+    }
+
+    public function test_a_hand_tuned_mapping_is_never_overwritten(): void
+    {
+        $this->employee();
+        $type = $this->type('Casual Leave', 'Casual', 9);
+
+        $this->allocate();
+
+        $policy = \App\Models\Hr\HrLeavePolicy::where('tenant_id', $this->tenant->id)
+            ->where('name', 'Standard')->firstOrFail();
+
+        // HR tunes Standard by hand afterwards.
+        \App\Models\Hr\HrLeavePolicyType::where('policy_id', $policy->id)
+            ->where('leave_type_id', $type->id)
+            ->update(['yearly_allocation' => 21, 'carry_forward_limit' => 7]);
+
+        // A new joiner triggers another run. Backfilling a gap is not the same
+        // as resetting somebody's configuration.
+        $this->employee();
+        $this->allocate();
+
+        $row = \App\Models\Hr\HrLeavePolicyType::where('policy_id', $policy->id)
+            ->where('leave_type_id', $type->id)->firstOrFail();
+
+        $this->assertSame(21.0, (float) $row->yearly_allocation);
+        $this->assertSame(7.0, (float) $row->carry_forward_limit);
+    }
+
+    public function test_a_type_added_later_is_mapped_on_the_next_run(): void
+    {
+        $this->employee();
+        $this->type('Casual Leave', 'Casual', 9);
+        $this->allocate();
+
+        $added = $this->type('Sick Leave', 'Sick', 12);
+        $this->allocate();
+
+        $policy = \App\Models\Hr\HrLeavePolicy::where('tenant_id', $this->tenant->id)
+            ->where('name', 'Standard')->firstOrFail();
+
+        $this->assertTrue(\App\Models\Hr\HrLeavePolicyType::where('policy_id', $policy->id)
+            ->where('leave_type_id', $added->id)->exists());
+    }
+
+    public function test_one_workspaces_standard_policy_is_its_own(): void
+    {
+        $this->employee();
+        $this->employee($this->other);
+        $mine = $this->type('Casual Leave', 'Casual', 9);
+        $theirs = $this->type('Casual Leave', 'Casual', 21, $this->other);
+
+        $this->allocate();
+
+        $myPolicy = \App\Models\Hr\HrLeavePolicy::where('tenant_id', $this->tenant->id)
+            ->where('name', 'Standard')->firstOrFail();
+        $theirPolicy = \App\Models\Hr\HrLeavePolicy::where('tenant_id', $this->other->id)
+            ->where('name', 'Standard')->firstOrFail();
+
+        $this->assertNotSame($myPolicy->id, $theirPolicy->id);
+        $this->assertSame([$mine->id], \App\Models\Hr\HrLeavePolicyType::where('policy_id', $myPolicy->id)
+            ->pluck('leave_type_id')->map(fn ($i) => (int) $i)->all());
+        $this->assertSame([$theirs->id], \App\Models\Hr\HrLeavePolicyType::where('policy_id', $theirPolicy->id)
+            ->pluck('leave_type_id')->map(fn ($i) => (int) $i)->all());
+    }
+
+    /**
+     * A first allocation has no previous period, so zero is correct.
+     *
+     * The backlog listed the allocator's hardcoded `carried_forward = 0` as a
+     * defect. It is not: the command skips anybody who already holds a balance
+     * for that type, so by construction there is never a prior period to carry
+     * from. Carry-forward happens in EmployeeLeaveBalanceService::assignPolicy,
+     * where a previous balance exists, and is covered by its own suite.
+     */
+    public function test_a_first_allocation_carries_nothing_because_there_is_no_prior_period(): void
+    {
+        $employee = $this->employee();
+        $type = $this->type('Earned Leave', 'Earned', 15);
+        $type->update(['carry_forward' => true, 'max_carry_forward' => 10]);
+
+        $this->allocate();
+
+        $balance = HrEmployeeLeaveBalance::where('employee_id', $employee->id)->firstOrFail();
+        $this->assertSame(0.0, (float) $balance->carried_forward);
+        $this->assertSame(15.0, (float) $balance->allocated);
+
+        // And a second run does not touch it.
+        $this->allocate();
+        $this->assertSame(0.0, (float) $balance->fresh()->carried_forward);
+        $this->assertSame(1, HrEmployeeLeaveBalance::where('employee_id', $employee->id)->count());
+    }
+
     /* ── 9 & 10. the settings are gone ────────────────────────────────── */
 
     public function test_the_four_legacy_settings_are_no_longer_configuration(): void

@@ -10,6 +10,7 @@ use App\Models\Hr\HrLeavePolicy;
 use App\Models\Hr\HrLeaveType;
 use App\Models\User;
 use App\Repositories\Hr\EmployeeLeaveBalanceRepository;
+use App\Support\Hr\LeaveCarryForward;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -102,7 +103,15 @@ class EmployeeLeaveBalanceService
                 }
                 $allocated = (float) $pt->yearly_allocation;
                 $prev = $prior->get($pt->leave_type_id);
-                $cf = $prev ? max(0.0, min((float) $prev->available_balance, (float) $pt->carry_forward_limit)) : 0.0;
+
+                // The leave TYPE's own configuration was ignored here: a type
+                // marked "does not carry forward" carried forward anyway, and
+                // its max_carry_forward — printed on the Leave Types screen as
+                // "≤ N" — was never a ceiling. LeaveCarryForward reconciles
+                // that with the policy's limit in one place.
+                $cf = $prev
+                    ? LeaveCarryForward::forBalance($pt->leaveType, $pt, (float) $prev->available_balance)
+                    : 0.0;
 
                 $balance = HrEmployeeLeaveBalance::create([
                     'tenant_id' => $tenantId, 'employee_id' => $employee->id,

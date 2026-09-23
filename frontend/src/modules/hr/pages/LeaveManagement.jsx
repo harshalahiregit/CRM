@@ -263,6 +263,14 @@ function LeavePolicies({ showToast }) {
                 {m && <>
                   <div className="flex items-center gap-1"><span className="text-[10px]" style={{ color:'var(--text-muted)' }}>Alloc</span><input type="number" min="0" className="input-3d text-xs" style={{ width:70, padding:'6px 8px' }} value={m.yearly_allocation} onChange={e=>setTypeVal(t.id,'yearly_allocation',e.target.value)}/></div>
                   <div className="flex items-center gap-1"><span className="text-[10px]" style={{ color:'var(--text-muted)' }}>CF≤</span><input type="number" min="0" className="input-3d text-xs" style={{ width:60, padding:'6px 8px' }} value={m.carry_forward_limit} onChange={e=>setTypeVal(t.id,'carry_forward_limit',e.target.value)}/></div>
+                  {/* Two ceilings apply and the tighter one binds, so a policy
+                      cannot carry more than the type itself allows. Said here
+                      because the number above looks like the only limit. */}
+                  <span className="w-full text-[10px]" style={{ color:'var(--text-muted)' }}>
+                    {t.carry_forward
+                      ? `Type allows ≤ ${Number(t.max_carry_forward)} — whichever is lower applies.`
+                      : 'This type does not carry forward, so nothing will carry regardless of this limit.'}
+                  </span>
                 </>}
               </div>
             )})}

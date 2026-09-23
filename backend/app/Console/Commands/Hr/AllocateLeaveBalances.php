@@ -5,6 +5,7 @@ namespace App\Console\Commands\Hr;
 use App\Models\Hr\HrEmployee;
 use App\Models\Hr\HrEmployeeLeaveBalance;
 use App\Models\Hr\HrLeavePolicy;
+use App\Models\Hr\HrLeavePolicyType;
 use App\Models\Hr\HrLeaveType;
 use App\Models\Tenant;
 use Illuminate\Console\Command;
@@ -153,10 +154,26 @@ class AllocateLeaveBalances extends Command
         return (float) $type->yearly_limit;
     }
 
-    /** One shared default policy per tenant, created once. */
+    /**
+     * One shared default policy per tenant, created once — and actually
+     * mapped to the leave types it is supposed to govern.
+     *
+     * The policy was created and stamped onto every balance while
+     * hr_leave_policy_types stayed empty, so "Standard" governed nothing:
+     * EmployeeLeaveBalanceService::assignPolicy() refuses a policy with no
+     * mapped types ("This policy has no mapped leave types to allocate"), so
+     * the one policy every balance pointed at was the one policy that could
+     * never be assigned.
+     *
+     * IDEMPOTENT, AND IT NEVER OVERWRITES. A mapping that already exists is
+     * left exactly as it is — a workspace that tuned Standard's allocation or
+     * carry-forward by hand keeps its numbers, and re-running the command adds
+     * only what is missing. That is the difference between backfilling a gap
+     * and resetting somebody's configuration.
+     */
     private function policyFor(int $tenantId): HrLeavePolicy
     {
-        return HrLeavePolicy::firstOrCreate(
+        $policy = HrLeavePolicy::firstOrCreate(
             ['tenant_id' => $tenantId, 'name' => 'Standard'],
             [
                 'applies_to'               => 'All',
@@ -171,5 +188,44 @@ class AllocateLeaveBalances extends Command
                 'description'              => 'Created by hr:allocate-leave.',
             ]
         );
+
+        $this->mapTypesTo($policy, $tenantId);
+
+        return $policy;
+    }
+
+    /**
+     * Give the policy a row for every active leave type it does not have yet.
+     *
+     * The figures come from the type itself — its yearly_limit, and its own
+     * carry-forward ceiling — so the default policy says the same thing the
+     * Leave Types screen does rather than inventing a second set of numbers.
+     * A type whose carry_forward flag is off maps with a limit of zero, which
+     * is what "—" on that screen has always meant.
+     */
+    private function mapTypesTo(HrLeavePolicy $policy, int $tenantId): void
+    {
+        $mapped = HrLeavePolicyType::where('policy_id', $policy->id)
+            ->pluck('leave_type_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $types = HrLeaveType::where('tenant_id', $tenantId)
+            ->where('is_active', true)
+            ->get();
+
+        foreach ($types as $type) {
+            if (in_array((int) $type->id, $mapped, true)) {
+                // Already configured — possibly by hand. Left alone.
+                continue;
+            }
+
+            HrLeavePolicyType::create([
+                'policy_id'           => $policy->id,
+                'leave_type_id'       => $type->id,
+                'yearly_allocation'   => (float) $type->yearly_limit,
+                'carry_forward_limit' => $type->carry_forward ? (float) $type->max_carry_forward : 0.0,
+            ]);
+        }
     }
 }
