@@ -8,6 +8,9 @@ use App\Models\Hr\HrLeavePolicy;
 use App\Models\Hr\HrLeavePolicyType;
 use App\Models\Hr\HrLeaveType;
 use App\Models\Tenant;
+use App\Services\Settings\SettingsService;
+use App\Support\Hr\HrSetting;
+use App\Support\Hr\LeaveEntitlement;
 use Illuminate\Console\Command;
 
 /**
@@ -38,6 +41,11 @@ class AllocateLeaveBalances extends Command
     {
         $commit = (bool) $this->option('commit');
 
+        // The leave year being opened. Calendar, January to December — one
+        // value, used both to decide proration and as the balance's
+        // effective_from, so the two can never describe different years.
+        $yearStart = now()->startOfYear();
+
         $tenants = Tenant::query()
             ->when($this->option('tenant'), fn ($q, $t) => $q->whereKey((int) $t))
             ->orderBy('id')->get(['id', 'name']);
@@ -56,7 +64,24 @@ class AllocateLeaveBalances extends Command
 
             $policy = $commit ? $this->policyFor((int) $tenant->id) : null;
 
+            // Read once per tenant, not once per employee.
+            $prorate = (bool) app(SettingsService::class)
+                ->get($tenant->id, HrSetting::GROUP, 'leave_prorate_first_year');
+
+            // NOBODY WHO HAS LEFT. The filter was missing entirely, so an
+            // exited employee picked up a fresh annual entitlement every time
+            // this ran — and ExitSettlementService sums available_balance when
+            // it works out what to encash, so those days had a price.
+            //
+            // 'Inactive' is the exit state in the employees enum
+            // (Active | On Leave | Inactive). 'On Leave' is deliberately NOT
+            // excluded: somebody on maternity or long sick leave is still
+            // employed and still earns their year's entitlement.
+            //
+            // Only NEW balances are affected. An inactive employee's existing
+            // rows are never touched — see the exists() check below.
             $employees = HrEmployee::where('tenant_id', $tenant->id)
+                ->where('status', '!=', 'Inactive')
                 ->when($this->option('employee'), fn ($q, $e) => $q->whereKey((int) $e))
                 ->orderBy('name')->get();
 
@@ -71,7 +96,10 @@ class AllocateLeaveBalances extends Command
                         continue;
                     }
 
-                    $days = $this->daysFor($type);
+                    // The leave year is the calendar year the balance is being
+                    // opened for, which is the same date written to
+                    // effective_from below.
+                    $days = $this->daysFor($type, $employee, $prorate, $yearStart);
 
                     if (! $commit) {
                         $rows[] = [$tenant->id, $employee->employee_code, $type->name, "would allocate {$days}"];
@@ -90,7 +118,7 @@ class AllocateLeaveBalances extends Command
                         'adjusted'          => 0,
                         'carried_forward'   => 0,
                         'available_balance' => $days,
-                        'effective_from'    => now()->startOfYear()->toDateString(),
+                        'effective_from'    => $yearStart->toDateString(),
                         'status'            => HrEmployeeLeaveBalance::ACTIVE,
                     ]);
 
@@ -149,9 +177,18 @@ class AllocateLeaveBalances extends Command
      * yearly_limit, no classification is needed and nothing can be
      * misclassified.
      */
-    private function daysFor(HrLeaveType $type): float
+    private function daysFor(HrLeaveType $type, HrEmployee $employee, bool $prorate, $yearStart): float
     {
-        return (float) $type->yearly_limit;
+        // yearly_limit is still the source of truth for the TYPE. What
+        // LeaveEntitlement decides is how much of it this employee earns in
+        // this particular year; with proration off it hands the figure back
+        // unchanged, which is exactly what this method used to return.
+        return LeaveEntitlement::forAllocation(
+            (float) $type->yearly_limit,
+            $employee->joining_date?->toDateString() ?? $employee->joining_date,
+            $prorate,
+            $yearStart
+        );
     }
 
     /**

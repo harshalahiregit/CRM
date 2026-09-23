@@ -259,6 +259,29 @@ class HrSetting
             'On, the person who raised a request cannot approve it — including when they are the reporting manager, hold the approving role, or manage the HR queue. Leave it off if too few people would be left to approve.', 'Approvals',
         ],
 
+        /* ── leave ───────────────────────────────────────────────────── */
+        //
+        // Whether somebody who joins part-way through the year gets part of
+        // that year's leave.
+        //
+        // OFF BY DEFAULT, and that is the point of it being a setting at all.
+        // Entitlement has always been front-loaded in full regardless of
+        // joining date, so turning this on is a real change to how much leave
+        // people receive; every existing workspace keeps today's behaviour
+        // until somebody decides otherwise.
+        //
+        // It changes the ALLOCATION only. The configured yearly limit on the
+        // leave type, the policy's allocation, and both carry-forward ceilings
+        // are untouched — see LeaveEntitlement, which is the one place the
+        // arithmetic lives.
+        'leave_prorate_first_year' => [
+            'Prorate leave in an employee\'s first year', self::TYPE_BOOL, false,
+            'On, somebody joining part-way through the year receives leave for the months they are here rather than a full year. '
+            .'The joining month counts in full, and the result is rounded down to the nearest half day. '
+            .'Only the first year is affected, and the yearly limits you configure on each leave type do not change.',
+            'Leave',
+        ],
+
         /* ── candidate portal ────────────────────────────────────────── */
         //
         // How long a candidate's onboarding link stays usable.

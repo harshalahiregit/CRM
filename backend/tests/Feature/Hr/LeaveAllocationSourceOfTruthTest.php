@@ -550,7 +550,20 @@ class LeaveAllocationSourceOfTruthTest extends TestCase
 
         // Gone from the schema the settings screen renders from, so the
         // controls disappear without a frontend change.
-        $this->assertArrayNotHasKey('Leave', HrSetting::schema());
+        //
+        // This used to assert that the whole 'Leave' SECTION was absent, which
+        // was only ever a proxy: removing these four emptied the section, so
+        // its disappearance stood in for theirs. First-year proration has since
+        // put a legitimate setting back in that section, and the proxy would
+        // now fail for a reason that has nothing to do with the legacy keys.
+        //
+        // Asserting on the keys themselves is what this test was always about,
+        // and it is strictly tighter — a section that exists no longer hides a
+        // legacy key inside it.
+        $schemaKeys = collect(HrSetting::schema())->flatten(1)->pluck('key')->all();
+        foreach ($removed as $key) {
+            $this->assertNotContains($key, $schemaKeys, "{$key} is still rendered by the settings screen");
+        }
 
         // And gone from the resolved payload, so nothing can read them back.
         $resolved = app(SettingsService::class)->getGroup($this->tenant->id, HrSetting::GROUP);
