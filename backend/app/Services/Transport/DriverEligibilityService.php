@@ -60,6 +60,22 @@ class DriverEligibilityService
     }
 
     /**
+     * Fleet's verdict on every driver, read once per company per request.
+     *
+     * `DriverService::eligible()` reads the whole directory — TPV workforce,
+     * purchase workforce, vendor contacts, customer contacts — and then the
+     * profiles. `candidatesFor()` needs it once, and `evaluate()` needs it per
+     * driver, so without this a fleet of 200 read that directory 201 times to
+     * answer one screen. Two drivers hid it completely in dev.
+     *
+     * Per instance, not static: the service is resolved per request, so this
+     * cannot serve one company's directory to the next request.
+     *
+     * @var array<int,array<string,mixed>>
+     */
+    private array $fleetCache = [];
+
+    /**
      * ── REPOINTED ONTO FLEET, 2026-09-23 (D-100 / D-109) ─────────────────
      *
      * This read `transport_drivers` and asked two questions of it directly:
@@ -157,7 +173,7 @@ class DriverEligibilityService
         }
 
         $policy = $this->policies->all($tenantId);
-        $fleet = $this->drivers->eligible($tenantId);
+        $fleet = $this->fleetVerdicts($tenantId);
 
         $rows = $includeIneligible
             ? array_merge($fleet['eligible'], $fleet['excluded'])
@@ -194,7 +210,7 @@ class DriverEligibilityService
      */
     private function fleetRow(int $profileId, int $tenantId): array
     {
-        $fleet = $this->drivers->eligible($tenantId);
+        $fleet = $this->fleetVerdicts($tenantId);
 
         foreach (array_merge($fleet['eligible'], $fleet['excluded']) as $row) {
             if ((int) ($row['profile']['id'] ?? 0) === $profileId) {
@@ -217,4 +233,10 @@ class DriverEligibilityService
         return $n.' '.($n === 1 ? 'day' : 'days');
     }
 
+
+    /** @return array<string,mixed> */
+    private function fleetVerdicts(int $tenantId): array
+    {
+        return $this->fleetCache[$tenantId] ??= $this->drivers->eligible($tenantId);
+    }
 }
