@@ -14,7 +14,9 @@
     "check:login-roles": "node scripts/login-roles.check.mjs",
     "check:sire": "node scripts/sire-context.check.mjs",
     "check:vendor-lock": "node scripts/vendor-lock.check.mjs",
-    "check:tasks": "node scripts/task-assignment.check.mjs"
+    "check:tasks": "node scripts/task-assignment.check.mjs",
+    "check:crash": "node scripts/undefined-identifiers.check.mjs",
+    "check:crash:all": "node scripts/undefined-identifiers.check.mjs --all"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
