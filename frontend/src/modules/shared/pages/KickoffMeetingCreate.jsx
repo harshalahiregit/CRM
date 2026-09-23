@@ -1711,17 +1711,22 @@ export default function KickoffMeetingCreate() {
           </div>
           )}
 
-          /*
-           * Section 4 — Minutes of Meeting — used to live here.
-           *
-           * Minutes record what a meeting DECIDED, so authoring them on the
-           * form that schedules it means writing the record of a conversation
-           * that has not happened. The same rule now holds on the server:
-           * MomGate refuses to generate or upload minutes until the meeting is
-           * marked Completed.
-           *
-           * Minutes are captured on the meeting itself, after it takes place.
-           */
+          {/*
+            * Section 4 — Minutes of Meeting — used to live here.
+            *
+            * Minutes record what a meeting DECIDED, so authoring them on the
+            * form that schedules it means writing the record of a conversation
+            * that has not happened. The same rule now holds on the server:
+            * MomGate refuses to generate or upload minutes until the meeting is
+            * marked Completed.
+            *
+            * Minutes are captured on the meeting itself, after it takes place.
+            *
+            * NOTE THE BRACES. Without them this is not a comment: a bare block
+            * comment between JSX tags is CHILD TEXT, and React rendered the
+            * whole thing onto the form for anybody scheduling a meeting to
+            * read. It compiled, it shipped, and nothing failed.
+            */}
 
           {/* Section 5 — Decision register */}
           <div className="pr-glass" style={{ padding: 20 }}>
