@@ -260,6 +260,20 @@ export const LICENCE_CLASSES = [
  * longer works here" are different facts, and a roster that merges them either
  * chases somebody who left or writes off somebody who is back on Monday.
  */
+/**
+ * Mirrors `VehicleLiveStatus::GENERATOR_STATES` — UPPERCASE since T-06.
+ *
+ * Richer than STOS-API's `ON | OFF | UNKNOWN` on purpose: a genset in FAULT is
+ * not one somebody switched OFF, and the person fixing it needs to know which.
+ * UNKNOWN arrives as null — "the device did not say" is its own state.
+ */
+export const GENSET_STATE_LABELS = {
+  OFF: 'Off', ON: 'Running', STANDBY: 'On standby power', FAULT: 'Faulted',
+}
+
+/** States in which the genset is NOT cooling the load. */
+export const GENSET_NOT_COOLING = ['OFF', 'FAULT']
+
 export const DRIVER_STATUSES = [
   { value: 'AVAILABLE', label: 'Available' },
   { value: 'ON_TRIP',   label: 'On trip', systemOnly: true },
