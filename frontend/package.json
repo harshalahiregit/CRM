@@ -16,6 +16,7 @@
     "check:vendor-lock": "node scripts/vendor-lock.check.mjs",
     "check:tasks": "node scripts/task-assignment.check.mjs",
     "check:crash": "node scripts/undefined-identifiers.check.mjs",
+    "check:meetings": "node scripts/meeting-links.check.mjs",
     "check:crash:all": "node scripts/undefined-identifiers.check.mjs --all"
   },
   "dependencies": {

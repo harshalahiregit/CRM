@@ -9,7 +9,7 @@ import { useAuth } from '@/context/AuthContext'
 // Resolves per call to the meeting engine of the module in the URL — the
 // shared engine under /app/tpv, Purchase's under /app/purchase. Aliased to
 // the old name so the call sites below read unchanged.
-import { meetingEngineApi as kickoffApi, meetingBase } from '@/services/meetingEngineApi'
+import { meetingEngineApi as kickoffApi, meetingPaths } from '@/services/meetingEngineApi'
 import ParticipantGrid from '@/components/meetings/ParticipantGrid'
 import { meetingApi } from '@/services/meetingApi'
 // The VENDOR api for the module in the URL. The picker, the ?vendor= prefill
@@ -281,7 +281,6 @@ export default function KickoffMeetingCreate() {
   // Meeting.docx §2 wants a real Customer on the meeting, and §5 wants
   // participants linked to Sangoe identities. Both are read through the owning
   // module's contract, so this page never touches their tables.
-  const [customers, setCustomers] = useState([])
   const [participants, setParticipants] = useState([])  // [{ id, name, designation, party, … }]
   // The four columns of the attendance sheet — Organiser, Client, Vendor,
   // Third-Party Vendor — each with the companies it can pick from. See
@@ -473,9 +472,6 @@ export default function KickoffMeetingCreate() {
     }).catch(() => {})
     // Projects for the §16 picker — a soft link, so failure just leaves it empty.
     kickoffApi.projects().then(d => { if (Array.isArray(d)) setProjects(d) }).catch(() => {})
-    // Customers for the §2 picker. Soft load: a failure leaves it empty rather
-    // than blocking the whole form.
-    kickoffApi.customers().then(d => { if (Array.isArray(d)) setCustomers(d) }).catch(() => {})
     // The attendance-sheet columns. `kickoffApi` here IS the engine proxy (see
     // the import), so this resolves to Purchase's own endpoint under
     // /app/purchase. Also a soft load — if it fails the grid says it is still
@@ -1015,7 +1011,7 @@ export default function KickoffMeetingCreate() {
         }
       }
 
-      navigate(newId ? `${meetingBase()}/kickoff/${newId}` : `${meetingBase()}/kickoff`)
+      navigate(newId ? meetingPaths().detail(newId) : meetingPaths().list)
     } catch (e) {
       setErr(e?.response?.data?.message || 'Could not save the meeting.')
       setSaving(false)
@@ -1031,14 +1027,14 @@ export default function KickoffMeetingCreate() {
       {/* ── Page Header ──────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 22, flexWrap: 'wrap', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-          <button onClick={() => navigate(`${meetingBase()}/kickoff`)}
+          <button onClick={() => navigate(meetingPaths().list)}
             style={{ width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)', marginTop: 3, flexShrink: 0 }}>
             <ArrowLeft size={16} />
           </button>
           <div>
             {/* Breadcrumb */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>
-              <span style={{ cursor: 'pointer', color: '#a78bfa' }} onClick={() => navigate(`${meetingBase()}/kickoff`)}>Kickoff Meetings</span>
+              <span style={{ cursor: 'pointer', color: '#a78bfa' }} onClick={() => navigate(meetingPaths().list)}>Kickoff Meetings</span>
               <ChevronRight size={12} />
               <span>{isEdit ? 'Edit' : 'Create New'}{loading ? ' · loading…' : ''}</span>
             </div>
@@ -1087,7 +1083,7 @@ export default function KickoffMeetingCreate() {
             <div style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8 }}>
               {/* Distribution is gated by approval now — the full submit → approve →
                   distribute workflow lives on the meeting detail page. */}
-              <button onClick={() => navigate(`${meetingBase()}/kickoff/${editId}`)}
+              <button onClick={() => navigate(meetingPaths().detail(editId))}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9,
                   fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: 'none', color: '#fff',
                   background: 'linear-gradient(145deg,#f59e0b,#d97706)' }}>
@@ -1257,31 +1253,39 @@ export default function KickoffMeetingCreate() {
                 <Field label="Department">
                   <TextInput value={form.department} onChange={set('department')} placeholder="e.g. HSE / Projects" />
                 </Field>
-                {/* Optional, and one field rather than two.
+                {/* BOTH customer boxes are gone, not just the duplicate.
                     There was a Customer picker AND a free-text "Client name" box
                     beside it — two boxes for one idea, where picking a customer
-                    already filled the other one in. Now that a customer's people
-                    are reachable through the participant grid and the role
-                    pickers above, the duplicate had no job left.
-                    The picker stays because it is not decoration: it links the
-                    meeting to the Customer module and puts that customer on the
-                    distribution list. It is optional — a meeting does not need a
-                    customer, and most internal ones have none. */}
-                <Field label="Customer (optional)">
-                  <SelectInput
-                    value={form.client_id}
-                    onChange={e => {
-                      const id = e.target.value
-                      const c = customers.find(x => String(x.id) === String(id))
-                      setForm(f => ({ ...f, client_id: id, client_name: c ? (c.company || c.name || f.client_name) : f.client_name }))
-                    }}
-                    pairs
-                    options={[['', customers.length ? '— none —' : 'No customers found'],
-                      ...customers.map(c => [String(c.id), c.company || c.name || `Customer #${c.id}`])]} />
-                </Field>
+                    already filled the other one in. A customer's people are
+                    reachable through the participant grid and the role pickers
+                    above, so neither box had a job left on this form.
+
+                    The customer LINK is not gone, because it is not decoration:
+                    it puts that customer on the §13 distribution list. It is
+                    derived from the project below instead, which already knows
+                    its customer — one fact, asked for once, in the place that
+                    cannot disagree with itself. A meeting opened on an existing
+                    record keeps whatever link it already had (client_id is
+                    hydrated and submitted unchanged), so editing a meeting
+                    never silently unlinks it. */}
                 {projects.length > 0 && (
                   <Field label="Project (optional)">
-                    <SelectInput value={form.project_id} onChange={set('project_id')} pairs
+                    <SelectInput
+                      value={form.project_id}
+                      onChange={e => {
+                        const id = e.target.value
+                        const p = projects.find(x => String(x.id) === String(id))
+
+                        setForm(f => ({
+                          ...f,
+                          project_id: id,
+                          // Only follow the project when it names a customer.
+                          // Clearing the project must not clear a link the
+                          // meeting was created with somewhere else.
+                          client_id: p?.customer_id ? String(p.customer_id) : f.client_id,
+                        }))
+                      }}
+                      pairs
                       options={[['', '— none —'], ...projects.map(p => [
                         String(p.id),
                         `${p.name}${p.project_code ? ` (${p.project_code})` : ''}`,
@@ -1891,7 +1895,7 @@ export default function KickoffMeetingCreate() {
                   Saved as a draft — nobody is notified until you <strong style={{ color: 'var(--text-h)' }}>Publish</strong> it from the meeting page.
                 </div>
               )}
-              <button onClick={() => navigate(`${meetingBase()}/kickoff`)} disabled={saving}
+              <button onClick={() => navigate(meetingPaths().list)} disabled={saving}
                 style={{
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                   padding: '10px 20px', borderRadius: 11, cursor: 'pointer', fontSize: 13, fontWeight: 600,

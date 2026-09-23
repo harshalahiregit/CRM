@@ -1082,6 +1082,14 @@ export default function AppRoutes() {
             it would put a vendor module in the way of a team catch-up. Static
             "new" before ":id" so it is not parsed as a meeting id. */}
         <Route path="meetings/new" element={<S><KickoffMeetingCreate /></S>} />
+        {/* The cross-meeting registers, on the neutral path too. They existed
+            only under /app/purchase and /app/tpv, so the one module that reads
+            across EVERY meeting could not open the register that reads across
+            every meeting -- you had to go into a vendor module to see it, which
+            is the complaint that made Meetings its own module (SIR-000030).
+            Static "registers" before ":id", or it is parsed as a meeting id. */}
+        <Route path="meetings/registers" element={<S><MeetingRegisters /></S>} />
+        <Route path="meetings/registers/:register" element={<S><MeetingRegisters /></S>} />
         <Route path="meetings/:id/edit" element={<S><KickoffMeetingCreate /></S>} />
         <Route path="meetings/:id" element={<S><KickoffMeetingDetail /></S>} />
 
