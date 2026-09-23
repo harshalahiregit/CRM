@@ -381,6 +381,14 @@ export const hrApi = {
       update: (id, data)   => api.put(`/hr/org-roles/${id}`, data).then(r => r.data),
       delete: (id)         => api.delete(`/hr/org-roles/${id}`).then(r => r.data),
     },
+    // Permanent, Contract, Intern — whatever this company calls them. Nothing
+    // is seeded; the list is entirely the workspace's own.
+    employmentTypes: {
+      list:   ()           => api.get('/hr/employment-types').then(r => r.data),
+      create: (data)       => api.post('/hr/employment-types', data).then(r => r.data),
+      update: (id, data)   => api.put(`/hr/employment-types/${id}`, data).then(r => r.data),
+      delete: (id)         => api.delete(`/hr/employment-types/${id}`).then(r => r.data),
+    },
   },
 
   // ── Payroll → Salary Components master (Phase 1) ────────────────────────

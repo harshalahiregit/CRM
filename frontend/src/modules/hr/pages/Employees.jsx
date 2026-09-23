@@ -17,7 +17,7 @@ const initials = n => (n||'').split(' ').slice(0,2).map(x=>x[0]).join('').toUppe
 const fmtDate  = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'
 const deptColor = d => DEPT_COLORS[d]||'#7C3AED'
 
-const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', gender:'', address:'', department:'', designation:'', department_id:'', designation_id:'', reporting_manager_id:'', reporting_manager_name:'', work_state:'', joining_date:'', probation_end_date:'', confirmation_date:'', notice_days:'', status:'Active',
+const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', gender:'', address:'', department:'', designation:'', department_id:'', designation_id:'', employment_type_id:'', reporting_manager_id:'', reporting_manager_name:'', work_state:'', joining_date:'', probation_end_date:'', confirmation_date:'', notice_days:'', status:'Active',
   // #36 — probation must be set when adding an employee, or the hire explicitly exempted.
   probation_policy_id:'', skip_probation:false, probation_skip_reason:'',
   // #29 — what this person is, and the comment's explicit "option to consider
@@ -96,6 +96,10 @@ export default function Employees() {
   // has something to be called in the list.
   const deptOptions    = (f) => withInactiveById(masters.departments,  f?.department_id,  f?.department)
   const desigOptions   = (f) => withInactiveById(masters.designations, f?.designation_id, f?.designation)
+  // Employment type carries no name column on the employee, so a since-retired
+  // master has no label to fall back on — withInactiveById prints "Current"
+  // for that case rather than dropping the value and losing it on save.
+  const empTypeOptions = (f) => withInactiveById(masters.employment_types, f?.employment_type_id, f?.employment_type?.name)
   // Managers are picked by ID, not by name. masters.managers already carries
   // {id, name, employee_code}; the name was the only part being used, so the
   // hierarchy every other feature reads — org chart, advance approvals, the
@@ -557,6 +561,20 @@ export default function Employees() {
                   to their grade and then the exit type's default, while 0 means
                   they genuinely serve none. Sending '' clears the override —
                   the field is normalised to null on save for that reason. */}
+              {/* Optional: a workspace that has configured no employment types
+                  must still be able to hire, so this never blocks a save. */}
+              <div>
+                <label className="label">Employment Type</label>
+                <select className="input-3d text-sm" value={form.employment_type_id||''}
+                  onChange={e=>setForm({...form,employment_type_id:e.target.value})}>
+                  <option value="">{(masters.employment_types||[]).length ? 'Select…' : 'No employment types defined yet'}</option>
+                  {empTypeOptions(form).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+                <button type="button" onClick={()=>navigate('/app/hr/organization-setup')}
+                  className="text-[10px] mt-1 underline" style={{ color:'#a78bfa' }}>
+                  {(masters.employment_types||[]).length ? 'Manage employment types in Organization Setup' : 'Add employment types in Organization Setup'}
+                </button>
+              </div>
               <div>
                 <label className="label">Notice Period (days)</label>
                 <input type="number" min="0" max="365" className="input-3d text-sm"

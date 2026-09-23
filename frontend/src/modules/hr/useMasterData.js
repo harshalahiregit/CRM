@@ -10,7 +10,7 @@ import { hrApi } from '@/services/hrApi'
  * Organization Setup OR Project CRUD so every mounted consumer re-reads the masters.
  */
 const EMPTY = {
-  departments: [], designations: [], grades: [], roles: [],
+  departments: [], designations: [], grades: [], roles: [], employment_types: [],
   shifts: [], business_units: [], employee_levels: [], managers: [], locations: [],
   projects: [], // sourced from the Project module (single source of truth), active-only
 }

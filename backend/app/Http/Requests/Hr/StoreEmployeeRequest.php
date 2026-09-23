@@ -43,6 +43,14 @@ class StoreEmployeeRequest extends FormRequest
                 'required', 'integer',
                 Rule::exists('hr_designations', 'id')->where('tenant_id', $this->user()?->tenant_id),
             ],
+            // The tenant's own employment classification. OPTIONAL, because a
+            // workspace that has configured none must still be able to hire —
+            // nothing is seeded, so requiring it would block every create on
+            // day one. Tenant-scoped like the two above.
+            'employment_type_id'     => [
+                'nullable', 'integer',
+                Rule::exists('hr_employment_types', 'id')->where('tenant_id', $this->user()?->tenant_id),
+            ],
             // Two fields, on purpose, and they are not duplicates of each other.
             //
             // reporting_manager_id is the IDENTITY, and it is what every feature

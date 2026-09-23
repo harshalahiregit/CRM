@@ -6,6 +6,7 @@ use App\Exceptions\BusinessException;
 use App\Models\Hr\HrDepartment;
 use App\Models\Hr\HrDesignation;
 use App\Models\Hr\HrEmployee;
+use App\Models\Hr\HrEmploymentType;
 use App\Models\Hr\HrOnboarding;
 use App\Models\User;
 use App\Repositories\Hr\EmployeeRepository;
@@ -216,6 +217,10 @@ class EmployeeService
         foreach ([
             ['id' => 'department_id',  'name' => 'department',  'model' => HrDepartment::class,  'label' => 'Department'],
             ['id' => 'designation_id', 'name' => 'designation', 'model' => HrDesignation::class, 'label' => 'Designation'],
+            // No name column beside it: hr_employees never carried an
+            // employment-type string, so there is nothing to keep in step and
+            // the id is the whole answer. It is here for the tenant check.
+            ['id' => 'employment_type_id', 'name' => null, 'model' => HrEmploymentType::class, 'label' => 'Employment type'],
         ] as $f) {
             if (empty($data[$f['id']])) {
                 continue;
@@ -229,8 +234,11 @@ class EmployeeService
             }
 
             $data[$f['id']] = $master->id;
-            // The master's spelling, never the caller's.
-            $data[$f['name']] = $master->name;
+
+            if ($f['name'] !== null) {
+                // The master's spelling, never the caller's.
+                $data[$f['name']] = $master->name;
+            }
         }
 
         return $data;

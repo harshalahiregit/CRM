@@ -133,6 +133,13 @@ class EmployeeController extends Controller
                 \Illuminate\Validation\Rule::exists('hr_designations', 'id')
                     ->where('tenant_id', $request->user()->tenant_id),
             ],
+            // See StoreEmployeeRequest. Nullable so an override can be cleared
+            // back to "none chosen".
+            'employment_type_id'     => [
+                'nullable', 'integer',
+                \Illuminate\Validation\Rule::exists('hr_employment_types', 'id')
+                    ->where('tenant_id', $request->user()->tenant_id),
+            ],
             // See StoreEmployeeRequest for why both exist. The service rejects a
             // self-reference and a cycle; existence and tenant are checked here.
             'reporting_manager_id'   => [

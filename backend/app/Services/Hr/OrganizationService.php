@@ -7,6 +7,7 @@ use App\Models\Hr\HrDepartment;
 use App\Models\Hr\HrDesignation;
 use App\Models\Hr\HrEmployee;
 use App\Models\Hr\HrGrade;
+use App\Models\Hr\HrEmploymentType;
 use App\Models\Hr\HrJobRole;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
@@ -269,6 +270,104 @@ class OrganizationService
 
     /*
     |--------------------------------------------------------------------------
+    | Employment Types
+    |--------------------------------------------------------------------------
+    |
+    | What kind of employment somebody is on — Permanent, Contract, Intern, or
+    | whatever this company calls them. Company-defined, with nothing seeded.
+    |
+    | Deliberately NOT hr_hiring_requests.employment_type, which is a
+    | requisition field published verbatim to external job boards and stays a
+    | fixed vocabulary; and not worker_type, which is the org chart's own
+    | three-value grouping.
+    */
+    public function employmentTypes(int $tenantId): array
+    {
+        $counts = $this->employeeCountsBy('employment_type_id', $tenantId);
+
+        // Sort order first, then name: the dropdown reads the way HR arranged
+        // it rather than alphabetically by accident.
+        return HrEmploymentType::where('tenant_id', $tenantId)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get()
+            ->map(fn (HrEmploymentType $t) => [
+                'id'             => $t->id,
+                'name'           => $t->name,
+                'code'           => $t->code,
+                'description'    => $t->description,
+                'sort_order'     => $t->sort_order,
+                'is_active'      => $t->is_active,
+                'employee_count' => $counts[$t->id] ?? 0,
+            ])->all();
+    }
+
+    public function createEmploymentType(array $data, int $tenantId, ?User $actor = null): HrEmploymentType
+    {
+        $this->assertUniqueName(HrEmploymentType::class, $tenantId, $data['name']);
+
+        $type = HrEmploymentType::create([
+            ...$this->employmentTypeAttrs($data),
+            'tenant_id' => $tenantId, 'created_by' => $actor?->id,
+        ]);
+        $type->recordAudit('Employment Type Created', $actor, null, ['name' => $type->name]);
+        $this->log('Employment type created', $tenantId, $type->id);
+
+        return $type;
+    }
+
+    public function updateEmploymentType(int $id, array $data, int $tenantId, ?User $actor = null): HrEmploymentType
+    {
+        $type = $this->findTenant(HrEmploymentType::class, $id, $tenantId);
+        if (array_key_exists('name', $data)) {
+            $this->assertUniqueName(HrEmploymentType::class, $tenantId, $data['name'], $type->id);
+        }
+        $type->update($this->employmentTypeAttrs($data) + ['updated_by' => $actor?->id]);
+        $type->recordAudit('Employment Type Updated', $actor, null, ['name' => $type->name]);
+
+        return $type->fresh();
+    }
+
+    /**
+     * Delete, but never out from under the people on it.
+     *
+     * The same rule every other org master follows: a type somebody is
+     * assigned to is deactivated rather than removed, so no employee record
+     * ends up pointing at nothing.
+     */
+    public function deleteEmploymentType(int $id, int $tenantId, ?User $actor = null): void
+    {
+        $type = $this->findTenant(HrEmploymentType::class, $id, $tenantId);
+        $inUse = HrEmployee::where('tenant_id', $tenantId)->where('employment_type_id', $type->id)->count();
+        if ($inUse > 0) {
+            throw new BusinessException("Cannot delete employment type \u{201C}{$type->name}\u{201D} \u{2014} {$inUse} employee(s) are assigned to it.");
+        }
+        $type->recordAudit('Employment Type Deleted', $actor, null, ['name' => $type->name]);
+        $type->delete();
+        $this->log('Employment type deleted', $tenantId, $id);
+    }
+
+    private function employmentTypeAttrs(array $data): array
+    {
+        $attrs = array_filter([
+            'name'        => $data['name'] ?? null,
+            'code'        => $data['code'] ?? null,
+            'description' => $data['description'] ?? null,
+        ], fn ($v) => $v !== null);
+
+        // Explicit, so 0 and false survive the array_filter above.
+        if (array_key_exists('sort_order', $data)) {
+            $attrs['sort_order'] = (int) $data['sort_order'];
+        }
+        if (array_key_exists('is_active', $data)) {
+            $attrs['is_active'] = (bool) $data['is_active'];
+        }
+
+        return $attrs;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | Job Roles
     |--------------------------------------------------------------------------
     */
@@ -417,6 +516,7 @@ class OrganizationService
             'designations'    => $base['designations'],
             'grades'          => $base['grades'],
             'roles'           => $base['roles'],
+            'employment_types' => $base['employment_types'],
             // Employees are the pool for Hiring Managers, Reporting Managers and Interviewers.
             'managers'        => $base['employees'],
             // No master table for these — derived from real tenant data, deduped.
@@ -471,6 +571,7 @@ class OrganizationService
             'designations' => $slim(HrDesignation::query()),
             'grades'       => $slim(HrGrade::query()),
             'roles'        => $slim(HrJobRole::query()),
+            'employment_types' => $slim(HrEmploymentType::query()),
             'employees'    => HrEmployee::where('tenant_id', $tenantId)->orderBy('name')
                 ->get(['id', 'name', 'employee_code'])->all(),
         ];

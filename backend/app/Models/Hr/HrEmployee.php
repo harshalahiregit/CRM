@@ -64,6 +64,10 @@ class HrEmployee extends Model
         'tenant_id','user_id','candidate_id','onboarding_id','employee_code',
         'name','email','phone','dob','gender','address','department','designation',
         'department_id','designation_id','grade_id','job_role_id',
+        // The tenant's own employment classification — Permanent, Contract,
+        // Intern, whatever they configured. Null means none chosen; there was
+        // never a legacy string on this table to inherit from.
+        'employment_type_id',
         'reporting_manager_name','reporting_manager_id',
         // `location` is the office/city (free text, unchanged). `work_state` is the
         // statutory jurisdiction Professional Tax is levied under — the two are NOT
@@ -183,6 +187,11 @@ class HrEmployee extends Model
     public function departmentRef()
     {
         return $this->belongsTo(HrDepartment::class, 'department_id');
+    }
+
+    public function employmentType()
+    {
+        return $this->belongsTo(HrEmploymentType::class, 'employment_type_id');
     }
 
     public function designationRef()

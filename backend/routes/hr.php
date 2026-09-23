@@ -371,6 +371,13 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::put('/org-roles/{id}',       [OrganizationController::class, 'updateRole']);
     Route::delete('/org-roles/{id}',    [OrganizationController::class, 'destroyRole']);
 
+    // Employment Types — Permanent, Contract, Intern, or whatever this company
+    // calls them. An org master like the four above, managed on the same screen.
+    Route::get('/employment-types',         [OrganizationController::class, 'employmentTypes']);
+    Route::post('/employment-types',        [OrganizationController::class, 'storeEmploymentType']);
+    Route::put('/employment-types/{id}',    [OrganizationController::class, 'updateEmploymentType']);
+    Route::delete('/employment-types/{id}', [OrganizationController::class, 'destroyEmploymentType']);
+
     // ── Payroll → Salary Components master (Phase 1). No hard delete — status toggle only.
     //    The /payroll/* prefix reserves the namespace for future phases (structures, etc.).
     Route::get('/payroll/salary-components',              [SalaryComponentController::class, 'index']);
