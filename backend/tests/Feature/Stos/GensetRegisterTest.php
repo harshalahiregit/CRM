@@ -76,7 +76,7 @@ class GensetRegisterTest extends TestCase
         // Unfitted is a normal state, not an incomplete one — a spare in the
         // yard is the whole reason the register exists.
         $this->assertNull($genset->vehicle_id);
-        $this->assertSame('idle', $genset->status);
+        $this->assertSame('IDLE', $genset->status);
         $this->assertSame('GS0001', $genset->serial_number);
     }
 
@@ -117,7 +117,7 @@ class GensetRegisterTest extends TestCase
 
         $this->assertSame($vehicle->id, $fitted->vehicle_id);
         // A unit sitting in the yard is working again once it is bolted on.
-        $this->assertSame('active', $fitted->status);
+        $this->assertSame('ACTIVE', $fitted->status);
     }
 
     public function test_a_unit_that_fails_is_replaced_by_moving_the_spare_across(): void
@@ -146,7 +146,7 @@ class GensetRegisterTest extends TestCase
     public function test_a_retired_unit_cannot_be_fitted(): void
     {
         $genset = $this->genset('GS-0013');
-        $this->svc()->update($genset->id, self::COMPANY, ['status' => 'retired'], $this->user()->id);
+        $this->svc()->update($genset->id, self::COMPANY, ['status' => 'RETIRED'], $this->user()->id);
 
         $this->actingAs($this->user())
             ->postJson("/api/v1/fleet/gensets/{$genset->id}/fit", ['vehicle_id' => $this->vehicle()->id])
@@ -155,7 +155,12 @@ class GensetRegisterTest extends TestCase
 
     public function test_a_working_unit_is_not_fitted_to_a_retired_truck(): void
     {
-        $retired = $this->vehicle(['status' => 'retired']);
+        // T-58 — this used to say 'retired', which is not a value `vehicles`
+        // has held since January. The guard it was testing said the same
+        // thing, so the test passed while the guard could never fire and a
+        // genset could really be fitted to a scrapped truck. Both now use the
+        // constant.
+        $retired = $this->vehicle(['status' => Vehicle::STATUS_RETIRED]);
         $genset = $this->genset('GS-0014');
 
         // It would strand the unit: the truck never moves and the genset reads
@@ -177,19 +182,19 @@ class GensetRegisterTest extends TestCase
         $this->assertNull($off->vehicle_id);
         // "Active" on a unit sitting in the yard reads as working AND in use,
         // and the register is what somebody checks before ordering another.
-        $this->assertSame('idle', $off->status);
+        $this->assertSame('IDLE', $off->status);
     }
 
     public function test_a_unit_under_repair_stays_under_repair_when_it_comes_off(): void
     {
         $vehicle = $this->vehicle();
         $genset = $this->genset('GS-0021', ['vehicle_id' => $vehicle->id]);
-        $this->svc()->update($genset->id, self::COMPANY, ['status' => 'in_maintenance'], $this->user()->id);
+        $this->svc()->update($genset->id, self::COMPANY, ['status' => 'IN_MAINTENANCE'], $this->user()->id);
 
         $off = $this->svc()->unfit($genset->id, self::COMPANY, $this->user()->id);
 
         // Taking it off does not repair it.
-        $this->assertSame('in_maintenance', $off->status);
+        $this->assertSame('IN_MAINTENANCE', $off->status);
     }
 
     public function test_unfitting_something_that_is_not_fitted_is_refused(): void
@@ -210,7 +215,7 @@ class GensetRegisterTest extends TestCase
         // act. Doing the second implicitly leaves a reefer reporting no genset
         // and nobody knowing why.
         $this->actingAs($this->user())
-            ->putJson("/api/v1/fleet/gensets/{$genset->id}", ['status' => 'retired'])
+            ->putJson("/api/v1/fleet/gensets/{$genset->id}", ['status' => 'RETIRED'])
             ->assertStatus(422);
 
         $this->assertSame($vehicle->id, $genset->fresh()->vehicle_id);
@@ -251,7 +256,7 @@ class GensetRegisterTest extends TestCase
 
     public function test_a_retired_reefer_is_not_reported_as_missing_a_genset(): void
     {
-        $this->vehicle(['status' => 'retired']);
+        $this->vehicle(['status' => Vehicle::STATUS_RETIRED]);
 
         $data = $this->actingAs($this->user())
             ->getJson('/api/v1/fleet/gensets')->assertOk()->json('data');

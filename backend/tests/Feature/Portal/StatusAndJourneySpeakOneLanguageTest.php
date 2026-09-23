@@ -61,7 +61,7 @@ class StatusAndJourneySpeakOneLanguageTest extends TestCase
      *
      * M14 is "Payment Received / Trip Closure" and requires the customer's own
      * payment. Our `trip.closed` does not, so neither "Completed" nor "Closed"
-     * may be spent on it — see D-124.
+     * may be spent on it — see D-129.
      */
     public function test_closure_does_not_use_a_word_m14_claims(): void
     {
@@ -70,7 +70,7 @@ class StatusAndJourneySpeakOneLanguageTest extends TestCase
         foreach (['completed', 'closed', 'closure', 'paid', 'payment'] as $claimed) {
             $this->assertStringNotContainsString($claimed, $word,
                 "\"{$word}\" uses \"{$claimed}\", which CLP §8's M14 claims for a state that also "
-                .'requires payment. A customer would have to unlearn it — D-124.');
+                .'requires payment. A customer would have to unlearn it — D-129.');
         }
     }
 }

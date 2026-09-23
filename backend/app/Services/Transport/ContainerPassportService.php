@@ -99,7 +99,9 @@ class ContainerPassportService
                 'order:id,order_number,order_status,service_type,required_at,priority',
                 'consignment:id,consignment_number,customer_reference,cargo_description,package_count,gross_weight_kg',
                 'vehicle:id,registration_number,vehicle_type',
-                'driver:id,name,licence_class',
+                // See D-134 — Fleet holds no name; the passport shows the
+                // licence until the directory lookup is wired in.
+                'driver:id,source,source_id,licence_number,licence_class',
             ])
             ->latest('id')
             ->first();

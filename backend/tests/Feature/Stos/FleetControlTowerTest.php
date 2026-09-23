@@ -67,7 +67,7 @@ class FleetControlTowerTest extends TestCase
             'longitude'        => '72.87765800',
             'speed'            => '46.50',
             'ignition'         => true,
-            'generator_status' => 'on',
+            'generator_status' => VehicleLiveStatus::GENSET_ON,
             'temperature'      => '-18.50',
             'last_ping_at'     => now()->subMinute(),
         ], $over));
@@ -117,7 +117,7 @@ class FleetControlTowerTest extends TestCase
     public function test_a_warming_load_with_the_genset_off_is_red(): void
     {
         $v = $this->vehicle();
-        $this->live($v, ['generator_status' => 'off', 'temperature' => '-9.00']);
+        $this->live($v, ['generator_status' => VehicleLiveStatus::GENSET_OFF, 'temperature' => '-9.00']);
 
         $row = $this->gridRow($v);
 
@@ -149,7 +149,7 @@ class FleetControlTowerTest extends TestCase
 
         MaintenanceJob::create([
             'company_id' => self::COMPANY, 'vehicle_id' => $v->id,
-            'job_card_number' => 'JC-1', 'status' => 'awaiting_parts',
+            'job_card_number' => 'JC-1', 'status' => 'AWAITING_PARTS',
             'parts_cost' => '100.00', 'labour_cost' => '50.00', 'total_cost' => '150.00',
         ]);
 
@@ -179,7 +179,7 @@ class FleetControlTowerTest extends TestCase
         // Progressive disclosure: the API withholds the fields, so the UI cannot
         // render an empty -18C dial on a tipper.
         $tipper = $this->vehicle(['vehicle_type' => 'tipper']);
-        $this->live($tipper, ['temperature' => '4.00', 'generator_status' => 'on']);
+        $this->live($tipper, ['temperature' => '4.00', 'generator_status' => VehicleLiveStatus::GENSET_ON]);
 
         $row = $this->gridRow($tipper);
 

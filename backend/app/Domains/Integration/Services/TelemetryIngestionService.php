@@ -42,7 +42,7 @@ class TelemetryIngestionService
             'longitude'        => $payload['longitude'] ?? null,
             'speed'            => $payload['speed']     ?? null,
             'ignition'         => array_key_exists('ignition', $payload) ? (bool) $payload['ignition'] : null,
-            'generator_status' => $payload['generator_status'] ?? null,
+            'generator_status' => VehicleLiveStatus::normaliseGeneratorState($payload['generator_status'] ?? null),
             'temperature'      => $payload['temperature'] ?? null,
         ];
 
@@ -287,7 +287,11 @@ class TelemetryIngestionService
     {
         $temperature = $reading['temperature'];
         $generator = $reading['generator_status'];
-        $offState = (string) config('stos.telemetry.excursion_generator_off', 'off');
+        // T-06 — a FAULTED genset is not cooling either, and reporting it as
+        // running is how a spoiled load goes unnoticed. The config value stays
+        // for the deployment that wants to narrow this to OFF alone.
+        $offStates = (array) config('stos.telemetry.excursion_generator_off',
+            VehicleLiveStatus::GENSET_NOT_COOLING);
         $threshold = (float) config('stos.telemetry.excursion_temperature', -18.0);
 
         // A silent probe is not a cold load. Never infer an excursion from a
@@ -296,7 +300,7 @@ class TelemetryIngestionService
             return false;
         }
 
-        if ($generator !== $offState || (float) $temperature <= $threshold) {
+        if (! in_array($generator, $offStates, true) || (float) $temperature <= $threshold) {
             return false;
         }
 

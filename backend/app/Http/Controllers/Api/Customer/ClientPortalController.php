@@ -280,7 +280,7 @@ class ClientPortalController extends Controller
      * ClientVisibleFields::CLIENT_EVENTS names the eleven moments a customer may
      * see; anything else — internal approvals, crew housekeeping — is not shown
      * because it is not named, rather than because somebody remembered to hide
-     * it. The vocabulary is INTERIM and is not CLP §8's M01–M14: see D-121 and
+     * it. The vocabulary is INTERIM and is not CLP §8's M01–M14: see D-126 and
      * the comment on that constant.
      *
      * ── NO DOCUMENTS ────────────────────────────────────────────────────

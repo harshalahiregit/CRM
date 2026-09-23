@@ -31,5 +31,5 @@ can opt into, defaulting off, so the ten sections that are fine stay exactly as 
 know the constraints on that file better than I do, and I would rather you designed it than
 inherited my guess.
 
-Logged as **D-122**. Whatever you decide, our section inherits it — we have added no table
+Logged as **D-127**. Whatever you decide, our section inherits it — we have added no table
 behaviour of our own.

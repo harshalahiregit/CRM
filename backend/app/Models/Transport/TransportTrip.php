@@ -2,6 +2,8 @@
 
 namespace App\Models\Transport;
 
+use App\Domains\Fleet\Models\DriverProfile;
+use App\Domains\Fleet\Models\Vehicle;
 use App\Models\Customer\Client;
 use App\Models\Transport\Concerns\RecordsTransportAudit;
 use App\Models\Traits\BelongsToTenant;
@@ -114,22 +116,27 @@ class TransportTrip extends Model
     /**
      * CTD-006 / CTD-007 — the vehicle and driver carrying this trip.
      *
-     * These point at `transport_vehicles` / `transport_drivers`, which are P1's
-     * PLACEHOLDER tables under TEAM-CONTRACTS §1a, not Fleet's. There is no read
-     * contract to Fleet — FleetResourceGateway carries only markDispatched() —
-     * so this is the only way the passport can name a vehicle today.
+     * ── REPOINTED ONTO FLEET, 2026-09-23 (D-100 / D-109) ─────────────────
+     * These used to read `transport_vehicles` / `transport_drivers`, P1's
+     * placeholder tables under TEAM-CONTRACTS §1a. `stos:repoint-trip-fleet-refs`
+     * has moved the ids, so `vehicle_id` and `driver_id` now hold Fleet ids and
+     * these read the Fleet masters.
      *
-     * When allocation is repointed at Fleet (D-100), these two relations are
-     * among the places that follow.
+     * Every reference moved in the same run — all seven columns, recorded in
+     * `fleet_reference_repoints` with a verdict each, so which id space a row is
+     * in is answerable from data rather than inferred.
+     *
+     * The placeholder tables still exist and still hold their rows. Nothing was
+     * dropped, and the ledger makes this reversible.
      */
     public function vehicle(): BelongsTo
     {
-        return $this->belongsTo(TransportVehicle::class, 'vehicle_id');
+        return $this->belongsTo(Vehicle::class, 'vehicle_id');
     }
 
     public function driver(): BelongsTo
     {
-        return $this->belongsTo(TransportDriver::class, 'driver_id');
+        return $this->belongsTo(DriverProfile::class, 'driver_id');
     }
 
     public function customer(): BelongsTo

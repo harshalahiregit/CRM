@@ -19,7 +19,7 @@ import { clientPortalApi } from '@/lib/clientPortalApi'
  *
  * ── THE MOMENTS ARE INTERIM, AND SAY SO ON SCREEN ────────────────────────
  * These are the moments we genuinely record, in plain words. They are NOT
- * CLP §8's M01–M14 — that model is deferred under D-121 because four of its
+ * CLP §8's M01–M14 — that model is deferred under D-126 because four of its
  * fourteen have no event type anywhere and it needs planned-versus-actual
  * times we do not carry. A customer is told the list is "the moments we record"
  * rather than being given a milestone model that quietly is not one.

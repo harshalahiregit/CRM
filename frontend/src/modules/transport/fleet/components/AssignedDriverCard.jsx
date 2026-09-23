@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { UserRound, IdCard, Phone, Building2, UserX, X, Check, Search } from 'lucide-react'
-import { stosApi, STOS_ACCENT, fmtWhen } from '@/services/stosApi'
+import { stosApi, STOS_ACCENT, fmtWhen, DRIVER_STATUS_LABELS } from '@/services/stosApi'
 import HealthChip from './HealthChip'
 
 /**
@@ -64,10 +64,10 @@ export default function AssignedDriverCard({ driver, vehicle, onChanged }) {
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>{driver.name}</span>
               <HealthChip tone={LICENCE_TONE[state]} size="sm">{LICENCE_LABEL[state]}</HealthChip>
-              {driver.profile?.status && driver.profile.status !== 'available' && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded capitalize"
+              {driver.profile?.status && driver.profile.status !== 'AVAILABLE' && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded"
                   style={{ background: 'var(--bg-card)', color: 'var(--text-muted)' }}>
-                  {driver.profile.status.replace('_', ' ')}
+                  {DRIVER_STATUS_LABELS[driver.profile.status] || driver.profile.status}
                 </span>
               )}
             </div>

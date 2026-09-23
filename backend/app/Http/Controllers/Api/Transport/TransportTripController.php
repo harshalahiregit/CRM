@@ -92,7 +92,13 @@ class TransportTripController extends Controller
             // displaying history.
             'assignment' => ($this->assignments->activeForTrip($trip->id, $tenantId)
                 ?? $this->assignments->historyForTrip($trip->id, $tenantId)->first())
-                ?->load('vehicle:id,registration_number,vehicle_type,status', 'driver:id,name,driver_code,licence_class,availability'),
+                // Fleet's columns, not the placeholder's. `driver_profiles` has no
+                // `name`, no `driver_code` and no `availability` — Fleet stores
+                // no names at all, because a driver is a reference into the CRM
+                // directory (`source` + `source_id`) plus a licence. Selecting
+                // the old four made this endpoint 503 with
+                // "Unknown column 'name'". See D-134 for the name itself.
+                ?->load('vehicle:id,registration_number,vehicle_type,status', 'driver:id,source,source_id,licence_number,licence_class,status'),
             'audit' => $this->audit->forSubject($trip, $tenantId),
             // CTD §4's destination, reachable from the trip in one click.
             //

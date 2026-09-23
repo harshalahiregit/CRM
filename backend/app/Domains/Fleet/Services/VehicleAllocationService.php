@@ -2,6 +2,7 @@
 
 namespace App\Domains\Fleet\Services;
 
+use App\Domains\Fleet\Models\DriverProfile;
 use App\Domains\Fleet\Models\FuelTransaction;
 use App\Domains\Fleet\Models\MaintenanceJob;
 use App\Domains\Fleet\Models\Vehicle;
@@ -332,7 +333,7 @@ class VehicleAllocationService
             return 0.5;
         }
 
-        return ($driver['profile']['status'] ?? 'available') === 'available' ? 1.0 : 0.5;
+        return ($driver['profile']['status'] ?? DriverProfile::AVAILABLE) === DriverProfile::AVAILABLE ? 1.0 : 0.5;
     }
 
     /**
@@ -356,7 +357,7 @@ class VehicleAllocationService
         // Licence state is deliberately absent. It is a fact about the person,
         // and attaching it here made a dispatch board stand down a perfectly
         // good truck. It is returned against the driver instead, as a blocker.
-        if (($driver['profile']['status'] ?? 'available') !== 'available') {
+        if (($driver['profile']['status'] ?? DriverProfile::AVAILABLE) !== DriverProfile::AVAILABLE) {
             $flags[] = 'driver_unavailable';
         }
 

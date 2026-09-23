@@ -18,6 +18,9 @@ a verbal approval is not an artefact.
 - [RULING-001](#ruling-001--the-client-portal-is-being-built-without-step-12-tickets) — the client
   portal is being built without Step 12 tickets (B-09). Two endpoints, one permission value.
   Retroactive ticket outstanding.
+- [RULING-002](#ruling-002--the-fleet-repoint-was-applied-2026-09-23) — the trip references were
+  repointed onto the Fleet masters. 16 rows moved, 7 recorded unmatchable, reversible via
+  `fleet_reference_repoints`. Driver allocation blocked on D-134.
 
 | ID | Area | Severity | Owner | Status |
 |----|------|----------|-------|--------|
@@ -4224,7 +4227,7 @@ except this one.
 
 ---
 
-## D-121 — CLP's M01–M14 is a second vocabulary, not a view, and four of them have no words at all
+## D-126 — CLP's M01–M14 is a second vocabulary, not a view, and four of them have no words at all
 
 **Raised:** 2026-09-22, sizing the client portal foundation. **Ours under MS-001 v1.1 §4** (the
 trip/milestone APIs are Person 1's). **Blocked on AUTH-REC-001 B-08.**
@@ -4282,7 +4285,50 @@ should be labelled as an interim so nobody mistakes it for §8's model.
 
 ---
 
-## D-122 — the client portal table has no pagination, and one customer already has 35 rows
+## D-121 — A genset could be fitted to a retired vehicle, and the guard against it had never fired
+
+**Raised and fixed:** 2026-09-22, P2, while converting the last lowercase enums (T-58). **P2's code.**
+
+### What it was
+
+`GensetService::fit()` refuses to put a working unit on a scrapped truck, because the unit would
+read as in service on a vehicle that never moves again:
+
+```php
+if ($vehicle->status === 'retired') {
+    throw new BusinessException('That vehicle is retired — fitting a working genset to it would strand the unit.');
+}
+```
+
+`vehicles.status` has held **`RETIRED`** since `2027_01_07_000001` adopted the ruled uppercase
+vocabulary. So that comparison has been false on every call it has ever handled. No error, no log
+line, no refusal — the fit simply succeeded.
+
+### Why it survived a test suite
+
+`test_a_working_unit_is_not_fitted_to_a_retired_truck` passed the whole time. Its fixture set the
+vehicle to `'retired'` — **the same misspelling the guard used** — so the test and the bug agreed
+with each other and neither agreed with the database. The fixture now uses
+`Vehicle::STATUS_RETIRED`, and the test fails against the old guard.
+
+That is the second time in this module a green test has been found asserting a defect rather than
+the behaviour: `TripTimelineTest` did the same for D-116, where eight cases passed because the
+fixture reproduced the wrong id space.
+
+### What was done
+
+Fixed with the change that made it findable. Both sides now use `Vehicle::STATUS_RETIRED` and
+`Genset::RETIRED` rather than string literals, so a future rename moves both or neither.
+
+### The general lesson
+
+*A test written from the same assumption as the code under test verifies the assumption, not the
+code.* Both of these were caught by changing the vocabulary underneath them — which is an argument
+for doing the rename rather than living with two spellings, not just for tidiness.
+
+---
+
+## D-127 — the client portal table has no pagination, and one customer already has 35 rows
 
 **Raised:** 2026-09-22, walking the Shipments screen. **P3's component** (`ClientPortalRecords`).
 **Not ours to fix — logged and raised.**
@@ -4319,7 +4365,7 @@ the house style exactly and will inherit whatever is decided.
 
 ---
 
-## D-123 — "Issue reported" tells a customer that something went wrong, not what
+## D-128 — "Issue reported" tells a customer that something went wrong, not what
 
 **Raised:** 2026-09-22, walking the journey view as the client. **P1.** **Needs a business ruling.**
 
@@ -4363,12 +4409,12 @@ Until then the two words stand. They are honest and they leak nothing; they are 
 
 ### Related
 
-Feeds [D-121](#d-121--clps-m01m14-is-a-second-vocabulary-not-a-view-and-four-of-them-have-no-words-at-all)
+Feeds [D-126](#d-126--clps-m01m14-is-a-second-vocabulary-not-a-view-and-four-of-them-have-no-words-at-all)
 — CLP §8's milestone model has no exception milestone either, so this gap survives that mapping.
 
 ---
 
-## D-124 — the client portal spent a word CLP §8 will want back
+## D-129 — the client portal spent a word CLP §8 will want back
 
 **Raised:** 2026-09-23, auditing our own portal work against §8. **P1.** **Fixed the same day.**
 
@@ -4404,11 +4450,11 @@ word and §8's milestone describe the same moment, the words should already agre
 **Invoiced/M13** and **Vehicle assigned/M01**). Where they describe *different* moments, the
 interim word must be one §8 does not use — otherwise the interim silently pre-empts the spec.
 
-Related: [D-121](#d-121--clps-m01m14-is-a-second-vocabulary-not-a-view-and-four-of-them-have-no-words-at-all).
+Related: [D-126](#d-126--clps-m01m14-is-a-second-vocabulary-not-a-view-and-four-of-them-have-no-words-at-all).
 
 ---
 
-## D-125 — `arrived` is a state a customer can see with no event behind it
+## D-130 — `arrived` is a state a customer can see with no event behind it
 
 **Raised:** 2026-09-23, writing the one-vocabulary test. **P1.** **Named, not fixed.**
 
@@ -4427,6 +4473,244 @@ Two smaller states were unmapped for the same reason and are now covered without
 `pod_pending` reads as *"Delivered"* (waiting for the POD is our work, not the customer's) and
 `settlement_pending` reads as *"Invoiced"* (settlement is between us and the transporter). Both
 correctly show the last moment the customer's shipment actually reached.
+
+---
+
+## D-131 — the four repointed tables have no foreign keys, and one already holds a value that is not an id
+
+**Raised:** 2026-09-23, during the repoint dry run. **P1 for three tables; P3 for `trip_advances`.**
+**Logged, not fixed — the constraints cannot go on until the data is cleaned.**
+
+### What it is
+
+The schema carries **488 foreign key constraints.** These four tables have **none at all** on the
+columns the repoint moves:
+
+| Table | `vehicle_id` | `driver_id` | Owner |
+|---|---|---|---|
+| `transport_trips` | no FK | no FK | P1 |
+| `trip_assignments` | no FK | no FK | P1 |
+| `trip_exceptions` | no FK | no FK | P1 |
+| `trip_advances` | — | no FK | **P3** |
+
+`trip_advances` has no foreign key on **any** column — not `trip_id`, not `tenant_id`, not
+`driver_id`.
+
+### What it already cost
+
+`trip_advances` #2 carries `driver_id = 1212010`. That value is **not an id in any table**: not a
+legacy driver, not a `driver_profile`, not a user. The trip's actual driver is 40. `purpose` on the
+same row reads `SEGDHCNV`. It was typed into a form on 2026-09-19 and nothing asked whether it was
+a driver.
+
+Recorded in the repoint ledger under the verdict **`never_valid`**, which exists because of this
+row — see below.
+
+### Why the constraints are not being added here
+
+Adding a foreign key to a column that already holds invalid values fails on the spot, and finding
+out *which* values are invalid across four tables is its own piece of work. What would have to
+happen first:
+
+1. Sweep all seven columns for values present in neither the legacy masters nor Fleet.
+2. Decide each one — they are not all the same kind of wrong. A stale legacy id is a mapping
+   failure; `1212010` was never a reference at all.
+3. **Decide which table each column should point at**, which cannot be settled before the repoint
+   lands: three of them are mid-migration between the legacy masters and Fleet, and a constraint
+   written now would have to be dropped and rewritten next week.
+
+So this waits for a block of its own, after `--apply`.
+
+### The half that is not ours
+
+`trip_advances` belongs to Person 3. This entry names the defect; **the fix is a written request to
+him, not an edit by us.** We have not touched the table, and advance #2 is recorded in our ledger
+and left exactly as it is so he can see the evidence rather than a repaired row.
+
+### The general rule underneath
+
+**A migration tool that has to describe bad data will eventually meet data that none of its
+descriptions fit, and the temptation is to use the nearest one. The nearest one is a lie.**
+
+The repoint could classify `1212010` only as *stranded* — *"points at a legacy row with no Fleet
+counterpart"*. That sentence is false: it points at no legacy row. Stranding it would have written
+a true-sounding, wrong sentence into a permanent ledger, and every downstream reader would then
+refuse the row on a stated ground that was not the real one. Same family as
+[D-116](#d-116) and [D-118](#d-118): an answer that is wrong without being an error.
+
+The fix is not to bend the nearest verdict. It is to give the tool a **true** one.
+
+### Related
+
+The three junk trips (2, 12, 14) are the other half of the same story and are recorded under
+`unmapped_legacy` — a verdict that *is* true of them. They also sit at status `allocated` with
+**zero rows in `trip_assignments`**: a trip cannot be allocated with nothing allocated to it. They
+are not merely empty, they are inconsistent, and that is the evidence that they were never real
+trips when somebody eventually decides to clear them. They are **not** being deleted as a side
+effect of a migration.
+
+---
+
+## D-132 — two of Person 2's migrations cannot run on MySQL, and one half-ran
+
+**Raised:** 2026-09-23, running the repoint. **P2's migrations; P1 repaired them to unblock.**
+
+Both pass on SQLite, which is what the test suite uses, and both fail on MySQL, which is what dev
+and production use. Neither was reachable by a green test run.
+
+### `2027_01_10_000001_adopt_uppercase_fleet_enums`
+
+```
+SQLSTATE[42000]: ... near 'rows from `maintenance_jobs` ...'
+SQL: select `status`, count(*) as rows from `maintenance_jobs` ...
+```
+
+`rows` is a reserved word in MySQL 8.0 and `DB::raw('count(*) as rows')` is unquoted. The failure is
+in `reportStragglers()` — the **diagnostic**, not the data change — and it halted the whole
+migration chain.
+
+It also half-ran: the conversion loop runs per table and reports after each, so `vehicles.status`
+was uppercased and `driver_profiles.status` was not. The dev database sat with **`AVAILABLE` in one
+table and `available` in the other** — the exact case mismatch that makes an allocation silently
+skip a resource. Fixed by backticking the identifier.
+
+### `2027_01_10_000003_generalise_party_assignees`
+
+Renames `task_party_assignees` → `party_assignees`, then swaps a unique index. On MySQL the drop is
+refused:
+
+```
+Cannot drop index 'task_party_unique': needed in a foreign key constraint
+```
+
+The foreign key it needs is removed by **`000004`, which runs afterwards**. On SQLite `renameColumn`
+rebuilds the table, so the index comes across by column and the problem never appears.
+
+Worse, it is not re-runnable: the first three steps had applied, so a retry failed at the rename
+with *"Table 'party_assignees' already exists"*, and the chain could not move at all.
+
+Fixed by **guarding each step** rather than reordering: `000004` drops and rebuilds the table with
+`party_subject_unique_v2`, so the index swap is superseded either way, and moving it would change
+what `000004` means. The swap is now attempted and allowed to fail with a comment saying why.
+
+### Why P1 edited P2's files
+
+Normally this would be a written request. These blocked the entire migration chain on MySQL, and
+the database was already half-converted — leaving it there was the worse option. Both edits are
+minimal and change no intent: one backtick, and guards around steps that were already written.
+**Sent to P2 for review; if he prefers the reorder, it is his call.**
+
+### The general point
+
+A test suite on SQLite and a deployment on MySQL means green tests prove the code runs *somewhere*.
+Reserved words, foreign-key ordering and `renameColumn` are precisely where the two disagree, and
+all three appeared in one merge.
+
+---
+
+## D-133 — an eighth reference into the legacy masters, which the repoint does not cover
+
+**Raised:** 2026-09-23, repointing the eligibility readers. **P1.** **Logged, not fixed.**
+
+`transport_documents` links to a vehicle or a driver **polymorphically** — `entity_type` +
+`entity_id` — so it is an eighth reference into the legacy masters, and
+`RepointCoversEveryReferenceTest` cannot see it: that test looks for columns *named* `vehicle_id` or
+`driver_id`, and this one is named `entity_id`.
+
+Live today: **4 driver documents under legacy driver 17, 3 vehicle documents under legacy vehicles
+6, 9 and 11.** All seven already point at legacy rows that a reseed deleted, so they are orphaned
+*before* the repoint and no behaviour changes today. Structurally it is D-120 again: one schema, two
+id spaces, nothing recording which.
+
+The consequence when documents are real: `VehicleEligibilityService::documentVerdict()` would look
+up a Fleet id in a column holding legacy ids, find nothing, and report *"No documents are required
+for this vehicle"* — a compliance check **silently passing** rather than failing.
+
+### Not fixed here
+
+A polymorphic pair does not fit `REFERENCES`, whose shape is `[table, column, kind]`, and extending
+it would mean changing the schema-derived test that D-120 just installed. That test and that command
+are **P2's**, and reshaping them to admit a different kind of reference is a design decision, not a
+patch. Raised with him.
+
+---
+
+## D-134 — after the repoint, no driver can be allocated: Fleet's directory does not list them
+
+**Raised:** 2026-09-23, walking the allocation screen after `--apply`. **P2's component.**
+**BLOCKING — the driver half of the repoint cannot complete without a ruling.**
+
+### What happens
+
+With allocation reading Fleet, the driver picker on an approved trip shows:
+
+```
+None ready for TRP-2026-000036
+CANNOT BE USED RIGHT NOW · 1
+  Rajesh Kumar  HMV  — Not eligible
+  No licence is on file for this driver. (Fleet compliance desk)
+```
+
+**One person, correctly blocked. The two real drivers are not there at all** — not listed, not shown
+as ineligible, absent.
+
+### Why
+
+`DriverService::list()` starts from `DriverDirectory::people()` and attaches profiles keyed by
+`source:source_id`. The bound implementation is `CrmDriverDirectory`, which describes itself as:
+
+> *"Read live from TPV workforce, Purchase workforce, Vendor contacts, Customer contacts."*
+
+It returns exactly one person: `crm_client_contact:1`. But the two migrated profiles carry
+**`source = 'stos'`** — written by the D-62 move migration — and only `StandaloneDriverDirectory`
+resolves that source. So a profile whose licence and expiry are both present and valid until 2029
+is invisible to the picker.
+
+```
+driver_profiles
+  1  crm_client_contact:1   licence NULL        AVAILABLE   ← the only one offered
+  2  stos:1   RJ14 2019 0011221  exp 2029-09-17  AVAILABLE   ← invisible
+  3  stos:2   MH12 2020 0033445  exp 2029-09-17  AVAILABLE   ← invisible
+```
+
+### Not a data problem
+
+The licences are in Fleet and they are valid. The migration did its job. The gap is that the
+directory reading people and the migration writing profiles disagree about what a `source` may be,
+and nothing reconciles them.
+
+### What a ruling has to decide
+
+1. Should `CrmDriverDirectory` also resolve `stos`-sourced profiles — a person who drives for us but
+   is not a TPV, purchase, vendor or customer contact?
+2. Or should the D-62 migration have created those people in the CRM directory first, making
+   `source = 'stos'` a state that should not exist?
+3. Either way, what happens to the profiles that carry it **today**?
+
+**The vehicle half of the repoint is unaffected and works end to end** — see the walk in
+RULING-002's companion note. This is the driver half only.
+
+---
+
+## D-135 — `driver_profiles` has no name, and two screens were selecting one
+
+**Raised:** 2026-09-23, same walk. **P1. Fixed.**
+
+`GET /api/transport/trips/{id}` returned **503**:
+
+```
+SQLSTATE[42S22]: Unknown column 'name' in 'field list'
+```
+
+Two places eager-loaded `driver:id,name,driver_code,licence_class,availability` — four columns that
+`transport_drivers` had and `driver_profiles` does not. Fleet stores **no names at all**: a driver is
+a reference into the CRM directory (`source` + `source_id`) plus a licence. Container 360 read
+*"Trip not found"* because of it.
+
+Fixed by selecting the columns that exist. **The name is not restored** — resolving it means going
+through the directory, which is [D-134](#d-134--after-the-repoint-no-driver-can-be-allocated-fleets-directory-does-not-list-them)'s
+territory. Until then the trip screen and the container passport identify a driver by licence rather
+than by name, which is honest but worse, and it is recorded here rather than left to be noticed.
 
 ---
 
@@ -4477,17 +4761,25 @@ B-09 makes two claims and only one of them is breached.
 
 - *"Do not implement from CLP narrative alone"* — **not breached.** The columns came from auditing
   our own tables and the journey phrases from our own `TripEventType` registry. Where CLP specified
-  something with no table behind it — M01–M14 — it was measured and refused ([D-121](#d-121--clps-m01m14-is-a-second-vocabulary-not-a-view-and-four-of-them-have-no-words-at-all)).
+  something with no table behind it — M01–M14 — it was measured and refused ([D-126](#d-126--clps-m01m14-is-a-second-vocabulary-not-a-view-and-four-of-them-have-no-words-at-all)).
 - *"No approved ticket authorises the portal"* — **breached.** Two endpoints and one permission
   value exist with no Step 12 ticket.
 
 ### What is outstanding
 
 1. **A retroactive Step 12 ticket** covering the two endpoints and the permission value. Owed.
-2. **The `{id}` route convention.** `ClientPortalTest::test_no_portal_route_accepts_a_client_id`
-   (Zafar, 2026-08-21) asserts no route under `api/portal/client` contains `{`, and ours does. That
-   test is red on master because of us. Raised with its owner; **the portal is paused until he
-   rules**, and his test has not been touched.
+2. ~~**The `{id}` route convention.**~~ **Closed 2026-09-23 — ruled by P3, in our favour.**
+   `ClientPortalTest::test_no_portal_route_accepts_a_client_id` (Zafar, 2026-08-21) asserted that no
+   route under `api/portal/client` may contain `{`. Ours does. He changed **his test, not our
+   route**: 125 portal routes already take a path parameter, so the client portal was the outlier.
+   `->whereNumber('id')` is what satisfies the replacement rule, and it was already in place.
+
+   **Correction to this entry as first written.** It said that test was *"red on master because of
+   us"*. It was not. Our route has never been on master — `git show origin/master:backend/routes/
+   portal.php | grep -c transport/shipments` returns **0**. The failure existed only in a local
+   working tree that had never been pushed. Claiming a shared branch was broken by unpushed work is
+   a factual error, not modesty, and it is the kind that sends other people looking for damage that
+   is not there. **Check which branch actually carries the code before reporting a break on it.**
 
 ### Why this entry exists at all
 
@@ -4500,3 +4792,76 @@ The remedy was written down before the breach and then not followed. From
 
 An "APPROVED" was allowed to stand in for the artefact. **Not defensible; correctable.** This is
 the correction.
+
+---
+
+## RULING-002 — the Fleet repoint was applied, 2026-09-23
+
+**Not a defect. A record of an irreversible-looking operation and what it actually did**, written
+down because the rows themselves cannot answer "which id space is this in" afterwards.
+
+**Applied:** 2026-09-23 by Person 1, authorised by the technical lead, D-120 closed.
+
+### What was run, in order
+
+1. **Backup**, proved by restoring into a throwaway `mysql:8.0` container and checking today's rows
+   were present — trips 39, events 44, assignments 4, the contact's `transport` permission, trip
+   44's 21 events. Not a table count.
+2. `stos:reconcile-fleet` — **0 outstanding on both halves.** `--relink` therefore wrote nothing.
+3. Dry run — clean on both of P2's new guards (no contested mapping, no unsafe collision).
+4. **Readers swapped** onto Fleet — see below.
+5. `--apply --force`.
+
+### The numbers
+
+| Table | Column | moved | never_valid |
+|---|---|---|---|
+| `transport_trips` | `vehicle_id` | 2 | 3 |
+| `transport_trips` | `driver_id` | 2 | 3 |
+| `trip_assignments` | `vehicle_id` | 4 | 0 |
+| `trip_assignments` | `driver_id` | 4 | 0 |
+| `trip_exceptions` | `vehicle_id` | 2 | 0 |
+| `trip_exceptions` | `driver_id` | 2 | 0 |
+| `trip_advances` | `driver_id` | 0 | 1 |
+| **Total** | | **16** | **7** |
+
+`--force` was used deliberately: nothing could be moved for those seven, and recording a true
+verdict against each is better than leaving them undescribed. **Nothing was deleted.** The legacy
+tables still hold their rows, and every decision is in `fleet_reference_repoints`.
+
+### What now reads Fleet
+
+- Seven relations: `TransportTrip::vehicle`/`driver`, `TripAssignment::vehicle`/`driver`,
+  `TripAdvance::driver`, `TripException::vehicle`/`driver`.
+- `VehicleEligibilityService` — `Vehicle::forCompany`, `Vehicle::ALLOCATABLE`. **The case mismatch
+  was real**: `VehicleStatus::AVAILABLE` is `'available'` and Fleet's is `'AVAILABLE'`, and the
+  comparison fails *silently* — the allocation still writes, the truck simply never leaves the
+  available pool.
+- `DriverEligibilityService` — delegates licence, medical and profile status to
+  `DriverService::eligible()`, keeping only the assignment clash, which Fleet cannot answer.
+  Lower-casing would not have helped here: **`driver_profiles` has no `availability` column at all.**
+- `AllocationService::allocate()` and `freeResources()`. `freeResources` matches `ON_TRIP_STATES`,
+  not just `ALLOCATED` — a delivered trip's vehicle is `IN_TRANSIT`, and matching the earlier state
+  only would strand every completed trip's truck. That is D-119 in its other direction.
+- Status changes now go through `$model->update()` so **Fleet's** observer raises
+  `fleet.vehicle.status_changed`. The reason is logged beside it rather than written as a second
+  audit row: one status change with two audit trails that can disagree is worse than one.
+
+### What is proven, and what is not
+
+**Proven in a browser** — the Fleet page lists MH12DEMO01 and MH14DEMO02; trip 44 reads its crew
+from Fleet; allocating on trip 45 assigned MH14DEMO02 through the repointed eligibility.
+
+**Blocked** — no driver can be allocated. [D-134](#d-134--after-the-repoint-no-driver-can-be-allocated-fleets-directory-does-not-list-them):
+Fleet's bound directory does not list `source = 'stos'` profiles, so the two migrated drivers are
+invisible. P2's to rule on. The full lifecycle walk stops at step 2 until it is answered.
+
+**Outstanding** — the Transport test suite is heavily red (~299 in `tests/Feature/Transport`), because
+its fixtures seed the legacy masters and never run the repoint. That is fixture work, it is known,
+and it is not evidence the product is broken — the browser walk is. It needs a block of its own.
+
+### To undo
+
+`fleet_reference_repoints` holds `from_id`, `to_id` and a verdict per reference, so the move can be
+read back and reversed. The pre-run backup is
+`sangoe_crm-pre-repoint-20260923-1615.sql`.

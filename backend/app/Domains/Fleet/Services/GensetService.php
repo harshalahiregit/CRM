@@ -37,7 +37,7 @@ class GensetService
         $genset = Genset::create([
             'company_id'    => $companyId,
             'serial_number' => $serial,
-            'status'        => $data['status'] ?? 'idle',
+            'status'        => $data['status'] ?? Genset::IDLE,
             'vehicle_id'    => null,
         ]);
 
@@ -98,11 +98,15 @@ class GensetService
         $genset = $this->find($gensetId, $companyId);
         $vehicle = $this->vehicle($vehicleId, $companyId);
 
-        if ($genset->status === 'retired') {
+        if ($genset->status === Genset::RETIRED) {
             throw new BusinessException('That genset is retired. Reinstate it before fitting it to a vehicle.');
         }
 
-        if ($vehicle->status === 'retired') {
+        // T-58 — was `=== 'retired'`, and `vehicles.status` has held RETIRED
+        // since the January vocabulary change, so this guard had never once
+        // fired. A genset could be fitted to a scrapped truck with no error and
+        // no log line. The constant is used now so the two cannot drift again.
+        if ($vehicle->status === Vehicle::STATUS_RETIRED) {
             throw new BusinessException('That vehicle is retired — fitting a working genset to it would strand the unit.');
         }
 
@@ -117,8 +121,8 @@ class GensetService
 
             // A unit that was sitting in the yard is working again. An explicit
             // `in_maintenance` is left alone — fitting does not repair it.
-            if ($genset->status === 'idle') {
-                $genset->status = 'active';
+            if ($genset->status === Genset::IDLE) {
+                $genset->status = Genset::ACTIVE;
             }
 
             $genset->save();
@@ -153,7 +157,7 @@ class GensetService
 
         $genset->update([
             'vehicle_id' => null,
-            'status'     => $genset->status === 'active' ? 'idle' : $genset->status,
+            'status'     => $genset->status === Genset::ACTIVE ? Genset::IDLE : $genset->status,
         ]);
 
         Log::channel('stos')->info('Genset removed', [
@@ -191,12 +195,12 @@ class GensetService
             // road, which is the question the register is usually opened for.
             'spare'   => Genset::forCompany($companyId)
                 ->whereNull('vehicle_id')
-                ->whereIn('status', ['idle', 'active'])->count(),
+                ->whereIn('status', [Genset::IDLE, Genset::ACTIVE])->count(),
             // Reefers running without a power unit on record. Either the genset
             // was never registered, or it came off and nobody said so.
             'reefers_without_genset' => Vehicle::forCompany($companyId)
                 ->where('vehicle_type', 'reefer')
-                ->where('status', '!=', 'retired')
+                ->where('status', '!=', Genset::RETIRED)
                 ->whereNotIn('id', Genset::forCompany($companyId)->whereNotNull('vehicle_id')->pluck('vehicle_id'))
                 ->get(['id', 'registration_number'])->all(),
         ];
@@ -217,7 +221,7 @@ class GensetService
             throw new BusinessException('That is not a genset status.');
         }
 
-        if ($status === 'retired' && $genset->vehicle_id !== null) {
+        if ($status === Genset::RETIRED && $genset->vehicle_id !== null) {
             throw new BusinessException('Take the genset off the vehicle before retiring it.');
         }
     }

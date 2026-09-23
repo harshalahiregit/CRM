@@ -159,7 +159,7 @@ final class ClientVisibleFields
         TripStatus::VIABILITY_PENDING => 'Being prepared',
         TripStatus::APPROVED          => 'Accepted',
 
-        // `arrived` has no event type anywhere — see D-125. The state is real
+        // `arrived` has no event type anywhere — see D-130. The state is real
         // and a customer plainly wants it, so it is named here rather than
         // falling through to "In progress"; it is simply a state the journey
         // cannot show a row for, because nothing emits one.
@@ -221,7 +221,7 @@ final class ClientVisibleFields
      * that**, and nobody should land here in a month believing the mapping is
      * done.
      *
-     * M01–M14 is deferred under **D-121**, on measured grounds: two of the
+     * M01–M14 is deferred under **D-126**, on measured grounds: two of the
      * fourteen are fully live in our system, FOUR have no event type registered
      * anywhere (container yard arrival, inspection and loading, yard departure,
      * loading and sealing), five are registered types that only P2 or P3 can
@@ -268,7 +268,7 @@ final class ClientVisibleFields
         'trip.delivered'     => 'Delivered',
         'pod.verified'       => 'Delivery confirmed',
         'invoice.posted'     => 'Invoiced',
-        // NOT "Completed", and NOT "Closed" either — D-124. CLP §8's M14 is
+        // NOT "Completed", and NOT "Closed" either — D-129. CLP §8's M14 is
         // "Payment Received / Trip Closure", whose minimum control is "payment
         // recorded and commercial closure". So §8 claims BOTH words for a state
         // that additionally requires the customer's own payment, which our

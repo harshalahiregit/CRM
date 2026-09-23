@@ -167,6 +167,20 @@ export default function DeveloperExport({ modules = [], scope = 'open', onImport
   const [busy, setBusy] = useState(false);
   const [withImages, setWithImages] = useState(true);
 
+  /*
+   * WHAT "OPEN" DOES NOT MEAN. The register's `open` scope is "not terminal",
+   * so an issue that was fixed, passed QA, shipped and was validated in
+   * production is still open -- correctly, because somebody still owes it a
+   * close. For a developer brief that is the wrong list: it put already-shipped
+   * fixes in front of the person being asked to fix them, and the honest
+   * reaction to that file is "half of these are done".
+   *
+   * `unresolved` is the same query with the six fix-submitted states dropped.
+   * Default, because it is what this panel is for.
+   */
+  const [needsCode, setNeedsCode] = useState(true);
+  const effectiveScope = needsCode ? 'unresolved' : (scope || 'open');
+
   // The register returns the modules that actually have issues, so this list is
   // never longer than it needs to be and never offers an empty one.
   const available = useMemo(
@@ -182,7 +196,7 @@ export default function DeveloperExport({ modules = [], scope = 'open', onImport
     setBusy(true);
     try {
       const { data } = await sireApi.exportIssues({
-        scope,
+        scope: effectiveScope,
         // No selection means everything. Making somebody tick eight boxes to say
         // "all of it" is a worse default than just giving them all of it.
         module: chosen.length ? chosen : undefined,
@@ -243,10 +257,46 @@ export default function DeveloperExport({ modules = [], scope = 'open', onImport
       {open && (
         <div className="mt-3">
           <p className="mb-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            Pick the modules you are about to work on. Nothing ticked exports everything
-            in the current scope. The brief carries reproduction steps and internal screen
-            names — engineering material, not something to forward to a customer.
+            Pick the modules you are about to work on. Nothing ticked exports every module.
+            The brief carries reproduction steps and internal screen names — engineering
+            material, not something to forward to a customer.
           </p>
+
+          {/* Which issues, said out loud. This used to follow the dashboard tile
+              silently, so the one control that decided whether closed and
+              already-shipped issues came down was somewhere else on the page. */}
+          <div className="mb-3 space-y-1">
+            <p className="text-[11px] font-medium" style={{ color: 'var(--text-h)' }}>
+              Which issues
+            </p>
+
+            <label className="flex items-start gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <input
+                type="radio"
+                className="mt-0.5"
+                checked={needsCode}
+                onChange={() => setNeedsCode(true)}
+              />
+              <span>
+                <strong style={{ color: 'var(--text-h)' }}>Still needs code</strong>
+                {' — '}leaves out anything already in QA, released, or validated in production.
+              </span>
+            </label>
+
+            <label className="flex items-start gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <input
+                type="radio"
+                className="mt-0.5"
+                checked={!needsCode}
+                onChange={() => setNeedsCode(false)}
+              />
+              <span>
+                <strong style={{ color: 'var(--text-h)' }}>The set on screen</strong>
+                {' — '}whatever the tiles and filters above are showing
+                {scope === 'all' && ', which right now includes closed issues'}.
+              </span>
+            </label>
+          </div>
 
           <label className="mb-3 flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
             <input
@@ -307,11 +357,16 @@ export default function DeveloperExport({ modules = [], scope = 'open', onImport
             >
               Download .md
             </button>
-            {chosen.length > 0 && (
-              <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                {chosen.length} module{chosen.length === 1 ? '' : 's'} selected
-              </span>
-            )}
+            {/* The scope travels with the file and is printed in its header,
+                so the reader can always check afterwards -- but they should not
+                have to find out afterwards. */}
+            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              scope <code>{effectiveScope}</code>
+              {' · '}
+              {chosen.length === 0
+                ? 'all modules'
+                : `${chosen.length} module${chosen.length === 1 ? '' : 's'}`}
+            </span>
           </div>
 
           <SendItBack onDone={onImported} />

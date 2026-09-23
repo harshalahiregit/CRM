@@ -210,7 +210,7 @@ an alias. **The alias case is the one that would slip past a reviewer.**
 ### c) M01–M14
 
 **Not in this proposal, and I recommend it is not in the portal's first release.** I sized it
-separately as **D-121**: two of fourteen milestones are fully live, four have **no vocabulary
+separately as **D-126**: two of fourteen milestones are fully live, four have **no vocabulary
 registered anywhere** (container yard arrival, inspection and loading, yard departure, loading and
 sealing), five are registered types nobody emits — all owned by P2 or P3 — and detention has
 nothing at all.
@@ -245,7 +245,7 @@ cheapest possible screen.
 | **Booking / transport requests** | No `Transport Request` entity, and booking needs the rate card — unspecified and unowned |
 | **Contract or rate display** | Same |
 | **Client Warehouse/Gate role** | No customer-location entity anywhere; CLP §26 puts it in the Customer module |
-| **M01–M14 milestones** | D-121 — four have no vocabulary, five emitters are not ours, and it needs an entity Step 11 has no registry for (B-08) |
+| **M01–M14 milestones** | D-126 — four have no vocabulary, five emitters are not ours, and it needs an entity Step 11 has no registry for (B-08) |
 | **Client document downloads** | Blocked on S-2 below |
 | **A second scope resolver** | The portal already scopes by client off the token. P3's `ScopeResolver` stays the staff answer. |
 

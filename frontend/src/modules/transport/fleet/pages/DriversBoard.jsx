@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { UserRound, Search, Database, IdCard, X, Check, Info, Building2 } from 'lucide-react'
-import { stosApi, STOS_ACCENT, LICENCE_CLASSES, DRIVER_STATUSES } from '@/services/stosApi'
+import { stosApi, STOS_ACCENT, LICENCE_CLASSES, SETTABLE_DRIVER_STATUSES, DRIVER_STATUS_LABELS } from '@/services/stosApi'
 import Select from '@/components/ui/Select'
 import HealthChip from '../components/HealthChip'
+import DriverDocumentsPanel from '../components/DriverDocumentsPanel'
 
 /**
  * Drivers — read live from the customer/vendor directory, never re-entered.
@@ -183,11 +184,19 @@ export default function DriversBoard() {
                   <HealthChip tone={LICENCE_TONE[d.licence.state]} size="sm">
                     {d.licence.state === 'unknown' ? 'no licence' : `licence ${d.licence.state}`}
                   </HealthChip>
-                  {d.profile?.status && d.profile.status !== 'available' && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded capitalize"
+                  {d.profile?.status && d.profile.status !== 'AVAILABLE' && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded"
                       style={{ background: 'var(--bg-input)', color: 'var(--text-muted)' }}>
-                      {d.profile.status.replace('_', ' ')}
+                      {DRIVER_STATUS_LABELS[d.profile.status] || d.profile.status}
                     </span>
+                  )}
+
+                  {/* T-41 — shown beside the licence because a dispatcher asks
+                      one question of both: can this person go out today? */}
+                  {d.medical?.state && d.medical.state !== 'valid' && (
+                    <HealthChip tone={LICENCE_TONE[d.medical.state]} size="sm">
+                      {d.medical.state === 'unknown' ? 'no medical' : `medical ${d.medical.state}`}
+                    </HealthChip>
                   )}
                   {d.designation && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-input)', color: 'var(--text-muted)' }}>
@@ -236,7 +245,10 @@ function Summary({ tone, count, label }) {
 /** Closes only via ✕ or Cancel — never a backdrop click. */
 function LicenceDialog({ driver, onClose }) {
   const qc = useQueryClient()
-  const [form, setForm] = useState({ licence_number: '', licence_class: 'HMV', licence_expiry: '', status: 'available', note: '' })
+  const [form, setForm] = useState({
+    licence_number: '', licence_class: 'HMV', licence_expiry: '',
+    medical_expiry: '', status: 'AVAILABLE', note: '',
+  })
   const [err, setErr] = useState('')
   const [loadedFor, setLoadedFor] = useState(null)
 
@@ -247,7 +259,8 @@ function LicenceDialog({ driver, onClose }) {
       licence_number: driver.profile?.licence_number || '',
       licence_class: driver.profile?.licence_class || 'HMV',
       licence_expiry: driver.profile?.licence_expiry || '',
-      status: driver.profile?.status || 'available',
+      medical_expiry: driver.profile?.medical_expiry || '',
+      status: driver.profile?.status || 'AVAILABLE',
       note: driver.profile?.note || '',
     })
     setErr('')
@@ -258,6 +271,7 @@ function LicenceDialog({ driver, onClose }) {
       ...form,
       licence_number: form.licence_number.trim() || null,
       licence_expiry: form.licence_expiry || null,
+      medical_expiry: form.medical_expiry || null,
       note: form.note.trim() || null,
     }),
     onSuccess: () => {
@@ -270,10 +284,12 @@ function LicenceDialog({ driver, onClose }) {
   if (!driver) return null
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 pt-[12vh] bg-black/50">
-      <form onSubmit={(e) => { e.preventDefault(); setErr(''); save.mutate() }}
-        className="w-full max-w-sm rounded-2xl overflow-hidden"
-        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
+    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 pt-[8vh] bg-black/50">
+      {/* The documents panel is a SIBLING of the form, not a child: it has its
+          own buttons and a nested form would submit this one. */}
+      <div
+        className="w-full max-w-md rounded-2xl overflow-hidden flex flex-col"
+        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', maxHeight: '84vh' }}
         onKeyDown={(e) => { if (e.key === 'Escape') onClose?.() }}>
         <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
           <div>
@@ -287,6 +303,7 @@ function LicenceDialog({ driver, onClose }) {
           </button>
         </div>
 
+        <form onSubmit={(e) => { e.preventDefault(); setErr(''); save.mutate() }} className="overflow-y-auto">
         <div className="px-5 py-4 space-y-3">
           <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
             Name, phone and employer come from the directory and are edited there. Only the licence and availability
@@ -309,9 +326,15 @@ function LicenceDialog({ driver, onClose }) {
             </Field>
           </div>
 
-          <Field label="Availability" hint="On-trip is set by Dispatch once that module lands">
+          <Field label="Medical expires"
+            hint="Verifying a medical certificate below sets this; an expired one blocks dispatch">
+            <input type="date" value={form.medical_expiry}
+              onChange={(e) => setForm({ ...form, medical_expiry: e.target.value })} className={inputClass} style={inputStyle} />
+          </Field>
+
+          <Field label="Availability" hint="On trip is set by Dispatch and cannot be chosen here">
             <Select size="sm" value={form.status} onChange={(v) => setForm({ ...form, status: v })}
-              options={DRIVER_STATUSES} ariaLabel="Driver status" />
+              options={SETTABLE_DRIVER_STATUSES} ariaLabel="Driver status" />
           </Field>
 
           {err && (
@@ -332,7 +355,16 @@ function LicenceDialog({ driver, onClose }) {
             <Check size={13} /> {save.isPending ? 'Saving…' : 'Save'}
           </button>
         </div>
-      </form>
+        </form>
+
+        {/* T-43. The dates above are what Transport gates on today; these are
+            the evidence behind them, and a verified licence sets the expiry
+            rather than somebody retyping it. */}
+        <div className="px-5 py-4 overflow-y-auto" style={{ borderTop: '1px solid var(--border)' }}>
+          <p className="text-[11px] font-bold mb-2" style={{ color: 'var(--text-muted)' }}>Paperwork</p>
+          <DriverDocumentsPanel driver={driver} onChanged={() => qc.invalidateQueries({ queryKey: ['stos-drivers'] })} />
+        </div>
+      </div>
     </div>
   )
 }

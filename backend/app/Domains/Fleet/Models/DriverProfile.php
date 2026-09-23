@@ -21,8 +21,34 @@ class DriverProfile extends Model
 
     protected $table = 'driver_profiles';
 
-    /** available | on_trip | suspended | inactive. */
-    public const STATUSES = ['available', 'on_trip', 'suspended', 'inactive'];
+    public const AVAILABLE = 'AVAILABLE';
+    public const ON_TRIP   = 'ON_TRIP';
+    public const SUSPENDED = 'SUSPENDED';
+
+    /**
+     * T-42 — away, and gone, are different facts.
+     *
+     * One `inactive` used to do both jobs. Rostering with them merged means
+     * either chasing somebody who left or writing off somebody who is back on
+     * Monday. ON_LEAVE ends; INACTIVE does not.
+     */
+    public const ON_LEAVE  = 'ON_LEAVE';
+    public const INACTIVE  = 'INACTIVE';
+
+    public const STATUSES = [
+        self::AVAILABLE, self::ON_TRIP, self::SUSPENDED, self::ON_LEAVE, self::INACTIVE,
+    ];
+
+    /**
+     * Statuses a person may be put into by hand.
+     *
+     * ON_TRIP is not one: it is written by the dispatch gateway when a trip
+     * takes the driver and cleared when it releases them. Typing it would
+     * claim a trip that does not exist.
+     */
+    public const MANUALLY_SETTABLE = [
+        self::AVAILABLE, self::SUSPENDED, self::ON_LEAVE, self::INACTIVE,
+    ];
 
     /** Indian commercial licence classes. */
     public const CLASSES = ['LMV', 'HMV', 'HTV', 'HAZ', 'OTHER'];
@@ -30,6 +56,7 @@ class DriverProfile extends Model
     protected $fillable = [
         'company_id', 'source', 'source_id', 'assigned_vehicle_id',
         'licence_number', 'licence_class', 'licence_expiry',
+        'medical_expiry',
         'status', 'note',
     ];
 
@@ -38,6 +65,7 @@ class DriverProfile extends Model
         'source_id'      => 'integer',
         'assigned_vehicle_id' => 'integer',
         'licence_expiry' => 'date',
+        'medical_expiry' => 'date',
     ];
 
     /** The vehicle this person regularly drives, if any. */
