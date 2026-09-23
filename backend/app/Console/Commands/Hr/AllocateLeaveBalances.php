@@ -113,7 +113,23 @@ class AllocateLeaveBalances extends Command
                         'leave_policy_id'   => $policy->id,
                         'leave_type_id'     => $type->id,
                         'allocated'         => $days,
-                        'opening_balance'   => $days,
+                        // ZERO, and the days go in `allocated` alone.
+                        //
+                        // This wrote $days here as well, which counted the same
+                        // entitlement twice: recomputeAvailable() sums
+                        // opening + allocated + adjusted + carried_forward − used,
+                        // so a row created with 12 in both fields is worth 24 the
+                        // moment anything recomputes it. available_balance was
+                        // written explicitly below, which hid the inconsistency
+                        // until the first leave was approved — recordUsage() then
+                        // recomputed and the balance JUMPED from 12 to 23 on a
+                        // single day's leave. F&F encashes available_balance, so
+                        // the invented days had a price.
+                        //
+                        // opening_balance is a real field, for a balance carried
+                        // in from another system; it is not a second copy of the
+                        // allocation. Nothing is opening here.
+                        'opening_balance'   => 0,
                         'used'              => 0,
                         'adjusted'          => 0,
                         'carried_forward'   => 0,
