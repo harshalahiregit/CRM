@@ -3,6 +3,7 @@
 namespace App\Domains\Fleet\Services;
 
 use App\Domains\Fleet\Models\TyreFitment;
+use App\Domains\Fleet\Models\TyreMaster;
 use App\Domains\Fleet\Models\Vehicle;
 use App\Exceptions\BusinessException;
 use Illuminate\Support\Facades\DB;
@@ -52,6 +53,12 @@ class TyreService
             $fitment = TyreFitment::create([
                 'company_id'          => $companyId,
                 'tyre_id'             => $tyreId,
+                // T-36 — the casing is an asset now, and a fitment that does
+                // not point at one leaves a hole in cost-per-km. Found or
+                // created from the serial, because the fitment IS the evidence
+                // the casing exists: refusing an unregistered tyre would stop a
+                // yard fitting a spare at six in the morning.
+                'tyre_master_id'      => $this->master($companyId, $tyreId)->id,
                 'vehicle_id'          => $vehicle->id,
                 'position'            => $data['position'],
                 'status'              => TyreFitment::FITTED,
@@ -60,6 +67,9 @@ class TyreService
                 'fitted_on'           => $data['fitted_on'] ?? now()->toDateString(),
                 'note'                => $data['note'] ?? null,
             ]);
+
+            TyreMaster::forCompany($companyId)->whereKey($fitment->tyre_master_id)
+                ->update(['status' => TyreMaster::FITTED]);
 
             Log::channel('stos')->info('Tyre fitted', [
                 'company_id' => $companyId, 'user_id' => $userId,
@@ -159,6 +169,22 @@ class TyreService
         ];
     }
 
+    /**
+     * The casing behind this serial — T-36.
+     *
+     * A minimal row when nobody has registered it: no cost, no size, which is
+     * exactly the "not measured" state and is visible on the register as
+     * something to complete. Better an incomplete asset than a fitment
+     * pointing at nothing.
+     */
+    private function master(int $companyId, string $serial): TyreMaster
+    {
+        return TyreMaster::firstOrCreate(
+            ['company_id' => $companyId, 'serial_number' => $serial],
+            ['status' => TyreMaster::IN_STOCK]
+        );
+    }
+
     private function closeFitment(TyreFitment $fitment, $odometer, string $status, ?string $note): void
     {
         $fitment->fill([
@@ -167,6 +193,33 @@ class TyreService
             'removed_on'          => now()->toDateString(),
             'note'                => $note ?? $fitment->note,
         ])->save();
+
+        // T-36 — the casing follows its fitment off the truck. The outcome the
+        // fitment records IS the casing's new state: a tyre removed to stock is
+        // IN_STOCK, one sent to the retreader is RETREADED, a scrapped one is
+        // scrapped. Only a casing that is not on something else, because the
+        // same serial can legitimately be refitted in the same breath.
+        if (! $fitment->tyre_master_id) {
+            return;
+        }
+
+        $stillOn = TyreFitment::forCompany((int) $fitment->company_id)
+            ->where('tyre_master_id', $fitment->tyre_master_id)
+            ->whereIn('status', TyreFitment::ON_VEHICLE)
+            ->where('id', '!=', $fitment->id)
+            ->exists();
+
+        if ($stillOn) {
+            return;
+        }
+
+        TyreMaster::forCompany((int) $fitment->company_id)
+            ->whereKey($fitment->tyre_master_id)
+            ->update(['status' => match ($status) {
+                TyreFitment::RETREADED => TyreMaster::RETREADED,
+                TyreFitment::SCRAPPED  => TyreMaster::SCRAPPED,
+                default                => TyreMaster::IN_STOCK,
+            }]);
     }
 
     private function vehicle(int $id, int $companyId): Vehicle
