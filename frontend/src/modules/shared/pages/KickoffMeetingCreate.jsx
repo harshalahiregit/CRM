@@ -126,6 +126,31 @@ const EMPTY_DECISION = () => ({ id: Date.now() + Math.random(), decision: '', de
 const EMPTY_ISSUE = () => ({ id: Date.now() + Math.random(), title: '', category: '', severity: '', owner: '', due_date: '', status: 'Open', issue_ref: '', converted_to: '', carried_from_id: null, carried_from_label: '' })
 
 // ── Section header matching KickoffMeetingDetail style ───────────────────────
+/**
+ * A name field that suggests real people but still takes a typed one.
+ *
+ * Organizer, Chairperson and Coordinator were plain text boxes, so the same
+ * person was entered three different ways and none of them linked back to a
+ * record — while the form already knew every client, vendor and TPV contact for
+ * the participant grid.
+ *
+ * A <datalist> rather than a dropdown, deliberately: a closed list would refuse
+ * the visiting consultant who is chairing, and "add manually" was half of what
+ * was asked for.
+ */
+function PersonInput({ value, onChange, people = [], listId, placeholder }) {
+  return (
+    <>
+      <TextInput value={value} onChange={onChange} placeholder={placeholder} list={listId} />
+      <datalist id={listId}>
+        {people.map((p, i) => (
+          <option key={`${p.name}-${i}`} value={p.name}>{p.hint || ''}</option>
+        ))}
+      </datalist>
+    </>
+  )
+}
+
 function SectionTitle({ icon: Icon, children }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
@@ -561,6 +586,42 @@ export default function KickoffMeetingCreate() {
     (party, entityId) => kickoffApi.partyPeople(party, entityId).then(d => d?.people ?? []),
     [],
   )
+
+  /*
+   * Everybody who could chair, organise or coordinate a meeting.
+   *
+   * Organizer, Chairperson and Coordinator were three free-text boxes, so the
+   * same person was typed three different ways and none of them linked back to
+   * a record — while this form already knows every party and their people for
+   * the participant grid. These are suggestions, not a closed list: plenty of
+   * meetings are chaired by somebody who is not in the system yet, so the field
+   * stays typable and a typed name is still accepted.
+   */
+  const [roleCandidates, setRoleCandidates] = useState([])
+  useEffect(() => {
+    if (!parties.length) return
+    let cancelled = false
+
+    Promise.all(
+      parties.flatMap(pty =>
+        (pty.entities || []).map(ent =>
+          loadPartyPeople(pty.key, ent.id)
+            .then(people => people.map(pr => ({
+              name: pr.name,
+              hint: [pr.designation, ent.name].filter(Boolean).join(' · '),
+            })))
+            .catch(() => []),
+        ),
+      ),
+    ).then(lists => {
+      if (cancelled) return
+      const seen = new Map()
+      lists.flat().forEach(c => { if (c.name && !seen.has(c.name)) seen.set(c.name, c) })
+      setRoleCandidates([...seen.values()])
+    })
+
+    return () => { cancelled = true }
+  }, [parties, loadPartyPeople])
 
 
   // ── MOM helpers ─────────────────────────────────────────────────────────
@@ -1085,7 +1146,54 @@ export default function KickoffMeetingCreate() {
         {/* ── LEFT COLUMN ────────────────────────────────────────────── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-          {/* Section 1 — Vendor & Participants */}
+          {/* Schedule first: you agree WHEN a meeting is before you work out
+              who has to be at it, and the participant list is the long part of
+              this form. Asking for it first made every new meeting start with
+              the hardest question. */}
+          {/* Section 1 — Schedule & Location */}
+          <div className="pr-glass" style={{ padding: 20 }}>
+            <SectionTitle icon={CalendarDays}>Schedule &amp; Location</SectionTitle>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+              <Field label="Meeting Date *">
+                {/* No past dates for a NEW meeting (min = today). When EDITING we
+                    drop the floor so an already-stored past date can still be
+                    re-selected — the backend blocks only a genuine move to the
+                    past. This was the edit-time bug. */}
+                <TextInput type="date" min={isEdit ? undefined : new Date().toLocaleDateString('en-CA')} value={form.meeting_date} onChange={set('meeting_date')} />
+              </Field>
+              <Field label="Start Time *">
+                {/* `min` is advisory only — see startInPast. The message below is
+                    the part the user actually sees. */}
+                <TextInput type="time" min={form.meeting_date === new Date().toLocaleDateString('en-CA') ? new Date().toTimeString().slice(0, 5) : undefined} value={form.meeting_time} onChange={set('meeting_time')} />
+                {startInPast && (
+                  <span style={{ fontSize: 11, color: '#f87171', fontWeight: 700 }}>
+                    That time has already passed — pick a later one.
+                  </span>
+                )}
+              </Field>
+              <Field label="End Time *">
+                {/* No `min`: an end EARLIER than the start is legitimate and means
+                    the meeting runs past midnight. The hint below says so, so it
+                    cannot be mistaken for a typo. */}
+                <TextInput type="time" value={form.meeting_end_time} onChange={set('meeting_end_time')} />
+                {form.meeting_time && form.meeting_end_time && form.meeting_end_time < form.meeting_time && (
+                  <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>Ends next day</span>
+                )}
+              </Field>
+              <Field label="Duration">
+                {/* Auto-computed from start→end — no longer a manual field. */}
+                <div style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 13.5, fontWeight: 700 }}>
+                  {durationLabel}
+                </div>
+              </Field>
+              <Field label="Planned Date (optional)">
+                <TextInput type="date" value={form.planned_date} onChange={set('planned_date')} />
+              </Field>
+            </div>
+          </div>
+
+          {/* Section 2 — Vendor & Participants */}
           <div className="pr-glass" style={{ padding: 20 }}>
             <SectionTitle icon={Users}>Vendor &amp; Participants</SectionTitle>
 
@@ -1130,23 +1238,36 @@ export default function KickoffMeetingCreate() {
                   <SelectInput value={form.confidentiality} onChange={set('confidentiality')} pairs
                     options={[['', '—'], ...confLevels.map(c => [c, c])]} />
                 </Field>
+                {/* Pick from the people this system already holds — staff,
+                    client, vendor and TPV contacts — or type somebody who is not
+                    in it yet. A datalist does both; a plain select would refuse
+                    the visiting consultant who chairs the meeting. */}
                 <Field label="Meeting Organizer">
-                  <TextInput value={form.organizer} onChange={set('organizer')} placeholder="Name (defaults to you)" />
+                  <PersonInput value={form.organizer} onChange={set('organizer')}
+                    people={roleCandidates} listId="mtg-organizer" placeholder="Name (defaults to you)" />
                 </Field>
                 <Field label="Chairperson">
-                  <TextInput value={form.chairperson} onChange={set('chairperson')} placeholder="Name" />
+                  <PersonInput value={form.chairperson} onChange={set('chairperson')}
+                    people={roleCandidates} listId="mtg-chair" placeholder="Name" />
                 </Field>
                 <Field label="Meeting Coordinator">
-                  <TextInput value={form.coordinator} onChange={set('coordinator')} placeholder="Name" />
+                  <PersonInput value={form.coordinator} onChange={set('coordinator')}
+                    people={roleCandidates} listId="mtg-coordinator" placeholder="Name" />
                 </Field>
                 <Field label="Department">
                   <TextInput value={form.department} onChange={set('department')} placeholder="e.g. HSE / Projects" />
                 </Field>
-                {/* The customer this meeting is for. Picking one links the meeting
-                    to the Customer module and puts that customer on the §13
-                    distribution list; the free-text field below still takes a
-                    name for anyone not in the master. */}
-                <Field label="Customer">
+                {/* Optional, and one field rather than two.
+                    There was a Customer picker AND a free-text "Client name" box
+                    beside it — two boxes for one idea, where picking a customer
+                    already filled the other one in. Now that a customer's people
+                    are reachable through the participant grid and the role
+                    pickers above, the duplicate had no job left.
+                    The picker stays because it is not decoration: it links the
+                    meeting to the Customer module and puts that customer on the
+                    distribution list. It is optional — a meeting does not need a
+                    customer, and most internal ones have none. */}
+                <Field label="Customer (optional)">
                   <SelectInput
                     value={form.client_id}
                     onChange={e => {
@@ -1157,9 +1278,6 @@ export default function KickoffMeetingCreate() {
                     pairs
                     options={[['', customers.length ? '— none —' : 'No customers found'],
                       ...customers.map(c => [String(c.id), c.company || c.name || `Customer #${c.id}`])]} />
-                </Field>
-                <Field label="Client name (free text)">
-                  <TextInput value={form.client_name} onChange={set('client_name')} placeholder="Client name" />
                 </Field>
                 {projects.length > 0 && (
                   <Field label="Project (optional)">
@@ -1200,49 +1318,6 @@ export default function KickoffMeetingCreate() {
                   loadPeople={loadPartyPeople}
                 />
               </div>
-            </div>
-          </div>
-
-          {/* Section 2 — Schedule & Location */}
-          <div className="pr-glass" style={{ padding: 20 }}>
-            <SectionTitle icon={CalendarDays}>Schedule &amp; Location</SectionTitle>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
-              <Field label="Meeting Date *">
-                {/* No past dates for a NEW meeting (min = today). When EDITING we
-                    drop the floor so an already-stored past date can still be
-                    re-selected — the backend blocks only a genuine move to the
-                    past. This was the edit-time bug. */}
-                <TextInput type="date" min={isEdit ? undefined : new Date().toLocaleDateString('en-CA')} value={form.meeting_date} onChange={set('meeting_date')} />
-              </Field>
-              <Field label="Start Time *">
-                {/* `min` is advisory only — see startInPast. The message below is
-                    the part the user actually sees. */}
-                <TextInput type="time" min={form.meeting_date === new Date().toLocaleDateString('en-CA') ? new Date().toTimeString().slice(0, 5) : undefined} value={form.meeting_time} onChange={set('meeting_time')} />
-                {startInPast && (
-                  <span style={{ fontSize: 11, color: '#f87171', fontWeight: 700 }}>
-                    That time has already passed — pick a later one.
-                  </span>
-                )}
-              </Field>
-              <Field label="End Time *">
-                {/* No `min`: an end EARLIER than the start is legitimate and means
-                    the meeting runs past midnight. The hint below says so, so it
-                    cannot be mistaken for a typo. */}
-                <TextInput type="time" value={form.meeting_end_time} onChange={set('meeting_end_time')} />
-                {form.meeting_time && form.meeting_end_time && form.meeting_end_time < form.meeting_time && (
-                  <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>Ends next day</span>
-                )}
-              </Field>
-              <Field label="Duration">
-                {/* Auto-computed from start→end — no longer a manual field. */}
-                <div style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 13.5, fontWeight: 700 }}>
-                  {durationLabel}
-                </div>
-              </Field>
-              <Field label="Planned Date (optional)">
-                <TextInput type="date" value={form.planned_date} onChange={set('planned_date')} />
-              </Field>
             </div>
           </div>
 
