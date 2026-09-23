@@ -4849,8 +4849,18 @@ tables still hold their rows, and every decision is in `fleet_reference_repoints
 
 ### What is proven, and what is not
 
-**Proven in a browser** — the Fleet page lists MH12DEMO01 and MH14DEMO02; trip 44 reads its crew
-from Fleet; allocating on trip 45 assigned MH14DEMO02 through the repointed eligibility.
+**Proven** — the Fleet page lists MH12DEMO01 and MH14DEMO02; trip 44 reads its crew from Fleet;
+`VehicleEligibilityService::candidatesFor()` returns both trucks with `status: "AVAILABLE"` matched
+and `eligible: true`; and `AllocationService::assign()` on trip 45 wrote `vehicle_id = 1` (a Fleet
+id) and moved Fleet's vehicle 1 to `ALLOCATED` — the exact write the case mismatch would have
+skipped in silence.
+
+> **Correction.** This entry first said the allocation was proven *in the browser*. It was not. The
+> trip screen showed "MH14DEMO02 — Vehicle and driver assigned", but that was assignment #37,
+> **released on 2026-09-21**, being rendered with its ids repointed. My click opened the driver
+> dialog and allocated nothing. The screen proved the Fleet *read*; it did not prove the write, and
+> I reported it as if it had. The write is proven above, by calling the service and re-reading both
+> rows. A screen that shows the right value is not evidence that the code under it ran.
 
 **Blocked** — no driver can be allocated. [D-134](#d-134--after-the-repoint-no-driver-can-be-allocated-fleets-directory-does-not-list-them):
 Fleet's bound directory does not list `source = 'stos'` profiles, so the two migrated drivers are

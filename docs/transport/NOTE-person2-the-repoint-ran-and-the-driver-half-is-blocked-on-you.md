@@ -123,9 +123,16 @@ job. The directory that reads people and the migration that writes profiles disa
    `source = 'stos'` a state that should not exist?
 3. Either way — what happens to the profiles carrying it today?
 
-**The vehicle half is unaffected and works end to end.** Walked in a browser: the Fleet page finally
-shows MH12DEMO01 and MH14DEMO02; trip 44 reads its crew from Fleet; allocating on trip 45 assigned
-MH14DEMO02 through the repointed eligibility. Your gateway's wording carried through untouched, and
+**The vehicle half is unaffected and works end to end.** The Fleet page finally shows MH12DEMO01
+and MH14DEMO02, and trip 44 reads its crew from Fleet. For the allocation itself I checked the
+service rather than the screen, because the screen misled me first: the trip page showed
+"MH14DEMO02 — Vehicle and driver assigned", which was a **released** assignment from 21 September
+rendered with repointed ids, and I nearly reported it as a successful allocation.
+
+What is actually proven: `VehicleEligibilityService::candidatesFor()` returns both trucks with
+`status: "AVAILABLE"` matched and `eligible: true`, and `AllocationService::assign()` on trip 45
+wrote `vehicle_id = 1` and moved Fleet vehicle 1 to `ALLOCATED`. Trip 45 is deliberately left in
+that state — a vehicle, no driver — because of the blocker below. Your gateway's wording carried through untouched, and
 so did `DriverService`'s blockers — *"No licence is on file for this driver. (Fleet compliance desk)"*
 is your sentence, and it reached the dispatcher's screen exactly as you wrote it, naming the desk.
 
