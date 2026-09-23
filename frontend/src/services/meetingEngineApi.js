@@ -1,5 +1,6 @@
 import { kickoffApi } from './kickoffApi'
 import { purchaseKickoffApi } from './purchaseKickoffApi'
+import { meetingModuleFor } from '@/modules/shared/meetingModules'
 
 /**
  * The meeting API for whichever module the user is currently in.
@@ -31,15 +32,21 @@ const implFor = (pathname) =>
   pathname.startsWith('/app/purchase') ? purchaseKickoffApi : kickoffApi
 
 /**
- * The route base for the module in the URL.
+ * Every link out of the meeting screens, for the module in the URL.
  *
- * The shared meeting screens linked to `/app/tpv/kickoff/...` in seventeen
- * places. Mounted under Purchase those would have walked the user out of the
- * module they were working in and shown a different company's meetings, so
- * every link is built from this instead.
+ * REPLACES `meetingBase()`, which returned a string to concatenate and tested
+ * only for `/app/purchase`, falling through to `/app/tpv` for everything else.
+ * That was wrong twice over once Meetings became a module of its own: it sent
+ * anybody standing in `/app/meetings` back into TPV, and even with the missing
+ * branch added a base string could not have built the right URL, because a
+ * meeting is `<base>/kickoff/<id>` under Purchase and TPV but `/app/meetings/
+ * <id>` in its own module. Builders, not concatenation (SIR-000030).
+ *
+ * Returns the same row `useMeetingModule()` returns, from the same table, so
+ * the two cannot disagree again. Use this outside React; use the hook inside a
+ * component that re-renders on navigation.
  */
-export const meetingBase = () =>
-  currentPath().startsWith('/app/purchase') ? '/app/purchase' : '/app/tpv'
+export const meetingPaths = () => meetingModuleFor(currentPath())
 
 export const meetingEngineApi = new Proxy({}, {
   get(_target, prop) {
