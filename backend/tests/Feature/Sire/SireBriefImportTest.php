@@ -118,6 +118,39 @@ class SireBriefImportTest extends TestCase
         $this->assertSame('closed', $this->statusOf($a['number']));
     }
 
+    /**
+     * A REAL file off the disk, not UploadedFile::fake().
+     *
+     * The fake carries whatever mime you hand it; a browser upload carries what
+     * finfo guesses from the bytes, and the endpoint validates with `mimetypes`.
+     * A brief with screenshots embedded is base64 megabytes inside a text file,
+     * which is exactly the kind of thing that guesses badly — so this uses the
+     * real shape rather than trusting that it is text.
+     */
+    public function test_a_real_markdown_file_with_embedded_screenshots_uploads(): void
+    {
+        $a = $this->issue('Brief with pictures in it');
+
+        $md = $this->tick($this->brief(), $a['number'], 'Fixed, with evidence attached.')
+            ."\n\n![shot](data:image/webp;base64,".base64_encode(random_bytes(40000)).")\n";
+
+        $path = tempnam(sys_get_temp_dir(), 'sire').'.md';
+        file_put_contents($path, $md);
+
+        try {
+            $this->post('/api/sire/reports/import', [
+                // getClientOriginalName/extension as a browser sends them, and
+                // the mime left to be guessed from the bytes.
+                'file'  => new UploadedFile($path, 'sire-issues-2026-09-22.md', null, null, true),
+                'apply' => true,
+            ])->assertOk()->assertJsonPath('data.closed', 1);
+
+            $this->assertSame('closed', $this->statusOf($a['number']));
+        } finally {
+            @unlink($path);
+        }
+    }
+
     public function test_sending_the_same_file_twice_is_safe(): void
     {
         $a = $this->issue('Duplicate submit closes twice');

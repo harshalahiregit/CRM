@@ -127,7 +127,17 @@ export const sireApi = {
     if (text) body.append('text', text);
     if (apply) body.append('apply', '1');
 
-    return api.post('/sire/reports/import', body);
+    // The Content-Type is NOT optional here. The shared instance defaults to
+    // application/json, and axios 1.x reads that in transformRequest BEFORE the
+    // adapter gets a chance to do the right thing: seeing a JSON content type
+    // with a FormData body, it quietly converts the whole thing with
+    // JSON.stringify(formDataToJSON(data)). The file arrives as a plain value,
+    // Laravel's `file` rule rejects it, and the upload fails with a 422 that
+    // says nothing about why. Every other upload in this file already passes
+    // this header; this one did not, and that was the bug.
+    return api.post('/sire/reports/import', body, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
   },
 
   // Many issues moved in one call. Every entry still runs its own guards and is

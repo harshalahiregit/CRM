@@ -49,10 +49,24 @@ function SendItBack({ onDone }) {
         onDone?.();
       }
     } catch (err) {
+      /*
+       * SAY WHAT THE SERVER SAID. This used to answer every failure with "That
+       * file could not be read", which is a guess dressed as a diagnosis: a 404
+       * from an un-deployed endpoint, a 413 from a file over the limit and a 422
+       * from a malformed upload all read the same, and none of them had anything
+       * to do with reading the file. The one real failure it ever saw was a 422,
+       * and the message sent the reader off looking at their markdown.
+       */
+      const status = err?.response?.status;
+      const said = err?.response?.data?.message
+        ?? Object.values(err?.response?.data?.errors ?? {})[0]?.[0];
+
       toast?.error?.(
-        err?.response?.status === 403
-          ? 'You do not have permission to close issues.'
-          : 'That file could not be read.',
+        status === 403 ? 'You do not have permission to close issues.'
+          : status === 404 ? 'This server does not have the import endpoint yet — it needs deploying.'
+            : status === 413 ? 'That file is too large to upload.'
+              : said ? `Upload refused: ${said}`
+                : `Upload failed${status ? ` (${status})` : ''}.`,
       );
     } finally {
       setBusy(false);
