@@ -16,8 +16,14 @@ use Illuminate\Support\Facades\Log;
  * Exit Requests (Exit Phase 2). An employee's separation record built on the
  * Phase 1 masters. Exit Type is required; the Exit Policy is auto-attached from
  * the employee's grade/designation/department (or supplied) and drives the
- * notice period. Notice End Date is computed from Request Date + policy notice
- * days; a manual override is honoured only when the policy allows buyout.
+ * notice period. Notice End Date is computed from Request Date + the resolved
+ * notice days; a manual override is honoured only when the policy allows
+ * buyout.
+ *
+ * Notice resolves through four levels, narrowest first — a number typed onto
+ * this request, the employee's own standing notice period, the matched exit
+ * policy (which is where GRADE-level notice is configured), then the exit
+ * type's default. See resolveNotice().
  * Lifecycle: Draft → Submitted, Withdrawn from either. Tenant-scoped, audited.
  */
 class ExitRequestService
@@ -57,7 +63,7 @@ class ExitRequestService
         $exitType = $this->exitType((int) ($data['exit_type_id'] ?? 0), $tenantId);
         $policy   = $this->resolvePolicy($data, $employee, $tenantId);
 
-        $computed = $this->computeNotice($data, $policy, $exitType);
+        $computed = $this->computeNotice($data, $employee, $policy, $exitType);
 
         $status = ($data['status'] ?? HrExitRequest::DRAFT) === HrExitRequest::SUBMITTED
             ? HrExitRequest::SUBMITTED : HrExitRequest::DRAFT;
@@ -116,7 +122,7 @@ class ExitRequestService
             'notice_days'       => $request->notice_days,
         ], array_filter($data, fn ($v) => $v !== null && $v !== ''));
 
-        $computed = $this->computeNotice($merged, $policy, $exitType);
+        $computed = $this->computeNotice($merged, $employee, $policy, $exitType);
 
         $request->update([
             'exit_type_id'  => $exitType->id,
@@ -174,7 +180,7 @@ class ExitRequestService
      * supplied Notice End is honoured only when the policy allows buyout (or when
      * there is no policy); otherwise it is recomputed. Notice can never go negative.
      */
-    private function computeNotice(array $data, ?HrExitPolicy $policy, HrExitType $exitType): array
+    private function computeNotice(array $data, HrEmployee $employee, ?HrExitPolicy $policy, HrExitType $exitType): array
     {
         $requestDate = Carbon::parse($data['request_date'] ?? now()->toDateString())->startOfDay();
 
@@ -183,7 +189,8 @@ class ExitRequestService
             throw new BusinessException('Last working date cannot be before the request date.');
         }
 
-        $noticeDays = $this->resolveNoticeDays($data, $policy, $exitType);
+        $notice = $this->resolveNotice($data, $employee, $policy, $exitType);
+        $noticeDays = $notice['days'];
         if ($noticeDays < 0) {
             throw new BusinessException('Notice period cannot be negative.');
         }
@@ -213,19 +220,58 @@ class ExitRequestService
             'notice_start_date' => $noticeStart->toDateString(),
             'notice_end_date'   => $noticeEnd->toDateString(),
             'notice_days'       => $noticeStart->diffInDays($noticeEnd),
+            // Not persisted — hr_exit_requests stores the number, which is the
+            // snapshot. This says which level produced it, for a caller that
+            // wants to explain the figure rather than just show it.
+            'notice_source'     => $notice['source'],
         ];
     }
 
-    private function resolveNoticeDays(array $data, ?HrExitPolicy $policy, HrExitType $exitType): int
+    /**
+     * How long this person's notice is, and where that number came from.
+     *
+     * FOUR LEVELS, NARROWEST FIRST. The first three already existed and are
+     * unchanged; the employee level is new and slots between the one-off and
+     * the policy, which is the only place it can go without changing what
+     * anything did before:
+     *
+     *   request   a number typed onto this exit. A one-off for this
+     *             separation — a negotiated exit, a buyout — and it still
+     *             wins, because somebody decided it for this case.
+     *
+     *   employee  the person's standing notice period. Somebody hired on six
+     *             months when their grade says two had nowhere to record it,
+     *             so HR had to remember at the moment of resignation.
+     *
+     *   policy    the exit policy matched to their grade, designation or
+     *             department by ExitRepository::policyForEmployee(). THIS is
+     *             where grade-level notice is configured — it is not missing
+     *             and does not need a column on hr_grades.
+     *
+     *   type      the exit type's default. Resignation and termination
+     *             legitimately differ.
+     *
+     * NULL IS NOT ZERO at the employee level. Null inherits; 0 means this
+     * person serves no notice, which is a real arrangement. Testing
+     * `!== null` rather than truthiness is what keeps the two apart.
+     *
+     * @return array{days:int, source:string}
+     */
+    private function resolveNotice(array $data, HrEmployee $employee, ?HrExitPolicy $policy, HrExitType $exitType): array
     {
         if (array_key_exists('notice_days', $data) && $data['notice_days'] !== null && $data['notice_days'] !== '') {
-            return (int) $data['notice_days'];
-        }
-        if ($policy) {
-            return (int) $policy->notice_days;
+            return ['days' => (int) $data['notice_days'], 'source' => 'request'];
         }
 
-        return (int) $exitType->default_notice_days;
+        if ($employee->notice_days !== null) {
+            return ['days' => (int) $employee->notice_days, 'source' => 'employee'];
+        }
+
+        if ($policy) {
+            return ['days' => (int) $policy->notice_days, 'source' => 'policy'];
+        }
+
+        return ['days' => (int) $exitType->default_notice_days, 'source' => 'exit_type'];
     }
 
     private function resolvePolicy(array $data, HrEmployee $employee, int $tenantId): ?HrExitPolicy

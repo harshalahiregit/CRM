@@ -17,7 +17,7 @@ const initials = n => (n||'').split(' ').slice(0,2).map(x=>x[0]).join('').toUppe
 const fmtDate  = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'
 const deptColor = d => DEPT_COLORS[d]||'#7C3AED'
 
-const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', gender:'', address:'', department:'', designation:'', department_id:'', designation_id:'', reporting_manager_id:'', reporting_manager_name:'', work_state:'', joining_date:'', probation_end_date:'', confirmation_date:'', status:'Active',
+const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', gender:'', address:'', department:'', designation:'', department_id:'', designation_id:'', reporting_manager_id:'', reporting_manager_name:'', work_state:'', joining_date:'', probation_end_date:'', confirmation_date:'', notice_days:'', status:'Active',
   // #36 — probation must be set when adding an employee, or the hire explicitly exempted.
   probation_policy_id:'', skip_probation:false, probation_skip_reason:'',
   // #29 — what this person is, and the comment's explicit "option to consider
@@ -550,6 +550,24 @@ export default function Employees() {
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="label">Probation End Date</label><input type="date" className="input-3d text-sm" value={form.probation_end_date||''} onChange={e=>setForm({...form,probation_end_date:e.target.value})}/></div>
                 <div><label className="label">Confirmation Date</label><input type="date" className="input-3d text-sm" value={form.confirmation_date||''} onChange={e=>setForm({...form,confirmation_date:e.target.value})}/></div>
+              </div>
+              {/* A standing notice period for this person.
+                  BLANK IS NOT ZERO, and the hint says so because the difference
+                  is invisible otherwise: blank inherits the exit policy matched
+                  to their grade and then the exit type's default, while 0 means
+                  they genuinely serve none. Sending '' clears the override —
+                  the field is normalised to null on save for that reason. */}
+              <div>
+                <label className="label">Notice Period (days)</label>
+                <input type="number" min="0" max="365" className="input-3d text-sm"
+                  placeholder="Leave blank to inherit from grade / exit type"
+                  value={form.notice_days ?? ''}
+                  onChange={e=>setForm({...form,notice_days:e.target.value})}/>
+                <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+                  {form.notice_days === '' || form.notice_days === null || form.notice_days === undefined
+                    ? 'Inheriting — the exit policy for this grade, otherwise the exit type default.'
+                    : `Overridden for this employee: ${Number(form.notice_days)} day(s).`}
+                </p>
               </div>
               {/* #36 — probation must be set when adding an employee. Shown only on
                   create: an existing employee's probation is managed in its own module. */}

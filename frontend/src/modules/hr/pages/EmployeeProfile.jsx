@@ -1168,7 +1168,7 @@ const IntegrationNote = ({ icon:Icon, title, subtitle, hint, chips, big }) => (
 function EditModal({ employee, onClose, onSaved, showToast }) {
   // department_id / designation_id are what is SUBMITTED; the two names ride
   // along only so a since-retired master still has a label in the dropdown.
-  const F = ['name','email','phone','department','designation','department_id','designation_id','reporting_manager_name','joining_date','probation_end_date','confirmation_date','status']
+  const F = ['name','email','phone','department','designation','department_id','designation_id','reporting_manager_name','joining_date','probation_end_date','confirmation_date','notice_days','status']
   const [form, setForm] = useState(Object.fromEntries(F.map(k=>[k, employee[k] ?? (k==='status'?'Active':'')])))
   const [saving, setSaving] = useState(false)
   // Department / Designation / Reporting Manager from Org Setup master data (single
@@ -1204,6 +1204,19 @@ function EditModal({ employee, onClose, onSaved, showToast }) {
                 <option value="">Select...</option>{desigOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
+          </div>
+          {/* Blank inherits the grade's exit policy and then the exit type
+              default; 0 means this person serves no notice. */}
+          <div>
+            <label className="label">Notice Period (days)</label>
+            <input type="number" min="0" max="365" className="input-3d text-sm"
+              placeholder="Leave blank to inherit from grade / exit type"
+              value={form.notice_days ?? ''} onChange={e=>set('notice_days',e.target.value)}/>
+            <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+              {form.notice_days === '' || form.notice_days === null || form.notice_days === undefined
+                ? 'Inheriting from grade / exit type.'
+                : `Overridden: ${Number(form.notice_days)} day(s).`}
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Reporting Manager</label>

@@ -64,6 +64,11 @@ class StoreEmployeeRequest extends FormRequest
             // Statutory jurisdiction (Professional Tax). Optional — an employee
             // without one simply gets no PT, with the reason recorded on the record.
             'work_state'             => ['nullable', 'string', 'max:80', new ValidWorkState],
+            // A standing notice period for this person. Absent or null means
+            // "inherit" — the exit policy matched to their grade, then the exit
+            // type's default. 0 is a real value meaning no notice is served,
+            // so `nullable` rather than a falsy check is what keeps them apart.
+            'notice_days'            => 'nullable|integer|min:0|max:365',
             'joining_date'           => 'required|date',
             'confirmation_date'      => 'nullable|date',
             'status'                 => 'in:Active,On Leave,Inactive',

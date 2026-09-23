@@ -141,6 +141,9 @@ class EmployeeController extends Controller
                     ->where('tenant_id', $request->user()->tenant_id),
             ],
             'reporting_manager_name' => 'nullable|string',
+            // See StoreEmployeeRequest. Null clears the override back to
+            // inheriting; 0 is an explicit "no notice".
+            'notice_days'            => 'nullable|integer|min:0|max:365',
             'work_state'             => ['nullable', 'string', 'max:80', new ValidWorkState],
             'joining_date'           => 'nullable|date',
             'probation_end_date'     => 'nullable|date',

@@ -83,6 +83,10 @@ class HrEmployee extends Model
         // Compared against the department/designation/grade/role skill profile.
         'skills',
         'joining_date','probation_end_date','confirmation_date','status',
+        // A standing notice period for this person. NULL means "inherit" —
+        // the exit policy matched to their grade, then the exit type's
+        // default. 0 is a real value meaning no notice is served.
+        'notice_days',
         // #29 — what this person is, and whether they belong on the org chart.
         // MUST be listed here: create() silently drops any key not whitelisted,
         // so an omission would leave every new hire on the default.
@@ -117,6 +121,9 @@ class HrEmployee extends Model
         'dob'                  => 'date',
         'probation_end_date'   => 'date',
         'confirmation_date'    => 'date',
+        // 'integer' leaves null as null, which is what keeps "no override"
+        // distinguishable from an explicit zero.
+        'notice_days'          => 'integer',
         'sangoetrack_user_id'  => 'integer',
         'sangoetrack_synced_at' => 'datetime',
     ];
