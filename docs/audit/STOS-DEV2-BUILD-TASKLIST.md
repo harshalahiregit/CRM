@@ -310,8 +310,8 @@ stale. The overlay holds a reference (`crm_tpv_worker:17`) plus what only Transp
 
 - [x] **T-39** Directory adapter: 40 workers added under a vendor in the CRM appear in Transport with nobody re-entering them · *DriverDirectoryTest*
 - [x] **T-40** Licence verdict drives allocation scoring and flags · *DriverAllocationLinkTest*
-- [ ] **T-41** Add `medical_expiry`, judge it exactly like the licence, and surface it on the driver card and the compliance tab
-- [ ] **T-42** Rename `inactive` → `ON_LEAVE` (or add both; "on leave" and "no longer with us" are different facts)
+- [x] **T-41** `medical_expiry` added and judged by the same date arithmetic as the licence, on the driver card and the drivers board. A VERIFIED `medical_certificate` now projects onto it (completes T-43's second gate). **Expired blocks; MISSING only warns** — the column arrives with every driver blank, so blocking on unknown would ground the fleet the day it ships. Making unknown a blocker once certificates are loaded is one line, and the owner's call.
+- [x] **T-42** Both added, not renamed — they are different facts. Existing `inactive` rows stay INACTIVE because that is what was recorded. `driver_profiles.status` went UPPERCASE with them (the last lowercase enum in the module), and ON_TRIP is now refused from the profile form because dispatch owns it.
 - [x] **T-43** Driver documents — filed through STOS-DOC's service at `/v1/fleet/drivers/{source}/{person}/documents`, with a VERIFIED `driving_license` projected onto `licence_expiry`. An upload does not clear a driver. Medical is filed but gates nothing until T-41 adds the column. **Unblocks P1's driver-controller deletion.**
 
 ---

@@ -81,13 +81,27 @@ class DriverAllocationLinkTest extends TestCase
         ]);
     }
 
-    private function assignDriver(int $personId, Vehicle $vehicle, ?string $licenceExpiry, string $status = 'available'): void
-    {
+    /**
+     * A driver whose MEDICAL is in order unless a test says otherwise.
+     *
+     * T-41 added `medical_expiry`, and a blank one raises
+     * `driver_medical_unrecorded`. These cases are about the LICENCE, so the
+     * fixture gives them a valid medical rather than letting an unrelated
+     * warning appear in assertions about licence behaviour.
+     */
+    private function assignDriver(
+        int $personId,
+        Vehicle $vehicle,
+        ?string $licenceExpiry,
+        string $status = DriverProfile::AVAILABLE,
+        $medicalExpiry = null
+    ): void {
         $drivers = app(DriverService::class);
         $drivers->saveProfile(self::COMPANY, 'crm_tpv_worker', $personId, [
             'licence_number' => 'MH01-'.$personId,
             'licence_class'  => 'HMV',
             'licence_expiry' => $licenceExpiry,
+            'medical_expiry' => $medicalExpiry === false ? null : ($medicalExpiry ?? now()->addYear()->toDateString()),
             'status'         => $status,
         ], 1);
         $drivers->assignToVehicle(self::COMPANY, 'crm_tpv_worker', $personId, $vehicle->id, 1);
@@ -172,6 +186,102 @@ class DriverAllocationLinkTest extends TestCase
         $this->assertSame([], $ok['warnings']);
     }
 
+    /* ── T-41: the medical, and why its unknown differs ─────────── */
+
+    public function test_an_expired_medical_blocks_the_driver(): void
+    {
+        // A certificate that has run out is a positive statement that this
+        // person is not currently certified fit. Same kind of fact as a lapsed
+        // licence, so the same consequence.
+        $this->assignDriver($this->person('Lapsed Lata'), $this->vehicle('MH12MED01'),
+            now()->addYear()->toDateString(), DriverProfile::AVAILABLE, now()->subDay()->toDateString());
+
+        $result = app(DriverService::class)->eligible(self::COMPANY);
+
+        $this->assertCount(0, $result['eligible']);
+        $this->assertSame('driver_medical_expired', $result['excluded'][0]['blockers'][0]['code']);
+    }
+
+    public function test_a_missing_medical_warns_and_does_not_ground_the_fleet(): void
+    {
+        // The asymmetry worth stating: a blank LICENCE blocks, because that
+        // column has been captured and enforced since Fleet's first day, so an
+        // empty one means nobody has ever seen it. `medical_expiry` arrived
+        // this morning and EVERY driver has a blank one — blocking on it would
+        // ground the whole fleet the moment the migration runs.
+        $this->assignDriver($this->person('New Nita'), $this->vehicle('MH12MED02'),
+            now()->addYear()->toDateString(), DriverProfile::AVAILABLE, false);
+
+        $result = app(DriverService::class)->eligible(self::COMPANY);
+
+        $ok = collect($result['eligible'])->firstWhere('name', 'New Nita');
+        $this->assertNotNull($ok, 'a missing medical must not take a licensed driver off the road');
+        $this->assertSame('driver_medical_unrecorded', collect($ok['warnings'])->pluck('code')->first());
+    }
+
+    public function test_an_expiring_medical_is_a_warning_not_a_block(): void
+    {
+        $this->assignDriver($this->person('Soon Sonia'), $this->vehicle('MH12MED03'),
+            now()->addYear()->toDateString(), DriverProfile::AVAILABLE, now()->addDays(9)->toDateString());
+
+        $result = app(DriverService::class)->eligible(self::COMPANY);
+
+        $ok = collect($result['eligible'])->firstWhere('name', 'Soon Sonia');
+        $this->assertNotNull($ok);
+        $this->assertContains('driver_medical_expiring', collect($ok['warnings'])->pluck('code')->all());
+    }
+
+    public function test_the_two_gaps_are_counted_separately(): void
+    {
+        // Chasing a certificate nobody has captured is a different job from
+        // chasing one that has run out, so the board must not merge them.
+        $this->assignDriver($this->person('No Medical'), $this->vehicle('MH12MED04'),
+            now()->addYear()->toDateString(), DriverProfile::AVAILABLE, false);
+        $this->assignDriver($this->person('Old Medical'), $this->vehicle('MH12MED05'),
+            now()->addYear()->toDateString(), DriverProfile::AVAILABLE, now()->subMonth()->toDateString());
+
+        $counts = app(DriverService::class)->list(self::COMPANY)['counts'];
+
+        $this->assertSame(1, $counts['medical_unrecorded']);
+        $this->assertSame(1, $counts['medical_expired']);
+    }
+
+    /* ── T-42: away is not gone ─────────────────────────────────── */
+
+    public function test_on_leave_and_inactive_are_different_states(): void
+    {
+        // One `inactive` used to do both jobs. Rostering with them merged means
+        // either chasing somebody who left or writing off somebody who is back
+        // on Monday.
+        $this->assignDriver($this->person('Away Anil'), $this->vehicle('MH12LEAV01'),
+            now()->addYear()->toDateString(), DriverProfile::ON_LEAVE);
+        $this->assignDriver($this->person('Gone Girish'), $this->vehicle('MH12LEAV02'),
+            now()->addYear()->toDateString(), DriverProfile::INACTIVE);
+
+        $result = app(DriverService::class)->eligible(self::COMPANY);
+
+        // Both are unavailable today; the difference is what the sentence says,
+        // because one of them comes back.
+        $reasons = collect($result['excluded'])->pluck('blockers')->flatten(1)->pluck('why');
+
+        $this->assertTrue($reasons->contains(fn ($w) => str_contains($w, 'ON LEAVE')));
+        $this->assertTrue($reasons->contains(fn ($w) => str_contains($w, 'INACTIVE')));
+    }
+
+    public function test_on_trip_cannot_be_typed_into_a_profile(): void
+    {
+        // It is written by the dispatch gateway when a trip takes the driver
+        // and cleared when it releases them. Typing it would claim a trip that
+        // does not exist, and the release would then never come.
+        $personId = $this->person('Typed Tarun');
+
+        $this->actingAs($this->user())
+            ->putJson("/api/v1/fleet/drivers/crm_tpv_worker/{$personId}", [
+                'licence_number' => 'MH01-X', 'licence_class' => 'HMV',
+                'status' => DriverProfile::ON_TRIP,
+            ])->assertStatus(422);
+    }
+
     public function test_an_expiring_licence_is_a_warning_not_a_block(): void
     {
         $this->assignDriver($this->person('Soon Suresh'), $this->vehicle('MH12SOON01'), now()->addDays(9)->toDateString());
@@ -201,7 +311,7 @@ class DriverAllocationLinkTest extends TestCase
 
     public function test_a_suspended_driver_is_blocked_and_the_fleet_office_owns_it(): void
     {
-        $this->assignDriver($this->person('Suspended Sam'), $this->vehicle('MH12SUSP01'), now()->addYear()->toDateString(), 'suspended');
+        $this->assignDriver($this->person('Suspended Sam'), $this->vehicle('MH12SUSP01'), now()->addYear()->toDateString(), DriverProfile::SUSPENDED);
 
         $result = app(\App\Domains\Fleet\Services\DriverService::class)->eligible(self::COMPANY);
 
@@ -268,7 +378,7 @@ class DriverAllocationLinkTest extends TestCase
     public function test_an_unavailable_regular_driver_still_flags_the_pairing(): void
     {
         $vehicle = $this->vehicle('MH12SUSP02');
-        $this->assignDriver($this->person('Suspended Sam'), $vehicle, now()->addYear()->toDateString(), 'suspended');
+        $this->assignDriver($this->person('Suspended Sam'), $vehicle, now()->addYear()->toDateString(), DriverProfile::SUSPENDED);
 
         $row = $this->eligible()[0];
 

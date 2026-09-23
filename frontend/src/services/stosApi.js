@@ -252,12 +252,35 @@ export const LICENCE_CLASSES = [
   { value: 'OTHER', label: 'Other' },
 ]
 
+/**
+ * Mirrors `DriverProfile::STATUSES` — UPPERCASE since T-42, when the last
+ * lowercase enum in the module was converted.
+ *
+ * ON_LEAVE and INACTIVE are separate on purpose: "away until the 14th" and "no
+ * longer works here" are different facts, and a roster that merges them either
+ * chases somebody who left or writes off somebody who is back on Monday.
+ */
 export const DRIVER_STATUSES = [
-  { value: 'available', label: 'Available' },
-  { value: 'on_trip',   label: 'On trip' },
-  { value: 'suspended', label: 'Suspended' },
-  { value: 'inactive',  label: 'Inactive' },
+  { value: 'AVAILABLE', label: 'Available' },
+  { value: 'ON_TRIP',   label: 'On trip', systemOnly: true },
+  { value: 'SUSPENDED', label: 'Suspended' },
+  { value: 'ON_LEAVE',  label: 'On leave' },
+  { value: 'INACTIVE',  label: 'No longer with us' },
 ]
+
+/**
+ * What a person may choose.
+ *
+ * ON_TRIP is written by dispatch when a trip takes the driver and cleared when
+ * it releases them — the server refuses it here, so offering it would be a box
+ * that always errors.
+ */
+export const SETTABLE_DRIVER_STATUSES = DRIVER_STATUSES.filter((s) => !s.systemOnly)
+
+/** Label by value, so no screen has to un-snake_case a status by hand. */
+export const DRIVER_STATUS_LABELS = Object.fromEntries(
+  DRIVER_STATUSES.map((s) => [s.value, s.label])
+)
 
 export const TYRE_POSITIONS = [
   'front_left', 'front_right',

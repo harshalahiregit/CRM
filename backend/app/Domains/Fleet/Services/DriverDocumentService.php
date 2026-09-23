@@ -36,11 +36,17 @@ class DriverDocumentService
     /**
      * The driver equivalent of `TransportDocumentType::GATES_DISPATCH`.
      *
-     * Kept as a map, not a single constant, so T-41 adds a row here rather than
-     * rewriting the class.
+     * Two rows since T-41 added `medical_expiry`, which is why this was a map
+     * from the start rather than a single constant.
+     *
+     * Both project the same way; they do NOT block the same way. An expired
+     * licence and an expired medical both stop a dispatch, but a MISSING
+     * medical only warns — see `DriverService::warningsFor()` for why the two
+     * unknowns are different facts.
      */
     public const GATES_DISPATCH = [
-        TransportDocumentType::DRIVING_LICENSE => 'licence_expiry',
+        TransportDocumentType::DRIVING_LICENSE    => 'licence_expiry',
+        TransportDocumentType::MEDICAL_CERTIFICATE => 'medical_expiry',
     ];
 
     public function __construct(private TransportDocumentService $documents)
@@ -72,7 +78,8 @@ class DriverDocumentService
             'document' => $document->fresh(),
             'gate_moved' => false,
             'notice' => $this->gatedBy($type)
-                ? 'Filed. A licence does not clear a driver until somebody has verified it.'
+                ? 'Filed. This document gates dispatch — it does not clear the driver until '
+                    .'somebody has verified it.'
                 : 'Filed. This document does not gate dispatch.',
         ];
     }
@@ -183,7 +190,12 @@ class DriverDocumentService
         // it is the thing a roadside check asks for, and retyping it is how it
         // gets mistyped. Only filled when the profile has none; a correction
         // belongs on the profile, not in a document upload.
-        if (! $profile->licence_number && $document->document_number) {
+        //
+        // Guarded on the document TYPE since T-41: a medical certificate also
+        // carries a number, and writing that into `licence_number` would put a
+        // doctor's reference where a roadside check looks for a licence.
+        if ($document->document_type === TransportDocumentType::DRIVING_LICENSE
+            && ! $profile->licence_number && $document->document_number) {
             $profile->update(['licence_number' => $document->document_number]);
         }
 

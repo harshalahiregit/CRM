@@ -219,13 +219,13 @@ class TransportFleetResourceGateway implements FleetResourceGateway
             return false;
         }
 
-        if ($profile->status === 'on_trip') {
+        if ($profile->status === DriverProfile::ON_TRIP) {
             return true;
         }
 
         // A suspended driver is suspended for a reason a dispatch does not
         // overrule. Same principle as the workshop hold on a vehicle.
-        if ($profile->status === 'suspended') {
+        if ($profile->status === DriverProfile::SUSPENDED) {
             Log::channel('stos')->warning('Dispatch could not put a suspended driver on a trip', [
                 'rule' => 'BRW-050', 'trip_id' => $trip->id, 'driver_profile_id' => $profile->id,
             ]);
@@ -233,7 +233,7 @@ class TransportFleetResourceGateway implements FleetResourceGateway
             return false;
         }
 
-        $profile->update(['status' => 'on_trip']);
+        $profile->update(['status' => DriverProfile::ON_TRIP]);
 
         return true;
     }
@@ -261,9 +261,9 @@ class TransportFleetResourceGateway implements FleetResourceGateway
             if ($driverId) {
                 DriverProfile::forCompany($tenantId)
                     ->where('id', $driverId)
-                    ->where('status', 'on_trip')
+                    ->where('status', DriverProfile::ON_TRIP)
                     ->get()
-                    ->each(fn (DriverProfile $p) => $p->update(['status' => 'available']));
+                    ->each(fn (DriverProfile $p) => $p->update(['status' => DriverProfile::AVAILABLE]));
             }
 
             return true;

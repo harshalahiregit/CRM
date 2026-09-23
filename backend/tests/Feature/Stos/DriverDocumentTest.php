@@ -167,18 +167,36 @@ class DriverDocumentTest extends TestCase
         );
     }
 
-    public function test_a_verified_medical_certificate_gates_nothing_yet(): void
+    public function test_a_verified_medical_certificate_now_sets_the_medical_expiry(): void
     {
-        // `driver_profiles` has no `medical_expiry` column (T-41). Claiming a
-        // gate the allocation engine does not enforce would be worse than an
-        // honest gap, so the document is kept and the gate does not move.
+        // T-41 closed the gap this test used to record. When it was written
+        // `driver_profiles` had no `medical_expiry`, so a verified certificate
+        // was kept and gated nothing; the column exists now and it projects
+        // exactly as the licence does.
         $personId = $this->driver();
-        $document = $this->fileDoc($personId, TransportDocumentType::MEDICAL_CERTIFICATE);
+        $document = $this->fileDoc($personId, TransportDocumentType::MEDICAL_CERTIFICATE,
+            now()->addMonths(6)->toDateString());
 
         $result = $this->svc()->verify($document->id, self::COMPANY, 'VERIFIED', null, $this->user());
 
-        $this->assertFalse($result['gate_moved']);
-        $this->assertSame('VERIFIED', $result['document']->verification_status);
+        $this->assertTrue($result['gate_moved']);
+        $this->assertSame(
+            now()->addMonths(6)->toDateString(),
+            $this->profileFor($personId)->medical_expiry->toDateString()
+        );
+    }
+
+    public function test_a_medical_certificate_number_never_lands_in_the_licence_field(): void
+    {
+        // Both documents carry a number. Writing a doctor's reference into
+        // `licence_number` would put it where a roadside check looks for a
+        // licence, so the carry-across is guarded on the document type.
+        $personId = $this->driver();
+        $document = $this->fileDoc($personId, TransportDocumentType::MEDICAL_CERTIFICATE, null, 'MED-99887');
+
+        $this->svc()->verify($document->id, self::COMPANY, 'VERIFIED', null, $this->user());
+
+        $this->assertNull($this->profileFor($personId)->licence_number);
     }
 
     public function test_the_licence_number_is_carried_across_but_never_overwritten(): void
