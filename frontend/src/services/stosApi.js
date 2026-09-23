@@ -144,6 +144,26 @@ export const stosApi = {
     unfit:    (id) => api.post(`/v1/fleet/gensets/${id}/unfit`).then(unwrap).catch(handleErr),
   },
 
+  /**
+   * Trailers and the coupling between (T-54).
+   *
+   * A trailer is its own master, not a `vehicle_type` — no engine, so no fuel,
+   * no telemetry and no PUC. `history` is an endpoint rather than a field
+   * because "which trailer was under that truck on the 14th" is the question
+   * the whole feature exists to answer.
+   */
+  trailers: {
+    list:     (params = {}) => api.get('/v1/fleet/trailers', { params }).then(unwrap).catch(handleErr),
+    create:   (data) => api.post('/v1/fleet/trailers', data).then(unwrap).catch(handleErr),
+    update:   (id, data) => api.put(`/v1/fleet/trailers/${id}`, data).then(unwrap).catch(handleErr),
+    compliance: (id) => api.get(`/v1/fleet/trailers/${id}/compliance`).then(unwrap).catch(handleErr),
+    couple:   (id, vehicleId, reason = null) =>
+      api.post(`/v1/fleet/trailers/${id}/couple`, { vehicle_id: vehicleId, reason }).then(unwrap).catch(handleErr),
+    uncouple: (id, reason = null) =>
+      api.post(`/v1/fleet/trailers/${id}/uncouple`, { reason }).then(unwrap).catch(handleErr),
+    history:  (params = {}) => api.get('/v1/fleet/trailers/history', { params }).then(unwrap).catch(handleErr),
+  },
+
   urea: {
     record: (vehicleId, data) => api.post(`/v1/fleet/vehicles/${vehicleId}/urea`, data).then(unwrap).catch(handleErr),
   },
@@ -273,6 +293,39 @@ export const GENSET_STATE_LABELS = {
 
 /** States in which the genset is NOT cooling the load. */
 export const GENSET_NOT_COOLING = ['OFF', 'FAULT']
+
+/** Mirrors `Trailer::TYPES`. */
+export const TRAILER_TYPES = [
+  { value: 'flatbed',  label: 'Flatbed' },
+  { value: 'skeletal', label: 'Container skeletal' },
+  { value: 'tipper',   label: 'Tipper' },
+  { value: 'tanker',   label: 'Tanker' },
+  { value: 'reefer',   label: 'Reefer' },
+  { value: 'curtain',  label: 'Curtain side' },
+  { value: 'lowbed',   label: 'Low bed' },
+  { value: 'other',    label: 'Other' },
+]
+
+export const TRAILER_TYPE_LABELS = Object.fromEntries(TRAILER_TYPES.map((t) => [t.value, t.label]))
+
+/**
+ * Mirrors `Trailer::STATUSES`. Only three are offered: COUPLED is written by
+ * coupling and COMPLIANCE_BLOCKED is derived from the document dates, so a box
+ * offering either would be one that always errors.
+ */
+export const TRAILER_STATUS_LABELS = {
+  AVAILABLE: 'In the yard',
+  COUPLED: 'Coupled',
+  UNDER_MAINTENANCE: 'Under repair',
+  COMPLIANCE_BLOCKED: 'Papers lapsed',
+  RETIRED: 'Retired',
+}
+
+export const SETTABLE_TRAILER_STATUSES = [
+  { value: 'AVAILABLE', label: 'In the yard' },
+  { value: 'UNDER_MAINTENANCE', label: 'Under repair' },
+  { value: 'RETIRED', label: 'Retired' },
+]
 
 export const DRIVER_STATUSES = [
   { value: 'AVAILABLE', label: 'Available' },
