@@ -364,7 +364,23 @@ export function ActivityTab({ projectId }) {
 /* ── Expenses ─────────────────────────────────────────────────── */
 
 const todayStr = () => new Date().toISOString().split('T')[0]
-const EMPTY_EXPENSE = () => ({ title: '', category: '', amount: '', expense_date: todayStr(), note: '', billable: false })
+/*
+ * A complete expense.
+ *
+ * It used to be title / category / amount / date / note / billable — enough to
+ * say money was spent and not enough to do anything with afterwards. No
+ * receipt, so nothing could be claimed or audited; no reference, so it could
+ * not be matched to a bill; no payment mode, which the client-side expense has
+ * always had; no tax, so a gross figure was typed and the component lost; and
+ * the category was retyped on every row while a category master already existed.
+ */
+const PAYMENT_MODES = ['Cash', 'Bank transfer', 'Card', 'UPI', 'Cheque', 'Credit']
+
+const EMPTY_EXPENSE = () => ({
+  title: '', category: '', expense_category_id: '', amount: '', currency: 'INR',
+  tax_percent: '', expense_date: todayStr(), reference_no: '', payment_mode: '',
+  note: '', billable: false,
+})
 
 export function ExpensesTab({ projectId }) {
   const qc = useQueryClient()
@@ -375,23 +391,59 @@ export function ExpensesTab({ projectId }) {
   const rows = data?.rows || []
   const total = data?.total || 0
   const bust = () => qc.invalidateQueries({ queryKey: ['project-expenses', projectId] })
-  const reset = () => { setEditId(null); setForm(EMPTY_EXPENSE()) }
+  const reset = () => { setEditId(null); setForm(EMPTY_EXPENSE()); setReceipt(null) }
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
+  const { data: categories = [] } = useQuery({
+    queryKey: ['expense-categories'], queryFn: projectApi.expenseCategories,
+  })
+  const catList = Array.isArray(categories) ? categories : categories?.data ?? []
+
+  // The receipt is staged with the form and uploaded once the row exists, since
+  // it hangs off an expense id.
+  const [receipt, setReceipt] = useState(null)
+  const receiptRef = useRef(null)
+
   const save = useMutation({
-    mutationFn: () => {
-      const payload = { ...form, amount: Number(form.amount) || 0 }
-      return editId ? projectApi.updateExpense(projectId, editId, payload) : projectApi.addExpense(projectId, payload)
+    mutationFn: async () => {
+      const payload = {
+        ...form,
+        amount: Number(form.amount) || 0,
+        tax_percent: form.tax_percent === '' ? 0 : Number(form.tax_percent) || 0,
+        expense_category_id: form.expense_category_id || null,
+      }
+      const saved = editId
+        ? await projectApi.updateExpense(projectId, editId, payload)
+        : await projectApi.addExpense(projectId, payload)
+
+      if (receipt) await projectApi.uploadExpenseReceipt(projectId, saved.id ?? editId, receipt)
+
+      return saved
     },
     onSuccess: () => { reset(); bust() },
   })
   const del = useMutation({ mutationFn: (eid) => projectApi.deleteExpense(projectId, eid), onSuccess: () => { setConfirmDelete(null); bust() } })
-  const startEdit = (e) => { setEditId(e.id); setForm({ title: e.title || '', category: e.category || '', amount: e.amount ?? '', expense_date: e.expense_date ? String(e.expense_date).split('T')[0] : todayStr(), note: e.note || '', billable: !!e.billable }) }
+  const startEdit = (e) => {
+    setEditId(e.id); setReceipt(null)
+    setForm({
+      title: e.title || '', category: e.category || '',
+      expense_category_id: e.expense_category_id ?? '',
+      amount: e.amount ?? '', currency: e.currency || 'INR',
+      tax_percent: e.tax_percent ?? '',
+      expense_date: e.expense_date ? String(e.expense_date).split('T')[0] : todayStr(),
+      reference_no: e.reference_no || '', payment_mode: e.payment_mode || '',
+      note: e.note || '', billable: !!e.billable,
+    })
+  }
   const doExport = () => exportCsv(stampedName(`project-${projectId}-expenses`), rows, [
     { key: 'expense_date', label: 'Date', value: r => String(r.expense_date).split('T')[0] },
     { key: 'title', label: 'Title' },
     { key: 'category', label: 'Category' },
+    { key: 'reference_no', label: 'Reference' },
+    { key: 'payment_mode', label: 'Paid by' },
     { key: 'amount', label: 'Amount' },
+    { key: 'tax_percent', label: 'Tax %' },
+    { key: 'total_amount', label: 'Gross' },
     { key: 'billable', label: 'Billable', value: r => r.billable ? 'Yes' : 'No' },
     { key: 'note', label: 'Note' },
   ])
@@ -420,13 +472,60 @@ export function ExpensesTab({ projectId }) {
         className="rounded-xl p-3 mb-4" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <input value={form.title} onChange={e => sf('title', e.target.value)} placeholder="Title *" style={INP} className="col-span-2" />
-          <input value={form.category} onChange={e => sf('category', e.target.value)} placeholder="Category" style={INP} />
+
+          {/* Chosen from the master where there is one, typed where there is
+              not — a taxi fare should not need an admin to create a category
+              first. Picking from the list wins over whatever was typed. */}
+          {catList.length > 0 ? (
+            <select value={form.expense_category_id} onChange={e => sf('expense_category_id', e.target.value)} style={INP}>
+              <option value="">Category…</option>
+              {catList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          ) : (
+            <input value={form.category} onChange={e => sf('category', e.target.value)} placeholder="Category" style={INP} />
+          )}
+
           <div className="relative">
             <IndianRupee size={13} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
             <input type="number" min="0" step="0.01" value={form.amount} onChange={e => sf('amount', e.target.value)} placeholder="Amount *" style={{ ...INP, paddingLeft: 26 }} />
           </div>
+
+          <input type="number" min="0" max="100" step="0.01" value={form.tax_percent}
+            onChange={e => sf('tax_percent', e.target.value)} placeholder="Tax %" style={INP} />
+          <select value={form.currency} onChange={e => sf('currency', e.target.value)} style={INP}>
+            {['INR', 'USD', 'EUR', 'GBP', 'AED'].map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+
           <input type="date" value={form.expense_date} onChange={e => sf('expense_date', e.target.value)} style={INP} />
-          <input value={form.note} onChange={e => sf('note', e.target.value)} placeholder="Note (optional)" style={INP} className="col-span-2 sm:col-span-3" />
+          <input value={form.reference_no} onChange={e => sf('reference_no', e.target.value)}
+            placeholder="Bill / voucher no." style={INP} />
+          <select value={form.payment_mode} onChange={e => sf('payment_mode', e.target.value)} style={INP}>
+            <option value="">Paid by…</option>
+            {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+
+          <input value={form.note} onChange={e => sf('note', e.target.value)} placeholder="Note (optional)" style={INP} className="col-span-2 sm:col-span-4" />
+        </div>
+
+        {/* The receipt. An expense with no document behind it cannot be claimed,
+            audited or re-billed — which is why it was being e-mailed separately. */}
+        <div className="flex items-center gap-2 mt-2">
+          <input ref={receiptRef} type="file" accept=".pdf,image/*" className="hidden"
+            onChange={e => setReceipt(e.target.files?.[0] || null)} />
+          <button type="button" onClick={() => receiptRef.current?.click()}
+            className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1.5 rounded-lg"
+            style={{ background: 'var(--bg-card)', border: '1px dashed var(--border)', color: 'var(--text-muted)' }}>
+            <Paperclip size={11} /> {receipt ? receipt.name : 'Attach receipt'}
+          </button>
+          {receipt && (
+            <button type="button" onClick={() => { setReceipt(null); if (receiptRef.current) receiptRef.current.value = '' }}
+              className="text-[11px]" style={{ color: 'var(--color-danger-500)' }}>Remove</button>
+          )}
+          {Number(form.amount) > 0 && Number(form.tax_percent) > 0 && (
+            <span className="ml-auto text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              Gross ₹{(Number(form.amount) * (1 + Number(form.tax_percent) / 100)).toFixed(2)}
+            </span>
+          )}
         </div>
         <div className="flex items-center justify-between mt-2">
           <label className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-body)', cursor: 'pointer' }}>
@@ -452,6 +551,8 @@ export function ExpensesTab({ projectId }) {
                 <th className="px-2 py-2 font-bold">Date</th>
                 <th className="px-2 py-2 font-bold">Title</th>
                 <th className="px-2 py-2 font-bold">Category</th>
+                <th className="px-2 py-2 font-bold">Reference</th>
+                <th className="px-2 py-2 font-bold">Paid by</th>
                 <th className="px-2 py-2 font-bold text-right">Amount</th>
                 <th className="px-2 py-2 font-bold" />
               </tr>
@@ -463,10 +564,31 @@ export function ExpensesTab({ projectId }) {
                   <td className="px-2 py-2" style={{ color: 'var(--text-h)' }}>
                     {r.title}
                     {r.billable && <span className="ml-1.5 text-[9px] font-bold px-1 py-0.5 rounded" style={{ background: `color-mix(in srgb, ${PROJECT_ACCENT} 14%, transparent)`, color: PROJECT_ACCENT }}>billable</span>}
+                    {/* The receipt, if one is attached. A link rather than a
+                        tick: the point of attaching it is opening it later. */}
+                    {r.has_receipt && (
+                      <a href={`/api${projectApi.expenseReceiptUrl(projectId, r.id)}`} target="_blank" rel="noreferrer"
+                        title={r.receipt_name || 'Receipt'}
+                        className="ml-1.5 inline-flex items-center gap-0.5 text-[9px] font-bold"
+                        style={{ color: PROJECT_ACCENT }}>
+                        <Paperclip size={9} /> receipt
+                      </a>
+                    )}
                     {r.note && <span className="block text-[10px]" style={{ color: 'var(--text-muted)' }}>{r.note}</span>}
                   </td>
                   <td className="px-2 py-2" style={{ color: 'var(--text-muted)' }}>{r.category || '—'}</td>
-                  <td className="px-2 py-2 text-right tabular-nums font-semibold" style={{ color: 'var(--text-h)' }}>₹{Number(r.amount).toLocaleString('en-IN')}</td>
+                  <td className="px-2 py-2" style={{ color: 'var(--text-muted)' }}>{r.reference_no || '—'}</td>
+                  <td className="px-2 py-2" style={{ color: 'var(--text-muted)' }}>{r.payment_mode || '—'}</td>
+                  <td className="px-2 py-2 text-right tabular-nums font-semibold" style={{ color: 'var(--text-h)' }}>
+                    ₹{Number(r.amount).toLocaleString('en-IN')}
+                    {/* The gross, when tax was recorded — the net alone is what
+                        somebody types, the gross is what left the bank. */}
+                    {Number(r.tax_percent) > 0 && (
+                      <span className="block text-[10px] font-normal" style={{ color: 'var(--text-muted)' }}>
+                        +{Number(r.tax_percent)}% = ₹{Number(r.total_amount).toLocaleString('en-IN')}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-2 py-2 text-right whitespace-nowrap">
                     <button onClick={() => startEdit(r)} className="hover:opacity-60 mr-2" aria-label="Edit expense"><Pencil size={12} style={{ color: 'var(--text-muted)' }} /></button>
                     <button onClick={() => setConfirmDelete(r)} className="hover:opacity-60" aria-label="Delete expense"><Trash2 size={12} style={{ color: 'var(--color-danger-500)' }} /></button>
@@ -476,7 +598,7 @@ export function ExpensesTab({ projectId }) {
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan={3} className="px-2 py-2 text-right text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>Total</td>
+                <td colSpan={5} className="px-2 py-2 text-right text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>Total</td>
                 <td className="px-2 py-2 text-right tabular-nums font-black" style={{ color: 'var(--text-h)' }}>₹{Number(total).toLocaleString('en-IN')}</td>
                 <td />
               </tr>
