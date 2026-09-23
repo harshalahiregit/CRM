@@ -429,17 +429,30 @@ class CareerPortalOfferTest extends TestCase
         $this->letter($t, $job->id, 'someone.else@cand.test', $raw)->assertStatus(404);
     }
 
-    /** @test */
+    /**
+     * Everything about the request is the other tenant's — EXCEPT the slug.
+     *
+     * THE JOB ID HAS TO BE THEIRS, and that is the whole point of this test.
+     * It first used a freshly created job of my own, which meant the lookup
+     * missed on `job_posting_id` and returned 404 for a reason that has nothing
+     * to do with tenancy: deleting the tenant filter from
+     * CandidateRepository::findApplicationForJob() left this passing, so it
+     * advertised a boundary it never touched.
+     *
+     * Using their job leaves `tenant_id` as the only column that can refuse the
+     * row, so the 404 below means what the method name says it means.
+     *
+     * @test
+     */
     public function the_letter_cannot_be_reached_across_tenants(): void
     {
-        [, , $theirCandidate, $theirOffer] = $this->application($this->other);
+        [, $theirJob, $theirCandidate, $theirOffer] = $this->application($this->other);
         $this->withLetter($theirOffer);
         $raw = $this->tokens()->issue($theirOffer);
 
-        // Their credential, their email — but this tenant's portal and job.
-        $mine = $this->job($this->tenant);
-
-        $this->letter($this->tenant, $mine->id, $theirCandidate->email, $raw)->assertStatus(404);
+        // Their job, their email, their live credential — through my slug.
+        $this->letter($this->tenant, $theirJob->id, $theirCandidate->email, $raw)
+            ->assertStatus(404);
     }
 
     /* ═══════════ 5. THE RESPOND ENDPOINT — PINNED, NOT CHANGED ═══════ */
@@ -577,14 +590,22 @@ class CareerPortalOfferTest extends TestCase
         $this->assertSame('Sent', $offer->fresh()->status);
     }
 
-    /** @test */
+    /**
+     * The same correction, for the endpoint that can actually change something.
+     *
+     * Their job id, so `tenant_id` is the only filter left standing — see the
+     * note on the letter's cross-tenant test. The status assertion matters
+     * doubly here: refusing the request is not enough if the offer moved.
+     *
+     * @test
+     */
     public function responding_cannot_reach_across_tenants(): void
     {
-        [, , $theirCandidate, $theirOffer] = $this->application($this->other);
-        $raw  = $this->tokens()->issue($theirOffer);
-        $mine = $this->job($this->tenant);
+        [, $theirJob, $theirCandidate, $theirOffer] = $this->application($this->other);
+        $raw = $this->tokens()->issue($theirOffer);
 
-        $this->respond($this->tenant, $mine->id, [
+        // Their job, their email, their live credential — through my slug.
+        $this->respond($this->tenant, $theirJob->id, [
             'email' => $theirCandidate->email, 'action' => 'accept', 'token' => $raw,
         ])->assertStatus(404);
 
