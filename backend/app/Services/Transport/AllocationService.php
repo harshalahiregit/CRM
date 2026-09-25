@@ -619,7 +619,11 @@ class AllocationService
             return AllocationScope::BR_VEHICLE_OVERLAP;   // BR-P0-003
         }
 
-        if ($kind === 'driver' && array_intersect(['availability', 'lifecycle', 'licence', 'documents'], $failedKeys)) {
+        // Since D-134 a driver's licence, medical, lifecycle and availability
+        // are ONE check, `fleet` — Fleet's verdict. The old four keys can no
+        // longer be emitted, and matching only them left `rule` null on every
+        // driver refusal (D-150). `assignment` stays unmapped: it never was.
+        if ($kind === 'driver' && in_array('fleet', $failedKeys, true)) {
             return AllocationScope::BR_DRIVER_BLOCKED;    // BR-P0-004
         }
 
@@ -645,6 +649,9 @@ class AllocationService
             'assignment'   => 'STOS-DB §199; RTM PLN-006',
             'licence'      => 'BR-P0-004; STOS-CMP §22; BRM BR-048',
             'documents'    => 'BR-P0-004; BRW-029; STOS-CMP §24',
+            // D-134: the four rules above, now one Fleet verdict — cited as
+            // the union of what they cited, nothing added.
+            'fleet'        => 'BR-P0-004; BRW-028; BRW-029; STOS-CMP §22; RTM PLN-004',
         ];
 
         return array_values(array_intersect_key($map, array_flip($failedKeys)));

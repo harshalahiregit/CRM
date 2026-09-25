@@ -173,6 +173,28 @@ class TransportAllocationRefusalAuditTest extends TestCase
         $this->assertArrayHasKey('override', $row->context, 'the key is present so the shape is right for PLN-007');
     }
 
+    /**
+     * D-150 — a driver refused by Fleet is BR-P0-004's refusal.
+     *
+     * Since D-134 licence, medical, lifecycle and availability are one check,
+     * `fleet`. ruleFor() still matched only the four old keys, so every driver
+     * refusal logged `rule: null` — evidence nobody could file under its rule.
+     */
+    public function test_a_fleet_refusal_is_logged_against_br_p0_004(): void
+    {
+        $trip = $this->trip();
+        $d = $this->driver(['licence_expiry' => now()->subDays(4)->toDateString()]);
+
+        $this->refuse($trip, null, $d->id);
+
+        $row = $this->refusal($trip);
+        $this->assertNotNull($row, 'BR-P0-004 requires a refusal log');
+        $this->assertSame(['fleet'], collect($row->context['checks'])->where('passed', false)->pluck('key')->values()->all(),
+            'this proves nothing unless Fleet is the check that refused');
+        $this->assertSame('BR-P0-004', $row->context['rule']);
+        $this->assertContains('BR-P0-004; BRW-028; BRW-029; STOS-CMP §22; RTM PLN-004', $row->context['sources']);
+    }
+
     public function test_an_expired_vehicle_document_is_logged_with_its_document_status(): void
     {
         $trip = $this->trip();

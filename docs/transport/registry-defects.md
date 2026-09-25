@@ -5660,9 +5660,18 @@ against the new shape.
    (`an_expired_licence_blocks_the_driver`, `an_expired_licence_returns_422_with_the_reason`) ask
    for "assign another eligible driver". Fleet's sentence stops at "cannot be dispatched". The
    sentence is Fleet's; the requirement is ours. Held, not weakened.
-2. **Driver refusals no longer carry `rule: BR-P0-004`.** `AllocationService::ruleFor()` looks for
-   `availability/lifecycle/licence/documents`; the failed key is now `fleet`. The audit row's rule
-   is null. Found here, not fixed — outside D-150's scope, and ours.
+2. ~~**Driver refusals no longer carry `rule: BR-P0-004`.**~~ **Closed.** `ruleFor()` matched only
+   `availability/lifecycle/licence/documents`, which no driver verdict can emit since D-134 — the
+   only keys are `fleet` and `assignment`. It now maps `fleet` → BR-P0-004 and the four dead keys
+   are gone from it. `assignment` stays unmapped, as it always was. `sourcesFor()` gained `fleet`,
+   cited as the union of the four rules it replaced — no new citation.
+   **Proved by test, broken 2 ways:** `test_a_fleet_refusal_is_logged_against_br_p0_004` (new) —
+   old keys restored → red; mapped to `assignment` → red; restored → green. Transport suite
+   unchanged otherwise: `80 failed · 1074 passed`.
+   **Still red, for a different reason:** `test_expired_licence_is_logged_against_br_p0_004_with_document_status`
+   now passes its `rule` line and stops at `document_status.licence.valid` — a key the repoint
+   (685a1a67) dropped from the driver's document status. Where validity should come from (Fleet's
+   own `licence.state`, rather than a second opinion computed here) is a decision, not a fix.
 3. **CMP §20 configurability.** `driver.check.licence.required` no longer does anything: Fleet's
    whole verdict is gated by `driver.check.lifecycle.required`. Whether licence alone may be advisory
    is a business rule.
