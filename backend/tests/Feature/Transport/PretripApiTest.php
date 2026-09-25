@@ -119,7 +119,8 @@ class PretripApiTest extends TestCase
             'licence_expiry' => now()->addYears(2)->toDateString(),
         ], $tenantId, $actor);
 
-        $this->alloc->assign($trip->fresh(), $v->id, $d->id, $tenantId, $actor);
+        // D-152 — a fresh directory read each time: the driver above is new.
+        app(AllocationService::class)->assign($trip->fresh(), $v->id, $d->id, $tenantId, $actor);
 
         return $trip->fresh();
     }

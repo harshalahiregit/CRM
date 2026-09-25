@@ -569,6 +569,7 @@ class PretripGateTest extends TestCase
 
         // A brand-new crew.
         $v2 = $this->vehicle(); $d2 = $this->driver();
+        $this->alloc = app(AllocationService::class);   // D-152: a fresh directory read — this crew is new
         $this->alloc->assign($trip->fresh(), $v2->id, $d2->id, self::TENANT_A, $this->actor);
         $this->assertSame(TripStatus::ALLOCATED, $trip->fresh()->status);
 
@@ -587,6 +588,7 @@ class PretripGateTest extends TestCase
         $this->alloc->release($this->assignmentFor($trip), self::TENANT_A, $this->actor);
 
         $v2 = $this->vehicle(); $d2 = $this->driver();
+        $this->alloc = app(AllocationService::class);   // D-152: a fresh directory read — this crew is new
         $this->alloc->assign($trip->fresh(), $v2->id, $d2->id, self::TENANT_A, $this->actor);
 
         $checks = $this->pretrip->generate($trip->fresh(), self::TENANT_A, $this->actor);
@@ -596,8 +598,8 @@ class PretripGateTest extends TestCase
             $this->assertTrue($check->satisfied(), $check->check_key.': '.$check->detail);
             $this->assertFalse($check->isCompleted(), 'a fresh evaluation is not a confirmation');
         }
-        $this->assertStringContainsString($v2->displayName(), $checks->firstWhere('check_key', PretripCheckKey::VEHICLE_ASSIGNED)->detail);
-        $this->assertStringContainsString($d2->displayName(), $checks->firstWhere('check_key', PretripCheckKey::DRIVER_ASSIGNED)->detail);
+        $this->assertStringContainsString($v2->registration_number, $checks->firstWhere('check_key', PretripCheckKey::VEHICLE_ASSIGNED)->detail);
+        $this->assertStringContainsString($d2->name, $checks->firstWhere('check_key', PretripCheckKey::DRIVER_ASSIGNED)->detail);
     }
 
     public function test_the_full_release_recrew_repass_cycle_works(): void
@@ -607,6 +609,7 @@ class PretripGateTest extends TestCase
         $this->alloc->release($this->assignmentFor($trip), self::TENANT_A, $this->actor);
 
         $v2 = $this->vehicle(); $d2 = $this->driver();
+        $this->alloc = app(AllocationService::class);   // D-152: a fresh directory read — this crew is new
         $this->alloc->assign($trip->fresh(), $v2->id, $d2->id, self::TENANT_A, $this->actor);
 
         $this->pretrip->generate($trip->fresh(), self::TENANT_A, $this->actor);
