@@ -153,6 +153,8 @@ export default function Employees() {
 
   const [showModal, setShowModal] = useState(false)
   const [editingId, setEditingId] = useState(null)
+  // The linked account's state, read-only, for the modal's Login account block.
+  const [loginState, setLoginState] = useState(null)
   const [appBusy, setAppBusy] = useState(null)
   const [form, setForm]           = useState(EMPTY_FORM)
   const [saving, setSaving]       = useState(false)
@@ -215,6 +217,9 @@ export default function Employees() {
 
   const openEdit = (emp) => {
     setEditingId(emp.id)
+    // Not part of the form — nothing here writes it. Kept beside the form so the
+    // modal can show what this person's access currently is.
+    setLoginState(emp.login || null)
     // #29 — the two org-chart keys fall back to the EMPTY_FORM defaults rather
     // than to '': an employee the list endpoint did not return them for would
     // otherwise open with "Show on the org chart" unticked and save it off.
@@ -246,7 +251,7 @@ export default function Employees() {
         setStats(prev=>({...prev,total:prev.total+1,active:prev.active+1}))
         showToast('Employee added!')
       }
-      setShowModal(false); setForm(EMPTY_FORM); setEditingId(null)
+      setShowModal(false); setForm(EMPTY_FORM); setEditingId(null); setLoginState(null)
     } catch (e) { showToast(e.response?.data?.message||'Failed','error') }
     finally { setSaving(false) }
   }
@@ -718,7 +723,53 @@ export default function Employees() {
                   The state Professional Tax is levied under — not the office city. Leave blank to use the company default.
                 </p>
               </div>
-              {editingId && <div><label className="label">Status</label><select className="input-3d text-sm" value={form.status} onChange={e=>setForm({...form,status:e.target.value})}>{['Active','On Leave','Inactive'].map(s=><option key={s}>{s}</option>)}</select></div>}
+              {editingId && <div><label className="label">Employment Status</label><select className="input-3d text-sm" value={form.status} onChange={e=>setForm({...form,status:e.target.value})}>{['Active','On Leave','Inactive'].map(s=><option key={s}>{s}</option>)}</select>
+                <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+                  Setting this to Inactive also stops the linked login from signing in.
+                </p>
+              </div>}
+
+              {/* The login attached to this person — READ ONLY.
+                  ────────────────────────────────────────────────────────────
+                  Employment status decides whether somebody may sign in, and this
+                  was the one screen that could not say so: an admin set a person
+                  Inactive here and had no way to see what it did to their access.
+                  Shown, never edited — the account belongs to Staff Management,
+                  and a second editor for it is exactly what this whole piece of
+                  work exists to remove. */}
+              {editingId && (
+                <div className="rounded-xl p-3" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div style={{ minWidth: 0 }}>
+                      <p className="text-[10px] font-black uppercase tracking-wide" style={{ color:'var(--text-muted)' }}>
+                        Login account
+                      </p>
+                      {loginState ? (
+                        <>
+                          <p className="text-xs font-semibold mt-1" style={{ color:'var(--text-h)' }}>{loginState.email}</p>
+                          <p className="text-[10px] mt-1" style={{ color: loginState.can_sign_in ? '#10b981' : '#f59e0b' }}>
+                            {loginState.can_sign_in
+                              ? 'Can sign in to the CRM'
+                              : `Cannot sign in — ${loginState.blocked_because}`}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-[11px] mt-1" style={{ color:'var(--text-muted)' }}>
+                          No login. This person cannot sign in or use the attendance app.
+                        </p>
+                      )}
+                    </div>
+                    {loginState && (
+                      <button type="button" onClick={()=>navigate('/app/admin/staff')}
+                        className="px-2.5 py-1 rounded-lg text-[10px] font-black whitespace-nowrap"
+                        style={{ background:'var(--bg-card)', color:'var(--text-h)', border:'1px solid var(--border)' }}>
+                        Manage account
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="flex gap-3 pt-1">
                 <button onClick={()=>setShowModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>Cancel</button>
                 <button onClick={handleSave} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)', opacity:saving?0.7:1 }}>{saving?'Saving…':editingId?'Save Changes':'Add Employee'}</button>

@@ -226,6 +226,17 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
    */
   const roleRequired = !staff || Boolean(staff.staff_role_id)
 
+  /**
+   * Does an employee record own this account's person details?
+   *
+   * `employee_id` is attached by StaffManagementController::withEmployeeIdentity,
+   * which is also where the displayed name, email, phone, department and
+   * designation come from. When it is present, HR is the editor for those and
+   * this form is the editor for the account: status, access role, permissions,
+   * password, mail identity.
+   */
+  const linkedEmployee = Boolean(staff?.employee_id)
+
   /** What the currently selected role grants, or {} when no role is assigned. */
   const inheritedPermissions = useMemo(() => {
     const role = roles.find(r => String(r.id) === String(formData.staff_role_id))
@@ -354,8 +365,22 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
     setErrors({})
     setLoading(true)
     const fullName = [formData.first_name, formData.last_name].filter(Boolean).join(' ')
+
+    // The employee record owns the person's details when there is one, and this
+    // form shows them read-only. Posting them back would be sending values this
+    // form never let anybody change — harmless today, because the server writes
+    // them through to the same owner, but it is the shape that lets a second
+    // editor grow back.
+    const identity = linkedEmployee ? {} : {
+      name: fullName,
+      email: formData.email,
+      phone: formData.phone,
+      department: formData.department,
+      designation: formData.designation,
+    }
+
     const payload  = {
-      name: fullName, email: formData.email, phone: formData.phone,
+      ...identity,
       password: formData.password,
       // Sent only when there is one. The backend rule is `sometimes|required`,
       // which means "if the key is here it must not be empty" — posting
@@ -364,7 +389,6 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
       // server one rather than fixing anything.
       ...(formData.internal_role ? { internal_role: formData.internal_role } : {}),
       staff_role_id: formData.staff_role_id || null,
-      department: formData.department, designation: formData.designation,
       status: formData.status,
       administrator: formData.administrator,
       meta: {
@@ -521,35 +545,83 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
                 </label>
               </div>
 
-              {/* First + Last Name */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label style={lbl}>First Name *</label>
-                  <input type="text" value={formData.first_name} onChange={e=>set('first_name',e.target.value)}
-                    required placeholder="Rahul" style={inp('first_name')}/>
-                  {errors.name&&<p className="text-[10px] mt-1" style={{ color:'#ef4444' }}>{errors.name[0]}</p>}
-                </div>
-                <div>
-                  <label style={lbl}>Last Name</label>
-                  <input type="text" value={formData.last_name} onChange={e=>set('last_name',e.target.value)}
-                    placeholder="Sharma" style={inp('last_name')}/>
-                </div>
-              </div>
+              {/* Identity — SHOWN here, OWNED by the employee record.
+                  ────────────────────────────────────────────────────────────
+                  When this account belongs to an employee, these five fields are
+                  read-only and point at HR. Two editors for one fact is what
+                  produced the divergence in the first place: an employee's email
+                  was changed in HR while the account kept the old one, and both
+                  screens went on insisting they were right.
 
-              {/* Email */}
-              <div>
-                <label style={lbl}>Email Address *</label>
-                <input type="email" value={formData.email} onChange={e=>set('email',e.target.value)}
-                  required placeholder="rahul@sangoe.com" style={inp('email')}/>
-                {errors.email&&<p className="text-[10px] mt-1" style={{ color:'#ef4444' }}>{errors.email[0]}</p>}
-              </div>
+                  This is a display change, not a permission one. Nothing is
+                  hidden — the values are the employee's, read live — and an
+                  account with no employee record keeps every field editable,
+                  because then there is no other place to edit them. */}
+              {linkedEmployee ? (
+                <div className="rounded-xl p-3" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+                  <div className="flex items-start justify-between gap-3 mb-2.5">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-wide" style={{ color:'var(--text-muted)' }}>
+                        Person details
+                      </p>
+                      <p className="text-[10px] mt-0.5" style={{ color:'var(--text-muted)' }}>
+                        Owned by the HR employee record ({staff.employee_code || `#${staff.employee_id}`}). Edit them there and they update here.
+                      </p>
+                    </div>
+                    <a href={`/app/hr/employees/${staff.employee_id}`}
+                      className="px-2.5 py-1 rounded-lg text-[10px] font-black whitespace-nowrap"
+                      style={{ background:'var(--bg-card)', color:'var(--text-h)', border:'1px solid var(--border)' }}>
+                      Edit in HR
+                    </a>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                    {[
+                      ['Name',        [formData.first_name, formData.last_name].filter(Boolean).join(' ')],
+                      ['Email',       formData.email],
+                      ['Phone',       formData.phone],
+                      ['Department',  formData.department],
+                      ['Designation', formData.designation],
+                    ].map(([label, value]) => (
+                      <div key={label}>
+                        <p style={lbl}>{label}</p>
+                        <p className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{value || '—'}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* First + Last Name */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label style={lbl}>First Name *</label>
+                      <input type="text" value={formData.first_name} onChange={e=>set('first_name',e.target.value)}
+                        required placeholder="Rahul" style={inp('first_name')}/>
+                      {errors.name&&<p className="text-[10px] mt-1" style={{ color:'#ef4444' }}>{errors.name[0]}</p>}
+                    </div>
+                    <div>
+                      <label style={lbl}>Last Name</label>
+                      <input type="text" value={formData.last_name} onChange={e=>set('last_name',e.target.value)}
+                        placeholder="Sharma" style={inp('last_name')}/>
+                    </div>
+                  </div>
 
-              {/* Phone */}
-              <div>
-                <label style={lbl}>Phone</label>
-                <input type="text" value={formData.phone} onChange={e=>set('phone',e.target.value)}
-                  placeholder="+91 98765 43210" style={inp('phone')}/>
-              </div>
+                  {/* Email */}
+                  <div>
+                    <label style={lbl}>Email Address *</label>
+                    <input type="email" value={formData.email} onChange={e=>set('email',e.target.value)}
+                      required placeholder="rahul@sangoe.com" style={inp('email')}/>
+                    {errors.email&&<p className="text-[10px] mt-1" style={{ color:'#ef4444' }}>{errors.email[0]}</p>}
+                  </div>
+
+                  {/* Phone */}
+                  <div>
+                    <label style={lbl}>Phone</label>
+                    <input type="text" value={formData.phone} onChange={e=>set('phone',e.target.value)}
+                      placeholder="+91 98765 43210" style={inp('phone')}/>
+                  </div>
+                </>
+              )}
 
               {/* Staff Signature */}
               <div>
@@ -599,36 +671,43 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
                   </p>
                   {errors.internal_role&&<p className="text-[10px] mt-1" style={{ color:'#ef4444' }}>{errors.internal_role[0]}</p>}
                 </div>
+                {/* Shown in the Person details block above when an employee owns
+                    them, so they are not offered twice on one form. */}
+                {!linkedEmployee && (
+                  <div>
+                    <label style={lbl}>Department</label>
+                    <select value={formData.department} onChange={e=>set('department',e.target.value)} style={inp('department')}>
+                      <option value="">Select Department</option>
+                      {departments.map(d=><option key={d.id} value={d.name}>{d.name}</option>)}
+                    </select>
+                    <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+                      Managed under HR &rarr; Organization Setup.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Job Title — a designation record, not free text. Distinct from
+                  the Access Role above: an access role decides what somebody may
+                  DO, a job title is what they ARE. Two Senior Engineers can hold
+                  different access roles. */}
+              {!linkedEmployee && (
                 <div>
-                  <label style={lbl}>Department</label>
-                  <select value={formData.department} onChange={e=>set('department',e.target.value)} style={inp('department')}>
-                    <option value="">Select Department</option>
-                    {departments.map(d=><option key={d.id} value={d.name}>{d.name}</option>)}
+                  <label style={lbl}>Job Title</label>
+                  <select value={formData.designation} onChange={e=>set('designation',e.target.value)} style={inp('designation')}>
+                    <option value="">Select Job Title</option>
+                    {jobTitles.map(t=><option key={t.id} value={t.name}>{t.name}</option>)}
+                    {/* A title typed before designations became records would vanish
+                        from the dropdown and silently clear on the next save. */}
+                    {formData.designation && !jobTitles.some(t=>t.name===formData.designation) && (
+                      <option value={formData.designation}>{formData.designation}</option>
+                    )}
                   </select>
                   <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
                     Managed under HR &rarr; Organization Setup.
                   </p>
                 </div>
-              </div>
-
-              {/* Job Title — a designation record, not free text. Distinct from
-                  Role above: Role decides what somebody may DO, a job title is
-                  what they ARE. Two Senior Engineers can hold different roles. */}
-              <div>
-                <label style={lbl}>Job Title</label>
-                <select value={formData.designation} onChange={e=>set('designation',e.target.value)} style={inp('designation')}>
-                  <option value="">Select Job Title</option>
-                  {jobTitles.map(t=><option key={t.id} value={t.name}>{t.name}</option>)}
-                  {/* A title typed before designations became records would vanish
-                      from the dropdown and silently clear on the next save. */}
-                  {formData.designation && !jobTitles.some(t=>t.name===formData.designation) && (
-                    <option value={formData.designation}>{formData.designation}</option>
-                  )}
-                </select>
-                <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
-                  Managed under HR &rarr; Organization Setup.
-                </p>
-              </div>
+              )}
 
               {/* Status */}
               <div>

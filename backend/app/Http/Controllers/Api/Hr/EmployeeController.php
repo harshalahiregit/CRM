@@ -23,15 +23,67 @@ class EmployeeController extends Controller
 
     public function index(Request $request)
     {
-        return response()->json(
-            $this->employeeService->list(
-                $request->user()->tenant_id,
-                $request->only(['status', 'department', 'designation', 'joined_from', 'search', 'per_page']),
-                // Passing the actor is what lets a non-global role narrow this
-                // list. A global role — which is every role today — is unchanged.
-                $request->user(),
-            )
+        $page = $this->employeeService->list(
+            $request->user()->tenant_id,
+            $request->only(['status', 'department', 'designation', 'joined_from', 'search', 'per_page']),
+            // Passing the actor is what lets a non-global role narrow this
+            // list. A global role — which is every role today — is unchanged.
+            $request->user(),
         );
+
+        return response()->json($this->withLoginState($page, (int) $request->user()->tenant_id));
+    }
+
+    /**
+     * Attach each employee's login state to the row.
+     *
+     * The employee form owns this person's identity, and it was the one screen
+     * that could not say whether they could actually get in — an admin could set
+     * somebody Inactive and had no way to see what that did to their access. The
+     * answer lives on `users` plus the employment gate, so it is resolved here
+     * and shown rather than left for somebody to guess.
+     *
+     * Read-only, and deliberately small: the account email, whether it can sign
+     * in, and why not when it cannot. Changing any of it is Staff Management's
+     * job — this is a window, not a second editor.
+     *
+     * One query for the page, not one per row.
+     */
+    private function withLoginState($page, int $tenantId)
+    {
+        $userIds = collect($page->items())->pluck('user_id')->filter()->unique();
+
+        $users = $userIds->isEmpty()
+            ? collect()
+            : \App\Models\User::where('tenant_id', $tenantId)
+                ->whereIn('id', $userIds)
+                ->get(['id', 'email', 'status', 'role'])
+                ->keyBy('id');
+
+        $signIn = \App\Services\Hr\EmployeeIdentityService::EMPLOYMENT_STATUSES_THAT_MAY_SIGN_IN;
+
+        $page->setCollection($page->getCollection()->map(function ($employee) use ($users, $signIn) {
+            $user = $employee->user_id ? $users->get($employee->user_id) : null;
+
+            $employee->setAttribute('login', $user ? [
+                'user_id'      => $user->id,
+                'email'        => $user->email,
+                'role'         => $user->role,
+                'status'       => $user->status,
+                'can_sign_in'  => $user->status === 'active'
+                                  && in_array((string) $employee->status, $signIn, true),
+                'blocked_because' => match (true) {
+                    $user->status !== 'active' => 'The account is '.$user->status.'.',
+                    ! in_array((string) $employee->status, $signIn, true)
+                        => 'Employment is '.$employee->status.'.',
+                    default => null,
+                },
+            ] : null);
+
+            return $employee;
+        }));
+
+        return $page;
     }
 
     /**
