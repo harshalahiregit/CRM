@@ -125,18 +125,39 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     // #13 — reconcile the ledger with what the channel currently reports.
     Route::post('/jobs/{jobPosting}/sync/{channel}',        [JobPostingController::class, 'syncChannel']);
 
-    // Candidates
-    Route::get('/candidates',                           [CandidateController::class, 'index']);
-    Route::get('/candidates/recruiters',                [CandidateController::class, 'recruiters']);
+    /*
+     | Candidate reads are recruitment data, and were readable by anyone signed in.
+     |
+     | The sidebar hides Recruitment, Candidates, Interviews, Offers, Employees,
+     | Payroll and Staff Management from a staff account with no permission role —
+     | verified in the browser. Typing /app/hr/candidates into the address bar
+     | still listed every candidate with name, email, phone, expected CTC and the
+     | stage they had reached. The UI stated the intent; the API did not enforce it.
+     |
+     | These reads now carry the same gate attendance already uses
+     | (`permission:hr_attendance,view_global` on its own routes). Administrators
+     | bypass it, and a recruiter holding hr_recruitment/view_global passes — the
+     | permission grid is how that access is meant to be granted.
+     |
+     | Writes are unaffected: CandidateController already checks canManageHrQueue()
+     | on every mutation, and keeps doing so.
+     */
+    Route::get('/candidates',                           [CandidateController::class, 'index'])
+        ->middleware('permission:hr_recruitment,view_global');
+    Route::get('/candidates/recruiters',                [CandidateController::class, 'recruiters'])
+        ->middleware('permission:hr_recruitment,view_global');
     Route::post('/candidates',                          [CandidateController::class, 'store']);
     Route::post('/candidates/linkedin-parse',           [CandidateController::class, 'linkedinParse']);
-    Route::get('/candidates/{candidate}/score',         [CandidateController::class, 'score']);
-    Route::get('/candidates/{candidate}/journey',       [CandidateController::class, 'journey']);
+    Route::get('/candidates/{candidate}/score',         [CandidateController::class, 'score'])
+        ->middleware('permission:hr_recruitment,view_global');
+    Route::get('/candidates/{candidate}/journey',       [CandidateController::class, 'journey'])
+        ->middleware('permission:hr_recruitment,view_global');
     Route::get('/candidates/{candidate}/communications', [CandidateController::class, 'communications']);
     Route::get('/candidates/{candidate}/communication-preview', [CandidateController::class, 'communicationPreview']);
     Route::post('/candidates/{candidate}/communicate',  [CandidateController::class, 'communicate']);
     Route::post('/candidates/{candidate}/reminder',     [CandidateController::class, 'scheduleReminder']);
-    Route::get('/candidates/{candidate}',               [CandidateController::class, 'show']);
+    Route::get('/candidates/{candidate}',               [CandidateController::class, 'show'])
+        ->middleware('permission:hr_recruitment,view_global');
     Route::put('/candidates/{candidate}',               [CandidateController::class, 'update']);
     Route::patch('/candidates/{candidate}/stage',       [CandidateController::class, 'updateStage']);
     Route::patch('/candidates/{candidate}/decision',    [CandidateController::class, 'updateDecision']);
@@ -144,7 +165,8 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::delete('/candidates/{candidate}',            [CandidateController::class, 'destroy']);
     // Resume upload / download / delete
     Route::post('/candidates/{candidate}/resume',       [ResumeController::class, 'upload']);
-    Route::get('/candidates/{candidate}/resume',        [ResumeController::class, 'download']);
+    Route::get('/candidates/{candidate}/resume',        [ResumeController::class, 'download'])
+        ->middleware('permission:hr_recruitment,view_global');
     Route::delete('/candidates/{candidate}/resume',     [ResumeController::class, 'delete']);
     // #15 — re-read an already-uploaded resume for Dept / Designation / Present Co.
     // / Reference. Runs automatically on upload; this is the button for the
@@ -161,7 +183,8 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::delete('/candidates/{candidate}/documents/{document}',[CandidateDocumentController::class, 'destroy']);
 
     // Interviews
-    Route::get('/interviews',                               [InterviewController::class, 'index']);
+    Route::get('/interviews',                               [InterviewController::class, 'index'])
+        ->middleware('permission:hr_recruitment,view_global');
     Route::get('/interviews/stats',                         [InterviewController::class, 'stats']);
     Route::get('/interview-panel/users',                    [InterviewController::class, 'panelUsers']);
     Route::get('/interview-panel/organizations',            [InterviewController::class, 'panelOrganizations']);
@@ -197,7 +220,9 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::delete('/interviews/{interviewRound}',           [InterviewController::class, 'destroy']);
 
     // Offers
-    Route::get('/offers',                           [OfferController::class, 'index']);
+    // Offers carry compensation. Same gate as the candidate reads above.
+    Route::get('/offers',                           [OfferController::class, 'index'])
+        ->middleware('permission:hr_recruitment,view_global');
     Route::get('/offers/joining-buckets',           [OfferController::class, 'joiningBuckets']);
     Route::post('/offers',                          [OfferController::class, 'store']);
     Route::get('/offers/{offer}',                   [OfferController::class, 'show']);
