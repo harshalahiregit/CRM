@@ -21,7 +21,7 @@ const deptColor = d => DEPT_COLORS[d]||'#7C3AED'
 /** The form keys backed by an <input type="date">. See hrDateInput. */
 const DATE_KEYS = new Set(['dob', 'joining_date', 'probation_end_date', 'confirmation_date'])
 
-const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', gender:'', address:'', department:'', designation:'', department_id:'', designation_id:'', employment_type_id:'', reporting_manager_id:'', reporting_manager_name:'', work_state:'', joining_date:'', probation_end_date:'', confirmation_date:'', notice_days:'', status:'Active',
+const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', gender:'', address:'', department:'', designation:'', department_id:'', designation_id:'', employment_type_id:'', grade_id:'', reporting_manager_id:'', reporting_manager_name:'', work_state:'', joining_date:'', probation_end_date:'', confirmation_date:'', notice_days:'', status:'Active',
   // #36 — probation must be set when adding an employee, or the hire explicitly exempted.
   probation_policy_id:'', skip_probation:false, probation_skip_reason:'',
   // #29 — what this person is, and the comment's explicit "option to consider
@@ -104,6 +104,7 @@ export default function Employees() {
   // master has no label to fall back on — withInactiveById prints "Current"
   // for that case rather than dropping the value and losing it on save.
   const empTypeOptions = (f) => withInactiveById(masters.employment_types, f?.employment_type_id, f?.employment_type?.name)
+  const gradeOptions   = (f) => withInactiveById(masters.grades, f?.grade_id, f?.grade?.name)
   // Managers are picked by ID, not by name. masters.managers already carries
   // {id, name, employee_code}; the name was the only part being used, so the
   // hierarchy every other feature reads — org chart, advance approvals, the
@@ -114,10 +115,17 @@ export default function Employees() {
   // only ever be a name. Id where there is one, name either way.
   const managerPeople  = (masters.managers || []).filter(m => m?.id)
   const managerOptions = (f) => {
-    const opts = managerPeople.map(m => ({
-      value: String(m.id),
-      label: m.employee_code ? `${m.name} (${m.employee_code})` : m.name,
-    }))
+    const opts = managerPeople
+      // Not yourself. The server already refuses it — "An employee cannot report
+      // to themselves" — but the list was offering the one choice guaranteed to
+      // fail, and the person only found out after pressing Save. Offering an
+      // option the server will reject is a question you already know the answer
+      // to.
+      .filter(m => !editingId || String(m.id) !== String(editingId))
+      .map(m => ({
+        value: String(m.id),
+        label: m.employee_code ? `${m.name} (${m.employee_code})` : m.name,
+      }))
     // An already-set manager who has since left the master list stays visible,
     // so editing somebody else's field cannot silently clear it.
     const current = f?.reporting_manager_id
@@ -610,6 +618,28 @@ export default function Employees() {
                 <button type="button" onClick={()=>navigate('/app/hr/organization-setup')}
                   className="text-[10px] mt-1 underline" style={{ color:'#a78bfa' }}>
                   {(masters.employment_types||[]).length ? 'Manage employment types in Organization Setup' : 'Add employment types in Organization Setup'}
+                </button>
+              </div>
+              {/* Grade. Same shape as Employment Type above, and added for the
+                  same reason it is optional: a workspace with no grades must
+                  still be able to hire.
+
+                  It was missing entirely. grade_id is fillable, the employee
+                  profile renders a Grade row, Organization Setup creates grades,
+                  and leave policies, exit policies and the salary report all
+                  target one — but no form wrote it, so every employee's grade was
+                  permanently null and a grade-scoped policy could never match
+                  anybody. */}
+              <div>
+                <label className="label">Grade</label>
+                <select className="input-3d text-sm" value={form.grade_id||''}
+                  onChange={e=>setForm({...form,grade_id:e.target.value})}>
+                  <option value="">{(masters.grades||[]).length ? 'Select…' : 'No grades defined yet'}</option>
+                  {gradeOptions(form).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+                <button type="button" onClick={()=>navigate('/app/hr/organization-setup')}
+                  className="text-[10px] mt-1 underline" style={{ color:'#a78bfa' }}>
+                  {(masters.grades||[]).length ? 'Manage grades in Organization Setup' : 'Add grades in Organization Setup'}
                 </button>
               </div>
               <div>

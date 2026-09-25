@@ -201,6 +201,19 @@ class EmployeeController extends Controller
                 \Illuminate\Validation\Rule::exists('hr_employment_types', 'id')
                     ->where('tenant_id', $request->user()->tenant_id),
             ],
+            // Grade was a dimension nothing could set.
+            //
+            // hr_employees.grade_id is fillable and has a relation, the employee
+            // profile renders a Grade field, Organization Setup lets you create
+            // grades, and leave policies, exit policies and the salary report all
+            // target one. But no form wrote it and these rules did not accept it,
+            // so every employee's grade was permanently null — which quietly means
+            // a leave or exit policy scoped to a grade can never match anybody.
+            'grade_id'               => [
+                'nullable', 'integer',
+                \Illuminate\Validation\Rule::exists('hr_grades', 'id')
+                    ->where('tenant_id', $request->user()->tenant_id),
+            ],
             // See StoreEmployeeRequest for why both exist. The service rejects a
             // self-reference and a cycle; existence and tenant are checked here.
             'reporting_manager_id'   => [
