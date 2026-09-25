@@ -307,8 +307,27 @@ export default function ManpowerRequests() {
    * wrong, whichever side decided it. The backend stays authoritative; this is
    * only about not making somebody wait for a round trip to be told.
    */
-  const validateForm = () => {
+  const validateForm = (mode = 'draft') => {
     const e = {}
+
+    /*
+     * Submitting for approval needs more than saving a draft does, and the form
+     * used to find that out the hard way: it created the record, then the submit
+     * came back 422 naming fields the form had never marked as needed. The
+     * person saw an error about a request that — as far as they knew — had not
+     * been created, and one had.
+     *
+     * Mirrors ManpowerRequestService::assertCompleteForApproval exactly, which
+     * is the authority; this only spares the round trip. A draft still saves
+     * with none of them, which is the point of a draft.
+     */
+    if (mode === 'submit') {
+      if (!form.job_description)             e.job_description = 'Needed before this can go for approval.'
+      if (!String(form.required_skills || '').trim()) e.required_skills = 'Add at least one skill before submitting.'
+      if (!form.hiring_manager_id)           e.hiring_manager_id = 'An approver needs to know who the hiring manager is.'
+      if (!form.employee_level)              e.employee_level = 'Needed before this can go for approval.'
+      if (!form.experience_required)         e.experience_required = 'Needed before this can go for approval.'
+    }
 
     if (!form.department) e.department = 'Department is required.'
     if (!form.position_title) e.position_title = 'Job Title is required.'
@@ -355,7 +374,7 @@ export default function ManpowerRequests() {
 
   // mode: 'draft' saves only; 'submit' also sends it for approval.
   const handleSave = async (mode = 'draft') => {
-    const local = validateForm()
+    const local = validateForm(mode)
 
     if (local) {
       setFormErrors(local)
@@ -370,6 +389,20 @@ export default function ManpowerRequests() {
       if (editingId) saved = await hrApi.manpower.update(editingId, buildPayload())
       else saved = await hrApi.manpower.create(buildPayload())
       const id = editingId || saved?.id || saved?.data?.id
+
+      /*
+       * The record exists now, so the form stops being a create form.
+       *
+       * "Submit for Approval" is two calls: create, then submit. When the submit
+       * failed, the modal stayed open — correctly, so nothing typed is lost — but
+       * editingId was still null, so pressing the button again created ANOTHER
+       * request. Three presses produced three requisitions, reproduced in the
+       * browser.
+       *
+       * Adopting the new id means a retry updates the record it already made.
+       */
+      if (!editingId && id) setEditingId(id)
+
       if (mode === 'submit' && id) await hrApi.manpower.submit(id)
       setShowModal(false); setForm(EMPTY_FORM); setEditingId(null); setFormErrors({})
       fetchAll()
