@@ -235,6 +235,29 @@ class DriverEligibilityService
         ]]];
     }
 
+    /**
+     * Fleet's row for one driver, read NOW — for pre-trip (D-151).
+     *
+     * Deliberately not through `$fleetCache`. Pre-trip and dispatch
+     * revalidation exist to catch what changed since allocation — a licence
+     * that lapsed in the yard — and a directory cached earlier in the same
+     * process is exactly what must not answer that. See D-152 for the cache.
+     *
+     * @return array<string,mixed>|null  null when Fleet does not offer this profile at all
+     */
+    public function fleetRecordNow(int $profileId, int $tenantId): ?array
+    {
+        $fleet = $this->drivers->eligible($tenantId);
+
+        foreach (array_merge($fleet['eligible'], $fleet['excluded']) as $row) {
+            if ((int) ($row['profile']['id'] ?? 0) === $profileId) {
+                return $row;
+            }
+        }
+
+        return null;
+    }
+
     /* ── Individual rules ───────────────────────────────────────────── */
 
     /** "1 day" / "731 days" — never "day(s)", which is a developer writing. */

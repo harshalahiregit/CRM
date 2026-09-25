@@ -9,6 +9,7 @@ use App\Models\Transport\TripAssignment;
 use App\Models\Transport\TripPretripCheck;
 use App\Models\User;
 use App\Support\Transport\PretripCheckKey;
+use App\Support\Transport\PretripDriverDocuments;
 use App\Support\Transport\PretripReadiness;
 use App\Support\Transport\PretripResult;
 use App\Support\Transport\PretripScope;
@@ -997,8 +998,10 @@ class PretripService
      * OPS §28 Driver, "Valid documents"; BRW-047 "driver compliance";
      * BR-P0-004; CMP §182 (Expiry → Non-Compliant → Dispatch Block).
      *
-     * Borrows the `licence` and `documents` checks from the driver eligibility
-     * verdict. See the class docblock for why the other three are left behind.
+     * D-151 — judged from Fleet's reason codes, not borrowed checks. The driver
+     * verdict's `licence` and `documents` checks stopped existing at D-134, the
+     * borrow matched nothing, and this item passed every driver. See
+     * PretripDriverDocuments for which codes count and why.
      */
     private function evaluateDriverDocuments(
         ?TripAssignment $assignment,
@@ -1016,11 +1019,20 @@ class PretripService
             ];
         }
 
-        $verdict = $this->driverEligibility->evaluate($driver, $trip, $tenantId, $policy);
-
-        return $this->fromBorrowedChecks(
-            $verdict, ['licence', 'documents'], FleetResourceName::of($driver), $isCritical, $tenantId, $policy,
+        [$result, $detail, $schemaError] = PretripDriverDocuments::judge(
+            $this->driverEligibility->fleetRecordNow($driver->id, $tenantId),
+            FleetResourceName::of($driver),
+            $isCritical,
         );
+
+        if ($schemaError !== null) {
+            Log::channel('transport')->error('Pre-trip driver documents: Fleet answer unreadable — D-151', [
+                'trip_id' => $trip->id, 'driver_id' => $driver->id, 'tenant_id' => $tenantId,
+                'error' => $schemaError,
+            ]);
+        }
+
+        return [$result, $detail];
     }
 
     /**
@@ -1074,6 +1086,23 @@ class PretripService
             $verdict['checks'] ?? [],
             fn (array $c) => in_array($c['key'], $keys, true),
         ));
+
+        // ── AN EMPTY BORROW IS A BUG, NOT A PASS — D-151 ─────────────────
+        // The driver item borrowed two keys that D-134 removed; nothing
+        // matched, nothing failed, and every driver passed for two days.
+        // Keys that match nothing mean this code and the verdict disagree
+        // about its shape, so the item fails and says so.
+        if ($borrowed === []) {
+            Log::channel('transport')->error('Pre-trip borrowed checks matched nothing — D-151', [
+                'keys' => $keys, 'present' => array_column($verdict['checks'] ?? [], 'key'), 'tenant_id' => $tenantId,
+            ]);
+
+            return [
+                PretripResult::forFailure($isCritical),
+                $subject.' — could not be verified: the checks this item reads ('.implode(', ', $keys)
+                .') are not in the eligibility verdict. Treat as not cleared until it is fixed.',
+            ];
+        }
 
         $failed = array_values(array_filter($borrowed, fn (array $c) => ! $c['passed']));
 
