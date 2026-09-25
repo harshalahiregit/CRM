@@ -297,8 +297,8 @@ export default function ManpowerRequests() {
   /**
    * Frontend validation, keyed by the SAME field names the API uses.
    *
-   * It used to return one sentence for the whole form, which went into an
-   * alert(). Keying it by field means the client-side failures and the server's
+   * It used to return one sentence for the whole form, which went into a browser
+   * dialog. Keying it by field means the client-side failures and the server's
    * 422 render through one mechanism — the message appears under the box that is
    * wrong, whichever side decided it. The backend stays authoritative; this is
    * only about not making somebody wait for a round trip to be told.
@@ -404,7 +404,11 @@ export default function ManpowerRequests() {
       else if (action === 'close')      await hrApi.manpower.close(id, remarks)
       else if (action === 'delete')     await hrApi.manpower.delete(id)
       setActionModal(null); setRemarks(''); fetchAll()
-    } catch (e) { alert(e?.response?.data?.message || 'Action failed') }
+    // Approve, reject, send back, publish, close, delete. The server's own
+    // sentence is what carries the reason — "this request is not at L1" is worth
+    // reading — so it goes through the shared extractor rather than being
+    // replaced with the word "failed".
+    } catch (e) { toast.error(errorMessage(e, 'Could not complete that action.')) }
     finally { setActionLoading(false) }
   }
 
@@ -443,7 +447,7 @@ export default function ManpowerRequests() {
       if (!payload.closing_date) delete payload.closing_date
       await hrApi.manpower.convertToJd(request.id, payload)
       setConvertModal(null); fetchAll()
-    } catch (e) { alert(e?.response?.data?.message || 'Conversion failed') }
+    } catch (e) { toast.error(errorMessage(e, 'Could not convert this request.')) }
     finally { setActionLoading(false) }
   }
 

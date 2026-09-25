@@ -55,7 +55,10 @@ class BannedPatternsTest extends TestCase
             'components/admin/StaffModal.jsx' => 1,
             'modules/hr/pages/JobPostings.jsx' => 6,
             'modules/hr/pages/JobWorkspace.jsx' => 4,
-            'modules/hr/pages/ManpowerRequests.jsx' => 4,
+            // ManpowerRequests.jsx is gone from this list entirely: validation
+            // now renders under the fields, and the workflow and conversion
+            // failures go through the shared extractor to a toast. Removed rather
+            // than lowered so it cannot drift back up to a budget.
             'modules/inventory/pages/InventorySettings.jsx' => 1,
             'modules/projects/pages/ProjectDetail.jsx' => 1,
             'modules/purchase/pages/PurchaseAnalytics.jsx' => 1,
