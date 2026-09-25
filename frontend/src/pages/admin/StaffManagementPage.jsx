@@ -188,7 +188,7 @@ export default function StaffManagementPage() {
           className="px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2"
           style={{ background:'var(--bg-input)', border:'1px solid var(--border)', color:'var(--text-p)' }}
         >
-          <Shield size={16} /> Roles
+          <Shield size={16} /> Access Roles
         </button>
         <button
           onClick={() => { setSelectedStaff(null); setShowStaffModal(true) }}
@@ -234,7 +234,9 @@ export default function StaffManagementPage() {
         {[
           {
             value: designationFilter, onChange: v => setDesignationFilter(v),
-            options: [{ value:'', label:'All Roles' }, ...designations.map(d => ({ value:d.value, label:d.label }))],
+            // This filter runs on internal_role, which is the ACCESS role's slug —
+            // the endpoint that feeds it is misleadingly named `designations`.
+            options: [{ value:'', label:'All Access Roles' }, ...designations.map(d => ({ value:d.value, label:d.label }))],
           },
           {
             value: statusFilter, onChange: v => setStatusFilter(v),

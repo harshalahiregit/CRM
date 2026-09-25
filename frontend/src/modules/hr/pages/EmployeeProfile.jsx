@@ -429,7 +429,11 @@ export default function EmployeeProfile() {
               <Field k="Department" v={e.department}/>
               <Field k="Designation" v={e.designation}/>
               <Field k="Grade" v={gradeName || (e.grade_id ? '—' : 'Not assigned')}/>
-              <Field k="Role" v={roleName || (e.job_role_id ? '—' : 'Not assigned')}/>
+              {/* "Job Role" — this is hr_job_roles, an org-chart position. The
+                  permission role lives in Staff Management and is called an
+                  Access Role. Two screens calling both of them "Role" is why
+                  people went to HR looking for access control. */}
+              <Field k="Job Role" v={roleName || (e.job_role_id ? '—' : 'Not assigned')}/>
               <Field k="Reporting Manager" v={e.reporting_manager_name}/>
               <Field k="Joining Date" v={fmtDate(e.joining_date)}/>
               <Field k="Confirmation Date" v={fmtDate(e.confirmation_date)}/>

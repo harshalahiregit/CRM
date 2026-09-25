@@ -108,7 +108,7 @@ export default function RolesModal({ onClose, onChanged }) {
   const editing = creating || selected
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Roles"
+    <div role="dialog" aria-modal="true" aria-label="Access Roles"
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="rounded-2xl w-full max-w-3xl flex flex-col"
@@ -117,7 +117,7 @@ export default function RolesModal({ onClose, onChanged }) {
         <div className="flex items-center gap-3 p-5" style={{ borderBottom: '1px solid var(--border)' }}>
           <Shield size={18} style={{ color: '#7C3AED' }} />
           <div className="flex-1">
-            <h2 className="text-base font-bold" style={{ color: 'var(--text-h)' }}>Roles</h2>
+            <h2 className="text-base font-bold" style={{ color: 'var(--text-h)' }}>Access Roles</h2>
             <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
               A role sets what someone can do. Changing one applies to everybody who has it.
             </p>
