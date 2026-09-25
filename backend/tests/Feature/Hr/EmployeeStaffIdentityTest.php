@@ -556,6 +556,65 @@ class EmployeeStaffIdentityTest extends TestCase
         $this->assertTrue($linked['login']['can_sign_in']);
     }
 
+    /* ── deleting an account must not corrupt the employee ────────────── */
+
+    /**
+     * Deleting a login left the employee pointing at a row that was gone.
+     *
+     * hr_employees.user_id has no cascade, and destroy() had a comment reading
+     * "you can add additional checks here" where the checks should have been. So
+     * a 200 produced exactly the blocking fault the directory panel detects —
+     * "linked to account #35, which no longer exists" — reproduced in the browser
+     * before this was written.
+     *
+     * The link is cleared rather than the delete refused: removing a login for
+     * somebody who has left is ordinary admin work, and the employment record has
+     * to survive it because payroll, attendance and service history hang off it.
+     */
+    public function test_deleting_a_staff_account_clears_the_employee_link_instead_of_orphaning_it(): void
+    {
+        $admin = $this->admin();
+        $user = $this->user();
+        $employee = $this->employee(['user_id' => $user->id, 'name' => 'Still Employed']);
+
+        $this->actingAs($admin)->deleteJson('/api/admin/staff/'.$user->id)->assertOk();
+
+        $employee->refresh();
+
+        $this->assertNotNull($employee, 'the employment record must survive');
+        $this->assertNull($employee->user_id, 'no pointer to a deleted account may remain');
+        $this->assertSame('Still Employed', $employee->name);
+        $this->assertNull(User::find($user->id), 'the account itself is gone');
+    }
+
+    /** A workspace must not be able to delete its way to having nobody in charge. */
+    public function test_the_founding_administrator_cannot_be_deleted(): void
+    {
+        $founder = $this->user(['role' => 'admin']);
+        $second  = $this->user(['role' => 'admin']);
+
+        $this->assertLessThan($second->id, $founder->id);
+
+        $this->actingAs($second)
+            ->deleteJson('/api/admin/staff/'.$founder->id)
+            ->assertStatus(422)
+            ->assertJsonFragment(['message' => 'The founding administrator cannot be deleted. Transfer ownership first.']);
+
+        $this->assertNotNull(User::find($founder->id));
+    }
+
+    public function test_an_admin_cannot_delete_their_own_account(): void
+    {
+        $founder = $this->user(['role' => 'admin']);
+        $actor   = $this->user(['role' => 'admin']);
+
+        $this->actingAs($actor)
+            ->deleteJson('/api/admin/staff/'.$actor->id)
+            ->assertStatus(422);
+
+        $this->assertNotNull(User::find($actor->id));
+    }
+
     /* ── reconciliation actions ───────────────────────────────────────── */
 
     public function test_provisioning_a_login_creates_one_and_links_it(): void

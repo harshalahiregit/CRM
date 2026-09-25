@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, MoreVertical, Edit, Trash2, Power, UserCheck, UserX, Shield, ShieldOff, RefreshCw } from 'lucide-react'
 import api from '@/lib/api'
+import { readFieldErrors } from '@/services/apiError'
 import { useAuth } from '@/context/AuthContext'
 import StaffModal from '@/components/admin/StaffModal'
 import RolesModal from '@/components/admin/RolesModal'
@@ -26,6 +28,7 @@ export default function StaffManagementPage() {
       },
     })
   }, [queryClient])
+  const [searchParams, setSearchParams] = useSearchParams()
   const [stats, setStats]       = useState({ total_staff: 0, active_staff: 0, inactive_staff: 0 })
   const [staff, setStaff]       = useState([])
   const [loading, setLoading]   = useState(true)
@@ -137,14 +140,41 @@ export default function StaffManagementPage() {
     return () => window.removeEventListener('focus', refresh)
   }, [showStaffModal, fetchDesignations, fetchDepartments, fetchJobTitles])
 
+  /**
+   * Arrive with an intention, not just at an address.
+   *
+   * HR → Employees creates people here, because a login and an employment record
+   * have to be made together. Its "Add Employee" button navigated to this page
+   * and stopped: you pressed Add Employee, landed on a list of people who already
+   * exist, and nothing said why you were here or what to do next.
+   *
+   *   ?new=1        open the create form
+   *   ?search=NAME  filter to one person — used by "Manage account" on an
+   *                 employee, so the admin does not have to find them again
+   *
+   * The parameter is consumed once and removed, so a refresh or a back button
+   * does not reopen a form the person has already dealt with.
+   */
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setSelectedStaff(null)
+      setShowStaffModal(true)
+    }
+
+    const wanted = searchParams.get('search')
+    if (wanted) setSearch(wanted)
+
+    if (searchParams.get('new') || wanted) setSearchParams({}, { replace: true })
+  }, [searchParams, setSearchParams])
+
   // ── Actions ───────────────────────────────────────────────────────────────
   const handleToggleStatus = async (member) => {
     try {
       await api.patch(`/admin/staff/${member.id}/toggle-status`, {})
       showToast(`${member.name}'s status updated`)
       fetchStaff(); fetchStats(); invalidateDirectory()
-    } catch {
-      showToast('Failed to update status', 'error')
+    } catch (e) {
+      showToast(readFieldErrors(e).summary, 'error')
     }
     setActionMenuOpen(null)
   }
@@ -155,8 +185,13 @@ export default function StaffManagementPage() {
       showToast(`${selectedStaff.name} deleted`)
       fetchStaff(); fetchStats(); invalidateDirectory()
       setShowDeleteModal(false); setSelectedStaff(null)
-    } catch {
-      showToast('Failed to delete staff member', 'error')
+    } catch (e) {
+      // The server refuses this for reasons worth reading — the founding
+      // administrator cannot be deleted, you cannot delete your own account —
+      // and `catch {}` with a fixed string threw every one of them away. The
+      // modal stays open so the person can see the message beside the button
+      // they just pressed.
+      showToast(readFieldErrors(e).summary, 'error')
     }
   }
 

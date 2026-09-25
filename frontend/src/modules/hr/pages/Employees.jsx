@@ -316,7 +316,13 @@ export default function Employees() {
               them to a screen that refuses them. */}
           {isAdmin && (
             <button
-              onClick={() => navigate('/app/admin/staff')}
+              /* `?new=1` so the destination OPENS the create form. Without it the
+                 button navigated to a different screen and stopped: the person
+                 pressed "Add Employee", landed on a list of existing staff, and
+                 nothing on that page said what to do next or why they were there.
+                 Going to the right screen is only half of sending somebody
+                 somewhere. */
+              onClick={() => navigate('/app/admin/staff?new=1')}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white"
               style={{ background: GRAD, boxShadow: '0 4px 14px rgba(124,58,237,0.4)' }}
               title="Employees are created in Staff Management, so the login and the employment record are made together">
@@ -760,7 +766,11 @@ export default function Employees() {
                       )}
                     </div>
                     {loginState && (
-                      <button type="button" onClick={()=>navigate('/app/admin/staff')}
+                      /* Filtered to this person. Dropping an admin onto an
+                         unfiltered list and making them search again for the
+                         name they were just looking at is the same dead end the
+                         Add Employee button had. */
+                      <button type="button" onClick={()=>navigate(`/app/admin/staff?search=${encodeURIComponent(loginState.email)}`)}
                         className="px-2.5 py-1 rounded-lg text-[10px] font-black whitespace-nowrap"
                         style={{ background:'var(--bg-card)', color:'var(--text-h)', border:'1px solid var(--border)' }}>
                         Manage account
