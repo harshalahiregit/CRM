@@ -130,11 +130,26 @@ export default function DriversBoard() {
         </div>
       )}
 
-      {counts && (counts.licence_expired > 0 || counts.unlicensed > 0) && (
+      {/* The row shows when ANY of these is non-zero. It used to test only
+          expired and unrecorded licences, so a fleet whose only problem was
+          licences about to lapse never saw the "Expiring soon" chip at all.
+
+          T-41 — the medical counts were already in the API and never reached
+          the screen: every card said "no medical" while the summary said
+          nothing, found by opening the page rather than by a test. Kept apart
+          from the licence counts because they are different jobs — chasing a
+          certificate nobody has captured, not one that has run out. */}
+      {counts && [
+        counts.licence_expired, counts.licence_expiring, counts.unlicensed,
+        counts.medical_expired, counts.medical_expiring, counts.medical_unrecorded,
+      ].some((n) => n > 0) && (
         <div className="flex flex-wrap gap-2 mb-3">
           {counts.licence_expired > 0 && <Summary tone="red" count={counts.licence_expired} label="Licence expired" />}
-          {counts.licence_expiring > 0 && <Summary tone="amber" count={counts.licence_expiring} label="Expiring soon" />}
+          {counts.licence_expiring > 0 && <Summary tone="amber" count={counts.licence_expiring} label="Licence expiring soon" />}
           {counts.unlicensed > 0 && <Summary tone="amber" count={counts.unlicensed} label="No licence recorded" />}
+          {counts.medical_expired > 0 && <Summary tone="red" count={counts.medical_expired} label="Medical expired" />}
+          {counts.medical_expiring > 0 && <Summary tone="amber" count={counts.medical_expiring} label="Medical expiring soon" />}
+          {counts.medical_unrecorded > 0 && <Summary tone="amber" count={counts.medical_unrecorded} label="No medical recorded" />}
         </div>
       )}
 
