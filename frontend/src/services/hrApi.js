@@ -332,6 +332,17 @@ export const hrApi = {
     // matches. Returns a one-time password when it created one.
     provisionLogin: (employeeId) =>
       api.post(`/hr/employees/${employeeId}/provision-login`).then(r => r.data?.data ?? r.data),
+    // Breaks a link that points at a missing or another workspace's account.
+    unlinkLogin: (employeeId) =>
+      api.post(`/hr/employees/${employeeId}/unlink-login`).then(r => r.data?.data ?? r.data),
+    // Pushes the employee's identity onto its login — the same one-way sync a
+    // save performs, run on demand to settle an identity mismatch.
+    resyncLogin: (employeeId) =>
+      api.post(`/hr/employees/${employeeId}/resync-login`).then(r => r.data?.data ?? r.data),
+    dismissDirectoryIssue: (key) =>
+      api.post('/hr/directory/dismiss', { key }).then(r => r.data?.data ?? r.data),
+    restoreDirectoryIssue: (key) =>
+      api.post('/hr/directory/restore', { key }).then(r => r.data?.data ?? r.data),
     // The extended record — personal, address, education, emergency contact,
     // bank, identity, statutory. Always returns every key (null where unset) so
     // the form renders without special-casing a person nobody has filled in yet.

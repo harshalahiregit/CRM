@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Users, UserX, KeyRound, ChevronDown, ChevronUp, Link2 } from 'lucide-react'
+import { Users, UserX, KeyRound, ChevronDown, ChevronUp, Link2, AlertTriangle } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { errorMessage } from '@/lib/apiErrors'
 
 /*  ────────────────────────────────────────────────────────────────────────
     Where the staff and employee directories disagree.
@@ -51,6 +52,35 @@ export default function DirectoryGapPanel({ showToast }) {
    * employee already holds — comes back from the server with its reason, and is
    * shown rather than swallowed.
    */
+  /**
+   * Resolve one of the "linked but wrong" issues.
+   *
+   * Nothing here decides anything on the admin's behalf. Each button carries out
+   * the single choice its label names, and the server refuses it if it should not
+   * happen — the panel never merges people or picks a winner between two values.
+   */
+  const issueAction = async (issue, what) => {
+    setBusy(issue.key)
+    try {
+      const id = issue.employee?.employee_id
+
+      if (what === 'resync')  await hrApi.employees.resyncLogin(id)
+      if (what === 'unlink')  await hrApi.employees.unlinkLogin(id)
+      if (what === 'dismiss') await hrApi.employees.dismissDirectoryIssue(issue.key)
+
+      showToast?.({
+        resync:  'Account updated from the employee record',
+        unlink:  'Link cleared',
+        dismiss: 'Hidden — it will return if the records change',
+      }[what])
+      load()
+    } catch (e) {
+      showToast?.(errorMessage(e, 'Could not complete that action'), 'error')
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const act = async (employeeId) => {
     setBusy(employeeId)
     setNewPassword(null)
@@ -69,7 +99,8 @@ export default function DirectoryGapPanel({ showToast }) {
   if (!data?.summary) return null
 
   const s = data.summary
-  const gaps = (s.without_login || 0) + (s.without_employee || 0)
+  const issues = data.issues || []
+  const gaps = (s.without_login || 0) + (s.without_employee || 0) + issues.length
 
   // Nothing to reconcile — say so quietly and stay out of the way.
   if (gaps === 0) {
@@ -91,10 +122,17 @@ export default function DirectoryGapPanel({ showToast }) {
         <UserX size={15} style={{ color: '#f59e0b', flexShrink: 0 }} />
         <span style={{ flex: 1, minWidth: 0 }}>
           <span className="block text-[12px] font-black" style={{ color: 'var(--text-h)' }}>
-            {gaps} record{gaps === 1 ? '' : 's'} exist on one side only
+            {gaps} thing{gaps === 1 ? '' : 's'} to reconcile
+            {s.blocking > 0 && (
+              <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-black align-middle"
+                style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>
+                {s.blocking} BLOCKING
+              </span>
+            )}
           </span>
           <span className="block text-[10px]" style={{ color: 'var(--text-muted)' }}>
-            {s.without_login} employee(s) with no login · {s.without_employee} login(s) with no employee record
+            {s.without_login} with no login · {s.without_employee} login(s) with no employee record
+            {issues.length > 0 && ` · ${issues.length} linked but inconsistent`}
           </span>
         </span>
         {open ? <ChevronUp size={15} style={{ color: 'var(--text-muted)' }} />
@@ -143,6 +181,18 @@ export default function DirectoryGapPanel({ showToast }) {
               }))} busy={busy} />
           )}
 
+          {issues.length > 0 && (
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-wide mb-1.5 flex items-center gap-1.5"
+                style={{ color: '#ef4444' }}>
+                <AlertTriangle size={12} /> Linked, but the two sides disagree ({issues.length})
+              </p>
+              <div className="space-y-1.5">
+                {issues.map(i => <IssueRow key={i.key} issue={i} busy={busy} act={issueAction} />)}
+              </div>
+            </div>
+          )}
+
           {data.without_employee?.length > 0 && (
             <Group icon={Link2} title="Has a login, no employee record" tone="#0ea5e9"
               rows={data.without_employee.map(r => ({
@@ -160,6 +210,107 @@ export default function DirectoryGapPanel({ showToast }) {
         </div>
       )}
     </div>
+  )
+}
+
+/** How an issue type reads, and what may be offered for it. */
+const ISSUE_LABELS = {
+  access_mismatch:     'Access mismatch',
+  permission_mismatch: 'Unexpected account role',
+  identity_mismatch:   'Identity mismatch',
+  broken_link:         'Broken link',
+  cross_tenant:        'Cross-workspace link',
+  duplicate_email:     'Duplicate email',
+}
+
+const SEVERITY_TONE = { blocking: '#ef4444', warning: '#f59e0b', info: '#0ea5e9' }
+
+/**
+ * One problem, both sides of it, and what can be done.
+ *
+ * The two sides are printed together on purpose. Every one of these is a
+ * disagreement, and an admin cannot decide which side is right from a summary —
+ * they need to see that the employee record says Engineering and the account says
+ * Sales before choosing to overwrite one with the other.
+ */
+function IssueRow({ issue, busy, act }) {
+  const tone = SEVERITY_TONE[issue.severity] || 'var(--text-muted)'
+  const e = issue.employee
+  const u = issue.user
+
+  return (
+    <div className="rounded-lg px-2.5 py-2" style={{ background: 'var(--bg-input)', borderLeft: `2px solid ${tone}` }}>
+      <div className="flex items-start gap-2">
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p className="text-[11px] font-black uppercase tracking-wide" style={{ color: tone }}>
+            {ISSUE_LABELS[issue.type] || issue.type}
+          </p>
+          {e && (
+            <p className="text-[12px] font-bold mt-0.5" style={{ color: 'var(--text-h)' }}>
+              {e.name} <span className="font-normal" style={{ color: 'var(--text-muted)' }}>{e.employee_code}</span>
+            </p>
+          )}
+          <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{issue.reason}</p>
+
+          {/* Field-by-field, so the choice is visible rather than described. */}
+          {issue.differences && (
+            <table className="mt-1.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+              <tbody>
+                {Object.entries(issue.differences).map(([field, v]) => (
+                  <tr key={field}>
+                    <td className="pr-3 font-semibold" style={{ color: 'var(--text-h)' }}>{field}</td>
+                    <td className="pr-3">employee: <strong>{v.employee}</strong></td>
+                    <td>account: <strong>{v.account}</strong></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          {u && !issue.differences && (
+            <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              Account: {u.email} · role {u.role} · {u.status}
+            </p>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-1" style={{ flexShrink: 0 }}>
+          {issue.action === 'sync_identity' && (
+            <ActionButton busy={busy === issue.key} onClick={() => act(issue, 'resync')}
+              title="Overwrite the account's copy with the employee record, which owns these fields">
+              Use employee values
+            </ActionButton>
+          )}
+          {issue.action === 'clear_link' && (
+            <ActionButton busy={busy === issue.key} onClick={() => act(issue, 'unlink')}
+              title="Clear the link. The account is not deleted — on a cross-workspace link it is not ours to delete">
+              Clear link
+            </ActionButton>
+          )}
+          {issue.action === 'deactivate_account' && (
+            <a href="/app/admin/staff" className="px-2.5 py-1 rounded-lg text-[10px] font-black whitespace-nowrap text-center"
+              style={{ background: 'var(--bg-card)', color: 'var(--text-h)', border: '1px solid var(--border)' }}
+              title="Account status is Staff Management's to change — this panel does not keep a second editor for it">
+              Open account
+            </a>
+          )}
+          <ActionButton busy={busy === issue.key} onClick={() => act(issue, 'dismiss')}
+            title="Hide this. It comes back if the underlying records change">
+            Dismiss
+          </ActionButton>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ActionButton({ children, onClick, busy, title }) {
+  return (
+    <button type="button" onClick={onClick} disabled={busy} title={title}
+      className="px-2.5 py-1 rounded-lg text-[10px] font-black whitespace-nowrap"
+      style={{ background: 'var(--bg-card)', color: 'var(--text-h)', border: '1px solid var(--border)', opacity: busy ? 0.5 : 1 }}>
+      {busy ? 'Working…' : children}
+    </button>
   )
 }
 
