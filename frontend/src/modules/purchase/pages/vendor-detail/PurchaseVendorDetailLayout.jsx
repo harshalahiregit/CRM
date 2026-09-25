@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { ONBOARDING_TOTAL_STEPS } from '@/lib/vendors/onboardingSteps'
 import { useParams, useNavigate, NavLink, Routes, Route, Navigate } from 'react-router-dom'
 import { ArrowLeft, Building2, CheckCircle2, CheckCircle, XCircle, PauseCircle, CornerUpLeft, ShieldCheck, ChevronDown, ChevronRight, Mail, Lock } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
@@ -7,7 +8,8 @@ import { VENDOR_NAV_GROUPS } from './vendorDetailNav'
 import { TAB_ELEMENTS } from './vendorDetailTabs'
 import { KIT3D_STYLE as GLASS_STYLE } from '@/components/ui/kit3d'
 import { VendorWorkspaceContext } from './vendorWorkspaceContext'
-import { isWorkspaceUnlocked, lockNav, lockNotice } from '@/lib/vendors/workspaceLock'
+import { isWorkspaceUnlocked, isSectionUnlocked, lockNav, lockNotice } from '@/lib/vendors/workspaceLock'
+import LockedSection from '@/components/vendors/LockedSection'
 import VendorAccessControls from '@/components/vendors/VendorAccessControls'
 import PurchaseRegistrationBadge from '@/modules/purchase/components/PurchaseRegistrationBadge'
 
@@ -146,6 +148,25 @@ export default function PurchaseVendorDetailLayout() {
       setNotice({ ok: false, text: e?.response?.data?.message || 'Could not send the activation email.' })
     } finally { setResending(false) }
   }
+  /*
+   * The steps, for the locked screens to teach from.
+   *
+   * The decision panel below fetches these too, and deliberately still does:
+   * it renders on Overview, which is never locked, so the two never load at
+   * the same time. Sharing one fetch would mean lifting state through a
+   * component that does not otherwise care about it.
+   */
+  const [lockSteps, setLockSteps] = useState(null)
+  useEffect(() => {
+    if (!onboarding?.id) return undefined
+    let alive = true
+    purchaseApi.onboarding.progress(onboarding.id)
+      .then(p => { if (alive) setLockSteps(Array.isArray(p?.steps) ? p.steps : null) })
+      .catch(() => {})
+
+    return () => { alive = false }
+  }, [onboarding?.id])
+
   const toggle = (title) => setCollapsed((c) => ({ ...c, [title]: !c[title] }))
 
   if (loading) return <div style={{ padding: 24, color: 'var(--text-muted)' }}>Loading vendor…</div>
@@ -159,10 +180,13 @@ export default function PurchaseVendorDetailLayout() {
    * other forty, which would every one of them load an empty list for a company
    * there is nothing to load anything for yet. See lib/vendors/workspaceLock.
    *
-   * Routing is left alone on purpose: a bookmarked URL for a locked section
-   * still resolves, because the lock is about what the screen puts in front of
-   * somebody, not about who is allowed where. An admin who wants the section is
-   * one approval away from it.
+   * ROUTING IS GUARDED TOO, which it was not. Hiding the entry left the route
+   * live, so a locked section still opened from a bookmark, a pasted link, or
+   * the module's own registers -- Purchase -> Prequalification lists every
+   * vendor and picking one walked into a workspace that was meant to be shut.
+   * The route now renders LockedSection instead. Still not a permission: an
+   * admin who wants the section approves the onboarding, which is the thing
+   * they were going to have to do anyway. The server decides what is allowed.
    */
   const unlocked = isWorkspaceUnlocked(vendor, onboarding)
   const { groups: navGroups, hidden } = lockNav(BUILT_NAV_GROUPS, unlocked, (it) => it.key)
@@ -316,8 +340,27 @@ export default function PurchaseVendorDetailLayout() {
           <VendorWorkspaceContext.Provider value={{ vendor, onboarding, reload: load }}>
             <Routes>
               <Route index element={<Navigate to={`/app/purchase/vendors/${id}/overview`} replace />} />
+              {/* THE LOCK IS HERE, not only on the sidebar.
+                   lockNav removes a locked entry from the menu, and that is all
+                   it does -- the route stayed live, so the section still opened
+                   from a bookmark, a pasted URL, or the module's own registers.
+                   Purchase -> Prequalification lists every vendor and picking
+                   one walked straight into a workspace that was meant to be
+                   shut. Refusing at the route closes every one of those doors
+                   at once. */}
               {BUILT_NAV_ITEMS.map((it) => (
-                <Route key={it.key} path={it.key} element={TAB_ELEMENTS[it.key]} />
+                <Route
+                  key={it.key}
+                  path={it.key}
+                  element={isSectionUnlocked(it.key, unlocked) ? TAB_ELEMENTS[it.key] : (
+                    <LockedSection
+                      label={it.label}
+                      steps={lockSteps}
+                      notice={lockedNotice}
+                      overviewHref={`/app/purchase/vendors/${id}/overview`}
+                    />
+                  )}
+                />
               ))}
               <Route path="*" element={<Navigate to={`/app/purchase/vendors/${id}/overview`} replace />} />
             </Routes>
@@ -362,7 +405,7 @@ export default function PurchaseVendorDetailLayout() {
 }
 
 /**
- * The six onboarding steps, in order, with the current one marked.
+ * Every onboarding step, in order, with the current one marked.
  *
  * Every step carries the server's own one-line detail ("3/7 uploaded",
  * "2 rejected"), because "incomplete" on its own does not tell an admin what to
@@ -431,7 +474,7 @@ function OnboardingDecisionPanel({ vendor, onboarding, onDecision }) {
   const accountActive = vendor.status === 'Active'
 
   /*
-   * The six steps, named, from the server.
+   * The steps, named, from the server.
    *
    * The panel already said "Step 1 of 6", which tells an admin where the vendor
    * is but not what the steps ARE or which one is next — the whole of
@@ -476,7 +519,7 @@ function OnboardingDecisionPanel({ vendor, onboarding, onDecision }) {
           <ShieldCheck size={16} style={{ color: tint }} /> Onboarding Decision
         </span>
         <span style={{ flex: 1 }} />
-        <StatusPill label="Step" value={`${step} of 6`} tone="#7C3AED" />
+        <StatusPill label="Step" value={`${step} of ${steps?.length || ONBOARDING_TOTAL_STEPS}`} tone="#7C3AED" />
         <StatusPill label="Onboarding" value={oc.label} tone={oc.color} />
         <StatusPill label="Account" value={accountActive ? 'Active' : (vendor.status_label || vendor.status)} tone={accountActive ? '#0ca30c' : '#8a94a6'} />
       </div>
@@ -493,7 +536,7 @@ function OnboardingDecisionPanel({ vendor, onboarding, onDecision }) {
 
         {approved ? (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 9, padding: '10px 14px', borderRadius: 10, background: 'color-mix(in srgb, #0ca30c 12%, transparent)', border: '1px solid color-mix(in srgb, #0ca30c 30%, transparent)', color: '#0ca30c', fontSize: 12.5, fontWeight: 700 }}>
-            <CheckCircle size={16} /> Step 6 — Account Activated. The vendor can now access the active portal.
+            <CheckCircle size={16} /> Onboarding complete — account activated. The vendor can now access the portal.
           </div>
         ) : (
           <>

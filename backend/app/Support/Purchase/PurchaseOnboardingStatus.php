@@ -49,7 +49,8 @@ final class PurchaseOnboardingStatus
         self::UNDER_REVIEW, self::RESUBMIT_REQUIRED,
     ];
 
-    public const TOTAL_STEPS = 6;
+    /** Seven since Add Contact became step 1 — see the onboarding service. */
+    public const TOTAL_STEPS = 7;
 
     public const LABELS = [
         self::DRAFT             => 'Draft',

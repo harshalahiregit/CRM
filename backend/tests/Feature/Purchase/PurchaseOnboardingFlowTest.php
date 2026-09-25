@@ -67,16 +67,46 @@ class PurchaseOnboardingFlowTest extends TestCase
         ]);
     }
 
-    public function test_onboarding_exposes_six_steps_in_order(): void
+    public function test_onboarding_exposes_seven_steps_in_order(): void
     {
         $steps = app(PurchaseOnboardingService::class)
             ->stepStatus($this->onboardingFor($this->vendor('StepsCo')))['steps'];
 
-        $this->assertCount(6, $steps);
+        $this->assertCount(7, $steps);
+
+        // Add Contact leads, and that order is the point of it: the kickoff
+        // meeting's organiser, chairperson and coordinator pickers are fed from
+        // the vendor's contacts, so a kickoff held first asks for the one thing
+        // nobody has entered yet.
         $this->assertSame(
-            ['kickoff', 'profile', 'documents', 'review', 'confirmation', 'submission'],
+            ['contacts', 'kickoff', 'profile', 'documents', 'review', 'confirmation', 'submission'],
             array_column($steps, 'key')
         );
+
+        $this->assertSame(7, \App\Support\Purchase\PurchaseOnboardingStatus::TOTAL_STEPS);
+    }
+
+    /**
+     * Adding the contact is OUR job, so it must never block the vendor.
+     *
+     * furthestReachableStep stops a vendor at the first step they have not
+     * finished. Add Contact is admin-only and sits at step 1, so without an
+     * exemption every vendor would be held at a step they are not allowed to
+     * touch — a wizard locked shut with no action on screen that opens it.
+     */
+    public function test_an_admin_only_step_does_not_block_the_vendor(): void
+    {
+        $vendor = $this->vendor('NoContactCo');
+        $ob     = $this->onboardingFor($vendor);
+        $svc    = app(PurchaseOnboardingService::class);
+
+        $steps = $svc->stepStatus($ob)['steps'];
+        $this->assertSame('contacts', $steps[0]['key']);
+        $this->assertFalse($steps[0]['complete'], 'the vendor has no contacts yet');
+        $this->assertSame('admin', $steps[0]['actor']);
+
+        // Kickoff, the vendor's own first step, is still reachable.
+        $this->assertSame(2, $svc->setStep($ob, 2, $vendor)->current_step);
     }
 
     /** A vendor may not skip ahead — the endpoint is the boundary, not the wizard. */
@@ -86,16 +116,18 @@ class PurchaseOnboardingFlowTest extends TestCase
         $ob     = $this->onboardingFor($vendor);
         $svc    = app(PurchaseOnboardingService::class);
 
-        foreach ([2, 3, 5, 6] as $step) {
+        // Kickoff is step 2 now, and it is the vendor's first, so that is where
+        // they are held.
+        foreach ([3, 4, 6, 7] as $step) {
             try {
                 $svc->setStep($ob, $step, $vendor);
                 $this->fail("Step {$step} should have been refused.");
             } catch (\App\Exceptions\BusinessException $e) {
-                $this->assertStringContainsString('Complete step 1', $e->getMessage());
+                $this->assertStringContainsString('Complete step 2', $e->getMessage());
             }
         }
 
-        $this->assertSame(1, $svc->setStep($ob, 1, $vendor)->current_step);
+        $this->assertSame(2, $svc->setStep($ob, 2, $vendor)->current_step);
     }
 
     /** Staff must keep free navigation or document review becomes unreachable. */
@@ -115,11 +147,11 @@ class PurchaseOnboardingFlowTest extends TestCase
         $ob     = $this->onboardingFor($vendor);
         $svc    = app(PurchaseOnboardingService::class);
 
-        $ob->update(['acknowledged' => true]);              // step 1 done
-        $this->assertSame(2, $svc->setStep($ob, 2, $vendor)->current_step);
+        $ob->update(['acknowledged' => true]);              // step 2, kickoff, done
+        $this->assertSame(3, $svc->setStep($ob, 3, $vendor)->current_step);
 
         $this->expectException(\App\Exceptions\BusinessException::class);
-        $svc->setStep($ob, 3, $vendor);                     // profile still empty
+        $svc->setStep($ob, 4, $vendor);                     // profile still empty
     }
 
     /** Progress survives a reload — the pointer is DB state, not client state. */

@@ -489,7 +489,7 @@ function StepKickoff({ onboarding, editable, onAcknowledged, onContinue, api }) 
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* State 1: Kickoff Not Completed / MOM Not Sent */}
       {(!readyForAck && !acknowledged) ? (
-        <Panel title="Kickoff MOM Review &amp; Acknowledgement" sub="Step 1 of 6 · Kickoff Meeting">
+        <Panel title="Kickoff MOM Review &amp; Acknowledgement" sub="Step 2 of 7 · Kickoff Meeting">
           <div style={{ padding: '24px 20px', borderRadius: 14, textAlign: 'center', background: 'rgba(239,68,68,0.06)', border: '1.5px dashed rgba(239,68,68,0.3)' }}>
             <AlertTriangle size={32} style={{ color: '#ef4444', marginBottom: 10, display: 'inline-block' }} />
             <h3 style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-h)', margin: '0 0 6px' }}>
@@ -519,7 +519,7 @@ function StepKickoff({ onboarding, editable, onAcknowledged, onContinue, api }) 
         /* State 2 & 3: Ready for Ack OR Already Acknowledged */
         <Panel
           title="Kickoff MOM Review &amp; Acknowledgement"
-          sub="Step 1 of 6 · Review Minutes of Meeting"
+          sub="Step 2 of 7 · Review Minutes of Meeting"
           actions={acknowledged && (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 999, background: 'rgba(16,185,129,0.12)', color: '#10b981', fontSize: 12, fontWeight: 800, border: '1px solid rgba(16,185,129,0.3)' }}>
               <CheckCircle size={14} /> MOM Acknowledged
