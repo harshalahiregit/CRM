@@ -45,13 +45,15 @@ class DriverService
                 ...$person,
                 'profile' => $profile ? $this->presentProfile($profile) : null,
                 'licence' => $this->licenceVerdict($profile),
+                'medical' => $this->medicalVerdict($profile),
                 'assigned_vehicle_id' => $profile?->assigned_vehicle_id,
             ];
         }, $people);
 
         if (! empty($filters['ready_only'])) {
             $rows = array_values(array_filter($rows, fn ($r) => $r['licence']['state'] === 'valid'
-                && ($r['profile']['status'] ?? null) === 'available'));
+                && $r['medical']['state'] !== 'expired'
+                && ($r['profile']['status'] ?? null) === DriverProfile::AVAILABLE));
         }
 
         return [
@@ -66,6 +68,12 @@ class DriverService
                 'licence_expired' => count(array_filter($rows, fn ($r) => $r['licence']['state'] === 'expired')),
                 'licence_expiring' => count(array_filter($rows, fn ($r) => $r['licence']['state'] === 'expiring')),
                 'unlicensed' => count(array_filter($rows, fn ($r) => $r['licence']['state'] === 'unknown')),
+                'medical_expired' => count(array_filter($rows, fn ($r) => $r['medical']['state'] === 'expired')),
+                'medical_expiring' => count(array_filter($rows, fn ($r) => $r['medical']['state'] === 'expiring')),
+                // Counted separately from `unlicensed` because it is a
+                // different job: chasing a certificate nobody has captured yet,
+                // not one that has run out.
+                'medical_unrecorded' => count(array_filter($rows, fn ($r) => $r['medical']['state'] === 'unknown')),
             ],
         ];
     }
@@ -153,6 +161,17 @@ class DriverService
             ];
         }
 
+        // T-41 — an EXPIRED medical blocks. A driver whose certificate has
+        // run out is a positive statement that they are not currently
+        // certified fit, and that is the same kind of fact as a lapsed licence.
+        if (($row['medical']['state'] ?? null) === 'expired') {
+            $blockers[] = [
+                'code'  => 'driver_medical_expired',
+                'why'   => $row['medical']['message'] ?? 'Medical certificate has expired.',
+                'owner' => 'Fleet compliance desk',
+            ];
+        }
+
         $status = $row['profile']['status'] ?? null;
 
         if ($status === null) {
@@ -161,7 +180,7 @@ class DriverService
                 'why'   => 'This person is in the directory but has no driver record yet.',
                 'owner' => 'Fleet office',
             ];
-        } elseif ($status !== 'available') {
+        } elseif ($status !== DriverProfile::AVAILABLE) {
             $blockers[] = [
                 'code'  => 'driver_unavailable',
                 'why'   => 'This driver is '.str_replace('_', ' ', (string) $status).'.',
@@ -172,18 +191,53 @@ class DriverService
         return $blockers;
     }
 
-    /** Not blocking, but a planner should see it before choosing. */
+    /**
+     * Not blocking, but a planner should see it before choosing.
+     *
+     * ── WHY A MISSING MEDICAL WARNS AND A MISSING LICENCE BLOCKS ──────────
+     * They look like the same case and they are not. `licence_expiry` has been
+     * captured and enforced since Fleet's first day, so a blank one means
+     * nobody has ever seen that person's licence. `medical_expiry` is being
+     * introduced NOW, so every driver in the system has a blank one this
+     * morning — blocking on it would ground the entire fleet the moment the
+     * migration runs, which is a cliff and not a safety measure.
+     *
+     * It warns loudly instead, and it is counted separately so the gap is
+     * visible rather than quietly tolerated. When the certificates are loaded,
+     * making the unknown case a blocker is one line here — and that is the
+     * owner's call, not a developer's.
+     */
     private function warningsFor(array $row): array
     {
-        if (($row['licence']['state'] ?? null) !== 'expiring') {
-            return [];
+        $warnings = [];
+
+        if (($row['licence']['state'] ?? null) === 'expiring') {
+            $warnings[] = [
+                'code'  => 'driver_license_expiring',
+                'why'   => $row['licence']['message'] ?? 'Licence expires soon.',
+                'owner' => 'Fleet compliance desk',
+            ];
         }
 
-        return [[
-            'code'  => 'driver_license_expiring',
-            'why'   => $row['licence']['message'] ?? 'Licence expires soon.',
-            'owner' => 'Fleet compliance desk',
-        ]];
+        $medical = $row['medical']['state'] ?? null;
+
+        if ($medical === 'expiring') {
+            $warnings[] = [
+                'code'  => 'driver_medical_expiring',
+                'why'   => $row['medical']['message'] ?? 'Medical certificate expires soon.',
+                'owner' => 'Fleet compliance desk',
+            ];
+        }
+
+        if ($medical === 'unknown') {
+            $warnings[] = [
+                'code'  => 'driver_medical_unrecorded',
+                'why'   => 'No medical certificate on file for this driver.',
+                'owner' => 'Fleet compliance desk',
+            ];
+        }
+
+        return $warnings;
     }
 
     /**
@@ -206,7 +260,8 @@ class DriverService
                 'licence_number' => $data['licence_number'] ?? null,
                 'licence_class'  => $data['licence_class'] ?? null,
                 'licence_expiry' => $data['licence_expiry'] ?? null,
-                'status'         => $data['status'] ?? 'available',
+                'medical_expiry' => $data['medical_expiry'] ?? null,
+                'status'         => $data['status'] ?? DriverProfile::AVAILABLE,
                 'note'           => $data['note'] ?? null,
             ]
         );
@@ -316,7 +371,7 @@ class DriverService
         }
 
         $profile->assigned_vehicle_id = $vehicleId;
-        $profile->status = $profile->status ?: 'available';
+        $profile->status = $profile->status ?: DriverProfile::AVAILABLE;
         $profile->save();
 
         Log::channel('stos')->info($vehicleId ? 'Driver assigned to vehicle' : 'Driver unassigned', [
@@ -340,34 +395,57 @@ class DriverService
      */
     public function licenceVerdict(?DriverProfile $profile): array
     {
-        if (! $profile || ! $profile->licence_expiry) {
-            return [
-                'state' => 'unknown', 'days_left' => null,
-                // Not a pass and not a block: a fleet migrating in from
-                // spreadsheets would have nobody able to drive on day one.
-                'message' => 'No licence recorded — add one before this driver is allocated.',
-            ];
+        return $this->dateVerdict(
+            $profile?->licence_expiry,
+            'Licence',
+            'No licence recorded — add one before this driver is allocated.'
+        );
+    }
+
+    /**
+     * T-41 — the medical certificate, judged exactly like the licence.
+     *
+     * CMP §22 puts it beside the licence, T-43 already files and versions it,
+     * and a VERIFIED certificate now projects onto `medical_expiry`. The same
+     * date arithmetic answers both, so the two cannot drift into judging
+     * "expired" differently.
+     */
+    public function medicalVerdict(?DriverProfile $profile): array
+    {
+        return $this->dateVerdict(
+            $profile?->medical_expiry,
+            'Medical',
+            'No medical certificate recorded.'
+        );
+    }
+
+    /**
+     * Valid THROUGH the date, like every vehicle document (see ComplianceService).
+     */
+    private function dateVerdict($expiry, string $noun, string $unknownMessage): array
+    {
+        if (! $expiry) {
+            return ['state' => 'unknown', 'days_left' => null, 'message' => $unknownMessage];
         }
 
-        // A licence is valid THROUGH its expiry date, like every vehicle
-        // document (see ComplianceService).
-        $daysLeft = (int) now()->startOfDay()->diffInDays(Carbon::parse($profile->licence_expiry)->startOfDay(), false);
+        $daysLeft = (int) now()->startOfDay()->diffInDays(Carbon::parse($expiry)->startOfDay(), false);
 
         if ($daysLeft < 0) {
             return [
                 'state' => 'expired', 'days_left' => $daysLeft,
-                'message' => 'Licence expired '.abs($daysLeft).' day'.(abs($daysLeft) === 1 ? '' : 's').' ago — this driver cannot be dispatched.',
+                'message' => $noun.' expired '.abs($daysLeft).' day'.(abs($daysLeft) === 1 ? '' : 's')
+                    .' ago — this driver cannot be dispatched.',
             ];
         }
 
         if ($daysLeft <= self::LICENCE_WARNING_DAYS) {
             return [
                 'state' => 'expiring', 'days_left' => $daysLeft,
-                'message' => 'Licence expires in '.$daysLeft.' day'.($daysLeft === 1 ? '' : 's').'.',
+                'message' => $noun.' expires in '.$daysLeft.' day'.($daysLeft === 1 ? '' : 's').'.',
             ];
         }
 
-        return ['state' => 'valid', 'days_left' => $daysLeft, 'message' => 'Licence valid.'];
+        return ['state' => 'valid', 'days_left' => $daysLeft, 'message' => $noun.' valid.'];
     }
 
     private function presentProfile(DriverProfile $profile): array
@@ -377,6 +455,7 @@ class DriverService
             'licence_number' => $profile->licence_number,
             'licence_class'  => $profile->licence_class,
             'licence_expiry' => $profile->licence_expiry?->toDateString(),
+            'medical_expiry' => $profile->medical_expiry?->toDateString(),
             'status'         => $profile->status,
             'note'           => $profile->note,
             'assigned_vehicle_id' => $profile->assigned_vehicle_id,

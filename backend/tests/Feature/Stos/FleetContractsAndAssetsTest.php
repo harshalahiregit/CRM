@@ -118,12 +118,12 @@ class FleetContractsAndAssetsTest extends TestCase
         ]);
         MaintenanceJob::create([
             'company_id' => self::COMPANY, 'vehicle_id' => $vehicle->id, 'trip_id' => $tripId,
-            'job_card_number' => 'JC-BREAKDOWN', 'status' => 'completed', 'total_cost' => '5000.00',
+            'job_card_number' => 'JC-BREAKDOWN', 'status' => 'COMPLETED', 'total_cost' => '5000.00',
         ]);
         // Routine servicing with NO trip: fleet overhead, not this trip's cost.
         MaintenanceJob::create([
             'company_id' => self::COMPANY, 'vehicle_id' => $vehicle->id,
-            'job_card_number' => 'JC-ROUTINE', 'status' => 'completed', 'total_cost' => '99999.00',
+            'job_card_number' => 'JC-ROUTINE', 'status' => 'COMPLETED', 'total_cost' => '99999.00',
         ]);
 
         $costs = app(FleetService::class)->getTripOperatingCosts($tripId, self::COMPANY);
@@ -362,7 +362,7 @@ class FleetContractsAndAssetsTest extends TestCase
         ])->assertStatus(201);
 
         // A casing cannot be on two axles at once — the old fitment is closed.
-        $this->assertSame(1, TyreFitment::where('tyre_id', 'TY-001')->where('status', 'fitted')->count());
+        $this->assertSame(1, TyreFitment::where('tyre_id', 'TY-001')->where('status', 'FITTED')->count());
         $this->assertSame(2, TyreFitment::where('tyre_id', 'TY-001')->count(), 'History must keep both fitments');
     }
 
@@ -376,8 +376,8 @@ class FleetContractsAndAssetsTest extends TestCase
             ])->assertStatus(201);
         }
 
-        $this->assertSame('removed', TyreFitment::where('tyre_id', 'TY-OLD')->first()->status);
-        $this->assertSame('fitted', TyreFitment::where('tyre_id', 'TY-NEW')->first()->status);
+        $this->assertSame('REMOVED', TyreFitment::where('tyre_id', 'TY-OLD')->first()->status);
+        $this->assertSame('FITTED', TyreFitment::where('tyre_id', 'TY-NEW')->first()->status);
     }
 
     public function test_tread_depth_cannot_increase(): void
@@ -406,11 +406,11 @@ class FleetContractsAndAssetsTest extends TestCase
         ])->json('data');
 
         $this->actingAs($this->user())->putJson("/api/v1/fleet/tyres/{$fitment['id']}/remove", [
-            'status' => 'retreaded', 'odometer_at_removal' => 92000,
+            'status' => TyreFitment::RETREADED, 'odometer_at_removal' => 92000,
         ])->assertOk();
 
         $row = TyreFitment::find($fitment['id']);
-        $this->assertSame('retreaded', $row->status);
+        $this->assertSame(TyreFitment::RETREADED, $row->status);
         // Cost per kilometre is only answerable because the distance is kept.
         $this->assertSame(82000.0, $row->kilometresRun());
     }

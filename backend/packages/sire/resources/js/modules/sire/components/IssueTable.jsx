@@ -57,6 +57,10 @@ export default function IssueTable({ page, loading, onPageChange }) {
     { key: 'severity', header: 'Severity', render: (row) => cell(row.severity?.name) },
     { key: 'type',     header: 'Type',     render: (row) => cell(row.category?.name) },
     { key: 'module',   header: 'Module',   render: (row) => cell(row.module_label ?? row.module) },
+    // Who FILED it, next to who is fixing it. The register showed only the
+    // assignee, so the one person who could answer a question about an issue --
+    // the one who hit it -- was the one name the list left out (SIR-000026).
+    { key: 'reporter', header: 'Reported by', render: (row) => cell(row.reporter?.name) },
     { key: 'assignee', header: 'Assignee', render: (row) => cell(row.assignee?.name, 'Unassigned') },
     {
       key: 'sla',

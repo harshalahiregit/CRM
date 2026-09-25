@@ -226,4 +226,52 @@ class TelemetryIngestionTest extends TestCase
         $this->assertSame(self::COMPANY, TelemetryRecord::first()->company_id);
         $this->assertSame(self::COMPANY, VehicleLiveStatus::find($this->vehicle->id)->company_id);
     }
+    /* ── T-06: the device's dialect, and ours ───────────────────── */
+
+    public function test_a_unit_reporting_lowercase_is_stored_in_the_ruled_vocabulary(): void
+    {
+        // Units already in the field send lowercase. Refusing them to tidy a
+        // vocabulary would stop live ingestion, which is never worth it — so
+        // the mapping happens at the boundary and nothing downstream has to
+        // know which dialect a device speaks.
+        $this->ping(['generator_status' => 'on'])->assertStatus(201);
+
+        $this->assertSame(VehicleLiveStatus::GENSET_ON,
+            VehicleLiveStatus::first()->generator_status);
+    }
+
+    public function test_the_api_contracts_uppercase_is_accepted_too(): void
+    {
+        $this->ping(['generator_status' => 'FAULT'])->assertStatus(201);
+
+        $this->assertSame(VehicleLiveStatus::GENSET_FAULT,
+            VehicleLiveStatus::first()->generator_status);
+    }
+
+    public function test_unknown_is_stored_as_nothing_and_not_as_off(): void
+    {
+        // STOS-API's third value. "The device did not say" must never be
+        // recorded as "the device said off", or a silent probe reads as a
+        // genset somebody switched off — and the excursion check refuses to
+        // fire on a null precisely so that cannot happen.
+        $this->ping(['generator_status' => 'UNKNOWN'])->assertStatus(201);
+
+        $this->assertNull(VehicleLiveStatus::first()->generator_status);
+    }
+
+    public function test_a_faulted_genset_counts_as_not_cooling(): void
+    {
+        // The reason the richer vocabulary was kept. A unit in FAULT is not
+        // one somebody switched off, and a load spoils either way — reporting
+        // it as running is how that goes unnoticed.
+        $this->ping(['generator_status' => 'fault', 'temperature' => -5.0, 'speed' => 40])
+            ->assertStatus(201)
+            ->assertJsonPath('data.excursion_detected', true);
+    }
+
+    public function test_a_state_no_device_should_send_is_refused(): void
+    {
+        $this->ping(['generator_status' => 'banana'])->assertStatus(422);
+    }
+
 }

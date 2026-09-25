@@ -9,6 +9,8 @@ use App\Models\Transport\TransportDocument;
 use App\Models\User;
 use App\Support\Transport\TransportDocumentType;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -66,6 +68,48 @@ class VehicleDocumentTest extends TestCase
             'document_number' => 'DOC-'.Str::random(5),
             'valid_until' => $validUntil ?? now()->addYear()->toDateString(),
         ], $this->user())['document'];
+    }
+
+    /* ── The file itself ────────────────────────────────────────── */
+
+    public function test_an_uploaded_certificate_is_actually_kept(): void
+    {
+        // Found by putting a real PDF through the endpoint, not by a test.
+        // `TransportDocumentService` stores file_path/file_name/file_hash and
+        // never takes an UploadedFile, so the validated `file` key was
+        // intersected away: the API answered 201, the screen said "Filed", and
+        // the certificate was gone. Every test here passed a number and a date
+        // and no file, so none of them noticed.
+        Storage::fake('local');
+
+        $vehicle = $this->vehicle();
+        $file = UploadedFile::fake()->create('insurance.pdf', 20, 'application/pdf');
+
+        $document = $this->svc()->file($vehicle->id, self::COMPANY, 'insurance', [
+            'document_number' => 'INS-FILE-1',
+            'valid_until' => now()->addYear()->toDateString(),
+            'file' => $file,
+        ], $this->user())['document'];
+
+        $this->assertNotNull($document->file_path, 'the upload was dropped');
+        $this->assertSame('insurance.pdf', $document->file_name);
+        $this->assertNotNull($document->file_hash);
+        Storage::disk('local')->assertExists($document->file_path);
+    }
+
+    public function test_a_document_with_no_file_still_files(): void
+    {
+        // Recording a certificate number without a scan is normal — the file
+        // is evidence, not the record.
+        $vehicle = $this->vehicle();
+
+        $document = $this->svc()->file($vehicle->id, self::COMPANY, 'insurance', [
+            'document_number' => 'INS-NOFILE-1',
+            'valid_until' => now()->addYear()->toDateString(),
+        ], $this->user())['document'];
+
+        $this->assertNull($document->file_path);
+        $this->assertSame('INS-NOFILE-1', $document->document_number);
     }
 
     /* ── The types the owner approved ───────────────────────────── */

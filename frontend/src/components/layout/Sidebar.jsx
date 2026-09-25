@@ -321,6 +321,11 @@ const TRANSPORT_SUB_ITEMS = [
   // and the data behind them is now one master, not two. Each keeps its own
   // `when`, so a customer never sees a fleet board that would answer 403.
   { label: 'Fleet',            path: '/app/transport/fleet',    icon: Truck,      when: canUseStos },
+  // T-54. Missed here when it was added to TransportLayout's tab bar, and
+  // found by opening the app: the two rails are separate lists, so a trailer
+  // register reachable from one and not the other is simply lost to anyone
+  // who navigates by the sidebar.
+  { label: 'Trailers',         path: '/app/transport/trailers', icon: Container,  when: canUseStos },
   { label: 'Drivers',          path: '/app/transport/drivers',  icon: UserRound,  when: canUseStos },
   { label: 'Workshop',         path: '/app/transport/workshop', icon: Wrench,     when: canUseStos },
 ]

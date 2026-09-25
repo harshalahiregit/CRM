@@ -4,11 +4,11 @@ import { helpdeskApi } from '@/services/helpdeskApi'
 import {
   ArrowLeft, Flame, Thermometer, Snowflake, Building2, Mail, Phone, Globe,
   MapPin, User, Tag, XCircle, RotateCcw, Trash2, TrendingUp, Plus, FileText,
-  HelpCircle, LifeBuoy, LayoutTemplate, Printer, Ban,
+  HelpCircle, LifeBuoy, LayoutTemplate, Printer, Ban, Pencil,
 } from 'lucide-react'
 import {
   useLead, useConvertLead, useDeleteLead, useMarkLeadLost, useMarkLeadJunk, useRestoreLead,
-  useAddLeadNote, useUpdateLead,
+  useAddLeadNote, useUpdateLead, useInvalidateLeads,
 } from '@/hooks/useLeads'
 import { useToast } from '@/hooks/useToast'
 import ActivityTimeline from '../components/ActivityTimeline'
@@ -25,6 +25,8 @@ import LeadAppointmentsTab from '../components/lead/LeadAppointmentsTab'
 import LeadCustomFieldsTab from '../components/lead/LeadCustomFieldsTab'
 import LeadEmailsTab from '../components/lead/LeadEmailsTab'
 import ConvertLeadDialog from '../components/lead/ConvertLeadDialog'
+import LeadEditDrawer from '../components/lead/LeadEditDrawer'
+import LeadQuestionnaireDialog from '../components/lead/LeadQuestionnaireDialog'
 import ReasonDialog from '../components/lead/ReasonDialog'
 import { printLead } from '../components/lead/printLead'
 import { leadEngagementApi } from '@/services/leadEngagementApi'
@@ -112,6 +114,7 @@ export default function LeadDetail() {
   const [confirmAction, setConfirmAction] = useState(null) // 'delete' | null
   const [reasonKind, setReasonKind] = useState(null)       // 'lost' | 'junk' | null
   const [converting, setConverting] = useState(false)      // convert dialog open
+  const [editing, setEditing] = useState(false)            // edit drawer open
 
   const markLost = useMarkLeadLost()
   const markJunk = useMarkLeadJunk()
@@ -213,6 +216,20 @@ export default function LeadDetail() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Edit — SIR-000032. Hidden rather than disabled when the grid
+                refuses: a greyed-out button invites a support call, and the
+                person cannot grant themselves the permission anyway.
+                can_edit is computed by the same method that guards the PUT, so
+                the control and the refusal can never disagree. Older payloads
+                have no can_edit key at all, hence !== false rather than a truth
+                test — an absent flag must not hide a button that used to work. */}
+            {lead.can_edit !== false && !lead.lost && !lead.junk && (
+              <button onClick={() => setEditing(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-[1.02]"
+                style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.25)', color: '#a78bfa' }}>
+                <Pencil size={13} /> Edit
+              </button>
+            )}
             {(lead.lost || lead.junk) ? (
               <button onClick={handleRestore} disabled={restore.isPending}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-[1.02]"
@@ -356,6 +373,8 @@ export default function LeadDetail() {
         />
       )}
 
+      {editing && <LeadEditDrawer lead={lead} onClose={() => setEditing(false)} />}
+
       {confirmAction === 'delete' && (
         <ConfirmDialog
           title="Delete this lead?"
@@ -490,13 +509,36 @@ function NotesTab({ lead, toast }) {
 }
 
 /* ── Proposals Tab ───────────────────────────────────────── */
+
+/**
+ * Start a proposal for this lead — SIR-000034.
+ *
+ * The wizard has understood lead recipients all along: handleRecipientChange
+ * prefills the address block from the lead the moment rel_type is 'lead'. What
+ * was missing was any route into it from the lead itself, so the tab invited you
+ * to read proposals it gave you no way to create. CustomerDetail has had the
+ * same button for customers since Phase 1; this is the other half of that pair.
+ */
+function NewProposalButton({ lead, navigate }) {
+  return (
+    <button onClick={() => navigate(`/app/sales/proposals/new?lead_id=${lead.id}`)}
+      className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl transition-opacity hover:opacity-90"
+      style={{ background: 'rgba(124,58,237,0.1)', color: 'var(--accent)', border: '1px solid var(--border)' }}>
+      <Plus size={13} /> New Proposal
+    </button>
+  )
+}
+
 function ProposalsTab({ lead, navigate }) {
   const proposals = lead.proposals || []
   if (proposals.length === 0) {
     return (
       <div className="card-3d" style={{ padding: '20px' }}>
         <EmptyState icon={FileText} title="No proposals yet" description="Proposals created for this lead will appear here." />
-        <div className="flex justify-center mt-3"><RaiseTicketButton lead={lead} /></div>
+        <div className="flex justify-center gap-2 mt-3">
+          <NewProposalButton lead={lead} navigate={navigate} />
+          <RaiseTicketButton lead={lead} />
+        </div>
       </div>
     )
   }
@@ -504,7 +546,10 @@ function ProposalsTab({ lead, navigate }) {
     <div className="card-3d" style={{ padding: '20px' }}>
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-bold text-sm" style={{ color: 'var(--text-h)' }}>Proposals</h3>
-        <RaiseTicketButton lead={lead} />
+        <div className="flex items-center gap-2">
+          <NewProposalButton lead={lead} navigate={navigate} />
+          <RaiseTicketButton lead={lead} />
+        </div>
       </div>
       <div className="space-y-2">
         {proposals.map(p => (
@@ -528,18 +573,39 @@ function ProposalsTab({ lead, navigate }) {
 
 /* ── Questionnaires Tab ──────────────────────────────────── */
 function QuestionnairesTab({ lead }) {
+  const [recording, setRecording] = useState(false)
+  const invalidateLeads = useInvalidateLeads()
   const responses = lead.questionnaire_responses || []
+
+  const recordButton = (
+    <button onClick={() => setRecording(true)}
+      className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl transition-opacity hover:opacity-90"
+      style={{ background: 'rgba(124,58,237,0.1)', color: 'var(--accent)', border: '1px solid var(--border)' }}>
+      <Plus size={13} /> Record Response
+    </button>
+  )
+
+  const dialog = recording && (
+    <LeadQuestionnaireDialog
+      lead={lead}
+      onClose={() => setRecording(false)}
+      onSaved={invalidateLeads}
+    />
+  )
+
   if (responses.length === 0) {
     return (
       <div className="card-3d" style={{ padding: '20px' }}>
         <EmptyState icon={HelpCircle} title="No questionnaire responses" description="Responses submitted for this lead will appear here." />
-        <div className="flex justify-center mt-3"><RaiseTicketButton lead={lead} /></div>
+        <div className="flex justify-center gap-2 mt-3">{recordButton}<RaiseTicketButton lead={lead} /></div>
+        {dialog}
       </div>
     )
   }
   return (
     <div className="space-y-4">
-      <div className="flex justify-end"><RaiseTicketButton lead={lead} /></div>
+      <div className="flex justify-end gap-2">{recordButton}<RaiseTicketButton lead={lead} /></div>
+      {dialog}
       {responses.map(r => (
         <div key={r.id} className="card-3d" style={{ padding: '20px' }}>
           <div className="flex items-center justify-between mb-3">

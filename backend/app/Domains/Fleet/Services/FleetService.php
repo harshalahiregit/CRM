@@ -26,7 +26,14 @@ use Illuminate\Support\Collection;
 class FleetService
 {
     /** Job-card states that mean the vehicle is still in the workshop. */
-    private const OPEN_JOB_STATES = ['open', 'in_progress', 'awaiting_parts'];
+    /**
+     * Deleted in favour of `MaintenanceJob::OPEN_STATES` — T-58.
+     *
+     * This list left out TESTING and QC, so a truck in quality control showed
+     * "0 open jobs" on the grid while the workshop refused to release it. The
+     * model owns the definition; nothing else may hold a second copy.
+     */
+    private const OPEN_JOB_STATES = MaintenanceJob::OPEN_STATES;
 
     public function __construct(
         private VehicleHealthEvaluator $health,
@@ -58,6 +65,11 @@ class FleetService
     {
         return $this->allocation->eligible($companyId, array_filter([
             'vehicle_type' => $vehicleType,
+            // PLN-001. Pass the order's `required_capacity_tonnes` straight
+            // through — a vehicle that cannot carry the load is excluded with
+            // `below_required_capacity`, and one with no payload recorded is
+            // kept but flagged `capacity_unknown`.
+            'required_capacity_tonnes' => $context['required_capacity_tonnes'] ?? null,
             'pickup_lat'   => $context['pickup_lat'] ?? null,
             'pickup_lng'   => $context['pickup_lng'] ?? null,
         ], fn ($v) => $v !== null && $v !== ''));

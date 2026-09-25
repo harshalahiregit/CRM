@@ -30,8 +30,64 @@ class VehicleLiveStatus extends Model
 
     public $timestamps = false;
 
-    /** off | on | standby | fault — the reefer genset, not the engine. */
-    public const GENERATOR_STATES = ['off', 'on', 'standby', 'fault'];
+    /* ── The reefer genset, not the engine (T-06) ───────────────────── */
+
+    public const GENSET_OFF     = 'OFF';
+    public const GENSET_ON      = 'ON';
+    public const GENSET_STANDBY = 'STANDBY';
+    public const GENSET_FAULT   = 'FAULT';
+
+    /**
+     * What we STORE. Uppercase per spec 12.S11, and richer than the API
+     * contract on purpose.
+     *
+     * STOS-API describes `ON | OFF | UNKNOWN`. Collapsing to that would throw
+     * away the two states that matter most on a reefer: a genset in FAULT is
+     * not the same fact as one somebody switched OFF, and STANDBY (running on
+     * dock power) is not the same as running on its own engine. A load spoils
+     * identically either way, but the person fixing it needs to know which.
+     *
+     * So the contract is honoured at the BOUNDARY and the detail is kept
+     * behind it — see `normaliseGeneratorState()`.
+     */
+    public const GENERATOR_STATES = [
+        self::GENSET_OFF, self::GENSET_ON, self::GENSET_STANDBY, self::GENSET_FAULT,
+    ];
+
+    /**
+     * What we ACCEPT, and what each thing means once stored.
+     *
+     * Units already in the field send lowercase; refusing them to tidy a
+     * vocabulary would stop live ingestion, which is never worth it. `UNKNOWN`
+     * is the API's third value and maps to null — "the device did not say" is
+     * its own state and must not be recorded as OFF, or a silent probe would
+     * read as a genset somebody turned off.
+     */
+    public const GENERATOR_INPUT = [
+        'off' => self::GENSET_OFF,          'OFF' => self::GENSET_OFF,
+        'on' => self::GENSET_ON,            'ON' => self::GENSET_ON,
+        'standby' => self::GENSET_STANDBY,  'STANDBY' => self::GENSET_STANDBY,
+        'fault' => self::GENSET_FAULT,      'FAULT' => self::GENSET_FAULT,
+        'unknown' => null,                  'UNKNOWN' => null,
+    ];
+
+    /**
+     * States in which the genset is NOT cooling the load.
+     *
+     * FAULT belongs here and that is the point of keeping it: a faulted unit
+     * reported as running is how a spoiled load goes unnoticed.
+     */
+    public const GENSET_NOT_COOLING = [self::GENSET_OFF, self::GENSET_FAULT];
+
+    /** Whatever the device sent, in the vocabulary we store. Null if unsayable. */
+    public static function normaliseGeneratorState(?string $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return self::GENERATOR_INPUT[$value] ?? self::GENERATOR_INPUT[strtoupper(trim($value))] ?? null;
+    }
 
     protected $fillable = [
         'vehicle_id',

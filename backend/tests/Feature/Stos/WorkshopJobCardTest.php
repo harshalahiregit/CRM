@@ -190,13 +190,13 @@ class WorkshopJobCardTest extends TestCase
     public function test_a_card_in_qc_still_holds_the_vehicle(): void
     {
         $vehicle = $this->vehicle();
-        $this->open($vehicle, ['status' => 'qc']);
+        $this->open($vehicle, ['status' => MaintenanceJob::QC]);
 
         // T-32 — the work is done but nobody has signed it off. This is exactly
         // the window in which somebody is tempted to take the vehicle.
         $this->assertSame('UNDER_MAINTENANCE', $vehicle->fresh()->status);
-        $this->assertContains('qc', MaintenanceJob::OPEN_STATES);
-        $this->assertContains('testing', MaintenanceJob::OPEN_STATES);
+        $this->assertContains(MaintenanceJob::QC, MaintenanceJob::OPEN_STATES);
+        $this->assertContains(MaintenanceJob::TESTING, MaintenanceJob::OPEN_STATES);
     }
 
     public function test_closing_a_card_records_how_long_the_vehicle_was_off_the_road(): void

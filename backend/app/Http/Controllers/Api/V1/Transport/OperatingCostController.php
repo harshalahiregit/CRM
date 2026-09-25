@@ -104,7 +104,7 @@ class OperatingCostController extends Controller
         $this->denyExternal($request);
 
         $data = $request->validate([
-            'status' => ['nullable', Rule::in(['removed', 'in_stock', 'retreaded', 'scrapped'])],
+            'status' => ['nullable', Rule::in(TyreFitment::OUTCOMES)],
             'odometer_at_removal' => 'nullable|numeric|min:0|max:9999999',
             'note'   => 'nullable|string|max:255',
         ]);

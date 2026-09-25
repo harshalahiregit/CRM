@@ -51,12 +51,71 @@ class RepointTripFleetReferences extends Command
 
     private const LEDGER = 'fleet_reference_repoints';
 
+    /**
+     * Every reference into the legacy masters — D-120.
+     *
+     * This was four entries written inline, and there are SEVEN. Person 1 found
+     * the three that were missing: `trip_exceptions.vehicle_id`,
+     * `trip_exceptions.driver_id` and `trip_advances.driver_id`. After `--apply`
+     * those columns would still have meant the legacy tables while the other
+     * four meant Fleet — one schema, two id spaces, nothing marking which —
+     * and it would have passed silently, because nothing loads
+     * `$exception->vehicle` today.
+     *
+     * (He said six. It is seven; he had the three omissions exactly right.)
+     *
+     * Declared as data rather than written into the plan loop, and
+     * `RepointCoversEveryReferenceTest` asserts this list is EVERY tenant-scoped
+     * `vehicle_id`/`driver_id` column in the schema. A table added later fails
+     * that test instead of being quietly missed, which is the only thing that
+     * stops this happening a third time.
+     *
+     * `trip_assignments.active_vehicle_id` / `active_driver_id` are absent on
+     * purpose: they are STORED generated columns off the two real ones and
+     * follow automatically. They matter to `unsafeCollisions()` below, not here.
+     */
+    private const REFERENCES = [
+        ['transport_trips', 'vehicle_id', 'vehicle'],
+        ['transport_trips', 'driver_id', 'driver'],
+        ['trip_assignments', 'vehicle_id', 'vehicle'],
+        ['trip_assignments', 'driver_id', 'driver'],
+        ['trip_exceptions', 'vehicle_id', 'vehicle'],
+        ['trip_exceptions', 'driver_id', 'driver'],
+        ['trip_advances', 'driver_id', 'driver'],
+    ];
+
+    /**
+     * The statuses `trip_assignments.active_vehicle_id` treats as holding the
+     * resource — kept identical to the CASE in that table's generated column.
+     */
+    private const ASSIGNMENT_HOLDS = ['assigned', 'confirmed', 'active'];
+
+    /** Legacy ids claimed by more than one Fleet row; filled by legacyMap(). */
+    private array $contested = [];
+
     public function handle(): int
     {
         $apply = (bool) $this->option('apply');
 
         $vehicleMap = $this->legacyMap('vehicles', 'legacy_transport_vehicle_id');
         $driverMap  = $this->legacyMap('driver_profiles', 'legacy_transport_driver_id');
+
+        // Two Fleet rows claiming one legacy id means the mapping is not a
+        // mapping. Refused before anything is surveyed, dry run included —
+        // a dry run built on a guessed map reports numbers nobody should trust.
+        if ($this->contested !== []) {
+            $this->error('The mapping is contested — two Fleet rows claim the same legacy row:');
+
+            foreach ($this->contested as $line) {
+                $this->line('  · '.$line);
+            }
+
+            $this->newLine();
+            $this->line('  Only one of them can be right and nothing here can tell which.');
+            $this->line('  Clear the duplicate `legacy_*_id` by hand, then run this again.');
+
+            return self::FAILURE;
+        }
 
         if ($vehicleMap === [] && $driverMap === []) {
             $this->info('Nothing has been moved into the Fleet masters yet — there is nothing to repoint.');
@@ -72,16 +131,12 @@ class RepointTripFleetReferences extends Command
             $this->newLine();
         }
 
-        $targets = [
-            ['transport_trips', 'vehicle_id', $vehicleMap],
-            ['transport_trips', 'driver_id', $driverMap],
-            ['trip_assignments', 'vehicle_id', $vehicleMap],
-            ['trip_assignments', 'driver_id', $driverMap],
-        ];
-
+        $maps = ['vehicle' => $vehicleMap, 'driver' => $driverMap];
         $plan = [];
 
-        foreach ($targets as [$table, $column, $map]) {
+        foreach (self::REFERENCES as [$table, $column, $kind]) {
+            $map = $maps[$kind];
+
             if (! Schema::hasTable($table) || ! Schema::hasColumn($table, $column) || $map === []) {
                 continue;
             }
@@ -98,6 +153,23 @@ class RepointTripFleetReferences extends Command
         }
 
         $this->newLine();
+
+        // Said in the dry run too, because switch-day is the wrong time to
+        // learn that two active assignments want the same truck.
+        $clashes = $this->unsafeCollisions($plan);
+
+        if ($clashes !== []) {
+            $this->error('Repointing would put two ACTIVE assignments on one resource:');
+
+            foreach ($clashes as $line) {
+                $this->line('  · '.$line);
+            }
+
+            $this->line('  trip_assignments allows one active assignment per vehicle and per driver.');
+            $this->line('  Release one of each pair first — this cannot be resolved by repointing.');
+
+            return self::FAILURE;
+        }
 
         if ($movable === 0 && $stranded === 0) {
             $this->info('Every reference has already been ruled on. Nothing left to do.');
@@ -153,6 +225,16 @@ class RepointTripFleetReferences extends Command
 
     /**
      * old legacy id => new Fleet id, reconstructed from the moved rows.
+     *
+     * ── A DUPLICATED LINK USED TO VANISH HERE ─────────────────────────────
+     * `pluck('id', $column)` keys by the legacy id, so if two Fleet rows both
+     * claim legacy #35 the second silently overwrites the first and the whole
+     * repoint runs against a mapping nobody chose. Same family as D-116: an
+     * answer that is wrong without being an error.
+     *
+     * `stos:reconcile-fleet --relink` refuses to create that state, but it can
+     * arrive by hand, by an import, or by a half-finished migration. So it is
+     * checked rather than assumed, and it stops the run.
      */
     private function legacyMap(string $table, string $column): array
     {
@@ -162,11 +244,96 @@ class RepointTripFleetReferences extends Command
 
         $company = $this->option('company');
 
-        return DB::table($table)
+        $rows = DB::table($table)
             ->whereNotNull($column)
             ->when($company, fn ($q) => $q->where('company_id', $company))
-            ->pluck('id', $column)
-            ->all();
+            ->get(['id', $column]);
+
+        $map = [];
+
+        foreach ($rows as $row) {
+            $legacyId = (int) $row->{$column};
+
+            if (isset($map[$legacyId])) {
+                $this->contested[] = sprintf('%s #%d and #%d both claim legacy #%d',
+                    $table, $map[$legacyId], $row->id, $legacyId);
+
+                continue;
+            }
+
+            $map[$legacyId] = (int) $row->id;
+        }
+
+        return $map;
+    }
+
+    /**
+     * Rows that would violate a uniqueness rule the moment they are repointed.
+     *
+     * `trip_assignments` enforces one ACTIVE assignment per vehicle and per
+     * driver, per tenant, through unique indexes on stored generated columns.
+     * Those columns follow `vehicle_id` and `driver_id` automatically — so a
+     * repoint that lands two active assignments on the same Fleet id trips the
+     * index mid-run.
+     *
+     * The write is transactional, so nothing is half-written; but discovering
+     * it on switch-day, partway through, is the worst moment to find out. The
+     * dry run says it now.
+     */
+    private function unsafeCollisions(array $plan): array
+    {
+        $clashes = [];
+
+        foreach ($plan as [$table, $column, , $survey]) {
+            if ($table !== 'trip_assignments') {
+                continue;
+            }
+
+            $seen = [];
+
+            foreach ($survey['movable'] as $row) {
+                if (! $this->isActiveAssignment((int) $row['id'])) {
+                    continue;
+                }
+
+                $key = $row['tenant_id'].':'.$row['to'];
+
+                // Two rows that are both moving onto the same Fleet id.
+                if (isset($seen[$key])) {
+                    $clashes[] = sprintf('%s.%s — assignments #%d and #%d would both be active on #%d',
+                        $table, $column, $seen[$key], $row['id'], $row['to']);
+
+                    continue;
+                }
+
+                $seen[$key] = (int) $row['id'];
+
+                // And the case the first version missed: a row that is NOT
+                // moving because it already holds the Fleet id natively. That
+                // is the partial state the switch itself creates, so it is the
+                // likeliest collision of the two, not the rarest.
+                $holder = DB::table($table)
+                    ->where('tenant_id', $row['tenant_id'])
+                    ->where($column, $row['to'])
+                    ->where('id', '!=', $row['id'])
+                    ->whereIn('status', self::ASSIGNMENT_HOLDS)
+                    ->value('id');
+
+                if ($holder) {
+                    $clashes[] = sprintf('%s.%s — assignment #%d would move onto #%d, which active assignment #%d already holds',
+                        $table, $column, $row['id'], $row['to'], $holder);
+                }
+            }
+        }
+
+        return $clashes;
+    }
+
+    private function isActiveAssignment(int $id): bool
+    {
+        return DB::table('trip_assignments')->where('id', $id)
+            ->whereIn('status', self::ASSIGNMENT_HOLDS)
+            ->exists();
     }
 
     /**

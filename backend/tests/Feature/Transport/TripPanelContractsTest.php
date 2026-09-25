@@ -242,6 +242,35 @@ class TripPanelContractsTest extends TestCase
     }
 
     /**
+     * BillingPanel can actually press the invoice route.
+     *
+     * The route shipped on 19 Sep with no caller in transportApi.js, so a trip
+     * stopped at Billable and closure was unreachable from the screen even
+     * though every endpoint behind it worked. D-106 one layer up: a route with
+     * no button is the same gap as a method with no route.
+     *
+     * Asserted here as the capability key the button gates on, because that is
+     * the part a backend test can hold. The caller itself is guarded by the
+     * frontend build.
+     */
+    public function test_the_invoice_button_has_a_permission_to_gate_on(): void
+    {
+        $grants = $this->getJson('/api/transport/permissions')->assertOk()->json('data.grants');
+
+        $this->assertArrayHasKey('transport.billing.invoiced', $grants,
+            'BillingPanel gates its Record-invoice button on this key');
+
+        // And it must stay NARROWER than prepare — Operations may mark a trip
+        // ready to invoice and may not declare that it was invoiced.
+        $matrix = \App\Support\Transport\TransportPermission::MATRIX;
+        $this->assertArrayNotHasKey(
+            \App\Support\Transport\TransportPermission::ROLE_OPERATIONS,
+            $matrix[\App\Support\Transport\TransportPermission::BILLING_INVOICED],
+            'recording an invoice is a finance act, not an operations one'
+        );
+    }
+
+    /**
      * Every permission key the panels gate their buttons on must be answerable.
      *
      * The panels read `grants['transport.cost.record']` and friends. A key that

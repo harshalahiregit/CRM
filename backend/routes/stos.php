@@ -3,11 +3,14 @@
 use App\Http\Controllers\Api\V1\Transport\DeviceTokenController;
 use App\Http\Controllers\Api\V1\Transport\GensetController;
 use App\Http\Controllers\Api\V1\Transport\DriverController;
+use App\Http\Controllers\Api\V1\Transport\DriverDocumentController;
 use App\Http\Controllers\Api\V1\Transport\FleetController;
 use App\Http\Controllers\Api\V1\Transport\FuelController;
 use App\Http\Controllers\Api\V1\Transport\MaintenanceController;
 use App\Http\Controllers\Api\V1\Transport\OperatingCostController;
 use App\Http\Controllers\Api\V1\Transport\TelemetryIngestionController;
+use App\Http\Controllers\Api\V1\Transport\TrailerController;
+use App\Http\Controllers\Api\V1\Transport\TyreMasterController;
 use App\Http\Controllers\Api\V1\Transport\VehicleAllocationController;
 use App\Http\Controllers\Api\V1\Transport\VehicleController;
 use App\Http\Controllers\Api\V1\Transport\VehicleDocumentController;
@@ -109,6 +112,33 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('v1/fleet')->gro
     Route::put('/drivers/{source}/{person}/assign', [DriverController::class, 'assign'])
         ->where('source', '[a-z_]+')->where('person', '[0-9]+');
 
+    // ── A driver's paperwork (T-43) ─────────────────────────────────────
+    // Absorbs Dev 1's retiring `/api/transport/drivers/{id}/documents`. The
+    // `{source}` constraint keeps "eligible" from ever matching these: it is a
+    // word, and these routes want a directory name.
+    Route::get('/drivers/{source}/{person}/documents', [DriverDocumentController::class, 'index'])
+        ->where('source', '[a-z_]+')->where('person', '[0-9]+');
+    Route::post('/drivers/{source}/{person}/documents', [DriverDocumentController::class, 'store'])
+        ->where('source', '[a-z_]+')->where('person', '[0-9]+');
+    Route::post('/drivers/{source}/{person}/documents/{document}/renew', [DriverDocumentController::class, 'renew'])
+        ->where('source', '[a-z_]+')->where('person', '[0-9]+')->where('document', '[0-9]+');
+    // Verification is by document id — the verdict is about the evidence, not
+    // about whose it is. Separate path from the vehicle one so neither has to
+    // guess which kind it was handed.
+    Route::patch('/driver-documents/{document}/verify', [DriverDocumentController::class, 'verify'])
+        ->where('document', '[0-9]+');
+
+    // ── Trailers and the coupling between (T-54) ────────────────────────
+    // `history` BEFORE `{trailer}`: it is a word, not an id, and the numeric
+    // constraint alone would not stop the detail route claiming it first.
+    Route::get('/trailers', [TrailerController::class, 'index']);
+    Route::get('/trailers/history', [TrailerController::class, 'history']);
+    Route::post('/trailers', [TrailerController::class, 'store']);
+    Route::put('/trailers/{trailer}', [TrailerController::class, 'update'])->where('trailer', '[0-9]+');
+    Route::get('/trailers/{trailer}/compliance', [TrailerController::class, 'compliance'])->where('trailer', '[0-9]+');
+    Route::post('/trailers/{trailer}/couple', [TrailerController::class, 'couple'])->where('trailer', '[0-9]+');
+    Route::post('/trailers/{trailer}/uncouple', [TrailerController::class, 'uncouple'])->where('trailer', '[0-9]+');
+
     // ── Urea / AdBlue (STOS-COST) ───────────────────────────────────────
     Route::post('/vehicles/{vehicle}/urea', [OperatingCostController::class, 'storeUrea'])->where('vehicle', '[0-9]+');
 
@@ -117,6 +147,17 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('v1/fleet')->gro
     Route::post('/tyres/fit', [OperatingCostController::class, 'fitTyre']);
     Route::put('/tyres/{fitment}/inspect', [OperatingCostController::class, 'inspectTyre'])->where('fitment', '[0-9]+');
     Route::put('/tyres/{fitment}/remove', [OperatingCostController::class, 'removeTyre'])->where('fitment', '[0-9]+');
+
+    // ── The casing register (T-36/37/38) ────────────────────────────────
+    // `/tyres/fit` and `/tyres/rotate` are words and sit beside `/tyres/{tyre}`,
+    // so the numeric constraint on the detail routes is what keeps them apart.
+    Route::get('/tyres', [TyreMasterController::class, 'index']);
+    Route::post('/tyres', [TyreMasterController::class, 'store']);
+    Route::post('/tyres/rotate', [TyreMasterController::class, 'rotate']);
+    Route::put('/tyres/{tyre}', [TyreMasterController::class, 'update'])->where('tyre', '[0-9]+');
+    Route::get('/tyres/{tyre}/economics', [TyreMasterController::class, 'economics'])->where('tyre', '[0-9]+');
+    Route::post('/tyres/{tyre}/retread', [TyreMasterController::class, 'retread'])->where('tyre', '[0-9]+');
+    Route::post('/tyres/{tyre}/scrap', [TyreMasterController::class, 'scrap'])->where('tyre', '[0-9]+');
 
     // ── Trip cost roll-up — the HTTP face of Developer 3's contract ──────
     Route::get('/trips/{trip}/operating-costs', [OperatingCostController::class, 'tripCosts'])->where('trip', '[0-9]+');

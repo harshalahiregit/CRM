@@ -375,6 +375,13 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     // Purchase had prequalification / risk / due diligence one vendor at a time,
     // which answers "how did this vendor score?" but never "who has not been
     // assessed yet?" — the question a register exists for.
+    // The questionnaire itself, edited from the admin panel. Static path, and it
+    // must sit above /vendors/{purchaseVendor}/... so "settings" is never read
+    // as a vendor id. Admin-only, enforced in the controller.
+    Route::get('/settings/prequalification',        [\App\Http\Controllers\Api\Purchase\PrequalificationCatalogueController::class, 'show']);
+    Route::put('/settings/prequalification',        [\App\Http\Controllers\Api\Purchase\PrequalificationCatalogueController::class, 'update']);
+    Route::post('/settings/prequalification/reset', [\App\Http\Controllers\Api\Purchase\PrequalificationCatalogueController::class, 'reset']);
+
     Route::get('/registers/prequalification', [PurchaseRegisterController::class, 'prequalification']);
     Route::get('/registers/risk',             [PurchaseRegisterController::class, 'risk']);
     Route::get('/registers/due-diligence',    [PurchaseRegisterController::class, 'dueDiligence']);

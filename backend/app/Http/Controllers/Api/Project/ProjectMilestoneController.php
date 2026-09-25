@@ -34,6 +34,30 @@ class ProjectMilestoneController extends Controller
         return $this->success($this->projects->createMilestone($project, $request->validated(), $request->user()->tenant_id), 'Milestone created', 201);
     }
 
+    /**
+     * Create many milestones from one uploaded sheet.
+     *
+     * A plan arrives as a spreadsheet; the only way in was a form, once per
+     * milestone. Same file types the workforce importer takes — csv, xls, xlsx —
+     * because it is the same reader.
+     */
+    public function import(Request $request, int $project)
+    {
+        $this->projects->assertProjectManage($project, $request->user()->tenant_id, $request->user()->id, $this->isAdmin($request));
+
+        $request->validate([
+            'file' => 'required|file|mimes:csv,txt,xls,xlsx|max:5120',
+        ], [
+            'file.required' => 'Choose the spreadsheet to import.',
+            'file.mimes'    => 'Upload a .csv, .xls or .xlsx file.',
+        ]);
+
+        return $this->success(
+            $this->projects->importMilestones($project, $request->file('file'), $request->user()->tenant_id),
+            'Milestones imported'
+        );
+    }
+
     public function update(UpdateMilestoneRequest $request, int $milestone)
     {
         $this->projects->assertMilestoneManage($milestone, $request->user()->tenant_id, $request->user()->id, $this->isAdmin($request));

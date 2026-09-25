@@ -7,7 +7,9 @@ use App\Exceptions\ResourceNotFoundException;
 use App\Models\Tenant;
 use App\Models\Transport\TransportAuditLog;
 use App\Models\Transport\TransportOrder;
+use App\Models\Transport\TransportDriver;
 use App\Models\Transport\TransportTrip;
+use App\Models\Transport\TransportVehicle;
 use App\Models\User;
 use App\Services\Transport\AllocationService;
 use App\Services\Transport\DispatchService;
@@ -15,6 +17,8 @@ use App\Services\Transport\PretripService;
 use App\Services\Transport\TransportDriverService;
 use App\Services\Transport\TransportTripService;
 use App\Services\Transport\TransportVehicleService;
+use App\Services\Transport\TripAssignmentService;
+use App\Support\Transport\DriverAvailability;
 use App\Support\Transport\OrderStatus;
 use App\Support\Transport\TransitScope;
 use App\Support\Transport\TripStatus;
@@ -450,5 +454,165 @@ class TransitTest extends TestCase
         $this->assertArrayHasKey('feedback', TransitScope::EXCLUDED);
         $this->assertStringContainsString('PERSON 3', TransitScope::EXCLUDED['feedback']);
         $this->assertStringContainsString('TM-001 §8', TransitScope::EXCLUDED['feedback']);
+    }
+
+    /* ═══════════ D-119 — delivery gives the crew back ═══════════ */
+
+    /**
+     * The owner had to free the driver by hand after every trip.
+     *
+     * STOS-FLEET §8: "Vehicle status must be driven by business events."
+     * Finishing a trip is the business event, and nothing was driving anything.
+     */
+    public function test_delivering_a_trip_frees_the_vehicle_and_the_driver(): void
+    {
+        $trip = $this->movingTrip();
+        $a = app(TripAssignmentService::class)->activeForTrip($trip->id, self::TENANT_A);
+
+        $this->assertSame(VehicleStatus::ALLOCATED,
+            TransportVehicle::find($a->vehicle_id)->status, 'held while moving');
+        $this->assertSame(DriverAvailability::ASSIGNED,
+            TransportDriver::find($a->driver_id)->availability, 'held while moving');
+
+        $this->trips->recordDelivery($trip->fresh(), [], self::TENANT_A, $this->actor);
+
+        $this->assertSame(VehicleStatus::AVAILABLE,
+            TransportVehicle::find($a->vehicle_id)->status,
+            'the vehicle should come free when the cargo is off');
+        $this->assertSame(DriverAvailability::AVAILABLE,
+            TransportDriver::find($a->driver_id)->availability,
+            'and so should the driver — OPS §79 withholds billing for late documents, not the driver');
+    }
+
+    /**
+     * Fleet is told. `markReleased()` sat on the gateway with no caller in the
+     * whole codebase, so Fleet heard when a resource was taken and never when
+     * it came back.
+     */
+    public function test_delivery_tells_fleet_the_resource_is_free(): void
+    {
+        $spy = new class implements \App\Services\Transport\Contracts\FleetResourceGateway {
+            public array $released = [];
+            public function markDispatched($trip, $vehicleId, $driverId, $tenantId, $actor = null): bool { return true; }
+            public function markDeparted($trip, $vehicleId, $tenantId, $actor = null): bool { return true; }
+            public function markReleased(?int $vehicleId, ?int $driverId, int $tenantId): bool
+            { $this->released[] = [$vehicleId, $driverId]; return true; }
+        };
+        $this->app->instance(\App\Services\Transport\Contracts\FleetResourceGateway::class, $spy);
+
+        $trip = $this->movingTrip();
+        $a = app(TripAssignmentService::class)->activeForTrip($trip->id, self::TENANT_A);
+        app(TransportTripService::class)->recordDelivery($trip->fresh(), [], self::TENANT_A, $this->actor);
+
+        $this->assertNotEmpty($spy->released, 'Fleet was never told the resource came free');
+        $this->assertSame([$a->vehicle_id, $a->driver_id], $spy->released[0]);
+    }
+
+    /**
+     * A truck that broke down while allocated must NOT be quietly marked
+     * Available because a trip happened to finish. FLEET §8 again: a vehicle
+     * "cannot become AVAILABLE if critical maintenance unresolved".
+     */
+    public function test_a_broken_down_vehicle_is_not_freed_by_a_delivery(): void
+    {
+        $trip = $this->movingTrip();
+        $a = app(TripAssignmentService::class)->activeForTrip($trip->id, self::TENANT_A);
+
+        TransportVehicle::find($a->vehicle_id)
+            ->forceFill(['status' => VehicleStatus::BREAKDOWN])->save();
+
+        $this->trips->recordDelivery($trip->fresh(), [], self::TENANT_A, $this->actor);
+
+        $this->assertSame(VehicleStatus::BREAKDOWN,
+            TransportVehicle::find($a->vehicle_id)->status,
+            'a delivery must not overwrite a breakdown');
+        $this->assertSame(DriverAvailability::AVAILABLE,
+            TransportDriver::find($a->driver_id)->availability,
+            'the driver is still free though — the two are judged separately');
+    }
+
+    /** The timeline says it happened. A driver quietly coming free is its own confusion. */
+    public function test_the_release_is_on_the_timeline(): void
+    {
+        $trip = $this->movingTrip();
+        $this->trips->recordDelivery($trip->fresh(), [], self::TENANT_A, $this->actor);
+
+        $row = \DB::table('trip_events')->where('trip_id', $trip->id)
+            ->where('event_type', 'crew.released')->first();
+
+        $this->assertNotNull($row, 'crew.released should be recorded when a trip is delivered');
+        $this->assertStringContainsString('delivered', $row->summary ?? '');
+        $this->assertSame('delivered', json_decode($row->detail, true)['because'] ?? null);
+    }
+
+    /**
+     * Releasing the crew must not erase who drove.
+     *
+     * The trip payload reads the ACTIVE assignment, and after delivery there is
+     * none — so without a fallback, finishing a trip would blank the vehicle and
+     * driver off its own screen.
+     */
+    public function test_a_delivered_trip_still_shows_who_drove_it(): void
+    {
+        $trip = $this->movingTrip();
+        $a = app(TripAssignmentService::class)->activeForTrip($trip->id, self::TENANT_A);
+        $this->trips->recordDelivery($trip->fresh(), [], self::TENANT_A, $this->actor);
+
+        \Laravel\Sanctum\Sanctum::actingAs($this->actor);
+        $payload = $this->getJson('/api/transport/trips/'.$trip->id)->assertOk()->json('data.assignment');
+
+        $this->assertNotNull($payload, 'the crew disappeared from the trip when it was delivered');
+        $this->assertSame($a->vehicle_id, $payload['vehicle_id']);
+        $this->assertSame($a->driver_id, $payload['driver_id']);
+    }
+
+    /** Delivery does not send the trip backwards or void its checklist. */
+    public function test_delivery_does_not_revert_the_trip_or_void_the_checklist(): void
+    {
+        $trip = $this->movingTrip();
+        $this->trips->recordDelivery($trip->fresh(), [], self::TENANT_A, $this->actor);
+
+        $this->assertSame(TripStatus::DELIVERED, $trip->fresh()->status,
+            'releasing the crew is not abandoning the allocation');
+    }
+
+    /**
+     * A finished trip must not forget which truck ran it.
+     *
+     * Releasing an assignment clears the trip's denormalised `vehicle_id` and
+     * `driver_id`, which is right for an ABANDONED allocation — the trip goes
+     * back to `approved` and must not claim a vehicle it no longer holds.
+     *
+     * It is wrong for a finished one, and the damage was measured before this
+     * test existed: after one delivery, Container 360 lost its vehicle and
+     * driver, a plate search answered "no trip has run on this vehicle yet"
+     * about a truck that had just delivered one, and the repoint dry run fell
+     * from 2 rows to move to 0 — it would have run, moved nothing, and looked
+     * finished.
+     */
+    public function test_a_delivered_trip_keeps_the_vehicle_and_driver_it_ran_with(): void
+    {
+        $trip = $this->movingTrip();
+        $before = $trip->fresh()->only(['vehicle_id', 'driver_id']);
+
+        $this->trips->recordDelivery($trip->fresh(), [], self::TENANT_A, $this->actor);
+
+        $after = $trip->fresh()->only(['vehicle_id', 'driver_id']);
+
+        $this->assertNotNull($after['vehicle_id'], 'the trip forgot which vehicle ran it');
+        $this->assertSame($before, $after,
+            'a finished trip keeps its crew pointers — they are history, not a claim');
+    }
+
+    /** An ABANDONED allocation still clears them. The two paths differ on purpose. */
+    public function test_releasing_an_allocation_early_still_clears_the_pointers(): void
+    {
+        $trip = $this->dispatchedTrip();
+        $a = app(TripAssignmentService::class)->activeForTrip($trip->id, self::TENANT_A);
+
+        $this->alloc->release($a, self::TENANT_A, $this->actor, 'changed our minds');
+
+        $this->assertNull($trip->fresh()->vehicle_id,
+            'an abandoned allocation must not leave the trip claiming a vehicle');
     }
 }

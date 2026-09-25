@@ -204,15 +204,30 @@ Walked on `TRP-2026-000034`, clicking, in one sitting:
 The receivable panel that used to explain its own emptiness now carries the real figures, and
 step 12's invoice linkage is visible rather than described.
 
-#### The one gap the walk found: nothing clicks the invoice route
-`POST /transport/trips/{id}/bill/invoiced` exists and works — the row above went through it — but
-**no control anywhere in the UI calls it.** `BillingPanel.jsx` has exactly one button (*Prepare
-billing*), and `transportApi.js` has no method for the endpoint. The trip above reached **Billed**
-because the walk posted to the route by hand.
+#### ~~The one gap the walk found: nothing clicks the invoice route~~ **CLOSED 21 Sep**
+The 19 September walk reached *Billed* only by posting to the route by hand: the endpoint existed
+and **no control in the UI called it**, so a demonstration could not get past *Billable* by
+clicking. That was written up rather than built here, because the panel is Person 3's.
 
-So the demonstration currently cannot get past *Billable* by clicking alone. The route is finance's
-and the panel is Person 3's, so the control is theirs to add; it is written up in
-`NOTE-person3-d106-landed-and-the-button-is-missing.md` rather than built here.
+**Person 3 shipped the button on 21 September** (`345afcfe`) — `BillingPanel` gained *Record
+invoice* with an invoice-number field, `transportApi.js` gained `markInvoiced()`, and the control
+gates on `transport.billing.invoiced`, which is deliberately **narrower than prepare**: Operations
+may mark a trip ready to invoice and may not declare that it *was* invoiced.
+
+Re-walked the same day on `TRP-2026-000035`, and for the first time in the project **a trip
+completed its own lifecycle by clicking**:
+
+| Click | Result on screen |
+|---|---|
+| Verify (POD) | **POD verified** |
+| Mark ready to invoice | **Ready to invoice** · ₹41,200.00 |
+| Type `90211` → **Record invoice** | **Invoiced** · *Handed to Accounts* |
+| Open receivable | Outstanding ₹41,200.00 |
+| Record a receipt → ₹41,200, `UTR-2026-88431` | **Settled**, outstanding ₹0.00 |
+| Close this trip | **refused** — see below |
+| *(resolve the exception)* → Close this trip | **Closed** |
+
+Step 12 is demonstrable by clicking. `trip_bills` carries `status=invoiced`, `invoice_id=90211`.
 
 #### The walk also proved the closure controls
 All five were read on screen at `collection_pending`, and two had been claiming they could not run:
@@ -230,6 +245,18 @@ exception register landed on 18 September, which meant **TRP-P0-014 — no silen
 unresolved critical exceptions — was not being enforced while the screen said the check could not
 run.** It now blocks on an open critical exception and says which one. Supplier settlement is the
 only control left that cannot be checked, and re-checking it confirmed the reason still holds.
+
+**And on 21 September it refused a real close, which is better evidence than any test.** The walk
+above pressed *Close this trip* on a trip that was delivered, POD-verified, invoiced and paid in
+full, and was told:
+
+> **Open exceptions — Outstanding.** 1 critical exception is still open on this trip.
+> TRP-P0-014 — no silent closure with unresolved critical exceptions.
+
+`EXC-2026-000003`, raised on 19 September, critical, open. The trip stayed at *Collection pending*.
+Resolving it through the panel — acknowledge, then resolve with a note — turned the control to
+**Passed**, and the close then went through. A guard that has refused a close nobody intended it to
+refuse is a guard that is working.
 
 ### 13 · Native CIA / management exception — NOT BUILT
 No control-room or intelligence screen exists in the Transport navigation. API-012

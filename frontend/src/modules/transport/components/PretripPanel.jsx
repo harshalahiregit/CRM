@@ -258,7 +258,7 @@ export default function PretripPanel({ trip, canPerform, onChanged }) {
         <Chip cfg={pretripReadinessCfg(status)} />
         {checks.length > 0 && (
           <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
-            {readiness.completed} of {readiness.total} confirmed
+            {readiness.completed} of {readiness.total} checks confirmed
           </span>
         )}
       </div>

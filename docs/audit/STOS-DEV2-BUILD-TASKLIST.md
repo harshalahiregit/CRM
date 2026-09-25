@@ -77,9 +77,9 @@ billing, QC/CAPA (Dev 3), and the people directory (the CRM already owns personh
 | Ownership type | Dropdown: `OWNED`, `FINANCED`, `LEASED`, `CONTRACTED`, `ATTACHED` | 🟡 `FINANCED` and `CONTRACTED` missing; extra `market` — see T-03 |
 | Chassis number | `VARCHAR(100)`, optional, unique per company when present | 🟡 column is `VARCHAR(50)` |
 | Engine number | `VARCHAR(100)`, optional | 🟡 column is `VARCHAR(50)` |
-| **Capacity / payload** | `DECIMAL(8,2)`, tons | ⬜ **column does not exist** — T-01 |
+| **Capacity / payload** | `DECIMAL(8,2)`, tons | ✅ column, form field, passport, **and matched against the order** (PLN-001) — T-01 |
 | GPS device id | `VARCHAR(100)`, unique per company — one device reports for one vehicle | 🟡 column is `VARCHAR(64)` |
-| **Genset serial number** | `VARCHAR(50)`, shown only when type = REEFER | ⬜ table exists, no form field and no endpoint — T-05 |
+| **Genset serial number** | `VARCHAR(50)`, shown only when type = REEFER | ✅ **derived, not stored** — T-05. `gensets` is the master and carries `vehicle_id`; the passport returns the fitted unit with its serial. A `vehicles.genset_serial` column would be a second copy of one fact, which golden rule 3 forbids. |
 | `registration_expiry` | Date | ✅ |
 | `insurance_expiry` | Date | ✅ |
 | `fitness_expiry` | Date | ✅ |
@@ -150,7 +150,7 @@ answer — T-07.
 - [x] **T-09** Replayed buffers (a unit leaving a tunnel) are kept in history but never drag the live row backwards
 - [x] **T-10** Excursion rule — genset OFF ∧ speed > 0 ∧ temp > −18 °C → `telemetry.temperature_excursion.detected`
 - [x] **T-11** `GET /v1/fleet/vehicles/{id}/live-status` with three-state GPS health (`active` / `degraded` / `offline`)
-- [ ] **T-06** Align `generator_status` values with the spec, or document the mapping in `STOS-API`
+- [x] **T-06** Both, and that was the point. Stored UPPERCASE per 12.S11 (which STOS-API already spelled that way), but NOT collapsed to `ON/OFF/UNKNOWN` — a genset in FAULT is not one somebody switched OFF. Devices keep sending lowercase and `normaliseGeneratorState()` maps at the boundary; `UNKNOWN` → null, never OFF. **Fixed a misreport:** a FAULTED genset was publishing `genset.on` to the timeline, so a unit that had failed read as running.
 - [x] **T-07** Per-device tokens — issue / rotate / revoke, SHA-256 hashed, plaintext shown once, `stos_dev_` prefix so a leaked one is identifiable on sight. **It also fixes the 409:** a token carries its company, so a device id held by two companies now resolves instead of being refused. The fleet-wide secret still works and is deprecated; the listing names every unit still relying on it, which is the migration checklist. Rotation issues before revoking, so re-flashing a unit is not an outage · *DeviceTokenTest*
 - [x] **T-12** Ingest is idempotent. **Decision taken: dedupe on write**, enforced by a unique index on `(company_id, device_id, recorded_at)` — one device has one clock, so the same instant is the same reading. Keep-all-and-dedupe-on-read was rejected because it makes every future consumer of the trail responsible for de-duplicating forever, and the first one that forgets double-counts a journey. A retry is answered 201 with `duplicate: true`, never 409: a device told 409 by a retry it could not avoid either retries forever or drops its buffer · *TelemetryIdempotencyAndBatchTest*
 - [x] **T-13** Batch ingest — `POST /v1/telemetry/ingest/batch`, up to 500 readings. Sorted by the device's own clock before writing, because the live row only moves forward; and one bad reading is rejected on its own line rather than failing the batch, because a device cannot resend just the good ones · *TelemetryIdempotencyAndBatchTest*
@@ -195,9 +195,9 @@ answer — T-07.
 - [x] **T-14** Fuel entry, odometer guard, variance flag, receipt upload · *FleetOperationsTest*
 - [x] **T-15** `fuel.emergency_issued` published on an emergency fill
 - [x] **T-16** `GET /v1/fleet/fuel/exceptions` — the variance and emergency register
-- [ ] **T-17** Report **L/KM** as the spec defines it (`litres ÷ km`) beside the stored km/l. Both are the same fact inverted, but the spec's figure is the one people quote — expose it explicitly rather than making a reader invert it
+- [x] **T-17** `litres_per_km` appended to every fill — DERIVED, never stored, because it is `1 ÷ efficiency_kmpl` exactly and a column would be a second copy of one fact. Four decimals, since 3.5 km/l is 0.2857 L/km and two would round three different trucks to 0.29.
 - [ ] **T-18** ⚠️ `recovery_status` vocabulary: spec `NOT_REVIEWED / BILLABLE / NON_BILLABLE / BILLED` vs built `not_applicable / pending / billable / recovered / waived`. **`BILLED` is Dev 3's to set** — agree who owns the transition before renaming
-- [ ] **T-19** Per-vehicle fuel benchmark overriding the per-type default in `config/stos.php`
+- [x] **T-19** `vehicles.benchmark_kmpl`, nullable — null means *nobody has measured this truck*, which is a different fact from a bad figure, so zero is refused. The variance note now names WHOSE benchmark was missed (“this vehicle's” vs “the reefer”), because a driver disputing a flag needs to know which.
 
 ---
 
@@ -286,9 +286,9 @@ answer — T-07.
 
 - [x] **T-34** `tyre_fitments` as a **chain** — fitting opens a row, removing closes it, so a casing's distance survives being moved between trucks · *FleetContractsAndAssetsTest*
 - [x] **T-35** Fitting a casing already on another vehicle moves it; fitting over an occupied position removes the incumbent; a casing at or below 1.6 mm is flagged
-- [ ] **T-36** `tyre_masters` (serial, brand, size, purchase cost, status `IN_STOCK/FITTED/RETREADED/SCRAPPED`) with fitments pointing at it — gives cost-per-km per casing and a stock list
-- [ ] **T-37** Rotation action (swap two fitted positions in one operation) and a retread cycle count
-- [ ] **T-38** Tread-wear forecast: mm lost per 10,000 km, projecting the replacement date
+- [x] **T-36** `tyre_masters` + `tyre_fitments.tyre_master_id`, backfilled from the existing serial strings with nothing lost. Cost-per-km spans every truck a casing has been on AND every retread — a casing on its third life has been paid for three times. Distance is DERIVED from the fitments, never cached. Fitting an unregistered casing registers it rather than refusing a yard at six in the morning. **Fitments can now point at a trailer as well as a vehicle** (T-54 made trailers real and they wear tyres; the old `trailer_1` position recorded *some* trailer, not which one).
+- [x] **T-37** `POST /tyres/rotate` closes and reopens both fitments in ONE transaction at ONE odometer. Recording it as four separate acts would write two rows that are lies — the casings never went to the rack — and cost-per-km would count a swap as a new fitting. Tread is carried across, because a tyre does not grow tread by changing axle. Retread increments the count and adds its cost.
+- [x] **T-38** mm per 10,000 km from two measurements and the distance between them — deliberately checkable on a clipboard, because a projection nobody can verify is one nobody acts on. Thin evidence is NAMED (`one_measurement`, `no_scrap_depth_set`, `at_or_below_floor`, `beyond_horizon`) rather than guessed, and the projection is capped at 200,000 km: extrapolating 800,000 km from two readings a fortnight apart is arithmetic, not a forecast.
 
 ---
 
@@ -310,9 +310,9 @@ stale. The overlay holds a reference (`crm_tpv_worker:17`) plus what only Transp
 
 - [x] **T-39** Directory adapter: 40 workers added under a vendor in the CRM appear in Transport with nobody re-entering them · *DriverDirectoryTest*
 - [x] **T-40** Licence verdict drives allocation scoring and flags · *DriverAllocationLinkTest*
-- [ ] **T-41** Add `medical_expiry`, judge it exactly like the licence, and surface it on the driver card and the compliance tab
-- [ ] **T-42** Rename `inactive` → `ON_LEAVE` (or add both; "on leave" and "no longer with us" are different facts)
-- [ ] **T-43** Driver documents: licence scan upload on the private disk, like the fuel receipt
+- [x] **T-41** `medical_expiry` added and judged by the same date arithmetic as the licence, on the driver card and the drivers board. A VERIFIED `medical_certificate` now projects onto it (completes T-43's second gate). **Expired blocks; MISSING only warns** — the column arrives with every driver blank, so blocking on unknown would ground the fleet the day it ships. Making unknown a blocker once certificates are loaded is one line, and the owner's call.
+- [x] **T-42** Both added, not renamed — they are different facts. Existing `inactive` rows stay INACTIVE because that is what was recorded. `driver_profiles.status` went UPPERCASE with them (the last lowercase enum in the module), and ON_TRIP is now refused from the profile form because dispatch owns it.
+- [x] **T-43** Driver documents — filed through STOS-DOC's service at `/v1/fleet/drivers/{source}/{person}/documents`, with a VERIFIED `driving_license` projected onto `licence_expiry`. An upload does not clear a driver. Medical is filed but gates nothing until T-41 adds the column. **Unblocks P1's driver-controller deletion.**
 
 ---
 
@@ -387,11 +387,11 @@ fires from a **model observer**, so no future code path can change availability 
 - [ ] **T-50** 🟡 Frontend, the four screens the tasks above imply. **Urea modal — done** (T-23). **Genset management — done** (T-05: passport panel + onboarding field). Still missing: FASTag register (T-27), tyre master screen (T-36).
 - [x] **T-51** — **RULED 2026-09-19 (spec 12.S11): two casings, on purpose.** Database enums and state-machine states are UPPERCASE; API blocker codes and machine reasons are lowercase snake_case. Fleet's advisory flags and blocker codes were uppercase and are now lowercase (`service_overdue`, `driver_license_expired`). A state is what a thing *is*; a machine reason is what a response *says about* it
 - [ ] **T-53** Expiry dates become a **projection**, not a master. `STOS-DOC` verification → `STOS-CMP` → Fleet's five date columns, so verifying a renewal clears the dispatch block with no manual re-entry; then hand-editing dates is prohibited. **Sequencing matters:** removing the manual input before the projection runs leaves no way to record a compliance date at all · *needs Dev 3's verify workflow live*
-- [ ] **T-54** `trailers` as their own master with `vehicle_trailer_assignments` dynamic coupling — a trailer is NOT a `vehicles` row. Own compliance profile, tyre set and maintenance record; coupling preserved historically
+- [x] **T-54** `trailers` + `vehicle_trailer_assignments`, with the rail entry, the register, coupling and history. **Four dated papers, not five — no PUC**, because a trailer has no engine and a sweep demanding one would ground a legal trailer for a certificate it cannot obtain (asserted by a test, not a comment). Coupling is an EVENT with a start and an end, never a column: “which trailer was under that truck on the 14th” is the question it exists to answer. One active coupling per trailer and per tractor, held by unique indexes on stored generated columns. **A lapsed trailer now blocks the tractor it is under, and the blocker names the trailer.** · *tyre set and maintenance record still to come*
 - [ ] 🛑 **T-55** Route / Movement Anomaly exception — **PARKED**: needs real pings to detect movement · *was:* Route / Movement Anomaly exception — a vehicle moving under power while not ALLOCATED or I…
 - [x] **T-56** Vehicle asset status transitions — `PATCH /v1/fleet/vehicles/{id}/status`, absorbed from Dev 1's retiring endpoint. Accepts only `AVAILABLE`, `IDLE`, `RETIRED`; every refusal names the desk that can clear it rather than just saying no. Retiring routes through the existing guarded `retire()` so it is not a second, weaker implementation. Input is canonicalised before validation, so the door and the service cannot disagree about a spelling · *VehicleStatusTransitionTest*
 - [x] **T-57** Vehicle documents — file / renew / list, written **through** STOS-DOC's service so versioning and audit stay Person 3's. The owner approved `rc`, `puc`, `tax` + six driver types, which fixes the ambiguity that made RC and PUC unfilable as themselves. **An upload never moves the dispatch gate** — only a VERIFIED document projects onto the vehicle's date, and an older certificate verified late cannot pull a date backwards · *VehicleDocumentTest*
-- [ ] **T-58** Genset, tyre and job-card statuses to UPPERCASE — they are database enums, so the ruled standard applies
+- [x] **T-58** Genset, tyre and job-card statuses to UPPERCASE — database enums, so spec 12.S11 applies. Migration `2027_01_10_000001` converts the rows and the defaults; the three vocabularies are named constants now. **Found a live bug doing it:** `GensetService::fit()` compared a vehicle against `'retired'` while `vehicles.status` has held `RETIRED` since January, so that guard had never once fired — a genset could be fitted to a scrapped truck. Also deleted `FleetService::OPEN_JOB_STATES`, a second definition of “open job” missing TESTING and QC.
 
 - [x] **T-52** ~~`BannedPatternsTest` fails on `TpvVendorDetail.jsx`~~ — **no longer true.** Full backend suite verified green on 2026-09-17: **4,641 passing, 0 failures, 3 skipped.** The uncommitted refactor that caused it was committed in the meantime.
 

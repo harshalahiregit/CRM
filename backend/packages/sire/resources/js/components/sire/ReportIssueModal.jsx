@@ -16,7 +16,7 @@
  * convention.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { sireHostUi, sireHostToast } from '../../lib/sire/host';
+import { sireHostUi, sireHostToast, sireHostNavigate } from '../../lib/sire/host';
 import { useSireReporting } from '../../context/SireContextProvider';
 import { SireContextCollector } from '../../lib/sire/collector';
 import { captureScreen, canCaptureScreen, validateScreenshotFile } from '../../lib/sire/screenshot';
@@ -29,6 +29,7 @@ import { sireApi } from '../../services/sireApi';
 const Modal = sireHostUi('Modal');
 const AsyncButton = sireHostUi('AsyncButton');
 const useToast = sireHostToast();
+const navigateTo = sireHostNavigate();
 
 /**
  * A ceiling, not a target. Each image is an upload of its own and the production
@@ -62,6 +63,17 @@ export default function ReportIssueModal() {
   // it blocks them; a lead triaging a queue is guessing. Pre-filled with the
   // middle of each scale so every issue arrives with a stated urgency, and
   // every one of these stays OPTIONAL -- D45, and there is a build check.
+  /**
+   * What the reporter is shown once the issue is filed.
+   *
+   * This used to be a toast: the SIR- number appeared for a few seconds and the
+   * modal closed itself. People could not write the number down in time and had
+   * no idea where the issue had gone, so the same bug got reported twice
+   * (SIR-000005). The receipt replaces the form in place and stays until it is
+   * dismissed by hand.
+   */
+  const [receipt, setReceipt] = useState(null);
+
   const [options, setOptions] = useState(null);
   const [categoryId, setCategoryId] = useState('');
   const [severityId, setSeverityId] = useState('');
@@ -80,6 +92,8 @@ export default function ReportIssueModal() {
     setCategoryId(modal.seed?.categoryId ?? '');
     setSeverityId(modal.seed?.severityId ?? '');
     setPriority(modal.seed?.priority ?? '');
+    // A previous receipt must never greet the next report.
+    setReceipt(null);
   }, [modal.open, modal.seed, explicitContext]);
 
   /**
@@ -224,27 +238,19 @@ export default function ReportIssueModal() {
 
       // The issue is filed either way. A failed upload is worth saying out loud
       // but must never read as though the report itself was lost.
-      if (failed) {
-        toast?.error?.(
-          `Issue reported${report?.report_number ? ` (${report.report_number})` : ''}, `
-          + `but ${failed} of ${files.length} image(s) could not be attached.`,
-        );
-      } else {
-        toast?.success?.(
-          report?.report_number
-            ? `${report.report_number} raised — your issue is logged.`
-            : 'Issue reported.',
-        );
-      }
-
-      closeReportIssue();
+      setReceipt({
+        number: report?.report_number || null,
+        id: report?.id || null,
+        failed,
+        attempted: files.length,
+      });
     } catch (err) {
       // 403 is passed through by lib/api.js and must be shown, not swallowed.
       toast?.error?.(err?.response?.data?.message || 'Could not report this issue. Please try again.');
       throw err; // let AsyncButton clear its pending state
     }
   }, [canSubmit, title, description, context, files, categoryId, severityId, priority,
-      toast, closeReportIssue]);
+      toast]);
 
   const shortcutHint = useMemo(
     () => (typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform || '') ? '⌥⇧R' : 'Alt+Shift+R'),
@@ -252,6 +258,97 @@ export default function ReportIssueModal() {
   );
 
   if (!modal.open) return null;
+
+  /*
+   * Filed. The form is gone and this stays put until it is dismissed.
+   *
+   * It answers the three things somebody wants the moment they report a bug:
+   * what its number is, that it was actually received, and where to go to see
+   * what happens to it next.
+   */
+  if (receipt) {
+    return (
+      <Modal open onClose={closeReportIssue} title="Issue reported" className="sire-report-modal">
+        <div className="space-y-4">
+          <div className="rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-900 dark:bg-green-950/40">
+            <p className="text-sm font-medium text-green-900 dark:text-green-200">
+              Your issue has been logged with the engineering team.
+            </p>
+            {receipt.number && (
+              <div className="mt-3">
+                <span className="block text-[11px] font-medium uppercase tracking-wide text-green-700 dark:text-green-400">
+                  Reference number
+                </span>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <code className="rounded-md border border-green-300 bg-white px-2.5 py-1 text-base font-semibold tracking-wide text-green-900 dark:border-green-800 dark:bg-gray-900 dark:text-green-200">
+                    {receipt.number}
+                  </code>
+                  {/* Quote it in a follow-up and nobody has to search by description. */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard?.writeText?.(receipt.number);
+                      toast?.success?.('Reference number copied.');
+                    }}
+                    className="rounded-md border border-green-300 px-2 py-1 text-xs font-medium text-green-800 hover:bg-green-100 dark:border-green-800 dark:text-green-200 dark:hover:bg-green-900/40"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Said plainly rather than left for the reporter to work out. */}
+          <div className="rounded-lg border border-gray-200 p-4 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-300">
+            <p className="mb-1 font-medium text-gray-900 dark:text-gray-100">
+              How to check its status
+            </p>
+            <p className="leading-relaxed">
+              Open <strong>Issues &amp; Quality → My Work</strong> from the sidebar
+              {receipt.number ? <> and look for <strong>{receipt.number}</strong></> : null}.
+              It shows where the issue has reached — triaged, assigned, in progress or released —
+              and anything the engineering team asks you.
+            </p>
+          </div>
+
+          {/* The report itself is safe; only the pictures failed. Say which. */}
+          {receipt.failed > 0 && (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+              The issue was filed, but {receipt.failed} of {receipt.attempted} image(s) could not be
+              attached. You can add them from the issue page.
+            </p>
+          )}
+
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-gray-200 pt-3 dark:border-gray-700">
+            <button
+              type="button"
+              className="px-3 py-2 text-sm text-gray-500"
+              onClick={closeReportIssue}
+            >
+              Close
+            </button>
+            <button
+              type="button"
+              onClick={() => { closeReportIssue(); navigateTo('/app/sire/my-work'); }}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800"
+            >
+              View my issues
+            </button>
+            {receipt.id && (
+              <button
+                type="button"
+                onClick={() => { closeReportIssue(); navigateTo(`/app/sire/cases/${receipt.id}`); }}
+                className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
+              >
+                Open this issue
+              </button>
+            )}
+          </div>
+        </div>
+      </Modal>
+    );
+  }
 
   return (
     <Modal open={modal.open} onClose={closeReportIssue} title="Report an issue" className="sire-report-modal">

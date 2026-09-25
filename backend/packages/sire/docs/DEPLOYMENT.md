@@ -93,7 +93,7 @@ php artisan sire:export-workflow
 ## 4. Cache
 
 Follow the existing deploy's cache steps. If none are documented, this is the
-minimum — and **`route:clear` is not optional**, because SIRE adds 84 routes:
+minimum — and **`route:clear` is not optional**, because SIRE adds 85 routes:
 
 ```bash
 php artisan route:clear
@@ -150,6 +150,50 @@ php artisan schedule:list
 ```
 
 ---
+
+## 6b. Closing issues on deploy (optional)
+
+`sire:close-from-commits` closes an issue when the commit that fixes it **reaches
+production** — not when it is written, not when it is merged. "Fixed" and "fixed
+for the people who reported it" are different days, and a register that conflates
+them tells everyone the backlog is cleaner than it is.
+
+A commit claims a fix by naming the issue with a closing verb:
+
+```
+fix: guard the null customer on the invoice builder (fixes SIR-000013)
+```
+
+`see SIR-000013` or `same root cause as SIR-000014` close nothing. People
+reference issue numbers constantly while discussing them, and a register that
+closes on a mention is worse than one that closes on nothing.
+
+### Where it has to run
+
+The deploy rsyncs with `--exclude='.git/'`, so **production has no git history**
+and can never work this out for itself. Run it from the machine doing the
+deploying, against the live database, using the commit already on the server as
+the starting point:
+
+```bash
+PREVIOUS="$(ssh "$SSH_TARGET" "cat $REMOTE/build-id.txt")"
+
+php artisan sire:close-from-commits   --since="$PREVIOUS" --tenant=1 --user=<id> --apply
+```
+
+Without `--apply` it prints what it would close and changes nothing. Without
+`--tenant` and `--user` it refuses to run at all: closing an issue is an act and
+the audit trail has to name who performed it, so there is no default actor to
+fall back on.
+
+Every issue still runs the same capability check, the same guard and the same
+required fields as the button, in its own transaction, audited on its own.
+
+### The manual alternative
+
+Developers who would rather not rely on commit discipline can tick the boxes in
+an exported brief and upload the file on the issue register — same result, same
+guards, and it previews before it closes anything. See `docs/EXPORT.md`.
 
 ## 7. Smoke tests
 

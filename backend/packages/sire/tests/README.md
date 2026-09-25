@@ -8,7 +8,7 @@ proves things that would be expensive to discover in production.
 node --test tests/*.test.mjs      # from the package root
 ```
 
-**407 checks across 28 suites. No database, no browser, no framework, no
+**417 checks across 31 suites. No database, no browser, no framework, no
 `npm install`.** They read the source in `` and `resources/js/` directly, so
 they work from this ZIP as-is.
 
@@ -37,6 +37,7 @@ working directory.
 | `routes-resolve` | Every route points at a controller method that exists, no verb+path is registered twice, and all routes sit in **one** middleware group. Caught a route naming a method that had never been written. |
 | `frontend-imports` | Every relative import resolves; SIRE depends on exactly nine host frontend files; no page is unrouted and no link is dangling. |
 | `route-map-sync` | The generated PHP route map matches its JavaScript source — two copies of 70 routes would drift silently. |
+| `client-copy-parity` | **The shipped client files and the running ones are the same file.** SIRE is a copy-install package, so every client file exists twice; the app runs the host copy, which means it is the *package* that rots, silently, until it is installed somewhere else. Caught a whole feature — the brief upload — written into one copy and not the other. |
 | `api-docs-sync` · `docs-consistency` | The API reference matches the routes; the schema doc matches the migrations; the AI catalogue matches the code; no document names a class or file that does not exist. |
 
 ## Executable specifications

@@ -140,7 +140,7 @@ export default function MeetingRegisters() {
           const on = key === tab
           const TIcon = t.icon
           return (
-            <button key={key} onClick={() => navigate(`${mod.base}/meetings/registers/${key}`)}
+            <button key={key} onClick={() => navigate(mod.registersPath(key))}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 14px', borderRadius: 10,
                 fontSize: 12.5, fontWeight: 700, cursor: 'pointer',

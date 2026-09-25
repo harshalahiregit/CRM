@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { HardHat, Gavel, HelpCircle, ShieldCheck, FileSignature } from 'lucide-react'
+import { HardHat, Gavel, HelpCircle, ShieldCheck, FileSignature, ListChecks } from 'lucide-react'
 import { purchasePortalApi } from '@/services/purchasePortalApi'
 import { purchaseVendorAuthApi } from '@/services/purchaseVendorAuthApi'
 import PortalShell from '@/pages/vendor-portal/PortalShell'
@@ -75,6 +75,10 @@ export default function PurchasePortalShell() {
             // section's Contracts view, which serves purchase_contracts — that
             // feature has live rows and is left exactly as it was.
             { key: 'agreements', label: 'Agreements',      icon: FileSignature, to: 'agreements' },
+            // Tasks assigned by name to this vendor's own contacts. There is no
+            // per-contact login on this portal — the vendor signs in as the
+            // company — so it is the team's work, each row naming whose it is.
+            { key: 'tasks',      label: 'Team Tasks',      icon: ListChecks, to: 'tasks' },
             { key: 'approval',   label: 'Approval Status', icon: ShieldCheck, to: 'approval' },
             { key: 'support',    label: 'Support',         icon: HelpCircle,  to: 'support' },
           ],

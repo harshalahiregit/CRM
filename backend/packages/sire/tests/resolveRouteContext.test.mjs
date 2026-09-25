@@ -94,10 +94,26 @@ test('wildcard pattern matches any depth below it', () => {
   assert.equal(b.source, 'route');
 });
 
-test('unmapped route inside a known module degrades to module-prefix, low confidence', () => {
+test('unmapped route under a mapped parent inherits it, still flagged for correction', () => {
+  // This used to assert module-only detection, because the package copy of the
+  // resolver had never received the prefix pass the host had been running for
+  // months. Inheriting the parent is the better answer: an unmapped screen
+  // under '/app/sales' is still a Sales screen.
   const r = resolveRouteContext('/app/sales/some-brand-new-screen');
   assert.equal(r.module, 'sales');
   assert.equal(r.moduleLabel, 'Sales');
+  assert.equal(r.section, 'overview');
+  assert.equal(r.screen, 'overview-some-brand-new-screen');
+  // Derived, not mapped -- so the modal still offers "Not right? Correct it".
+  assert.equal(r.confidence, 'medium');
+  assert.equal(r.source, 'route-prefix');
+});
+
+test('a known module with no mapped parent still degrades to module-prefix', () => {
+  // The last line of defence before giving up entirely: the module name is in
+  // the URL, so it is still worth reporting even with nothing else known.
+  const r = resolveRouteContext('/app/shared/some-brand-new-screen');
+  assert.equal(r.module, 'shared');
   assert.equal(r.section, null);
   assert.equal(r.screen, null);
   assert.equal(r.confidence, 'low');

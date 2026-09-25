@@ -102,12 +102,66 @@ export const stosApi = {
       api.patch(`/v1/fleet/documents/${documentId}/verify`, { verdict, reason }).then(unwrap).catch(handleErr),
   },
 
+  /**
+   * A driver's paperwork (T-43).
+   *
+   * Addressed by `{source}/{person}` like the rest of the drivers board — Fleet
+   * holds no names, so the person is the directory entry and the profile hangs
+   * off it. Verification is by document id on its own path, because the verdict
+   * is about the evidence and not about whose it is.
+   */
+  driverDocuments: {
+    forDriver: (source, personId) =>
+      api.get(`/v1/fleet/drivers/${source}/${personId}/documents`).then(unwrap).catch(handleErr),
+
+    file: (source, personId, form) => {
+      const body = new FormData()
+      Object.entries(form).forEach(([k, v]) => { if (v !== null && v !== undefined && v !== '') body.append(k, v) })
+
+      return api.post(`/v1/fleet/drivers/${source}/${personId}/documents`, body, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }).then(unwrap).catch(handleErr)
+    },
+
+    renew: (source, personId, documentId, form) => {
+      const body = new FormData()
+      Object.entries(form).forEach(([k, v]) => { if (v !== null && v !== undefined && v !== '') body.append(k, v) })
+
+      return api.post(`/v1/fleet/drivers/${source}/${personId}/documents/${documentId}/renew`, body, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }).then(unwrap).catch(handleErr)
+    },
+
+    verify: (documentId, verdict, reason = null) =>
+      api.patch(`/v1/fleet/driver-documents/${documentId}/verify`, { verdict, reason }).then(unwrap).catch(handleErr),
+  },
+
   gensets: {
     register: (params = {}) => api.get('/v1/fleet/gensets', { params }).then(unwrap).catch(handleErr),
     create:   (data) => api.post('/v1/fleet/gensets', data).then(unwrap).catch(handleErr),
     update:   (id, data) => api.put(`/v1/fleet/gensets/${id}`, data).then(unwrap).catch(handleErr),
     fit:      (id, vehicleId) => api.post(`/v1/fleet/gensets/${id}/fit`, { vehicle_id: vehicleId }).then(unwrap).catch(handleErr),
     unfit:    (id) => api.post(`/v1/fleet/gensets/${id}/unfit`).then(unwrap).catch(handleErr),
+  },
+
+  /**
+   * Trailers and the coupling between (T-54).
+   *
+   * A trailer is its own master, not a `vehicle_type` — no engine, so no fuel,
+   * no telemetry and no PUC. `history` is an endpoint rather than a field
+   * because "which trailer was under that truck on the 14th" is the question
+   * the whole feature exists to answer.
+   */
+  trailers: {
+    list:     (params = {}) => api.get('/v1/fleet/trailers', { params }).then(unwrap).catch(handleErr),
+    create:   (data) => api.post('/v1/fleet/trailers', data).then(unwrap).catch(handleErr),
+    update:   (id, data) => api.put(`/v1/fleet/trailers/${id}`, data).then(unwrap).catch(handleErr),
+    compliance: (id) => api.get(`/v1/fleet/trailers/${id}/compliance`).then(unwrap).catch(handleErr),
+    couple:   (id, vehicleId, reason = null) =>
+      api.post(`/v1/fleet/trailers/${id}/couple`, { vehicle_id: vehicleId, reason }).then(unwrap).catch(handleErr),
+    uncouple: (id, reason = null) =>
+      api.post(`/v1/fleet/trailers/${id}/uncouple`, { reason }).then(unwrap).catch(handleErr),
+    history:  (params = {}) => api.get('/v1/fleet/trailers/history', { params }).then(unwrap).catch(handleErr),
   },
 
   urea: {
@@ -218,12 +272,82 @@ export const LICENCE_CLASSES = [
   { value: 'OTHER', label: 'Other' },
 ]
 
-export const DRIVER_STATUSES = [
-  { value: 'available', label: 'Available' },
-  { value: 'on_trip',   label: 'On trip' },
-  { value: 'suspended', label: 'Suspended' },
-  { value: 'inactive',  label: 'Inactive' },
+/**
+ * Mirrors `DriverProfile::STATUSES` — UPPERCASE since T-42, when the last
+ * lowercase enum in the module was converted.
+ *
+ * ON_LEAVE and INACTIVE are separate on purpose: "away until the 14th" and "no
+ * longer works here" are different facts, and a roster that merges them either
+ * chases somebody who left or writes off somebody who is back on Monday.
+ */
+/**
+ * Mirrors `VehicleLiveStatus::GENERATOR_STATES` — UPPERCASE since T-06.
+ *
+ * Richer than STOS-API's `ON | OFF | UNKNOWN` on purpose: a genset in FAULT is
+ * not one somebody switched OFF, and the person fixing it needs to know which.
+ * UNKNOWN arrives as null — "the device did not say" is its own state.
+ */
+export const GENSET_STATE_LABELS = {
+  OFF: 'Off', ON: 'Running', STANDBY: 'On standby power', FAULT: 'Faulted',
+}
+
+/** States in which the genset is NOT cooling the load. */
+export const GENSET_NOT_COOLING = ['OFF', 'FAULT']
+
+/** Mirrors `Trailer::TYPES`. */
+export const TRAILER_TYPES = [
+  { value: 'flatbed',  label: 'Flatbed' },
+  { value: 'skeletal', label: 'Container skeletal' },
+  { value: 'tipper',   label: 'Tipper' },
+  { value: 'tanker',   label: 'Tanker' },
+  { value: 'reefer',   label: 'Reefer' },
+  { value: 'curtain',  label: 'Curtain side' },
+  { value: 'lowbed',   label: 'Low bed' },
+  { value: 'other',    label: 'Other' },
 ]
+
+export const TRAILER_TYPE_LABELS = Object.fromEntries(TRAILER_TYPES.map((t) => [t.value, t.label]))
+
+/**
+ * Mirrors `Trailer::STATUSES`. Only three are offered: COUPLED is written by
+ * coupling and COMPLIANCE_BLOCKED is derived from the document dates, so a box
+ * offering either would be one that always errors.
+ */
+export const TRAILER_STATUS_LABELS = {
+  AVAILABLE: 'In the yard',
+  COUPLED: 'Coupled',
+  UNDER_MAINTENANCE: 'Under repair',
+  COMPLIANCE_BLOCKED: 'Papers lapsed',
+  RETIRED: 'Retired',
+}
+
+export const SETTABLE_TRAILER_STATUSES = [
+  { value: 'AVAILABLE', label: 'In the yard' },
+  { value: 'UNDER_MAINTENANCE', label: 'Under repair' },
+  { value: 'RETIRED', label: 'Retired' },
+]
+
+export const DRIVER_STATUSES = [
+  { value: 'AVAILABLE', label: 'Available' },
+  { value: 'ON_TRIP',   label: 'On trip', systemOnly: true },
+  { value: 'SUSPENDED', label: 'Suspended' },
+  { value: 'ON_LEAVE',  label: 'On leave' },
+  { value: 'INACTIVE',  label: 'No longer with us' },
+]
+
+/**
+ * What a person may choose.
+ *
+ * ON_TRIP is written by dispatch when a trip takes the driver and cleared when
+ * it releases them — the server refuses it here, so offering it would be a box
+ * that always errors.
+ */
+export const SETTABLE_DRIVER_STATUSES = DRIVER_STATUSES.filter((s) => !s.systemOnly)
+
+/** Label by value, so no screen has to un-snake_case a status by hand. */
+export const DRIVER_STATUS_LABELS = Object.fromEntries(
+  DRIVER_STATUSES.map((s) => [s.value, s.label])
+)
 
 export const TYRE_POSITIONS = [
   'front_left', 'front_right',
@@ -250,24 +374,30 @@ export const FUEL_TYPES = [
   { value: 'hybrid',   label: 'Hybrid' },
 ]
 
-/** Mirrors `Genset::STATUSES`. */
+/**
+ * Mirrors `Genset::STATUSES` — UPPERCASE since T-58.
+ *
+ * Database enums and state-machine states are UPPERCASE; API blocker codes and
+ * machine reasons are lowercase snake_case (spec 12.S11). These are the former,
+ * so the value is what the column holds and only the label is for reading.
+ */
 export const GENSET_STATUSES = [
-  { value: 'idle',           label: 'In the yard' },
-  { value: 'active',         label: 'In service' },
-  { value: 'in_maintenance', label: 'Under repair' },
-  { value: 'retired',        label: 'Retired' },
+  { value: 'IDLE',           label: 'In the yard' },
+  { value: 'ACTIVE',         label: 'In service' },
+  { value: 'IN_MAINTENANCE', label: 'Under repair' },
+  { value: 'RETIRED',        label: 'Retired' },
 ]
 
 export const JOB_STATUSES = [
-  { value: 'open',           label: 'Open',           open: true },
-  { value: 'in_progress',    label: 'In progress',    open: true },
-  { value: 'awaiting_parts', label: 'Awaiting parts', open: true },
+  { value: 'OPEN',           label: 'Open',           open: true },
+  { value: 'IN_PROGRESS',    label: 'In progress',    open: true },
+  { value: 'AWAITING_PARTS', label: 'Awaiting parts', open: true },
   // T-32 — the work is done but nobody has signed it off yet. This is exactly
   // the window in which a vehicle gets taken, so both still hold it.
-  { value: 'testing',        label: 'Road testing',   open: true },
-  { value: 'qc',             label: 'With QC',        open: true },
-  { value: 'completed',      label: 'Completed' },
-  { value: 'cancelled',      label: 'Cancelled' },
+  { value: 'TESTING',        label: 'Road testing',   open: true },
+  { value: 'QC',             label: 'With QC',        open: true },
+  { value: 'COMPLETED',      label: 'Completed' },
+  { value: 'CANCELLED',      label: 'Cancelled' },
 ]
 
 /**

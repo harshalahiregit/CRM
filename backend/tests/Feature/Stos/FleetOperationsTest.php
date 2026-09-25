@@ -84,7 +84,7 @@ class FleetOperationsTest extends TestCase
         $safety = $this->vehicle(['registration_number' => 'MH12AB0003']);
         MaintenanceJob::create([
             'company_id' => self::COMPANY, 'vehicle_id' => $safety->id,
-            'job_card_number' => 'JC-S1', 'status' => 'open', 'is_safety_critical' => true,
+            'job_card_number' => 'JC-S1', 'status' => 'OPEN', 'is_safety_critical' => true,
         ]);
 
         $data = $this->actingAs($this->user())
@@ -102,12 +102,119 @@ class FleetOperationsTest extends TestCase
         $this->assertNotEmpty($excluded['blockers'][0]['owner']);
     }
 
+    /* ── PLN-001: the order's payload ───────────────────────────── */
+
+    /*
+     * `vehicles.capacity_tonnes` and `transport_orders.required_capacity_tonnes`
+     * both existed and nothing compared them, so a 9-tonne load could be
+     * RECOMMENDED a 2-tonne van and the loading bay would be the first to know.
+     *
+     * Capacity is the one blocker that is not a fact about the truck: it is a
+     * fact about the truck AND this job. A small van is not "blocked" — it is
+     * wrong for this load and right for the next one. So it excludes from this
+     * answer and writes nothing on the row.
+     */
+
+    public function test_a_vehicle_too_small_for_the_load_is_excluded_with_the_numbers(): void
+    {
+        $big = $this->vehicle(['registration_number' => 'MH12BIG1', 'capacity_tonnes' => 25]);
+        $small = $this->vehicle(['registration_number' => 'MH12SML1', 'capacity_tonnes' => 2.5]);
+
+        $data = $this->actingAs($this->user())
+            ->getJson('/api/v1/fleet/vehicles/eligible?required_capacity_tonnes=9')
+            ->assertOk()->json('data');
+
+        $this->assertTrue(collect($data['eligible'])->pluck('id')->contains($big->id));
+
+        $excluded = collect($data['excluded'])->firstWhere('id', $small->id);
+        $this->assertNotNull($excluded, 'a van too small for the load must not be recommended');
+        $this->assertSame('below_required_capacity', $excluded['blockers'][0]['code']);
+
+        // The planner gets both numbers, not "not eligible".
+        $this->assertStringContainsString('2.5', $excluded['blockers'][0]['missing']);
+        $this->assertStringContainsString('9', $excluded['blockers'][0]['missing']);
+    }
+
+    public function test_exactly_enough_capacity_is_enough(): void
+    {
+        // The boundary, because "at least" and "more than" are one keystroke
+        // apart and a 9-tonne truck refusing a 9-tonne load is nonsense.
+        $exact = $this->vehicle(['registration_number' => 'MH12EXA1', 'capacity_tonnes' => 9]);
+
+        $data = $this->actingAs($this->user())
+            ->getJson('/api/v1/fleet/vehicles/eligible?required_capacity_tonnes=9')
+            ->assertOk()->json('data');
+
+        $this->assertTrue(collect($data['eligible'])->pluck('id')->contains($exact->id));
+    }
+
+    public function test_an_unmeasured_vehicle_is_flagged_rather_than_hidden(): void
+    {
+        // Most of the fleet predates the column being filled. Excluding every
+        // unmeasured truck would empty the list while looking like a considered
+        // verdict — so it stays, carrying the doubt.
+        $unknown = $this->vehicle(['registration_number' => 'MH12UNK1', 'capacity_tonnes' => null]);
+
+        $data = $this->actingAs($this->user())
+            ->getJson('/api/v1/fleet/vehicles/eligible?required_capacity_tonnes=9')
+            ->assertOk()->json('data');
+
+        $row = collect($data['eligible'])->firstWhere('id', $unknown->id);
+        $this->assertNotNull($row, 'a missing number must not take a working truck off the road');
+        $this->assertContains('capacity_unknown', $row['flags']);
+        $this->assertNull($row['capacity_tonnes']);
+    }
+
+    public function test_without_an_order_capacity_neither_blocks_nor_flags(): void
+    {
+        $small = $this->vehicle(['registration_number' => 'MH12SML2', 'capacity_tonnes' => 2.5]);
+        $unknown = $this->vehicle(['registration_number' => 'MH12UNK2', 'capacity_tonnes' => null]);
+
+        $data = $this->actingAs($this->user())
+            ->getJson('/api/v1/fleet/vehicles/eligible')->assertOk()->json('data');
+
+        $ids = collect($data['eligible'])->pluck('id');
+        $this->assertTrue($ids->contains($small->id));
+        $this->assertTrue($ids->contains($unknown->id));
+
+        // Nothing to compare against is not a doubt worth raising.
+        $row = collect($data['eligible'])->firstWhere('id', $unknown->id);
+        $this->assertNotContains('capacity_unknown', $row['flags']);
+    }
+
+    public function test_the_payload_is_shown_even_when_no_order_asked_for_it(): void
+    {
+        // A planner choosing between two trucks wants the number in front of
+        // them, and a null is the prompt to go and record it.
+        $v = $this->vehicle(['registration_number' => 'MH12CAP1', 'capacity_tonnes' => 25]);
+
+        $data = $this->actingAs($this->user())
+            ->getJson('/api/v1/fleet/vehicles/eligible')->assertOk()->json('data');
+
+        // JSON has no float/int distinction, so 25.0 arrives as 25. Compared as
+        // a number rather than asserting a type the wire cannot carry.
+        $row = collect($data['eligible'])->firstWhere('id', $v->id);
+        $this->assertSame(25.0, (float) $row['capacity_tonnes']);
+    }
+
+    public function test_a_zero_payload_is_refused_rather_than_meaning_everything(): void
+    {
+        $this->vehicle(['capacity_tonnes' => 2.5]);
+
+        // Zero would silently mean "every vehicle qualifies", which is what an
+        // empty box already means. Two spellings of one intent is how a filter
+        // stops being trusted.
+        $this->actingAs($this->user())
+            ->getJson('/api/v1/fleet/vehicles/eligible?required_capacity_tonnes=0')
+            ->assertStatus(422);
+    }
+
     public function test_a_non_safety_job_does_not_block_allocation(): void
     {
         $v = $this->vehicle();
         MaintenanceJob::create([
             'company_id' => self::COMPANY, 'vehicle_id' => $v->id,
-            'job_card_number' => 'JC-MINOR', 'status' => 'open', 'is_safety_critical' => false,
+            'job_card_number' => 'JC-MINOR', 'status' => 'OPEN', 'is_safety_critical' => false,
         ]);
 
         $data = $this->actingAs($this->user())
@@ -192,6 +299,77 @@ class FleetOperationsTest extends TestCase
         $this->assertSame('300.0', $second->json('data.km_driven'));
         $this->assertSame('3.00', $second->json('data.efficiency_kmpl'));
         $this->assertFalse($second->json('data.fuel_exception'));
+    }
+
+    /* ── T-17 / T-19: the spec's figure, and whose benchmark ────── */
+
+    public function test_litres_per_km_travels_beside_the_stored_km_per_litre(): void
+    {
+        // STOS-COST specifies litres ÷ km. A workshop and a driver quote km/l;
+        // the spec and anyone costing a route quote L/km, and making a reader
+        // invert a number in their head is how the wrong one reaches a quote.
+        $v = $this->vehicle(['vehicle_type' => 'reefer']);
+
+        $this->fill($v, ['odometer' => 1000])->assertStatus(201);
+        $second = $this->fill($v, ['odometer' => 1300, 'litres' => 100])->assertStatus(201);
+
+        // 3.00 km/l is 0.3333 L/km. Derived, never stored — a column would be a
+        // second copy of one fact and they would disagree after a correction.
+        $this->assertSame('3.00', $second->json('data.efficiency_kmpl'));
+        $this->assertSame(0.3333, $second->json('data.litres_per_km'));
+    }
+
+    public function test_a_fill_with_nothing_to_measure_has_no_litres_per_km_either(): void
+    {
+        $v = $this->vehicle();
+
+        $this->fill($v)->assertStatus(201)
+            ->assertJsonPath('data.efficiency_kmpl', null)
+            ->assertJsonPath('data.litres_per_km', null);
+    }
+
+    public function test_a_vehicles_own_benchmark_overrides_the_type_default(): void
+    {
+        // A ten-year-old tipper and last year's do not return the same km/l.
+        // Flagging the old one on every fill teaches people to ignore the
+        // exception queue, which is the only thing that catches real theft.
+        $v = $this->vehicle(['vehicle_type' => 'reefer', 'benchmark_kmpl' => 1.4]);
+
+        $this->fill($v, ['odometer' => 1000])->assertStatus(201);
+        // 1.5 km/l — below the 2.8 type default, ABOVE this truck's own 1.4.
+        $second = $this->fill($v, ['odometer' => 1150, 'litres' => 100])->assertStatus(201);
+
+        $this->assertFalse($second->json('data.fuel_exception'));
+    }
+
+    public function test_the_note_says_whose_benchmark_it_failed(): void
+    {
+        // A driver disputing a flag needs to know whether the number came from
+        // this vehicle's history or from a table of type averages — those two
+        // are answered in completely different ways.
+        $own = $this->vehicle(['vehicle_type' => 'reefer', 'benchmark_kmpl' => 5.0]);
+        $this->fill($own, ['odometer' => 1000])->assertStatus(201);
+        $flagged = $this->fill($own, ['odometer' => 1150, 'litres' => 100])->assertStatus(201);
+
+        $this->assertTrue($flagged->json('data.fuel_exception'));
+        $this->assertStringContainsString("this vehicle's benchmark", $flagged->json('data.variance_note'));
+
+        $typed = $this->vehicle(['vehicle_type' => 'reefer']);
+        $this->fill($typed, ['odometer' => 1000])->assertStatus(201);
+        $other = $this->fill($typed, ['odometer' => 1150, 'litres' => 100])->assertStatus(201);
+
+        $this->assertStringContainsString('the reefer benchmark', $other->json('data.variance_note'));
+    }
+
+    public function test_a_zero_benchmark_is_refused_so_unmeasured_stays_tellable(): void
+    {
+        // Null means "nobody has measured it". Zero would mean "measured at
+        // zero", which is not a thing, and the two must stay tellable apart.
+        $this->actingAs($this->user())
+            ->postJson('/api/v1/fleet/vehicles', [
+                'registration_number' => 'MH12BENCH1', 'vehicle_type' => 'reefer',
+                'benchmark_kmpl' => 0,
+            ])->assertStatus(422);
     }
 
     public function test_a_thirsty_fill_is_flagged_with_an_explanation(): void
@@ -304,7 +482,7 @@ class FleetOperationsTest extends TestCase
                 'parts_cost' => 18500, 'labour_cost' => 4200,
             ])->assertOk();
 
-        $this->assertSame('completed', $response->json('data.job.status'));
+        $this->assertSame('COMPLETED', $response->json('data.job.status'));
         $this->assertSame('22700.00', $response->json('data.job.total_cost'));
         $this->assertTrue($response->json('data.release.released'));
         $this->assertSame('AVAILABLE', $v->fresh()->status);

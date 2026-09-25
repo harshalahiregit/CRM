@@ -3,6 +3,7 @@
 namespace App\Services\Transport;
 
 use App\Events\Transport\TripApproved;
+use App\Services\Transport\AllocationService;
 use App\Services\Transport\TripEventRecorder;
 use App\Events\Transport\TripCreated;
 use App\Exceptions\BusinessException;
@@ -605,6 +606,16 @@ class TransportTripService
         app(TripEventRecorder::class)->record(
             'trip.delivered', trip: $delivered, actor: $actor, occurredAt: $delivered->delivered_at,
         );
+
+        // The cargo is off, so the vehicle and the driver come free — STOS-OPS
+        // §83 separates operational closure from accounting closure, and our
+        // `closed` is the accounting end. The reasoning is in
+        // AllocationService::releaseOnDelivery(), which owns the resource
+        // vocabulary; this line only says WHEN. D-119.
+        //
+        // After the commit, like every other side effect of this method: a trip
+        // that rolled back must not have freed a truck.
+        app(AllocationService::class)->releaseOnDelivery($delivered, $tenantId, $actor);
 
         Log::channel('transport')->info('Trip delivered', [
             'trip_id' => $delivered->id, 'tenant_id' => $tenantId,

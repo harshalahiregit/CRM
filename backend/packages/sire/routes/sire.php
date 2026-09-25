@@ -75,6 +75,9 @@ Route::middleware(\Sire\Http\SireRouteMiddleware::stack())
     // fixing was never the slow part. `sire.export` is finally enforced here.
     Route::get('export', [SireExportController::class, 'markdown']);
     Route::post('reports/transitions', [SireExportController::class, 'transitions']);
+    // The brief, sent back: tick the boxes, upload it, the ticked issues close.
+    // Previews unless `apply` is sent -- see SireExportController::import().
+    Route::post('reports/import', [SireExportController::class, 'import']);
 
     Route::get('report-options', [ReportController::class, 'options']);
     Route::post('reports', [ReportController::class, 'store']);
