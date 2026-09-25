@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, MoreVertical, Edit, Trash2, Power, UserCheck, UserX, Shield, ShieldOff, RefreshCw } from 'lucide-react'
@@ -29,6 +29,8 @@ export default function StaffManagementPage() {
     })
   }, [queryClient])
   const [searchParams, setSearchParams] = useSearchParams()
+  /** Sequence of the newest staff-list request; older answers are discarded. */
+  const staffRequestSeq = useRef(0)
   const [stats, setStats]       = useState({ total_staff: 0, active_staff: 0, inactive_staff: 0 })
   const [staff, setStaff]       = useState([])
   const [loading, setLoading]   = useState(true)
@@ -90,6 +92,19 @@ export default function StaffManagementPage() {
   }, [])
 
   const fetchStaff = useCallback(async () => {
+    // Which request this is. The search box fires one per keystroke and there is
+    // no debounce, so several are in flight at once and they do not come back in
+    // the order they were sent — a slow early response was overwriting a fast
+    // later one and leaving the list showing results for a query the person had
+    // already changed. Reproduced by arriving with ?search=priya: the box read
+    // "priya" and the rows were the unfiltered eight, because the empty-search
+    // response landed last and won.
+    //
+    // A sequence number rather than an AbortController: the earlier request is
+    // still worth completing for the cache, it simply must not be allowed to
+    // paint. Anything but the newest answer is dropped.
+    const seq = ++staffRequestSeq.current
+
     setLoading(true)
     try {
       const res = await api.get('/admin/staff', {
@@ -101,12 +116,16 @@ export default function StaffManagementPage() {
           page:        pagination.current_page,
         },
       })
+
+      if (seq !== staffRequestSeq.current) return
+
       setStaff(res.data.data.staff)
       setPagination(res.data.data.pagination)
-    } catch {
-      showToast('Failed to load staff list', 'error')
+    } catch (e) {
+      if (seq !== staffRequestSeq.current) return
+      showToast(readFieldErrors(e).summary, 'error')
     } finally {
-      setLoading(false)
+      if (seq === staffRequestSeq.current) setLoading(false)
     }
   }, [search, designationFilter, statusFilter, pagination.current_page, pagination.per_page])
 
