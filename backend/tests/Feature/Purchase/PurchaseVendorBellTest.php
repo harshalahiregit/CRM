@@ -83,7 +83,17 @@ class PurchaseVendorBellTest extends TestCase
             'end_at'       => $this->clock(1500),
         ], $actor);
 
-        return $service->transition($meeting->fresh(), PurchaseKickoffStatus::SCHEDULED, [], $actor);
+        $published = $service->transition($meeting->fresh(), PurchaseKickoffStatus::SCHEDULED, [], $actor);
+
+        // Publishing now notifies AFTER the response is flushed — one SMTP
+        // session per participant used to run inside the request and timed it
+        // out at thirty seconds. A test calls the service directly, so nothing
+        // would ever terminate the application and the notice would sit unsent
+        // forever. This is the honest question: by the time the request is
+        // over, was the vendor told?
+        $this->app->terminate();
+
+        return $published;
     }
 
     public function test_a_draft_meeting_tells_the_vendor_nothing(): void
