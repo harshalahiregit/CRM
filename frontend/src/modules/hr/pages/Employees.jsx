@@ -6,7 +6,7 @@ import { useAuth } from '@/context/AuthContext'
 import { Search, Building2, Plus, X, LayoutGrid, List, Eye, Pencil } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { useMasterData, withInactiveById } from '@/modules/hr/useMasterData'
-import { canManageHrQueue } from '@/modules/hr/constants'
+import { canManageHrQueue, hrDateInput } from '@/modules/hr/constants'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import Modal from '@/components/ui/Modal'
 import DirectoryGapPanel from '@/modules/hr/components/DirectoryGapPanel'
@@ -16,6 +16,9 @@ const STATUS_S = s => s==='Active'?{c:'#10b981',bg:'rgba(16,185,129,0.12)'}:s===
 const initials = n => (n||'').split(' ').slice(0,2).map(x=>x[0]).join('').toUpperCase()
 const fmtDate  = d => d ? new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) : '—'
 const deptColor = d => DEPT_COLORS[d]||'#7C3AED'
+
+/** The form keys backed by an <input type="date">. See hrDateInput. */
+const DATE_KEYS = new Set(['dob', 'joining_date', 'probation_end_date', 'confirmation_date'])
 
 const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', gender:'', address:'', department:'', designation:'', department_id:'', designation_id:'', employment_type_id:'', reporting_manager_id:'', reporting_manager_name:'', work_state:'', joining_date:'', probation_end_date:'', confirmation_date:'', notice_days:'', status:'Active',
   // #36 — probation must be set when adding an employee, or the hire explicitly exempted.
@@ -215,8 +218,15 @@ export default function Employees() {
     // #29 — the two org-chart keys fall back to the EMPTY_FORM defaults rather
     // than to '': an employee the list endpoint did not return them for would
     // otherwise open with "Show on the org chart" unticked and save it off.
+    //
+    // The date keys go through hrDateInput on the way in. The API serialises
+    // them as full instants and <input type="date"> renders anything that is not
+    // YYYY-MM-DD as blank, so these four fields opened empty on every employee —
+    // Joining Date among them, beside its required marker. See constants.js.
     setForm({ ...EMPTY_FORM, ...Object.fromEntries(Object.keys(EMPTY_FORM).map(k=>[
-      k, emp[k] ?? (k === 'status' ? 'Active' : (k in { worker_type:1, include_in_org_chart:1, app_login_enabled:1 } ? EMPTY_FORM[k] : '')),
+      k, DATE_KEYS.has(k)
+        ? hrDateInput(emp[k])
+        : emp[k] ?? (k === 'status' ? 'Active' : (k in { worker_type:1, include_in_org_chart:1, app_login_enabled:1 } ? EMPTY_FORM[k] : '')),
     ])) })
     setShowModal(true)
   }

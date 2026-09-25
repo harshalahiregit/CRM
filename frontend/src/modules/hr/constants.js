@@ -398,3 +398,36 @@ export const hrTime = (v) => {
  * is what makes the two comparable at all.
  */
 export const hrTimeEquals = (a, b) => hrTime(a) === hrTime(b)
+
+/**
+ * A stored date as the YYYY-MM-DD that <input type="date"> will actually show.
+ *
+ * `joining_date` is a date column, but Eloquent casts it to a Carbon instance
+ * and serialises it as a full instant — "2025-01-01T00:00:00.000000Z". An
+ * <input type="date"> accepts ONLY "YYYY-MM-DD"; handed anything else it
+ * silently renders empty rather than complaining. So opening any employee for
+ * editing showed Joining Date, Date of Birth, Probation End and Confirmation
+ * Date as blank — Joining Date beside a required marker, on a record whose card
+ * two lines above read "Joined 01 Jan 2025".
+ *
+ * The value was never lost: form state kept the ISO string and saving preserved
+ * the date. It was a display fault, and a convincing one — it reads as missing
+ * data, and the obvious response is to retype a date that was already right.
+ *
+ * Truncates rather than converting. These are calendar dates: a joining date is
+ * the day on the contract, not an instant. Running "2025-01-01T00:00:00Z"
+ * through a local-time conversion moves it to 31 December for every reader west
+ * of Greenwich, which is the timezone bug this codebase has already paid for
+ * once on attendance. Taking the first ten characters keeps the day the server
+ * sent.
+ */
+export const hrDateInput = (v) => {
+  if (!v) return ''
+
+  const s = String(v)
+
+  // Already the shape the input wants, possibly with an instant glued on.
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
+
+  return ''
+}
