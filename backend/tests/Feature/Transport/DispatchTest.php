@@ -444,12 +444,25 @@ class DispatchTest extends TestCase
         $this->assertNotInstanceOf(PendingFleetResourceGateway::class, app(FleetResourceGateway::class));
 
         [$trip] = $this->readyTrip();
-        $this->dispatch->confirm($trip, $this->fields(), self::TENANT_A, $this->actor);
+
+        // The unmigrated case, built on purpose. The fixtures are Fleet's now,
+        // so a trip only points at transport_vehicles if a test makes it: the
+        // trip's own reference is left on a legacy row whose id Fleet does
+        // not have — the shape of the repoint's `never_valid` references.
+        $legacyId = (int) Vehicle::withTrashed()->max('id') + 1000;
+        (new TransportVehicle())->forceFill([
+            'id' => $legacyId, 'tenant_id' => self::TENANT_A,
+            'registration_number' => 'MH12UN'.self::uniqueSeq(4),
+        ])->save();
+        $trip->forceFill(['vehicle_id' => $legacyId])->save();
+        $this->assertNull(Vehicle::withTrashed()->find($legacyId), 'precondition: Fleet must not know this vehicle');
+
+        $this->dispatch->confirm($trip->fresh(), $this->fields(), self::TENANT_A, $this->actor);
 
         $entry = $trip->auditTrail()->where('action', 'transport.trip.status_changed')->get()
             ->first(fn ($e) => ($e->new_values['status'] ?? null) === TripStatus::DISPATCHED);
 
-        // The fixture's vehicle exists only in transport_vehicles, so Fleet
+        // The trip's vehicle exists only in transport_vehicles, so Fleet
         // cannot find it and says so instead of claiming success.
         $this->assertFalse($entry->context['fleet_state_applied']);
     }
