@@ -97,6 +97,37 @@ class StaffPermissionModuleParityTest extends TestCase
             .implode(', ', $ungrouped));
     }
 
+    /**
+     * The groups start OPEN, and more than one can be — SIR-000009.
+     *
+     * "Staff permission settings are not fully visible to assign permission."
+     * This was a single-open accordion holding one label, initialised to null:
+     * six groups, nothing open, and expanding one collapsed the last. Assigning a
+     * realistic set meant ticking blind, because you could never see what you had
+     * already granted.
+     *
+     * This file's existing concern is that a row nobody can see is the same as a
+     * row that does not exist. A row behind a collapsed group nobody thought to
+     * open is the same thing by a different route, which is why the guard lives
+     * here rather than beside the render.
+     */
+    public function test_the_permission_groups_are_visible_without_hunting(): void
+    {
+        $src = file_get_contents(self::MODAL);
+
+        $this->assertStringContainsString('collapsedGroups', $src,
+            'The accordion must track what is CLOSED, so the default is open.');
+        $this->assertStringContainsString('new Set()', $src,
+            'It starts as an empty set — nothing collapsed, every group visible.');
+
+        // The old shape, and the two things that made it hurt: one label at a
+        // time, and null meaning "all shut".
+        $this->assertStringNotContainsString('expandedGroup', $src,
+            'A single expanded label is back — one group open at a time is the defect.');
+        $this->assertStringNotContainsString('setExpandedGroup(null)', $src,
+            'Collapsing everything on a click is how the grid became invisible.');
+    }
+
     public function test_no_group_names_a_module_that_does_not_exist(): void
     {
         $unknown = array_diff($this->groupedKeys(), StaffPermission::MODULES);
