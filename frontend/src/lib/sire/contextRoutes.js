@@ -173,6 +173,7 @@ export const ROUTE_CONTEXT_MAP = [
   // T-54 — without this an issue raised from the Trailers page arrives with
   // no screen named, and whoever triages it has to ask where it came from.
   { pattern: '/app/transport/trailers', module: 'transport', section: 'fleet', screen: 'trailer-register' },
+  { pattern: '/app/transport/tyres', module: 'transport', section: 'fleet', screen: 'tyre-register' },
   // 'vehicles' and 'drivers' render the same Fleet screens as above -- kept so
   // an existing bookmark still reports against the screen it actually shows.
   { pattern: '/app/transport/vehicles', module: 'transport', section: 'fleet', screen: 'fleet-overview' },
