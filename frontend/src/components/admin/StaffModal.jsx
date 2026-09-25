@@ -114,6 +114,36 @@ const EMPTY_FORM = {
 // `designations` is gone from the signature: roles are fetched here from
 // /admin/roles now, so the parent no longer has to pass a list that came from a
 // different source than the permissions did.
+/**
+ * Where departments and job titles are actually created — SIR-000008.
+ *
+ * "Option to add designation, department etc." on the staff screen. Both are
+ * RECORDS maintained under HR → Organization Setup, deliberately: they used to
+ * be free text merged with a hardcoded list, which is how the same department
+ * came to exist three times with no way to rename it. Putting an "add" back here
+ * would walk straight into that again.
+ *
+ * So this is a way to GET there rather than a second place to create. It opens a
+ * new tab on purpose — this sits inside a modal, and navigating in place would
+ * throw away a half-filled staff form. StaffManagementPage refetches the lists
+ * when the window comes back, so whatever was added in the other tab is in the
+ * dropdown by the time you look.
+ *
+ * Deliberately not an inline "+": the HR create endpoints are mounted under
+ * auth:sanctum with no permission gate, so any authenticated user can already
+ * create an org record. Wiring a button to that from a second screen would
+ * spread the gap rather than close it. Raised separately.
+ */
+function OrgSetupLink() {
+  return (
+    <a href="/app/hr/organization-setup" target="_blank" rel="noopener noreferrer"
+      className="font-semibold underline decoration-dotted"
+      style={{ color: '#a78bfa' }}>
+      HR &rarr; Organization Setup
+    </a>
+  )
+}
+
 export default function StaffModal({ staff, departments = [], jobTitles = [], onClose, onSuccess }) {
   const [activeTab,     setActiveTab]     = useState('profile')
   const { user: actor } = useAuth()
@@ -141,7 +171,20 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
    */
   const [roles,         setRoles]         = useState([])
   const [permSearch,    setPermSearch]    = useState('')
-  const [expandedGroup, setExpandedGroup] = useState(null)
+  /*
+   | SIR-000009 — "Staff permission settings are not fully visible to assign
+   | permission."
+   |
+   | This was a single-open accordion starting with NOTHING open: six groups, 23
+   | modules, and opening one closed the last. Assigning a realistic set meant
+   | ticking blind, because you could never see what you had already granted.
+   |
+   | Now a Set, so groups stay open together, and every group starts open — the
+   | complaint was invisibility, so the default answers it. The modal already
+   | scrolls (overflow-y-auto, maxHeight 92vh), which is why nothing structural
+   | needed changing to let them all sit open at once.
+   */
+  const [collapsedGroups, setCollapsedGroups] = useState(() => new Set())
 
   // Grouped modules for collapsible sections.
   //
@@ -575,7 +618,7 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
                     {departments.map(d=><option key={d.id} value={d.name}>{d.name}</option>)}
                   </select>
                   <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
-                    Managed under HR &rarr; Organization Setup.
+                    Managed under <OrgSetupLink />.
                   </p>
                 </div>
               </div>
@@ -595,7 +638,7 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
                   )}
                 </select>
                 <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
-                  Managed under HR &rarr; Organization Setup.
+                  Managed under <OrgSetupLink />.
                 </p>
               </div>
 
@@ -766,10 +809,25 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
 
               {/* Permissions Table — Grouped & Collapsible */}
               <div className="space-y-3">
-                <label style={lbl}>Module Permissions</label>
+                <div className="flex items-center justify-between gap-3">
+                  <label style={lbl}>Module Permissions</label>
+                  {/* Kept for anyone who wants the grid tidy again. Hidden while
+                      searching, when open/closed is decided by the matches. */}
+                  {!permSearch && (
+                    <button type="button"
+                      onClick={()=>setCollapsedGroups(prev=>
+                        prev.size ? new Set() : new Set(filteredGroups.map(g=>g.label)))}
+                      className="text-[11px] font-bold px-2.5 py-1 rounded-lg transition-colors"
+                      style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>
+                      {collapsedGroups.size ? 'Expand all' : 'Collapse all'}
+                    </button>
+                  )}
+                </div>
 
                 {filteredGroups.map(group=>{
-                  const isOpen = expandedGroup===group.label || permSearch.length>0
+                  // Searching still forces every match open, as it did before —
+                  // a hit you cannot see is not a hit.
+                  const isOpen = permSearch.length>0 || !collapsedGroups.has(group.label)
                   // Count granted in this group
                   // Effective, matching the header count — a group of fully
                   // inherited modules is not an empty group.
@@ -780,7 +838,14 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
                       style={{ border:'1px solid var(--border)' }}>
                       {/* Group Header */}
                       <button type="button"
-                        onClick={()=>setExpandedGroup(isOpen&&!permSearch?null:group.label)}
+                        onClick={()=>setCollapsedGroups(prev=>{
+                          // A no-op while searching: the group is open because it
+                          // matched, and collapsing it would hide the result.
+                          if (permSearch) return prev
+                          const next = new Set(prev)
+                          next.has(group.label) ? next.delete(group.label) : next.add(group.label)
+                          return next
+                        })}
                         className="w-full flex items-center justify-between px-4 py-3 text-left transition-all"
                         style={{ background:'rgba(124,58,237,0.04)', borderBottom: isOpen?'1px solid var(--border)':'none' }}>
                         <div className="flex items-center gap-2">
