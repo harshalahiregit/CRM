@@ -5578,3 +5578,96 @@ proposal for making that mechanical is owed with the block's results.
 
 The fixture creates through Fleet, or inserts directly; the assertion is unchanged, because the rule
 it states is still exactly right.
+
+---
+
+## D-150 — one shape for a blocker, everywhere
+
+**Raised:** 2026-09-25, following D-147. **P1.** **Fixed.**
+
+### What was wrong
+
+D-147 fixed the crash by making `reason()` read `{code, why, owner}`, on the belief that every
+producer was Fleet now. It was not. Three producers still emitted **plain strings**:
+
+```
+EligibilityVerdict::make()        blockers/warnings = the check's detail, a string
+DriverEligibilityService          Fleet's owner flattened into the sentence: "why (owner)"
+TripPretripCheck::blockersOf()    "Label: detail" — read by the passport and the pre-trip panel
+TripPretripCheck::warningsOf()    same
+```
+
+A string reaching `reason()` has no `owner` and no `why`, so it rendered **EMPTY**. An ineligible
+driver showed on the picker with no reason at all; the Container 360 readiness box and the pre-trip
+panel's warnings printed a bullet and nothing after it. That is the bug D-147 was written to fix,
+arriving by the other door. No crash, no test, nothing red.
+
+The first consumer also broke quietly: `AllocationService` built its 422 refusal with
+`implode(' ', $verdict['blockers'])`, which against objects is *"Array to string conversion"*.
+
+### What changed
+
+- `EligibilityVerdict::make()` emits `{code, why, owner}` for every blocker and warning.
+  `code` is the check key; `owner` is optional on `check()`, null where no desk owns the rule.
+- `DriverEligibilityService` carries Fleet's owner as a **field**, and joins **every** Fleet
+  blocker's `why`, not the first.
+- `TripPretripCheck::blockersOf()` / `warningsOf()` emit the same shape, `owner: null` — no
+  document names a desk for a pre-trip check, and inventing one would be a rule nobody made.
+  `PretripService::refusalMessage()` reads `why`.
+- `AllocationService`'s refusal sentence reads `why (owner)` — the desk stays in the 422 text.
+- The three `reason()` readers keep no string branch. The backend owns the shape.
+
+**Nothing in `app/Domains/Fleet/**` was touched.** Fleet's shape was already `{code, why, owner}`.
+
+### The eligibility tests, rewritten not recounted
+
+Four tests asserted `assertCount(5, …checks)`, the pre-D-134 driver contract. It is two on
+purpose. `assertCount(2)` would pass on "Fit to drive: no" with no reason and no desk, so each now
+asserts what a dispatcher needs: a clean driver carries no blocker and every check says what it
+verified; a refused one carries a `why` and a named `owner`.
+
+| File | Test | Now asserts |
+|---|---|---|
+| TransportEligibilityTest | a_clean_driver_is_eligible | no blockers; every check passed with a detail; `fleet` = "Cleared by Fleet" |
+| TransportEligibilityTest | a_driver_with_no_licence_is_blocked | blocker `why` says no licence; owner = Fleet compliance desk |
+| TransportEligibilityTest | an_expiring_licence_warns_without_blocking | eligible; `driver_license_expiring` warning with `why` and owner |
+| TransportEligibilityTest | an_expired_licence_blocks_the_driver | one blocker, "expired", owner named — **BRWM §70 line held** |
+| TransportAllocationTest | the_audit_row_carries_every_eligibility_check | `fleet` and `assignment` both on the row, passed, with detail |
+| TransportAllocationRefusalAuditTest | the_row_records_every_check_not_only_the_failures | one failure; the passing `assignment` check still recorded; blocker has why + owner |
+| TransportAllocationApiTest | assigning_both_allocates_the_trip | driver verdict eligible, no blockers, `fleet` check present |
+
+The other `assertCount(5` lines count pre-trip checklist items (PretripApi, PretripGate,
+PretripGeneration, PretripEvidenceAudit, PretripScope), CMP §23's compliance states
+(TransportMasterAudit), registry rows (ExceptionScope, TripEventRegistry). Not eligibility. Untouched.
+
+Seven more tests read `blockers[0]` as a string and now read `['why']` — the same assertion,
+against the new shape.
+
+### How it is proved
+
+- **Test, broken 2 ways.** `EligibilityVerdictShapeTest` (6 tests): blockers made plain strings →
+  5 red; `owner` dropped → 4 red; restored → 6 green. Its warnings test passes under both breaks
+  because driver warnings are Fleet's own, passed through — it guards Fleet's shape, not ours.
+- **Suite, `--filter=Transport`, against HEAD measured in a separate worktree:**
+  `89 failed · 1058 passed` → `80 failed · 1073 passed` (3 skipped both). Nine cleared, none new;
+  the other six passes are the new shape tests.
+- **Frontend build:** succeeds.
+- **Not walked in a browser.** The empty-reason render is inferred from the code, not seen.
+
+### Left red, on purpose — each needs a ruling, not a test edit
+
+1. **BRWM §70's tone is gone from driver refusals.** Two tests
+   (`an_expired_licence_blocks_the_driver`, `an_expired_licence_returns_422_with_the_reason`) ask
+   for "assign another eligible driver". Fleet's sentence stops at "cannot be dispatched". The
+   sentence is Fleet's; the requirement is ours. Held, not weakened.
+2. **Driver refusals no longer carry `rule: BR-P0-004`.** `AllocationService::ruleFor()` looks for
+   `availability/lifecycle/licence/documents`; the failed key is now `fleet`. The audit row's rule
+   is null. Found here, not fixed — outside D-150's scope, and ours.
+3. **CMP §20 configurability.** `driver.check.licence.required` no longer does anything: Fleet's
+   whole verdict is gated by `driver.check.lifecycle.required`. Whether licence alone may be advisory
+   is a business rule.
+4. **Transport's `driver.required_documents` policy is no longer consulted.** A driver missing a
+   policy-required document is eligible. Is that policy retired, or does Fleet own it now?
+
+Four more in `TransportEligibilityTest` (on leave, inactive, blocked, candidate listing) call the
+legacy `TransportDriverService` on a Fleet profile. Fixture debt — the next task.
