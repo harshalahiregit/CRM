@@ -31,7 +31,16 @@ class EmployeeController extends Controller
             $request->user(),
         );
 
-        return response()->json($this->withLoginState($page, (int) $request->user()->tenant_id));
+        // Only for the people the block is FOR. It exists so an HR admin editing
+        // an employee can see what their employment status does to their access;
+        // to anybody else it is a list of which accounts exist, which of them are
+        // admins, and which can sign in — reconnaissance, not a directory. The
+        // employee directory itself stays readable by staff, as it was.
+        if ($request->user()->canManageHrQueue()) {
+            $page = $this->withLoginState($page, (int) $request->user()->tenant_id);
+        }
+
+        return response()->json($page);
     }
 
     /**

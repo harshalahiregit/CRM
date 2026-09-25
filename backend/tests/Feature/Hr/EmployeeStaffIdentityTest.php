@@ -516,6 +516,46 @@ class EmployeeStaffIdentityTest extends TestCase
         ])->assertStatus(422);
     }
 
+    /**
+     * The login block is for the people who manage access, and nobody else.
+     *
+     * It was added so an HR admin editing an employee can see what employment
+     * status does to their sign-in. To an ordinary staff account the same block
+     * is a list of which accounts exist, which of them are administrators, and
+     * which can sign in — reconnaissance rather than a directory, on a list that
+     * staff are allowed to read.
+     */
+    public function test_the_login_block_is_hidden_from_staff_who_cannot_manage_hr(): void
+    {
+        $user = $this->user();
+        $this->employee(['user_id' => $user->id]);
+
+        $plain = $this->user(['role' => 'staff']);
+        $this->assertFalse($plain->canManageHrQueue(), 'fixture must be genuinely unprivileged');
+
+        $rows = $this->actingAs($plain)->getJson('/api/hr/employees?per_page=50')->assertOk()->json('data');
+
+        foreach ($rows as $row) {
+            $this->assertArrayNotHasKey('login', $row, 'account state must not reach an ordinary staff account');
+        }
+
+        // ...and the directory itself is still readable, which it always was.
+        $this->assertNotEmpty($rows);
+    }
+
+    public function test_an_hr_administrator_still_sees_the_login_block(): void
+    {
+        $user = $this->user();
+        $this->employee(['user_id' => $user->id]);
+
+        $rows = $this->actingAs($this->admin())->getJson('/api/hr/employees?per_page=50')->assertOk()->json('data');
+
+        $linked = collect($rows)->firstWhere('user_id', $user->id);
+
+        $this->assertNotNull($linked['login'] ?? null);
+        $this->assertTrue($linked['login']['can_sign_in']);
+    }
+
     /* ── reconciliation actions ───────────────────────────────────────── */
 
     public function test_provisioning_a_login_creates_one_and_links_it(): void
