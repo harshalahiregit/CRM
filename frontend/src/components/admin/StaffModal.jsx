@@ -217,6 +217,15 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
   // "no opinion": un-ticking every box for a module is a real decision and has
   // to survive. Absent and empty are different answers.
 
+  /**
+   * Must an access role be chosen before this form will submit?
+   *
+   * New account: yes — deciding permissions at creation is the point.
+   * Existing account that has one: yes, so an edit cannot quietly drop it.
+   * Existing account that has none: no. See the Access Role field below.
+   */
+  const roleRequired = !staff || Boolean(staff.staff_role_id)
+
   /** What the currently selected role grants, or {} when no role is assigned. */
   const inheritedPermissions = useMemo(() => {
     const role = roles.find(r => String(r.id) === String(formData.staff_role_id))
@@ -347,7 +356,13 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
     const fullName = [formData.first_name, formData.last_name].filter(Boolean).join(' ')
     const payload  = {
       name: fullName, email: formData.email, phone: formData.phone,
-      password: formData.password, internal_role: formData.internal_role,
+      password: formData.password,
+      // Sent only when there is one. The backend rule is `sometimes|required`,
+      // which means "if the key is here it must not be empty" — posting
+      // internal_role: '' for an account that legitimately has no access role
+      // is a 422, and it would have replaced the browser's silent refusal with a
+      // server one rather than fixing anything.
+      ...(formData.internal_role ? { internal_role: formData.internal_role } : {}),
       staff_role_id: formData.staff_role_id || null,
       department: formData.department, designation: formData.designation,
       status: formData.status,
@@ -555,16 +570,32 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
               {/* Designation + Department */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label style={lbl}>Role *</label>
+                  <label style={lbl}>Access Role {roleRequired && '*'}</label>
                   {/* One selector, not two. This used to set internal_role while a separate
                       "Role Template" dropdown on the Permissions tab set the permissions —
-                      from a different list, so the two disagreed. */}
-                  <select value={formData.staff_role_id || ''} onChange={e=>applyRole(e.target.value)} required style={inp('internal_role')}>
-                    <option value="">Select Role</option>
+                      from a different list, so the two disagreed.
+
+                      "Access Role", not "Role": HR Organization Setup has Job Roles, which
+                      are org-chart titles and grant nothing. Two screens calling two
+                      different things "Role" is why people expected a designation here.
+
+                      Required on a NEW account, and on an existing one that already has a
+                      role — you may change it, not silently drop it. Required on NEITHER
+                      when the account has none, because plenty legitimately do not: 7 of 11
+                      real accounts, Super Admin among them, whose permissions come from
+                      being an admin rather than from a template. Marking it required
+                      unconditionally made those records permanently uneditable — the form
+                      could not validate, so pressing Update sent no request at all and
+                      said nothing. */}
+                  <select value={formData.staff_role_id || ''} onChange={e=>applyRole(e.target.value)}
+                    required={roleRequired} style={inp('internal_role')}>
+                    <option value="">{roleRequired ? 'Select Role' : 'No access role'}</option>
                     {roles.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
                   </select>
                   <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
-                    Sets the permissions below. You can still change any of them for this person.
+                    {roleRequired
+                      ? 'Sets the permissions below. You can still change any of them for this person.'
+                      : 'This account has no access role — its permissions come from its account type. Choosing one sets the permissions below.'}
                   </p>
                   {errors.internal_role&&<p className="text-[10px] mt-1" style={{ color:'#ef4444' }}>{errors.internal_role[0]}</p>}
                 </div>
