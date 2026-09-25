@@ -1,5 +1,5 @@
 import PartyContractList from '@/modules/contract/components/PartyContractList'
-import { ONBOARDING_TOTAL_STEPS } from '@/lib/vendors/onboardingSteps'
+import { ONBOARDING_TOTAL_STEPS, stepsOrNotStarted } from '@/lib/vendors/onboardingSteps'
 import { contractsForParty } from '@/services/contractModuleApi'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -350,11 +350,17 @@ export default function TpvVendorDetail() {
 
       </div>
 
-      {/* Onboarding Decision — prominent, directly under the header. Only for
-          admins/staff, and only once the vendor has an onboarding to decide on. */}
-      {manage && activeOnboarding && (
+      {/* Onboarding Decision — prominent, directly under the header, for
+          admins and staff.
+          NOT gated on the onboarding RECORD any more. A vendor nobody has
+          started has no record, and this panel is the only thing on the screen
+          that names the steps or says where to begin — so the one vendor that
+          needed the guidance was the one vendor that got none, under a header
+          still reading "Onboarding: Draft", because that pill falls back to
+          Draft when the record is absent. */}
+      {manage && (
         <OnboardingDecisionPanel
-          vendor={v} onboarding={activeOnboarding} api={cfg.api} steps={lockSteps}
+          vendor={v} onboarding={activeOnboarding} api={cfg.api} steps={stepsOrNotStarted(lockSteps)}
           onDecision={kind => { setDecisionModal(kind); setRemarks('') }}
         />
       )}
