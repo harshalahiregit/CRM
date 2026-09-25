@@ -328,6 +328,10 @@ export const hrApi = {
     reconciliation: () => api.get('/hr/directory/reconciliation').then(r => r.data?.data ?? {}),
     linkLogin: (employeeId, userId) =>
       api.post(`/hr/employees/${employeeId}/link-login`, { user_id: userId }).then(r => r.data),
+    // Creates the account when there is none, links it when an address already
+    // matches. Returns a one-time password when it created one.
+    provisionLogin: (employeeId) =>
+      api.post(`/hr/employees/${employeeId}/provision-login`).then(r => r.data?.data ?? r.data),
     // The extended record — personal, address, education, emergency contact,
     // bank, identity, statutory. Always returns every key (null where unset) so
     // the form renders without special-casing a person nobody has filled in yet.

@@ -40,7 +40,7 @@ const GROUPS = [
       { icon: Building2, label: 'Departments',  desc: 'Create, rename and retire departments',        to: '/app/hr/organization-setup' },
       { icon: Tag,       label: 'Designations', desc: 'Job titles offered on the employee form',      to: '/app/hr/organization-setup' },
       { icon: Layers,    label: 'Grades',       desc: 'Seniority bands a designation can sit in',     to: '/app/hr/organization-setup' },
-      { icon: UserCog,   label: 'Org Roles',    desc: 'Org-chart roles — not access permissions',     to: '/app/hr/organization-setup' },
+      { icon: UserCog,   label: 'Job Roles',    desc: 'Org-chart roles — for access permissions, see Staff Access below', to: '/app/hr/organization-setup' },
       { icon: Network,   label: 'Organization Chart', desc: 'The reporting line as it stands today',  to: '/app/hr/org-chart' },
     ],
   },

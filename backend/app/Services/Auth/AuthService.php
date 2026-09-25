@@ -8,6 +8,7 @@ use App\Models\Purchase\PurchaseVendor;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Models\Vendor\Vendor;
+use App\Services\Hr\EmployeeIdentityService;
 use App\Services\Purchase\PurchaseVendorService;
 use App\Support\AgencyContext;
 use App\Support\Purchase\PurchaseRegistrationType;
@@ -498,6 +499,24 @@ class AuthService
 
         if ($user->access_expires_at && $user->access_expires_at->isPast()) {
             throw new BusinessException('Your temporary access has expired. Contact your administrator.', 403);
+        }
+
+        // Employment, which is a different question from the account.
+        //
+        // Everything above asks whether this LOGIN is allowed — suspended,
+        // pending approval, deactivated by an administrator. None of it looked at
+        // whether the person still works here. An employee set to Inactive on the
+        // HR screen kept a working login: users.status stayed 'active' because
+        // nothing joined the two, and HR had no reason to think a second switch
+        // existed. Asked last so the account's own reasons keep their specific
+        // wording; a suspended account should say suspended, not talk about HR.
+        if ($reason = app(EmployeeIdentityService::class)->employmentRefusalReason($user)) {
+            Log::channel('auth')->warning('Login refused: employment is not active', [
+                'user_id'   => $user->id,
+                'tenant_id' => $user->tenant_id,
+            ]);
+
+            throw new BusinessException($reason, 403);
         }
     }
 }

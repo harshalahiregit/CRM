@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, MoreVertical, Edit, Trash2, Power, UserCheck, UserX, Shield, RefreshCw } from 'lucide-react'
+import { Plus, Search, MoreVertical, Edit, Trash2, Power, UserCheck, UserX, Shield, ShieldOff, RefreshCw } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuth } from '@/context/AuthContext'
 import StaffModal from '@/components/admin/StaffModal'
@@ -272,7 +272,14 @@ export default function StaffManagementPage() {
           <table className="w-full">
             <thead style={{ background: 'rgba(124,58,237,0.04)', borderBottom: '1px solid var(--border)' }}>
               <tr>
-                {['Staff Member','Role / Designation','Departments','Status','Last Active','Actions'].map(h => (
+                {/* "Access Role", to separate it from HR's Job Roles — that column is
+                    the permission role, and the designation under it is the job title. */}
+                {/* "Member Of", not "Departments". This column is meta.member_departments —
+                    the departments an ACCOUNT belongs to for ticket routing, which is a
+                    different thing from the one department the person works in. Sharing a
+                    name with the employee's department made an empty routing list read as
+                    a contradiction of the HR screen. */}
+                {['Staff Member','Access Role / Designation','Member Of','Account Status','Last Active','Actions'].map(h => (
                   <th key={h} className="px-5 py-3.5 text-left text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
                     {h}
                   </th>
@@ -343,8 +350,13 @@ export default function StaffManagementPage() {
                     <td className="px-5 py-4">
                       <div>
                         <div className="text-sm font-semibold" style={{ color: 'var(--text-h)' }}>{formatRole(member.internal_role)}</div>
-                        {member.designation && (
-                          <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{member.designation}</div>
+                        {/* The job title and the home department, both read from the
+                            employee record that owns them — so this cannot disagree with
+                            the HR screen the way it used to. */}
+                        {(member.designation || member.department) && (
+                          <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                            {[member.designation, member.department].filter(Boolean).join(' · ')}
+                          </div>
                         )}
                       </div>
                     </td>
@@ -370,8 +382,26 @@ export default function StaffManagementPage() {
                       </div>
                     </td>
 
-                    {/* Status */}
-                    <td className="px-5 py-4"><StatusBadge status={member.status}/></td>
+                    {/* Status — the ACCOUNT's, plus why sign-in is closed when it is.
+                        These are two different questions and the screen used to answer
+                        only one: an employee whose HR record was Inactive still showed a
+                        plain ACTIVE badge here, next to a login that no longer works. */}
+                    <td className="px-5 py-4">
+                      <StatusBadge status={member.status}/>
+                      {member.access_blocked_reason && (
+                        <div className="flex items-start gap-1 mt-1.5 max-w-[190px]">
+                          <ShieldOff size={11} style={{ color:'#f59e0b', flexShrink:0, marginTop:2 }}/>
+                          <span className="text-[10px] leading-tight" style={{ color:'#f59e0b' }}>
+                            {member.access_blocked_reason}
+                          </span>
+                        </div>
+                      )}
+                      {member.employment_status && !member.access_blocked_reason && (
+                        <div className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+                          Employment: {member.employment_status}
+                        </div>
+                      )}
+                    </td>
 
                     {/* Last Active */}
                     <td className="px-5 py-4">

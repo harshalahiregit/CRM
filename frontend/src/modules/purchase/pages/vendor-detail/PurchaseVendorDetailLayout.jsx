@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ONBOARDING_TOTAL_STEPS } from '@/lib/vendors/onboardingSteps'
+import { ONBOARDING_TOTAL_STEPS, stepsOrNotStarted } from '@/lib/vendors/onboardingSteps'
 import { useParams, useNavigate, NavLink, Routes, Route, Navigate } from 'react-router-dom'
 import { ArrowLeft, Building2, CheckCircle2, CheckCircle, XCircle, PauseCircle, CornerUpLeft, ShieldCheck, ChevronDown, ChevronRight, Mail, Lock } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
@@ -253,9 +253,12 @@ export default function PurchaseVendorDetailLayout() {
         </div>
       </div>
 
-      {/* Onboarding Decision — prominent, directly under the header, once the
-          vendor has an onboarding to decide on. */}
-      {onboarding && (
+      {/* Onboarding Decision — prominent, directly under the header.
+          Shown whether or not an onboarding RECORD exists. A vendor nobody has
+          started has none, and this panel is the only place the steps are
+          named, so gating it on the record hid the instructions from exactly
+          the vendor who needed them. */}
+      {(
         <OnboardingDecisionPanel
           vendor={vendor} onboarding={onboarding}
           onDecision={kind => { setDecision(kind); setRemarks('') }}
@@ -486,9 +489,9 @@ function OnboardingDecisionPanel({ vendor, onboarding, onDecision }) {
         {/* Clickable. Each step goes to the section that completes it —
             the strip used to name the outstanding step and leave the
             reader to find which of forty sidebar entries does it. */}
-        {steps && (
+        {(
           <OnboardingSteps
-            steps={steps}
+            steps={stepsOrNotStarted(steps)}
             hrefFor={(section) => `/app/purchase/vendors/${vendor.id}/${section === 'contact' ? 'contacts' : section}`}
           />
         )}
