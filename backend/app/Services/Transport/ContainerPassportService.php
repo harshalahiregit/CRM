@@ -101,7 +101,7 @@ class ContainerPassportService
                 'vehicle:id,registration_number,vehicle_type',
                 // See D-134 — Fleet holds no name; the passport shows the
                 // licence until the directory lookup is wired in.
-                'driver:id,source,source_id,licence_number,licence_class',
+                'driver:id,company_id,source,source_id,licence_number,licence_class',
             ])
             ->latest('id')
             ->first();

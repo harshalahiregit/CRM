@@ -5,6 +5,8 @@ namespace App\Providers;
 use App\Domains\Fleet\Contracts\DriverDirectory;
 use App\Domains\Fleet\Integration\TransportFleetResourceGateway;
 use App\Domains\Fleet\Directory\CompositeDriverDirectory;
+use App\Domains\Fleet\Models\DriverProfile;
+use App\Support\Transport\DriverNaming;
 use App\Domains\Fleet\Directory\CrmDriverDirectory;
 use App\Domains\Fleet\Directory\StandaloneDriverDirectory;
 use App\Domains\Fleet\Events\EmergencyFuelIssued;
@@ -100,19 +102,40 @@ class StosServiceProvider extends ServiceProvider
                 || Schema::hasTable('purchase_workers')
                 || Schema::hasTable('client_contacts');
 
-            $localPresent = Schema::hasTable('stos_drivers')
-                && DB::table('stos_drivers')->whereNull('deleted_at')->exists();
-
-            if ($crmPresent && $localPresent) {
-                return new CompositeDriverDirectory(new CrmDriverDirectory(), new StandaloneDriverDirectory());
-            }
-
-            return $crmPresent ? new CrmDriverDirectory() : new StandaloneDriverDirectory();
+            // Deliberately NOT conditioned on `stos_drivers` having rows.
+            // This binding is a singleton, so any data-dependent choice is
+            // frozen at whatever the table held the first time it resolved —
+            // fine in a request that boots fresh, wrong in a queue worker, and
+            // wrong in a test that creates its drivers afterwards. It also made
+            // the composite's presence depend on the order things happened in,
+            // which is not a property anybody wants to debug.
+            //
+            // The composite over an empty local register simply returns the CRM
+            // list, so there is nothing to gain by asking.
+            return $crmPresent
+                ? new CompositeDriverDirectory(new CrmDriverDirectory(), new StandaloneDriverDirectory())
+                : new StandaloneDriverDirectory();
         });
     }
 
     public function boot(): void
     {
+        // D-135 — a driver's name, filled in wherever a profile is read.
+        //
+        // `driver_profiles` has no `name` column; the name lives in the
+        // directory. After the repoint every `$trip->driver->name` in the
+        // codebase silently became null, and the allocation panel rendered a
+        // blank where a driver WAS assigned — indistinguishable from nothing
+        // being assigned.
+        //
+        // Hooked here rather than patched at each reader, because it was
+        // already fixed once for two screens and four more were still reading
+        // a name. This is our provider; P2's model is untouched.
+        DriverProfile::retrieved(function (DriverProfile $profile) {
+            app(DriverNaming::class)->attach($profile);
+        });
+
+
         foreach (self::LISTENERS as $event => $listeners) {
             foreach ($listeners as $listener) {
                 Event::listen($event, $listener);

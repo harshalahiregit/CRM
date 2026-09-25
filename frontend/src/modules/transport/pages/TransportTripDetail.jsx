@@ -425,7 +425,12 @@ export default function TransportTripDetail() {
               does, so the step that held them is the step that says so. */}
           <TripStep {...stepProps('crew')} icon={Truck} n={1} title="Vehicle & driver"
             outcome={(() => {
-              const who = [assignment?.vehicle?.registration_number, assignment?.driver?.name]
+              // D-135 — fall back to the id rather than dropping the driver
+              // out of the sentence entirely when the name does not resolve.
+              const who = [
+                assignment?.vehicle?.registration_number || (assignment?.vehicle_id ? `#${assignment.vehicle_id}` : null),
+                assignment?.driver?.name || (assignment?.driver_id ? `#${assignment.driver_id}` : null),
+              ]
                 .filter(Boolean).join(' · ')
               if (!who) return 'Assigned'
               return assignment?.status === 'released' ? `${who} · freed for other trips` : who

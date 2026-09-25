@@ -175,6 +175,27 @@ function CandidateRow({ row, kind, onPick, picking, commitment }) {
   )
 }
 
+
+/**
+ * What to show in a slot — D-135.
+ *
+ * This used to read `assignment?.driver ? assignment.driver.name : '#'+id`.
+ * The repoint made `assignment.driver` a real object whose `name` was empty,
+ * so the first branch won, the id fallback never ran, and a driver that HAD
+ * been assigned rendered as a blank. A blank is indistinguishable from nothing
+ * being assigned, which is exactly how it was reported.
+ *
+ * So the test is on the VALUE, not on whether the object exists. The server
+ * resolves the name through the directory now and should always send one; if
+ * it ever does not, the id says "something is here" rather than the screen
+ * saying nothing is.
+ */
+const named = (value, isSet, id) => {
+  const shown = (value ?? '').toString().trim()
+  if (shown) return shown
+  return isSet && id != null ? `#${id}` : null
+}
+
 export default function AllocationPanel({ trip, assignment, canAssign, onChanged }) {
   const toast = useToast()
 
@@ -309,10 +330,10 @@ export default function AllocationPanel({ trip, assignment, canAssign, onChanged
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
         <Slot kind="vehicle" icon={Truck} label="Vehicle"
-          value={assignment?.vehicle ? assignment.vehicle.registration_number : (hasVehicle ? `#${assignment.vehicle_id}` : null)}
+          value={named(assignment?.vehicle?.registration_number, hasVehicle, assignment?.vehicle_id)}
           canAssign={canAssign} onAssign={() => { setRefusal(null); setPicker('vehicle') }} />
         <Slot kind="driver" icon={UserRound} label="Driver"
-          value={assignment?.driver ? assignment.driver.name : (hasDriver ? `#${assignment.driver_id}` : null)}
+          value={named(assignment?.driver?.name, hasDriver, assignment?.driver_id)}
           canAssign={canAssign} onAssign={() => { setRefusal(null); setPicker('driver') }} />
       </div>
 

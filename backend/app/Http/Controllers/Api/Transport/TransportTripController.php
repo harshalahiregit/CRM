@@ -98,7 +98,7 @@ class TransportTripController extends Controller
                 // directory (`source` + `source_id`) plus a licence. Selecting
                 // the old four made this endpoint 503 with
                 // "Unknown column 'name'". See D-134 for the name itself.
-                ?->load('vehicle:id,registration_number,vehicle_type,status', 'driver:id,source,source_id,licence_number,licence_class,status'),
+                ?->load('vehicle:id,registration_number,vehicle_type,status', 'driver:id,company_id,source,source_id,licence_number,licence_class,status'),
             'audit' => $this->audit->forSubject($trip, $tenantId),
             // CTD §4's destination, reachable from the trip in one click.
             //

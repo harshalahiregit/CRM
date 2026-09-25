@@ -97,7 +97,7 @@ export default function ContainerPassport() {
               container.container_type,
               chain.customer?.name,
               chain.vehicle?.registration,
-              chain.driver?.name,
+              chain.driver?.name || (chain.driver?.id ? `#${chain.driver.id}` : null),
             ].filter(Boolean).join(' · ')}
           </p>
           {container.container_number_normalized !== container.container_number && (
@@ -199,7 +199,7 @@ export default function ContainerPassport() {
             hint={chain.trip ? `${chain.trip.status_label}${chain.trip.route ? ` · ${chain.trip.route}` : ''}` : null}
             onOpen={chain.trip && (() => navigate(`/app/transport/trips/${chain.trip.id}`))} />
           <ChainRow icon={Truck} label="Vehicle" value={chain.vehicle?.registration} hint={chain.vehicle?.type} />
-          <ChainRow icon={UserRound} label="Driver" value={chain.driver?.name} hint={chain.driver?.licence_class} />
+          <ChainRow icon={UserRound} label="Driver" value={chain.driver?.name || (chain.driver?.id ? `#${chain.driver.id}` : null)} hint={chain.driver?.licence_class} />
         </div>
       </Section>
       )}
