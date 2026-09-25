@@ -8,6 +8,8 @@ import CommandPalette from '@/components/CommandPalette'
 import IdleTimeoutWarning from '@/components/common/IdleTimeoutWarning'
 import AppNotificationToaster from '@/components/notifications/AppNotificationToaster'
 import ReportIssueRoot from '@/components/sire/ReportIssueRoot'
+import ErrorBoundary from '@/components/ErrorBoundary'
+import PageErrorFallback from '@/components/PageErrorFallback'
 import { canUseSire } from '@/lib/sire/access'
 import { useAuth } from '@/context/AuthContext'
 import clsx from 'clsx'
@@ -102,7 +104,22 @@ export default function AppShell() {
         style={{ '--sidebar-w': `${sidebarW}px` }}
       >
         <div className={clsx('p-4 md:p-6', !fullBleed && 'max-w-[1440px] mx-auto')}>
-          <Outlet />
+          {/* A crashing PAGE must not take the application with it.
+              The only boundary used to be at the top of App.jsx, above the
+              providers and above this shell, so any page that threw replaced
+              everything -- sidebar, header, and the Report Issue button, which
+              lives a few lines below. Report Issue is meant to be on every
+              screen, and the screen it was missing from was the one that had
+              just broken in front of the user.
+              resetKey, because a boundary latches: without it, one crashed
+              page would follow the user to every route they tried next, and
+              only a manual reload would clear it. */}
+          <ErrorBoundary
+            resetKey={pathname}
+            fallback={(error, retry) => <PageErrorFallback error={error} onRetry={retry} />}
+          >
+            <Outlet />
+          </ErrorBoundary>
         </div>
       </main>
 
