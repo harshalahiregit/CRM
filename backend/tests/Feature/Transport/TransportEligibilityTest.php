@@ -142,13 +142,13 @@ class TransportEligibilityTest extends TestCase
     public function test_a_vehicle_that_is_not_available_is_blocked(): void
     {
         $v = $this->goodVehicle();
-        $this->moveFleetVehicle($v, Vehicle::STATUS_SUSPENDED);
+        $this->moveFleetVehicle($v, Vehicle::STATUS_COMPLIANCE_BLOCKED);
 
         $verdict = $this->vehicles->evaluate($v->fresh(), $this->trip(), self::TENANT_A);
 
         $this->assertFalse($verdict['eligible']);
         $this->assertFalse($this->checkFor($verdict, 'status')['passed']);
-        $this->assertStringContainsString('Suspended', $verdict['blockers'][0]);
+        $this->assertStringContainsString('Compliance blocked', $verdict['blockers'][0]['why']);
         // The other checks still pass — one failure must not cascade.
         $this->assertTrue($this->checkFor($verdict, 'documents')['passed']);
     }
@@ -251,9 +251,18 @@ class TransportEligibilityTest extends TestCase
     {
         $verdict = $this->drivers->evaluate($this->goodDriver(), $this->trip(), self::TENANT_A);
 
+        // D-150 — was `assertCount(5, checks)` and `compliance_status`, the
+        // pre-D-134 contract. Fleet now decides fitness; what a dispatcher
+        // needs from a clean driver is that nothing stands in the way, and that
+        // every check that ran says what it verified.
         $this->assertTrue($verdict['eligible']);
-        $this->assertCount(5, $verdict['checks'], 'lifecycle, availability, assignment, licence, documents');
-        $this->assertSame('compliant', $verdict['compliance_status']);
+        $this->assertSame([], $verdict['blockers'], 'an eligible driver carries no blocker');
+        foreach ($verdict['checks'] as $c) {
+            $this->assertTrue($c['passed'], "check '{$c['key']}' did not pass");
+            $this->assertNotSame('', $c['detail'], "check '{$c['key']}' says nothing about what it verified");
+        }
+        $this->assertSame('Cleared by Fleet', $this->checkFor($verdict, 'fleet')['detail'],
+            'Fleet\'s clearance must be on the record — it is the one that replaced licence, medical and lifecycle');
     }
 
     /** BR-P0-004: "critical document expired blocks assignment". */
@@ -266,22 +275,32 @@ class TransportEligibilityTest extends TestCase
 
         $verdict = $this->drivers->evaluate($d, $this->trip(), self::TENANT_A);
 
+        // D-150 — the licence rule is Fleet's since D-134, so there is no
+        // `licence` check to find. What BR-P0-004 needs is a blocker that says
+        // what is wrong and whose desk clears it.
         $this->assertFalse($verdict['eligible']);
-        $check = $this->checkFor($verdict, 'licence');
-        $this->assertFalse($check['passed']);
-        $this->assertStringContainsString('expired', $check['detail']);
-        // BRWM §70's required tone.
-        $this->assertStringContainsString('assign another eligible driver', $check['detail']);
+        $this->assertCount(1, $verdict['blockers']);
+        $blocker = $verdict['blockers'][0];
+        $this->assertStringContainsString('expired', strtolower($blocker['why']));
+        $this->assertSame('Fleet compliance desk', $blocker['owner']);
+        // BRWM §70's required tone. Held, not dropped: Fleet's sentence does not
+        // carry the next action — see D-150, "left red" — not a reason to stop asking.
+        $this->assertStringContainsString('assign another eligible driver', $blocker['why']);
     }
 
     public function test_a_driver_with_no_licence_is_blocked(): void
     {
-        $d = $this->fleetDriver(['name' => 'No Licence'], self::TENANT_A, $this->actor);
+        // The Fleet fixture files a licence by default; this driver must have none.
+        $d = $this->fleetDriver(['name' => 'No Licence', 'licence_number' => null, 'licence_expiry' => null],
+            self::TENANT_A, $this->actor);
 
         $verdict = $this->drivers->evaluate($d, $this->trip(), self::TENANT_A);
 
+        // D-150 — the reason and the desk, where it used to be a `licence` check.
         $this->assertFalse($verdict['eligible']);
-        $this->assertStringContainsString('No licence number', $this->checkFor($verdict, 'licence')['detail']);
+        $this->assertNotEmpty($verdict['blockers']);
+        $this->assertStringContainsString('no licence', strtolower($verdict['blockers'][0]['why']));
+        $this->assertSame('Fleet compliance desk', $verdict['blockers'][0]['owner']);
     }
 
     /** BRW-028: "Only drivers with AVAILABLE status may be recommended." */
@@ -355,10 +374,15 @@ class TransportEligibilityTest extends TestCase
 
         $verdict = $this->drivers->evaluate($d, $this->trip(), self::TENANT_A);
 
+        // D-150 — `compliance_status` and `expiring_soon` were the pre-D-134
+        // driver contract. Fleet's expiry warning now carries the same facts:
+        // which document (code), what is happening (why), and whose desk.
         $this->assertTrue($verdict['eligible'], 'a warning must not block');
-        $this->assertSame('expiring', $verdict['compliance_status']);
-        $this->assertNotEmpty($verdict['expiring_soon']);
-        $this->assertSame('licence', $verdict['expiring_soon'][0]['document_type']);
+        $this->assertSame([], $verdict['blockers']);
+        $warning = collect($verdict['warnings'])->firstWhere('code', 'driver_license_expiring');
+        $this->assertNotNull($warning, 'the expiring licence was not reported');
+        $this->assertNotSame('', $warning['why']);
+        $this->assertSame('Fleet compliance desk', $warning['owner']);
     }
 
     /* ══════════ POLICY: advisory vs blocking (CMP §20) ══════════ */
@@ -425,7 +449,7 @@ class TransportEligibilityTest extends TestCase
         $ok = $this->goodVehicle(capacity: 30);
         $tooSmall = $this->goodVehicle(capacity: 10);
         $suspended = $this->goodVehicle();
-        $this->moveFleetVehicle($suspended, Vehicle::STATUS_SUSPENDED);
+        $this->moveFleetVehicle($suspended, Vehicle::STATUS_COMPLIANCE_BLOCKED);
 
         $ids = $this->vehicles->candidatesFor($trip, self::TENANT_A)->pluck('subject.id');
 
@@ -455,7 +479,7 @@ class TransportEligibilityTest extends TestCase
         $trip = $this->trip();
         $this->goodVehicle();
         $bad = $this->goodVehicle();
-        $this->moveFleetVehicle($bad, Vehicle::STATUS_SUSPENDED);
+        $this->moveFleetVehicle($bad, Vehicle::STATUS_COMPLIANCE_BLOCKED);
 
         $all = $this->vehicles->candidatesFor($trip, self::TENANT_A, includeIneligible: true);
         $row = $all->firstWhere('subject.id', $bad->id);

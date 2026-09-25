@@ -327,7 +327,16 @@ class TransportAllocationTest extends TestCase
         $this->assertArrayHasKey('vehicle', $checks);
         $this->assertArrayHasKey('driver', $checks);
         $this->assertCount(4, $checks['vehicle'], 'status, assignment, documents, capacity');
-        $this->assertCount(5, $checks['driver'], 'lifecycle, availability, assignment, licence, documents');
+        // D-150 — was a count of the pre-D-134 five. What a review needs is
+        // that Fleet's clearance and our own assignment check are both on the
+        // row, and that each says what it verified.
+        $driverKeys = array_column($checks['driver'], 'key');
+        $this->assertContains('fleet', $driverKeys, 'Fleet\'s clearance is not on the audit row');
+        $this->assertContains('assignment', $driverKeys, 'the assignment clash check is not on the audit row');
+        foreach ($checks['driver'] as $c) {
+            $this->assertTrue($c['passed']);
+            $this->assertNotSame('', $c['detail']);
+        }
         // Every check records what it verified, not only the failures.
         foreach ($checks['vehicle'] as $c) {
             $this->assertArrayHasKey('passed', $c);

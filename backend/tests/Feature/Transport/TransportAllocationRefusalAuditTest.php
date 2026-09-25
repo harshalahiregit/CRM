@@ -141,7 +141,7 @@ class TransportAllocationRefusalAuditTest extends TestCase
         // `allocated` when it was crewed, AND it is on an active assignment. Both
         // are recorded; the rule is keyed off the assignment one, since that is
         // what BR-P0-003 is actually about.
-        $blockers = implode(' | ', $row->context['blockers']);
+        $blockers = implode(' | ', array_column($row->context['blockers'], 'why'));
         $this->assertStringContainsString('Already assigned', $blockers);
         $this->assertStringContainsString('trip', strtolower($blockers), 'a conflict log must name the conflicting trip');
         $this->assertContains('BR-P0-003; STOS-DB §198; RTM PLN-006', $row->context['sources']);
@@ -214,7 +214,7 @@ class TransportAllocationRefusalAuditTest extends TestCase
 
         $row = $this->refusal($trip);
         $this->assertContains('RTM PLN-001; FRS TRP-P0-003 ("payload")', $row->context['sources']);
-        $this->assertStringContainsString('below', $row->context['blockers'][0]);
+        $this->assertStringContainsString('below', $row->context['blockers'][0]['why']);
     }
 
     public function test_a_missing_required_document_is_logged(): void
@@ -227,7 +227,7 @@ class TransportAllocationRefusalAuditTest extends TestCase
         $this->refuse($trip, $v->id, null);
 
         $row = $this->refusal($trip);
-        $this->assertStringContainsString('Missing required', $row->context['blockers'][0]);
+        $this->assertStringContainsString('Missing required', $row->context['blockers'][0]['why']);
         $this->assertSame([], $row->context['document_status']['documents'], 'nothing on file, and that is the point');
     }
 
@@ -251,9 +251,17 @@ class TransportAllocationRefusalAuditTest extends TestCase
 
         $this->refuse($trip, null, $d->id);
 
-        $checks = $this->refusal($trip)->context['checks'];
-        $this->assertCount(5, $checks, 'lifecycle, availability, assignment, licence, documents');
+        $row = $this->refusal($trip);
+        $checks = $row->context['checks'];
+        // D-150 — was a count of the pre-D-134 five. The point was that the
+        // PASSING checks are recorded too: here the assignment check passed and
+        // must still be on the row beside Fleet's refusal.
         $this->assertSame(1, collect($checks)->where('passed', false)->count());
+        $this->assertTrue(collect($checks)->firstWhere('key', 'assignment')['passed'] ?? false,
+            'the check that passed is missing from the row');
+        // And the reason a reviewer reads is actionable: the sentence and the desk.
+        $this->assertNotSame('', $row->context['blockers'][0]['why']);
+        $this->assertSame('Fleet compliance desk', $row->context['blockers'][0]['owner']);
         foreach ($checks as $c) {
             $this->assertArrayHasKey('detail', $c);
             $this->assertArrayHasKey('required', $c);

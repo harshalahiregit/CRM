@@ -602,7 +602,12 @@ class AllocationService
         ]);
 
         throw new BusinessException(
-            'That '.$kind.' cannot be allocated. '.FleetResourceName::of($resource).': '.implode(' ', $verdict['blockers']),
+            'That '.$kind.' cannot be allocated. '.FleetResourceName::of($resource).': '.implode(' ', array_map(
+                // D-150: blockers are {code, why, owner}. The desk stays in the
+                // sentence, as it was when Fleet's owner was flattened into it.
+                fn (array $b) => $b['owner'] ? $b['why'].' ('.$b['owner'].')' : $b['why'],
+                $verdict['blockers'],
+            )),
             422
         );
     }
