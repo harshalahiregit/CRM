@@ -376,6 +376,54 @@ class TripTimelineTest extends TestCase
             ->where('trip_id', $fresh)->where('event_type', 'gps.activated')->count());
     }
 
+    public function test_a_trip_re_crewed_after_the_switch_follows_its_new_truck(): void
+    {
+        // A breakdown swap after the repoint: release clears the trip's
+        // pointer, reassignment writes the replacement truck. The ledger still
+        // names the truck that was replaced. The verdict used to govern the
+        // trip row forever, so the replacement's telemetry was refused and the
+        // trip went dark at exactly the moment somebody needs to watch it.
+        $this->repointVerdict($this->tripId, $this->legacyId, 4242);
+
+        DB::table('transport_trips')->where('id', $this->tripId)
+            ->update(['vehicle_id' => $this->vehicle->id]);
+
+        $this->ping()->assertCreated();
+
+        $this->assertCount(1, $this->events('gps.activated'));
+    }
+
+    public function test_a_corrected_never_valid_trip_is_published_to_again(): void
+    {
+        // Person 1's split: never_valid is fixed by somebody correcting the
+        // row. A correction has to be visible to the publisher, or the row is
+        // refused forever for a value it no longer holds.
+        $this->repointVerdict($this->tripId, 1212010, null);
+
+        DB::table('transport_trips')->where('id', $this->tripId)
+            ->update(['vehicle_id' => $this->vehicle->id]);
+
+        $this->ping()->assertCreated();
+
+        $this->assertCount(1, $this->events('gps.activated'));
+    }
+
+    public function test_an_uncorrected_never_valid_trip_is_still_refused(): void
+    {
+        // The other half, so the fix cannot quietly widen into "any verdict
+        // can be ignored": while the row still holds the stranded value, it
+        // names no truck we can vouch for, even though that number happens to
+        // equal this Fleet vehicle's id.
+        $this->repointVerdict($this->tripId, $this->vehicle->id, null);
+
+        DB::table('transport_trips')->where('id', $this->tripId)
+            ->update(['vehicle_id' => $this->vehicle->id]);
+
+        $this->ping()->assertCreated();
+
+        $this->assertCount(0, $this->events());
+    }
+
     /* ── A ping with no trip ────────────────────────────────────── */
 
     public function test_a_truck_idling_in_the_yard_writes_nothing_to_any_timeline(): void

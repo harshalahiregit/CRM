@@ -224,6 +224,7 @@ const SireRecurrenceDetail = lazy(() => import('@/modules/sire/pages/RecurrenceD
 // Fleet screens (Person 2), inside the Transport module since the D-62 merge.
 const FleetOverview = lazy(() => import('@/modules/transport/fleet/pages/FleetOverview'))
 const FleetTrailers = lazy(() => import('@/modules/transport/fleet/pages/TrailersBoard'))
+const FleetTyres = lazy(() => import('@/modules/transport/fleet/pages/TyresBoard'))
 const FleetVehiclePassport = lazy(() => import('@/modules/transport/fleet/pages/VehiclePassportView'))
 const FleetWorkshop = lazy(() => import('@/modules/transport/fleet/pages/MaintenanceBoard'))
 const FleetDrivers = lazy(() => import('@/modules/transport/fleet/pages/DriversBoard'))
@@ -956,6 +957,7 @@ export default function AppRoutes() {
           <Route path="vehicles" element={<S><FleetOverview /></S>} />
           <Route path="vehicles/:id" element={<S><FleetVehiclePassport /></S>} />
           <Route path="trailers" element={<S><FleetTrailers /></S>} />
+          <Route path="tyres" element={<S><FleetTyres /></S>} />
           <Route path="drivers" element={<S><FleetDrivers /></S>} />
           <Route path="drivers/:id" element={<S><FleetDrivers /></S>} />
         </Route>
