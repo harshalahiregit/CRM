@@ -24,8 +24,29 @@ class DirectoryController extends Controller
     {
     }
 
+    /**
+     * Gated like the actions beside it, which it always should have been.
+     *
+     * Every write on this controller checks canManageHrQueue() and this read
+     * checked nothing, so any signed-in staff account — including one with no
+     * access role at all — could fetch the whole report. Confirmed by calling it
+     * with such a token: 200, with every orphan login's name and address.
+     *
+     * That was already more than a directory listing, and adding the linkage
+     * issues made it considerably more: it now carries account roles and
+     * statuses, both sides of every identity mismatch including personal phone
+     * numbers and emails, and — the part that matters — a list of exactly which
+     * accounts are live when their holder is no longer employed. That is a map
+     * of the weakest logins in the workspace, and it does not belong to everyone
+     * who can sign in.
+     *
+     * Same check as the remediation actions, so the people who can act on the
+     * report are the people who can read it.
+     */
     public function reconciliation(Request $request)
     {
+        abort_unless($request->user()->canManageHrQueue(), 403, 'You are not authorised to view the directory report');
+
         return response()->json(['data' => $this->service->report($this->tenant($request))]);
     }
 

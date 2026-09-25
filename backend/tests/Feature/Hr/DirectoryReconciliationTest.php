@@ -312,6 +312,34 @@ class DirectoryReconciliationTest extends TestCase
         }
     }
 
+    /**
+     * The report is gated like the actions beside it.
+     *
+     * It was not. Any signed-in staff account could read it, and the report is
+     * not a directory listing — it carries account roles and statuses, both sides
+     * of every identity mismatch including personal phone numbers, and a list of
+     * exactly which logins are still live for people who no longer work here.
+     * That last one is a map of the weakest accounts in the workspace.
+     */
+    public function test_a_staff_account_without_hr_rights_cannot_read_the_report(): void
+    {
+        $plain = $this->user(['role' => 'staff']);
+
+        $this->assertFalse($plain->canManageHrQueue(), 'fixture must be a genuinely unprivileged account');
+
+        $this->actingAs($plain)
+            ->getJson('/api/hr/directory/reconciliation')
+            ->assertStatus(403);
+    }
+
+    public function test_an_hr_administrator_can_still_read_the_report(): void
+    {
+        $this->actingAs($this->admin())
+            ->getJson('/api/hr/directory/reconciliation')
+            ->assertOk()
+            ->assertJsonStructure(['data' => ['summary', 'without_login', 'without_employee', 'issues']]);
+    }
+
     public function test_dismissal_is_tenant_scoped(): void
     {
         $admin = $this->admin();
