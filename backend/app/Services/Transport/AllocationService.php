@@ -7,6 +7,7 @@ use App\Exceptions\BusinessException;
 use App\Exceptions\ResourceNotFoundException;
 use App\Models\Transport\TransportDocument;
 use App\Domains\Fleet\Models\DriverProfile;
+use App\Domains\Fleet\Services\DriverService;
 use App\Models\Transport\TransportTrip;
 use App\Services\Transport\Contracts\FleetResourceGateway;
 use App\Services\Transport\TripEventRecorder;
@@ -71,6 +72,9 @@ use Illuminate\Support\Facades\Log;
  */
 class AllocationService
 {
+    /** The licence states Fleet blocks on — DriverService::blockersFor(). */
+    private const FLEET_LICENCE_BLOCKING = ['expired', 'unknown'];
+
     public function __construct(
         private TripAssignmentService $assignments,
         private VehicleEligibilityService $vehicleEligibility,
@@ -81,6 +85,8 @@ class AllocationService
         // TAKEN; nothing ever told it when one came free — `markReleased()` sat
         // on the interface with no caller in the codebase. D-119.
         private FleetResourceGateway $fleet,
+        // Fleet's own licence verdict, for the refusal's document status — D-150.
+        private DriverService $fleetDrivers,
     ) {
     }
 
@@ -685,10 +691,21 @@ class AllocationService
             $status['fleet'] = collect($verdict['checks'] ?? [])
                 ->firstWhere('key', 'fleet')['detail'] ?? 'Refused by Fleet.';
 
+            // `state` is Fleet's licence verdict, copied as-is — D-150. `valid`
+            // is not a second opinion on it: it is the line Fleet itself draws
+            // when it decides to block. DriverService::blockersFor() refuses a
+            // licence that is `expired` or `unknown` and only warns on
+            // `expiring`, so those two, and only those, are not valid here.
+            // (Fleet's list(ready_only) is stricter — it wants `valid` alone —
+            // but that answers "no warnings", not "may this driver be refused".)
+            $licence = $this->fleetDrivers->licenceVerdict($resource);
+
             $status['licence'] = [
                 'number'      => $resource->licence_number,
                 'class'       => $resource->licence_class,
                 'valid_until' => $resource->licence_expiry?->toDateString(),
+                'state'       => $licence['state'],
+                'valid'       => ! in_array($licence['state'], self::FLEET_LICENCE_BLOCKING, true),
             ];
 
             return $status;

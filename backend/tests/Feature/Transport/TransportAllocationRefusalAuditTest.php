@@ -167,6 +167,8 @@ class TransportAllocationRefusalAuditTest extends TestCase
         $this->assertSame('HMV', $lic['class']);
         $this->assertSame(now()->subDays(4)->toDateString(), $lic['valid_until']);
         $this->assertFalse($lic['valid']);
+        // D-150 — and the Fleet verdict it was read from, so the row shows why.
+        $this->assertSame('expired', $lic['state']);
 
         // The override half cannot be satisfied — PLN-007 is P1.
         $this->assertNull($row->context['override']);

@@ -5668,10 +5668,18 @@ against the new shape.
    **Proved by test, broken 2 ways:** `test_a_fleet_refusal_is_logged_against_br_p0_004` (new) —
    old keys restored → red; mapped to `assignment` → red; restored → green. Transport suite
    unchanged otherwise: `80 failed · 1074 passed`.
-   **Still red, for a different reason:** `test_expired_licence_is_logged_against_br_p0_004_with_document_status`
-   now passes its `rule` line and stops at `document_status.licence.valid` — a key the repoint
-   (685a1a67) dropped from the driver's document status. Where validity should come from (Fleet's
-   own `licence.state`, rather than a second opinion computed here) is a decision, not a fix.
+   **The licence-validity half — closed too.** The repoint (685a1a67) had dropped
+   `document_status.licence.valid`. Ruled by the owner: validity is read from Fleet, never
+   re-derived here. The row now carries Fleet's `DriverService::licenceVerdict()` `state`
+   verbatim (`unknown | expired | expiring | valid`) beside `valid`, which is false exactly for
+   the states Fleet's own `blockersFor()` refuses on — `expired` and `unknown`. `expiring` is
+   valid: Fleet only warns on it. Fleet's `list(ready_only)` is stricter (it wants `valid` alone),
+   but that answers "no warnings", not "why was this driver refused". No Fleet file touched.
+   **Proved by test, broken 2 ways:**
+   `test_expired_licence_is_logged_against_br_p0_004_with_document_status` — now green, and
+   asserts `state = expired` as well. `valid` hard-coded true → red; Fleet's `state` dropped →
+   red; restored → green. Transport: `80 failed · 1074 passed` → `79 failed · 1075 passed`, no
+   test newly red.
 3. **CMP §20 configurability.** `driver.check.licence.required` no longer does anything: Fleet's
    whole verdict is gated by `driver.check.lifecycle.required`. Whether licence alone may be advisory
    is a business rule.
