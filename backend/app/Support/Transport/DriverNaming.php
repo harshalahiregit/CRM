@@ -24,12 +24,13 @@ use App\Domains\Fleet\Models\DriverProfile;
  * report that came in. This never returns null: worst case it returns `#2`,
  * which is worse than a name and far better than a blank.
  *
- * ── WHY IT IS RESOLVED ON READ, NOT AT EACH CALL SITE ────────────────────
- * D-135 was reported fixed for two screens and four more were still reading a
- * name. Patching each one is how it comes back a third time. The directory —
- * the composite from D-134, which answers for both registers — is asked once
- * per request, and every `DriverProfile` that is read gets its name filled in
- * by `StosServiceProvider`'s `retrieved` hook.
+ * ── WHY IT IS ONE RESOLVER, NOT A PATCH PER CALL SITE ────────────────────
+ * D-135 was reported fixed for two screens and a grep found six readers, four
+ * still broken. Patching each is how it comes back a third time. This is the
+ * one place, reached through `DriverProfile::getNameAttribute()` — an accessor,
+ * so it costs a lookup only when something actually asks for a name, and so
+ * `toArray()` never carries a derived value that would become a copy the
+ * moment it was cached (D-144).
  *
  * The lookup is memoised per request: `DriverDirectory::people()` reads TPV
  * workforce, purchase workforce, vendor and customer contacts, plus the local
@@ -50,23 +51,6 @@ class DriverNaming
         // guessing the tenant from auth is how a lookup silently returns
         // nothing in exactly those contexts.
         return $this->names((int) $profile->company_id)[$ref] ?? '#'.$profile->id;
-    }
-
-    /**
-     * Fill in the name on a profile that has just been read.
-     *
-     * `syncOriginalAttribute` afterwards so the attribute is not dirty: this is
-     * a derived value and a later `save()` must never try to write it to a
-     * column that does not exist.
-     */
-    public function attach(DriverProfile $profile): void
-    {
-        if ($profile->source === null) {
-            return;     // not yet persisted, or mid-construction
-        }
-
-        $profile->setAttribute('name', $this->nameFor($profile));
-        $profile->syncOriginalAttribute('name');
     }
 
     /** @return array<string,string> */

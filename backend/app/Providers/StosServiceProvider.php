@@ -120,21 +120,6 @@ class StosServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        // D-135 — a driver's name, filled in wherever a profile is read.
-        //
-        // `driver_profiles` has no `name` column; the name lives in the
-        // directory. After the repoint every `$trip->driver->name` in the
-        // codebase silently became null, and the allocation panel rendered a
-        // blank where a driver WAS assigned — indistinguishable from nothing
-        // being assigned.
-        //
-        // Hooked here rather than patched at each reader, because it was
-        // already fixed once for two screens and four more were still reading
-        // a name. This is our provider; P2's model is untouched.
-        DriverProfile::retrieved(function (DriverProfile $profile) {
-            app(DriverNaming::class)->attach($profile);
-        });
-
 
         foreach (self::LISTENERS as $event => $listeners) {
             foreach ($listeners as $listener) {

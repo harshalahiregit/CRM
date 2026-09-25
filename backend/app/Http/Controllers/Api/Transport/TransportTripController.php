@@ -25,6 +25,8 @@ use Illuminate\Support\Facades\DB;
  */
 class TransportTripController extends Controller
 {
+    use \App\Support\Transport\WithDriverName;
+
     use ApiResponse;
 
     public function __construct(
@@ -90,15 +92,20 @@ class TransportTripController extends Controller
             // The allocation controller still reads the ACTIVE one, correctly:
             // it is deciding whether a trip can be allocated or released, not
             // displaying history.
-            'assignment' => ($this->assignments->activeForTrip($trip->id, $tenantId)
-                ?? $this->assignments->historyForTrip($trip->id, $tenantId)->first())
-                // Fleet's columns, not the placeholder's. `driver_profiles` has no
-                // `name`, no `driver_code` and no `availability` — Fleet stores
-                // no names at all, because a driver is a reference into the CRM
-                // directory (`source` + `source_id`) plus a licence. Selecting
-                // the old four made this endpoint 503 with
-                // "Unknown column 'name'". See D-134 for the name itself.
-                ?->load('vehicle:id,registration_number,vehicle_type,status', 'driver:id,company_id,source,source_id,licence_number,licence_class,status'),
+            'assignment' => $this->withDriverName(
+                ($this->assignments->activeForTrip($trip->id, $tenantId)
+                    ?? $this->assignments->historyForTrip($trip->id, $tenantId)->first())
+                    // Fleet's columns, not the placeholder's. `driver_profiles`
+                    // has no `name`, no `driver_code` and no `availability` —
+                    // Fleet stores no names, because a driver is a reference
+                    // into the CRM directory (`source` + `source_id`) plus a
+                    // licence. Selecting the old four made this endpoint 503
+                    // with "Unknown column 'name'".
+                    ?->load(
+                        'vehicle:id,registration_number,vehicle_type,status',
+                        'driver:id,company_id,source,source_id,licence_number,licence_class,status',
+                    )
+            ),
             'audit' => $this->audit->forSubject($trip, $tenantId),
             // CTD §4's destination, reachable from the trip in one click.
             //
