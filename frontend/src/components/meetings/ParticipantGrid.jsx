@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Search, X, Check, Trash2, Users } from 'lucide-react'
+import { Plus, Search, Check, Trash2, Users } from 'lucide-react'
+import { Overlay } from '@/components/ui/kit3d'
 
 /**
  * The attendance sheet: four columns, Name and Designation.
@@ -146,69 +147,100 @@ function PartyColumn({ party, chosen, onAdd, onRemove, loadPeople }) {
           </div>
         )}
 
-        {/* The picker. Inline rather than a portalled popover: a column is
-            narrow, the list belongs under the company it came from, and the
-            whole point of the grid is seeing all four at once. */}
+        {/*
+          * The picker opens CENTRED, not inside the column.
+          *
+          * It used to expand in place, and a party column is about 210px wide:
+          * the search box clipped its own placeholder to "Search name or
+          * desig…", every person read as two cramped lines, and the card grew
+          * to twice the height of the three beside it -- so the grid this whole
+          * screen is built around stopped lining up the moment anybody used it.
+          * On a phone it was unusable.
+          *
+          * A dialog gets the width the list needs whatever the column is doing,
+          * and the grid behind it stays still. Backdrop clicks do not close it:
+          * a half-filled attendance sheet should not vanish because somebody
+          * clicked past the edge.
+          */}
         {party.picks_entity && !entityId ? (
           <p style={{ margin: 0, fontSize: 11.5, color: 'var(--text-muted)' }}>
             Pick a {party.label.toLowerCase()} to see its team.
           </p>
         ) : (
-          <>
-            <button type="button" onClick={() => setOpen(o => !o)} style={addPersonBtn}>
-              {open ? <X size={12} /> : <Plus size={12} />} {open ? 'Done' : 'Add person'}
-            </button>
+          <button type="button" onClick={() => { setOpen(true); setQ('') }} style={addPersonBtn}>
+            <Plus size={12} /> Add person
+          </button>
+        )}
 
-            {open && (
-              <div style={{ borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-input)', overflow: 'hidden' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', borderBottom: '1px solid var(--border)' }}>
-                  <Search size={12} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-                  <input
-                    value={q}
-                    onChange={e => setQ(e.target.value)}
-                    placeholder="Search name or designation…"
-                    style={{ flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none', color: 'var(--text-h)', fontSize: 12 }}
-                  />
-                </div>
-                <div style={{ maxHeight: 220, overflowY: 'auto' }}>
-                  {loading ? (
-                    <p style={emptyNote}>Loading {entityName || 'the team'}…</p>
-                  ) : matches.length === 0 ? (
-                    <p style={emptyNote}>
-                      {people.length === 0
-                        ? `No people are registered against ${entityName || 'this party'} yet.`
-                        : `Nobody matches “${q}”.`}
-                    </p>
-                  ) : matches.map(person => {
-                    const already = taken.has(person.ref)
-                    return (
-                      <button
-                        key={person.ref}
-                        type="button"
-                        disabled={already}
-                        onClick={() => onAdd(person)}
-                        title={already ? 'Already on the sheet' : undefined}
-                        style={{
-                          width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 6,
-                          padding: '7px 9px', background: 'transparent', border: 'none',
-                          borderBottom: '1px solid var(--border)',
-                          cursor: already ? 'default' : 'pointer', opacity: already ? 0.45 : 1,
-                        }}
-                        onMouseEnter={e => { if (!already) e.currentTarget.style.background = 'var(--bg-card)' }}
-                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-                      >
-                        <span style={{ flex: 1, minWidth: 0 }}>
-                          <span style={nameLine}>{person.name || '—'}</span>
-                          <span style={designationLine}>{person.designation || 'No designation on record'}</span>
-                        </span>
-                        {already && <Check size={12} style={{ color: '#10b981', flexShrink: 0 }} />}
-                      </button>
-                    )
-                  })}
-                </div>
+        {open && (
+          <Overlay onClose={() => setOpen(false)} width={520}>
+            <div style={{ padding: '18px 20px 6px' }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: 'var(--text-h)' }}>
+                Add from {entityName || party.label}
+              </h3>
+              <p style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--text-muted)' }}>
+                Name and designation come from the record — pick somebody rather than retyping them.
+              </p>
+            </div>
+
+            <div style={{ padding: '10px 20px 18px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 11px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-input)', marginBottom: 10 }}>
+                <Search size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                <input
+                  autoFocus
+                  value={q}
+                  onChange={e => setQ(e.target.value)}
+                  placeholder="Search name or designation…"
+                  style={{ flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none', color: 'var(--text-h)', fontSize: 13 }}
+                />
               </div>
-            )}
-          </>
+
+              <div style={{ maxHeight: '48vh', overflowY: 'auto', borderRadius: 10, border: '1px solid var(--border)' }}>
+                {loading ? (
+                  <p style={emptyNote}>Loading {entityName || 'the team'}…</p>
+                ) : matches.length === 0 ? (
+                  <p style={emptyNote}>
+                    {people.length === 0
+                      ? `No people are registered against ${entityName || 'this party'} yet.`
+                      : `Nobody matches “${q}”.`}
+                  </p>
+                ) : matches.map(person => {
+                  const already = taken.has(person.ref)
+                  return (
+                    <button
+                      key={person.ref}
+                      type="button"
+                      disabled={already}
+                      onClick={() => onAdd(person)}
+                      title={already ? 'Already on the sheet' : undefined}
+                      style={{
+                        width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '10px 12px', background: 'transparent', border: 'none',
+                        borderBottom: '1px solid var(--border)',
+                        cursor: already ? 'default' : 'pointer', opacity: already ? 0.45 : 1,
+                      }}
+                      onMouseEnter={e => { if (!already) e.currentTarget.style.background = 'var(--bg-input)' }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+                    >
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={nameLine}>{person.name || '—'}</span>
+                        <span style={designationLine}>{person.designation || 'No designation on record'}</span>
+                      </span>
+                      {already && <Check size={13} style={{ color: '#10b981', flexShrink: 0 }} />}
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* Each pick is applied immediately, so this is Done and not Save
+                  -- there is nothing held back waiting to be confirmed. */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
+                <button type="button" onClick={() => setOpen(false)} style={{ padding: '9px 22px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700, background: 'linear-gradient(135deg,#7c3aed,#6d28d9)', color: '#fff' }}>
+                  Done
+                </button>
+              </div>
+            </div>
+          </Overlay>
         )}
 
         {chosen.length === 0 && !open && (
