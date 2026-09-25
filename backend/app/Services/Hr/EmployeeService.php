@@ -10,6 +10,7 @@ use App\Models\Hr\HrEmploymentType;
 use App\Models\Hr\HrOnboarding;
 use App\Models\User;
 use App\Repositories\Hr\EmployeeRepository;
+use App\Services\Hr\EmployeeIdentityService;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
@@ -183,6 +184,13 @@ class EmployeeService
         // events (department change, deactivation, manager change).
         [$action, $meta] = $this->describeChange($before, $employee);
         $employee->recordAudit($action, $actor, null, $meta);
+
+        // The employee record owns who the person is; the login attached to it
+        // has to follow, or Staff Management goes on showing the name, phone,
+        // department and designation this edit just replaced. One call, one
+        // direction — see EmployeeIdentityService::syncLoginFromEmployee for why
+        // it is not two.
+        app(EmployeeIdentityService::class)->syncLoginFromEmployee($employee, $actor);
 
         Log::channel('hr')->info('Employee updated', ['employee_id' => $employee->id, 'tenant_id' => $employee->tenant_id, 'action' => $action]);
 

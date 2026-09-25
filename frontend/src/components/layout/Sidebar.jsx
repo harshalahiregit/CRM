@@ -1,5 +1,5 @@
 import {
-  Activity, ArrowLeftRight, Award, Banknote, BarChart2, BarChart3, Bell, BookOpen, BookText, Boxes, Briefcase, Bug, Building2, CalendarCheck, CalendarClock, CalendarDays, CalendarOff, CalendarRange, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList, Clock, Contact, CreditCard, Factory, FileCheck2, FileQuestion, FileSignature, FileText, FileX, FolderOpen, Globe, GraduationCap, Handshake, HelpCircle, History, Hourglass, IndianRupee, Landmark, Layers3, LayoutDashboard, LayoutTemplate, LifeBuoy, Link2, LogOut, MessageSquare, Network, Package, PackageMinus, PackagePlus, PartyPopper, PenLine, Receipt, RefreshCw, Rocket, Scale, ScanLine, Search, Settings, Settings2, Shield, ShieldCheck, ShoppingBag, ShoppingCart, SlidersHorizontal, Stethoscope, TrendingUp, Truck, Undo2, User, UserCheck, UserCog, UserPlus, UserRound, Users, Wallet, Warehouse, Wrench, X, Zap, Container,
+  Activity, ArrowLeftRight, Award, Banknote, BarChart2, BarChart3, Bell, BookOpen, BookText, Boxes, Briefcase, Bug, Building2, CalendarCheck, CalendarClock, CalendarDays, CalendarOff, CalendarRange, CheckSquare, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, ClipboardList, Clock, Contact, CreditCard, Factory, FileCheck2, FileQuestion, FileSignature, FileText, FileX, FolderOpen, Globe, GraduationCap, Handshake, HelpCircle, History, Hourglass, IndianRupee, Landmark, Layers3, LayoutDashboard, LayoutTemplate, LifeBuoy, Link2, LogOut, MessageSquare, Network, Package, PackageMinus, PackagePlus, PartyPopper, PenLine, Receipt, RefreshCw, Rocket, Scale, ScanLine, Search, Settings, Settings2, Shield, ShieldCheck, ShoppingBag, ShoppingCart, SlidersHorizontal, Stethoscope, TrendingUp, Truck, Undo2, User, UserCheck, UserCog, UserPlus, UserRound, Users, Wallet, Warehouse, Wrench, X, Zap, Container, Disc3,
 } from 'lucide-react'
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -328,6 +328,9 @@ const TRANSPORT_SUB_ITEMS = [
   { label: 'Trailers',         path: '/app/transport/trailers', icon: Container,  when: canUseStos },
   { label: 'Drivers',          path: '/app/transport/drivers',  icon: UserRound,  when: canUseStos },
   { label: 'Workshop',         path: '/app/transport/workshop', icon: Wrench,     when: canUseStos },
+  // T-36 — added here AND in TransportLayout in the same change. Trailers was
+  // added to one rail and not the other and nobody could find it.
+  { label: 'Tyres',            path: '/app/transport/tyres',    icon: Disc3,      when: canUseStos },
 ]
 
 const SUBMODULE_SEARCH = [

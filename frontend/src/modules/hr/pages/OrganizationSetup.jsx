@@ -90,10 +90,14 @@ const MASTERS = {
     ],
   },
   roles: {
-    label: 'Roles', singular: 'Role', icon: UserCog,
+    // "Job Roles", not "Roles". Staff Management has Roles too, and those grant
+    // permissions — people arrived here looking for the access control and left
+    // having renamed an org-chart title. The database concept is untouched
+    // (hr_job_roles, /hr/organization/roles); only the words people read change.
+    label: 'Job Roles', singular: 'Job Role', icon: UserCog,
     api: () => hrApi.organization.roles,
     columns: [
-      { key: 'name',           head: 'Role' },
+      { key: 'name',           head: 'Job Role' },
       { key: 'code',           head: 'Code' },
       { key: 'employee_count', head: 'Employees', chip: true },
     ],

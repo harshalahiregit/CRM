@@ -55,7 +55,8 @@ class DirectoryReconciliationService
     {
         $employees = HrEmployee::where('tenant_id', $tenantId)
             ->whereIn('status', ['Active', 'On Probation'])
-            ->get(['id', 'name', 'employee_code', 'department', 'designation', 'user_id', 'status']);
+            ->get(['id', 'name', 'employee_code', 'department', 'designation', 'user_id', 'status',
+                   'email', 'official_email']);
 
         // INTERNAL roles only.
         //
@@ -76,25 +77,49 @@ class DirectoryReconciliationService
 
         $linkedUserIds = $employees->pluck('user_id')->filter()->unique();
 
-        // An employment record with nobody able to sign in as them. Fine for a
-        // site worker; a problem for anybody expected to use the app.
-        $withoutLogin = $employees->whereNull('user_id')->values()->map(fn ($e) => [
-            'employee_id'   => $e->id,
-            'name'          => $e->name,
-            'employee_code' => $e->employee_code,
-            'department'    => $e->department,
-            'designation'   => $e->designation,
-        ])->all();
+        $unlinkedUsers = $users->whereNotIn('id', $linkedUserIds->all())->values();
 
         // A login with no employment record. Legitimate for a super-admin or a
         // portal account — and the reason somebody is missing from payroll when
         // it is not.
-        $withoutEmployee = $users->whereNotIn('id', $linkedUserIds->all())->values()->map(fn ($u) => [
+        $withoutEmployee = $unlinkedUsers->map(fn ($u) => [
             'user_id' => $u->id,
             'name'    => $u->name,
             'email'   => $u->email,
             'role'    => $u->role,
         ])->all();
+
+        // An employment record with nobody able to sign in as them. Fine for a
+        // site worker; a problem for anybody expected to use the app.
+        //
+        // Each row carries a suggestion when — and only when — an unlinked login
+        // in this tenant holds exactly the same email address. Exact, and unique:
+        // two accounts sharing an address, or a near miss on a name, produce no
+        // suggestion at all. A wrong link here hands one person's payslips and
+        // attendance to another, so anything short of certainty is left for a
+        // human to decide, and even the certain case is only ever OFFERED — the
+        // admin still presses the button.
+        $byEmail = $unlinkedUsers->groupBy(fn ($u) => strtolower(trim((string) $u->email)));
+
+        $withoutLogin = $employees->whereNull('user_id')->values()->map(function ($e) use ($byEmail) {
+            $email = strtolower(trim((string) ($e->official_email ?: $e->email)));
+            $match = $email !== '' ? $byEmail->get($email) : null;
+            $unique = $match && $match->count() === 1 ? $match->first() : null;
+
+            return [
+                'employee_id'    => $e->id,
+                'name'           => $e->name,
+                'employee_code'  => $e->employee_code,
+                'department'     => $e->department,
+                'designation'    => $e->designation,
+                'email'          => $e->official_email ?: $e->email,
+                'suggested_user' => $unique ? [
+                    'user_id' => $unique->id,
+                    'name'    => $unique->name,
+                    'email'   => $unique->email,
+                ] : null,
+            ];
+        })->all();
 
         return [
             'summary' => [

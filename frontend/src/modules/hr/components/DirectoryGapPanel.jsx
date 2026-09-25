@@ -17,6 +17,12 @@ import { hrApi } from '@/services/hrApi'
     gets added in one place and is missing from the other, and nobody finds out
     until they are left off a payroll run. That is what this shows.
 
+    And, now, what it FIXES. The remediation endpoint existed on the server, was
+    routed, had a client helper written for it, and was called by nothing — the
+    panel reported eleven people who could not sign in and offered no way to give
+    any of them a login. A diagnostic with no remedy is a screen people learn to
+    scroll past.
+
     Collapsed by default: on a workspace where the two agree there is nothing
     to do here, and a panel that shouts on every visit stops being read.
     ──────────────────────────────────────────────────────────────────────── */
@@ -24,11 +30,41 @@ import { hrApi } from '@/services/hrApi'
 export default function DirectoryGapPanel({ showToast }) {
   const [data, setData] = useState(null)
   const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(null)
+  const [newPassword, setNewPassword] = useState(null)
 
   const load = useCallback(() => {
     hrApi.employees.reconciliation().then(setData).catch(() => {})
   }, [])
   useEffect(() => { load() }, [load])
+
+  /**
+   * Close one gap.
+   *
+   * One endpoint for both offered actions, because they are one decision made
+   * by the server rather than two the browser chooses between: provision()
+   * links to a matching account when one exists and creates a login when none
+   * does. Having the UI pick would mean the UI deciding what counts as a match,
+   * which is exactly the judgement that must not live in two places.
+   *
+   * Every refusal — another tenant's address, a portal account, a login another
+   * employee already holds — comes back from the server with its reason, and is
+   * shown rather than swallowed.
+   */
+  const act = async (employeeId) => {
+    setBusy(employeeId)
+    setNewPassword(null)
+    try {
+      const res = await hrApi.employees.provisionLogin(employeeId)
+      if (res?.temporary_password) setNewPassword(res)
+      showToast?.(res?.created ? 'Login created' : 'Linked to the existing login')
+      load()
+    } catch (e) {
+      showToast?.(e.response?.data?.message || 'Could not create the login', 'error')
+    } finally {
+      setBusy(null)
+    }
+  }
 
   if (!data?.summary) return null
 
@@ -73,13 +109,38 @@ export default function DirectoryGapPanel({ showToast }) {
             the app, and a login with no employee record is missed by every payroll run.
           </p>
 
+          {newPassword && (
+            <div className="rounded-lg px-2.5 py-2" style={{ background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.25)' }}>
+              <p className="text-[10px] font-black uppercase tracking-wide" style={{ color:'#10b981' }}>
+                One-time password for {newPassword.email}
+              </p>
+              <p className="text-[13px] font-mono font-bold mt-1 select-all" style={{ color:'var(--text-h)' }}>
+                {newPassword.temporary_password}
+              </p>
+              <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+                Shown once. Pass it on now — it is not stored anywhere and cannot be shown again.
+              </p>
+            </div>
+          )}
+
           {data.without_login?.length > 0 && (
             <Group icon={KeyRound} title="Employed, no login" tone="#f59e0b"
               rows={data.without_login.map(r => ({
                 key: r.employee_id,
                 main: r.name,
                 sub: [r.employee_code, r.department].filter(Boolean).join(' · '),
-              }))} />
+                // An exact, unique email match is the only thing offered as a
+                // link. Anything less certain says so and waits for a human —
+                // linking the wrong account hands one person's payslips and
+                // attendance to another.
+                note: r.suggested_user
+                  ? `Matches the existing login ${r.suggested_user.email}`
+                  : (r.email ? `Will create a login for ${r.email}` : 'Needs an email address before a login can be made'),
+                action: r.email ? {
+                  label: r.suggested_user ? 'Link login' : 'Create login',
+                  onClick: () => act(r.employee_id),
+                } : null,
+              }))} busy={busy} />
           )}
 
           {data.without_employee?.length > 0 && (
@@ -88,7 +149,13 @@ export default function DirectoryGapPanel({ showToast }) {
                 key: r.user_id,
                 main: r.name,
                 sub: [r.email, r.role].filter(Boolean).join(' · '),
-              }))} />
+                // Deliberately no button. Making an employee from a login means
+                // inventing a joining date, and an invented joining date is a
+                // wrong figure in every service and gratuity calculation from
+                // that day on. It is a form somebody fills in, not a click.
+                note: 'Add them on the Employees screen if they should be on payroll.',
+                action: null,
+              }))} busy={busy} />
           )}
         </div>
       )}
@@ -96,7 +163,7 @@ export default function DirectoryGapPanel({ showToast }) {
   )
 }
 
-function Group({ icon: Icon, title, tone, rows }) {
+function Group({ icon: Icon, title, tone, rows, busy }) {
   return (
     <div>
       <p className="text-[10px] font-black uppercase tracking-wide mb-1.5 flex items-center gap-1.5"
@@ -105,9 +172,20 @@ function Group({ icon: Icon, title, tone, rows }) {
       </p>
       <div className="space-y-1">
         {rows.map(r => (
-          <div key={r.key} className="rounded-lg px-2.5 py-1.5" style={{ background: 'var(--bg-input)' }}>
-            <p className="text-[12px] font-bold" style={{ color: 'var(--text-h)' }}>{r.main}</p>
-            {r.sub && <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{r.sub}</p>}
+          <div key={r.key} className="rounded-lg px-2.5 py-1.5 flex items-center gap-2" style={{ background: 'var(--bg-input)' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p className="text-[12px] font-bold" style={{ color: 'var(--text-h)' }}>{r.main}</p>
+              {r.sub && <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{r.sub}</p>}
+              {r.note && <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{r.note}</p>}
+            </div>
+            {r.action && (
+              <button type="button" onClick={r.action.onClick} disabled={busy === r.key}
+                className="px-2.5 py-1 rounded-lg text-[10px] font-black whitespace-nowrap"
+                style={{ background:'var(--bg-card)', color:'var(--text-h)', border:'1px solid var(--border)',
+                         opacity: busy === r.key ? 0.5 : 1 }}>
+                {busy === r.key ? 'Working…' : r.action.label}
+              </button>
+            )}
           </div>
         ))}
       </div>

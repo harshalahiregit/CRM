@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Disc3, Plus, Ruler, LogOut, AlertTriangle, X, Check } from 'lucide-react'
-import { stosApi, STOS_ACCENT, TYRE_POSITIONS, TYRE_POSITION_LABEL, fmtWhen } from '@/services/stosApi'
+import { Disc3, Plus, Ruler, LogOut, AlertTriangle, X, Check, ArrowLeftRight } from 'lucide-react'
+import { stosApi, STOS_ACCENT, TYRE_POSITIONS, TYRE_POSITION_LABEL, TYRE_FITMENT_STATUS_LABELS, fmtWhen } from '@/services/stosApi'
 import Select from '@/components/ui/Select'
 
 /**
@@ -17,16 +17,17 @@ import Select from '@/components/ui/Select'
 export default function TyrePanel({ tyres, vehicle, onChanged }) {
   const [fitting, setFitting] = useState(false)
   const [acting, setActing] = useState(null)      // { fitment, mode: 'inspect' | 'remove' }
+  const [rotating, setRotating] = useState(false)
 
   if (!tyres) return null
 
-  const { fitted = [], history = [], due_replacement = 0, min_tread_mm } = tyres
+  const { fitted = [], history = [], moves = [], due_replacement = 0, min_tread_mm } = tyres
 
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>
-          {fitted.length} fitted · {history.length} off the vehicle
+          {fitted.length} fitted · {history.length} taken off
         </span>
         {due_replacement > 0 && (
           <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded"
@@ -34,8 +35,17 @@ export default function TyrePanel({ tyres, vehicle, onChanged }) {
             <AlertTriangle size={9} /> {due_replacement} at or below {min_tread_mm} mm
           </span>
         )}
+        {/* T-37 — two tyres swap positions in one act. Offered only when there
+            are two to swap; one fitted tyre has nothing to rotate with. */}
+        {fitted.length >= 2 && (
+          <button onClick={() => setRotating(true)}
+            className="ml-auto flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-xl"
+            style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }}>
+            <ArrowLeftRight size={11} /> Rotate
+          </button>
+        )}
         <button onClick={() => setFitting(true)}
-          className="ml-auto flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-xl"
+          className={`${fitted.length >= 2 ? '' : 'ml-auto '}flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-xl`}
           style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)' }}>
           <Plus size={11} /> Fit tyre
         </button>
@@ -107,7 +117,9 @@ export default function TyrePanel({ tyres, vehicle, onChanged }) {
             {history.map((t) => (
               <div key={t.id} className="flex items-center gap-2 rounded-xl px-3 py-1.5" style={{ background: 'var(--bg-input)' }}>
                 <span className="text-[11px] font-bold" style={{ color: 'var(--text-h)' }}>{t.tyre_id}</span>
-                <span className="text-[10px] capitalize" style={{ color: 'var(--text-muted)' }}>{t.status}</span>
+                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                  {TYRE_FITMENT_STATUS_LABELS[t.status] || t.status}
+                </span>
                 <span className="ml-auto text-[10px]" style={{ color: 'var(--text-muted)' }}>
                   {t.km_run !== null ? `${Number(t.km_run).toLocaleString('en-IN')} km run` : 'distance not recorded'}
                 </span>
@@ -117,8 +129,34 @@ export default function TyrePanel({ tyres, vehicle, onChanged }) {
         </details>
       )}
 
+      {/* T-37 — where tyres that are STILL on this vehicle used to sit. Kept
+          apart from "taken off" so a rotation never reads as a removal. */}
+      {moves.length > 0 && (
+        <details>
+          <summary className="text-[11px] font-bold cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+            Earlier positions ({moves.length})
+          </summary>
+          <div className="space-y-1 mt-2">
+            {moves.map((t) => (
+              <div key={t.id} className="flex items-center gap-2 rounded-xl px-3 py-1.5" style={{ background: 'var(--bg-input)' }}>
+                <span className="text-[11px] font-bold" style={{ color: 'var(--text-h)' }}>{t.tyre_id}</span>
+                <span className="text-[10px] capitalize" style={{ color: 'var(--text-muted)' }}>
+                  was {TYRE_POSITION_LABEL(t.position)}
+                </span>
+                <span className="ml-auto text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                  {t.km_run !== null ? `${Number(t.km_run).toLocaleString('en-IN')} km there` : 'distance not recorded'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
       <FitTyreDialog open={fitting} onClose={() => setFitting(false)} vehicle={vehicle} onSaved={onChanged} />
       <TyreActionDialog acting={acting} onClose={() => setActing(null)} onSaved={onChanged} />
+      {rotating && (
+        <RotateDialog fitted={fitted} onClose={() => setRotating(false)} onSaved={onChanged} />
+      )}
     </div>
   )
 }
@@ -232,6 +270,56 @@ function TyreActionDialog({ acting, onClose, onSaved }) {
           </Field>
         </>
       )}
+    </Dialog>
+  )
+}
+
+/**
+ * T-37 — swap two fitted tyres, in one operation.
+ *
+ * Not "remove both, fit both": doing it as four acts writes two rows that are
+ * lies — the casings never went into the store — and the cost per kilometre
+ * would count a swap as two new fittings. The server closes and reopens both
+ * at one odometer; this dialog only has to name the pair.
+ */
+function RotateDialog({ fitted, onClose, onSaved }) {
+  const qc = useQueryClient()
+  const [first, setFirst] = useState(String(fitted[0]?.id ?? ''))
+  const [second, setSecond] = useState(String(fitted[1]?.id ?? ''))
+  const [odometer, setOdometer] = useState('')
+  const [err, setErr] = useState('')
+
+  const options = fitted.map((t) => ({
+    value: String(t.id), label: `${TYRE_POSITION_LABEL(t.position)} — ${t.tyre_id}`,
+  }))
+
+  const save = useMutation({
+    mutationFn: () => stosApi.tyres.rotate(Number(first), Number(second), odometer || null),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['stos-vehicle'] })
+      qc.invalidateQueries({ queryKey: ['stos-tyres'] })
+      onSaved?.(); onClose?.()
+    },
+    onError: (e) => setErr(e?.message || 'Could not rotate those tyres.'),
+  })
+
+  return (
+    <Dialog title="Rotate two tyres" onClose={onClose} busy={save.isPending} err={err}
+      onSubmit={(e) => {
+        e.preventDefault(); setErr('')
+        if (first === second) return setErr('Choose two different tyres.')
+        save.mutate()
+      }}>
+      <Field label="This tyre">
+        <Select size="sm" value={first} onChange={setFirst} options={options} ariaLabel="First tyre" />
+      </Field>
+      <Field label="Swaps with">
+        <Select size="sm" value={second} onChange={setSecond} options={options} ariaLabel="Second tyre" />
+      </Field>
+      <Field label="Odometer now" hint="Both tyres change position at this reading, so the distance each ran stays exact">
+        <input type="number" step="0.1" value={odometer} onChange={(e) => setOdometer(e.target.value)}
+          className={inputClass} style={inputStyle} />
+      </Field>
     </Dialog>
   )
 }

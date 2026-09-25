@@ -18,6 +18,8 @@
     "check:crash": "node scripts/undefined-identifiers.check.mjs",
     "check:meetings": "node scripts/meeting-links.check.mjs",
     "check:jsx": "node scripts/jsx-leaked-text.check.mjs",
+    "check:employee-dates": "node scripts/employee-dates.check.mjs",
+    "check:staff-identity": "node scripts/staff-identity.check.mjs",
     "check:onboarding": "node scripts/onboarding-steps.check.mjs",
     "check:crash:all": "node scripts/undefined-identifiers.check.mjs --all"
   },

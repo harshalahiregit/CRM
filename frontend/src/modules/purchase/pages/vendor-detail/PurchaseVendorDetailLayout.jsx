@@ -10,6 +10,7 @@ import { KIT3D_STYLE as GLASS_STYLE } from '@/components/ui/kit3d'
 import { VendorWorkspaceContext } from './vendorWorkspaceContext'
 import { isWorkspaceUnlocked, isSectionUnlocked, lockNav, lockNotice } from '@/lib/vendors/workspaceLock'
 import LockedSection from '@/components/vendors/LockedSection'
+import OnboardingSteps from '@/components/vendors/OnboardingSteps'
 import VendorAccessControls from '@/components/vendors/VendorAccessControls'
 import PurchaseRegistrationBadge from '@/modules/purchase/components/PurchaseRegistrationBadge'
 
@@ -358,6 +359,7 @@ export default function PurchaseVendorDetailLayout() {
                       steps={lockSteps}
                       notice={lockedNotice}
                       overviewHref={`/app/purchase/vendors/${id}/overview`}
+                      hrefFor={(section) => `/app/purchase/vendors/${id}/${section === 'contact' ? 'contacts' : section}`}
                     />
                   )}
                 />
@@ -400,57 +402,6 @@ export default function PurchaseVendorDetailLayout() {
         </Overlay>
       )}
 
-    </div>
-  )
-}
-
-/**
- * Every onboarding step, in order, with the current one marked.
- *
- * Every step carries the server's own one-line detail ("3/7 uploaded",
- * "2 rejected"), because "incomplete" on its own does not tell an admin what to
- * chase. The first step that is not complete is the one to move on, and it is
- * called out as Next rather than left for the reader to work out.
- */
-function StepTrail({ steps, current }) {
-  const nextStep = steps.find(s => !s.complete)?.step ?? null
-
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 8, margin: '0 0 14px' }}>
-      {steps.map(s => {
-        const isNext = s.step === nextStep
-        const tone = s.complete ? '#0ca30c' : isNext ? '#7C3AED' : 'var(--border)'
-        return (
-          <div key={s.step}
-            style={{
-              padding: '9px 11px', borderRadius: 10,
-              border: `1px solid color-mix(in srgb, ${tone} 45%, var(--border))`,
-              background: s.complete || isNext ? `color-mix(in srgb, ${tone} 7%, transparent)` : 'transparent',
-            }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-              <span style={{
-                width: 17, height: 17, borderRadius: '50%', flexShrink: 0,
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 9.5, fontWeight: 800,
-                background: s.complete ? '#0ca30c' : isNext ? '#7C3AED' : 'var(--bg-input)',
-                color: s.complete || isNext ? '#fff' : 'var(--text-muted)',
-                border: s.complete || isNext ? 'none' : '1px solid var(--border)',
-              }}>
-                {s.complete ? '✓' : s.step}
-              </span>
-              <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text-h)', lineHeight: 1.2 }}>{s.label}</span>
-            </div>
-            <div style={{ fontSize: 10.5, color: 'var(--text-muted)', paddingLeft: 23, lineHeight: 1.35 }}>
-              {s.detail || (s.complete ? 'Done' : 'Pending')}
-            </div>
-            {isNext && (
-              <div style={{ fontSize: 9.5, fontWeight: 800, color: '#7C3AED', textTransform: 'uppercase', letterSpacing: '.05em', paddingLeft: 23, marginTop: 2 }}>
-                Next step
-              </div>
-            )}
-          </div>
-        )
-      })}
     </div>
   )
 }
@@ -532,7 +483,15 @@ function OnboardingDecisionPanel({ vendor, onboarding, onDecision }) {
               : 'is still progressing through onboarding.'}
         </p>
         {/* Where the vendor actually is, step by step. */}
-        {steps && <StepTrail steps={steps} current={step} />}
+        {/* Clickable. Each step goes to the section that completes it —
+            the strip used to name the outstanding step and leave the
+            reader to find which of forty sidebar entries does it. */}
+        {steps && (
+          <OnboardingSteps
+            steps={steps}
+            hrefFor={(section) => `/app/purchase/vendors/${vendor.id}/${section === 'contact' ? 'contacts' : section}`}
+          />
+        )}
 
         {approved ? (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 9, padding: '10px 14px', borderRadius: 10, background: 'color-mix(in srgb, #0ca30c 12%, transparent)', border: '1px solid color-mix(in srgb, #0ca30c 30%, transparent)', color: '#0ca30c', fontSize: 12.5, fontWeight: 700 }}>

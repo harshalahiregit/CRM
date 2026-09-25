@@ -4274,7 +4274,13 @@ should be labelled as an interim so nobody mistakes it for §8's model.
 
 ---
 
-## D-121 — A genset could be fitted to a retired vehicle, and the guard against it had never fired
+## D-200 — A genset could be fitted to a retired vehicle, and the guard against it had never fired
+
+> **Renumbered from D-121, 2026-09-25.** P1 allocated D-121 on 22 September (CLP's M01–M14
+> vocabulary); P2 allocated it again on the 23rd without checking. Under the banding agreed after
+> D-58…D-61 — P1 D-100+, P2 D-200+, P3 D-300+, recorded in P2's own ownership doc — this one was
+> never P2's to take. The later allocation moves; P1's D-121 is unchanged. The T-58 commit message
+> (`d95c1dea`) still says D-121 and cannot be rewritten; it means this entry.
 
 **Raised and fixed:** 2026-09-22, P2, while converting the last lowercase enums (T-58). **P2's code.**
 
@@ -4397,3 +4403,81 @@ ticket.
 ### Status
 
 **Open — blocked on a ruling, not on effort.** P1 raised the same gap independently.
+
+---
+
+## D-201 — My own data move created drivers that my own directory then hid
+
+**Raised and fixed:** found by P1 on his branch, 2026-09-25; the cause is P2's. **P2's code.**
+
+### What it was
+
+The D-62 data move (`2027_01_02_000002`) carries every legacy `transport_drivers` row into Fleet.
+A legacy driver has no CRM person to point at, so the move writes one into the standalone register
+(`stos_drivers`) and hangs the `driver_profiles` row off that — `source = 'stos'`.
+
+The `auto` directory mode then chose **one** register for the whole deployment: CRM if any CRM
+table existed, standalone otherwise. On every real deployment the CRM tables exist. So `auto`
+resolved to `CrmDriverDirectory`, and **every driver the migration had just moved became invisible**
+— present in the database, with a profile and a licence, and on no screen.
+
+### Why it was missed
+
+The assumption was that the two registers are alternatives: a deployment either has the CRM or it
+does not. The migration broke that assumption the moment it ran, and nothing checked the two
+against each other. P2 saw the symptom during the 23 September data walk — "with the CRM present,
+the standalone register is ignored" — and recorded it as a design fact rather than a defect.
+
+### What was done
+
+P1 replaced `auto` with a `CompositeDriverDirectory` that concatenates both registers, dispatches
+`find()` on the source prefix, and keeps each register refusing the other's handles so a refusal
+can never quietly become a fallback. P2 agrees with the design; `DriverDirectoryTest` encodes the
+old rule and changes when P1's code reaches master, not before, so master is never red in between.
+
+### The general lesson
+
+*Any code that creates rows in a second source has to be read alongside whatever chooses between
+sources.* The next person to add a driver source — a vendor portal, an agency feed — will meet the
+same assumption. A directory is a union of registers, not a choice of one.
+
+---
+
+## D-202 — A repoint verdict was applied to a trip forever, whatever the trip held afterwards
+
+**Raised and fixed:** 2026-09-25, P2, prompted by P1's `verdict` split. **P2's code.**
+
+### What it was
+
+`TripTimelinePublisher` reads the `fleet_reference_repoints` ledger to decide which id space a
+trip's `vehicle_id` is in (D-116). It looked the verdict up by trip row and applied it for good —
+it never asked whether the trip still held the value the verdict was written about. A trip's
+`vehicle_id` does change after the switch:
+
+- **A crew swap.** Release clears the trip's pointer and reassignment writes the replacement truck.
+  The verdict still named the truck that was replaced, so the replacement's telemetry was refused
+  and the trip went dark — exactly when a breakdown swap makes watching it matter most. Not a
+  wrong-join: the old truck could no longer reach the trip, because candidates are found by the
+  trip's current value. But silence reads like an idle truck, which is how step 8 went dark before.
+- **A correction.** P1 split unmatchable rows into `unmapped_legacy` and `never_valid`, and
+  `never_valid` is fixed by somebody correcting the row. A corrected row stayed refused forever,
+  because its old verdict still said "unmatchable".
+
+### What was done
+
+A verdict now governs only while the trip still holds the value it describes: `from_id` for an
+unmatchable verdict, `to_id` for a moved one. Once the value has changed it was written after the
+switch, so it is read as a Fleet id. The publisher reads `from_id` and `to_id` only — never P1's
+new `verdict` column — so his third verdict changes nothing here: `unmapped_legacy` and
+`never_valid` both carry a null `to_id` and are both refused while unchanged.
+
+Three tests: a re-crewed trip follows its new truck; a corrected `never_valid` trip is published
+to again; an **uncorrected** one is still refused even though its number equals a live Fleet id —
+so the fix cannot widen into "a verdict can be ignored". The first two were run against the old
+publisher and fail there.
+
+### The general lesson
+
+*A record of a decision describes the value it was made about, not the row forever.* Keying the
+ledger on the row id was right; applying it without checking the value was the gap.
+

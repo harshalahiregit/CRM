@@ -1,5 +1,5 @@
 import ModuleShell from '@/components/layout/ModuleShell'
-import { Package, Truck, Users, Boxes, Container, Wrench, Search,
+import { Package, Truck, Users, Boxes, Container, Wrench, Search, Disc3,
 } from 'lucide-react'
 
 /**
@@ -61,6 +61,8 @@ const TRANSPORT_ITEMS = [
   { label: 'Trailers',         path: '/app/transport/trailers',     icon: Container },
   { label: 'Drivers',          path: '/app/transport/drivers',      icon: Users },
   { label: 'Workshop',         path: '/app/transport/workshop',     icon: Wrench },
+  // T-36 — the casing register. Beside Workshop because that is who uses it.
+  { label: 'Tyres',            path: '/app/transport/tyres',        icon: Disc3 },
 ]
 
 export default function TransportLayout() {

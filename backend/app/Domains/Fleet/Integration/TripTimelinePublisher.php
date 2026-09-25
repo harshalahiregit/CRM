@@ -295,9 +295,38 @@ class TripTimelinePublisher
         $verdict = $this->repointVerdictFor((int) $candidate->id);
 
         if ($verdict !== null) {
-            // `to_id` of null is the repoint saying it found nothing to map
-            // this row to. That row is stranded in the old space for good.
-            return $verdict->to_id !== null && (int) $verdict->to_id === (int) $vehicle->id;
+            $current = (int) $candidate->vehicle_id;
+
+            // ── A VERDICT DESCRIBES A VALUE, NOT A ROW FOREVER ────────────
+            // The ledger says what the repoint decided about the number the
+            // trip held AT THAT MOMENT. It used to be applied to the trip row
+            // for good, whatever the row held later — and a trip's vehicle_id
+            // does change after the switch:
+            //
+            //   - A crew swap. Release clears the pointer and reassignment
+            //     writes the replacement truck. The verdict still named the
+            //     truck it replaced, so the replacement's telemetry was
+            //     refused and the trip went dark — at the moment a breakdown
+            //     swap makes watching it matter most.
+            //   - A correction. Person 1 split unmatchable rows into
+            //     unmapped_legacy and never_valid, and never_valid is fixed by
+            //     somebody correcting the row. A corrected row stayed refused
+            //     forever, because its old verdict still said "unmatchable".
+            //
+            // So the verdict governs only while the trip still holds the value
+            // it was written about. Once the value has moved on, it was written
+            // after the switch, which means it is a Fleet id.
+            if ($verdict->to_id === null) {
+                if ($current === (int) $verdict->from_id) {
+                    // Still the stranded value — unmapped or never valid.
+                    // Either way it names no truck we can vouch for.
+                    return false;
+                }
+            } elseif ($current === (int) $verdict->to_id) {
+                return (int) $verdict->to_id === (int) $vehicle->id;
+            }
+
+            return $current === (int) $vehicle->id;
         }
 
         if ($this->switchHasHappenedFor((int) $vehicle->company_id)) {
@@ -390,7 +419,9 @@ class TripTimelinePublisher
             ->where('table_name', 'transport_trips')
             ->where('column_name', 'vehicle_id')
             ->where('row_id', $tripId)
-            ->first(['to_id']);
+            // from_id as well as to_id: a verdict only applies while the trip
+            // still holds the value it was written about.
+            ->first(['from_id', 'to_id']);
     }
 
     /**

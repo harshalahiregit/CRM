@@ -173,6 +173,21 @@ export const stosApi = {
     fit:     (data) => api.post('/v1/fleet/tyres/fit', data).then(unwrap).catch(handleErr),
     inspect: (id, data) => api.put(`/v1/fleet/tyres/${id}/inspect`, data).then(unwrap).catch(handleErr),
     remove:  (id, data) => api.put(`/v1/fleet/tyres/${id}/remove`, data).then(unwrap).catch(handleErr),
+
+    // ── The casing register (T-36/37/38) ──────────────────────────────
+    // The fitment calls above are about an axle; these are about the casing,
+    // which outlives every truck it is fitted to.
+    register:  (params = {}) => api.get('/v1/fleet/tyres', { params }).then(unwrap).catch(handleErr),
+    create:    (data) => api.post('/v1/fleet/tyres', data).then(unwrap).catch(handleErr),
+    update:    (id, data) => api.put(`/v1/fleet/tyres/${id}`, data).then(unwrap).catch(handleErr),
+    economics: (id) => api.get(`/v1/fleet/tyres/${id}/economics`).then(unwrap).catch(handleErr),
+    // One act, not four: both fitments close and reopen at one odometer.
+    rotate:    (firstFitmentId, secondFitmentId, odometer = null) =>
+      api.post('/v1/fleet/tyres/rotate', {
+        first_fitment_id: firstFitmentId, second_fitment_id: secondFitmentId, odometer,
+      }).then(unwrap).catch(handleErr),
+    retread:   (id, data) => api.post(`/v1/fleet/tyres/${id}/retread`, data).then(unwrap).catch(handleErr),
+    scrap:     (id, reason) => api.post(`/v1/fleet/tyres/${id}/scrap`, { reason }).then(unwrap).catch(handleErr),
   },
 
   // Developer 3's contract, over HTTP. The in-process
@@ -293,6 +308,41 @@ export const GENSET_STATE_LABELS = {
 
 /** States in which the genset is NOT cooling the load. */
 export const GENSET_NOT_COOLING = ['OFF', 'FAULT']
+
+/**
+ * Mirrors `TyreMaster::STATUSES`. FITTED and RETREADED are written by fitting
+ * and by the retread action, so the register never offers them as choices.
+ */
+export const TYRE_MASTER_STATUS_LABELS = {
+  IN_STOCK: 'In the store',
+  FITTED: 'Fitted',
+  RETREADED: 'Back from retread',
+  SCRAPPED: 'Scrapped',
+}
+
+/** Mirrors `TyreFitment::STATUSES` — what a fitment row ended as. */
+export const TYRE_FITMENT_STATUS_LABELS = {
+  IN_STOCK: 'Back to stock',
+  FITTED: 'Fitted',
+  REMOVED: 'Removed',
+  RETREADED: 'Sent to retread',
+  SCRAPPED: 'Scrapped',
+}
+
+/**
+ * What each `wear.basis` from the forecast means, in words a workshop reads.
+ * The service names thin evidence rather than guessing, and the screen has to
+ * say which case it is instead of showing a blank.
+ */
+export const TYRE_WEAR_BASIS = {
+  measured: null,
+  no_measurements: 'No tread depth recorded yet — inspect it to start a forecast.',
+  one_measurement: 'Only one tread reading so far. A second one gives a wear rate.',
+  no_wear_measured: 'The readings show no wear, usually because it was retreaded between them.',
+  no_scrap_depth_set: 'Set the scrap depth on this casing to get a replacement point.',
+  at_or_below_floor: 'At or below its scrap depth — replace it.',
+  beyond_horizon: 'Wearing slowly enough that a replacement point would be a guess.',
+}
 
 /** Mirrors `Trailer::TYPES`. */
 export const TRAILER_TYPES = [
