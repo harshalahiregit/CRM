@@ -4,6 +4,10 @@
 `php artisan test --filter=Transport` → **79 failed · 1075 passed · 3 skipped** (matches the expected baseline).
 Read-and-report only: no code or test was changed to produce this.
 
+> **Updated after D-151 (same day).** Transport now **64 failed · 1098 passed · 3 skipped**.
+> See §6 for what cleared and the counts that stand. The table in §2 is kept as the 79-test
+> baseline it was written against.
+
 ## 1 · Counts
 
 | Bucket | Meaning | Tests |
@@ -140,21 +144,42 @@ for 4 tests. No base `TestCase` is involved.
 It lacks one thing: a way to move a **driver** to a Fleet status (the C3 group). Adding
 `moveFleetDriver()` beside `moveFleetVehicle()` would be ours to add.
 
-## 5 · Unsure — flagged, not decided
+## 5 · Rulings (owner, 25 September)
 
-- **Three tests the PUSHED doc lists as deliberate that are really C1.** PUSHED §3 lists all 11 red
-  `TransportMasterAllocationAuditTest` tests as "Waiting on the delete decision". Three of them
-  (`expired_insurance…`, `a_document_that_lapses…`, `release_then_reassign…`) test allocation, not
-  delete. They pass their real assertions and fail only on a casing line. `LIST-tests-proposed-for-retirement.md`
-  Group 4 says the same: "REPAIR, do not rewrite". I've put them in C; if you'd rather follow PUSHED,
-  they move to A.
-- **`expired_licence_blocks_the_driver_with_the_actionable_reason`** is kept in A (it's one of PUSHED's 11).
-  But its first failure is a legacy `TransportDriverService::create`, which is C, and behind that it asserts the BRWM §70 wording, which is B.
-  It isn't a delete test.
-- **B vs C for `version_one_is_the_release_itself` and `the_shipped_gateway…`.** Both assume Fleet does
-  not move on release. The gateway test's own docblock names the case it wants (an unmigrated vehicle),
-  so building that fixture is C. `version_one` asserts "Fleet did not move" on *every* release, so it
-  needs a ruling (B).
-- **The stale cache (D):** only a test problem in normal web requests, where the service is resolved per
-  request. It would be a real problem in any long-lived process (queue worker, Octane). The fix is
-  either the tests re-resolving the service, or the service invalidating its cache on assign. That's a decision.
+- **Stays in C:** `expired_insurance_blocks_the_vehicle_with_the_actionable_reason`,
+  `a_document_that_lapses_after_creation_blocks_without_any_sweep`, and
+  `release_then_reassign_keeps_the_old_assignment_as_history`. They test allocation, not delete, and
+  fail only on casing. PUSHED §3's "11" over-counted them.
+- **Stays in A:** `expired_licence_blocks_the_driver_with_the_actionable_reason`, which is one of PUSHED's 11.
+- **Stays in B, pending the owner:** `version_one_is_the_release_itself`, which asserts Fleet never moves on release.
+- **C:** `the_shipped_gateway_is_fleets_and_reports_an_unmigrated_vehicle_honestly`. Build the
+  unmigrated-vehicle fixture on purpose.
+- **The stale cache** is recorded as [D-152](registry-defects.md). The tests will use a fresh service instance.
+- **The pretrip defect** is fixed as [D-151](registry-defects.md), under option (b).
+
+## 6 · After D-151
+
+**15 of the 20 pretrip reds cleared:** `DispatchTest` ×4 (lapse after pretrip, newly-applicable check,
+fixing the lapse, revalidation names it), `PretripEvidenceAuditTest` ×4 (refused gate, revoked
+confirmation, no override, refusal records every check), `PretripGateTest` ×2 (blocked checklist refuses,
+refusal audited), and `PretripGenerationTest` ×5 (expired licence blocks, relaxed check, completing a blocked
+check, completion never alters, re-evaluation clears).
+
+**The other 5 now fail only on fixture debt**, so they move to C:
+
+| Test | Now fails on | Group |
+|---|---|---|
+| `PretripGateTest::a_refusal_changes_no_state` | `VehicleStatus::ALLOCATED` casing | C1 |
+| `PretripEvidenceAuditTest::a_refusal_changes_nothing` | `VehicleStatus::ALLOCATED` casing | C1 |
+| `PretripApiTest::the_gate_refuses_a_blocked_checklist_with_the_reason` | legacy `TransportDriver::firstOrFail()` | C2 |
+| `DispatchApiTest::the_get_explains_a_block_before_the_user_acts` | legacy `TransportDriver::first()` | C2 |
+| `PretripGenerationTest::the_blocked_reason_is_actionable` | `DriverProfile::displayName()` does not exist → `FleetResourceName::of()` | C6 |
+
+**Counts that stand (64):**
+
+| Bucket | Tests |
+|---|---|
+| A | 10 |
+| B | 8 |
+| C | **41** (C1 15 · C2 10 · C3 5 · C4 4 · C5 3 · C6 4) |
+| D | **5** (4 × stale cache, D-152 · 1 × seeder guard false positive) |

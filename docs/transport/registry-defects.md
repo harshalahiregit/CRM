@@ -5688,3 +5688,106 @@ against the new shape.
 
 Four more in `TransportEligibilityTest` (on leave, inactive, blocked, candidate listing) call the
 legacy `TransportDriverService` on a Fleet profile. Fixture debt — the next task.
+
+---
+
+## D-151 — the pre-trip "driver documents" item passed every driver
+
+**Raised:** 2026-09-25, classifying the red Transport tests. **P1 — ours, a D-134 leftover.** **Fixed.**
+
+### What was wrong
+
+`PretripService::evaluateDriverDocuments()` borrowed the driver verdict's `licence` and `documents`
+checks. D-134 collapsed those into one `fleet` check, so the borrow matched **nothing**, nothing
+failed, and the item graded **PASS** for every driver. **A driver whose licence lapsed after
+allocation was stopped neither at pre-trip nor at dispatch revalidation.** The expiring-licence
+warning was dead too: it read `expiring_soon`, which the driver verdict no longer carries.
+
+No test was needed to find it. Twenty were already red about it, filed as fixture debt.
+
+### What the old checks covered, and what Fleet can answer
+
+Read from the service as it stood before the repoint (`685a1a67^`):
+
+| Old check | Covered | Fleet code |
+|---|---|---|
+| `licence` | expired | `driver_license_expired` — blocker |
+| `licence` | no licence **number** | `driver_license_unrecorded` — blocker, but Fleet means no **expiry date**. We now follow Fleet's meaning. |
+| `licence` | not yet valid (`licence_valid_from` in future) | **none** — gap (i) |
+| `licence` / `expiring_soon` | expiring inside the window | `driver_license_expiring` — warning |
+| `documents` | medical certificate expired | `driver_medical_expired` — blocker |
+| `documents` / `expiring_soon` | medical expiring | `driver_medical_expiring` — warning |
+| `documents` | any other driver document expired | **none** — gap (ii) |
+| `documents` | `driver.required_documents` missing | **none** — gap (iii) |
+
+### What changed — owner's ruling, option (b)
+
+The item now reads Fleet's reason codes for the driver (`App\Support\Transport\PretripDriverDocuments`):
+
+- **FAIL** on `driver_license_expired`, `driver_license_unrecorded`, `driver_medical_expired`, with each
+  blocker's `why` and `(owner)`. That's BRW-048's exact reason, in Fleet's words.
+- **PASS_WARNING** on `driver_license_expiring`, `driver_medical_expiring`.
+- **Not read:** `driver_unavailable`. Allocation sets the driver ON_TRIP and Fleet answers that with
+  `driver_unavailable`, so reading it would fail every allocated driver. Also not read:
+  `driver_not_onboarded` and `driver_medical_unrecorded`.
+- **Read fresh:** `DriverEligibilityService::fleetRecordNow()` skips the per-instance cache
+  ([D-152](#d-152--the-driver-eligibility-cache-lives-as-long-as-the-object)). Pre-trip and
+  revalidation exist to catch what changed since allocation.
+- **One thing Fleet does not supply.** Fleet computes `warnings` only for drivers it would still offer,
+  and an allocated driver is ON_TRIP, so it never gets one. In that case the warning is read from
+  Fleet's own `licence` / `medical` verdict (`state: expiring`, `message`), under the code Fleet would
+  have given it. The owner string is guarded against Fleet's whenever Fleet does compute warnings.
+
+### An empty read can no longer pass
+
+Both paths now **fail loudly** (an `error` log line, and an item detail that says *could not be
+verified*) instead of passing:
+
+- **Driver:** the Fleet row must carry the `licence.state` and `medical.state` its codes are derived
+  from, and every code those states imply must actually be present. A renamed code fails the item.
+- **Vehicle:** `fromBorrowedChecks()` fails when the keys it borrows match no check in the verdict.
+  The vehicle path is otherwise unchanged.
+
+### How it is proved
+
+- **Test:** `PretripDriverDocumentsTest`, 8 new tests. A licence lapsed after allocation → CRITICAL_FAIL
+  with Fleet's sentence and desk; medical expired → fail; licence expiring → PASS_WARNING; an
+  allocated (ON_TRIP) driver with valid papers → PASS, with Fleet's own `driver_unavailable` asserted as
+  the precondition; a row with no verdicts, a renamed code, an unknown driver, and a vehicle borrow that
+  matches nothing → never PASS.
+- **Broken, two ways per guard, each red, each restored:** dropping `driver_license_expired`, and
+  borrowing `driver_unavailable` (the trap); the schema check disabled, and schema errors graded PASS;
+  the empty-borrow block removed, and an empty borrow graded PASS; the warning silenced.
+- **Suite:** Transport `79 failed · 1075 passed` → `64 failed · 1098 passed`. 15 cleared and 8 new;
+  none newly red. The other 5 pre-trip reds now fail only on fixture debt.
+
+### Left open — owner decisions, not ours to build
+
+- **(i) Licence not yet valid.** `driver_profiles.licence_valid_from` exists (the unify migration copied
+  it over), but Fleet's `licenceVerdict()` ignores it. The old Transport check failed on it.
+  **Owner: Fleet (P2).**
+- **(ii) Expiry of every driver document other than medical** (police verification, ID proof,
+  training certificate, customer qualification, the general driver document) is checked **nowhere**
+  since D-134, neither at allocation nor at pre-trip. These documents can still be filed against a Fleet
+  driver. Documents are P3's; the eligibility rule is Fleet's. **Needs a ruling on who enforces it.**
+- **(iii) The required-documents policy.** The same gap as D-150 "left red" #4.
+
+---
+
+## D-152 — the driver eligibility cache lives as long as the object
+
+**Raised:** 2026-09-25, classifying the red Transport tests. **P1.** **Recorded, not fixed.**
+
+`DriverEligibilityService::$fleetCache` holds Fleet's whole driver directory for the lifetime of the
+service instance (added in `9f86e884` so one screen did not read the directory once per driver). Its
+docblock reasons that the service is resolved per request, and in a web request that holds.
+
+**It does not hold in a long-running process.** In a queue worker, or under Octane, one instance can
+outlive many changes. A driver created after the first read then answers *"This driver is not in the
+fleet directory"*, and a licence that lapses after it answers with its old state.
+
+Four tests show exactly this, because each holds one `AllocationService` from `setUp`. With the cache
+disabled in a throwaway worktree, 3 of the 4 passed; the fourth then failed on unrelated fixture debt.
+
+**Decision: recorded only.** Tests will use a fresh service instance. Pre-trip already reads fresh
+(`fleetRecordNow()`, D-151), because it's the one path whose purpose is catching change.
