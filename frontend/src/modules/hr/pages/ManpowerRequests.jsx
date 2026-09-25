@@ -7,7 +7,11 @@ import {
   Sparkles, Loader2, TrendingUp,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
-import { fieldErrors, errorMessage, firstInvalidField, humanFieldName } from '@/lib/apiErrors'
+// The shared normaliser the onboarding wizards already use — readFieldErrors
+// turns a 422 into {map, list, summary} keyed by the form's own field names, and
+// knows that "Validation failed" is a restatement of the status code rather than
+// a reason. Nothing new was written for this page.
+import { readFieldErrors, prettyField } from '@/services/apiError'
 import WorkflowProgress from '@/components/ui/WorkflowProgress'
 import { useToast } from '@/components/ui/Toast'
 import { useMasterData } from '@/modules/hr/useMasterData'
@@ -373,14 +377,14 @@ export default function ManpowerRequests() {
       // A 422 becomes messages under the fields; anything else is a toast, because
       // there is no field to attach "the server is down" to. The modal stays open
       // either way — closing it would throw away everything they typed.
-      const fields = fieldErrors(e)
+      const { map, summary } = readFieldErrors(e)
 
-      if (fields) {
-        setFormErrors(fields)
-        revealField(firstInvalidField(e))
+      if (Object.keys(map).length) {
+        setFormErrors(map)
+        revealField(Object.keys(map)[0])
       } else {
         setFormErrors({})
-        toast.error(errorMessage(e, 'Could not save the request.'))
+        toast.error(summary)
       }
     }
     finally { setSaving(false) }
@@ -408,7 +412,7 @@ export default function ManpowerRequests() {
     // sentence is what carries the reason — "this request is not at L1" is worth
     // reading — so it goes through the shared extractor rather than being
     // replaced with the word "failed".
-    } catch (e) { toast.error(errorMessage(e, 'Could not complete that action.')) }
+    } catch (e) { toast.error(readFieldErrors(e).summary) }
     finally { setActionLoading(false) }
   }
 
@@ -447,7 +451,7 @@ export default function ManpowerRequests() {
       if (!payload.closing_date) delete payload.closing_date
       await hrApi.manpower.convertToJd(request.id, payload)
       setConvertModal(null); fetchAll()
-    } catch (e) { toast.error(errorMessage(e, 'Could not convert this request.')) }
+    } catch (e) { toast.error(readFieldErrors(e).summary) }
     finally { setActionLoading(false) }
   }
 
@@ -692,6 +696,16 @@ const SkillPicker = ({ value, onChange, suggestions, placeholder }) => (
 const FormErrors = createContext({})
 
 /**
+ * Laravel repeats the field name inside the sentence — "The education field must
+ * not be greater than 255 characters" — and we print the label right next to it,
+ * so it reads "Education — The education field must not be…". Trimmed here, at
+ * the render site, rather than in the shared normaliser: roughly 400 call sites
+ * rely on that message exactly as it is, and most of them show it on its own
+ * where the repetition is what names the field.
+ */
+const trimFieldPrefix = (msg) => String(msg).replace(/^The .+? field /, 'Must ').replace(/^Must must /i, 'Must ')
+
+/**
  * One labelled input, which says so when the server rejected it.
  *
  * `name` is the API's field name, not the label — it is what the 422 comes back
@@ -708,7 +722,7 @@ const Field = ({ label, children, full, name }) => {
       {children}
       {error && (
         <p style={{ margin: '5px 0 0', fontSize: 11, fontWeight: 600, color: '#ef4444', lineHeight: 1.4 }}>
-          {error}
+          {trimFieldPrefix(error)}
         </p>
       )}
     </div>
@@ -812,7 +826,7 @@ function RequestFormModal({ form, setForm, editingId, saving, errors = {}, reque
           </p>
           <ul style={{ margin: '6px 0 0', paddingLeft: 18, color: '#ef4444', fontSize: 11.5, lineHeight: 1.6 }}>
             {Object.entries(errors).map(([field, msg]) => (
-              <li key={field}><strong>{humanFieldName(field)}</strong> — {msg}</li>
+              <li key={field}><strong>{prettyField(field)}</strong> — {trimFieldPrefix(msg)}</li>
             ))}
           </ul>
         </div>

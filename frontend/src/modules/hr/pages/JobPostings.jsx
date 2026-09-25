@@ -7,6 +7,8 @@ import {
   ClipboardList, Layers, XCircle, User, ShieldCheck, Activity, LayoutGrid, List, Globe, Trash2,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { useToast } from '@/components/ui/Toast'
+import { readFieldErrors } from '@/services/apiError'
 import { useMasterData } from '@/modules/hr/useMasterData'
 import { useAuth } from '@/context/AuthContext'
 import JobListView from './JobListView'
@@ -77,6 +79,7 @@ function StatusBadge({ status }) {
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function JobPostings() {
   const navigate = useNavigate()
+  const toast = useToast()
   const location = useLocation()
   const { user, tenant } = useAuth()
   const manageHr = canManageHrQueue(user)
@@ -144,14 +147,25 @@ export default function JobPostings() {
     setShowForm(true)
   }
   const saveJob = async () => {
-    if (!form.title || !form.department || !form.location) { alert('Title, Department and Location are required'); return }
+    // Names the fields that are actually missing rather than listing all three
+    // every time and leaving the reader to work out which one they skipped.
+    const missing = [
+      !form.title && 'Title',
+      !form.department && 'Department',
+      !form.location && 'Location',
+    ].filter(Boolean)
+
+    if (missing.length) {
+      toast.error(`${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} required.`)
+      return
+    }
     setBusy(true)
     try {
       const payload = { ...form, number_of_openings: Number(form.number_of_openings) || 1, salary_from: form.salary_from || null, salary_to: form.salary_to || null }
       if (editingId) await hrApi.jobs.update(editingId, payload)
       else await hrApi.jobs.create(payload)
       setShowForm(false); fetchAll()
-    } catch (e) { alert(e?.response?.data?.message || 'Failed to save job') }
+    } catch (e) { toast.error(readFieldErrors(e).summary) }
     finally { setBusy(false) }
   }
 
@@ -166,7 +180,7 @@ export default function JobPostings() {
       if (action === 'publish-portal') await hrApi.jobs.publishTo(job.id, 'careers')
       if (action === 'remove-portal')  await hrApi.jobs.unpublishFrom(job.id, 'careers')
       fetchAll()
-    } catch (e) { alert(e?.response?.data?.message || 'Action failed') }
+    } catch (e) { toast.error(readFieldErrors(e).summary) }
     finally { setBusy(false) }
   }
   const runBulk = async (action, ids) => {
@@ -175,8 +189,12 @@ export default function JobPostings() {
     try {
       const r = await hrApi.jobs.bulk(action, ids)
       await fetchAll()
-      if (r?.skipped) alert(`${r.success} updated, ${r.skipped} skipped (action not applicable to their status).`)
-    } catch (e) { alert(e?.response?.data?.message || 'Bulk action failed') }
+      // A partial result is not a failure, and it was being announced in the same
+      // modal dialog as one. It is information about what happened.
+      if (r?.skipped) {
+        toast.info(`${r.success} updated, ${r.skipped} skipped — the action did not apply to their status.`)
+      }
+    } catch (e) { toast.error(readFieldErrors(e).summary) }
     finally { setBusy(false) }
   }
 
@@ -187,7 +205,7 @@ export default function JobPostings() {
       if (action === 'close') await hrApi.jobs.close(job.id, remarks)
       if (action === 'cancel') await hrApi.jobs.cancel(job.id, remarks)
       setCloseModal(null); setRemarks(''); fetchAll()
-    } catch (e) { alert(e?.response?.data?.message || 'Action failed') }
+    } catch (e) { toast.error(readFieldErrors(e).summary) }
     finally { setBusy(false) }
   }
 

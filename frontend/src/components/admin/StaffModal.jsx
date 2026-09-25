@@ -769,6 +769,34 @@ export default function StaffModal({ staff, departments = [], jobTitles = [], on
                     </label>
                   ))}
                 </div>
+
+                {/* Employment and access are two different questions, and this
+                    screen used to answer only one — an ACTIVE badge sat beside a
+                    login the auth gate refuses, with nothing to explain it.
+                    Account Status above is what an admin sets here; this says what
+                    it adds up to once employment is taken into account, and why
+                    when the answer is no. Derived, never a second switch. */}
+                {staff && (
+                  <div className="mt-3 rounded-xl p-2.5" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[10px] font-black uppercase tracking-wide" style={{ color:'var(--text-muted)' }}>
+                        Can sign in
+                      </span>
+                      <span className="text-xs font-bold"
+                        style={{ color: staff.access_blocked_reason ? '#f59e0b' : '#10b981' }}>
+                        {staff.access_blocked_reason ? 'No' : 'Yes'}
+                      </span>
+                    </div>
+                    {staff.access_blocked_reason && (
+                      <p className="text-[10px] mt-1" style={{ color:'#f59e0b' }}>{staff.access_blocked_reason}</p>
+                    )}
+                    {linkedEmployee && staff.employment_status && (
+                      <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+                        Employment: {staff.employment_status} — changed on the employee record, not here.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Password */}

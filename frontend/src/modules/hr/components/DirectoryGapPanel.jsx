@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Users, UserX, KeyRound, ChevronDown, ChevronUp, Link2, AlertTriangle } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
-import { errorMessage } from '@/lib/apiErrors'
+import { readFieldErrors } from '@/services/apiError'
 
 /*  ────────────────────────────────────────────────────────────────────────
     Where the staff and employee directories disagree.
@@ -75,7 +75,7 @@ export default function DirectoryGapPanel({ showToast }) {
       }[what])
       load()
     } catch (e) {
-      showToast?.(errorMessage(e, 'Could not complete that action'), 'error')
+      showToast?.(readFieldErrors(e).summary, 'error')
     } finally {
       setBusy(null)
     }

@@ -53,12 +53,10 @@ class BannedPatternsTest extends TestCase
     private const GRANDFATHERED = [
         'alert(' => [
             'components/admin/StaffModal.jsx' => 1,
-            'modules/hr/pages/JobPostings.jsx' => 6,
-            'modules/hr/pages/JobWorkspace.jsx' => 4,
-            // ManpowerRequests.jsx is gone from this list entirely: validation
-            // now renders under the fields, and the workflow and conversion
-            // failures go through the shared extractor to a toast. Removed rather
-            // than lowered so it cannot drift back up to a budget.
+            // Every HR page is now off this list. Validation renders under the
+            // fields on the manpower form, and every workflow, publish and sync
+            // failure goes through readFieldErrors() to a toast. Removed rather
+            // than lowered, because a budget of N is a licence to have N.
             'modules/inventory/pages/InventorySettings.jsx' => 1,
             'modules/projects/pages/ProjectDetail.jsx' => 1,
             'modules/purchase/pages/PurchaseAnalytics.jsx' => 1,
