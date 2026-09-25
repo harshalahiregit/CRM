@@ -242,43 +242,54 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
         Route::get('/vehicles/{id}',          [TransportVehicleController::class, 'show'])->whereNumber('id');
     });
 
-    Route::middleware('transport.permission:'.TransportPermission::VEHICLE_CREATE)->group(function () {
-        Route::post('/vehicles',                     [TransportVehicleController::class, 'store']);
-        Route::post('/vehicles/{id}/documents',      [TransportVehicleController::class, 'storeDocument'])->whereNumber('id');
-        Route::post('/vehicles/{id}/documents/{documentId}/renew', [TransportVehicleController::class, 'renewDocument'])->whereNumber('id')->whereNumber('documentId');
-    });
-
-    Route::middleware('transport.permission:'.TransportPermission::VEHICLE_UPDATE)->group(function () {
-        Route::put('/vehicles/{id}',          [TransportVehicleController::class, 'update'])->whereNumber('id');
-        // FLEET §8 — status is a business event, not an editable field.
-        Route::patch('/vehicles/{id}/status', [TransportVehicleController::class, 'transition'])->whereNumber('id');
-    });
-
-    Route::middleware('transport.permission:'.TransportPermission::VEHICLE_DELETE)->group(function () {
-        Route::delete('/vehicles/{id}', [TransportVehicleController::class, 'destroy'])->whereNumber('id');
-    });
+    /* ── THE WRITES ARE GONE — read-only from 2026-09-23. D-143 ────────
+     *
+     * POST / PUT / PATCH / DELETE on `/transport/vehicles` and
+     * `/transport/drivers` are no longer registered. Creation, editing, status
+     * and deletion of a vehicle or a driver belong to Fleet, which owns those
+     * masters and has the whole path: `POST /v1/fleet/vehicles` and the rest,
+     * under a comment that reads *"Step 1: the vehicle master. Everything below
+     * needs the vehicle_id these create."*
+     *
+     * ── WHY NOT KEEP WRITING HERE AND LET FLEET STORE IT ─────────────────
+     * Because the two write paths do not enforce the same things, and his are
+     * the ones with reasons attached. `StoreVehicleRequest` normalises the
+     * plate before validating it, enforces uniqueness on registration AND
+     * chassis scoped to the company and counting soft-deleted rows, binds
+     * vehicle_type / ownership_type / fuel_type to enums, and bounds the
+     * manufacturing year — *"a typo here silently ages the fleet in every
+     * report that uses it"*. `TransportVehicleService::create()` is
+     * `array_intersect_key($data, self::EDITABLE)`: no normalisation, no
+     * uniqueness, no enums.
+     *
+     * And his request omits `status` on purpose — *"a vehicle's operational
+     * state is decided by its job cards, not typed into a form"* — while ours
+     * writes it. Keeping our form would have had it type a value his module
+     * states must never be typed. That is a rules conflict, not a storage
+     * question.
+     *
+     * It would also have made this code a permanent second writer into his
+     * master, which is a fresh instance of D-300 — two writers, no referee —
+     * still open and still unowned.
+     *
+     * ── WHAT THE READS ARE FOR NOW ───────────────────────────────────────
+     * History. `transport_vehicles` and `transport_drivers` still hold every
+     * row they held, and every reference into them is recorded in
+     * `fleet_reference_repoints`. The screens show what was there; they no
+     * longer claim to be where a vehicle comes from.
+     *
+     * The controllers, services, requests and models are deliberately NOT
+     * deleted, only unrouted — the same choice the frontend made for the
+     * placeholder screens in 2026-09-17. Removing files is a separate decision
+     * under TEAM-CONTRACTS §1a; unrouting is what actually ends the duplicate
+     * write path.
+     */
 
     /* ── Driver master (SNG-TRN-004) ──────────────────────────────────── */
     Route::middleware('transport.permission:'.TransportPermission::DRIVER_VIEW)->group(function () {
         Route::get('/drivers/status-counts', [TransportDriverController::class, 'statusCounts']);
         Route::get('/drivers',               [TransportDriverController::class, 'index']);
         Route::get('/drivers/{id}',          [TransportDriverController::class, 'show'])->whereNumber('id');
-    });
-
-    Route::middleware('transport.permission:'.TransportPermission::DRIVER_CREATE)->group(function () {
-        Route::post('/drivers',                    [TransportDriverController::class, 'store']);
-        Route::post('/drivers/{id}/documents',     [TransportDriverController::class, 'storeDocument'])->whereNumber('id');
-        Route::post('/drivers/{id}/documents/{documentId}/renew', [TransportDriverController::class, 'renewDocument'])->whereNumber('id')->whereNumber('documentId');
-    });
-
-    Route::middleware('transport.permission:'.TransportPermission::DRIVER_UPDATE)->group(function () {
-        Route::put('/drivers/{id}',          [TransportDriverController::class, 'update'])->whereNumber('id');
-        // Two axes, one at a time — the request says which.
-        Route::patch('/drivers/{id}/status', [TransportDriverController::class, 'transition'])->whereNumber('id');
-    });
-
-    Route::middleware('transport.permission:'.TransportPermission::DRIVER_DELETE)->group(function () {
-        Route::delete('/drivers/{id}', [TransportDriverController::class, 'destroy'])->whereNumber('id');
     });
 
     /* ── Allocation (SNG-TRN-009) — PERM-004 ──────────────────────────

@@ -111,6 +111,44 @@ final class ClientVisibleFields
         // Internal in their entirety — no column on either is client-visible.
         'trip_costs'       => ['*'],
         'trip_advances'    => ['*'],
+
+        /*
+         * ── FLEET'S TABLES — ADDED 2026-09-23, D-142 ─────────────────────
+         *
+         * Nothing is leaking through these today: the portal serves no vehicle
+         * or driver data at all. That is precisely the problem this fixes. The
+         * list above denies seven columns on `transport_drivers`, and driver
+         * data no longer lives there — after the repoint it lives in
+         * `driver_profiles`, and not one Fleet table appeared here.
+         *
+         * So the guard was aimed at a room we had moved out of, and it would
+         * have been useless on exactly the day it was needed: D-134 and D-135
+         * both want the driver's NAME on a customer's screen, and that name
+         * arrives through the directory alongside the licence and the medical.
+         *
+         * A guard must follow the data, not the table it was written against.
+         *
+         * `stos_drivers.name` is deliberately NOT denied — the customer is
+         * meant to learn who is driving their load. What is denied is
+         * everything they are not: the licence, the medical, the employer's
+         * commercial details and the internal references.
+         */
+        'driver_profiles' => [
+            'licence_number', 'licence_normalized', 'licence_class',
+            'licence_valid_from', 'licence_expiry', 'medical_expiry',
+            'driver_code', 'hr_employee_id', 'supplier_id',
+            'assigned_vehicle_id', 'note', 'legacy_transport_driver_id',
+        ],
+
+        'stos_drivers' => ['phone', 'employer_name', 'external_ref'],
+
+        'vehicles' => [
+            'chassis_number', 'engine_number', 'gps_device_id',
+            'purchase_date', 'compliance_hold_reason', 'fleet_number',
+            'registration_expiry', 'insurance_expiry', 'fitness_expiry',
+            'permit_expiry', 'puc_expiry',
+            'created_by', 'updated_by', 'legacy_transport_vehicle_id',
+        ],
     ];
 
     /** Every denied column name, flattened, for a response-key assertion. */

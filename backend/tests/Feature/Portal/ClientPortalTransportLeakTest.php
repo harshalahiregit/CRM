@@ -72,6 +72,15 @@ class ClientPortalTransportLeakTest extends TestCase
         // get a value nothing else could produce.
         'detail'    => 'SENTINEL-EVENT-DETAIL-8F2A',
         'actor'     => 'SENTINEL-ACTOR-NAME-8F2A',
+
+        // Fleet's tables — D-142. The deny list gained `driver_profiles`,
+        // `vehicles` and `stos_drivers` because that is where vehicle and
+        // driver data lives after the repoint. A deny-list entry for a table
+        // this fixture never populates is a tick with nothing behind it, so
+        // these rows are seeded and the values are what the guard hunts for.
+        'fleetlicence' => 'SENTINEL-FLEET-LICENCE-8F2A',
+        'chassis'      => 'SENTINEL-CHASSIS-8F2A',
+        'gps'          => 'SENTINEL-GPS-DEVICE-8F2A',
     ];
 
     private ClientContact $contact;
@@ -112,12 +121,43 @@ class ClientPortalTransportLeakTest extends TestCase
             'trip_number' => 'TRP-LEAKCHECK-1',
         ]);
         $this->tripId = $trip->id;
+
+        // ── Fleet's rows, which is where this data lives now — D-142 ─────
+        // The trip points at THESE, not at the legacy pair above, exactly as a
+        // repointed trip does. The legacy driver stays seeded so the old
+        // sentinels still have a row to live in.
+        $fleetVehicleId = DB::table('vehicles')->insertGetId([
+            'company_id' => $tenant->id, 'registration_number' => 'MH01LEAK01',
+            'registration_normalized' => 'MH01LEAK01',
+            'vehicle_type' => 'truck', 'ownership_type' => 'owned', 'status' => 'AVAILABLE',
+            'chassis_number' => self::SENTINELS['chassis'],
+            'gps_device_id' => self::SENTINELS['gps'],
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $stosDriverId = DB::table('stos_drivers')->insertGetId([
+            'company_id' => $tenant->id, 'name' => 'Leakcheck Driver',
+            'phone' => '9820000000', 'designation' => 'Driver',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $fleetDriverId = DB::table('driver_profiles')->insertGetId([
+            'company_id' => $tenant->id, 'source' => 'stos', 'source_id' => $stosDriverId,
+            'licence_number' => self::SENTINELS['fleetlicence'],
+            'licence_normalized' => self::SENTINELS['fleetlicence'],
+            'licence_class' => 'HMV', 'licence_expiry' => now()->addYear()->toDateString(),
+            'status' => 'AVAILABLE',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
         $trip->forceFill([
             'approved_freight' => self::SENTINELS['freight'],
             'closure_reason'   => self::SENTINELS['closure'],
             'rejection_reason' => self::SENTINELS['rejection'],
             'route'            => 'Mundra → Pune',
-            'driver_id'        => $driver->id,
+            // Fleet ids, because that is what a repointed trip carries.
+            'vehicle_id'       => $fleetVehicleId,
+            'driver_id'        => $fleetDriverId,
         ])->save();
 
         // Moments on the timeline: two a customer may see, and two they may not.

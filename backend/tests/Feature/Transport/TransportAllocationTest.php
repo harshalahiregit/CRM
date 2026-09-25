@@ -25,6 +25,9 @@ use App\Support\Transport\VehicleStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
+use App\Domains\Fleet\Models\DriverProfile;
+use App\Domains\Fleet\Models\Vehicle;
+use Tests\Concerns\CreatesFleetResources;
 use Tests\TestCase;
 
 /**
@@ -38,6 +41,7 @@ use Tests\TestCase;
 class TransportAllocationTest extends TestCase
 {
     use RefreshDatabase;
+    use CreatesFleetResources;
 
     private const TENANT_A = 1;
     private const TENANT_B = 2;
@@ -90,19 +94,19 @@ class TransportAllocationTest extends TestCase
         return $trip->fresh();
     }
 
-    private function vehicle(int $tenantId = self::TENANT_A, ?float $capacity = 30): TransportVehicle
+    private function vehicle(int $tenantId = self::TENANT_A, ?float $capacity = 30): Vehicle
     {
-        $v = $this->vehicleSvc->create([
+        $v = $this->fleetVehicle([
             'registration_number' => 'MH12AB'.self::uniqueSeq(4),
             'vehicle_type' => 'Trailer 40ft', 'capacity_tonnes' => $capacity,
         ], $tenantId, $this->actor);
 
-        return $this->vehicleSvc->transitionTo($v, VehicleStatus::AVAILABLE, $tenantId, $this->actor);
+        return $this->moveFleetVehicle($v, Vehicle::STATUS_AVAILABLE);
     }
 
-    private function driver(int $tenantId = self::TENANT_A): TransportDriver
+    private function driver(int $tenantId = self::TENANT_A): DriverProfile
     {
-        return $this->driverSvc->create([
+        return $this->fleetDriver([
             'name' => 'Ramesh '.Str::random(4),
             'licence_number' => 'RJ14'.self::uniqueSeq(6),
             'licence_class' => 'HMV',
@@ -191,7 +195,7 @@ class TransportAllocationTest extends TestCase
     public function test_an_ineligible_driver_blocks_and_leaves_nothing_behind(): void
     {
         $trip = $this->approvedTrip();
-        $d = $this->driverSvc->create([
+        $d = $this->fleetDriver([
             'name' => 'Lapsed', 'licence_number' => 'MH0199',
             'licence_valid_until' => now()->subDay()->toDateString(),
         ], self::TENANT_A, $this->actor);
@@ -235,7 +239,7 @@ class TransportAllocationTest extends TestCase
     public function test_a_failing_driver_does_not_leave_the_vehicle_allocated(): void
     {
         $trip = $this->approvedTrip(); $v = $this->vehicle();
-        $bad = $this->driverSvc->create(['name' => 'No Licence'], self::TENANT_A, $this->actor);
+        $bad = $this->fleetDriver(['name' => 'No Licence'], self::TENANT_A, $this->actor);
 
         try {
             $this->alloc->assign($trip, $v->id, $bad->id, self::TENANT_A, $this->actor);

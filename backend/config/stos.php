@@ -110,7 +110,9 @@ return [
     | Where the people STOS can put behind a wheel come from.
     |
     |   'auto'       — use the CRM's customer/vendor directories when they are
-    |                  present, and the STOS-local register when they are not.
+    |                  present — as `both`, since the two stopped being
+    |                  alternatives — and the STOS-local register when they are
+    |                  not.
     |                  This is what lets one codebase run integrated AND
     |                  standalone without a build flag.
     |   'crm'        — force the CRM directories.

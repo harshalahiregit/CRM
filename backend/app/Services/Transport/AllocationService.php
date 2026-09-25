@@ -15,6 +15,7 @@ use App\Models\Transport\TripAssignment;
 use App\Models\User;
 use App\Support\Transport\AllocationScope;
 use App\Support\Transport\DriverAvailability;
+use App\Support\Transport\FleetResourceName;
 use App\Support\Transport\TripStatus;
 use App\Support\Transport\VehicleStatus;
 use Illuminate\Support\Facades\DB;
@@ -601,7 +602,7 @@ class AllocationService
         ]);
 
         throw new BusinessException(
-            'That '.$kind.' cannot be allocated. '.$resource->displayName().': '.implode(' ', $verdict['blockers']),
+            'That '.$kind.' cannot be allocated. '.FleetResourceName::of($resource).': '.implode(' ', $verdict['blockers']),
             422
         );
     }

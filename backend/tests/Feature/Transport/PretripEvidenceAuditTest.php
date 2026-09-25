@@ -25,6 +25,9 @@ use App\Support\Transport\TripStatus;
 use App\Support\Transport\VehicleStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use App\Domains\Fleet\Models\DriverProfile;
+use App\Domains\Fleet\Models\Vehicle;
+use Tests\Concerns\CreatesFleetResources;
 use Tests\TestCase;
 
 /**
@@ -47,6 +50,7 @@ use Tests\TestCase;
 class PretripEvidenceAuditTest extends TestCase
 {
     use RefreshDatabase;
+    use CreatesFleetResources;
 
     private const TENANT_A = 1;
 
@@ -94,13 +98,13 @@ class PretripEvidenceAuditTest extends TestCase
         ]);
         $trip->forceFill(['status' => TripStatus::APPROVED])->save();
 
-        $v = $this->vehicleSvc->create([
+        $v = $this->fleetVehicle([
             'registration_number' => 'MH12AB'.self::uniqueSeq(4),
             'vehicle_type' => 'Trailer 40ft', 'capacity_tonnes' => 30,
         ], self::TENANT_A, $this->actor);
-        $v = $this->vehicleSvc->transitionTo($v, VehicleStatus::AVAILABLE, self::TENANT_A, $this->actor);
+        $v = $this->moveFleetVehicle($v, Vehicle::STATUS_AVAILABLE);
 
-        $d = $this->driverSvc->create([
+        $d = $this->fleetDriver([
             'name' => 'Ramesh '.Str::random(4),
             'licence_number' => 'RJ14'.self::uniqueSeq(6),
             'licence_class' => 'HMV',

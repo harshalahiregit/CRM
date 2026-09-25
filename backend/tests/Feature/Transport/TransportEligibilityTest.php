@@ -22,6 +22,9 @@ use App\Support\Transport\TransportDocumentType;
 use App\Support\Transport\VehicleStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use App\Domains\Fleet\Models\DriverProfile;
+use App\Domains\Fleet\Models\Vehicle;
+use Tests\Concerns\CreatesFleetResources;
 use Tests\TestCase;
 
 /**
@@ -37,6 +40,7 @@ use Tests\TestCase;
 class TransportEligibilityTest extends TestCase
 {
     use RefreshDatabase;
+    use CreatesFleetResources;
 
     private const TENANT_A = 1;
     private const TENANT_B = 2;
@@ -93,19 +97,19 @@ class TransportEligibilityTest extends TestCase
     }
 
     /** An otherwise-perfect vehicle: available, no clash, no expired papers. */
-    private function goodVehicle(int $tenantId = self::TENANT_A, ?float $capacity = 30): TransportVehicle
+    private function goodVehicle(int $tenantId = self::TENANT_A, ?float $capacity = 30): Vehicle
     {
-        $v = $this->vehicleSvc->create([
+        $v = $this->fleetVehicle([
             'registration_number' => 'MH12AB'.self::uniqueSeq(4),
             'vehicle_type' => 'Trailer 40ft', 'capacity_tonnes' => $capacity,
         ], $tenantId, $this->actor);
 
-        return $this->vehicleSvc->transitionTo($v, VehicleStatus::AVAILABLE, $tenantId, $this->actor);
+        return $this->moveFleetVehicle($v, Vehicle::STATUS_AVAILABLE);
     }
 
-    private function goodDriver(int $tenantId = self::TENANT_A): TransportDriver
+    private function goodDriver(int $tenantId = self::TENANT_A): DriverProfile
     {
-        return $this->driverSvc->create([
+        return $this->fleetDriver([
             'name' => 'Ramesh '.Str::random(4),
             'licence_number' => 'RJ14'.self::uniqueSeq(6),
             'licence_class' => 'HMV',
@@ -138,7 +142,7 @@ class TransportEligibilityTest extends TestCase
     public function test_a_vehicle_that_is_not_available_is_blocked(): void
     {
         $v = $this->goodVehicle();
-        $this->vehicleSvc->transitionTo($v, VehicleStatus::SUSPENDED, self::TENANT_A, $this->actor);
+        $this->moveFleetVehicle($v, Vehicle::STATUS_SUSPENDED);
 
         $verdict = $this->vehicles->evaluate($v->fresh(), $this->trip(), self::TENANT_A);
 
@@ -255,7 +259,7 @@ class TransportEligibilityTest extends TestCase
     /** BR-P0-004: "critical document expired blocks assignment". */
     public function test_an_expired_licence_blocks_the_driver(): void
     {
-        $d = $this->driverSvc->create([
+        $d = $this->fleetDriver([
             'name' => 'Lapsed', 'licence_number' => 'MH0199',
             'licence_valid_until' => now()->subDay()->toDateString(),
         ], self::TENANT_A, $this->actor);
@@ -272,7 +276,7 @@ class TransportEligibilityTest extends TestCase
 
     public function test_a_driver_with_no_licence_is_blocked(): void
     {
-        $d = $this->driverSvc->create(['name' => 'No Licence'], self::TENANT_A, $this->actor);
+        $d = $this->fleetDriver(['name' => 'No Licence'], self::TENANT_A, $this->actor);
 
         $verdict = $this->drivers->evaluate($d, $this->trip(), self::TENANT_A);
 
@@ -344,7 +348,7 @@ class TransportEligibilityTest extends TestCase
     /** FLEET §13 — expiring warns, it does not block. */
     public function test_an_expiring_licence_warns_without_blocking(): void
     {
-        $d = $this->driverSvc->create([
+        $d = $this->fleetDriver([
             'name' => 'Expiring', 'licence_number' => 'MH0177',
             'licence_valid_until' => now()->addDays(10)->toDateString(),
         ], self::TENANT_A, $this->actor);
@@ -361,7 +365,7 @@ class TransportEligibilityTest extends TestCase
 
     public function test_policy_can_move_a_check_from_blocking_to_advisory(): void
     {
-        $d = $this->driverSvc->create([
+        $d = $this->fleetDriver([
             'name' => 'Lapsed', 'licence_number' => 'MH0155',
             'licence_valid_until' => now()->subDay()->toDateString(),
         ], self::TENANT_A, $this->actor);
@@ -421,7 +425,7 @@ class TransportEligibilityTest extends TestCase
         $ok = $this->goodVehicle(capacity: 30);
         $tooSmall = $this->goodVehicle(capacity: 10);
         $suspended = $this->goodVehicle();
-        $this->vehicleSvc->transitionTo($suspended, VehicleStatus::SUSPENDED, self::TENANT_A, $this->actor);
+        $this->moveFleetVehicle($suspended, Vehicle::STATUS_SUSPENDED);
 
         $ids = $this->vehicles->candidatesFor($trip, self::TENANT_A)->pluck('subject.id');
 
@@ -436,7 +440,7 @@ class TransportEligibilityTest extends TestCase
         $ok = $this->goodDriver();
         $onLeave = $this->goodDriver();
         $this->driverSvc->transitionAvailabilityTo($onLeave, DriverAvailability::ON_LEAVE, self::TENANT_A, $this->actor);
-        $noLicence = $this->driverSvc->create(['name' => 'No Licence'], self::TENANT_A, $this->actor);
+        $noLicence = $this->fleetDriver(['name' => 'No Licence'], self::TENANT_A, $this->actor);
 
         $ids = $this->drivers->candidatesFor($trip, self::TENANT_A)->pluck('subject.id');
 
@@ -451,7 +455,7 @@ class TransportEligibilityTest extends TestCase
         $trip = $this->trip();
         $this->goodVehicle();
         $bad = $this->goodVehicle();
-        $this->vehicleSvc->transitionTo($bad, VehicleStatus::SUSPENDED, self::TENANT_A, $this->actor);
+        $this->moveFleetVehicle($bad, Vehicle::STATUS_SUSPENDED);
 
         $all = $this->vehicles->candidatesFor($trip, self::TENANT_A, includeIneligible: true);
         $row = $all->firstWhere('subject.id', $bad->id);
