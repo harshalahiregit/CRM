@@ -26,14 +26,18 @@ class UpdateManpowerRequest extends FormRequest
             'location'            => 'nullable|string|max:150',
             'employee_level'      => 'nullable|string|max:60',
             'experience_required' => 'nullable|string|max:100',
-            'education'           => 'nullable|string|max:150',
+            // Kept identical to StoreManpowerRequest — see the reasoning there.
+            // An edit that refused what the create accepted would be worse than
+            // either limit on its own: the record saves once and can never be
+            // touched again.
+            'education'           => 'nullable|string|max:255',
             'criticality'         => 'nullable|in:Low,Medium,High,Business Critical',
             'salary_min'          => 'nullable|numeric|min:0',
             'salary_max'          => 'nullable|numeric|min:0|gte:salary_min',
             'required_skills'     => 'nullable|array',
-            'required_skills.*'   => 'string|max:60',
+            'required_skills.*'   => 'string|max:2000',
             'preferred_skills'    => 'nullable|array',
-            'preferred_skills.*'  => 'string|max:60',
+            'preferred_skills.*'  => 'string|max:2000',
             'job_description'     => 'nullable|string',
             'justification'       => 'nullable|string',
             'required_by_date'    => 'nullable|date|after_or_equal:today',
@@ -51,7 +55,7 @@ class UpdateManpowerRequest extends FormRequest
             'shift'                  => ['nullable', Rule::in($this->allowedShifts())],
             'budget'                 => 'nullable|numeric|min:0',
             'certifications'         => 'nullable|array',
-            'certifications.*'       => 'string|max:100',
+            'certifications.*'       => 'string|max:2000',
             'hiring_reason'          => 'nullable|in:New Position,Replacement,Expansion,Contract',
             'replacement_employee_id' => 'nullable|required_if:hiring_reason,Replacement|exists:hr_employees,id',
             'cost_center'            => 'nullable|string|max:100',

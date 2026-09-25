@@ -301,6 +301,43 @@ export default function ManpowerRequests() {
     return null
   }
 
+  /**
+   * What actually went wrong, rather than the word "failed".
+   *
+   * A 422 from this API carries {status, message, errors}, where `message` is the
+   * hard-coded string "Validation failed" (bootstrap/app.php) and `errors` holds
+   * the field and the reason. This page read only `message`, so every rejection —
+   * a skill one character too long, a date in the past, a shift the workspace does
+   * not have — produced the same four words and named nothing. On a form this size
+   * that is not a hint, it is a search.
+   *
+   * The field names are the API's, which are close enough to the labels to find
+   * the box. Array entries arrive as `required_skills.3`; the index is 0-based, so
+   * it is shown as a position a human can count to.
+   */
+  const saveError = (e) => {
+    const data = e?.response?.data
+    const errors = data?.errors
+
+    if (errors && typeof errors === 'object') {
+      const lines = Object.entries(errors).map(([field, msgs]) => {
+        const msg = Array.isArray(msgs) ? msgs[0] : String(msgs)
+        const m = field.match(/^(.+)\.(\d+)$/)
+        const where = m
+          ? `${m[1].replace(/_/g, ' ')} (entry ${Number(m[2]) + 1})`
+          : field.replace(/_/g, ' ')
+        // Laravel repeats the raw field name inside the sentence ("The
+        // required_skills.0 field must not be…"). The label in front of it already
+        // says which field, so the duplicate opening is dropped.
+        return `• ${where}: ${msg.replace(/^The .+? field /, '')}`
+      })
+
+      if (lines.length) return `Please fix the following:\n\n${lines.join('\n')}`
+    }
+
+    return data?.message || 'Failed to save request'
+  }
+
   // mode: 'draft' saves only; 'submit' also sends it for approval.
   const handleSave = async (mode = 'draft') => {
     const err = validateForm()
@@ -314,7 +351,7 @@ export default function ManpowerRequests() {
       if (mode === 'submit' && id) await hrApi.manpower.submit(id)
       setShowModal(false); setForm(EMPTY_FORM); setEditingId(null)
       fetchAll()
-    } catch (e) { alert(e?.response?.data?.message || 'Failed to save request') }
+    } catch (e) { alert(saveError(e)) }
     finally { setSaving(false) }
   }
 
