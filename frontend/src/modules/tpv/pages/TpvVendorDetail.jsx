@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { isWorkspaceUnlocked, isSectionUnlocked, lockNav, lockNotice } from '@/lib/vendors/workspaceLock'
 import LockedSection from '@/components/vendors/LockedSection'
+import OnboardingSteps from '@/components/vendors/OnboardingSteps'
 import VendorAccessControls from '@/components/vendors/VendorAccessControls'
 
 const NOTIF_COLORS = { sent: '#10b981', failed: '#ef4444', skipped: '#94a3b8', queued: '#0ea5e9' }
@@ -115,6 +116,12 @@ export default function TpvVendorDetail() {
   const [resending, setResending] = useState(false)
   const [notice, setNotice] = useState(null)
   const [showTimeline, setShowTimeline] = useState(false)
+  /*
+   * The onboarding steps, for the decision panel and for anything locked.
+   * `v.tpv_onboarding` carries the status and the pointer but not the step
+   * list, which is computed per request — so it is asked for separately.
+   */
+  const [lockSteps, setLockSteps] = useState(null)
 
   // Slug ↔ label lookup so the ?tab= query param survives reloads and drives history.
   const bySlug = useMemo(() => {
@@ -164,6 +171,17 @@ export default function TpvVendorDetail() {
   }, [id, cfg.api])
   useEffect(() => { load() }, [load])
 
+  const onboardingId = (v?.tpv_onboarding || v?.tpvOnboarding)?.id
+  useEffect(() => {
+    if (!onboardingId) return undefined
+    let alive = true
+    tpvApi.onboarding.progress(onboardingId)
+      .then(p => { if (alive) setLockSteps(Array.isArray(p?.steps) ? p.steps : null) })
+      .catch(() => {})
+
+    return () => { alive = false }
+  }, [onboardingId])
+
   if (loading) return <div style={wrap}><style>{KIT3D_STYLE}</style><Loader2 size={22} className="rfq-spin" style={{ color: '#a78bfa' }} /></div>
   if (!v) return <div style={wrap}><style>{KIT3D_STYLE}</style><p style={{ color: 'var(--text-muted)' }}>Vendor not found.</p></div>
 
@@ -181,8 +199,11 @@ export default function TpvVendorDetail() {
    * company there is nothing to show for yet. The same rule and the same four
    * on the Purchase side; see lib/vendors/workspaceLock.
    *
-   * The tab itself stays reachable by ?tab= — the lock is about what the screen
-   * puts in front of somebody, not about who is allowed where.
+   * The SECTION refuses too, not just the sidebar entry. The tab is chosen by
+   * ?tab= here, so hiding the entry left the locked half of the workspace one
+   * hand-typed query string away. Still not a permission — an admin who wants
+   * a locked section approves the onboarding, which is the thing they were
+   * going to have to do anyway.
    */
   const unlocked = isWorkspaceUnlocked(v, activeOnboarding)
   // Items here are plain label strings, so lockNav's default key reader — the
@@ -333,7 +354,7 @@ export default function TpvVendorDetail() {
           admins/staff, and only once the vendor has an onboarding to decide on. */}
       {manage && activeOnboarding && (
         <OnboardingDecisionPanel
-          vendor={v} onboarding={activeOnboarding} api={cfg.api}
+          vendor={v} onboarding={activeOnboarding} api={cfg.api} steps={lockSteps}
           onDecision={kind => { setDecisionModal(kind); setRemarks('') }}
         />
       )}
@@ -420,7 +441,13 @@ export default function TpvVendorDetail() {
             onDecision={kind => { setDecisionModal(kind); setRemarks('') }}
             onReload={load} />
           ) : (
-            <LockedSection label={active} notice={lockedNotice} overviewHref="?tab=overview" />
+            <LockedSection
+              label={active}
+              steps={lockSteps}
+              notice={lockedNotice}
+              overviewHref="?tab=overview"
+              hrefFor={(section) => `?tab=${section === 'meeting' ? 'meetings' : section}`}
+            />
           )}
         </div>
       </div>
@@ -813,7 +840,7 @@ function VendorOverview({ vendor, api, isActive }) {
  * but disabled, listing exactly what is missing, so an incomplete onboarding can
  * never be approved by accident.
  */
-function OnboardingDecisionPanel({ vendor, onboarding, api, onDecision }) {
+function OnboardingDecisionPanel({ vendor, onboarding, api, onDecision, steps = null }) {
   const [docs, setDocs] = useState(null)
   const status = onboarding?.status || 'Draft'
   const step = onboarding?.current_step || 1
@@ -859,11 +886,18 @@ function OnboardingDecisionPanel({ vendor, onboarding, api, onDecision }) {
         <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text-muted)' }}>
           <strong style={{ color: 'var(--text-h)' }}>{vendor.company_name || vendor.vendor_code}</strong>
           {' — '}{approved
-            ? 'onboarding approved and the account is activated (Step 6).'
+            ? 'onboarding approved and the account is activated.'
             : decidable
               ? 'has completed all steps and is waiting for your decision.'
               : 'is still progressing through onboarding.'}
         </p>
+
+        {/* The strip Purchase has had since SIR-000006 and TPV never got.
+            "Step 3 of 7" says where a vendor is, not what the steps are or
+            which one is next -- which was the whole of that issue, still live
+            on this side of the house. Clickable: each one goes to the section
+            that completes it. */}
+        {!approved && <OnboardingSteps steps={steps} hrefFor={(section) => `?tab=${section === 'meeting' ? 'meetings' : section}`} />}
 
         {approved ? (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 9, padding: '10px 14px', borderRadius: 10, background: 'color-mix(in srgb, #0ca30c 12%, transparent)', border: '1px solid color-mix(in srgb, #0ca30c 30%, transparent)', color: '#0ca30c', fontSize: 12.5, fontWeight: 700 }}>

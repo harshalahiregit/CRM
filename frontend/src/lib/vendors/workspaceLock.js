@@ -32,15 +32,24 @@ export const VENDOR_ACTIVE = 'Active'
  *
  *   overview   — where the onboarding stands, and the approve/hold/reject panel
  *   profile    — is this company who they say they are
- *   contacts   — who do we talk to
+ *   contacts   — who do we talk to, and step 1 of the onboarding itself
+ *   meetings   — the kickoff, which is step 2
  *   documents  — what have they actually uploaded, and is it acceptable
+ *
+ * THE LIST IS DERIVED, not chosen: it is exactly the sections the seven
+ * onboarding steps send somebody to. Meetings was missing, which made step 2
+ * the only step on the strip that could not be opened — the kickoff is held
+ * before the vendor is approved, so locking it until approval asked for the
+ * meeting after the thing it unlocks.
  *
  * Both key styles are listed because the two workspaces address their tabs
  * differently: Purchase by a URL segment ('purchase-orders'), TPV by a slugged
  * label ('purchase-order'). Matching is done on the slug of whatever is passed,
  * so either spelling resolves.
  */
-export const PRE_ONBOARDING_SECTIONS = ['overview', 'profile', 'contact', 'contacts', 'documents']
+export const PRE_ONBOARDING_SECTIONS = [
+  'overview', 'profile', 'contact', 'contacts', 'documents', 'meeting', 'meetings',
+]
 
 /**
  * And the same rule from the vendor's own side of the glass.
