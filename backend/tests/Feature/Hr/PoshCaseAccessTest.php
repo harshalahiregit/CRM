@@ -415,7 +415,35 @@ class PoshCaseAccessTest extends TestCase
         $encoded = json_encode($body);
         $this->assertStringNotContainsString('POSH-SECRET', $encoded);
         $this->assertStringNotContainsString('What happened.', $encoded);
-        $this->assertStringNotContainsString((string) $case->committee_id, $encoded);
+
+        /*
+         | The committee id is checked by VALUE, not as a substring.
+         |
+         | It was asserted with assertStringNotContainsString((string) $committee_id),
+         | and committee_id is a small integer — so the test failed whenever the
+         | refusal's random reference happened to contain that digit. "01AD1E"
+         | contains a 1, and the case's committee was 1. It passed or failed on a
+         | coin toss, which is worse than not being tested: a flaky guard on a
+         | disclosure path gets muted rather than believed.
+         |
+         | What it means to assert is that no value in the payload IS the id, and
+         | that nothing names it. A digit appearing inside an opaque reference is
+         | not a leak.
+         */
+        $this->assertArrayNotHasKey('committee_id', $body);
+        $this->assertNotContains($case->committee_id, $this->leaves($body));
+    }
+
+    /** Every scalar in a nested payload, so a value can be checked as a value. */
+    private function leaves(array $body): array
+    {
+        $out = [];
+
+        array_walk_recursive($body, function ($v) use (&$out) {
+            $out[] = $v;
+        });
+
+        return $out;
     }
 
     /* ── surfaces that must not exist ─────────────────────────────────── */
