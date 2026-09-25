@@ -47,6 +47,7 @@ class VehicleAllocationService
             ->whereIn('vehicle_id', $vehicles->pluck('id'))->get()->keyBy('vehicle_id');
 
         $blockingJobs = $this->safetyCriticalJobCounts($companyId, $vehicles->pluck('id'));
+        $coupledTrailers = $this->trailerBlockers($companyId, $vehicles->pluck('id'));
         $openJobs = $this->openJobCounts($companyId, $vehicles->pluck('id'));
         $efficiency = $this->efficiencyByVehicle($companyId, $vehicles->pluck('id'));
         $utilisation = $this->utilisationByVehicle($companyId, $vehicles->pluck('id'));
@@ -81,6 +82,15 @@ class VehicleAllocationService
         foreach ($vehicles as $vehicle) {
             $l = $live[$vehicle->id] ?? null;
             $blockers = $this->blockersFor($vehicle, $l, (int) ($blockingJobs[$vehicle->id] ?? 0), $required);
+
+            // T-54 — a tractor pulling a trailer with lapsed papers cannot
+            // legally go out, however clean the tractor's own file is. The
+            // blocker names the TRAILER, because sending somebody to renew the
+            // truck's documents over a trailer's fitness certificate is how an
+            // hour gets wasted at a gate.
+            if ($trailerBlock = ($coupledTrailers[$vehicle->id] ?? null)) {
+                $blockers[] = $trailerBlock;
+            }
 
             if ($blockers !== []) {
                 // Excluded vehicles are RETURNED, not silently dropped. A planner
@@ -273,6 +283,51 @@ class VehicleAllocationService
         }
 
         return $blockers;
+    }
+
+    /**
+     * Vehicles whose coupled trailer would stop the combination — T-54.
+     *
+     * Loaded in bulk: this runs on the busiest read in the module, and one
+     * query per truck to find a trailer that usually is not there would be a
+     * poor trade.
+     *
+     * Only a BLOCKED trailer produces an entry. A trailer whose papers merely
+     * expire soon is a warning on the trailer register, not a reason to refuse
+     * a truck today.
+     *
+     * @return array<int,array>  vehicle id => blocker
+     */
+    private function trailerBlockers(int $companyId, Collection $vehicleIds): array
+    {
+        if ($vehicleIds->isEmpty() || ! \Illuminate\Support\Facades\Schema::hasTable('vehicle_trailer_assignments')) {
+            return [];
+        }
+
+        $rows = \App\Domains\Fleet\Models\VehicleTrailerAssignment::forCompany($companyId)
+            ->open()
+            ->whereIn('vehicle_id', $vehicleIds)
+            ->with('trailer:id,trailer_number,status,compliance_status')
+            ->get();
+
+        $out = [];
+
+        foreach ($rows as $row) {
+            $trailer = $row->trailer;
+
+            if (! $trailer || $trailer->status !== \App\Domains\Fleet\Models\Trailer::STATUS_COMPLIANCE_BLOCKED) {
+                continue;
+            }
+
+            $out[(int) $row->vehicle_id] = $this->blocker(
+                'trailer_compliance_blocked',
+                'The coupled trailer is not road legal.',
+                $trailer->trailer_number.' has a lapsed document, so the combination cannot go out.',
+                'Fleet compliance desk'
+            );
+        }
+
+        return $out;
     }
 
     private function blocker(string $code, string $why, string $missing, string $owner): array

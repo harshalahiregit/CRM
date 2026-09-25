@@ -69,6 +69,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('projects')->gro
     Route::get('/{project}/expenses',              [ProjectController::class, 'expenses']);
     Route::post('/{project}/expenses',             [ProjectController::class, 'storeExpense']);
     Route::put('/{project}/expenses/{expense}',    [ProjectController::class, 'updateExpense']);
+    // The receipt behind the expense. Its own endpoint because it is a file and
+    // is usually attached later, when somebody gets back to a scanner.
+    Route::post('/{project}/expenses/{expense}/receipt',   [ProjectController::class, 'uploadExpenseReceipt']);
+    Route::get('/{project}/expenses/{expense}/receipt',    [ProjectController::class, 'downloadExpenseReceipt']);
     Route::delete('/{project}/expenses/{expense}', [ProjectController::class, 'destroyExpense']);
 
     // Meeting tab (Kickoff meetings)
@@ -96,6 +100,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('projects')->gro
     // Milestones (nested list/create)
     Route::get('/{project}/milestones',  [ProjectMilestoneController::class, 'index']);
     Route::post('/{project}/milestones', [ProjectMilestoneController::class, 'store']);
+    // A plan arrives as a spreadsheet, not as twenty trips through a form.
+    Route::post('/{project}/milestones/import', [ProjectMilestoneController::class, 'import']);
 
     // Files
     Route::get('/{project}/files',                     [ProjectFileController::class, 'index']);

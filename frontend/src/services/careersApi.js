@@ -21,8 +21,20 @@ export const careersApi = {
   }).then(r => r.data),
   // Application tracking (public — matched by the applicant's own email/phone)
   status:       (slug, id, payload) => api.post(`/careers/${slug}/jobs/${id}/status`, payload).then(r => r.data),
-  respondOffer: (slug, id, payload) => api.post(`/careers/${slug}/jobs/${id}/offer/respond`, payload).then(r => r.data),
-  offerLetterUrl: (slug, id, email) => `${BASE}/careers/${slug}/jobs/${id}/offer/letter?email=${encodeURIComponent(email)}`,
+
+  // NO OFFER HELPERS HERE, DELIBERATELY. respondOffer() and offerLetterUrl()
+  // used to sit on this object, called by nothing, and neither carried the
+  // offer token their endpoints require — offerLetterUrl() built a URL that
+  // would have been rejected before it reached the letter.
+  //
+  // They are gone rather than repaired because this portal has no token to put
+  // in them. The route is /careers/:slug/jobs/:id, nothing ever emails a
+  // tokenised Careers URL, and the raw token must never be fetched from an API.
+  // A page that cannot hold the credential must not host actions that need one:
+  // Careers tracks the offer, and the private emailed link acts on it.
+  //
+  // The backend routes are untouched and still serve a candidate who holds
+  // their token.
 }
 
 export default careersApi

@@ -327,7 +327,11 @@ class HrPayrollDemoSeeder extends Seeder
 
             HrEmployeeLeaveBalance::updateOrCreate(
                 ['tenant_id' => $this->tenantId, 'employee_id' => $e->id, 'leave_type_id' => $leaveType->id],
-                ['leave_policy_id' => $policy?->id, 'allocated' => 12, 'opening_balance' => 12,
+                // opening_balance stays 0: it is a balance carried in from another
+                // system, not a second copy of the allocation. Seeding 12 in both
+                // made the row worth 24 to recomputeAvailable() — see the note in
+                // AllocateLeaveBalances.
+                ['leave_policy_id' => $policy?->id, 'allocated' => 12, 'opening_balance' => 0,
                  'used' => 0, 'adjusted' => 0, 'carried_forward' => 0, 'available_balance' => 12,
                  'effective_from' => '2026-04-01', 'status' => HrEmployeeLeaveBalance::ACTIVE]
             );

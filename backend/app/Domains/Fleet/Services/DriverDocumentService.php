@@ -7,6 +7,7 @@ use App\Exceptions\BusinessException;
 use App\Models\Transport\TransportDocument;
 use App\Services\Transport\TransportDocumentService;
 use App\Support\Transport\TransportDocumentType;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -65,7 +66,7 @@ class DriverDocumentService
         $profile = $this->profile($companyId, $source, $sourceId);
         $type = $this->normaliseType($type);
 
-        $document = $this->documents->file($profile, $type, $data, $companyId, $actor);
+        $document = $this->documents->file($profile, $type, $this->withFile($data, $companyId), $companyId, $actor);
 
         Log::channel('stos')->info('Driver document filed', [
             'company_id' => $companyId, 'driver_profile_id' => $profile->id,
@@ -89,7 +90,7 @@ class DriverDocumentService
     {
         $current = $this->documents->find($documentId, $companyId);
 
-        $document = $this->documents->renew($current, $data, $companyId, $actor);
+        $document = $this->documents->renew($current, $this->withFile($data, $companyId), $companyId, $actor);
 
         return [
             'document'   => $document->fresh(),
@@ -253,6 +254,34 @@ class DriverDocumentService
     }
 
     /* ── helpers ────────────────────────────────────────────────── */
+
+    /**
+     * Put the uploaded licence or certificate somewhere it will survive.
+     *
+     * Same bug as the vehicle side, found the same way: the shared store takes
+     * `file_path` / `file_name` / `file_hash`, never an `UploadedFile`, so a
+     * validated `file` key was intersected away and the scan was dropped while
+     * the API answered 201.
+     *
+     * A driving licence scan on a public URL would be worse than losing it, so
+     * this is the private disk like everything else.
+     */
+    private function withFile(array $data, int $companyId): array
+    {
+        $file = $data['file'] ?? null;
+        unset($data['file']);
+
+        if (! $file instanceof UploadedFile) {
+            return $data;
+        }
+
+        return [
+            ...$data,
+            'file_path' => $file->store("stos/driver-documents/{$companyId}", 'local'),
+            'file_name' => $file->getClientOriginalName(),
+            'file_hash' => hash_file('sha256', $file->getRealPath()),
+        ];
+    }
 
     /** Which profile date this document type sets, or null if it sets none. */
     public function gatedBy(string $type): ?string

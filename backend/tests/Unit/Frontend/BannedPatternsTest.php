@@ -99,7 +99,11 @@ class BannedPatternsTest extends TestCase
             'modules/tpv/pages/TpvWorkerWizard.jsx' => 28,
             'modules/tpv/pages/TpvWorkers.jsx' => 19,
             'modules/tpv/pages/WorkforceDashboard.jsx' => 10,
-            'pages/careers/CareerJobDetails.jsx' => 1,
+            // CareerJobDetails.jsx used to sit here with 1. Its only alert()
+            // was inside a dead respond() that sent no offer token and was
+            // wired to no button; removing the function removed the alert with
+            // it. Delisted as the ratchet instructs, which also means the file
+            // can never reintroduce one without failing this test.
             'pages/careers/ClientTrackingPortal.jsx' => 3,
             'pages/careers/HiringRequestPortal.jsx' => 3,
             'pages/purchase-portal/PurchasePortalKickoff.jsx' => 1,

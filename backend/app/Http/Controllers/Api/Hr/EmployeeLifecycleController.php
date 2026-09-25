@@ -35,8 +35,13 @@ class EmployeeLifecycleController extends Controller
         $tenantId = $this->tenant($request);
         $payload = $this->lifecycle->forEmployee($employeeId, $tenantId);
 
-        if ($request->user()->canManageHrQueue()) {
-            $payload['loans'] = $this->recovery->forEmployee($employeeId, $tenantId);
+        // Two separate questions, and the existing design answers them the same
+        // way: may they see debt at all (permission), and is this employee
+        // theirs to see (scope). Either "no" omits the block rather than 403s
+        // the whole page, which is what the comment above already promised.
+        if ($request->user()->canManageHrQueue()
+            && app(\App\Services\Auth\ScopeResolver::class)->canActOnEmployee($request->user(), $employeeId)) {
+            $payload['loans'] = $this->recovery->forEmployee($employeeId, $tenantId, $request->user());
         }
 
         return response()->json($payload);
@@ -54,14 +59,14 @@ class EmployeeLifecycleController extends Controller
     {
         $this->can($request);
 
-        return response()->json($this->recovery->forEmployee($employeeId, $this->tenant($request)));
+        return response()->json($this->recovery->forEmployee($employeeId, $this->tenant($request), $request->user()));
     }
 
     public function loanRecovery(Request $request, int $loanId)
     {
         $this->can($request);
 
-        return response()->json($this->recovery->forLoan($loanId, $this->tenant($request)));
+        return response()->json($this->recovery->forLoan($loanId, $this->tenant($request), $request->user()));
     }
 
     public function outstandingLoans(Request $request)
@@ -70,7 +75,7 @@ class EmployeeLifecycleController extends Controller
 
         return response()->json([
             'data' => $this->recovery->outstanding($this->tenant($request),
-                $request->only(['employee_id', 'department', 'period'])),
+                $request->only(['employee_id', 'department', 'period']), $request->user()),
         ]);
     }
 
@@ -78,7 +83,7 @@ class EmployeeLifecycleController extends Controller
     {
         $this->can($request);
 
-        return response()->json($this->recovery->forRun($runId, $this->tenant($request)));
+        return response()->json($this->recovery->forRun($runId, $this->tenant($request), $request->user()));
     }
 
     private function tenant(Request $request): int

@@ -37,21 +37,21 @@ class PayslipService
     ) {
     }
 
-    public function list(int $tenantId, array $filters): array
+    public function list(int $tenantId, array $filters, ?User $actor = null): array
     {
-        return $this->repo->filtered($tenantId, $filters)->map(fn ($p) => $this->present($p))->all();
+        return $this->repo->filtered($tenantId, $filters, $actor)->map(fn ($p) => $this->present($p))->all();
     }
 
-    public function show(int $id, int $tenantId): array
+    public function show(int $id, int $tenantId, ?User $actor = null): array
     {
-        return $this->present($this->find($id, $tenantId));
+        return $this->present($this->find($id, $tenantId, $actor));
     }
 
-    public function forEmployee(int $employeeId, int $tenantId): array
+    public function forEmployee(int $employeeId, int $tenantId, ?User $actor = null): array
     {
         $this->assertEmployee($employeeId, $tenantId);
 
-        return $this->repo->forEmployee($employeeId, $tenantId)->map(fn ($p) => $this->present($p))->all();
+        return $this->repo->forEmployee($employeeId, $tenantId, $actor)->map(fn ($p) => $this->present($p))->all();
     }
 
     /**
@@ -134,7 +134,10 @@ class PayslipService
     /** Prepare a payslip file for download (rendering the PDF if missing). Audited. */
     public function download(int $id, int $tenantId, ?User $actor = null): array
     {
-        $payslip = $this->find($id, $tenantId);
+        // The actor was already here for the audit line but was not reaching
+        // the lookup, so the PDF was the one payslip surface scope never saw —
+        // the export path around the list.
+        $payslip = $this->find($id, $tenantId, $actor);
 
         if (empty($payslip->pdf_path) || ! Storage::disk(self::DOC_DISK)->exists($payslip->pdf_path)) {
             $payslip->update(['pdf_path' => $this->renderPdf($payslip)]);
@@ -257,9 +260,9 @@ class PayslipService
         ];
     }
 
-    private function find(int $id, int $tenantId): HrPayslip
+    private function find(int $id, int $tenantId, ?User $actor = null): HrPayslip
     {
-        $payslip = $this->repo->findForTenant($id, $tenantId);
+        $payslip = $this->repo->findForTenant($id, $tenantId, $actor);
         if (! $payslip) {
             throw new BusinessException('Payslip not found', 404);
         }

@@ -19,12 +19,12 @@ class EmployeeLeaveBalanceController extends Controller
 
     public function index(Request $request)
     {
-        return response()->json($this->service->list($this->tenant($request), $request->only(['employee_id', 'leave_type_id', 'status'])));
+        return response()->json($this->service->list($this->tenant($request), $request->only(['employee_id', 'leave_type_id', 'status']), $request->user()));
     }
 
     public function forEmployee(Request $request, int $employee)
     {
-        return response()->json($this->service->forEmployee($employee, $this->tenant($request)));
+        return response()->json($this->service->forEmployee($employee, $this->tenant($request), $request->user()));
     }
 
     public function assign(Request $request)
@@ -84,7 +84,7 @@ class EmployeeLeaveBalanceController extends Controller
 
     public function history(Request $request, int $balance)
     {
-        return response()->json($this->service->history($balance, $this->tenant($request)));
+        return response()->json($this->service->history($balance, $this->tenant($request), $request->user()));
     }
 
     private function tenant(Request $request): int

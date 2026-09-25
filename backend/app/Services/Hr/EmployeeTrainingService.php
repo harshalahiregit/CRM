@@ -24,30 +24,31 @@ class EmployeeTrainingService
     {
     }
 
-    public function list(int $tenantId, array $f): array
+    public function list(int $tenantId, array $f, ?User $actor = null): array
     {
         return [
-            'data'  => $this->repo->assignments($tenantId, $f)->map(fn ($a) => $this->present($a))->all(),
-            'stats' => $this->repo->stats($tenantId),
+            'data'  => $this->repo->assignments($tenantId, $f, $actor)->map(fn ($a) => $this->present($a))->all(),
+            // Counted over the same population as the rows above it.
+            'stats' => $this->repo->stats($tenantId, $actor),
         ];
     }
 
     public function show(int $id, int $tenantId, ?User $actor = null): array
     {
-        $assignment = $this->find($id, $tenantId);
+        $assignment = $this->find($id, $tenantId, $actor);
         $assignment->recordAudit('Training Viewed', $actor);
 
         return $this->present($assignment, true);
     }
 
-    public function forEmployee(int $employeeId, int $tenantId): array
+    public function forEmployee(int $employeeId, int $tenantId, ?User $actor = null): array
     {
-        return $this->repo->forEmployee($employeeId, $tenantId)->map(fn ($a) => $this->present($a))->all();
+        return $this->repo->forEmployee($employeeId, $tenantId, $actor)->map(fn ($a) => $this->present($a))->all();
     }
 
-    public function history(int $tenantId, array $f): array
+    public function history(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->history($tenantId, $f)->map(fn ($a) => $this->present($a))->all();
+        return $this->repo->history($tenantId, $f, $actor)->map(fn ($a) => $this->present($a))->all();
     }
 
     /* ── Assign ───────────────────────────────────────────── */
@@ -99,7 +100,7 @@ class EmployeeTrainingService
         );
         $this->log($attempt > 1 ? 'Retraining assigned' : 'Training assigned', $tenantId, $assignment->id);
 
-        return $this->present($this->find($assignment->id, $tenantId), true);
+        return $this->present($this->find($assignment->id, $tenantId, $actor), true);
     }
 
     /**
@@ -144,7 +145,7 @@ class EmployeeTrainingService
 
     public function start(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $assignment = $this->find($id, $tenantId);
+        $assignment = $this->find($id, $tenantId, $actor);
         if ($assignment->status !== HrEmployeeTraining::ASSIGNED) {
             throw new BusinessException('Only an assigned training can be started.');
         }
@@ -158,12 +159,12 @@ class EmployeeTrainingService
         $assignment->recordAudit('Training Started', $actor);
         $this->log('Training started', $tenantId, $assignment->id);
 
-        return $this->present($this->find($id, $tenantId), true);
+        return $this->present($this->find($id, $tenantId, $actor), true);
     }
 
     public function complete(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $assignment = $this->find($id, $tenantId);
+        $assignment = $this->find($id, $tenantId, $actor);
         if (! in_array($assignment->status, HrEmployeeTraining::ACTIVE, true)) {
             throw new BusinessException('Only an assigned or in-progress training can be completed.');
         }
@@ -177,12 +178,12 @@ class EmployeeTrainingService
         $assignment->recordAudit('Training Completed', $actor, $data['remarks'] ?? null);
         $this->log('Training completed', $tenantId, $assignment->id);
 
-        return $this->present($this->find($id, $tenantId), true);
+        return $this->present($this->find($id, $tenantId, $actor), true);
     }
 
     public function cancel(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $assignment = $this->find($id, $tenantId);
+        $assignment = $this->find($id, $tenantId, $actor);
         if (in_array($assignment->status, HrEmployeeTraining::TERMINAL, true)) {
             throw new BusinessException("A {$assignment->status} training cannot be cancelled.");
         }
@@ -194,7 +195,7 @@ class EmployeeTrainingService
         $assignment->recordAudit('Training Cancelled', $actor, $data['remarks'] ?? null);
         $this->log('Training cancelled', $tenantId, $assignment->id);
 
-        return $this->present($this->find($id, $tenantId), true);
+        return $this->present($this->find($id, $tenantId, $actor), true);
     }
 
     /* ── Helpers ──────────────────────────────────────────── */
@@ -248,9 +249,9 @@ class EmployeeTrainingService
         return $out;
     }
 
-    private function find(int $id, int $tenantId): HrEmployeeTraining
+    private function find(int $id, int $tenantId, ?User $actor = null): HrEmployeeTraining
     {
-        $assignment = $this->repo->find($id, $tenantId);
+        $assignment = $this->repo->find($id, $tenantId, $actor);
         if (! $assignment) {
             throw new BusinessException('Training assignment not found', 404);
         }

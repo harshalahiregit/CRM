@@ -119,8 +119,27 @@ class EmployeeController extends Controller
             'dob'                    => 'nullable|date',
             'gender'                 => 'nullable|in:Male,Female,Other,Prefer not to say',
             'address'                => 'nullable|string',
-            'department'             => 'sometimes|required|string',
-            'designation'            => 'sometimes|required|string',
+            // See StoreEmployeeRequest: the master record, not a typed string,
+            // and tenant-scoped so another workspace's department cannot be
+            // assigned. `sometimes` because an edit that touches neither must
+            // leave both exactly as they are.
+            'department_id'          => [
+                'sometimes', 'required', 'integer',
+                \Illuminate\Validation\Rule::exists('hr_departments', 'id')
+                    ->where('tenant_id', $request->user()->tenant_id),
+            ],
+            'designation_id'         => [
+                'sometimes', 'required', 'integer',
+                \Illuminate\Validation\Rule::exists('hr_designations', 'id')
+                    ->where('tenant_id', $request->user()->tenant_id),
+            ],
+            // See StoreEmployeeRequest. Nullable so an override can be cleared
+            // back to "none chosen".
+            'employment_type_id'     => [
+                'nullable', 'integer',
+                \Illuminate\Validation\Rule::exists('hr_employment_types', 'id')
+                    ->where('tenant_id', $request->user()->tenant_id),
+            ],
             // See StoreEmployeeRequest for why both exist. The service rejects a
             // self-reference and a cycle; existence and tenant are checked here.
             'reporting_manager_id'   => [
@@ -129,6 +148,9 @@ class EmployeeController extends Controller
                     ->where('tenant_id', $request->user()->tenant_id),
             ],
             'reporting_manager_name' => 'nullable|string',
+            // See StoreEmployeeRequest. Null clears the override back to
+            // inheriting; 0 is an explicit "no notice".
+            'notice_days'            => 'nullable|integer|min:0|max:365',
             'work_state'             => ['nullable', 'string', 'max:80', new ValidWorkState],
             'joining_date'           => 'nullable|date',
             'probation_end_date'     => 'nullable|date',

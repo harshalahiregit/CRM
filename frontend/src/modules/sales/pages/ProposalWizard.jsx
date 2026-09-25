@@ -48,7 +48,16 @@ export default function ProposalWizard() {
   const [assignees, setAssignees] = useState([])
   // Launched from a customer profile? Lock that customer (Phase 1).
   const lockedClientId = params.get('client_id') || ''
-  const [form, setForm] = useState(() => ({ ...EMPTY, rel_id: lockedClientId }))
+  // …or from a lead profile — SIR-000034. Same idea, other arm of rel_type.
+  const lockedLeadId = params.get('lead_id') || ''
+  const locked = !!lockedClientId || !!lockedLeadId
+  // rel_type is seeded here rather than left to the effect below, so a wizard
+  // opened from a lead never renders a frame reading "Customer" first.
+  const [form, setForm] = useState(() => ({
+    ...EMPTY,
+    rel_type: lockedLeadId ? 'lead' : EMPTY.rel_type,
+    rel_id: lockedLeadId || lockedClientId,
+  }))
   const [savedId, setSavedId] = useState(id ? Number(id) : null)
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(editing)
@@ -116,6 +125,20 @@ export default function ProposalWizard() {
       // ignore fetch error
     }
   }
+
+  /**
+   * Started from a lead's profile — pull that lead's details in.
+   *
+   * Reuses handleRecipientChange rather than repeating the prefill, so the
+   * address block is filled by exactly the code that fills it when somebody
+   * picks the lead by hand. Skipped while editing: an existing proposal's own
+   * recipient is authoritative and must not be overwritten by a stale URL.
+   */
+  useEffect(() => {
+    if (editing || !lockedLeadId) return
+    handleRecipientChange('lead', lockedLeadId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, lockedLeadId])
 
   // Load for edit
   useEffect(() => {
@@ -334,7 +357,7 @@ export default function ProposalWizard() {
           <div className="grid md:grid-cols-3 gap-4">
             <div>
               <label className="label">Related To</label>
-              <select className="input-3d text-sm" value={form.rel_type} disabled={!!lockedClientId}
+              <select className="input-3d text-sm" value={form.rel_type} disabled={locked}
                 onChange={e => handleRecipientChange(e.target.value, '')}>
                 <option value="customer">Customer</option>
                 <option value="lead">Lead</option>
@@ -342,16 +365,20 @@ export default function ProposalWizard() {
             </div>
             <div>
               <label className="label">{form.rel_type === 'lead' ? 'Lead *' : 'Customer *'}</label>
-              <select className="input-3d text-sm" value={form.rel_id} disabled={!!lockedClientId}
+              <select className="input-3d text-sm" value={form.rel_id} disabled={locked}
                 onChange={e => handleRecipientChange(form.rel_type, e.target.value)}
-                style={lockedClientId ? { opacity: 0.7, cursor: 'not-allowed' } : undefined}>
+                style={locked ? { opacity: 0.7, cursor: 'not-allowed' } : undefined}>
                 <option value="">Select {form.rel_type === 'lead' ? 'lead' : 'customer'}…</option>
                 {form.rel_type === 'customer'
                   ? clients.map(c => <option key={c.id} value={c.id}>{c.company || c.name}</option>)
                   : leads.map(l => <option key={l.id} value={l.id}>{l.name || l.company} {l.company ? `(${l.company})` : ''}</option>)
                 }
               </select>
-              {lockedClientId && <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>🔒 Locked — started from this customer's profile.</p>}
+              {locked && (
+                <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                  🔒 Locked — started from this {lockedLeadId ? 'lead' : 'customer'}&apos;s profile.
+                </p>
+              )}
             </div>
             {form.rel_type === 'customer' ? (
               <div>

@@ -35,7 +35,12 @@ use Illuminate\Support\Facades\Log;
  */
 class EmployeeMovementService
 {
-    public function __construct(private EmployeeSkillService $skills)
+    public function __construct(
+        private EmployeeSkillService $skills,
+        // Transfers, promotions, demotions and redesignations notified nobody,
+        // including the person they happened to.
+        private HrEventNotifier $events,
+    )
     {
     }
 
@@ -159,6 +164,14 @@ class EmployeeMovementService
         Log::channel('hr')->info('Employee movement recorded', [
             'tenant_id' => $tenantId, 'employee_id' => $employee->id, 'type' => $type,
         ]);
+
+        // After the transaction, and to the person it happened to. A promotion
+        // the promoted employee has to discover for themselves is the clearest
+        // case of the gap this closes.
+        $this->events->toEmployee($employee->fresh(), 'Lifecycle', 'Movement Recorded', [
+            'type' => $type,
+            'date' => (string) ($data['effective_date'] ?? now()->toDateString()),
+        ], $actor);
 
         return $this->present($movement->fresh()) + [
             // #43 — the new position's skill expectations against what they have,

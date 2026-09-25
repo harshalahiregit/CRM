@@ -9,6 +9,8 @@ use App\Http\Controllers\Api\V1\Transport\FuelController;
 use App\Http\Controllers\Api\V1\Transport\MaintenanceController;
 use App\Http\Controllers\Api\V1\Transport\OperatingCostController;
 use App\Http\Controllers\Api\V1\Transport\TelemetryIngestionController;
+use App\Http\Controllers\Api\V1\Transport\TrailerController;
+use App\Http\Controllers\Api\V1\Transport\TyreMasterController;
 use App\Http\Controllers\Api\V1\Transport\VehicleAllocationController;
 use App\Http\Controllers\Api\V1\Transport\VehicleController;
 use App\Http\Controllers\Api\V1\Transport\VehicleDocumentController;
@@ -126,6 +128,17 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('v1/fleet')->gro
     Route::patch('/driver-documents/{document}/verify', [DriverDocumentController::class, 'verify'])
         ->where('document', '[0-9]+');
 
+    // ── Trailers and the coupling between (T-54) ────────────────────────
+    // `history` BEFORE `{trailer}`: it is a word, not an id, and the numeric
+    // constraint alone would not stop the detail route claiming it first.
+    Route::get('/trailers', [TrailerController::class, 'index']);
+    Route::get('/trailers/history', [TrailerController::class, 'history']);
+    Route::post('/trailers', [TrailerController::class, 'store']);
+    Route::put('/trailers/{trailer}', [TrailerController::class, 'update'])->where('trailer', '[0-9]+');
+    Route::get('/trailers/{trailer}/compliance', [TrailerController::class, 'compliance'])->where('trailer', '[0-9]+');
+    Route::post('/trailers/{trailer}/couple', [TrailerController::class, 'couple'])->where('trailer', '[0-9]+');
+    Route::post('/trailers/{trailer}/uncouple', [TrailerController::class, 'uncouple'])->where('trailer', '[0-9]+');
+
     // ── Urea / AdBlue (STOS-COST) ───────────────────────────────────────
     Route::post('/vehicles/{vehicle}/urea', [OperatingCostController::class, 'storeUrea'])->where('vehicle', '[0-9]+');
 
@@ -134,6 +147,17 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('v1/fleet')->gro
     Route::post('/tyres/fit', [OperatingCostController::class, 'fitTyre']);
     Route::put('/tyres/{fitment}/inspect', [OperatingCostController::class, 'inspectTyre'])->where('fitment', '[0-9]+');
     Route::put('/tyres/{fitment}/remove', [OperatingCostController::class, 'removeTyre'])->where('fitment', '[0-9]+');
+
+    // ── The casing register (T-36/37/38) ────────────────────────────────
+    // `/tyres/fit` and `/tyres/rotate` are words and sit beside `/tyres/{tyre}`,
+    // so the numeric constraint on the detail routes is what keeps them apart.
+    Route::get('/tyres', [TyreMasterController::class, 'index']);
+    Route::post('/tyres', [TyreMasterController::class, 'store']);
+    Route::post('/tyres/rotate', [TyreMasterController::class, 'rotate']);
+    Route::put('/tyres/{tyre}', [TyreMasterController::class, 'update'])->where('tyre', '[0-9]+');
+    Route::get('/tyres/{tyre}/economics', [TyreMasterController::class, 'economics'])->where('tyre', '[0-9]+');
+    Route::post('/tyres/{tyre}/retread', [TyreMasterController::class, 'retread'])->where('tyre', '[0-9]+');
+    Route::post('/tyres/{tyre}/scrap', [TyreMasterController::class, 'scrap'])->where('tyre', '[0-9]+');
 
     // ── Trip cost roll-up — the HTTP face of Developer 3's contract ──────
     Route::get('/trips/{trip}/operating-costs', [OperatingCostController::class, 'tripCosts'])->where('trip', '[0-9]+');

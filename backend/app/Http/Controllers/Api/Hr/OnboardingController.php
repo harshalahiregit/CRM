@@ -8,6 +8,7 @@ use App\Models\Hr\HrOffer;
 use App\Models\Hr\HrOnboarding;
 use App\Models\Hr\HrOnboardingDocument;
 use App\Services\Hr\OfferService;
+use App\Services\Hr\OnboardingPortalToken;
 use App\Services\Hr\OnboardingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -18,6 +19,7 @@ class OnboardingController extends Controller
     public function __construct(
         private OnboardingService $onboardingService,
         private OfferService $offerService,
+        private OnboardingPortalToken $portalToken,
     ) {
     }
 
@@ -89,7 +91,8 @@ class OnboardingController extends Controller
                 'department'       => $onboarding->department ?? optional($job)->department,
                 'offered_ctc'      => $ctc,
                 'joining_date'     => now()->addDays(30)->toDateString(),
-                'validity_date'    => now()->addDays(7)->toDateString(),
+                // The tenant's configured offer validity, not a fixed week.
+                'validity_date'    => now()->addDays($this->offerValidityDays($tenantId))->toDateString(),
                 'probation_period' => '3 months',
                 'notice_period'    => '1 month',
             ], $tenantId);
@@ -169,6 +172,61 @@ class OnboardingController extends Controller
         $this->onboardingService->destroy($onboarding);
 
         return response()->json(['message' => 'Deleted']);
+    }
+
+    /**
+     * Issue a fresh portal link, replacing any live one.
+     *
+     * The raw token is in this response and nowhere else, ever — not stored,
+     * not logged, not audited. HR sends it to the candidate out of band. If it
+     * is lost the only remedy is to issue another, which revokes this one;
+     * that is the intended trade, because a link that can be looked up again
+     * is a link everybody with database access holds.
+     *
+     * The previous link stops working immediately. Before this endpoint
+     * existed there was no way to invalidate anything at all, so this is new
+     * capability rather than a change to how regeneration behaved.
+     */
+    public function issuePortalLink(Request $request, HrOnboarding $onboarding)
+    {
+        $this->assertTenant($request, $onboarding);
+        $this->assertCanManage($request);
+
+        $raw = $this->portalToken->issue($onboarding, $request->user());
+
+        return response()->json(['data' => [
+            'link'       => $this->onboardingService->portalLink($raw),
+            'expires_at' => optional($onboarding->fresh()->token_expires_at)->toIso8601String(),
+            'notice'     => 'This link is shown once and cannot be retrieved again. '
+                .'Any link issued earlier has stopped working.',
+        ]], 201);
+    }
+
+    /** Stop the candidate's current link working. */
+    public function revokePortalLink(Request $request, HrOnboarding $onboarding)
+    {
+        $this->assertTenant($request, $onboarding);
+        $this->assertCanManage($request);
+
+        $data = $request->validate(['reason' => 'nullable|string|max:255']);
+
+        $this->portalToken->revoke($onboarding, $request->user(), $data['reason'] ?? null);
+
+        return response()->json(['message' => 'Portal link revoked']);
+    }
+
+    /**
+     * Days an auto-generated offer stays open — the tenant's setting.
+     *
+     * Mirrors OfferService::validityDays(), including the guard: an unusable
+     * value falls back to the seven days that were hardcoded here before.
+     */
+    private function offerValidityDays(int $tenantId): int
+    {
+        $days = app(\App\Services\Settings\SettingsService::class)
+            ->get($tenantId, \App\Support\Hr\HrSetting::GROUP, 'offer_validity_days');
+
+        return (is_numeric($days) && (int) $days >= 1) ? (int) $days : 7;
     }
 
     private function assertTenant(Request $request, HrOnboarding $onboarding): void

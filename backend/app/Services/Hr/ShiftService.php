@@ -10,6 +10,7 @@ use App\Models\Hr\HrShiftRotation;
 use App\Models\Hr\HrShiftRotationStep;
 use App\Models\Hr\HrShiftTiming;
 use App\Models\User;
+use App\Repositories\Hr\Concerns\ScopesEmployeeData;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -29,6 +30,20 @@ use Illuminate\Support\Facades\Log;
  */
 class ShiftService
 {
+    /**
+     * Scope applies to the three surfaces that are ABOUT employees — roster,
+     * history and assign. It deliberately does not reach shiftForDate(),
+     * isWeekOff(), isOffDay() or offDaysBetween().
+     *
+     * Those four are the resolver AttendanceService and LeaveApplicationService
+     * call to work out whether a given day was a working day for a given person.
+     * They run inside a punch and inside a leave-day count, where there is no
+     * viewer at all — the question is about the employee, not about who is
+     * asking. Scoping them would make a punch depend on who triggered the sync,
+     * which is how attendance starts disagreeing with itself.
+     */
+    use ScopesEmployeeData;
+
     /* ── Shift master ─────────────────────────────────────────────────── */
 
     public function shifts(int $tenantId, array $filters = []): array
@@ -181,6 +196,10 @@ class ShiftService
             throw new BusinessException('Employee not found', 404);
         }
 
+        // Assigning a shift changes when somebody is expected at work and which
+        // days count as their weekly off, which feeds attendance and then pay.
+        $this->assertEmployeeInScope($actor, $employee->id);
+
         $shiftId    = $data['shift_id'] ?? null;
         $rotationId = $data['rotation_id'] ?? null;
 
@@ -231,8 +250,10 @@ class ShiftService
     }
 
     /** Full assignment history for one employee, newest first. */
-    public function history(int $employeeId, int $tenantId): array
+    public function history(int $employeeId, int $tenantId, ?User $actor = null): array
     {
+        $this->assertEmployeeInScope($actor, $employeeId);
+
         return HrEmployeeShift::forTenant($tenantId)
             ->where('employee_id', $employeeId)
             ->with(['shift:id,name,code,shift_type', 'rotation:id,name'])
@@ -240,12 +261,15 @@ class ShiftService
             ->get()->map(fn ($a) => $this->presentAssignment($a))->all();
     }
 
-    /** Current assignment for every employee — the roster view. */
-    public function roster(int $tenantId, array $filters = []): array
+    /** Current assignment for every employee the actor may see — the roster view. */
+    public function roster(int $tenantId, array $filters = [], ?User $actor = null): array
     {
-        $q = HrEmployeeShift::forTenant($tenantId)
-            ->whereNull('effective_to')
-            ->with(['employee:id,name,employee_code,department,designation', 'shift:id,name,code,shift_type', 'rotation:id,name']);
+        $q = $this->scopeToEmployees(
+            HrEmployeeShift::forTenant($tenantId)
+                ->whereNull('effective_to')
+                ->with(['employee:id,name,employee_code,department,designation', 'shift:id,name,code,shift_type', 'rotation:id,name']),
+            $actor
+        );
 
         if (! empty($filters['shift_id'])) {
             $q->where('shift_id', (int) $filters['shift_id']);

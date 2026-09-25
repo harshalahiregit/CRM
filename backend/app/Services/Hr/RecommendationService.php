@@ -29,9 +29,9 @@ class RecommendationService
     }
 
     /* ── Promotion ────────────────────────────────────────── */
-    public function listPromotions(int $tenantId, array $f): array
+    public function listPromotions(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->promotions($tenantId, $f)->map(fn ($p) => $this->presentPromotion($p))->all();
+        return $this->repo->promotions($tenantId, $f, $actor)->map(fn ($p) => $this->presentPromotion($p))->all();
     }
 
     /** Derive an eligibility recommendation from the latest review + completed goals. */
@@ -70,7 +70,7 @@ class RecommendationService
         if (! in_array($status, HrPromotionRecommendation::STATUSES, true)) {
             throw new BusinessException('Invalid status.');
         }
-        $rec = $this->repo->findPromotion($id, $tenantId);
+        $rec = $this->repo->findPromotion($id, $tenantId, $actor);
         if (! $rec) {
             throw new BusinessException('Promotion recommendation not found', 404);
         }
@@ -97,9 +97,9 @@ class RecommendationService
     }
 
     /* ── Increment ────────────────────────────────────────── */
-    public function listIncrements(int $tenantId, array $f): array
+    public function listIncrements(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->increments($tenantId, $f)->map(fn ($i) => $this->presentIncrement($i))->all();
+        return $this->repo->increments($tenantId, $f, $actor)->map(fn ($i) => $this->presentIncrement($i))->all();
     }
 
     /** Suggest an increment from the current active salary + latest rating. Read-only on Payroll. */
@@ -146,7 +146,7 @@ class RecommendationService
         if (! in_array($status, HrIncrementRecommendation::STATUSES, true)) {
             throw new BusinessException('Invalid status.');
         }
-        $rec = $this->repo->findIncrement($id, $tenantId);
+        $rec = $this->repo->findIncrement($id, $tenantId, $actor);
         if (! $rec) {
             throw new BusinessException('Increment recommendation not found', 404);
         }

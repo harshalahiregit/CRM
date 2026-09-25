@@ -24,25 +24,27 @@ class ProbationReviewService
     {
     }
 
-    public function list(int $tenantId, array $f): array
+    public function list(int $tenantId, array $f, ?User $actor = null): array
     {
         return [
-            'data'  => $this->repo->list($tenantId, $f)->map(fn ($r) => $this->present($r))->all(),
-            'stats' => $this->repo->stats($tenantId),
+            'data'  => $this->repo->list($tenantId, $f, $actor)->map(fn ($r) => $this->present($r))->all(),
+            // The stats block has to count the same population as the rows
+            // above it, or the header contradicts the table under it.
+            'stats' => $this->repo->stats($tenantId, $actor),
         ];
     }
 
     public function show(int $id, int $tenantId, ?User $actor = null): array
     {
-        $review = $this->find($id, $tenantId);
+        $review = $this->find($id, $tenantId, $actor);
         $review->recordAudit('Probation Review Viewed', $actor);
 
         return $this->present($review, true);
     }
 
-    public function forEmployee(int $employeeId, int $tenantId): array
+    public function forEmployee(int $employeeId, int $tenantId, ?User $actor = null): array
     {
-        return $this->repo->forEmployee($employeeId, $tenantId)->map(fn ($r) => $this->present($r, true))->all();
+        return $this->repo->forEmployee($employeeId, $tenantId, $actor)->map(fn ($r) => $this->present($r, true))->all();
     }
 
     public function create(array $data, int $tenantId, ?User $actor = null): array
@@ -84,12 +86,12 @@ class ProbationReviewService
         $review->recordAudit($status === HrProbationReview::SUBMITTED ? 'Probation Review Submitted' : 'Probation Review Created', $actor, null, ['review_no' => $reviewNo, 'recommendation' => $recommendation]);
         $this->log('Probation review created', $tenantId, $review->id);
 
-        return $this->present($this->find($review->id, $tenantId), true);
+        return $this->present($this->find($review->id, $tenantId, $actor), true);
     }
 
     public function update(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $review = $this->find($id, $tenantId);
+        $review = $this->find($id, $tenantId, $actor);
         if ($review->status === HrProbationReview::COMPLETED) {
             throw new BusinessException('A completed review is read-only and cannot be edited.');
         }
@@ -124,24 +126,24 @@ class ProbationReviewService
         $review->update($attrs);
         $review->recordAudit('Probation Review Updated', $actor);
 
-        return $this->present($this->find($id, $tenantId), true);
+        return $this->present($this->find($id, $tenantId, $actor), true);
     }
 
     public function submit(int $id, int $tenantId, ?User $actor = null): array
     {
-        $review = $this->find($id, $tenantId);
+        $review = $this->find($id, $tenantId, $actor);
         if ($review->status !== HrProbationReview::DRAFT) {
             throw new BusinessException('Only a draft review can be submitted.');
         }
         $review->update(['status' => HrProbationReview::SUBMITTED, 'submitted_at' => now(), 'updated_by' => $actor?->id]);
         $review->recordAudit('Probation Review Submitted', $actor);
 
-        return $this->present($this->find($id, $tenantId), true);
+        return $this->present($this->find($id, $tenantId, $actor), true);
     }
 
     public function complete(int $id, int $tenantId, ?User $actor = null): array
     {
-        $review = $this->find($id, $tenantId);
+        $review = $this->find($id, $tenantId, $actor);
         if ($review->status === HrProbationReview::COMPLETED) {
             throw new BusinessException('This review is already completed.');
         }
@@ -152,7 +154,7 @@ class ProbationReviewService
         $review->recordAudit('Probation Review Completed', $actor, null, ['recommendation' => $review->recommendation]);
         $this->log('Probation review completed', $tenantId, $review->id);
 
-        return $this->present($this->find($id, $tenantId), true);
+        return $this->present($this->find($id, $tenantId, $actor), true);
     }
 
     /* ── Validation helpers ───────────────────────────────── */
@@ -250,9 +252,12 @@ class ProbationReviewService
         return $out;
     }
 
-    private function find(int $id, int $tenantId): HrProbationReview
+    private function find(int $id, int $tenantId, ?User $actor = null): HrProbationReview
     {
-        $review = $this->repo->find($id, $tenantId);
+        // Every write path above reaches its record through here, so guarding
+        // this one read is what keeps an edit from landing on somebody outside
+        // the actor's scope.
+        $review = $this->repo->find($id, $tenantId, $actor);
         if (! $review) {
             throw new BusinessException('Probation review not found', 404);
         }

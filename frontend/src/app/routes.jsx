@@ -51,6 +51,10 @@ const MyLeave = lazy(() => import('@/modules/hr/pages/MyLeave'))
 const MyCorrections = lazy(() => import('@/modules/hr/pages/MyCorrections'))
 const Corrections   = lazy(() => import('@/modules/hr/pages/Corrections'))
 const HrSettings    = lazy(() => import('@/modules/hr/pages/HrSettings'))
+const OnboardingChecklistSettings = lazy(() => import('@/modules/hr/pages/OnboardingChecklistSettings'))
+const ClearanceDepartmentSettings = lazy(() => import('@/modules/hr/pages/ClearanceDepartmentSettings'))
+const PoshCommitteeSettings = lazy(() => import('@/modules/hr/pages/PoshCommitteeSettings'))
+const ApprovalWorkflows = lazy(() => import('@/modules/hr/pages/ApprovalWorkflows'))
 const DemoRequests  = lazy(() => import('@/modules/hr/pages/DemoRequests'))
 const Holidays            = lazy(() => import('@/modules/hr/pages/Holidays'))
 const HRDashboard = lazy(() => import('@/modules/hr/pages/HRDashboard'))
@@ -71,6 +75,7 @@ const RecruiterWorkspace = lazy(() => import('@/modules/hr/pages/RecruiterWorksp
 const CompanyApprovals = lazy(() => import('@/modules/hr/pages/CompanyApprovals'))
 const Attendance = lazy(() => import('@/modules/hr/pages/Attendance'))
 const OrganizationSetup = lazy(() => import('@/modules/hr/pages/OrganizationSetup'))
+const HrConfiguration = lazy(() => import('@/modules/hr/pages/HrConfiguration'))
 // #29 — organisation chart, derived from the employee reporting hierarchy.
 const OrgChart = lazy(() => import('@/modules/hr/pages/OrgChart'))
 // #10 — interview question bank + AI generation.
@@ -218,6 +223,7 @@ const SireRecurrenceDetail = lazy(() => import('@/modules/sire/pages/RecurrenceD
 // and invoice data owned by other developers and are not stubbed here.
 // Fleet screens (Person 2), inside the Transport module since the D-62 merge.
 const FleetOverview = lazy(() => import('@/modules/transport/fleet/pages/FleetOverview'))
+const FleetTrailers = lazy(() => import('@/modules/transport/fleet/pages/TrailersBoard'))
 const FleetVehiclePassport = lazy(() => import('@/modules/transport/fleet/pages/VehiclePassportView'))
 const FleetWorkshop = lazy(() => import('@/modules/transport/fleet/pages/MaintenanceBoard'))
 const FleetDrivers = lazy(() => import('@/modules/transport/fleet/pages/DriversBoard'))
@@ -678,8 +684,15 @@ export default function AppRoutes() {
           <Route path="my-corrections" element={<S><MyCorrections /></S>} />
           <Route path="corrections" element={<S><Corrections /></S>} />
           <Route path="settings" element={<S><HrSettings /></S>} />
+          <Route path="onboarding-checklist" element={<S><OnboardingChecklistSettings /></S>} />
+          <Route path="clearance-departments" element={<S><ClearanceDepartmentSettings /></S>} />
+          <Route path="posh-committees" element={<S><PoshCommitteeSettings /></S>} />
+          <Route path="approval-workflows" element={<S><ApprovalWorkflows /></S>} />
           <Route path="demo-requests" element={<S><DemoRequests /></S>} />
             <Route path="holidays" element={<S><Holidays /></S>} />
+          {/* An index of every HR master and where it is maintained. Links
+              only — it owns no data and duplicates no API. */}
+          <Route path="configuration" element={<S><HrConfiguration /></S>} />
           <Route path="organization-setup" element={<S><OrganizationSetup /></S>} />
           <Route path="org-chart" element={<S><OrgChart /></S>} />
           <Route path="interview-questions" element={<S><InterviewQuestionBank /></S>} />
@@ -942,6 +955,7 @@ export default function AppRoutes() {
           <Route path="workshop" element={<S><FleetWorkshop /></S>} />
           <Route path="vehicles" element={<S><FleetOverview /></S>} />
           <Route path="vehicles/:id" element={<S><FleetVehiclePassport /></S>} />
+          <Route path="trailers" element={<S><FleetTrailers /></S>} />
           <Route path="drivers" element={<S><FleetDrivers /></S>} />
           <Route path="drivers/:id" element={<S><FleetDrivers /></S>} />
         </Route>
@@ -1081,6 +1095,14 @@ export default function AppRoutes() {
             it would put a vendor module in the way of a team catch-up. Static
             "new" before ":id" so it is not parsed as a meeting id. */}
         <Route path="meetings/new" element={<S><KickoffMeetingCreate /></S>} />
+        {/* The cross-meeting registers, on the neutral path too. They existed
+            only under /app/purchase and /app/tpv, so the one module that reads
+            across EVERY meeting could not open the register that reads across
+            every meeting -- you had to go into a vendor module to see it, which
+            is the complaint that made Meetings its own module (SIR-000030).
+            Static "registers" before ":id", or it is parsed as a meeting id. */}
+        <Route path="meetings/registers" element={<S><MeetingRegisters /></S>} />
+        <Route path="meetings/registers/:register" element={<S><MeetingRegisters /></S>} />
         <Route path="meetings/:id/edit" element={<S><KickoffMeetingCreate /></S>} />
         <Route path="meetings/:id" element={<S><KickoffMeetingDetail /></S>} />
 
@@ -1138,7 +1160,9 @@ export default function AppRoutes() {
           {/* /settings/roles retired: it managed a second staff-role catalogue
               (access_roles) beside the live one. staff_roles owns the vocabulary,
               permissions and scope together, and is maintained in Staff
-              Management at /admin/roles. */}
+              Management — the UI route /app/admin/staff, whose Roles button opens
+              the permission grid. (/admin/roles is that screen's API, not a page;
+              naming it here sent people looking for a route that never existed.) */}
           <Route path="departments" element={<S><DepartmentsSettings /></S>} />
           {/* Each module's own settings, reachable from the one Setup panel as
               well as from inside the module. Same component either way, so the

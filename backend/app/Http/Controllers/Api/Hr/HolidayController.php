@@ -20,12 +20,12 @@ class HolidayController extends Controller
 
     public function index(Request $request)
     {
-        return response()->json($this->service->list($this->tenant($request), $request->only(['year', 'holiday_type', 'department_id', 'status', 'search', 'employee_id', 'from'])));
+        return response()->json($this->service->list($this->tenant($request), $request->only(['year', 'holiday_type', 'department_id', 'status', 'search', 'employee_id', 'from']), $request->user()));
     }
 
     public function calendar(Request $request)
     {
-        return response()->json($this->service->calendar($this->tenant($request), $request->only(['year', 'holiday_type', 'department_id', 'status', 'employee_id'])));
+        return response()->json($this->service->calendar($this->tenant($request), $request->only(['year', 'holiday_type', 'department_id', 'status', 'employee_id']), $request->user()));
     }
 
     public function show(Request $request, int $id)

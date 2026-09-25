@@ -4,6 +4,7 @@ namespace App\Repositories\Notifications;
 
 use App\Models\Notifications\HrNotification;
 use App\Models\User;
+use App\Services\Notifications\NotificationRoleResolver;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 
@@ -11,19 +12,42 @@ use Illuminate\Support\Carbon;
 class NotificationRepository
 {
     /**
-     * Notifications visible to a user: their own, plus role-queue notifications when
-     * they manage the HR queue. Tenant-scoped first.
+     * Notifications visible to a user: their own, plus the role-targeted ones
+     * addressed to a role they actually hold. Tenant-scoped first.
+     *
+     * The role used to be stored and never read. Anyone who could manage the HR
+     * queue saw EVERY role-targeted row, so a reminder escalated to a
+     * department head landed with every HR executive and nowhere near a
+     * department head — and an escalation to 'admin' distinguished nobody.
+     *
+     * 'hr' still resolves to exactly canManageHrQueue(), so the population that
+     * could see those rows before still can. What narrows is the other three.
      */
     public function visibleTo(User $user): Builder
     {
         $tenantId = (int) $user->tenant_id;
-        $canQueue = method_exists($user, 'canManageHrQueue') && $user->canManageHrQueue();
+        $roles    = app(NotificationRoleResolver::class)->rolesFor($user);
+
+        $named = array_values(array_diff($roles, [NotificationRoleResolver::UNRECOGNISED]));
+        $catchAll = in_array(NotificationRoleResolver::UNRECOGNISED, $roles, true);
 
         return HrNotification::where('tenant_id', $tenantId)
-            ->where(function ($q) use ($user, $canQueue) {
+            ->where(function ($q) use ($user, $named, $catchAll) {
                 $q->where('recipient_user_id', $user->id);
-                if ($canQueue) {
-                    $q->orWhereNull('recipient_user_id'); // role-targeted queue items
+
+                if ($named !== []) {
+                    $q->orWhere(fn ($r) => $r->whereNull('recipient_user_id')
+                        ->whereIn('recipient_role', $named));
+                }
+
+                // A role this build has no mapping for — an edited escalation
+                // ladder, or one added later. Administrators see it so it is
+                // never a silent hole; nobody else does, so it is never the
+                // blanket disclosure this method used to be.
+                if ($catchAll) {
+                    $q->orWhere(fn ($r) => $r->whereNull('recipient_user_id')
+                        ->whereNotNull('recipient_role')
+                        ->whereNotIn('recipient_role', NotificationRoleResolver::KNOWN));
                 }
             });
     }

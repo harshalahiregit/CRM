@@ -12,7 +12,9 @@ use App\Http\Requests\Sales\SubmitQuestionnaireResponseRequest;
 use App\Http\Requests\Sales\UpdateLeadRequest;
 use App\Http\Requests\Sales\UpdateLeadStatusRequest;
 use App\Models\Sales\Lead;
+use App\Services\Auth\StaffPermissionService;
 use App\Services\Sales\LeadService;
+use App\Support\Hr\StaffPermission;
 use Illuminate\Http\Request;
 
 class LeadController extends Controller
@@ -54,14 +56,61 @@ class LeadController extends Controller
     /* ── Show ──────────────────────────────────────────────────── */
     public function show(Lead $lead, Request $request)
     {
-        return response()->json($this->leadService->show($lead, $request->user()->tenant_id));
+        $loaded = $this->leadService->show($lead, $request->user()->tenant_id);
+
+        // can_edit rides on the payload so the screen can hide a control it would
+        // only be refused for pressing. The same rule decides both, one line
+        // below, so the button and the gate cannot drift apart.
+        return response()->json([
+            ...$loaded->toArray(),
+            'can_edit' => $this->canEdit($request->user()),
+        ]);
     }
 
     /* ── Update ────────────────────────────────────────────────── */
     public function update(UpdateLeadRequest $request, Lead $lead)
     {
+        abort_unless($this->canEdit($request->user()), 403, 'You do not have permission to edit leads.');
+
         $updated = $this->leadService->update($lead, $request->validated(), $request->user()->tenant_id);
         return response()->json($updated);
+    }
+
+    /**
+     * May this user edit a lead?
+     *
+     * Leads are the FIRST module to read the staff permission grid. The grid has
+     * been stored in users.meta.permissions since Staff Management shipped and
+     * has never been consulted by anything. Nothing new had to be built for this:
+     * an admin already has the tick box — Deals → edit, StaffModal.jsx — it
+     * simply had nobody asking about it.
+     *
+     * ── WHY AN EMPTY GRID MEANS YES ──────────────────────────────────────────
+     * Every account in this system currently has an empty grid, because nothing
+     * read it and so nobody filled it in. Enforcing the grid literally would take
+     * lead editing away from everyone at once, on the strength of boxes nobody
+     * knew were load-bearing — precisely the lockout StaffPermissionService
+     * warns about in its own docblock, and the reason it shipped uncalled.
+     *
+     * So an entirely empty grid is read as "nobody has ever expressed an opinion
+     * about this person", and permits. Today's behaviour is preserved exactly.
+     * The moment an admin configures ANY module for them, the grid becomes the
+     * authority and Deals → edit must be granted explicitly.
+     *
+     * The test is deliberately the WHOLE grid, not the deals key. Were it
+     * per-module, an admin who set someone up for HR alone would silently hand
+     * them the sales pipeline too — a grant nobody made, which is the failure
+     * mode this check exists to prevent.
+     */
+    private function canEdit($user): bool
+    {
+        $permissions = app(StaffPermissionService::class);
+
+        if ($permissions->grantsFor($user) === []) {
+            return true;
+        }
+
+        return $permissions->can($user, StaffPermission::EDIT, 'deals');
     }
 
     /* ── Delete ────────────────────────────────────────────────── */

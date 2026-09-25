@@ -5,12 +5,35 @@ namespace App\Repositories\Hr;
 use App\Models\Hr\HrEmployee;
 use App\Models\Hr\HrHoliday;
 use Illuminate\Database\Eloquent\Collection;
+use App\Models\User;
+use App\Repositories\Hr\Concerns\ScopesEmployeeData;
 
 /** Read queries for the Holiday Calendar (Leave Phase 5). Tenant-scoped; no writes. */
 class HolidayRepository
 {
-    public function list(int $tenantId, array $f): Collection
+    use ScopesEmployeeData;
+
+    /**
+     * The company holiday calendar. DELIBERATELY NOT employee-scoped.
+     *
+     * hr_holidays has no employee_id: a public holiday is the same fact for
+     * everybody, and narrowing it by the reader's department would hide real
+     * company holidays rather than protect anybody. So list(), find(),
+     * existsForScope() and stats() stay tenant-wide.
+     *
+     * The ONE employee-shaped thing here is the optional employee_id FILTER,
+     * which answers "which holidays apply to this person" by reading their
+     * department and designation. That lookup is guarded: left open, a
+     * department-scoped actor could pass somebody else's id and infer their
+     * department and designation from which holidays came back. Guarding the
+     * lookup is not the same as scoping the calendar.
+     */
+    public function list(int $tenantId, array $f, ?User $actor = null): Collection
     {
+        if (! empty($f['employee_id'])) {
+            $this->assertEmployeeInScope($actor, $f['employee_id']);
+        }
+
         $query = HrHoliday::where('tenant_id', $tenantId)
             ->with(['department:id,name', 'designation:id,name'])
             ->when(! empty($f['year']) && $f['year'] !== 'All', fn ($q) => $q->whereYear('holiday_date', $f['year']))

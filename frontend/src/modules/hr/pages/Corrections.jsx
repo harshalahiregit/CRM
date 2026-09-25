@@ -17,6 +17,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useState, useEffect, useCallback } from 'react'
 import { PenLine, Check, X, PauseCircle, Lock, RefreshCw, ArrowRight, Plus } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { hrTime, hrTimeEquals } from '@/modules/hr/constants'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import { useToast } from '@/components/ui/Toast'
 import RequestThread from '../components/RequestThread'
@@ -34,7 +35,17 @@ const TABS = [
   { key: 'rejected', label: 'Rejected' },
 ]
 
-const hhmm = t => (t ? (String(t).length > 8 ? String(t).slice(11, 16) : String(t).slice(0, 5)) : '—')
+/*
+ * The two sides of this screen are different SHAPES, and the old helper read
+ * them on different footings: `now.check_in` is a stored UTC timestamp and was
+ * sliced to its UTC clock face, while `requested_check_in` is a wall-clock
+ * time the employee typed. So the approver compared 09:28 UTC against 15:00
+ * local — a request to move a punch by two minutes looked like a five-hour
+ * move, and a request that changed nothing never showed "(no change)".
+ *
+ * hrTime normalises both to local before they are compared or displayed.
+ */
+const hhmm = hrTime
 const day  = d => (d ? String(d).slice(0, 10) : '—')
 
 function Pill({ status }) {
@@ -48,7 +59,7 @@ function Pill({ status }) {
 /** Now → asked for, side by side. The comparison IS the decision. */
 function Change({ label, from, to }) {
   if (!to) return null
-  const same = hhmm(from) === hhmm(to)
+  const same = hrTimeEquals(from, to)
   return (
     <div className="flex items-center gap-1.5 text-[11px]">
       <span className="uppercase tracking-wider font-bold" style={{ color: 'var(--text-muted)', minWidth: 74 }}>{label}</span>

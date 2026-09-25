@@ -52,6 +52,8 @@ export default function NewTicketModal({ settings, onClose, onCreated, draft = n
     project_id: draft?.project_id || '',
     customer_id: draft?.customer_id || '',
     cc: '',
+    // Accepted by the API since the column existed; the form just never asked.
+    due_date: draft?.due_date || '',
   })
   const [tagIds, setTagIds] = useState([])
   const [files, setFiles] = useState([])
@@ -231,6 +233,20 @@ export default function NewTicketModal({ settings, onClose, onCreated, draft = n
                 <Select value={form.status} onChange={v => set('status', v)} ariaLabel="Status"
                   options={(settings?.statuses || [{ name: 'open' }]).filter(s => s.name !== 'merged').map(s => ({ value: s.name, label: s.name, dot: s.color }))} />
               </div>
+            </div>
+
+            {/* Due by — the one field on the reference helpdesks that this form
+                did not ask for. The column and the API have accepted it all
+                along; only the form never offered it, so a ticket promised for
+                Friday had nowhere to say so and the SLA clock was the only
+                deadline anyone could see. */}
+            <div>
+              <label style={LBL}>Due by</label>
+              <input type="date" style={inp} value={form.due_date || ''}
+                onChange={e => set('due_date', e.target.value)} />
+              <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                Optional. Separate from the SLA target — this is what was promised to the requester.
+              </p>
             </div>
 
             <div>
