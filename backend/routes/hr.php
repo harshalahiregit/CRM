@@ -100,13 +100,16 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::patch('/manpower-requests/{manpowerRequest}/assign-manager', [ManpowerRequestController::class, 'assignManager']);
 
     // Job Postings — Recruitment Workspace
-    Route::get('/jobs',                            [JobPostingController::class, 'index']);
-    Route::get('/jobs/stats',                      [JobPostingController::class, 'stats']);
+    Route::get('/jobs',                            [JobPostingController::class, 'index'])
+        ->middleware('permission:hr_recruitment,view_global');
+    Route::get('/jobs/stats',                      [JobPostingController::class, 'stats'])
+        ->middleware('permission:hr_recruitment,view_global');
     Route::get('/jobs/channels',                   [JobPostingController::class, 'channels']);
     Route::post('/jobs/bulk',                      [JobPostingController::class, 'bulk']);
     Route::post('/jobs/analyze-jd',                [JobPostingController::class, 'analyzeJd']);
     Route::post('/jobs',                           [JobPostingController::class, 'store']);
-    Route::get('/jobs/{jobPosting}',               [JobPostingController::class, 'show']);
+    Route::get('/jobs/{jobPosting}',               [JobPostingController::class, 'show'])
+        ->middleware('permission:hr_recruitment,view_global');
     Route::put('/jobs/{jobPosting}',               [JobPostingController::class, 'update']);
     Route::patch('/jobs/{jobPosting}/status',      [JobPostingController::class, 'updateStatus']);
     Route::patch('/jobs/{jobPosting}/external-id', [JobPostingController::class, 'updateExternalId']);
@@ -152,7 +155,8 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
         ->middleware('permission:hr_recruitment,view_global');
     Route::get('/candidates/{candidate}/journey',       [CandidateController::class, 'journey'])
         ->middleware('permission:hr_recruitment,view_global');
-    Route::get('/candidates/{candidate}/communications', [CandidateController::class, 'communications']);
+    Route::get('/candidates/{candidate}/communications', [CandidateController::class, 'communications'])
+        ->middleware('permission:hr_recruitment,view_global');
     Route::get('/candidates/{candidate}/communication-preview', [CandidateController::class, 'communicationPreview']);
     Route::post('/candidates/{candidate}/communicate',  [CandidateController::class, 'communicate']);
     Route::post('/candidates/{candidate}/reminder',     [CandidateController::class, 'scheduleReminder']);
@@ -173,19 +177,23 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     // resumes that were already on disk before that existed.
     Route::post('/candidates/{candidate}/resume/extract', [ResumeController::class, 'extract']);
     // Collaborative notes thread
-    Route::get('/candidates/{candidate}/notes',                 [CandidateNoteController::class, 'index']);
+    Route::get('/candidates/{candidate}/notes',                 [CandidateNoteController::class, 'index'])
+        ->middleware('permission:hr_recruitment,view_global');
     Route::post('/candidates/{candidate}/notes',                [CandidateNoteController::class, 'store']);
     Route::delete('/candidates/{candidate}/notes/{note}',       [CandidateNoteController::class, 'destroy']);
     // Documents (typed, beyond the primary resume)
-    Route::get('/candidates/{candidate}/documents',             [CandidateDocumentController::class, 'index']);
+    Route::get('/candidates/{candidate}/documents',             [CandidateDocumentController::class, 'index'])
+        ->middleware('permission:hr_recruitment,view_global');
     Route::post('/candidates/{candidate}/documents',            [CandidateDocumentController::class, 'store']);
-    Route::get('/candidates/{candidate}/documents/{document}',  [CandidateDocumentController::class, 'download']);
+    Route::get('/candidates/{candidate}/documents/{document}',  [CandidateDocumentController::class, 'download'])
+        ->middleware('permission:hr_recruitment,view_global');
     Route::delete('/candidates/{candidate}/documents/{document}',[CandidateDocumentController::class, 'destroy']);
 
     // Interviews
     Route::get('/interviews',                               [InterviewController::class, 'index'])
         ->middleware('permission:hr_recruitment,view_global');
-    Route::get('/interviews/stats',                         [InterviewController::class, 'stats']);
+    Route::get('/interviews/stats',                         [InterviewController::class, 'stats'])
+        ->middleware('permission:hr_recruitment,view_global');
     Route::get('/interview-panel/users',                    [InterviewController::class, 'panelUsers']);
     Route::get('/interview-panel/organizations',            [InterviewController::class, 'panelOrganizations']);
     // #10 — interview question bank, sets, AI generation and round integration.
