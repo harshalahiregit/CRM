@@ -306,38 +306,43 @@ class TransportEligibilityTest extends TestCase
     /** BRW-028: "Only drivers with AVAILABLE status may be recommended." */
     public function test_a_driver_on_leave_is_not_eligible(): void
     {
-        $d = $this->goodDriver();
-        $this->driverSvc->transitionAvailabilityTo($d, DriverAvailability::ON_LEAVE, self::TENANT_A, $this->actor);
+        $d = $this->moveFleetDriver($this->goodDriver(), DriverProfile::ON_LEAVE);
 
-        $verdict = $this->drivers->evaluate($d->fresh(), $this->trip(), self::TENANT_A);
+        $verdict = $this->drivers->evaluate($d, $this->trip(), self::TENANT_A);
 
+        // Availability is Fleet's since D-134: one blocker, its reason and its desk.
         $this->assertFalse($verdict['eligible']);
-        $this->assertStringContainsString('On leave', $this->checkFor($verdict, 'availability')['detail']);
-        // Licence is untouched — checks are independent.
-        $this->assertTrue($this->checkFor($verdict, 'licence')['passed']);
+        $this->assertStringContainsString('on leave', strtolower($verdict['blockers'][0]['why']));
+        $this->assertSame('Fleet office', $verdict['blockers'][0]['owner']);
+        // Licence is untouched — a leave is not reported as a paperwork problem.
+        $this->assertStringNotContainsString('licence', strtolower($verdict['blockers'][0]['why']));
     }
 
     public function test_an_inactive_driver_is_not_eligible(): void
     {
-        $d = $this->goodDriver();
-        $this->driverSvc->transitionStatusTo($d, DriverStatus::INACTIVE, self::TENANT_A, $this->actor);
+        $d = $this->moveFleetDriver($this->goodDriver(), DriverProfile::INACTIVE);
 
-        $verdict = $this->drivers->evaluate($d->fresh(), $this->trip(), self::TENANT_A);
+        $verdict = $this->drivers->evaluate($d, $this->trip(), self::TENANT_A);
 
+        // Lifecycle is Fleet's since D-134: its `fleet` check fails and says why.
         $this->assertFalse($verdict['eligible']);
-        $this->assertFalse($this->checkFor($verdict, 'lifecycle')['passed']);
+        $this->assertFalse($this->checkFor($verdict, 'fleet')['passed']);
+        $this->assertStringContainsString('inactive', strtolower($verdict['blockers'][0]['why']));
+        $this->assertSame('Fleet office', $verdict['blockers'][0]['owner']);
     }
 
     /** CMP §23 — a blocked driver reports blocked, whatever the paperwork says. */
     public function test_a_blocked_driver_is_not_eligible_and_reports_blocked(): void
     {
-        $d = $this->goodDriver();
-        $this->driverSvc->transitionStatusTo($d, DriverStatus::BLOCKED, self::TENANT_A, $this->actor, 'incident');
+        // Fleet has no BLOCKED; SUSPENDED is its manual "may not drive" state.
+        $d = $this->moveFleetDriver($this->goodDriver(), DriverProfile::SUSPENDED);
 
-        $verdict = $this->drivers->evaluate($d->fresh(), $this->trip(), self::TENANT_A);
+        $verdict = $this->drivers->evaluate($d, $this->trip(), self::TENANT_A);
 
-        $this->assertFalse($verdict['eligible']);
-        $this->assertSame('blocked', $verdict['compliance_status']);
+        // `compliance_status` left with D-134; the refusal now names itself.
+        $this->assertFalse($verdict['eligible'], 'valid papers must not outweigh a suspension');
+        $this->assertStringContainsString('suspended', strtolower($verdict['blockers'][0]['why']));
+        $this->assertSame('Fleet office', $verdict['blockers'][0]['owner']);
     }
 
     /** BRW-029: "Driver must have valid required documents. If not: BLOCK." */
@@ -462,9 +467,10 @@ class TransportEligibilityTest extends TestCase
     {
         $trip = $this->trip();
         $ok = $this->goodDriver();
-        $onLeave = $this->goodDriver();
-        $this->driverSvc->transitionAvailabilityTo($onLeave, DriverAvailability::ON_LEAVE, self::TENANT_A, $this->actor);
-        $noLicence = $this->fleetDriver(['name' => 'No Licence'], self::TENANT_A, $this->actor);
+        $onLeave = $this->moveFleetDriver($this->goodDriver(), DriverProfile::ON_LEAVE);
+        // The Fleet fixture files a licence by default; this driver must have none.
+        $noLicence = $this->fleetDriver(['name' => 'No Licence', 'licence_number' => null, 'licence_expiry' => null],
+            self::TENANT_A, $this->actor);
 
         $ids = $this->drivers->candidatesFor($trip, self::TENANT_A)->pluck('subject.id');
 

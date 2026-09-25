@@ -258,8 +258,7 @@ class TransportAllocationRefusalAuditTest extends TestCase
     public function test_an_unavailable_driver_is_logged_against_br_p0_004(): void
     {
         $trip = $this->trip();
-        $d = $this->driver();
-        $this->driverSvc->transitionAvailabilityTo($d, DriverAvailability::ON_LEAVE, self::A, $this->actor);
+        $d = $this->moveFleetDriver($this->driver(), DriverProfile::ON_LEAVE);
 
         $this->refuse($trip, null, $d->id);
 
