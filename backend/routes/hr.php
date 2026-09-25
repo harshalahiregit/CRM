@@ -10,6 +10,11 @@ use App\Http\Controllers\Api\Hr\ResumeController;
 use App\Http\Controllers\Api\Hr\InterviewController;
 use App\Http\Controllers\Api\Hr\InterviewQuestionController;
 use App\Http\Controllers\Api\Hr\OfferController;
+use App\Http\Controllers\Api\Hr\OnboardingChecklistController;
+use App\Http\Controllers\Api\Hr\PoshCaseController;
+use App\Http\Controllers\Api\Hr\PoshCaseWorkController;
+use App\Http\Controllers\Api\Hr\PoshReportController;
+use App\Http\Controllers\Api\Hr\PoshCommitteeController;
 use App\Http\Controllers\Api\Hr\OnboardingController;
 use App\Http\Controllers\Api\Hr\EmployeeAssetController;
 use App\Http\Controllers\Api\Hr\EmployeeController;
@@ -18,6 +23,8 @@ use App\Http\Controllers\Api\Hr\MyAttendanceController;
 use App\Http\Controllers\Api\Hr\AdvanceController;
 use App\Http\Controllers\Api\Hr\AttendanceReportController;
 use App\Http\Controllers\Api\Hr\MyAdvanceController;
+use App\Http\Controllers\Api\Hr\ApprovalWorkflowController;
+use App\Http\Controllers\Api\Hr\ClearanceDepartmentController;
 use App\Http\Controllers\Api\Hr\AttendanceCorrectionController;
 use App\Http\Controllers\Api\Hr\MyAttendanceCorrectionController;
 use App\Http\Controllers\Api\Hr\DemoRequestController;
@@ -205,6 +212,12 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::patch('/offers/{offer}/revise',          [OfferController::class, 'revise']);
     Route::patch('/offers/{offer}/extend',          [OfferController::class, 'extend']);
     Route::get('/offers/{offer}/revisions',         [OfferController::class, 'revisions']);
+    // Authenticated, tenant-scoped offer letter for HR — replaces staff reading
+    // the candidate's public /api/offer/{token}/letter route.
+    Route::get('/offers/{offer}/letter',            [OfferController::class, 'letter']);
+    // Controlled reissue / revocation of the candidate's portal credential.
+    Route::post('/offers/{offer}/portal-link',      [OfferController::class, 'issuePortalLink']);
+    Route::delete('/offers/{offer}/portal-link',    [OfferController::class, 'revokePortalLink']);
     Route::delete('/offers/{offer}',                [OfferController::class, 'destroy']);
 
     // Onboarding
@@ -215,6 +228,12 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/onboarding/{onboarding}/documents/{document}', [OnboardingController::class, 'downloadDocument']);
     Route::patch('/onboarding/{onboarding}/documents/{document}/verify', [OnboardingController::class, 'verifyDocument']);
     Route::patch('/onboarding/{onboarding}/step',       [OnboardingController::class, 'toggleStep']);
+    // The candidate's portal credential. Issuing returns the raw link ONCE and
+    // revokes whatever was live before it; there is deliberately no GET, because
+    // the raw value is not stored and cannot be handed back a second time.
+    Route::post('/onboarding/{onboarding}/portal-link',   [OnboardingController::class, 'issuePortalLink']);
+    Route::delete('/onboarding/{onboarding}/portal-link', [OnboardingController::class, 'revokePortalLink']);
+
     Route::delete('/onboarding/{onboarding}',           [OnboardingController::class, 'destroy']);
 
     // #37 — the employee's Projects / Tasks / Tickets / KB, with jump links.
@@ -357,6 +376,13 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::post('/org-roles',           [OrganizationController::class, 'storeRole']);
     Route::put('/org-roles/{id}',       [OrganizationController::class, 'updateRole']);
     Route::delete('/org-roles/{id}',    [OrganizationController::class, 'destroyRole']);
+
+    // Employment Types — Permanent, Contract, Intern, or whatever this company
+    // calls them. An org master like the four above, managed on the same screen.
+    Route::get('/employment-types',         [OrganizationController::class, 'employmentTypes']);
+    Route::post('/employment-types',        [OrganizationController::class, 'storeEmploymentType']);
+    Route::put('/employment-types/{id}',    [OrganizationController::class, 'updateEmploymentType']);
+    Route::delete('/employment-types/{id}', [OrganizationController::class, 'destroyEmploymentType']);
 
     // ── Payroll → Salary Components master (Phase 1). No hard delete — status toggle only.
     //    The /payroll/* prefix reserves the namespace for future phases (structures, etc.).
@@ -652,6 +678,53 @@ Route::middleware(['auth:sanctum', 'permission:hr_attendance,view_global'])->pre
     Route::get('/settings',  [HrSettingsController::class, 'index']);
     Route::put('/settings',  [HrSettingsController::class, 'update']);
 
+    // ── POSH committees ─────────────────────────────────────────────────
+    // Committee composition, its own role vocabulary and its members. Gated
+    // on hr_settings inside the controller. CONFIGURATION ONLY — no case data
+    // is reachable here, and case access will never come through this gate.
+    Route::get('/posh-committees',                       [PoshCommitteeController::class, 'index']);
+    Route::post('/posh-committees',                      [PoshCommitteeController::class, 'store']);
+    Route::put('/posh-committees/{id}',                  [PoshCommitteeController::class, 'update'])->whereNumber('id');
+    Route::patch('/posh-committees/{id}/status',         [PoshCommitteeController::class, 'setStatus'])->whereNumber('id');
+    Route::delete('/posh-committees/{id}',               [PoshCommitteeController::class, 'destroy'])->whereNumber('id');
+    Route::post('/posh-committees/{id}/roles',           [PoshCommitteeController::class, 'storeRole'])->whereNumber('id');
+    Route::put('/posh-committees/{id}/roles/{roleId}',   [PoshCommitteeController::class, 'updateRole'])->whereNumber('id')->whereNumber('roleId');
+    Route::delete('/posh-committees/{id}/roles/{roleId}',[PoshCommitteeController::class, 'destroyRole'])->whereNumber('id')->whereNumber('roleId');
+    Route::put('/posh-committees/{id}/members',          [PoshCommitteeController::class, 'setMembers'])->whereNumber('id');
+
+    // ── Exit clearance departments ──────────────────────────────────────
+    // Who may sign off each department. Gated on hr_settings inside the
+    // controller: actioning clearances must not confer the right to decide
+    // who actions them.
+    Route::get('/clearance-departments',                 [ClearanceDepartmentController::class, 'index']);
+    Route::post('/clearance-departments',                [ClearanceDepartmentController::class, 'store']);
+    Route::post('/clearance-departments/reorder',        [ClearanceDepartmentController::class, 'reorder']);
+    Route::put('/clearance-departments/{id}',            [ClearanceDepartmentController::class, 'update'])->whereNumber('id');
+    Route::patch('/clearance-departments/{id}/status',   [ClearanceDepartmentController::class, 'setStatus'])->whereNumber('id');
+    Route::put('/clearance-departments/{id}/authorities',[ClearanceDepartmentController::class, 'authorities'])->whereNumber('id');
+    Route::delete('/clearance-departments/{id}',         [ClearanceDepartmentController::class, 'destroy'])->whereNumber('id');
+
+    // ── Onboarding checklist master ─────────────────────────────────────
+    // The 27 tasks that used to be a PHP constant. Gated on hr_settings
+    // inside the controller, like the approval workflows below: configuring
+    // what everybody must do is not the same authority as doing it.
+    Route::get('/onboarding-checklist',                  [OnboardingChecklistController::class, 'index']);
+    Route::post('/onboarding-checklist',                 [OnboardingChecklistController::class, 'store']);
+    Route::post('/onboarding-checklist/reorder',         [OnboardingChecklistController::class, 'reorder']);
+    Route::post('/onboarding-checklist/adopt-defaults',  [OnboardingChecklistController::class, 'adoptDefaults']);
+    Route::put('/onboarding-checklist/{id}',             [OnboardingChecklistController::class, 'update'])->whereNumber('id');
+    Route::patch('/onboarding-checklist/{id}/status',    [OnboardingChecklistController::class, 'setStatus'])->whereNumber('id');
+    Route::delete('/onboarding-checklist/{id}',          [OnboardingChecklistController::class, 'destroy'])->whereNumber('id');
+
+    // ── Approval workflows ──────────────────────────────────────────────
+    // Who approves what, in what order. Gated on hr_settings inside the
+    // controller, not on the HR-queue predicate: an approver must not be able
+    // to edit the ladder they stand on.
+    Route::get('/approval-workflows',                     [ApprovalWorkflowController::class, 'index']);
+    Route::get('/approval-workflows/{process}',           [ApprovalWorkflowController::class, 'show']);
+    Route::put('/approval-workflows/{process}',           [ApprovalWorkflowController::class, 'save']);
+    Route::patch('/approval-workflows/{process}/status',  [ApprovalWorkflowController::class, 'setStatus']);
+
     // ── Attendance corrections ──────────────────────────────────────────
     Route::get('/corrections',                 [AttendanceCorrectionController::class, 'index']);
     Route::get('/corrections/{id}',            [AttendanceCorrectionController::class, 'show']);
@@ -708,3 +781,87 @@ Route::get('/hr/attendance/{attendance}/selfie/{which}',
     ->whereIn('which', ['in', 'out'])
     ->name('hr.attendance.selfie')
     ->middleware('signed');
+
+/*
+|--------------------------------------------------------------------------
+| POSH cases — members only
+|--------------------------------------------------------------------------
+|
+| Their own group, with NO permission middleware, and that is deliberate.
+|
+| Authorisation is PoshAccessResolver and nothing else: not a permission, not
+| a data scope, not the HR queue, not committee membership, not being an
+| administrator. A harassment complaint may name any of those people, so none
+| of them is a way in.
+|
+| A permission gate here would also answer the wrong question in the wrong
+| way. It refuses with 403 before the resolver runs, and a 403 says "this
+| exists and you may not see it" — which on this data is itself a disclosure.
+| Every refusal has to be the same 404.
+|
+| There is deliberately NO index route. A list is an enumeration surface.
+*/
+Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
+    Route::get('/posh-cases/{id}',         [PoshCaseController::class, 'show'])->whereNumber('id');
+    Route::get('/posh-cases/{id}/members', [PoshCaseController::class, 'members'])->whereNumber('id');
+
+    // Intake. The ONE route here that is not gated on case membership,
+    // because there is no case yet to be a member of. hr_posh_intake, which
+    // is not admin, not hr_settings and not the HR queue — and which grants
+    // no access to what it creates.
+    Route::post('/posh-cases', [PoshCaseWorkController::class, 'store']);
+
+    // Everything below resolves the case through PoshAccessResolver first.
+    Route::patch('/posh-cases/{id}/acknowledge', [PoshCaseWorkController::class, 'acknowledge'])->whereNumber('id');
+    Route::patch('/posh-cases/{id}/withdraw',    [PoshCaseWorkController::class, 'withdraw'])->whereNumber('id');
+    Route::patch('/posh-cases/{id}/close',       [PoshCaseWorkController::class, 'close'])->whereNumber('id');
+
+    Route::get('/posh-cases/{id}/thread',   [PoshCaseWorkController::class, 'thread'])->whereNumber('id');
+    Route::post('/posh-cases/{id}/messages', [PoshCaseWorkController::class, 'message'])->whereNumber('id');
+    Route::post('/posh-cases/{id}/notes',    [PoshCaseWorkController::class, 'note'])->whereNumber('id');
+
+    Route::get('/posh-cases/{id}/attachments',      [PoshCaseWorkController::class, 'attachments'])->whereNumber('id');
+    Route::post('/posh-cases/{id}/attachments',     [PoshCaseWorkController::class, 'upload'])->whereNumber('id');
+    Route::get('/posh-cases/{id}/attachments/{attachmentId}', [PoshCaseWorkController::class, 'download'])
+        ->whereNumber('id')->whereNumber('attachmentId');
+
+    Route::get('/posh-cases/{id}/inquiry',         [PoshCaseWorkController::class, 'inquiry'])->whereNumber('id');
+    Route::post('/posh-cases/{id}/inquiry',        [PoshCaseWorkController::class, 'openInquiry'])->whereNumber('id');
+    Route::post('/posh-cases/{id}/inquiry/decide', [PoshCaseWorkController::class, 'decide'])->whereNumber('id');
+
+    Route::get('/posh-cases/{id}/findings',          [PoshCaseWorkController::class, 'findings'])->whereNumber('id');
+    Route::put('/posh-cases/{id}/findings',          [PoshCaseWorkController::class, 'saveFindings'])->whereNumber('id');
+    Route::post('/posh-cases/{id}/findings/record',  [PoshCaseWorkController::class, 'recordFindings'])->whereNumber('id');
+    Route::post('/posh-cases/{id}/findings/publish', [PoshCaseWorkController::class, 'publishFindings'])->whereNumber('id');
+
+    // The complainant's link. Issuing is can_manage_case + active membership,
+    // exactly like running the case — NOT hr_posh_intake, which would put the
+    // credential in the hands of whoever takes complaints at the door, and not
+    // hr_settings or admin, neither of which can reach the case at all.
+    //
+    // There is deliberately no GET: a token list would be an inventory of live
+    // credentials, and the raw values are unrecoverable in any case.
+    Route::post('/posh-cases/{id}/tokens', [PoshCaseWorkController::class, 'issueToken'])->whereNumber('id');
+    Route::delete('/posh-cases/{id}/tokens/{tokenId}', [PoshCaseWorkController::class, 'revokeToken'])
+        ->whereNumber('id')->whereNumber('tokenId');
+
+    // hr_settings authority, and it grants NO case-content access.
+    Route::post('/posh-cases/{id}/reconstitute', [PoshCaseWorkController::class, 'reconstitute'])->whereNumber('id');
+});
+
+/*
+| POSH aggregate reporting.
+|
+| Counts only — period, status, outcome — and gated on its own capability.
+| Sits apart from the case routes above because it answers a different
+| question: how many complaints, in what state. hr_posh_reports grants no
+| access to a single case and is never consulted by the access resolver.
+|
+| auth:sanctum ONLY, with the capability checked inside the controller. The
+| main HR group requires hr_attendance, and sitting inside it would mean a
+| compliance officer needed attendance permission to read a complaint count —
+| two unrelated authorities welded together, and a 403 from the wrong gate.
+*/
+Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
+    Route::get('/posh-reports/summary', [PoshReportController::class, 'summary']);
+});

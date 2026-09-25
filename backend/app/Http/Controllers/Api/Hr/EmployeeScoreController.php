@@ -106,6 +106,25 @@ class EmployeeScoreController extends Controller
         ];
     }
 
+    /**
+     * Three questions, in widening order: which workspace, may they see scores
+     * at all, and whose score is this.
+     *
+     * Every endpoint on this controller opens with this call, so it is the only
+     * place the boundary has to hold — show, preview, recalculate and insights
+     * all reach their data through the bound $employee and nothing else.
+     *
+     * The scope check is the one that was missing. Permission answered "may this
+     * person see employee scores", which any HR user passes, and nothing then
+     * asked which employees are theirs. A score is a judgement about a named
+     * person — band, risk factors, an AI narrative about their conduct — and two
+     * of these endpoints WRITE it. Scoping the binding is enough on its own
+     * because the engine reads only this employee's own reviews, attendance,
+     * leave and training; there is no peer comparison to leak through.
+     *
+     * 404 rather than 403, matching the tenant check above and the rest of HR:
+     * "you may not see this employee" still confirms the employee exists.
+     */
     private function authorise(Request $request, HrEmployee $employee): void
     {
         // Route-model binding must not leak another tenant's employee.
@@ -115,5 +134,8 @@ class EmployeeScoreController extends Controller
 
         abort_unless($request->user()->canManageHrQueue(), 403,
             'You are not authorised to view employee scores');
+
+        app(\App\Services\Auth\ScopeResolver::class)
+            ->assertCanActOnEmployee($request->user(), $employee->id);
     }
 }

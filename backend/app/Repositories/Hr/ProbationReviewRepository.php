@@ -4,19 +4,24 @@ namespace App\Repositories\Hr;
 
 use App\Models\Hr\HrProbationReview;
 use Illuminate\Database\Eloquent\Collection;
+use App\Models\User;
+use App\Repositories\Hr\Concerns\ScopesEmployeeData;
 
 /** Read queries for Probation Reviews (Phase 3). Tenant-scoped; no writes. */
 class ProbationReviewRepository
 {
+    use ScopesEmployeeData;
+
     private const EAGER = [
         'employee:id,name,employee_code,department,designation',
         'reviewer:id,name,employee_code',
         'probation:id,current_status,probation_policy_id', 'probation.policy:id,name',
     ];
 
-    public function list(int $tenantId, array $f): Collection
+    public function list(int $tenantId, array $f, ?User $actor = null): Collection
     {
-        return HrProbationReview::where('tenant_id', $tenantId)
+        // Scope before the filters: a filter narrows within it, never past it.
+        return $this->scopeToEmployees(HrProbationReview::where('tenant_id', $tenantId), $actor)
             ->with(self::EAGER)
             ->when(! empty($f['employee_id']), fn ($q) => $q->where('employee_id', $f['employee_id']))
             ->when(! empty($f['employee_probation_id']), fn ($q) => $q->where('employee_probation_id', $f['employee_probation_id']))
@@ -32,13 +37,18 @@ class ProbationReviewRepository
             ->orderByDesc('id')->get();
     }
 
-    public function find(int $id, int $tenantId): ?HrProbationReview
+    public function find(int $id, int $tenantId, ?User $actor = null): ?HrProbationReview
     {
-        return HrProbationReview::where('tenant_id', $tenantId)->with([...self::EAGER, 'auditLogs'])->find($id);
+        // Out of scope returns null, so the caller's 404 stands and the record
+        // looks absent rather than forbidden.
+        return $this->scopeToEmployees(HrProbationReview::where('tenant_id', $tenantId), $actor)
+            ->with([...self::EAGER, 'auditLogs'])->find($id);
     }
 
-    public function forEmployee(int $employeeId, int $tenantId): Collection
+    public function forEmployee(int $employeeId, int $tenantId, ?User $actor = null): Collection
     {
+        $this->assertEmployeeInScope($actor, $employeeId);
+
         return HrProbationReview::where('tenant_id', $tenantId)->where('employee_id', $employeeId)
             ->with([...self::EAGER, 'auditLogs'])->orderByDesc('id')->get();
     }
@@ -57,9 +67,11 @@ class ProbationReviewRepository
             ->where('employee_probation_id', $probationId)->max('review_no') + 1;
     }
 
-    public function stats(int $tenantId): array
+    public function stats(int $tenantId, ?User $actor = null): array
     {
-        $rows = HrProbationReview::where('tenant_id', $tenantId)
+        // Aggregated over the scoped population, not computed globally and
+        // trimmed afterwards — a total is a disclosure too.
+        $rows = $this->scopeToEmployees(HrProbationReview::where('tenant_id', $tenantId), $actor)
             ->selectRaw("COUNT(*) as total,
                 SUM(CASE WHEN status IN ('Draft','Submitted') THEN 1 ELSE 0 END) as pending,
                 SUM(CASE WHEN status='Completed' THEN 1 ELSE 0 END) as completed,

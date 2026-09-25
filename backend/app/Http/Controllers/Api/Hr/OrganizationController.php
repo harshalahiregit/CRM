@@ -186,6 +186,49 @@ class OrganizationController extends Controller
         return response()->json(['message' => 'Deleted']);
     }
 
+    /* ── Employment Types ─────────────────────────────────────────────── */
+
+    public function employmentTypes(Request $request)
+    {
+        return response()->json($this->org->employmentTypes($this->tenant($request)));
+    }
+
+    public function storeEmploymentType(Request $request)
+    {
+        $this->assertCanManage($request);
+        $data = $request->validate([
+            'name'        => 'required|string|max:120',
+            'code'        => 'nullable|string|max:40',
+            'description' => 'nullable|string',
+            'sort_order'  => 'nullable|integer|min:0|max:9999',
+            'is_active'   => 'boolean',
+        ]);
+
+        return response()->json($this->org->createEmploymentType($data, $this->tenant($request), $request->user()), 201);
+    }
+
+    public function updateEmploymentType(Request $request, int $id)
+    {
+        $this->assertCanManage($request);
+        $data = $request->validate([
+            'name'        => 'sometimes|required|string|max:120',
+            'code'        => 'nullable|string|max:40',
+            'description' => 'nullable|string',
+            'sort_order'  => 'nullable|integer|min:0|max:9999',
+            'is_active'   => 'boolean',
+        ]);
+
+        return response()->json($this->org->updateEmploymentType($id, $data, $this->tenant($request), $request->user()));
+    }
+
+    public function destroyEmploymentType(Request $request, int $id)
+    {
+        $this->assertCanManage($request);
+        $this->org->deleteEmploymentType($id, $this->tenant($request), $request->user());
+
+        return response()->json(['message' => 'Deleted']);
+    }
+
     /* ── Roles ────────────────────────────────────────────────────────── */
 
     public function roles(Request $request)

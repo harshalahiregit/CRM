@@ -5,13 +5,19 @@ namespace App\Repositories\Hr;
 use App\Models\Hr\HrEmployeeLeaveBalance;
 use App\Models\Hr\HrLeaveBalanceTransaction;
 use Illuminate\Database\Eloquent\Collection;
+use App\Models\User;
+use App\Repositories\Hr\Concerns\ScopesEmployeeData;
 
 /** Read queries for employee leave balances (Leave Phase 2). Tenant-scoped; no writes. */
 class EmployeeLeaveBalanceRepository
 {
-    public function balances(int $tenantId, array $f): Collection
+    use ScopesEmployeeData;
+
+    public function balances(int $tenantId, array $f, ?User $actor = null): Collection
     {
-        return HrEmployeeLeaveBalance::where('tenant_id', $tenantId)
+        // The admin-facing balance list. The per-employee helpers below are
+        // deliberately NOT scoped — see the class note.
+        return $this->scopeToEmployees(HrEmployeeLeaveBalance::where('tenant_id', $tenantId), $actor)
             ->with(['employee:id,name,employee_code,department', 'policy:id,name', 'leaveType:id,name,code,color'])
             ->when(! empty($f['employee_id']), fn ($q) => $q->where('employee_id', $f['employee_id']))
             ->when(! empty($f['leave_type_id']), fn ($q) => $q->where('leave_type_id', $f['leave_type_id']))
@@ -60,9 +66,10 @@ class EmployeeLeaveBalanceRepository
             ->orderByDesc('id')->get();
     }
 
-    public function stats(int $tenantId): array
+    public function stats(int $tenantId, ?User $actor = null): array
     {
-        $active = HrEmployeeLeaveBalance::where('tenant_id', $tenantId)->where('status', HrEmployeeLeaveBalance::ACTIVE);
+        $active = $this->scopeToEmployees(HrEmployeeLeaveBalance::where('tenant_id', $tenantId), $actor)
+            ->where('status', HrEmployeeLeaveBalance::ACTIVE);
 
         return [
             'employees_covered' => (clone $active)->distinct('employee_id')->count('employee_id'),

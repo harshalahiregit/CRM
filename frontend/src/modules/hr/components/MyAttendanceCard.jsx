@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Clock, LogIn, LogOut, Coffee, Play } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { hrTime } from '@/modules/hr/constants'
 import { useToast } from '@/components/ui/Toast'
+import { useMyAttendanceToday, useRefreshMyAttendanceToday } from '@/modules/hr/hooks/useMyAttendanceToday'
 
 /**
  * Clock yourself in and out.
@@ -17,26 +19,20 @@ import { useToast } from '@/components/ui/Toast'
  * would be alarming and useless. It says what is missing and who fixes it.
  */
 export default function MyAttendanceCard({ compact = false }) {
-  const [state, setState] = useState({ loading: true, data: null, unlinked: false, error: null })
+  // Shared with HeaderPunch, which is on every page: one request and one cached
+  // 403 between them instead of two of each. See useMyAttendanceToday.
+  const today = useMyAttendanceToday()
+  const refresh = useRefreshMyAttendanceToday()
+  const state = {
+    loading: today.loading,
+    data: today.data,
+    unlinked: today.unlinked,
+    error: today.unlinked ? today.unlinkedMessage : today.error,
+  }
   const [busy, setBusy] = useState(false)
   const toast = useToast()
 
-  const load = async () => {
-    try {
-      const res = await hrApi.attendance.me.today()
-      setState({ loading: false, data: res.data, unlinked: false, error: null })
-    } catch (e) {
-      // 403 here means "your login has no employee record" — expected for many
-      // people right now, so it is a state rather than a failure.
-      if (e?.response?.status === 403) {
-        setState({ loading: false, data: null, unlinked: true, error: e?.response?.data?.message || null })
-        return
-      }
-      setState({ loading: false, data: null, unlinked: false, error: e?.response?.data?.message || 'Could not load your attendance.' })
-    }
-  }
-
-  useEffect(() => { load() }, [])
+  const load = refresh
 
   const act = async (fn, done) => {
     setBusy(true)
@@ -51,7 +47,9 @@ export default function MyAttendanceCard({ compact = false }) {
     }
   }
 
-  const time = (v) => (v ? String(v).slice(11, 16) || String(v).slice(0, 5) : '—')
+  // Was a substring of the ISO string, which showed the UTC clock face — this
+  // card read 05:23 for a punch the register showed as 10:53. hrTime converts.
+  const time = hrTime
 
   if (state.loading) {
     // A skeleton the same shape and height as the loaded card, so the button

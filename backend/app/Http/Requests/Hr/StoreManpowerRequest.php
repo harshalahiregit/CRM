@@ -47,7 +47,13 @@ class StoreManpowerRequest extends FormRequest
             // Enterprise fields (SPK-1) — all optional, backward compatible.
             'hiring_manager_id'      => 'nullable|exists:hr_employees,id',
             'work_mode'              => 'nullable|in:Onsite,Remote,Hybrid',
-            'shift'                  => 'nullable|in:Day,Night,Rotational,Flexible',
+            // Whatever this workspace configured under HR Settings, or the
+            // legacy names when it has configured none. Resolved from the same
+            // place the dropdown reads, so the field cannot offer a value the
+            // validator then refuses.
+            'shift'                  => ['nullable', Rule::in(
+                \App\Services\Hr\OrganizationService::shiftOptions((int) $this->user()->tenant_id)
+            )],
             'budget'                 => 'nullable|numeric|min:0',
             'certifications'         => 'nullable|array',
             'certifications.*'       => 'string|max:100',

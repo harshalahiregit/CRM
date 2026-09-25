@@ -20,12 +20,12 @@ class PayslipController extends Controller
 
     public function index(Request $request)
     {
-        return response()->json($this->service->list($this->tenant($request), $request->only(['year', 'month', 'status', 'search'])));
+        return response()->json($this->service->list($this->tenant($request), $request->only(['year', 'month', 'status', 'search']), $request->user()));
     }
 
     public function show(Request $request, int $id)
     {
-        return response()->json($this->service->show($id, $this->tenant($request)));
+        return response()->json($this->service->show($id, $this->tenant($request), $request->user()));
     }
 
     /** POST /hr/payroll/runs/{id}/generate-payslips */
@@ -45,7 +45,7 @@ class PayslipController extends Controller
 
     public function employeePayslips(Request $request, int $employeeId)
     {
-        return response()->json($this->service->forEmployee($employeeId, $this->tenant($request)));
+        return response()->json($this->service->forEmployee($employeeId, $this->tenant($request), $request->user()));
     }
 
     private function tenant(Request $request): int

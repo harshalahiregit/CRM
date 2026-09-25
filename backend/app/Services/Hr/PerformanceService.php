@@ -24,9 +24,9 @@ class PerformanceService
     {
     }
 
-    public function dashboard(int $tenantId): array
+    public function dashboard(int $tenantId, ?User $actor = null): array
     {
-        return $this->repo->dashboard($tenantId);
+        return $this->repo->dashboard($tenantId, $actor);
     }
 
     /* ── KPI master ───────────────────────────────────────── */
@@ -123,9 +123,9 @@ class PerformanceService
     }
 
     /* ── Employee goal assignments ────────────────────────── */
-    public function listEmployeeGoals(int $tenantId, array $f): array
+    public function listEmployeeGoals(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->employeeGoals($tenantId, $f)->map(fn ($a) => $this->presentAssignment($a))->all();
+        return $this->repo->employeeGoals($tenantId, $f, $actor)->map(fn ($a) => $this->presentAssignment($a))->all();
     }
 
     /** Assign a goal to one or more employees (idempotent per employee). */
@@ -156,7 +156,7 @@ class PerformanceService
 
     public function updateAssignment(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $a = $this->repo->findEmployeeGoal($id, $tenantId);
+        $a = $this->repo->findEmployeeGoal($id, $tenantId, $actor);
         if (! $a) {
             throw new BusinessException('Assignment not found', 404);
         }
@@ -192,14 +192,18 @@ class PerformanceService
     }
 
     /* ── Employee performance timeline (Phase 7, read-only) ── */
-    public function timeline(int $employeeId, int $tenantId): array
+    public function timeline(int $employeeId, int $tenantId, ?User $actor = null): array
     {
         $this->assertEmployee($employeeId, $tenantId);
 
-        $goals = $this->repo->employeeGoals($tenantId, ['employee_id' => $employeeId]);
-        $reviews = $this->repo->reviews($tenantId, ['employee_id' => $employeeId]);
-        $promotions = $this->repo->promotions($tenantId, ['employee_id' => $employeeId]);
-        $increments = $this->repo->increments($tenantId, ['employee_id' => $employeeId]);
+        // A timeline is one employee's whole performance record in one view, so
+        // the scope goes on each strand rather than on the employee filter
+        // alone — the filter says which employee, the scope says whether this
+        // actor may see them at all.
+        $goals = $this->repo->employeeGoals($tenantId, ['employee_id' => $employeeId], $actor);
+        $reviews = $this->repo->reviews($tenantId, ['employee_id' => $employeeId], $actor);
+        $promotions = $this->repo->promotions($tenantId, ['employee_id' => $employeeId], $actor);
+        $increments = $this->repo->increments($tenantId, ['employee_id' => $employeeId], $actor);
 
         return [
             'goals' => $goals->map(fn ($a) => $this->presentAssignment($a))->all(),

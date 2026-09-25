@@ -10,6 +10,10 @@ use App\Models\Hr\HrLeavePolicy;
 use App\Models\Hr\HrLeaveType;
 use App\Models\User;
 use App\Repositories\Hr\EmployeeLeaveBalanceRepository;
+use App\Services\Settings\SettingsService;
+use App\Support\Hr\HrSetting;
+use App\Support\Hr\LeaveCarryForward;
+use App\Support\Hr\LeaveEntitlement;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -29,18 +33,35 @@ class EmployeeLeaveBalanceService
     {
     }
 
-    public function list(int $tenantId, array $f): array
+    /**
+     * The admin balance grid.
+     *
+     * Only this listing takes the scope. activeByType / allActiveForEmployee /
+     * activeForEmployee stay unscoped on purpose: they are the leave APPLY and
+     * DEDUCT path, reached by the employee's own request and by the Attendance
+     * App, and a balance has to be debited whoever triggered the leave.
+     */
+    public function list(int $tenantId, array $f, ?User $actor = null): array
     {
         return [
-            'data'  => $this->repo->balances($tenantId, $f)->map(fn ($b) => $this->present($b))->all(),
-            'stats' => $this->repo->stats($tenantId),
+            'data'  => $this->repo->balances($tenantId, $f, $actor)->map(fn ($b) => $this->present($b))->all(),
+            'stats' => $this->repo->stats($tenantId, $actor),
         ];
     }
 
-    /** Active balances + current policy for one employee. */
-    public function forEmployee(int $employeeId, int $tenantId): array
+    /**
+     * Active balances + current policy for one employee.
+     *
+     * The guard sits here rather than on activeForEmployee(), because that
+     * repository method is shared with the leave apply/deduct path, which has
+     * to run whoever triggered the leave. This is the admin read surface, where
+     * the employee id arrives in the URL, so it takes the scope assertion.
+     */
+    public function forEmployee(int $employeeId, int $tenantId, ?User $actor = null): array
     {
         $this->employee($employeeId, $tenantId);
+        app(\App\Services\Auth\ScopeResolver::class)->assertCanActOnEmployee($actor, $employeeId);
+
         $balances = $this->repo->activeForEmployee($employeeId, $tenantId);
         $policy = $balances->first(fn ($b) => $b->policy)?->policy;
 
@@ -70,7 +91,13 @@ class EmployeeLeaveBalanceService
 
         $effectiveFrom = $data['effective_from'] ?? now()->toDateString();
 
-        DB::transaction(function () use ($employee, $policy, $tenantId, $effectiveFrom, $actor) {
+        // Read once for the whole assignment. The leave year is the calendar
+        // year the assignment takes effect in, so a policy backdated to last
+        // December prorates against last December's year rather than today's.
+        $prorate = (bool) app(SettingsService::class)
+            ->get($tenantId, HrSetting::GROUP, 'leave_prorate_first_year');
+
+        DB::transaction(function () use ($employee, $policy, $tenantId, $effectiveFrom, $prorate, $actor) {
             // Carry-forward source = prior active available per leave type.
             $prior = $this->repo->allActiveForEmployee($employee->id, $tenantId)->keyBy('leave_type_id');
 
@@ -83,9 +110,29 @@ class EmployeeLeaveBalanceService
                 if (! $pt->leaveType) {
                     continue;
                 }
-                $allocated = (float) $pt->yearly_allocation;
+                // The POLICY's figure is the configured entitlement on this
+                // path — a grade may be granted more or less than the leave
+                // type's own yearly_limit, and that decision is untouched.
+                // LeaveEntitlement only decides how much of it this employee
+                // earns in their joining year; with proration off, or for
+                // anybody who joined before this year, it returns the
+                // configured figure unchanged.
+                $allocated = LeaveEntitlement::forAllocation(
+                    (float) $pt->yearly_allocation,
+                    $employee->joining_date?->toDateString() ?? $employee->joining_date,
+                    $prorate,
+                    $effectiveFrom
+                );
                 $prev = $prior->get($pt->leave_type_id);
-                $cf = $prev ? max(0.0, min((float) $prev->available_balance, (float) $pt->carry_forward_limit)) : 0.0;
+
+                // The leave TYPE's own configuration was ignored here: a type
+                // marked "does not carry forward" carried forward anyway, and
+                // its max_carry_forward — printed on the Leave Types screen as
+                // "≤ N" — was never a ceiling. LeaveCarryForward reconciles
+                // that with the policy's limit in one place.
+                $cf = $prev
+                    ? LeaveCarryForward::forBalance($pt->leaveType, $pt, (float) $prev->available_balance)
+                    : 0.0;
 
                 $balance = HrEmployeeLeaveBalance::create([
                     'tenant_id' => $tenantId, 'employee_id' => $employee->id,
@@ -204,7 +251,15 @@ class EmployeeLeaveBalanceService
         ];
     }
 
-    /** Manually allocate additional leave to an employee's active balance for a type. */
+    /**
+     * Manually allocate additional leave to an employee's active balance for a type.
+     *
+     * NOT PRORATED, DELIBERATELY. This is an operator typing a number and a
+     * reason — a goodwill grant, a correction, leave agreed at offer. The
+     * quantity IS the decision, so scaling it by the months left in the year
+     * would silently overrule the person who entered it. Proration belongs to
+     * the annual entitlement, which is what the other two paths allocate.
+     */
     public function allocate(array $data, int $tenantId, ?User $actor = null): array
     {
         $employee = $this->employee((int) $data['employee_id'], $tenantId);
@@ -302,12 +357,16 @@ class EmployeeLeaveBalanceService
         return $balance->fresh();
     }
 
-    public function history(int $balanceId, int $tenantId): array
+    public function history(int $balanceId, int $tenantId, ?User $actor = null): array
     {
         $balance = $this->repo->findBalance($balanceId, $tenantId);
         if (! $balance) {
             throw new BusinessException('Leave balance not found', 404);
         }
+
+        // The ledger is one employee's accrual and deduction history, so the
+        // balance being readable is not enough — whose it is decides.
+        app(\App\Services\Auth\ScopeResolver::class)->assertCanActOnEmployee($actor, $balance->employee_id);
 
         return [
             'balance' => $this->present($balance),

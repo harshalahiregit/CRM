@@ -23,7 +23,7 @@ class ExitRequestController extends Controller
 
     public function index(Request $request)
     {
-        return response()->json($this->service->list($this->tenant($request), $request->only(['employee_id', 'exit_type_id', 'status', 'search'])));
+        return response()->json($this->service->list($this->tenant($request), $request->only(['employee_id', 'exit_type_id', 'status', 'search']), $request->user()));
     }
 
     public function show(Request $request, int $id)
@@ -34,7 +34,7 @@ class ExitRequestController extends Controller
     /** Employee Profile → Exit tab: read-only current (non-withdrawn) exit request. */
     public function forEmployee(Request $request, int $employee)
     {
-        return response()->json($this->service->currentForEmployee($employee, $this->tenant($request)));
+        return response()->json($this->service->currentForEmployee($employee, $this->tenant($request), $request->user()));
     }
 
     public function store(Request $request)

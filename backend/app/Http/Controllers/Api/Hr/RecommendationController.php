@@ -19,7 +19,7 @@ class RecommendationController extends Controller
     /* ── Promotion ── */
     public function promotions(Request $request)
     {
-        return response()->json($this->service->listPromotions($this->tenant($request), $request->only(['employee_id', 'status'])));
+        return response()->json($this->service->listPromotions($this->tenant($request), $request->only(['employee_id', 'status']), $request->user()));
     }
 
     public function generatePromotion(Request $request)
@@ -45,7 +45,7 @@ class RecommendationController extends Controller
     /* ── Increment ── */
     public function increments(Request $request)
     {
-        return response()->json($this->service->listIncrements($this->tenant($request), $request->only(['employee_id', 'status'])));
+        return response()->json($this->service->listIncrements($this->tenant($request), $request->only(['employee_id', 'status']), $request->user()));
     }
 
     public function generateIncrement(Request $request)

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\Auth\StaffPermissionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -41,7 +42,7 @@ class DashboardController extends Controller
             'win_rate'           => $this->winRate($tenantId),
             'revenue_this_month' => $this->revenueThisMonth($tenantId),
             'revenue_by_month'   => $this->revenueByMonth($tenantId),
-            'recent_activity'    => $this->recentActivity($tenantId),
+            'recent_activity'    => $this->recentActivity($tenantId, $request->user()),
         ];
 
         // Which figures this deployment can actually produce. The UI hides a
@@ -73,14 +74,41 @@ class DashboardController extends Controller
      *
      * @return array<int, array{action: string, description: string, at: ?string}>
      */
-    private function recentActivity(int $tenantId, int $limit = 6): array
+    /**
+     * The activity feed — SIR-000044.
+     *
+     * It filtered on tenant_id alone, so every authenticated user read the whole
+     * company's audit trail on the landing page, actor_name included: who edited
+     * which invoice, who touched whose employee record, across every module. On a
+     * shared tenant that is an org chart and a work diary handed to anybody with
+     * a login.
+     *
+     * ── WHO MAY SEE EVERYONE ─────────────────────────────────────────────────
+     * StaffPermissionService::scope() exists for exactly this decision — its own
+     * docblock says 'global' sees the company and 'own' sees their own records,
+     * and that a report or a list is what should branch on it. The audit trail
+     * spans every module, so `reports` is the module that governs it.
+     *
+     * Unlike the lead-edit gate, this one does NOT grandfather an unconfigured
+     * grid. Narrowing to your own actions is not a lockout — it is what the
+     * report asked for, and it is the safe direction to fail in. Nobody loses
+     * work they do daily; they lose sight of other people's, which they were
+     * never meant to have.
+     */
+    private function recentActivity(int $tenantId, $user, int $limit = 6): array
     {
         if (! Schema::hasTable('audit_logs')) {
             return [];
         }
 
+        $global = app(StaffPermissionService::class)->scope($user, 'reports') === 'global';
+
         return DB::table('audit_logs')
             ->where('tenant_id', $tenantId)
+            // Own actions only, unless entitled to the whole tenant's. Rows with
+            // no actor_id are system writes and belong to nobody, so a scoped
+            // reader does not see them either.
+            ->when(! $global, fn ($q) => $q->where('actor_id', $user->id))
             ->orderByDesc('created_at')->orderByDesc('id')
             ->limit($limit)
             ->get(['action', 'actor_name', 'auditable_type', 'metadata', 'created_at'])

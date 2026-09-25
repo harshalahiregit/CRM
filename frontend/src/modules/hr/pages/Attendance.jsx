@@ -5,6 +5,7 @@ import {
   Search, Plus, X, LogIn, LogOut, Coffee, Pencil, Download, Printer, CalendarCheck,
   Users, UserCheck, UserX, Clock, Hourglass, Plane, Home, Sun, CalendarDays, Percent, Timer, MapPin } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { hrTime } from '../constants'
 
 const STATUSES = ['Present', 'Absent', 'Late', 'Half Day', 'Leave', 'Holiday', 'Weekend', 'Work From Home', 'Remote']
 const SHIFTS = ['General', 'Morning', 'Evening', 'Night', 'Custom']
@@ -17,7 +18,14 @@ export const ST_COLOR = s => ({
   Holiday:'#94a3b8', Weekend:'#94a3b8', 'Work From Home':'#8b5cf6', Remote:'#14b8a6',
 }[s] || '#94a3b8')
 const stStyle = s => { const c = ST_COLOR(s); return { c, bg:`${c}1f` } }
-const fmtT = t => t ? new Date(t).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false}) : '—'
+/*
+ | The Register was the screen that always converted, so the others were fixed to
+ | agree with it. It now defers to the same shared helper instead of carrying its
+ | own copy: it was the last place hardcoding a 24-hour clock and the browser's
+ | timezone, which would have left it reading 14:30 while every other attendance
+ | screen read 02:30 pm for the same punch.
+ */
+const fmtT = hrTime
 const today = () => new Date().toISOString().slice(0,10)
 
 /**

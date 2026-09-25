@@ -130,7 +130,13 @@ class HrWriteAuthorizationTest extends TestCase
         $before = HrEmployee::count();
 
         $this->postJson('/api/hr/employees', [
-            'name' => 'Sneaked In', 'department' => 'Ops', 'designation' => 'Analyst',
+            'name' => 'Sneaked In',
+            // Valid ids, so the 403 below is the permission gate refusing and
+            // not the request rules rejecting a malformed payload.
+            'department_id' => \App\Models\Hr\HrDepartment::create(
+                ['tenant_id' => $this->tenant->id, 'name' => 'Ops', 'is_active' => true])->id,
+            'designation_id' => \App\Models\Hr\HrDesignation::create(
+                ['tenant_id' => $this->tenant->id, 'name' => 'Analyst', 'is_active' => true])->id,
             'joining_date' => '2026-01-01', 'status' => 'Active', 'work_state' => 'Maharashtra',
             'skip_probation' => true, 'probation_skip_reason' => 'n/a',
         ])->assertForbidden();

@@ -29,15 +29,15 @@ class EmployeeSalaryService
     }
 
     /** Current salary + full history for one employee. */
-    public function forEmployee(int $employeeId, int $tenantId): array
+    public function forEmployee(int $employeeId, int $tenantId, ?User $actor = null): array
     {
         $this->assertEmployee($employeeId, $tenantId);
 
-        $current = $this->repo->currentActive($employeeId, $tenantId);
+        $current = $this->repo->currentActive($employeeId, $tenantId, $actor);
 
         return [
             'current' => $current ? $this->present($current) : null,
-            'history' => $this->repo->historyFor($employeeId, $tenantId)->map(fn ($s) => $this->present($s))->all(),
+            'history' => $this->repo->historyFor($employeeId, $tenantId, $actor)->map(fn ($s) => $this->present($s))->all(),
             'revisions' => $this->revisions($employeeId, $tenantId),
         ];
     }
@@ -243,7 +243,7 @@ class EmployeeSalaryService
     public function update(int $employeeId, int $id, array $data, int $tenantId, ?User $actor = null): array
     {
         $this->assertEmployee($employeeId, $tenantId);
-        $salary = $this->find($id, $employeeId, $tenantId);
+        $salary = $this->find($id, $employeeId, $tenantId, $actor);
 
         $attrs = ['updated_by' => $actor?->id];
         if (array_key_exists('effective_from', $data) && $data['effective_from']) {
@@ -270,7 +270,7 @@ class EmployeeSalaryService
     public function setStatus(int $employeeId, int $id, bool $active, int $tenantId, ?User $actor = null): array
     {
         $this->assertEmployee($employeeId, $tenantId);
-        $salary = $this->find($id, $employeeId, $tenantId);
+        $salary = $this->find($id, $employeeId, $tenantId, $actor);
 
         DB::transaction(function () use ($salary, $employeeId, $tenantId, $active, $actor) {
             if ($active) {
@@ -347,9 +347,11 @@ class EmployeeSalaryService
         return $employee;
     }
 
-    private function find(int $id, int $employeeId, int $tenantId): HrEmployeeSalary
+    private function find(int $id, int $employeeId, int $tenantId, ?User $actor = null): HrEmployeeSalary
     {
-        $salary = $this->repo->findForTenant($id, $employeeId, $tenantId);
+        // The write paths already carried $actor for auditing; passing it here
+        // is what stops an edit being aimed at somebody outside the scope.
+        $salary = $this->repo->findForTenant($id, $employeeId, $tenantId, $actor);
         if (! $salary) {
             throw new BusinessException('Salary record not found', 404);
         }

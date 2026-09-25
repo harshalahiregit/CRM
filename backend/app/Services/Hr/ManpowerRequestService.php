@@ -21,6 +21,12 @@ class ManpowerRequestService
     public function __construct(
         private ManpowerRequestRepository $manpowerRequestRepository,
         private \App\Services\Notifications\NotificationService $notifications,
+        // The bell. A different class from the one above, which is the
+        // e-mail/WhatsApp/SMS channel service — this one drops a row into a
+        // user's in-app notification list. L1 is a blocking stage now, so the
+        // approver has to be told the request is there; nothing in this flow
+        // told anybody anything except on publish.
+        private \App\Services\NotificationService $bell,
     ) {
     }
 
@@ -127,10 +133,17 @@ class ManpowerRequestService
 
         $this->assertCompleteForApproval($manpowerRequest);
 
+        // Resolved once, here: the same collection answers "is there anybody to
+        // approve this" and "who do we tell". Computing it before the
+        // transaction means a workspace with no Department Head is refused
+        // rather than left holding a request nobody can move.
+        $l1Approvers = $this->eligibleApprovers($manpowerRequest, 'L1');
+        $this->assertSomebodyCanApprove($l1Approvers, 'L1');
+
         $wasRejected = $manpowerRequest->status === Status::REJECTED;
         $fromStatus  = $manpowerRequest->status;
 
-        return DB::transaction(function () use ($manpowerRequest, $user, $wasRejected, $fromStatus) {
+        return DB::transaction(function () use ($manpowerRequest, $user, $wasRejected, $fromStatus, $l1Approvers) {
             // Record the submission (Draft/Rejected → L1 Pending) …
             $manpowerRequest->update([
                 'status'       => Status::L1_PENDING,
@@ -160,13 +173,25 @@ class ManpowerRequestService
                 $wasRejected ? 'Resubmitted for approval after rejection' : 'Submitted for approval',
                 ['status' => $fromStatus], ['status' => Status::L1_PENDING]);
 
-            // … then auto-approve L1 (SPK-1): the creator no longer approves L1
-            // manually. Reuses the same approval transition, so the L1-Approved
-            // history entry is written identically to a manual approval. The
-            // request lands on L2 (Management) Pending.
-            $this->applyL1Approval($manpowerRequest, $user, null, true);
+            /*
+             | The request RESTS here, waiting on the Department Head.
+             |
+             | It used to auto-approve L1 on this line. The intent was sound —
+             | the creator should not rubber-stamp their own L1 — but it was
+             | applied to every request regardless of who submitted it, so a
+             | plain staff member with no approval authority had their own user
+             | id written to l1_approver_id. The spec is explicit that "HR should
+             | not be able to start recruitment until both approvals are
+             | completed", and with L1 stamped automatically only one approval
+             | was ever real.
+             |
+             | The creator still does not approve their own L1 — that is now a
+             | REFUSAL (assertNotOwnRequest) rather than a free pass.
+             */
+            $this->notifyLevelPending($manpowerRequest, 'L1', $user,
+                $wasRejected ? 'resubmitted' : 'submitted', $l1Approvers);
 
-            Log::channel('hr')->info('Manpower request submitted + L1 auto-approved', ['request_id' => $manpowerRequest->id, 'tenant_id' => $manpowerRequest->tenant_id]);
+            Log::channel('hr')->info('Manpower request submitted — awaiting L1', ['request_id' => $manpowerRequest->id, 'tenant_id' => $manpowerRequest->tenant_id]);
 
             return $manpowerRequest->fresh()->load(['requester', 'l1Approver', 'auditLogs.actor']);
         });
@@ -176,6 +201,7 @@ class ManpowerRequestService
     {
         $this->assertTenant($manpowerRequest, $user);
         $this->authorize($user->canApproveL1(), 'You are not authorised to give L1 (Department Head) approval');
+        $this->assertNotOwnRequest($manpowerRequest, $user);
 
         if ($manpowerRequest->status !== Status::L1_PENDING) {
             throw new BusinessException('Request is not pending L1 approval', 422);
@@ -183,6 +209,8 @@ class ManpowerRequestService
 
         return DB::transaction(function () use ($manpowerRequest, $user, $remarks) {
             $this->applyL1Approval($manpowerRequest, $user, $remarks);
+
+            $this->notifyLevelPending($manpowerRequest, 'L2', $user, 'L1 approved');
 
             return $manpowerRequest->fresh()->load(['requester', 'l1Approver', 'auditLogs.actor']);
         });
@@ -210,6 +238,10 @@ class ManpowerRequestService
             $this->logHistory($manpowerRequest, 'L1', 'Rejected', $user, $remarks,
                 ['status' => Status::L1_PENDING], ['status' => Status::REJECTED, 'l1_status' => 'rejected']);
 
+            $this->notifyRequester($manpowerRequest, $user, 'Manpower request rejected at L1',
+                'MR-'.$manpowerRequest->id.' · '.$manpowerRequest->position_title
+                    .' was rejected by the Department Head. Reason: '.trim($remarks));
+
             Log::channel('hr')->info('Manpower request rejected at L1', ['request_id' => $manpowerRequest->id, 'tenant_id' => $manpowerRequest->tenant_id, 'approver_id' => $user->id]);
 
             return $manpowerRequest->fresh()->load(['requester', 'auditLogs.actor']);
@@ -220,7 +252,11 @@ class ManpowerRequestService
     {
         $this->assertTenant($manpowerRequest, $user);
         $this->authorize($user->canApproveL2(), 'You are not authorised to give L2 (Management) approval');
+        $this->assertNotOwnRequest($manpowerRequest, $user);
 
+        // The L2 gate is reachable only from L2_Pending, which only
+        // applyL1Approval() writes — so L1 cannot be bypassed by calling this
+        // endpoint directly on a request still sitting at L1.
         if ($manpowerRequest->status !== Status::L2_PENDING) {
             throw new BusinessException('Request is not pending L2 approval', 422);
         }
@@ -239,6 +275,10 @@ class ManpowerRequestService
             $this->logHistory($manpowerRequest, 'L2', 'Approved', $user,
                 $remarks ?? 'L2 Approved by Management — request is now in the HR queue',
                 ['status' => Status::L2_PENDING], ['status' => Status::READY_FOR_HR, 'l2_status' => 'approved']);
+
+            $this->notifyRequester($manpowerRequest, $user, 'Manpower request fully approved',
+                'MR-'.$manpowerRequest->id.' · '.$manpowerRequest->position_title
+                    .' cleared both approvals and is now with HR.');
 
             Log::channel('hr')->info('Manpower request L2 approved (ready for HR)', ['request_id' => $manpowerRequest->id, 'tenant_id' => $manpowerRequest->tenant_id, 'approver_id' => $user->id]);
 
@@ -267,6 +307,10 @@ class ManpowerRequestService
 
             $this->logHistory($manpowerRequest, 'L2', 'Rejected', $user, $remarks,
                 ['status' => Status::L2_PENDING], ['status' => Status::REJECTED, 'l2_status' => 'rejected']);
+
+            $this->notifyRequester($manpowerRequest, $user, 'Manpower request rejected at L2',
+                'MR-'.$manpowerRequest->id.' · '.$manpowerRequest->position_title
+                    .' was rejected by Management. Reason: '.trim($remarks));
 
             Log::channel('hr')->info('Manpower request rejected at L2', ['request_id' => $manpowerRequest->id, 'tenant_id' => $manpowerRequest->tenant_id, 'approver_id' => $user->id]);
 
@@ -310,6 +354,12 @@ class ManpowerRequestService
             $this->logHistory($manpowerRequest, $level, 'Sent Back', $user, $remarks,
                 ['status' => $from], ['status' => Status::DRAFT]);
 
+            // Sending back is only useful if the requester finds out — it is a
+            // request for THEIR action, not a decision they can read later.
+            $this->notifyRequester($manpowerRequest, $user, 'Manpower request sent back for revision',
+                'MR-'.$manpowerRequest->id.' · '.$manpowerRequest->position_title
+                    .' was sent back at '.$level.' and is editable again. '.trim($remarks));
+
             Log::channel('hr')->info('Manpower request sent back for revision', ['request_id' => $manpowerRequest->id, 'tenant_id' => $manpowerRequest->tenant_id, 'from' => $from]);
 
             return $manpowerRequest->fresh()->load(['requester', 'auditLogs.actor']);
@@ -324,11 +374,17 @@ class ManpowerRequestService
      * resubmitting, which sends it through L1 again even when it was L2 that
      * rejected it. This reverses the rejection instead.
      *
-     * It does NOT approve the request outright. It restores the request to the
-     * pending state of the level that rejected it and then delegates to that
-     * level's existing approve method — so the two-level gate is preserved
-     * exactly: an L1 rejection reversed lands on L2 Pending, not on the HR queue.
-     * There is no second copy of the approval logic here.
+     * It does NOT approve the request. It restores the request to the pending
+     * state of the level that rejected it and STOPS — reversing a rejection and
+     * granting an approval are two decisions, and this is only the first.
+     *
+     * It used to reopen and then call that level's approve method, which meant
+     * one click both un-rejected the request and approved it. With L1 restored
+     * as a real rung that would have re-created exactly the defect this phase
+     * removes: an approval written without anybody deciding it. The approver now
+     * reopens, the request lands back on its rung, and they approve it through
+     * the normal guarded path — which also means the anti-self-approval rule and
+     * the status checks apply to it.
      *
      * The resubmit path is untouched — the requester can still edit and resubmit a
      * Rejected request, which remains the right route when the request itself
@@ -373,11 +429,13 @@ class ManpowerRequestService
                 'level' => $level, 'approver_id' => $user->id,
             ]);
 
-            $fresh = $manpowerRequest->fresh();
+            $this->notifyRequester($manpowerRequest, $user, 'Manpower request reopened',
+                'MR-'.$manpowerRequest->id.' · '.$manpowerRequest->position_title
+                    .' was reopened at '.$level.' and is waiting for that approval again. '.trim($remarks));
 
-            return $level === 'L2'
-                ? $this->approveL2($fresh, $user, $remarks)
-                : $this->approveL1($fresh, $user, $remarks);
+            $this->notifyLevelPending($manpowerRequest->fresh(), $level, $user, 'reopened after rejection');
+
+            return $manpowerRequest->fresh()->load(['requester', 'l1Approver', 'l2Approver', 'auditLogs.actor']);
         });
     }
 
@@ -686,20 +744,56 @@ class ManpowerRequestService
     }
 
     /**
+     * Nobody approves the requisition they raised.
+     *
+     * This is what the old auto-approval was reaching for and got backwards. The
+     * concern was real — a department head raising their own headcount request
+     * and then clicking "L1 Approve" is a signature with nothing behind it — but
+     * the answer was to grant the approval automatically, which produced the
+     * same empty signature and attributed it to whoever happened to submit. The
+     * answer is to refuse it, so the second pair of eyes is an actual second
+     * pair.
+     *
+     * Applied to approval only. Rejecting or sending back your own request
+     * cannot let anything through, so those stay open.
+     *
+     * A single-approver workspace will feel this: if the only person who can
+     * approve L1 is the one who raised the request, it cannot proceed. That is
+     * the honest consequence of a two-signature rule, and it is the same
+     * position AdvanceTierService already takes ("nobody approves their own
+     * advance at any tier, however senior").
+     */
+    private function assertNotOwnRequest(HrManpowerRequest $mr, User $actor): void
+    {
+        if ((int) $mr->requested_by === (int) $actor->id) {
+            throw new BusinessException(
+                'You cannot approve a manpower request you raised yourself — it needs somebody else at this level.',
+                403
+            );
+        }
+    }
+
+    /**
      * Record a workflow action on the reusable audit trail. Actor name/role,
      * tenant and timestamp are snapshotted by AuditLogService.
      */
     /**
      * The L1 (Department Head) approval state transition and its history entry.
      *
-     * Single source of truth shared by manual approval (approveL1) and the
-     * automatic L1 approval performed on submission (SPK-1). Callers own the
-     * permission/status checks and the surrounding transaction; this only writes
-     * the L1 → L2 transition exactly the same way for both paths, so no approval
-     * logic is duplicated and the audit history is identical.
+     * The authority check is repeated here rather than left to the caller, and
+     * deliberately so: this method is the only thing that writes l1_approver_id,
+     * and that column is read by the UI as "✅ L1: <name>" and by the audit
+     * trail as the person who approved. When submission auto-approved L1, this
+     * ran with whoever submitted — including a plain staff member with no L1
+     * authority at all — and stamped their name as the Department Head's
+     * approval. A false audit record is worse than a missing one, so the write
+     * refuses rather than trusts its caller.
      */
-    private function applyL1Approval(HrManpowerRequest $mr, User $actor, ?string $remarks, bool $auto = false): void
+    private function applyL1Approval(HrManpowerRequest $mr, User $actor, ?string $remarks): void
     {
+        $this->authorize($actor->canApproveL1(), 'You are not authorised to give L1 (Department Head) approval');
+        $this->assertNotOwnRequest($mr, $actor);
+
         $mr->update([
             'status'         => Status::L2_PENDING,
             'l1_status'      => 'approved',
@@ -709,13 +803,118 @@ class ManpowerRequestService
         ]);
 
         $this->logHistory($mr, 'L1', 'Approved', $actor,
-            $remarks ?? ($auto ? 'L1 auto-approved on submission' : 'L1 Approved by Department Head'),
+            $remarks ?? 'L1 Approved by Department Head',
             ['status' => Status::L1_PENDING], ['status' => Status::L2_PENDING, 'l1_status' => 'approved']);
 
         Log::channel('hr')->info('Manpower request L1 approved', [
-            'request_id' => $mr->id, 'tenant_id' => $mr->tenant_id, 'approver_id' => $actor->id, 'auto' => $auto,
+            'request_id' => $mr->id, 'tenant_id' => $mr->tenant_id, 'approver_id' => $actor->id,
         ]);
     }
+
+    /* ── Telling people ─────────────────────────────────────────────────── */
+
+    /**
+     * Everybody who may decide at a level, for this workspace.
+     *
+     * Resolved in PHP rather than by query because canApproveL1/L2 are not
+     * expressible as SQL — the granted-authority clause goes through the
+     * permission grid. Narrowed first to active staff accounts, which is the
+     * guard both predicates open with, so the collection stays small.
+     *
+     * @return \Illuminate\Support\Collection<int, User>
+     */
+    private function approversFor(int $tenantId, string $level)
+    {
+        return User::where('tenant_id', $tenantId)
+            ->where('status', 'active')
+            ->whereIn('role', ['admin', 'staff'])
+            ->get()
+            ->filter(fn (User $u) => $level === 'L1' ? $u->canApproveL1() : $u->canApproveL2())
+            ->values();
+    }
+
+    /**
+     * Who could actually decide THIS request at a level.
+     *
+     * The requester is excluded, because assertNotOwnRequest() would refuse
+     * them. That exclusion is the whole point of asking: a workspace whose only
+     * Department Head is the person raising the requisition has nobody to
+     * approve it, and counting them would report an approver who cannot act.
+     *
+     * @return \Illuminate\Support\Collection<int, User>
+     */
+    private function eligibleApprovers(HrManpowerRequest $mr, string $level)
+    {
+        return $this->approversFor((int) $mr->tenant_id, $level)
+            ->reject(fn (User $u) => (int) $u->id === (int) $mr->requested_by)
+            ->values();
+    }
+
+    /**
+     * Refuse a submission that nobody could ever approve.
+     *
+     * Without this the request goes to L1_Pending and stays there — no error,
+     * no queue entry anybody can see, no notification that resolves to a
+     * recipient. Silence is the worst possible answer, because the requester
+     * assumes it is being considered.
+     *
+     * It REFUSES rather than falling through to L2 or granting the approval:
+     * bypassing L1 because L1 is unstaffed is how the defect this phase removed
+     * came about. The way out is to give somebody the authority, which the
+     * message says in the words used on the screen that grants it.
+     */
+    private function assertSomebodyCanApprove($approvers, string $level): void
+    {
+        if ($approvers->isNotEmpty()) {
+            return;
+        }
+
+        $who = $level === 'L1' ? 'Department Head' : 'Management';
+
+        throw new BusinessException(
+            "Nobody in this workspace can give {$who} ({$level}) approval on this request"
+            .' — you cannot approve one you raised yourself. Ask an administrator to grant'
+            ." \"Manpower Approval ({$level})\" to somebody else before submitting.",
+            422
+        );
+    }
+
+    /**
+     * Tell the people a request is now waiting on.
+     *
+     * This is the half that makes L1 safe to restore. A blocking stage nobody is
+     * told about is a request that sits until somebody thinks to look, and
+     * before this nothing in the manpower flow notified anybody except on
+     * publish. Best-effort throughout: notify() swallows its own failures, so an
+     * approval is never lost because a bell could not be rung.
+     */
+    private function notifyLevelPending(HrManpowerRequest $mr, string $level, User $actor, string $because, $approvers = null): void
+    {
+        $who   = $level === 'L1' ? 'Department Head' : 'Management';
+        $title = "Manpower request awaiting {$who} ({$level}) approval";
+        $body  = 'MR-'.$mr->id.' · '.$mr->position_title.' — '.$mr->department.' ('.$because.')';
+
+        // Reuses the collection submit() already resolved, when there is one —
+        // the eligibility check and the notification are asking the same
+        // question, and asking it twice would walk the permission grid twice.
+        foreach ($approvers ?? $this->eligibleApprovers($mr, $level) as $approver) {
+            // The actor is skipped by notify() itself: somebody who just
+            // approved at L1 and also holds L2 does not need telling that the
+            // thing they did happened.
+            $this->bell->notify($approver->id, (int) $mr->tenant_id, 'hr_manpower_approval',
+                $title, $body, self::LINK, $actor->id);
+        }
+    }
+
+    /** Tell the person who raised it what was decided. */
+    private function notifyRequester(HrManpowerRequest $mr, User $actor, string $title, string $body): void
+    {
+        $this->bell->notify($mr->requested_by, (int) $mr->tenant_id, 'hr_manpower_decision',
+            $title, $body, self::LINK, $actor->id);
+    }
+
+    /** Where the bell takes them. */
+    private const LINK = '/app/hr/manpower-requests';
 
     private function logHistory(HrManpowerRequest $mr, string $level, string $action, User $user, ?string $remarks, ?array $oldValues, ?array $newValues): void
     {

@@ -32,8 +32,9 @@ const EMPTY_FORM = {
 // Job Requisition criticality (Doc 3 Module 2)
 const CRITICALITY = ['Low', 'Medium', 'High', 'Business Critical']
 // Enterprise enums (SPK-1) — match the backend `in:` validation lists.
+// Shifts are NOT here: they come from the hr_shifts master this workspace
+// configured, and arrive on masters.shifts with the rest of the dropdowns.
 const WORK_MODES = ['Onsite', 'Remote', 'Hybrid']
-const SHIFTS = ['Day', 'Night', 'Rotational', 'Flexible']
 const HIRING_REASONS = ['New Position', 'Replacement', 'Expansion', 'Contract']
 
 const labelStyle = { display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }
@@ -968,7 +969,7 @@ function ActionModal({ actionModal, remarks, setRemarks, actionLoading, onClose,
       <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 14 }}>
         <strong style={{ color: 'var(--text-h)' }}>MR-{request.id} · {request.position_title}</strong> — {request.department}
       </p>
-      {action === 'submit' && <InfoBox><strong>L1 is approved automatically</strong> on submission — the request goes straight to <strong>Management (L2)</strong> approval, then the HR queue.</InfoBox>}
+      {action === 'submit' && <InfoBox>This goes to your <strong>Department Head (L1)</strong> for approval, then to <strong>Management (L2)</strong>, and only then to the HR queue. You cannot approve a request you raised yourself.</InfoBox>}
       {action === 'delete' && <InfoBox tone="danger">This permanently deletes the request. This cannot be undone.</InfoBox>}
       {showRemarks && (
         <>

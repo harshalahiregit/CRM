@@ -204,20 +204,28 @@ class HrSetting
             'Off lets one person move an advance through several stages — quicker, and much weaker.', 'Advances',
         ],
 
-        /* ── leave ───────────────────────────────────────────────────── */
-        'leave_paid_days' => [
-            'Paid leave a year', self::TYPE_DECIMAL, 12,
-            'Used when setting up a new employee.', 'Leave',
-        ],
-        'leave_casual_days' => [
-            'Casual leave a year', self::TYPE_DECIMAL, 12, '', 'Leave',
-        ],
-        'leave_unpaid_days' => [
-            'Unpaid leave a year', self::TYPE_DECIMAL, 0, '', 'Leave',
-        ],
-        'leave_comp_off_days' => [
-            'Comp-off a year', self::TYPE_DECIMAL, 0, '', 'Leave',
-        ],
+        /*
+         | ── leave ────────────────────────────────────────────────────
+         |
+         | There is deliberately nothing here any more.
+         |
+         | leave_paid_days, leave_casual_days, leave_unpaid_days and
+         | leave_comp_off_days used to live in this section and are gone. They
+         | predated the Leave Types master and duplicated its Yearly Limit,
+         | which is the box people actually edit — and because
+         | SettingsService::getGroup() fills every registered key from the
+         | registry defaults, these always had a value and always won. The
+         | Leave Types screen therefore had no effect on Casual, Earned or
+         | Unpaid allocation while appearing to.
+         |
+         | How much leave a type is worth is configured on the Leave Types
+         | screen. Removing these leaves ONE editable number instead of two
+         | that disagreed silently.
+         |
+         | Rows already stored under these keys are harmless and are left
+         | alone: getGroup() only returns keys the registry still knows, so
+         | they are inert. No destructive cleanup for values nothing reads.
+         */
 
         /* ── people ──────────────────────────────────────────────────── */
         'employee_prefix' => [
@@ -231,6 +239,102 @@ class HrSetting
         'app_login_default' => [
             'New employees can use the attendance app', self::TYPE_BOOL, false,
             'Off by default: app access is granted, never assumed.', 'People',
+        ],
+
+        /* ── approvals ───────────────────────────────────────────────── */
+        //
+        // Whether the person who raised a request may also decide it.
+        //
+        // OFF BY DEFAULT, and that is not a recommendation — it is what the
+        // system does today. Turning it on for existing workspaces would
+        // change who can approve what without anybody asking, and in a company
+        // with one HR person it would stop approvals entirely. So the default
+        // preserves current behaviour and each workspace opts in.
+        //
+        // Advances are unaffected: their ladder does not run through the
+        // engine's step gate and has carried its own
+        // advance_require_distinct_approvers for longer.
+        'require_distinct_approver' => [
+            'Approvers must be someone other than the requester', self::TYPE_BOOL, false,
+            'On, the person who raised a request cannot approve it — including when they are the reporting manager, hold the approving role, or manage the HR queue. Leave it off if too few people would be left to approve.', 'Approvals',
+        ],
+
+        /* ── leave ───────────────────────────────────────────────────── */
+        //
+        // Whether somebody who joins part-way through the year gets part of
+        // that year's leave.
+        //
+        // OFF BY DEFAULT, and that is the point of it being a setting at all.
+        // Entitlement has always been front-loaded in full regardless of
+        // joining date, so turning this on is a real change to how much leave
+        // people receive; every existing workspace keeps today's behaviour
+        // until somebody decides otherwise.
+        //
+        // It changes the ALLOCATION only. The configured yearly limit on the
+        // leave type, the policy's allocation, and both carry-forward ceilings
+        // are untouched — see LeaveEntitlement, which is the one place the
+        // arithmetic lives.
+        'leave_prorate_first_year' => [
+            'Prorate leave in an employee\'s first year', self::TYPE_BOOL, false,
+            'On, somebody joining part-way through the year receives leave for the months they are here rather than a full year. '
+            .'The joining month counts in full, and the result is rounded down to the nearest half day. '
+            .'Only the first year is affected, and the yearly limits you configure on each leave type do not change.',
+            'Leave',
+        ],
+
+        /* ── offers ──────────────────────────────────────────────────── */
+        //
+        // How long an offer stays open when nobody names a date.
+        //
+        // Seven days was hardcoded in three places — the auto-generated offer
+        // raised from onboarding, regenerating an offer, and extending one —
+        // so a company that gives candidates a fortnight had to retype the
+        // date every time or accept a week.
+        //
+        // IT IS A DEFAULT, NOT A RULE. An explicit validity_date always wins,
+        // and an offer deliberately created with none still has none: a blank
+        // validity means an offer with no deadline, which is a supported state
+        // and not something this setting quietly fills in. Only the three
+        // places that already invented a date consult it.
+        'offer_validity_days' => [
+            'Offer validity', self::TYPE_INT, 7,
+            'Days an offer stays open when no validity date is given. Used when an offer is generated automatically, regenerated or extended; typing a date always overrides it, and an offer created with no date deliberately keeps none.',
+            'Offers',
+        ],
+
+        /* ── candidate portal ────────────────────────────────────────── */
+        //
+        // How long a candidate's onboarding link stays usable.
+        //
+        // A setting rather than a constant because the window companies give a
+        // candidate genuinely differs — some expect documents within the week,
+        // others leave a month while notice periods run. The value is read
+        // ONLY at issuance and frozen onto the record, so editing it moves
+        // nothing already sent.
+        //
+        // The generic integer rule below admits 0 and null. OnboardingPortalToken
+        // refuses both rather than treating them as "no expiry".
+        'onboarding_link_ttl_days' => [
+            'Onboarding link validity', self::TYPE_INT, 30,
+            'Days a candidate\'s onboarding portal link stays usable. Applies to links issued from now on; links already sent keep the validity they were given.', 'Candidate portal',
+        ],
+
+        /* ── POSH ────────────────────────────────────────────────────── */
+        //
+        // How long a complainant's portal link stays usable. It is a setting
+        // rather than a constant because the right answer depends on how a
+        // workspace runs its committee, and nothing in the statute that we
+        // have verified fixes a number.
+        //
+        // The value is read ONLY at issuance and frozen onto the token, so
+        // editing this moves nothing that has already been handed out.
+        //
+        // The generic integer rule below admits 0 and null. PoshTokenService
+        // refuses both rather than treating them as "no expiry" — see the
+        // fail-closed note there.
+        'posh_token_ttl_days' => [
+            'POSH complainant link validity', self::TYPE_INT, 30,
+            'Days a complainant\'s portal link stays usable. Applies to links issued from now on; existing links keep the validity they were given.', 'POSH',
         ],
     ];
 

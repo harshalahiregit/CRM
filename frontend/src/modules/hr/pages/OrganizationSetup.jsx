@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useTheme } from '@/context/ThemeContext'
 import {
-  Building2, Tag, Layers, UserCog, Network,
+  Building2, Tag, Layers, UserCog, Network, BriefcaseBusiness,
   Plus, Pencil, Trash2, X, Users, AlertTriangle,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
@@ -71,6 +71,22 @@ const MASTERS = {
       { key: 'description', label: 'Description', type: 'textarea', full: true },
       { key: 'skills', label: 'Expected Skills', type: 'skills', full: true,
         hint: 'Compared against each employee’s own skills to score their fit for this position.' },
+    ],
+  },
+  employmentTypes: {
+    label: 'Employment Types', singular: 'Employment Type', icon: BriefcaseBusiness,
+    api: () => hrApi.organization.employmentTypes,
+    columns: [
+      { key: 'name',           head: 'Employment Type' },
+      { key: 'code',           head: 'Code' },
+      { key: 'employee_count', head: 'Employees', chip: true },
+    ],
+    fields: [
+      { key: 'name', label: 'Name', type: 'text', required: true, placeholder: 'e.g. Permanent' },
+      { key: 'code', label: 'Code', type: 'text', placeholder: 'e.g. PERM' },
+      { key: 'sort_order', label: 'Order', type: 'number',
+        hint: 'Controls the order this appears in the employee form. Lower comes first.' },
+      { key: 'description', label: 'Description', type: 'textarea', full: true },
     ],
   },
   roles: {

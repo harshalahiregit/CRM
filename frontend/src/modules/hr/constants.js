@@ -3,6 +3,11 @@
 // the queue, the dashboard and any badge render identically. Keys match the
 // backend App\Support\Hr\ManpowerRequestStatus values.
 
+// Read, not hooked: hrTime() below is a plain function called from tables and
+// print sheets, so it reaches the tenant's clock settings through this rather
+// than hardcoding them. No cycle — useFormats imports react and lib/api only.
+import { localizationNow } from '@/hooks/useFormats'
+
 export const MR_STATUS = {
   DRAFT:              'Draft',
   L1_PENDING:         'L1_Pending',
@@ -281,3 +286,115 @@ export const canManageHrQueue = (u) => capability(u, 'hr_manage')
 export const jobCode = (id) => id ? `JOB-${String(id).padStart(4, '0')}` : '—'
 export const publicApplyUrl = (slug, id) => (slug && id) ? `${window.location.origin}/careers/${slug}/jobs/${id}` : null
 export const internalApplyUrl = (id) => id ? `${window.location.origin}/app/hr/jobs/${id}` : null
+
+/*
+|------------------------------------------------------------------------------
+| Attendance clock times
+|------------------------------------------------------------------------------
+|
+| Storage is UTC and stays UTC — config/app.php says so, and warns that setting
+| it to Asia/Kolkata "to fix attendance times" broke numbering and localisation
+| instead. So the conversion belongs here, in presentation, done once.
+|
+| It was not done once. The Attendance Register parsed the timestamp and let the
+| browser localise it; four other screens took a substring of the ISO string,
+| which is the UTC clock face with the date cut off. Same record, two answers,
+| 5 hours 30 minutes apart — a punch at 10:53 IST read 05:23 on the dashboard.
+|
+| TWO SHAPES ARRIVE HERE, and telling them apart is the whole job:
+|
+|   hr_attendance.check_in            datetime, cast, serialised "…T09:28:00Z"
+|                                     → an INSTANT. Must be converted.
+|   hr_attendance_corrections
+|     .requested_check_in             a `time` column, value "09:15"
+|                                     → a WALL-CLOCK time. Already local; it
+|                                       carries no date and no zone, so parsing
+|                                       it as an instant would invent both.
+|
+| Converting the second would be the same bug pointing the other way, which is
+| why this does not simply call new Date() on everything.
+*/
+
+/** Does this value carry a date, and therefore a zone? */
+const isInstant = (v) => /^\d{4}-\d{2}-\d{2}[T ]/.test(String(v))
+
+/**
+ * An attendance clock time as HH:MM in the reader's local zone.
+ *
+ * Accepts either shape above. Bare times pass through trimmed to HH:MM;
+ * timestamps are parsed and localised — the same conversion the Attendance
+ * Register already did, now shared so the screens cannot disagree again.
+ *
+ * An unparseable timestamp returns the dash rather than "Invalid Date": a
+ * clock face is read at a glance and a wrong one is worse than an absent one.
+ */
+export const hrTime = (v) => {
+  if (v === null || v === undefined || v === '') return '—'
+
+  const s = String(v)
+  const l = localizationNow()
+
+  // The tenant's setting, the same one useFormats() reads. It was hardcoded to a
+  // 24-hour clock here, so a checkout read "14:30" on an attendance card while
+  // every other screen in the product said "02:30 pm" for the same instant.
+  const hour12 = String(l.time_format) !== '24'
+
+  if (!isInstant(s)) {
+    /*
+     | A bare wall-clock time — "09:15", "09:15:00" — from a `time` column such
+     | as hr_attendance_corrections.requested_check_in. It carries no date and no
+     | zone, so it must NOT be converted; doing so would invent an offset for a
+     | value that never had one. Only the clock face changes, and it has to,
+     | otherwise the correction queue shows 24-hour times beside the 12-hour
+     | card it is asking to correct.
+     */
+    const m = s.match(/^(\d{1,2}):(\d{2})/)
+    if (!m) return '—'
+
+    const h = Number(m[1])
+    if (!hour12) return `${m[1].padStart(2, '0')}:${m[2]}`
+
+    const suffix = h < 12 ? 'am' : 'pm'
+    const h12 = h % 12 === 0 ? 12 : h % 12
+    return `${String(h12).padStart(2, '0')}:${m[2]} ${suffix}`
+  }
+
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return '—'
+
+  /*
+   | Converted in the TENANT's timezone rather than the browser's.
+   |
+   | config/app.php is explicit that storage stays UTC and presentation converts
+   | per tenant. This previously leant on the viewer's own clock, which is right
+   | for a team sitting in one place and wrong the moment somebody opens the
+   | register from another country — they would read their own local time for
+   | somebody else's shift.
+   */
+  /*
+   | hourCycle, not hour12, and the difference is not cosmetic.
+   |
+   | `hour12: true` on en-GB selects the h11 cycle, which counts 0–11: noon
+   | renders as "00:00 pm" and midnight as "00:00 am". A night shift punched at
+   | midnight would have read 00:00 am, which looks like a plausible time and is
+   | the wrong one. 'h12' counts 1–12 and gives 12:00 am / 12:00 pm.
+   */
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: l.timezone || undefined,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: hour12 ? 'h12' : 'h23',
+  }).format(d)
+}
+
+/**
+ * Two attendance times compared on the same footing.
+ *
+ * The correction queue shows "now → asked for", where `now` is a stored
+ * timestamp and `asked for` is a wall-clock time the employee typed. Comparing
+ * their raw strings compared a UTC clock face against a local one: an approver
+ * reviewing a request to change nothing saw a five-and-a-half hour move, and
+ * the "(no change)" hint never fired. Normalising both through hrTime() first
+ * is what makes the two comparable at all.
+ */
+export const hrTimeEquals = (a, b) => hrTime(a) === hrTime(b)

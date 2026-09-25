@@ -19,17 +19,17 @@ class ProbationExtensionController extends Controller
 
     public function index(Request $request)
     {
-        return response()->json($this->service->list($this->tenant($request), $request->only(['employee_id', 'probation_id', 'department', 'status', 'from', 'to', 'search'])));
+        return response()->json($this->service->list($this->tenant($request), $request->only(['employee_id', 'probation_id', 'department', 'status', 'from', 'to', 'search']), $request->user()));
     }
 
     public function history(Request $request)
     {
-        return response()->json($this->service->history($this->tenant($request), $request->only(['employee_id'])));
+        return response()->json($this->service->history($this->tenant($request), $request->only(['employee_id']), $request->user()));
     }
 
     public function forEmployee(Request $request, int $employee)
     {
-        return response()->json($this->service->forEmployee($employee, $this->tenant($request)));
+        return response()->json($this->service->forEmployee($employee, $this->tenant($request), $request->user()));
     }
 
     public function show(Request $request, int $id)

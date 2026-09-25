@@ -23,17 +23,18 @@ class TrainingQuizService
     {
     }
 
-    public function list(int $tenantId, array $f): array
+    public function list(int $tenantId, array $f, ?User $actor = null): array
     {
         return [
-            'data'  => $this->repo->quizzes($tenantId, $f)->map(fn ($q) => $this->present($q))->all(),
-            'stats' => $this->repo->quizStats($tenantId),
+            'data'  => $this->repo->quizzes($tenantId, $f, $actor)->map(fn ($q) => $this->present($q))->all(),
+            // Counted over the same population as the rows above it.
+            'stats' => $this->repo->quizStats($tenantId, $actor),
         ];
     }
 
-    public function show(int $id, int $tenantId): array
+    public function show(int $id, int $tenantId, ?User $actor = null): array
     {
-        return $this->present($this->find($id, $tenantId), true);
+        return $this->present($this->find($id, $tenantId, $actor), true);
     }
 
     public function create(array $data, int $tenantId, ?User $actor = null): array
@@ -56,7 +57,7 @@ class TrainingQuizService
 
     public function update(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $quiz = $this->find($id, $tenantId);
+        $quiz = $this->find($id, $tenantId, $actor);
         [$total, $obtained, $pct] = $this->compute([
             'total_marks' => $data['total_marks'] ?? $quiz->total_marks,
             'obtained_marks' => $data['obtained_marks'] ?? $quiz->obtained_marks,
@@ -131,9 +132,9 @@ class TrainingQuizService
         return $out;
     }
 
-    private function find(int $id, int $tenantId): HrTrainingQuiz
+    private function find(int $id, int $tenantId, ?User $actor = null): HrTrainingQuiz
     {
-        $quiz = $this->repo->findQuiz($id, $tenantId);
+        $quiz = $this->repo->findQuiz($id, $tenantId, $actor);
         if (! $quiz) {
             throw new BusinessException('Quiz not found', 404);
         }

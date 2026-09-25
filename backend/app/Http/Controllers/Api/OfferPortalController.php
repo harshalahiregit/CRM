@@ -11,17 +11,35 @@ use Illuminate\Http\Request;
  * Public, unauthenticated candidate Offer Letter portal. Access is scoped by the
  * secret {token}; the service resolves the offer/tenant from it and hard-scopes
  * every read/write. No candidate can reach another candidate's or tenant's offer.
+ *
+ * EVERY ACTION RESOLVES THROUGH resolve(), which is the one seam in this class.
+ * OnboardingOfferPortalController serves the same six actions to a candidate who
+ * arrived on their ONBOARDING link instead, and it does that by overriding that
+ * one method — so the validation rules, the service calls and the response
+ * shapes below are shared rather than copied, and the two portals cannot drift.
  */
 class OfferPortalController extends Controller
 {
-    public function __construct(private OfferService $offerService)
+    public function __construct(protected OfferService $offerService)
     {
+    }
+
+    /**
+     * The offer this request is about.
+     *
+     * Here: the token IS an offer portal token. Overridden by the onboarding
+     * adapter, where it is an onboarding token and the offer is reached through
+     * the candidate that token belongs to.
+     */
+    protected function resolve(string $token): HrOffer
+    {
+        return $this->offerService->byToken($token);
     }
 
     /* GET /api/offer/{token} — view offer (marks it Viewed) */
     public function show(string $token)
     {
-        $offer = $this->offerService->byToken($token);
+        $offer = $this->resolve($token);
 
         return response()->json($this->offerService->portalView($offer, markViewed: true));
     }
@@ -29,7 +47,7 @@ class OfferPortalController extends Controller
     /* GET /api/offer/{token}/letter — download the offer letter file (if any) */
     public function letter(string $token)
     {
-        $offer = $this->offerService->byToken($token);
+        $offer = $this->resolve($token);
         $file  = $this->offerService->offerLetterFile($offer);
 
         abort_if(! $file, 404, 'Offer letter file is not available for download.');
@@ -47,7 +65,7 @@ class OfferPortalController extends Controller
             'signature' => 'nullable|string|max:2000000',
         ]);
 
-        $offer = $this->offerService->byToken($token);
+        $offer = $this->resolve($token);
 
         $ua = (string) $request->userAgent();
         $this->offerService->accept($offer, [
@@ -65,7 +83,7 @@ class OfferPortalController extends Controller
     public function decline(Request $request, string $token)
     {
         $data  = $request->validate(['reason' => 'nullable|string|max:1000']);
-        $offer = $this->offerService->byToken($token);
+        $offer = $this->resolve($token);
         $this->offerService->decline($offer, $data['reason'] ?? null);
 
         return response()->json(['success' => true, 'offer' => $this->offerService->portalView($offer->fresh('candidate'))]);
@@ -75,7 +93,7 @@ class OfferPortalController extends Controller
     public function clarify(Request $request, string $token)
     {
         $data  = $request->validate(['message' => 'required|string|max:1000']);
-        $offer = $this->offerService->byToken($token);
+        $offer = $this->resolve($token);
         $this->offerService->requestClarification($offer, $data['message']);
 
         return response()->json(['success' => true, 'offer' => $this->offerService->portalView($offer->fresh('candidate'))]);
@@ -90,7 +108,7 @@ class OfferPortalController extends Controller
             'file'  => 'nullable|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:10240',
         ]);
 
-        $offer = $this->offerService->byToken($token);
+        $offer = $this->resolve($token);
         $this->offerService->updatePreJoiningTask($offer, $data['key'], $data['value'] ?? null, $request->file('file'));
 
         return response()->json(['success' => true, 'offer' => $this->offerService->portalView($offer->fresh('candidate'))]);

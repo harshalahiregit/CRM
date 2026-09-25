@@ -6,10 +6,14 @@ use App\Models\Hr\HrExitClearance;
 use App\Models\Hr\HrExitRequest;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
+use App\Models\User;
+use App\Repositories\Hr\Concerns\ScopesEmployeeData;
 
 /** Read queries for Exit Clearance (Phase 4). Tenant-scoped; no writes. */
 class ClearanceRepository
 {
+    use ScopesEmployeeData;
+
     private const EAGER = [
         'items',
         'employee:id,name,employee_code,department,designation',
@@ -18,9 +22,10 @@ class ClearanceRepository
     ];
 
     /** Approved exit requests that have no clearance record yet — need lazy init. */
-    public function approvedExitsNeedingClearance(int $tenantId): Collection
+    public function approvedExitsNeedingClearance(int $tenantId, ?User $actor = null): Collection
     {
-        return HrExitRequest::where('tenant_id', $tenantId)
+        // A worklist is a list: it names the leavers this actor may act on.
+        return $this->scopeToEmployees(HrExitRequest::where('tenant_id', $tenantId), $actor)
             ->where('status', HrExitRequest::APPROVED)
             ->whereNotExists(function ($q) {
                 $q->selectRaw('1')->from('hr_exit_clearances')
@@ -29,9 +34,9 @@ class ClearanceRepository
             ->get();
     }
 
-    public function queue(int $tenantId, array $f): Collection
+    public function queue(int $tenantId, array $f, ?User $actor = null): Collection
     {
-        return HrExitClearance::where('tenant_id', $tenantId)
+        return $this->scopeToEmployees(HrExitClearance::where('tenant_id', $tenantId), $actor)
             ->with(self::EAGER)
             ->when(! empty($f['employee_id']), fn ($q) => $q->where('employee_id', $f['employee_id']))
             ->when(! empty($f['status']) && $f['status'] !== 'All', fn ($q) => $q->where('status', $f['status']))
@@ -43,33 +48,36 @@ class ClearanceRepository
             ->orderByDesc('id')->get();
     }
 
-    public function find(int $id, int $tenantId): ?HrExitClearance
+    public function find(int $id, int $tenantId, ?User $actor = null): ?HrExitClearance
     {
-        return HrExitClearance::where('tenant_id', $tenantId)
+        return $this->scopeToEmployees(HrExitClearance::where('tenant_id', $tenantId), $actor)
             ->with([...self::EAGER, 'auditLogs'])
             ->find($id);
     }
 
-    public function findByEmployee(int $employeeId, int $tenantId): ?HrExitClearance
+    public function findByEmployee(int $employeeId, int $tenantId, ?User $actor = null): ?HrExitClearance
     {
+        $this->assertEmployeeInScope($actor, $employeeId);
+
         return HrExitClearance::where('tenant_id', $tenantId)
             ->where('employee_id', $employeeId)
             ->with([...self::EAGER, 'auditLogs'])
             ->orderByDesc('id')->first();
     }
 
-    public function history(int $tenantId, array $f): Collection
+    public function history(int $tenantId, array $f, ?User $actor = null): Collection
     {
-        return HrExitClearance::where('tenant_id', $tenantId)
+        return $this->scopeToEmployees(HrExitClearance::where('tenant_id', $tenantId), $actor)
             ->whereIn('status', [HrExitClearance::COMPLETED, HrExitClearance::REJECTED])
             ->with(self::EAGER)
             ->when(! empty($f['employee_id']), fn ($q) => $q->where('employee_id', $f['employee_id']))
             ->orderByDesc('completed_at')->orderByDesc('id')->get();
     }
 
-    public function stats(int $tenantId): array
+    public function stats(int $tenantId, ?User $actor = null): array
     {
-        $base = fn () => HrExitClearance::where('tenant_id', $tenantId);
+        // The closure is re-invoked per tile, so the scope goes inside it.
+        $base = fn () => $this->scopeToEmployees(HrExitClearance::where('tenant_id', $tenantId), $actor);
         $monthStart = Carbon::today()->startOfMonth();
         $monthEnd = Carbon::today()->endOfMonth();
 

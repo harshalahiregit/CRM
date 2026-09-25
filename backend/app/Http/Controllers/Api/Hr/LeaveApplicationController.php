@@ -47,6 +47,17 @@ class LeaveApplicationController extends Controller
             'half_day'      => 'nullable|boolean',
         ]);
 
+        // The employee id arrives in the request body, so it is checked here,
+        // like show()/submit()/cancel() below. A preview answers with the
+        // employee's shift pattern, their weekly offs and their policy name —
+        // small, but it is somebody's working pattern, and an unchecked id also
+        // confirms which employee ids exist.
+        //
+        // On the controller rather than in the service, for the reason given on
+        // assertInScope(): the attendance app calls this same service.
+        app(\App\Services\Auth\ScopeResolver::class)
+            ->assertCanActOnEmployee($request->user(), (int) $data['employee_id']);
+
         return response()->json($this->service->preview(
             (int) $data['employee_id'], (int) $request->user()->tenant_id,
             $data['from_date'], $data['to_date'],

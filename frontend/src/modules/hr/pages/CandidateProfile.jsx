@@ -142,6 +142,28 @@ export default function CandidateProfile() {
   const canManage = canManageHrQueue(user)
   const showToast = (msg, type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3000) }
 
+  /**
+   * The offer letter, over the authenticated HR route.
+   *
+   * This screen used to build `${apiBase}/offer/${o.access_token}/letter` — the
+   * CANDIDATE's public portal URL — from a bearer token the API had to hand
+   * over for that purpose alone. The token is no longer published, so the PDF
+   * comes down as a blob and is handed to the browser as an object URL, which
+   * <a>, <object> and <iframe> all accept.
+   */
+  const withLetterBlobUrl = async (offerId, use) => {
+    try {
+      const blob = await hrApi.offers.letterBlob(offerId)
+      const url = URL.createObjectURL(blob)
+      use(url)
+      setTimeout(() => URL.revokeObjectURL(url), 30000)
+    } catch { showToast('Failed to open the offer letter', 'error') }
+  }
+  const openOfferLetter = (offerId) => withLetterBlobUrl(offerId, url => window.open(url, '_blank', 'noopener'))
+  const downloadOfferLetter = (offerId, fileName) => withLetterBlobUrl(offerId, url => {
+    const a = document.createElement('a'); a.href = url; a.download = fileName || 'offer-letter.pdf'; a.click()
+  })
+
   const loadCandidate = useCallback(async () => {
     if (!id) { setCandidate(null); setLoading(false); return }
     // This workspace stays mounted when :id changes (Previous/Next only swaps the
@@ -1044,9 +1066,10 @@ export default function CandidateProfile() {
             const o = c.offer
             const offerNo = `OFR-${String(o.id).padStart(4,'0')}`
             // The SAME stored file the candidate downloaded and signed — never regenerated.
-            const apiBase = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'
-            const letterUrl = o.access_token ? `${apiBase}/offer/${o.access_token}/letter` : null
+            // Gated on the stored file rather than on a token, which is both the
+            // honest condition and the only one still available.
             const fileName = o.letter_path ? String(o.letter_path).split('/').pop() : null
+            const hasLetter = !!o.letter_path
             const signed = !!o.accepted_at
 
             return (
@@ -1120,18 +1143,18 @@ export default function CandidateProfile() {
                             Generated {fmtDateTime(o.generated_at)}{signed ? ` · Accepted ${fmtDateTime(o.accepted_at)}` : ''}
                           </p>
                         </div>
-                        {letterUrl && (
+                        {hasLetter && (
                           <div className="flex gap-2 flex-shrink-0">
-                            <a href={letterUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>
+                            <button onClick={()=>openOfferLetter(o.id)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>
                               <ExternalLink size={12}/> Open in new tab
-                            </a>
-                            <a href={letterUrl} download={fileName} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>
+                            </button>
+                            <button onClick={()=>downloadOfferLetter(o.id, fileName)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}>
                               <Download size={12}/> Download
-                            </a>
+                            </button>
                           </div>
                         )}
                       </div>
-                      {letterUrl && <OfferPdfPreview url={letterUrl} fileName={fileName}/>}
+                      {hasLetter && <OfferPdfPreview offerId={o.id} fileName={fileName}/>}
                     </>
                   )}
                 </div>
@@ -1276,16 +1299,52 @@ function SignatureBlock({ src }) {
  * it inline, the preview is swapped for direct actions — the PDF is never
  * regenerated, both actions point at the same stored file.
  */
-function OfferPdfPreview({ url, fileName }) {
+/**
+ * Inline preview of the stored offer letter.
+ *
+ * Fetches the PDF over the authenticated HR route and previews the resulting
+ * object URL. It used to be handed the candidate's public portal URL directly,
+ * which worked only because that URL needed no credentials — the whole reason
+ * the candidate's token had to be published in the first place.
+ */
+function OfferPdfPreview({ offerId, fileName }) {
   const [failed, setFailed] = useState(false)
+  const [url, setUrl] = useState(null)
+
+  useEffect(() => {
+    let objectUrl = null
+    let cancelled = false
+    hrApi.offers.letterBlob(offerId)
+      .then(blob => {
+        if (cancelled) return
+        objectUrl = URL.createObjectURL(blob)
+        setUrl(objectUrl)
+      })
+      .catch(() => { if (! cancelled) setFailed(true) })
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl) }
+  }, [offerId])
+
+  if (! url && ! failed) {
+    return (
+      <div className="flex items-center justify-center rounded-xl" style={{ height:200, background:'var(--bg-input)', border:'1px dashed var(--border)' }}>
+        <p className="text-xs" style={{ color:'var(--text-muted)' }}>Loading the offer letter…</p>
+      </div>
+    )
+  }
   if (failed) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 rounded-xl" style={{ height:200, background:'var(--bg-input)', border:'1px dashed var(--border)' }}>
-        <p className="text-xs" style={{ color:'var(--text-muted)' }}>Inline preview isn’t available in this browser.</p>
-        <div className="flex gap-2">
-          <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold" style={{ background:'var(--bg-card,transparent)', color:'var(--text-muted)', border:'1px solid var(--border)' }}><ExternalLink size={12}/> Open PDF</a>
-          <a href={url} download={fileName} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}><Download size={12}/> Download PDF</a>
-        </div>
+        {/* Two different failures share this box: the fetch did not come back
+            (no url), or the browser cannot render a PDF inline (url present). */}
+        <p className="text-xs" style={{ color:'var(--text-muted)' }}>
+          {url ? 'Inline preview isn’t available in this browser.' : 'The offer letter could not be loaded.'}
+        </p>
+        {url && (
+          <div className="flex gap-2">
+            <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold" style={{ background:'var(--bg-card,transparent)', color:'var(--text-muted)', border:'1px solid var(--border)' }}><ExternalLink size={12}/> Open PDF</a>
+            <a href={url} download={fileName} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)' }}><Download size={12}/> Download PDF</a>
+          </div>
+        )}
       </div>
     )
   }
