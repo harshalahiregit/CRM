@@ -615,6 +615,49 @@ class EmployeeStaffIdentityTest extends TestCase
         $this->assertNotNull(User::find($actor->id));
     }
 
+    /* ── the most sensitive read in the module ────────────────────────── */
+
+    /**
+     * Bank account, IFSC, PAN, Aadhaar, UAN — readable by anyone who could sign in.
+     *
+     * The WRITE on this endpoint has been HR-only since it was written. The read
+     * had nothing but a tenant check, so any staff account could fetch a
+     * colleague's identity documents by id. Confirmed against the running API
+     * with a token for an account holding no permission role: it returned a
+     * seeded Aadhaar and account number in full.
+     */
+    public function test_an_ordinary_staff_account_cannot_read_another_employees_personal_details(): void
+    {
+        $plain = $this->user(['role' => 'staff']);
+        $this->assertFalse($plain->canManageHrQueue(), 'fixture must be genuinely unprivileged');
+
+        $someoneElse = $this->employee(['name' => 'Has Bank Details']);
+
+        $this->actingAs($plain)
+            ->getJson('/api/hr/employees/'.$someoneElse->id.'/detail')
+            ->assertStatus(403);
+    }
+
+    /** Your own record is yours to read, whatever your permission role is. */
+    public function test_an_employee_can_read_their_own_personal_details(): void
+    {
+        $plain = $this->user(['role' => 'staff']);
+        $own = $this->employee(['user_id' => $plain->id]);
+
+        $this->actingAs($plain)
+            ->getJson('/api/hr/employees/'.$own->id.'/detail')
+            ->assertOk();
+    }
+
+    public function test_hr_can_still_read_anyones_personal_details(): void
+    {
+        $employee = $this->employee();
+
+        $this->actingAs($this->admin())
+            ->getJson('/api/hr/employees/'.$employee->id.'/detail')
+            ->assertOk();
+    }
+
     /* ── reconciliation actions ───────────────────────────────────────── */
 
     public function test_provisioning_a_login_creates_one_and_links_it(): void

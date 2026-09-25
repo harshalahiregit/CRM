@@ -122,14 +122,46 @@ class EmployeeController extends Controller
      * Always returns every field, null where unset, so the form renders without
      * having to special-case a person who has none of it filled in yet.
      */
+    /**
+     * The extended personal record — and the most sensitive read in the module.
+     *
+     * It returns bank account number, IFSC, PAN, Aadhaar, UAN, ESIC, PF, date of
+     * birth, personal email and home address. The WRITE beside it has been
+     * HR-only since it was written; the read had nothing but a tenant check, so
+     * any signed-in account could fetch any colleague's bank and identity numbers
+     * by id. Confirmed with a token for a staff account holding no permission
+     * role at all: it read a seeded Aadhaar and account number in full.
+     *
+     * Two callers are legitimate: somebody who administers HR, and the person
+     * whose record it is. Everything else is refused — 403 rather than 404,
+     * because unlike the list endpoints this is not about hiding that the
+     * employee exists, it is about who may read their identity documents.
+     */
     public function detail(Request $request, HrEmployee $employee)
     {
         $this->assertTenant($request, $employee);
+        $this->assertCanReadDetail($request, $employee);
 
         return response()->json([
             'status' => 'success',
             'data'   => $this->details->get($employee),
         ]);
+    }
+
+    private function assertCanReadDetail(Request $request, HrEmployee $employee): void
+    {
+        if ($request->user()->canManageHrQueue()) {
+            return;
+        }
+
+        // Your own record is yours to read. There is no self-service screen for
+        // it today, but refusing somebody their own bank details would be the
+        // wrong rule to write down for the one that arrives later.
+        if ($employee->user_id && (int) $employee->user_id === (int) $request->user()->id) {
+            return;
+        }
+
+        abort(403, 'You are not authorised to view this employee’s personal details');
     }
 
     /**
