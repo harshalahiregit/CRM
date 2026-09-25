@@ -3,6 +3,11 @@
 // the queue, the dashboard and any badge render identically. Keys match the
 // backend App\Support\Hr\ManpowerRequestStatus values.
 
+// Read, not hooked: hrTime() below is a plain function called from tables and
+// print sheets, so it reaches the tenant's clock settings through this rather
+// than hardcoding them. No cycle — useFormats imports react and lib/api only.
+import { localizationNow } from '@/hooks/useFormats'
+
 export const MR_STATUS = {
   DRAFT:              'Draft',
   L1_PENDING:         'L1_Pending',
@@ -327,17 +332,59 @@ export const hrTime = (v) => {
   if (v === null || v === undefined || v === '') return '—'
 
   const s = String(v)
+  const l = localizationNow()
+
+  // The tenant's setting, the same one useFormats() reads. It was hardcoded to a
+  // 24-hour clock here, so a checkout read "14:30" on an attendance card while
+  // every other screen in the product said "02:30 pm" for the same instant.
+  const hour12 = String(l.time_format) !== '24'
 
   if (!isInstant(s)) {
-    // "09:15", "09:15:00" → "09:15". Anything else is not a time we know.
+    /*
+     | A bare wall-clock time — "09:15", "09:15:00" — from a `time` column such
+     | as hr_attendance_corrections.requested_check_in. It carries no date and no
+     | zone, so it must NOT be converted; doing so would invent an offset for a
+     | value that never had one. Only the clock face changes, and it has to,
+     | otherwise the correction queue shows 24-hour times beside the 12-hour
+     | card it is asking to correct.
+     */
     const m = s.match(/^(\d{1,2}):(\d{2})/)
-    return m ? `${m[1].padStart(2, '0')}:${m[2]}` : '—'
+    if (!m) return '—'
+
+    const h = Number(m[1])
+    if (!hour12) return `${m[1].padStart(2, '0')}:${m[2]}`
+
+    const suffix = h < 12 ? 'am' : 'pm'
+    const h12 = h % 12 === 0 ? 12 : h % 12
+    return `${String(h12).padStart(2, '0')}:${m[2]} ${suffix}`
   }
 
   const d = new Date(s)
   if (Number.isNaN(d.getTime())) return '—'
 
-  return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })
+  /*
+   | Converted in the TENANT's timezone rather than the browser's.
+   |
+   | config/app.php is explicit that storage stays UTC and presentation converts
+   | per tenant. This previously leant on the viewer's own clock, which is right
+   | for a team sitting in one place and wrong the moment somebody opens the
+   | register from another country — they would read their own local time for
+   | somebody else's shift.
+   */
+  /*
+   | hourCycle, not hour12, and the difference is not cosmetic.
+   |
+   | `hour12: true` on en-GB selects the h11 cycle, which counts 0–11: noon
+   | renders as "00:00 pm" and midnight as "00:00 am". A night shift punched at
+   | midnight would have read 00:00 am, which looks like a plausible time and is
+   | the wrong one. 'h12' counts 1–12 and gives 12:00 am / 12:00 pm.
+   */
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: l.timezone || undefined,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: hour12 ? 'h12' : 'h23',
+  }).format(d)
 }
 
 /**

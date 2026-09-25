@@ -73,8 +73,66 @@ class AttendanceTimeFormattingTest extends TestCase
             'The helper must test the shape before deciding to convert.');
         $this->assertMatchesRegularExpression('/\\\\d\{4\}-\\\\d\{2\}-\\\\d\{2\}\[T /', $c,
             'The shape test should recognise a leading calendar date.');
-        $this->assertStringContainsString('toLocaleTimeString', $c,
+        $this->assertStringContainsString('Intl.DateTimeFormat', $c,
             'Timestamps must be localised, not sliced.');
+        $this->assertStringContainsString('timeZone', $c,
+            'The conversion must name a timezone — the browser\'s is not the tenant\'s.');
+    }
+
+    /* ── the clock face ───────────────────────────────────────────────── */
+
+    /**
+     * The clock format is the tenant's setting, not a constant.
+     *
+     * It was hardcoded to a 24-hour clock, so a checkout read 14:30 on an
+     * attendance card while the rest of the product said 02:30 pm for the same
+     * instant. localizationNow() is how a plain helper reaches the same
+     * localization values useFormats() serves to components.
+     */
+    public function test_the_clock_format_follows_the_tenant_setting(): void
+    {
+        $c = $this->read('modules/hr/constants.js');
+
+        $this->assertStringContainsString('localizationNow', $c,
+            'hrTime must read the tenant clock setting rather than hardcode one.');
+        $this->assertStringContainsString('time_format', $c,
+            'The 12/24 decision belongs to localization.time_format.');
+    }
+
+    /**
+     * hourCycle, not hour12 — and this one is a correctness bug, not a style.
+     *
+     * `hour12: true` on en-GB selects the h11 cycle, which counts 0–11. Noon
+     * rendered as "00:00 pm" and midnight as "00:00 am": both are plausible
+     * clock faces and both are wrong, which is the worst combination for a night
+     * shift. 'h12' counts 1–12.
+     *
+     * Asserted in both the HR helper and the shared formatter, because the shared
+     * one had the same defect and every screen in the product reads it.
+     */
+    public function test_the_twelve_hour_clock_uses_the_h12_cycle(): void
+    {
+        foreach (['modules/hr/constants.js', 'hooks/useFormats.js'] as $file) {
+            $src = $this->read($file);
+
+            $this->assertStringContainsString("'h12'", $src,
+                "{$file} must select the h12 cycle, or noon renders as 00:00 pm.");
+
+            // Comments stripped first. Both files EXPLAIN the hour12 trap in
+            // prose, and a test that reads its own warning as the defect is the
+            // AccessRole architecture test's mistake repeated.
+            $this->assertDoesNotMatchRegularExpression(
+                '/hour12:\s*(true|String)/',
+                $this->code($src),
+                "{$file} still decides the clock with hour12 — on en-GB that is the 0–11 cycle."
+            );
+        }
+    }
+
+    /** Source with comments removed, so prose about a defect is not read as one. */
+    private function code(string $src): string
+    {
+        return preg_replace('~//.*~', '', preg_replace('~/\*.*?\*/~s', '', $src));
     }
 
     /* ── adoption ─────────────────────────────────────────────────────── */
@@ -105,15 +163,24 @@ class AttendanceTimeFormattingTest extends TestCase
     }
 
     /**
-     * The Register is the screen that was always right. It must keep converting,
-     * so the others have something to agree WITH.
+     * The Register was the screen that was always right, and now defers too.
+     *
+     * It used to carry its own toLocaleTimeString with a hardcoded 24-hour clock,
+     * which was correct when everything else was broken and became the last
+     * disagreement once they were fixed: it would have read 14:30 beside cards
+     * reading 02:30 pm. Six screens, one helper.
      */
-    public function test_the_attendance_register_still_converts(): void
+    public function test_the_attendance_register_uses_the_shared_helper(): void
     {
         $src = $this->read('modules/hr/pages/Attendance.jsx');
 
-        $this->assertStringContainsString('toLocaleTimeString', $src);
-        $this->assertStringContainsString('hour12: false', str_replace('hour12:false', 'hour12: false', $src));
+        $this->assertStringContainsString('hrTime', $src,
+            'The Register must render stored timestamps through the shared helper.');
+        $this->assertDoesNotMatchRegularExpression(
+            '/toLocaleTimeString/',
+            $src,
+            'The Register is formatting time itself again — that is how the six screens drifted apart.'
+        );
     }
 
     /* ── what must NOT be converted ───────────────────────────────────── */
