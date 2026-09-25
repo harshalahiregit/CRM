@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { GRAD } from '@/components/ui/brand'
 import { useTheme } from '@/context/ThemeContext'
@@ -7,6 +7,7 @@ import { Search, Building2, Plus, X, LayoutGrid, List, Eye, Pencil } from 'lucid
 import { hrApi } from '@/services/hrApi'
 import { useMasterData, withInactiveById } from '@/modules/hr/useMasterData'
 import { canManageHrQueue, hrDateInput } from '@/modules/hr/constants'
+import { readFieldErrors } from '@/services/apiError'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import Modal from '@/components/ui/Modal'
 import DirectoryGapPanel from '@/modules/hr/components/DirectoryGapPanel'
@@ -146,6 +147,8 @@ export default function Employees() {
 
   // Filters
   const [search, setSearch]       = useState('')
+  /** Sequence of the newest employee-list request; older answers are discarded. */
+  const employeeRequestSeq = useRef(0)
   const [deptF, setDeptF]         = useState('All')
   const [desigF, setDesigF]       = useState('All')
   const [statusF, setStatusF]     = useState('All')
@@ -166,6 +169,14 @@ export default function Employees() {
   const [meta, setMeta] = useState({ current_page:1, last_page:1, total:0, per_page:25 })
 
   const fetchData = async () => {
+    // Same guard as Staff Management, for the same reason: the search box fires
+    // one request per keystroke with no debounce, several are in flight at once,
+    // and they do not come back in the order they were sent. On a fast local
+    // server they usually do, which is exactly why this is worth pinning — the
+    // list silently showing results for two letters ago is a bug that only
+    // appears on a slow connection.
+    const seq = ++employeeRequestSeq.current
+
     setLoading(true)
     try {
       const params = {}
@@ -177,6 +188,8 @@ export default function Employees() {
       params.page = page
       const [res, st] = await Promise.all([hrApi.employees.listPaged(params), hrApi.employees.stats()])
       // Laravel paginator: { data, current_page, last_page, total, per_page }
+      if (seq !== employeeRequestSeq.current) return
+
       const rows = Array.isArray(res) ? res : (res?.data ?? [])
       setEmployees(rows)
       setMeta({
@@ -186,8 +199,11 @@ export default function Employees() {
         per_page:     res?.per_page ?? rows.length,
       })
       setStats(st)
-    } catch { showToast('Failed to load employees','error') }
-    finally { setLoading(false) }
+    } catch (e) {
+      if (seq !== employeeRequestSeq.current) return
+      showToast(readFieldErrors(e).summary, 'error')
+    }
+    finally { if (seq === employeeRequestSeq.current) setLoading(false) }
   }
   useEffect(()=>{ fetchData() },[deptF, desigF, statusF, joinedFrom, search, page])
   useEffect(()=>{ setPage(1) },[deptF, desigF, statusF, joinedFrom, search])
