@@ -351,8 +351,8 @@ class TransportAllocationApiTest extends TestCase
 
         $this->assertSame(TripStatus::APPROVED, $body['trip']['status']);
         $this->assertSame('released', $body['assignment']['status']);
-        $this->assertSame(VehicleStatus::AVAILABLE, $v->fresh()->status);
-        $this->assertSame(DriverAvailability::AVAILABLE, $d->fresh()->availability);
+        $this->assertSame(Vehicle::STATUS_AVAILABLE, $v->fresh()->status);
+        $this->assertSame(DriverProfile::AVAILABLE, $d->fresh()->status);
     }
 
     public function test_releasing_a_trip_with_no_assignment_is_refused(): void

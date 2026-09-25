@@ -222,7 +222,7 @@ class PretripEvidenceAuditTest extends TestCase
 
         $this->assertSame($before, $after, 'a refused gate must not mutate the checklist');
         $this->assertSame(TripStatus::ALLOCATED, $trip->fresh()->status);
-        $this->assertSame(VehicleStatus::ALLOCATED, $vehicle->fresh()->status);
+        $this->assertSame(Vehicle::STATUS_ALLOCATED, $vehicle->fresh()->status);
     }
 
     public function test_repeated_refusals_each_leave_a_row(): void

@@ -412,15 +412,15 @@ class DispatchTest extends TestCase
         [$trip, $vehicle, $driver] = $this->readyTrip();
 
         $vBefore = $vehicle->fresh()->status;
-        $dBefore = $driver->fresh()->availability;
+        $dBefore = $driver->fresh()->status;
 
         $this->dispatch->confirm($trip, $this->fields(), self::TENANT_A, $this->actor);
 
         $this->assertSame($vBefore, $vehicle->fresh()->status, 'transport_vehicles is Person 2 territory');
-        $this->assertSame($dBefore, $driver->fresh()->availability, 'transport_drivers is Person 2 territory');
+        $this->assertSame($dBefore, $driver->fresh()->status, 'transport_drivers is Person 2 territory');
         // Specifically: still allocated/assigned, NOT in-operation/on-trip.
-        $this->assertSame(VehicleStatus::ALLOCATED, $vehicle->fresh()->status);
-        $this->assertSame(DriverAvailability::ASSIGNED, $driver->fresh()->availability);
+        $this->assertSame(Vehicle::STATUS_ALLOCATED, $vehicle->fresh()->status);
+        $this->assertSame(DriverProfile::ON_TRIP, $driver->fresh()->status);
     }
 
     /**

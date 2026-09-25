@@ -217,7 +217,7 @@ class TransportMasterAllocationAuditTest extends TestCase
         // And nothing was written.
         $this->assertSame(TripStatus::APPROVED, $trip->fresh()->status);
         $this->assertSame(0, TripAssignment::forTenant(self::A)->forTrip($trip->id)->count());
-        $this->assertSame(VehicleStatus::AVAILABLE, $v->fresh()->status);
+        $this->assertSame(Vehicle::STATUS_AVAILABLE, $v->fresh()->status);
     }
 
     /** BR-P0-004 — expired licence blocks the driver, with a reason. */
@@ -256,7 +256,7 @@ class TransportMasterAllocationAuditTest extends TestCase
             ->where('id', $doc->id)->update(['valid_until' => now()->subDay()->toDateString()]);
 
         $this->postJson("/api/transport/trips/{$trip->id}/assign", ['vehicle_id' => $v->id])->assertStatus(422);
-        $this->assertSame(VehicleStatus::AVAILABLE, $v->fresh()->status, 'the stored status never changed — the check is live');
+        $this->assertSame(Vehicle::STATUS_AVAILABLE, $v->fresh()->status, 'the stored status never changed — the check is live');
     }
 
     /* ═══════════════ 3. DOUBLE BOOKING + CONCURRENCY ═══════════════ */
@@ -338,8 +338,8 @@ class TransportMasterAllocationAuditTest extends TestCase
         $this->assertSame($v1->id, (int) $first->vehicle_id, 'history keeps WHICH vehicle it was');
 
         // Both resources are free again.
-        $this->assertSame(VehicleStatus::AVAILABLE, $v1->fresh()->status);
-        $this->assertSame(DriverAvailability::AVAILABLE, $d->fresh()->availability);
+        $this->assertSame(Vehicle::STATUS_AVAILABLE, $v1->fresh()->status);
+        $this->assertSame(DriverProfile::AVAILABLE, $d->fresh()->status);
         $this->assertSame(TripStatus::APPROVED, $trip->fresh()->status);
 
         // Reassign to a different vehicle.

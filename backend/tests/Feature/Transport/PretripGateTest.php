@@ -214,8 +214,8 @@ class PretripGateTest extends TestCase
         [$trip, $vehicle, $driver] = $this->readyTrip();
         $this->pretrip->passPretrip($trip, self::TENANT_A, $this->actor);
 
-        $this->assertSame(VehicleStatus::ALLOCATED, $vehicle->fresh()->status);
-        $this->assertSame(DriverAvailability::ASSIGNED, $driver->fresh()->availability);
+        $this->assertSame(Vehicle::STATUS_ALLOCATED, $vehicle->fresh()->status);
+        $this->assertSame(DriverProfile::ON_TRIP, $driver->fresh()->status);
         $this->assertNotNull($this->assignmentFor($trip));
     }
 
@@ -414,8 +414,8 @@ class PretripGateTest extends TestCase
         }
 
         $this->assertSame(TripStatus::ALLOCATED, $trip->fresh()->status);
-        $this->assertSame(VehicleStatus::ALLOCATED, $vehicle->fresh()->status);
-        $this->assertSame(DriverAvailability::ASSIGNED, $driver->fresh()->availability);
+        $this->assertSame(Vehicle::STATUS_ALLOCATED, $vehicle->fresh()->status);
+        $this->assertSame(DriverProfile::ON_TRIP, $driver->fresh()->status);
     }
 
     /* ══════════ crew release — while the checklist is in progress ══════════ */
@@ -526,8 +526,8 @@ class PretripGateTest extends TestCase
 
         $this->alloc->release($this->assignmentFor($trip), self::TENANT_A, $this->actor);
 
-        $this->assertSame(VehicleStatus::AVAILABLE, $vehicle->fresh()->status);
-        $this->assertSame(DriverAvailability::AVAILABLE, $driver->fresh()->availability);
+        $this->assertSame(Vehicle::STATUS_AVAILABLE, $vehicle->fresh()->status);
+        $this->assertSame(DriverProfile::AVAILABLE, $driver->fresh()->status);
     }
 
     public function test_releasing_from_pretrip_ok_invalidates_the_passed_checklist(): void

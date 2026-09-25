@@ -126,8 +126,8 @@ class TransportAllocationTest extends TestCase
         $this->assertTrue($result['assignment']->isComplete());
         $this->assertSame(AssignmentStatus::ASSIGNED, $result['assignment']->status);
         // Resource states follow, so the masters stop advertising them.
-        $this->assertSame(VehicleStatus::ALLOCATED, $v->fresh()->status);
-        $this->assertSame(DriverAvailability::ASSIGNED, $d->fresh()->availability);
+        $this->assertSame(Vehicle::STATUS_ALLOCATED, $v->fresh()->status);
+        $this->assertSame(DriverProfile::ON_TRIP, $d->fresh()->status);
     }
 
     /** SM-TRP's entry gate is "Vehicle+driver eligible" — both, not either. */
@@ -139,7 +139,7 @@ class TransportAllocationTest extends TestCase
 
         $this->assertSame(TripStatus::APPROVED, $result['trip']->status, 'a trip is not allocated until it is crewed');
         $this->assertFalse($result['assignment']->isComplete());
-        $this->assertSame(VehicleStatus::ALLOCATED, $v->fresh()->status, 'but the vehicle is still spoken for');
+        $this->assertSame(Vehicle::STATUS_ALLOCATED, $v->fresh()->status, 'but the vehicle is still spoken for');
     }
 
     public function test_adding_the_driver_afterwards_completes_the_transition(): void
@@ -189,7 +189,7 @@ class TransportAllocationTest extends TestCase
         // Nothing written: eligibility runs before the assignment.
         $this->assertSame(TripStatus::APPROVED, $trip->fresh()->status);
         $this->assertSame(0, TripAssignment::forTenant(self::TENANT_A)->forTrip($trip->id)->count());
-        $this->assertSame(VehicleStatus::AVAILABLE, $v->fresh()->status, 'the vehicle must not be marked allocated');
+        $this->assertSame(Vehicle::STATUS_AVAILABLE, $v->fresh()->status, 'the vehicle must not be marked allocated');
     }
 
     public function test_an_ineligible_driver_blocks_and_leaves_nothing_behind(): void
@@ -209,7 +209,7 @@ class TransportAllocationTest extends TestCase
 
         $this->assertSame(TripStatus::APPROVED, $trip->fresh()->status);
         $this->assertSame(0, TripAssignment::forTenant(self::TENANT_A)->forTrip($trip->id)->count());
-        $this->assertSame(DriverAvailability::AVAILABLE, $d->fresh()->availability);
+        $this->assertSame(DriverProfile::AVAILABLE, $d->fresh()->status);
     }
 
     /** PLN-001 — the capacity check reaches the allocation act. */
@@ -378,8 +378,8 @@ class TransportAllocationTest extends TestCase
         $this->alloc->release($result['assignment'], self::TENANT_A, $this->actor, 'wrong vehicle');
 
         $this->assertSame(AssignmentStatus::RELEASED, $result['assignment']->fresh()->status);
-        $this->assertSame(VehicleStatus::AVAILABLE, $v->fresh()->status);
-        $this->assertSame(DriverAvailability::AVAILABLE, $d->fresh()->availability);
+        $this->assertSame(Vehicle::STATUS_AVAILABLE, $v->fresh()->status);
+        $this->assertSame(DriverProfile::AVAILABLE, $d->fresh()->status);
         $this->assertSame(TripStatus::APPROVED, $trip->fresh()->status, 'inferred revert — see TripStatus');
     }
 
@@ -395,7 +395,7 @@ class TransportAllocationTest extends TestCase
         $this->assertSame($v2->id, (int) $second['assignment']->vehicle_id);
         // The released row survives as history.
         $this->assertSame(2, TripAssignment::forTenant(self::TENANT_A)->forTrip($trip->id)->count());
-        $this->assertSame(VehicleStatus::AVAILABLE, $v1->fresh()->status, 'the first vehicle is free again');
+        $this->assertSame(Vehicle::STATUS_AVAILABLE, $v1->fresh()->status, 'the first vehicle is free again');
     }
 
     /** A vehicle that broke down while allocated must not be marked Available. */
