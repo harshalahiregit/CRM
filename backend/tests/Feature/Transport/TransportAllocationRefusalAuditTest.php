@@ -92,7 +92,9 @@ class TransportAllocationRefusalAuditTest extends TestCase
             'capacity_tonnes' => $capacity,
         ], self::A, $this->actor);
 
-        return $available ? $this->moveFleetVehicle($v, Vehicle::STATUS_AVAILABLE) : $v;
+        // Fleet creates a vehicle AVAILABLE, so "not available" has to be made
+        // on purpose — out of service, a status allocation must refuse.
+        return $this->moveFleetVehicle($v, $available ? Vehicle::STATUS_AVAILABLE : Vehicle::STATUS_UNDER_MAINTENANCE);
     }
 
     private function driver(array $o = []): DriverProfile
@@ -219,7 +221,7 @@ class TransportAllocationRefusalAuditTest extends TestCase
     public function test_a_vehicle_that_is_not_available_is_logged(): void
     {
         $trip = $this->trip();
-        $v = $this->vehicle(available: false);   // still NEW
+        $v = $this->vehicle(available: false);   // under maintenance
 
         $this->refuse($trip, $v->id, null);
 
@@ -324,7 +326,7 @@ class TransportAllocationRefusalAuditTest extends TestCase
         // ...and nothing else did.
         $this->assertSame(TripStatus::APPROVED, $trip->fresh()->status);
         $this->assertSame(0, TripAssignment::forTenant(self::A)->forTrip($trip->id)->count());
-        $this->assertSame(VehicleStatus::NEW, $v->fresh()->status);
+        $this->assertSame(Vehicle::STATUS_UNDER_MAINTENANCE, $v->fresh()->status, 'the refusal left the vehicle as it was');
         $this->assertNull($trip->fresh()->vehicle_id);
     }
 
