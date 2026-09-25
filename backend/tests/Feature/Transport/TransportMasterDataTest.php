@@ -242,8 +242,8 @@ class TransportMasterDataTest extends TestCase
     /** CMP §22 / BR-P0-004 — the licence check allocation will run in step 5. */
     public function test_licence_validity_covers_every_date_case(): void
     {
-        $valid = $this->driver(self::TENANT_A, ['licence_number' => 'A1', 'licence_expiry' => now()->addYear()->toDateString()]);
-        $lapsed = $this->driver(self::TENANT_A, ['licence_number' => 'A2', 'licence_expiry' => now()->subDay()->toDateString()]);
+        $valid = $this->driver(self::TENANT_A, ['licence_number' => 'A1', 'licence_valid_until' => now()->addYear()->toDateString()]);
+        $lapsed = $this->driver(self::TENANT_A, ['licence_number' => 'A2', 'licence_valid_until' => now()->subDay()->toDateString()]);
         $future = $this->driver(self::TENANT_A, ['licence_number' => 'A3', 'licence_valid_from' => now()->addMonth()->toDateString()]);
         $noExpiry = $this->driver(self::TENANT_A, ['licence_number' => 'A4']);
         $noLicence = $this->driver(self::TENANT_A);
