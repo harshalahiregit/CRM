@@ -69,6 +69,10 @@ export default function WorkerPpePanel({ workerId, api, accent = '#7C3AED', canM
                   <tr key={r.id} style={{ borderTop: '1px solid var(--border)' }}>
                     <td style={{ padding: '9px 12px', fontWeight: 650, color: 'var(--text-h)' }}>
                       {r.item}{r.sku && <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}> · {r.sku}</span>}
+                      {/* Kit from the vendor's own PPE list, not the company store. */}
+                      {r.source === 'vendor' && (
+                        <span style={{ marginLeft: 6, fontSize: 9.5, fontWeight: 700, padding: '2px 6px', borderRadius: 6, color: accent, background: `color-mix(in srgb, ${accent} 12%, transparent)`, whiteSpace: 'nowrap' }}>Vendor stock</span>
+                      )}
                     </td>
                     <td style={{ padding: '9px 12px', fontVariantNumeric: 'tabular-nums', color: 'var(--text-muted)' }}>
                       {r.qty}{r.returned_qty > 0 && <span> ({r.returned_qty} back)</span>}
@@ -118,8 +122,9 @@ function ReturnDialog({ row, outstanding, api, accent, onClose, onDone }) {
 
   // Portalled to <body> so a .pr-glass ancestor can't clip it (see PpeCatalogue).
   return createPortal(
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 380, maxWidth: '94vw', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: 22, position: 'relative' }}>
+    // No backdrop close: this popup closes only from ✕ or Cancel.
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div style={{ width: 380, maxWidth: '94vw', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: 22, position: 'relative' }}>
         <button onClick={onClose} aria-label="Close" style={{ position: 'absolute', top: 14, right: 14, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={17} /></button>
         <h3 style={{ margin: 0, fontSize: 15.5, fontWeight: 800, color: 'var(--text-h)', paddingRight: 24 }}>Return {row.item}</h3>
         <p style={{ margin: '4px 0 14px', fontSize: 12, color: 'var(--text-muted)' }}>{outstanding} outstanding</p>
@@ -136,7 +141,9 @@ function ReturnDialog({ row, outstanding, api, accent, onClose, onDone }) {
 
         <p style={{ margin: '10px 0 0', fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.5 }}>
           {condition === 'returned'
-            ? 'Stock returns to Inventory immediately.'
+            ? (row.source === 'vendor'
+              ? "The items go back on the vendor's own PPE list immediately."
+              : 'Stock returns to Inventory immediately.')
             : 'These items left Inventory when they were issued, so stock does not change — the write-off is recorded against this issue.'}
         </p>
 

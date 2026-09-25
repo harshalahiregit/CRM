@@ -5,6 +5,7 @@ import { tpvApi } from '@/services/tpvApi'
 import { portalApi } from '@/services/portalApi'
 import { canManageTpv } from '../constants'
 import PpeCatalogue from '@/components/vendor/PpeCatalogue'
+import VendorPpeItemsPanel from '@/components/vendor/VendorPpeItemsPanel'
 
 /**
  * PPE stock — one page, three surfaces.
@@ -40,6 +41,19 @@ export default function TpvPpe() {
       </p>
 
       <PpeCatalogue api={api} workers={workers} canIssue={canIssue} accent="#f59e0b" linkInventory={!isPortal} />
+
+      {/* The vendor's OWN kit — its stock, kept apart from Inventory. Staff see
+          each vendor's list in that vendor's workspace, under Workforce. */}
+      {isPortal && (
+        <VendorPpeItemsPanel
+          client={portalApi.ppe.myItems}
+          scopeKey="tpv-portal"
+          canManage
+          workers={workers}
+          issue={portalApi.ppe.issue}
+          accent="#f59e0b"
+        />
+      )}
     </div>
   )
 }

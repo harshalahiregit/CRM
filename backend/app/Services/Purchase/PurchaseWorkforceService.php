@@ -16,7 +16,9 @@ use App\Support\Purchase\PurchaseOnboardingStatus;
 use App\Support\Purchase\PurchaseVendorStatus;
 use App\Support\Shared\WorkerImport;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 /**
@@ -335,6 +337,71 @@ class PurchaseWorkforceService
         $this->advanceTo($worker, 3, $this->stepThreeCleared($worker->fresh()));
 
         return $induction;
+    }
+
+    /**
+     * One group session, many workers — the trainer signs ONCE.
+     *
+     * Each worker goes through saveInduction(), so the medical-clearance block
+     * applies exactly as it does to a single induction. A worker it refuses is
+     * SKIPPED with the reason instead of failing the whole group, and each
+     * worker is written in its own transaction so a failure never leaves one
+     * half-recorded.
+     *
+     * The trainer's signature arrives once as a data URL, is stored once, and
+     * that single stored path goes on every worker's row.
+     *
+     * Scope: $tenantId always; $vendorId when the caller is the vendor portal,
+     * so another vendor's worker id reads as "not found" and is never touched.
+     *
+     * @param  list<int>  $workerIds
+     * @return array{saved: list<int>, skipped: list<array{id: int, name: ?string, reason: string}>}
+     */
+    public function saveGroupInduction(int $tenantId, ?int $vendorId, array $workerIds, array $data): array
+    {
+        $workerIds = array_values(array_unique(array_map('intval', $workerIds)));
+
+        $workers = PurchaseWorker::forTenant($tenantId)
+            ->when($vendorId !== null, fn ($q) => $q->where('purchase_vendor_id', $vendorId))
+            ->whereIn('id', $workerIds)
+            ->with('latestMedical')
+            ->get()
+            ->keyBy('id');
+
+        $signature = $data['signature_data'] ?? null;
+        unset($data['signature_data']);
+        if ($signature && str_contains($signature, 'base64,')) {
+            $path = 'workers/induction/group_signature_'.Str::uuid().'.png';
+            Storage::disk(self::DISK)->put($path, base64_decode(explode('base64,', $signature, 2)[1]));
+            $data['signature_path'] = $path;
+        }
+
+        $saved = [];
+        $skipped = [];
+        foreach ($workerIds as $id) {
+            $worker = $workers->get($id);
+            if (! $worker) {
+                $skipped[] = ['id' => $id, 'name' => null, 'reason' => 'Worker not found.'];
+                continue;
+            }
+
+            try {
+                DB::transaction(fn () => $this->saveInduction($worker, $data));
+                $saved[] = $id;
+            } catch (BusinessException $e) {
+                $skipped[] = ['id' => $id, 'name' => $worker->full_name, 'reason' => $e->getMessage()];
+            } catch (\Throwable $e) {
+                report($e);
+                $skipped[] = ['id' => $id, 'name' => $worker->full_name, 'reason' => 'Could not be saved — try this worker on their own.'];
+            }
+        }
+
+        // Nobody took the session, so the stored signature belongs to no record.
+        if ($saved === [] && isset($path)) {
+            Storage::disk(self::DISK)->delete($path);
+        }
+
+        return ['saved' => $saved, 'skipped' => $skipped];
     }
 
     /**

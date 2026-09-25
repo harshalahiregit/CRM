@@ -430,6 +430,21 @@ class KickoffMeetingController extends Controller
     {
         $this->assertVisible($request, $kickoffMeeting);
 
+        /*
+         * The register is the ADMIN's record, not the room's.
+         *
+         * This was gated on assertVisible() alone, which means every member of
+         * staff who could open the meeting could rewrite who attended it — on a
+         * document that goes to the vendor over the organiser's name. The same
+         * authority that decides the verdict decides the tick: the organiser who
+         * called the meeting, or an admin.
+         */
+        abort_unless(
+            app(\App\Services\Shared\MeetingAttendanceReview::class)->mayReview($kickoffMeeting, $request->user()),
+            403,
+            'Only the meeting organiser or an admin can record attendance.',
+        );
+
         // `attended` was required here; it is now optional so a caller can send
         // attendance_status instead. At least one of the two must be present —
         // an entry carrying neither would silently do nothing.
@@ -445,6 +460,10 @@ class KickoffMeetingController extends Controller
             'attendance.*.attended' => 'nullable|boolean',
             'attendance.*.attendance_status' => 'nullable|string|in:'.implode(',', KickoffAttendee::STATUSES),
             'attendance.*.remark' => 'nullable|string|max:1000',
+            // The times the admin types. Nullable, because "Present" without the
+            // clock is still a legitimate record — half a window is not.
+            'attendance.*.in_at' => 'nullable|date',
+            'attendance.*.out_at' => 'nullable|date|after:attendance.*.in_at',
         ]);
 
         // Presence by KEY, so an explicit null still counts as an instruction.

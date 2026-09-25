@@ -13,17 +13,28 @@ use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 /**
- * The join link is earned, not given.
+ * What the join link costs, and what it never should have.
  *
  * The link used to travel in the invitation e-mail, in the calendar attachment
  * and in every payload the portal read, so the CRM was something people walked
- * past on their way to the call. Nobody opened the agenda, nobody was recorded
- * as attending, and the register was rebuilt afterwards from memory.
+ * past on their way to the call. The answer then was to withhold it until
+ * somebody marked attendance.
  *
- * These tests hold the gate shut from the outside. The important ones are not
- * the happy path — they are the ones that read the raw JSON and assert the link
- * is not in it, because a link that reaches the browser is not gated by the
- * page choosing not to draw it.
+ * That toll is gone. The real room is now SENT — MeetingLinkAnnouncer e-mails
+ * it, with a calendar attachment, to everyone invited the moment the organiser
+ * pastes it — so withholding the same URL from their own meeting page protects
+ * nothing and only makes the CRM the slow route to a link they already have.
+ *
+ * What these tests still hold shut, and what is still worth holding shut:
+ *
+ *  - an INSTANT-START link (meet.google.com/new) reaches nobody but the host,
+ *    because it is not a room: it opens a different, empty meeting for whoever
+ *    clicks it;
+ *  - a cancelled or finished meeting hands out nothing;
+ *  - the invitation, sent days early, still carries no link at all — in the
+ *    HTML, the text part or the .ics;
+ *  - one vendor never reaches another vendor's meeting, and a roster row is
+ *    matched to the right identity.
  */
 class MeetingAttendanceGateTest extends TestCase
 {
@@ -86,7 +97,7 @@ class MeetingAttendanceGateTest extends TestCase
 
     /* ── the vendor portal ───────────────────────────────────────────── */
 
-    public function test_the_link_is_not_in_the_vendors_meeting_list_before_they_mark_attendance(): void
+    public function test_the_vendor_gets_the_real_room_without_marking_first(): void
     {
         [$user, $vendor] = $this->vendorWithLogin();
         $this->meeting($vendor);
@@ -94,16 +105,33 @@ class MeetingAttendanceGateTest extends TestCase
         Sanctum::actingAs($user);
         $res = $this->getJson('/api/portal/meetings')->assertOk();
 
-        $res->assertJsonPath('data.0.meeting_link', null)
+        // The link was e-mailed to them when the organiser pasted it. Making
+        // them mark attendance to see the same URL in the portal was a toll on
+        // the slower route, not a gate.
+        $res->assertJsonPath('data.0.meeting_link', self::LINK)
             ->assertJsonPath('data.0.attendance_marked', false)
+            // Still offered — the register is the point, and it is now asked
+            // for on its own terms rather than sold.
             ->assertJsonPath('data.0.can_mark_attendance', true)
-            // The difference between "no online meeting" and "one you have not
-            // unlocked" — without this the screen cannot tell them apart.
             ->assertJsonPath('data.0.has_meeting_link', true);
+    }
+
+    public function test_an_instant_start_link_still_reaches_nobody_but_the_host(): void
+    {
+        [$user, $vendor] = $this->vendorWithLogin();
+        // Not a room: meet.google.com/new opens a different, empty meeting for
+        // every person who clicks it.
+        $this->meeting($vendor, null, ['meeting_link' => 'https://meet.google.com/new']);
+
+        Sanctum::actingAs($user);
+        $res = $this->getJson('/api/portal/meetings')->assertOk();
+
+        $res->assertJsonPath('data.0.meeting_link', null)
+            ->assertJsonPath('data.0.link_pending', true);
 
         // The whole response, not one field: a link anywhere in this body is a
         // link the browser has, whatever the page draws.
-        $this->assertStringNotContainsString(self::LINK, $res->getContent());
+        $this->assertStringNotContainsString('meet.google.com/new', $res->getContent());
     }
 
     public function test_marking_attendance_hands_over_the_link_and_records_the_vendor(): void
@@ -182,7 +210,7 @@ class MeetingAttendanceGateTest extends TestCase
             ->assertJsonPath('meeting_link', self::LINK);
     }
 
-    public function test_a_staff_attendee_who_did_not_organise_is_gated(): void
+    public function test_a_staff_attendee_who_did_not_organise_gets_the_room_too(): void
     {
         [, $vendor] = $this->vendorWithLogin();
         $organiser = $this->staff();
@@ -202,29 +230,36 @@ class MeetingAttendanceGateTest extends TestCase
         Sanctum::actingAs($attendee);
         $res = $this->getJson("/api/kickoff/meetings/{$meeting->id}")->assertOk();
 
-        $res->assertJsonPath('meeting_link', null)
+        // The room was mailed to them. Marking is still offered, and still
+        // records what it always recorded.
+        $res->assertJsonPath('meeting_link', self::LINK)
+            ->assertJsonPath('attendance_marked', false)
             ->assertJsonPath('can_mark_attendance', true);
-        $this->assertStringNotContainsString(self::LINK, $res->getContent());
 
         $this->postJson("/api/kickoff/meetings/{$meeting->id}/attendance")->assertOk()
             ->assertJsonPath('meeting_link', self::LINK)
             ->assertJsonPath('attendance_marked', true);
     }
 
-    public function test_the_link_endpoint_is_gated_too(): void
+    public function test_the_link_endpoint_agrees_with_the_meeting_payload(): void
     {
         [, $vendor] = $this->vendorWithLogin();
         $organiser = $this->staff();
         $attendee = $this->staff();
         $meeting = $this->meeting($vendor, $organiser);
 
-        // The other way into the link. Leaving it open would have made gating
-        // the meeting payload decorative.
+        // The other way into the link. The two must say the same thing — when
+        // they disagreed, whichever one the screen happened to read decided
+        // whether a person could join.
         Sanctum::actingAs($attendee);
-        $res = $this->getJson("/api/kickoff/meetings/{$meeting->id}/link")->assertOk();
+        $this->getJson("/api/kickoff/meetings/{$meeting->id}/link")->assertOk()
+            ->assertJsonPath('link', self::LINK);
 
-        $res->assertJsonPath('link', null);
-        $this->assertStringNotContainsString(self::LINK, $res->getContent());
+        // And on an instant-start link, both still withhold it.
+        $meeting->forceFill(['meeting_link' => 'https://meet.google.com/new'])->save();
+        $res = $this->getJson("/api/kickoff/meetings/{$meeting->id}/link")->assertOk();
+        $res->assertJsonPath('link', null)->assertJsonPath('link_pending', true);
+        $this->assertStringNotContainsString('meet.google.com/new', $res->getContent());
     }
 
     public function test_an_admin_is_not_gated(): void
@@ -362,8 +397,10 @@ class MeetingAttendanceGateTest extends TestCase
         Sanctum::actingAs($user);
         $res = $this->getJson('/api/portal/meetings')->assertOk();
 
-        $res->assertJsonPath('data.0.meeting_link', null)
-            ->assertJsonPath('data.0.attendance_marked', false);
-        $this->assertStringNotContainsString(self::LINK, $res->getContent());
+        // The link itself is no longer the tell — everyone invited gets it. The
+        // tell is the RECORD: this vendor must not be credited with somebody
+        // else's attendance because two id spaces happened to collide.
+        $res->assertJsonPath('data.0.attendance_marked', false)
+            ->assertJsonPath('data.0.can_mark_attendance', true);
     }
 }

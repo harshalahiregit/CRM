@@ -99,6 +99,71 @@ class OnlineMeetingService
         return $result;
     }
 
+    /**
+     * Is this a platform's "start a new meeting" URL rather than a room?
+     *
+     * meet.google.com/new opens a DIFFERENT, empty meeting for every person
+     * who clicks it. It is fine for the organiser — it is how they start the
+     * call — but handed to attendees it puts each of them in a room of their
+     * own. So it is treated as "no room yet" everywhere except for the host.
+     */
+    public static function isInstant(?string $link): bool
+    {
+        if (! $link) {
+            return false;
+        }
+
+        $normal = rtrim(strtolower(trim($link)), '/');
+
+        return in_array($normal, [
+            'https://meet.google.com/new',
+            'https://zoom.us/start/videomeeting',
+            'https://teams.microsoft.com/start',
+        ], true);
+    }
+
+    /**
+     * The organiser pastes the real room link (e.g. after starting the call
+     * from an instant link, or booking it in their own calendar).
+     *
+     * @throws \InvalidArgumentException when the link is not a joinable room
+     */
+    public function setLink(Model $meeting, string $link): array
+    {
+        $link = trim($link);
+        $host = strtolower((string) parse_url($link, PHP_URL_HOST));
+
+        if (! filter_var($link, FILTER_VALIDATE_URL) || parse_url($link, PHP_URL_SCHEME) !== 'https') {
+            throw new \InvalidArgumentException('Paste the full meeting link, starting with https://');
+        }
+        if (self::isInstant($link)) {
+            throw new \InvalidArgumentException('That link starts a new, empty meeting for whoever opens it. Start the meeting first, then paste the link of the room you are in.');
+        }
+
+        $platform = match (true) {
+            $host === 'meet.google.com'                                  => 'google_meet',
+            $host === 'zoom.us' || str_ends_with($host, '.zoom.us')      => 'zoom',
+            str_ends_with($host, 'teams.microsoft.com') || str_ends_with($host, 'teams.live.com') => 'teams',
+            default => throw new \InvalidArgumentException('Only Google Meet, Zoom or Microsoft Teams links can be used.'),
+        };
+
+        $meeting->forceFill([
+            'meeting_platform'  => $platform,
+            'meeting_link'      => $link,
+            // Whatever the provider minted before no longer describes this room.
+            'meeting_id'        => null,
+            'meeting_passcode'  => null,
+            'meeting_host_link' => null,
+        ])->save();
+
+        Log::info('OnlineMeetingService: meeting link pasted', [
+            'meeting'  => $meeting::class.'#'.$meeting->getKey(),
+            'platform' => $platform,
+        ]);
+
+        return $this->getLinkData($meeting);
+    }
+
     /** The stored link data for a meeting, or null when it has none. */
     public function getLinkData(Model $meeting): ?array
     {
@@ -113,6 +178,7 @@ class OnlineMeetingService
             'id'        => $meeting->meeting_id,
             'passcode'  => $meeting->meeting_passcode,
             'host_link' => $meeting->meeting_host_link,
+            'instant'   => self::isInstant($meeting->meeting_link),
         ];
     }
 
