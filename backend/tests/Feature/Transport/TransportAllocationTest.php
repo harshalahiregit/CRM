@@ -239,7 +239,9 @@ class TransportAllocationTest extends TestCase
     public function test_a_failing_driver_does_not_leave_the_vehicle_allocated(): void
     {
         $trip = $this->approvedTrip(); $v = $this->vehicle();
-        $bad = $this->fleetDriver(['name' => 'No Licence'], self::TENANT_A, $this->actor);
+        // The Fleet fixture files a licence by default; this driver must have none.
+        $bad = $this->fleetDriver(['name' => 'No Licence', 'licence_number' => null, 'licence_expiry' => null],
+            self::TENANT_A, $this->actor);
 
         try {
             $this->alloc->assign($trip, $v->id, $bad->id, self::TENANT_A, $this->actor);
@@ -248,7 +250,7 @@ class TransportAllocationTest extends TestCase
             // expected
         }
 
-        $this->assertSame(VehicleStatus::AVAILABLE, $v->fresh()->status);
+        $this->assertSame(Vehicle::STATUS_AVAILABLE, $v->fresh()->status);
         $this->assertSame(TripStatus::APPROVED, $trip->fresh()->status);
         $this->assertSame(0, TripAssignment::forTenant(self::TENANT_A)->forTrip($trip->id)->count());
     }
@@ -403,11 +405,12 @@ class TransportAllocationTest extends TestCase
     {
         $trip = $this->approvedTrip(); $v = $this->vehicle(); $d = $this->driver();
         $result = $this->alloc->assign($trip, $v->id, $d->id, self::TENANT_A, $this->actor);
-        \Illuminate\Support\Facades\DB::table('transport_vehicles')->where('id', $v->id)->update(['status' => VehicleStatus::BREAKDOWN]);
+        // The allocated vehicle is a Fleet row; it breaks down there.
+        $this->moveFleetVehicle($v, Vehicle::STATUS_BREAKDOWN);
 
         $this->alloc->release($result['assignment'], self::TENANT_A, $this->actor);
 
-        $this->assertSame(VehicleStatus::BREAKDOWN, $v->fresh()->status);
+        $this->assertSame(Vehicle::STATUS_BREAKDOWN, $v->fresh()->status);
     }
 
     /* ══════════ Candidates ══════════ */

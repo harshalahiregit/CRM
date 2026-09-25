@@ -269,7 +269,8 @@ class PretripGenerationTest extends TestCase
 
         $this->assertCount(1, $blockers);
         $this->assertStringContainsString('Driver documents valid', $blockers[0]['why']);
-        $this->assertStringContainsString($driver->displayName(), $blockers[0]['why']);
+        // Fleet's name for the driver — DriverProfile has no displayName().
+        $this->assertStringContainsString($driver->name, $blockers[0]['why']);
     }
 
     /* ══════════ Step 4 · BRW-052, critical vs non-critical ══════════ */
