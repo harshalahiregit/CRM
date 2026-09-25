@@ -31,8 +31,22 @@ use Illuminate\Support\Facades\Schema;
  */
 class ClientPortalService
 {
-    /** Mirrors the old CRM's six contact permissions. */
-    public const PERMISSIONS = ['invoice', 'estimate', 'contract', 'proposal', 'support', 'project'];
+    /**
+     * The old CRM's six contact permissions, plus one.
+     *
+     * `transport` was added on 2026-09-22 for STOS-CLP §28 step 7. It is gated
+     * the same way as the other six and for the same reason — a customer who
+     * buys haulage from us is not automatically a customer who may see every
+     * trip we ran for them, and the decision belongs to whoever invited the
+     * contact rather than to the code.
+     *
+     * Deliberately NOT wired to TransportPermission::MATRIX. That matrix
+     * answers "may this STAFF role touch this area", its rows are derived from
+     * a locked Step 11 sheet under D-8, and its `role:client` mapping points at
+     * a User identity that does not sign in to this portal at all. The portal
+     * has its own gate and this is it.
+     */
+    public const PERMISSIONS = ClientContact::MODULES;
 
     public function can(ClientContact $contact, string $permission): bool
     {

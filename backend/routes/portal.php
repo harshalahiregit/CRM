@@ -477,6 +477,14 @@ Route::middleware(['auth:sanctum', 'client.portal'])->prefix('portal/client')->g
     // a score they were told on the phone.
     Route::get('/feedback',      [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'myFeedback']);
     Route::post('/feedback',     [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'submitFeedback']);
+    // STOS-CLP §28 step 7. No client id in the path — the contact's own client
+    // comes off the token, like every route in this group.
+    Route::get('/transport/shipments', [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'transportShipments']);
+    // The first portal route that takes an id. The trip is constrained by the
+    // same where clause that scopes the list, so another customer's trip does
+    // not fail a check — it does not match, and the answer is 404.
+    Route::get('/transport/shipments/{id}', [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'transportShipment'])->whereNumber('id');
+
     Route::get('/notes',         [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'notes']);
     Route::get('/files',         [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'files']);
     Route::get('/contacts',      [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'contacts']);

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, Link } from 'react-router-dom'
 import { clientPortalApi } from '@/lib/clientPortalApi'
 
 /**
@@ -24,6 +24,18 @@ const STATUS_TONE = {
   Overdue: '#ef4444', Declined: '#ef4444', Expired: '#ef4444',
   Sent: '#3b82f6', open: '#3b82f6', in_progress: '#3b82f6', 'in-progress': '#3b82f6',
   'Partially Paid': '#f59e0b', on_hold: '#f59e0b', not_started: '#9ca3af',
+  // Shipment statuses. These are the plain words the server sends instead of
+  // the trip's raw state — `Accepted` is already above and means the same
+  // thing here. An unmapped value falls through to the neutral tone, which is
+  // why a missing one is a dull chip rather than a broken screen.
+  // Kept in step with ClientVisibleFields::CLIENT_EVENTS — the status word IS
+  // the journey word now, so these are the same eleven phrases.
+  'Shipment finished': '#10b981', Delivered: '#10b981', 'Delivery confirmed': '#10b981',
+  'Collected and on the way': '#3b82f6', 'Ready to leave': '#3b82f6',
+  'Vehicle assigned': '#3b82f6', 'Driver assigned': '#3b82f6',
+  'Vehicle checks completed': '#3b82f6',
+  Invoiced: '#f59e0b',
+  'Being prepared': '#9ca3af', 'In progress': '#9ca3af',
 }
 
 function Status({ value }) {
@@ -64,6 +76,35 @@ export const RECORD_VIEWS = {
     { k: 'subject', h: 'Contract', bold: true }, { k: 'contract_type', h: 'Type' },
     { k: 'start_date', h: 'Start', fmt: date }, { k: 'end_date', h: 'Ends', fmt: date },
     { k: 'value', h: 'Value', fmt: money, right: true }, { k: 'status', h: 'Status', status: true },
+  ]},
+  /*
+   * Shipments — STOS-CLP §28 step 7, "Client Sees Trip".
+   *
+   * A SUBSET of what the endpoint returns, and deliberately so: the API sends
+   * eleven fields and seven are shown. planned_departure_at, departed_at and
+   * cargo_description are fetched because the journey view will want them, and
+   * a list that shows everything it receives is a list nobody can read.
+   *
+   * Every header is plain English for the same reason the status cell is. A
+   * column head is as good a place for "collection_pending" to leak as a value
+   * — "Trip" rather than trip_number, "Your reference" rather than
+   * customer_reference, and no header naming a state machine at all.
+   */
+  shipments: { title: 'Shipments', fetch: () => clientPortalApi.shipments(), cols: [
+    // The way into the journey view. Done here, in this screen's own column
+    // definition, rather than by teaching the shared table to open rows: a cell
+    // renders whatever its `fmt` returns, so one screen can be clickable
+    // without changing what the other eleven do.
+    { k: 'trip_number', h: 'Shipment', bold: true,
+      fmt: (v, r) => (r.id
+        ? <Link to={`/portal/shipments/${r.id}`} style={{ color: '#a78bfa', textDecoration: 'none' }}>{v || '—'}</Link>
+        : (v || '—')) },
+    { k: 'consignment_number', h: 'Consignment' },
+    { k: 'route', h: 'Route' },
+    { k: 'customer_reference', h: 'Your reference' },
+    { k: 'planned_arrival_at', h: 'Expected', fmt: date },
+    { k: 'delivered_at', h: 'Delivered', fmt: date },
+    { k: 'status', h: 'Status', status: true },
   ]},
   projects: { title: 'Projects', fetch: () => clientPortalApi.projects(), cols: [
     { k: 'name', h: 'Project', bold: true }, { k: 'start_date', h: 'Start', fmt: date },

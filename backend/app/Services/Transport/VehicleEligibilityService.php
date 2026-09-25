@@ -4,12 +4,11 @@ namespace App\Services\Transport;
 
 use App\Models\Transport\TransportDocument;
 use App\Models\Transport\TransportTrip;
-use App\Models\Transport\TransportVehicle;
+use App\Domains\Fleet\Models\Vehicle;
 use App\Models\Transport\TripAssignment;
 use App\Support\Transport\EligibilityVerdict;
 use App\Support\Transport\TransportDocumentEntity;
 use App\Support\Transport\TransportDocumentType;
-use App\Support\Transport\VehicleStatus;
 use Illuminate\Support\Collection;
 
 /**
@@ -61,7 +60,7 @@ class VehicleEligibilityService
      * @param  array<string,mixed>|null  $policy  pre-loaded policy, to avoid a
      *         per-row read when evaluating a whole fleet.
      */
-    public function evaluate(TransportVehicle $vehicle, ?TransportTrip $trip, int $tenantId, ?array $policy = null): array
+    public function evaluate(Vehicle $vehicle, ?TransportTrip $trip, int $tenantId, ?array $policy = null): array
     {
         $policy ??= $this->policies->all($tenantId);
         $checks = [];
@@ -69,14 +68,16 @@ class VehicleEligibilityService
         /* 1 — Operational status. FLEET §7/§8; BRW-044 blocks a vehicle with
               overdue mandatory maintenance; CMP §21 blocks an expired-compliance
               vehicle. All of those surface here as a status the fleet set. */
-        $statusOk = in_array($vehicle->status, VehicleStatus::ALLOCATABLE, true);
+        // Fleet's vocabulary, not Transport's. VehicleStatus::ALLOCATABLE is
+        // lowercase and would never match a Fleet row — see D-133.
+        $statusOk = in_array($vehicle->status, Vehicle::ALLOCATABLE, true);
         $checks[] = EligibilityVerdict::check(
             'status', 'Operational status',
             (bool) $policy['vehicle.check.status.required'],
             $statusOk,
             $statusOk
-                ? 'Vehicle is '.$vehicle->statusLabel()
-                : 'Vehicle is '.$vehicle->statusLabel().' — only an Available or Idle vehicle can be allocated.',
+                ? 'Vehicle is '.self::label($vehicle->status)
+                : 'Vehicle is '.self::label($vehicle->status).' — only an Available or Idle vehicle can be allocated.',
         );
 
         /* 2 — Not already spoken for. BR-P0-003 (Hard/Critical), STOS-DB §198,
@@ -145,13 +146,18 @@ class VehicleEligibilityService
         // Status is narrowed in SQL so a large fleet is not fully hydrated, but
         // the authoritative status check still runs in evaluate() — the query is
         // an optimisation, never the rule.
-        $vehicles = TransportVehicle::forTenant($tenantId)
-            ->when(! $includeIneligible, fn ($q) => $q->allocatable())
+        // Fleet's scope is `forCompany`, not `forTenant`, and its ALLOCATABLE
+        // states are UPPERCASE. Both are stated here rather than assumed —
+        // comparing 'AVAILABLE' against VehicleStatus::AVAILABLE ('available')
+        // is false, and it fails SILENTLY: the allocation still writes, the
+        // vehicle simply never leaves the available pool.
+        $vehicles = Vehicle::forCompany($tenantId)
+            ->when(! $includeIneligible, fn ($q) => $q->whereIn('status', Vehicle::ALLOCATABLE))
             ->orderBy('registration_number')
             ->get();
 
         return $vehicles
-            ->map(fn (TransportVehicle $v) => $this->evaluate($v, $trip, $tenantId, $policy))
+            ->map(fn (Vehicle $v) => $this->evaluate($v, $trip, $tenantId, $policy))
             ->when(! $includeIneligible, fn (Collection $c) => $c->filter(fn ($v) => $v['eligible']))
             ->values();
     }
@@ -211,7 +217,7 @@ class VehicleEligibilityService
      *
      * @return array{0:bool,1:bool,2:string}
      */
-    private function capacityVerdict(TransportVehicle $vehicle, ?TransportTrip $trip, array $policy): array
+    private function capacityVerdict(Vehicle $vehicle, ?TransportTrip $trip, array $policy): array
     {
         $needed = $trip?->order?->required_capacity_tonnes;
 
@@ -260,5 +266,17 @@ class VehicleEligibilityService
         $value = $policy[$key] ?? [];
 
         return is_array($value) ? array_values($value) : [];
+    }
+
+    /**
+     * Fleet's statuses in a sentence.
+     *
+     * `TransportVehicle` carried `statusLabel()`; the Fleet model does not, and
+     * adding one to another developer's model to suit our message is not ours
+     * to do. AVAILABLE → "Available", UNDER_MAINTENANCE → "Under maintenance".
+     */
+    private static function label(?string $status): string
+    {
+        return $status === null ? 'in an unknown state' : ucfirst(strtolower(str_replace('_', ' ', $status)));
     }
 }

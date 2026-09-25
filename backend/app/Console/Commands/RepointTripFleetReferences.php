@@ -52,6 +52,48 @@ class RepointTripFleetReferences extends Command
     private const LEDGER = 'fleet_reference_repoints';
 
     /**
+     * What the ledger is allowed to say about a reference — D-131.
+     *
+     * There used to be two outcomes, carried implicitly by `to_id`: set meant
+     * moved, null meant stranded, which the command describes as *"points at a
+     * legacy row with no Fleet counterpart"*.
+     *
+     * `trip_advances` #2 holds `driver_id = 1212010`. That value is in no table
+     * anywhere. Calling it stranded is not a rough approximation of the truth,
+     * it is a different claim that happens to be false — and every reader
+     * downstream would then refuse the row on a stated ground that was not the
+     * real one. Same family as D-116 and D-118: an answer that is wrong without
+     * being an error.
+     *
+     * A migration tool that has to describe bad data will eventually meet data
+     * none of its descriptions fit, and the temptation is to use the nearest
+     * one. The nearest one is a lie. So there is a third word.
+     *
+     * The distinction is operational, not pedantic: UNMAPPED_LEGACY is fixed by
+     * finishing the migration, NEVER_VALID is fixed by somebody correcting the
+     * row, and those are different people's work.
+     *
+     * ── WHAT NEVER_VALID CAN AND CANNOT PROVE ────────────────────────────
+     * What is checked is narrow and literal: **the value is not an id in the
+     * legacy master today**. That is true of `1212010`, which was never an id
+     * anywhere. It is ALSO true of a legacy row that existed and was later
+     * deleted — trips 2, 12 and 14 point at legacy ids 10, 16, 17 and 21, which
+     * a reseed removed. The tool cannot tell "never existed" from "deleted
+     * since", because both leave exactly the same absence behind.
+     *
+     * So the verdict is not claiming to know history. It is claiming that
+     * nothing in the legacy master answers to this value, which is the thing a
+     * reader needs and the thing that can be demonstrated. The alternative —
+     * calling them unmapped legacy rows — would assert a legacy row exists when
+     * none does, which is the lie this constant was added to stop telling.
+     */
+    private const MOVED = 'moved';
+
+    private const UNMAPPED_LEGACY = 'unmapped_legacy';
+
+    private const NEVER_VALID = 'never_valid';
+
+    /**
      * Every reference into the legacy masters — D-120.
      *
      * This was four entries written inline, and there are SEVEN. Person 1 found
@@ -141,15 +183,41 @@ class RepointTripFleetReferences extends Command
                 continue;
             }
 
-            $plan[] = [$table, $column, $map, $this->survey($table, $column, $map)];
+            $legacyTable = $kind === 'vehicle' ? 'transport_vehicles' : 'transport_drivers';
+
+            $plan[] = [$table, $column, $map, $this->survey($table, $column, $map, $legacyTable)];
         }
 
         $movable = array_sum(array_map(fn ($p) => count($p[3]['movable']), $plan));
         $stranded = array_sum(array_map(fn ($p) => count($p[3]['stranded']), $plan));
 
+        $neverValid = [];
+
         foreach ($plan as [$table, $column, , $survey]) {
-            $this->line(sprintf('  %-18s %-12s %d to move, %d pointing at ids that no longer map',
-                $table, $column, count($survey['movable']), count($survey['stranded'])));
+            $unmapped = array_filter($survey['stranded'], fn ($r) => $r['verdict'] === self::UNMAPPED_LEGACY);
+            $invalid = array_filter($survey['stranded'], fn ($r) => $r['verdict'] === self::NEVER_VALID);
+
+            $this->line(sprintf('  %-18s %-12s %d to move, %d legacy ids not migrated, %d that are not ids at all',
+                $table, $column, count($survey['movable']), count($unmapped), count($invalid)));
+
+            foreach ($invalid as $row) {
+                $neverValid[] = sprintf('%s #%d holds %s in %s', $table, $row['id'], $row['from'], $column);
+            }
+        }
+
+        // Said separately and by row, because it is a different problem with a
+        // different owner: an unmapped legacy id is fixed by finishing the
+        // migration, a value that is not an id is fixed by correcting the row.
+        if ($neverValid !== []) {
+            $this->newLine();
+            $this->warn('  These hold a value that exists in NO legacy table — they were never references:');
+
+            foreach ($neverValid as $line) {
+                $this->line('    · '.$line);
+            }
+
+            $this->line('    Recorded as `'.self::NEVER_VALID.'`, not as an unmapped legacy id. Those are');
+            $this->line('    different failures and the ledger must not call one by the other\'s name.');
         }
 
         $this->newLine();
@@ -197,10 +265,12 @@ class RepointTripFleetReferences extends Command
         // where it is. That is the safe outcome, but it is also permanent, so
         // it is not something to discover afterwards.
         if ($stranded > 0 && ! $this->option('force')) {
-            $this->error("{$stranded} references point at legacy rows with no Fleet counterpart.");
-            $this->line('  They will be left alone and marked unmatchable — telemetry and any other');
-            $this->line('  reader will refuse them from then on rather than guess which truck they meant.');
-            $this->line('  Fix the mapping first, or pass --force if stranding them is intended.');
+            $this->error("{$stranded} references cannot be moved.");
+            $this->line('  They will be left alone and recorded under the verdict that is TRUE of each —');
+            $this->line('  `'.self::UNMAPPED_LEGACY.'` for a real legacy row not yet migrated, `'.self::NEVER_VALID.'` for a');
+            $this->line('  value that was never a reference. Readers refuse them either way, but the');
+            $this->line('  ledger says which problem it is, and therefore whose it is.');
+            $this->line('  Fix the mapping first, or pass --force if recording them is intended.');
 
             return self::FAILURE;
         }
@@ -344,10 +414,17 @@ class RepointTripFleetReferences extends Command
      * repointed row no longer matches any legacy id", which is the same kind of
      * luck D-116 was about.
      */
-    private function survey(string $table, string $column, array $map): array
+    private function survey(string $table, string $column, array $map, string $legacyTable): array
     {
         $company = $this->option('company');
         $ruled = $this->alreadyRuled($table, $column);
+
+        // Every id the legacy master actually holds. Read once per column
+        // rather than per row: it is two rows today and this is the check that
+        // separates "not migrated yet" from "never was a reference".
+        $legacyIds = Schema::hasTable($legacyTable)
+            ? DB::table($legacyTable)->pluck('id')->map(fn ($id) => (int) $id)
+            : collect();
 
         $movable = $stranded = [];
 
@@ -356,7 +433,7 @@ class RepointTripFleetReferences extends Command
             ->when($company, fn ($q) => $q->where('tenant_id', $company))
             ->orderBy('id')
             ->select(['id', 'tenant_id', $column])
-            ->chunk(500, function ($rows) use ($column, $map, $ruled, &$movable, &$stranded) {
+            ->chunk(500, function ($rows) use ($column, $map, $ruled, $legacyIds, &$movable, &$stranded) {
                 foreach ($rows as $row) {
                     if (isset($ruled[(int) $row->id])) {
                         continue;
@@ -367,9 +444,17 @@ class RepointTripFleetReferences extends Command
 
                     if (isset($map[$old])) {
                         $entry['to'] = (int) $map[$old];
+                        $entry['verdict'] = self::MOVED;
                         $movable[] = $entry;
                     } else {
+                        // Not in the mapping. Two different things look the
+                        // same here, so ask which one it is rather than
+                        // assuming the commoner: a legacy row we have not
+                        // migrated yet, or a value that was never a reference.
                         $entry['to'] = null;
+                        $entry['verdict'] = $legacyIds->contains($old)
+                            ? self::UNMAPPED_LEGACY
+                            : self::NEVER_VALID;
                         $stranded[] = $entry;
                     }
                 }
@@ -408,6 +493,7 @@ class RepointTripFleetReferences extends Command
                         'table_name' => $table, 'column_name' => $column,
                         'row_id' => $row['id'],
                         'from_id' => $row['from'], 'to_id' => $row['to'],
+                        'verdict' => $row['verdict'],
                         'applied_at' => now(),
                     ];
 

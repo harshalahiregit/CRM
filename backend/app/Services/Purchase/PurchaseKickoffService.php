@@ -326,7 +326,7 @@ class PurchaseKickoffService
         }
 
         if ($wasPublished && $meeting->scheduled_at && ($scheduleChanged || array_key_exists('participants', $data))) {
-            $this->notifyParticipants($meeting->fresh('participants'), true);
+            $this->notifyParticipantsAfterResponse($meeting->fresh('participants'), true);
         }
 
         return $this->find($meeting->id, $actor->tenant_id);
@@ -376,7 +376,7 @@ class PurchaseKickoffService
         // Publishing sends the invitation to the roster (mandatory) and shares
         // the join link. Reminders read the live scheduled_at each run.
         if ($isPublishing) {
-            $this->notifyParticipants($meeting->fresh('participants'), false);
+            $this->notifyParticipantsAfterResponse($meeting->fresh('participants'), false);
         }
 
         $verb = $isPublishing
@@ -486,6 +486,42 @@ class PurchaseKickoffService
      * Invitation e-mail to every participant with an address (sent on publish and
      * when a published meeting's time/place/roster changes). Carries the join link.
      */
+
+    /**
+     * The same notify, after the response has gone out.
+     *
+     * notifyParticipants() opens one SMTP session per participant, inline. On
+     * the shared engine that timed out a publish at exactly thirty seconds —
+     *
+     *   Maximum execution time of 30 seconds exceeded
+     *     at symfony/mailer/Transport/Smtp/Stream/SocketStream.php:154
+     *
+     * — and this engine does the same thing on the same click, so it has the
+     * same fault whether or not anyone has hit it yet.
+     *
+     * Worse than slow: the meeting is updated BEFORE the mail runs, so the
+     * publish succeeded and the organiser was told it had failed. Pressing the
+     * button again then answered "Cannot move a Scheduled meeting to
+     * Scheduled" — the error that actually reached the screen.
+     *
+     * `terminating` runs this once the response is flushed, in the same
+     * process. No queue worker is needed, which matters because there is not
+     * one. Nothing waits on a result: notifyParticipants() returns void and
+     * both callers discard it.
+     */
+    private function notifyParticipantsAfterResponse(PurchaseKickoffMeeting $meeting, bool $isUpdate): void
+    {
+        app()->terminating(function () use ($meeting, $isUpdate) {
+            try {
+                $this->notifyParticipants($meeting, $isUpdate);
+            } catch (\Throwable $e) {
+                Log::channel('purchase')->warning('Purchase kickoff participant notify failed', [
+                    'meeting_id' => $meeting->id, 'error' => $e->getMessage(),
+                ]);
+            }
+        });
+    }
+
     private function notifyParticipants(PurchaseKickoffMeeting $meeting, bool $isUpdate): void
     {
         // The same news, in the vendor's bell. E-mail reaches named people; this

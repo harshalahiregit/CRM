@@ -181,9 +181,88 @@ class MeetingInvitationReachTest extends TestCase
             $meeting, PurchaseKickoffStatus::SCHEDULED, [], $this->organiser,
         );
 
+        // The send happens after the response is flushed now — inline it was
+        // one SMTP session per recipient and timed a real publish out at
+        // thirty seconds. Nothing terminates the application in a test that
+        // calls the service directly, so ask for it: by the time the request
+        // was over, who had been written to?
+        $this->app->terminate();
+
         $to = $sent->getArrayCopy();
 
         $this->assertContains('sales@bolt.test', $to, 'the vendor the meeting is about');
         $this->assertContains('priya@sangoe.test', $to, 'and the person who called it');
+    }
+
+    /**
+     * Publishing must not wait on SMTP. This is the regression.
+     *
+     * It did, and it cost a real publish:
+     *
+     *   Maximum execution time of 30 seconds exceeded
+     *     at symfony/mailer/Transport/Smtp/Stream/SocketStream.php:154
+     *
+     * One session per recipient, opened inside the request. The meeting is
+     * updated first, so the publish SUCCEEDED and the organiser was told it had
+     * failed — and pressing the button again answered "Cannot move a Scheduled
+     * meeting to Scheduled", which is the error that reached the screen.
+     *
+     * The assertion is the ORDER, not the sending: nothing may have been
+     * written to before the response is flushed, and everything must have been
+     * written to after. A test that only checks the mail goes out passes just
+     * as happily with the send back inside the request.
+     */
+    public function test_publishing_does_not_send_before_the_response_is_flushed(): void
+    {
+        $vendor = PurchaseVendor::create([
+            'tenant_id' => self::TENANT, 'company_name' => 'Latency Ltd',
+            'purchase_vendor_code' => 'PV-'.strtoupper(Str::random(6)),
+            'email' => 'ops@latency.test', 'status' => 'Active', 'portal_status' => 'active',
+        ]);
+
+        $meeting = PurchaseKickoffMeeting::create([
+            'tenant_id' => self::TENANT, 'created_by' => $this->organiser->id,
+            'purchase_vendor_id' => $vendor->id,
+            'title' => 'Kickoff', 'meeting_type' => 'kickoff',
+            'status' => PurchaseKickoffStatus::DRAFT, 'mode' => 'online',
+            'scheduled_at' => now()->addDay()->format('Y-m-d H:i:s'),
+            'duration_minutes' => 60,
+        ]);
+
+        $sent = new \ArrayObject();
+        $this->swap(NotificationService::class, new class($sent) extends NotificationService
+        {
+            public function __construct(private \ArrayObject $seen)
+            {
+            }
+
+            public function email(?string $to, string $subject, string $body, array $context = [], ?int $tenantId = null): string
+            {
+                $this->seen[] = strtolower((string) $to);
+
+                return 'sent';
+            }
+        });
+
+        app(PurchaseKickoffService::class)->transition(
+            $meeting, PurchaseKickoffStatus::SCHEDULED, [], $this->organiser,
+        );
+
+        $this->assertCount(
+            0,
+            $sent,
+            'the response had not been flushed yet and mail was already going out — '
+            .'put the send back behind app()->terminating()'
+        );
+
+        // The meeting is live regardless: the status is saved before the mail,
+        // which is precisely why a timeout used to leave a published meeting
+        // behind a failure message.
+        $this->assertSame(PurchaseKickoffStatus::SCHEDULED, $meeting->fresh()->status);
+
+        $this->app->terminate();
+
+        $this->assertNotCount(0, $sent, 'and once the request is over, the invitations go');
+        $this->assertContains('ops@latency.test', $sent->getArrayCopy());
     }
 }

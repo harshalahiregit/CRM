@@ -478,6 +478,21 @@ class DispatchService
 
             $assignment = TripAssignment::forTenant($tenantId)->forTrip($trip->id)->active()->first();
 
+            // STT-006's other half, which nothing called — P2's handover, item
+            // (b). markDispatched() leaves the vehicle ALLOCATED, because
+            // dispatch is not departure; markDeparted() is what moves it to
+            // IN_TRANSIT. With no caller, a truck that had left the yard stayed
+            // ALLOCATED for the whole journey and only closure released it.
+            //
+            // Inside the transaction and after the trip's own write, so Fleet
+            // cannot move a vehicle for a departure that then rolls back. It
+            // never throws and reports false rather than refusing — a loaded
+            // truck does not wait in a yard over bookkeeping — so the outcome
+            // is recorded below, not acted on.
+            $departureApplied = $this->fleet->markDeparted(
+                $trip, $assignment?->vehicle_id, $tenantId, $actor,
+            );
+
             $trip->auditTransition(
                 'transport.trip.status_changed',
                 $from,
@@ -500,6 +515,8 @@ class DispatchService
                     ],
                     // STT-006's side effect, and what actually happened to it.
                     'monitoring_started' => false,
+                    // Whether Fleet actually moved the vehicle to IN_TRANSIT.
+                    'fleet_departure_applied' => $departureApplied,
                     'deferred_effects'   => array_keys(array_filter(
                         TransitScope::SIDE_EFFECTS,
                         fn (string $d) => $d !== 'built',

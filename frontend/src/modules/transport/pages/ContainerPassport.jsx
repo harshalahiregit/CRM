@@ -32,6 +32,17 @@ import { fmtDateTime, TRIP_STATUS_LABEL } from '../constants'
  * Dialect: mirrors TransportContainers.jsx / Bills.jsx — Tailwind for layout,
  * var(--…) for every colour, zero raw hex.
  */
+
+/**
+ * A warning or blocker as a sentence — D-147.
+ *
+ * Fleet's eligibility answers `{code, why, owner}` since D-134, and rendering
+ * that object into JSX is the "Objects are not valid as a React child" crash.
+ * `why (owner)` matches DriversBoard and VehicleAllocationModal — the desk that
+ * can clear it is the useful half.
+ */
+const reason = (r) => (r?.owner ? `${r.why} (${r.owner})` : r?.why ?? '')
+
 export default function ContainerPassport() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -97,7 +108,7 @@ export default function ContainerPassport() {
               container.container_type,
               chain.customer?.name,
               chain.vehicle?.registration,
-              chain.driver?.name,
+              chain.driver?.name || (chain.driver?.id ? `#${chain.driver.id}` : null),
             ].filter(Boolean).join(' · ')}
           </p>
           {container.container_number_normalized !== container.container_number && (
@@ -199,7 +210,7 @@ export default function ContainerPassport() {
             hint={chain.trip ? `${chain.trip.status_label}${chain.trip.route ? ` · ${chain.trip.route}` : ''}` : null}
             onOpen={chain.trip && (() => navigate(`/app/transport/trips/${chain.trip.id}`))} />
           <ChainRow icon={Truck} label="Vehicle" value={chain.vehicle?.registration} hint={chain.vehicle?.type} />
-          <ChainRow icon={UserRound} label="Driver" value={chain.driver?.name} hint={chain.driver?.licence_class} />
+          <ChainRow icon={UserRound} label="Driver" value={chain.driver?.name || (chain.driver?.id ? `#${chain.driver.id}` : null)} hint={chain.driver?.licence_class} />
         </div>
       </Section>
       )}
@@ -220,7 +231,7 @@ export default function ContainerPassport() {
             <ul className="mt-2 space-y-1">
               {readiness.blockers.map((b, i) => (
                 <li key={i} className="text-xs flex gap-1.5" style={{ color: 'var(--color-danger-500)' }}>
-                  <AlertTriangle size={12} className="mt-0.5 shrink-0" />{b}
+                  <AlertTriangle size={12} className="mt-0.5 shrink-0" />{reason(b)}
                 </li>
               ))}
             </ul>

@@ -2,6 +2,7 @@
 
 namespace App\Models\Transport;
 
+use App\Domains\Fleet\Models\DriverProfile;
 use App\Models\Transport\Concerns\RecordsTransportAudit;
 use App\Models\Traits\BelongsToTenant;
 use App\Support\Transport\AdvanceStatus;
@@ -69,7 +70,7 @@ class TripAdvance extends Model
 
     public function driver(): BelongsTo
     {
-        return $this->belongsTo(TransportDriver::class, 'driver_id');
+        return $this->belongsTo(DriverProfile::class, 'driver_id');
     }
 
     /* ── Scopes. None filters by tenant; they compose AFTER forTenant(). ── */

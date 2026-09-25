@@ -110,6 +110,14 @@ class MeetingDocComplianceTest extends TestCase
         // An intentionally undated meeting cannot be published — leave it a draft.
         if (! empty($payload['scheduled_at'])) {
             $m = $this->svc()->transition($m, KickoffStatus::SCHEDULED, [], $this->actor);
+
+            // Invitations are sent after the response is flushed now: one SMTP
+            // session per recipient inside the request timed a real publish out
+            // at thirty seconds. A test calls the service directly, so nothing
+            // would ever terminate the application and the mail would sit
+            // unsent. Terminating here asks the honest question — by the time
+            // the request was over, did the invitations go?
+            $this->app->terminate();
         }
 
         return $m;

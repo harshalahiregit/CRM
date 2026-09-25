@@ -21,6 +21,9 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
+use App\Domains\Fleet\Models\DriverProfile;
+use App\Domains\Fleet\Models\Vehicle;
+use Tests\Concerns\CreatesFleetResources;
 use Tests\TestCase;
 
 /**
@@ -37,6 +40,7 @@ use Tests\TestCase;
 class TransportAllocationApiTest extends TestCase
 {
     use RefreshDatabase;
+    use CreatesFleetResources;
 
     private const TENANT_A = 1;
     private const TENANT_B = 2;
@@ -94,19 +98,19 @@ class TransportAllocationApiTest extends TestCase
         return $trip->fresh();
     }
 
-    private function vehicle(int $tenantId = self::TENANT_A, ?float $capacity = 30, ?User $actor = null): TransportVehicle
+    private function vehicle(int $tenantId = self::TENANT_A, ?float $capacity = 30, ?User $actor = null): Vehicle
     {
-        $v = $this->vehicleSvc->create([
+        $v = $this->fleetVehicle([
             'registration_number' => 'MH12AB'.self::uniqueSeq(4),
             'vehicle_type' => 'Trailer 40ft', 'capacity_tonnes' => $capacity,
         ], $tenantId, $actor);
 
-        return $this->vehicleSvc->transitionTo($v, VehicleStatus::AVAILABLE, $tenantId, $actor);
+        return $this->moveFleetVehicle($v, Vehicle::STATUS_AVAILABLE);
     }
 
-    private function driver(int $tenantId = self::TENANT_A, ?User $actor = null): TransportDriver
+    private function driver(int $tenantId = self::TENANT_A, ?User $actor = null): DriverProfile
     {
-        return $this->driverSvc->create([
+        return $this->fleetDriver([
             'name' => 'Ramesh '.Str::random(4),
             'licence_number' => 'RJ14'.self::uniqueSeq(6),
             'licence_class' => 'HMV',
@@ -235,7 +239,7 @@ class TransportAllocationApiTest extends TestCase
     {
         $admin = $this->asAdmin();
         $trip = $this->approvedTrip();
-        $d = $this->driverSvc->create([
+        $d = $this->fleetDriver([
             'name' => 'Lapsed', 'licence_number' => 'MH0199',
             'licence_valid_until' => now()->subDay()->toDateString(),
         ], self::TENANT_A, $admin);

@@ -321,16 +321,53 @@ class TripAssignmentService
      *
      * Ordered by table then id so two concurrent transactions acquire locks in
      * the same sequence and cannot deadlock each other.
+     *
+     * ── REPOINTED ONTO FLEET, 2026-09-23 — D-136 ─────────────────────────
+     * This locked `transport_vehicles` and `transport_drivers`. Since the
+     * repoint, `$vehicleId` is a FLEET id, so the lock was taken on the wrong
+     * table — and it failed in the worst possible way:
+     *
+     *   · for a migrated vehicle, it locked whichever legacy row happened to
+     *     carry that id, which is not the row being allocated;
+     *   · for anything created through Fleet's own screen there is no legacy
+     *     row at all, `first()` returned null, and it locked **nothing**.
+     *
+     * BR-P0-003 — the guard that stops two dispatchers booking one truck at the
+     * same moment — had therefore stopped guarding, silently, only under
+     * concurrency, which no test suite races into.
+     *
+     * ── THE ROW LOCKED MUST BE THE ROW THE ALLOCATION CONTENDS FOR ───────
+     * Moving the lock to another table that merely happens to exist would move
+     * the bug rather than fix it. Two dispatchers racing for one truck contend
+     * for exactly one thing: the Fleet vehicle row that `$vehicleId` names, and
+     * that the trip and the assignment will both then point at. That is the row
+     * taken here. Fleet's tenant key is `company_id`, not `tenant_id`.
+     *
+     * ── A LOCK THAT LOCKED NOTHING USED TO BE INDISTINGUISHABLE FROM ONE
+     *    THAT WORKED ────────────────────────────────────────────────────
+     * That is how this survived the repoint. If the row is not there the
+     * resource does not exist, so there is nothing to serialise on and nothing
+     * legitimate to allocate; it now says so instead of proceeding unguarded.
      */
     private function lockResources(int $tenantId, ?int $vehicleId, ?int $driverId): void
     {
         if ($vehicleId !== null) {
-            DB::table('transport_vehicles')->where('tenant_id', $tenantId)
-                ->where('id', $vehicleId)->lockForUpdate()->first();
+            $locked = DB::table('vehicles')->where('company_id', $tenantId)
+                ->where('id', $vehicleId)->whereNull('deleted_at')
+                ->lockForUpdate()->first();
+
+            if (! $locked) {
+                throw new ResourceNotFoundException('Vehicle');
+            }
         }
+
         if ($driverId !== null) {
-            DB::table('transport_drivers')->where('tenant_id', $tenantId)
+            $locked = DB::table('driver_profiles')->where('company_id', $tenantId)
                 ->where('id', $driverId)->lockForUpdate()->first();
+
+            if (! $locked) {
+                throw new ResourceNotFoundException('Driver');
+            }
         }
     }
 

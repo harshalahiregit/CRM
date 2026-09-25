@@ -341,49 +341,76 @@ class TransportDemoSeeder extends Seeder
      */
     private function fleet(int $tenantId, ?User $actor): array
     {
-        $vehicleService = app(TransportVehicleService::class);
-        $driverService  = app(TransportDriverService::class);
+        // ── FLEET'S MASTERS, from 2026-09-25 — D-143 ────────────────────
+        // This seeded `transport_vehicles` / `transport_drivers`. Since the
+        // repoint those rows cannot be allocated to anything — lockResources()
+        // refuses a legacy id (D-136) — so the demo it produced was a demo of
+        // trips nobody could crew. Demo data has to be data the product can
+        // actually use.
+        $fleetVehicles = app(\App\Domains\Fleet\Services\VehicleService::class);
 
         $vehicles = [];
         foreach (self::VEHICLES as [$registration, $type, $tonnes]) {
-            $vehicle = TransportVehicle::forTenant($tenantId)
-                ->where('registration_normalized', TransportVehicle::normalizeRegistration($registration))
-                ->first();
+            $normalised = TransportVehicle::normalizeRegistration($registration);
+
+            // Matched on the NORMALISED plate in PHP, because Fleet does not
+            // populate `registration_normalized` on save (D-141) and stores the
+            // plate as typed — "MH 12 DEMO 01". A column comparison missed the
+            // row that was already there and then hit Fleet's own uniqueness
+            // check, which is a clearer failure than a duplicate but still the
+            // wrong one. The fleet is small enough to match in memory.
+            $vehicle = \App\Domains\Fleet\Models\Vehicle::forCompany($tenantId)->get()
+                ->first(fn ($v) => TransportVehicle::normalizeRegistration($v->registration_number) === $normalised);
 
             if (! $vehicle) {
-                $vehicle = $vehicleService->create([
+                $vehicle = $fleetVehicles->create([
                     'registration_number' => $registration,
-                    'vehicle_type'        => $type,
+                    'vehicle_type'        => 'truck',
                     'capacity_tonnes'     => $tonnes,
                     'ownership_type'      => 'owned',
-                ], $tenantId, $actor);
+                ], $tenantId, $actor?->id ?? 1);
             }
 
             // FLEET §8 — a new vehicle is NOT allocatable. The demo needs these
-            // two to be choosable, and the state machine is the only way to get
-            // there, so the transition is made rather than the column forced.
-            if ($vehicle->status === VehicleStatus::NEW) {
-                $vehicle = $vehicleService->transitionTo(
-                    $vehicle, VehicleStatus::AVAILABLE, $tenantId, $actor, 'Demo data'
-                );
+            // choosable, and the state is moved through the model so Fleet's
+            // observer fires rather than the column being forced.
+            if (! in_array($vehicle->status, \App\Domains\Fleet\Models\Vehicle::ALLOCATABLE, true)) {
+                $vehicle->update(['status' => \App\Domains\Fleet\Models\Vehicle::STATUS_AVAILABLE]);
+                $vehicle = $vehicle->fresh();
             }
 
             $vehicles[] = $vehicle;
         }
 
+        // Two rows per driver, because Fleet stores no names: a person in the
+        // local register, and the profile that carries the licence. The
+        // composite directory (D-134) is what reads both back.
         $drivers = [];
-        foreach (self::DRIVERS as [$name, $licence, $class]) {
-            $driver = TransportDriver::forTenant($tenantId)
-                ->where('licence_normalized', TransportDriver::normalizeLicence($licence))
-                ->first();
+        foreach (self::DRIVERS as $i => [$name, $licence, $class]) {
+            $driver = \App\Domains\Fleet\Models\DriverProfile::forCompany($tenantId)
+                ->where('licence_number', $licence)->first();
 
-            $drivers[] = $driver ?: $driverService->create([
-                'name'                => $name,
-                'licence_number'      => $licence,
-                'licence_class'       => $class,
-                'licence_valid_until' => now()->addYears(3)->toDateString(),
-                'mobile'              => '98200000'.count($drivers).count($drivers),
-            ], $tenantId, $actor);
+            if (! $driver) {
+                $personId = \Illuminate\Support\Facades\DB::table('stos_drivers')->insertGetId([
+                    'company_id' => $tenantId,
+                    'name'        => $name,
+                    'phone'       => '98200000'.$i.$i,
+                    'designation' => 'Driver',
+                    'created_at'  => now(), 'updated_at' => now(),
+                ]);
+
+                $driver = \App\Domains\Fleet\Models\DriverProfile::create([
+                    'company_id'     => $tenantId,
+                    'source'         => 'stos',
+                    'source_id'      => $personId,
+                    'licence_number' => $licence,
+                    'licence_class'  => $class,
+                    'licence_expiry' => now()->addYears(3)->toDateString(),
+                    'status'         => \App\Domains\Fleet\Models\DriverProfile::AVAILABLE,
+                ]);
+            }
+
+            $drivers[] = $driver;
         }
 
         return [$vehicles, $drivers];
@@ -394,8 +421,8 @@ class TransportDemoSeeder extends Seeder
         int $tenantId,
         ?User $actor,
         int $customerId,
-        TransportVehicle $vehicle,
-        TransportDriver $driver,
+        \App\Domains\Fleet\Models\Vehicle $vehicle,
+        \App\Domains\Fleet\Models\DriverProfile $driver,
     ): TransportTrip {
         $order = $this->order($tenantId, $actor, $customerId, [
             'pickup'  => 'JNPT Terminal, Navi Mumbai',
@@ -498,8 +525,8 @@ class TransportDemoSeeder extends Seeder
         int $tenantId,
         TransportTrip $moving,
         TransportTrip $waiting,
-        TransportVehicle $vehicle,
-        TransportDriver $driver,
+        \App\Domains\Fleet\Models\Vehicle $vehicle,
+        \App\Domains\Fleet\Models\DriverProfile $driver,
     ): void {
         $moving  = $moving->fresh();
         $waiting = $waiting->fresh();

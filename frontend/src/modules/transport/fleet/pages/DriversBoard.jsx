@@ -1,6 +1,7 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { UserRound, Search, Database, IdCard, X, Check, Info, Building2 } from 'lucide-react'
+import { UserRound, Search, Database, IdCard, X, Check, Info, Building2, ArrowLeft } from 'lucide-react'
 import { stosApi, STOS_ACCENT, LICENCE_CLASSES, SETTABLE_DRIVER_STATUSES, DRIVER_STATUS_LABELS } from '@/services/stosApi'
 import Select from '@/components/ui/Select'
 import HealthChip from '../components/HealthChip'
@@ -21,6 +22,24 @@ import DriverDocumentsPanel from '../components/DriverDocumentsPanel'
  */
 
 const LICENCE_TONE = { valid: 'green', expiring: 'amber', expired: 'red', unknown: 'amber' }
+
+
+/**
+ * Out of Drivers and back to Fleet — D-148.
+ *
+ * Deliberately identical to `VehiclePassportView`'s `BackLink`: same target,
+ * same icon, same words. Two sibling screens that behave differently is the
+ * thing being fixed, so this is a copy of the established one and not an
+ * improvement on it.
+ */
+function BackToFleet() {
+  return (
+    <Link to="/app/transport/fleet" className="inline-flex items-center gap-1.5 text-xs font-semibold mb-3"
+      style={{ color: 'var(--text-muted)' }}>
+      <ArrowLeft size={13} /> Back to fleet
+    </Link>
+  )
+}
 
 export default function DriversBoard() {
   const [term, setTerm] = useState('')
@@ -60,6 +79,13 @@ export default function DriversBoard() {
 
   return (
     <div className="max-w-5xl">
+      {/* D-148 — the way out. The vehicle passport has had one since it was
+          built; this screen, its sibling, had none, so adding a driver left
+          you on a page with no route back to Fleet but the browser button.
+          Same component and same wording as VehiclePassportView::BackLink,
+          rather than a second pattern for two screens that sit side by side. */}
+      <BackToFleet />
+
       <header className="flex flex-wrap items-center gap-2 mb-3">
         <span className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
           style={{ background: `color-mix(in srgb, ${STOS_ACCENT} 14%, transparent)` }}>

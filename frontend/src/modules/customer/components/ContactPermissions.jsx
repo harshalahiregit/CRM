@@ -11,6 +11,10 @@ export const PERMISSION_MODULES = [
   { key: 'proposal', label: 'Proposals' },
   { key: 'support', label: 'Support' },
   { key: 'project', label: 'Projects' },
+  // STOS-CLP §28 step 7. Must stay in step with ClientContact::MODULES on the
+  // server: that constant is what a save is filtered against, so a key offered
+  // here and missing there is a tick that silently does nothing.
+  { key: 'transport', label: 'Shipments' },
 ]
 
 export const NOTIFICATION_TYPES = [

@@ -2,6 +2,9 @@
 
 namespace App\Services\Transport;
 
+use App\Domains\Fleet\Models\Vehicle;
+use App\Domains\Fleet\Models\DriverProfile;
+use App\Domains\Fleet\Contracts\DriverDirectory;
 use App\Models\Transport\TransportConsignment;
 use App\Support\Transport\TransportDocumentType;
 use App\Support\Transport\TransportDocumentEntity;
@@ -420,23 +423,78 @@ class TransportSearchService
      */
     private function vehicle(string $term, int $tenantId): ?array
     {
-        $v = TransportVehicle::forTenant($tenantId)
-            ->where('registration_normalized', TransportVehicle::normalizeRegistration($term))
+        $normalised = TransportVehicle::normalizeRegistration($term);
+
+        // ── REPOINTED ONTO FLEET, 2026-09-23 — D-140 ─────────────────────
+        // This read `transport_vehicles`. Under the read-only ruling every new
+        // vehicle exists ONLY in Fleet, so a plate search would have found the
+        // migrated trucks — because they still sit in the legacy table — and
+        // silently failed for every vehicle created from today. Measured before
+        // the change: MH09WALK99, created through Fleet's own form, returned
+        // NOT FOUND while the two migrated plates resolved.
+        //
+        // ── WHY TWO CLAUSES ──────────────────────────────────────────────
+        // `registration_normalized` is the column built for this, and Fleet's
+        // model does not populate it on save — the migrated rows have it, a row
+        // created through Fleet's form has NULL. Normalising the stored side
+        // here would paper over that and the next reader of that table would hit
+        // it again, so the stored side is matched as it is, and only the INPUT
+        // is normalised. Where the column is populated a spaced plate matches;
+        // where it is not, an exactly typed plate still does.
+        //
+        // Who should populate it is D-141, and it is P2's model.
+        $v = Vehicle::forCompany($tenantId)
+            ->where(fn ($q) => $q->where('registration_normalized', $normalised)
+                ->orWhere('registration_number', $term))
             ->first();
 
         // The path here is the FALLBACK — where the user goes when the chain
         // runs out (a truck with no trips). throughToPassport() overwrites it
         // with the passport whenever one is reachable.
         return $v ? $this->hit('vehicle', $v->id, $v->registration_number, 'Vehicle',
-            '/app/transport/vehicles', matched: $v->registration_normalized) : null;
+            '/app/transport/fleet/vehicles/'.$v->id, matched: $v->registration_normalized ?? $v->registration_number) : null;
     }
 
+    /**
+     * A driver by name — through the directory, because Fleet holds no names.
+     *
+     * ── REPOINTED, 2026-09-23 — D-140 ────────────────────────────────────
+     * This read `TransportDriver::where('name', $term)`. `driver_profiles` has
+     * no `name` column at all: a driver is a reference into a directory
+     * (`source` + `source_id`) plus a licence. So this could not simply be
+     * repointed the way the vehicle half was — the name is not in the table the
+     * id now names.
+     *
+     * It goes through `DriverDirectory` instead, which is where names live, and
+     * which since D-134 is the composite asking BOTH registers. Without that
+     * composite this would have found only CRM-sourced people and missed every
+     * migrated driver — the same blind spot, arriving by a different route.
+     *
+     * The directory is asked for the name; the profile is what the id must
+     * resolve to, because that is what a trip points at. A person in the
+     * directory with no profile is not offered: there is nothing to land on.
+     */
     private function driver(string $term, int $tenantId): ?array
     {
-        $d = TransportDriver::forTenant($tenantId)->where('name', $term)->first();
+        $people = app(DriverDirectory::class)->people($tenantId, ['q' => $term]);
 
-        return $d ? $this->hit('driver', $d->id, $d->name, 'Driver',
-            '/app/transport/drivers') : null;
+        foreach ($people as $person) {
+            if (strcasecmp(trim($person['name'] ?? ''), trim($term)) !== 0) {
+                continue;
+            }
+
+            $profile = DriverProfile::forCompany($tenantId)
+                ->where('source', $person['source'])
+                ->where('source_id', $person['source_id'])
+                ->first();
+
+            if ($profile) {
+                return $this->hit('driver', $profile->id, $person['name'], 'Driver',
+                    '/app/transport/drivers', matched: $person['ref']);
+            }
+        }
+
+        return null;
     }
 
     /** @return array<string,mixed> */
