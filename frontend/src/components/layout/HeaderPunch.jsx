@@ -5,6 +5,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useToast } from '@/components/ui/Toast'
 import { getLocation, buildNote } from '@/lib/punchEvidence'
 import { hrTime } from '@/modules/hr/constants'
+import { useMyAttendanceToday, useRefreshMyAttendanceToday } from '@/modules/hr/hooks/useMyAttendanceToday'
 import SelfieCapture from '@/modules/hr/components/SelfieCapture'
 
 /**
@@ -30,8 +31,16 @@ export default function HeaderPunch() {
   const { canSee } = useAuth()
   const hasHrModule = canSee('hr_attendance')
 
-  const [data, setData] = useState(null)      // null until loaded, or if hidden
-  const [hidden, setHidden] = useState(false) // 403 / no module / load failed
+  // Shared with MyAttendanceCard on the dashboard. This component lives in
+  // Header.jsx, so it mounts on EVERY page — its own fetch meant a request per
+  // navigation, and a console 403 per navigation for any login with no employee
+  // record. One query key, one cached answer. See useMyAttendanceToday.
+  const today = useMyAttendanceToday({ enabled: hasHrModule })
+  const refresh = useRefreshMyAttendanceToday()
+  const data = today.data
+  // Hidden for the same reasons as before: no module, no employee record, or a
+  // genuine failure. Nothing belongs in the chrome that the person cannot act on.
+  const hidden = ! hasHrModule || today.unlinked || !! today.error
   const [busy, setBusy] = useState(false)
   const [open, setOpen] = useState(false)
   const [now, setNow] = useState(() => Date.now())
@@ -40,19 +49,7 @@ export default function HeaderPunch() {
   const popRef = useRef(null)
   const toast = useToast()
 
-  const load = async () => {
-    try {
-      const res = await hrApi.attendance.me.today()
-      setData(res.data)
-      setHidden(false)
-    } catch (e) {
-      // 403 = this login has no employee record. Expected for plenty of
-      // accounts; say nothing rather than putting an error in the chrome.
-      setHidden(true)
-    }
-  }
-
-  useEffect(() => { if (hasHrModule) load() }, [hasHrModule])
+  const load = refresh
 
   // What this workspace asks for on a web punch. Failing to read it must not
   // disable punching, so the defaults stand: location asked, selfie not.

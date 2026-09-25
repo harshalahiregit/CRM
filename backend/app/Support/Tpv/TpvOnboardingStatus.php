@@ -39,7 +39,8 @@ final class TpvOnboardingStatus
     ];
 
     /** Total steps in the onboarding wizard. */
-    public const TOTAL_STEPS = 6;
+    /** Seven since Add Contact became step 1 — see the onboarding service. */
+    public const TOTAL_STEPS = 7;
 
     /** Human-readable labels. */
     public const LABELS = [
