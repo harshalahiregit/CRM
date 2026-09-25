@@ -98,7 +98,7 @@ class FleetBaselineSchemaTest extends TestCase
                     'company_id' => self::COMPANY,
                     'latitude' => $lat, 'longitude' => '70.80000000',
                     'speed' => $speed, 'ignition' => true,
-                    'generator_status' => 'on', 'temperature' => '-18.50',
+                    'generator_status' => VehicleLiveStatus::GENSET_ON, 'temperature' => '-18.50',
                     'last_ping_at' => now()->subMinutes($minutesAgo),
                 ]
             );
@@ -110,7 +110,7 @@ class FleetBaselineSchemaTest extends TestCase
                 'device_id'  => $vehicle->gps_device_id,
                 'latitude'   => $lat, 'longitude' => '70.80000000',
                 'speed'      => $speed, 'ignition' => true,
-                'generator_status' => 'on', 'temperature' => '-18.50',
+                'generator_status' => VehicleLiveStatus::GENSET_ON, 'temperature' => '-18.50',
                 'recorded_at' => now()->subMinutes($minutesAgo),
             ]);
         }
@@ -178,7 +178,7 @@ class FleetBaselineSchemaTest extends TestCase
         $vehicle = $this->vehicle();
         $genset = Genset::create([
             'company_id' => self::COMPANY, 'serial_number' => 'GEN-4471',
-            'vehicle_id' => $vehicle->id, 'status' => 'active',
+            'vehicle_id' => $vehicle->id, 'status' => 'ACTIVE',
         ]);
 
         $this->assertTrue($genset->vehicle->is($vehicle));

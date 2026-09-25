@@ -291,8 +291,22 @@ class AttendanceTimeFormattingTest extends TestCase
         );
 
         // TPV computes it once and passes it down, the way it passes api.
-        $this->assertStringContainsString('onNext, api, isPortal }', $tpv,
-            'Step2Medical must receive isPortal as a prop.');
+        //
+        // Matched on the DECLARATION rather than on an exact parameter-list
+        // string. The first version of this asserted the literal
+        // 'onNext, api, isPortal }', which pinned the punctuation as well as
+        // the property: a signature written `isPortal = false` — the same fix
+        // with a safety default, and the one that is on master — failed it
+        // while being strictly better code. A test that objects to a default
+        // value is testing the typing, not the behaviour.
+        //
+        // This still fails if isPortal is dropped from the parameters, which is
+        // the crash it exists to prevent.
+        $this->assertMatchesRegularExpression(
+            '/function Step2Medical\(\{[^}]*\bisPortal\b[^}]*\}\)/',
+            $tpv,
+            'Step2Medical must destructure isPortal from its props, with or without a default.'
+        );
         $this->assertStringContainsString('isPortal={isPortal}', $tpv,
             'The call site must pass it.');
     }

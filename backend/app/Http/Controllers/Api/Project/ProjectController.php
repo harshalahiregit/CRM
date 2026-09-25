@@ -316,11 +316,20 @@ class ProjectController extends Controller
         $this->guardView($request, $project);
         $data = $request->validate([
             'title'        => 'required|string|max:255',
-            'category'     => 'nullable|string|max:120',
             'amount'       => 'required|numeric|min:0',
             'expense_date' => 'required|date',
             'note'         => 'nullable|string|max:2000',
             'billable'     => 'nullable|boolean',
+            // The category is chosen from the master where there is one, and
+            // typed where there is not — a taxi fare should not need an admin to
+            // create a category first.
+            'category'           => 'nullable|string|max:120',
+            'expense_category_id' => 'nullable|integer|exists:expense_categories,id',
+            'currency'           => 'nullable|string|size:3',
+            'tax_percent'        => 'nullable|numeric|min:0|max:100',
+            'reference_no'       => 'nullable|string|max:120',
+            'payment_mode'       => 'nullable|string|max:40',
+            'purchase_vendor_id' => 'nullable|integer',
         ]);
 
         return $this->success($this->projects->addExpense($project, $data, $request->user()->tenant_id, $request->user()->id), 'Expense added', 201);
@@ -331,14 +340,55 @@ class ProjectController extends Controller
         $this->guardView($request, $project);
         $data = $request->validate([
             'title'        => 'sometimes|required|string|max:255',
-            'category'     => 'nullable|string|max:120',
             'amount'       => 'sometimes|required|numeric|min:0',
             'expense_date' => 'sometimes|required|date',
             'note'         => 'nullable|string|max:2000',
             'billable'     => 'nullable|boolean',
+            // The category is chosen from the master where there is one, and
+            // typed where there is not — a taxi fare should not need an admin to
+            // create a category first.
+            'category'           => 'nullable|string|max:120',
+            'expense_category_id' => 'nullable|integer|exists:expense_categories,id',
+            'currency'           => 'nullable|string|size:3',
+            'tax_percent'        => 'nullable|numeric|min:0|max:100',
+            'reference_no'       => 'nullable|string|max:120',
+            'payment_mode'       => 'nullable|string|max:40',
+            'purchase_vendor_id' => 'nullable|integer',
         ]);
 
         return $this->success($this->projects->updateExpense($expense, $project, $data, $request->user()->tenant_id), 'Expense updated');
+    }
+
+    /**
+     * Attach the receipt.
+     *
+     * Its own endpoint rather than a field on the form, because the form is JSON
+     * and this is a file — and because a receipt is usually added later, when
+     * the person gets back to a scanner. Stored on the private disk; the path
+     * never reaches the browser (see ProjectExpense::$hidden), only a flag.
+     */
+    public function uploadExpenseReceipt(Request $request, int $project, int $expense)
+    {
+        $this->guardView($request, $project);
+
+        $request->validate([
+            'receipt' => 'required|file|mimes:pdf,jpg,jpeg,png,webp|max:10240',
+        ], [
+            'receipt.mimes' => 'A receipt should be a PDF or an image.',
+        ]);
+
+        return $this->success(
+            $this->projects->attachExpenseReceipt($expense, $project, $request->file('receipt'), $request->user()->tenant_id),
+            'Receipt attached'
+        );
+    }
+
+    /** Stream the receipt back. Authenticated and tenant-scoped — never public. */
+    public function downloadExpenseReceipt(Request $request, int $project, int $expense)
+    {
+        $this->guardView($request, $project);
+
+        return $this->projects->expenseReceiptDownload($expense, $project, $request->user()->tenant_id);
     }
 
     public function destroyExpense(Request $request, int $project, int $expense)

@@ -79,6 +79,43 @@ class Vehicle extends Model
      */
     public const ON_TRIP_STATES = [self::STATUS_ALLOCATED, self::STATUS_IN_TRANSIT];
 
+    /**
+     * States a vehicle may hold and still be considered for a trip (PLN-002).
+     *
+     * The Fleet-side twin of `Support\Transport\VehicleStatus::ALLOCATABLE`,
+     * which is `['available','idle']` and therefore matches nothing on this
+     * table. Person 1's allocation reader points here when it swaps onto the
+     * Fleet master, so neither side has to carry a literal — the coupling he
+     * named as (a) in D-100 is a constant rather than a rename.
+     *
+     * Being allocatable is not the same as being eligible: a vehicle in one of
+     * these states can still be refused by a blocker. This narrows the query;
+     * `VehicleAllocationService::blockersFor()` decides.
+     */
+    public const ALLOCATABLE = [self::STATUS_AVAILABLE, self::STATUS_IDLE];
+
+    /**
+     * The km/l this truck is judged against — T-19.
+     *
+     * Its own figure when somebody has measured it, the type default when
+     * nobody has. Returned with its SOURCE, because an exception note that
+     * says "below benchmark" without saying whose benchmark is an argument
+     * waiting to happen: a driver disputing a flag needs to know whether the
+     * number came from this vehicle's history or from a table of averages.
+     *
+     * @return array{value: float, source: string}
+     */
+    public function fuelBenchmark(): array
+    {
+        if ($this->benchmark_kmpl !== null && (float) $this->benchmark_kmpl > 0) {
+            return ['value' => (float) $this->benchmark_kmpl, 'source' => 'vehicle'];
+        }
+
+        $byType = (float) (config('stos.fuel.benchmark_kmpl')[$this->vehicle_type] ?? 0);
+
+        return ['value' => $byType, 'source' => 'type'];
+    }
+
     /** States in which the vehicle is off the road and cannot be dispatched. */
     public const OFF_ROAD_STATES = [
         self::STATUS_UNDER_MAINTENANCE,
@@ -116,6 +153,7 @@ class Vehicle extends Model
         'fuel_type',
         'branch',
         'capacity_tonnes',
+        'benchmark_kmpl',
         'service_interval_km',
         'service_interval_days',
         'last_service_odometer',
@@ -141,6 +179,7 @@ class Vehicle extends Model
         'manufacturing_year' => 'integer',
         'purchase_date'      => 'date',
         'capacity_tonnes'    => 'decimal:2',
+        'benchmark_kmpl'     => 'decimal:2',
         'service_interval_km'   => 'integer',
         'service_interval_days' => 'integer',
         'last_service_odometer' => 'decimal:1',

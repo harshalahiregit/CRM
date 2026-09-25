@@ -45,7 +45,7 @@ class SireDashboardService
      * so a tile's number and the list you get by clicking it cannot disagree.
      */
     public const SCOPES = [
-        'open', 'critical', 'high_priority', 'overdue', 'sla_breached',
+        'open', 'unresolved', 'critical', 'high_priority', 'overdue', 'sla_breached',
         'mine', 'awaiting_qa', 'qa_failed', 'reopened', 'recently_resolved', 'all',
     ];
 
@@ -136,6 +136,17 @@ class SireDashboardService
 
         return match ($scope) {
             'open'          => $open($query),
+
+            // "What still needs code written." OPEN answers a different
+            // question: it means not-terminal, so an issue that was fixed, went
+            // through QA, shipped and was validated in production is still open
+            // -- correctly, because somebody owes it a close. That is the right
+            // answer for a work queue and the wrong one for a developer brief,
+            // where it put already-shipped fixes in front of the person being
+            // asked to fix them. No tile for this: it is a narrowing of `open`
+            // for the export, not an eleventh way to slice the dashboard.
+            'unresolved'    => $open($query)->whereNotIn('status', SireStatus::FIX_SUBMITTED),
+
             'critical'      => $open($query)->whereHas('severity', fn ($q) => $q->where('code', 'critical')),
             'high_priority' => $open($query)->whereIn('priority', [SirePriority::P1, SirePriority::P2]),
 

@@ -180,7 +180,7 @@ function FitTyreDialog({ open, onClose, vehicle, onSaved }) {
 function TyreActionDialog({ acting, onClose, onSaved }) {
   const qc = useQueryClient()
   const [value, setValue] = useState('')
-  const [outcome, setOutcome] = useState('removed')
+  const [outcome, setOutcome] = useState('REMOVED')
   const [err, setErr] = useState('')
 
   const inspecting = acting?.mode === 'inspect'
@@ -220,10 +220,10 @@ function TyreActionDialog({ acting, onClose, onSaved }) {
           <Field label="Where is it going?">
             <Select size="sm" value={outcome} onChange={setOutcome} ariaLabel="Outcome"
               options={[
-                { value: 'in_stock', label: 'Back to stock' },
-                { value: 'retreaded', label: 'To the retreader' },
-                { value: 'scrapped', label: 'Scrapped' },
-                { value: 'removed', label: 'Removed (undecided)' },
+                { value: 'IN_STOCK', label: 'Back to stock' },
+                { value: 'RETREADED', label: 'To the retreader' },
+                { value: 'SCRAPPED', label: 'Scrapped' },
+                { value: 'REMOVED', label: 'Removed (undecided)' },
               ]} />
           </Field>
           <Field label="Odometer at removal" hint="What makes cost-per-kilometre answerable for this casing">

@@ -3,103 +3,153 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
  * D-62 — what moved into Fleet, and what a person still has to decide.
  *
- * The data-move migration deliberately refuses ambiguous plates: when a
- * normalised registration matches more than one Fleet vehicle, no automatic
- * rule can say which truck it is, and a wrong match silently attaches one
- * vehicle's fuel and maintenance history to another. The migration leaves those
- * rows alone and says to run this.
+ * The data-move migration deliberately refuses an ambiguous identity: when a
+ * normalised registration — or licence — matches more than one Fleet row, no
+ * automatic rule can say which one it is, and a wrong match silently attaches
+ * one truck's fuel history, or one driver's licence, to another. The migration
+ * leaves those alone and says to run this.
  *
- * So this exists to answer one question: after the migration, is there anything
- * left in the old tables that a human needs to look at? It reads, counts and
- * prints.
+ * ── ONE ENGINE, BOTH MASTERS (D-118) ─────────────────────────────────────
+ * This used to be two methods that only looked alike. The vehicle half checked
+ * each legacy row against Fleet and classified it; the driver half COUNTED
+ * links and compared two numbers:
  *
- * ── TWO DIFFERENT THINGS USED TO PRINT THE SAME SENTENCE ──────────────────
- * Every unmigrated row was reported as "AMBIGUOUS, matches N Fleet vehicles",
- * followed by "resolve by correcting the duplicate plates". With N = 1 there is
- * no duplicate to correct, and the reader goes looking for something that is
- * not there. Person 1 hit exactly that.
+ *     $migrated = DB::table('driver_profiles')->whereNotNull($link)->count();
  *
- * One match is not an ambiguity, it is a BROKEN LINK: the truck is in Fleet,
- * the plate agrees, and only `legacy_transport_vehicle_id` is wrong — which is
- * what a reseed of the legacy table does. That case is repairable without a
- * judgement call, so `--relink` repairs it and nothing else. Anything that
- * needs a person is still only reported.
+ * A count cannot tell a good link from a dangling one. With profiles linked to
+ * drivers 33 and 34, and the live drivers being 39 and 40, that line reported
+ * "2 legacy rows — 2 have a Fleet profile" and looked healthy against ids that
+ * do not exist. Person 1 found it holding up the repoint: a repoint on that
+ * mapping would have written permanent "unmatchable" verdicts against live
+ * driver references on real trips.
+ *
+ * So there is one implementation now, parameterised by which master it is
+ * reading. Two copies of a rule is how one of them ends up not being the rule.
+ *
+ * ── WHAT IT WILL AND WILL NOT DO ─────────────────────────────────────────
+ * One matching identity is not an ambiguity. It means the row is in Fleet, the
+ * identity agrees, and only the stored link is wrong — which is precisely what
+ * a reseed of the legacy table leaves behind. That is repairable without a
+ * judgement call, so `--relink` repairs it and nothing else. Anything with no
+ * match, no identity to match on, or more than one candidate is only reported.
  */
 class ReconcileFleetMasters extends Command
 {
     protected $signature = 'stos:reconcile-fleet
-                            {--relink : repair links where exactly one Fleet vehicle carries the plate}
+                            {--relink : repair links where exactly one Fleet row carries the identity}
                             {--company= : limit to one company}';
 
     protected $description = 'Report which legacy transport vehicles and drivers are still unmigrated, and why';
 
     public function handle(): int
     {
-        if (! Schema::hasTable('transport_vehicles')) {
-            $this->info('No legacy `transport_vehicles` table — nothing to reconcile.');
+        if (! Schema::hasTable('transport_vehicles') && ! Schema::hasTable('transport_drivers')) {
+            $this->info('No legacy transport tables — nothing to reconcile.');
 
             return self::SUCCESS;
         }
 
         $company = $this->option('company');
 
-        $this->reconcileVehicles($company);
+        $this->reconcile($this->vehicleSpec(), $company);
         $this->newLine();
-        $this->reconcileDrivers($company);
+        $this->reconcile($this->driverSpec(), $company);
 
         return self::SUCCESS;
     }
 
-    private function reconcileVehicles(?string $company): void
-    {
-        $legacy = DB::table('transport_vehicles')
-            ->when($company, fn ($q) => $q->where('tenant_id', $company))
-            ->get(['id', 'tenant_id', 'registration_number']);
+    /* ── What each master is ────────────────────────────────────────── */
 
-        if ($legacy->isEmpty()) {
-            $this->info('Vehicles: the legacy table is empty. Nothing outstanding.');
+    private function vehicleSpec(): array
+    {
+        return [
+            'noun' => 'Vehicles',
+            'legacyTable' => 'transport_vehicles',
+            'fleetTable' => 'vehicles',
+            'fleetNoun' => 'Fleet vehicle',
+            'link' => 'legacy_transport_vehicle_id',
+            'legacyKey' => 'registration_number',
+            'fleetKey' => 'registration_number',
+            'keyName' => 'plate',
+            'legacySelect' => ['id', 'tenant_id', 'registration_number'],
+            'fleetSelect' => ['id', 'registration_number', 'legacy_transport_vehicle_id'],
+            'softDeletes' => true,
+            'describeLegacy' => fn ($row) => $row->registration_number,
+            'describeFleet' => fn ($row) => $row->registration_number,
+            'wrongMatchCosts' => "a wrong match attaches one truck's fuel and job history to another",
+            'footer' => null,
+        ];
+    }
+
+    private function driverSpec(): array
+    {
+        return [
+            'noun' => 'Drivers',
+            'legacyTable' => 'transport_drivers',
+            'fleetTable' => 'driver_profiles',
+            'fleetNoun' => 'Fleet profile',
+            'link' => 'legacy_transport_driver_id',
+            'legacyKey' => 'licence_number',
+            'fleetKey' => 'licence_number',
+            'keyName' => 'licence',
+            'legacySelect' => ['id', 'tenant_id', 'name', 'licence_number'],
+            'fleetSelect' => ['id', 'licence_number', 'legacy_transport_driver_id'],
+            'softDeletes' => false,
+            'describeLegacy' => fn ($row) => trim(($row->name ?: 'Unnamed').' · '.($row->licence_number ?: 'no licence')),
+            'describeFleet' => fn ($row) => $row->licence_number ?: 'no licence',
+            'wrongMatchCosts' => "a wrong match puts one person's licence and expiry on another driver",
+
+            // Fleet holds no names, so a driver that never moved is not the same
+            // kind of problem a vehicle would be. Said once, at the end, rather
+            // than against every row.
+            'footer' => [
+                'Fleet stores no names: a driver is a reference into the CRM directory plus a',
+                'licence. A legacy driver who is not a person in the CRM has to be created there',
+                'first — that is the design, not a gap.',
+            ],
+        ];
+    }
+
+    /* ── The engine ─────────────────────────────────────────────────── */
+
+    private function reconcile(array $spec, ?string $company): void
+    {
+        if (! Schema::hasTable($spec['legacyTable'])) {
+            $this->info("{$spec['noun']}: no legacy table.");
 
             return;
         }
 
-        $moved = $repairable = $ambiguous = $missing = [];
+        $legacy = DB::table($spec['legacyTable'])
+            ->when($company, fn ($q) => $q->where('tenant_id', $company))
+            ->get($spec['legacySelect']);
 
-        foreach ($legacy as $row) {
-            if (DB::table('vehicles')->where('legacy_transport_vehicle_id', $row->id)->exists()) {
-                $moved[] = $row;
+        if ($legacy->isEmpty()) {
+            $this->info("{$spec['noun']}: the legacy table is empty. Nothing outstanding.");
 
-                continue;
-            }
-
-            // Same normalisation the migration uses: a plate is written
-            // "MH 12 AB 1234" as often as "MH12AB1234" and they are one truck.
-            $plate = $this->normalise($row->registration_number);
-
-            $candidates = DB::table('vehicles')
-                ->where('company_id', $row->tenant_id)
-                ->whereNull('deleted_at')
-                ->get(['id', 'registration_number', 'legacy_transport_vehicle_id'])
-                ->filter(fn ($v) => $this->normalise($v->registration_number) === $plate)
-                ->values();
-
-            $entry = ['legacy_id' => $row->id, 'plate' => $row->registration_number, 'candidates' => $candidates];
-
-            match (true) {
-                $candidates->count() === 0 => $missing[] = $entry,
-                $candidates->count() === 1 => $repairable[] = $entry,
-                default => $ambiguous[] = $entry,
-            };
+            return;
         }
 
-        $outstanding = count($repairable) + count($ambiguous) + count($missing);
+        $buckets = ['migrated' => [], 'repairable' => [], 'ambiguous' => [], 'missing' => [], 'unidentifiable' => []];
 
-        $this->line("Vehicles: {$legacy->count()} legacy rows — ".count($moved).' migrated, '.$outstanding.' outstanding.');
+        foreach ($legacy as $row) {
+            $buckets[$this->classify($spec, $row, $candidates)][] = [
+                'legacy' => $row,
+                'candidates' => $candidates,
+            ];
+        }
+
+        $outstanding = $legacy->count() - count($buckets['migrated']);
+
+        $this->line("{$spec['noun']}: {$legacy->count()} legacy rows — "
+            .count($buckets['migrated']).' linked, '.$outstanding.' outstanding.');
 
         if ($outstanding === 0) {
             $this->info('  Nothing needs a person. The legacy table can be retired on schedule.');
@@ -108,75 +158,138 @@ class ReconcileFleetMasters extends Command
         }
 
         $this->newLine();
+        $this->report($spec, $buckets);
 
-        foreach ($missing as $row) {
-            // Should not happen: the migration inserts these. Worth saying
-            // loudly rather than reporting a tidy zero.
-            $this->warn("  · #{$row['legacy_id']} {$row['plate']} — no Fleet vehicle carries this plate and none was inserted. Re-run the migration.");
-        }
-
-        foreach ($ambiguous as $row) {
-            $plates = $row['candidates']->pluck('registration_number')->implode(', ');
-            $ids = $row['candidates']->pluck('id')->implode(', ');
-
-            $this->warn("  · #{$row['legacy_id']} {$row['plate']} — AMBIGUOUS, {$row['candidates']->count()} Fleet vehicles carry this plate (ids {$ids}: {$plates}).");
-            $this->line('      Needs a person: correct the duplicate plates in Fleet, then re-run the migration.');
-            $this->line("      Do not guess — a wrong match attaches one truck's fuel and job history to another.");
-        }
-
-        if ($repairable !== []) {
-            $this->reportRepairable($repairable);
+        if ($spec['footer'] && ($buckets['missing'] !== [] || $buckets['unidentifiable'] !== [])) {
+            $this->newLine();
+            foreach ($spec['footer'] as $line) {
+                $this->line('  '.$line);
+            }
         }
     }
 
     /**
-     * Exactly one Fleet vehicle carries the plate — so the link is knowable.
+     * Which of the five states is this legacy row in?
      *
-     * The only reason it is not already set is that something overwrote the
-     * legacy side: a reseed gives the same truck a new `transport_vehicles` id
+     * `$candidates` is filled with the Fleet rows carrying the same identity,
+     * so the caller can name them without querying twice.
+     */
+    private function classify(array $spec, object $row, ?Collection &$candidates): string
+    {
+        $candidates = collect();
+
+        // A link that points at a row that IS there is the only thing that
+        // counts as migrated. Not "a link exists" — that was D-118.
+        $linked = DB::table($spec['fleetTable'])
+            ->where($spec['link'], $row->id)
+            ->when($spec['softDeletes'], fn ($q) => $q->whereNull('deleted_at'))
+            ->exists();
+
+        if ($linked) {
+            return 'migrated';
+        }
+
+        $key = $this->normalise($row->{$spec['legacyKey']} ?? null);
+
+        // Nothing to match on. For a driver this is real — a legacy row can
+        // carry no licence at all — and no rule can repair it.
+        if ($key === '') {
+            return 'unidentifiable';
+        }
+
+        $candidates = DB::table($spec['fleetTable'])
+            ->where('company_id', $row->tenant_id)
+            ->when($spec['softDeletes'], fn ($q) => $q->whereNull('deleted_at'))
+            ->get($spec['fleetSelect'])
+            ->filter(fn ($f) => $this->normalise($f->{$spec['fleetKey']} ?? null) === $key)
+            ->values();
+
+        return match (true) {
+            $candidates->count() === 0 => 'missing',
+            $candidates->count() === 1 => 'repairable',
+            default => 'ambiguous',
+        };
+    }
+
+    private function report(array $spec, array $buckets): void
+    {
+        foreach ($buckets['missing'] as $entry) {
+            // Should not happen: the migration inserts these. Worth saying
+            // loudly rather than reporting a tidy zero.
+            $this->warn("  · #{$entry['legacy']->id} {$this->describe($spec, $entry['legacy'])}"
+                ." — no {$spec['fleetNoun']} carries this {$spec['keyName']} and none was inserted. Re-run the migration.");
+        }
+
+        foreach ($buckets['unidentifiable'] as $entry) {
+            $this->warn("  · #{$entry['legacy']->id} {$this->describe($spec, $entry['legacy'])}"
+                ." — no {$spec['keyName']} recorded, so nothing can be matched on.");
+            $this->line('      Needs a person: give it one in the legacy record, or link it by hand.');
+        }
+
+        foreach ($buckets['ambiguous'] as $entry) {
+            $ids = $entry['candidates']->pluck('id')->implode(', ');
+            $shown = $entry['candidates']->map(fn ($c) => $this->describeFleet($spec, $c))->implode(', ');
+
+            $this->warn("  · #{$entry['legacy']->id} {$this->describe($spec, $entry['legacy'])}"
+                ." — AMBIGUOUS, {$entry['candidates']->count()} carry this {$spec['keyName']} (ids {$ids}: {$shown}).");
+            $this->line("      Needs a person: correct the duplicate {$spec['keyName']}s in Fleet, then re-run the migration.");
+            $this->line("      Do not guess — {$spec['wrongMatchCosts']}.");
+        }
+
+        if ($buckets['repairable'] !== []) {
+            $this->repairable($spec, $buckets['repairable']);
+        }
+    }
+
+    /**
+     * Exactly one Fleet row carries the identity — so the link is knowable.
+     *
+     * The only reason it is not already set is that something replaced the
+     * legacy side: a reseed gives the same truck or the same driver a new id,
      * and the stored link keeps pointing at the row that used to be there.
      *
-     * Repairing it is still refused when the Fleet vehicle is already linked to
-     * a legacy row that STILL EXISTS. That is two live legacy rows competing
-     * for one Fleet vehicle, which is a decision, not a repair.
+     * Repairing is still refused when the Fleet row is already linked to a
+     * legacy row that STILL EXISTS. Two live legacy rows competing for one
+     * Fleet row is a decision, not a repair.
      */
-    private function reportRepairable(array $repairable): void
+    private function repairable(array $spec, array $entries): void
     {
         $relink = (bool) $this->option('relink');
 
-        $this->line('  These are not ambiguous — exactly one Fleet vehicle carries the plate, and only the');
-        $this->line('  stored link is wrong. That is what a reseed of the legacy table leaves behind.');
+        $this->line("  These are not ambiguous — exactly one {$spec['fleetNoun']} carries the {$spec['keyName']},");
+        $this->line('  and only the stored link is wrong. That is what a reseed of the legacy table leaves behind.');
         $this->newLine();
 
         $repaired = 0;
 
-        foreach ($repairable as $row) {
-            $fleet = $row['candidates']->first();
-            $held = $fleet->legacy_transport_vehicle_id;
+        foreach ($entries as $entry) {
+            $row = $entry['legacy'];
+            $fleet = $entry['candidates']->first();
+            $held = $fleet->{$spec['link']};
 
             $contested = $held
-                && (int) $held !== (int) $row['legacy_id']
-                && DB::table('transport_vehicles')->where('id', $held)->exists();
+                && (int) $held !== (int) $row->id
+                && DB::table($spec['legacyTable'])->where('id', $held)->exists();
 
             if ($contested) {
-                $this->warn("  · #{$row['legacy_id']} {$row['plate']} — Fleet #{$fleet->id} is already linked to live legacy #{$held}.");
-                $this->line('      Needs a person: two legacy rows claim one Fleet vehicle.');
+                $this->warn("  · #{$row->id} {$this->describe($spec, $row)}"
+                    ." — {$spec['fleetNoun']} #{$fleet->id} is already linked to live legacy #{$held}.");
+                $this->line("      Needs a person: two legacy rows claim one {$spec['fleetNoun']}.");
 
                 continue;
             }
 
             if (! $relink) {
-                $this->line("  · #{$row['legacy_id']} {$row['plate']} — Fleet #{$fleet->id}"
+                $this->line("  · #{$row->id} {$this->describe($spec, $row)} — {$spec['fleetNoun']} #{$fleet->id}"
                     .($held ? " (link points at #{$held}, which is gone)" : ' (no link stored)').'. Repairable.');
 
                 continue;
             }
 
-            DB::table('vehicles')->where('id', $fleet->id)
-                ->update(['legacy_transport_vehicle_id' => $row['legacy_id']]);
+            DB::table($spec['fleetTable'])->where('id', $fleet->id)->update([$spec['link'] => $row->id]);
 
             $repaired++;
-            $this->info("  · #{$row['legacy_id']} {$row['plate']} — relinked to Fleet #{$fleet->id}.");
+            $this->info("  · #{$row->id} {$this->describe($spec, $row)} — relinked to {$spec['fleetNoun']} #{$fleet->id}.");
         }
 
         $this->newLine();
@@ -187,42 +300,28 @@ class ReconcileFleetMasters extends Command
             return;
         }
 
-        $this->line('  Re-run with --relink to repair them. It only writes `legacy_transport_vehicle_id`,');
-        $this->line('  and only where one plate matches one vehicle — nothing else is touched.');
+        $this->line("  Re-run with --relink to repair them. It only writes `{$spec['link']}`, and only");
+        $this->line('  where one identity matches one row — nothing else is touched.');
     }
 
-    private function reconcileDrivers(?string $company): void
+    private function describe(array $spec, object $row): string
     {
-        if (! Schema::hasTable('transport_drivers')) {
-            $this->info('Drivers: no legacy table.');
-
-            return;
-        }
-
-        $legacy = DB::table('transport_drivers')
-            ->when($company, fn ($q) => $q->where('tenant_id', $company))
-            ->count();
-
-        if ($legacy === 0) {
-            $this->info('Drivers: the legacy table is empty. Nothing outstanding.');
-
-            return;
-        }
-
-        $migrated = DB::table('driver_profiles')->whereNotNull('legacy_transport_driver_id')->count();
-
-        $this->line("Drivers: {$legacy} legacy rows — {$migrated} have a Fleet profile.");
-
-        if ($migrated < $legacy) {
-            $this->warn('  The remainder have no profile yet.');
-            $this->line('  Fleet stores no names: a driver is a reference into the CRM directory plus');
-            $this->line('  a licence. A legacy driver who is not a person in the CRM has to be created');
-            $this->line('  there first — that is the design, not a gap.');
-        }
+        return ($spec['describeLegacy'])($row);
     }
 
-    private function normalise(?string $plate): string
+    private function describeFleet(array $spec, object $row): string
     {
-        return preg_replace('/[^A-Z0-9]/', '', strtoupper((string) $plate));
+        return ($spec['describeFleet'])($row);
+    }
+
+    /**
+     * The same normalisation both masters use.
+     *
+     * "MH 12 AB 1234" and "MH12AB1234" are one truck; "MH-01 2011 0012345" and
+     * "MH01201100 12345" are one licence.
+     */
+    private function normalise(?string $value): string
+    {
+        return preg_replace('/[^A-Z0-9]/', '', strtoupper((string) $value));
     }
 }

@@ -43,13 +43,37 @@ class ComplianceService
      */
     public function evaluate(Vehicle $vehicle): array
     {
+        $read = $this->readExpiries($vehicle, Vehicle::EXPIRY_DOCUMENTS);
+
+        return [
+            'status'    => $this->verdict($vehicle, $read['expired'], $read['expiring']),
+            'documents' => $read['documents'],
+            'expired'   => $read['expired'],
+            'expiring'  => $read['expiring'],
+        ];
+    }
+
+    /**
+     * The same reading for any asset that has dated papers — T-54.
+     *
+     * Trailers have four documents where a vehicle has five, and no PUC at all.
+     * What they share is the RULE: valid through the date, expiring inside the
+     * window, unknown when blank. A second copy of that arithmetic is how one
+     * of them eventually judges "expired" a day differently from the other,
+     * which is the drift that cost us D-118.
+     *
+     * @param  array<string,string>  $map  field => label
+     * @return array{documents: array, expired: array, expiring: array}
+     */
+    public function readExpiries(object $asset, array $map): array
+    {
         $today = now()->startOfDay();
         $documents = [];
         $expired = [];
         $expiring = [];
 
-        foreach (Vehicle::EXPIRY_DOCUMENTS as $field => $label) {
-            $date = $vehicle->{$field};
+        foreach ($map as $field => $label) {
+            $date = $asset->{$field};
 
             if (! $date) {
                 // A missing date is NOT a pass. It is unknown, and the tab says
@@ -79,12 +103,7 @@ class ComplianceService
             }
         }
 
-        return [
-            'status'    => $this->verdict($vehicle, $expired, $expiring),
-            'documents' => $documents,
-            'expired'   => $expired,
-            'expiring'  => $expiring,
-        ];
+        return ['documents' => $documents, 'expired' => $expired, 'expiring' => $expiring];
     }
 
     /**

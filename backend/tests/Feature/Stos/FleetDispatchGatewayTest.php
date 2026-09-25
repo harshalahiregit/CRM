@@ -53,7 +53,7 @@ class FleetDispatchGatewayTest extends TestCase
         ]);
     }
 
-    private function driver(string $status = 'available'): DriverProfile
+    private function driver(string $status = DriverProfile::AVAILABLE): DriverProfile
     {
         return DriverProfile::create([
             'company_id' => self::COMPANY, 'source' => 'stos',
@@ -104,7 +104,7 @@ class FleetDispatchGatewayTest extends TestCase
         // transit here would tell a planner chasing a late load that it was on
         // the road when it was still loading.
         $this->assertSame('ALLOCATED', $vehicle->fresh()->status);
-        $this->assertSame('on_trip', $driver->fresh()->status);
+        $this->assertSame(DriverProfile::ON_TRIP, $driver->fresh()->status);
     }
 
     public function test_applying_the_same_departure_twice_is_a_no_op_that_still_succeeds(): void
@@ -151,10 +151,10 @@ class FleetDispatchGatewayTest extends TestCase
 
     public function test_a_suspended_driver_is_not_put_on_a_trip(): void
     {
-        $driver = $this->driver('suspended');
+        $driver = $this->driver(DriverProfile::SUSPENDED);
 
         $this->assertFalse($this->gateway()->markDispatched($this->trip(), null, $driver->id, self::COMPANY));
-        $this->assertSame('suspended', $driver->fresh()->status);
+        $this->assertSame(DriverProfile::SUSPENDED, $driver->fresh()->status);
     }
 
     /* ── It must never throw, and must be honest ────────────────── */
@@ -184,7 +184,7 @@ class FleetDispatchGatewayTest extends TestCase
     public function test_a_partial_application_is_reported_as_failure(): void
     {
         $vehicle = $this->vehicle();
-        $suspended = $this->driver('suspended');
+        $suspended = $this->driver(DriverProfile::SUSPENDED);
 
         $applied = $this->gateway()->markDispatched($this->trip(), $vehicle->id, $suspended->id, self::COMPANY);
 
@@ -300,6 +300,6 @@ class FleetDispatchGatewayTest extends TestCase
         // Without this half, every vehicle is permanently "in operation" and
         // the fleet has no availability at all.
         $this->assertSame('AVAILABLE', $vehicle->fresh()->status);
-        $this->assertSame('available', $driver->fresh()->status);
+        $this->assertSame(DriverProfile::AVAILABLE, $driver->fresh()->status);
     }
 }

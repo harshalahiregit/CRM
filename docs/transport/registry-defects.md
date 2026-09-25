@@ -1190,6 +1190,33 @@ rows?". Read it as *21 permissions, none of which narrow anything*, not as *one 
 (The count is 21, not the 13 on Step 11's original Permissions sheet: the difference is the rows
 derived under D-8, D-21 and D-45 for entities that sheet never covered.)
 
+### The same problem was solved next door on 2026-09-21 — talk to P3 before designing this
+
+Person 3 shipped `app/Services/Auth/ScopeResolver.php` and `app/Support/Hr/DataScope.php` for HR.
+Its docblock describes this defect almost word for word:
+
+> *"scope existed, was computed correctly, and was consulted in a single place that rendered
+> menus."*
+
+That is this entry: `SCOPE_OWN` and `SCOPE_ASSIGNED` declared in the matrix, `scope()` called once,
+no production path consuming either. He has now solved that problem class, with a deliberately
+small primitive — `visibleEmployeeIds($actor)` returning `null` (global) / `[]` (nothing) /
+`[ids]` — plus `applyToQuery($query, $actor, $column)` so a module is one `whereIn()` away rather
+than a fresh copy of the hierarchy walk.
+
+**It is not adoptable as it stands, and the reason is the axis.** `DataScope` is
+`global / own / department / branch / team` — an EMPLOYEE hierarchy, resolved through `HrEmployee`,
+with no Transport awareness anywhere in the file. Ours is a CUSTOMER axis: "own" in HR means *my
+employee record*; "own" in Transport means *my company's consignments*. Only `global` and `own`
+overlap even as words.
+
+**So this does not unblock D-46.** What it changes is who should be in the room. When the client
+roles are designed — and CLP §3 now names six of them, organisation-, branch-, role-,
+transaction- and document-type aware — that is a conversation with Person 3 and a second
+implementation of a pattern he has already built, not a design from scratch.
+
+Recorded so that nobody solves this twice in one repository.
+
 `ORDER_VIEW` and `TRIP_VIEW` both grant `ROLE_CUSTOMER => SCOPE_OWN`, and `TRIP_VIEW` also grants
 `ROLE_SUPPLIER => SCOPE_ASSIGNED`.
 
@@ -2745,6 +2772,47 @@ by seeding copies.
 **Raised:** 2026-09-17, starting the repoint. **First use of P1's new D-100 band.**
 **Owner: P1 + P2.** **Status: NOT STARTED — deliberately, and here is why.**
 
+> ### Three couplings, measured 2026-09-21 — find these before you discover them
+>
+> The repoint is not one change to one reader. Three things on OUR side must move in the same
+> commit as the data, and the first would have wasted an afternoon.
+>
+> **1. The status vocabularies disagree, and the comparison is strict.**
+> `vehicles.status = "AVAILABLE"`, `transport_vehicles.status = "available"`, and
+> `VehicleEligibilityService` gates on
+> `in_array($vehicle->status, VehicleStatus::ALLOCATABLE, true)` where `ALLOCATABLE` is
+> `['available', 'idle']`. Point the picker at Fleet without normalising this and **every Fleet
+> vehicle reads as not allocatable — an empty candidate list that looks like a considered
+> eligibility verdict rather than a bug.**
+> *(The drivers happen to agree — both sides store `available` — though the columns are named
+> `status` and `availability`.)*
+>
+> **2. The relations are hard-coded to our model, in both places that matter.**
+> `TransportTrip::vehicle()` and `TripAssignment::vehicle()` are both
+> `belongsTo(TransportVehicle::class, 'vehicle_id')`, and the trip detail payload loads the
+> registration through that relation. Repoint the column without the relation and the trip screen
+> shows a **blank vehicle** today, and a **different truck** the day the two id ranges overlap.
+>
+> **3. Two readers resolve a `vehicle_id` against our table and would fail silently.**
+> `TransportSearchService::vehicle()` resolves a plate in `transport_vehicles` and then looks for
+> trips by that id — after a repoint a plate search finds the vehicle and **no journeys**, quietly
+> undoing CTD §4's follow-through. And `AllocationService::freeResources()` (D-119) resolves
+> `vehicle_id` the same way and would **stop freeing trucks without a word**.
+>
+> **The picker is not separable from the data.** If the picker offers Fleet vehicles, `assign()`
+> writes a Fleet id into `transport_trips.vehicle_id` while every existing row holds one of ours —
+> the mixed namespace arrives through the back door with no ledger recording which is which.
+>
+> **Ruled 2026-09-21: do not split the repoint into a vehicle half and a driver half.** Couplings
+> 2 and 3 touch drivers in the same files, so a vehicle-only repoint does most of the driver work
+> to avoid waiting for the driver data — and leaves `vehicle_id` meaning Fleet and `driver_id`
+> meaning ours in the same row. We wait for D-118.
+>
+> **The good news, also measured:** Fleet's `vehicles` carries every column ours does except
+> `tenant_id` (it uses `company_id`), including status, capacity, type and normalised
+> registration. This is a reader swap plus a vocabulary normalisation plus relation repointing —
+> **not** a data-model migration.
+
 The instruction was to repoint allocation, pre-trip and dispatch onto
 `FleetService::getEligibleVehicles`. It exists, it is explicitly *"Consumed by Developer 1
 (Operations) during dispatch planning"*, and its payload is good — id, registration, type,
@@ -3884,3 +3952,448 @@ cannot reach them; there is no `cancelled` state in `TripStatus`, no delete rout
 method. `TransportTrip` uses `SoftDeletes`, so the model's own mechanism exists — but nothing
 above it does. Recorded because "clear it through the real services" is not currently possible for
 a trip, and that is worth knowing before somebody needs it on real data.
+
+---
+
+## D-118, continued — the relink ran. The driver half is now the only thing holding the repoint.
+
+**2026-09-21.** Backup proven, `--relink` run under authorisation, dry run re-run. Stopped before
+`--apply`, which is where it must stay.
+
+### The backup is a backup now, not a file
+
+`sangoe_crm_backup_20260919_175826_pre-repoint.sql` was restored into a throwaway **MySQL 8.0.46**
+container — the same version as dev — because the app user is granted only `sangoe_crm.*` and no
+scratch schema could be created on the host.
+
+**570 tables restored.** Row counts matched live exactly on every table this touches:
+`transport_trips` 39, `transport_vehicles` 2, `transport_drivers` 2, `trip_assignments` 3,
+`vehicles` 2, `driver_profiles` 3, `trip_events` 31, `transport_containers` 2, `users` 17. Content
+spot-checked, not just counts — trips 2, 12, 14 and 43 came back with the right numbers and states.
+
+### Two corrections to what this entry said two days ago
+
+**1. The junk trips were already cleared, and I reported otherwise.** Trips 2, 12 and 14 carry
+`deleted_at` dated **2026-09-16** — five days before I first looked at them. My earlier count used
+`DB::table('transport_trips')`, which **bypasses soft deletes**, so I counted three already-deleted
+rows as live references and reported "clear them first" for work that was already done.
+
+The lesson is the one this project keeps relearning in new costumes: *I queried the table, not the
+model, and the table does not know about `deleted_at`.*
+
+**2. Clearing them would not have helped anyway, because the command does not honour soft
+deletes.** `RepointTripFleetReferences` reads through `DB::table($table)` with no `deleted_at`
+filter, so it sees deleted rows and would repoint and ledger them. That is a finding in its own
+right and is raised with P2.
+
+### What the relink did
+
+`stos:reconcile-fleet --relink` repaired exactly two links, one-to-one on the plate, and wrote
+nothing else — confirmed by reading the command: it updates `vehicles.legacy_transport_vehicle_id`
+and **writes no ledger rows at all.**
+
+```
+vehicles.legacy_transport_vehicle_id   {1: 29, 2: 30}  ->  {1: 35, 2: 36}
+```
+
+That matters for the gate attached to this step: the permanent-`NULL` harm the condition guards
+against can only be written by `--apply`. `--relink` cannot cause it.
+
+### The dry run is meaningful for the first time
+
+| | Before | After |
+|---|---|---|
+| `transport_trips.vehicle_id` | 0 to move, 5 unmapped | **2 to move**, 3 unmapped |
+| `transport_trips.driver_id` | 0 to move, 5 unmapped | 0 to move, **5 unmapped** |
+| `trip_assignments.vehicle_id` | 0 to move, 3 unmapped | **3 to move**, 0 unmapped |
+| `trip_assignments.driver_id` | 0 to move, 3 unmapped | 0 to move, **3 unmapped** |
+
+### The vehicle side is clean. The driver side is not, and that is the whole blocker.
+
+Every unmappable **vehicle** reference is a soft-deleted junk trip:
+
+```
+trip 2   TRP-Hyxjpm        vehicle_id=10  SOFT-DELETED
+trip 12  TRP-2026-000004   vehicle_id=17  SOFT-DELETED
+trip 14  TRP-2026-000006   vehicle_id=17  SOFT-DELETED
+```
+
+**No live vehicle reference would get a permanent NULL.** Five live **driver** references would:
+
+```
+trip 43        TRP-2026-000034  driver_id=39  LIVE
+trip 44        TRP-2026-000035  driver_id=40  LIVE
+assignment 34  trip 43          driver_id=39  LIVE
+assignment 35  trip 44          driver_id=40  LIVE
+assignment 36  trip 44          driver_id=40  LIVE
+```
+
+All five are real demo data pointing at real drivers, unmappable only because
+`driver_profiles.legacy_transport_driver_id` still holds **33 and 34** while the live
+`transport_drivers` rows are **39 and 40** — and `--relink` is vehicle-only.
+
+**So `--apply` must not run.** It would write five permanent *"never match this row"* entries
+against live records, which is precisely the outcome the owner's condition exists to prevent.
+
+The fix is unchanged and still one pass: extend `--relink` to match drivers on the normalised
+licence, as it matches vehicles on the normalised plate. `driver_profiles.licence_normalized`
+already exists and the licences match one-to-one. Simulated with both halves relinked, every
+column reaches **0 unmappable**.
+
+**State: ledger 0 rows. Nothing repointed. Backup proven and retained.**
+
+---
+
+## D-119 — a finished trip never gave its vehicle and driver back
+
+**Raised:** 2026-09-21 by the owner, who had been freeing the driver by hand after every trip.
+**Ours. Fixed the same day.**
+
+### What was wrong
+
+`markReleased()` sat on `FleetResourceGateway` with **no caller anywhere in the codebase**. Its two
+siblings had 5 and 2. So Fleet was told when a resource was taken and **never** when it came back.
+
+Worse than the gateway: nothing freed our own tables either. `AllocationService::release()` frees a
+vehicle and driver, but it is the ABANDONED path — it reverts the trip to `approved` and voids the
+pre-trip checklist. No completion path existed at all. Proven on live data rather than by reading:
+`TRP-2026-000035` was **closed** with its vehicle still `allocated` and its driver still `assigned`.
+The other demo trip's resources were free only because somebody had released them by hand — which
+is the complaint.
+
+STOS-FLEET §8 is on the owner's side: *"Vehicle status must be driven by business events. Users
+should not freely type 'Available' without satisfying required conditions."*
+
+### The decision: at DELIVERY, not at closure — and why the driver is not an exception
+
+Neither FLEET nor OPS states the moment outright, so it was ruled here. The reasoning, because an
+unwritten decision reads as an oversight later:
+
+**The vehicle.** STOS-OPS §39 and §8 put the chain as `DELIVERY → CUSTOMER HANDOVER → FEEDBACK →
+POD → DOCUMENT RETURN → BILLING READINESS → ACCOUNTING → OPERATIONAL CLOSURE`, and §83 says plainly
+that *"operational closure does not necessarily mean accounting closure"*. Our `closed` is the
+accounting end — it requires a verified POD, an invoice and a collected payment. Holding a physical
+truck until a customer pays ties an asset to a commercial event, which is the thing that separation
+exists to prevent. STOS-FLEET §16 supplies the other half: *"Available — Asset is free."*
+
+**The driver looked like an exception and is not.** OPS §78 does give a driver a post-delivery
+duty — physical documents must be returned, and the system raises a *"Submit Trip Documents"* task.
+So the fair question is whether the driver stays held until they do.
+
+**§79 answers it.** The consequence of a late return is *"reminder; supervisor escalation; billing
+block; management visibility"* — a **billing** block, not an availability block. The document says
+what to withhold and it is money, not the driver. So both come free together.
+
+*(When §78/§79 are built, that billing block belongs in the billing gate. `releaseOnDelivery()`
+should not acquire a document check.)*
+
+### What shipped
+
+`AllocationService::releaseOnDelivery()`, called from `recordDelivery()` after the commit. It moves
+the assignment to `RELEASED` — the vocabulary's only terminal state; there is no `COMPLETED` and
+inventing one would be a new state with no Step 11 entry — frees both resources, tells Fleet, and
+records `crew.released` with `because: delivered`.
+
+It deliberately does **not** revert the trip or void the checklist. `release()` does both because
+that is an abandoned allocation; this is a completed one, and the checklist it passed is a
+historical fact about a journey that happened.
+
+**The Fleet call was wired into `release()` too.** That path had the same gap: it freed our two
+tables and left Fleet holding the resource for ever.
+
+### The screen says it
+
+Releasing the crew must not erase who drove. The trip payload read only the ACTIVE assignment, so
+without a fallback a delivered trip would have blanked its own vehicle and driver — the opposite of
+what freeing them is meant to communicate. It now falls back to the latest assignment, the step
+summary reads *"MH 12 DEMO 01 · Ramesh Kumar · released"*, and the panel explains that they were
+freed at delivery and stay listed because this is who ran this trip.
+
+The allocation controller still reads the ACTIVE assignment, correctly: it decides whether a trip
+can be allocated or released, rather than displaying history. And `assign()` refuses anything that
+is not `approved`, so releasing at delivery cannot reopen allocation on a finished trip.
+
+### Proved, and proved to fail
+
+Six tests. Broken three ways: removing the call from delivery reproduced the original bug and
+failed four of them; freeing our tables without telling Fleet failed exactly one; freeing a
+broken-down truck failed exactly one.
+
+The breakdown guard is the one worth keeping in mind — FLEET §8 says a vehicle *"cannot become
+AVAILABLE if critical maintenance unresolved"*, so a delivery must not overwrite a breakdown. The
+driver is judged separately and still comes free.
+
+### The stuck rows were repaired through the new path
+
+Not by hand: `releaseOnDelivery()` was run over the finished trips, which released
+`TRP-2026-000035`'s assignment and left all four demo resources available.
+
+---
+
+## D-120 — the repoint moves four reference columns and there are six
+
+**Raised:** 2026-09-22, at step 5 of the repoint, **before `--apply` was run.** **P1 found it,
+P2's command.** **BLOCKS `--apply`.**
+
+### What is wrong
+
+`stos:repoint-trip-fleet-refs` moves exactly four columns:
+
+```
+transport_trips    vehicle_id, driver_id
+trip_assignments   vehicle_id, driver_id
+```
+
+**Two more exist and are not covered:**
+
+| Table | Columns | Live references |
+|---|---|---|
+| `trip_exceptions` | `vehicle_id`, `driver_id` | **4** |
+| `trip_advances` | `driver_id` | 1 |
+
+And they hold precisely the ids the repoint is moving away from:
+
+```
+trip_exceptions #2  EXC-2026-000001  vehicle_id=35  driver_id=39
+trip_exceptions #4  EXC-2026-000003  vehicle_id=36  driver_id=40
+```
+
+`35, 36` are the legacy vehicles and `39, 40` the legacy drivers. After `--apply`, trips and
+assignments would hold Fleet's `1, 2` and `2, 3` while these two tables still hold `35, 36, 39,
+40` — **the same column name meaning two different things in one schema, with nothing marking
+which.**
+
+### Why it matters, and why it is D-116's shape again
+
+There are **seven** relations across **four** models, all resolving these columns against the
+legacy master:
+
+| Model | Relations |
+|---|---|
+| `TransportTrip` | `vehicle()`, `driver()` |
+| `TripAssignment` | `vehicle()`, `driver()` |
+| **`TripException`** | **`vehicle()`, `driver()`** |
+| **`TripAdvance`** | **`driver()`** |
+
+*(I found these independently rather than working from the count in P2's reply, as instructed. It
+is seven, and the two models I had missed in my own coupling list are the two the repoint does not
+cover — which is what makes this a defect rather than a tidying job.)*
+
+So the reader swap has no correct answer for those three relations:
+
+- **Repoint them** → they resolve legacy ids against Fleet: **blank today, a different truck the
+  day the ranges overlap.** That is D-116 exactly, in a place neither of us had a guard.
+- **Leave them** → `vehicle_id` means Fleet in two tables and legacy in two others, permanently,
+  with no marker. The next person to write a join has a one-in-two chance.
+
+### Why it is not visible yet, which makes it worse
+
+Neither relation is loaded anywhere today — no service or controller reads
+`$exception->vehicle` or `$advance->driver`. So **nothing would break at `--apply`**, no screen
+would go blank, no test would fail. It would be discovered by whoever first renders a vehicle on an
+exception, against data that has been wrong for however long.
+
+### The ledger does not cover it either
+
+`fleet_reference_repoints` records a verdict per row **for the four columns the command processes**.
+The uncovered two get no entry at all — so the "a row with no entry was created after the switch
+and is therefore in the new space" rule would read these legacy rows as new-space rows. The ledger
+would confirm the wrong answer.
+
+### Also found: one reference is not an id
+
+`trip_advances #2` carries `driver_id = 1212010`. There is no such driver; the live ids are 39 and
+40. Whatever that value is, it is not a foreign key, and it should not be carried through a
+migration as though it were.
+
+### What I did not do
+
+**`--apply` has not run.** The reconcile and both `--relink` passes have (they are authorised and
+write one column each); vehicles and drivers are now correctly mapped `{35→1, 36→2}` and
+`{39→2, 40→3}`, and the dry run reports **2 + 2 + 4 + 4 rows to move with every unmappable row a
+soft-deleted junk trip** — no live reference would be lost. The repoint is ready in every respect
+except this one.
+
+---
+
+## D-121 — CLP's M01–M14 is a second vocabulary, not a view, and four of them have no words at all
+
+**Raised:** 2026-09-22, sizing the client portal foundation. **Ours under MS-001 v1.1 §4** (the
+trip/milestone APIs are Person 1's). **Blocked on AUTH-REC-001 B-08.**
+
+### It is not a filter over `trip_events`
+
+CLP §8 defines fourteen client milestones. **Our internal states do not appear in it** —
+`dispatched`, `pretrip_ok` and `in_transit` are not milestones, and M03 *Container Yard Arrival* is
+not a state we have. It is a parallel vocabulary describing the same journey from the client's side.
+
+### Measured against what we emit
+
+| Covered | Count | Which |
+|---|---|---|
+| **Fully live** | 2 | M01 allocation, M13 billing |
+| Partly | 4 | M02, M08, M10, M14 |
+| **Registered, never emitted** | 5 | M06 `gate.in`, M09 `port.entry/exit` *(P2)*; M11 `documents.handed_over`, M12 `feedback.*`, M14 `collection.recorded` *(P3)* |
+| **No vocabulary anywhere** | **4** | M03 container yard arrival · M04 container inspection & loading · M05 container yard departure · M07 loading & sealing complete |
+
+Also unregistered: **detention** (part of M10), which §8 wants as a *"contractual detention
+calculation"* — a commercial rule nobody has specified.
+
+### The shape is wrong too, not only the coverage
+
+§8 requires each milestone to carry *"planned/actual time, location, source, actor, evidence,
+remarks, exception and audit trail."*
+
+`trip_events` has `occurred_at`, `recorded_at`, `source`, `actor_*`, `summary`, `detail` — and
+**no planned time, no location, no evidence link, no exception link.** A milestone is a richer
+object than an event: it carries an expectation as well as a fact, which is what makes *"running
+late"* expressible. An event cannot be late.
+
+### Why this is not a mapping job
+
+1. A **milestone entity** with planned vs actual, location and evidence — a new table, and
+   **B-08 already records that Step 11 has no milestone registry.**
+2. **Four new event types**, which under Hard Rule 4 need a Step 11 entry or a ruling — and they
+   are not renamings of things we do. *Container yard arrival* and *loading and sealing complete*
+   are **operational acts nobody performs in the system today**; somebody at a yard has to record
+   them.
+3. **Five emitters owned by other people** — two P2's, three P3's.
+4. §27 forbids the cheap way out: *"do not force clients to manually update information STOS can
+   derive from system/GPS/geofence/telemetry/workflow."* So the timestamps are supposed to come
+   from telemetry and geofencing, which is D-116's territory and reaches no trip today.
+
+### Estimate
+
+**Larger than the rest of the client portal foundation put together, and most of it is not code.**
+It is a registry decision, four new capture points that change what somebody does at a yard, five
+emitters we do not own, and a detention rule nobody has written.
+
+**Recommendation: keep M01–M14 out of the foundation entirely.** The portal does not depend on it.
+A plain-language journey built from the nine moments we already emit is honest, buildable now, and
+should be labelled as an interim so nobody mistakes it for §8's model.
+
+---
+
+## D-121 — A genset could be fitted to a retired vehicle, and the guard against it had never fired
+
+**Raised and fixed:** 2026-09-22, P2, while converting the last lowercase enums (T-58). **P2's code.**
+
+### What it was
+
+`GensetService::fit()` refuses to put a working unit on a scrapped truck, because the unit would
+read as in service on a vehicle that never moves again:
+
+```php
+if ($vehicle->status === 'retired') {
+    throw new BusinessException('That vehicle is retired — fitting a working genset to it would strand the unit.');
+}
+```
+
+`vehicles.status` has held **`RETIRED`** since `2027_01_07_000001` adopted the ruled uppercase
+vocabulary. So that comparison has been false on every call it has ever handled. No error, no log
+line, no refusal — the fit simply succeeded.
+
+### Why it survived a test suite
+
+`test_a_working_unit_is_not_fitted_to_a_retired_truck` passed the whole time. Its fixture set the
+vehicle to `'retired'` — **the same misspelling the guard used** — so the test and the bug agreed
+with each other and neither agreed with the database. The fixture now uses
+`Vehicle::STATUS_RETIRED`, and the test fails against the old guard.
+
+That is the second time in this module a green test has been found asserting a defect rather than
+the behaviour: `TripTimelineTest` did the same for D-116, where eight cases passed because the
+fixture reproduced the wrong id space.
+
+### What was done
+
+Fixed with the change that made it findable. Both sides now use `Vehicle::STATUS_RETIRED` and
+`Genset::RETIRED` rather than string literals, so a future rename moves both or neither.
+
+### The general lesson
+
+*A test written from the same assumption as the code under test verifies the assumption, not the
+code.* Both of these were caught by changing the vocabulary underneath them — which is an argument
+for doing the rename rather than living with two spellings, not just for tidiness.
+
+---
+
+## D-300 — M06/M07/M08 have two applications writing one milestone, and no rule for who wins
+
+**Raised:** 2026-09-23, P3, while mapping the cross-app data flow. **Nobody's code yet — and that
+is the point.** Numbered in the P3 band (D-300+) under the banding agreed after the D-58..D-61
+collision.
+
+### What it is
+
+Two specifications hand the same three milestones to two different people:
+
+| | Arrival (M06) | Loading & sealing (M07) | Departure (M08) |
+|---|---|---|---|
+| **CLP §3** | Client Warehouse/Gate role confirms | confirms | confirms |
+| **DVR §9** | Driver confirms | captures evidence | captures evidence |
+
+Both are written as the authority. Neither defers to the other.
+
+### Why it is worse than a duplicate
+
+A gate clerk and a driver standing in the same yard will not click at the same moment, and they
+will not always agree. So this is not "two ways to record one fact" — it is two facts, arriving
+out of order, with no rule for which one the trip keeps.
+
+And there is nothing underneath to arbitrate it: Step 11 registers no milestone table, no
+milestone event and no milestone endpoint. The words `milestone`, `container`, `portal`,
+`feedback` and `geofence` appear **zero times** in the canonical registry, against `trip` 84 and
+`POD` 14 by my count — P1 counted across every XML part of the workbook and got higher numbers
+with the same zeros. So there is no canonical place for the answer even once someone gives it.
+
+CLP §27 says milestones should be derived from gate scan, geofence or telemetry rather than typed
+by a person. If that is honoured, both of these become fallbacks rather than sources, and the
+conflict is bounded. That is a ruling, not a reading.
+
+### Why it needs deciding before anyone builds
+
+The milestone APIs are P1's under MS-001 v1.1 §4, the driver half is P2's, the client half is P3's.
+All three implement whatever is decided. A ruling after two of the three have built is a rewrite of
+two modules, which is the expensive order to do this in.
+
+### Status
+
+**Open — escalated for an owner ruling.** Independently reached from two directions: P1 raised the
+same gap from the milestone-API side. Not started by anyone, deliberately.
+
+---
+
+## D-301 — M12 feedback has two producers, no table, no event and no endpoint
+
+**Raised:** 2026-09-23, P3, same pass as D-300. **P3's to build once ruled.**
+
+### What it is
+
+CLP puts client feedback at M12. DVR §20 puts driver feedback at final handover, and adds that
+negative feedback can open a customer/service concern. So "M12 Feedback" names two different
+things collected from two different people at roughly the same moment, and the spine lists it once.
+
+Underneath it there is nothing at all: no `feedback` table in Step 11, no event in the registry,
+no endpoint in the API list. The word does not appear in the canonical registry.
+
+### Why it is not simply buildable
+
+CLP §20 describes the client half in enough detail to build from, and B-09 forbids building from
+CLP narrative without a Step 12 ticket — which is exactly the rule that stops one developer's
+reading of a specification becoming the product's behaviour. Two producers with no ruled owner is
+the case that rule exists for.
+
+There is a related asymmetry worth stating: `client_feedback` already exists on the CRM side and
+the client portal already has `GET/POST /api/portal/client/feedback`. So the client half has a
+home and the driver half does not, and "reuse what exists" would quietly decide the question by
+picking the half that is easier — which is how a specification gets settled by convenience.
+
+### What is needed
+
+One ruling covering: whether M12 is one milestone or two, who owns each, whether the driver's
+feedback is the same record as the client's, and what a negative response opens. Then a Step 12
+ticket.
+
+### Status
+
+**Open — blocked on a ruling, not on effort.** P1 raised the same gap independently.

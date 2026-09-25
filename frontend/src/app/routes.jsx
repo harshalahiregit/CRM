@@ -223,6 +223,7 @@ const SireRecurrenceDetail = lazy(() => import('@/modules/sire/pages/RecurrenceD
 // and invoice data owned by other developers and are not stubbed here.
 // Fleet screens (Person 2), inside the Transport module since the D-62 merge.
 const FleetOverview = lazy(() => import('@/modules/transport/fleet/pages/FleetOverview'))
+const FleetTrailers = lazy(() => import('@/modules/transport/fleet/pages/TrailersBoard'))
 const FleetVehiclePassport = lazy(() => import('@/modules/transport/fleet/pages/VehiclePassportView'))
 const FleetWorkshop = lazy(() => import('@/modules/transport/fleet/pages/MaintenanceBoard'))
 const FleetDrivers = lazy(() => import('@/modules/transport/fleet/pages/DriversBoard'))
@@ -325,6 +326,10 @@ const ContractSignPortal = lazy(() => import('@/modules/contract/pages/ContractS
 const PortalContractsTpv = lazy(() => import('@/modules/contract/pages/portals/TpvContractsPage'))
 const PortalContractsPurchase = lazy(() => import('@/modules/contract/pages/portals/PurchaseContractsPage'))
 const PortalContractsClient = lazy(() => import('@/modules/contract/pages/portals/ClientContractsPage'))
+// "Assigned to me" — ONE screen for all three portals. Unlike the contract pages
+// above it takes no api client, because here the three really do read the same
+// URL: the server works out who is asking from the token.
+const PortalAssignedTasks = lazy(() => import('@/modules/tasks/portal/PortalAssignedTasks'))
 
 const PurchaseVendorDetailLayout = lazy(() => import('@/modules/purchase/pages/vendor-detail/PurchaseVendorDetailLayout'))
 const PurchaseVendorOnboardingWizard = lazy(() => import('@/modules/purchase/pages/PurchaseVendorOnboardingWizard'))
@@ -949,6 +954,7 @@ export default function AppRoutes() {
           <Route path="workshop" element={<S><FleetWorkshop /></S>} />
           <Route path="vehicles" element={<S><FleetOverview /></S>} />
           <Route path="vehicles/:id" element={<S><FleetVehiclePassport /></S>} />
+          <Route path="trailers" element={<S><FleetTrailers /></S>} />
           <Route path="drivers" element={<S><FleetDrivers /></S>} />
           <Route path="drivers/:id" element={<S><FleetDrivers /></S>} />
         </Route>
@@ -1088,6 +1094,14 @@ export default function AppRoutes() {
             it would put a vendor module in the way of a team catch-up. Static
             "new" before ":id" so it is not parsed as a meeting id. */}
         <Route path="meetings/new" element={<S><KickoffMeetingCreate /></S>} />
+        {/* The cross-meeting registers, on the neutral path too. They existed
+            only under /app/purchase and /app/tpv, so the one module that reads
+            across EVERY meeting could not open the register that reads across
+            every meeting -- you had to go into a vendor module to see it, which
+            is the complaint that made Meetings its own module (SIR-000030).
+            Static "registers" before ":id", or it is parsed as a meeting id. */}
+        <Route path="meetings/registers" element={<S><MeetingRegisters /></S>} />
+        <Route path="meetings/registers/:register" element={<S><MeetingRegisters /></S>} />
         <Route path="meetings/:id/edit" element={<S><KickoffMeetingCreate /></S>} />
         <Route path="meetings/:id" element={<S><KickoffMeetingDetail /></S>} />
 
@@ -1232,6 +1246,12 @@ export default function AppRoutes() {
         <Route path="training"          element={<S><MyTraining /></S>} />
         <Route path="projects"          element={<S><MyWork view="projects" /></S>} />
         <Route path="tasks"             element={<S><MyWork view="tasks" /></S>} />
+        {/* Two task lists here, and they are genuinely two things: `tasks` above
+            is what was assigned to THIS LOGIN as a user, this one is what was
+            assigned by name to the vendor's contacts, who have no login of their
+            own. Merging them would need one of the two kinds of assignment to
+            pretend to be the other. */}
+        <Route path="team-tasks"        element={<S><PortalAssignedTasks /></S>} />
         <Route path="tickets"           element={<S><MyWork view="tickets" /></S>} />
         <Route path="expenses"          element={<S><MyWork view="expenses" /></S>} />
         <Route path="risk-score"        element={<S><MyPerformance view="risk" /></S>} />
@@ -1279,6 +1299,10 @@ export default function AppRoutes() {
         <Route path="profile"      element={<S><ClientPortalProfile /></S>} />
         <Route path="feedback" element={<S><ClientPortalFeedback /></S>} />
         <Route path="agreements"   element={<S><PortalContractsClient /></S>} />
+        {/* Work assigned to THIS contact by name. The client portal had no task
+            screen at all, so a task given to a client's coordinator reached them
+            only as an email with nowhere to go back to. */}
+        <Route path="my-tasks"     element={<S><PortalAssignedTasks /></S>} />
         {['invoices', 'payments', 'credit-notes', 'estimates', 'proposals',
           'contracts', 'projects', 'tickets', 'files', 'notes', 'contacts'].map(v => (
           <Route key={v} path={v} element={<S><ClientPortalRecords view={v} /></S>} />
@@ -1302,6 +1326,10 @@ export default function AppRoutes() {
             PurchasePortalOnboarding resolves the record from the token via
             onboarding.self() — no id in the URL. */}
         <Route path="agreements" element={<S><PortalContractsPurchase /></S>} />
+        {/* Tasks assigned to this vendor's own contacts. The Purchase portal has
+            no per-contact login — the vendor signs in as the company — so this
+            is its team's work, with each row naming whose it is. */}
+        <Route path="tasks"      element={<S><PortalAssignedTasks /></S>} />
         <Route path="onboarding" element={<S><PurchasePortalOnboarding /></S>} />
         <Route path="documents"  element={<S><PurchasePortalDocuments /></S>} />
         <Route path="compliance" element={<S><PurchasePortalCompliance /></S>} />

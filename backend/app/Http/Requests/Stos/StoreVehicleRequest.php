@@ -79,6 +79,10 @@ class StoreVehicleRequest extends FormRequest
             'fuel_type'          => ['nullable', Rule::in(Vehicle::FUEL_TYPES)],
             'branch'             => 'nullable|string|max:100',
             'capacity_tonnes'    => 'nullable|numeric|min:0|max:999999',
+            // T-19 — this truck's own km/l, overriding the type default. Null
+            // means "nobody has measured it", which is a different fact from
+            // zero and must stay tellable apart, so `gt:0` rather than `min:0`.
+            'benchmark_kmpl'     => 'nullable|numeric|gt:0|max:999.99',
 
             // T-04 — the service schedule. Either clock, neither or both:
             // trucks are serviced on distance, trailers often on time, and some

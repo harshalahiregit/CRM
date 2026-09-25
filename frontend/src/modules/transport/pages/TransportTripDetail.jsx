@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Truck, Building2, Package, History, Route as RouteIcon,
   AlertTriangle, Loader2, Gauge, Pencil, ClipboardCheck, Send, Boxes, CheckCircle2, Undo2,
-  Wallet, IndianRupee, FileCheck2, Receipt, Banknote, MapPin, Lock, ChevronDown, ChevronRight,
+  Wallet, IndianRupee, FileCheck2, Receipt, Banknote, MapPin, Flag, Lock, ChevronDown, ChevronRight,
   AlertTriangle as AlertIcon,
 } from 'lucide-react'
 import { transportTripApi, transportCapabilityApi, transportPretripApi } from '@/services/transportApi'
@@ -222,10 +222,14 @@ export default function TransportTripDetail() {
     crew:      { done: 3, current: [2] },
     checks:    { done: 4, current: [3] },
     dispatch:  { done: 5, current: [4] },
-    road:      { done: 7, current: [5, 6] },
+    // `road` is DEPARTURE and `delivery` is arrival. One drawer held both until
+    // 21 Sep and was the only one spanning two tracker pips.
+    road:      { done: 6, current: [5] },
+    delivery:  { done: 7, current: [6] },
     paperwork: { done: 8, current: [7] },
-    billing:   { done: 10, current: [8, 9] },
-    paid:      { done: 12, current: [10, 11] },
+    // Billing and collection are one concern read together — invoiced, then
+    // paid. Two drawers made a reader open both to learn one answer.
+    billing:   { done: 12, current: [8, 9, 10, 11] },
     close:     { done: 12, current: [11] },
     // Not stages of the journey — see the comment beside them in the markup.
     advances:  { available: 2 },
@@ -306,7 +310,11 @@ export default function TransportTripDetail() {
         <button onClick={() => navigate('/app/transport/trips')} style={backBtn}><ArrowLeft size={16} /></button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ color: '#a78bfa', margin: 0, fontSize: 11, fontWeight: 800, letterSpacing: '0.08em' }}>
-            {trip.trip_number}{trip.order?.order_number ? ` · from ${trip.order.order_number}` : ''}
+            {/* "· from TO-2026-000038" gave a number with no noun. Four
+                prefixes appear on this page and none of them announces what it
+                is; a reader who has not been told cannot tell an order from a
+                consignment. */}
+            {trip.trip_number}{trip.order?.order_number ? ` · Order ${trip.order.order_number}` : ''}
           </p>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <h1 style={{ color: 'var(--text-h)', fontSize: 22, fontWeight: 900, margin: '2px 0 0', letterSpacing: '-0.02em' }}>
@@ -377,6 +385,30 @@ export default function TransportTripDetail() {
         onGoToStep={goToStep}
       />
 
+      {/* ── WHAT HAS GONE WRONG, in the open ───────────────────────────
+          This was a collapsed drawer in the middle of the ladder until 21 Sep.
+          An open critical exception REFUSES A CLOSE — we watched it refuse a
+          real one — and a blocker you have to think to open is the wrong shape
+          for a working screen.
+
+          It is not reduced to a warning line, and that was checked rather than
+          assumed: `Raise an exception` lives in exactly one place in the whole
+          product, there is no exception register screen and no route to one, and
+          `transport.exception.create` is granted to the Dispatcher while
+          `transport.exception.manage` is not. Removing this would have left the
+          one role nearest the problem with no way to report it — "a register
+          nobody on the ground can write to only hears things second-hand".
+
+          So it moves up and opens out: problems are visible without a click, and
+          reporting one is still here. */}
+      <ExceptionsPanel
+        compact
+        trip={trip}
+        canRaise={!!grants['transport.exception.create']}
+        canManage={!!grants['transport.exception.manage']}
+        onChanged={load}
+      />
+
       {/* ── 2. WHERE IT IS, in one row ─────────────────────────────────── */}
       <TripProgress status={trip.status} />
 
@@ -387,9 +419,17 @@ export default function TransportTripDetail() {
 
           {/* SNG-TRN-009. Assigning only becomes possible once the trip is
               approved (STT-004's from-state). */}
+          {/* The summary says who, and — once the trip is delivered — that they
+              have been given back. D-119 releases the crew at delivery, and a
+              driver quietly becoming free is as confusing as one that never
+              does, so the step that held them is the step that says so. */}
           <TripStep {...stepProps('crew')} icon={Truck} n={1} title="Vehicle & driver"
-            outcome={[assignment?.vehicle?.registration_number, assignment?.driver?.name]
-              .filter(Boolean).join(' · ') || 'Assigned'}
+            outcome={(() => {
+              const who = [assignment?.vehicle?.registration_number, assignment?.driver?.name]
+                .filter(Boolean).join(' · ')
+              if (!who) return 'Assigned'
+              return assignment?.status === 'released' ? `${who} · freed for other trips` : who
+            })()}
             hint="Only vehicles and drivers that are free and have valid papers are offered.">
             {['draft', 'viability_pending'].includes(trip.status) ? (
               <p style={muted}>You can assign a vehicle and driver once the trip has been approved.</p>
@@ -401,7 +441,7 @@ export default function TransportTripDetail() {
 
           {/* SNG-TRN-010. RTM OPS-004 — "missing requirements identified". */}
           <TripStep {...stepProps('checks')} icon={ClipboardCheck} n={2} title="Pre-trip checks"
-            outcome={readiness?.total ? `${readiness.completed} of ${readiness.total} confirmed` : 'Passed'}
+            outcome={readiness?.total ? `${readiness.completed} of ${readiness.total} checks confirmed` : 'Passed'}
             hint="The order, the driver's papers and the vehicle's papers — you confirm each one.">
             {['draft', 'viability_pending'].includes(trip.status) ? (
               <p style={muted}>These checks begin once the trip has been approved.</p>
@@ -421,13 +461,26 @@ export default function TransportTripDetail() {
             )}
           </TripStep>
 
-          {/* STT-006 and STT-007 — D-105. Released is not moving. */}
-          <TripStep {...stepProps('road')} icon={MapPin} n={4} title="On the road"
-            outcome={trip.delivered_at
-              ? `Delivered ${fmtDateTime(trip.delivered_at)}`
-              : trip.departed_at ? `Left ${fmtDateTime(trip.departed_at)}` : 'Recorded'}
+          {/* STT-006 and STT-007 — D-105. Released is not moving.
+              Split into two drawers on 21 Sep. This was ONE drawer titled "On
+              the road" carrying both actions, and it was the only drawer on the
+              page spanning two tracker pips: its outcome read "Delivered 19
+              Sept" under a heading named after the previous stage, so the page
+              said "On the road: Delivered" and no reader could tell which stage
+              that was. One drawer per action is the rule everywhere else. */}
+          <TripStep {...stepProps('road')} icon={MapPin} n={4} title="Departure"
+            outcome={trip.departed_at ? `Left ${fmtDateTime(trip.departed_at)}` : 'Not recorded yet'}
             hint="Recorded by hand — there is no live vehicle tracking yet.">
-            <JourneyPanel trip={trip}
+            <JourneyPanel trip={trip} phase="departure"
+              canDepart={!!grants['transport.trip.dispatch']}
+              canDeliver={!!grants['transport.trip.deliver']}
+              onChanged={load} />
+          </TripStep>
+
+          <TripStep {...stepProps('delivery')} icon={Flag} n={5} title="Delivery"
+            outcome={trip.delivered_at ? `Delivered ${fmtDateTime(trip.delivered_at)}` : 'Not recorded yet'}
+            hint="The cargo is off and the vehicle and driver are freed for other trips.">
+            <JourneyPanel trip={trip} phase="delivery"
               canDepart={!!grants['transport.trip.dispatch']}
               canDeliver={!!grants['transport.trip.deliver']}
               onChanged={load} />
@@ -443,22 +496,13 @@ export default function TransportTripDetail() {
 
               `available`, not numbered — something can go wrong at any point,
               and a trip with no exceptions is not a trip missing a step. */}
-          <TripStep {...stepProps('exceptions')} icon={AlertIcon} n="!" title="What has gone wrong"
-            hint="Anything that needs somebody to own it and put it right. Raising is wider than resolving: whoever is nearest the problem can record it.">
-            <ExceptionsPanel
-              trip={trip}
-              canRaise={!!grants['transport.exception.create']}
-              canManage={!!grants['transport.exception.manage']}
-              onChanged={load}
-            />
-          </TripStep>
 
           <GroupLabel>Paperwork and money</GroupLabel>
 
           {/* P3's components. WHERE they sit and WHETHER they are open is this
               page's layout decision; their internals are untouched. A
               dispatcher assigning a truck should not scroll past billing. */}
-          <TripStep {...stepProps('paperwork')} icon={FileCheck2} n={5} title="Paperwork and proof of delivery"
+          <TripStep {...stepProps('paperwork')} icon={FileCheck2} n={6} title="Paperwork and proof of delivery"
             outcome="Proof of delivery verified"
             hint="A trip cannot be billed until its POD is verified, unless an exception waives it.">
             {['draft', 'viability_pending', 'approved'].includes(trip.status) ? (
@@ -470,51 +514,32 @@ export default function TransportTripDetail() {
             )}
           </TripStep>
 
-          <TripStep {...stepProps('billing')} icon={Receipt} n={6} title="Billing"
-            outcome="Handed to Accounts"
-            hint="Transport marks a trip ready to invoice; Accounts raise the invoice.">
+          {/* Billing and getting paid were two drawers until 21 Sep. They are
+              one question — has it been invoiced, and has the money arrived —
+              and a reader had to open both to answer it. */}
+          <TripStep {...stepProps('billing')} icon={Receipt} n={7} title="Billing and payment"
+            outcome={trip.status === 'closed' ? 'Invoiced and paid' : undefined}
+            hint="Transport marks a trip ready to invoice; Accounts raise it and post the money.">
             {['draft', 'viability_pending', 'approved'].includes(trip.status) ? (
               <p style={muted}>Billing becomes relevant once the trip has been dispatched.</p>
             ) : (
-              <BillingPanel trip={trip} canPrepare={!!grants['transport.billing.prepare']} onChanged={load} />
-            )}
-          </TripStep>
-
-          <TripStep {...stepProps('paid')} icon={Banknote} n={7} title="Getting paid"
-            outcome="Settled"
-            hint="Recording a receipt here tracks it; Accounts post the money.">
-            {['draft', 'viability_pending', 'approved'].includes(trip.status) ? (
-              <p style={muted}>This becomes relevant once the trip has been billed.</p>
-            ) : (
-              <CollectionPanel trip={trip} canRecord={!!grants['transport.collection.record']} onChanged={load} />
+              <div style={{ display: 'grid', gap: 16 }}>
+                <BillingPanel
+                  trip={trip}
+                  canPrepare={!!grants['transport.billing.prepare']}
+                  /* Narrower than prepare by one role: Operations may mark a trip
+                     ready to invoice and may not declare that it WAS invoiced. */
+                  canInvoice={!!grants['transport.billing.invoiced']}
+                  onChanged={load}
+                />
+                <CollectionPanel trip={trip} canRecord={!!grants['transport.collection.record']} onChanged={load} />
+              </div>
             )}
           </TripStep>
 
           {/* Advances and costs are not stages — they may happen any time after
               approval and never become "done". Marked `available` so they carry
               neither a tick nor a lock, both of which would be untrue. */}
-          <TripStep {...stepProps('advances')} icon={Wallet} n="₹" title="Advances"
-            hint="Money paid out before the trip earns anything. Requesting is separate from approving.">
-            {['draft', 'viability_pending'].includes(trip.status) ? (
-              <p style={muted}>Advances can be requested once the trip has been approved.</p>
-            ) : (
-              <AdvancesPanel trip={trip}
-                canRequest={!!grants['transport.advance.request']}
-                canApprove={!!grants['transport.advance.approve']} onChanged={load} />
-            )}
-          </TripStep>
-
-          <TripStep {...stepProps('costs')} icon={IndianRupee} n="₹" title="Trip costs"
-            hint="Fuel, tolls and anything else. Subtracted from the freight to give the margin.">
-            {['draft', 'viability_pending'].includes(trip.status) ? (
-              <p style={muted}>Costs can be recorded once the trip has been approved.</p>
-            ) : (
-              <CostsPanel trip={trip}
-                canRecord={!!grants['transport.cost.record']}
-                canRetract={!!grants['transport.cost.retract']} onChanged={load} />
-            )}
-          </TripStep>
-
           <GroupLabel>Closing</GroupLabel>
 
           {/* STT-012. Built and unreachable — D-106. The panel says so itself. */}
@@ -612,13 +637,40 @@ export default function TransportTripDetail() {
             )}
           </Fold>
 
+          {/* ── MONEY, beside the work rather than in it ─────────────────
+              Advances and trip costs were drawers 9 and 10 of eleven in the
+              main column. They are not stages — they can happen any time after
+              approval and never become "done" — and a dispatcher does not need
+              either of them to decide what to do next. That is the test this
+              page is now held to, so they sit here with the other reference. */}
+          <Fold icon={Wallet} title="Advances"
+            summary={['draft', 'viability_pending'].includes(trip.status) ? 'Not yet' : undefined}>
+            {['draft', 'viability_pending'].includes(trip.status) ? (
+              <p style={muted}>Advances can be requested once the trip has been approved.</p>
+            ) : (
+              <AdvancesPanel trip={trip}
+                canRequest={!!grants['transport.advance.request']}
+                canApprove={!!grants['transport.advance.approve']} onChanged={load} />
+            )}
+          </Fold>
+
+          <Fold icon={IndianRupee} title="Trip costs"
+            summary={['draft', 'viability_pending'].includes(trip.status) ? 'Not yet' : undefined}>
+            {['draft', 'viability_pending'].includes(trip.status) ? (
+              <p style={muted}>Costs can be recorded once the trip has been approved.</p>
+            ) : (
+              <CostsPanel trip={trip}
+                canRecord={!!grants['transport.cost.record']}
+                canRetract={!!grants['transport.cost.retract']} onChanged={load} />
+            )}
+          </Fold>
+
           <Fold icon={History} title="History" summary={`${audit.length} event${audit.length === 1 ? '' : 's'}`}>
             <AuditList entries={audit} />
           </Fold>
         </div>
       </div>
 
-      {/*
       {/* STT-003. The reason is the precondition, so the button stays disabled
           until there is one — the person correcting the trip has to know what
           to change. */}

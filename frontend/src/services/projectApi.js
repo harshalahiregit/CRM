@@ -12,6 +12,15 @@ export const projectApi = {
   meta: () => api.get('/projects/meta').then(unwrap).catch(handleErr),
   list: (params = {}) => api.get('/projects', { params }).then(unwrap).catch(handleErr),
   get: (id) => api.get(`/projects/${id}`).then(unwrap).catch(handleErr),
+
+  // People at a client, a vendor or a TPV who are on this project. Same engine
+  // and same directory as the task side — the picker walks /tasks/parties/*,
+  // only the write is project-specific.
+  parties: {
+    list: (id) => api.get(`/projects/${id}/party-assignees`).then(unwrap).catch(handleErr),
+    // `parties` is the list to END UP with — an empty array clears them.
+    sync: (id, parties) => api.post(`/projects/${id}/party-assignees`, { parties }).then(unwrap).catch(handleErr),
+  },
   // Project expenses for one vendor, across every project it is linked to.
   // The vendor is resolved to projects server-side — this never sends project ids.
   // vendorType names the party type ('tpv_vendor' | 'purchase_vendor'); the same
@@ -39,6 +48,13 @@ export const projectApi = {
   createMilestone: (id, data) => api.post(`/projects/${id}/milestones`, data).then(unwrap).catch(handleErr),
   updateMilestone: (mid, data) => api.put(`/projects/milestones/${mid}`, data).then(unwrap).catch(handleErr),
   deleteMilestone: (mid) => api.delete(`/projects/milestones/${mid}`).then(unwrap).catch(handleErr),
+  // A plan arrives as a spreadsheet — csv, xls or xlsx, the same reader the
+  // workforce importer uses. Returns {created, skipped, errors}.
+  importMilestones: (id, file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return api.post(`/projects/${id}/milestones/import`, fd).then(unwrap).catch(handleErr)
+  },
   files: (id) => api.get(`/projects/${id}/files`).then(unwrap).catch(handleErr),
   uploadFile: (id, formData) => api.post(`/projects/${id}/files`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }).then(unwrap).catch(handleErr),
 
@@ -85,6 +101,17 @@ export const projectApi = {
   expenses: (id) => api.get(`/projects/${id}/expenses`).then(unwrap).catch(handleErr),
   addExpense: (id, data) => api.post(`/projects/${id}/expenses`, data).then(unwrap).catch(handleErr),
   updateExpense: (id, eid, data) => api.put(`/projects/${id}/expenses/${eid}`, data).then(unwrap).catch(handleErr),
+  // The receipt behind an expense. Separate from the form because it is a file
+  // and is usually attached later.
+  uploadExpenseReceipt: (id, eid, file) => {
+    const fd = new FormData()
+    fd.append('receipt', file)
+    return api.post(`/projects/${id}/expenses/${eid}/receipt`, fd).then(unwrap).catch(handleErr)
+  },
+  expenseReceiptUrl: (id, eid) => `/projects/${id}/expenses/${eid}/receipt`,
+  // The tenant's expense categories, so the category is chosen rather than
+  // retyped three different ways.
+  expenseCategories: () => api.get('/customers/expense-categories').then(unwrap).catch(handleErr),
   deleteExpense: (id, eid) => api.delete(`/projects/${id}/expenses/${eid}`).then(unwrap).catch(handleErr),
 
   // Meeting tab — returns { meetings, counters: { total, completed, pending } }

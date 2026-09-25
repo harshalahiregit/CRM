@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { X, Trash2, Loader2 } from 'lucide-react'
+import { X, Trash2, Loader2, UserPlus } from 'lucide-react'
 import { taskApi, TASK_STATUS, TASK_PRIORITY, TASK_ACCENT } from '@/services/taskApi'
 import Select from '@/components/ui/Select'
-import { ConfirmModal } from '@/components/ui/SearchPicker'
+import SearchPicker, { ConfirmModal } from '@/components/ui/SearchPicker'
 
 /**
  * Bulk action bar. Fires ONE request to /tasks/bulk rather than N parallel
@@ -12,6 +12,7 @@ import { ConfirmModal } from '@/components/ui/SearchPicker'
  * half-applying a bad one.
  */
 export default function TaskBulkBar({ selected, onClear, staff = [] }) {
+  const [assigning, setAssigning] = useState(false)
   const qc = useQueryClient()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [err, setErr] = useState('')
@@ -48,12 +49,15 @@ export default function TaskBulkBar({ selected, onClear, staff = [] }) {
             onChange={v => v && run.mutate({ action: 'priority', value: v })}
             options={Object.entries(TASK_PRIORITY).map(([v, c]) => ({ value: v, label: v[0].toUpperCase() + v.slice(1), dot: c }))} />
         </div>
-        <div style={{ minWidth: 150 }}>
-          {/* Adds to existing assignees rather than replacing them. */}
-          <Select size="sm" value="" placeholder="Assign to…"
-            onChange={v => v && run.mutate({ action: 'assign', value: Number(v) })}
-            options={staff.map(s => ({ value: String(s.id), label: s.name }))} />
-        </div>
+        {/* Several people at once. A dropdown here meant putting three people on
+            a set of tasks was three passes over the same selection — and the
+            selection is the expensive thing to build. Adds to whoever is already
+            on each task rather than replacing them. */}
+        <button onClick={() => setAssigning(true)}
+          className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl"
+          style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-body)' }}>
+          <UserPlus size={12} /> Assign to…
+        </button>
 
         <button onClick={() => setConfirmDelete(true)}
           className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl"
@@ -74,6 +78,15 @@ export default function TaskBulkBar({ selected, onClear, staff = [] }) {
           style={{ background: 'color-mix(in srgb, var(--color-danger-500) 12%, transparent)', color: 'var(--color-danger-500)' }}>{err}</p>
       )}
 
+      <SearchPicker
+        multi confirmLabel="Assign"
+        open={assigning} onClose={() => setAssigning(false)}
+        onConfirm={picked => run.mutate({ action: 'assign', value: picked.map(p => p.id) })}
+        items={staff.map(s => ({ id: s.id, label: s.name, sublabel: s.role }))}
+        title={`Assign ${selected.length} ${selected.length === 1 ? 'task' : 'tasks'}`}
+        subtitle="They are added to whoever is already on each task."
+        emptyText="No people available." accent={TASK_ACCENT}
+      />
       <ConfirmModal open={confirmDelete} onClose={() => setConfirmDelete(false)}
         onConfirm={() => run.mutate({ action: 'delete', value: null })}
         title={`Delete ${ids.length} ${ids.length === 1 ? 'task' : 'tasks'}?`}

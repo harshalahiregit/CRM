@@ -95,6 +95,59 @@ class TaskNotifier
     }
 
     /**
+     * A task was handed to named people at a client, a vendor or a TPV.
+     *
+     * Separate from subtaskAssigned() because the recipients are not users. They
+     * have an email address and — for a client contact — sometimes a portal
+     * login, but there is no users row to ring a bell on, and emails() only
+     * knows how to turn user ids into addresses. So the addresses come straight
+     * off the assignment rows, which is also why those rows carry the email in
+     * the first place.
+     *
+     * A contact with no email is still assigned; they simply are not told by
+     * this system, and whoever assigned them is the one who knows that.
+     *
+     * @param  \App\Models\Shared\PartyAssignee[]  $added
+     */
+    public function partyAssigned(Task $task, array $added, ?int $actorId): void
+    {
+        if (! $added || ! $this->config->on($task->tenant_id, 'notify_assigned')) {
+            return;
+        }
+
+        $actor = $this->name($actorId);
+
+        // Anyone among them who DOES have a login in this system gets the bell
+        // as well, so the portal badge agrees with the inbox.
+        $userIds = [];
+        foreach ($added as $row) {
+            $contact = $row->party();
+            if ($contact && ! empty($contact->user_id)) {
+                $userIds[] = (int) $contact->user_id;
+            }
+        }
+        $userIds = array_values(array_unique(array_diff($userIds, [(int) $actorId])));
+
+        if ($userIds) {
+            $this->bell(
+                $userIds, $task->tenant_id, 'task.assigned',
+                "{$actor} assigned you: {$task->name}",
+                $this->trail($task), $this->link($task), $actorId,
+            );
+        }
+
+        $addresses = array_values(array_unique(array_filter(
+            array_map(fn ($row) => (string) ($row->email ?? ''), $added)
+        )));
+
+        $this->mail(
+            $task->tenant_id, $addresses,
+            fn () => new SubtaskAssignedMail($task, $this->tree->ancestryOf($task, $task->tenant_id), $actor),
+            "party assignment of task {$task->id}",
+        );
+    }
+
+    /**
      * A checklist item was assigned to someone. Checklist items previously had NO
      * notification at all — this gives them the same in-app bell + email leg as a
      * subtask assignment. Gated by notify_assigned; self-assignment is silent.

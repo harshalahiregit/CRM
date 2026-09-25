@@ -47,7 +47,11 @@ return [
 
     'telemetry' => [
         'excursion_temperature'  => (float) env('STOS_EXCURSION_TEMP', -18.0),
-        'excursion_generator_off' => 'off',
+        // T-06 — states in which the genset is NOT cooling the load. FAULT is
+        // here because a faulted unit reported as running is how a spoiled load
+        // goes unnoticed. Narrow it to ['OFF'] for a deployment whose units
+        // report FAULT unreliably.
+        'excursion_generator_off' => ['OFF', 'FAULT'],
 
         // M2 rule: an excursion needs the vehicle to be MOVING as well.
         //

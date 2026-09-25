@@ -42,7 +42,7 @@ class MaintenanceService
                 'workshop_name'   => $data['workshop_name'] ?? null,
                 'complaint'       => $data['complaint'] ?? null,
                 'diagnosis'       => $data['diagnosis'] ?? null,
-                'status'          => $data['status'] ?? 'open',
+                'status'          => $data['status'] ?? MaintenanceJob::OPEN,
                 'is_safety_critical' => (bool) ($data['is_safety_critical'] ?? false),
                 'opened_at'       => now(),
             ]);
@@ -75,7 +75,7 @@ class MaintenanceService
     {
         $job = $this->job($jobId, $companyId);
 
-        if (in_array($job->status, ['completed', 'cancelled'], true)) {
+        if (in_array($job->status, MaintenanceJob::CLOSED_STATES, true)) {
             throw new BusinessException('That job card is already closed. Open a new one for further work.');
         }
 
@@ -114,7 +114,7 @@ class MaintenanceService
     {
         $job = $this->job($jobId, $companyId);
 
-        if ($job->status === 'completed') {
+        if ($job->status === MaintenanceJob::COMPLETED) {
             throw new BusinessException('That job card is already closed.');
         }
 
@@ -125,7 +125,7 @@ class MaintenanceService
             $job->fill([
                 'diagnosis'     => $data['diagnosis']     ?? $job->diagnosis,
                 'workshop_name' => $data['workshop_name'] ?? $job->workshop_name,
-                'status'        => 'completed',
+                'status'        => MaintenanceJob::COMPLETED,
                 'closed_at'     => $closedAt,
                 // Both are written from one verdict so they cannot drift.
                 'qc_result'     => $verdict,

@@ -7,6 +7,7 @@ use App\Exceptions\BusinessException;
 use App\Models\Transport\TransportDocument;
 use App\Services\Transport\TransportDocumentService;
 use App\Support\Transport\TransportDocumentType;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -48,7 +49,7 @@ class VehicleDocumentService
         $vehicle = $this->vehicle($vehicleId, $companyId);
         $type = $this->normaliseType($type);
 
-        $document = $this->documents->file($vehicle, $type, $data, $companyId, $actor);
+        $document = $this->documents->file($vehicle, $type, $this->withFile($data, $companyId), $companyId, $actor);
 
         Log::channel('stos')->info('Vehicle document filed', [
             'company_id' => $companyId, 'vehicle_id' => $vehicle->id,
@@ -71,7 +72,7 @@ class VehicleDocumentService
     {
         $current = $this->documents->find($documentId, $companyId);
 
-        $document = $this->documents->renew($current, $data, $companyId, $actor);
+        $document = $this->documents->renew($current, $this->withFile($data, $companyId), $companyId, $actor);
 
         return [
             'document'   => $document->fresh(),
@@ -243,6 +244,43 @@ class VehicleDocumentService
     }
 
     /* ── helpers ────────────────────────────────────────────────── */
+
+    /**
+     * Put the uploaded certificate somewhere, and name it for the store.
+     *
+     * `TransportDocumentService` stores `file_path`, `file_name` and
+     * `file_hash` — it does not take an `UploadedFile`. The controller
+     * validated one under the key `file`, handed the whole array over, and the
+     * shared service intersected it against its editable columns, where `file`
+     * is not one. So the upload was **dropped, silently**: the API answered
+     * 201, the screen said "Filed", and no certificate was kept.
+     *
+     * Found by putting a real PDF through the endpoint. Every test passed a
+     * document number and a date and no file, so none of them noticed — the
+     * same shape of blind spot as the tests that passed while asserting D-116.
+     *
+     * Private disk, same as a fuel receipt: a statutory certificate is not
+     * something to serve from a public URL.
+     */
+    private function withFile(array $data, int $companyId): array
+    {
+        $file = $data['file'] ?? null;
+        unset($data['file']);
+
+        if (! $file instanceof UploadedFile) {
+            return $data;
+        }
+
+        return [
+            ...$data,
+            'file_path' => $file->store("stos/vehicle-documents/{$companyId}", 'local'),
+            // The name a person recognises, beside a stored path that is a
+            // hash nobody can read.
+            'file_name' => $file->getClientOriginalName(),
+            // So the same certificate uploaded twice is recognisable as one.
+            'file_hash' => hash_file('sha256', $file->getRealPath()),
+        ];
+    }
 
     /** Which vehicle date this document type sets, or null if it sets none. */
     public function gatedBy(string $type): ?string

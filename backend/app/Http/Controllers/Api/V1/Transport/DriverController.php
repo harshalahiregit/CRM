@@ -70,7 +70,12 @@ class DriverController extends Controller
             'licence_number' => 'nullable|string|max:40',
             'licence_class'  => ['nullable', Rule::in(DriverProfile::CLASSES)],
             'licence_expiry' => 'nullable|date',
-            'status'         => ['nullable', Rule::in(DriverProfile::STATUSES)],
+            'medical_expiry' => 'nullable|date',
+            // MANUALLY_SETTABLE, not STATUSES: ON_TRIP is written by the
+            // dispatch gateway when a trip takes the driver and cleared when it
+            // releases them. Typing it here would claim a trip that does not
+            // exist, and the release would then never come.
+            'status'         => ['nullable', Rule::in(DriverProfile::MANUALLY_SETTABLE)],
             'note'           => 'nullable|string|max:255',
         ]);
 

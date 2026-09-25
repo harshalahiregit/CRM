@@ -144,7 +144,12 @@ class FuelService
         }
 
         $kmpl = round($km / $litres, 2);
-        $benchmark = (float) (config('stos.fuel.benchmark_kmpl')[$vehicle->vehicle_type] ?? 0);
+
+        // T-19 — this truck's own figure when somebody has measured it, the
+        // type default when nobody has. A ten-year-old tipper and last year's
+        // do not return the same km/l, and flagging the old one on every fill
+        // teaches people to ignore the exception queue.
+        ['value' => $benchmark, 'source' => $source] = $vehicle->fuelBenchmark();
 
         if ($benchmark <= 0) {
             return ['km_driven' => $km, 'efficiency_kmpl' => $kmpl, 'exception' => false, 'note' => null];
@@ -159,13 +164,20 @@ class FuelService
 
         $shortfall = round((1 - $kmpl / $benchmark) * 100);
 
+        // Whose benchmark, not just "the benchmark". A driver disputing a flag
+        // needs to know whether the number came from this vehicle's own history
+        // or from a table of type averages — those are answered differently.
+        $whose = $source === 'vehicle'
+            ? "this vehicle's benchmark of {$benchmark}"
+            : "the {$vehicle->vehicle_type} benchmark of {$benchmark}";
+
         return [
             'km_driven'       => $km,
             'efficiency_kmpl' => $kmpl,
             'exception'       => true,
             // The note says what was expected and what happened, so the
             // exception queue does not need a second query to be understood.
-            'note' => "{$kmpl} km/l against a benchmark of {$benchmark} — {$shortfall}% below, over {$km} km.",
+            'note' => "{$kmpl} km/l against {$whose} — {$shortfall}% below, over {$km} km.",
         ];
     }
 

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronRight, Square, CheckSquare, Plus, CalendarDays, CornerDownRight } from 'lucide-react'
+import { ChevronRight, Square, CheckSquare, Plus, CalendarDays, CornerDownRight, ListTree } from 'lucide-react'
 import { TASK_ACCENT, TASK_PRIORITY } from '@/services/taskApi'
 
 /**
@@ -31,6 +31,15 @@ function Row({ node, onToggle, onAddChild, onOpen, busyId }) {
 
   const kids = node.children || []
   const hasKids = kids.length > 0
+
+  // Sent by the server (TaskTreeService::breakdown) so the modal, the board and
+  // the project percentage can never quote different numbers for the same work.
+  // `subtasks` is DIRECT children only — "3 of 6 subtasks" is a sentence about
+  // this row; the deep number is what progress.percent already is.
+  const listDone  = node.breakdown?.checklist?.done ?? node.checklist?.done ?? 0
+  const listCount = node.breakdown?.checklist?.total ?? node.checklist?.total ?? 0
+  const subDone   = node.breakdown?.subtasks?.done ?? 0
+  const subCount  = node.breakdown?.subtasks?.total ?? kids.length
   const due = fmtDate(node.due_date)
   const overdue = node.due_date && !node.is_done && new Date(node.due_date) < new Date().setHours(0, 0, 0, 0)
   const busy = busyId === node.id
@@ -100,6 +109,33 @@ function Row({ node, onToggle, onAddChild, onOpen, busyId }) {
               </span>
             )}
 
+            {/* The two tallies, named and kept apart.
+
+                One rolled-up "60%" is the right answer for a bar and the wrong
+                one for a person scanning a list: it does not say whether four
+                checklist lines are ticked or two subtasks are finished, and at
+                fifty rows on screen that is the only thing anybody is reading
+                for. So each is shown with its own icon and its own count, and
+                the bar keeps the deep number.
+
+                Each appears only when it exists — a task with no checklist
+                should not carry an empty "0/0" down every level. */}
+            {subCount > 0 && (
+              <span className="flex items-center gap-0.5 text-[10px] tabular-nums"
+                title={`${subDone} of ${subCount} subtasks finished`}
+                style={{ color: subDone === subCount ? 'var(--color-success-500)' : 'var(--text-muted)' }}>
+                <ListTree size={9} /> {subDone}/{subCount}
+              </span>
+            )}
+
+            {listCount > 0 && (
+              <span className="flex items-center gap-0.5 text-[10px] tabular-nums"
+                title={`${listDone} of ${listCount} checklist items ticked`}
+                style={{ color: listDone === listCount ? 'var(--color-success-500)' : 'var(--text-muted)' }}>
+                <CheckSquare size={9} /> {listDone}/{listCount}
+              </span>
+            )}
+
             {/* Only meaningful when there IS work underneath — a childless row's
                 progress is just its own tick box, which is already shown. */}
             {node.progress?.total > 0 && hasKids && (
@@ -108,7 +144,7 @@ function Row({ node, onToggle, onAddChild, onOpen, busyId }) {
                   <span className="block h-full rounded-full"
                     style={{ width: `${node.progress.percent}%`, background: 'var(--color-success-500)' }} />
                 </span>
-                {node.progress.done}/{node.progress.total}
+                {node.progress.percent}%
               </span>
             )}
 

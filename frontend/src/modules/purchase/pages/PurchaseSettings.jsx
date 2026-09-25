@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Save, Plus, Pencil, Trash2, ExternalLink, Info } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
 import LoadError from '@/components/ui/LoadError'
+import PrequalificationCatalogueTab from '../components/PrequalificationCatalogueTab'
 import { useAuth } from '@/context/AuthContext'
 import { KIT3D_STYLE as PURCHASE_STYLE, labelStyle, inputStyle, Overlay, ModalFooter, Field, TextInput } from '@/components/ui/kit3d'
 
@@ -19,6 +20,7 @@ const TABS = [
   { key: 'governance', label: 'Governance' },
   { key: 'medical',    label: 'Medical' },
   { key: 'categories', label: 'Vendor category' },
+  { key: 'prequalification', label: 'Prequalification' },
   { key: 'return',     label: 'Order Return' },
   // Managed elsewhere — pointers, not duplicates.
   { key: 'units',      label: 'Units',           linkTo: '/app/inventory/settings', where: 'Inventory → Settings → Units' },
@@ -107,6 +109,7 @@ export default function PurchaseSettings() {
               : tab === 'general' ? <GeneralTab s={settings} set={set} save={save} msg={msg} canEdit={isAdmin} />
                 : tab === 'options' ? <OptionsTab s={settings} set={set} save={save} msg={msg} canEdit={isAdmin} />
                   : tab === 'governance' ? <GovernanceTab s={settings} set={set} save={save} msg={msg} canEdit={isAdmin} />
+                    : tab === 'prequalification' ? <PrequalificationCatalogueTab canEdit={isAdmin} />
                     : tab === 'medical' ? <MedicalTab s={settings} set={set} save={save} msg={msg} canEdit={isAdmin} />
                     : tab === 'return' ? <ReturnTab s={settings} set={set} save={save} msg={msg} canEdit={isAdmin} />
                       : <CategoriesTab canEdit={isAdmin} />}

@@ -89,7 +89,7 @@ export default function GensetPanel({ vehicle, gensets = [], onChanged }) {
             className="w-full text-xs rounded-lg px-3 py-2"
             style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text)' }} />
           <Select size="sm" value={status} onChange={setStatus}
-            options={GENSET_STATUSES.filter((s) => s.value !== 'retired')} ariaLabel="Genset status" />
+            options={GENSET_STATUSES.filter((s) => s.value !== 'RETIRED')} ariaLabel="Genset status" />
           <div className="flex items-center justify-end gap-2">
             <button type="button" onClick={() => { setAdding(false); setErr('') }}
               className="text-[11px] font-semibold px-3 py-1.5 rounded-lg"

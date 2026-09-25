@@ -80,7 +80,18 @@ class TransportTripController extends Controller
             // Accounts and Approver — roles PERM-001 grants full trip view to.
             // The eager loads are column-limited so a trip read never becomes a
             // full master-data read.
-            'assignment' => $this->assignments->activeForTrip($trip->id, $tenantId)
+            // The ACTIVE assignment while there is one, and the last one after
+            // the trip is delivered.
+            //
+            // From D-119 the crew is released at delivery, so a delivered trip
+            // has no active assignment — and reading only the active one would
+            // blank "who drove this" the moment a trip finished, which is the
+            // opposite of what freeing the driver is supposed to communicate.
+            // The allocation controller still reads the ACTIVE one, correctly:
+            // it is deciding whether a trip can be allocated or released, not
+            // displaying history.
+            'assignment' => ($this->assignments->activeForTrip($trip->id, $tenantId)
+                ?? $this->assignments->historyForTrip($trip->id, $tenantId)->first())
                 ?->load('vehicle:id,registration_number,vehicle_type,status', 'driver:id,name,driver_code,licence_class,availability'),
             'audit' => $this->audit->forSubject($trip, $tenantId),
             // CTD §4's destination, reachable from the trip in one click.

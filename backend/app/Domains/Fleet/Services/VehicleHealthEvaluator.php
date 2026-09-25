@@ -3,6 +3,7 @@
 namespace App\Domains\Fleet\Services;
 
 use App\Domains\Fleet\Models\Vehicle;
+use App\Domains\Fleet\Models\VehicleLiveStatus;
 use Illuminate\Support\Carbon;
 
 /**
@@ -154,9 +155,12 @@ class VehicleHealthEvaluator
         }
 
         $threshold = (float) config('stos.telemetry.excursion_temperature', -18.0);
-        $offState  = (string) config('stos.telemetry.excursion_generator_off', 'off');
+        // Same list the ingestion excursion check uses, from the same config
+        // key — two readings of "not cooling" would eventually disagree.
+        $offStates = (array) config('stos.telemetry.excursion_generator_off',
+            VehicleLiveStatus::GENSET_NOT_COOLING);
 
-        if ($live->generator_status !== $offState || (float) $live->temperature <= $threshold) {
+        if (! in_array($live->generator_status, $offStates, true) || (float) $live->temperature <= $threshold) {
             return null;
         }
 

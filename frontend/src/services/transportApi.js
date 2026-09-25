@@ -644,6 +644,20 @@ export const transportBillingApi = {
       .then((r) => r.data?.data ?? { readiness: null, bill: null }).catch(handleErr),
 
   prepare: (tripId) => post422(`/transport/trips/${tripId}/bill`, {}),
+
+  /**
+   * STT-010 — record that Accounts raised the invoice.
+   *
+   * The route shipped on 19 Sep and had no caller here for two days, which is
+   * D-106 repeating one layer up: the endpoint existed and nothing could press
+   * it, so a trip stopped at Billable and closure stayed unreachable from the
+   * screen. A route with no button is the same gap as a method with no route.
+   *
+   * Does NOT raise an invoice. Accounts does that and emits EVT-010; this
+   * records the linkage and moves the trip to `billed`.
+   */
+  markInvoiced: (tripId, invoiceId) =>
+    post422(`/transport/trips/${tripId}/bill/invoiced`, { invoice_id: invoiceId }),
 }
 
 /**
