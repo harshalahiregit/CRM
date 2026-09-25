@@ -5,7 +5,7 @@ import { Plus, Search, X, Linkedin, Loader2, Upload, FileText, Briefcase, Clock,
 import { hrApi } from '@/services/hrApi'
 import { useMasterData } from '@/modules/hr/useMasterData'
 import { HrLoading } from '@/components/ui/HrState'
-import { formatCTC, candidateScore } from '@/modules/hr/constants'
+import { formatCTC, candidateScore, JOB_LIVE_STATUSES } from '@/modules/hr/constants'
 import CandidateQuickActions from '@/modules/hr/components/CandidateQuickActions'
 
 const STAGES = ['Applied','Screening','Assessment','Interview','Offer','Hired','Rejected']
@@ -528,7 +528,12 @@ export default function Candidates() {
                   <label className="label">Applying For</label>
                   <select className="input-3d text-sm" value={form.job_posting_id} onChange={e=>setForm({...form,job_posting_id:e.target.value})}>
                     <option value="">Select job...</option>
-                    {jobs.filter(j=>j.status==='Active').map(j=><option key={j.id} value={j.id}>{j.title}</option>)}
+                    {/* JOB_LIVE_STATUSES, not 'Active'. 'Active' is the legacy
+                        value the status migration replaced with 'Published', so
+                        this filter matched nothing and the picker was empty on
+                        every workspace — a candidate could not be attached to a
+                        job through this form at all. */}
+                    {jobs.filter(j=>JOB_LIVE_STATUSES.includes(j.status)).map(j=><option key={j.id} value={j.id}>{j.title}</option>)}
                   </select>
                 </div>
               </div>
