@@ -304,6 +304,7 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     */
     Route::get('/directory/reconciliation', [DirectoryController::class, 'reconciliation']);
     Route::post('/employees/{employee}/link-login', [DirectoryController::class, 'link'])->whereNumber('employee');
+    Route::post('/employees/{employee}/provision-login', [DirectoryController::class, 'provision'])->whereNumber('employee');
 
     Route::get('/employees/{employee}/letters', [LetterController::class, 'available'])->whereNumber('employee');
     Route::get('/employees/{employee}/letters/{type}', [LetterController::class, 'download'])
