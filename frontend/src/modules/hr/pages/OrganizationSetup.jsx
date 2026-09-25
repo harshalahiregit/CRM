@@ -81,6 +81,7 @@ const MASTERS = {
   },
   employmentTypes: {
     label: 'Employment Types', singular: 'Employment Type', icon: BriefcaseBusiness,
+    purpose: 'Employment types are how somebody is engaged — Full-time, Contract, Intern. They fill the Employment Type picker on the employee form, which reads "No employment types defined yet" until one exists.',
     api: () => hrApi.organization.employmentTypes,
     columns: [
       { key: 'name',           head: 'Employment Type' },
