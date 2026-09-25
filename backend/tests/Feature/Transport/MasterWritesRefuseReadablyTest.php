@@ -60,7 +60,7 @@ class MasterWritesRefuseReadablyTest extends TestCase
     private function legacyVehicleId(): int
     {
         return DB::table('transport_vehicles')->insertGetId([
-            'tenant_id' => self::COMPANY, 'registration_number' => $plate = 'MH01OLD'.random_int(1000, 9999),
+            'tenant_id' => self::COMPANY, 'registration_number' => $plate = 'MH01OLD'.self::uniqueSeq(4),
             'registration_normalized' => $plate,
             'created_at' => now(), 'updated_at' => now(),
         ]);
@@ -69,7 +69,7 @@ class MasterWritesRefuseReadablyTest extends TestCase
     private function legacyDriverId(): int
     {
         return DB::table('transport_drivers')->insertGetId([
-            'tenant_id' => self::COMPANY, 'name' => 'Old Driver '.random_int(100, 999),
+            'tenant_id' => self::COMPANY, 'name' => 'Old Driver '.self::uniqueSeq(3),
             'created_at' => now(), 'updated_at' => now(),
         ]);
     }
@@ -124,7 +124,7 @@ class MasterWritesRefuseReadablyTest extends TestCase
             $user = $this->actAs($role);
             $target = str_replace(['{v}', '{d}'], [$this->legacyVehicleId(), $this->legacyDriverId()], $uri);
 
-            $status = $this->{$verb}($target, ['registration_number' => 'MH01NEW'.random_int(10, 99)])->status();
+            $status = $this->{$verb}($target, ['registration_number' => 'MH01NEW'.self::uniqueSeq(4)])->status();
 
             $this->assertNotContains($status, [200, 201],
                 "Role `{$role}` wrote to a read-only master ({$verb} {$uri}). The ruling is that "

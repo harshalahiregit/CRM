@@ -8,6 +8,7 @@ use App\Domains\Fleet\Services\VehicleService;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Tests\TestCase;
 
 /**
  * Fixtures that create the resources allocation actually meets.
@@ -38,7 +39,10 @@ trait CreatesFleetResources
         $userId = $actor instanceof User ? $actor->id : ($actor ?? ($this->actor->id ?? 1));
 
         return app(VehicleService::class)->create(array_merge([
-            'registration_number' => 'MH'.random_int(10, 99).Str::upper(Str::random(2)).random_int(1000, 9999),
+            // D-54 — monotonic, never random. A random unique identifier makes
+            // a collision rare rather than impossible, and a rare failure gets
+            // re-run rather than fixed.
+            'registration_number' => 'MHFL'.Str::upper(Str::random(2)).TestCase::uniqueSeq(6),
             'vehicle_type' => 'truck',
             'ownership_type' => 'owned',
             'capacity_tonnes' => 25,
@@ -58,7 +62,7 @@ trait CreatesFleetResources
         $personId = DB::table('stos_drivers')->insertGetId([
             'company_id' => $companyId,
             'name' => $attrs['name'] ?? 'Ramesh '.Str::random(4),
-            'phone' => $attrs['phone'] ?? '98'.random_int(10000000, 99999999),
+            'phone' => $attrs['phone'] ?? '98'.TestCase::uniqueSeq(8),
             'designation' => 'Driver',
             'created_at' => now(), 'updated_at' => now(),
         ]);
@@ -69,7 +73,7 @@ trait CreatesFleetResources
             'company_id' => $companyId,
             'source' => 'stos',
             'source_id' => $personId,
-            'licence_number' => 'RJ14'.random_int(100000, 999999),
+            'licence_number' => 'RJ14'.TestCase::uniqueSeq(6),
             'licence_class' => 'HMV',
             'licence_expiry' => now()->addYears(2)->toDateString(),
             'status' => DriverProfile::AVAILABLE,

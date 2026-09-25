@@ -67,7 +67,7 @@ class AllocationLockTargetsFleetTest extends TestCase
     private function fleetVehicle(): int
     {
         return DB::table('vehicles')->insertGetId([
-            'company_id' => self::COMPANY, 'registration_number' => 'MH01LOCK'.random_int(10, 99),
+            'company_id' => self::COMPANY, 'registration_number' => 'MH01LOCK'.self::uniqueSeq(4),
             'vehicle_type' => 'truck', 'ownership_type' => 'owned', 'status' => 'AVAILABLE',
             'created_at' => now(), 'updated_at' => now(),
         ]);
