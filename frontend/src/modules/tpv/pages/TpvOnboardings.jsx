@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { ONBOARDING_TOTAL_STEPS } from '@/lib/vendors/onboardingSteps'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, RefreshCw, Search, Rocket, Eye, Trash2, ShieldCheck, Clock, CheckCircle, XCircle, AlertTriangle,
@@ -150,7 +151,7 @@ export default function TpvOnboardings() {
                     )}
                   </div>
                   <div style={{ display: 'flex', gap: 16, color: 'var(--text-muted)', fontSize: 12, flexWrap: 'wrap' }}>
-                    <span>Step {r.current_step} of 6</span>
+                    <span>Step {r.current_step} of {r.total_steps || ONBOARDING_TOTAL_STEPS}</span>
                     <span>Started {fmtDate(r.created_at)}</span>
                     {r.submitted_at && <span>Submitted {fmtDate(r.submitted_at)}</span>}
                   </div>

@@ -102,18 +102,20 @@ class PortalOnboardingFlowTest extends TestCase
         $vendor = $this->user('third_party_vendor');
         $svc    = app(TpvOnboardingService::class);
 
-        // Step 1 is not acknowledged, so 2..6 are all out of reach.
-        foreach ([2, 3, 5, 6] as $step) {
+        // Step 2, the kickoff, is not acknowledged, so 3..7 are out of reach.
+        // Step 1 is Add Contact, which is admin-only and therefore never what
+        // holds a vendor up -- see the service's furthestReachableStep().
+        foreach ([3, 4, 6, 7] as $step) {
             try {
                 $svc->setStep($ob, $step, $vendor);
                 $this->fail("Step {$step} should have been refused.");
             } catch (\App\Exceptions\BusinessException $e) {
-                $this->assertStringContainsString('Complete step 1', $e->getMessage());
+                $this->assertStringContainsString('Complete step 2', $e->getMessage());
             }
         }
 
-        // Step 1 itself is always reachable.
-        $this->assertSame(1, $svc->setStep($ob, 1, $vendor)->current_step);
+        // The vendor's own first step is always reachable.
+        $this->assertSame(2, $svc->setStep($ob, 2, $vendor)->current_step);
     }
 
     /** Finishing a step opens exactly the next one, and no further. */
@@ -124,12 +126,12 @@ class PortalOnboardingFlowTest extends TestCase
         $vendor   = $this->user('third_party_vendor');
         $svc      = app(TpvOnboardingService::class);
 
-        $ob->update(['acknowledged' => true]);          // step 1 done
-        $this->assertSame(2, $svc->setStep($ob, 2, $vendor)->current_step);
+        $ob->update(['acknowledged' => true]);          // step 2, the kickoff, done
+        $this->assertSame(3, $svc->setStep($ob, 3, $vendor)->current_step);
 
-        // Step 2 is still incomplete (no profile), so 3 stays shut.
+        // Step 3 is still incomplete (no profile), so 4 stays shut.
         $this->expectException(\App\Exceptions\BusinessException::class);
-        $svc->setStep($ob, 3, $vendor);
+        $svc->setStep($ob, 4, $vendor);
     }
 
     /** Staff must keep free navigation, or document review becomes unreachable. */
