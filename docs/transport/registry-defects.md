@@ -5200,3 +5200,52 @@ and it is not evidence the product is broken — the browser walk is. It needs a
 `fleet_reference_repoints` holds `from_id`, `to_id` and a verdict per reference, so the move can be
 read back and reversed. The pre-run backup is
 `sangoe_crm-pre-repoint-20260923-1615.sql`.
+
+---
+
+## D-144 — our D-134 and D-135 fixes each contradict one of P2's tests
+
+**Raised:** 2026-09-25, after merging master's 76 commits. **P1's changes, P2's tests.**
+**Not edited. Needs a ruling.**
+
+Two failures in `tests/Feature/Stos/DriverDirectoryTest`, both caused by us, neither touched.
+
+### 1 · `auto` no longer resolves to `CrmDriverDirectory`
+
+```
+-'CrmDriverDirectory'
++'CompositeDriverDirectory'
+```
+
+His test asserts the binding's old rule: CRM tables present → the CRM directory. **That rule is what
+D-134 deliberately replaced**, because after the D-62 move a CRM installation legitimately holds
+drivers in the local register too, and choosing one hid the other. The composite contains his CRM
+directory and returns everything it returned, plus the migrated drivers.
+
+The binding is **ours** (`StosServiceProvider`, `config/stos.php`), so the behaviour was ours to
+change and the owner approved it. His test encodes the superseded rule. A one-line change to assert
+what is returned rather than which class returns it would pass on both, but it is his test.
+
+### 2 · A resolved name appears in `toArray()`
+
+> *"The overlay holds a REFERENCE and licence facts. No name, no phone — those are the directory's,
+> and a copy is what goes stale."*
+
+D-135 hooks `DriverProfile::retrieved` and fills in the name from the directory, so
+`$profile->toArray()` now contains `name` and his assertion fails.
+
+**His principle is met in substance and his test still fails.** The value is resolved from the
+directory on every read, never written — `isDirty('name')` is false and `syncOriginalAttribute`
+keeps it out of any save, verified. It cannot go stale, because there is no copy to go stale. But
+the array shape is arguably the contract, and he wrote the rule.
+
+The alternative is to resolve only at the three serialisation boundaries, which satisfies the shape
+exactly and reintroduces the failure D-135 already had twice: the next reader forgets, and a driver
+renders blank again.
+
+### The ruling needed
+
+Either the name may be a derived, never-persisted attribute on the profile — in which case his two
+tests want updating — or it may not, in which case D-135 moves to the boundaries and we accept that
+a future reader can reintroduce the blank. **Not decided here, and nothing of his was edited.**
+
