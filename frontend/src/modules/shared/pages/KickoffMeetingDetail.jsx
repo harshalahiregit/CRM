@@ -1,17 +1,18 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, CheckCircle2, XCircle,
   Send, Copy, Upload, AlertTriangle, Loader2, FileText, ShieldCheck, History,
   Sparkles, Eye, Download, Video, ExternalLink, ClipboardCheck, ThumbsUp, Undo2, RotateCcw, ListChecks,
   Plus, Mail, MailCheck, Pencil, Building2, UserCheck, Briefcase, UserX, Trash2,
-  Monitor, Globe,
+  Monitor, Globe, Check,
 } from 'lucide-react'
 // Resolves per call to the meeting engine of the module in the URL — the
 // shared engine under /app/tpv, Purchase's under /app/purchase. Aliased to
 // the old name so the call sites below read unchanged.
 import { meetingEngineApi as kickoffApi, meetingPaths } from '@/services/meetingEngineApi'
 import MeetingJoinGate from '@/components/portal/MeetingJoinGate'
+import { useAuth } from '@/context/AuthContext'
 import AttendanceReviewPanel from '@/components/meetings/AttendanceReviewPanel'
 import {
   KO_STATUS, koStatusCfg, koNextStatuses, koModeLabel, fmtDateTime, fmtDate,
@@ -29,6 +30,11 @@ import SelectInput from '@/components/ui/SearchableSelectInput'
 export default function KickoffMeetingDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  // Opened from a vendor page (TPV/Purchase onboarding)? Then an admin gets a
+  // way straight back to it. Everyone else keeps only the list arrow.
+  const cameFrom = useLocation().state
+  const { user } = useAuth()
+  const backToVendor = user?.role === 'admin' && cameFrom?.from ? cameFrom : null
   const [m, setM]         = useState(null)
   const [loading, setLoad] = useState(true)
   const [err, setErr]     = useState(null)
@@ -36,6 +42,10 @@ export default function KickoffMeetingDetail() {
   const [publishBusy, setPublishBusy] = useState(false)   // "Send minutes to vendor" in flight
   const [action, setAction]   = useState(null)   // { to } transition modal
   const [linkData, setLinkData]     = useState(null)    // online meeting link data
+  // What happened when the room link was last mailed out: who it reached, and
+  // by name, who it could not. Held here rather than shown as a toast because
+  // an unreachable name is something the admin has to go and fix.
+  const [sendReport, setSendReport] = useState(null)
   const [genLinkBusy, setGenLinkBusy] = useState(false) // link generation in progress
 
   const load = () => kickoffApi.get(id).then(d => {
@@ -78,6 +88,12 @@ export default function KickoffMeetingDetail() {
           <ArrowLeft size={16} />
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
+          {backToVendor && (
+            <button onClick={() => navigate(backToVendor.from)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 8, padding: '5px 11px', borderRadius: 8, cursor: 'pointer', background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.35)', color: '#a78bfa', fontSize: 12, fontWeight: 700 }}>
+              <ArrowLeft size={13} /> {backToVendor.fromLabel || 'Back'}
+            </button>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <h1 style={{ color: 'var(--text-h)', fontSize: 23, fontWeight: 900, margin: 0, letterSpacing: '-0.02em' }}>{m.title}</h1>
             {m.meeting_no && <span style={{ padding: '3px 9px', borderRadius: 7, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 11.5, fontWeight: 800, letterSpacing: '0.02em' }}>{m.meeting_no}</span>}
@@ -199,6 +215,20 @@ export default function KickoffMeetingDetail() {
               meeting={m}
               linkData={linkData}
               busy={genLinkBusy}
+              sendReport={sendReport}
+              onSetLink={async (link) => {
+                const res = await kickoffApi.setLink(m.id, link)
+                setM(res.meeting)
+                // Saving the room mails it to everyone invited — the server says
+                // who it will reach and, by name, who has no address anywhere.
+                setSendReport(res.notified || null)
+                // Re-read through the gate so the card gets this viewer's flags.
+                setLinkData(await kickoffApi.getLink(m.id).catch(() => res.link))
+              }}
+              onResend={async () => {
+                const res = await kickoffApi.announceLink(m.id)
+                setSendReport(res.notified || null)
+              }}
               onGenerate={async (platform) => {
                 setGenLinkBusy(true); setErr(null)
                 try {
@@ -1499,8 +1529,23 @@ const PLATFORM_COLORS = {
   jitsi:       '#a78bfa',
 }
 
-function OnlineMeetingCard({ meeting, linkData, busy, onGenerate }) {
+function OnlineMeetingCard({ meeting, linkData, busy, onGenerate, onSetLink, onResend, sendReport }) {
   const [copied, setCopied] = useState(false)
+  const [showPaste, setShowPaste] = useState(false)
+  const [resending, setResending] = useState(false)
+  const [resendErr, setResendErr] = useState(null)
+
+  const resend = async () => {
+    if (resending) return
+    setResending(true); setResendErr(null)
+    try { await onResend() } catch (e) {
+      setResendErr(e?.response?.data?.message || 'The link could not be sent. Please try again.')
+    } finally { setResending(false) }
+  }
+  // meet.google.com/new is a "start a meeting" button, not a room: everyone
+  // who opens it gets a different, empty meeting. The host starts the call
+  // with it and pastes the real room link back; attendees never receive it.
+  const isInstant = !!(linkData?.link_is_instant || linkData?.instant)
 
   const copy = () => {
     if (!linkData?.link) return
@@ -1527,6 +1572,29 @@ function OnlineMeetingCard({ meeting, linkData, busy, onGenerate }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '14px', borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
           <Loader2 size={16} className="ko-spin" style={{ color: '#a78bfa' }} />
           <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Generating meeting link…</span>
+        </div>
+      ) : linkData?.link_pending ? (
+        <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.32)' }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: '#d97706', marginBottom: 3 }}>Waiting for the organiser</div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-h)', lineHeight: 1.5 }}>
+            The meeting room has not been shared yet. It will appear here as soon as the organiser starts the call.
+          </div>
+        </div>
+      ) : isInstant && linkData?.link ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.32)' }}>
+            <div style={{ fontSize: 12.5, fontWeight: 800, color: '#d97706', marginBottom: 6 }}>Attendees cannot join yet — share the real room</div>
+            <ol style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: 'var(--text-h)', lineHeight: 1.7 }}>
+              <li>Click <strong>Start meeting</strong> — {platformLbl} opens a new room for you.</li>
+              <li>Copy that room's link from the browser (e.g. meet.google.com/abc-defg-hij).</li>
+              <li>Paste it below and press <strong>Save link</strong>. Everyone invited gets exactly that room.</li>
+            </ol>
+          </div>
+          <a href={linkData.link} target="_blank" rel="noopener noreferrer"
+            style={{ ...solidBtn, alignSelf: 'flex-start', textDecoration: 'none' }}>
+            <ExternalLink size={14} /> Start meeting
+          </a>
+          <PasteLinkBox onSave={onSetLink} />
         </div>
       ) : (linkData?.has_meeting_link && !linkData?.meeting_link) ? (
         /* A link exists but this account has not earned it.
@@ -1581,13 +1649,35 @@ function OnlineMeetingCard({ meeting, linkData, busy, onGenerate }) {
             )}
           </div>
 
-          {/* Regenerate */}
-          <button
-            onClick={() => onGenerate(platform)}
-            style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 13px', borderRadius: 9, cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)', background: 'var(--bg-card)', border: '1px solid var(--border)' }}
-          >
-            <Video size={12} /> Regenerate link
-          </button>
+          {linkData.can_set_link !== false && (
+            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+              <button
+                onClick={() => onGenerate(platform)}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 13px', borderRadius: 9, cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)', background: 'var(--bg-card)', border: '1px solid var(--border)' }}
+              >
+                <Video size={12} /> Regenerate link
+              </button>
+              <button
+                onClick={() => setShowPaste(v => !v)}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 13px', borderRadius: 9, cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)', background: 'var(--bg-card)', border: '1px solid var(--border)' }}
+              >
+                <Copy size={12} /> {showPaste ? 'Keep this link' : 'Use a different link'}
+              </button>
+              {/* Somebody always joins late, loses the mail, or is added to the
+                  roster after the link went out. Re-pasting the same URL would
+                  work, but reads as a mistake; this says what it does. */}
+              {!isInstant && onResend && (
+                <button
+                  onClick={resend} disabled={resending}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 13px', borderRadius: 9, cursor: resending ? 'wait' : 'pointer', fontSize: 11.5, fontWeight: 700, color: '#0ea5e9', background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.35)', opacity: resending ? 0.6 : 1 }}
+                >
+                  {resending ? <Loader2 size={12} className="ko-spin" /> : <Send size={12} />} Resend link to everyone
+                </button>
+              )}
+            </div>
+          )}
+          <SendReport report={sendReport} error={resendErr} />
+          {showPaste && <PasteLinkBox onSave={async (l) => { await onSetLink(l); setShowPaste(false) }} />}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1600,8 +1690,96 @@ function OnlineMeetingCard({ meeting, linkData, busy, onGenerate }) {
           >
             <Video size={15} /> Generate Meeting Link
           </button>
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 4 }}>…or paste a room link you already have:</div>
+          <PasteLinkBox onSave={onSetLink} />
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * What the last send actually did.
+ *
+ * "Link sent to 7 people" on its own is the comfortable half. The half that
+ * matters is the other one: a participant with no e-mail address anywhere in
+ * the database is named here, because the only person who can fix that record
+ * is the one reading this card, and a silent skip is how a meeting starts with
+ * somebody missing and nobody knowing why.
+ */
+function SendReport({ report, error }) {
+  if (error) {
+    return (
+      <div style={{ padding: '9px 12px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.3)', fontSize: 12, color: '#b91c1c', fontWeight: 600 }}>
+        {error}
+      </div>
+    )
+  }
+  if (!report) return null
+
+  const unreachable = report.unreachable || []
+  const reached = report.reachable ?? report.sent ?? 0
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {report.smtp_ready === false ? (
+        <div style={{ padding: '9px 12px', borderRadius: 10, background: 'rgba(245,158,11,0.09)', border: '1px solid rgba(245,158,11,0.32)', fontSize: 12, color: '#b45309', fontWeight: 700 }}>
+          {report.smtp_reason || 'E-mail is not set up, so nothing was sent.'}
+        </div>
+      ) : (
+        <div style={{ padding: '9px 12px', borderRadius: 10, background: 'rgba(16,185,129,0.09)', border: '1px solid rgba(16,185,129,0.3)', fontSize: 12, color: '#059669', fontWeight: 700 }}>
+          Link sent to {reached} {reached === 1 ? 'person' : 'people'}.
+        </div>
+      )}
+      {unreachable.length > 0 && (
+        <div style={{ padding: '9px 12px', borderRadius: 10, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)' }}>
+          <div style={{ fontSize: 11.5, fontWeight: 800, color: '#b45309', marginBottom: 4 }}>
+            {unreachable.length} could not be reached — add an e-mail address to their record:
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 17, fontSize: 12, color: 'var(--text-h)', lineHeight: 1.6 }}>
+            {unreachable.map((u, i) => <li key={i}><strong>{u.name}</strong> — {u.reason}</li>)}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Organiser pastes a real Google Meet / Zoom / Teams room link. The server
+ *  refuses instant-start URLs and non-organisers, and says why. */
+function PasteLinkBox({ onSave }) {
+  const [val, setVal]   = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr]   = useState(null)
+
+  const save = async () => {
+    if (!val.trim()) return
+    setBusy(true); setErr(null)
+    try {
+      await onSave(val.trim())
+      setVal('')
+    } catch (e) {
+      const detail = Object.values(e?.response?.data?.errors || {}).flat()[0]
+      setErr(detail || e?.response?.data?.message || 'Could not save the link.')
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', gap: 7 }}>
+        <input
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') save() }}
+          placeholder="https://meet.google.com/abc-defg-hij"
+          style={{ flex: 1, padding: '9px 11px', borderRadius: 9, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)', fontSize: 12, fontFamily: 'monospace', minWidth: 0 }}
+        />
+        <button onClick={save} disabled={busy || !val.trim()}
+          style={{ ...solidBtn, padding: '0 14px', opacity: busy || !val.trim() ? 0.6 : 1 }}>
+          {busy ? <Loader2 size={13} className="ko-spin" /> : <Check size={13} />} Save link
+        </button>
+      </div>
+      {err && <div style={{ fontSize: 11.5, color: '#ef4444' }}>{err}</div>}
     </div>
   )
 }
@@ -1703,7 +1881,9 @@ function HeldRecord({ meeting: m }) {
  */
 function MeetingLinkRow({ meeting: m }) {
   const [copied, setCopied] = useState(false)
-  if (!m.meeting_link) return null
+  // An instant-start URL is not a room — copying it out would send people to
+  // empty meetings of their own. The Online Meeting card walks the host through it.
+  if (!m.meeting_link || INSTANT_START_URLS.includes(m.meeting_link.replace(/\/+$/, '').toLowerCase())) return null
 
   const copy = () => {
     navigator.clipboard?.writeText(m.meeting_link)
@@ -1897,6 +2077,8 @@ const Banner = ({ tone, icon: Icon, children }) => (
     <span style={{ fontSize: 13, color: 'var(--text-h)' }}>{children}</span>
   </div>
 )
+
+const INSTANT_START_URLS = ['https://meet.google.com/new', 'https://zoom.us/start/videomeeting', 'https://teams.microsoft.com/start']
 
 const solidBtn = {
   display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 16px', borderRadius: 10, cursor: 'pointer',

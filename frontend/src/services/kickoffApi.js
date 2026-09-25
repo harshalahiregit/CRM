@@ -57,6 +57,11 @@ export const kickoffApi = {
   generateLink: (id, platform = null) =>
     api.post(`/kickoff/meetings/${id}/generate-link`, { platform }).then(r => r.data),
   getLink: (id) => api.get(`/kickoff/meetings/${id}/link`).then(r => r.data),
+  // The organiser pastes the real room link (never an instant-start /new URL).
+  setLink: (id, link) => api.put(`/kickoff/meetings/${id}/link`, { link }).then(r => r.data),
+  // Send the room link to everybody again — for the person who joined late,
+  // lost the mail, or was added to the roster after it first went out.
+  announceLink: (id) => api.post(`/kickoff/meetings/${id}/link/announce`).then(r => r.data),
   // Mark MYSELF present, which is what releases the joining link to a staff
   // attendee who did not organise the meeting. Distinct from markAttendance
   // below, which is the organiser ticking other people's rows afterwards —

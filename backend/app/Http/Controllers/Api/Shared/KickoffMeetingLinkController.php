@@ -59,6 +59,64 @@ class KickoffMeetingLinkController extends Controller
     }
 
     /**
+     * The organiser pastes the real room link.
+     *
+     * Body: link — a Google Meet, Zoom or Teams room URL. The platforms'
+     * "start a new meeting" URLs are refused: they open an empty room for
+     * each person, which is exactly what this exists to replace.
+     */
+    public function update(Request $request, KickoffMeeting $kickoffMeeting, \App\Services\Shared\MeetingAttendanceGate $gate): JsonResponse
+    {
+        abort_unless($kickoffMeeting->tenant_id === $request->user()->tenant_id, 403);
+        abort_unless($gate->hosts($kickoffMeeting, $request->user()), 403, 'Only the organiser or an admin can set the meeting link.');
+
+        $data = $request->validate(['link' => ['required', 'string', 'max:2048']]);
+
+        try {
+            $link = $this->meetingService->setLink($kickoffMeeting, $data['link']);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage(), 'errors' => ['link' => [$e->getMessage()]]], 422);
+        }
+
+        // Everyone invited gets the room, now, by e-mail — see
+        // MeetingLinkAnnouncer. The send runs after the response is flushed so
+        // pasting a link never waits on an SMTP session per participant; the
+        // counts returned are the plan, which is the half the organiser has to
+        // act on ("two of these people have no address anywhere").
+        $notified = app(\App\Services\Shared\MeetingLinkAnnouncer::class)
+            ->announceAfterResponse($kickoffMeeting, $request->user());
+
+        return response()->json([
+            'meeting' => $kickoffMeeting->fresh(),
+            'link' => $link,
+            'notified' => $notified,
+        ]);
+    }
+
+    /**
+     * Send the room link again, to everybody.
+     *
+     * Somebody always joins late, loses the mail, or is added to the roster
+     * after the link went out. Re-pasting the same URL to trigger the send would
+     * work but reads as a mistake; this says what it does.
+     */
+    public function announce(Request $request, KickoffMeeting $kickoffMeeting, \App\Services\Shared\MeetingAttendanceGate $gate): JsonResponse
+    {
+        abort_unless($kickoffMeeting->tenant_id === $request->user()->tenant_id, 403);
+        abort_unless($gate->hosts($kickoffMeeting, $request->user()), 403, 'Only the organiser or an admin can send the meeting link.');
+
+        $announcer = app(\App\Services\Shared\MeetingLinkAnnouncer::class);
+
+        if (! $kickoffMeeting->meeting_link || OnlineMeetingService::isInstant($kickoffMeeting->meeting_link)) {
+            return response()->json([
+                'message' => 'Start the meeting and paste the room link first — there is no room to send yet.',
+            ], 422);
+        }
+
+        return response()->json(['notified' => $announcer->announceAfterResponse($kickoffMeeting, $request->user())]);
+    }
+
+    /**
      * Return the stored online-meeting link data (read-only).
      */
     public function show(KickoffMeeting $kickoffMeeting, \App\Services\Shared\MeetingAttendanceGate $gate): JsonResponse

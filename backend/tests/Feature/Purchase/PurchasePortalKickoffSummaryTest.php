@@ -102,11 +102,11 @@ class PurchasePortalKickoffSummaryTest extends TestCase
     /**
      * The distinction this draws against the expired case above is whether the
      * meeting is still JOINABLE — and it still is. What changed is that the
-     * link is now earned rather than given: it is withheld from the payload
-     * until the vendor marks attendance, so has_meeting_link is what says the
-     * meeting is online. See MeetingAttendanceGate.
+     * link was briefly earned rather than given — that toll has gone, because
+     * MeetingLinkAnnouncer e-mails the real room to every participant the
+     * moment the organiser pastes it. See MeetingAttendanceGate.
      */
-    public function test_a_meeting_in_progress_is_still_joinable_but_the_link_is_earned(): void
+    public function test_a_meeting_in_progress_is_joinable_and_carries_its_room(): void
     {
         $this->meeting('Running now', -10);
 
@@ -114,7 +114,9 @@ class PurchasePortalKickoffSummaryTest extends TestCase
 
         $this->assertTrue($m['is_live']);
         $this->assertTrue($m['has_meeting_link'], 'the dashboard still knows this is an online meeting');
-        $this->assertNull($m['meeting_link'], 'and does not hand out the link before attendance is marked');
+        $this->assertSame('https://meet.example.test/room', $m['meeting_link'],
+            'a real room is handed over — it was e-mailed to them anyway');
+        // Still offered, and now asked for on its own terms rather than sold.
         $this->assertTrue($m['can_mark_attendance']);
     }
 

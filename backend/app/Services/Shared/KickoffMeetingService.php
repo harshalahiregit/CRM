@@ -1446,9 +1446,31 @@ class KickoffMeetingService
                 $changes['remark'] = $row['remark'];
             }
 
+            /*
+             * The times the admin types — the OFFICIAL record of when this
+             * person was in the meeting.
+             *
+             * Stored in their own columns, not in joined_at/left_at: those are
+             * observed, written by the room, and are the evidence this entry is
+             * checked against. Overwriting them with a typed value would leave
+             * nothing to check. Not in verdict_from/verdict_to either — the
+             * review drops that window for any verdict but Partial_Absent, so
+             * times kept there vanish the moment somebody is marked present.
+             */
+            foreach (['in_at', 'out_at'] as $field) {
+                if (array_key_exists($field, $row)) {
+                    $changes[$field] = $row[$field] ?: null;
+                }
+            }
+
             if (! $changes) {
                 continue;
             }
+
+            // Who said so, and when. An attendance record with no author is an
+            // assertion nobody owns, and this one goes to the vendor.
+            $changes['marked_by'] = $actor->id;
+            $changes['marked_at'] = now();
 
             // A person looking at the meeting knows something the system does
             // not, so a tick made by hand outranks anything observed — and the

@@ -16,6 +16,9 @@ class TpvWorkerPpeIssue extends Model
 
     protected $fillable = [
         'tenant_id','tpv_worker_id','issued_by','inventory_item_id',
+        // Set instead of inventory_item_id when the kit came off the vendor's
+        // OWN PPE list rather than the central store.
+        'vendor_ppe_item_id',
         'project','site',
         'item','qty','size','issued_date','notes',
         // Return lifecycle. Quantities still live in Inventory — these only record
@@ -55,6 +58,12 @@ class TpvWorkerPpeIssue extends Model
     public function product()
     {
         return $this->belongsTo(\App\Models\Inventory\Product::class, 'inventory_item_id');
+    }
+
+    /** The vendor's own PPE item this issue drew from, when not from Inventory. */
+    public function vendorItem()
+    {
+        return $this->belongsTo(TpvVendorPpeItem::class, 'vendor_ppe_item_id');
     }
 
     protected $appends = ['item_label'];

@@ -26,6 +26,24 @@ class MeetingDistribution extends Model
 
     public const KIND_MOM = 'mom';
 
+    /**
+     * The real room link, sent the moment the organiser pastes it.
+     *
+     * A separate kind from the invitation because it is a separate promise: the
+     * invitation says when and where, this one says "here is the door". Mixing
+     * them would make "was the link ever actually sent to Ravi?" unanswerable,
+     * which is the question this kind exists for.
+     */
+    public const KIND_LINK = 'link';
+
+    /** Which meetings table kickoff_meeting_id points into. */
+    public const ENGINE_SHARED = 'shared';
+
+    public const ENGINE_PURCHASE = 'purchase';
+
+    /** project_meetings — the Project workspace's own, much simpler meeting. */
+    public const ENGINE_PROJECT = 'project';
+
     /** §13's recipient groups. */
     public const PARTY_INTERNAL = 'internal';
 
@@ -50,7 +68,7 @@ class MeetingDistribution extends Model
     public const FAILED = 'failed';
 
     protected $fillable = [
-        'tenant_id', 'kickoff_meeting_id', 'kind', 'kickoff_attendee_id', 'user_id',
+        'tenant_id', 'kickoff_meeting_id', 'kind', 'engine', 'kickoff_attendee_id', 'user_id',
         'party', 'name', 'email', 'channel', 'token', 'status', 'error',
         'sent_at', 'viewed_at', 'acknowledged_at',
     ];

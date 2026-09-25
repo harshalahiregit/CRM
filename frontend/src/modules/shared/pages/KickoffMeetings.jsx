@@ -1212,6 +1212,39 @@ function ConfirmDeleteMeetings({ targets, busy, onCancel, onConfirm }) {
   )
 }
 
+/** A datetime-local value from an ISO string, in the reader's own zone. */
+const toLocalInput = (iso) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+/** Whole minutes between two datetime-local values, or null when it is not a window. */
+const minutesBetween = (from, to) => {
+  if (!from || !to) return null
+  const a = new Date(from).getTime()
+  const b = new Date(to).getTime()
+  if (Number.isNaN(a) || Number.isNaN(b) || b <= a) return null
+  return Math.round((b - a) / 60000)
+}
+
+const timeLbl = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }
+const timeInput = {
+  padding: '5px 8px', fontSize: 11.5, borderRadius: 8, colorScheme: 'dark',
+  background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-body)',
+}
+
+/**
+ * The attendance grid — and the one place the in/out times are typed.
+ *
+ * The review panel (AttendanceReviewPanel) has a window too, but it belongs to
+ * the ORGANISER'S VERDICT and is dropped for any verdict but Partial Absent, so
+ * times entered there disappear the moment somebody is marked fully present.
+ * The admin needs to record when each person came and went whatever their
+ * status, so it lives here, beside the tick it describes, in their own columns.
+ */
 function AttendanceModal({ id, onClose, onDone }) {
   const [rows, setRows] = useState(null)
   const [title, setTitle] = useState('')
@@ -1229,6 +1262,12 @@ function AttendanceModal({ id, onClose, onDone }) {
         // value here — "not marked yet" — so it must survive the round trip.
         attendance_status: a.attendance_status ?? (a.attended ? 'Present' : null),
         remark: a.remark ?? '',
+        // The ADMIN's own in/out times — the official record. joined_at and
+        // seconds_in_call stay untouched underneath as the observed evidence.
+        in_at: toLocalInput(a.in_at),
+        out_at: toLocalInput(a.out_at),
+        marked_by_name: a.marked_by_name || null,
+        marked_at: a.marked_at || null,
       })))
     }).catch(() => setErr('Could not load the attendee list.'))
   }, [id])
@@ -1238,6 +1277,7 @@ function AttendanceModal({ id, onClose, onDone }) {
     setRows(rs => rs.map(r => (r.id === aid ? { ...r, attendance_status: r.attendance_status === val ? null : val } : r)))
 
   const setRemark = (aid, val) => setRows(rs => rs.map(r => (r.id === aid ? { ...r, remark: val } : r)))
+  const setField = (aid, patch) => setRows(rs => rs.map(r => (r.id === aid ? { ...r, ...patch } : r)))
 
   const save = async ({ notify = false } = {}) => {
     setSaving(true); setErr(null)
@@ -1246,6 +1286,8 @@ function AttendanceModal({ id, onClose, onDone }) {
         id: r.id,
         attendance_status: r.attendance_status,
         remark: r.remark || null,
+        in_at: r.in_at || null,
+        out_at: r.out_at || null,
       })))
       // The summary is the existing reminder mail — one endpoint, no new
       // notification path — sent after the save so it reflects what was stored.
@@ -1292,6 +1334,27 @@ function AttendanceModal({ id, onClose, onDone }) {
                     <SegBtn active={a.attendance_status === 'Offline'} color="#64748b" icon={Building2}    onClick={() => setStatus(a.id, 'Offline')}>Offline</SegBtn>
                   </div>
                 </div>
+                {/* The times the admin types. This is the official record of
+                    when the person was in the meeting: the CRM cannot see a
+                    call held on Google's or Zoom's servers, and joined_at only
+                    ever existed for the few who pressed Join here. Both ends or
+                    neither — half a window is not a duration. */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                  <label style={timeLbl}>In</label>
+                  <input type="datetime-local" value={a.in_at || ''}
+                    onChange={e => setField(a.id, { in_at: e.target.value })} style={timeInput} />
+                  <label style={timeLbl}>Out</label>
+                  <input type="datetime-local" value={a.out_at || ''}
+                    onChange={e => setField(a.id, { out_at: e.target.value })} style={timeInput} />
+                  <span style={{ fontSize: 11.5, fontWeight: 800, color: minutesBetween(a.in_at, a.out_at) === null ? 'var(--text-muted)' : '#10b981' }}>
+                    {minutesBetween(a.in_at, a.out_at) === null ? '— min' : `${minutesBetween(a.in_at, a.out_at)} min`}
+                  </span>
+                </div>
+                {a.marked_by_name && (
+                  <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-muted)' }}>
+                    Marked by {a.marked_by_name}{a.marked_at ? ` on ${new Date(a.marked_at).toLocaleDateString()}` : ''}
+                  </div>
+                )}
                 <input
                   value={a.remark}
                   onChange={e => setRemark(a.id, e.target.value)}
@@ -1413,15 +1476,7 @@ const ModalError = ({ children }) => (
 )
 
 // ISO timestamp → the value a <input type="datetime-local"> expects, in local time.
-function toLocalInput(iso) {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  const p = n => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
-}
-
-const th = { textAlign: 'left', padding: '11px 14px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)', whiteSpace: 'nowrap', background: 'var(--bg-card)' }
+const th ={ textAlign: 'left', padding: '11px 14px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)', whiteSpace: 'nowrap', background: 'var(--bg-card)' }
 const td = { padding: '11px 14px', color: 'var(--text-h)', whiteSpace: 'nowrap', verticalAlign: 'middle' }
 
 const solidBtn = {

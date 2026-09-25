@@ -133,6 +133,8 @@ export const purchaseKickoffApi = {
   // the shared engine so the meeting pages need no branch.
   generateLink: (id, platform = null) => k.generateLink(id, platform),
   getLink:      (id) => k.getLink(id),
+  setLink:      (id, link) => k.setLink(id, link),
+  announceLink: (id) => k.announceLink(id),
   publish:   k.publish,
   history:   k.history,
   // The shared page's carryForward is the read-only PREVIEW — GET with subject

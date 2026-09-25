@@ -1,3 +1,17 @@
+@php
+    /**
+     * Minutes-of-meeting e-mail. Mirrors resources/views/pdf/kickoff_mom.blade.php
+     * — the mail and the document have to agree, and the attendance table is
+     * where they had drifted furthest.
+     */
+    $statusOf = fn ($a) => $a->attendance_status ?: ($a->attended ? 'Present' : null);
+    $statusColour = function ($a) use ($statusOf) {
+        return [
+            'Present' => '#047857', 'Online' => '#1d4ed8', 'Offline' => '#334155',
+            'Late' => '#b45309', 'Excused' => '#6d28d9', 'Absent' => '#b91c1c',
+        ][$statusOf($a)] ?? '#6b7280';
+    };
+@endphp
 {{-- Kickoff MOM e-mail — sent when minutes are published for acknowledgement.
 
      Table-based + inline CSS, matching emails/tpv/activation.blade.php, so it
@@ -81,6 +95,7 @@
             <th align="left"  style="padding:9px 14px;font-size:11.5px;color:#ffffff;font-weight:700;">Name</th>
             <th align="left"  style="padding:9px 14px;font-size:11.5px;color:#ffffff;font-weight:700;">Role</th>
             <th align="left"  style="padding:9px 14px;font-size:11.5px;color:#ffffff;font-weight:700;">Organisation</th>
+            <th align="left"  style="padding:9px 14px;font-size:11.5px;color:#ffffff;font-weight:700;">In / Out</th>
             <th align="right" style="padding:9px 14px;font-size:11.5px;color:#ffffff;font-weight:700;">Attendance</th>
           </tr>
           @foreach($attendees as $i => $a)
@@ -89,8 +104,31 @@
             <td style="padding:9px 14px;font-size:12.5px;color:#111827;font-weight:600;">{{ $a->name ?: '—' }}</td>
             <td style="padding:9px 14px;font-size:12.5px;color:#374151;">{{ $a->role ?: '—' }}</td>
             <td style="padding:9px 14px;font-size:12.5px;color:#374151;">{{ $a->organisation ?: '—' }}</td>
-            <td align="right" style="padding:9px 14px;font-size:12px;font-weight:700;color:{{ $a->attended ? '#047857' : '#b91c1c' }};">
-              {{ $a->attended ? 'Present' : 'Absent' }}
+            {{-- In, out and duration — the admin's typed record, the same
+                 figures the MOM PDF prints. --}}
+            <td style="padding:9px 14px;font-size:12px;color:#374151;">
+              @if($a->in_at || $a->out_at)
+                {{ $a->in_at ? $a->in_at->format('H:i') : '—' }}–{{ $a->out_at ? $a->out_at->format('H:i') : '—' }}
+                @if($a->attendance_minutes !== null)
+                  <div style="font-size:11px;color:#6b7280;">{{ $a->attendance_minutes }} min</div>
+                @endif
+              @else
+                <span style="color:#9ca3af;">Not recorded</span>
+              @endif
+            </td>
+            {{-- The recorded STATE, not the boolean projection of it. This
+                 column read `attended ? Present : Absent`, so a meeting where
+                 nobody had been marked yet e-mailed the vendor a table
+                 asserting every one of their people missed it, and Late /
+                 Excused / Online / Offline all collapsed into two words. The
+                 PDF stopped doing that; the mail had not. --}}
+            <td align="right" style="padding:9px 14px;font-size:12px;font-weight:700;color:{{ $statusColour($a) }};">
+              {{ $statusOf($a) ?: 'Not marked' }}
+              @if($a->marked_by_name)
+                <div style="font-size:11px;font-weight:400;color:#6b7280;">
+                  Marked by {{ $a->marked_by_name }}@if($a->marked_at) on {{ $a->marked_at->format('d M Y') }}@endif
+                </div>
+              @endif
             </td>
           </tr>
           @endforeach

@@ -933,15 +933,31 @@ class PurchaseKickoffService
             }
             // 6-state attendance (§6): status drives the boolean; a bare boolean still works.
             $status = $row['attendance_status'] ?? null;
+
+            /*
+             * The times the admin types, and who typed them — the same four
+             * columns as the shared roster, written the same way. See the note
+             * in KickoffMeetingService::markAttendance(): these are the official
+             * record, joined_at/left_at remain the observed evidence for it.
+             */
+            $changes = [
+                'attendance_source' => \App\Services\Shared\MeetingJoinRecorder::SOURCE_MANUAL,
+                'marked_by' => $actor->id,
+                'marked_at' => now(),
+            ];
+            foreach (['in_at', 'out_at'] as $field) {
+                if (array_key_exists($field, $row)) {
+                    $changes[$field] = $row[$field] ?: null;
+                }
+            }
+
             if ($status && in_array($status, PurchaseKickoffParticipant::ATTENDANCE, true)) {
                 $attended = in_array($status, PurchaseKickoffParticipant::ATTENDING, true);
                 // A tick made by hand outranks anything observed — see MeetingJoinRecorder.
-                $participant->update(['attendance_status' => $status, 'attended' => $attended,
-                    'attendance_source' => \App\Services\Shared\MeetingJoinRecorder::SOURCE_MANUAL]);
+                $participant->update($changes + ['attendance_status' => $status, 'attended' => $attended]);
             } else {
                 $attended = ! empty($row['attended']);
-                $participant->update(['attended' => $attended, 'attendance_status' => $attended ? 'Present' : 'Absent',
-                    'attendance_source' => \App\Services\Shared\MeetingJoinRecorder::SOURCE_MANUAL]);
+                $participant->update($changes + ['attended' => $attended, 'attendance_status' => $attended ? 'Present' : 'Absent']);
             }
             $attended ? $present++ : $absent++;
         }

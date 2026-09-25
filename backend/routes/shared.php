@@ -119,9 +119,14 @@ Route::middleware(['auth:sanctum', $internal])->prefix('kickoff')->group(functio
     // ── Online meeting link generation ────────────────────────────────────────
     Route::post('/meetings/{kickoffMeeting}/generate-link', [KickoffMeetingLinkController::class, 'generate']);
     Route::get('/meetings/{kickoffMeeting}/link', [KickoffMeetingLinkController::class, 'show']);
-    // Marking attendance is what releases the join link to a staff attendee
-    // who did not organise the meeting. The organiser and an admin already
-    // hold it — see MeetingAttendanceGate.
+    Route::put('/meetings/{kickoffMeeting}/link', [KickoffMeetingLinkController::class, 'update']);
+    // Send the room link to everyone again — for the person who joined late,
+    // lost the mail, or was added to the roster after it went out.
+    Route::post('/meetings/{kickoffMeeting}/link/announce', [KickoffMeetingLinkController::class, 'announce']);
+    // Attendance is recorded for its own sake now: a REAL room link is given to
+    // everyone who can see the meeting, so this is no longer the price of it.
+    // Only an instant-start link is still held by the host — see
+    // MeetingAttendanceGate.
     Route::post('/meetings/{kickoffMeeting}/attendance', [KickoffMeetingLinkController::class, 'markAttendance']);
     // The organiser's verdict on who actually attended — the three slabs, kept
     // BESIDE each person's own attendance mark rather than over it. See

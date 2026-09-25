@@ -197,6 +197,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     // verification_required. Until this existed that flag could be configured
     // but never met, so nothing read it.
     Route::post('/ppe/issues/{issue}/verify',             [\App\Http\Controllers\Api\Tpv\PpeController::class, 'verifyIssue']);
+    // One vendor's OWN PPE list (its stock, not Inventory) — read-only for admin,
+    // shown in the vendor workspace. The vendor keeps it from its portal.
+    Route::get('/ppe/vendors/{vendor}/items',             [\App\Http\Controllers\Api\Tpv\VendorPpeItemController::class, 'index'])->whereNumber('vendor');
+    Route::get('/ppe/vendors/{vendor}/items/{item}/image', [\App\Http\Controllers\Api\Tpv\VendorPpeItemController::class, 'image'])->whereNumber('vendor')->whereNumber('item');
     Route::get('/workers/stats',                          [TpvWorkerController::class, 'stats']);
     Route::get('/workers',                                [TpvWorkerController::class, 'index']);
     Route::post('/workers',                               [TpvWorkerController::class, 'store']);
@@ -210,6 +214,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::post('/workers/{worker}/medical',              [TpvWorkerController::class, 'saveMedical']);
     Route::post('/workers/{worker}/mark-medical',         [TpvWorkerController::class, 'markMedical']);
     Route::post('/workers/{worker}/induction',            [TpvWorkerController::class, 'saveInduction']);
+    // Group session — many workers, one trainer signature. Skips (with a reason)
+    // any worker who cannot be inducted instead of failing the whole group.
+    Route::post('/workers/bulk-induction',                [TpvWorkerController::class, 'saveGroupInduction']);
     Route::post('/workers/{worker}/mark-induction',       [TpvWorkerController::class, 'markInduction']);
     // Issuing and returning PPE lives on the /ppe routes above, which move Inventory
     // stock. This one only records a deliberate skip of the step.

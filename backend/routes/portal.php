@@ -152,6 +152,15 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access', 'vendor.onboa
     Route::get('/ppe/workers/{worker}',                   [VendorPortalController::class, 'workerPpe']);
     Route::post('/ppe/workers/{worker}/issue',            [VendorPortalController::class, 'issueWorkerPpe']);
     Route::post('/ppe/issues/{issue}/return',             [VendorPortalController::class, 'returnWorkerPpe']);
+    // The vendor's OWN PPE list — its stock, never the company's Inventory. The
+    // owner is the vendor behind the token; another vendor's item id is a 404.
+    // Issuing one uses the issue route above with `vendor_ppe_item_id`.
+    // Update is POST so a replacement photo can travel as multipart.
+    Route::get('/ppe/my-items',                           [\App\Http\Controllers\Api\Portal\VendorPortalPpeItemController::class, 'index']);
+    Route::post('/ppe/my-items',                          [\App\Http\Controllers\Api\Portal\VendorPortalPpeItemController::class, 'store']);
+    Route::post('/ppe/my-items/{item}',                   [\App\Http\Controllers\Api\Portal\VendorPortalPpeItemController::class, 'update'])->whereNumber('item');
+    Route::patch('/ppe/my-items/{item}/status',           [\App\Http\Controllers\Api\Portal\VendorPortalPpeItemController::class, 'setStatus'])->whereNumber('item');
+    Route::get('/ppe/my-items/{item}/image',              [\App\Http\Controllers\Api\Portal\VendorPortalPpeItemController::class, 'image'])->whereNumber('item');
     // The vendor's own work packages — read-only, for the worker-wizard deploy field.
     Route::get('/work-packages',                          [VendorPortalController::class, 'workPackages']);
     Route::get('/workers/stats',                          [VendorPortalController::class, 'workerStats']);
@@ -181,6 +190,8 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access', 'vendor.onboa
     Route::get('/medical/{medical}/document',             [VendorPortalMedicalController::class, 'document'])->whereNumber('medical');
     Route::post('/workers/{worker}/medical/external',     [VendorPortalMedicalController::class, 'store'])->whereNumber('worker');
     Route::post('/workers/{worker}/induction',            [VendorPortalController::class, 'saveInduction']);
+    // Group session over the vendor's OWN workers — one trainer signature.
+    Route::post('/workers/bulk-induction',                [VendorPortalController::class, 'saveGroupInduction']);
     // The typed training catalogue (§15). The portal could record an induction
     // and nothing else, so a vendor could neither file a Work-at-Height
     // certificate for their own worker nor see one filed for them.
@@ -246,7 +257,10 @@ Route::prefix('purchase-vendor')->group(function () {
 Route::middleware(['auth:sanctum', 'purchase.vendor.portal', 'vendor.onboarded'])->prefix('portal/purchase')->group(function () {
     Route::post('/logout',                            [PurchaseVendorAuthController::class, 'logout']);
     Route::get('/dashboard',                          [PurchasePortalController::class, 'dashboard']);
-    Route::get('/ppe',                                [\App\Http\Controllers\Api\Tpv\PpeController::class, 'catalogue']);
+    // Purchase's own catalogue endpoint, not TPV's PpeController: the shelf is the
+    // same, but TPV's "Issued" column counts TPV hand-outs, so every Purchase
+    // issue read as zero here.
+    Route::get('/ppe',                                [PurchasePortalWorkforceController::class, 'ppeCatalogue']);
     // NOT PpeController::summary — that one totals every issue in the tenant, so
     // it showed a Purchase vendor how much PPE the TPV vendors were holding. The
     // shelf is shared and stays tenant-wide; the issued figures are the vendor's own.
@@ -337,6 +351,8 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal', 'vendor.onboarded']
     Route::get('/trainings',                          [PurchasePortalWorkforceController::class, 'trainings']);
     Route::get('/strikes',                            [PurchasePortalWorkforceController::class, 'strikes']);
     Route::post('/workers/{worker}/induction',        [PurchasePortalWorkforceController::class, 'saveInduction']);
+    // Group session over the vendor's OWN workers — one trainer signature.
+    Route::post('/workers/bulk-induction',            [PurchasePortalWorkforceController::class, 'saveGroupInduction']);
 
     // ── Workforce step 4 (PPE) and step 5 (badge, read-only) ──────────────
     // Vendor-owned: every worker/issue id is resolved through the caller's own
@@ -347,6 +363,13 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal', 'vendor.onboarded']
     Route::get('/workers/{worker}/ppe/compliance',    [PurchasePortalWorkforceController::class, 'workerPpeCompliance']);
     Route::post('/workers/{worker}/ppe/issue',        [PurchasePortalWorkforceController::class, 'issueWorkerPpe']);
     Route::post('/ppe/issues/{issue}/return',         [PurchasePortalWorkforceController::class, 'returnWorkerPpe']);
+    // The vendor's OWN PPE list — parity with the TPV portal's /ppe/my-items.
+    // Its stock, never the company's Inventory; owner is the token's vendor.
+    Route::get('/ppe/my-items',                       [\App\Http\Controllers\Api\Portal\PurchasePortalPpeItemController::class, 'index']);
+    Route::post('/ppe/my-items',                      [\App\Http\Controllers\Api\Portal\PurchasePortalPpeItemController::class, 'store']);
+    Route::post('/ppe/my-items/{item}',               [\App\Http\Controllers\Api\Portal\PurchasePortalPpeItemController::class, 'update'])->whereNumber('item');
+    Route::patch('/ppe/my-items/{item}/status',       [\App\Http\Controllers\Api\Portal\PurchasePortalPpeItemController::class, 'setStatus'])->whereNumber('item');
+    Route::get('/ppe/my-items/{item}/image',          [\App\Http\Controllers\Api\Portal\PurchasePortalPpeItemController::class, 'image'])->whereNumber('item');
     // ── Site gate — READ ONLY. Recording a crossing is the security desk's act
     // and stays admin-side; a vendor that could write its own scans could
     // manufacture attendance. Scoped to the caller's own workers by the token.
