@@ -23,6 +23,9 @@ use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
+use App\Domains\Fleet\Models\DriverProfile;
+use App\Domains\Fleet\Models\Vehicle;
+use Tests\Concerns\CreatesFleetResources;
 use Tests\TestCase;
 
 /**
@@ -36,6 +39,7 @@ use Tests\TestCase;
 class TransportMasterAllocationAuditTest extends TestCase
 {
     use RefreshDatabase;
+    use CreatesFleetResources;
 
     private const A = 1;
     private const B = 2;
@@ -95,21 +99,30 @@ class TransportMasterAllocationAuditTest extends TestCase
         return [
             'name' => 'Driver '.Str::random(4),
             'licence_number' => 'RJ14'.self::uniqueSeq(6),
-            'licence_valid_until' => now()->addYears(2)->toDateString(),
+            'licence_expiry' => now()->addYears(2)->toDateString(),
         ];
     }
 
-    private function seedVehicle(int $tenant = self::A, ?float $capacity = 30): TransportVehicle
+    /**
+     * Fleet's rows — the ones an assignment points at since the repoint.
+     *
+     * These built through TransportVehicleService / TransportDriverService,
+     * which write the legacy masters. A legacy row cannot be allocated at all
+     * now: lockResources() refuses it (D-136). The tests above are about
+     * ALLOCATION, not about the master CRUD, so the fixture moves and their
+     * subject does not.
+     */
+    private function seedVehicle(int $tenant = self::A, ?float $capacity = 30): Vehicle
     {
-        $svc = app(TransportVehicleService::class);
-        $v = $svc->create(['registration_number' => 'MH12'.Str::upper(Str::random(2)).self::uniqueSeq(4), 'capacity_tonnes' => $capacity], $tenant, null);
-
-        return $svc->transitionTo($v, VehicleStatus::AVAILABLE, $tenant, null);
+        return $this->fleetVehicle([
+            'registration_number' => 'MH12'.Str::upper(Str::random(2)).self::uniqueSeq(4),
+            'capacity_tonnes' => $capacity,
+        ], $tenant);
     }
 
-    private function seedDriver(int $tenant = self::A): TransportDriver
+    private function seedDriver(int $tenant = self::A): DriverProfile
     {
-        return app(TransportDriverService::class)->create($this->driverPayload(), $tenant, null);
+        return $this->fleetDriver($this->driverPayload(), $tenant);
     }
 
     private function approvedTrip(int $tenant = self::A, ?float $capacity = null): TransportTrip
