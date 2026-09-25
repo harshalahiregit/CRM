@@ -4,6 +4,9 @@ namespace App\Providers;
 
 use App\Domains\Fleet\Contracts\DriverDirectory;
 use App\Domains\Fleet\Integration\TransportFleetResourceGateway;
+use App\Domains\Fleet\Directory\CompositeDriverDirectory;
+use App\Domains\Fleet\Models\DriverProfile;
+use App\Support\Transport\DriverNaming;
 use App\Domains\Fleet\Directory\CrmDriverDirectory;
 use App\Domains\Fleet\Directory\StandaloneDriverDirectory;
 use App\Domains\Fleet\Events\EmergencyFuelIssued;
@@ -13,6 +16,7 @@ use App\Domains\Fleet\Observers\VehicleStatusObserver;
 use App\Domains\Integration\Events\TelemetryExcursionDetected;
 use App\Domains\Integration\Listeners\LogTemperatureExcursion;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 
@@ -80,16 +84,43 @@ class StosServiceProvider extends ServiceProvider
                 return new CrmDriverDirectory();
             }
 
+            if ($mode === 'both') {
+                return new CompositeDriverDirectory(new CrmDriverDirectory(), new StandaloneDriverDirectory());
+            }
+
+            // ── `auto`, corrected 2026-09-23 — D-134 ─────────────────────
+            // This used to choose ONE, on the assumption that the two sources
+            // are alternatives. The D-62 move made them simultaneous: it put
+            // the drivers it found into `stos_drivers` and pointed their
+            // profiles at it, correctly, because there was no CRM person to
+            // point at. A CRM installation can now hold people in both.
+            //
+            // So `auto` asks a second question. Choosing the CRM alone hid the
+            // migrated drivers from allocation entirely; choosing standalone
+            // alone would have hidden every CRM-sourced one instead.
             $crmPresent = Schema::hasTable('tpv_workers')
                 || Schema::hasTable('purchase_workers')
                 || Schema::hasTable('client_contacts');
 
-            return $crmPresent ? new CrmDriverDirectory() : new StandaloneDriverDirectory();
+            // Deliberately NOT conditioned on `stos_drivers` having rows.
+            // This binding is a singleton, so any data-dependent choice is
+            // frozen at whatever the table held the first time it resolved —
+            // fine in a request that boots fresh, wrong in a queue worker, and
+            // wrong in a test that creates its drivers afterwards. It also made
+            // the composite's presence depend on the order things happened in,
+            // which is not a property anybody wants to debug.
+            //
+            // The composite over an empty local register simply returns the CRM
+            // list, so there is nothing to gain by asking.
+            return $crmPresent
+                ? new CompositeDriverDirectory(new CrmDriverDirectory(), new StandaloneDriverDirectory())
+                : new StandaloneDriverDirectory();
         });
     }
 
     public function boot(): void
     {
+
         foreach (self::LISTENERS as $event => $listeners) {
             foreach ($listeners as $listener) {
                 Event::listen($event, $listener);

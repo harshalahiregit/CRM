@@ -49,6 +49,8 @@ use Illuminate\Http\Request;
  */
 class TransportAllocationController extends Controller
 {
+    use \App\Support\Transport\WithDriverName;
+
     use ApiResponse;
 
     public function __construct(
@@ -102,7 +104,7 @@ class TransportAllocationController extends Controller
                 'eligibility' => $this->allocation->candidates($record, $tenantId, includeIneligible: true),
                 'data'        => [
                     'trip'       => $record->fresh(),
-                    'assignment' => $this->assignments->activeForTrip($record->id, $tenantId),
+                    'assignment' => $this->withDriverName($this->assignments->activeForTrip($record->id, $tenantId)?->load('driver')),
                 ],
             // getStatusCode(), not getCode(): BusinessException carries its
             // status in its own property and getCode() is always 0.
@@ -111,7 +113,7 @@ class TransportAllocationController extends Controller
 
         return $this->success([
             'trip'        => $result['trip'],
-            'assignment'  => $result['assignment'],
+            'assignment'  => $this->withDriverName($result['assignment']?->load('driver')),
             'eligibility' => $result['eligibility'],
             // STT-004 fires only when both resources are set. Saying so plainly
             // stops a client having to infer it from the status string.
@@ -144,7 +146,7 @@ class TransportAllocationController extends Controller
             'trip'       => $record->only(['id', 'trip_number', 'status', 'vehicle_id', 'driver_id']),
             'vehicles'   => $candidates['vehicles'],
             'drivers'    => $candidates['drivers'],
-            'assignment' => $this->assignments->activeForTrip($record->id, $tenantId),
+            'assignment' => $this->withDriverName($this->assignments->activeForTrip($record->id, $tenantId)?->load('driver')),
         ], 'Allocation candidates retrieved');
     }
 
@@ -162,7 +164,7 @@ class TransportAllocationController extends Controller
 
         $data = $request->validate(['reason' => 'nullable|string|max:500']);
 
-        $assignment = $this->assignments->activeForTrip($record->id, $tenantId);
+        $assignment = $this->withDriverName($this->assignments->activeForTrip($record->id, $tenantId)?->load('driver'));
 
         if (! $assignment) {
             throw new BusinessException('This trip has no active assignment to release.', 422);
@@ -172,7 +174,7 @@ class TransportAllocationController extends Controller
 
         return $this->success([
             'trip'       => $record->fresh(),
-            'assignment' => $released,
+            'assignment' => $this->withDriverName($released?->load('driver')),
         ], 'Assignment released');
     }
 }

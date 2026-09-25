@@ -132,6 +132,17 @@ function CheckRow({ check, canPerform, onConfirm, busyId }) {
   )
 }
 
+
+/**
+ * A warning or blocker as a sentence — D-147.
+ *
+ * Fleet's eligibility answers `{code, why, owner}` since D-134, and rendering
+ * that object into JSX is the "Objects are not valid as a React child" crash.
+ * `why (owner)` matches DriversBoard and VehicleAllocationModal — the desk that
+ * can clear it is the useful half.
+ */
+const reason = (r) => (r?.owner ? `${r.why} (${r.owner})` : r?.why ?? '')
+
 export default function PretripPanel({ trip, canPerform, onChanged }) {
   const toast = useToast()
 
@@ -295,7 +306,7 @@ export default function PretripPanel({ trip, canPerform, onChanged }) {
       {(readiness?.warnings || []).length > 0 && (
         <div style={{ marginTop: 10 }}>
           {readiness.warnings.map((w, i) => (
-            <p key={i} style={{ margin: '0 0 4px', fontSize: 11.5, color: '#fbbf24' }}>⚠ {w}</p>
+            <p key={i} style={{ margin: '0 0 4px', fontSize: 11.5, color: '#fbbf24' }}>⚠ {reason(w)}</p>
           ))}
         </div>
       )}

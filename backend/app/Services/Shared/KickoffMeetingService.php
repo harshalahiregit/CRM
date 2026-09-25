@@ -389,6 +389,50 @@ class KickoffMeetingService
         return $this->invites->sendInvitations($meeting, $actor);
     }
 
+    /**
+     * Send the invitations AFTER the response has gone out.
+     *
+     * Publishing a meeting timed out and told the organiser it had failed:
+     *
+     *   Maximum execution time of 30 seconds exceeded
+     *     at symfony/mailer/Transport/Smtp/Stream/SocketStream.php:154
+     *
+     * One SMTP session per recipient, opened inline while the browser waited.
+     * Three or four people on the roster is more than thirty seconds, so PHP
+     * killed the request and the dialog showed "something went wrong on our
+     * side".
+     *
+     * The meeting had already been published. `update()` runs before this, so
+     * the status was saved and only the mail was still running — which is why
+     * pressing the button again answered "Cannot move a Scheduled meeting to
+     * Scheduled". The organiser was told publishing failed, twice, on a meeting
+     * that was live both times.
+     *
+     * `terminating` runs the callback once the response is flushed, in this
+     * same process — no queue worker involved, and there is not one running.
+     * The mail still goes out on this request, just not while somebody is
+     * watching a spinner.
+     *
+     * ONLY FOR SENDS NOBODY IS WAITING ON A RESULT FROM. The explicit
+     * sendInvitations() above stays inline, because it answers with how many
+     * were sent, skipped and failed, and an answer cannot be given after the
+     * answer has been given.
+     */
+    private function sendInvitationsAfterResponse(KickoffMeeting $meeting, User $actor, string $what): void
+    {
+        $fresh = $meeting->fresh(['attendees', 'agendaItems']);
+
+        app()->terminating(function () use ($fresh, $actor, $what) {
+            try {
+                $this->invites->sendInvitations($fresh, $actor);
+            } catch (\Throwable $e) {
+                Log::channel('tpv')->warning($what, [
+                    'meeting_id' => $fresh->id, 'error' => $e->getMessage(),
+                ]);
+            }
+        });
+    }
+
     /** Edit an open meeting's details (not its status — that goes through the transitions). */
     public function update(KickoffMeeting $meeting, array $data, User $actor): KickoffMeeting
     {
@@ -507,13 +551,9 @@ class KickoffMeetingService
         }
 
         if ($wasPublished && $meeting->scheduled_at && ($scheduleChanged || $rosterChanged)) {
-            try {
-                $this->invites->sendInvitations($meeting->fresh(['attendees', 'agendaItems']), $actor);
-            } catch (\Throwable $e) {
-                Log::channel('tpv')->warning('Kickoff re-invite after edit failed', [
-                    'meeting_id' => $meeting->id, 'error' => $e->getMessage(),
-                ]);
-            }
+            // Same reason as publishing: nobody is waiting on a count here, and
+            // an edit that saves in eleven seconds reads as an edit that hung.
+            $this->sendInvitationsAfterResponse($meeting, $actor, 'Kickoff re-invite after edit failed');
         }
 
         return $this->find($meeting->id, $actor->tenant_id);
@@ -579,13 +619,7 @@ class KickoffMeetingService
         // join link. Reminders need no explicit scheduling — the reminder
         // command reads the live scheduled_at each run.
         if ($isPublishing) {
-            try {
-                $this->invites->sendInvitations($meeting->fresh(['attendees', 'agendaItems']), $actor);
-            } catch (\Throwable $e) {
-                Log::channel('tpv')->warning('Kickoff publish invitation failed', [
-                    'meeting_id' => $meeting->id, 'error' => $e->getMessage(),
-                ]);
-            }
+            $this->sendInvitationsAfterResponse($meeting, $actor, 'Kickoff publish invitation failed');
         }
 
         $verb = $isPublishing

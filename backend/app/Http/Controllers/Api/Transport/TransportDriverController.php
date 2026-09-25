@@ -27,6 +27,8 @@ use Illuminate\Http\Request;
  */
 class TransportDriverController extends Controller
 {
+    use \App\Support\Transport\MasterIsReadOnly;
+
     use ApiResponse;
 
     public function __construct(
@@ -87,7 +89,19 @@ class TransportDriverController extends Controller
             // CMP §23, derived. UX §35: "Never merely show Blocked. Show: Why?"
             // — the eligibility verdict carries the why.
             'compliance_status' => $driver->complianceStatus($window),
-            'eligibility'       => $this->eligibility->evaluate($driver, null, $tenantId),
+            // D-143 — no allocation verdict on a historical record.
+            //
+            // This called the eligibility service, which since the repoint
+            // takes a FLEET vehicle; passing the legacy row TypeErrors and took
+            // a READ endpoint down with it. Removed rather than adapted: a
+            // record in this table can no longer be allocated to anything, so
+            // "is it eligible" has no answer that means anything. Answering it
+            // would be worse than not — a screen saying a retired row is
+            // eligible is a screen inviting somebody to try.
+            //
+            // The key stays, explicitly null, so a reader sees the question was
+            // considered rather than dropped.
+            'eligibility' => null,
             'transitions' => [
                 'status'       => DriverStatus::TRANSITIONS[$driver->status] ?? [],
                 'availability' => DriverAvailability::TRANSITIONS[$driver->availability] ?? [],
@@ -98,6 +112,12 @@ class TransportDriverController extends Controller
 
     public function store(StoreTransportDriverRequest $request): JsonResponse
     {
+        // D-143 — read-only. See MasterIsReadOnly for why this refuses here
+        // rather than the route simply not existing.
+        $this->refuseMasterWrite('driver');
+
+        // @phpstan-ignore-next-line  unreachable, kept so the surface is
+        // readable and the diff shows what was retired rather than deleted.
         $driver = $this->drivers->create(
             $request->validated(), $request->user()->tenant_id, $request->user()
         );
@@ -107,6 +127,12 @@ class TransportDriverController extends Controller
 
     public function update(UpdateTransportDriverRequest $request, int $id): JsonResponse
     {
+        // D-143 — read-only. See MasterIsReadOnly for why this refuses here
+        // rather than the route simply not existing.
+        $this->refuseMasterWrite('driver');
+
+        // @phpstan-ignore-next-line  unreachable, kept so the surface is
+        // readable and the diff shows what was retired rather than deleted.
         $tenantId = $request->user()->tenant_id;
         $driver   = $this->drivers->find($id, $tenantId);
 
@@ -119,6 +145,12 @@ class TransportDriverController extends Controller
     /** One axis at a time — see TransitionTransportDriverRequest. */
     public function transition(TransitionTransportDriverRequest $request, int $id): JsonResponse
     {
+        // D-143 — read-only. See MasterIsReadOnly for why this refuses here
+        // rather than the route simply not existing.
+        $this->refuseMasterWrite('driver');
+
+        // @phpstan-ignore-next-line  unreachable, kept so the surface is
+        // readable and the diff shows what was retired rather than deleted.
         $tenantId = $request->user()->tenant_id;
         $driver   = $this->drivers->find($id, $tenantId);
         $data     = $request->validated();
@@ -132,6 +164,12 @@ class TransportDriverController extends Controller
 
     public function destroy(Request $request, int $id): JsonResponse
     {
+        // D-143 — read-only. See MasterIsReadOnly for why this refuses here
+        // rather than the route simply not existing.
+        $this->refuseMasterWrite('driver');
+
+        // @phpstan-ignore-next-line  unreachable, kept so the surface is
+        // readable and the diff shows what was retired rather than deleted.
         $tenantId = $request->user()->tenant_id;
         $driver   = $this->drivers->find($id, $tenantId);
 
@@ -144,6 +182,12 @@ class TransportDriverController extends Controller
 
     public function storeDocument(StoreTransportDocumentRequest $request, int $id): JsonResponse
     {
+        // D-143 — read-only. See MasterIsReadOnly for why this refuses here
+        // rather than the route simply not existing.
+        $this->refuseMasterWrite('driver');
+
+        // @phpstan-ignore-next-line  unreachable, kept so the surface is
+        // readable and the diff shows what was retired rather than deleted.
         $tenantId = $request->user()->tenant_id;
         $driver   = $this->drivers->find($id, $tenantId);
         $data     = $request->validated();
@@ -156,6 +200,12 @@ class TransportDriverController extends Controller
 
     public function renewDocument(StoreTransportDocumentRequest $request, int $id, int $documentId): JsonResponse
     {
+        // D-143 — read-only. See MasterIsReadOnly for why this refuses here
+        // rather than the route simply not existing.
+        $this->refuseMasterWrite('driver');
+
+        // @phpstan-ignore-next-line  unreachable, kept so the surface is
+        // readable and the diff shows what was retired rather than deleted.
         $tenantId = $request->user()->tenant_id;
         $this->drivers->find($id, $tenantId);
         $current = $this->documents->find($documentId, $tenantId);

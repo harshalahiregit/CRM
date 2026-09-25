@@ -18,6 +18,9 @@ use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use App\Domains\Fleet\Models\DriverProfile;
+use App\Domains\Fleet\Models\Vehicle;
+use Tests\Concerns\CreatesFleetResources;
 use Tests\TestCase;
 
 /**
@@ -32,6 +35,7 @@ use Tests\TestCase;
 class TripAssignmentTest extends TestCase
 {
     use RefreshDatabase;
+    use CreatesFleetResources;
 
     private const TENANT_A = 1;
     private const TENANT_B = 2;
@@ -72,16 +76,22 @@ class TripAssignmentTest extends TestCase
         ]);
     }
 
-    private function vehicle(int $tenantId = self::TENANT_A): TransportVehicle
+    /**
+     * Fleet's rows, because those are what an assignment points at now.
+     *
+     * These used to be `TransportVehicle::create()` and
+     * `TransportDriver::create()`. After the repoint a legacy row cannot be
+     * assigned at all — `lockResources()` refuses it (D-136) — so a fixture
+     * built there would be testing an allocation nobody can perform.
+     */
+    private function vehicle(int $tenantId = self::TENANT_A): Vehicle
     {
-        return TransportVehicle::create([
-            'tenant_id' => $tenantId, 'registration_number' => 'MH12AB'.self::uniqueSeq(4),
-        ]);
+        return $this->fleetVehicle(['registration_number' => 'MH12AB'.self::uniqueSeq(4)], $tenantId);
     }
 
-    private function driver(int $tenantId = self::TENANT_A): TransportDriver
+    private function driver(int $tenantId = self::TENANT_A): DriverProfile
     {
-        return TransportDriver::create(['tenant_id' => $tenantId, 'name' => 'Driver '.Str::random(5)]);
+        return $this->fleetDriver(['name' => 'Driver '.Str::random(5)], $tenantId);
     }
 
     /* ══════════ Creating an assignment ══════════ */

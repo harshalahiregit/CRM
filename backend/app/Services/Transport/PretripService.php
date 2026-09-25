@@ -12,6 +12,7 @@ use App\Support\Transport\PretripCheckKey;
 use App\Support\Transport\PretripReadiness;
 use App\Support\Transport\PretripResult;
 use App\Support\Transport\PretripScope;
+use App\Support\Transport\FleetResourceName;
 use App\Support\Transport\TripStatus;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -973,7 +974,7 @@ class PretripService
             ];
         }
 
-        return [PretripResult::PASS, $driver->displayName().' is assigned.'];
+        return [PretripResult::PASS, FleetResourceName::of($driver).' is assigned.'];
     }
 
     /** OPS §28 Vehicle, "Assigned"; BRW-046. */
@@ -988,7 +989,7 @@ class PretripService
             ];
         }
 
-        return [PretripResult::PASS, $vehicle->displayName().' is assigned.'];
+        return [PretripResult::PASS, FleetResourceName::of($vehicle).' is assigned.'];
     }
 
     /**
@@ -1017,7 +1018,7 @@ class PretripService
         $verdict = $this->driverEligibility->evaluate($driver, $trip, $tenantId, $policy);
 
         return $this->fromBorrowedChecks(
-            $verdict, ['licence', 'documents'], $driver->displayName(), $isCritical, $tenantId, $policy,
+            $verdict, ['licence', 'documents'], FleetResourceName::of($driver), $isCritical, $tenantId, $policy,
         );
     }
 
@@ -1044,7 +1045,7 @@ class PretripService
         $verdict = $this->vehicleEligibility->evaluate($vehicle, $trip, $tenantId, $policy);
 
         return $this->fromBorrowedChecks(
-            $verdict, ['documents'], $vehicle->displayName(), $isCritical, $tenantId, $policy,
+            $verdict, ['documents'], FleetResourceName::of($vehicle), $isCritical, $tenantId, $policy,
         );
     }
 

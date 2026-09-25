@@ -6,15 +6,16 @@ use App\Events\Transport\TripAssigned;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ResourceNotFoundException;
 use App\Models\Transport\TransportDocument;
-use App\Models\Transport\TransportDriver;
+use App\Domains\Fleet\Models\DriverProfile;
 use App\Models\Transport\TransportTrip;
 use App\Services\Transport\Contracts\FleetResourceGateway;
 use App\Services\Transport\TripEventRecorder;
-use App\Models\Transport\TransportVehicle;
+use App\Domains\Fleet\Models\Vehicle;
 use App\Models\Transport\TripAssignment;
 use App\Models\User;
 use App\Support\Transport\AllocationScope;
 use App\Support\Transport\DriverAvailability;
+use App\Support\Transport\FleetResourceName;
 use App\Support\Transport\TripStatus;
 use App\Support\Transport\VehicleStatus;
 use Illuminate\Support\Facades\DB;
@@ -161,11 +162,19 @@ class AllocationService
             $assignment = $this->assignments->assign($trip, $vehicleId, $driverId, $tenantId, $actor, $meta);
 
             /* ── 4. Resource states, so the masters stop advertising them. ─ */
-            if ($vehicle && $vehicle->status === VehicleStatus::AVAILABLE) {
-                $this->moveVehicle($vehicle, VehicleStatus::ALLOCATED, $actor, 'Allocated to trip '.$trip->trip_number);
+            // Fleet's vocabulary. Two traps here, both SILENT if missed —
+            // the allocation still writes its row, the resource simply never
+            // stops being advertised as free:
+            //   · Fleet's statuses are UPPERCASE, so VehicleStatus::AVAILABLE
+            //     ('available') never matches.
+            //   · `driver_profiles` has NO `availability` column at all, so
+            //     $driver->availability is null and lower-casing saves nothing.
+            //     A profile's one state is `status`.
+            if ($vehicle && in_array($vehicle->status, Vehicle::ALLOCATABLE, true)) {
+                $this->moveVehicle($vehicle, Vehicle::STATUS_ALLOCATED, $actor, 'Allocated to trip '.$trip->trip_number);
             }
-            if ($driver && $driver->availability === DriverAvailability::AVAILABLE) {
-                $this->moveDriver($driver, DriverAvailability::ASSIGNED, $actor, 'Assigned to trip '.$trip->trip_number);
+            if ($driver && $driver->status === DriverProfile::AVAILABLE) {
+                $this->moveDriver($driver, DriverProfile::ON_TRIP, $actor, 'Assigned to trip '.$trip->trip_number);
             }
 
             /* ── 5. Audit, carrying the evidence. ───────────────────────── */
@@ -363,16 +372,21 @@ class AllocationService
     private function freeResources(?int $vehicleId, ?int $driverId, int $tenantId, ?User $actor, string $reason): void
     {
         if ($vehicleId) {
-            $vehicle = TransportVehicle::forTenant($tenantId)->find($vehicleId);
-            if ($vehicle && $vehicle->status === VehicleStatus::ALLOCATED) {
-                $this->moveVehicle($vehicle, VehicleStatus::AVAILABLE, $actor, $reason);
+            $vehicle = Vehicle::forCompany($tenantId)->find($vehicleId);
+
+            // ON_TRIP_STATES, not just ALLOCATED: a trip that reaches delivery
+            // has moved its vehicle on to IN_TRANSIT, and matching only the
+            // earlier state would leave every completed trip's truck showing as
+            // in transit forever. That is D-119 in its other direction.
+            if ($vehicle && in_array($vehicle->status, Vehicle::ON_TRIP_STATES, true)) {
+                $this->moveVehicle($vehicle, Vehicle::STATUS_AVAILABLE, $actor, $reason);
             }
         }
 
         if ($driverId) {
-            $driver = TransportDriver::forTenant($tenantId)->find($driverId);
-            if ($driver && $driver->availability === DriverAvailability::ASSIGNED) {
-                $this->moveDriver($driver, DriverAvailability::AVAILABLE, $actor, $reason);
+            $driver = DriverProfile::forCompany($tenantId)->find($driverId);
+            if ($driver && $driver->status === DriverProfile::ON_TRIP) {
+                $this->moveDriver($driver, DriverProfile::AVAILABLE, $actor, $reason);
             }
         }
 
@@ -534,7 +548,7 @@ class AllocationService
     private function assertEligible(
         array $verdict,
         string $kind,
-        TransportVehicle|TransportDriver $resource,
+        Vehicle|DriverProfile $resource,
         TransportTrip $trip,
         int $tenantId,
         ?User $actor,
@@ -555,7 +569,13 @@ class AllocationService
 
             'kind'          => $kind,
             'resource_id'   => (int) $resource->id,
-            'resource_name' => $resource->displayName(),
+            // Fleet's models carry no displayName(), and adding one to another
+            // developer's model to suit our audit row is not ours to do. A
+            // vehicle is its plate; a driver is their licence, because Fleet
+            // stores no names — a driver is a reference into the CRM directory.
+            'resource_name' => $resource instanceof Vehicle
+                ? $resource->registration_number
+                : ($resource->licence_number ?? 'driver #'.$resource->id),
             'trip_number'   => $trip->trip_number,
 
             'blockers' => $verdict['blockers'],
@@ -566,7 +586,7 @@ class AllocationService
 
             // BR-P0-004's "Document status" half, as structured data rather than
             // a sentence — which document, valid until when, still valid or not.
-            'document_status' => $this->documentStatus($kind, $resource, $tenantId, $keys),
+            'document_status' => $this->documentStatus($kind, $resource, $tenantId, $keys, $verdict),
 
             // BR-P0-004's "+ override" half. PLN-007 is P1 and AllocationScope
             // defers it, so no override can exist yet. The key is present and
@@ -582,7 +602,7 @@ class AllocationService
         ]);
 
         throw new BusinessException(
-            'That '.$kind.' cannot be allocated. '.$resource->displayName().': '.implode(' ', $verdict['blockers']),
+            'That '.$kind.' cannot be allocated. '.FleetResourceName::of($resource).': '.implode(' ', $verdict['blockers']),
             422
         );
     }
@@ -632,24 +652,38 @@ class AllocationService
      * Only gathered when a document or licence check actually failed; a capacity
      * refusal has no document story to tell.
      */
-    private function documentStatus(string $kind, TransportVehicle|TransportDriver $resource, int $tenantId, array $failedKeys): ?array
+    private function documentStatus(string $kind, Vehicle|DriverProfile $resource, int $tenantId, array $failedKeys, array $verdict = []): ?array
     {
-        if (! array_intersect(['documents', 'licence'], $failedKeys)) {
+        // `fleet` joins the list: after the repoint, a driver's licence and
+        // medical are Fleet's checks and they arrive under that key, so keying
+        // only on the old two would silently record no evidence at all for
+        // every driver refusal.
+        if (! array_intersect(['documents', 'licence', 'fleet'], $failedKeys)) {
             return null;
         }
 
         $status = [];
 
-        if ($kind === 'driver' && $resource instanceof TransportDriver) {
+        if ($kind === 'driver') {
+            // The evidence for a driver refusal now IS Fleet's verdict — the
+            // licence state, the medical state and the profile status, each
+            // already naming the desk that can clear it. Copied as given rather
+            // than re-derived: a second opinion recorded as evidence is not
+            // evidence.
+            $status['fleet'] = collect($verdict['checks'] ?? [])
+                ->firstWhere('key', 'fleet')['detail'] ?? 'Refused by Fleet.';
+
             $status['licence'] = [
                 'number'      => $resource->licence_number,
                 'class'       => $resource->licence_class,
-                'valid_until' => $resource->licence_valid_until?->toDateString(),
-                'valid'       => $resource->licenceIsValid(),
+                'valid_until' => $resource->licence_expiry?->toDateString(),
             ];
+
+            return $status;
         }
 
-        $status['documents'] = $resource->documents()
+        $status['documents'] = TransportDocument::forTenant($tenantId)
+            ->forVehicle($resource->id)
             ->where('status', TransportDocument::STATUS_ACTIVE)
             ->get()
             ->map(fn (TransportDocument $d) => [
@@ -690,23 +724,45 @@ class AllocationService
         return $out;
     }
 
-    private function moveVehicle(TransportVehicle $vehicle, string $to, ?User $actor, string $reason): void
+    /**
+     * Fleet owns the status; we say why it moved.
+     *
+     * Through `update()` rather than `forceFill()->save()`, because Fleet hangs
+     * a status observer off the model and Developers 1 and 3 are listening for
+     * `fleet.vehicle.status_changed`. Writing round the model would move the
+     * truck and tell nobody.
+     */
+    private function moveVehicle(Vehicle $vehicle, string $to, ?User $actor, string $reason): void
     {
         $from = $vehicle->status;
-        $vehicle->forceFill(['status' => $to, 'updated_by' => $actor?->id])->save();
-        $vehicle->auditTransition('transport.vehicle.status_changed', $from, $to, $actor, ['reason' => $reason]);
+        $vehicle->update(['status' => $to]);
+
+        // The status itself is audited by Fleet: the model observer raises
+        // `fleet.vehicle.status_changed`, which is now the record of record for
+        // a Fleet-owned column. What Fleet cannot know is WHY allocation moved
+        // it, so that is what this line adds. Writing a second transitions row
+        // from here would give one status change two audit trails that could
+        // disagree.
+        Log::channel('stos')->info('Vehicle status moved by allocation', [
+            'vehicle_id' => $vehicle->id, 'from' => $from, 'to' => $to,
+            'reason' => $reason, 'user_id' => $actor?->id,
+        ]);
     }
 
-    private function moveDriver(TransportDriver $driver, string $to, ?User $actor, string $reason): void
+    private function moveDriver(DriverProfile $driver, string $to, ?User $actor, string $reason): void
     {
-        $from = $driver->availability;
-        $driver->forceFill(['availability' => $to, 'updated_by' => $actor?->id])->save();
-        $driver->auditTransition('transport.driver.availability_changed', $from, $to, $actor, ['reason' => $reason]);
+        $from = $driver->status;
+        $driver->update(['status' => $to]);
+
+        Log::channel('stos')->info('Driver status moved by allocation', [
+            'driver_profile_id' => $driver->id, 'from' => $from, 'to' => $to,
+            'reason' => $reason, 'user_id' => $actor?->id,
+        ]);
     }
 
-    private function findVehicle(int $id, int $tenantId): TransportVehicle
+    private function findVehicle(int $id, int $tenantId): Vehicle
     {
-        $vehicle = TransportVehicle::forTenant($tenantId)->find($id);
+        $vehicle = Vehicle::forCompany($tenantId)->find($id);
         if (! $vehicle) {
             throw new ResourceNotFoundException('Vehicle');
         }
@@ -714,9 +770,9 @@ class AllocationService
         return $vehicle;
     }
 
-    private function findDriver(int $id, int $tenantId): TransportDriver
+    private function findDriver(int $id, int $tenantId): DriverProfile
     {
-        $driver = TransportDriver::forTenant($tenantId)->find($id);
+        $driver = DriverProfile::forCompany($tenantId)->find($id);
         if (! $driver) {
             throw new ResourceNotFoundException('Driver');
         }

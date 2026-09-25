@@ -25,8 +25,20 @@ class ClientContact extends Model implements AuthenticatableContract
      * notifications (old-CRM `get_contact_permissions` set). `emails_enabled`
      * is the single master switch that mutes all mail regardless.
      */
+    /**
+     * Which portal sections a contact can be granted.
+     *
+     * The single source of truth for both sides of the gate: this is what the
+     * contact controller and ClientService will accept on a WRITE, and what
+     * ClientPortalService::PERMISSIONS reads on the READ. They were two
+     * identical lists in two files until 2026-09-22 — adding `transport` to one
+     * of them would have let a staff member tick the box and had the value
+     * silently stripped on save, with nothing failing anywhere.
+     *
+     * `transport` — STOS-CLP §28 step 7, the client's shipments.
+     */
     public const MODULES = [
-        'invoice', 'estimate', 'contract', 'proposal', 'support', 'project',
+        'invoice', 'estimate', 'contract', 'proposal', 'support', 'project', 'transport',
     ];
 
     /** Per-type email-notification keys — independent of access permissions. */

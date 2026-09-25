@@ -103,7 +103,10 @@ return new class extends Migration
     {
         $unknown = DB::table($table)
             ->whereNotIn('status', array_values($values))
-            ->select('status', DB::raw('count(*) as rows'))
+            // `rows` is a reserved word in MySQL 8.0 and this query is
+            // unquoted, so the straggler report — not the data change — halted
+            // the whole migration chain partway through. Backticked. D-132.
+            ->select('status', DB::raw('count(*) as `rows`'))
             ->groupBy('status')->get();
 
         if ($unknown->isEmpty()) {

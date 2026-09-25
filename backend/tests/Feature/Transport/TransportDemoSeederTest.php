@@ -17,6 +17,8 @@ use App\Support\Transport\TripStatus;
 use Database\Seeders\TransportDemoSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use App\Domains\Fleet\Models\DriverProfile;
+use App\Domains\Fleet\Models\Vehicle;
 use Tests\TestCase;
 
 /**
@@ -56,8 +58,11 @@ class TransportDemoSeederTest extends TestCase
     {
         $this->runDemoSeeder();
 
-        $this->assertSame(2, TransportVehicle::forTenant(1)->count());
-        $this->assertSame(2, TransportDriver::forTenant(1)->count());
+        // Fleet's masters, not the legacy pair — the seeder writes where the
+        // product reads (D-143). A demo built in `transport_vehicles` would be
+        // a demo of trips nobody could crew.
+        $this->assertSame(2, Vehicle::forCompany(1)->count());
+        $this->assertSame(2, DriverProfile::forCompany(1)->count());
         $this->assertSame(2, TransportTrip::forTenant(1)->count());
         $this->assertSame(2, TransportConsignment::forTenant(1)->count());
         $this->assertSame(2, TransportOrder::forTenant(1)->count());
@@ -142,9 +147,9 @@ class TransportDemoSeederTest extends TestCase
         $this->assertSame(2, TransportConsignment::forTenant(1)->count());
         $this->assertSame(2, TransportOrder::forTenant(1)->count());
 
-        // Fleet rows are reused, not recreated — registration is unique per tenant.
-        $this->assertSame(2, TransportVehicle::forTenant(1)->count());
-        $this->assertSame(2, TransportDriver::forTenant(1)->count());
+        // Fleet rows are reused, not recreated — registration is unique per company.
+        $this->assertSame(2, Vehicle::forCompany(1)->count());
+        $this->assertSame(2, DriverProfile::forCompany(1)->count());
     }
 
     public function test_clearing_is_reversible_and_leaves_no_dangling_assignment(): void

@@ -158,6 +158,109 @@ class RepointCoversEveryReferenceTest extends TestCase
             ->whereIn('table_name', ['trip_exceptions', 'trip_advances'])->count());
     }
 
+    /**
+     * D-131 — the ledger must not call one failure by the other's name.
+     *
+     * Two rows that cannot be moved, for two different reasons:
+     *
+     *   · a driver that IS in the legacy master but has no Fleet counterpart
+     *     — a mapping that has not finished
+     *   · `driver_id = 1212010`, which is an id in no table anywhere
+     *     — a reference that was never valid
+     *
+     * Before this, both were recorded identically as "points at a legacy row
+     * with no Fleet counterpart". For the second that sentence is false, and a
+     * permanent ledger stating a false reason is worse than one saying nothing:
+     * every reader downstream then refuses the row on a ground that is not the
+     * real one, and the person who could fix it is never told it is theirs.
+     */
+    public function test_the_ledger_tells_an_unmigrated_row_from_one_that_was_never_a_reference(): void
+    {
+        // A legacy driver that the mover will NOT be run for, so it stays
+        // unmapped: a real row, no Fleet counterpart.
+        $unmigrated = DB::table('transport_drivers')->insertGetId([
+            'tenant_id' => self::COMPANY, 'driver_code' => 'DRV-131',
+            'name' => 'Unmigrated Singh', 'mobile' => '9800000131',
+            'licence_number' => 'MH0120110099999', 'licence_class' => 'HMV',
+            'licence_valid_until' => now()->addYear()->toDateString(),
+            'status' => 'active', 'availability' => 'available',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        // And one that IS migrated, so the mapping is not empty and the command
+        // has something to do — otherwise it exits before surveying anything.
+        $migrated = DB::table('transport_drivers')->insertGetId([
+            'tenant_id' => self::COMPANY, 'driver_code' => 'DRV-131B',
+            'name' => 'Migrated Rao', 'mobile' => '9800000132',
+            'licence_number' => 'MH0120110088888', 'licence_class' => 'HMV',
+            'licence_valid_until' => now()->addYear()->toDateString(),
+            'status' => 'active', 'availability' => 'available',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $this->runMover();
+
+        // Break the link for the one that must stay unmapped, so it is a legacy
+        // row with genuinely no Fleet counterpart rather than an unmigrated one.
+        DB::table('driver_profiles')->where('legacy_transport_driver_id', $unmigrated)
+            ->update(['legacy_transport_driver_id' => null]);
+
+        $good = $this->trip(null, $migrated);
+        $stale = $this->trip(null, $unmigrated);
+        $bogus = $this->trip(null, 1212010);
+
+        $this->artisan('stos:repoint-trip-fleet-refs --apply --force')->assertSuccessful();
+
+        $verdict = fn (int $rowId) => DB::table('fleet_reference_repoints')
+            ->where('table_name', 'transport_trips')->where('column_name', 'driver_id')
+            ->where('row_id', $rowId)->value('verdict');
+
+        $this->assertSame('moved', $verdict($good));
+
+        $this->assertSame('unmapped_legacy', $verdict($stale),
+            'A driver that is really in the legacy master, with no Fleet row yet, is a migration '
+            .'that has not finished. Finishing it fixes this row.');
+
+        $this->assertSame('never_valid', $verdict($bogus),
+            '1212010 is an id in no table anywhere. Recording it as an unmapped legacy id would '
+            .'state that a legacy row exists when none does — the exact lie this verdict exists '
+            .'to stop telling.');
+    }
+
+    /** The ledger may only ever say one of the three things it declares. */
+    public function test_no_row_is_recorded_under_a_verdict_that_does_not_exist(): void
+    {
+        $legacyId = DB::table('transport_drivers')->insertGetId([
+            'tenant_id' => self::COMPANY, 'driver_code' => 'DRV-131C',
+            'name' => 'Vocabulary Test', 'mobile' => '9800000133',
+            'licence_number' => 'MH0120110077777', 'licence_class' => 'HMV',
+            'licence_valid_until' => now()->addYear()->toDateString(),
+            'status' => 'active', 'availability' => 'available',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $this->runMover();
+        $this->trip(null, $legacyId);
+        $this->trip(null, 4242424);
+
+        $this->artisan('stos:repoint-trip-fleet-refs --apply --force')->assertSuccessful();
+
+        $declared = ['moved', 'unmapped_legacy', 'never_valid'];
+        $written = DB::table('fleet_reference_repoints')->distinct()->pluck('verdict');
+
+        $this->assertNotEmpty($written, 'nothing was recorded, so this proves nothing');
+
+        foreach ($written as $v) {
+            $this->assertContains($v, $declared,
+                "The ledger recorded `{$v}`, which is not one of the three verdicts the command "
+                .'declares. A verdict nobody declared is a sentence nobody agreed to.');
+        }
+
+        $this->assertNull(DB::table('fleet_reference_repoints')->whereNull('verdict')->value('id'),
+            'A row was recorded with no verdict at all — the ledger would then be read by its '
+            .'to_id again, which is what D-131 removed.');
+    }
+
     public function test_a_contested_mapping_stops_the_run_before_it_reports_anything(): void
     {
         $legacyId = DB::table('transport_vehicles')->insertGetId([

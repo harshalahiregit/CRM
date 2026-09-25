@@ -75,6 +75,35 @@ class DriverProfile extends Model
     }
 
     /** The handle the rest of STOS passes around. */
+    /**
+     * The driver's name, resolved from the directory — D-135 / D-144. **P1's
+     * addition to P2's model, 2026-09-25, awaiting his review.**
+     *
+     * Not a column and deliberately **not in `$appends`**: `$profile->name`
+     * resolves for a PHP reader, and `toArray()` stays exactly as it was. That
+     * is the shape this file already asks for — *"the overlay holds a REFERENCE
+     * and licence facts. No name, no phone — those are the directory's, and a
+     * copy is what goes stale."*
+     *
+     * P1's first attempt filled the attribute in from a `retrieved` hook. It
+     * never reached a save, but it DID reach `toArray()`, and an array that
+     * carries a name with nothing marking it derived becomes a copy the moment
+     * it is cached, queued or returned in a response somebody caches. The rule
+     * above survived the defence.
+     *
+     * An accessor also only costs the directory lookup when something actually
+     * asks for a name. The hook paid it on every read of every profile,
+     * including the many that never wanted one.
+     *
+     * Never null: a name if the directory has one, `#id` if it does not. A
+     * blank is indistinguishable from "no driver assigned", which is precisely
+     * how D-135 was reported.
+     */
+    public function getNameAttribute(): string
+    {
+        return app(\App\Support\Transport\DriverNaming::class)->nameFor($this);
+    }
+
     public function getRefAttribute(): string
     {
         return $this->source.':'.$this->source_id;

@@ -32,6 +32,8 @@ use Illuminate\Http\Request;
  */
 class TransportVehicleController extends Controller
 {
+    use \App\Support\Transport\MasterIsReadOnly;
+
     use ApiResponse;
 
     public function __construct(
@@ -82,7 +84,19 @@ class TransportVehicleController extends Controller
             'documents' => $vehicle->documents()->orderByDesc('id')->get(),
             // FLEET §16: Available ≠ Eligible ≠ Ready. The detail page shows the
             // eligibility verdict beside the status so the two are not confused.
-            'eligibility' => $this->eligibility->evaluate($vehicle, null, $tenantId),
+            // D-143 — no allocation verdict on a historical record.
+            //
+            // This called the eligibility service, which since the repoint
+            // takes a FLEET vehicle; passing the legacy row TypeErrors and took
+            // a READ endpoint down with it. Removed rather than adapted: a
+            // record in this table can no longer be allocated to anything, so
+            // "is it eligible" has no answer that means anything. Answering it
+            // would be worse than not — a screen saying a retired row is
+            // eligible is a screen inviting somebody to try.
+            //
+            // The key stays, explicitly null, so a reader sees the question was
+            // considered rather than dropped.
+            'eligibility' => null,
             'transitions' => VehicleStatus::TRANSITIONS[$vehicle->status] ?? [],
             'audit'       => $this->audit->forSubject($vehicle, $tenantId),
         ], 'Vehicle retrieved');
@@ -90,6 +104,12 @@ class TransportVehicleController extends Controller
 
     public function store(StoreTransportVehicleRequest $request): JsonResponse
     {
+        // D-143 — read-only. See MasterIsReadOnly for why this refuses here
+        // rather than the route simply not existing.
+        $this->refuseMasterWrite('vehicle');
+
+        // @phpstan-ignore-next-line  unreachable, kept so the surface is
+        // readable and the diff shows what was retired rather than deleted.
         $vehicle = $this->vehicles->create(
             $request->validated(), $request->user()->tenant_id, $request->user()
         );
@@ -99,6 +119,12 @@ class TransportVehicleController extends Controller
 
     public function update(UpdateTransportVehicleRequest $request, int $id): JsonResponse
     {
+        // D-143 — read-only. See MasterIsReadOnly for why this refuses here
+        // rather than the route simply not existing.
+        $this->refuseMasterWrite('vehicle');
+
+        // @phpstan-ignore-next-line  unreachable, kept so the surface is
+        // readable and the diff shows what was retired rather than deleted.
         $tenantId = $request->user()->tenant_id;
         $vehicle  = $this->vehicles->find($id, $tenantId);
 
@@ -111,6 +137,12 @@ class TransportVehicleController extends Controller
     /** FLEET §8 — status moves here, never through update(). */
     public function transition(TransitionTransportVehicleRequest $request, int $id): JsonResponse
     {
+        // D-143 — read-only. See MasterIsReadOnly for why this refuses here
+        // rather than the route simply not existing.
+        $this->refuseMasterWrite('vehicle');
+
+        // @phpstan-ignore-next-line  unreachable, kept so the surface is
+        // readable and the diff shows what was retired rather than deleted.
         $tenantId = $request->user()->tenant_id;
         $vehicle  = $this->vehicles->find($id, $tenantId);
 
@@ -125,6 +157,12 @@ class TransportVehicleController extends Controller
 
     public function destroy(Request $request, int $id): JsonResponse
     {
+        // D-143 — read-only. See MasterIsReadOnly for why this refuses here
+        // rather than the route simply not existing.
+        $this->refuseMasterWrite('vehicle');
+
+        // @phpstan-ignore-next-line  unreachable, kept so the surface is
+        // readable and the diff shows what was retired rather than deleted.
         $tenantId = $request->user()->tenant_id;
         $vehicle  = $this->vehicles->find($id, $tenantId);
 
@@ -137,6 +175,12 @@ class TransportVehicleController extends Controller
 
     public function storeDocument(StoreTransportDocumentRequest $request, int $id): JsonResponse
     {
+        // D-143 — read-only. See MasterIsReadOnly for why this refuses here
+        // rather than the route simply not existing.
+        $this->refuseMasterWrite('vehicle');
+
+        // @phpstan-ignore-next-line  unreachable, kept so the surface is
+        // readable and the diff shows what was retired rather than deleted.
         $tenantId = $request->user()->tenant_id;
         $vehicle  = $this->vehicles->find($id, $tenantId);
         $data     = $request->validated();
@@ -150,6 +194,12 @@ class TransportVehicleController extends Controller
     /** STOS-DOC §26 — a replacement is a new version, never an overwrite. */
     public function renewDocument(StoreTransportDocumentRequest $request, int $id, int $documentId): JsonResponse
     {
+        // D-143 — read-only. See MasterIsReadOnly for why this refuses here
+        // rather than the route simply not existing.
+        $this->refuseMasterWrite('vehicle');
+
+        // @phpstan-ignore-next-line  unreachable, kept so the surface is
+        // readable and the diff shows what was retired rather than deleted.
         $tenantId = $request->user()->tenant_id;
         $this->vehicles->find($id, $tenantId);          // tenant + existence gate
         $current = $this->documents->find($documentId, $tenantId);

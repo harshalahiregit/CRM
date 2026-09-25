@@ -19,6 +19,7 @@ use App\Support\Transport\VehicleStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
+use Tests\Concerns\CreatesFleetResources;
 use Tests\TestCase;
 
 /**
@@ -30,6 +31,7 @@ use Tests\TestCase;
 class DispatchApiTest extends TestCase
 {
     use RefreshDatabase;
+    use CreatesFleetResources;
 
     private const TENANT_A = 1;
     private const TENANT_B = 2;
@@ -71,18 +73,19 @@ class DispatchApiTest extends TestCase
         ]);
         $trip->forceFill(['status' => TripStatus::APPROVED])->save();
 
-        $vs = app(TransportVehicleService::class);
-        $v = $vs->create([
+        // Fleet's rows. A legacy vehicle cannot be allocated since the
+        // repoint — lockResources() refuses it (D-136) — so a fixture built
+        // there would be testing a dispatch nobody can reach.
+        $v = $this->fleetVehicle([
             'registration_number' => 'MH12AB'.self::uniqueSeq(4),
-            'vehicle_type' => 'Trailer 40ft', 'capacity_tonnes' => 30,
+            'vehicle_type' => 'truck', 'capacity_tonnes' => 30,
         ], $tenantId, $actor);
-        $v = $vs->transitionTo($v, VehicleStatus::AVAILABLE, $tenantId, $actor);
 
-        $d = app(TransportDriverService::class)->create([
+        $d = $this->fleetDriver([
             'name' => 'Ramesh '.Str::random(4),
             'licence_number' => 'RJ14'.self::uniqueSeq(6),
-            'licence_class' => 'HMV', 'licence_valid_until' => now()->addYears(2)->toDateString(),
-        ], $tenantId, $actor);
+            'licence_class' => 'HMV', 'licence_expiry' => now()->addYears(2)->toDateString(),
+        ], $tenantId);
 
         app(AllocationService::class)->assign($trip->fresh(), $v->id, $d->id, $tenantId, $actor);
         $trip = $trip->fresh();

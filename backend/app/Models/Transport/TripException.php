@@ -2,6 +2,8 @@
 
 namespace App\Models\Transport;
 
+use App\Domains\Fleet\Models\DriverProfile;
+use App\Domains\Fleet\Models\Vehicle;
 use App\Models\Transport\Concerns\RecordsTransportAudit;
 use App\Models\Traits\BelongsToTenant;
 use App\Support\Transport\ExceptionSeverity;
@@ -102,12 +104,12 @@ class TripException extends Model
 
     public function vehicle(): BelongsTo
     {
-        return $this->belongsTo(TransportVehicle::class, 'vehicle_id');
+        return $this->belongsTo(Vehicle::class, 'vehicle_id');
     }
 
     public function driver(): BelongsTo
     {
-        return $this->belongsTo(TransportDriver::class, 'driver_id');
+        return $this->belongsTo(DriverProfile::class, 'driver_id');
     }
 
     /* ── Scopes ─────────────────────────────────────────────────────── */

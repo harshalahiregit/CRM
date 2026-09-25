@@ -22,6 +22,9 @@ use App\Support\Transport\TripStatus;
 use App\Support\Transport\VehicleStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use App\Domains\Fleet\Models\DriverProfile;
+use App\Domains\Fleet\Models\Vehicle;
+use Tests\Concerns\CreatesFleetResources;
 use Tests\TestCase;
 
 /**
@@ -35,6 +38,7 @@ use Tests\TestCase;
 class TransportAllocationRefusalAuditTest extends TestCase
 {
     use RefreshDatabase;
+    use CreatesFleetResources;
 
     private const A = 1;
 
@@ -81,19 +85,19 @@ class TransportAllocationRefusalAuditTest extends TestCase
         return $t->fresh();
     }
 
-    private function vehicle(?float $capacity = 30, bool $available = true): TransportVehicle
+    private function vehicle(?float $capacity = 30, bool $available = true): Vehicle
     {
-        $v = $this->vehicleSvc->create([
+        $v = $this->fleetVehicle([
             'registration_number' => 'MH12'.Str::upper(Str::random(2)).self::uniqueSeq(4),
             'capacity_tonnes' => $capacity,
         ], self::A, $this->actor);
 
-        return $available ? $this->vehicleSvc->transitionTo($v, VehicleStatus::AVAILABLE, self::A, $this->actor) : $v;
+        return $available ? $this->moveFleetVehicle($v, Vehicle::STATUS_AVAILABLE) : $v;
     }
 
-    private function driver(array $o = []): TransportDriver
+    private function driver(array $o = []): DriverProfile
     {
-        return $this->driverSvc->create(array_merge([
+        return $this->fleetDriver(array_merge([
             'name' => 'Driver '.Str::random(4),
             'licence_number' => 'RJ14'.self::uniqueSeq(6),
             'licence_valid_until' => now()->addYears(2)->toDateString(),

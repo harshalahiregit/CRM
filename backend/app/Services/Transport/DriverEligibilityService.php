@@ -3,14 +3,14 @@
 namespace App\Services\Transport;
 
 use App\Models\Transport\TransportDocument;
-use App\Models\Transport\TransportDriver;
+use App\Domains\Fleet\Models\DriverProfile;
+use App\Domains\Fleet\Services\DriverService;
 use App\Models\Transport\TransportTrip;
 use App\Models\Transport\TripAssignment;
 use App\Support\Transport\DriverAvailability;
 use App\Support\Transport\DriverComplianceStatus;
 use App\Support\Transport\DriverStatus;
 use App\Support\Transport\EligibilityVerdict;
-use App\Support\Transport\TransportDocumentType;
 use Illuminate\Support\Collection;
 
 /**
@@ -53,43 +53,80 @@ use Illuminate\Support\Collection;
  */
 class DriverEligibilityService
 {
-    public function __construct(private TransportPolicyService $policies)
-    {
+    public function __construct(
+        private TransportPolicyService $policies,
+        private DriverService $drivers,
+    ) {
     }
 
-    /** @param array<string,mixed>|null $policy pre-loaded, to avoid a read per row */
-    public function evaluate(TransportDriver $driver, ?TransportTrip $trip, int $tenantId, ?array $policy = null): array
+    /**
+     * Fleet's verdict on every driver, read once per company per request.
+     *
+     * `DriverService::eligible()` reads the whole directory — TPV workforce,
+     * purchase workforce, vendor contacts, customer contacts — and then the
+     * profiles. `candidatesFor()` needs it once, and `evaluate()` needs it per
+     * driver, so without this a fleet of 200 read that directory 201 times to
+     * answer one screen. Two drivers hid it completely in dev.
+     *
+     * Per instance, not static: the service is resolved per request, so this
+     * cannot serve one company's directory to the next request.
+     *
+     * @var array<int,array<string,mixed>>
+     */
+    private array $fleetCache = [];
+
+    /**
+     * ── REPOINTED ONTO FLEET, 2026-09-23 (D-100 / D-109) ─────────────────
+     *
+     * This read `transport_drivers` and asked two questions of it directly:
+     * `status` against `DriverStatus::ALLOCATABLE`, and `availability` against
+     * `DriverAvailability::ALLOCATABLE`.
+     *
+     * Neither survives the repoint, and lower-casing does not save them the way
+     * it saves the vehicle half: **`driver_profiles` has no `availability`
+     * column at all.** `$driver->availability` is simply null on a Fleet
+     * profile, so the check would read "Driver is ." and pass or fail on an
+     * absence — and the licence and medical rules live in Fleet now anyway.
+     *
+     * So the driver-record questions are asked of `DriverService::eligible()`,
+     * which is where Fleet keeps them: licence expired, licence unrecorded,
+     * medical expired, not onboarded, not AVAILABLE. One rule set, one place,
+     * and each blocker already names the desk that can clear it.
+     *
+     * **The assignment clash stays here**, because Fleet does not know about
+     * trips. A driver can be perfectly fit to drive and still be on another
+     * load, and that is Transport's question to ask.
+     *
+     * @param  array<string,mixed>|null  $policy  pre-loaded, to avoid a read per row
+     */
+    public function evaluate(DriverProfile $driver, ?TransportTrip $trip, int $tenantId, ?array $policy = null): array
     {
         $policy ??= $this->policies->all($tenantId);
-        $window = (int) $policy['compliance.expiring_window_days'];
+
+        $row = $this->fleetRow($driver->id, $tenantId);
         $checks = [];
 
-        /* 1 — Lifecycle. BO-009: does this person drive for us at all. */
-        $lifecycleOk = in_array($driver->status, DriverStatus::ALLOCATABLE, true);
+        /* 1 — Fit to drive at all. Fleet's rules, verbatim: licence, medical
+              and the profile's own status. Reported as ONE check carrying
+              Fleet's own words, rather than re-derived into ours. */
+        $blockers = $row['blockers'] ?? [];
+        $fit = $blockers === [];
         $checks[] = EligibilityVerdict::check(
-            'lifecycle', 'Driver record active',
+            'fleet', 'Fit to drive',
             (bool) $policy['driver.check.lifecycle.required'],
-            $lifecycleOk,
-            $lifecycleOk
-                ? 'Active'
-                : 'Driver is '.$driver->statusLabel().' — only an active driver can be allocated.',
+            $fit,
+            $fit
+                ? 'Cleared by Fleet'
+                : implode(' ', array_map(
+                    fn ($b) => $b['why'].' ('.$b['owner'].')',
+                    $blockers,
+                )),
         );
 
-        /* 2 — Availability. BRW-028, verbatim: "Only drivers with AVAILABLE
-              status may be automatically recommended for allocation." */
-        $availableOk = in_array($driver->availability, DriverAvailability::ALLOCATABLE, true);
-        $checks[] = EligibilityVerdict::check(
-            'availability', 'Availability',
-            (bool) $policy['driver.check.availability.required'],
-            $availableOk,
-            $availableOk
-                ? 'Available'
-                : 'Driver is '.$driver->availabilityLabel().'.',
-        );
-
-        /* 3 — Not already spoken for. STOS-DB §199, PLN-006. Ruled a hard block
+        /* 2 — Not already spoken for. STOS-DB §199, PLN-006. Ruled a hard block
               on 2026-09-07, matching the vehicle: a person cannot be in two
-              places at once, whatever "incompatible" was meant to mean. */
+              places at once, whatever "incompatible" was meant to mean.
+              Transport's question, and the only one Fleet cannot answer. */
         $clash = TripAssignment::forTenant($tenantId)
             ->forDriver($driver->id)
             ->active()
@@ -104,40 +141,19 @@ class DriverEligibilityService
                 : 'Already assigned to trip #'.$clash->trip_id.' — release that assignment first.',
         );
 
-        /* 4 — Licence. CMP §22, BR-048, BR-P0-004. */
-        [$licOk, $licDetail] = $this->licenceVerdict($driver, $window);
-        $checks[] = EligibilityVerdict::check(
-            'licence', 'Driving licence',
-            (bool) $policy['driver.check.licence.required'],
-            $licOk,
-            $licDetail,
-        );
-
-        /* 5 — Documents. BRW-029, CMP §24. */
-        [$docsOk, $docsDetail] = $this->documentVerdict($driver->id, $tenantId, $policy);
-        $checks[] = EligibilityVerdict::check(
-            'documents', 'Compliance documents',
-            (bool) $policy['driver.check.documents.required'],
-            $docsOk,
-            $docsDetail,
-        );
-
         return EligibilityVerdict::make(
             [
                 'id' => $driver->id,
-                'name' => $driver->name,
-                'driver_code' => $driver->driver_code,
+                'name' => $row['name'] ?? null,
                 'licence_class' => $driver->licence_class,
                 'status' => $driver->status,
-                'availability' => $driver->availability,
             ],
             $checks,
             [
-                // CMP §23's derived status, reported alongside rather than as a
-                // sixth check — it summarises the same facts checks 4 and 5 test,
-                // and a UI wants the single word.
-                'compliance_status' => $driver->complianceStatus($window),
-                'expiring_soon'     => $this->expiringSoon($driver, $tenantId, $window),
+                // Fleet's warnings pass straight through — a licence about to
+                // expire does not block, but a planner should see it before
+                // choosing. Re-wording them here would be a second opinion.
+                'warnings' => $row['warnings'] ?? [],
             ],
         );
     }
@@ -145,8 +161,8 @@ class DriverEligibilityService
     /**
      * PLN-003 — "Only eligible drivers suggested".
      *
-     * Tenant-scoped explicitly at every step, for the same reason as the vehicle
-     * listing: this starts from a whole table.
+     * Fleet decides who may drive; we then remove whoever is already on a load.
+     * Company-scoped by DriverService and trip-scoped here.
      *
      * @return Collection<int,array<string,mixed>>
      */
@@ -157,44 +173,59 @@ class DriverEligibilityService
         }
 
         $policy = $this->policies->all($tenantId);
+        $fleet = $this->fleetVerdicts($tenantId);
 
-        $drivers = TransportDriver::forTenant($tenantId)
-            ->when(! $includeIneligible, fn ($q) => $q->allocatable())
-            ->with('documents')
-            ->orderBy('name')
-            ->get();
+        $rows = $includeIneligible
+            ? array_merge($fleet['eligible'], $fleet['excluded'])
+            : $fleet['eligible'];
 
-        return $drivers
-            ->map(fn (TransportDriver $d) => $this->evaluate($d, $trip, $tenantId, $policy))
+        // A person in the directory with no driver record has no profile id and
+        // cannot be allocated to anything. Dropped rather than evaluated, so we
+        // never present a candidate the allocation could not accept.
+        $ids = array_values(array_filter(array_map(
+            fn (array $r) => $r['profile']['id'] ?? null,
+            $rows,
+        )));
+
+        if ($ids === []) {
+            return collect();
+        }
+
+        return DriverProfile::forCompany($tenantId)
+            ->whereIn('id', $ids)
+            ->get()
+            ->map(fn (DriverProfile $d) => $this->evaluate($d, $trip, $tenantId, $policy))
             ->when(! $includeIneligible, fn (Collection $c) => $c->filter(fn ($d) => $d['eligible']))
             ->values();
     }
 
-    /* ── Individual rules ───────────────────────────────────────────── */
-
-    /** @return array{0:bool,1:string} */
-    private function licenceVerdict(TransportDriver $driver, int $window): array
+    /**
+     * Fleet's verdict on one profile.
+     *
+     * `DriverService` is organised by PERSON, not by profile, so the row is
+     * found by the profile id it carries. A profile Fleet does not offer at all
+     * is reported as a blocker rather than as "fine" — an absence is not a pass.
+     *
+     * @return array<string,mixed>
+     */
+    private function fleetRow(int $profileId, int $tenantId): array
     {
-        if (! $driver->hasLicence()) {
-            return [false, 'No licence number recorded. Upload a valid licence before allocating.'];
-        }
-        if ($driver->licenceIsNotYetValid()) {
-            return [false, 'Licence is not valid until '.$driver->licence_valid_from->format('d M Y').'.'];
-        }
-        if ($driver->licenceIsExpired()) {
-            return [false, 'Licence expired on '.$driver->licence_valid_until->format('d M Y')
-                .'. Upload a valid licence or assign another eligible driver.'];
+        $fleet = $this->fleetVerdicts($tenantId);
+
+        foreach (array_merge($fleet['eligible'], $fleet['excluded']) as $row) {
+            if ((int) ($row['profile']['id'] ?? 0) === $profileId) {
+                return $row;
+            }
         }
 
-        $days = $driver->daysUntilLicenceExpiry();
-        $class = $driver->licence_class ? ' ('.$driver->licence_class.')' : '';
-
-        if ($days !== null && $days <= $window) {
-            return [true, 'Valid'.$class.', but expires in '.$this->days($days).'.'];
-        }
-
-        return [true, 'Valid'.$class.($days === null ? '' : ' for another '.$this->days($days)).'.'];
+        return ['blockers' => [[
+            'code'  => 'driver_not_in_fleet',
+            'why'   => 'This driver is not in the fleet directory.',
+            'owner' => 'Fleet office',
+        ]]];
     }
+
+    /* ── Individual rules ───────────────────────────────────────────── */
 
     /** "1 day" / "731 days" — never "day(s)", which is a developer writing. */
     private function days(int $n): string
@@ -202,64 +233,10 @@ class DriverEligibilityService
         return $n.' '.($n === 1 ? 'day' : 'days');
     }
 
-    private function documentCount(int $n): string
+
+    /** @return array<string,mixed> */
+    private function fleetVerdicts(int $tenantId): array
     {
-        return $n.' '.($n === 1 ? 'document' : 'documents');
-    }
-
-    /** @return array{0:bool,1:string} */
-    private function documentVerdict(int $driverId, int $tenantId, array $policy): array
-    {
-        $documents = TransportDocument::forTenant($tenantId)
-            ->forDriver($driverId)
-            ->active()
-            ->get();
-
-        $expired = $documents->filter(fn (TransportDocument $d) => ! $d->isCurrentlyValid());
-        if ($expired->isNotEmpty()) {
-            return [false, 'Expired or not-yet-valid: '
-                .$expired->map(fn ($d) => $d->typeLabel().($d->valid_until ? ' (expired '.$d->valid_until->format('d M Y').')' : ''))
-                    ->implode(', ').'. Renew before allocating.'];
-        }
-
-        $required = $policy['driver.required_documents'] ?? [];
-        $required = is_array($required) ? array_values($required) : [];
-
-        if ($required === []) {
-            // "None on file and none required" is two facts a reader has to
-            // combine into "nothing is wrong". Say that instead.
-            return [true, $documents->isEmpty()
-                ? 'No documents are required for this driver.'
-                : $this->documentCount($documents->count()).' on file, all valid.'];
-        }
-
-        $missing = array_values(array_diff($required, $documents->pluck('document_type')->unique()->all()));
-
-        if ($missing !== []) {
-            return [false, 'Missing required: '
-                .implode(', ', array_map(fn ($t) => TransportDocumentType::label($t), $missing)).'.'];
-        }
-
-        return [true, 'All required documents are on file and valid.'];
-    }
-
-    /** FLEET §13 / CMP §18 warning window — advisory, includes the licence. */
-    private function expiringSoon(TransportDriver $driver, int $tenantId, int $window): array
-    {
-        $out = [];
-
-        $licenceDays = $driver->daysUntilLicenceExpiry();
-        if ($licenceDays !== null && $licenceDays >= 0 && $licenceDays <= $window) {
-            $out[] = ['document_type' => 'licence', 'label' => 'Driving licence', 'days_remaining' => $licenceDays];
-        }
-
-        foreach (TransportDocument::forTenant($tenantId)->forDriver($driver->id)->active()->get() as $d) {
-            $days = $d->daysUntilExpiry();
-            if ($days !== null && $days >= 0 && $days <= $window) {
-                $out[] = ['document_type' => $d->document_type, 'label' => $d->typeLabel(), 'days_remaining' => $days];
-            }
-        }
-
-        return $out;
+        return $this->fleetCache[$tenantId] ??= $this->drivers->eligible($tenantId);
     }
 }

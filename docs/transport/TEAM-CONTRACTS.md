@@ -113,6 +113,37 @@ that has never failed is a guard nobody has tested.
 
 ---
 
+## A key-name guard cannot catch a renamed field — check the value
+
+**P1, 2026-09-22.** Standing rule for any guard that asserts something did **not** escape.
+
+The client portal's leak test began as a deny-list of field names checked against response keys.
+It caught a denied column added to a select, and it caught a join whose alias was still mapped to
+the forbidden name. Both breaks went red. It looked finished.
+
+Then the same join was aliased **all the way through** —
+`->get([..., 'd.licence_number as driver_contact'])` with `'driver_contact' => $row->driver_contact`
+— and **the guard passed while the response carried a real licence number.** The forbidden word
+appeared nowhere: not in the response, not in the diff a reviewer reads.
+
+**A name check can only ever find what somebody agreed to call the thing.** The fix is to seed the
+internal fields with **sentinel values** that exist nowhere else, and assert those values never
+appear in a response at any depth, under any key. A value travels even when the name does not.
+
+**So: when a guard asserts an absence, ask what a rename does to it.** If renaming defeats it,
+the guard is checking spelling rather than substance.
+
+**And the general lesson, which is why this is here rather than only in the test:**
+
+> **Stopping at the break that worked is how a blind guard is born.**
+
+Two breaks went red and the third — the one the reviewer had specifically warned about — went
+green. That third case only existed because it was tried after the guard already looked finished.
+Six blind guards on this project now, every one written carefully by somebody who believed it
+worked.
+
+---
+
 ## Assert on what the user ends up with, not on what you just added
 
 **P1, 2026-09-19. Standing rule for every test on this project.** It has been earned five separate
@@ -821,3 +852,35 @@ the XLSX says nothing, nothing is there.
    Step 10 + the Step 11 XLSX + the one ticket + the one module spec.
 9. **Audit against the package, not yourself.** Step 12's Acceptance_Criteria and
    Step 13's DOD-001…015 are the checklist.
+
+---
+
+## Before a merge, and before retiring a test
+
+Two rules earned the hard way in the week of 22–25 September. Both are one command.
+
+### The collision that matters is not always a file both sides edited
+
+The pre-merge check for the 76-commit re-base compared changed paths and came back clean: one
+doc conflict, one auto-merge, one additive method. **The real collision only appeared when both
+sides RAN together** — two of P2's tests asserted behaviour our D-134 and D-135 changes had
+deliberately replaced, in files neither branch had touched.
+
+> Comparing changed paths finds the edits. Running the merged suite finds the **rules**. Do both,
+> and do the second one before believing the first.
+
+### Before retiring or relocating a test, name who enforces it afterwards
+
+Do **not** ask *"is this still our surface?"*. Ask:
+
+> **"Who enforces this after the move, and have I read their code saying so?"**
+
+Retiring 18 tests with the legacy master's write path, six were checked this way and each names the
+Fleet test taking over. Three were not, and would have been moved to an endpoint where the rule is
+not enforced at all — Fleet has never read `trip_assignments`, so its delete cannot know a vehicle
+is mid-journey (**D-146**). A fourth turned out to be the only thing in the codebase enforcing
+licence uniqueness (**D-145**).
+
+Both were found by one `grep` each, after the list was written and before anything was deleted.
+**A guard that disappears in a cleanup never goes red** — which is what makes this cheaper to do
+than to skip.

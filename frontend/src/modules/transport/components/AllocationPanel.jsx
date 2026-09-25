@@ -89,8 +89,14 @@ function CandidateRow({ row, kind, onPick, picking, commitment }) {
    * and may reword it at any time without telling us.
    */
   const assignmentDetail = (row.checks || []).find((c) => c.key === 'assignment' && !c.passed)?.detail
+  // Compared on `why`, not on the blocker itself — D-147. These were strings
+  // until the eligibility services moved to Fleet, and `b === assignmentDetail`
+  // then compared an object to a string, which is always false. No crash: the
+  // de-duplication simply stopped, and the same sentence appeared twice. Worth
+  // saying because it is the half of the shape change that did not announce
+  // itself.
   const visibleBlockers = (row.blockers || []).filter(
-    (b) => !(commitment && assignmentDetail && b === assignmentDetail),
+    (b) => !(commitment && assignmentDetail && reason(b) === assignmentDetail),
   )
 
   return (
@@ -152,7 +158,7 @@ function CandidateRow({ row, kind, onPick, picking, commitment }) {
         <div style={{ marginTop: 8, paddingTop: commitment ? 0 : 8, borderTop: commitment ? 'none' : '1px solid var(--border)' }}>
           {visibleBlockers.map((b, i) => (
             <p key={i} style={{ margin: '0 0 4px', fontSize: 11.5, color: '#f87171', display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-              <AlertTriangle size={12} style={{ marginTop: 1, flexShrink: 0 }} /> {b}
+              <AlertTriangle size={12} style={{ marginTop: 1, flexShrink: 0 }} /> {reason(b)}
             </p>
           ))}
           {open && (
@@ -167,13 +173,52 @@ function CandidateRow({ row, kind, onPick, picking, commitment }) {
       {eligible && (row.warnings || []).length > 0 && (
         <div style={{ marginTop: 7 }}>
           {row.warnings.map((w, i) => (
-            <p key={i} style={{ margin: 0, fontSize: 11.5, color: '#fbbf24' }}>⚠ {w}</p>
+            <p key={i} style={{ margin: 0, fontSize: 11.5, color: '#fbbf24' }}>⚠ {reason(w)}</p>
           ))}
         </div>
       )}
     </div>
   )
 }
+
+
+/**
+ * What to show in a slot — D-135.
+ *
+ * This used to read `assignment?.driver ? assignment.driver.name : '#'+id`.
+ * The repoint made `assignment.driver` a real object whose `name` was empty,
+ * so the first branch won, the id fallback never ran, and a driver that HAD
+ * been assigned rendered as a blank. A blank is indistinguishable from nothing
+ * being assigned, which is exactly how it was reported.
+ *
+ * So the test is on the VALUE, not on whether the object exists. The server
+ * resolves the name through the directory now and should always send one; if
+ * it ever does not, the id says "something is here" rather than the screen
+ * saying nothing is.
+ */
+const named = (value, isSet, id) => {
+  const shown = (value ?? '').toString().trim()
+  if (shown) return shown
+  return isSet && id != null ? `#${id}` : null
+}
+
+
+/**
+ * A blocker or a warning, as a sentence — D-147.
+ *
+ * These arrived as strings until the eligibility services were repointed at
+ * Fleet (D-134). Fleet answers with `{code, why, owner}` — the owner being the
+ * desk that can clear it — and rendering that object straight into JSX is the
+ * "Objects are not valid as a React child" crash the owner hit.
+ *
+ * Shaped to match `DriversBoard` and `VehicleAllocationModal`, which already
+ * print `why (owner)`. Naming the desk is the point: "Blocked" on its own
+ * sends a dispatcher hunting; "the compliance desk holds this one" does not.
+ *
+ * No string fallback. Every producer of these is Fleet now, one shape, and a
+ * dual-shape reader is how two shapes survive.
+ */
+const reason = (r) => (r?.owner ? `${r.why} (${r.owner})` : r?.why ?? '')
 
 export default function AllocationPanel({ trip, assignment, canAssign, onChanged }) {
   const toast = useToast()
@@ -309,10 +354,10 @@ export default function AllocationPanel({ trip, assignment, canAssign, onChanged
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
         <Slot kind="vehicle" icon={Truck} label="Vehicle"
-          value={assignment?.vehicle ? assignment.vehicle.registration_number : (hasVehicle ? `#${assignment.vehicle_id}` : null)}
+          value={named(assignment?.vehicle?.registration_number, hasVehicle, assignment?.vehicle_id)}
           canAssign={canAssign} onAssign={() => { setRefusal(null); setPicker('vehicle') }} />
         <Slot kind="driver" icon={UserRound} label="Driver"
-          value={assignment?.driver ? assignment.driver.name : (hasDriver ? `#${assignment.driver_id}` : null)}
+          value={named(assignment?.driver?.name, hasDriver, assignment?.driver_id)}
           canAssign={canAssign} onAssign={() => { setRefusal(null); setPicker('driver') }} />
       </div>
 
