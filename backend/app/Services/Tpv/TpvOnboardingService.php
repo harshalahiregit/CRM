@@ -151,6 +151,14 @@ class TpvOnboardingService
     private function furthestReachableStep(TpvOnboarding $onboarding): int
     {
         foreach ($this->stepStatus($onboarding)['steps'] as $s) {
+            // An ADMIN-ONLY step never holds the vendor up. Adding a contact is
+            // ours to do, and this method exists to stop a vendor skipping their
+            // OWN work -- stopping them at a step they are not allowed to touch
+            // would lock the wizard shut with no action available to open it.
+            if (($s['actor'] ?? null) === 'admin') {
+                continue;
+            }
+
             if (! $s['complete']) {
                 return (int) $s['step'];
             }
@@ -190,7 +198,8 @@ class TpvOnboardingService
 
         $onboarding->update([
             'profile'      => $merged,
-            'current_step' => max($onboarding->current_step, 3),
+            // Documents. One higher than it was: Add Contact is now step 1.
+            'current_step' => max($onboarding->current_step, 4),
         ]);
 
         // Mirror the identity + bank fields onto the vendor master, the same way
@@ -313,7 +322,8 @@ class TpvOnboardingService
                 'acknowledged_browser' => $meta['browser'] ?? null,
                 'acknowledged_device'  => $meta['device'] ?? null,
                 'status'               => $onboarding->status === Status::DRAFT ? Status::IN_PROGRESS : $onboarding->status,
-                'current_step'         => max($onboarding->current_step, 2),
+                // Company Profile, one higher since Add Contact took step 1.
+                'current_step'         => max($onboarding->current_step, 3),
             ]);
 
             $onboarding->recordAudit('Kickoff MOM Accepted', $actor, null, [
@@ -358,6 +368,7 @@ class TpvOnboardingService
      */
     public function stepStatus(TpvOnboarding $onboarding): array
     {
+        $contactCount = $onboarding->vendor ? $onboarding->vendor->contacts()->count() : 0;
         $checklist = $this->documentService->checklist($onboarding->vendor);
         $s = $checklist['summary'];
 
@@ -369,14 +380,25 @@ class TpvOnboardingService
 
         return [
             'current_step' => $onboarding->current_step,
+            // Sent, not assumed. Every screen that drew "Step 3 of 6" had the 6
+            // typed into it, so adding one step meant finding six files.
+            'total_steps'  => Status::TOTAL_STEPS,
             'documents'    => $checklist,
             'steps' => [
-                ['step' => 1, 'key' => 'kickoff',      'label' => 'Kickoff MOM',    'complete' => (bool) $onboarding->acknowledged, 'detail' => $onboarding->acknowledged ? 'Acknowledged' : 'Awaiting acknowledgement'],
-                ['step' => 2, 'key' => 'profile',      'label' => 'Company Profile', 'complete' => $profileDone, 'detail' => $profileDone ? 'Saved' : 'Pending'],
-                ['step' => 3, 'key' => 'documents',    'label' => 'Documents',       'complete' => $allUploaded, 'detail' => "{$s['uploaded']}/{$s['required']} uploaded"],
-                ['step' => 4, 'key' => 'review',       'label' => 'Under Review',    'complete' => $allReviewed && $s['rejected'] === 0, 'detail' => $s['rejected'] > 0 ? "{$s['rejected']} rejected" : ($allReviewed ? 'All reviewed' : "{$s['pending']} pending")],
-                ['step' => 5, 'key' => 'confirmation', 'label' => 'Confirmation',    'complete' => $allApproved, 'detail' => "{$s['approved']}/{$s['required']} approved"],
-                ['step' => 6, 'key' => 'submission',   'label' => 'Admin Approval',  'complete' => $submitted,   'detail' => $onboarding->status_label],
+                // Same seven steps as Purchase, in the same order, deliberately.
+                // These two onboardings are one process against two vendor
+                // masters, and every time they have been edited separately they
+                // have drifted. Step 1 is a contact because the kickoff's
+                // Organiser / Chairperson / Coordinator pickers read the
+                // parties' contacts -- with none entered, the meeting opens
+                // asking for the one thing nobody has added yet.
+                ['step' => 1, 'key' => 'contacts',     'label' => 'Add Contact',     'actor' => 'admin', 'complete' => $contactCount > 0, 'detail' => $contactCount > 0 ? ($contactCount === 1 ? '1 added' : "{$contactCount} added") : 'None yet'],
+                ['step' => 2, 'key' => 'kickoff',      'label' => 'Kickoff MOM',    'complete' => (bool) $onboarding->acknowledged, 'detail' => $onboarding->acknowledged ? 'Acknowledged' : 'Awaiting acknowledgement'],
+                ['step' => 3, 'key' => 'profile',      'label' => 'Company Profile', 'complete' => $profileDone, 'detail' => $profileDone ? 'Saved' : 'Pending'],
+                ['step' => 4, 'key' => 'documents',    'label' => 'Documents',       'complete' => $allUploaded, 'detail' => "{$s['uploaded']}/{$s['required']} uploaded"],
+                ['step' => 5, 'key' => 'review',       'label' => 'Under Review',    'complete' => $allReviewed && $s['rejected'] === 0, 'detail' => $s['rejected'] > 0 ? "{$s['rejected']} rejected" : ($allReviewed ? 'All reviewed' : "{$s['pending']} pending")],
+                ['step' => 6, 'key' => 'confirmation', 'label' => 'Confirmation',    'complete' => $allApproved, 'detail' => "{$s['approved']}/{$s['required']} approved"],
+                ['step' => 7, 'key' => 'submission',   'label' => 'Admin Approval',  'complete' => $submitted,   'detail' => $onboarding->status_label],
             ],
         ];
     }

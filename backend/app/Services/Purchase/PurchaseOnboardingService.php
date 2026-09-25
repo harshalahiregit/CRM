@@ -157,6 +157,14 @@ class PurchaseOnboardingService
     private function furthestReachableStep(PurchaseOnboarding $onboarding): int
     {
         foreach ($this->stepStatus($onboarding)['steps'] as $s) {
+            // An ADMIN-ONLY step never holds the vendor up. Adding a contact is
+            // ours to do, and this method exists to stop a vendor skipping their
+            // OWN work -- stopping them at a step they are not allowed to touch
+            // would lock the wizard shut with no action available to open it.
+            if (($s['actor'] ?? null) === 'admin') {
+                continue;
+            }
+
             if (! $s['complete']) {
                 return (int) $s['step'];
             }
@@ -176,7 +184,8 @@ class PurchaseOnboardingService
 
         $onboarding->update([
             'profile'      => $merged,
-            'current_step' => max($onboarding->current_step, 3),
+            // Documents. One higher than it was: Add Contact is now step 1.
+            'current_step' => max($onboarding->current_step, 4),
         ]);
 
         $this->mirrorProfileToVendor($onboarding, $merged);
@@ -217,6 +226,7 @@ class PurchaseOnboardingService
     /** Per-step completion + document checklist (the wizard's live state). */
     public function stepStatus(PurchaseOnboarding $onboarding): array
     {
+        $contactCount = $onboarding->vendor ? $onboarding->vendor->contacts()->count() : 0;
         $checklist = $this->documentService->checklist($onboarding->vendor);
         $s = $checklist['summary'];
 
@@ -235,18 +245,33 @@ class PurchaseOnboardingService
 
         return [
             'current_step'       => $onboarding->current_step,
+            // Sent, not assumed. Every screen that drew "Step 3 of 6" had the 6
+            // typed into it, so adding one step meant finding six files.
+            'total_steps'        => Status::TOTAL_STEPS,
             'documents'          => $checklist,
             'category'           => $cfg['category'],
             'requires_workforce' => $cfg['requires_workforce'],
             'onboarding_steps'   => $cfg['onboarding_steps'],
             'workforce'          => $workforce,
             'steps' => [
-                ['step' => 1, 'key' => 'kickoff',      'label' => 'Kickoff MOM',     'complete' => (bool) $onboarding->acknowledged, 'detail' => $onboarding->acknowledged ? 'Acknowledged' : 'Awaiting acknowledgement'],
-                ['step' => 2, 'key' => 'profile',      'label' => 'Company Profile', 'complete' => $profileDone, 'detail' => $profileDone ? 'Saved' : 'Pending'],
-                ['step' => 3, 'key' => 'documents',    'label' => 'Documents',       'complete' => $allUploaded, 'detail' => "{$s['uploaded']}/{$s['required']} uploaded"],
-                ['step' => 4, 'key' => 'review',       'label' => 'Under Review',    'complete' => $allReviewed && $s['rejected'] === 0, 'detail' => $s['rejected'] > 0 ? "{$s['rejected']} rejected" : ($allReviewed ? 'All reviewed' : "{$s['pending']} pending")],
-                ['step' => 5, 'key' => 'confirmation', 'label' => 'Confirmation',    'complete' => $allApproved, 'detail' => "{$s['approved']}/{$s['required']} approved"],
-                ['step' => 6, 'key' => 'submission',   'label' => 'Admin Approval',  'complete' => $submitted,   'detail' => $onboarding->status_label],
+            // STEP 1 IS A CONTACT, and it comes before the kickoff on purpose.
+            //
+            // The kickoff meeting's Organiser, Chairperson and Coordinator
+            // pickers are fed from the parties' CONTACTS. A vendor with none
+            // gives three empty pickers, so the first thing the meeting asks
+            // for is the one thing nobody has entered yet -- and the meeting
+            // was step 1. The order was simply backwards.
+            //
+            // Complete at one contact. Not "a primary contact": the screen does
+            // not require anybody to mark one, so a rule about primaries would
+            // block a vendor who had done exactly what was asked.
+                ['step' => 1, 'key' => 'contacts',     'label' => 'Add Contact',     'actor' => 'admin', 'complete' => $contactCount > 0, 'detail' => $contactCount > 0 ? ($contactCount === 1 ? '1 added' : "{$contactCount} added") : 'None yet'],
+                ['step' => 2, 'key' => 'kickoff',      'label' => 'Kickoff MOM',     'complete' => (bool) $onboarding->acknowledged, 'detail' => $onboarding->acknowledged ? 'Acknowledged' : 'Awaiting acknowledgement'],
+                ['step' => 3, 'key' => 'profile',      'label' => 'Company Profile', 'complete' => $profileDone, 'detail' => $profileDone ? 'Saved' : 'Pending'],
+                ['step' => 4, 'key' => 'documents',    'label' => 'Documents',       'complete' => $allUploaded, 'detail' => "{$s['uploaded']}/{$s['required']} uploaded"],
+                ['step' => 5, 'key' => 'review',       'label' => 'Under Review',    'complete' => $allReviewed && $s['rejected'] === 0, 'detail' => $s['rejected'] > 0 ? "{$s['rejected']} rejected" : ($allReviewed ? 'All reviewed' : "{$s['pending']} pending")],
+                ['step' => 6, 'key' => 'confirmation', 'label' => 'Confirmation',    'complete' => $allApproved, 'detail' => "{$s['approved']}/{$s['required']} approved"],
+                ['step' => 7, 'key' => 'submission',   'label' => 'Admin Approval',  'complete' => $submitted,   'detail' => $onboarding->status_label],
             ],
         ];
     }
@@ -516,7 +541,8 @@ class PurchaseOnboardingService
                 'acknowledged_at' => now(),
                 'acknowledged_ip' => $meta['ip'] ?? null,
                 'status'          => $onboarding->status === Status::DRAFT ? Status::IN_PROGRESS : $onboarding->status,
-                'current_step'    => max($onboarding->current_step, 2),
+                // Company Profile, one higher since Add Contact took step 1.
+                'current_step'    => max($onboarding->current_step, 3),
             ]);
             $onboarding->recordAudit('Kickoff MOM Accepted', $this->actorUser($actor), null,
                 $meta, $this->actorLabel($actor));

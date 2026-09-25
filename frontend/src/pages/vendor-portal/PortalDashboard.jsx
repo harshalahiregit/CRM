@@ -1,5 +1,6 @@
 import RegistrationStatusCard from '@/components/vendor/RegistrationStatusCard'
 import GettingStartedGuide from '@/components/vendor/GettingStartedGuide'
+import { ONBOARDING_TOTAL_STEPS } from '@/lib/vendors/onboardingSteps'
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import {
@@ -392,7 +393,7 @@ export default function PortalDashboard() {
             <div className="portal-progress-fill" style={{ width: `${obPct}%` }} />
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
-            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Step {onboarding.current_step} of 6</span>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Step {onboarding.current_step} of {onboarding.total_steps || ONBOARDING_TOTAL_STEPS}</span>
             <span style={{ fontSize: 11, fontWeight: 700, color: '#7C3AED' }}>{obPct}% complete</span>
           </div>
           {/* Step tiles */}
@@ -442,7 +443,7 @@ export default function PortalDashboard() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-h)' }}>Onboarding Application</div>
                   <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
-                    Step {onboarding.current_step} of 6 · Started {fmtDate(onboarding.created_at)}
+                    Step {onboarding.current_step} of {onboarding.total_steps || ONBOARDING_TOTAL_STEPS} · Started {fmtDate(onboarding.created_at)}
                   </div>
                   <div className="portal-progress-bar" style={{ marginTop: 6, height: 4 }}>
                     <div className="portal-progress-fill" style={{ width: `${obPct}%` }} />

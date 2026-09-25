@@ -1,4 +1,5 @@
 import PartyContractList from '@/modules/contract/components/PartyContractList'
+import { ONBOARDING_TOTAL_STEPS } from '@/lib/vendors/onboardingSteps'
 import { contractsForParty } from '@/services/contractModuleApi'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -8,7 +9,8 @@ import {
   Briefcase, IndianRupee, ClipboardCheck, BarChart3, ChevronDown, ChevronRight, Mail, HardHat, Ban,
   Users, FileText, Paperclip, StickyNote, Lock,
 } from 'lucide-react'
-import { isWorkspaceUnlocked, lockNav, lockNotice } from '@/lib/vendors/workspaceLock'
+import { isWorkspaceUnlocked, isSectionUnlocked, lockNav, lockNotice } from '@/lib/vendors/workspaceLock'
+import LockedSection from '@/components/vendors/LockedSection'
 import VendorAccessControls from '@/components/vendors/VendorAccessControls'
 
 const NOTIF_COLORS = { sent: '#10b981', failed: '#ef4444', skipped: '#94a3b8', queued: '#0ea5e9' }
@@ -410,9 +412,16 @@ export default function TpvVendorDetail() {
         </nav>
 
         <div style={{ flex: 1, minWidth: 0 }}>
-          <SectionContent tab={active} v={v} isActive={isActive} manage={manage} api={cfg.api} moduleName={cfg.moduleName}
-          onDecision={kind => { setDecisionModal(kind); setRemarks('') }}
-          onReload={load} />
+          {/* Locked at the section, not only on the sidebar. The tab is chosen
+              by ?tab= in the URL here, so hiding the menu entry left the whole
+              locked half of the workspace one hand-typed query string away. */}
+          {isSectionUnlocked(active, unlocked) ? (
+            <SectionContent tab={active} v={v} isActive={isActive} manage={manage} api={cfg.api} moduleName={cfg.moduleName}
+            onDecision={kind => { setDecisionModal(kind); setRemarks('') }}
+            onReload={load} />
+          ) : (
+            <LockedSection label={active} notice={lockedNotice} overviewHref="?tab=overview" />
+          )}
         </div>
       </div>
 
@@ -841,7 +850,7 @@ function OnboardingDecisionPanel({ vendor, onboarding, api, onDecision }) {
           <ShieldCheck size={16} style={{ color: tint }} /> Onboarding Decision
         </span>
         <span style={{ flex: 1 }} />
-        <StatusPill label="Step" value={`${step} of 6`} tone="#7C3AED" />
+        <StatusPill label="Step" value={`${step} of ${onboarding?.total_steps || ONBOARDING_TOTAL_STEPS}`} tone="#7C3AED" />
         <StatusPill label="Onboarding" value={obc.label} tone={obc.color} />
         <StatusPill label="Account" value={accountActive ? 'Active' : (vendor.status_label || vendor.status)} tone={accountActive ? '#0ca30c' : '#8a94a6'} />
       </div>
@@ -858,7 +867,7 @@ function OnboardingDecisionPanel({ vendor, onboarding, api, onDecision }) {
 
         {approved ? (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 9, padding: '10px 14px', borderRadius: 10, background: 'color-mix(in srgb, #0ca30c 12%, transparent)', border: '1px solid color-mix(in srgb, #0ca30c 30%, transparent)', color: '#0ca30c', fontSize: 12.5, fontWeight: 700 }}>
-            <CheckCircle size={16} /> Step 6 — Account Activated. The vendor can now access the active portal.
+            <CheckCircle size={16} /> Onboarding complete — account activated. The vendor can now access the portal.
           </div>
         ) : (
           <>
