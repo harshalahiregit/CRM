@@ -183,3 +183,60 @@ check, completion never alters, re-evaluation clears).
 | B | 8 |
 | C | **41** (C1 15 · C2 10 · C3 5 · C4 4 · C5 3 · C6 4) |
 | D | **5** (4 × stale cache, D-152 · 1 × seeder guard false positive) |
+
+## 7 · Closed — what is still red and why
+
+**Transport: 64 failed · 1098 passed → 19 failed · 1144 passed · 3 skipped.** Nothing that passed
+started failing at any step; the suite was run after every group.
+
+| Commit | Group | Cleared |
+|---|---|---|
+| `9738feee` | C1 status casing | 15 |
+| `2756bb43` | C2 legacy vehicle/driver create and lookup | 9 |
+| `6a277a42` | C3 legacy driver service on a Fleet driver | 5 |
+| `55655508` | C4 the unavailable vehicle | 4 |
+| `4902962e` | C5 `licence_valid_until` on the legacy driver | 3 |
+| `8631c088` | C6 one-offs | 3 |
+| `b9b5dd79` | the unmigrated-vehicle fixture, built on purpose | 1 |
+| `84efb2c2` | D stale cache — a fresh service per new crew | 4 |
+| `e586fadf` | D seeder guard tells a trip status from a vehicle status | 1 |
+| | | **45** |
+
+### Still red — 19
+
+**A (10), deliberate, untouched:** `DriverDirectoryTest::forty_workers…` (D-144),
+`TransportMasterApiTest::duplicate_licence…` (D-145), and eight in `TransportMasterAllocationAuditTest`:
+the three D-146 delete guards, `the_guard_holds…`, `an_unassigned_vehicle_still_deletes_freely`,
+`a_deleted_master_is_soft_deleted…`, `everything_requires_authentication`, and
+`expired_licence_blocks_the_driver_with_the_actionable_reason`.
+
+**B (8), needs a ruling, untouched:** the two BRWM §70 tests, CMP §20 licence advisory, the
+required-documents policy, the three legacy write-route tests in `TransportMasterApiTest`, and
+`DispatchTest::version_one_is_the_release_itself`.
+
+**Newly found (1). This isn't fixture debt; it's a production bug in our own code:**
+`TransportSearchTest::a_vehicle_registration_resolves_however_it_is_spaced`. On a Fleet fixture it
+shows that **no Fleet-created vehicle can be found by a spaced or lowercase plate.** Fleet stores
+`registration_number` already normalised (`MH12AB4455`) and leaves `registration_normalized` NULL.
+`TransportSearchService::vehicle()` compares the *normalised* input only against that NULL column,
+and the *raw* input against `registration_number`. So `MH 12 AB 4455` and `mh12ab4455` find
+nothing; only the exact stored form does. A one-line fix (match the normalised input against
+`registration_number` too), but it's production code, so it's left for a ruling.
+
+### Judgement calls made along the way — for review
+
+- **C1:** Transport's `ASSIGNED` is read as Fleet's `ON_TRIP`, which is what allocation writes. Fleet
+  has one "held" driver state where Transport had two (ASSIGNED / ON_TRIP).
+- **C2:** transit's "held while moving" now expects `IN_TRANSIT`, the state departure moves a Fleet
+  vehicle to. The old `ALLOCATED` was true only while departure moved nothing. This also gives the
+  departure move a test for the first time (POSITION §2 had it as unproved).
+- **C3:** legacy `BLOCKED` is mapped to Fleet's `SUSPENDED`. Three tests that asserted pre-D-134 keys
+  (`availability`, `lifecycle`, `compliance_status`) now assert the refusal itself, as D-150 did.
+- **C5:** five passing tests in the same files had the same broken rename and were passing only
+  because a null expiry never expires. They got their original column back too, and still pass.
+- The one other legacy site with the bad rename, `TransportMasterAllocationAuditTest` `:228`, is inside
+  a bucket-A test and was not touched.
+
+**Skipped because it was another developer's file:** none. Every change was in
+`backend/tests/Feature/Transport/**`. `CreatesFleetResources` needed nothing: `moveFleetDriver()`
+already existed.
