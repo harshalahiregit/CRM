@@ -405,7 +405,7 @@ class PretripApiTest extends TestCase
             $this->patchJson($this->url($trip).'/'.$c->id)->assertOk();
         }
 
-        $driver = TransportDriver::forTenant(self::TENANT_A)->firstOrFail();
+        $driver = DriverProfile::forCompany(self::TENANT_A)->firstOrFail();   // the crew is a Fleet driver
         $driver->forceFill(['licence_expiry' => now()->subDay()])->save();
         $this->postJson($this->url($trip))->assertOk();
 

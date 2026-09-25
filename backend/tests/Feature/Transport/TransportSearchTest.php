@@ -17,6 +17,7 @@ use App\Support\Transport\OrderStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
+use Tests\Concerns\CreatesFleetResources;
 use Tests\TestCase;
 
 /**
@@ -30,6 +31,7 @@ use Tests\TestCase;
 class TransportSearchTest extends TestCase
 {
     use RefreshDatabase;
+    use CreatesFleetResources;
 
     private const TENANT_A = 1;
     private const TENANT_B = 2;
@@ -153,9 +155,8 @@ class TransportSearchTest extends TestCase
 
     public function test_a_vehicle_registration_resolves_however_it_is_spaced(): void
     {
-        $v = TransportVehicle::create([
-            'tenant_id' => self::TENANT_A, 'registration_number' => 'MH 12 AB 4455', 'capacity_tonnes' => 25,
-        ]);
+        // Search reads Fleet's vehicles since the repoint — a Fleet row, not a legacy one.
+        $v = $this->fleetVehicle(['registration_number' => 'MH 12 AB 4455', 'capacity_tonnes' => 25], self::TENANT_A);
 
         foreach (['MH 12 AB 4455', 'mh12ab4455', 'MH-12-AB-4455'] as $typed) {
             $hit = $this->search->resolve($typed, self::TENANT_A);
@@ -167,9 +168,8 @@ class TransportSearchTest extends TestCase
 
     public function test_a_driver_name_resolves(): void
     {
-        $d = TransportDriver::create([
-            'tenant_id' => self::TENANT_A, 'name' => 'Ramesh Kumar', 'licence_number' => 'RJ14'.self::uniqueSeq(6),
-        ]);
+        // The name lives in the directory, the id on the Fleet profile.
+        $d = $this->fleetDriver(['name' => 'Ramesh Kumar', 'licence_number' => 'RJ14'.self::uniqueSeq(6)], self::TENANT_A);
 
         $hit = $this->search->resolve('Ramesh Kumar', self::TENANT_A);
 
@@ -333,10 +333,7 @@ class TransportSearchTest extends TestCase
         $c = $this->chain();
         app(ContainerService::class)->attach($c['container'], $c['consignment'], self::TENANT_A, $c['actor']);
 
-        $v = TransportVehicle::create([
-            'tenant_id' => self::TENANT_A, 'registration_number' => 'MH 12 AB '.self::uniqueSeq(4),
-            'vehicle_type' => 'Trailer', 'status' => 'available',
-        ]);
+        $v = $this->fleetVehicle(['registration_number' => 'MH 12 AB '.self::uniqueSeq(4), 'vehicle_type' => 'trailer'], self::TENANT_A);
         $c['trip']->forceFill(['vehicle_id' => $v->id])->save();
 
         $hit = $this->search->resolve($v->registration_number, self::TENANT_A);
@@ -363,10 +360,7 @@ class TransportSearchTest extends TestCase
         app(ContainerService::class)->attach($one['container'], $one['consignment'], self::TENANT_A, $one['actor']);
         app(ContainerService::class)->attach($two['container'], $two['consignment'], self::TENANT_A, $two['actor']);
 
-        $v = TransportVehicle::create([
-            'tenant_id' => self::TENANT_A, 'registration_number' => 'MH 14 CD '.self::uniqueSeq(4),
-            'vehicle_type' => 'Trailer', 'status' => 'available',
-        ]);
+        $v = $this->fleetVehicle(['registration_number' => 'MH 14 CD '.self::uniqueSeq(4), 'vehicle_type' => 'trailer'], self::TENANT_A);
         $one['trip']->forceFill(['vehicle_id' => $v->id])->save();
         $two['trip']->forceFill(['vehicle_id' => $v->id])->save();
 
@@ -387,10 +381,7 @@ class TransportSearchTest extends TestCase
     {
         $this->chain();
 
-        $v = TransportVehicle::create([
-            'tenant_id' => self::TENANT_A, 'registration_number' => 'MH 16 EF '.self::uniqueSeq(4),
-            'vehicle_type' => 'Trailer', 'status' => 'available',
-        ]);
+        $v = $this->fleetVehicle(['registration_number' => 'MH 16 EF '.self::uniqueSeq(4), 'vehicle_type' => 'trailer'], self::TENANT_A);
 
         $hit = $this->search->resolve($v->registration_number, self::TENANT_A);
 
