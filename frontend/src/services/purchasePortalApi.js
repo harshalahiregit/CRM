@@ -276,7 +276,37 @@ export const purchasePortalApi = {
 
     ppeCatalogue:  ()                 => api.get('/portal/purchase/ppe').then(r => r.data),
     ppe:           (workerId)         => api.get(`/portal/purchase/workers/${workerId}/ppe`).then(r => r.data),
-    issuePpe:      (workerId, data)   => api.post(`/portal/purchase/workers/${workerId}/ppe/issue`, data).then(r => r.data),
+    /*
+     * The SAME form posts here and to the admin route, and the two routes never
+     * agreed on what to call the item.
+     *
+     *   admin   product_id         qty nullable   issued_at
+     *   portal  inventory_item_id  qty required   issued_date
+     *
+     * So the PPE issue form built for SIR-000013 worked for staff and answered
+     * "The inventory item id field is required." for every vendor — a field
+     * their screen does not have and cannot show an error against.
+     *
+     * Translated here rather than in the form, because a shared screen having
+     * to know which engine it is talking to is the thing this adapter exists to
+     * prevent, and rather than on the server, because that contract may have
+     * other callers. The id is the same either way: both catalogues are built
+     * by PpeInventoryService::catalogue() and both return product_id.
+     *
+     * Held down by PpeIssueFormMatchesBothRoutesTest.
+     */
+    issuePpe: (workerId, data = {}) => {
+      const { product_id: productId, issued_at: issuedAt, ...rest } = data
+
+      return api.post(`/portal/purchase/workers/${workerId}/ppe/issue`, {
+        ...rest,
+        inventory_item_id: productId ?? data.inventory_item_id,
+        // Required here, nullable on the admin route; the form always sends one,
+        // but a caller that does not must not fail on a field it never saw.
+        qty: Number(rest.qty) > 0 ? Number(rest.qty) : 1,
+        ...(issuedAt ? { issued_date: issuedAt } : {}),
+      }).then(r => r.data)
+    },
     returnPpe:     (issueId, data)    => api.post(`/portal/purchase/ppe/issues/${issueId}/return`, data).then(r => r.data),
 
     // Admin decisions — refused here the way portalApi refuses them for TPV.
