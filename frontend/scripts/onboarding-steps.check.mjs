@@ -23,13 +23,19 @@ import { dirname, join } from 'node:path'
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const BACKEND = join(ROOT, '../backend')
 
-const { ONBOARDING_TOTAL_STEPS } = await import(
+const { ONBOARDING_TOTAL_STEPS, NOT_STARTED_STEPS } = await import(
   pathToFileURL(join(ROOT, 'src/lib/vendors/onboardingSteps.js')).href
 )
 
 const SOURCES = [
   ['Purchase', 'app/Support/Purchase/PurchaseOnboardingStatus.php'],
   ['TPV', 'app/Support/Tpv/TpvOnboardingStatus.php'],
+]
+
+/** Where the real step list is built, per engine. */
+const SERVICES = [
+  ['Purchase', 'app/Services/Purchase/PurchaseOnboardingService.php'],
+  ['TPV', 'app/Services/Tpv/TpvOnboardingService.php'],
 ]
 
 const failures = []
@@ -73,6 +79,40 @@ if (found.length < SOURCES.length) {
   failures.push('not every onboarding status class was read — the scan is incomplete')
 }
 
+/*
+ * The frontend keeps a copy of the step names, for a vendor whose onboarding
+ * has not started yet: the server builds that list per RECORD, so there is
+ * nothing to ask for until one exists. A second list of names is only safe
+ * while something fails when it disagrees with the first.
+ */
+const expected = NOT_STARTED_STEPS.map((s) => `${s.key}:${s.label}`)
+
+for (const [name, rel] of SERVICES) {
+  let php
+  try {
+    php = readFileSync(join(BACKEND, rel), 'utf8')
+  } catch {
+    failures.push(`${name}: cannot read ${rel} — was it moved?`)
+    continue
+  }
+
+  const actual = [...php.matchAll(/'key'\s*=>\s*'([a-z_]+)',\s*'label'\s*=>\s*'([^']+)'/g)]
+    .map((m) => `${m[1]}:${m[2].trim()}`)
+
+  if (actual.length === 0) {
+    failures.push(`${name}: found no steps in ${rel} — the scan pattern no longer matches`)
+    continue
+  }
+
+  if (actual.join(' | ') !== expected.join(' | ')) {
+    failures.push(
+      `${name}'s step list has drifted from NOT_STARTED_STEPS in `
+      + `src/lib/vendors/onboardingSteps.js — server has [${actual.join(' , ')}], `
+      + `frontend has [${expected.join(' , ')}]`,
+    )
+  }
+}
+
 if (failures.length) {
   console.error('✗ onboarding steps\n')
   for (const f of failures) console.error(`  - ${f}`)
@@ -80,4 +120,7 @@ if (failures.length) {
   process.exit(1)
 }
 
-console.log(`✓ onboarding steps (${ONBOARDING_TOTAL_STEPS}, agreed by Purchase, TPV and the frontend)`)
+console.log(
+  `✓ onboarding steps (${ONBOARDING_TOTAL_STEPS} steps and their names agreed by `
+  + 'Purchase, TPV and the frontend)',
+)
