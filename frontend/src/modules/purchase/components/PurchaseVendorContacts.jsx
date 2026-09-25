@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Plus, Search, Eye, Pencil, Trash2, Star, X } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
+import { Overlay } from '@/components/ui/kit3d'
 
 /**
  * Purchase Vendor Contacts — vendor-scoped contact manager for a single
@@ -136,9 +137,28 @@ function ContactModal({ vendorId, modal, onClose, onSaved, onEdit }) {
 
   const title = view ? 'Contact Details' : modal.mode === 'add' ? 'Add Contact' : 'Edit Contact'
 
+  /*
+    * PORTALLED, not rendered where it sits.
+    *
+    * This drew its own `position: fixed` backdrop inline, a few levels inside
+    * the vendor workspace. `fixed` resolves against the viewport only while no
+    * ancestor has a transform, filter, backdrop-filter or perspective — and the
+    * cards this sits in use backdrop-filter, which makes one of them the
+    * containing block instead. So the dialog was positioned against a card
+    * rather than the screen: clipped at the top, its buttons pushed off the
+    * bottom, and sitting wherever that card happened to be.
+    *
+    * TPV's copy of this screen already knew — it renders outside the glass card
+    * and has a comment explaining why. Purchase's copy never got either.
+    *
+    * kit3d's Overlay portals to document.body, so no ancestor can capture it,
+    * and it does not close on a backdrop click: a half-typed contact should not
+    * be thrown away by a stray click. showClose is off because this dialog
+    * draws its own X in the header.
+    */
   return (
-    <div style={overlay}>
-      <div className="card-3d" style={{ padding: 0, width: 680, maxWidth: '95vw', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
+    <Overlay onClose={onClose} width={680} showClose={false}>
+      <div style={{ padding: 0, maxHeight: '84vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <h2 style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-h)', margin: 0 }}>{title}</h2>
           <button onClick={onClose} style={{ ...miniBtn, border: 'none' }}><X size={18} /></button>
@@ -180,7 +200,7 @@ function ContactModal({ vendorId, modal, onClose, onSaved, onEdit }) {
           </div>
         </div>
       </div>
-    </div>
+    </Overlay>
   )
 }
 
@@ -216,4 +236,3 @@ const btn = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8p
 const primaryBtn = { ...btn, background: '#7C3AED', color: '#fff', border: 'none' }
 const miniBtn = { display: 'inline-flex', alignItems: 'center', padding: '5px 7px', borderRadius: 6, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', cursor: 'pointer', marginLeft: 5 }
 const pageBtn = { ...btn, padding: '6px 12px', fontSize: 12 }
-const overlay = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }
