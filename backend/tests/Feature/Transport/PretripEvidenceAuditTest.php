@@ -108,7 +108,7 @@ class PretripEvidenceAuditTest extends TestCase
             'name' => 'Ramesh '.Str::random(4),
             'licence_number' => 'RJ14'.self::uniqueSeq(6),
             'licence_class' => 'HMV',
-            'licence_valid_until' => now()->addYears(2)->toDateString(),
+            'licence_expiry' => now()->addYears(2)->toDateString(),
         ], self::TENANT_A, $this->actor);
 
         $this->alloc->assign($trip->fresh(), $v->id, $d->id, self::TENANT_A, $this->actor);
@@ -137,7 +137,7 @@ class PretripEvidenceAuditTest extends TestCase
     public function test_a_refused_gate_leaves_evidence_that_survives_the_exception(): void
     {
         [$trip, , $driver] = $this->ready();
-        $driver->forceFill(['licence_valid_until' => now()->subDay()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()])->save();
         $this->pretrip->generate($trip, self::TENANT_A, $this->actor);
 
         try {
@@ -159,7 +159,7 @@ class PretripEvidenceAuditTest extends TestCase
         // A review needs to know what was VERIFIED, not only what went wrong —
         // the same reasoning as the allocation refusal audit in ticket 009.
         [$trip, , $driver] = $this->ready();
-        $driver->forceFill(['licence_valid_until' => now()->subDay()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()])->save();
         $this->pretrip->generate($trip, self::TENANT_A, $this->actor);
 
         try { $this->pretrip->passPretrip($trip->fresh(), self::TENANT_A, $this->actor); } catch (BusinessException) {}
@@ -209,7 +209,7 @@ class PretripEvidenceAuditTest extends TestCase
     public function test_a_refusal_changes_nothing(): void
     {
         [$trip, $vehicle, $driver] = $this->ready();
-        $driver->forceFill(['licence_valid_until' => now()->subDay()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()])->save();
         $this->pretrip->generate($trip, self::TENANT_A, $this->actor);
 
         $before = TripPretripCheck::forTenant(self::TENANT_A)->forTrip($trip->id)->get()
@@ -268,7 +268,7 @@ class PretripEvidenceAuditTest extends TestCase
         // diff two checklists.
         [$trip, , $driver] = $this->ready();
 
-        $driver->forceFill(['licence_valid_until' => now()->subDay()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()])->save();
         $this->pretrip->generate($trip, self::TENANT_A, $this->actor);
 
         $entry = $trip->auditTrail()->where('action', 'transport.pretrip.confirmations_revoked')->first();
@@ -302,7 +302,7 @@ class PretripEvidenceAuditTest extends TestCase
         [$trip, , $driver] = $this->crewed();
         $this->pretrip->generate($trip, self::TENANT_A, $this->actor);   // evaluated, none confirmed
 
-        $driver->forceFill(['licence_valid_until' => now()->subDay()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()])->save();
         $this->pretrip->generate($trip, self::TENANT_A, $this->actor);
 
         $this->assertSame(
@@ -352,7 +352,7 @@ class PretripEvidenceAuditTest extends TestCase
         [$trip, , $driver] = $this->ready();
 
         // The world changes, but nothing has regenerated the checklist.
-        $driver->forceFill(['licence_valid_until' => now()->subDay()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()])->save();
 
         $moved = $this->pretrip->passPretrip($trip->fresh(), self::TENANT_A, $this->actor);
 
@@ -446,7 +446,7 @@ class PretripEvidenceAuditTest extends TestCase
     public function test_no_override_is_ever_recorded(): void
     {
         [$trip, , $driver] = $this->ready();
-        $driver->forceFill(['licence_valid_until' => now()->subDay()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()])->save();
         $this->pretrip->generate($trip, self::TENANT_A, $this->actor);
 
         foreach ($this->pretrip->checksFor($trip, self::TENANT_A) as $c) {

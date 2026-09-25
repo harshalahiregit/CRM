@@ -114,7 +114,7 @@ class TransportAllocationApiTest extends TestCase
             'name' => 'Ramesh '.Str::random(4),
             'licence_number' => 'RJ14'.self::uniqueSeq(6),
             'licence_class' => 'HMV',
-            'licence_valid_until' => now()->addYears(2)->toDateString(),
+            'licence_expiry' => now()->addYears(2)->toDateString(),
         ], $tenantId, $actor);
     }
 
@@ -241,7 +241,7 @@ class TransportAllocationApiTest extends TestCase
         $trip = $this->approvedTrip();
         $d = $this->fleetDriver([
             'name' => 'Lapsed', 'licence_number' => 'MH0199',
-            'licence_valid_until' => now()->subDay()->toDateString(),
+            'licence_expiry' => now()->subDay()->toDateString(),
         ], self::TENANT_A, $admin);
 
         $body = $this->postJson("/api/transport/trips/{$trip->id}/assign", ['driver_id' => $d->id])

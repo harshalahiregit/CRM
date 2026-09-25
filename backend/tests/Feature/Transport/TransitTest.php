@@ -109,7 +109,7 @@ class TransitTest extends TestCase
             'name' => 'Ramesh '.Str::random(4),
             'licence_number' => 'RJ14'.self::uniqueSeq(6),
             'licence_class' => 'HMV',
-            'licence_valid_until' => now()->addYears(2)->toDateString(),
+            'licence_expiry' => now()->addYears(2)->toDateString(),
         ], $tenantId, $this->actor);
 
         $this->alloc->assign($trip->fresh(), $v->id, $d->id, $tenantId, $this->actor);

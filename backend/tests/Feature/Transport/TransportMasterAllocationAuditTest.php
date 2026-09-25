@@ -227,7 +227,7 @@ class TransportMasterAllocationAuditTest extends TestCase
         $trip = $this->approvedTrip();
         $d = app(TransportDriverService::class)->create([
             'name' => 'Lapsed', 'licence_number' => 'MH99'.self::uniqueSeq(4),
-            'licence_valid_until' => now()->subDay()->toDateString(),
+            'licence_expiry' => now()->subDay()->toDateString(),
         ], self::A, null);
 
         $body = $this->postJson("/api/transport/trips/{$trip->id}/assign", ['driver_id' => $d->id])

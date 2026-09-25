@@ -113,7 +113,7 @@ class TransportEligibilityTest extends TestCase
             'name' => 'Ramesh '.Str::random(4),
             'licence_number' => 'RJ14'.self::uniqueSeq(6),
             'licence_class' => 'HMV',
-            'licence_valid_until' => now()->addYears(2)->toDateString(),
+            'licence_expiry' => now()->addYears(2)->toDateString(),
         ], $tenantId, $this->actor);
     }
 
@@ -261,7 +261,7 @@ class TransportEligibilityTest extends TestCase
     {
         $d = $this->fleetDriver([
             'name' => 'Lapsed', 'licence_number' => 'MH0199',
-            'licence_valid_until' => now()->subDay()->toDateString(),
+            'licence_expiry' => now()->subDay()->toDateString(),
         ], self::TENANT_A, $this->actor);
 
         $verdict = $this->drivers->evaluate($d, $this->trip(), self::TENANT_A);
@@ -350,7 +350,7 @@ class TransportEligibilityTest extends TestCase
     {
         $d = $this->fleetDriver([
             'name' => 'Expiring', 'licence_number' => 'MH0177',
-            'licence_valid_until' => now()->addDays(10)->toDateString(),
+            'licence_expiry' => now()->addDays(10)->toDateString(),
         ], self::TENANT_A, $this->actor);
 
         $verdict = $this->drivers->evaluate($d, $this->trip(), self::TENANT_A);
@@ -367,7 +367,7 @@ class TransportEligibilityTest extends TestCase
     {
         $d = $this->fleetDriver([
             'name' => 'Lapsed', 'licence_number' => 'MH0155',
-            'licence_valid_until' => now()->subDay()->toDateString(),
+            'licence_expiry' => now()->subDay()->toDateString(),
         ], self::TENANT_A, $this->actor);
 
         $this->assertFalse($this->drivers->evaluate($d, $this->trip(), self::TENANT_A)['eligible']);

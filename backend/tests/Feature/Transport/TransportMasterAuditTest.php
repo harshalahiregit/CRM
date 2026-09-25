@@ -270,7 +270,7 @@ class TransportMasterAuditTest extends TestCase
     public function test_compliance_is_non_compliant_without_a_valid_licence(): void
     {
         $noLicence = $this->makeDriver();
-        $lapsed = $this->makeDriver(['licence_number' => 'A1', 'licence_valid_until' => now()->subDay()->toDateString()]);
+        $lapsed = $this->makeDriver(['licence_number' => 'A1', 'licence_expiry' => now()->subDay()->toDateString()]);
 
         $this->assertSame(DriverComplianceStatus::NON_COMPLIANT, $noLicence->complianceStatus());
         $this->assertSame(DriverComplianceStatus::NON_COMPLIANT, $lapsed->complianceStatus());
@@ -279,7 +279,7 @@ class TransportMasterAuditTest extends TestCase
 
     public function test_compliance_is_compliant_with_a_valid_licence_and_valid_documents(): void
     {
-        $driver = $this->makeDriver(['licence_number' => 'A2', 'licence_valid_until' => now()->addYears(2)->toDateString()]);
+        $driver = $this->makeDriver(['licence_number' => 'A2', 'licence_expiry' => now()->addYears(2)->toDateString()]);
         $this->documents->file($driver, TransportDocumentType::FITNESS,
             ['valid_until' => now()->addYear()->toDateString()], self::TENANT_A, $this->actor);
 
@@ -289,7 +289,7 @@ class TransportMasterAuditTest extends TestCase
 
     public function test_a_document_inside_the_warning_window_reads_expiring_not_blocking(): void
     {
-        $driver = $this->makeDriver(['licence_number' => 'A3', 'licence_valid_until' => now()->addYears(2)->toDateString()]);
+        $driver = $this->makeDriver(['licence_number' => 'A3', 'licence_expiry' => now()->addYears(2)->toDateString()]);
         $this->documents->file($driver, TransportDocumentType::FITNESS,
             ['valid_until' => now()->addDays(10)->toDateString()], self::TENANT_A, $this->actor);
 
@@ -301,7 +301,7 @@ class TransportMasterAuditTest extends TestCase
 
     public function test_the_expiring_window_is_configurable_for_step_5(): void
     {
-        $driver = $this->makeDriver(['licence_number' => 'A4', 'licence_valid_until' => now()->addDays(45)->toDateString()]);
+        $driver = $this->makeDriver(['licence_number' => 'A4', 'licence_expiry' => now()->addDays(45)->toDateString()]);
 
         $this->assertSame(DriverComplianceStatus::COMPLIANT, $driver->complianceStatus());        // default 30
         $this->assertSame(DriverComplianceStatus::EXPIRING, $driver->complianceStatus(60));       // tenant policy
@@ -310,7 +310,7 @@ class TransportMasterAuditTest extends TestCase
 
     public function test_a_lapsed_document_is_ignored_once_superseded(): void
     {
-        $driver = $this->makeDriver(['licence_number' => 'A5', 'licence_valid_until' => now()->addYears(2)->toDateString()]);
+        $driver = $this->makeDriver(['licence_number' => 'A5', 'licence_expiry' => now()->addYears(2)->toDateString()]);
         $old = $this->documents->file($driver, TransportDocumentType::FITNESS,
             ['valid_until' => now()->subDay()->toDateString()], self::TENANT_A, $this->actor);
 
@@ -324,7 +324,7 @@ class TransportMasterAuditTest extends TestCase
 
     public function test_a_blocked_driver_reports_blocked_regardless_of_paperwork(): void
     {
-        $driver = $this->makeDriver(['licence_number' => 'A6', 'licence_valid_until' => now()->addYears(2)->toDateString()]);
+        $driver = $this->makeDriver(['licence_number' => 'A6', 'licence_expiry' => now()->addYears(2)->toDateString()]);
         $this->drivers->transitionStatusTo($driver, DriverStatus::BLOCKED, self::TENANT_A, $this->actor, 'incident review');
 
         $fresh = $driver->fresh();

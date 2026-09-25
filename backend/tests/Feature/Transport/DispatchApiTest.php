@@ -360,7 +360,7 @@ class DispatchApiTest extends TestCase
         $trip = $this->readyTrip(actor: $a);
 
         TransportDriver::forTenant(self::TENANT_A)->first()
-            ->forceFill(['licence_valid_until' => now()->subDay()->toDateString()])->save();
+            ->forceFill(['licence_expiry' => now()->subDay()->toDateString()])->save();
 
         $res = $this->getJson($this->url($trip))->assertOk();
 

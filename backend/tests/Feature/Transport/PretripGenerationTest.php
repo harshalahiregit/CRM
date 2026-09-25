@@ -117,7 +117,7 @@ class PretripGenerationTest extends TestCase
             'name' => 'Ramesh '.Str::random(4),
             'licence_number' => 'RJ14'.self::uniqueSeq(6),
             'licence_class' => 'HMV',
-            'licence_valid_until' => $licenceUntil ?? now()->addYears(2)->toDateString(),
+            'licence_expiry' => $licenceUntil ?? now()->addYears(2)->toDateString(),
         ], $tenantId, $this->actor);
     }
 
@@ -232,7 +232,7 @@ class PretripGenerationTest extends TestCase
     {
         // BR-P0-004, QA-003, CMP §182: Expiry → Non-Compliant → Dispatch Block.
         [$trip, , $driver] = $this->crewedTrip();
-        $driver->forceFill(['licence_valid_until' => now()->subDay()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()])->save();
 
         $this->pretrip->generate($trip, self::TENANT_A, $this->actor);
         $check = $this->keyed($trip)[PretripCheckKey::DRIVER_DOCUMENTS];
@@ -262,7 +262,7 @@ class PretripGenerationTest extends TestCase
     {
         // BRW-048: "If dispatch fails, Sangoe must display exact reason."
         [$trip, , $driver] = $this->crewedTrip();
-        $driver->forceFill(['licence_valid_until' => now()->subDay()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()])->save();
         $this->pretrip->generate($trip, self::TENANT_A, $this->actor);
 
         $blockers = $this->pretrip->readiness($trip, self::TENANT_A)['blockers'];
@@ -280,7 +280,7 @@ class PretripGenerationTest extends TestCase
         $this->policies->set(self::TENANT_A, 'pretrip.check.driver.documents_valid.critical', false, $this->actor);
 
         [$trip, , $driver] = $this->crewedTrip();
-        $driver->forceFill(['licence_valid_until' => now()->subDay()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()])->save();
         $this->pretrip->generate($trip, self::TENANT_A, $this->actor);
 
         $check = $this->keyed($trip)[PretripCheckKey::DRIVER_DOCUMENTS];
@@ -443,7 +443,7 @@ class PretripGenerationTest extends TestCase
         $this->pretrip->complete($check, self::TENANT_A, $this->actor, 'Checked the licence myself');
         $this->assertTrue($this->keyed($trip)[PretripCheckKey::DRIVER_DOCUMENTS]->isCompleted());
 
-        $driver->forceFill(['licence_valid_until' => now()->subDay()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()])->save();
         $this->pretrip->generate($trip, self::TENANT_A, $this->actor);
 
         $refreshed = $this->keyed($trip)[PretripCheckKey::DRIVER_DOCUMENTS];
@@ -502,7 +502,7 @@ class PretripGenerationTest extends TestCase
         // Completion and outcome are different axes. FRS's "supervisor sign-off"
         // is the override, and override is P1.
         [$trip, , $driver] = $this->crewedTrip();
-        $driver->forceFill(['licence_valid_until' => now()->subDay()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()])->save();
         $this->pretrip->generate($trip, self::TENANT_A, $this->actor);
 
         foreach ($this->pretrip->checksFor($trip, self::TENANT_A) as $check) {
@@ -518,7 +518,7 @@ class PretripGenerationTest extends TestCase
     public function test_completion_never_alters_the_result(): void
     {
         [$trip, , $driver] = $this->crewedTrip();
-        $driver->forceFill(['licence_valid_until' => now()->subDay()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()])->save();
         $this->pretrip->generate($trip, self::TENANT_A, $this->actor);
 
         $check = $this->keyed($trip)[PretripCheckKey::DRIVER_DOCUMENTS];

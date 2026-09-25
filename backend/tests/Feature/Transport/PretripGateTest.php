@@ -118,7 +118,7 @@ class PretripGateTest extends TestCase
             'name' => 'Ramesh '.Str::random(4),
             'licence_number' => 'RJ14'.self::uniqueSeq(6),
             'licence_class' => 'HMV',
-            'licence_valid_until' => now()->addYears(2)->toDateString(),
+            'licence_expiry' => now()->addYears(2)->toDateString(),
         ], $tenantId, $this->actor);
     }
 
@@ -225,7 +225,7 @@ class PretripGateTest extends TestCase
     {
         // BRW-048's own example is "Dispatch blocked — Driver licence expired."
         [$trip, , $driver] = $this->readyTrip();
-        $driver->forceFill(['licence_valid_until' => now()->subDay()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()])->save();
         $this->pretrip->generate($trip, self::TENANT_A, $this->actor);
 
         try {
@@ -287,7 +287,7 @@ class PretripGateTest extends TestCase
         $v = $this->vehicle(); $d = $this->driver();
         $this->alloc->assign($trip, $v->id, $d->id, self::TENANT_A, $this->actor);
         $trip = $trip->fresh();
-        $d->forceFill(['licence_valid_until' => now()->subDay()])->save();
+        $d->forceFill(['licence_expiry' => now()->subDay()])->save();
 
         $this->pretrip->generate($trip, self::TENANT_A, $this->actor);
         foreach ($this->pretrip->checksFor($trip, self::TENANT_A) as $check) {
@@ -385,7 +385,7 @@ class PretripGateTest extends TestCase
         // Same discipline as ticket 009's refused allocation: a block is exactly
         // the event an auditor asks about later.
         [$trip, , $driver] = $this->readyTrip();
-        $driver->forceFill(['licence_valid_until' => now()->subDay()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()])->save();
         $this->pretrip->generate($trip, self::TENANT_A, $this->actor);
 
         try {
@@ -405,7 +405,7 @@ class PretripGateTest extends TestCase
     public function test_a_refusal_changes_no_state(): void
     {
         [$trip, $vehicle, $driver] = $this->readyTrip();
-        $driver->forceFill(['licence_valid_until' => now()->subDay()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()])->save();
         $this->pretrip->generate($trip, self::TENANT_A, $this->actor);
 
         try {

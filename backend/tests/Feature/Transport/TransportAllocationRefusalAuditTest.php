@@ -100,7 +100,7 @@ class TransportAllocationRefusalAuditTest extends TestCase
         return $this->fleetDriver(array_merge([
             'name' => 'Driver '.Str::random(4),
             'licence_number' => 'RJ14'.self::uniqueSeq(6),
-            'licence_valid_until' => now()->addYears(2)->toDateString(),
+            'licence_expiry' => now()->addYears(2)->toDateString(),
         ], $o), self::A, $this->actor);
     }
 
@@ -154,7 +154,7 @@ class TransportAllocationRefusalAuditTest extends TestCase
     public function test_expired_licence_is_logged_against_br_p0_004_with_document_status(): void
     {
         $trip = $this->trip();
-        $d = $this->driver(['licence_valid_until' => now()->subDays(4)->toDateString(), 'licence_class' => 'HMV']);
+        $d = $this->driver(['licence_expiry' => now()->subDays(4)->toDateString(), 'licence_class' => 'HMV']);
 
         $this->refuse($trip, null, $d->id);
 
@@ -247,7 +247,7 @@ class TransportAllocationRefusalAuditTest extends TestCase
     public function test_the_row_records_every_check_not_only_the_failures(): void
     {
         $trip = $this->trip();
-        $d = $this->driver(['licence_valid_until' => now()->subDay()->toDateString()]);
+        $d = $this->driver(['licence_expiry' => now()->subDay()->toDateString()]);
 
         $this->refuse($trip, null, $d->id);
 

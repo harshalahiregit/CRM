@@ -15,6 +15,19 @@ Authority for who rules on what: the Conflict Resolution matrix in
 defects do: a rule consciously set aside needs to be as findable as a rule broken by accident, and
 a verbal approval is not an artefact.
 
+### This file is a grep target before it is a document
+
+Any heading that states a **state** — *proposed*, *not built*, *deferred*, *blocked*, *awaiting* —
+is a claim that goes stale silently, because nothing re-reads it. So:
+
+> **A `Proposed, NOT built` section is REPLACED, never appended to, the moment the proposal ships —
+> by a `Built` section naming the file path and the test. The heading must not survive, because the
+> heading is what a grep finds.**
+
+D-134 described a class as proposed for two days after it existed, in a folder it was not in. The
+entry was not lying; nobody had re-read it. **When a proposal ships, grep this file for its heading
+before closing the work** — it is one command, and it is in the TEAM-CONTRACTS checklist.
+
 - [RULING-001](#ruling-001--the-client-portal-is-being-built-without-step-12-tickets) — the client
   portal is being built without Step 12 tickets (B-09). Two endpoints, one permission value.
   Retroactive ticket outstanding.
@@ -4902,45 +4915,22 @@ Because it trades one blank picker for another. `crm_client_contact:1` — Rajes
 would then be the invisible one. Every CRM-sourced driver would disappear to reveal ours. **Not
 done.**
 
-### Proposed, NOT built
+### Built — `app/Support/Transport/CompositeDriverDirectory.php`
 
-A `CompositeDriverDirectory` in **our** tree implementing `App\Domains\Fleet\Contracts\DriverDirectory`:
-`people()` concatenates both sources, `find()` dispatches on the `source` prefix, `describe()` names
-both.
+`people()` concatenates both registers and sorts by name; `find()` **dispatches on the source
+prefix** rather than trying both; `describe()` names both. A fourth mode `both`, with `auto`
+resolving to it whenever the CRM is present. Neither underlying directory was touched.
 
-Implementing P2's interface is not editing P2's code — the contract exists precisely for this, and
-its own docblock says *"Swapping the implementation swaps the source. Nothing above this line has to
-know which one is in use."* The refs are already namespaced (`stos:` vs `crm_*:`), so a merge cannot
-collide, and each implementation already returns null for refs it does not own.
+Test: `tests/Feature/Transport/CompositeDriverDirectoryTest.php`.
 
-It became a fourth mode (`auto` | `crm` | `standalone` | `both`), with `auto` resolving to `both`
-when the CRM is present **and** `stos_drivers` is non-empty.
+**It lived in `app/Domains/Fleet/Directory/` for two days and was moved on 2026-09-25.** The line is
+drawn at **whose tree, not whose concept**: the decision this class encodes — that `auto` resolves
+to both sources — is ours, made in our provider and our config. P2's two directories each answer for
+one source because that is all either of them is. Its test moved with it, on the same grounds.
 
-### Built and verified
-
-`CompositeDriverDirectory` — `people()` concatenates and sorts by name, `find()` **dispatches on the
-source prefix** rather than trying both, `describe()` names both registers. Neither underlying
-directory was touched.
-
-The picker went from one candidate to three:
-
-```
-#1  eligible=no   No licence is on file for this driver. (Fleet compliance desk)
-#2  eligible=yes  Cleared by Fleet
-#3  eligible=yes  Cleared by Fleet
-```
-
-`CompositeDriverDirectoryTest` — five tests, and one of them guards the property the namespacing
-buys: **each register must keep REFUSING the other's handles.** `find()` dispatches instead of
-trying both precisely so a refusal can never silently become a fallback; if it did, two registers
-could answer for one handle and a ref would stop naming one person.
-
-Broken two ways before it was trusted: reverted to CRM-only → **red**, naming the invisible driver;
-made the CRM directory answer for a `stos:` handle → **red** on the refusal guard.
-
-One test passed *vacuously* on the first run — the CRM register was empty in the fixture, so its
-loop iterated nothing and showed a tick. Fixed by seeding a CRM contact and asserting the list is
-non-empty first.
+The picker went from one candidate to three. One of its five tests passed *vacuously* on the first
+run — the CRM register was empty in the fixture, so its loop iterated nothing and showed a tick —
+which is fixed and is one of the five instances behind [D-149](#d-149--a-guard-that-stops-guarding-does-not-go-red).
 
 ---
 
@@ -5542,3 +5532,49 @@ is not usually alone.*
 `TransportDrivers.jsx` also has an "Add driver" form and no way out, and was left alone: it is
 **unrouted** — the placeholder screen retired in September — so nothing can reach it. Noted rather
 than fixed, because fixing dead code hides that it is dead.
+
+---
+
+## D-149 — the cross-tenant guard on the master surface stopped asserting anything
+
+**Raised:** 2026-09-25, attributing the fixture debt. **P1.** **The rule holds; the guard does not.**
+
+### What it looked like
+
+```
+test_a_tenant_cannot_read_or_write_another_tenants_master_records
+  Failed asserting that 200 is identical to 404
+  ➜ $this->getJson("/api/transport/vehicles/{$vehicleId}")->assertNotFound();
+```
+
+Which reads exactly like a cross-tenant leak on a read endpoint.
+
+### What it is
+
+The test builds its fixture with `POST /vehicles`, which now answers **409** under the read-only
+ruling. So `json('data.id')` is **null**, the URL collapses to `/api/transport/vehicles/` — the
+index — and 200 is the correct answer to the question actually asked.
+
+**Isolation is intact.** Checked directly rather than assumed:
+
+```
+tenant 1 owns legacy vehicle #35
+  as tenant 1: FOUND MH 12 DEMO 01
+  as tenant 2: ResourceNotFoundException — Vehicle not found.
+```
+
+### Why it is a defect anyway
+
+The guard for cross-tenant access to the entire master surface now **asserts nothing about
+tenancy**. It would pass or fail for reasons unrelated to it. A guard that has stopped guarding is
+the shape of [D-145](#d-145--fleet-accepts-two-drivers-with-the-same-licence-number) and
+[D-146](#d-146--fleet-can-delete-a-vehicle-that-is-on-a-live-trip), and this is the third in a week.
+
+**Five in two weeks, and every one was found by a person noticing, not by the suite:** the leak
+test's original vacuity, the composite test's empty CRM register, D-145, D-146, and this. A
+proposal for making that mechanical is owed with the block's results.
+
+### Repair
+
+The fixture creates through Fleet, or inserts directly; the assertion is unchanged, because the rule
+it states is still exactly right.

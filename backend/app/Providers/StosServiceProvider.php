@@ -4,7 +4,7 @@ namespace App\Providers;
 
 use App\Domains\Fleet\Contracts\DriverDirectory;
 use App\Domains\Fleet\Integration\TransportFleetResourceGateway;
-use App\Domains\Fleet\Directory\CompositeDriverDirectory;
+use App\Support\Transport\CompositeDriverDirectory;
 use App\Domains\Fleet\Models\DriverProfile;
 use App\Support\Transport\DriverNaming;
 use App\Domains\Fleet\Directory\CrmDriverDirectory;

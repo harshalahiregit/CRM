@@ -1,8 +1,8 @@
 <?php
 
-namespace Tests\Feature\Stos;
+namespace Tests\Feature\Transport;
 
-use App\Domains\Fleet\Directory\CompositeDriverDirectory;
+use App\Support\Transport\CompositeDriverDirectory;
 use App\Domains\Fleet\Directory\CrmDriverDirectory;
 use App\Domains\Fleet\Directory\StandaloneDriverDirectory;
 use App\Models\Tenant;
@@ -12,6 +12,10 @@ use Tests\TestCase;
 
 /**
  * D-134 — both registers, and the refusal that keeps a handle a handle.
+ *
+ * Lives in Transport's tests, not Fleet's, for the same reason the class does:
+ * the decision under test is ours. A test tree that disagrees with the source
+ * tree is the register-versus-code problem in another costume.
  *
  * After the D-62 move a CRM installation holds drivers in the CRM directories
  * AND in `stos_drivers`, because the move put the drivers it found into the

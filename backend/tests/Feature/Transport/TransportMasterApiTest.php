@@ -14,6 +14,7 @@ use App\Support\Transport\VehicleStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -79,8 +80,43 @@ class TransportMasterApiTest extends TestCase
             'name' => 'Ramesh Kumar', 'mobile' => '9876543210',
             'licence_number' => 'RJ14 '.self::uniqueSeq(6),
             'licence_class' => 'HMV',
-            'licence_valid_until' => now()->addYear()->toDateString(),
+            'licence_expiry' => now()->addYear()->toDateString(),
         ], $o);
+    }
+
+
+    /**
+     * A legacy master row, created directly — D-149.
+     *
+     * These tests used `POST /vehicles` as SETUP for something else: status
+     * counts, cross-tenant isolation, the permission matrix. That endpoint now
+     * refuses (409, the read-only ruling), so the setup produced a null id and
+     * the assertions afterwards stopped testing what they name — the tenancy
+     * one collapsed its URL to the index and asserted nothing about tenancy at
+     * all.
+     *
+     * Inserted directly rather than through Fleet: the subject here is the
+     * LEGACY read surface, which still serves history, so the fixture has to be
+     * a legacy row. Through the service would go through validation that is no
+     * longer reachable from the API anyway.
+     */
+    private function seedLegacyVehicle(?int $tenantId = null): int
+    {
+        return DB::table('transport_vehicles')->insertGetId([
+            'tenant_id' => $tenantId ?? self::TENANT_A,
+            'registration_number' => 'MH01SEED'.self::uniqueSeq(4),
+            'registration_normalized' => 'MH01SEED'.self::uniqueSeq(4),
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+    }
+
+    private function seedLegacyDriver(?int $tenantId = null): int
+    {
+        return DB::table('transport_drivers')->insertGetId([
+            'tenant_id' => $tenantId ?? self::TENANT_A,
+            'name' => 'Seed Driver '.self::uniqueSeq(3),
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
     }
 
     /* ══════════ VEHICLE CRUD ══════════ */
@@ -88,7 +124,7 @@ class TransportMasterApiTest extends TestCase
     public function test_status_counts_cover_every_declared_state(): void
     {
         $this->actingAsAdmin();
-        $this->postJson('/api/transport/vehicles', $this->vehiclePayload())->assertCreated();
+        $this->seedLegacyVehicle();
 
         $counts = $this->getJson('/api/transport/vehicles/status-counts')->assertOk()->json('data');
 
@@ -170,8 +206,13 @@ class TransportMasterApiTest extends TestCase
         $this->getJson('/api/transport/vehicles')->assertOk();
         $this->getJson('/api/transport/drivers')->assertOk();
 
+        // D-143 — the permission middleware still runs first, so a dispatcher
+        // is still refused on permission grounds for the VEHICLE write. The
+        // driver create is HELD (D-145) and its route is absent, which answers
+        // 405; that is a temporary shape and the hold's comment in
+        // routes/transport.php lists this test as one that moves when it lifts.
         $this->postJson('/api/transport/vehicles', $this->vehiclePayload())->assertForbidden();
-        $this->postJson('/api/transport/drivers', $this->driverPayload())->assertForbidden();
+        $this->postJson('/api/transport/drivers', $this->driverPayload())->assertStatus(405);
     }
 
     public function test_accounts_may_read_masters_but_not_write_them(): void
@@ -204,14 +245,23 @@ class TransportMasterApiTest extends TestCase
 
         foreach (['/api/transport/vehicles', '/api/transport/drivers'] as $path) {
             $this->getJson($path)->assertForbidden();
-            $this->postJson($path, [])->assertForbidden();
         }
+
+        // The rule is unchanged — accounts may not write a master. Only the
+        // vehicle path can still state it as a permission refusal; the driver
+        // create route is held (D-145).
+        $this->postJson('/api/transport/vehicles', [])->assertForbidden();
+        $this->postJson('/api/transport/drivers', [])->assertStatus(405);
     }
 
     public function test_an_unauthenticated_request_is_refused(): void
     {
         $this->getJson('/api/transport/vehicles')->assertUnauthorized();
-        $this->postJson('/api/transport/drivers', [])->assertUnauthorized();
+
+        // Against a REGISTERED write, so this asserts authentication rather
+        // than the absence of a route — the held POST /drivers answers 405 to
+        // everyone, signed in or not, which would have made this vacuous.
+        $this->putJson('/api/transport/vehicles/1', [])->assertUnauthorized();
     }
 
     public function test_the_new_permission_keys_exist_and_deny_by_default(): void
@@ -235,8 +285,15 @@ class TransportMasterApiTest extends TestCase
     public function test_a_tenant_cannot_read_or_write_another_tenants_master_records(): void
     {
         $this->actingAsAdmin(self::TENANT_A);
-        $vehicleId = $this->postJson('/api/transport/vehicles', $this->vehiclePayload())->json('data.id');
-        $driverId  = $this->postJson('/api/transport/drivers', $this->driverPayload())->json('data.id');
+
+        // D-149 — seeded, not POSTed. Creating through the API returns 409 now,
+        // so these ids were null and the URLs below collapsed to the index:
+        // the guard asserted nothing about tenancy while still looking like it
+        // did. Isolation itself was never broken; the test had stopped checking.
+        $vehicleId = $this->seedLegacyVehicle(self::TENANT_A);
+        $driverId  = $this->seedLegacyDriver(self::TENANT_A);
+
+        $this->assertNotNull($vehicleId, 'nothing was seeded, so this proves nothing');
 
         $this->actingAsAdmin(self::TENANT_B);
 
