@@ -242,366 +242,151 @@ const ReadOnlyInput = ({ value, placeholder }) => (
 )
 
 // ── Full Add / Edit / View modal ───────────────────────────────────────────
+/**
+ * Add / edit a vendor contact.
+ *
+ * THE SAME SIXTEEN FIELDS PURCHASE CAPTURES, and only those.
+ *
+ * This form used to ask for twenty-six: date of birth, gender, Aadhaar, PAN,
+ * passport, driving licence, joining date, site, emergency contact and a photo.
+ * The endpoint accepted nine of them and the table had columns for nine, so
+ * everything else was typed in and dropped on save without a word.
+ *
+ * Worse, the name box was `full_name` while the request required `first_name`
+ * and `last_name`, so the save did not merely lose data -- it failed outright,
+ * every time, on a field this form did not have and could not put an error
+ * against. The dialog just said "Could not save contact". That is why a TPV
+ * vendor's contact count stayed at zero, and why the Add Contact onboarding
+ * step could never be completed on this side.
+ *
+ * Purchase's version of this screen asks for sixteen, accepts sixteen and
+ * stores sixteen. This is now the same form against the same contract, with
+ * tpv_contacts given the seven columns purchase_contacts already had.
+ *
+ * The KYC fields are not hidden, they are gone: a box that has never once
+ * stored what somebody typed is not a feature being withheld. If Aadhaar and
+ * PAN belong on a vendor contact, they need columns, rules and a screen that
+ * says what they are for -- in both workspaces, not one.
+ */
 function ContactModal({ vendorId, vendor, mode, contact, onClose, onSaved, api = tpvApi }) {
-  const view = mode === 'view'
+  const view   = mode === 'view'
   const isEdit = mode === 'edit'
 
-  // ── Form state — ALL fields ────────────────────────────────────────────
   const EMPTY = {
-    // Personal
-    full_name:        '',
-    dob:              '',
-    gender:           '',
-    mobile:           '',
-    email:            '',
-    aadhaar_number:   '',
-    designation:      '',
-    department:       '',
-    // Company (auto-filled)
-    company_name:     vendor?.company_name ?? '',
-    vendor_code:      vendor?.vendor_code ?? '',
-    site_name:        '',
-    joining_date:     '',
-    // Emergency
-    emergency_name:   '',
-    emergency_number: '',
-    relationship:     '',
-    // Address
-    address:          '',
-    city:             '',
-    state:            '',
-    pincode:          '',
-    // Identity
-    pan_number:       '',
-    passport_number:  '',
-    driving_license:  '',
-    // Meta
-    is_primary:       false,
-    status:           CONTACT_STATUS.ACTIVE,
-    notes:            '',
+    first_name: '', last_name: '', designation: '', department: '',
+    email: '', phone: '', mobile: '', alternate_mobile: '',
+    address: '', city: '', state: '', country: '', pincode: '',
+    notes: '', is_primary: false, status: CONTACT_STATUS.ACTIVE,
   }
 
-  const [f, setF] = useState(contact ? {
-    full_name:        contact.full_name ?? '',
-    dob:              contact.dob ?? '',
-    gender:           contact.gender ?? '',
-    mobile:           contact.mobile ?? '',
-    email:            contact.email ?? '',
-    aadhaar_number:   contact.aadhaar_number ?? '',
-    designation:      contact.designation ?? '',
-    department:       contact.department ?? '',
-    company_name:     contact.company_name ?? vendor?.company_name ?? '',
-    vendor_code:      contact.vendor_code ?? vendor?.vendor_code ?? '',
-    site_name:        contact.site_name ?? '',
-    joining_date:     contact.joining_date ?? '',
-    emergency_name:   contact.emergency_name ?? '',
-    emergency_number: contact.emergency_number ?? '',
-    relationship:     contact.relationship ?? '',
-    address:          contact.address ?? '',
-    city:             contact.city ?? '',
-    state:            contact.state ?? '',
-    pincode:          contact.pincode ?? '',
-    pan_number:       contact.pan_number ?? '',
-    passport_number:  contact.passport_number ?? '',
-    driving_license:  contact.driving_license ?? '',
-    is_primary:       contact.is_primary ?? false,
-    status:           contact.status ?? CONTACT_STATUS.ACTIVE,
-    notes:            contact.notes ?? '',
-  } : EMPTY)
-
-  // ── Photo upload state ─────────────────────────────────────────────────
-  const [photoFile, setPhotoFile]     = useState(null)
-  const [photoPreview, setPhotoPreview] = useState(contact?.photo_url ?? null)
-  const fileRef = useRef(null)
-
-  const pickPhoto = (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (file.size > 5 * 1024 * 1024) { alert('Photo must be under 5 MB.'); return }
-    if (!['image/jpeg', 'image/png'].includes(file.type)) { alert('Only JPG and PNG are supported.'); return }
-    setPhotoFile(file)
-    setPhotoPreview(URL.createObjectURL(file))
-  }
-  const removePhoto = () => { setPhotoFile(null); setPhotoPreview(null); if (fileRef.current) fileRef.current.value = '' }
+  const [f, setF] = useState(contact
+    ? Object.fromEntries(Object.keys(EMPTY).map(k => [k, contact[k] ?? EMPTY[k]]))
+    : EMPTY)
 
   const [saving, setSaving] = useState(false)
-  const set = (k) => (e) => setF(p => ({ ...p, [k]: e.target.value }))
+  const set = (k) => (e) => setF(prev => ({
+    ...prev,
+    [k]: e?.target?.type === 'checkbox' ? e.target.checked : e.target.value,
+  }))
 
-  // ── Validation ─────────────────────────────────────────────────────────
   const errs = {
-    full_name:      !f.full_name.trim() ? 'Full Name is required' : '',
-    mobile:         !f.mobile.trim() ? 'Mobile is required' : (!PHONE_RE.test(f.mobile) ? 'Enter a valid mobile number (7–15 digits)' : ''),
-    designation:    !f.designation.trim() ? 'Designation is required' : '',
-    email:          f.email && !EMAIL_RE.test(f.email) ? 'Enter a valid email address' : '',
-    aadhaar_number: f.aadhaar_number && !AADHAAR_RE.test(f.aadhaar_number.replace(/\s/g, '')) ? 'Must be a 12-digit Aadhaar number' : '',
-    pan_number:     f.pan_number && !PAN_RE.test(f.pan_number) ? 'Invalid PAN (AAAAA9999A format)' : '',
-    pincode:        f.pincode && !PIN_RE.test(f.pincode) ? 'Must be a 6-digit pincode' : '',
-    emergency_number: f.emergency_number && !PHONE_RE.test(f.emergency_number) ? 'Invalid phone number' : '',
+    first_name:  !String(f.first_name).trim() ? 'First name is required' : '',
+    last_name:   !String(f.last_name).trim() ? 'Last name is required' : '',
+    designation: !String(f.designation).trim() ? 'Designation is required' : '',
+    email:       !String(f.email).trim()
+      ? 'Email is required'
+      : (!EMAIL_RE.test(f.email) ? 'Enter a valid email address' : ''),
+    mobile:      !String(f.mobile).trim()
+      ? 'Mobile is required'
+      : (!PHONE_RE.test(f.mobile) ? 'Enter a valid mobile number (7-15 digits)' : ''),
   }
-  const canSave = !errs.full_name && !errs.mobile && !errs.designation && !errs.email &&
-                  !errs.aadhaar_number && !errs.pan_number && !errs.pincode && !errs.emergency_number
+  const firstError = Object.values(errs).find(Boolean)
 
-  // ── Save ───────────────────────────────────────────────────────────────
   const save = async () => {
-    if (!canSave) {
-      const first = Object.values(errs).find(Boolean)
-      return alert(first || 'Please fix the highlighted errors.')
-    }
+    if (firstError) return alert(firstError)
     setSaving(true)
     try {
-      let payload
-      // If there's a photo to upload, use FormData; otherwise send JSON.
-      if (photoFile) {
-        payload = new FormData()
-        Object.entries(f).forEach(([k, v]) => {
-          if (v !== null && v !== undefined && v !== '') payload.append(k, v)
-        })
-        payload.append('photo', photoFile)
-      } else {
-        payload = { ...f }
-        // Nullify optional blanks so backend doesn't store empty strings
-        const optional = ['dob', 'gender', 'email', 'aadhaar_number', 'department', 'site_name',
-          'joining_date', 'emergency_name', 'emergency_number', 'relationship', 'address', 'city',
-          'state', 'pincode', 'pan_number', 'passport_number', 'driving_license', 'notes']
-        optional.forEach(k => { if (payload[k] === '') payload[k] = null })
-      }
+      // Blanks go as null so an optional field is absent rather than an empty
+      // string sitting in the column.
+      const payload = Object.fromEntries(
+        Object.entries(f).map(([k, v]) => [k, v === '' ? null : v]),
+      )
 
       if (isEdit) await api.contacts.update(vendorId, contact.id, payload)
       else        await api.contacts.create(vendorId, payload)
       onSaved()
-    } catch (e) { alert(e?.response?.data?.message || 'Could not save contact') }
-    finally { setSaving(false) }
+    } catch (e) {
+      alert(e?.response?.data?.message || 'Could not save contact')
+    } finally { setSaving(false) }
   }
 
-  const roStyle = view ? { pointerEvents: 'none', opacity: 0.85 } : undefined
-  const title   = view ? 'Contact Details' : isEdit ? 'Edit Contact' : 'Add New Contact'
-  const subtitle = view
-    ? `Read-only view — ${contact?.full_name ?? 'contact'}`
-    : isEdit
-      ? `Update details for ${contact?.full_name ?? 'contact'}`
-      : `Register a new contact person for ${vendor ? `Vendor #${vendorId} — ${vendor.company_name}` : `Vendor #${vendorId}`}`
+  const title = view ? 'Contact Details' : isEdit ? 'Edit Contact' : 'Add Contact'
+  const ro = view ? { pointerEvents: 'none', opacity: 0.85 } : undefined
 
-  // ── Field style helpers ────────────────────────────────────────────────
-  const errInput = (key) => errs[key] ? { borderColor: '#ef444480' } : {}
+  const T = (k, label, { required = false, full = false, type = 'text' } = {}) => (
+    <Field label={required ? `${label} *` : label} full={full}>
+      <TextInput type={type} value={f[k] ?? ''} onChange={set(k)} style={ro} />
+      <ErrHint msg={!view ? errs[k] : ''} />
+    </Field>
+  )
 
   return (
-    <Overlay onClose={() => !saving && onClose()} width={820}>
-      {/* Modal header */}
-      <div style={{ marginBottom: 20 }}>
-        <h2 style={{ color: 'var(--text-h)', margin: '0 0 4px', fontSize: 18, fontWeight: 800 }}>{title}</h2>
-        <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: 0 }}>{subtitle}</p>
+    <Overlay onClose={() => !saving && onClose()} width={760}>
+      <div style={{ marginBottom: 16 }}>
+        <h2 style={{ color: 'var(--text-h)', margin: '0 0 4px', fontSize: 17, fontWeight: 800 }}>{title}</h2>
+        <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: 0 }}>
+          {vendor?.company_name ? `For ${vendor.company_name}` : 'Vendor contact'}
+        </p>
       </div>
 
       {f.is_primary && !view && (
         <InfoBox>This contact will be marked <strong>Primary</strong> for the vendor.</InfoBox>
       )}
 
-      {/* ── Photo upload ─────────────────────────────────────────── */}
-      {!view && (
-        <div style={{ gridColumn: '1/-1', marginBottom: 20 }}>
-          <label style={labelStyle}>Contact Photo</label>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <div style={{ width: 72, height: 72, borderRadius: '50%', border: '2px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', background: 'var(--bg-input)', flexShrink: 0, position: 'relative' }}>
-              {photoPreview
-                ? <img src={photoPreview} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                : <Camera size={24} style={{ color: 'var(--text-muted)', opacity: 0.5 }} />}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <button type="button" onClick={() => fileRef.current?.click()}
-                style={{ ...ghostBtn, gap: 8 }}>
-                <Upload size={14} /> {photoPreview ? 'Change Photo' : 'Upload Photo'}
-              </button>
-              {photoPreview && (
-                <button type="button" onClick={removePhoto}
-                  style={{ ...ghostBtn, color: '#f87171', fontSize: 12 }}>
-                  <X size={12} /> Remove
-                </button>
-              )}
-              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Supported: JPG, PNG · Max 5 MB</span>
-            </div>
-          </div>
-          <input ref={fileRef} type="file" accept="image/jpeg,image/png" onChange={pickPhoto} style={{ display: 'none' }} />
-        </div>
-      )}
-
-      {/* ── View-only photo ─────────────────────────────────────── */}
-      {view && contact?.photo_url && (
-        <div style={{ marginBottom: 20 }}>
-          <img src={contact.photo_url} alt="contact" style={{ width: 72, height: 72, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border)' }} />
-        </div>
-      )}
-
-      {/* ── Form grid ──────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, ...roStyle }}>
-
-        {/* ── Contact Information ─────────────────────────────── */}
-        <Section title="Contact Information" />
-
-        <Field label="Full Name *">
-          <TextInput value={f.full_name} onChange={set('full_name')} placeholder="John Smith" style={errInput('full_name')} />
-          <ErrHint msg={errs.full_name} />
-        </Field>
-
-        <Field label="Employee ID / Contact Code">
-          {/* Auto-generated by backend on save — show existing code or placeholder */}
-          <ReadOnlyInput value={contact?.contact_code ?? ''} placeholder="Auto-generated (e.g. CNT-00025)" />
-        </Field>
-
-        <Field label="Date of Birth">
-          <TextInput type="date" value={f.dob} onChange={set('dob')} />
-        </Field>
-
-        <Field label="Gender">
-          <SelectInput value={f.gender} onChange={set('gender')} pairs
-            options={[['', 'Select gender…'], ...GENDERS.map(g => [g, g])]} />
-        </Field>
-
-        <Field label="Mobile Number *">
-          <div style={{ display: 'flex' }}>
-            <span style={{ ...inputStyle, width: 'auto', borderRight: 'none', borderRadius: '8px 0 0 8px', color: 'var(--text-muted)', flexShrink: 0, paddingRight: 8, background: 'var(--bg-input)' }}>+91</span>
-            <TextInput value={f.mobile} onChange={set('mobile')} placeholder="10-digit mobile"
-              style={{ borderRadius: '0 8px 8px 0', ...errInput('mobile') }} />
-          </div>
-          <ErrHint msg={errs.mobile} />
-        </Field>
-
-        <Field label="Email Address">
-          <TextInput type="email" value={f.email} onChange={set('email')} placeholder="john@company.com"
-            style={errInput('email')} />
-          <ErrHint msg={errs.email} />
-        </Field>
-
-        <Field label="Aadhaar Number">
-          <TextInput value={f.aadhaar_number} onChange={set('aadhaar_number')} placeholder="xxxx xxxx xxxx"
-            maxLength={14} style={errInput('aadhaar_number')} />
-          <ErrHint msg={errs.aadhaar_number} />
-        </Field>
-
-        <Field label="Designation *">
-          <ComboInput value={f.designation} onChange={set('designation')} id="designation"
-            placeholder="e.g. Site Engineer" list={DESIGNATIONS} style={errInput('designation')} />
-          <ErrHint msg={errs.designation} />
-        </Field>
-
-        <Field label="Department">
-          <ComboInput value={f.department} onChange={set('department')} id="department"
-            placeholder="e.g. Operations" list={DEPARTMENTS} />
-        </Field>
-
-        {/* ── Company Information ─────────────────────────────── */}
-        <Section title="Company Information" />
-
-        <Field label="Company Name">
-          <ReadOnlyInput value={f.company_name} placeholder="Auto-filled from vendor" />
-        </Field>
-
-        <Field label="Vendor Code">
-          <ReadOnlyInput value={f.vendor_code} placeholder="Auto-filled" />
-        </Field>
-
-        <Field label="Site Name">
-          <TextInput value={f.site_name} onChange={set('site_name')} placeholder="e.g. Main Plant Gate 3" />
-        </Field>
-
-        <Field label="Joining Date">
-          <TextInput type="date" value={f.joining_date} onChange={set('joining_date')} />
-        </Field>
-
-        {/* ── Emergency Contact ───────────────────────────────── */}
-        <Section title="Emergency Contact" />
-
-        <Field label="Emergency Contact Name">
-          <TextInput value={f.emergency_name} onChange={set('emergency_name')} placeholder="e.g. Jane Smith" />
-        </Field>
-
-        <Field label="Emergency Contact Number">
-          <TextInput value={f.emergency_number} onChange={set('emergency_number')} placeholder="10-digit mobile"
-            style={errInput('emergency_number')} />
-          <ErrHint msg={errs.emergency_number} />
-        </Field>
-
-        <Field label="Relationship">
-          <SelectInput value={f.relationship} onChange={set('relationship')} pairs
-            options={[['', 'Select relationship…'], ...RELATIONSHIPS.map(r => [r, r])]} />
-        </Field>
-
-        {/* ── Address ─────────────────────────────────────────── */}
-        <Section title="Address" />
-
-        <Field label="Address Line" full>
-          <TextInput value={f.address} onChange={set('address')} placeholder="Street address, building name…" />
-        </Field>
-
-        <Field label="City">
-          <TextInput value={f.city} onChange={set('city')} placeholder="e.g. Mumbai" />
-        </Field>
-
-        <Field label="State">
-          <TextInput value={f.state} onChange={set('state')} placeholder="e.g. Maharashtra" />
-        </Field>
-
-        <Field label="Pincode">
-          <TextInput value={f.pincode} onChange={set('pincode')} placeholder="6-digit pincode"
-            maxLength={6} style={errInput('pincode')} />
-          <ErrHint msg={errs.pincode} />
-        </Field>
-
-        {/* ── Identity ─────────────────────────────────────────── */}
-        <Section title="Identity" />
-
-        <Field label="PAN Number">
-          <TextInput value={f.pan_number} onChange={set('pan_number')} placeholder="AAAAA9999A"
-            maxLength={10} style={{ textTransform: 'uppercase', ...errInput('pan_number') }} />
-          <ErrHint msg={errs.pan_number} />
-        </Field>
-
-        <Field label="Passport Number (Optional)">
-          <TextInput value={f.passport_number} onChange={set('passport_number')} placeholder="e.g. J1234567" />
-        </Field>
-
-        <Field label="Driving License Number (Optional)">
-          <TextInput value={f.driving_license} onChange={set('driving_license')} placeholder="e.g. MH0120210012345" />
-        </Field>
-
-        {/* ── Status ───────────────────────────────────────────── */}
-        <Section title="Status & Settings" />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        {T('first_name', 'First Name', { required: true })}
+        {T('last_name', 'Last Name', { required: true })}
+        {T('designation', 'Designation', { required: true })}
+        {T('department', 'Department')}
+        {T('email', 'Email', { required: true, type: 'email' })}
+        {T('phone', 'Phone')}
+        {T('mobile', 'Mobile', { required: true })}
+        {T('alternate_mobile', 'Alternate Phone')}
+        {T('address', 'Address', { full: true })}
+        {T('city', 'City')}
+        {T('state', 'State')}
+        {T('country', 'Country')}
+        {T('pincode', 'Pincode')}
 
         <Field label="Status">
-          <SelectInput value={f.status} onChange={set('status')} pairs
-            options={[[CONTACT_STATUS.ACTIVE, 'Active'], [CONTACT_STATUS.INACTIVE, 'Inactive']]} />
+          <SelectInput value={f.status} onChange={set('status')} style={ro}
+            options={Object.values(CONTACT_STATUS)} />
         </Field>
 
         <Field label="Primary Contact">
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-h)', cursor: view ? 'default' : 'pointer', paddingTop: 2 }}>
-            <input type="checkbox" checked={f.is_primary}
-              onChange={e => setF(p => ({ ...p, is_primary: e.target.checked }))}
-              style={{ cursor: view ? 'default' : 'pointer', width: 15, height: 15 }} />
-            Mark as the vendor's primary contact
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-h)', ...(ro || {}) }}>
+            <input type="checkbox" checked={!!f.is_primary} onChange={set('is_primary')} />
+            Mark as the primary contact
           </label>
         </Field>
 
-        {/* ── Notes ────────────────────────────────────────────── */}
-        <Section title="Notes" />
-
-        <Field label="Additional Notes" full>
-          <textarea value={f.notes} onChange={set('notes')} placeholder="Additional information…"
-            rows={3} style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }} />
-        </Field>
-
+        {T('notes', 'Notes', { full: true })}
       </div>
 
-      {/* ── Footer ──────────────────────────────────────────────── */}
       {view ? (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 22 }}>
-          <button onClick={onClose} style={primaryBtn}>Close</button>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
+          <button type="button" onClick={onClose}
+            style={{ padding: '9px 20px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}>
+            Close
+          </button>
         </div>
       ) : (
         <ModalFooter
           onClose={onClose}
           onConfirm={save}
           loading={saving}
-          disabled={!canSave}
-          confirmLabel={isEdit ? 'Save Changes' : 'Save Contact'}
+          disabled={!!firstError}
+          confirmLabel={isEdit ? 'Save Changes' : 'Add Contact'}
         />
       )}
     </Overlay>
