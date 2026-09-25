@@ -152,67 +152,6 @@ class TransportMasterAllocationAuditTest extends TestCase
         }
     }
 
-    public function test_vehicle_create_and_update_are_owner_operations_admin_only(): void
-    {
-        foreach (['owner', 'operations', 'admin'] as $stosRole) {
-            $this->actAs($stosRole);
-            $id = $this->postJson('/api/transport/vehicles', $this->vehiclePayload())
-                ->assertCreated("{$stosRole} should create")->json('data.id');
-            $this->putJson("/api/transport/vehicles/{$id}", ['manufacturer' => 'Tata'])->assertOk();
-        }
-
-        foreach (['dispatcher', 'accounts'] as $stosRole) {
-            $this->actAs($stosRole);
-            $this->postJson('/api/transport/vehicles', $this->vehiclePayload())->assertForbidden("{$stosRole} must not create");
-            $this->putJson('/api/transport/vehicles/1', ['manufacturer' => 'X'])->assertForbidden();
-        }
-    }
-
-    public function test_vehicle_delete_is_owner_and_admin_only(): void
-    {
-        $admin = $this->actAs('admin');
-        $ids = [];
-        foreach (range(1, 4) as $i) {
-            $ids[] = $this->postJson('/api/transport/vehicles', $this->vehiclePayload())->json('data.id');
-        }
-
-        foreach (['operations', 'dispatcher', 'accounts'] as $stosRole) {
-            $this->actAs($stosRole);
-            $this->deleteJson('/api/transport/vehicles/'.$ids[0])->assertForbidden("{$stosRole} must not delete");
-        }
-
-        $this->actAs('owner');
-        $this->deleteJson('/api/transport/vehicles/'.$ids[0])->assertOk();
-        Sanctum::actingAs($admin);
-        $this->deleteJson('/api/transport/vehicles/'.$ids[1])->assertOk();
-    }
-
-    /** DRIVER: same shape as vehicle. */
-    public function test_driver_view_create_update_delete_follow_the_same_matrix(): void
-    {
-        foreach (array_keys($this->identities()) as $stosRole) {
-            $this->actAs($stosRole);
-            $this->getJson('/api/transport/drivers')->assertOk();
-        }
-
-        foreach (['owner', 'operations', 'admin'] as $stosRole) {
-            $this->actAs($stosRole);
-            $id = $this->postJson('/api/transport/drivers', $this->driverPayload())->assertCreated()->json('data.id');
-            $this->putJson("/api/transport/drivers/{$id}", ['mobile' => '9800000000'])->assertOk();
-        }
-
-        foreach (['dispatcher', 'accounts'] as $stosRole) {
-            $this->actAs($stosRole);
-            $this->postJson('/api/transport/drivers', $this->driverPayload())->assertForbidden();
-        }
-
-        $this->actAs('operations');
-        $id = $this->postJson('/api/transport/drivers', $this->driverPayload())->json('data.id');
-        $this->deleteJson("/api/transport/drivers/{$id}")->assertForbidden('operations must not delete a driver');
-        $this->actAs('admin');
-        $this->deleteJson("/api/transport/drivers/{$id}")->assertOk();
-    }
-
     /** ELIGIBILITY VIEW + ASSIGN + RELEASE all key off PERM-004. */
     public function test_assign_release_and_eligibility_are_owner_operations_dispatcher_admin(): void
     {

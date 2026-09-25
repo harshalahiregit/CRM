@@ -852,3 +852,35 @@ the XLSX says nothing, nothing is there.
    Step 10 + the Step 11 XLSX + the one ticket + the one module spec.
 9. **Audit against the package, not yourself.** Step 12's Acceptance_Criteria and
    Step 13's DOD-001…015 are the checklist.
+
+---
+
+## Before a merge, and before retiring a test
+
+Two rules earned the hard way in the week of 22–25 September. Both are one command.
+
+### The collision that matters is not always a file both sides edited
+
+The pre-merge check for the 76-commit re-base compared changed paths and came back clean: one
+doc conflict, one auto-merge, one additive method. **The real collision only appeared when both
+sides RAN together** — two of P2's tests asserted behaviour our D-134 and D-135 changes had
+deliberately replaced, in files neither branch had touched.
+
+> Comparing changed paths finds the edits. Running the merged suite finds the **rules**. Do both,
+> and do the second one before believing the first.
+
+### Before retiring or relocating a test, name who enforces it afterwards
+
+Do **not** ask *"is this still our surface?"*. Ask:
+
+> **"Who enforces this after the move, and have I read their code saying so?"**
+
+Retiring 18 tests with the legacy master's write path, six were checked this way and each names the
+Fleet test taking over. Three were not, and would have been moved to an endpoint where the rule is
+not enforced at all — Fleet has never read `trip_assignments`, so its delete cannot know a vehicle
+is mid-journey (**D-146**). A fourth turned out to be the only thing in the codebase enforcing
+licence uniqueness (**D-145**).
+
+Both were found by one `grep` each, after the list was written and before anything was deleted.
+**A guard that disappears in a cleanup never goes red** — which is what makes this cheaper to do
+than to skip.

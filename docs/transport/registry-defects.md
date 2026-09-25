@@ -5288,3 +5288,113 @@ answers: a red test naming a real missing guard is worth more than a green suite
 the rule.
 
 See `LIST-tests-proposed-for-retirement.md` for the six that do retire and what takes over each.
+
+---
+
+## D-146 — Fleet can delete a vehicle that is on a live trip
+
+**Raised:** 2026-09-25, deciding where three delete tests should go.
+**Enforcement: P2. Finding: P1.** **Not fixed. The three tests stay red and in place.**
+
+### Measured
+
+```
+grep -rn "trip_assignments\|TripAssignment" app/Domains/Fleet/   →  0
+```
+
+**Fleet never reads `trip_assignments`. Not once, anywhere.** So
+`DELETE /v1/fleet/vehicles/{id}` cannot know the vehicle is mid-journey, and nothing stops it.
+
+The legacy master did know. `TransportVehicleService::delete()` refuses while an active assignment
+exists, and three tests assert it:
+
+```
+a_vehicle_with_an_active_assignment_cannot_be_deleted
+a_driver_with_an_active_assignment_cannot_be_deleted
+deletion_succeeds_once_the_assignment_is_released
+```
+
+### What was nearly done to them
+
+They were proposed for "move to Fleet's delete endpoint or follow Group 2" — moving them to a place
+where **the thing they assert is not enforced.** That is [D-145](#d-145--fleet-accepts-two-drivers-with-the-same-licence-number)
+happening a second time, in the same list, three groups apart.
+
+### Why this one is worse than D-145
+
+A duplicate licence is bad data. Deleting a truck that is mid-journey leaves **a trip pointing at
+nothing while a driver is on the road with it** — and [D-131](#d-131--the-four-repointed-tables-have-no-foreign-keys-and-one-already-holds-a-value-that-is-not-an-id)
+records that there is no foreign key to catch it either. The two defects meet here.
+
+### The rule this produces, and it is the real output
+
+> **Before retiring or relocating a test, do not ask "is this still our surface".
+> Ask: "who enforces this after the move, and have I read their code saying so".**
+
+Group 3's six retirements each name the Fleet test taking over, and each was checked. These three
+were not, and the difference was one `grep`. Added to the pre-merge checklist.
+
+### Not fixed here
+
+Fleet's delete is his endpoint, and what it should do about a live assignment is his call: refuse,
+or release first and say so. Either needs Fleet to read something it currently never reads, which
+is a boundary decision, not a patch.
+
+---
+
+## RULING-003 — the legacy masters are read-only, and this is how it was carried out
+
+**Recorded:** 2026-09-25. Owner's ruling (b), 24 September. **P1.**
+
+### The shape that was chosen, and the one that was rejected
+
+Writes are refused **in the controller**, with the routes still registered. Unrouting them was the
+first attempt and it contradicted itself: a route that does not exist returns a bare 404 from the
+router and can name nothing. Three reasons the sentence matters more than the absence —
+
+1. A guard that refuses correctly with an unreadable message is half a guard ([D-136](#d-136--the-double-booking-lock-was-taken-on-a-table-nobody-was-competing-for)).
+2. The screens still exist because they still show history, so somebody will have a stale form
+   open. A 404 says the product is broken; a sentence says where to go.
+3. *"No role bypasses this"* is a real assertion against a controller refusal and a vacuous one
+   against a route that is not there.
+
+Status **409**, not 403: the caller's permissions are not the problem, and 403 sends an operations
+lead to an administrator who cannot help.
+
+### The 42, as carried out
+
+| Group | Action | Outcome |
+|---|---|---|
+| 1 | reads unchanged | passing, and one **real regression fixed** — see below |
+| 2 | 11 tests → `MasterWritesRefuseReadablyTest` | 11 passing, 5 endpoints |
+| 3 | 7 retired, each naming its Fleet replacement | verified against the tree |
+| 3⚠ | `duplicate_licence…` left red | [D-145](#d-145--fleet-accepts-two-drivers-with-the-same-licence-number) |
+| 4 | fixtures moved to Fleet | DispatchApi 20→1, AllocationAudit 14→11, DemoSeeder 11→1 |
+| — | 3 delete tests left red | [D-146](#d-146--fleet-can-delete-a-vehicle-that-is-on-a-live-trip) |
+
+**18 tests retired. Two guards kept red on purpose.**
+
+### The regression Group 1 uncovered
+
+`GET /transport/vehicles/{id}` and the driver equivalent returned **500**. Both called the
+eligibility service, which since the repoint takes a *Fleet* vehicle, so passing the legacy row
+TypeErrored — a **read** endpoint taken down by the repoint, which earlier suite runs had filed
+under fixture debt.
+
+Removed rather than adapted: a row in these tables can no longer be allocated, so *"is it
+eligible"* has no answer that means anything, and a screen calling a retired row eligible invites
+somebody to try. The key stays, explicitly `null`, so a reader can see the question was considered
+rather than dropped.
+
+### The driver-create hold
+
+`POST /transport/drivers` is the one part of the ruling deliberately not carried out.
+`StoreTransportDriverRequest` is the only thing in the codebase enforcing licence uniqueness, so
+refusing it before Fleet has the guard would open a window in which nothing checks — and our own
+ruling would be what opened it. Held until P2 answers ([D-145](#d-145--fleet-accepts-two-drivers-with-the-same-licence-number)).
+
+### The demo seeder
+
+Repointed too. It seeded `transport_vehicles` / `transport_drivers`, which since the repoint cannot
+be allocated at all — so it produced a demo of trips nobody could crew. Demo data has to be data
+the product can use.

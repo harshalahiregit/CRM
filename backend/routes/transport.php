@@ -242,54 +242,84 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
         Route::get('/vehicles/{id}',          [TransportVehicleController::class, 'show'])->whereNumber('id');
     });
 
-    /* ── THE WRITES ARE GONE — read-only from 2026-09-23. D-143 ────────
+    /* ── READ-ONLY from 2026-09-23 — D-143, refused in the CONTROLLER ──
      *
-     * POST / PUT / PATCH / DELETE on `/transport/vehicles` and
-     * `/transport/drivers` are no longer registered. Creation, editing, status
-     * and deletion of a vehicle or a driver belong to Fleet, which owns those
-     * masters and has the whole path: `POST /v1/fleet/vehicles` and the rest,
-     * under a comment that reads *"Step 1: the vehicle master. Everything below
-     * needs the vehicle_id these create."*
+     * Creation, editing, status and deletion of a vehicle or a driver belong
+     * to Fleet, which owns these masters and has the whole path:
+     * `POST /v1/fleet/vehicles` and the rest, under a comment reading *"Step 1:
+     * the vehicle master. Everything below needs the vehicle_id these create."*
+     *
+     * The routes stay REGISTERED and the controller refuses with a sentence
+     * naming where vehicles are created now. Unrouting them was the first
+     * attempt and it contradicted itself — a route that does not exist returns
+     * a bare 404 and can name nothing, which is the same half-a-guard mistake
+     * D-136 was about. It also makes "no role bypasses this" testable, which it
+     * is not against a route that is absent.
      *
      * ── WHY NOT KEEP WRITING HERE AND LET FLEET STORE IT ─────────────────
-     * Because the two write paths do not enforce the same things, and his are
-     * the ones with reasons attached. `StoreVehicleRequest` normalises the
-     * plate before validating it, enforces uniqueness on registration AND
-     * chassis scoped to the company and counting soft-deleted rows, binds
-     * vehicle_type / ownership_type / fuel_type to enums, and bounds the
-     * manufacturing year — *"a typo here silently ages the fleet in every
-     * report that uses it"*. `TransportVehicleService::create()` is
-     * `array_intersect_key($data, self::EDITABLE)`: no normalisation, no
-     * uniqueness, no enums.
+     * The two paths do not enforce the same things, and his are the ones with
+     * reasons attached. `StoreVehicleRequest` normalises the plate before
+     * validating, enforces uniqueness on registration AND chassis counting
+     * soft-deletes, binds three enums and bounds the manufacturing year — *"a
+     * typo here silently ages the fleet in every report that uses it"*. Ours is
+     * `array_intersect_key`. And his omits `status` on purpose — *"a vehicle's
+     * operational state is decided by its job cards, not typed into a form"* —
+     * while ours writes it. A rules conflict, not a storage question. It would
+     * also make this a permanent second writer into his master, which is a
+     * fresh D-300.
      *
-     * And his request omits `status` on purpose — *"a vehicle's operational
-     * state is decided by its job cards, not typed into a form"* — while ours
-     * writes it. Keeping our form would have had it type a value his module
-     * states must never be typed. That is a rules conflict, not a storage
-     * question.
-     *
-     * It would also have made this code a permanent second writer into his
-     * master, which is a fresh instance of D-300 — two writers, no referee —
-     * still open and still unowned.
-     *
-     * ── WHAT THE READS ARE FOR NOW ───────────────────────────────────────
-     * History. `transport_vehicles` and `transport_drivers` still hold every
-     * row they held, and every reference into them is recorded in
-     * `fleet_reference_repoints`. The screens show what was there; they no
-     * longer claim to be where a vehicle comes from.
-     *
-     * The controllers, services, requests and models are deliberately NOT
-     * deleted, only unrouted — the same choice the frontend made for the
-     * placeholder screens in 2026-09-17. Removing files is a separate decision
-     * under TEAM-CONTRACTS §1a; unrouting is what actually ends the duplicate
-     * write path.
+     * The permission middleware stays in front, so the matrix is unchanged and
+     * the refusal is what everyone meets, owner and admin included.
      */
+    Route::middleware('transport.permission:'.TransportPermission::VEHICLE_CREATE)->group(function () {
+        Route::post('/vehicles',                     [TransportVehicleController::class, 'store']);
+        Route::post('/vehicles/{id}/documents',      [TransportVehicleController::class, 'storeDocument'])->whereNumber('id');
+        Route::post('/vehicles/{id}/documents/{documentId}/renew', [TransportVehicleController::class, 'renewDocument'])->whereNumber('id')->whereNumber('documentId');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::VEHICLE_UPDATE)->group(function () {
+        Route::put('/vehicles/{id}',          [TransportVehicleController::class, 'update'])->whereNumber('id');
+        Route::patch('/vehicles/{id}/status', [TransportVehicleController::class, 'transition'])->whereNumber('id');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::VEHICLE_DELETE)->group(function () {
+        Route::delete('/vehicles/{id}', [TransportVehicleController::class, 'destroy'])->whereNumber('id');
+    });
 
     /* ── Driver master (SNG-TRN-004) ──────────────────────────────────── */
     Route::middleware('transport.permission:'.TransportPermission::DRIVER_VIEW)->group(function () {
         Route::get('/drivers/status-counts', [TransportDriverController::class, 'statusCounts']);
         Route::get('/drivers',               [TransportDriverController::class, 'index']);
         Route::get('/drivers/{id}',          [TransportDriverController::class, 'show'])->whereNumber('id');
+    });
+
+    /* ── The driver writes, same refusal — except CREATE, which is HELD ──
+     *
+     * `POST /drivers` is deliberately still absent, and this is the only place
+     * the read-only ruling is not yet complete. **D-145**:
+     * `StoreTransportDriverRequest` is the ONLY thing in the codebase enforcing
+     * that a licence number is unique — Fleet has no check in `DriverService`,
+     * no request class, and its one unique index is
+     * `(company_id, source, source_id)`, which is one profile per person and
+     * says nothing about licences.
+     *
+     * So refusing driver creation here before Fleet has the guard would open a
+     * window in which NOTHING in the system checks. We are not discovering
+     * someone else's gap; our own ruling is what would create it. Held until
+     * P2 adds the guard or rules that he does not want it.
+     */
+    Route::middleware('transport.permission:'.TransportPermission::DRIVER_UPDATE)->group(function () {
+        Route::put('/drivers/{id}',          [TransportDriverController::class, 'update'])->whereNumber('id');
+        Route::patch('/drivers/{id}/status', [TransportDriverController::class, 'transition'])->whereNumber('id');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::DRIVER_CREATE)->group(function () {
+        Route::post('/drivers/{id}/documents',     [TransportDriverController::class, 'storeDocument'])->whereNumber('id');
+        Route::post('/drivers/{id}/documents/{documentId}/renew', [TransportDriverController::class, 'renewDocument'])->whereNumber('id')->whereNumber('documentId');
+    });
+
+    Route::middleware('transport.permission:'.TransportPermission::DRIVER_DELETE)->group(function () {
+        Route::delete('/drivers/{id}', [TransportDriverController::class, 'destroy'])->whereNumber('id');
     });
 
     /* ── Allocation (SNG-TRN-009) — PERM-004 ──────────────────────────
