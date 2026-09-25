@@ -268,8 +268,8 @@ class PretripGenerationTest extends TestCase
         $blockers = $this->pretrip->readiness($trip, self::TENANT_A)['blockers'];
 
         $this->assertCount(1, $blockers);
-        $this->assertStringContainsString('Driver documents valid', $blockers[0]);
-        $this->assertStringContainsString($driver->displayName(), $blockers[0]);
+        $this->assertStringContainsString('Driver documents valid', $blockers[0]['why']);
+        $this->assertStringContainsString($driver->displayName(), $blockers[0]['why']);
     }
 
     /* ══════════ Step 4 · BRW-052, critical vs non-critical ══════════ */

@@ -300,7 +300,8 @@ class PretripService
      *
      * @return array{
      *     status:string, ready:bool, checked:bool,
-     *     blockers:array<int,string>, warnings:array<int,string>,
+     *     blockers:array<int,array{code:string,why:string,owner:null}>,
+     *     warnings:array<int,array{code:string,why:string,owner:null}>,
      *     lapsed:array<int,array{key:string,label:string,was:string,now:string,detail:string|null}>,
      *     message:string|null
      * }
@@ -555,7 +556,7 @@ class PretripService
      * So each branch below names the failure AND the next action. UX §35's rule
      * is that a screen must never merely show Blocked.
      *
-     * @param  array<int,string>  $blockers
+     * @param  array<int,array{code:string,why:string,owner:null}>  $blockers
      * @param  array<int,string>  $incomplete
      */
     private function refusalMessage(string $status, array $blockers, array $incomplete): string
@@ -566,7 +567,7 @@ class PretripService
         }
 
         if ($blockers !== []) {
-            return 'Dispatch blocked — '.implode(' ', $blockers)
+            return 'Dispatch blocked — '.implode(' ', array_column($blockers, 'why'))
                 .' Resolve the failed checks, then re-run the checklist.';
         }
 
