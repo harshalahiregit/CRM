@@ -370,7 +370,11 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::post('/variable-earnings/{id}/approve',  [VariableEarningController::class, 'approve'])->whereNumber('id');
     Route::post('/variable-earnings/{id}/reject',   [VariableEarningController::class, 'reject'])->whereNumber('id');
     Route::delete('/variable-earnings/{id}',        [VariableEarningController::class, 'destroy'])->whereNumber('id');
-    Route::get('/employees/{employee}/attendance', [AttendanceController::class, 'employeeAttendance']);
+        // One employee's attendance calendar. An unprivileged account could read any
+    // colleague's dates, Late flags and check-in times by id; their OWN attendance
+    // has its own /hr/me/attendance routes and is unaffected.
+Route::get('/employees/{employee}/attendance', [AttendanceController::class, 'employeeAttendance'])
+        ->middleware('permission:hr_attendance,view_global');
 
     // Assets — read-only views onto the Inventory register. HRMS owns no asset data.
     //
@@ -448,11 +452,15 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::patch('/payroll/employees/{employeeId}/salary/{id}/status',   [EmployeeSalaryController::class, 'updateStatus'])->whereNumber('id');
 
     // Payroll → Payroll Processing (Phase 4). Monthly runs + frozen snapshots.
-    Route::get('/payroll/runs',                 [PayrollRunController::class, 'index']);
+        // Payroll runs are money. Gated like the rest of the module.
+Route::get('/payroll/runs',                 [PayrollRunController::class, 'index'])
+        ->middleware('permission:hr_payroll,view_global');
     Route::post('/payroll/runs',                [PayrollRunController::class, 'store']);
-    Route::get('/payroll/runs/{id}',            [PayrollRunController::class, 'show']);
+    Route::get('/payroll/runs/{id}',            [PayrollRunController::class, 'show'])
+        ->middleware('permission:hr_payroll,view_global');
     Route::post('/payroll/runs/{id}/process',   [PayrollRunController::class, 'process']);
-    Route::get('/payroll/runs/{id}/records',    [PayrollRunController::class, 'records']);
+    Route::get('/payroll/runs/{id}/records',    [PayrollRunController::class, 'records'])
+        ->middleware('permission:hr_payroll,view_global');
     Route::get('/payroll/records/{id}/lines',   [PayrollRunController::class, 'recordLines'])->whereNumber('id');
     Route::patch('/payroll/runs/{id}/status',   [PayrollRunController::class, 'updateStatus']);
 
@@ -481,9 +489,15 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::post('/payroll/records/{id}/payslip-visibility', [PayrollWorkflowController::class, 'setPayslipVisibility'])->whereNumber('id');
 
     // Payroll → Payslips (Phase 5). Generated from a completed run; PDF via dompdf.
-    Route::get('/payroll/payslips',                    [PayslipController::class, 'index']);
-    Route::get('/payroll/payslips/{id}',               [PayslipController::class, 'show']);
-    Route::get('/payroll/payslips/{id}/download',       [PayslipController::class, 'download']);
+        // Payslips and their PDF. The JSON and the download are gated together —
+    // protecting the list and leaving /download open is the classic version of
+    // this mistake.
+Route::get('/payroll/payslips',                    [PayslipController::class, 'index'])
+        ->middleware('permission:hr_payroll,view_global');
+    Route::get('/payroll/payslips/{id}',               [PayslipController::class, 'show'])
+        ->middleware('permission:hr_payroll,view_global');
+    Route::get('/payroll/payslips/{id}/download',       [PayslipController::class, 'download'])
+        ->middleware('permission:hr_payroll,view_global');
     Route::post('/payroll/runs/{id}/generate-payslips', [PayslipController::class, 'generate']);
     Route::get('/employees/{employeeId}/payslips',      [PayslipController::class, 'employeePayslips']);
 
@@ -608,7 +622,9 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     // Attendance
     Route::get('/attendance/stats',          [AttendanceController::class, 'stats']);
     Route::get('/attendance/export',         [AttendanceController::class, 'export']);
-    Route::get('/attendance',                [AttendanceController::class, 'index']);
+        // The whole workforce's attendance register.
+Route::get('/attendance',                [AttendanceController::class, 'index'])
+        ->middleware('permission:hr_attendance,view_global');
     Route::post('/attendance',               [AttendanceController::class, 'storeManual']);
     // ── Self service ────────────────────────────────────────────────────
     // Clocking YOURSELF in, from the CRM dashboard or the HR module. No
