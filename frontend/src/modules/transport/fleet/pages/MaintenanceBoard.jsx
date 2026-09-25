@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Wrench, ShieldAlert, CheckCircle2, ArrowRight } from 'lucide-react'
+import { Wrench, ShieldAlert, CheckCircle2, ArrowRight, ArrowLeft } from 'lucide-react'
 import { stosApi, STOS_ACCENT, JOB_STATUSES, fmtMoney, fmtWhen, isJobOpen } from '@/services/stosApi'
 import HealthChip from '../components/HealthChip'
 import MaintenanceJobCardForm from '../components/MaintenanceJobCardForm'
@@ -16,6 +16,17 @@ import MaintenanceJobCardForm from '../components/MaintenanceJobCardForm'
  * Closing a card happens here, and the result is honest about what happened:
  * a vehicle that could not be released says which hold stopped it.
  */
+
+/** Out of this board and back to Fleet — D-148, the same link the drivers board and the vehicle passport use. */
+function BackToFleet() {
+  return (
+    <Link to="/app/transport/fleet" className="inline-flex items-center gap-1.5 text-xs font-semibold mb-3"
+      style={{ color: 'var(--text-muted)' }}>
+      <ArrowLeft size={13} /> Back to fleet
+    </Link>
+  )
+}
+
 export default function MaintenanceBoard() {
   const [status, setStatus] = useState('')
   const [closing, setClosing] = useState(null)
@@ -36,6 +47,8 @@ export default function MaintenanceBoard() {
 
   return (
     <div className="max-w-5xl">
+      <BackToFleet />
+
       <header className="flex flex-wrap items-center gap-2 mb-4">
         <span className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
           style={{ background: `color-mix(in srgb, ${STOS_ACCENT} 14%, transparent)` }}>
