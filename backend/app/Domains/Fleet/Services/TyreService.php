@@ -147,11 +147,27 @@ class TyreService
             ->orderByDesc('id')->limit(100)->get();
 
         $fitted = $rows->whereIn('status', TyreFitment::ON_VEHICLE)->values();
+        $closed = $rows->whereNotIn('status', TyreFitment::ON_VEHICLE)->values();
+
+        // T-37 — a closed fitment whose casing is STILL on this vehicle is a
+        // change of position, not a tyre that came off. Rotation closes both
+        // fitments and reopens them, and before this split the panel showed
+        // those two closed rows as "2 off the vehicle" under "Removed casings":
+        // nothing had been removed, two tyres had swapped places, and the
+        // screen said the opposite. Found by rotating two tyres in the browser.
+        //
+        // Decided from the data, not by reading "Rotated to" out of a note: the
+        // casing identity is the fact, the note is only a description of it.
+        $stillOn = $fitted->map(fn (TyreFitment $t) => $this->casingKey($t))->flip();
+
+        [$moved, $gone] = $closed->partition(fn (TyreFitment $t) => $stillOn->has($this->casingKey($t)));
 
         return [
             'fitted'  => $fitted->map(fn (TyreFitment $t) => $this->present($t))->all(),
-            'history' => $rows->whereNotIn('status', TyreFitment::ON_VEHICLE)->values()
-                ->map(fn (TyreFitment $t) => $this->present($t))->all(),
+            // Casings that have left this vehicle — stock, retreader or scrap.
+            'history' => $gone->values()->map(fn (TyreFitment $t) => $this->present($t))->all(),
+            // Earlier positions of casings still fitted here: the rotation trail.
+            'moves'   => $moved->values()->map(fn (TyreFitment $t) => $this->present($t))->all(),
             'due_replacement' => $fitted->filter(fn (TyreFitment $t) => $t->isWornOut())->count(),
             'min_tread_mm'    => TyreFitment::MIN_TREAD_MM,
             'positions'       => TyreFitment::POSITIONS,
@@ -159,6 +175,18 @@ class TyreService
     }
 
     /* ── helpers ────────────────────────────────────────────────── */
+
+    /**
+     * One casing's identity across its fitments.
+     *
+     * The master id where there is one; the stamped serial for rows older
+     * than T-36, so a rotation recorded before the casing register existed
+     * still reads as a move rather than a removal.
+     */
+    private function casingKey(TyreFitment $t): string
+    {
+        return $t->tyre_master_id ? 'm:'.$t->tyre_master_id : 's:'.strtoupper((string) $t->tyre_id);
+    }
 
     private function present(TyreFitment $t): array
     {

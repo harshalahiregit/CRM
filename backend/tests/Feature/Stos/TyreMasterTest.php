@@ -247,6 +247,41 @@ class TyreMasterTest extends TestCase
         $this->assertSame(40000.0, $this->svc()->economics($master->id, self::COMPANY)['km_run']);
     }
 
+    public function test_a_rotation_is_not_shown_as_tyres_taken_off(): void
+    {
+        // Found by rotating two tyres in the browser: the passport said "2 off
+        // the vehicle" under "Removed casings". Nothing had been removed. The
+        // closed fitments are the positions the tyres USED to hold, and they
+        // belong in their own list.
+        $v = $this->vehicle();
+        $left  = $this->fit($v, 'CASING-MV-L', 'front_left', 10000);
+        $right = $this->fit($v, 'CASING-MV-R', 'front_right', 10000);
+
+        $this->svc()->rotate(self::COMPANY, $left->id, $right->id, 30000, 1);
+
+        $panel = app(TyreService::class)->forVehicle($v->id, self::COMPANY);
+
+        $this->assertCount(2, $panel['fitted']);
+        $this->assertCount(0, $panel['history'], 'a rotation must not read as a removal');
+        $this->assertCount(2, $panel['moves']);
+    }
+
+    public function test_a_casing_that_really_left_is_still_history(): void
+    {
+        // The split must not swallow a genuine removal.
+        $v = $this->vehicle();
+        $f = $this->fit($v, 'CASING-GONE', 'front_left', 10000);
+
+        app(TyreService::class)->remove($f->id, self::COMPANY, [
+            'status' => TyreFitment::REMOVED, 'odometer_at_removal' => 30000,
+        ], 1);
+
+        $panel = app(TyreService::class)->forVehicle($v->id, self::COMPANY);
+
+        $this->assertCount(1, $panel['history']);
+        $this->assertCount(0, $panel['moves']);
+    }
+
     public function test_tyres_on_different_assets_are_not_rotated(): void
     {
         $a = $this->vehicle(['registration_number' => 'MH12ROTA01']);
