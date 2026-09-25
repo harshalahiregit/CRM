@@ -5249,3 +5249,42 @@ Either the name may be a derived, never-persisted attribute on the profile — i
 tests want updating — or it may not, in which case D-135 moves to the boundaries and we accept that
 a future reader can reintroduce the blank. **Not decided here, and nothing of his was edited.**
 
+---
+
+## D-145 — Fleet accepts two drivers with the same licence number
+
+**Raised:** 2026-09-25, checking what our write tests protected before retiring them.
+**P2's master.** **Found because the guard was about to be deleted, not because it fired.**
+
+### Measured, both sides
+
+`StoreTransportDriverRequest` — the legacy master, now read-only — enforces uniqueness on
+`licence_normalized`, `driver_code` and `hr_employee_id`, tenant-scoped and counting soft-deletes.
+
+Fleet enforces **none** of the three:
+
+- no uniqueness check anywhere in `DriverService`
+- no request class for a driver at all
+- the only unique index on `driver_profiles` is `(company_id, source, source_id)` — one profile per
+  *person*, which is a different rule and does not constrain the licence
+- no Fleet test asserts a duplicate licence is rejected; a grep for it returns nothing
+
+**So two drivers in one company can be given the same licence number today.**
+
+### Why it surfaced now
+
+Ruling (b) retired the legacy driver CRUD, and our test
+`duplicate_licence_and_duplicate_employee_link_are_rejected` was on the list to retire with it.
+Checking each write test against a Fleet equivalent — six had one — found that this one does not.
+Retiring it would have removed the only statement in the codebase that a licence is unique.
+
+**A guard disappearing in a cleanup is worse than a guard failing**, because nothing goes red.
+
+### Not fixed here
+
+It is his master, his request layer and his index, and a unique index cannot go on until the
+existing rows are checked — the same shape as D-131. Our test stays **red and in place** until he
+answers: a red test naming a real missing guard is worth more than a green suite that has forgotten
+the rule.
+
+See `LIST-tests-proposed-for-retirement.md` for the six that do retire and what takes over each.
