@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Purchase;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Purchase\SaveGroupInductionRequest;
 use App\Models\Purchase\PurchaseVendor;
 use App\Models\Purchase\PurchaseWorker;
 use App\Models\Purchase\PurchaseWorkerMedical;
@@ -567,6 +568,19 @@ class PurchaseWorkforceAdminController extends Controller
         $data['recorded_by'] = $request->user()->id;
 
         return response()->json($this->service->saveInduction($worker, $data));
+    }
+
+    /** One group session saved against many workers; the trainer signs once. */
+    public function saveGroupInduction(SaveGroupInductionRequest $request)
+    {
+        $data = $request->validated();
+        $ids  = $data['worker_ids'];
+        unset($data['worker_ids']);
+        $data['recorded_by'] = $request->user()->id;
+
+        return response()->json($this->service->saveGroupInduction(
+            (int) $request->user()->tenant_id, null, $ids, $data
+        ));
     }
 
     /** The worker's badge — what the gate scans. */

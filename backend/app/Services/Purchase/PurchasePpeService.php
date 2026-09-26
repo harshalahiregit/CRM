@@ -52,14 +52,21 @@ class PurchasePpeService
         private StockService $stock,
         private ConfigService $config,
         private PpeInventoryService $catalogueSource,
+        private PurchaseVendorPpeItemService $vendorItems,
     ) {}
 
     /* ── Reads ──────────────────────────────────────────────────────── */
 
-    /** The PPE shelf — tenant-wide, because there is one central store. */
+    /**
+     * The PPE shelf — tenant-wide, because there is one central store.
+     *
+     * The shelf is shared; the "Issued" column is not. It counts PURCHASE
+     * hand-outs — borrowing the catalogue unqualified counted TPV's table, so
+     * every Purchase issue read as zero.
+     */
     public function catalogue(int $tenantId): Collection
     {
-        return $this->catalogueSource->catalogue($tenantId);
+        return $this->catalogueSource->catalogue($tenantId, PurchaseWorkerPpeIssue::class);
     }
 
     /**
@@ -96,9 +103,14 @@ class PurchasePpeService
         return PurchaseWorkerPpeIssue::query()
             ->where('tenant_id', $worker->tenant_id)
             ->where('purchase_worker_id', $worker->id)
-            ->with('product:id,name,sku')
+            ->with(['product:id,name,sku', 'vendorItem:id,name,category,size'])
             ->latest('issued_date')
-            ->get();
+            ->get()
+            // Where the kit came from — the central store or the vendor's own
+            // PPE list. Both are the worker's PPE; only the stock differs.
+            ->each(fn (PurchaseWorkerPpeIssue $i) => $i->setAttribute(
+                'source', $i->vendor_ppe_item_id ? 'vendor' : 'inventory'
+            ));
     }
 
     /** Items the worker currently holds — issued and not fully handed back. */
@@ -296,6 +308,14 @@ class PurchasePpeService
             throw new BusinessException('Quantity must be greater than zero.', 422);
         }
 
+        if (! empty($data['vendor_ppe_item_id'])) {
+            if (! empty($data['inventory_item_id'])) {
+                throw new BusinessException('Issue either an Inventory item or one of your own PPE items, not both.', 422);
+            }
+
+            return $this->issueVendorItem($worker, $data, $qty, $actor);
+        }
+
         $product = Product::forTenant($tenantId)->find($data['inventory_item_id'] ?? null)
             ?? throw new BusinessException('That PPE item does not exist in Inventory.', 404);
 
@@ -346,6 +366,41 @@ class PurchasePpeService
     }
 
     /**
+     * Issue from the vendor's OWN PPE list — the vendor's stock, not the company's.
+     *
+     * No Inventory movement: this stock never entered the ledger. The item must
+     * belong to the worker's own vendor, so one vendor's kit can never be handed
+     * to another vendor's worker, whoever is issuing.
+     */
+    private function issueVendorItem(PurchaseWorker $worker, array $data, float $qty, ?User $actor): PurchaseWorkerPpeIssue
+    {
+        $tenantId = (int) $worker->tenant_id;
+
+        return DB::transaction(function () use ($worker, $data, $qty, $actor, $tenantId) {
+            $item = $this->vendorItems->draw((int) $worker->purchase_vendor_id, $tenantId, (int) $data['vendor_ppe_item_id'], $qty);
+
+            $issue = PurchaseWorkerPpeIssue::create([
+                'tenant_id' => $tenantId,
+                'purchase_worker_id' => $worker->id,
+                'inventory_item_id' => null,
+                'vendor_ppe_item_id' => $item->id,
+                'item' => $item->name,
+                'qty' => $qty,
+                'size' => $data['size'] ?? $item->size,
+                'issued_date' => $data['issued_date'] ?? now()->toDateString(),
+                'issued_by' => $actor?->id,
+                'notes' => $data['notes'] ?? null,
+                'status' => 'issued',
+                'returned_qty' => 0,
+            ]);
+
+            $this->syncWorkerPpeState($worker);
+
+            return $issue->fresh(['product', 'vendorItem']);
+        });
+    }
+
+    /**
      * Hand back, or write off as lost/damaged.
      *
      * Kit goes back where it came from: the outward movement written at issue time
@@ -376,7 +431,9 @@ class PurchasePpeService
         // Only a genuine return needs a site — resolving one for a write-off would
         // fail a tenant with no warehouse, for a call that touches no stock.
         $movementType = self::RETURN_CONDITIONS[$condition];
-        $warehouseId = $movementType
+        // Kit from the vendor's own list goes back on the vendor's shelf, not
+        // into a warehouse — so it needs no site at all.
+        $warehouseId = $movementType && $issue->inventory_item_id
             ? $this->resolveWarehouseId((int) $issue->tenant_id, $this->issuedFromWarehouseId($issue))
             : null;
 
@@ -392,6 +449,10 @@ class PurchasePpeService
                     'reference_type' => 'purchase_ppe_issue',
                     'reference_id' => $issue->id,
                 ], (int) $issue->tenant_id, $actor?->id);
+            }
+
+            if ($movementType && $issue->vendor_ppe_item_id) {
+                $this->vendorItems->restock((int) $issue->vendor_ppe_item_id, $qty);
             }
 
             $returned = round((float) $issue->returned_qty + $qty, 3);

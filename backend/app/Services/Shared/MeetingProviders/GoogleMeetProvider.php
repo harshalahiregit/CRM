@@ -42,7 +42,7 @@ class GoogleMeetProvider implements MeetingProviderInterface
         $event = [
             'summary' => $data['title'],
             'start'   => ['dateTime' => $start->format(\DateTime::RFC3339), 'timeZone' => 'UTC'],
-            'end'     => ['end'      => $end->format(\DateTime::RFC3339),   'timeZone' => 'UTC'],
+            'end'     => ['dateTime' => $end->format(\DateTime::RFC3339),   'timeZone' => 'UTC'],
             'conferenceData' => [
                 'createRequest' => [
                     'requestId'             => uniqid('crm-', true),

@@ -7,24 +7,31 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 
 /**
- * The join link is earned, not given.
+ * What the join link costs, and what it never should have.
  *
- * A meeting invitation used to carry the Google Meet / Zoom link in the e-mail,
- * in the calendar attachment and in every payload the portal read. So the CRM
- * was a thing people walked past on their way to the call: nobody opened the
- * agenda, nobody was recorded as attending, and the register was rebuilt
- * afterwards from memory by whoever could still remember.
+ * The invitation used to carry the Google Meet / Zoom link in the e-mail, the
+ * calendar attachment and every payload the portal read, so the CRM was a thing
+ * people walked past on their way to the call. The answer then was to withhold
+ * the link until somebody marked attendance.
  *
- * Now the link is withheld until the person marks attendance. The invitation
- * points at the meeting in the CRM, the meeting page shows the agenda, and the
- * link appears the moment they press Mark Attendance — which is the same moment
- * the register gains a row saying they did, at that time, from that device.
+ * ── That price is no longer charged, and here is why ────────────────────
+ * The link is now SENT — MeetingLinkAnnouncer e-mails the real room URL, with a
+ * calendar attachment, to every participant the moment the organiser pastes it.
+ * Once that is true, withholding the same URL from the person's own meeting
+ * page protects nothing: it is already in their inbox. All it achieves is that
+ * the CRM is the slowest way to reach a link everybody already has, which is a
+ * worse version of the problem the gate was built for. So a REAL room link is
+ * in the payload for anyone who can see the meeting.
  *
- * ── Withheld on the server, not hidden in the page ──────────────────────
- * A `display:none` on a link that is sitting in the JSON is not a gate; it is a
- * gate-shaped picture of one. So `meeting_link` is absent from the payload
- * entirely until it has been earned. There is nothing in the response to read
- * out of the network tab, because there is nothing there.
+ * ── The rule that IS load-bearing ───────────────────────────────────────
+ * An instant-start URL — meet.google.com/new and its Zoom and Teams twins — is
+ * not a room. It opens a different, empty meeting for every person who clicks
+ * it. That one is still held by the host alone, and everyone else is told the
+ * room has not been shared yet (`link_pending`) rather than handed a meeting of
+ * their own. Withholding it is a kindness; withholding a real room was a toll.
+ *
+ * Marking attendance still works and is still offered. It is now what it always
+ * should have been: a record, not a turnstile.
  *
  * ── What this cannot claim ──────────────────────────────────────────────
  * Pressing a button in the CRM is not proof of sitting through a call held on
@@ -113,16 +120,55 @@ class MeetingAttendanceGate
                 'has_meeting_link' => (bool) $meeting->meeting_link,
                 'attendance_marked' => false,
                 'can_mark_attendance' => false,
+                'link_pending' => false,
+                // No link yet: the host can still paste one. Ended: nothing to set.
+                'can_set_link' => ! $meeting->meeting_link && $this->hosts($meeting, $viewer),
             ];
         }
 
         $row = $this->recorder->rosterRowFor($meeting, $viewer);
         $marked = $row ? (bool) $row->attended : false;
+        $hosts = $this->hosts($meeting, $viewer);
+
+        // An instant-start link (meet.google.com/new) is not a room: each
+        // person who opens it lands in a meeting of their own. Only the host
+        // may hold it — to start the call and paste the real room back.
+        // Everyone else waits for that, and is told so.
+        if (OnlineMeetingService::isInstant($meeting->meeting_link) && ! $hosts) {
+            return [
+                'meeting_link' => null,
+                'has_meeting_link' => false,
+                'link_pending' => true,
+                'can_set_link' => false,
+                'attendance_marked' => $marked,
+                'can_mark_attendance' => ! $marked,
+            ];
+        }
 
         return [
-            // Earned by marking, or held by whoever built it.
-            'meeting_link' => ($marked || $this->hosts($meeting, $viewer)) ? $meeting->meeting_link : null,
+            /*
+             * A REAL room is given to everyone who can see the meeting.
+             *
+             * This used to be ($marked || $hosts). That made sense while the
+             * link existed nowhere else — marking was the only way to obtain it,
+             * so it was a price worth charging. It is not the case any more:
+             * the moment the organiser pastes the room, MeetingLinkAnnouncer
+             * e-mails that exact URL to every participant, with a calendar
+             * attachment carrying it. Keeping the lock here would withhold from
+             * a person's CRM page a link already sitting in their inbox — which
+             * does not protect the register, it just makes the CRM the slower
+             * way to do the same thing.
+             *
+             * The instant-link rule above is untouched, and is the one that was
+             * ever load-bearing: meet.google.com/new is not a room, and handing
+             * it out is a real harm rather than a lost data point.
+             */
+            'meeting_link' => $meeting->meeting_link,
             'has_meeting_link' => true,
+            'link_pending' => false,
+            // Tells the host to start the call and paste the real room link.
+            'link_is_instant' => $hosts && OnlineMeetingService::isInstant($meeting->meeting_link),
+            'can_set_link' => $hosts,
             'attendance_marked' => $marked,
             // Still offered to the organiser: they attend their own meetings,
             // and a register that cannot record the person who called the

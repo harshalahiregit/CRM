@@ -198,10 +198,23 @@ export const purchasePortalApi = {
     summary:   ()          => api.get('/portal/purchase/ppe/summary').then(r => r.data),
     // Private file: fetched as a blob so the bearer token is sent.
     imageBlob: (productId) => api.get(`/portal/purchase/ppe/item/${productId}/image`, { responseType: 'blob' }).then(r => URL.createObjectURL(r.data)),
-    forWorker:  (workerId)        => api.get(`/portal/purchase/workers/${workerId}/ppe`).then(r => r.data),
+    // The server answers {issues, compliance} — the admin route's contract, which
+    // the shared worker wizard reads. This keeps the bare list for callers here.
+    forWorker:  (workerId)        => api.get(`/portal/purchase/workers/${workerId}/ppe`).then(r => r.data?.issues ?? r.data ?? []),
     compliance: (workerId)        => api.get(`/portal/purchase/workers/${workerId}/ppe/compliance`).then(r => r.data),
     issue:      (workerId, data)  => api.post(`/portal/purchase/workers/${workerId}/ppe/issue`, data).then(r => r.data),
     return:     (issueId, data)   => api.post(`/portal/purchase/ppe/issues/${issueId}/return`, data).then(r => r.data),
+    // Same name as portalApi / tpvApi, so the shared WorkerPpePanel works here too.
+    returnIssue: (issueId, data)  => api.post(`/portal/purchase/ppe/issues/${issueId}/return`, data).then(r => r.data),
+    // The vendor's OWN PPE list — its stock, never the company's Inventory.
+    // Parity with portalApi.ppe.myItems.
+    myItems: {
+      list:      ()             => api.get('/portal/purchase/ppe/my-items').then(r => r.data),
+      create:    (fd)           => upload('/portal/purchase/ppe/my-items', fd),
+      update:    (id, fd)       => upload(`/portal/purchase/ppe/my-items/${id}`, fd),
+      setActive: (id, isActive) => api.patch(`/portal/purchase/ppe/my-items/${id}/status`, { is_active: isActive }).then(r => r.data),
+      imageBlob: (id)           => api.get(`/portal/purchase/ppe/my-items/${id}/image`, { responseType: 'blob' }).then(r => URL.createObjectURL(r.data)),
+    },
   },
 
   /**
@@ -271,6 +284,8 @@ export const purchasePortalApi = {
     doctorOptions: () => api.get('/portal/purchase/medical/doctor-options').then(r => r.data?.data ?? r.data),
     saveTraining:  (id, data)    => api.post(`/portal/purchase/workers/${id}/training`, data).then(r => r.data),
     saveInduction: (id, data)    => api.post(`/portal/purchase/workers/${id}/induction`, data).then(r => r.data),
+    // Group session over the vendor's own workers → { saved[], skipped[] }
+    bulkInduction: (data)        => api.post('/portal/purchase/workers/bulk-induction', data).then(r => r.data),
     document:      (id, fd)      => api.post(`/portal/purchase/workers/${id}/documents`, fd).then(r => r.data),
     badge:         (id)          => api.get(`/portal/purchase/workers/${id}/badge`).then(r => r.data),
 

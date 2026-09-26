@@ -23,7 +23,8 @@ class TpvContact extends Model
     protected $fillable = [
         'tenant_id', 'vendor_id', 'user_id', 'created_by', 'updated_by',
         'first_name', 'last_name', 'designation', 'department',
-        'email', 'mobile', 'alternate_mobile',
+        'email', 'phone', 'mobile', 'alternate_mobile',
+        'address', 'city', 'state', 'country', 'pincode', 'notes',
         'is_primary', 'status',
     ];
 

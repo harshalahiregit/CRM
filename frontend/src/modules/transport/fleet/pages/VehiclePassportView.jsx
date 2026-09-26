@@ -4,7 +4,7 @@ import { useParams, Link, useLocation } from 'react-router-dom'
 import {
   Truck, ArrowLeft, Fuel, Wrench, Receipt, ShieldCheck, Activity, Zap, Plus, FileText, AlertTriangle, Droplets, Disc3, UserRound, ShieldAlert,
 } from 'lucide-react'
-import { stosApi, STOS_ACCENT, VEHICLE_TYPE_LABELS, fmtMoney, fmtWhen, vehicleStatusLabel } from '@/services/stosApi'
+import { stosApi, STOS_ACCENT, VEHICLE_TYPE_LABELS, fmtMoney, fmtWhen, vehicleStatusLabel, vehicleOwnershipLabel } from '@/services/stosApi'
 import HealthChip from '../components/HealthChip'
 import ExceptionPanel from '../components/ExceptionPanel'
 import LiveTelemetryGauge from '../components/LiveTelemetryGauge'
@@ -93,7 +93,7 @@ export default function VehiclePassportView() {
               <h1 className="text-lg font-bold" style={{ color: 'var(--text-h)' }}>{vehicle.registration_number}</h1>
               <HealthChip tone={health.tone} />
               <Tag>{VEHICLE_TYPE_LABELS[vehicle.vehicle_type] || vehicle.vehicle_type}</Tag>
-              <Tag capitalize>{String(vehicle.ownership_type).replace('_', ' ')}</Tag>
+              <Tag>{vehicleOwnershipLabel(vehicle.ownership_type)}</Tag>
               <Tag>{vehicleStatusLabel(vehicle.status)}</Tag>
             </div>
             <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>{health.headline}</p>
@@ -149,7 +149,7 @@ export default function VehiclePassportView() {
               <Fact label="Chassis" value={vehicle.chassis_number} />
               <Fact label="Engine" value={vehicle.engine_number} />
               <Fact label="GPS device" value={vehicle.gps_device_id} />
-              <Fact label="Ownership" value={vehicle.ownership_type} />
+              <Fact label="Ownership" value={vehicleOwnershipLabel(vehicle.ownership_type)} />
               {/* T-01 — came over with the D-62 union and had nowhere to show. */}
               <Fact label="Fleet no." value={vehicle.fleet_number} />
               <Fact label="Make / model"

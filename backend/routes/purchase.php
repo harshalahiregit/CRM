@@ -314,6 +314,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     Route::put('/ppe/requirements/{requirement}',     [PurchasePpeRequirementController::class, 'update']);
     Route::delete('/ppe/requirements/{requirement}',  [PurchasePpeRequirementController::class, 'destroy']);
     Route::get('/ppe/compliance/workers/{worker}',    [PurchasePpeRequirementController::class, 'worker']);
+    // One vendor's OWN PPE list (its stock, not Inventory) — read-only for admin,
+    // shown in the vendor workspace. Parity with /tpv/ppe/vendors/{vendor}/items.
+    Route::get('/ppe/vendors/{purchaseVendor}/items', [\App\Http\Controllers\Api\Purchase\PurchaseVendorPpeItemController::class, 'index'])->whereNumber('purchaseVendor');
+    Route::get('/ppe/vendors/{purchaseVendor}/items/{item}/image', [\App\Http\Controllers\Api\Purchase\PurchaseVendorPpeItemController::class, 'image'])->whereNumber('purchaseVendor')->whereNumber('item');
 
     Route::post('/workforce/workers/upload',          [PurchaseWorkforceAdminController::class, 'uploadWorkers']);
     Route::get('/workforce/workers/stats',            [PurchaseWorkforceAdminController::class, 'stats']);
@@ -334,6 +338,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     // a training endpoint an admin-registered worker could never be badged.
     Route::post('/workforce/workers/{worker}/training',   [PurchaseWorkforceAdminController::class, 'saveTraining']);
     Route::post('/workforce/workers/{worker}/induction',  [PurchaseWorkforceAdminController::class, 'saveInduction']);
+    // Group session — many workers, one trainer signature.
+    Route::post('/workforce/workers/bulk-induction',      [PurchaseWorkforceAdminController::class, 'saveGroupInduction']);
     // Vendor detail Medical / Training tabs. Vendor-scoped (?vendor_id=) and
     // strict about it — declared before the {worker} wildcard above would ever
     // be consulted, since these are static segments.
@@ -602,10 +608,14 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('purchase')->gro
     // The online meeting link. Purchase meetings are their own records, so they
     // mint and read their link here rather than through the shared engine.
     Route::post('/kickoff/{kickoff}/generate-link', [PurchaseKickoffController::class, 'generateLink'])->whereNumber('kickoff');
+    Route::put('/kickoff/{kickoff}/link', [PurchaseKickoffController::class, 'updateLink'])->whereNumber('kickoff');
     Route::get('/kickoff/{kickoff}/link',          [PurchaseKickoffController::class, 'link'])->whereNumber('kickoff');
-    // Marking attendance is what releases the join link to a staff attendee
-    // who did not organise the meeting. The organiser and an admin already
-    // hold it — see MeetingAttendanceGate.
+    // Send the room link to everyone again — the twin of the shared engine's.
+    Route::post('/kickoff/{kickoff}/link/announce', [PurchaseKickoffController::class, 'announceLink'])->whereNumber('kickoff');
+    // Attendance is recorded for its own sake now: a REAL room link is given to
+    // everyone who can see the meeting, so this is no longer the price of it.
+    // Only an instant-start link is still held by the host — see
+    // MeetingAttendanceGate.
     Route::post('/kickoff/{kickoff}/attendance',   [PurchaseKickoffController::class, 'markAttendance'])->whereNumber('kickoff');
     // The organiser's verdict on who actually attended — the three slabs, kept
     // BESIDE each person's own attendance mark rather than over it. See

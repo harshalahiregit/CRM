@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { useNavigate, useSearchParams, useParams } from 'react-router-dom'
+import { useNavigate, useSearchParams, useParams, useLocation } from 'react-router-dom'
 import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, Plus, Trash2,
   AlertTriangle, ChevronRight, Laptop, Building2, CheckCircle2, Send, Download,
@@ -180,6 +180,10 @@ function ErrBanner({ msg }) {
  */
 export default function KickoffMeetingCreate() {
   const navigate = useNavigate()
+  // Set by a vendor page (TPV/Purchase onboarding). Handed on to the meeting
+  // this form creates, so that page can offer the way back.
+  const locationState = useLocation().state
+  const cameFrom = locationState?.from ? locationState : null
   const { user } = useAuth()
   const vendorApi = useVendorModule().api
   // The start instant as STORED, so editing an old meeting (adding its
@@ -1011,7 +1015,7 @@ export default function KickoffMeetingCreate() {
         }
       }
 
-      navigate(newId ? meetingPaths().detail(newId) : meetingPaths().list)
+      navigate(newId ? meetingPaths().detail(newId) : meetingPaths().list, cameFrom ? { state: cameFrom } : undefined)
     } catch (e) {
       setErr(e?.response?.data?.message || 'Could not save the meeting.')
       setSaving(false)
@@ -1027,7 +1031,7 @@ export default function KickoffMeetingCreate() {
       {/* ── Page Header ──────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 22, flexWrap: 'wrap', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-          <button onClick={() => navigate(meetingPaths().list)}
+          <button onClick={() => navigate(cameFrom ? cameFrom.from : meetingPaths().list)}
             style={{ width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)', marginTop: 3, flexShrink: 0 }}>
             <ArrowLeft size={16} />
           </button>

@@ -380,6 +380,9 @@ export const purchaseApi = {
     // mint and read it on their own route rather than the shared engine's.
     generateLink: (id, platform = null) => api.post(`/purchase/kickoff/${id}/generate-link`, { platform }).then(r => r.data),
     getLink:      (id) => api.get(`/purchase/kickoff/${id}/link`).then(r => r.data),
+    setLink:      (id, link) => api.put(`/purchase/kickoff/${id}/link`, { link }).then(r => r.data),
+    // Send the room link to everybody again — the twin of the shared engine's.
+    announceLink: (id) => api.post(`/purchase/kickoff/${id}/link/announce`).then(r => r.data),
     // Mark MYSELF present, which is what releases the joining link to a staff
     // attendee who did not organise the meeting. Distinct from markAttendance
     // (`attendance`), which is the organiser ticking other people's rows afterwards —
@@ -551,6 +554,10 @@ export const purchaseApi = {
     updateRequirement: (id, data)  => api.put(`/purchase/ppe/requirements/${id}`, data).then(r => r.data),
     deleteRequirement: (id)        => api.delete(`/purchase/ppe/requirements/${id}`).then(r => r.data),
     workerCompliance:  (workerId)  => api.get(`/purchase/ppe/compliance/workers/${workerId}`).then(r => r.data),
+    // One vendor's OWN PPE list (its stock, not Inventory) — read-only here;
+    // the vendor keeps it from its portal. Parity with tpvApi.ppe.vendorItems.
+    vendorItems:     (vendorId)         => api.get(`/purchase/ppe/vendors/${vendorId}/items`).then(r => r.data),
+    vendorItemImage: (vendorId, itemId) => api.get(`/purchase/ppe/vendors/${vendorId}/items/${itemId}/image`, { responseType: 'blob' }).then(r => URL.createObjectURL(r.data)),
   },
 
   workforce: {
@@ -603,6 +610,8 @@ export const purchaseApi = {
     // clears the step and so can never be badged.
     saveTraining:  (id, data)  => api.post(`/purchase/workforce/workers/${id}/training`, data).then(r => r.data),
     saveInduction: (id, data)  => api.post(`/purchase/workforce/workers/${id}/induction`, data).then(r => r.data),
+    // Group session: { worker_ids[], ...session, signature_data } → { saved[], skipped[] }
+    bulkInduction: (data)      => api.post('/purchase/workforce/workers/bulk-induction', data).then(r => r.data),
     badge:         (id)        => api.get(`/purchase/workforce/workers/${id}/badge`).then(r => r.data),
     // PPE from the admin side — the catalogue of kit, and issuing it at the gate.
     // Both existed in the service but were reachable only from the vendor portal.

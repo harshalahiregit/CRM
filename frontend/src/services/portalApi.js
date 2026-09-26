@@ -188,6 +188,8 @@ export const portalApi = {
     // module server-side — there is no parameter here to point elsewhere.
     doctorOptions: () => api.get('/portal/medical/doctor-options').then(r => r.data?.data ?? r.data),
     saveInduction: (id, data)  => api.post(`/portal/workers/${id}/induction`, data).then(r => r.data),
+    // Group session over the vendor's own workers → { saved[], skipped[] }
+    bulkInduction: (data)      => api.post('/portal/workers/bulk-induction', data).then(r => r.data),
     // The typed training catalogue. Multipart when a certificate is attached —
     // axios must be left to set its own boundary, hence the undefined header.
     saveTraining:  (id, data)  => api.post(`/portal/workers/${id}/training`, data,
@@ -277,6 +279,16 @@ export const portalApi = {
     workerCompliance: (workerId)  => api.get(`/portal/ppe/compliance/workers/${workerId}`).then(r => r.data),
     // Private file: fetched as a blob so the bearer token is sent.
     imageBlob:   (productId)      => api.get(`/portal/ppe/item/${productId}/image`, { responseType: 'blob' }).then(r => URL.createObjectURL(r.data)),
+    // The vendor's OWN PPE list — its stock, never the company's Inventory.
+    // Issue one with issue(workerId, { vendor_ppe_item_id, qty }). Writes are
+    // FormData so a photo can ride along; update is POST for the same reason.
+    myItems: {
+      list:      ()             => api.get('/portal/ppe/my-items').then(r => r.data),
+      create:    (fd)           => upload('/portal/ppe/my-items', fd),
+      update:    (id, fd)       => upload(`/portal/ppe/my-items/${id}`, fd),
+      setActive: (id, isActive) => api.patch(`/portal/ppe/my-items/${id}/status`, { is_active: isActive }).then(r => r.data),
+      imageBlob: (id)           => api.get(`/portal/ppe/my-items/${id}/image`, { responseType: 'blob' }).then(r => URL.createObjectURL(r.data)),
+    },
   },
 
   // §32 "View compliance" — the vendor's own compliance register (read-only).

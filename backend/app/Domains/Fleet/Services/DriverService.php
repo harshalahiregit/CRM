@@ -3,6 +3,7 @@
 namespace App\Domains\Fleet\Services;
 
 use App\Domains\Fleet\Contracts\DriverDirectory;
+use App\Domains\Fleet\Integration\TripCommitmentReader;
 use App\Domains\Fleet\Models\DriverProfile;
 use App\Domains\Fleet\Models\Vehicle;
 use App\Exceptions\BusinessException;
@@ -26,8 +27,10 @@ class DriverService
     /** How far ahead a licence counts as expiring — same window as vehicles. */
     public const LICENCE_WARNING_DAYS = 30;
 
-    public function __construct(private DriverDirectory $directory)
-    {
+    public function __construct(
+        private DriverDirectory $directory,
+        private TripCommitmentReader $trips,
+    ) {
     }
 
     /** Everyone the directory offers, each with their STOS overlay attached. */
@@ -161,6 +164,16 @@ class DriverService
             ];
         }
 
+        if ($licence === 'not_yet_valid') {
+            // D-151(i) — a real licence, just not in force yet. It clears itself
+            // on its start date, so this names when rather than who.
+            $blockers[] = [
+                'code'  => 'driver_license_not_yet_valid',
+                'why'   => $row['licence']['message'] ?? 'Licence has not taken effect yet.',
+                'owner' => 'Fleet compliance desk',
+            ];
+        }
+
         // T-41 — an EXPIRED medical blocks. A driver whose certificate has
         // run out is a positive statement that they are not currently
         // certified fit, and that is the same kind of fact as a lapsed licence.
@@ -254,6 +267,9 @@ class DriverService
             throw new BusinessException('That person is not in the directory for this workspace.', 404);
         }
 
+        $this->refuseADuplicateLicence($companyId, $source, $sourceId, $data['licence_number'] ?? null);
+        $this->refuseToStandDownADriverOnATrip($companyId, $source, $sourceId, $data['status'] ?? null);
+
         $profile = DriverProfile::updateOrCreate(
             ['company_id' => $companyId, 'source' => $source, 'source_id' => $sourceId],
             [
@@ -278,6 +294,103 @@ class DriverService
         ];
     }
 
+    /**
+     * D-146, the driver half — a person on a live trip is in a cab.
+     *
+     * Fleet has no driver delete, so the equivalent of the legacy refusal is
+     * the status change that takes somebody out of service: SUSPENDED,
+     * ON_LEAVE or INACTIVE while a trip is holding them. Allowing it produces
+     * a driver who is simultaneously "no longer works here" and named on a
+     * running trip, and every roster and eligibility screen then disagrees
+     * with the dispatch board.
+     *
+     * AVAILABLE is not guarded: it is the value every save carries by default
+     * and it takes nobody off anything.
+     *
+     * The commitment is Ops' record, read through the one seam. Fleet's own
+     * ON_TRIP status is not used as the test — it is written by the dispatch
+     * gateway, which is explicitly allowed to fail without stopping a
+     * departure, so a truck can be rolling with the status not yet flipped.
+     * Asking the assignment asks the thing that is actually authoritative.
+     */
+    private function refuseToStandDownADriverOnATrip(int $companyId, string $source, int $sourceId, ?string $status): void
+    {
+        $standDown = [DriverProfile::SUSPENDED, DriverProfile::ON_LEAVE, DriverProfile::INACTIVE];
+
+        if ($status === null || ! in_array($status, $standDown, true)) {
+            return;
+        }
+
+        $profile = DriverProfile::forCompany($companyId)
+            ->where('source', $source)->where('source_id', $sourceId)
+            ->first(['id']);
+
+        if (! $profile) {
+            // No profile yet means no trip can be holding them: an assignment
+            // points at a profile id.
+            return;
+        }
+
+        $commitment = $this->trips->forDriver((int) $profile->id, $companyId);
+
+        if ($commitment === null) {
+            return;
+        }
+
+        throw new BusinessException(
+            'This driver is on '.$this->trips->describe($commitment).'. '
+            .'Release them from the trip first — a driver cannot be taken off duty '
+            .'while a trip is relying on them.'
+        );
+    }
+
+    /**
+     * D-145 — a licence number identifies one person, so say so in words.
+     *
+     * The unique index added in 2027_01_16 is what actually holds the rule,
+     * and it holds it against every writer. This exists so the person typing
+     * the licence reads a sentence naming who already has it, instead of a
+     * driver-level integrity error naming a column. The index catches a race
+     * between two saves; this catches the everyday case, which is somebody
+     * being entered twice — once from the employee directory and once as a
+     * contractor.
+     *
+     * Deliberately scoped to the workspace, matching the index: two companies
+     * on this installation may legitimately both employ the same person.
+     */
+    private function refuseADuplicateLicence(int $companyId, string $source, int $sourceId, ?string $licence): void
+    {
+        if (blank($licence)) {
+            return;
+        }
+
+        $normalised = DriverProfile::normalizeLicence((string) $licence);
+
+        if ($normalised === '') {
+            return;
+        }
+
+        $holder = DriverProfile::forCompany($companyId)
+            ->where('licence_normalized', $normalised)
+            ->where(fn ($q) => $q->where('source', '<>', $source)->orWhere('source_id', '<>', $sourceId))
+            ->first();
+
+        if (! $holder) {
+            return;
+        }
+
+        // Name the person if the directory still knows them. It may not: the
+        // profile outlives a directory entry, and "held by hr:41" is still a
+        // usable answer — it is the reference the other screen shows.
+        $who = $this->directory->find($companyId, $holder->source, (int) $holder->source_id);
+        $name = $who['name'] ?? ($holder->source.':'.$holder->source_id);
+
+        throw new BusinessException(
+            'Licence '.$licence.' is already recorded against '.$name.'. '
+            .'A licence belongs to one driver — if this is the same person entered twice, '
+            .'clear the licence from the other profile first.'
+        );
+    }
 
     /**
      * The driver who regularly takes this vehicle, resolved through the
@@ -395,6 +508,29 @@ class DriverService
      */
     public function licenceVerdict(?DriverProfile $profile): array
     {
+        // D-151(i) — a licence whose start date is in the future has not taken
+        // effect. The expiry check below would call it "valid" (it has not
+        // expired), and a driver would be dispatchable on a licence that has
+        // not begun. The old Transport check refused this; so does this. Checked
+        // first because "not started" and "expired" cannot both be true, and if
+        // the data contradicts itself, not-yet-begun is the safer verdict.
+        $validFrom = $profile?->licence_valid_from;
+
+        if ($validFrom) {
+            $starts = Carbon::parse($validFrom)->startOfDay();
+
+            if ($starts->isAfter(now()->startOfDay())) {
+                $daysAway = (int) now()->startOfDay()->diffInDays($starts, false);
+
+                return [
+                    'state'     => 'not_yet_valid',
+                    'days_left' => null,
+                    'message'   => 'Licence does not take effect until '.$starts->format('j M Y')
+                        .' ('.$daysAway.' day'.($daysAway === 1 ? '' : 's').' away) — this driver cannot be dispatched yet.',
+                ];
+            }
+        }
+
         return $this->dateVerdict(
             $profile?->licence_expiry,
             'Licence',

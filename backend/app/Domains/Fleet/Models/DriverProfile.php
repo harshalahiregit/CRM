@@ -58,6 +58,10 @@ class DriverProfile extends Model
         'licence_number', 'licence_class', 'licence_expiry',
         'medical_expiry',
         'status', 'note',
+        // `licence_normalized` is derived in the boot hook below and is
+        // deliberately absent here: a caller setting it by hand could put a
+        // value under the unique index that no licence number normalises to,
+        // which is the one way to defeat D-145's guard from inside the model.
     ];
 
     protected $casts = [
@@ -67,6 +71,44 @@ class DriverProfile extends Model
         'licence_expiry' => 'date',
         'medical_expiry' => 'date',
     ];
+
+    /**
+     * D-145 — the normalised licence is derived, never supplied.
+     *
+     * Written on every save so the unique index added in 2027_01_16 always
+     * sees the same shape, whichever path wrote the row: the service, a
+     * seeder, a repair script or tinker. Put in the model rather than the
+     * service for exactly that reason — the guard has to hold for the writer
+     * who did not read the service.
+     *
+     * An empty or whitespace-only licence number normalises to NULL, not to
+     * '', so blanks do not collide with each other under the index. "Not
+     * recorded yet" is a normal state for a driver profile.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (self $profile) {
+            $normalised = filled($profile->licence_number)
+                ? self::normalizeLicence((string) $profile->licence_number)
+                : '';
+
+            $profile->licence_normalized = $normalised === '' ? null : $normalised;
+        });
+    }
+
+    /**
+     * Indian driving licences are written many ways — "RJ14 20110012345",
+     * "RJ-14-2011-0012345" and "rj1420110012345" are one licence.
+     *
+     * Same rule as the legacy register used, so a licence that was a duplicate
+     * before the move is still a duplicate after it. Deliberately not a format
+     * validator: licence formats vary by issuing state and by decade, and a
+     * regex strict enough to be useful would reject real drivers.
+     */
+    public static function normalizeLicence(string $licence): string
+    {
+        return preg_replace('/[^A-Z0-9]/', '', strtoupper(trim($licence))) ?? '';
+    }
 
     /** The vehicle this person regularly drives, if any. */
     public function assignedVehicle()

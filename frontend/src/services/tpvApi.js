@@ -274,6 +274,8 @@ export const tpvApi = {
     saveMedical:     (id, data) => api.post(`/tpv/workers/${id}/medical`, data, data instanceof FormData ? { headers: { 'Content-Type': undefined } } : undefined).then(r => r.data),
     markMedical:     (id, data) => api.post(`/tpv/workers/${id}/mark-medical`, data).then(r => r.data),
     saveInduction:   (id, data) => api.post(`/tpv/workers/${id}/induction`, data).then(r => r.data),
+    // Group session: { worker_ids[], ...session, signature_data } → { saved[], skipped[] }
+    bulkInduction:   (data)     => api.post('/tpv/workers/bulk-induction', data).then(r => r.data),
     markInduction:   (id, data) => api.post(`/tpv/workers/${id}/mark-induction`, data).then(r => r.data),
     // Issuing/returning PPE lives on `ppe` below (it moves Inventory stock).
     // This only records a deliberate skip of the step.
@@ -523,6 +525,10 @@ export const tpvApi = {
     holders:     (productId)      => api.get(`/tpv/ppe/item/${productId}/holders`).then(r => r.data),
     // Private file: fetched as a blob so the bearer token is sent.
     imageBlob:   (productId)      => api.get(`/tpv/ppe/item/${productId}/image`, { responseType: 'blob' }).then(r => URL.createObjectURL(r.data)),
+    // One vendor's OWN PPE list (its stock, not Inventory) — read-only here;
+    // the vendor keeps it from its portal.
+    vendorItems:     (vendorId)         => api.get(`/tpv/ppe/vendors/${vendorId}/items`).then(r => r.data),
+    vendorItemImage: (vendorId, itemId) => api.get(`/tpv/ppe/vendors/${vendorId}/items/${itemId}/image`, { responseType: 'blob' }).then(r => URL.createObjectURL(r.data)),
 
     // ── Requirement matrix: role → required PPE (admin-configurable) ──
     requirements:       ()          => api.get('/tpv/ppe/requirements').then(r => r.data),

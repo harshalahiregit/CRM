@@ -134,14 +134,16 @@ function CheckRow({ check, canPerform, onConfirm, busyId }) {
 
 
 /**
- * A warning or blocker as a sentence — D-147.
+ * A blocker or a warning, as a sentence — D-150.
  *
- * Fleet's eligibility answers `{code, why, owner}` since D-134, and rendering
- * that object into JSX is the "Objects are not valid as a React child" crash.
- * `why (owner)` matches DriversBoard and VehicleAllocationModal — the desk that
- * can clear it is the useful half.
+ * ONE shape: `{code, why, owner}`. What this screen reads is PRE-TRIP
+ * readiness (`TripPretripCheck::blockersOf/warningsOf`), which was still
+ * plain strings — and D-147's version turned a string into EMPTY: `r?.owner`
+ * undefined fell through to `r?.why ?? ''`. Both now emit the same shape as
+ * `EligibilityVerdict`; `owner` is null because no pre-trip check names a desk.
+ * No string branch: PretripSchemaPolicyTest holds the backend to the shape.
  */
-const reason = (r) => (r?.owner ? `${r.why} (${r.owner})` : r?.why ?? '')
+const reason = (r) => (r?.owner ? `${r.why} (${r.owner})` : (r?.why ?? ''))
 
 export default function PretripPanel({ trip, canPerform, onChanged }) {
   const toast = useToast()

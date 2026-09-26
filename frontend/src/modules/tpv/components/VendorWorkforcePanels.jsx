@@ -4,6 +4,7 @@ import { tpvApi } from '@/services/tpvApi'
 import { SectionTable, Pill } from './VendorSectionTable'
 import VendorAddModal from './VendorAddModal'
 import { useDoctorOptions, doctorSelectOptions } from '@/components/medical/InternalDoctorSelect'
+import VendorPpeItemsPanel from '@/components/vendor/VendorPpeItemsPanel'
 
 /**
  * The five vendor-detail sections backed by data the TPV module already holds:
@@ -86,6 +87,17 @@ export function VendorWorkforce({ vendorId, manage }) {
         { key: 'current_step', label: 'Step', render: r => `${r.current_step ?? 1}/5` },
         { key: 'status', label: 'Status', render: r => <Pill value={r.status} good={['active']} bad={['blocked', 'rejected', 'inactive']} /> },
       ]}
+    />
+    {/* The vendor's OWN PPE — its stock, kept from its portal, never Inventory.
+        Read-only here; what its workers hold shows on each worker's PPE step. */}
+    <VendorPpeItemsPanel
+      client={{
+        list: () => tpvApi.ppe.vendorItems(vendorId),
+        imageBlob: (id) => tpvApi.ppe.vendorItemImage(vendorId, id),
+      }}
+      scopeKey={`tpv-admin-${vendorId}`}
+      title="Vendor's own PPE"
+      accent="#f59e0b"
     />
     </>
   )

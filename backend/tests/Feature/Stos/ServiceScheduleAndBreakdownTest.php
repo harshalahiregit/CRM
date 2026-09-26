@@ -344,7 +344,7 @@ class ServiceScheduleAndBreakdownTest extends TestCase
         $data = $this->actingAs($this->user())
             ->postJson('/api/v1/fleet/vehicles', [
                 'registration_number' => 'MH12ZZ9999',
-                'vehicle_type' => 'truck', 'ownership_type' => 'owned',
+                'vehicle_type' => 'truck', 'ownership_type' => 'OWNED',
                 'service_interval_km' => 15000,
                 'last_service_odometer' => 82000,
                 'last_service_on' => now()->subMonth()->toDateString(),
@@ -359,7 +359,7 @@ class ServiceScheduleAndBreakdownTest extends TestCase
         $this->actingAs($this->user())
             ->postJson('/api/v1/fleet/vehicles', [
                 'registration_number' => 'MH12YY8888',
-                'vehicle_type' => 'truck', 'ownership_type' => 'owned',
+                'vehicle_type' => 'truck', 'ownership_type' => 'OWNED',
                 'last_service_on' => now()->addMonth()->toDateString(),
             ])->assertStatus(422)->assertJsonValidationErrors('last_service_on');
     }

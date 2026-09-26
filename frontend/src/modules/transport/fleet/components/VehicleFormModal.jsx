@@ -15,15 +15,19 @@ import Select from '@/components/ui/Select'
  * Closes only via ✕ or Cancel — never a backdrop click.
  */
 
+// T-03 — the six values of STOS-FLEET §10, UPPERCASE to match the stored enum.
+// Financed and Contracted were missing; market is gone (it folded into Other).
 const OWNERSHIPS = [
-  { value: 'owned',    label: 'Owned' },
-  { value: 'leased',   label: 'Leased' },
-  { value: 'attached', label: 'Attached' },
-  { value: 'market',   label: 'Market hire' },
+  { value: 'OWNED',      label: 'Owned' },
+  { value: 'FINANCED',   label: 'Financed' },
+  { value: 'LEASED',     label: 'Leased' },
+  { value: 'CONTRACTED', label: 'Contracted' },
+  { value: 'ATTACHED',   label: 'Attached' },
+  { value: 'OTHER',      label: 'Other' },
 ]
 
 const EMPTY = {
-  registration_number: '', vehicle_type: 'truck', ownership_type: 'owned',
+  registration_number: '', vehicle_type: 'truck', ownership_type: 'OWNED',
   chassis_number: '', engine_number: '', gps_device_id: '',
   fleet_number: '', manufacturer: '', model: '', variant: '',
   manufacturing_year: '', purchase_date: '', fuel_type: '', branch: '',
@@ -47,7 +51,7 @@ export default function VehicleFormModal({ open, onClose, vehicle = null, onSave
       ? {
           registration_number: vehicle.registration_number || '',
           vehicle_type: vehicle.vehicle_type || 'truck',
-          ownership_type: vehicle.ownership_type || 'owned',
+          ownership_type: vehicle.ownership_type || 'OWNED',
           chassis_number: vehicle.chassis_number || '',
           engine_number: vehicle.engine_number || '',
           gps_device_id: vehicle.gps_device_id || '',

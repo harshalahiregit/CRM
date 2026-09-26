@@ -51,6 +51,31 @@
 
         return $a->verdict_from->format('H:i').'–'.$a->verdict_to->format('H:i').($mins ? " ({$mins} min)" : '');
     };
+    /**
+     * The ADMIN's record of when this person was in the meeting.
+     *
+     * Typed on the attendance grid, not observed — which is exactly why it is
+     * printed. joined_at/seconds_in_call only ever existed for people who
+     * pressed Join in the CRM, so before this the minutes could not say what
+     * time most attendees arrived or left.
+     */
+    $inOut = function ($a) {
+        if (! $a->in_at && ! $a->out_at) {
+            return null;
+        }
+        $f = fn ($d) => $d ? \Illuminate\Support\Carbon::parse($d)->format('H:i') : '—';
+
+        return $f($a->in_at).'–'.$f($a->out_at);
+    };
+    $markedNote = function ($a) {
+        if (! $a->marked_by_name && ! $a->marked_at) {
+            return null;
+        }
+        $who = $a->marked_by_name ?: 'the organiser';
+        $when = $a->marked_at ? \Illuminate\Support\Carbon::parse($a->marked_at)->format('d M Y') : null;
+
+        return 'Marked by '.$who.($when ? ' on '.$when : '');
+    };
     $contradicts = fn ($a) => \App\Support\Shared\AttendanceVerdict::contradictsClaim((bool) $a->attended, $a->verdict);
     $reviewed = $attendees->filter(fn ($a) => $a->verdict !== null)->count();
 
@@ -159,7 +184,7 @@
     @endif
     <table class="att">
         <thead>
-            <tr><th style="width:26%">Name</th><th style="width:17%">Role</th><th style="width:22%">Organisation</th><th style="width:14%">Marked</th><th style="width:21%">Organiser's verdict</th></tr>
+            <tr><th style="width:21%">Name</th><th style="width:14%">Role</th><th style="width:17%">Organisation</th><th style="width:17%">Marked</th><th style="width:14%">In / Out</th><th style="width:17%">Organiser's verdict</th></tr>
         </thead>
         <tbody>
             @foreach ($attendees as $a)
@@ -176,6 +201,20 @@
                             <span class="pill {{ $pillOf[$st] ?? 'unmarked' }}">{{ $st }}</span>
                         @else
                             <span class="pill unmarked">Not marked</span>
+                        @endif
+                        {{-- Who put this on the record. An attendance entry with
+                             no author is an assertion nobody owns, and this
+                             document goes to the vendor. --}}
+                        @if ($markedNote($a))<div class="sub">{{ $markedNote($a) }}</div>@endif
+                    </td>
+                    {{-- In, out and how long — the admin's own entry, which is
+                         the official record. --}}
+                    <td>
+                        @if ($inOut($a))
+                            {{ $inOut($a) }}
+                            <div class="sub">{{ $a->attendance_minutes !== null ? $a->attendance_minutes.' min' : 'Duration not known' }}</div>
+                        @else
+                            <span class="sub">Not recorded</span>
                         @endif
                     </td>
                     {{-- The organiser's decision, printed BESIDE the mark rather
