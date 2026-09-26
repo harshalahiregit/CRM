@@ -327,7 +327,7 @@ function AddDriverDialog({ onClose, onAdded }) {
 
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 pt-[8vh] bg-black/50">
-      <div className="w-full max-w-md rounded-2xl overflow-hidden flex flex-col"
+      <div className="w-full max-w-lg rounded-2xl overflow-hidden flex flex-col"
         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', maxHeight: '84vh' }}
         onKeyDown={(e) => { if (e.key === 'Escape') onClose?.() }}>
         <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
@@ -438,7 +438,7 @@ function LicenceDialog({ driver, onClose }) {
       {/* The documents panel is a SIBLING of the form, not a child: it has its
           own buttons and a nested form would submit this one. */}
       <div
-        className="w-full max-w-md rounded-2xl overflow-hidden flex flex-col"
+        className="w-full max-w-3xl rounded-2xl overflow-hidden flex flex-col"
         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', maxHeight: '84vh' }}
         onKeyDown={(e) => { if (e.key === 'Escape') onClose?.() }}>
         <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>

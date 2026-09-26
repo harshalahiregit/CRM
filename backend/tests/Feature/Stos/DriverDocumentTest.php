@@ -12,7 +12,9 @@ use App\Models\Transport\TransportDocument;
 use App\Models\User;
 use App\Support\Transport\TransportDocumentType;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -357,5 +359,70 @@ class DriverDocumentTest extends TestCase
         $this->actingAs($this->user())
             ->getJson('/api/v1/fleet/drivers/eligible')
             ->assertOk()->assertJsonStructure(['data' => ['eligible', 'excluded']]);
+    }
+
+    /* ── Viewing the uploaded file ──────────────────────────────── */
+
+    private function fileWithUpload(int $personId): int
+    {
+        return $this->actingAs($this->user())
+            ->post('/api/v1/fleet/drivers/stos/'.$personId.'/documents', [
+                'document_type' => 'driving_license',
+                'file' => UploadedFile::fake()->create('licence.pdf', 20, 'application/pdf'),
+            ])->assertCreated()->json('data.document.id');
+    }
+
+    public function test_an_uploaded_document_can_be_viewed(): void
+    {
+        Storage::fake('local');
+        $documentId = $this->fileWithUpload($this->driver());
+
+        $this->actingAs($this->user())
+            ->get('/api/v1/fleet/driver-documents/'.$documentId.'/file')
+            ->assertOk();
+    }
+
+    public function test_another_workspace_cannot_view_the_file(): void
+    {
+        Storage::fake('local');
+        $documentId = $this->fileWithUpload($this->driver());
+
+        // A user in another company — the file belongs to nobody they can see.
+        (new Tenant())->forceFill([
+            'id' => 2, 'name' => 'Co2', 'slug' => 'co2', 'subdomain' => 'co2', 'status' => 'active',
+        ])->save();
+        $other = User::create([
+            'tenant_id' => 2, 'name' => 'Other', 'role' => 'admin',
+            'email' => 'other-'.Str::random(6).'@test.local', 'password' => bcrypt('x'), 'status' => 'active',
+        ]);
+
+        $this->actingAs($other)
+            ->get('/api/v1/fleet/driver-documents/'.$documentId.'/file')
+            ->assertNotFound();
+    }
+
+    public function test_a_document_with_no_file_says_so(): void
+    {
+        // Rows filed before an upload, or a dates-only record, have no file.
+        $doc = $this->fileDoc($this->driver(), 'driving_license');
+
+        $this->actingAs($this->user())
+            ->get('/api/v1/fleet/driver-documents/'.$doc->id.'/file')
+            ->assertNotFound();
+    }
+
+    public function test_a_portal_login_cannot_view_a_file(): void
+    {
+        Storage::fake('local');
+        $documentId = $this->fileWithUpload($this->driver());
+
+        $portal = User::create([
+            'tenant_id' => self::COMPANY, 'name' => 'Client', 'role' => 'client',
+            'email' => 'client-'.Str::random(6).'@test.local', 'password' => bcrypt('x'), 'status' => 'active',
+        ]);
+
+        $this->actingAs($portal)
+            ->get('/api/v1/fleet/driver-documents/'.$documentId.'/file')
+            ->assertForbidden();
     }
 }

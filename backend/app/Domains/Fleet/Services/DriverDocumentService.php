@@ -9,6 +9,8 @@ use App\Services\Transport\TransportDocumentService;
 use App\Support\Transport\TransportDocumentType;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * STOS-FLEET — a driver's paperwork (T-43).
@@ -100,6 +102,32 @@ class DriverDocumentService
     }
 
     /** Everything on file for a driver, newest first, with the gate verdict. */
+    /**
+     * Stream a filed document's actual file for viewing.
+     *
+     * The upload lives on the PRIVATE `local` disk, so it is never a public URL
+     * — it is only reachable through this authenticated, tenant-scoped door. A
+     * document belonging to another workspace is a 404, not someone else's file.
+     * Served inline so a PDF or image opens in the viewer rather than forcing a
+     * download.
+     */
+    public function streamFile(int $companyId, int $documentId): StreamedResponse
+    {
+        $document = TransportDocument::where('tenant_id', $companyId)
+            ->where('entity_type', 'driver')
+            ->find($documentId);
+
+        if (! $document) {
+            throw new BusinessException('That document could not be found.', 404);
+        }
+
+        if (blank($document->file_path) || ! Storage::disk('local')->exists($document->file_path)) {
+            throw new BusinessException('No file was uploaded with this document.', 404);
+        }
+
+        return Storage::disk('local')->response($document->file_path, $document->file_name);
+    }
+
     public function forDriver(int $companyId, string $source, int $sourceId): array
     {
         $profile = $this->profile($companyId, $source, $sourceId);

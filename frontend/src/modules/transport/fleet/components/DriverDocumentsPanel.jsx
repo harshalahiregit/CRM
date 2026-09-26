@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { FileText, Upload, Check, ShieldCheck, Clock, AlertTriangle } from 'lucide-react'
+import { FileText, Upload, Check, ShieldCheck, Clock, AlertTriangle, Eye } from 'lucide-react'
 import { stosApi, STOS_ACCENT } from '@/services/stosApi'
+import { useToast } from '@/components/ui/Toast'
 import Select from '@/components/ui/Select'
 
 /**
@@ -36,7 +37,23 @@ export default function DriverDocumentsPanel({ driver, onChanged }) {
     retry: false,
   })
 
+  const toast = useToast()
+
   const done = () => { refetch(); qc.invalidateQueries({ queryKey: ['stos-drivers'] }); onChanged?.() }
+
+  // View the actual file. The private disk needs the bearer token, so the file
+  // is fetched with it and opened as a blob rather than a bare URL a new tab
+  // could not authenticate.
+  const viewDoc = async (id) => {
+    try {
+      const blob = await stosApi.driverDocuments.fileBlob(id)
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener')
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch {
+      toast.error('Could not open that document')
+    }
+  }
 
   const verify = useMutation({
     mutationFn: ({ id, verdict, why }) => stosApi.driverDocuments.verify(id, verdict, why),
@@ -125,6 +142,14 @@ export default function DriverDocumentsPanel({ driver, onChanged }) {
 
               <VerificationChip state={d.verification_status} />
 
+              {d.file_name && (
+                <button type="button" onClick={() => viewDoc(d.id)}
+                  className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg shrink-0"
+                  style={{ color: STOS_ACCENT, border: '1px solid var(--border)' }}>
+                  <Eye size={11} /> View
+                </button>
+              )}
+
               {d.verification_status !== 'VERIFIED' && d.status !== 'superseded' && (
                 <div className="flex items-center gap-1 shrink-0">
                   <button type="button" onClick={() => verify.mutate({ id: d.id, verdict: 'VERIFIED' })}
@@ -208,15 +233,26 @@ function UploadForm({ driver, types, onCancel, onDone }) {
   const [type, setType] = useState(types[0]?.value ?? 'driving_license')
   const [number, setNumber] = useState('')
   const [validUntil, setValidUntil] = useState('')
-  const [file, setFile] = useState(null)
+  const [files, setFiles] = useState([])
   const [err, setErr] = useState('')
 
+  // Several files at once — e.g. both sides of a licence, or a multi-page
+  // permit. Each becomes its own document of the chosen type, filed one after
+  // the other so a failure part-way names which file it was.
   const save = useMutation({
-    mutationFn: () => stosApi.driverDocuments.file(driver.source, driver.source_id, {
-      document_type: type, document_number: number, valid_until: validUntil, file,
-    }),
+    mutationFn: async () => {
+      for (const f of files) {
+        try {
+          await stosApi.driverDocuments.file(driver.source, driver.source_id, {
+            document_type: type, document_number: number, valid_until: validUntil, file: f,
+          })
+        } catch (e) {
+          throw new Error(`${f.name}: ${e?.message || 'could not be filed'}`)
+        }
+      }
+    },
     onSuccess: () => onDone(),
-    onError: (e) => setErr(e?.message || 'Could not file that document.'),
+    onError: (e) => setErr(e?.message || 'Could not file those documents.'),
   })
 
   const gates = types.find((t) => t.value === type)?.gates_dispatch
@@ -232,8 +268,12 @@ function UploadForm({ driver, types, onCancel, onDone }) {
           className={cell} style={inputStyle} />
       </div>
 
-      <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+      <input type="file" accept=".pdf,.jpg,.jpeg,.png" multiple
+        onChange={(e) => setFiles([...(e.target.files ?? [])])}
         className="w-full text-[10px]" style={{ color: 'var(--text-muted)' }} />
+      {files.length > 1 && (
+        <p className="text-[10px]" style={{ color: STOS_ACCENT }}>{files.length} files selected — each is filed separately.</p>
+      )}
 
       {/* Said before they press save, not after. */}
       {gates && (
@@ -249,10 +289,10 @@ function UploadForm({ driver, types, onCancel, onDone }) {
         <button type="button" onClick={onCancel}
           className="text-[11px] font-semibold px-3 py-1.5 rounded-lg"
           style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
-        <button type="button" onClick={() => save.mutate()} disabled={save.isPending}
+        <button type="button" onClick={() => save.mutate()} disabled={save.isPending || files.length === 0}
           className="flex items-center gap-1 text-[11px] font-bold px-3 py-1.5 rounded-lg disabled:opacity-60"
           style={{ background: STOS_ACCENT, color: '#fff' }}>
-          <Check size={11} /> {save.isPending ? 'Filing…' : 'File'}
+          <Check size={11} /> {save.isPending ? 'Filing…' : (files.length > 1 ? `File ${files.length}` : 'File')}
         </button>
       </div>
     </div>

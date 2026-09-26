@@ -136,6 +136,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('v1/fleet')->gro
     // guess which kind it was handed.
     Route::patch('/driver-documents/{document}/verify', [DriverDocumentController::class, 'verify'])
         ->where('document', '[0-9]+');
+    // View the uploaded file itself — streamed from the private disk.
+    Route::get('/driver-documents/{document}/file', [DriverDocumentController::class, 'file'])
+        ->where('document', '[0-9]+');
 
     // ── Trailers and the coupling between (T-54) ────────────────────────
     // `history` BEFORE `{trailer}`: it is a word, not an id, and the numeric

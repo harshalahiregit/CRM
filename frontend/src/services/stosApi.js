@@ -117,6 +117,11 @@ export const stosApi = {
     forDriver: (source, personId) =>
       api.get(`/v1/fleet/drivers/${source}/${personId}/documents`).then(unwrap).catch(handleErr),
 
+    /** The uploaded file itself, as a blob — for viewing. Auth is a bearer
+        token, so the file is fetched with it and opened, never a bare URL. */
+    fileBlob: (documentId) =>
+      api.get(`/v1/fleet/driver-documents/${documentId}/file`, { responseType: 'blob' }).then((r) => r.data),
+
     file: (source, personId, form) => {
       const body = new FormData()
       Object.entries(form).forEach(([k, v]) => { if (v !== null && v !== undefined && v !== '') body.append(k, v) })

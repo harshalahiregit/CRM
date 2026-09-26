@@ -44,6 +44,14 @@ class DriverDocumentController extends Controller
         );
     }
 
+    /** View the actual uploaded file — streamed from the private disk, tenant-scoped. */
+    public function file(Request $request, int $document)
+    {
+        $this->denyExternal($request);
+
+        return $this->documents->streamFile($this->companyId($request), $document);
+    }
+
     public function store(Request $request, string $source, int $person): JsonResponse
     {
         $this->denyExternal($request);
