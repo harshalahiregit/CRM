@@ -425,6 +425,68 @@ class DriverDirectoryTest extends TestCase
         $this->assertSame(2, DriverProfile::withoutGlobalScopes()->whereNotNull('licence_number')->count());
     }
 
+    /* ── Registering a driver STOS owns itself ───────────────────── */
+
+    public function test_a_locally_registered_driver_appears_on_the_board(): void
+    {
+        // A haulier's own driver — not a customer or vendor contact.
+        $person = $this->actingAs($this->user())
+            ->postJson('/api/v1/fleet/drivers', ['name' => 'Ramesh Kumar', 'phone' => '9876543210'])
+            ->assertCreated()->json('data');
+
+        $this->assertSame('stos', $person['source']);
+        $this->assertSame('Ramesh Kumar', $person['name']);
+
+        // Shows up in the directory list, alongside anyone from the CRM.
+        $list = $this->actingAs($this->user())->getJson('/api/v1/fleet/drivers')->json('data');
+        $this->assertContains('Ramesh Kumar', collect($list['drivers'])->pluck('name'));
+
+        // And takes a licence overlay by the handle it was given.
+        $this->actingAs($this->user())
+            ->putJson('/api/v1/fleet/drivers/stos/'.$person['source_id'], ['licence_number' => 'MH1220110099887'])
+            ->assertOk()->assertJsonPath('data.profile.licence_number', 'MH1220110099887');
+    }
+
+    public function test_a_registered_driver_and_a_crm_person_share_one_board(): void
+    {
+        // Part B — the register does not replace the directory; both are read.
+        $this->vendorWithWorkers(2);
+        $this->actingAs($this->user())->postJson('/api/v1/fleet/drivers', ['name' => 'Own Driver'])->assertCreated();
+
+        $list = $this->actingAs($this->user())->getJson('/api/v1/fleet/drivers')->json('data');
+        $names = collect($list['drivers'])->pluck('name');
+
+        $this->assertContains('Own Driver', $names);          // from the STOS register
+        $this->assertContains('Driver 01', $names);            // from the CRM vendor
+        // The banner names both sources, so nobody wonders where a name came from.
+        $directory = strtolower((string) $list['directory']);
+        $this->assertStringContainsString('stos driver register', $directory);
+        $this->assertStringContainsString('contacts', $directory);
+    }
+
+    public function test_registering_the_identical_person_twice_is_refused(): void
+    {
+        $body = ['name' => 'Ramesh Kumar', 'phone' => '9998887777'];
+        $this->actingAs($this->user())->postJson('/api/v1/fleet/drivers', $body)->assertCreated();
+        $this->actingAs($this->user())->postJson('/api/v1/fleet/drivers', $body)->assertStatus(422);
+    }
+
+    public function test_a_driver_needs_a_name_to_be_registered(): void
+    {
+        $this->actingAs($this->user())
+            ->postJson('/api/v1/fleet/drivers', ['phone' => '9'])
+            ->assertStatus(422)->assertJsonValidationErrors('name');
+    }
+
+    public function test_a_portal_login_cannot_register_a_driver(): void
+    {
+        foreach (['client', 'vendor', 'third_party_vendor'] as $role) {
+            $this->actingAs($this->user($role))
+                ->postJson('/api/v1/fleet/drivers', ['name' => 'X'])
+                ->assertForbidden();
+        }
+    }
+
     public function test_a_portal_login_cannot_read_the_driver_directory(): void
     {
         $this->vendorWithWorkers(2);

@@ -89,8 +89,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('v1/fleet')->gro
     Route::get('/fuel/{fuel}/receipt', [FuelController::class, 'receipt'])->where('fuel', '[0-9]+');
 
     // ── Drivers (STOS-FLEET) ────────────────────────────────────────────
-    // Read LIVE from the CRM's customer/vendor directories — there is no
-    // "create driver" here, because STOS does not own people.
+    // Read LIVE from the CRM's customer/vendor directories — STOS does not own
+    // the PEOPLE it hires from a customer or vendor. But a haulier's own drivers
+    // are nobody's contact, so `POST /drivers` files those into STOS's own
+    // register (stos_drivers), the one directory STOS is the master of.
     // ── Gensets (T-05) ──────────────────────────────────────────────────
     // Fit and unfit are their own endpoints, not a field on the update: a unit
     // physically moving between trailers is an event, and it is logged as one.
@@ -109,6 +111,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('v1/fleet')->gro
     Route::delete('/devices/tokens/{token}', [DeviceTokenController::class, 'revoke'])->where('token', '[0-9]+');
 
     Route::get('/drivers', [DriverController::class, 'index']);
+    // Register a driver STOS owns itself (not a CRM contact) into stos_drivers.
+    Route::post('/drivers', [DriverController::class, 'register']);
     // The crew half of allocation. Same response shape as eligible vehicles,
     // because a dispatch board shows them side by side.
     Route::get('/drivers/eligible', [DriverController::class, 'eligible']);

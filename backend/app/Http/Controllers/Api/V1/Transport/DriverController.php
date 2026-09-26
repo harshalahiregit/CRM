@@ -56,6 +56,32 @@ class DriverController extends Controller
     }
 
     /**
+     * Register a driver STOS owns itself — one who is not a CRM contact.
+     *
+     * The board reads people from the directory and never invents them, but a
+     * haulier's OWN drivers are not customers or vendors, so no CRM record holds
+     * them. This files them into STOS's own register (`stos_drivers`), which the
+     * composite directory already reads, so they appear on the board like any
+     * other person and take a licence overlay the same way.
+     */
+    public function register(Request $request): JsonResponse
+    {
+        $this->denyExternal($request);
+
+        $data = $request->validate([
+            'name'        => 'required|string|max:150',
+            'phone'       => 'nullable|string|max:30',
+            'employer'    => 'nullable|string|max:150',
+            'designation' => 'nullable|string|max:60',
+        ]);
+
+        return $this->success(
+            $this->drivers->registerLocalDriver($this->companyId($request), $data, (int) $request->user()->id),
+            'Driver added to the register', 201
+        );
+    }
+
+    /**
      * Save the Transport overlay against a person from the directory.
      *
      * Addressed by `source:source_id` — the handle that points back at the

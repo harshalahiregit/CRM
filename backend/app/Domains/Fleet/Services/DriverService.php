@@ -9,6 +9,7 @@ use App\Domains\Fleet\Models\DriverProfile;
 use App\Domains\Fleet\Models\Vehicle;
 use App\Exceptions\BusinessException;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -252,6 +253,76 @@ class DriverService
         }
 
         return $warnings;
+    }
+
+    /**
+     * Register a driver STOS owns itself — an employed or roster driver who is
+     * not a customer or vendor contact, so no CRM directory holds them.
+     *
+     * This is NOT a breach of golden rule 3 (no duplicate master data): the row
+     * in `stos_drivers` is this person's PRIMARY record, not a copy of one that
+     * lives elsewhere. The composite directory already reads this register
+     * alongside the CRM's, so the new driver appears on the board like any
+     * other, and the licence overlay is added exactly the same way.
+     *
+     * Deliberately a thin person record — name and contact only. Licence facts
+     * are the overlay's job (`saveProfile`), so the two do not drift into two
+     * places that both claim to hold a licence.
+     */
+    public function registerLocalDriver(int $companyId, array $data, int $userId): array
+    {
+        $name = trim((string) $data['name']);
+        $phone = isset($data['phone']) ? trim((string) $data['phone']) : null;
+
+        // A soft guard against the obvious double-entry: the same name and phone
+        // already on the register. Not a hard unique index — two real people can
+        // share a name, and a blank phone is a normal state — but re-adding the
+        // identical person twice is almost always a mistake worth stopping.
+        if ($phone) {
+            $clash = DB::table('stos_drivers')
+                ->where('company_id', $companyId)
+                ->whereNull('deleted_at')
+                ->whereRaw('lower(name) = ?', [strtolower($name)])
+                ->where('phone', $phone)
+                ->exists();
+
+            if ($clash) {
+                throw new BusinessException(
+                    $name.' is already on the driver register with that phone number. '
+                    .'Open their card to add or correct their licence instead.'
+                );
+            }
+        }
+
+        $id = DB::table('stos_drivers')->insertGetId([
+            'company_id'    => $companyId,
+            'name'          => $name,
+            'phone'         => $phone ?: null,
+            'employer_name' => isset($data['employer']) ? trim((string) $data['employer']) ?: null : null,
+            // Defaults to Driver so the "drivers only" filter finds them without
+            // the person having to know the filter keys off designation.
+            'designation'   => isset($data['designation']) ? trim((string) $data['designation']) ?: 'Driver' : 'Driver',
+            'created_at'    => now(),
+            'updated_at'    => now(),
+        ]);
+
+        Log::channel('stos')->info('Local driver registered', [
+            'company_id' => $companyId, 'user_id' => $userId, 'ref' => 'stos:'.$id, 'name' => $name,
+        ]);
+
+        // Return in the exact directory shape the board renders, so the new
+        // person can be clicked straight through to "Add licence".
+        $person = $this->directory->find($companyId, 'stos', $id);
+
+        return [
+            ...($person ?? [
+                'source' => 'stos', 'source_id' => $id, 'ref' => 'stos:'.$id,
+                'name' => $name, 'phone' => $phone ?: null, 'designation' => 'Driver',
+                'employer' => null, 'employer_type' => null, 'directory' => 'STOS drivers',
+            ]),
+            'profile' => null,
+            'licence' => $this->licenceVerdict(null),
+        ];
     }
 
     /**

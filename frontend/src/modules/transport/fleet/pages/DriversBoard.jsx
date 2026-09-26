@@ -45,6 +45,7 @@ export default function DriversBoard() {
   const [term, setTerm] = useState('')
   const [driversOnly, setDriversOnly] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [adding, setAdding] = useState(false)
   const [readyOnly, setReadyOnly] = useState(false)
 
   const params = { ...(term ? { q: term } : {}), ...(driversOnly ? { drivers_only: 1 } : {}) }
@@ -98,7 +99,13 @@ export default function DriversBoard() {
           </span>
         )}
 
-        <label className="ml-auto flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer"
+        <button type="button" onClick={() => setAdding(true)}
+          className="ml-auto flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-xl"
+          style={{ background: STOS_ACCENT, color: '#fff' }}>
+          <UserRound size={13} /> Add driver
+        </button>
+
+        <label className="flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer"
           style={{ color: 'var(--text-muted)' }}>
           <input type="checkbox" checked={driversOnly} onChange={(e) => setDriversOnly(e.target.checked)} />
           Drivers only
@@ -270,6 +277,12 @@ export default function DriversBoard() {
       </div>
 
       <LicenceDialog driver={editing} onClose={() => setEditing(null)} />
+
+      {adding && (
+        <AddDriverDialog
+          onClose={() => setAdding(false)}
+          onAdded={(person) => { setAdding(false); setEditing(person) }} />
+      )}
     </div>
   )
 }
@@ -284,6 +297,102 @@ function Summary({ tone, count, label }) {
 }
 
 /** Closes only via ✕ or Cancel — never a backdrop click. */
+/**
+ * Add a driver STOS owns itself — one who is not a customer or vendor contact.
+ *
+ * Files the PERSON into STOS's own register; the licence is added next, in the
+ * card that opens straight after, so the two never live in one form pretending
+ * to be one record. Name, phone and employer are theirs; the licence is the
+ * overlay's.
+ */
+function AddDriverDialog({ onClose, onAdded }) {
+  const qc = useQueryClient()
+  const [form, setForm] = useState({ name: '', phone: '', employer: '', designation: 'Driver' })
+  const [err, setErr] = useState('')
+
+  const add = useMutation({
+    mutationFn: () => stosApi.drivers.register({
+      name: form.name.trim(),
+      phone: form.phone.trim() || null,
+      employer: form.employer.trim() || null,
+      designation: form.designation.trim() || null,
+    }),
+    onSuccess: (person) => {
+      qc.invalidateQueries({ queryKey: ['stos-drivers'] })
+      // Open their card so the licence goes on right away.
+      onAdded?.(person)
+    },
+    onError: (e) => setErr(e?.message || 'Could not add that driver.'),
+  })
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 pt-[8vh] bg-black/50">
+      <div className="w-full max-w-md rounded-2xl overflow-hidden flex flex-col"
+        style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', maxHeight: '84vh' }}
+        onKeyDown={(e) => { if (e.key === 'Escape') onClose?.() }}>
+        <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div>
+            <h2 className="font-bold" style={{ color: 'var(--text-h)', fontSize: 14 }}>Add a driver</h2>
+            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              For your own drivers. People who are already a customer or vendor contact appear on the board automatically.
+            </p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" style={{ color: 'var(--text-muted)' }}>
+            <X size={15} />
+          </button>
+        </div>
+
+        <form onSubmit={(e) => { e.preventDefault(); setErr(''); if (form.name.trim()) add.mutate() }}>
+          <div className="px-5 py-4 space-y-3">
+            <Field label="Full name">
+              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="Ramesh Kumar" autoFocus className={inputClass} style={inputStyle} />
+            </Field>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Phone">
+                <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  placeholder="98765 43210" className={inputClass} style={inputStyle} />
+              </Field>
+              <Field label="Designation">
+                <input value={form.designation} onChange={(e) => setForm({ ...form, designation: e.target.value })}
+                  placeholder="Driver" className={inputClass} style={inputStyle} />
+              </Field>
+            </div>
+
+            <Field label="Employer" hint="Optional — who they drive for">
+              <input value={form.employer} onChange={(e) => setForm({ ...form, employer: e.target.value })}
+                placeholder="Own fleet" className={inputClass} style={inputStyle} />
+            </Field>
+
+            <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+              You'll add their licence and availability on the next screen.
+            </p>
+
+            {err && (
+              <p className="text-xs px-3 py-2 rounded-lg"
+                style={{ background: 'color-mix(in srgb, var(--color-danger-500) 12%, transparent)', color: 'var(--color-danger-500)' }}>
+                {err}
+              </p>
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-2 px-5 py-3"
+            style={{ background: 'var(--bg-input)', borderTop: '1px solid var(--border)' }}>
+            <button type="button" onClick={onClose} className="text-xs font-semibold px-4 py-2 rounded-xl"
+              style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
+            <button type="submit" disabled={add.isPending || !form.name.trim()}
+              className="flex items-center gap-1.5 text-xs font-bold px-4 py-2 rounded-xl disabled:opacity-60"
+              style={{ background: STOS_ACCENT, color: '#fff' }}>
+              <Check size={13} /> {add.isPending ? 'Adding…' : 'Add driver'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 function LicenceDialog({ driver, onClose }) {
   const qc = useQueryClient()
   const [form, setForm] = useState({
