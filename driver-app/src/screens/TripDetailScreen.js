@@ -28,24 +28,46 @@ export default function TripDetailScreen({ trip: initial, onBack }) {
 
   useEffect(() => { load() }, [load])
 
-  const capturePod = async () => {
-    const perm = await ImagePicker.requestCameraPermissionsAsync()
-    if (!perm.granted) return Alert.alert('Camera needed', 'Allow the camera to photograph the signed delivery sheet.')
+  // Photograph or pick the signed sheet, then upload. Camera and gallery are
+  // both offered because a camera can fail on some phones, and a driver may
+  // already have the photo.
+  const addPod = async (fromCamera) => {
+    let shot
+    try {
+      if (fromCamera) {
+        const perm = await ImagePicker.requestCameraPermissionsAsync()
+        if (!perm.granted) return Alert.alert('Camera needed', 'Allow the camera in settings, or use "From gallery" instead.')
+        shot = await ImagePicker.launchCameraAsync({ quality: 0.5 })
+      } else {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync()
+        if (!perm.granted) return Alert.alert('Gallery needed', 'Allow photo access in settings to pick the delivery sheet.')
+        shot = await ImagePicker.launchImageLibraryAsync({ quality: 0.5 })
+      }
+    } catch (e) {
+      return Alert.alert('Could not open the ' + (fromCamera ? 'camera' : 'gallery'), String(e?.message || e))
+    }
 
-    const shot = await ImagePicker.launchCameraAsync({ quality: 0.6 })
-    if (shot.canceled || !shot.assets?.length) return
+    if (!shot || shot.canceled || !shot.assets?.length) return
 
     const asset = shot.assets[0]
     setUploading(true)
     try {
       const form = new FormData()
       form.append('document_type', 'pod')
-      form.append('file', { uri: asset.uri, name: `pod-${Date.now()}.jpg`, type: 'image/jpeg' })
+      form.append('file', {
+        uri: asset.uri,
+        name: asset.fileName || `pod-${Date.now()}.jpg`,
+        type: asset.mimeType || 'image/jpeg',
+      })
       await api.uploadPod(trip.id, form)
       Alert.alert('Filed', 'The proof of delivery is on the trip. The office will verify it.')
       await load()
     } catch (e) {
-      Alert.alert('Could not file it', e?.message || 'Try again in a moment.')
+      // Distinguish "server refused it" from "could not reach the server".
+      const msg = e?.status === 0
+        ? 'Upload failed — could not reach the server. Check your connection and try again.'
+        : (e?.message || 'The server refused the file. Try again.')
+      Alert.alert('Could not file the POD', msg)
     } finally {
       setUploading(false)
     }
@@ -101,10 +123,20 @@ export default function TripDetailScreen({ trip: initial, onBack }) {
                 ))
               )}
 
-              <TouchableOpacity onPress={capturePod} disabled={uploading} activeOpacity={0.85}
-                style={{ backgroundColor: theme.accent, borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginTop: 8, opacity: uploading ? 0.6 : 1 }}>
-                {uploading ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontSize: 16, fontWeight: '800' }}>📷  Capture POD</Text>}
-              </TouchableOpacity>
+              {uploading ? (
+                <View style={{ paddingVertical: 15, alignItems: 'center' }}><ActivityIndicator color={theme.accent} /></View>
+              ) : (
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+                  <TouchableOpacity onPress={() => addPod(true)} activeOpacity={0.85}
+                    style={{ flex: 1, backgroundColor: theme.accent, borderRadius: 14, paddingVertical: 15, alignItems: 'center' }}>
+                    <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>📷  Take photo</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => addPod(false)} activeOpacity={0.85}
+                    style={{ flex: 1, borderRadius: 14, paddingVertical: 15, alignItems: 'center', borderWidth: 1, borderColor: theme.border }}>
+                    <Text style={{ color: theme.text, fontSize: 15, fontWeight: '700' }}>🖼  From gallery</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </>
           )}
         </Section>
