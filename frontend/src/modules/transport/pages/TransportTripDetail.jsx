@@ -451,7 +451,8 @@ export default function TransportTripDetail() {
             {['draft', 'viability_pending'].includes(trip.status) ? (
               <p style={muted}>These checks begin once the trip has been approved.</p>
             ) : (
-              <PretripPanel trip={trip} canPerform={!!grants['transport.pretrip.perform']} onChanged={load} />
+              <PretripPanel trip={trip} canPerform={!!grants['transport.pretrip.perform']} onChanged={load}
+                crewKey={`${assignment?.id ?? ''}:${assignment?.vehicle_id ?? ''}:${assignment?.driver_id ?? ''}:${assignment?.status ?? ''}`} />
             )}
           </TripStep>
 

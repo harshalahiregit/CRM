@@ -145,7 +145,14 @@ function CheckRow({ check, canPerform, onConfirm, busyId }) {
  */
 const reason = (r) => (r?.owner ? `${r.why} (${r.owner})` : (r?.why ?? ''))
 
-export default function PretripPanel({ trip, canPerform, onChanged }) {
+/**
+ * `crewKey` changes whenever the trip's vehicle or driver does. Assigning a
+ * crew re-evaluates the checklist on the server (AllocationService), and a
+ * release invalidates it; neither changes `trip.id`, and a driver-only
+ * assignment changes nothing on the trip row at all, so without this key the
+ * panel kept showing "No driver is assigned" until Refresh (TRP-RACE-53).
+ */
+export default function PretripPanel({ trip, canPerform, onChanged, crewKey }) {
   const toast = useToast()
 
   const [readiness, setReadiness] = useState(null)
@@ -165,7 +172,7 @@ export default function PretripPanel({ trip, canPerform, onChanged }) {
     } finally {
       setLoading(false)
     }
-  }, [trip.id])
+  }, [trip.id, crewKey])
 
   useEffect(() => { load() }, [load])
 

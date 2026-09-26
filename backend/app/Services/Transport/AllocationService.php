@@ -13,6 +13,7 @@ use App\Services\Transport\Contracts\FleetResourceGateway;
 use App\Services\Transport\TripEventRecorder;
 use App\Domains\Fleet\Models\Vehicle;
 use App\Models\Transport\TripAssignment;
+use App\Models\Transport\TripPretripCheck;
 use App\Models\User;
 use App\Support\Transport\AllocationScope;
 use App\Support\Transport\DriverAvailability;
@@ -270,7 +271,43 @@ class AllocationService
             );
         }
 
+        /* ── 8. Pre-trip, re-read for the crew it now has. ──────────────── */
+        $this->reevaluatePretrip($result['trip'], $tenantId, $actor);
+
         return $result;
+    }
+
+    /**
+     * A checklist evaluated before this crew existed describes a trip that no
+     * longer exists.
+     *
+     * Seen live on TRP-RACE-53: checks evaluated at 05:53:02, the driver
+     * assigned at 05:53:16, and the panel went on saying "No driver is
+     * assigned" until somebody clicked Refresh. So assigning re-runs the
+     * checklist here, in the flow that records the assignment, and every caller
+     * gets it. It is the same generate() a Refresh runs: this changes WHEN the
+     * checks are evaluated, never what any of them decides.
+     *
+     * Only an EVALUATED checklist. After a release, invalidate() has reset every
+     * row and cleared `evaluated_at` on purpose. A re-crewed trip must earn its
+     * checklist again, and regenerating that one is deliberately never automatic
+     * (see PretripService::invalidate()). No checklist at all: nothing to
+     * refresh, and building one is a person's decision.
+     */
+    private function reevaluatePretrip(TransportTrip $trip, int $tenantId, ?User $actor): void
+    {
+        if (! in_array($trip->status, PretripService::GENERATABLE_FROM, true)) {
+            return;
+        }
+
+        $evaluated = TripPretripCheck::forTenant($tenantId)
+            ->forTrip($trip->id)
+            ->whereNotNull('evaluated_at')
+            ->exists();
+
+        if ($evaluated) {
+            $this->pretrip->generate($trip, $tenantId, $actor);
+        }
     }
 
     /**
