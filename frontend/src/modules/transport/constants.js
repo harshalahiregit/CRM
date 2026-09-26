@@ -327,6 +327,20 @@ export const driverAvailabilityCfg = (a) => ({
   unavailable: { label: 'Unavailable', color: '#94a3b8', bg: 'rgba(148,163,184,0.14)' },
 }[a] || { label: a || '—', color: 'var(--text-muted)', bg: 'var(--bg-input)' })
 
+/**
+ * A Fleet driver's status — `DriverProfile::STATUSES`, UPPERCASE as Fleet
+ * stores them. The allocation picker's driver candidates carry this in
+ * `subject.status`; they have no `availability` (that was the legacy master's
+ * second axis), which is why the card used to show "—".
+ */
+export const fleetDriverStatusCfg = (s) => ({
+  AVAILABLE: { label: 'Available', color: '#34d399', bg: 'rgba(52,211,153,0.14)' },
+  ON_TRIP:   { label: 'On trip',   color: '#818cf8', bg: 'rgba(129,140,248,0.14)' },
+  ON_LEAVE:  { label: 'On leave',  color: '#fbbf24', bg: 'rgba(251,191,36,0.16)' },
+  SUSPENDED: { label: 'Suspended', color: '#fb7185', bg: 'rgba(251,113,133,0.16)' },
+  INACTIVE:  { label: 'Inactive',  color: '#64748b', bg: 'rgba(100,116,139,0.14)' },
+}[s] || { label: s || '—', color: 'var(--text-muted)', bg: 'var(--bg-input)' })
+
 /** Mirrors DriverStatus::TRANSITIONS and DriverAvailability::TRANSITIONS. */
 export const DRIVER_STATUS_TRANSITIONS = {
   active:   [{ to: 'inactive', label: 'Deactivate' }, { to: 'blocked', label: 'Block' }],

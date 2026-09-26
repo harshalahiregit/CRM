@@ -7,7 +7,7 @@ import Modal from '@/components/ui/Modal'
 import { useToast } from '@/components/ui/Toast'
 import { transportAllocationApi, transportResourceCommitmentApi } from '@/services/transportApi'
 import { Chip } from './MasterFormFields'
-import { vehicleStatusCfg, driverAvailabilityCfg } from '../constants'
+import { vehicleStatusCfg, fleetDriverStatusCfg } from '../constants'
 
 /**
  * Allocation panel on the trip detail page — SNG-TRN-009 step 8.
@@ -73,7 +73,8 @@ function CandidateRow({ row, kind, onPick, picking, commitment }) {
   const [open, setOpen] = useState(false)
   const s = row.subject
   const eligible = row.eligible
-  const statusChip = kind === 'vehicle' ? vehicleStatusCfg(s.status) : driverAvailabilityCfg(s.availability)
+  // Drivers: Fleet's own status (subject.status). There is no availability axis on a Fleet driver.
+  const statusChip = kind === 'vehicle' ? vehicleStatusCfg(s.status) : fleetDriverStatusCfg(s.status)
 
   /*
    * When one of OUR trips is holding this resource, the eligibility service
