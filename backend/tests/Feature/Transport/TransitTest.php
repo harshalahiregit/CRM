@@ -109,7 +109,7 @@ class TransitTest extends TestCase
             'name' => 'Ramesh '.Str::random(4),
             'licence_number' => 'RJ14'.self::uniqueSeq(6),
             'licence_class' => 'HMV',
-            'licence_valid_until' => now()->addYears(2)->toDateString(),
+            'licence_expiry' => now()->addYears(2)->toDateString(),
         ], $tenantId, $this->actor);
 
         $this->alloc->assign($trip->fresh(), $v->id, $d->id, $tenantId, $this->actor);
@@ -473,18 +473,20 @@ class TransitTest extends TestCase
         $trip = $this->movingTrip();
         $a = app(TripAssignmentService::class)->activeForTrip($trip->id, self::TENANT_A);
 
-        $this->assertSame(VehicleStatus::ALLOCATED,
-            TransportVehicle::find($a->vehicle_id)->status, 'held while moving');
-        $this->assertSame(DriverAvailability::ASSIGNED,
-            TransportDriver::find($a->driver_id)->availability, 'held while moving');
+        // The assignment holds Fleet ids; Fleet's own states say held and free.
+        // Departure moved the vehicle on to IN_TRANSIT — still held, now moving.
+        $this->assertSame(Vehicle::STATUS_IN_TRANSIT,
+            Vehicle::find($a->vehicle_id)->status, 'held while moving');
+        $this->assertSame(DriverProfile::ON_TRIP,
+            DriverProfile::find($a->driver_id)->status, 'held while moving');
 
         $this->trips->recordDelivery($trip->fresh(), [], self::TENANT_A, $this->actor);
 
-        $this->assertSame(VehicleStatus::AVAILABLE,
-            TransportVehicle::find($a->vehicle_id)->status,
+        $this->assertSame(Vehicle::STATUS_AVAILABLE,
+            Vehicle::find($a->vehicle_id)->status,
             'the vehicle should come free when the cargo is off');
-        $this->assertSame(DriverAvailability::AVAILABLE,
-            TransportDriver::find($a->driver_id)->availability,
+        $this->assertSame(DriverProfile::AVAILABLE,
+            DriverProfile::find($a->driver_id)->status,
             'and so should the driver — OPS §79 withholds billing for late documents, not the driver');
     }
 
@@ -522,16 +524,15 @@ class TransitTest extends TestCase
         $trip = $this->movingTrip();
         $a = app(TripAssignmentService::class)->activeForTrip($trip->id, self::TENANT_A);
 
-        TransportVehicle::find($a->vehicle_id)
-            ->forceFill(['status' => VehicleStatus::BREAKDOWN])->save();
+        $this->moveFleetVehicle(Vehicle::find($a->vehicle_id), Vehicle::STATUS_BREAKDOWN);
 
         $this->trips->recordDelivery($trip->fresh(), [], self::TENANT_A, $this->actor);
 
-        $this->assertSame(VehicleStatus::BREAKDOWN,
-            TransportVehicle::find($a->vehicle_id)->status,
+        $this->assertSame(Vehicle::STATUS_BREAKDOWN,
+            Vehicle::find($a->vehicle_id)->status,
             'a delivery must not overwrite a breakdown');
-        $this->assertSame(DriverAvailability::AVAILABLE,
-            TransportDriver::find($a->driver_id)->availability,
+        $this->assertSame(DriverProfile::AVAILABLE,
+            DriverProfile::find($a->driver_id)->status,
             'the driver is still free though — the two are judged separately');
     }
 

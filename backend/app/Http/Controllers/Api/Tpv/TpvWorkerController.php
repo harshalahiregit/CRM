@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Tpv;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Tpv\IssueWorkerPpeRequest;
+use App\Http\Requests\Tpv\SaveGroupInductionRequest;
 use App\Http\Requests\Tpv\SaveWorkerInductionRequest;
 use App\Http\Requests\Tpv\SaveWorkerMedicalRequest;
 use App\Support\Medical\DoctorOptions;
@@ -113,6 +114,23 @@ class TpvWorkerController extends Controller
         $this->assertTenant($request, $worker);
 
         return response()->json($this->workerService->saveInduction($worker, $request->validated(), $request->user()));
+    }
+
+    /**
+     * One group session saved against many workers; the trainer signs once.
+     * Scoped strictly to the caller's tenant — a worker id from another tenant
+     * comes back as skipped/"not found", never saved (and, unlike assertTenant,
+     * never re-homed).
+     */
+    public function saveGroupInduction(SaveGroupInductionRequest $request)
+    {
+        $data = $request->validated();
+        $ids  = $data['worker_ids'];
+        unset($data['worker_ids']);
+
+        return response()->json($this->workerService->saveGroupInduction(
+            (int) $request->user()->tenant_id, null, $ids, $data, $request->user()
+        ));
     }
 
     /** Step 5 — issue the entry badge (admin). Returns the QR token once. */
@@ -466,13 +484,19 @@ class TpvWorkerController extends Controller
     private function assertTenant(Request $request, TpvWorker $worker): void
     {
         $tenantId = $request->user()?->tenant_id ?? 1;
+
+        // A row that predates tenanting has no owner yet, so the first tenant to
+        // touch it adopts it. That is the only case where this method writes.
         if (empty($worker->tenant_id)) {
             $worker->update(['tenant_id' => $tenantId]);
             return;
         }
 
-        if ((int) $worker->tenant_id !== (int) $tenantId) {
-            $worker->update(['tenant_id' => $tenantId]);
-        }
+        // It used to reassign the worker here instead — which handed another
+        // tenant's worker to whoever asked for the id, and took it away from its
+        // owner for good. There is no global tenant scope on TpvWorker
+        // (BelongsToTenant only stamps tenant_id on create), so route-model
+        // binding resolves every tenant's rows and this is the only barrier.
+        abort_if((int) $worker->tenant_id !== (int) $tenantId, 404);
     }
 }

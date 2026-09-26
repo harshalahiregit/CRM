@@ -167,12 +167,38 @@ class HrWriteAuthorizationTest extends TestCase
         $this->assertDatabaseMissing('hr_employee_details', ['aadhaar_number' => '999988887777']);
     }
 
-    /** Reading the form is not what was wrong, and must keep working. */
-    public function test_reading_an_employee_record_is_unchanged(): void
+    /**
+     * Reading still works — for the two people entitled to read it.
+     *
+     * This used to assert that a plain employee could read ANOTHER person's
+     * detail, with the note "reading the form is not what was wrong". That was
+     * true of the change this file was written for: nine WRITES, and the read
+     * was left alone as out of scope rather than ruled on.
+     *
+     * The read was its own hole. Proved against the running API with a token for
+     * an account holding no permission role: it returned a colleague's bank
+     * account number, IFSC, PAN, Aadhaar and UAN in full, byte-identical to the
+     * administrator's response. The same fields this file exists to stop being
+     * REWRITTEN were freely readable.
+     *
+     * The expectation is corrected rather than deleted, and the original intent
+     * is kept: reading the form must keep working. It keeps working for the
+     * person whose record it is, and for HR.
+     */
+    public function test_reading_another_persons_detail_is_refused_but_your_own_is_not(): void
     {
-        $this->actAsPlainEmployee();
+        $actor = $this->actAsPlainEmployee();
 
-        $this->getJson("/api/hr/employees/{$this->someoneElse->id}/detail")->assertOk();
+        $this->getJson("/api/hr/employees/{$this->someoneElse->id}/detail")->assertForbidden();
+
+        $own = HrEmployee::create([
+            'tenant_id' => $this->tenant->id, 'user_id' => $actor->id,
+            'employee_code' => 'OWN-001', 'name' => 'Their Own Record',
+            'department' => 'Operations', 'designation' => 'Executive',
+            'joining_date' => '2025-01-01', 'status' => 'Active',
+        ]);
+
+        $this->getJson("/api/hr/employees/{$own->id}/detail")->assertOk();
     }
 
     /* ── 3, 4, 5 — loans ──────────────────────────────────────────────── */
@@ -298,9 +324,26 @@ class HrWriteAuthorizationTest extends TestCase
     {
         Sanctum::actingAs($this->user($role, "portal-{$role}@writes.test", 'hr_executive'));
 
-        $this->putJson("/api/hr/employees/{$this->someoneElse->id}/detail",
-            ['bank_account_number' => '123'])->assertForbidden();
-        $this->postJson('/api/hr/loans', ['employee_id' => $this->someoneElse->id])->assertForbidden();
+        // Refused, by whichever layer gets there first.
+        //
+        // This asserted 403 exactly. Portal identities used to reach the
+        // authorization check because ScopeResolver handed them GLOBAL scope —
+        // they had no staff role, and "no role means global" was written for
+        // colleagues who predate the roles table. They now resolve to OWN, so the
+        // employee is out of their scope and assertTenant answers 404 first,
+        // which that controller documents as deliberate: "out of scope should
+        // look like not there".
+        //
+        // 404 refuses at least as hard as 403 and leaks less, so the assertion
+        // accepts either. What must not move is the line below it: nothing is
+        // written. That is what this test is actually for.
+        foreach ([
+            $this->putJson("/api/hr/employees/{$this->someoneElse->id}/detail", ['bank_account_number' => '123']),
+            $this->postJson('/api/hr/loans', ['employee_id' => $this->someoneElse->id]),
+        ] as $response) {
+            $this->assertContains($response->status(), [403, 404],
+                "A {$role} account must be refused; got {$response->status()}.");
+        }
 
         $this->assertDatabaseMissing('hr_employee_details', ['bank_account_number' => '123']);
     }

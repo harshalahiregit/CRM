@@ -43,13 +43,36 @@ class ScopeResolver
      *
      * An admin is global regardless: they bypass the permission grid, and a
      * scope that could lock the administrator out of the screen that fixes
-     * scopes is a trap. Somebody with no role is global too — that is everybody
-     * who existed before roles were records, and their access must not change.
+     * scopes is a trap. A STAFF member with no role is global too — that is
+     * everybody who existed before roles were records, and their access must not
+     * change.
+     *
+     * A PORTAL identity is not. That back-compat rule was written for colleagues
+     * who predate the roles table, and it silently extended to clients, vendors,
+     * third-party vendors and company logins, because they have no staff role
+     * either and normalise(null) answers GLOBAL.
+     *
+     * Confirmed on live data: two `client` accounts resolved to GLOBAL, and one
+     * of them read the workforce's leave register — employee names, codes,
+     * departments, dates and the reason given for each absence — through
+     * /hr/leave/applications.
+     *
+     * EnsureStaffPermission already draws this line for the permission grid:
+     * "a portal account must never satisfy a staff gate". The same line belongs
+     * here, because a data scope is the other half of the same question. OWN
+     * rather than a refusal, so the resolver keeps returning a scope and its
+     * callers keep working: a portal identity with no employee record resolves
+     * to an empty id set, which employeeIds() already treats as "no honest set
+     * of records for them".
      */
     public function scopeFor(User $actor): string
     {
         if ($actor->isAdmin()) {
             return DataScope::GLOBAL;
+        }
+
+        if (! $actor->isStaffAccount()) {
+            return DataScope::OWN;
         }
 
         $role = $actor->relationLoaded('staffRole') ? $actor->staffRole : $actor->staffRole()->first();

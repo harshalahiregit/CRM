@@ -18,6 +18,7 @@ use App\Support\Transport\TripStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
+use Tests\Concerns\CreatesFleetResources;
 use Tests\TestCase;
 
 /**
@@ -31,6 +32,7 @@ use Tests\TestCase;
 class ContainerPassportTest extends TestCase
 {
     use RefreshDatabase;
+    use CreatesFleetResources;
 
     private const TENANT_A = 1;
     private const TENANT_B = 2;
@@ -120,12 +122,13 @@ class ContainerPassportTest extends TestCase
         // contract to Fleet (D-100).
         $chain = $this->fullChain();
 
-        $vehicle = \App\Models\Transport\TransportVehicle::create([
-            'tenant_id' => self::TENANT_A, 'registration_number' => 'MH12AB'.self::uniqueSeq(4), 'capacity_tonnes' => 25,
-        ]);
-        $driver = \App\Models\Transport\TransportDriver::create([
-            'tenant_id' => self::TENANT_A, 'name' => 'Ramesh Kumar', 'licence_number' => 'RJ14'.self::uniqueSeq(6),
-        ]);
+        // Trips hold Fleet ids since the repoint, and the passport reads them.
+        $vehicle = $this->fleetVehicle([
+            'registration_number' => 'MH12AB'.self::uniqueSeq(4), 'capacity_tonnes' => 25,
+        ], self::TENANT_A);
+        $driver = $this->fleetDriver([
+            'name' => 'Ramesh Kumar', 'licence_number' => 'RJ14'.self::uniqueSeq(6),
+        ], self::TENANT_A);
         $chain['trip']->forceFill(['vehicle_id' => $vehicle->id, 'driver_id' => $driver->id])->save();
 
         $p = $this->passports->forContainer($chain['container']->id, self::TENANT_A);

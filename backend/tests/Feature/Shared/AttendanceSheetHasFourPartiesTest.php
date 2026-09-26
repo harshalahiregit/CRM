@@ -133,6 +133,72 @@ class AttendanceSheetHasFourPartiesTest extends TestCase
             .'recorded a firm as having attended it');
     }
 
+    /**
+     * A third-party vendor's column also lists its CONTACTS — the people its
+     * Contacts tab holds, not only badged workers.
+     *
+     * This column read the legacy `vendor_contacts` table, which no TPV screen
+     * writes: the Contacts tab saves to `tpv_contacts`. So a vendor with staff
+     * but no workers offered nobody at all — "No people are registered against
+     * <vendor> yet" — while the same picker worked on the Purchase side, which
+     * had never drifted from its own table. The suite missed it because every
+     * case here inserted workers and none inserted a contact.
+     */
+    public function test_a_third_party_vendors_contacts_are_offered_too(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $vendor = Vendor::create([
+            'tenant_id' => self::TENANT, 'company_name' => 'Sangoe Fabrication',
+            'vendor_code' => 'TPV-002', 'status' => 'Active', 'email' => 'ops@sangoe.test',
+        ]);
+
+        $contactId = DB::table('tpv_contacts')->insertGetId([
+            'tenant_id' => self::TENANT, 'vendor_id' => $vendor->id,
+            'first_name' => 'Heera', 'last_name' => 'Lal', 'designation' => 'Manager',
+            'email' => 'heera@sangoe.test', 'status' => 'Active',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        // Deliberately NO workers on this vendor: contacts alone must fill the column.
+        $people = $this->getJson('/api/kickoff/party-people?party=tpv&entity_id='.$vendor->id)
+            ->assertOk()->json('people');
+
+        $this->assertNotEmpty($people,
+            'a vendor with contacts and no workers offered nobody — the column read the wrong table');
+
+        $heera = collect($people)->firstWhere('ref', 'tpv_contact:'.$contactId);
+
+        $this->assertNotNull($heera, "the vendor's own contact is not offered in its column");
+        $this->assertSame('Heera Lal', $heera['name'], 'first and last name are joined for display');
+        $this->assertSame('Manager', $heera['designation']);
+        $this->assertSame('heera@sangoe.test', $heera['email'],
+            'the e-mail must come across, or the invitation cannot reach them');
+        $this->assertSame('Sangoe Fabrication', $heera['organisation']);
+    }
+
+    /** A deleted contact is not offered. */
+    public function test_a_removed_contact_is_not_offered(): void
+    {
+        Sanctum::actingAs($this->admin);
+
+        $vendor = Vendor::create([
+            'tenant_id' => self::TENANT, 'company_name' => 'Gone Traders',
+            'vendor_code' => 'TPV-003', 'status' => 'Active', 'email' => 'ops@gone.test',
+        ]);
+
+        DB::table('tpv_contacts')->insert([
+            'tenant_id' => self::TENANT, 'vendor_id' => $vendor->id,
+            'first_name' => 'Removed', 'last_name' => 'Person', 'status' => 'Active',
+            'deleted_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $people = $this->getJson('/api/kickoff/party-people?party=tpv&entity_id='.$vendor->id)
+            ->assertOk()->json('people');
+
+        $this->assertEmpty($people, 'a deleted contact must not be invitable');
+    }
+
     /** The Vendor column is Purchase's vendors, which are a separate master. */
     public function test_the_vendor_column_is_the_purchase_vendor_master(): void
     {

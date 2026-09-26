@@ -38,6 +38,11 @@ export function MeetingsTab({ projectId, canManage = false }) {
   const [linkMenu, setLinkMenu] = useState(false)
   const [linkBusy, setLinkBusy] = useState(null)
   const [tagMenu, setTagMenu] = useState(false)
+  // What happened when the meeting link was mailed out: how many people it
+  // reached, and by name, who it could not. Named rather than counted —
+  // a silent skip is how a meeting starts with somebody missing.
+  const [sent, setSent] = useState(null)
+  const [linkHint, setLinkHint] = useState('')
 
   const { data: staff = [] } = useQuery({ queryKey: ['task-staff'], queryFn: taskApi.staff })
   const { data, isLoading } = useQuery({ queryKey: ['project-meetings', projectId], queryFn: () => projectApi.meetings(projectId) })
@@ -56,7 +61,13 @@ export function MeetingsTab({ projectId, canManage = false }) {
       meeting_date: form.meeting_date || null,
       notes: form.notes.trim() || null,
     }),
-    onSuccess: () => { setForm(EMPTY); setShowForm(false); setErr(''); bust() },
+    onSuccess: (res) => {
+      setForm(EMPTY); setShowForm(false); setErr(''); setLinkHint('')
+      // Saving a link mails it to every participant — the server says who it
+      // reached and who has no address anywhere.
+      setSent(res?.notified || null)
+      bust()
+    },
     onError: onErr,
   })
 
@@ -66,7 +77,23 @@ export function MeetingsTab({ projectId, canManage = false }) {
     setLinkBusy(platform)
     try {
       const res = await meetingLinkApi.create(platform, form.title.trim() || 'Project meeting')
-      if (res?.link) setForm(f => ({ ...f, meeting_link: res.link }))
+      /*
+       * An instant-start URL is not a room.
+       *
+       * With no provider configured this comes back as meet.google.com/new (or
+       * its Zoom / Teams twin), which opens a DIFFERENT, empty meeting for
+       * every person who clicks it. Dropping that into the form and mailing it
+       * to five people would put them in five rooms. So it opens the meeting
+       * instead, and the person pastes back the room they are now in — the same
+       * flow the kickoff meetings use.
+       */
+      if (res?.instant && res?.link) {
+        window.open(res.link, '_blank', 'noopener')
+        setLinkHint('Your meeting is opening in a new tab. Copy its address from the browser and paste it here — that is the room everyone will be sent.')
+      } else if (res?.link) {
+        setForm(f => ({ ...f, meeting_link: res.link }))
+        setLinkHint('')
+      }
       setLinkMenu(false)
     } catch (e) { onErr(e) }
     finally { setLinkBusy(null) }
@@ -81,7 +108,11 @@ export function MeetingsTab({ projectId, canManage = false }) {
     })
     setTagMenu(false)
   }
-  const patch = useMutation({ mutationFn: ({ mid, data }) => projectApi.updateMeeting(projectId, mid, data), onSuccess: () => { setErr(''); bust() }, onError: onErr })
+  const patch = useMutation({
+    mutationFn: ({ mid, data }) => projectApi.updateMeeting(projectId, mid, data),
+    onSuccess: (res) => { setErr(''); setSent(res?.notified || null); bust() },
+    onError: onErr,
+  })
   const del = useMutation({ mutationFn: (mid) => projectApi.deleteMeeting(projectId, mid), onSuccess: () => { setConfirmDelete(null); bust() }, onError: onErr })
 
   if (isLoading) return <Skeleton />
@@ -113,6 +144,24 @@ export function MeetingsTab({ projectId, canManage = false }) {
       </div>
 
       {err && <p className="text-[11px] mb-2" style={{ color: 'var(--color-danger-500)' }}>{err}</p>}
+      {linkHint && <p className="text-[11px] mb-2" style={{ color: 'var(--color-warning-500, #b45309)' }}>{linkHint}</p>}
+      {sent && (
+        <div className="text-[11px] mb-2 rounded-lg px-3 py-2"
+          style={{ background: 'rgba(16,185,129,0.09)', border: '1px solid rgba(16,185,129,0.3)' }}>
+          {sent.smtp_ready === false ? (
+            <span style={{ color: '#b45309', fontWeight: 700 }}>{sent.smtp_reason}</span>
+          ) : (
+            <span style={{ color: '#059669', fontWeight: 700 }}>
+              Meeting link sent to {sent.reachable} {sent.reachable === 1 ? 'person' : 'people'}.
+            </span>
+          )}
+          {(sent.unreachable || []).length > 0 && (
+            <ul className="mt-1 pl-4 list-disc" style={{ color: 'var(--text-body)' }}>
+              {sent.unreachable.map((u, i) => <li key={i}><strong>{u.name}</strong> — {u.reason}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
 
       {canManage && showForm && (
         <form onSubmit={e => { e.preventDefault(); if (form.title.trim()) create.mutate() }}

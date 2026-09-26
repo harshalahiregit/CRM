@@ -92,7 +92,9 @@ class TransportAllocationRefusalAuditTest extends TestCase
             'capacity_tonnes' => $capacity,
         ], self::A, $this->actor);
 
-        return $available ? $this->moveFleetVehicle($v, Vehicle::STATUS_AVAILABLE) : $v;
+        // Fleet creates a vehicle AVAILABLE, so "not available" has to be made
+        // on purpose — out of service, a status allocation must refuse.
+        return $this->moveFleetVehicle($v, $available ? Vehicle::STATUS_AVAILABLE : Vehicle::STATUS_UNDER_MAINTENANCE);
     }
 
     private function driver(array $o = []): DriverProfile
@@ -100,7 +102,7 @@ class TransportAllocationRefusalAuditTest extends TestCase
         return $this->fleetDriver(array_merge([
             'name' => 'Driver '.Str::random(4),
             'licence_number' => 'RJ14'.self::uniqueSeq(6),
-            'licence_valid_until' => now()->addYears(2)->toDateString(),
+            'licence_expiry' => now()->addYears(2)->toDateString(),
         ], $o), self::A, $this->actor);
     }
 
@@ -141,7 +143,7 @@ class TransportAllocationRefusalAuditTest extends TestCase
         // `allocated` when it was crewed, AND it is on an active assignment. Both
         // are recorded; the rule is keyed off the assignment one, since that is
         // what BR-P0-003 is actually about.
-        $blockers = implode(' | ', $row->context['blockers']);
+        $blockers = implode(' | ', array_column($row->context['blockers'], 'why'));
         $this->assertStringContainsString('Already assigned', $blockers);
         $this->assertStringContainsString('trip', strtolower($blockers), 'a conflict log must name the conflicting trip');
         $this->assertContains('BR-P0-003; STOS-DB §198; RTM PLN-006', $row->context['sources']);
@@ -154,7 +156,7 @@ class TransportAllocationRefusalAuditTest extends TestCase
     public function test_expired_licence_is_logged_against_br_p0_004_with_document_status(): void
     {
         $trip = $this->trip();
-        $d = $this->driver(['licence_valid_until' => now()->subDays(4)->toDateString(), 'licence_class' => 'HMV']);
+        $d = $this->driver(['licence_expiry' => now()->subDays(4)->toDateString(), 'licence_class' => 'HMV']);
 
         $this->refuse($trip, null, $d->id);
 
@@ -167,10 +169,34 @@ class TransportAllocationRefusalAuditTest extends TestCase
         $this->assertSame('HMV', $lic['class']);
         $this->assertSame(now()->subDays(4)->toDateString(), $lic['valid_until']);
         $this->assertFalse($lic['valid']);
+        // D-150 — and the Fleet verdict it was read from, so the row shows why.
+        $this->assertSame('expired', $lic['state']);
 
         // The override half cannot be satisfied — PLN-007 is P1.
         $this->assertNull($row->context['override']);
         $this->assertArrayHasKey('override', $row->context, 'the key is present so the shape is right for PLN-007');
+    }
+
+    /**
+     * D-150 — a driver refused by Fleet is BR-P0-004's refusal.
+     *
+     * Since D-134 licence, medical, lifecycle and availability are one check,
+     * `fleet`. ruleFor() still matched only the four old keys, so every driver
+     * refusal logged `rule: null` — evidence nobody could file under its rule.
+     */
+    public function test_a_fleet_refusal_is_logged_against_br_p0_004(): void
+    {
+        $trip = $this->trip();
+        $d = $this->driver(['licence_expiry' => now()->subDays(4)->toDateString()]);
+
+        $this->refuse($trip, null, $d->id);
+
+        $row = $this->refusal($trip);
+        $this->assertNotNull($row, 'BR-P0-004 requires a refusal log');
+        $this->assertSame(['fleet'], collect($row->context['checks'])->where('passed', false)->pluck('key')->values()->all(),
+            'this proves nothing unless Fleet is the check that refused');
+        $this->assertSame('BR-P0-004', $row->context['rule']);
+        $this->assertContains('BR-P0-004; BRW-028; BRW-029; STOS-CMP §22; RTM PLN-004', $row->context['sources']);
     }
 
     public function test_an_expired_vehicle_document_is_logged_with_its_document_status(): void
@@ -195,7 +221,7 @@ class TransportAllocationRefusalAuditTest extends TestCase
     public function test_a_vehicle_that_is_not_available_is_logged(): void
     {
         $trip = $this->trip();
-        $v = $this->vehicle(available: false);   // still NEW
+        $v = $this->vehicle(available: false);   // under maintenance
 
         $this->refuse($trip, $v->id, null);
 
@@ -214,7 +240,7 @@ class TransportAllocationRefusalAuditTest extends TestCase
 
         $row = $this->refusal($trip);
         $this->assertContains('RTM PLN-001; FRS TRP-P0-003 ("payload")', $row->context['sources']);
-        $this->assertStringContainsString('below', $row->context['blockers'][0]);
+        $this->assertStringContainsString('below', $row->context['blockers'][0]['why']);
     }
 
     public function test_a_missing_required_document_is_logged(): void
@@ -227,15 +253,14 @@ class TransportAllocationRefusalAuditTest extends TestCase
         $this->refuse($trip, $v->id, null);
 
         $row = $this->refusal($trip);
-        $this->assertStringContainsString('Missing required', $row->context['blockers'][0]);
+        $this->assertStringContainsString('Missing required', $row->context['blockers'][0]['why']);
         $this->assertSame([], $row->context['document_status']['documents'], 'nothing on file, and that is the point');
     }
 
     public function test_an_unavailable_driver_is_logged_against_br_p0_004(): void
     {
         $trip = $this->trip();
-        $d = $this->driver();
-        $this->driverSvc->transitionAvailabilityTo($d, DriverAvailability::ON_LEAVE, self::A, $this->actor);
+        $d = $this->moveFleetDriver($this->driver(), DriverProfile::ON_LEAVE);
 
         $this->refuse($trip, null, $d->id);
 
@@ -247,13 +272,21 @@ class TransportAllocationRefusalAuditTest extends TestCase
     public function test_the_row_records_every_check_not_only_the_failures(): void
     {
         $trip = $this->trip();
-        $d = $this->driver(['licence_valid_until' => now()->subDay()->toDateString()]);
+        $d = $this->driver(['licence_expiry' => now()->subDay()->toDateString()]);
 
         $this->refuse($trip, null, $d->id);
 
-        $checks = $this->refusal($trip)->context['checks'];
-        $this->assertCount(5, $checks, 'lifecycle, availability, assignment, licence, documents');
+        $row = $this->refusal($trip);
+        $checks = $row->context['checks'];
+        // D-150 — was a count of the pre-D-134 five. The point was that the
+        // PASSING checks are recorded too: here the assignment check passed and
+        // must still be on the row beside Fleet's refusal.
         $this->assertSame(1, collect($checks)->where('passed', false)->count());
+        $this->assertTrue(collect($checks)->firstWhere('key', 'assignment')['passed'] ?? false,
+            'the check that passed is missing from the row');
+        // And the reason a reviewer reads is actionable: the sentence and the desk.
+        $this->assertNotSame('', $row->context['blockers'][0]['why']);
+        $this->assertSame('Fleet compliance desk', $row->context['blockers'][0]['owner']);
         foreach ($checks as $c) {
             $this->assertArrayHasKey('detail', $c);
             $this->assertArrayHasKey('required', $c);
@@ -293,7 +326,7 @@ class TransportAllocationRefusalAuditTest extends TestCase
         // ...and nothing else did.
         $this->assertSame(TripStatus::APPROVED, $trip->fresh()->status);
         $this->assertSame(0, TripAssignment::forTenant(self::A)->forTrip($trip->id)->count());
-        $this->assertSame(VehicleStatus::NEW, $v->fresh()->status);
+        $this->assertSame(Vehicle::STATUS_UNDER_MAINTENANCE, $v->fresh()->status, 'the refusal left the vehicle as it was');
         $this->assertNull($trip->fresh()->vehicle_id);
     }
 

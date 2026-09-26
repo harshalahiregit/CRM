@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { GRAD } from '@/components/ui/brand'
 import { useTheme } from '@/context/ThemeContext'
@@ -7,6 +7,7 @@ import { Search, Building2, Plus, X, LayoutGrid, List, Eye, Pencil } from 'lucid
 import { hrApi } from '@/services/hrApi'
 import { useMasterData, withInactiveById } from '@/modules/hr/useMasterData'
 import { canManageHrQueue, hrDateInput } from '@/modules/hr/constants'
+import { readFieldErrors } from '@/services/apiError'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import Modal from '@/components/ui/Modal'
 import DirectoryGapPanel from '@/modules/hr/components/DirectoryGapPanel'
@@ -20,7 +21,7 @@ const deptColor = d => DEPT_COLORS[d]||'#7C3AED'
 /** The form keys backed by an <input type="date">. See hrDateInput. */
 const DATE_KEYS = new Set(['dob', 'joining_date', 'probation_end_date', 'confirmation_date'])
 
-const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', gender:'', address:'', department:'', designation:'', department_id:'', designation_id:'', employment_type_id:'', reporting_manager_id:'', reporting_manager_name:'', work_state:'', joining_date:'', probation_end_date:'', confirmation_date:'', notice_days:'', status:'Active',
+const EMPTY_FORM = { name:'', email:'', phone:'', dob:'', gender:'', address:'', department:'', designation:'', department_id:'', designation_id:'', employment_type_id:'', grade_id:'', reporting_manager_id:'', reporting_manager_name:'', work_state:'', joining_date:'', probation_end_date:'', confirmation_date:'', notice_days:'', status:'Active',
   // #36 — probation must be set when adding an employee, or the hire explicitly exempted.
   probation_policy_id:'', skip_probation:false, probation_skip_reason:'',
   // #29 — what this person is, and the comment's explicit "option to consider
@@ -103,6 +104,7 @@ export default function Employees() {
   // master has no label to fall back on — withInactiveById prints "Current"
   // for that case rather than dropping the value and losing it on save.
   const empTypeOptions = (f) => withInactiveById(masters.employment_types, f?.employment_type_id, f?.employment_type?.name)
+  const gradeOptions   = (f) => withInactiveById(masters.grades, f?.grade_id, f?.grade?.name)
   // Managers are picked by ID, not by name. masters.managers already carries
   // {id, name, employee_code}; the name was the only part being used, so the
   // hierarchy every other feature reads — org chart, advance approvals, the
@@ -113,10 +115,17 @@ export default function Employees() {
   // only ever be a name. Id where there is one, name either way.
   const managerPeople  = (masters.managers || []).filter(m => m?.id)
   const managerOptions = (f) => {
-    const opts = managerPeople.map(m => ({
-      value: String(m.id),
-      label: m.employee_code ? `${m.name} (${m.employee_code})` : m.name,
-    }))
+    const opts = managerPeople
+      // Not yourself. The server already refuses it — "An employee cannot report
+      // to themselves" — but the list was offering the one choice guaranteed to
+      // fail, and the person only found out after pressing Save. Offering an
+      // option the server will reject is a question you already know the answer
+      // to.
+      .filter(m => !editingId || String(m.id) !== String(editingId))
+      .map(m => ({
+        value: String(m.id),
+        label: m.employee_code ? `${m.name} (${m.employee_code})` : m.name,
+      }))
     // An already-set manager who has since left the master list stays visible,
     // so editing somebody else's field cannot silently clear it.
     const current = f?.reporting_manager_id
@@ -146,6 +155,8 @@ export default function Employees() {
 
   // Filters
   const [search, setSearch]       = useState('')
+  /** Sequence of the newest employee-list request; older answers are discarded. */
+  const employeeRequestSeq = useRef(0)
   const [deptF, setDeptF]         = useState('All')
   const [desigF, setDesigF]       = useState('All')
   const [statusF, setStatusF]     = useState('All')
@@ -153,6 +164,8 @@ export default function Employees() {
 
   const [showModal, setShowModal] = useState(false)
   const [editingId, setEditingId] = useState(null)
+  // The linked account's state, read-only, for the modal's Login account block.
+  const [loginState, setLoginState] = useState(null)
   const [appBusy, setAppBusy] = useState(null)
   const [form, setForm]           = useState(EMPTY_FORM)
   const [saving, setSaving]       = useState(false)
@@ -164,6 +177,14 @@ export default function Employees() {
   const [meta, setMeta] = useState({ current_page:1, last_page:1, total:0, per_page:25 })
 
   const fetchData = async () => {
+    // Same guard as Staff Management, for the same reason: the search box fires
+    // one request per keystroke with no debounce, several are in flight at once,
+    // and they do not come back in the order they were sent. On a fast local
+    // server they usually do, which is exactly why this is worth pinning — the
+    // list silently showing results for two letters ago is a bug that only
+    // appears on a slow connection.
+    const seq = ++employeeRequestSeq.current
+
     setLoading(true)
     try {
       const params = {}
@@ -175,6 +196,8 @@ export default function Employees() {
       params.page = page
       const [res, st] = await Promise.all([hrApi.employees.listPaged(params), hrApi.employees.stats()])
       // Laravel paginator: { data, current_page, last_page, total, per_page }
+      if (seq !== employeeRequestSeq.current) return
+
       const rows = Array.isArray(res) ? res : (res?.data ?? [])
       setEmployees(rows)
       setMeta({
@@ -184,8 +207,11 @@ export default function Employees() {
         per_page:     res?.per_page ?? rows.length,
       })
       setStats(st)
-    } catch { showToast('Failed to load employees','error') }
-    finally { setLoading(false) }
+    } catch (e) {
+      if (seq !== employeeRequestSeq.current) return
+      showToast(readFieldErrors(e).summary, 'error')
+    }
+    finally { if (seq === employeeRequestSeq.current) setLoading(false) }
   }
   useEffect(()=>{ fetchData() },[deptF, desigF, statusF, joinedFrom, search, page])
   useEffect(()=>{ setPage(1) },[deptF, desigF, statusF, joinedFrom, search])
@@ -215,6 +241,9 @@ export default function Employees() {
 
   const openEdit = (emp) => {
     setEditingId(emp.id)
+    // Not part of the form — nothing here writes it. Kept beside the form so the
+    // modal can show what this person's access currently is.
+    setLoginState(emp.login || null)
     // #29 — the two org-chart keys fall back to the EMPTY_FORM defaults rather
     // than to '': an employee the list endpoint did not return them for would
     // otherwise open with "Show on the org chart" unticked and save it off.
@@ -246,7 +275,7 @@ export default function Employees() {
         setStats(prev=>({...prev,total:prev.total+1,active:prev.active+1}))
         showToast('Employee added!')
       }
-      setShowModal(false); setForm(EMPTY_FORM); setEditingId(null)
+      setShowModal(false); setForm(EMPTY_FORM); setEditingId(null); setLoginState(null)
     } catch (e) { showToast(e.response?.data?.message||'Failed','error') }
     finally { setSaving(false) }
   }
@@ -311,7 +340,13 @@ export default function Employees() {
               them to a screen that refuses them. */}
           {isAdmin && (
             <button
-              onClick={() => navigate('/app/admin/staff')}
+              /* `?new=1` so the destination OPENS the create form. Without it the
+                 button navigated to a different screen and stopped: the person
+                 pressed "Add Employee", landed on a list of existing staff, and
+                 nothing on that page said what to do next or why they were there.
+                 Going to the right screen is only half of sending somebody
+                 somewhere. */
+              onClick={() => navigate('/app/admin/staff?new=1')}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white"
               style={{ background: GRAD, boxShadow: '0 4px 14px rgba(124,58,237,0.4)' }}
               title="Employees are created in Staff Management, so the login and the employment record are made together">
@@ -585,6 +620,28 @@ export default function Employees() {
                   {(masters.employment_types||[]).length ? 'Manage employment types in Organization Setup' : 'Add employment types in Organization Setup'}
                 </button>
               </div>
+              {/* Grade. Same shape as Employment Type above, and added for the
+                  same reason it is optional: a workspace with no grades must
+                  still be able to hire.
+
+                  It was missing entirely. grade_id is fillable, the employee
+                  profile renders a Grade row, Organization Setup creates grades,
+                  and leave policies, exit policies and the salary report all
+                  target one — but no form wrote it, so every employee's grade was
+                  permanently null and a grade-scoped policy could never match
+                  anybody. */}
+              <div>
+                <label className="label">Grade</label>
+                <select className="input-3d text-sm" value={form.grade_id||''}
+                  onChange={e=>setForm({...form,grade_id:e.target.value})}>
+                  <option value="">{(masters.grades||[]).length ? 'Select…' : 'No grades defined yet'}</option>
+                  {gradeOptions(form).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+                <button type="button" onClick={()=>navigate('/app/hr/organization-setup')}
+                  className="text-[10px] mt-1 underline" style={{ color:'#a78bfa' }}>
+                  {(masters.grades||[]).length ? 'Manage grades in Organization Setup' : 'Add grades in Organization Setup'}
+                </button>
+              </div>
               <div>
                 <label className="label">Notice Period (days)</label>
                 <input type="number" min="0" max="365" className="input-3d text-sm"
@@ -718,7 +775,57 @@ export default function Employees() {
                   The state Professional Tax is levied under — not the office city. Leave blank to use the company default.
                 </p>
               </div>
-              {editingId && <div><label className="label">Status</label><select className="input-3d text-sm" value={form.status} onChange={e=>setForm({...form,status:e.target.value})}>{['Active','On Leave','Inactive'].map(s=><option key={s}>{s}</option>)}</select></div>}
+              {editingId && <div><label className="label">Employment Status</label><select className="input-3d text-sm" value={form.status} onChange={e=>setForm({...form,status:e.target.value})}>{['Active','On Leave','Inactive'].map(s=><option key={s}>{s}</option>)}</select>
+                <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+                  Setting this to Inactive also stops the linked login from signing in.
+                </p>
+              </div>}
+
+              {/* The login attached to this person — READ ONLY.
+                  ────────────────────────────────────────────────────────────
+                  Employment status decides whether somebody may sign in, and this
+                  was the one screen that could not say so: an admin set a person
+                  Inactive here and had no way to see what it did to their access.
+                  Shown, never edited — the account belongs to Staff Management,
+                  and a second editor for it is exactly what this whole piece of
+                  work exists to remove. */}
+              {editingId && (
+                <div className="rounded-xl p-3" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div style={{ minWidth: 0 }}>
+                      <p className="text-[10px] font-black uppercase tracking-wide" style={{ color:'var(--text-muted)' }}>
+                        Login account
+                      </p>
+                      {loginState ? (
+                        <>
+                          <p className="text-xs font-semibold mt-1" style={{ color:'var(--text-h)' }}>{loginState.email}</p>
+                          <p className="text-[10px] mt-1" style={{ color: loginState.can_sign_in ? '#10b981' : '#f59e0b' }}>
+                            {loginState.can_sign_in
+                              ? 'Can sign in to the CRM'
+                              : `Cannot sign in — ${loginState.blocked_because}`}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-[11px] mt-1" style={{ color:'var(--text-muted)' }}>
+                          No login. This person cannot sign in or use the attendance app.
+                        </p>
+                      )}
+                    </div>
+                    {loginState && (
+                      /* Filtered to this person. Dropping an admin onto an
+                         unfiltered list and making them search again for the
+                         name they were just looking at is the same dead end the
+                         Add Employee button had. */
+                      <button type="button" onClick={()=>navigate(`/app/admin/staff?search=${encodeURIComponent(loginState.email)}`)}
+                        className="px-2.5 py-1 rounded-lg text-[10px] font-black whitespace-nowrap"
+                        style={{ background:'var(--bg-card)', color:'var(--text-h)', border:'1px solid var(--border)' }}>
+                        Manage account
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="flex gap-3 pt-1">
                 <button onClick={()=>setShowModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>Cancel</button>
                 <button onClick={handleSave} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:'linear-gradient(135deg,#7C3AED,#5b21b6)', opacity:saving?0.7:1 }}>{saving?'Saving…':editingId?'Save Changes':'Add Employee'}</button>

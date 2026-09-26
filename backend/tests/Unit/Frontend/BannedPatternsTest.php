@@ -53,9 +53,10 @@ class BannedPatternsTest extends TestCase
     private const GRANDFATHERED = [
         'alert(' => [
             'components/admin/StaffModal.jsx' => 1,
-            'modules/hr/pages/JobPostings.jsx' => 6,
-            'modules/hr/pages/JobWorkspace.jsx' => 4,
-            'modules/hr/pages/ManpowerRequests.jsx' => 4,
+            // Every HR page is now off this list. Validation renders under the
+            // fields on the manpower form, and every workflow, publish and sync
+            // failure goes through readFieldErrors() to a toast. Removed rather
+            // than lowered, because a budget of N is a licence to have N.
             'modules/inventory/pages/InventorySettings.jsx' => 1,
             'modules/projects/pages/ProjectDetail.jsx' => 1,
             'modules/purchase/pages/PurchaseAnalytics.jsx' => 1,
@@ -71,11 +72,11 @@ class BannedPatternsTest extends TestCase
             'modules/purchase/pages/PurchaseVendorItems.jsx' => 1,
             'modules/purchase/pages/PurchaseViolations.jsx' => 1,
             'modules/purchase/pages/PurchaseWorkPackages.jsx' => 1,
-            'modules/purchase/pages/PurchaseWorkerWizard.jsx' => 28,
-            'modules/purchase/pages/PurchaseWorkers.jsx' => 14,
+            'modules/purchase/pages/PurchaseWorkerWizard.jsx' => 23,
+            'modules/purchase/pages/PurchaseWorkers.jsx' => 10,
             'modules/purchase/pages/vendor-detail/PurchaseVendorDetailLayout.jsx' => 2,
             'modules/purchase/pages/vendor-detail/vendorDetailTabs.jsx' => 2,
-            'modules/tpv/components/TpvVendorContacts.jsx' => 7,
+            'modules/tpv/components/TpvVendorContacts.jsx' => 5,
             'modules/tpv/components/TpvVendorDocuments.jsx' => 3,
             'modules/tpv/components/VendorAttachmentsPanel.jsx' => 5,
             'modules/tpv/components/VendorNotesPanel.jsx' => 1,
@@ -96,8 +97,8 @@ class BannedPatternsTest extends TestCase
             'modules/tpv/pages/TpvVendorDetail.jsx' => 2,
             'modules/tpv/pages/TpvVendors.jsx' => 2,
             'modules/tpv/pages/TpvViolations.jsx' => 1,
-            'modules/tpv/pages/TpvWorkerWizard.jsx' => 28,
-            'modules/tpv/pages/TpvWorkers.jsx' => 19,
+            'modules/tpv/pages/TpvWorkerWizard.jsx' => 23,
+            'modules/tpv/pages/TpvWorkers.jsx' => 13,
             'modules/tpv/pages/WorkforceDashboard.jsx' => 10,
             // CareerJobDetails.jsx used to sit here with 1. Its only alert()
             // was inside a dead respond() that sent no offer token and was
@@ -158,7 +159,6 @@ class BannedPatternsTest extends TestCase
             'modules/tpv/pages/TpvViolations.jsx' => 2,
             'modules/tpv/pages/TpvWorkPackages.jsx' => 1,
             'modules/tpv/pages/TpvWorkerWizard.jsx' => 3,
-            'modules/tpv/pages/TpvWorkers.jsx' => 1,
             'pages/company-portal/CompanyHiringRequests.jsx' => 1,
             'pages/company-portal/CompanyInterviews.jsx' => 1,
             'pages/company-portal/CompanyRequestDetail.jsx' => 1,

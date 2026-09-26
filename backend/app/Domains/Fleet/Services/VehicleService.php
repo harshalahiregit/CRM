@@ -2,6 +2,7 @@
 
 namespace App\Domains\Fleet\Services;
 
+use App\Domains\Fleet\Integration\TripCommitmentReader;
 use App\Domains\Fleet\Models\FuelTransaction;
 use App\Domains\Fleet\Models\Genset;
 use App\Domains\Fleet\Models\MaintenanceJob;
@@ -32,8 +33,10 @@ use Illuminate\Support\Facades\Log;
  */
 class VehicleService
 {
-    public function __construct(private ComplianceService $compliance)
-    {
+    public function __construct(
+        private ComplianceService $compliance,
+        private TripCommitmentReader $trips,
+    ) {
     }
 
     public function create(array $data, int $companyId, int $userId): Vehicle
@@ -224,6 +227,20 @@ class VehicleService
     {
         $vehicle = $this->find($id, $companyId);
 
+        // D-146 — a truck on a live trip is loaded and moving. Retiring it
+        // soft-deletes the row every screen on that trip reads from, so the
+        // journey in progress loses the asset it is about. The legacy master
+        // refused this and the refusal did not come across with the move.
+        $commitment = $this->trips->forVehicle($id, $companyId);
+
+        if ($commitment !== null) {
+            throw new BusinessException(
+                'This vehicle is on '.$this->trips->describe($commitment).'. '
+                .'Release it from the trip first — retiring a vehicle mid-journey '
+                .'would take it away from the trip that is using it.'
+            );
+        }
+
         $openJobs = MaintenanceJob::forCompany($companyId)
             ->where('vehicle_id', $id)
             ->whereIn('status', MaintenanceJob::OPEN_STATES)
@@ -271,7 +288,10 @@ class VehicleService
      */
     private function normalisePlate(string $plate): string
     {
-        return preg_replace('/[^A-Z0-9]/', '', strtoupper(trim($plate)));
+        // One definition of "the same plate", on the model, so the service's
+        // uniqueness check and the derived `registration_normalized` (D-141)
+        // can never disagree about what counts as a clash.
+        return Vehicle::normaliseRegistration($plate);
     }
 
     private function assertPlateFree(string $plate, int $companyId, ?int $exceptId = null): void

@@ -51,6 +51,13 @@ class StoreEmployeeRequest extends FormRequest
                 'nullable', 'integer',
                 Rule::exists('hr_employment_types', 'id')->where('tenant_id', $this->user()?->tenant_id),
             ],
+            // See EmployeeController::update — grade was a dimension nothing could
+            // set, while leave policies, exit policies and the salary report all
+            // target one.
+            'grade_id'               => [
+                'nullable', 'integer',
+                Rule::exists('hr_grades', 'id')->where('tenant_id', $this->user()?->tenant_id),
+            ],
             // Two fields, on purpose, and they are not duplicates of each other.
             //
             // reporting_manager_id is the IDENTITY, and it is what every feature

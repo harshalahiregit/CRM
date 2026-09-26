@@ -516,6 +516,148 @@ class EmployeeStaffIdentityTest extends TestCase
         ])->assertStatus(422);
     }
 
+    /**
+     * The login block is for the people who manage access, and nobody else.
+     *
+     * It was added so an HR admin editing an employee can see what employment
+     * status does to their sign-in. To an ordinary staff account the same block
+     * is a list of which accounts exist, which of them are administrators, and
+     * which can sign in — reconnaissance rather than a directory, on a list that
+     * staff are allowed to read.
+     */
+    public function test_the_login_block_is_hidden_from_staff_who_cannot_manage_hr(): void
+    {
+        $user = $this->user();
+        $this->employee(['user_id' => $user->id]);
+
+        $plain = $this->user(['role' => 'staff']);
+        $this->assertFalse($plain->canManageHrQueue(), 'fixture must be genuinely unprivileged');
+
+        $rows = $this->actingAs($plain)->getJson('/api/hr/employees?per_page=50')->assertOk()->json('data');
+
+        foreach ($rows as $row) {
+            $this->assertArrayNotHasKey('login', $row, 'account state must not reach an ordinary staff account');
+        }
+
+        // ...and the directory itself is still readable, which it always was.
+        $this->assertNotEmpty($rows);
+    }
+
+    public function test_an_hr_administrator_still_sees_the_login_block(): void
+    {
+        $user = $this->user();
+        $this->employee(['user_id' => $user->id]);
+
+        $rows = $this->actingAs($this->admin())->getJson('/api/hr/employees?per_page=50')->assertOk()->json('data');
+
+        $linked = collect($rows)->firstWhere('user_id', $user->id);
+
+        $this->assertNotNull($linked['login'] ?? null);
+        $this->assertTrue($linked['login']['can_sign_in']);
+    }
+
+    /* ── deleting an account must not corrupt the employee ────────────── */
+
+    /**
+     * Deleting a login left the employee pointing at a row that was gone.
+     *
+     * hr_employees.user_id has no cascade, and destroy() had a comment reading
+     * "you can add additional checks here" where the checks should have been. So
+     * a 200 produced exactly the blocking fault the directory panel detects —
+     * "linked to account #35, which no longer exists" — reproduced in the browser
+     * before this was written.
+     *
+     * The link is cleared rather than the delete refused: removing a login for
+     * somebody who has left is ordinary admin work, and the employment record has
+     * to survive it because payroll, attendance and service history hang off it.
+     */
+    public function test_deleting_a_staff_account_clears_the_employee_link_instead_of_orphaning_it(): void
+    {
+        $admin = $this->admin();
+        $user = $this->user();
+        $employee = $this->employee(['user_id' => $user->id, 'name' => 'Still Employed']);
+
+        $this->actingAs($admin)->deleteJson('/api/admin/staff/'.$user->id)->assertOk();
+
+        $employee->refresh();
+
+        $this->assertNotNull($employee, 'the employment record must survive');
+        $this->assertNull($employee->user_id, 'no pointer to a deleted account may remain');
+        $this->assertSame('Still Employed', $employee->name);
+        $this->assertNull(User::find($user->id), 'the account itself is gone');
+    }
+
+    /** A workspace must not be able to delete its way to having nobody in charge. */
+    public function test_the_founding_administrator_cannot_be_deleted(): void
+    {
+        $founder = $this->user(['role' => 'admin']);
+        $second  = $this->user(['role' => 'admin']);
+
+        $this->assertLessThan($second->id, $founder->id);
+
+        $this->actingAs($second)
+            ->deleteJson('/api/admin/staff/'.$founder->id)
+            ->assertStatus(422)
+            ->assertJsonFragment(['message' => 'The founding administrator cannot be deleted. Transfer ownership first.']);
+
+        $this->assertNotNull(User::find($founder->id));
+    }
+
+    public function test_an_admin_cannot_delete_their_own_account(): void
+    {
+        $founder = $this->user(['role' => 'admin']);
+        $actor   = $this->user(['role' => 'admin']);
+
+        $this->actingAs($actor)
+            ->deleteJson('/api/admin/staff/'.$actor->id)
+            ->assertStatus(422);
+
+        $this->assertNotNull(User::find($actor->id));
+    }
+
+    /* ── the most sensitive read in the module ────────────────────────── */
+
+    /**
+     * Bank account, IFSC, PAN, Aadhaar, UAN — readable by anyone who could sign in.
+     *
+     * The WRITE on this endpoint has been HR-only since it was written. The read
+     * had nothing but a tenant check, so any staff account could fetch a
+     * colleague's identity documents by id. Confirmed against the running API
+     * with a token for an account holding no permission role: it returned a
+     * seeded Aadhaar and account number in full.
+     */
+    public function test_an_ordinary_staff_account_cannot_read_another_employees_personal_details(): void
+    {
+        $plain = $this->user(['role' => 'staff']);
+        $this->assertFalse($plain->canManageHrQueue(), 'fixture must be genuinely unprivileged');
+
+        $someoneElse = $this->employee(['name' => 'Has Bank Details']);
+
+        $this->actingAs($plain)
+            ->getJson('/api/hr/employees/'.$someoneElse->id.'/detail')
+            ->assertStatus(403);
+    }
+
+    /** Your own record is yours to read, whatever your permission role is. */
+    public function test_an_employee_can_read_their_own_personal_details(): void
+    {
+        $plain = $this->user(['role' => 'staff']);
+        $own = $this->employee(['user_id' => $plain->id]);
+
+        $this->actingAs($plain)
+            ->getJson('/api/hr/employees/'.$own->id.'/detail')
+            ->assertOk();
+    }
+
+    public function test_hr_can_still_read_anyones_personal_details(): void
+    {
+        $employee = $this->employee();
+
+        $this->actingAs($this->admin())
+            ->getJson('/api/hr/employees/'.$employee->id.'/detail')
+            ->assertOk();
+    }
+
     /* ── reconciliation actions ───────────────────────────────────────── */
 
     public function test_provisioning_a_login_creates_one_and_links_it(): void

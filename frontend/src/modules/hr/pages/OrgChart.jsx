@@ -51,10 +51,22 @@ export default function OrgChart() {
         <div>
           <p className="label-caps mb-1">HR Records</p>
           <h1 className="font-black flex items-center gap-2" style={{ fontSize:'clamp(1.3rem,2vw,1.7rem)', color:'var(--text-h)', letterSpacing:'-0.02em' }}>
-            <Network size={22} style={{ color:'#a78bfa' }}/> Organization <span className="text-gradient">Chart</span>
+            <Network size={22} style={{ color:'#a78bfa' }}/> Reporting <span className="text-gradient">Structure</span>
           </h1>
+          {/* Named "Reporting Structure", and says plainly how it differs from the
+              other tree. Organization Setup has a Department Hierarchy —
+              departments and their heads — and the two are genuinely different
+              models: a person can sit in a department whose head is not their
+              reporting manager. Sharing the word "hierarchy" made them look like
+              one screen built twice, and people edited the wrong one. */}
           <p className="text-sm mt-0.5" style={{ color:'var(--text-muted)' }}>
-            Built from each person's reporting manager — it updates itself as people join, move or leave.
+            Who reports to whom, built from each person's reporting manager — it updates itself as people join, move or leave.
+          </p>
+          <p className="text-xs mt-1.5" style={{ color:'var(--text-muted)' }}>
+            Open anyone below to change their reporting manager. For departments and their heads, see{' '}
+            <Link to="/app/hr/organization-setup" style={{ color:'#a78bfa', textDecoration:'underline' }}>
+              Department Hierarchy
+            </Link>{' '}in Organization Setup.
           </p>
         </div>
       </div>

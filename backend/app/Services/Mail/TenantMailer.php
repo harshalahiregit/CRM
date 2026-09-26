@@ -225,7 +225,16 @@ class TenantMailer
             // Measured against a real host: 6s for the TCP+TLS handshake alone
             // and 11s for a complete send. 15s left almost no headroom, so a
             // slow day timed out mid-send and read as "the button does nothing".
-            'timeout'    => (int) config('mail.tenant_timeout', 30),
+            //
+            // But it must also finish BEFORE PHP gives up on the request, or the
+            // process is killed mid-socket and the caller gets a fatal error
+            // instead of a message it can show. That is what an unreachable mail
+            // host produced: max_execution_time is 30s under the dev server and
+            // this timeout was 30s too, so "Maximum execution time of 30 seconds
+            // exceeded … Smtp/Stream/SocketStream.php" reached the user as a
+            // frozen Publish button. We keep a few seconds of headroom, so the
+            // transport always loses the race and raises a real exception.
+            'timeout'    => self::socketTimeout(),
             // Symfony reads this from the transport options and, when false,
             // skips both peer and hostname checks. Needed for panel-managed
             // mail servers whose certificate is self-signed or issued for a
@@ -234,6 +243,38 @@ class TenantMailer
         ]]);
 
         return 'tenant';
+    }
+
+    /**
+     * How long a single SMTP conversation may take — and room for it to finish.
+     *
+     * The timeout itself stays generous, because it is measured: ~6s for the
+     * TCP+TLS handshake and ~11s for a complete send against the live host, so
+     * cutting it short turns a slow day into a message that never arrives.
+     *
+     * The bug was never the length; it was that PHP's own request limit is 30s
+     * too. An unreachable mail server held the socket until BOTH expired at
+     * once, and PHP won: "Maximum execution time of 30 seconds exceeded … in
+     * Smtp/Stream/SocketStream.php" is a FATAL error, not an exception, so the
+     * `catch` around every send never ran and the Publish button just froze.
+     *
+     * So we give the request more room than the transport needs. The transport
+     * then always loses the race, throws something catchable, and the caller
+     * reports "the mail server did not answer" instead of dying mid-socket.
+     */
+    private static function socketTimeout(): int
+    {
+        $timeout = max(5, (int) config('mail.tenant_timeout', 30));
+
+        // 0 means "no limit" (CLI, some FPM pools) — nothing to extend.
+        if ((int) ini_get('max_execution_time') > 0) {
+            // Resets the counter as well as raising it, which is right: each
+            // send deserves its own budget, not a share of one the request has
+            // already spent elsewhere.
+            @set_time_limit($timeout + 15);
+        }
+
+        return $timeout;
     }
 
     /**

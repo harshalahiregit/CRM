@@ -18,7 +18,9 @@ use App\Support\Tpv\TpvPpeItem as Ppe;
 use App\Support\Tpv\TpvWorkerStatus as Status;
 use App\Support\Vendor\VendorStatus;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 /**
@@ -153,14 +155,7 @@ class TpvWorkerService
 
         // Decode the base64 proof images (group photo, signature, thumb impression)
         // to stored files — the model keeps only the paths.
-        foreach (['photo_data' => 'photo_path', 'signature_data' => 'signature_path', 'thumb_data' => 'thumbprint_path'] as $src => $dst) {
-            if (! empty($data[$src]) && str_contains($data[$src], 'base64,')) {
-                $binary = base64_decode(explode('base64,', $data[$src])[1]);
-                $path   = 'workers/induction/'.$dst.'_'.uniqid().'.png';
-                \Illuminate\Support\Facades\Storage::disk('public')->put($path, $binary);
-                $data[$dst] = $path;
-            }
-        }
+        $data = $this->storeInductionImages($data);
 
         $worker->induction()->updateOrCreate(
             ['tpv_worker_id' => $worker->id],
@@ -175,6 +170,101 @@ class TpvWorkerService
         ]);
 
         return $worker->fresh(['induction']);
+    }
+
+    /**
+     * One group session, many workers — the trainer signs ONCE.
+     *
+     * The same session is saved against each worker through saveInduction(), so
+     * every rule a single induction obeys (editable, medical clearance) holds
+     * here too. The difference is only in how refusals are handled: one worker
+     * who cannot be inducted is SKIPPED with the reason, rather than failing the
+     * whole group — with a thousand people in a hall, "3 were skipped, here is
+     * why" is the useful answer, not "nothing was saved".
+     *
+     * The trainer's signature (and any group photo) is decoded and stored once,
+     * and that one stored path is written on every worker's record.
+     *
+     * Scope: $tenantId always; $vendorId when the caller is a vendor portal, so a
+     * vendor naming another vendor's worker gets "not found" for it, never a save.
+     *
+     * @param  list<int>  $workerIds
+     * @return array{saved: list<int>, skipped: list<array{id: int, name: ?string, reason: string}>}
+     */
+    public function saveGroupInduction(int $tenantId, ?int $vendorId, array $workerIds, array $data, User $actor): array
+    {
+        $workerIds = array_values(array_unique(array_map('intval', $workerIds)));
+
+        $workers = TpvWorker::forTenant($tenantId)
+            ->when($vendorId !== null, fn ($q) => $q->where('vendor_id', $vendorId))
+            ->whereIn('id', $workerIds)
+            ->with('medical')
+            ->get()
+            ->keyBy('id');
+
+        $before = $data;
+        $data = $this->storeInductionImages($data);
+        // Only files THIS call wrote — never a path the caller passed in.
+        $stored = array_filter(
+            ['photo_path', 'signature_path', 'thumbprint_path'],
+            fn ($k) => ! empty($data[$k]) && ($before[$k] ?? null) !== $data[$k],
+        );
+
+        $saved = [];
+        $skipped = [];
+        foreach ($workerIds as $id) {
+            $worker = $workers->get($id);
+            if (! $worker) {
+                $skipped[] = ['id' => $id, 'name' => null, 'reason' => 'Worker not found.'];
+                continue;
+            }
+
+            try {
+                // Per worker: a refusal half-way through one worker's save must
+                // not leave that worker with a partial record.
+                DB::transaction(fn () => $this->saveInduction($worker, $data, $actor));
+                $saved[] = $id;
+            } catch (BusinessException $e) {
+                $skipped[] = ['id' => $id, 'name' => $worker->name, 'reason' => $e->getMessage()];
+            } catch (\Throwable $e) {
+                report($e);
+                $skipped[] = ['id' => $id, 'name' => $worker->name, 'reason' => 'Could not be saved — try this worker on their own.'];
+            }
+        }
+
+        // Nobody took the session: the stored proof belongs to no record.
+        if ($saved === []) {
+            foreach ($stored as $key) {
+                Storage::disk('public')->delete($data[$key]);
+            }
+        }
+
+        Log::channel('tpv')->info('TPV group induction recorded', [
+            'tenant_id' => $tenantId, 'vendor_id' => $vendorId,
+            'saved' => count($saved), 'skipped' => count($skipped),
+        ]);
+
+        return ['saved' => $saved, 'skipped' => $skipped];
+    }
+
+    /**
+     * Decode the base64 proof images to stored files, replacing each `*_data`
+     * key with its `*_path`. Idempotent: data that already holds a path (a group
+     * session's shared signature) passes through untouched.
+     */
+    private function storeInductionImages(array $data): array
+    {
+        foreach (['photo_data' => 'photo_path', 'signature_data' => 'signature_path', 'thumb_data' => 'thumbprint_path'] as $src => $dst) {
+            if (! empty($data[$src]) && str_contains($data[$src], 'base64,')) {
+                $binary = base64_decode(explode('base64,', $data[$src])[1]);
+                $path   = 'workers/induction/'.$dst.'_'.uniqid().'.png';
+                Storage::disk('public')->put($path, $binary);
+                $data[$dst] = $path;
+            }
+            unset($data[$src]);
+        }
+
+        return $data;
     }
 
     /* ── Step 4 — PPE issuance ──────────────────────────────────────────────

@@ -111,16 +111,26 @@ class DriverEligibilityService
               Fleet's own words, rather than re-derived into ours. */
         $blockers = $row['blockers'] ?? [];
         $fit = $blockers === [];
+
+        // D-150 — Fleet's OWNER is carried through as a field, not flattened
+        // into the sentence. It used to be appended in brackets, which made
+        // this check's detail a string while its warnings were objects: one
+        // response, two shapes, and the screen rendered the string as blank.
+        //
+        // ── EVERY GROUND, NOT THE FIRST ──────────────────────────────────
+        // A collapsed check can only report one failure unless something stops
+        // it. Fleet's eligible() returns ALL blockers for a driver — verified,
+        // a driver with no licence and no medical comes back with both — so
+        // they are all joined here. A dispatcher who fixes one and is then
+        // refused for a second nobody mentioned is the failure this avoids.
         $checks[] = EligibilityVerdict::check(
             'fleet', 'Fit to drive',
             (bool) $policy['driver.check.lifecycle.required'],
             $fit,
             $fit
                 ? 'Cleared by Fleet'
-                : implode(' ', array_map(
-                    fn ($b) => $b['why'].' ('.$b['owner'].')',
-                    $blockers,
-                )),
+                : implode(' ', array_column($blockers, 'why')),
+            owner: $fit ? null : (collect($blockers)->pluck('owner')->filter()->unique()->implode(', ') ?: null),
         );
 
         /* 2 — Not already spoken for. STOS-DB §199, PLN-006. Ruled a hard block
@@ -223,6 +233,29 @@ class DriverEligibilityService
             'why'   => 'This driver is not in the fleet directory.',
             'owner' => 'Fleet office',
         ]]];
+    }
+
+    /**
+     * Fleet's row for one driver, read NOW — for pre-trip (D-151).
+     *
+     * Deliberately not through `$fleetCache`. Pre-trip and dispatch
+     * revalidation exist to catch what changed since allocation — a licence
+     * that lapsed in the yard — and a directory cached earlier in the same
+     * process is exactly what must not answer that. See D-152 for the cache.
+     *
+     * @return array<string,mixed>|null  null when Fleet does not offer this profile at all
+     */
+    public function fleetRecordNow(int $profileId, int $tenantId): ?array
+    {
+        $fleet = $this->drivers->eligible($tenantId);
+
+        foreach (array_merge($fleet['eligible'], $fleet['excluded']) as $row) {
+            if ((int) ($row['profile']['id'] ?? 0) === $profileId) {
+                return $row;
+            }
+        }
+
+        return null;
     }
 
     /* ── Individual rules ───────────────────────────────────────────── */

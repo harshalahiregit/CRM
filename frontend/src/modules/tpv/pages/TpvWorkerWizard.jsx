@@ -11,6 +11,7 @@ import { portalApi } from '@/services/portalApi'
 import InternalDoctorSelect from '@/components/medical/InternalDoctorSelect'
 import { useAuth } from '@/context/AuthContext'
 import AuditTimeline from '@/components/ui/AuditTimeline'
+import GroupInductionModal from '@/components/vendor/GroupInductionModal'
 import {
   WORKER_STATUS, workerStatusCfg, vendorStatusCfg, fitnessCfg, FITNESS, BAND_COLORS,
   SKILL_CATEGORIES, GENDERS,
@@ -1464,203 +1465,16 @@ function StepInduction({ worker, editable, onSaved, onNext, api }) {
       </div>
 
       {groupModalOpen && (
-        <WizardGroupInductionModal
+        <GroupInductionModal
+          engine="tpv"
+          api={api}
           workers={vendorWorkers.length > 0 ? vendorWorkers : [worker]}
+          preselectIds={[worker.id]}
           onClose={() => setGroupModalOpen(false)}
           onCompleted={() => { setGroupModalOpen(false); onSaved() }}
-          api={api}
         />
       )}
     </Panel>
-  )
-}
-
-function WizardGroupInductionModal({ workers, onClose, onCompleted, api }) {
-  const [selectedIds, setSelectedIds] = useState(workers.map(w => w.id))
-  const [f, setF] = useState({
-    induction_type: 'General Safety',
-    trainer: 'Safety Officer – Rahul Sharma',
-    custom_trainer: '',
-    location: 'Site Office',
-  })
-
-  const [workerProofs, setWorkerProofs] = useState(
-    Object.fromEntries(workers.map(w => [w.id, { done: false, proofType: 'sig', sigData: '' }]))
-  )
-  const [activeWid, setActiveWid] = useState(workers[0]?.id || null)
-  const [saving, setSaving] = useState(false)
-  const [progressMsg, setProgressMsg] = useState('')
-
-  const canvasRef = useRef(null)
-  const isDrawing = useRef(false)
-
-  const set = (k) => (e) => setF(p => ({ ...p, [k]: e.target.value }))
-
-  const TRAINER_PRESETS = [
-    { group: 'Safety Team', items: ['Safety Officer – Rahul Sharma', 'Safety Supervisor – Priya Patel', 'HSE Lead – Amit Verma', 'HSSE Manager – Neha Singh', 'Safety Inspector – Ravi Kumar'] },
-    { group: 'HR Team', items: ['HR Manager – Sunita Joshi', 'HR Executive – Deepak Nair', 'HR Coordinator – Anjali Mehta'] },
-    { group: 'Site Management', items: ['Site Engineer – Vikram Rao', 'Project Manager – Suresh Pillai', 'Site Supervisor – Mohan Das'] },
-    { group: 'Custom', items: ['Other / Custom Trainer...'] },
-  ]
-
-  const startCanvasDraw = (e) => {
-    const canvas = canvasRef.current; if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    const rect = canvas.getBoundingClientRect()
-    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left
-    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top
-    ctx.beginPath(); ctx.moveTo(x, y)
-    isDrawing.current = true
-  }
-
-  const doCanvasDraw = (e) => {
-    if (!isDrawing.current) return
-    const canvas = canvasRef.current; if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    const rect = canvas.getBoundingClientRect()
-    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left
-    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top
-    ctx.lineTo(x, y); ctx.stroke()
-  }
-
-  const stopCanvasDraw = () => { isDrawing.current = false }
-  const clearCanvas = () => {
-    const canvas = canvasRef.current; if (!canvas) return
-    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height)
-  }
-
-  const confirmWorkerProof = (wid) => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const url = canvas.toDataURL('image/png')
-    setWorkerProofs(p => ({ ...p, [wid]: { ...p[wid], sigData: url, done: true } }))
-    clearCanvas()
-    const pending = workers.find(w => selectedIds.includes(w.id) && w.id !== wid && !workerProofs[w.id]?.done)
-    if (pending) setActiveWid(pending.id)
-  }
-
-  const activeWorkers = workers.filter(w => selectedIds.includes(w.id))
-  const signedCount = activeWorkers.filter(w => workerProofs[w.id]?.done).length
-  const allSigned = signedCount === activeWorkers.length && activeWorkers.length > 0
-
-  const saveGroupInduction = async () => {
-    const finalTrainer = f.trainer === 'Other / Custom Trainer...' ? f.custom_trainer : f.trainer
-    if (!finalTrainer.trim()) { alert('Trainer Name is required.'); return }
-    if (!f.location.trim()) { alert('Location is required.'); return }
-    if (!allSigned) { alert('All selected workers must confirm signature first.'); return }
-
-    setSaving(true)
-    try {
-      const now = new Date()
-      let count = 0
-      for (const w of activeWorkers) {
-        count++
-        setProgressMsg(`Saving worker ${count}/${activeWorkers.length}: ${w.name}...`)
-        const proof = workerProofs[w.id]
-        const payload = {
-          induction_type: f.induction_type,
-          trainer: finalTrainer,
-          location: f.location,
-          start_time: now.toISOString(),
-          end_time: now.toISOString(),
-          duration_minutes: 15,
-          signature_data: proof?.proofType === 'sig' ? proof?.sigData : null,
-          thumb_data: proof?.proofType === 'thumb' ? proof?.sigData : null,
-          topics: ['Site Safety Rules', 'PPE Usage', 'Emergency Response'],
-          passed: true,
-        }
-        await api.workers.saveInduction(w.id, payload)
-      }
-      alert(`Group induction completed for ${activeWorkers.length} workers!`)
-      onCompleted()
-    } catch (e) {
-      alert(e?.response?.data?.message || 'Group induction save failed')
-    } finally {
-      setSaving(false)
-      setProgressMsg('')
-    }
-  }
-
-  return (
-    <Overlay onClose={() => !saving && onClose()} width={820}>
-      <h2 style={{ fontSize: 18, fontWeight: 900, color: 'var(--text-h)', margin: '0 0 14px' }}>
-        👥 Group Induction Session ({activeWorkers.length} Selected)
-      </h2>
-
-      {/* Worker Checkbox Selector Strip */}
-      <div style={{ padding: 10, borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', marginBottom: 14, display: 'flex', flexWrap: 'wrap', gap: 10, maxHeight: 100, overflowY: 'auto' }}>
-        {workers.map(w => (
-          <label key={w.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 20, background: selectedIds.includes(w.id) ? '#e0f2fe' : 'var(--bg-card)', border: '1px solid var(--border)', fontSize: 11.5, cursor: 'pointer', fontWeight: selectedIds.includes(w.id) ? 800 : 500 }}>
-            <input type="checkbox" checked={selectedIds.includes(w.id)} onChange={e => {
-              const checked = e.target.checked
-              setSelectedIds(p => checked ? [...p, w.id] : p.filter(x => x !== w.id))
-            }} style={{ width: 14, height: 14 }} />
-            {w.name} ({w.worker_code})
-          </label>
-        ))}
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 14 }}>
-        <Field label="Induction Type *">
-          <SelectInput value={f.induction_type} onChange={set('induction_type')} pairs options={[
-            ['General Safety', 'General Safety'],
-            ['Activity Specific', 'Activity Specific'],
-            ['Site Specific', 'Site Specific'],
-            ['Client Specific', 'Client Specific'],
-            ['Emergency & Evacuation', 'Emergency & Evacuation'],
-            ['Fire Safety', 'Fire Safety'],
-            ['PPE Usage', 'PPE Usage'],
-            ['Toolbox Talk', 'Toolbox Talk'],
-          ]} />
-        </Field>
-        <Field label="Trainer *">
-          <select value={f.trainer} onChange={set('trainer')} style={inputStyle}>
-            {TRAINER_PRESETS.map(grp => (
-              <optgroup key={grp.group} label={grp.group}>
-                {grp.items.map(item => <option key={item} value={item}>{item}</option>)}
-              </optgroup>
-            ))}
-          </select>
-        </Field>
-        <Field label="Location *"><TextInput value={f.location} onChange={set('location')} placeholder="e.g. Site Office" /></Field>
-      </div>
-
-      {/* Progress */}
-      <div style={{ padding: 10, borderRadius: 8, background: '#f3e8ff', marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <strong style={{ fontSize: 12, color: '#6b21a8' }}>✍ Signature Progress</strong>
-        <strong style={{ fontSize: 12, color: '#6b21a8' }}>{signedCount} / {activeWorkers.length} Signed</strong>
-      </div>
-
-      {/* Cards */}
-      <div style={{ maxHeight: 300, overflowY: 'auto', marginBottom: 14 }}>
-        {activeWorkers.map(w => {
-          const proof = workerProofs[w.id] || {}
-          const isActive = activeWid === w.id
-          return (
-            <div key={w.id} style={{ borderRadius: 8, border: proof.done ? '2px solid #10b981' : isActive ? '2px solid #0284c7' : '1px solid var(--border)', marginBottom: 8, background: 'var(--bg-card)' }}>
-              <div onClick={() => setActiveWid(isActive ? null : w.id)} style={{ padding: '8px 12px', background: proof.done ? '#dcfce7' : isActive ? '#e0f2fe' : 'var(--bg-input)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <strong style={{ fontSize: 12.5, color: 'var(--text-h)' }}>{w.name} ({w.worker_code})</strong>
-                <span style={{ fontSize: 10.5, fontWeight: 800, padding: '2px 8px', borderRadius: 20, background: proof.done ? '#10b981' : '#f59e0b', color: '#fff' }}>
-                  {proof.done ? '✓ Signed' : 'Pending'}
-                </span>
-              </div>
-              {isActive && (
-                <div style={{ padding: 12 }}>
-                  <canvas ref={canvasRef} width={480} height={110} onMouseDown={startCanvasDraw} onMouseMove={doCanvasDraw} onMouseUp={stopCanvasDraw} onMouseLeave={stopCanvasDraw} onTouchStart={startCanvasDraw} onTouchMove={doCanvasDraw} onTouchEnd={stopCanvasDraw} style={{ background: '#fff', border: '2px dashed var(--border)', borderRadius: 8, cursor: 'crosshair', display: 'block', marginBottom: 8 }} />
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button type="button" onClick={clearCanvas} style={{ padding: '4px 10px', borderRadius: 6, background: '#ef4444', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 800 }}>Clear</button>
-                    <button type="button" onClick={() => confirmWorkerProof(w.id)} style={{ padding: '4px 12px', borderRadius: 6, background: '#10b981', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 800 }}>Confirm Signature</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-
-      {progressMsg && <div style={{ padding: '6px 12px', background: '#e0f2fe', color: '#0369a1', fontSize: 12, fontWeight: 700, marginBottom: 10 }}>⏳ {progressMsg}</div>}
-      <ModalFooter onClose={onClose} onConfirm={saveGroupInduction} loading={saving} disabled={!allSigned} confirmLabel={`Save Group Induction (${activeWorkers.length} Workers)`} />
-    </Overlay>
   )
 }
 

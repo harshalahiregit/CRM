@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Portal;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Tpv\IssueWorkerPpeRequest;
 use App\Http\Requests\Tpv\SaveOnboardingProfileRequest;
+use App\Http\Requests\Tpv\SaveGroupInductionRequest;
 use App\Http\Requests\Tpv\SaveWorkerInductionRequest;
 use App\Http\Requests\Tpv\SaveWorkerMedicalRequest;
 use App\Support\Medical\DoctorOptions;
@@ -1148,6 +1149,23 @@ class VendorPortalController extends Controller
         return response()->json($this->workerService->saveInduction($worker, $request->validated(), $request->user()));
     }
 
+    /**
+     * One group session over the caller's own workers; the trainer signs once.
+     * The vendor comes from the token — an id belonging to another vendor is
+     * reported back as "not found" and nothing is written for it.
+     */
+    public function saveGroupInduction(SaveGroupInductionRequest $request)
+    {
+        $vendor = $this->portalVendor($request);
+        $data   = $request->validated();
+        $ids    = $data['worker_ids'];
+        unset($data['worker_ids']);
+
+        return response()->json($this->workerService->saveGroupInduction(
+            (int) $vendor->tenant_id, (int) $vendor->id, $ids, $data, $request->user()
+        ));
+    }
+
     /* ── PPE (Workforce Step 4) ────────────────────────────────────────
      *
      * These four used to be the ADMIN PpeController and PpeRequirementController,
@@ -1183,13 +1201,17 @@ class VendorPortalController extends Controller
      * server-side from the tenant's default so a vendor can never name another
      * tenant's warehouse. Stock rules (availability, no-negative) stay in
      * PpeInventoryService / StockService — none of them are re-implemented here.
+     *
+     * Either a central Inventory item or one of the vendor's OWN PPE items
+     * (`vendor_ppe_item_id`); the service checks the item is this vendor's.
      */
     public function issueWorkerPpe(Request $request, TpvWorker $worker)
     {
         $this->assertWorkerOwned($request, $worker);
 
         $data = $request->validate([
-            'inventory_item_id' => 'required|integer|min:1',
+            'inventory_item_id'  => 'required_without:vendor_ppe_item_id|nullable|integer|min:1',
+            'vendor_ppe_item_id' => 'required_without:inventory_item_id|nullable|integer|min:1',
             'qty'               => 'required|numeric|min:0.001',
             'size'              => 'nullable|string|max:40',
             'issued_date'       => 'nullable|date',

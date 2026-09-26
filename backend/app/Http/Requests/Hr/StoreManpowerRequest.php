@@ -30,14 +30,29 @@ class StoreManpowerRequest extends FormRequest
             'location'            => 'nullable|string|max:150',
             'employee_level'      => 'nullable|string|max:60',
             'experience_required' => 'nullable|string|max:100',
-            'education'           => 'nullable|string|max:150',
+            // 255 because that is what the column holds (string() with no length).
+            // Was 150, which refused a qualification written out in full.
+            'education'           => 'nullable|string|max:255',
             'criticality'         => 'nullable|in:Low,Medium,High,Business Critical',
             'salary_min'          => 'nullable|numeric|min:0',
             'salary_max'          => 'nullable|numeric|min:0|gte:salary_min',
+            // A skill here is not a keyword. Hiring managers write a requirement
+            // out in prose — "5+ years building distributed systems, ideally with
+            // Kafka" — and 60 characters refused that at the 61st, with an alert
+            // that said only "Validation failed" and named no field. Nobody could
+            // see what to shorten.
+            //
+            // 2000 is roughly 300 words, which is "a paragraph or more" with room
+            // to spare. It costs nothing to store: required_skills,
+            // preferred_skills and certifications are json columns holding the
+            // whole array, not varchars, so the old 60 and 100 were not the
+            // database's limits — they were guesses about how people write.
+            // The count is capped at 30 entries in the form, so the worst case is
+            // well inside anything MySQL will carry.
             'required_skills'     => 'nullable|array',
-            'required_skills.*'   => 'string|max:60',
+            'required_skills.*'   => 'string|max:2000',
             'preferred_skills'    => 'nullable|array',
-            'preferred_skills.*'  => 'string|max:60',
+            'preferred_skills.*'  => 'string|max:2000',
             'job_description'     => 'nullable|string',
             'justification'       => 'nullable|string',
             // Business rule (SPK-1): a request cannot be needed in the past.
@@ -55,8 +70,10 @@ class StoreManpowerRequest extends FormRequest
                 \App\Services\Hr\OrganizationService::shiftOptions((int) $this->user()->tenant_id)
             )],
             'budget'                 => 'nullable|numeric|min:0',
+            // Same reasoning as the skills above — a json column, and a
+            // certification is often named in full with its issuing body.
             'certifications'         => 'nullable|array',
-            'certifications.*'       => 'string|max:100',
+            'certifications.*'       => 'string|max:2000',
             'hiring_reason'          => 'nullable|in:New Position,Replacement,Expansion,Contract',
             // Replacement employee only makes sense for a replacement hire.
             'replacement_employee_id' => 'nullable|required_if:hiring_reason,Replacement|exists:hr_employees,id',

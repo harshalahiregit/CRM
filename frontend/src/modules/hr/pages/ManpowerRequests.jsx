@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, createContext, useContext } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import {
   Plus, CheckCircle, XCircle, Clock, Send, RefreshCw, FileText, Eye, Trash2,
@@ -7,7 +7,13 @@ import {
   Sparkles, Loader2, TrendingUp,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+// The shared normaliser the onboarding wizards already use — readFieldErrors
+// turns a 422 into {map, list, summary} keyed by the form's own field names, and
+// knows that "Validation failed" is a restatement of the status code rather than
+// a reason. Nothing new was written for this page.
+import { readFieldErrors, prettyField } from '@/services/apiError'
 import WorkflowProgress from '@/components/ui/WorkflowProgress'
+import { useToast } from '@/components/ui/Toast'
 import { useMasterData } from '@/modules/hr/useMasterData'
 import { useAuth } from '@/context/AuthContext'
 import AuditTimeline from '@/components/ui/AuditTimeline'
@@ -174,10 +180,14 @@ export default function ManpowerRequests() {
   const [mgrF, setMgrF]     = useState('All')   // #3 — hiring manager filter
   const { masters: listMasters } = useMasterData()
 
+  const toast = useToast()
+
   const [showModal, setShowModal]     = useState(false)
   const [editingId, setEditingId]     = useState(null)
   const [form, setForm]               = useState(EMPTY_FORM)
   const [saving, setSaving]           = useState(false)
+  // Keyed by API field name. Set from this form's own checks and from a 422.
+  const [formErrors, setFormErrors]   = useState({})
 
   const [actionModal, setActionModal] = useState(null)   // { request, action }
   const [remarks, setRemarks]         = useState('')
@@ -288,33 +298,128 @@ export default function ManpowerRequests() {
     return p
   }
 
-  // Frontend validation mirrors the backend rules (backend stays authoritative).
-  const validateForm = () => {
-    if (!form.department || !form.position_title) return 'Department and Job Title are required.'
-    if (Number(form.number_of_posts) < 1) return 'Number of Positions must be at least 1.'
+  /**
+   * Frontend validation, keyed by the SAME field names the API uses.
+   *
+   * It used to return one sentence for the whole form, which went into a browser
+   * dialog. Keying it by field means the client-side failures and the server's
+   * 422 render through one mechanism — the message appears under the box that is
+   * wrong, whichever side decided it. The backend stays authoritative; this is
+   * only about not making somebody wait for a round trip to be told.
+   */
+  const validateForm = (mode = 'draft') => {
+    const e = {}
+
+    /*
+     * Submitting for approval needs more than saving a draft does, and the form
+     * used to find that out the hard way: it created the record, then the submit
+     * came back 422 naming fields the form had never marked as needed. The
+     * person saw an error about a request that — as far as they knew — had not
+     * been created, and one had.
+     *
+     * Mirrors ManpowerRequestService::assertCompleteForApproval exactly, which
+     * is the authority; this only spares the round trip. A draft still saves
+     * with none of them, which is the point of a draft.
+     */
+    if (mode === 'submit') {
+      if (!form.job_description)             e.job_description = 'Needed before this can go for approval.'
+      if (!String(form.required_skills || '').trim()) e.required_skills = 'Add at least one skill before submitting.'
+      if (!form.hiring_manager_id)           e.hiring_manager_id = 'An approver needs to know who the hiring manager is.'
+      if (!form.employee_level)              e.employee_level = 'Needed before this can go for approval.'
+      if (!form.experience_required)         e.experience_required = 'Needed before this can go for approval.'
+    }
+
+    if (!form.department) e.department = 'Department is required.'
+    if (!form.position_title) e.position_title = 'Job Title is required.'
+    if (Number(form.number_of_posts) < 1) e.number_of_posts = 'Must be at least 1.'
     if (form.salary_min !== '' && form.salary_max !== '' && Number(form.salary_min) > Number(form.salary_max))
-      return 'Salary Max cannot be less than Salary Min.'
+      e.salary_max = 'Salary Max cannot be less than Salary Min.'
     if (form.required_by_date && new Date(form.required_by_date) < new Date(new Date().toDateString()))
-      return 'Required By date cannot be earlier than today.'
+      e.required_by_date = 'Required By date cannot be earlier than today.'
     if (form.hiring_reason === 'Replacement' && !form.replacement_employee_id)
-      return 'Select the employee being replaced.'
-    return null
+      e.replacement_employee_id = 'Select the employee being replaced.'
+
+    return Object.keys(e).length ? e : null
+  }
+
+  /**
+   * Put the person in front of the first thing that is wrong.
+   *
+   * An array error arrives as `required_skills.3`; the Field is named for the
+   * list, so the index is dropped before looking for it. Scrolled rather than
+   * focused where the control is not an input — several of these are pickers
+   * that would swallow a focus() call.
+   */
+  const revealField = (field) => {
+    if (!field) return
+    const el = document.querySelector(`[data-field="${field.split('.')[0]}"]`)
+    if (!el) return
+
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+
+    // Several of these fields are SearchableSelect, which renders no focusable
+    // control until it is opened — so there is nothing for focus() to land on and
+    // a screen reader would be left where it was. The wrapper itself takes focus
+    // in that case; tabIndex -1 makes it focusable programmatically without
+    // adding it to the tab order.
+    const control = el.querySelector('input, select, textarea, button')
+
+    if (control) {
+      control.focus({ preventScroll: true })
+    } else {
+      el.setAttribute('tabindex', '-1')
+      el.focus({ preventScroll: true })
+    }
   }
 
   // mode: 'draft' saves only; 'submit' also sends it for approval.
   const handleSave = async (mode = 'draft') => {
-    const err = validateForm()
-    if (err) { alert(err); return }
+    const local = validateForm(mode)
+
+    if (local) {
+      setFormErrors(local)
+      revealField(Object.keys(local)[0])
+      return
+    }
+
+    setFormErrors({})
     setSaving(true)
     try {
       let saved
       if (editingId) saved = await hrApi.manpower.update(editingId, buildPayload())
       else saved = await hrApi.manpower.create(buildPayload())
       const id = editingId || saved?.id || saved?.data?.id
+
+      /*
+       * The record exists now, so the form stops being a create form.
+       *
+       * "Submit for Approval" is two calls: create, then submit. When the submit
+       * failed, the modal stayed open — correctly, so nothing typed is lost — but
+       * editingId was still null, so pressing the button again created ANOTHER
+       * request. Three presses produced three requisitions, reproduced in the
+       * browser.
+       *
+       * Adopting the new id means a retry updates the record it already made.
+       */
+      if (!editingId && id) setEditingId(id)
+
       if (mode === 'submit' && id) await hrApi.manpower.submit(id)
-      setShowModal(false); setForm(EMPTY_FORM); setEditingId(null)
+      setShowModal(false); setForm(EMPTY_FORM); setEditingId(null); setFormErrors({})
       fetchAll()
-    } catch (e) { alert(e?.response?.data?.message || 'Failed to save request') }
+    } catch (e) {
+      // A 422 becomes messages under the fields; anything else is a toast, because
+      // there is no field to attach "the server is down" to. The modal stays open
+      // either way — closing it would throw away everything they typed.
+      const { map, summary } = readFieldErrors(e)
+
+      if (Object.keys(map).length) {
+        setFormErrors(map)
+        revealField(Object.keys(map)[0])
+      } else {
+        setFormErrors({})
+        toast.error(summary)
+      }
+    }
     finally { setSaving(false) }
   }
 
@@ -336,7 +441,11 @@ export default function ManpowerRequests() {
       else if (action === 'close')      await hrApi.manpower.close(id, remarks)
       else if (action === 'delete')     await hrApi.manpower.delete(id)
       setActionModal(null); setRemarks(''); fetchAll()
-    } catch (e) { alert(e?.response?.data?.message || 'Action failed') }
+    // Approve, reject, send back, publish, close, delete. The server's own
+    // sentence is what carries the reason — "this request is not at L1" is worth
+    // reading — so it goes through the shared extractor rather than being
+    // replaced with the word "failed".
+    } catch (e) { toast.error(readFieldErrors(e).summary) }
     finally { setActionLoading(false) }
   }
 
@@ -375,7 +484,7 @@ export default function ManpowerRequests() {
       if (!payload.closing_date) delete payload.closing_date
       await hrApi.manpower.convertToJd(request.id, payload)
       setConvertModal(null); fetchAll()
-    } catch (e) { alert(e?.response?.data?.message || 'Conversion failed') }
+    } catch (e) { toast.error(readFieldErrors(e).summary) }
     finally { setActionLoading(false) }
   }
 
@@ -571,7 +680,7 @@ export default function ManpowerRequests() {
         </div>
       )}
 
-      {showModal && <RequestFormModal {...{ form, setForm, editingId, saving, requestedBy: user?.name, onClose: () => setShowModal(false), onSave: handleSave }} />}
+      {showModal && <RequestFormModal {...{ form, setForm, editingId, saving, errors: formErrors, requestedBy: user?.name, onClose: () => { setShowModal(false); setFormErrors({}) }, onSave: handleSave }} />}
       {actionModal && actionModal.action === 'publish'
         ? <PublishModal request={actionModal.request} onClose={() => setActionModal(null)} onPublished={() => { setActionModal(null); fetchAll() }} />
         : actionModal && <ActionModal {...{ actionModal, remarks, setRemarks, actionLoading, onClose: () => setActionModal(null), onConfirm: runAction }} />}
@@ -609,12 +718,49 @@ const SkillPicker = ({ value, onChange, suggestions, placeholder }) => (
   />
 )
 
-const Field = ({ label, children, full }) => (
-  <div style={full ? { gridColumn: '1/-1' } : undefined}>
-    <label style={labelStyle}>{label}</label>
-    {children}
-  </div>
-)
+/**
+ * The validation errors for the form currently on screen, keyed by API field.
+ *
+ * A context rather than a prop threaded through five Sections and thirty Fields:
+ * every Field needs to know whether it is the one at fault, and passing an
+ * `errors` object down by hand would mean touching every call site to add a
+ * prop most of them never use.
+ */
+const FormErrors = createContext({})
+
+/**
+ * Laravel repeats the field name inside the sentence — "The education field must
+ * not be greater than 255 characters" — and we print the label right next to it,
+ * so it reads "Education — The education field must not be…". Trimmed here, at
+ * the render site, rather than in the shared normaliser: roughly 400 call sites
+ * rely on that message exactly as it is, and most of them show it on its own
+ * where the repetition is what names the field.
+ */
+const trimFieldPrefix = (msg) => String(msg).replace(/^The .+? field /, 'Must ').replace(/^Must must /i, 'Must ')
+
+/**
+ * One labelled input, which says so when the server rejected it.
+ *
+ * `name` is the API's field name, not the label — it is what the 422 comes back
+ * keyed by, and what `data-field` lets the form scroll to. A Field with no name
+ * cannot be pointed at, which is fine for the read-only ones.
+ */
+const Field = ({ label, children, full, name }) => {
+  const errors = useContext(FormErrors)
+  const error = name ? errors[name] : null
+
+  return (
+    <div data-field={name} style={full ? { gridColumn: '1/-1' } : undefined}>
+      <label style={labelStyle}>{label}</label>
+      {children}
+      {error && (
+        <p style={{ margin: '5px 0 0', fontSize: 11, fontWeight: 600, color: '#ef4444', lineHeight: 1.4 }}>
+          {trimFieldPrefix(error)}
+        </p>
+      )}
+    </div>
+  )
+}
 const TextInput = (props) => <input {...props} style={inputStyle} />
 // Native select. `options` are plain strings, or [value, label] pairs when `pairs`.
 const SelectInput = ({ options, pairs, ...p }) => (
@@ -641,7 +787,7 @@ const ReadOnly = ({ label, value }) => (
   <Field label={label}><div style={{ ...inputStyle, background: 'var(--bg-card, var(--bg-input))', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>{value || '—'}</div></Field>
 )
 
-function RequestFormModal({ form, setForm, editingId, saving, requestedBy, onClose, onSave }) {
+function RequestFormModal({ form, setForm, editingId, saving, errors = {}, requestedBy, onClose, onSave }) {
   const set = (k) => (e) => setForm(p => ({ ...p, [k]: e.target.value }))
   const setV = (k) => (v) => setForm(p => ({ ...p, [k]: v }))
 
@@ -694,32 +840,53 @@ function RequestFormModal({ form, setForm, editingId, saving, requestedBy, onClo
   const isReplacement = form.hiring_reason === 'Replacement'
 
   return (
+    <FormErrors.Provider value={errors}>
     <Overlay onClose={onClose} width={1120}>
       <h2 style={{ color: 'var(--text-h)', margin: '0 0 4px', fontSize: 18, fontWeight: 800 }}>{editingId ? 'Edit' : 'New'} Manpower Request</h2>
       <p style={{ color: 'var(--text-muted)', fontSize: 12, margin: '0 0 18px' }}>Complete the requisition in sections. Fields marked * are required.</p>
 
+      {/* The summary, for the case the message under the field cannot solve: five
+          sections do not fit on a screen, so "Education is too long" is useless
+          if Education is a thousand pixels below the fold. Each line says where
+          to look; the form has already scrolled to the first one. */}
+      {Object.keys(errors).length > 0 && (
+        <div role="alert" style={{ margin: '0 0 18px', padding: '12px 14px', borderRadius: 10,
+          background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)' }}>
+          <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: '#ef4444' }}>
+            {Object.keys(errors).length === 1
+              ? 'One field needs attention'
+              : `${Object.keys(errors).length} fields need attention`}
+          </p>
+          <ul style={{ margin: '6px 0 0', paddingLeft: 18, color: '#ef4444', fontSize: 11.5, lineHeight: 1.6 }}>
+            {Object.entries(errors).map(([field, msg]) => (
+              <li key={field}><strong>{prettyField(field)}</strong> — {trimFieldPrefix(msg)}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* ── Section 1 — Basic Information ── */}
       <Section n={1} title="Basic Information">
-        <Field label="Business Unit"><SearchableSelect value={form.business_unit} onChange={setV('business_unit')} options={masters.business_units || []} loading={loading} placeholder="Select business unit…" emptyText="No business units yet" allowCreate /></Field>
-        <Field label="Department *"><SearchableSelect value={form.department} onChange={setV('department')} options={deptOptions || []} loading={loading} placeholder="Select department…" emptyText="No departments yet" allowCreate /></Field>
-        <Field label="Project"><SelectInput value={form.project_id ?? ''} onChange={(e) => onProjectChange(e.target.value)} options={[['', loading ? 'Loading projects…' : (projectOptions.length ? 'Select project…' : 'No active projects')], ...projectOptions.map(p => [String(p.id), p.name + (['finished', 'cancelled', 'inactive'].includes(p.status) ? ' (inactive)' : '')])]} pairs /></Field>
-        <Field label="Project Location"><SearchableSelect value={form.location} onChange={setV('location')} options={masters.locations || []} loading={loading} placeholder="Select or type location…" emptyText="No locations yet" allowCreate /></Field>
-        <Field label="Hiring Manager"><SelectInput value={form.hiring_manager_id} onChange={set('hiring_manager_id')} options={[['', 'Select manager…'], ...managers.map(m => [String(m.id), m.employee_code ? `${m.name} · ${m.employee_code}` : m.name])]} pairs /></Field>
+        <Field label="Business Unit" name="business_unit"><SearchableSelect value={form.business_unit} onChange={setV('business_unit')} options={masters.business_units || []} loading={loading} placeholder="Select business unit…" emptyText="No business units yet" allowCreate /></Field>
+        <Field label="Department *" name="department"><SearchableSelect value={form.department} onChange={setV('department')} options={deptOptions || []} loading={loading} placeholder="Select department…" emptyText="No departments yet" allowCreate /></Field>
+        <Field label="Project" name="project_id"><SelectInput value={form.project_id ?? ''} onChange={(e) => onProjectChange(e.target.value)} options={[['', loading ? 'Loading projects…' : (projectOptions.length ? 'Select project…' : 'No active projects')], ...projectOptions.map(p => [String(p.id), p.name + (['finished', 'cancelled', 'inactive'].includes(p.status) ? ' (inactive)' : '')])]} pairs /></Field>
+        <Field label="Project Location" name="location"><SearchableSelect value={form.location} onChange={setV('location')} options={masters.locations || []} loading={loading} placeholder="Select or type location…" emptyText="No locations yet" allowCreate /></Field>
+        <Field label="Hiring Manager" name="hiring_manager_id"><SelectInput value={form.hiring_manager_id} onChange={set('hiring_manager_id')} options={[['', 'Select manager…'], ...managers.map(m => [String(m.id), m.employee_code ? `${m.name} · ${m.employee_code}` : m.name])]} pairs /></Field>
         <ReadOnly label="Request Date" value={editingId ? undefined : today} />
         <ReadOnly label="Requested By" value={requestedBy || 'Current user'} />
       </Section>
 
       {/* ── Section 2 — Position Details ── */}
       <Section n={2} title="Position Details">
-        <Field label="Job Title *"><SearchableSelect value={form.position_title} onChange={setV('position_title')} options={designationOptions} loading={loading} placeholder="Select or type a job title…" emptyText="No designations yet" allowCreate /></Field>
-        <Field label="Employee Level"><SelectInput value={form.employee_level} onChange={set('employee_level')} options={['', ...(masters.employee_levels || [])]} /></Field>
-        <Field label="Employment Type"><SelectInput value={form.job_type} onChange={set('job_type')} options={EMPLOYMENT_TYPES} /></Field>
-        <Field label="Work Mode"><SelectInput value={form.work_mode} onChange={set('work_mode')} options={['', ...WORK_MODES]} /></Field>
-        <Field label="Shift"><SelectInput value={form.shift} onChange={set('shift')} options={['', ...(masters.shifts || [])]} /></Field>
-        <Field label="No. of Positions *"><TextInput type="number" min="1" value={form.number_of_posts} onChange={set('number_of_posts')} /></Field>
-        <Field label="Experience Required"><TextInput value={form.experience_required} onChange={set('experience_required')} placeholder="e.g. 3-5 years" /></Field>
-        <Field label="Required By Date"><TextInput type="date" min={today} value={form.required_by_date} onChange={set('required_by_date')} /></Field>
-        <Field label="Expected Joining Date"><TextInput type="date" min={today} value={form.target_joining_date} onChange={set('target_joining_date')} /></Field>
+        <Field label="Job Title *" name="position_title"><SearchableSelect value={form.position_title} onChange={setV('position_title')} options={designationOptions} loading={loading} placeholder="Select or type a job title…" emptyText="No designations yet" allowCreate /></Field>
+        <Field label="Employee Level" name="employee_level"><SelectInput value={form.employee_level} onChange={set('employee_level')} options={['', ...(masters.employee_levels || [])]} /></Field>
+        <Field label="Employment Type" name="job_type"><SelectInput value={form.job_type} onChange={set('job_type')} options={EMPLOYMENT_TYPES} /></Field>
+        <Field label="Work Mode" name="work_mode"><SelectInput value={form.work_mode} onChange={set('work_mode')} options={['', ...WORK_MODES]} /></Field>
+        <Field label="Shift" name="shift"><SelectInput value={form.shift} onChange={set('shift')} options={['', ...(masters.shifts || [])]} /></Field>
+        <Field label="No. of Positions *" name="number_of_posts"><TextInput type="number" min="1" value={form.number_of_posts} onChange={set('number_of_posts')} /></Field>
+        <Field label="Experience Required" name="experience_required"><TextInput value={form.experience_required} onChange={set('experience_required')} placeholder="e.g. 3-5 years" /></Field>
+        <Field label="Required By Date" name="required_by_date"><TextInput type="date" min={today} value={form.required_by_date} onChange={set('required_by_date')} /></Field>
+        <Field label="Expected Joining Date" name="target_joining_date"><TextInput type="date" min={today} value={form.target_joining_date} onChange={set('target_joining_date')} /></Field>
       </Section>
 
       {/* ── Section 3 — Compensation & Skills ── */}
@@ -728,40 +895,40 @@ function RequestFormModal({ form, setForm, editingId, saving, requestedBy, onClo
             none (plain decimal), and an unlabelled figure was being read as annual
             by some users and monthly by others. Placeholders match the stated
             period so the field never contradicts its own label. */}
-        <Field label="Salary Min (Per Month)"><TextInput type="number" min="0" value={form.salary_min} onChange={set('salary_min')} placeholder="e.g. 50000" /></Field>
-        <Field label="Salary Max (Per Month)"><TextInput type="number" min="0" value={form.salary_max} onChange={set('salary_max')} placeholder="e.g. 90000" /></Field>
-        <Field label="Budget (Per Month, optional)"><TextInput type="number" min="0" value={form.budget} onChange={set('budget')} placeholder="Monthly hiring budget" /></Field>
+        <Field label="Salary Min (Per Month)" name="salary_min"><TextInput type="number" min="0" value={form.salary_min} onChange={set('salary_min')} placeholder="e.g. 50000" /></Field>
+        <Field label="Salary Max (Per Month)" name="salary_max"><TextInput type="number" min="0" value={form.salary_max} onChange={set('salary_max')} placeholder="e.g. 90000" /></Field>
+        <Field label="Budget (Per Month, optional)" name="budget"><TextInput type="number" min="0" value={form.budget} onChange={set('budget')} placeholder="Monthly hiring budget" /></Field>
         {/* #4 — "list of skills with add option". A tag editor rather than a
             comma-separated box: each skill is a discrete chip that can be removed
             without re-editing a sentence, and suggestions come from the skills
             already on the chosen designation/department so the same skill is
             spelled one way company-wide. The form state stays a comma-joined
             string, so save/edit handling is untouched. */}
-        <Field label="Required Skills" full>
+        <Field label="Required Skills" name="required_skills" full>
           <SkillPicker value={form.required_skills} onChange={setV('required_skills')} suggestions={skillSuggestions}
             placeholder="Type a skill and press Enter" />
         </Field>
-        <Field label="Preferred Skills" full>
+        <Field label="Preferred Skills" name="preferred_skills" full>
           <SkillPicker value={form.preferred_skills} onChange={setV('preferred_skills')} suggestions={skillSuggestions}
             placeholder="Good to have — type and press Enter" />
         </Field>
-        <Field label="Education"><TextInput value={form.education} onChange={set('education')} placeholder="e.g. B.Tech" /></Field>
-        <Field label="Certifications (comma-separated)"><TextInput value={form.certifications} onChange={set('certifications')} placeholder="e.g. AWS, PMP" /></Field>
+        <Field label="Education" name="education"><TextInput value={form.education} onChange={set('education')} placeholder="e.g. B.Tech" /></Field>
+        <Field label="Certifications (comma-separated)" name="certifications"><TextInput value={form.certifications} onChange={set('certifications')} placeholder="e.g. AWS, PMP" /></Field>
       </Section>
 
       {/* ── Section 4 — Hiring Details ── */}
       <Section n={4} title="Hiring Details">
-        <Field label="Hiring Reason"><SelectInput value={form.hiring_reason} onChange={set('hiring_reason')} options={['', ...HIRING_REASONS]} /></Field>
-        <Field label="Priority"><SelectInput value={form.priority} onChange={set('priority')} options={PRIORITIES} /></Field>
-        <Field label="Criticality"><SelectInput value={form.criticality} onChange={set('criticality')} options={['', ...CRITICALITY]} /></Field>
-        {isReplacement && <Field label="Replacement Employee *"><SelectInput value={form.replacement_employee_id} onChange={set('replacement_employee_id')} options={[['', 'Select employee…'], ...managers.map(m => [String(m.id), m.label])]} pairs /></Field>}
-        {isReplacement && <Field label="Cost Center (optional)"><TextInput value={form.cost_center} onChange={set('cost_center')} placeholder="e.g. CC-1024" /></Field>}
+        <Field label="Hiring Reason" name="hiring_reason"><SelectInput value={form.hiring_reason} onChange={set('hiring_reason')} options={['', ...HIRING_REASONS]} /></Field>
+        <Field label="Priority" name="priority"><SelectInput value={form.priority} onChange={set('priority')} options={PRIORITIES} /></Field>
+        <Field label="Criticality" name="criticality"><SelectInput value={form.criticality} onChange={set('criticality')} options={['', ...CRITICALITY]} /></Field>
+        {isReplacement && <Field label="Replacement Employee *" name="replacement_employee_id"><SelectInput value={form.replacement_employee_id} onChange={set('replacement_employee_id')} options={[['', 'Select employee…'], ...managers.map(m => [String(m.id), m.label])]} pairs /></Field>}
+        {isReplacement && <Field label="Cost Center (optional)" name="cost_center"><TextInput value={form.cost_center} onChange={set('cost_center')} placeholder="e.g. CC-1024" /></Field>}
       </Section>
 
       {/* ── Section 5 — Job Description ── */}
       <Section n={5} title="Job Description">
-        <Field label="Job Description" full><textarea value={form.job_description} onChange={set('job_description')} rows={3} placeholder="Role summary and responsibilities (auto-formatted into a standard JD when converted)" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
-        <Field label="Additional Remarks / Justification" full><textarea value={form.justification} onChange={set('justification')} rows={2} placeholder="Why is this position required?" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
+        <Field label="Job Description" name="job_description" full><textarea value={form.job_description} onChange={set('job_description')} rows={3} placeholder="Role summary and responsibilities (auto-formatted into a standard JD when converted)" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
+        <Field label="Additional Remarks / Justification" name="justification" full><textarea value={form.justification} onChange={set('justification')} rows={2} placeholder="Why is this position required?" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
       </Section>
 
       {/* Sticky footer — Save Draft · Submit · Cancel */}
@@ -771,6 +938,7 @@ function RequestFormModal({ form, setForm, editingId, saving, requestedBy, onClo
         <button onClick={() => onSave('submit')} disabled={saving} style={{ padding: '9px 18px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Submit for Approval'}</button>
       </div>
     </Overlay>
+    </FormErrors.Provider>
   )
 }
 

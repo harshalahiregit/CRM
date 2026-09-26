@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\V1\Transport\GensetController;
 use App\Http\Controllers\Api\V1\Transport\DriverController;
 use App\Http\Controllers\Api\V1\Transport\DriverDocumentController;
 use App\Http\Controllers\Api\V1\Transport\FleetController;
+use App\Http\Controllers\Api\V1\Transport\FleetReportController;
 use App\Http\Controllers\Api\V1\Transport\FuelController;
 use App\Http\Controllers\Api\V1\Transport\MaintenanceController;
 use App\Http\Controllers\Api\V1\Transport\OperatingCostController;
@@ -77,6 +78,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('v1/fleet')->gro
     Route::get('/vehicles/{vehicle}/live-status', [FleetController::class, 'liveStatus'])->where('vehicle', '[0-9]+');
     // Addressed by registration number or id — a person types the plate.
     Route::get('/vehicles/{vehicle}/passport', [VehiclePassportController::class, 'show']);
+
+    // ── Reporting the executive tower feeds from (T-49) ─────────────────
+    Route::get('/reports/idle', [FleetReportController::class, 'idle']);
+    Route::get('/reports/utilisation', [FleetReportController::class, 'utilisation']);
 
     // ── Fuel & emergency diesel (Feature 3) ─────────────────────────────
     Route::post('/vehicles/{vehicle}/fuel', [FuelController::class, 'store'])->where('vehicle', '[0-9]+');

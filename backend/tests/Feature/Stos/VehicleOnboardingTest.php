@@ -54,7 +54,7 @@ class VehicleOnboardingTest extends TestCase
         return $this->actingAs($this->user($role))->postJson('/api/v1/fleet/vehicles', array_merge([
             'registration_number' => 'MH12AB1234',
             'vehicle_type'        => 'reefer',
-            'ownership_type'      => 'owned',
+            'ownership_type'      => 'OWNED',
             'chassis_number'      => 'MAT477050N3K12345',
             'gps_device_id'       => 'DEV-0001',
         ], $over));
@@ -152,7 +152,7 @@ class VehicleOnboardingTest extends TestCase
 
         $this->actingAs($this->user())->putJson("/api/v1/fleet/vehicles/{$id}", [
             'registration_number' => 'MH12AB1234',
-            'vehicle_type' => 'reefer', 'ownership_type' => 'owned',
+            'vehicle_type' => 'reefer', 'ownership_type' => 'OWNED',
             'status' => 'active',
         ])->assertOk();
 
@@ -225,11 +225,11 @@ class VehicleOnboardingTest extends TestCase
         // And another company's vehicle cannot be edited by guessing its id.
         $theirs = Vehicle::create([
             'company_id' => self::OTHER, 'registration_number' => 'MH88ZZ1111',
-            'vehicle_type' => 'truck', 'ownership_type' => 'owned',
+            'vehicle_type' => 'truck', 'ownership_type' => 'OWNED',
         ]);
 
         $this->actingAs($this->user())->putJson("/api/v1/fleet/vehicles/{$theirs->id}", [
-            'registration_number' => 'MH88ZZ2222', 'vehicle_type' => 'truck', 'ownership_type' => 'owned',
+            'registration_number' => 'MH88ZZ2222', 'vehicle_type' => 'truck', 'ownership_type' => 'OWNED',
         ])->assertNotFound();
 
         $this->assertSame('MH88ZZ1111', $theirs->fresh()->registration_number);
