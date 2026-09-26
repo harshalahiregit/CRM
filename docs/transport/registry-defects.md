@@ -5936,6 +5936,9 @@ verified*) instead of passing:
   invented licence or medical state fails), broken two ways each: the code dropped from FAILS, the
   state dropped from the known list, the fail-closed check disabled, and an unknown state graded PASS.
   Each red, then restored.
+  **Cross-reference:** `c402bccc` resolves what P2 recorded as **D-204** (*"the pre-trip check does
+  not know Fleet's `not_yet_valid` licence state"*), including the fail-closed behaviour it asks for.
+  D-204 is his entry and is left as he wrote it.
 - **(ii) Expiry of every driver document other than medical** (police verification, ID proof,
   training certificate, customer qualification, the general driver document) is checked **nowhere**
   since D-134, neither at allocation nor at pre-trip. These documents can still be filed against a Fleet
@@ -6112,9 +6115,17 @@ behind it, changes Fleet's guard with no change in Fleet's code. **Any change to
 heads-up to Person 2 before it merges.** `ACTIVE_STATES` is already load-bearing for BR-P0-003 (a
 unique index over a generated column); this adds a second, cross-module reason.
 
-**One property to know:** both readers **degrade to "not committed"** when the read fails or Ops is
-absent. That is P2's choice, so Fleet can run standalone. So a query that breaks here doesn't make
-Fleet refuse; it makes Fleet allow. That's another reason a change to this scope must be tested
-against his D-146 test before merging.
+**How each reader behaves when the read breaks.** Updated 2026-09-26 after P2's `d8e0aabf`:
+
+- **`TripCommitmentReader`, the D-146 guard, now fails CLOSED.** A failed read of `trip_assignments`
+  throws `TripCommitmentUnavailable`, and the retire or stand-down is refused. The only open path is
+  when there's no `trip_assignments` table at all, so a standalone Fleet can still retire vehicles.
+  Read from his code, not assumed.
+- **`TripHistoryReader`, the utilisation report, still degrades to empty** on any read error. That's
+  harmless for a report.
+
+A broken change to this scope now makes Fleet **refuse**, which is loud, rather than allow. It must
+still be tested against his D-146 tests before merging: a scope that returns the wrong rows without
+erroring still changes what Fleet refuses, silently.
 
 A pointer comment now sits on `scopeActive()` itself, where the next person to change it will read it.
