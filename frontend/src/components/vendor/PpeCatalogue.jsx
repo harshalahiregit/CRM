@@ -186,8 +186,9 @@ function IssueDrawer({ item, workers, api, accent, onClose, onDone }) {
   // card (backdrop-filter makes such a card the containing block for fixed
   // descendants, and its overflow:hidden then crops them).
   return createPortal(
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 420, maxWidth: '94vw', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: 22, position: 'relative' }}>
+    // No backdrop close: this popup closes only from ✕ or Cancel.
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div style={{ width: 420, maxWidth: '94vw', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 16, padding: 22, position: 'relative' }}>
         <button onClick={onClose} aria-label="Close" style={{ position: 'absolute', top: 14, right: 14, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={17} /></button>
         <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-h)', paddingRight: 24 }}>Issue {item.name}</h3>
         <p style={{ margin: '4px 0 16px', fontSize: 12, color: 'var(--text-muted)' }}>{item.sku}</p>

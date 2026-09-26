@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { CalendarDays, Plus, Loader2, AlertTriangle, ListChecks, Clock } from 'lucide-react'
 
 /**
@@ -17,6 +17,10 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('en-IN', { day: '2-di
 
 export function VendorMeetingsPanel({ vendorId, api }) {
   const navigate = useNavigate()
+  const location = useLocation()
+  // The meeting pages offer a way back to this vendor (and its onboarding
+  // steps) only when they are told where they were opened from.
+  const backTo = { state: { from: location.pathname + location.search, fromLabel: 'Back to vendor onboarding' } }
   const [data, setData]       = useState(null)
   const [loading, setLoading] = useState(true)
   const [err, setErr]         = useState(null)
@@ -38,7 +42,7 @@ export function VendorMeetingsPanel({ vendorId, api }) {
           <CalendarDays size={16} style={{ color: '#a78bfa' }} />
           <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--text-h)' }}>Meeting History</h2>
         </div>
-        <button onClick={() => navigate(`/app/tpv/kickoff/new?vendor=${vendorId}`)} style={btnPrimary}>
+        <button onClick={() => navigate(`/app/tpv/kickoff/new?vendor=${vendorId}`, backTo)} style={btnPrimary}>
           <Plus size={13} /> Schedule meeting
         </button>
       </div>
@@ -81,7 +85,7 @@ export function VendorMeetingsPanel({ vendorId, api }) {
             {data.meetings.map(m => {
               const color = STATUS_COLOR[m.status] || 'var(--text-muted)'
               return (
-                <button key={m.id} onClick={() => navigate(`/app/tpv/kickoff/${m.id}`)}
+                <button key={m.id} onClick={() => navigate(`/app/tpv/kickoff/${m.id}`, backTo)}
                   style={{ textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, cursor: 'pointer', background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-h)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.title || m.meeting_type_label}</div>

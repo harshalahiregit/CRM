@@ -23,15 +23,76 @@ class EmployeeController extends Controller
 
     public function index(Request $request)
     {
-        return response()->json(
-            $this->employeeService->list(
-                $request->user()->tenant_id,
-                $request->only(['status', 'department', 'designation', 'joined_from', 'search', 'per_page']),
-                // Passing the actor is what lets a non-global role narrow this
-                // list. A global role — which is every role today — is unchanged.
-                $request->user(),
-            )
+        $page = $this->employeeService->list(
+            $request->user()->tenant_id,
+            $request->only(['status', 'department', 'designation', 'joined_from', 'search', 'per_page']),
+            // Passing the actor is what lets a non-global role narrow this
+            // list. A global role — which is every role today — is unchanged.
+            $request->user(),
         );
+
+        // Only for the people the block is FOR. It exists so an HR admin editing
+        // an employee can see what their employment status does to their access;
+        // to anybody else it is a list of which accounts exist, which of them are
+        // admins, and which can sign in — reconnaissance, not a directory. The
+        // employee directory itself stays readable by staff, as it was.
+        if ($request->user()->canManageHrQueue()) {
+            $page = $this->withLoginState($page, (int) $request->user()->tenant_id);
+        }
+
+        return response()->json($page);
+    }
+
+    /**
+     * Attach each employee's login state to the row.
+     *
+     * The employee form owns this person's identity, and it was the one screen
+     * that could not say whether they could actually get in — an admin could set
+     * somebody Inactive and had no way to see what that did to their access. The
+     * answer lives on `users` plus the employment gate, so it is resolved here
+     * and shown rather than left for somebody to guess.
+     *
+     * Read-only, and deliberately small: the account email, whether it can sign
+     * in, and why not when it cannot. Changing any of it is Staff Management's
+     * job — this is a window, not a second editor.
+     *
+     * One query for the page, not one per row.
+     */
+    private function withLoginState($page, int $tenantId)
+    {
+        $userIds = collect($page->items())->pluck('user_id')->filter()->unique();
+
+        $users = $userIds->isEmpty()
+            ? collect()
+            : \App\Models\User::where('tenant_id', $tenantId)
+                ->whereIn('id', $userIds)
+                ->get(['id', 'email', 'status', 'role'])
+                ->keyBy('id');
+
+        $signIn = \App\Services\Hr\EmployeeIdentityService::EMPLOYMENT_STATUSES_THAT_MAY_SIGN_IN;
+
+        $page->setCollection($page->getCollection()->map(function ($employee) use ($users, $signIn) {
+            $user = $employee->user_id ? $users->get($employee->user_id) : null;
+
+            $employee->setAttribute('login', $user ? [
+                'user_id'      => $user->id,
+                'email'        => $user->email,
+                'role'         => $user->role,
+                'status'       => $user->status,
+                'can_sign_in'  => $user->status === 'active'
+                                  && in_array((string) $employee->status, $signIn, true),
+                'blocked_because' => match (true) {
+                    $user->status !== 'active' => 'The account is '.$user->status.'.',
+                    ! in_array((string) $employee->status, $signIn, true)
+                        => 'Employment is '.$employee->status.'.',
+                    default => null,
+                },
+            ] : null);
+
+            return $employee;
+        }));
+
+        return $page;
     }
 
     /**
@@ -61,14 +122,46 @@ class EmployeeController extends Controller
      * Always returns every field, null where unset, so the form renders without
      * having to special-case a person who has none of it filled in yet.
      */
+    /**
+     * The extended personal record — and the most sensitive read in the module.
+     *
+     * It returns bank account number, IFSC, PAN, Aadhaar, UAN, ESIC, PF, date of
+     * birth, personal email and home address. The WRITE beside it has been
+     * HR-only since it was written; the read had nothing but a tenant check, so
+     * any signed-in account could fetch any colleague's bank and identity numbers
+     * by id. Confirmed with a token for a staff account holding no permission
+     * role at all: it read a seeded Aadhaar and account number in full.
+     *
+     * Two callers are legitimate: somebody who administers HR, and the person
+     * whose record it is. Everything else is refused — 403 rather than 404,
+     * because unlike the list endpoints this is not about hiding that the
+     * employee exists, it is about who may read their identity documents.
+     */
     public function detail(Request $request, HrEmployee $employee)
     {
         $this->assertTenant($request, $employee);
+        $this->assertCanReadDetail($request, $employee);
 
         return response()->json([
             'status' => 'success',
             'data'   => $this->details->get($employee),
         ]);
+    }
+
+    private function assertCanReadDetail(Request $request, HrEmployee $employee): void
+    {
+        if ($request->user()->canManageHrQueue()) {
+            return;
+        }
+
+        // Your own record is yours to read. There is no self-service screen for
+        // it today, but refusing somebody their own bank details would be the
+        // wrong rule to write down for the one that arrives later.
+        if ($employee->user_id && (int) $employee->user_id === (int) $request->user()->id) {
+            return;
+        }
+
+        abort(403, 'You are not authorised to view this employee’s personal details');
     }
 
     /**
@@ -138,6 +231,19 @@ class EmployeeController extends Controller
             'employment_type_id'     => [
                 'nullable', 'integer',
                 \Illuminate\Validation\Rule::exists('hr_employment_types', 'id')
+                    ->where('tenant_id', $request->user()->tenant_id),
+            ],
+            // Grade was a dimension nothing could set.
+            //
+            // hr_employees.grade_id is fillable and has a relation, the employee
+            // profile renders a Grade field, Organization Setup lets you create
+            // grades, and leave policies, exit policies and the salary report all
+            // target one. But no form wrote it and these rules did not accept it,
+            // so every employee's grade was permanently null — which quietly means
+            // a leave or exit policy scoped to a grade can never match anybody.
+            'grade_id'               => [
+                'nullable', 'integer',
+                \Illuminate\Validation\Rule::exists('hr_grades', 'id')
                     ->where('tenant_id', $request->user()->tenant_id),
             ],
             // See StoreEmployeeRequest for why both exist. The service rejects a

@@ -8,6 +8,7 @@ import {
 import { purchaseApi } from '@/services/purchaseApi'
 import InternalDoctorSelect from '@/components/medical/InternalDoctorSelect'
 import { useVendorModule } from '@/modules/tpv/useVendorModule'
+import GroupInductionModal from '@/components/vendor/GroupInductionModal'
 import { useAuth } from '@/context/AuthContext'
 import AuditTimeline from '@/components/ui/AuditTimeline'
 import Select from '@/components/ui/Select'
@@ -1601,8 +1602,11 @@ function StepInduction({ worker, readiness, editable, onSaved, onNext }) {
       </div>
 
       {groupModalOpen && (
-        <WizardGroupInductionModal
+        <GroupInductionModal
+          engine="purchase"
+          api={api}
           workers={vendorWorkers.length > 0 ? vendorWorkers : [worker]}
+          preselectIds={[worker.id]}
           onClose={() => setGroupModalOpen(false)}
           onCompleted={() => { setGroupModalOpen(false); onSaved() }}
         />
@@ -1638,110 +1642,10 @@ function buildInductionPayload({ type, trainer, location, duration, topics }) {
       `Location: ${location}`,
       `Duration: ${duration || 15} min`,
       `Topics: ${topics.length ? topics.join(', ') : '—'}`,
-    ].join('\n').slice(0, 2000),
+    // purchase_worker_inductions.remarks is a string(500) and the portal route
+    // validates max:500 — a longer slice could only ever be refused.
+    ].join('\n').slice(0, 500),
   }
-}
-
-/** One session, many workers — the same induction saved against each in turn. */
-function WizardGroupInductionModal({ workers, onClose, onCompleted }) {
-  const { api } = useVendorModule()
-
-  const [selectedIds, setSelectedIds] = useState(workers.map(w => w.id))
-  const [f, setF] = useState({
-    induction_type: 'General Safety',
-    trainer: 'Safety Officer – Rahul Sharma',
-    custom_trainer: '',
-    location: 'Site Office',
-  })
-  const [topics, setTopics] = useState(['Site Safety Rules', 'PPE Usage', 'Emergency Response'])
-  const [saving, setSaving] = useState(false)
-  const [progressMsg, setProgressMsg] = useState('')
-
-  const set = (k) => (e) => setF(p => ({ ...p, [k]: e.target.value }))
-  const toggleTopic = (t) => setTopics(p => p.includes(t) ? p.filter(x => x !== t) : [...p, t])
-
-  const activeWorkers = workers.filter(w => selectedIds.includes(w.id))
-
-  const saveGroupInduction = async () => {
-    const finalTrainer = f.trainer === 'Other / Custom Trainer...' ? f.custom_trainer : f.trainer
-    if (!finalTrainer.trim()) { alert('Trainer Name is required.'); return }
-    if (!f.location.trim()) { alert('Location is required.'); return }
-    if (activeWorkers.length === 0) { alert('Select at least one worker.'); return }
-
-    setSaving(true)
-    try {
-      // One request per worker: the endpoint records a single worker's induction,
-      // so the loop is the batch — and a failure part-way leaves the workers
-      // already saved genuinely inducted rather than rolling them back.
-      let count = 0
-      for (const w of activeWorkers) {
-        count++
-        setProgressMsg(`Saving worker ${count}/${activeWorkers.length}: ${w.full_name}...`)
-        await api.workforce.saveInduction(w.id, buildInductionPayload({
-          type: f.induction_type, trainer: finalTrainer, location: f.location, duration: 15, topics,
-        }))
-      }
-      alert(`Group induction completed for ${activeWorkers.length} workers!`)
-      onCompleted()
-    } catch (e) {
-      alert(apiError(e, 'Group induction save failed'))
-    } finally {
-      setSaving(false)
-      setProgressMsg('')
-    }
-  }
-
-  return (
-    <Overlay onClose={() => !saving && onClose()} width={820}>
-      <h2 style={{ fontSize: 18, fontWeight: 900, color: 'var(--text-h)', margin: '0 0 14px' }}>
-        👥 Group Induction Session ({activeWorkers.length} Selected)
-      </h2>
-
-      {/* Worker Checkbox Selector Strip */}
-      <div style={{ padding: 10, borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', marginBottom: 14, display: 'flex', flexWrap: 'wrap', gap: 10, maxHeight: 100, overflowY: 'auto' }}>
-        {workers.map(w => (
-          <label key={w.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 20, background: selectedIds.includes(w.id) ? '#e0f2fe' : 'var(--bg-card)', border: '1px solid var(--border)', fontSize: 11.5, cursor: 'pointer', fontWeight: selectedIds.includes(w.id) ? 800 : 500 }}>
-            <input type="checkbox" checked={selectedIds.includes(w.id)} onChange={e => {
-              const checked = e.target.checked
-              setSelectedIds(p => checked ? [...p, w.id] : p.filter(x => x !== w.id))
-            }} style={{ width: 14, height: 14 }} />
-            {w.full_name} ({w.worker_code})
-          </label>
-        ))}
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 14 }}>
-        <Field label="Induction Type *">
-          <SelectInput value={f.induction_type} onChange={set('induction_type')} pairs options={INDUCTION_TYPES} />
-        </Field>
-        <Field label="Trainer *">
-          <select value={f.trainer} onChange={set('trainer')} style={inputStyle}>
-            {TRAINER_PRESETS.map(grp => (
-              <optgroup key={grp.group} label={grp.group}>
-                {grp.items.map(item => <option key={item} value={item}>{item}</option>)}
-              </optgroup>
-            ))}
-          </select>
-          {f.trainer === 'Other / Custom Trainer...' && (
-            <input type="text" value={f.custom_trainer} onChange={set('custom_trainer')} placeholder="Enter trainer full name..." style={{ ...inputStyle, marginTop: 6 }} />
-          )}
-        </Field>
-        <Field label="Location *"><TextInput value={f.location} onChange={set('location')} placeholder="e.g. Site Office" /></Field>
-      </div>
-
-      <h3 style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-h)', margin: '0 0 8px' }}>📚 Topics Covered</h3>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-        {INDUCTION_TOPICS.map(t => (
-          <button type="button" key={t} onClick={() => toggleTopic(t)} style={{ padding: '5px 12px', borderRadius: 20, border: '1.5px solid', fontSize: 11, fontWeight: 800, cursor: 'pointer', background: topics.includes(t) ? '#7c3aed' : 'var(--bg-input)', color: topics.includes(t) ? '#fff' : 'var(--text-muted)', borderColor: topics.includes(t) ? '#7c3aed' : 'var(--border)' }}>
-            {topics.includes(t) ? '✓ ' : '+ '}{t}
-          </button>
-        ))}
-      </div>
-
-      {progressMsg && <div style={{ padding: '6px 12px', background: '#e0f2fe', color: '#0369a1', fontSize: 12, fontWeight: 700, marginBottom: 10 }}>⏳ {progressMsg}</div>}
-      <ModalFooter onClose={onClose} onConfirm={saveGroupInduction} loading={saving} disabled={activeWorkers.length === 0} confirmLabel={`Save Group Induction (${activeWorkers.length} Workers)`} />
-    </Overlay>
-  )
 }
 
 // ── Step 4 — PPE, issued from Inventory ──────────────────────────────────────

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Portal;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Purchase\SaveGroupInductionRequest;
 use App\Http\Requests\Purchase\StorePurchaseWorkerRequest;
 use App\Http\Requests\Purchase\UpdatePurchaseWorkerRequest;
 use App\Models\Purchase\PurchaseVendor;
@@ -139,6 +140,23 @@ class PurchasePortalWorkforceController extends Controller
         ]);
 
         return response()->json($this->service->saveInduction($w, $data), 201);
+    }
+
+    /**
+     * One group session over the vendor's own workers; the trainer signs once.
+     * The vendor comes from the token, so another vendor's worker id is
+     * reported as "not found" and never written.
+     */
+    public function saveGroupInduction(SaveGroupInductionRequest $request)
+    {
+        $vendor = $this->vendor($request);
+        $data   = $request->validated();
+        $ids    = $data['worker_ids'];
+        unset($data['worker_ids']);
+
+        return response()->json($this->service->saveGroupInduction(
+            (int) $vendor->tenant_id, (int) $vendor->id, $ids, $data
+        ));
     }
 
     /* ── scoping ─────────────────────────────────────────────────────────── */
@@ -311,10 +329,23 @@ class PurchasePortalWorkforceController extends Controller
         return response()->json($ppe->summaryForVendor((int) $vendor->id, (int) $vendor->tenant_id));
     }
 
-    /** One of the caller's own workers' PPE history. */
+    /**
+     * One of the caller's own workers' PPE — history and what they hold.
+     *
+     * The SAME contract as the admin route (PurchaseWorkforceAdminController::ppe),
+     * because the SAME screen reads both: the worker wizard's PPE step reads
+     * `issues` and `compliance`. This used to answer a bare array, so on the
+     * portal `data.issues` was always undefined and every worker — including
+     * ones admin had just kitted out — read "No PPE issued".
+     */
     public function workerPpe(Request $request, int $worker, PurchasePpeService $ppe)
     {
-        return response()->json($ppe->forWorker($this->owned($request, $worker))->values());
+        $w = $this->owned($request, $worker);
+
+        return response()->json([
+            'issues'     => $ppe->forWorker($w)->values(),
+            'compliance' => $ppe->complianceFor($w),
+        ]);
     }
 
     public function workerPpeCompliance(Request $request, int $worker, PurchasePpeService $ppe)
@@ -327,11 +358,15 @@ class PurchasePortalWorkforceController extends Controller
      *
      * warehouse_id is deliberately NOT accepted: a vendor picking a site would be
      * moving stock between warehouses. The service resolves the tenant default.
+     *
+     * Either a central Inventory item or one of the vendor's OWN PPE items
+     * (`vendor_ppe_item_id`); the service checks the item is this vendor's.
      */
     public function issueWorkerPpe(Request $request, int $worker, PurchasePpeService $ppe)
     {
         $data = $request->validate([
-            'inventory_item_id' => 'required|integer',
+            'inventory_item_id' => 'required_without:vendor_ppe_item_id|nullable|integer',
+            'vendor_ppe_item_id' => 'required_without:inventory_item_id|nullable|integer|min:1',
             'qty'               => 'required|numeric|min:0.001',
             'size'              => 'nullable|string|max:40',
             'issued_date'       => 'nullable|date',

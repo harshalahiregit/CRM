@@ -141,6 +141,48 @@ class PurchaseKickoffController extends Controller
         ]);
     }
 
+    /** The organiser pastes the real room link — see KickoffMeetingLinkController::update. */
+    public function updateLink(Request $request, PurchaseKickoffMeeting $kickoff, OnlineMeetingService $meetings,
+        \App\Services\Shared\MeetingAttendanceGate $gate)
+    {
+        $this->assertTenant($request, $kickoff);
+        abort_unless($gate->hosts($kickoff, $request->user()), 403, 'Only the organiser or an admin can set the meeting link.');
+
+        $data = $request->validate(['link' => ['required', 'string', 'max:2048']]);
+
+        try {
+            $link = $meetings->setLink($kickoff, $data['link']);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage(), 'errors' => ['link' => [$e->getMessage()]]], 422);
+        }
+
+        // Everyone invited gets the room by e-mail, after the response — the
+        // same announcer the shared engine uses, so the two cannot drift.
+        $notified = app(\App\Services\Shared\MeetingLinkAnnouncer::class)
+            ->announceAfterResponse($kickoff, $request->user());
+
+        return response()->json(['meeting' => $kickoff->fresh(), 'link' => $link, 'notified' => $notified]);
+    }
+
+    /** Send the room link again, to everybody — see KickoffMeetingLinkController::announce. */
+    public function announceLink(Request $request, PurchaseKickoffMeeting $kickoff,
+        \App\Services\Shared\MeetingAttendanceGate $gate)
+    {
+        $this->assertTenant($request, $kickoff);
+        abort_unless($gate->hosts($kickoff, $request->user()), 403, 'Only the organiser or an admin can send the meeting link.');
+
+        if (! $kickoff->meeting_link || OnlineMeetingService::isInstant($kickoff->meeting_link)) {
+            return response()->json([
+                'message' => 'Start the meeting and paste the room link first — there is no room to send yet.',
+            ], 422);
+        }
+
+        return response()->json([
+            'notified' => app(\App\Services\Shared\MeetingLinkAnnouncer::class)
+                ->announceAfterResponse($kickoff, $request->user()),
+        ]);
+    }
+
     /** The stored link, if this meeting has one. */
     public function link(Request $request, PurchaseKickoffMeeting $kickoff, OnlineMeetingService $meetings,
         \App\Services\Shared\MeetingAttendanceGate $gate)
@@ -154,7 +196,13 @@ class PurchaseKickoffController extends Controller
 
         // Same gate as the meeting payload. This endpoint is the other way into
         // the link, and leaving it open would have made the first one decorative.
-        return response()->json(array_merge($data, $gate->stateFor($kickoff, $request->user())));
+        // 'link' too, not just meeting_link: $data carries the raw stored link,
+        // and passing it through un-gated handed the room to anyone who asked.
+        return response()->json(array_merge(
+            $data,
+            $gate->stateFor($kickoff, $request->user()),
+            ['link' => $gate->linkFor($kickoff, $request->user())],
+        ));
     }
 
     /**
@@ -328,11 +376,21 @@ class PurchaseKickoffController extends Controller
     {
         $this->assertTenant($request, $kickoff);
 
+        // The register is the admin's record — see KickoffMeetingController::attendance.
+        abort_unless(
+            app(\App\Services\Shared\MeetingAttendanceReview::class)->mayReview($kickoff, $request->user()),
+            403,
+            'Only the meeting organiser or an admin can record attendance.',
+        );
+
         $data = $request->validate([
             'rows'                     => 'required|array',
             'rows.*.id'                => 'required|integer',
             'rows.*.attended'          => 'nullable|boolean',
             'rows.*.attendance_status' => ['nullable', Rule::in(\App\Models\Purchase\PurchaseKickoffParticipant::ATTENDANCE)],
+            // The times the admin types. Half a window is not a record.
+            'rows.*.in_at'             => 'nullable|date',
+            'rows.*.out_at'            => 'nullable|date|after:rows.*.in_at',
         ]);
 
         return response()->json($this->service->markAttendance($kickoff, $data['rows'], $request->user()));

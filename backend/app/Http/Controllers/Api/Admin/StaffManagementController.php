@@ -808,14 +808,62 @@ class StaffManagementController extends Controller
         $staff = $this->manageable($tenantId)
             ->findOrFail($id);
 
-        // Prevent deleting staff if they have active assignments
-        // You can add additional checks here based on your business logic
+        // The two guards the original "add additional checks here" comment stood
+        // in for. Both were reproducible in the browser.
 
-        $staff->delete();
+        // 1. A workspace must not be able to delete its way to having nobody in
+        //    charge. Demotion is already refused for this account
+        //    (roleChangeError); deleting it is the same outcome by a shorter
+        //    route, and there is no way back from it.
+        if ((int) $staff->id === $this->foundingAdminId($tenantId)) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'The founding administrator cannot be deleted. Transfer ownership first.',
+            ], 422);
+        }
+
+        if ((int) $staff->id === (int) $request->user()->id) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'You cannot delete your own account.',
+            ], 422);
+        }
+
+        // 2. Do not leave a pointer to a row that is gone. hr_employees.user_id
+        //    is not a foreign key with a cascade, so deleting the account left
+        //    the employee pointing at nothing — which the directory panel then
+        //    reports as a blocking "linked to account #35, which no longer
+        //    exists". The application was manufacturing the exact corruption it
+        //    detects, on a 200.
+        //
+        //    The link is cleared rather than the delete refused: removing a login
+        //    for somebody who has left is ordinary admin work, and the employment
+        //    record must survive it — payroll, attendance and service history all
+        //    hang off that row. The employee lands in "employed, no login", which
+        //    is a normal state the panel already knows how to resolve.
+        $employee = HrEmployee::where('tenant_id', $tenantId)
+            ->where('user_id', $staff->id)
+            ->first();
+
+        DB::transaction(function () use ($staff, $employee, $request) {
+            if ($employee) {
+                $employee->update(['user_id' => null]);
+
+                \Illuminate\Support\Facades\Log::channel('hr')->info('Employee unlinked because its login was deleted', [
+                    'employee_id' => $employee->id,
+                    'user_id'     => $staff->id,
+                    'by'          => $request->user()->id,
+                ]);
+            }
+
+            $staff->delete();
+        });
 
         return response()->json([
-            'status' => 'success',
-            'message' => 'Staff member deleted successfully',
+            'status'  => 'success',
+            'message' => $employee
+                ? "Staff member deleted. {$employee->name} remains an employee with no login."
+                : 'Staff member deleted successfully',
         ]);
     }
 

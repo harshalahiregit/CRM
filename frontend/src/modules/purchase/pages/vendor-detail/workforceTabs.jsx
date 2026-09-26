@@ -6,6 +6,7 @@ import VendorAddModal from '@/modules/tpv/components/VendorAddModal'
 import { useVendorWorkspace } from './vendorWorkspaceContext'
 import { VendorScopedList, linkBtn } from './vendorDetailShared'
 import { useDoctorOptions, doctorSelectOptions } from '@/components/medical/InternalDoctorSelect'
+import VendorPpeItemsPanel from '@/components/vendor/VendorPpeItemsPanel'
 
 /**
  * The Workforce group on a Purchase vendor: roster, medical, training, gate log
@@ -58,6 +59,7 @@ export function WorkforceTab() {
   const navigate = useNavigate()
 
   return (
+    <>
     <VendorScopedList
       key={`wf-${vendor.id}`}
       title="Workforce"
@@ -82,6 +84,18 @@ export function WorkforceTab() {
         { header: 'Phone', cell: (r) => r.phone || '—' },
       ]}
     />
+    {/* The vendor's OWN PPE — its stock, kept from its portal, never Inventory.
+        Read-only here; what its workers hold shows on each worker's PPE step. */}
+    <VendorPpeItemsPanel
+      client={{
+        list: () => purchaseApi.ppe.vendorItems(vendor.id),
+        imageBlob: (id) => purchaseApi.ppe.vendorItemImage(vendor.id, id),
+      }}
+      scopeKey={`purchase-admin-${vendor.id}`}
+      title="Vendor's own PPE"
+      accent="#0ea5e9"
+    />
+    </>
   )
 }
 

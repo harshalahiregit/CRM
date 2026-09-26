@@ -126,12 +126,14 @@ class VendorPortalMeetingsTest extends TestCase
      * moment it started, which is exactly when it is needed, and that must not
      * come back.
      *
-     * What changed is that the link is now EARNED rather than given: it is
-     * withheld from the payload until the vendor marks attendance, so
-     * has_meeting_link is what says this meeting is online. See
-     * MeetingAttendanceGate.
+     * The link was briefly EARNED rather than given — withheld until the vendor
+     * marked attendance. That toll has gone: MeetingLinkAnnouncer e-mails the
+     * real room to every participant the moment the organiser pastes it, so
+     * withholding the same URL here made the portal the slow route to a link
+     * already in their inbox. Marking attendance is still offered, and is now
+     * asked for on its own terms. See MeetingAttendanceGate.
      */
-    public function test_a_meeting_in_progress_is_still_joinable_but_the_link_is_earned(): void
+    public function test_a_meeting_in_progress_is_joinable_and_carries_its_room(): void
     {
         $meeting = $this->meeting('Running', -10);
 
@@ -141,13 +143,11 @@ class VendorPortalMeetingsTest extends TestCase
         $this->assertSame('live', $row['timing_state']);
         $this->assertTrue($row['is_live']);
         $this->assertTrue($row['has_meeting_link'], 'the portal still knows this is an online meeting');
-        $this->assertNull($row['meeting_link'], 'and does not hand it out before attendance is marked');
+        $this->assertSame('https://meet.example.test/room', $row['meeting_link'],
+            'a real room is handed over — it was e-mailed to them anyway');
+        $this->assertFalse($row['attendance_marked'], 'and it cost them nothing to get it');
 
-        // Withheld from the whole body, not just that field — a link anywhere in
-        // this response is a link the browser has.
-        $this->assertStringNotContainsString('meet.example.test', $res->getContent());
-
-        // And marking attendance releases it, so the gate is a door, not a wall.
+        // Marking attendance still records what it always recorded.
         $this->postJson("/api/portal/meetings/{$meeting->id}/attendance")->assertOk()
             ->assertJsonPath('attendance_marked', true);
 

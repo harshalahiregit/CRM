@@ -1,7 +1,7 @@
 import PartyContractList from '@/modules/contract/components/PartyContractList'
 import { contractsForParty } from '@/services/contractModuleApi'
 ﻿import { useState, useEffect, useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { Save, ExternalLink, ClipboardList, Rocket, Inbox, Plus, CalendarClock, CheckCircle2, Trash2, Users, User, HardHat, FileText, Paperclip, StickyNote, ShieldCheck } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
 import LoadError from '@/components/ui/LoadError'
@@ -866,12 +866,17 @@ function TicketTab() {
 function MeetingTab() {
   const { vendor } = useVendorWorkspace()
   const navigate = useNavigate()
+  const location = useLocation()
+  // The meeting pages offer a way back to this vendor (and its onboarding
+  // steps) only when they are told where they were opened from.
+  const backTo = { state: { from: location.pathname + location.search, fromLabel: 'Back to vendor onboarding' } }
 
   return (
     <VendorScopedList
       title="Meetings"
       addLabel="Add Meeting"
-      onAdd={() => navigate(`/app/purchase/kickoff/new?vendor=${vendor.id}`)}
+      onAdd={() => navigate(`/app/purchase/kickoff/new?vendor=${vendor.id}`, backTo)}
+      onRowClick={(m) => navigate(`/app/purchase/kickoff/${m.id}`, backTo)}
       fetcher={(vid) => purchaseApi.kickoff.list({ purchase_vendor_id: vid })}
       statusCfg={(s) => ({ label: String(s || '—').replace(/_/g, ' '), color: '#7C3AED', bg: 'rgba(124,58,237,0.15)' })}
       columns={[

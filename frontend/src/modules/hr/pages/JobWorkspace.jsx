@@ -7,6 +7,8 @@ import {
   GitBranch, FileSignature, History, Search, Eye, X,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { useToast } from '@/components/ui/Toast'
+import { readFieldErrors } from '@/services/apiError'
 import { useAuth } from '@/context/AuthContext'
 import AuditTimeline from '@/components/ui/AuditTimeline'
 import WorkflowProgress from '@/components/ui/WorkflowProgress'
@@ -40,6 +42,7 @@ const TABS = [
 
 export default function JobWorkspace() {
   const { id } = useParams()
+  const toast = useToast()
   const navigate = useNavigate()
   const { user } = useAuth()
   const manageHr = canManageHrQueue(user)
@@ -63,11 +66,19 @@ export default function JobWorkspace() {
       const r = await hrApi.jobs.publishChannels(id, keys)
       await load()
       const failed = (r?.results || []).filter(x => x.status === 'failed')
-      if (failed.length) alert(`${r.published} channel(s) published. Not published: ` + failed.map(x => x.message || x.channel).join('; '))
-    } catch (e) { alert(e?.response?.data?.message || 'Publish failed') }
+      // A partial publish is information, not a failure, and it was being raised
+      // in the same modal dialog as one. Each channel's own reason is kept — the
+      // whole point of the message is which ones did not go out and why.
+      if (failed.length) {
+        toast.warning(`${r.published} channel(s) published.\n` +
+          failed.map(x => `• ${x.channel}: ${x.message || 'not published'}`).join('\n'))
+      } else if (r?.published) {
+        toast.success(`${r.published} channel(s) published.`)
+      }
+    } catch (e) { toast.error(readFieldErrors(e).summary) }
   }
   const unpublishChannel = async (key) => {
-    try { await hrApi.jobs.unpublishFrom(id, key); load() } catch (e) { alert(e?.response?.data?.message || 'Action failed') }
+    try { await hrApi.jobs.unpublishFrom(id, key); load() } catch (e) { toast.error(readFieldErrors(e).summary) }
   }
 
   // #13 — reconcile one channel's status. The reload is what surfaces the result;
@@ -77,7 +88,7 @@ export default function JobWorkspace() {
   const syncChannel = async (key) => {
     setSyncing(key)
     try { await hrApi.jobs.syncChannel(id, key); await load() }
-    catch (e) { alert(e?.response?.data?.message || 'Sync failed') }
+    catch (e) { toast.error(readFieldErrors(e).summary) }
     finally { setSyncing(null) }
   }
 

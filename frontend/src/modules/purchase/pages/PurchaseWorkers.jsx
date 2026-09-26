@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Plus, RefreshCw, Search, Eye, Trash2, HardHat, QrCode, AlertTriangle, Upload } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
 import { useVendorModule } from '@/modules/tpv/useVendorModule'
+import GroupInductionModal from '@/components/vendor/GroupInductionModal'
 import { readFieldErrors } from '@/services/apiError'
 import { useAuth } from '@/context/AuthContext'
 import { canManagePR } from '../constants'
@@ -188,7 +189,6 @@ export default function PurchaseWorkers() {
     setSelectedIds(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id])
   }
 
-  const selectedWorkers = rows.filter(r => selectedIds.includes(r.id))
 
   return (
     <div style={{ padding: '24px 32px' }}>
@@ -207,9 +207,11 @@ export default function PurchaseWorkers() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          {selectedIds.length > 0 && (
+          {/* Always reachable for whoever may record inductions — the modal has
+              its own picker, so ticking rows first is optional (ticks carry over). */}
+          {(manage || selectedIds.length > 0) && (
             <button onClick={() => setGroupInducting(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 10, background: 'linear-gradient(135deg,#8b5cf6,#6d28d9)', color: '#fff', fontWeight: 800, border: 'none', cursor: 'pointer', fontSize: 13, boxShadow: '0 8px 20px -4px rgba(139,92,246,0.5)' }}>
-              👥 Group Induction ({selectedIds.length} Selected)
+              👥 Group Induction{selectedIds.length > 0 ? ` (${selectedIds.length} Selected)` : ''}
             </button>
           )}
 
@@ -419,7 +421,7 @@ export default function PurchaseWorkers() {
       {uploadingMedical && <BulkMedicalModal vendorId={vendorId}
         onClose={() => setUploadingMedical(false)} onUploaded={() => { setUploadingMedical(false); fetchAll() }} />}
       {creating && <CreateModal vendorId={vendorId} api={api} isPortal={isPortal} onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); navigate(workerHref(id)) }} />}
-      {groupInducting && <GroupInductionModal workers={selectedWorkers} onClose={() => setGroupInducting(false)} onCompleted={() => { setGroupInducting(false); setSelectedIds([]); fetchAll() }} />}
+      {groupInducting && <GroupInductionModal engine="purchase" api={api} workers={rows} preselectIds={selectedIds} onClose={() => setGroupInducting(false)} onCompleted={() => { setGroupInducting(false); setSelectedIds([]); fetchAll() }} />}
     </div>
   )
 }
@@ -691,140 +693,6 @@ function BulkUploadModal({ vendorId, api, isPortal, onClose, onUploaded }) {
 
       <ModalFooter onClose={onClose} onConfirm={result ? onUploaded : doUpload}
         loading={busy} disabled={!result && !!blockedTarget} confirmLabel={result ? 'Done' : 'Upload & Process'} />
-    </Overlay>
-  )
-}
-
-function GroupInductionModal({ workers, onClose, onCompleted }) {
-  const { api } = useVendorModule()
-
-  const [f, setF] = useState({
-    induction_date: new Date().toISOString().slice(0, 10),
-    conducted_by: 'Safety Officer – Rahul Sharma',
-    custom_conducted_by: '',
-    status: 'Completed',
-    remarks: '',
-  })
-  const [done, setDone] = useState({})          // { [workerId]: true } as each save lands
-  const [saving, setSaving] = useState(false)
-  const [progressMsg, setProgressMsg] = useState('')
-
-  const set = (k) => (e) => setF(p => ({ ...p, [k]: e.target.value }))
-
-  const TRAINER_PRESETS = [
-    { group: 'Safety Team', items: ['Safety Officer – Rahul Sharma', 'Safety Supervisor – Priya Patel', 'HSE Lead – Amit Verma', 'HSSE Manager – Neha Singh', 'Safety Inspector – Ravi Kumar'] },
-    { group: 'HR Team', items: ['HR Manager – Sunita Joshi', 'HR Executive – Deepak Nair', 'HR Coordinator – Anjali Mehta'] },
-    { group: 'Site Management', items: ['Site Engineer – Vikram Rao', 'Project Manager – Suresh Pillai', 'Site Supervisor – Mohan Das'] },
-    { group: 'Custom', items: ['Other / Custom Trainer...'] },
-  ]
-
-  const doneCount = Object.values(done).filter(Boolean).length
-
-  const saveGroupInduction = async () => {
-    const conductedBy = f.conducted_by === 'Other / Custom Trainer...' ? f.custom_conducted_by : f.conducted_by
-    if (!conductedBy.trim()) { alert('Conducted By is required.'); return }
-    if (!f.induction_date) { alert('Induction Date is required.'); return }
-
-    setSaving(true)
-    try {
-      let count = 0
-      for (const w of workers) {
-        count++
-        setProgressMsg(`Saving worker ${count}/${workers.length}: ${w.full_name}...`)
-        await api.workforce.saveInduction(w.id, {
-          induction_date: f.induction_date,
-          status:         f.status,
-          conducted_by:   conductedBy,
-          remarks:        f.remarks || null,
-        })
-        setDone(p => ({ ...p, [w.id]: true }))
-      }
-      alert(`Successfully saved induction for ${workers.length} workers!`)
-      onCompleted()
-    } catch (e) {
-      alert(e?.response?.data?.message || 'Group induction save failed')
-    } finally {
-      setSaving(false)
-      setProgressMsg('')
-    }
-  }
-
-  return (
-    <Overlay onClose={() => !saving && onClose()} width={820}>
-      <div style={{ marginBottom: 16 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 900, color: 'var(--text-h)', margin: 0 }}>
-          👥 Group Induction Session ({workers.length} Workers Selected)
-        </h2>
-        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Apply one session's details to every selected worker</span>
-      </div>
-
-      {/* Session Details */}
-      <div style={{ padding: 14, borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)', marginBottom: 16 }}>
-        <strong style={{ fontSize: 12.5, color: '#0284c7', display: 'block', marginBottom: 10 }}>📋 Session Details (Applies to all selected workers)</strong>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 10 }}>
-          <Field label="Induction Date *">
-            <TextInput type="date" value={f.induction_date} onChange={set('induction_date')} />
-          </Field>
-          <Field label="Conducted By *">
-            <select value={f.conducted_by} onChange={set('conducted_by')} style={inputStyle}>
-              {TRAINER_PRESETS.map(grp => (
-                <optgroup key={grp.group} label={grp.group}>
-                  {grp.items.map(item => <option key={item} value={item}>{item}</option>)}
-                </optgroup>
-              ))}
-            </select>
-          </Field>
-          {/* Step 3 only clears on a Completed induction, so the outcome is a
-              choice here rather than an assumption. */}
-          <Field label="Outcome *">
-            <SelectInput value={f.status} onChange={set('status')} pairs options={[['Completed', 'Completed'], ['Pending', 'Pending']]} />
-          </Field>
-          {f.conducted_by === 'Other / Custom Trainer...' && (
-            <Field label="Trainer Name *" full>
-              <TextInput value={f.custom_conducted_by} onChange={set('custom_conducted_by')} placeholder="Who conducted this induction?" />
-            </Field>
-          )}
-          <Field label="Remarks" full>
-            <TextInput value={f.remarks} onChange={set('remarks')} placeholder="Topics covered, site rules briefed, observations…" />
-          </Field>
-        </div>
-      </div>
-
-      {/* Save Progress Bar */}
-      <div style={{ padding: 12, borderRadius: 10, background: 'linear-gradient(135deg, #f3e8ff, #e9d5ff)', border: '1px solid #c084fc', marginBottom: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-          <strong style={{ fontSize: 12.5, color: '#6b21a8' }}>📝 Induction Records Progress</strong>
-          <span style={{ fontSize: 12, fontWeight: 900, color: '#6b21a8' }}>{doneCount} / {workers.length} Recorded</span>
-        </div>
-        <div style={{ height: 8, borderRadius: 999, background: '#d8b4fe', overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${Math.round((doneCount / Math.max(workers.length, 1)) * 100)}%`, background: 'linear-gradient(90deg, #10b981, #059669)', transition: 'width 0.3s' }} />
-        </div>
-      </div>
-
-      {/* Per-worker rows */}
-      <div style={{ maxHeight: 340, overflowY: 'auto', marginBottom: 16 }}>
-        {workers.map(w => (
-          <div key={w.id} style={{ borderRadius: 10, border: done[w.id] ? '2px solid #10b981' : '1px solid var(--border)', marginBottom: 8, overflow: 'hidden', background: 'var(--bg-card)' }}>
-            <div style={{ padding: '10px 14px', background: done[w.id] ? '#dcfce7' : 'var(--bg-input)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <strong style={{ fontSize: 13, color: 'var(--text-h)' }}>{w.full_name}</strong>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>({w.worker_code || 'W-0001'})</span>
-              </div>
-              <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 10px', borderRadius: 20, background: done[w.id] ? '#10b981' : '#f59e0b', color: '#fff' }}>
-                {done[w.id] ? '✓ Recorded' : 'Pending'}
-              </span>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {progressMsg && (
-        <div style={{ padding: '8px 12px', borderRadius: 8, background: '#e0f2fe', color: '#0369a1', fontSize: 12, fontWeight: 700, marginBottom: 12 }}>
-          ⏳ {progressMsg}
-        </div>
-      )}
-
-      <ModalFooter onClose={onClose} onConfirm={saveGroupInduction} loading={saving} confirmLabel={`Complete Group Induction (${workers.length} Workers)`} />
     </Overlay>
   )
 }

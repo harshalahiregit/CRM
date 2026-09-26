@@ -41,7 +41,10 @@ const GROUPS = [
       { icon: Tag,       label: 'Designations', desc: 'Job titles offered on the employee form',      to: '/app/hr/organization-setup' },
       { icon: Layers,    label: 'Grades',       desc: 'Seniority bands a designation can sit in',     to: '/app/hr/organization-setup' },
       { icon: UserCog,   label: 'Job Roles',    desc: 'Org-chart roles — for access permissions, see Staff Access below', to: '/app/hr/organization-setup' },
-      { icon: Network,   label: 'Organization Chart', desc: 'The reporting line as it stands today',  to: '/app/hr/org-chart' },
+      // Named for what it shows, so it cannot be mistaken for Organization
+      // Setup's Department Hierarchy. That one is departments and their heads;
+      // this one is people and their reporting managers.
+      { icon: Network,   label: 'Reporting Structure (Org Chart)', desc: 'Who reports to whom — built from each employee’s reporting manager', to: '/app/hr/org-chart' },
     ],
   },
   {

@@ -306,7 +306,22 @@ class ScopedDirectAccessTest extends TestCase
         $this->putJson("/api/hr/employees/{$target->id}", ['designation' => 'X'])->assertForbidden();
     }
 
-    /** @dataProvider portalRoles */
+    /**
+     * Refused, by whichever layer reaches it first.
+     *
+     * This asserted 403 exactly. Portal identities used to be handed GLOBAL data
+     * scope — they hold no staff role, and "no role means global" was written for
+     * colleagues who predate the roles table — so they passed the scope check and
+     * were stopped by the authorization check. They now resolve to OWN, the
+     * target is outside their scope, and assertTenant answers 404, which that
+     * controller documents as deliberate: out of scope should look like not there.
+     *
+     * 404 refuses at least as hard as 403 and tells the caller less, so either is
+     * accepted. The point of the test — a portal account cannot write to an
+     * employee — is unchanged, and is re-asserted against the database below.
+     *
+     * @dataProvider portalRoles
+     */
     public function test_a_portal_account_is_still_refused(string $accountType): void
     {
         $user   = $this->hrUser("portal-{$accountType}@direct.test", DataScope::GLOBAL, $accountType);
@@ -314,7 +329,13 @@ class ScopedDirectAccessTest extends TestCase
 
         Sanctum::actingAs($user);
 
-        $this->putJson("/api/hr/employees/{$target->id}", ['designation' => 'X'])->assertForbidden();
+        $response = $this->putJson("/api/hr/employees/{$target->id}", ['designation' => 'X']);
+
+        $this->assertContains($response->status(), [403, 404],
+            "A {$accountType} account must be refused; got {$response->status()}.");
+
+        $this->assertSame($target->designation, $target->fresh()->designation,
+            'nothing may be written by a portal identity');
     }
 
     public static function portalRoles(): array

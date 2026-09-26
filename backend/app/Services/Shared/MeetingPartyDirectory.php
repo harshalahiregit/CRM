@@ -252,16 +252,31 @@ class MeetingPartyDirectory
         $org = DB::table('vendors')->where('tenant_id', $tenantId)
             ->where('id', $vendorId)->value('company_name');
 
-        $contacts = DB::table('vendor_contacts')
+        /*
+         * `tpv_contacts`, NOT `vendor_contacts`.
+         *
+         * The TPV Contacts tab writes `tpv_contacts` (TpvContactController →
+         * TpvContactService → TpvContact). `vendor_contacts` is a legacy table
+         * whose only writer is an optional inline `contacts[]` array on vendor
+         * create/update that no TPV screen sends — so it is empty, and this
+         * column offered nobody however many contacts a vendor had. Purchase
+         * never drifted: it reads `purchase_contacts`, the table its own form
+         * writes, which is why that column worked and this one did not.
+         *
+         * `party_ref` is an opaque de-duplication string, never a foreign key
+         * (see KickoffAttendee), and the picker copies name/designation/email
+         * onto the row — so changing the source table changes no stored id.
+         */
+        $contacts = DB::table('tpv_contacts')
             ->where('tenant_id', $tenantId)
             ->where('vendor_id', $vendorId)
             ->whereNull('deleted_at')
-            ->orderBy('name')
-            ->get(['id', 'name', 'designation', 'email'])
+            ->orderBy('first_name')
+            ->get(['id', 'first_name', 'last_name', 'designation', 'email'])
             ->map(fn ($c) => [
-                'ref'          => 'vendor_contact:'.$c->id,
+                'ref'          => 'tpv_contact:'.$c->id,
                 'user_id'      => null,
-                'name'         => $c->name,
+                'name'         => trim(($c->first_name ?? '').' '.($c->last_name ?? '')),
                 'designation'  => $c->designation,
                 'email'        => $c->email,
                 'organisation' => $org,

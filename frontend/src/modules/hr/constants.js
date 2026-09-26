@@ -56,6 +56,26 @@ export const JOB_STATUS = {
   ON_HOLD:          'On_Hold',
 }
 
+/**
+ * The statuses where a job is live and can receive candidates.
+ *
+ * Mirrors JobPostingStatus::LIVE. It exists because the Candidates form filtered
+ * on `status === 'Active'`, and 'Active' is a LEGACY value — the migration maps
+ * it to 'Published' (see LEGACY_MAP, and the legacy alias left in
+ * JOB_STATUS_CONFIG below for old rows). After that migration no job posting
+ * holds 'Active' any more, so the "Applying For" picker matched nothing and a
+ * candidate could not be attached to a job at all.
+ *
+ * The legacy value is included rather than dropped: a workspace that has not run
+ * the migration would otherwise break the other way.
+ */
+export const JOB_LIVE_STATUSES = [
+  JOB_STATUS.PUBLISHED,
+  JOB_STATUS.HIRING,
+  JOB_STATUS.PARTIALLY_FILLED,
+  'Active',
+]
+
 export const JOB_STATUS_CONFIG = {
   Draft:            { label: 'Draft',            color: '#6b7280', bg: 'rgba(107,114,128,0.15)' },
   Ready_for_HR:     { label: 'Ready for HR',     color: '#0ea5e9', bg: 'rgba(14,165,233,0.15)' },

@@ -1,7 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, MoreVertical, Edit, Trash2, Power, UserCheck, UserX, Shield, ShieldOff, RefreshCw } from 'lucide-react'
 import api from '@/lib/api'
+import { readFieldErrors } from '@/services/apiError'
 import { useAuth } from '@/context/AuthContext'
 import StaffModal from '@/components/admin/StaffModal'
 import RolesModal from '@/components/admin/RolesModal'
@@ -26,6 +28,9 @@ export default function StaffManagementPage() {
       },
     })
   }, [queryClient])
+  const [searchParams, setSearchParams] = useSearchParams()
+  /** Sequence of the newest staff-list request; older answers are discarded. */
+  const staffRequestSeq = useRef(0)
   const [stats, setStats]       = useState({ total_staff: 0, active_staff: 0, inactive_staff: 0 })
   const [staff, setStaff]       = useState([])
   const [loading, setLoading]   = useState(true)
@@ -87,6 +92,19 @@ export default function StaffManagementPage() {
   }, [])
 
   const fetchStaff = useCallback(async () => {
+    // Which request this is. The search box fires one per keystroke and there is
+    // no debounce, so several are in flight at once and they do not come back in
+    // the order they were sent — a slow early response was overwriting a fast
+    // later one and leaving the list showing results for a query the person had
+    // already changed. Reproduced by arriving with ?search=priya: the box read
+    // "priya" and the rows were the unfiltered eight, because the empty-search
+    // response landed last and won.
+    //
+    // A sequence number rather than an AbortController: the earlier request is
+    // still worth completing for the cache, it simply must not be allowed to
+    // paint. Anything but the newest answer is dropped.
+    const seq = ++staffRequestSeq.current
+
     setLoading(true)
     try {
       const res = await api.get('/admin/staff', {
@@ -98,12 +116,16 @@ export default function StaffManagementPage() {
           page:        pagination.current_page,
         },
       })
+
+      if (seq !== staffRequestSeq.current) return
+
       setStaff(res.data.data.staff)
       setPagination(res.data.data.pagination)
-    } catch {
-      showToast('Failed to load staff list', 'error')
+    } catch (e) {
+      if (seq !== staffRequestSeq.current) return
+      showToast(readFieldErrors(e).summary, 'error')
     } finally {
-      setLoading(false)
+      if (seq === staffRequestSeq.current) setLoading(false)
     }
   }, [search, designationFilter, statusFilter, pagination.current_page, pagination.per_page])
 
@@ -137,14 +159,41 @@ export default function StaffManagementPage() {
     return () => window.removeEventListener('focus', refresh)
   }, [showStaffModal, fetchDesignations, fetchDepartments, fetchJobTitles])
 
+  /**
+   * Arrive with an intention, not just at an address.
+   *
+   * HR → Employees creates people here, because a login and an employment record
+   * have to be made together. Its "Add Employee" button navigated to this page
+   * and stopped: you pressed Add Employee, landed on a list of people who already
+   * exist, and nothing said why you were here or what to do next.
+   *
+   *   ?new=1        open the create form
+   *   ?search=NAME  filter to one person — used by "Manage account" on an
+   *                 employee, so the admin does not have to find them again
+   *
+   * The parameter is consumed once and removed, so a refresh or a back button
+   * does not reopen a form the person has already dealt with.
+   */
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setSelectedStaff(null)
+      setShowStaffModal(true)
+    }
+
+    const wanted = searchParams.get('search')
+    if (wanted) setSearch(wanted)
+
+    if (searchParams.get('new') || wanted) setSearchParams({}, { replace: true })
+  }, [searchParams, setSearchParams])
+
   // ── Actions ───────────────────────────────────────────────────────────────
   const handleToggleStatus = async (member) => {
     try {
       await api.patch(`/admin/staff/${member.id}/toggle-status`, {})
       showToast(`${member.name}'s status updated`)
       fetchStaff(); fetchStats(); invalidateDirectory()
-    } catch {
-      showToast('Failed to update status', 'error')
+    } catch (e) {
+      showToast(readFieldErrors(e).summary, 'error')
     }
     setActionMenuOpen(null)
   }
@@ -155,8 +204,13 @@ export default function StaffManagementPage() {
       showToast(`${selectedStaff.name} deleted`)
       fetchStaff(); fetchStats(); invalidateDirectory()
       setShowDeleteModal(false); setSelectedStaff(null)
-    } catch {
-      showToast('Failed to delete staff member', 'error')
+    } catch (e) {
+      // The server refuses this for reasons worth reading — the founding
+      // administrator cannot be deleted, you cannot delete your own account —
+      // and `catch {}` with a fixed string threw every one of them away. The
+      // modal stays open so the person can see the message beside the button
+      // they just pressed.
+      showToast(readFieldErrors(e).summary, 'error')
     }
   }
 
@@ -208,7 +262,7 @@ export default function StaffManagementPage() {
           className="px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2"
           style={{ background:'var(--bg-input)', border:'1px solid var(--border)', color:'var(--text-p)' }}
         >
-          <Shield size={16} /> Roles
+          <Shield size={16} /> Access Roles
         </button>
         <button
           onClick={() => { setSelectedStaff(null); setShowStaffModal(true) }}
@@ -254,7 +308,9 @@ export default function StaffManagementPage() {
         {[
           {
             value: designationFilter, onChange: v => setDesignationFilter(v),
-            options: [{ value:'', label:'All Roles' }, ...designations.map(d => ({ value:d.value, label:d.label }))],
+            // This filter runs on internal_role, which is the ACCESS role's slug —
+            // the endpoint that feeds it is misleadingly named `designations`.
+            options: [{ value:'', label:'All Access Roles' }, ...designations.map(d => ({ value:d.value, label:d.label }))],
           },
           {
             value: statusFilter, onChange: v => setStatusFilter(v),

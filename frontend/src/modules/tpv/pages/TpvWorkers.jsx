@@ -4,6 +4,7 @@ import { Plus, RefreshCw, Search, Eye, Trash2, HardHat, QrCode, AlertTriangle } 
 import { tpvApi } from '@/services/tpvApi'
 import { portalApi } from '@/services/portalApi'
 import MyCompanyCard from '@/components/vendor/MyCompanyCard'
+import GroupInductionModal from '@/components/vendor/GroupInductionModal'
 import { useAuth } from '@/context/AuthContext'
 import {
   WORKER_STATUS, WORKER_STATUS_CONFIG, workerStatusCfg, fitnessCfg,
@@ -122,7 +123,6 @@ export default function TpvWorkers() {
     setSelectedIds(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id])
   }
 
-  const selectedWorkers = rows.filter(r => selectedIds.includes(r.id))
 
   return (
     <div style={{ padding: '24px 32px' }}>
@@ -155,9 +155,11 @@ export default function TpvWorkers() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          {selectedIds.length > 0 && (
+          {/* Always reachable for whoever may record inductions — the modal has
+              its own picker, so ticking rows first is optional (ticks carry over). */}
+          {(manage || isPortal || selectedIds.length > 0) && (
             <button onClick={() => setGroupInducting(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 10, background: 'linear-gradient(135deg,#8b5cf6,#6d28d9)', color: '#fff', fontWeight: 800, border: 'none', cursor: 'pointer', fontSize: 13, boxShadow: '0 8px 20px -4px rgba(139,92,246,0.5)' }}>
-              👥 Group Induction ({selectedIds.length} Selected)
+              👥 Group Induction{selectedIds.length > 0 ? ` (${selectedIds.length} Selected)` : ''}
             </button>
           )}
 
@@ -346,268 +348,8 @@ export default function TpvWorkers() {
 
       {creating && <CreateModal vendorId={vendorId} onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); navigate(workerHref(id)) }} api={api} isPortal={isPortal} />}
       {uploading && <BulkUploadModal vendorId={vendorId} onClose={() => setUploading(false)} onUploaded={() => { setUploading(false); fetchAll() }} api={api} isPortal={isPortal} />}
-      {groupInducting && <GroupInductionModal workers={selectedWorkers} onClose={() => setGroupInducting(false)} onCompleted={() => { setGroupInducting(false); setSelectedIds([]); fetchAll() }} api={api} />}
+      {groupInducting && <GroupInductionModal engine="tpv" api={api} workers={rows} preselectIds={selectedIds} onClose={() => setGroupInducting(false)} onCompleted={() => { setGroupInducting(false); setSelectedIds([]); fetchAll() }} />}
     </div>
-  )
-}
-
-function GroupInductionModal({ workers, onClose, onCompleted, api }) {
-  const [f, setF] = useState({
-    induction_type: 'General Safety',
-    trainer: 'Safety Officer – Rahul Sharma',
-    custom_trainer: '',
-    location: 'Site Office',
-    time_mode: 'auto',
-    start_time: new Date().toISOString(),
-    end_time: '',
-    duration_minutes: 15,
-    m_start_date: new Date().toISOString().slice(0, 10),
-    m_start_time: new Date().toTimeString().slice(0, 5),
-    m_end_date: new Date().toISOString().slice(0, 10),
-    m_end_time: new Date().toTimeString().slice(0, 5),
-    photo_data: '',
-  })
-
-  // State per worker: { [wid]: { done: false, proofType: 'sig', sigData: '' } }
-  const [workerProofs, setWorkerProofs] = useState(
-    Object.fromEntries(workers.map(w => [w.id, { done: false, proofType: 'sig', sigData: '' }]))
-  )
-  const [activeWid, setActiveWid] = useState(workers[0]?.id || null)
-  const [sessionActive, setSessionActive] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [progressMsg, setProgressMsg] = useState('')
-
-  // Camera states
-  const [camActive, setCamActive] = useState(false)
-  const [photoPreview, setPhotoPreview] = useState(null)
-  const videoRef = useRef(null)
-  const photoCanvasRef = useRef(null)
-  const streamRef = useRef(null)
-
-  // Canvas Refs
-  const canvasRef = useRef(null)
-  const isDrawing = useRef(false)
-
-  const set = (k) => (e) => setF(p => ({ ...p, [k]: e.target.value }))
-
-  const TRAINER_PRESETS = [
-    { group: 'Safety Team', items: ['Safety Officer – Rahul Sharma', 'Safety Supervisor – Priya Patel', 'HSE Lead – Amit Verma', 'HSSE Manager – Neha Singh', 'Safety Inspector – Ravi Kumar'] },
-    { group: 'HR Team', items: ['HR Manager – Sunita Joshi', 'HR Executive – Deepak Nair', 'HR Coordinator – Anjali Mehta'] },
-    { group: 'Site Management', items: ['Site Engineer – Vikram Rao', 'Project Manager – Suresh Pillai', 'Site Supervisor – Mohan Das'] },
-    { group: 'Custom', items: ['Other / Custom Trainer...'] },
-  ]
-
-  // Canvas Drawing Handlers
-  const startCanvasDraw = (e) => {
-    const canvas = canvasRef.current; if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    const rect = canvas.getBoundingClientRect()
-    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left
-    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top
-    ctx.beginPath(); ctx.moveTo(x, y)
-    isDrawing.current = true
-  }
-
-  const doCanvasDraw = (e) => {
-    if (!isDrawing.current) return
-    const canvas = canvasRef.current; if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    const rect = canvas.getBoundingClientRect()
-    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left
-    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top
-    ctx.lineTo(x, y); ctx.stroke()
-  }
-
-  const stopCanvasDraw = () => {
-    isDrawing.current = false
-  }
-
-  const clearCanvas = () => {
-    const canvas = canvasRef.current; if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-  }
-
-  const confirmWorkerProof = (wid) => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const url = canvas.toDataURL('image/png')
-    setWorkerProofs(p => ({
-      ...p,
-      [wid]: { ...p[wid], sigData: url, done: true }
-    }))
-    clearCanvas()
-
-    // Auto-open next pending worker card
-    const pending = workers.find(w => w.id !== wid && !workerProofs[w.id]?.done)
-    if (pending) {
-      setActiveWid(pending.id)
-    }
-  }
-
-  // Count done
-  const signedCount = Object.values(workerProofs).filter(w => w.done).length
-  const allSigned = signedCount === workers.length
-
-  const saveGroupInduction = async () => {
-    const finalTrainer = f.trainer === 'Other / Custom Trainer...' ? f.custom_trainer : f.trainer
-    if (!finalTrainer.trim()) { alert('Trainer Name is required.'); return }
-    if (!f.location.trim()) { alert('Location is required.'); return }
-    if (!allSigned) { alert('All selected workers must confirm signature first.'); return }
-
-    setSaving(true)
-    try {
-      const now = new Date()
-      let count = 0
-      for (const w of workers) {
-        count++
-        setProgressMsg(`Saving worker ${count}/${workers.length}: ${w.name}...`)
-        const proof = workerProofs[w.id]
-        const payload = {
-          induction_type: f.induction_type,
-          trainer: finalTrainer,
-          location: f.location,
-          start_time: f.start_time || now.toISOString(),
-          end_time: now.toISOString(),
-          duration_minutes: f.duration_minutes || 15,
-          photo_data: f.photo_data,
-          signature_data: proof?.proofType === 'sig' ? proof?.sigData : null,
-          thumb_data: proof?.proofType === 'thumb' ? proof?.sigData : null,
-          topics: ['Site Safety Rules', 'PPE Usage', 'Emergency Response'],
-          passed: true,
-        }
-        await api.workers.saveInduction(w.id, payload)
-      }
-      alert(`Successfully saved induction for ${workers.length} workers!`)
-      onCompleted()
-    } catch (e) {
-      alert(e?.response?.data?.message || 'Group induction save failed')
-    } finally {
-      setSaving(false)
-      setProgressMsg('')
-    }
-  }
-
-  const markGroupSkip = async () => {
-    if (!window.confirm(`Skip HSSE Induction for all ${workers.length} selected workers?`)) return
-    setSaving(true)
-    try {
-      let count = 0
-      for (const w of workers) {
-        count++
-        setProgressMsg(`Skipping worker ${count}/${workers.length}: ${w.name}...`)
-        await api.workers.saveInduction(w.id, { induction_type: 'skip' })
-      }
-      onCompleted()
-    } catch (e) {
-      alert(e?.response?.data?.message || 'Group skip failed')
-    } finally {
-      setSaving(false)
-      setProgressMsg('')
-    }
-  }
-
-  return (
-    <Overlay onClose={() => !saving && onClose()} width={820}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div>
-          <h2 style={{ fontSize: 18, fontWeight: 900, color: 'var(--text-h)', margin: 0 }}>
-            👥 Group Induction Session ({workers.length} Workers Selected)
-          </h2>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Apply single session details &amp; collect individual signatures</span>
-        </div>
-        <button type="button" onClick={markGroupSkip} style={{ padding: '6px 12px', borderRadius: 8, background: '#f59e0b', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 800, fontSize: 11.5 }}>
-          ⏩ Skip All ({workers.length})
-        </button>
-      </div>
-
-      {/* Session Details */}
-      <div style={{ padding: 14, borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)', marginBottom: 16 }}>
-        <strong style={{ fontSize: 12.5, color: '#0284c7', display: 'block', marginBottom: 10 }}>📋 Session Details (Applies to all selected workers)</strong>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 10 }}>
-          <Field label="Induction Type *">
-            <SelectInput value={f.induction_type} onChange={set('induction_type')} pairs options={[
-              ['General Safety', 'General Safety'],
-              ['Activity Specific', 'Activity Specific'],
-              ['Site Specific', 'Site Specific'],
-              ['Client Specific', 'Client Specific'],
-              ['Emergency & Evacuation', 'Emergency & Evacuation'],
-              ['Fire Safety', 'Fire Safety'],
-              ['PPE Usage', 'PPE Usage'],
-              ['Toolbox Talk', 'Toolbox Talk'],
-            ]} />
-          </Field>
-          <Field label="Trainer *">
-            <select value={f.trainer} onChange={set('trainer')} style={inputStyle}>
-              {TRAINER_PRESETS.map(grp => (
-                <optgroup key={grp.group} label={grp.group}>
-                  {grp.items.map(item => <option key={item} value={item}>{item}</option>)}
-                </optgroup>
-              ))}
-            </select>
-          </Field>
-          <Field label="Location *">
-            <TextInput value={f.location} onChange={set('location')} placeholder="e.g. Site Office" />
-          </Field>
-        </div>
-      </div>
-
-      {/* Signature Progress Bar */}
-      <div style={{ padding: 12, borderRadius: 10, background: 'linear-gradient(135deg, #f3e8ff, #e9d5ff)', border: '1px solid #c084fc', marginBottom: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-          <strong style={{ fontSize: 12.5, color: '#6b21a8' }}>✍ Worker Signatures Progress</strong>
-          <span style={{ fontSize: 12, fontWeight: 900, color: '#6b21a8' }}>{signedCount} / {workers.length} Signed</span>
-        </div>
-        <div style={{ height: 8, borderRadius: 999, background: '#d8b4fe', overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${Math.round((signedCount / workers.length) * 100)}%`, background: 'linear-gradient(90deg, #10b981, #059669)', transition: 'width 0.3s' }} />
-        </div>
-      </div>
-
-      {/* Per-Worker Accordion Cards */}
-      <div style={{ maxHeight: 340, overflowY: 'auto', marginBottom: 16 }}>
-        {workers.map(w => {
-          const proof = workerProofs[w.id] || {}
-          const isActive = activeWid === w.id
-          return (
-            <div key={w.id} style={{ borderRadius: 10, border: proof.done ? '2px solid #10b981' : isActive ? '2px solid #0284c7' : '1px solid var(--border)', marginBottom: 8, overflow: 'hidden', background: 'var(--bg-card)' }}>
-              <div onClick={() => setActiveWid(isActive ? null : w.id)} style={{ padding: '10px 14px', background: proof.done ? '#dcfce7' : isActive ? '#e0f2fe' : 'var(--bg-input)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div>
-                  <strong style={{ fontSize: 13, color: 'var(--text-h)' }}>{w.name}</strong>
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>({w.worker_code || 'W-0001'})</span>
-                </div>
-                <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 10px', borderRadius: 20, background: proof.done ? '#10b981' : '#f59e0b', color: '#fff' }}>
-                  {proof.done ? '✓ Signed' : 'Pending Signature'}
-                </span>
-              </div>
-
-              {isActive && (
-                <div style={{ padding: 14 }}>
-                  <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-                    <button type="button" onClick={() => setWorkerProofs(p => ({ ...p, [w.id]: { ...p[w.id], proofType: 'sig' } }))} style={{ padding: '3px 10px', borderRadius: 14, border: 'none', background: proof.proofType === 'sig' ? '#7c3aed' : 'var(--bg-input)', color: proof.proofType === 'sig' ? '#fff' : 'var(--text-muted)', fontWeight: 800, fontSize: 10.5, cursor: 'pointer' }}>✍ Signature</button>
-                    <button type="button" onClick={() => setWorkerProofs(p => ({ ...p, [w.id]: { ...p[w.id], proofType: 'thumb' } }))} style={{ padding: '3px 10px', borderRadius: 14, border: 'none', background: proof.proofType === 'thumb' ? '#7c3aed' : 'var(--bg-input)', color: proof.proofType === 'thumb' ? '#fff' : 'var(--text-muted)', fontWeight: 800, fontSize: 10.5, cursor: 'pointer' }}>👍 Thumb</button>
-                  </div>
-
-                  <canvas ref={canvasRef} width={500} height={120} onMouseDown={startCanvasDraw} onMouseMove={doCanvasDraw} onMouseUp={stopCanvasDraw} onMouseLeave={stopCanvasDraw} onTouchStart={startCanvasDraw} onTouchMove={doCanvasDraw} onTouchEnd={stopCanvasDraw} style={{ background: '#fff', border: '2px dashed var(--border)', borderRadius: 8, cursor: 'crosshair', display: 'block', marginBottom: 8 }} />
-
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                    <button type="button" onClick={clearCanvas} style={{ padding: '4px 10px', borderRadius: 6, background: '#ef4444', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 800 }}>Clear</button>
-                    <button type="button" onClick={() => confirmWorkerProof(w.id)} style={{ padding: '6px 14px', borderRadius: 6, background: '#10b981', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11.5, fontWeight: 800 }}>Confirm Signature for {w.name}</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-
-      {progressMsg && (
-        <div style={{ padding: '8px 12px', borderRadius: 8, background: '#e0f2fe', color: '#0369a1', fontSize: 12, fontWeight: 700, marginBottom: 12 }}>
-          ⏳ {progressMsg}
-        </div>
-      )}
-
-      <ModalFooter onClose={onClose} onConfirm={saveGroupInduction} loading={saving} disabled={!allSigned} confirmLabel={`Complete Group Induction (${workers.length} Workers)`} />
-    </Overlay>
   )
 }
 
