@@ -238,14 +238,61 @@ class TransportDemoSeederTest extends TestCase
         // The first version of this guard banned the string outright and fired
         // on the self-check the day it was added. A guard that cannot tell a
         // read from a write trains people to weaken it.
-        preg_match_all("/'status'\\s*=>\\s*[^,\\]\\)]+/", $source, $writes);
+        $writes = $this->tripStatusWrites($source);
 
-        $this->assertSame([], $writes[0], sprintf(
+        $this->assertSame([], $writes, sprintf(
             "TransportDemoSeeder ASSIGNS a trip status in code again:\n  %s\n\n"
             ."Demo trips must reach their state by walking the real transitions (see "
             ."approvedTrip()). If they cannot, that is a finding to report — not something to "
             .'route around. See D-63.',
-            implode("\n  ", $writes[0]),
+            implode("\n  ", $writes),
+        ));
+    }
+
+    /**
+     * The guard has to still bite. Fed source that forces a trip status the
+     * way D-63's seeder did — by constant, by literal, by variable — it must
+     * find every one; fed Fleet's own resource-state writes, it must find none.
+     */
+    public function test_the_guard_still_catches_a_trip_status_write(): void
+    {
+        $forced = <<<'PHP'
+            $trip->forceFill(['status' => TripStatus::APPROVED])->save();
+            $trip->forceFill(['status' => 'allocated'])->save();
+            $trip->update(['status' => $next]);
+        PHP;
+
+        $this->assertCount(3, $this->tripStatusWrites($forced), 'a forced trip status slipped past the guard');
+
+        $fleet = <<<'PHP'
+            $vehicle->update(['status' => \App\Domains\Fleet\Models\Vehicle::STATUS_AVAILABLE]);
+            DriverProfile::create(['status' => \App\Domains\Fleet\Models\DriverProfile::AVAILABLE, 'x' => 1]);
+        PHP;
+
+        $this->assertSame([], $this->tripStatusWrites($fleet), 'a Fleet resource state is not a trip status');
+    }
+
+    /**
+     * Every `'status' => …` write in the source, except those whose value is a
+     * Fleet resource constant.
+     *
+     * The first version flagged every `'status' =>`. When the seeder was
+     * repointed onto Fleet it began making its vehicles and drivers choosable
+     * through Fleet's own model — `Vehicle::STATUS_*`, `DriverProfile::*` —
+     * and the guard fired on a vehicle, which is not what D-63 was about.
+     * So those two, and only those, are let through: anything else (a
+     * TripStatus constant, a string, a variable) is still treated as a trip
+     * status being forced.
+     *
+     * @return array<int,string>
+     */
+    private function tripStatusWrites(string $source): array
+    {
+        preg_match_all("/'status'\\s*=>\\s*[^,\\]\\)]+/", $source, $writes);
+
+        return array_values(array_filter(
+            array_map('trim', $writes[0]),
+            fn (string $w) => ! preg_match('/=>\\s*\\\\?(App\\\\Domains\\\\Fleet\\\\Models\\\\)?(Vehicle::STATUS_|DriverProfile::)[A-Z_]+$/', $w),
         ));
     }
 

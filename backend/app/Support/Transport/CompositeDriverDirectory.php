@@ -1,8 +1,10 @@
 <?php
 
-namespace App\Domains\Fleet\Directory;
+namespace App\Support\Transport;
 
 use App\Domains\Fleet\Contracts\DriverDirectory;
+use App\Domains\Fleet\Directory\CrmDriverDirectory;
+use App\Domains\Fleet\Directory\StandaloneDriverDirectory;
 
 /**
  * Both directories at once — D-134.
@@ -23,11 +25,20 @@ use App\Domains\Fleet\Contracts\DriverDirectory;
  * Forcing `standalone` would have inverted the problem rather than fixed it —
  * every CRM-sourced driver would have disappeared to reveal these two.
  *
- * ── WHY THIS CLASS AND NOT AN EDIT TO EITHER ONE ─────────────────────────
+ * ── WHY THIS CLASS, AND WHY IT LIVES HERE ────────────────────────────────
  * `DriverDirectory` exists for precisely this. Its own docblock: *"Swapping the
  * implementation swaps the source. Nothing above this line has to know which
  * one is in use."* Neither underlying directory is wrong, and neither is
  * touched.
+ *
+ * It sat in `app/Domains/Fleet/Directory/` for two days, beside the two things
+ * it composes, which is where a reader would look for it. It is here instead
+ * because **the line is drawn at whose TREE, not whose CONCEPT**: the decision
+ * this class encodes — that `auto` resolves to both sources — is ours, made in
+ * our provider and our config. P2's two directories each answer for one source
+ * because that is all either of them is; choosing to ask both is not a Fleet
+ * fact. If he reorganises his folder he should not have to reason about a file
+ * whose behaviour he did not choose.
  *
  * ── THE PROPERTY THE NAMESPACED REFS BUY ─────────────────────────────────
  * Every ref is `source:source_id`, and the sources are disjoint by

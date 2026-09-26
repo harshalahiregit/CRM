@@ -104,7 +104,7 @@ class DispatchTest extends TestCase
             'name' => 'Ramesh '.Str::random(4),
             'licence_number' => 'RJ14'.self::uniqueSeq(6),
             'licence_class' => 'HMV',
-            'licence_valid_until' => now()->addYears(2)->toDateString(),
+            'licence_expiry' => now()->addYears(2)->toDateString(),
         ], $tenantId, $this->actor);
 
         $this->alloc->assign($trip->fresh(), $v->id, $d->id, $tenantId, $this->actor);
@@ -412,15 +412,15 @@ class DispatchTest extends TestCase
         [$trip, $vehicle, $driver] = $this->readyTrip();
 
         $vBefore = $vehicle->fresh()->status;
-        $dBefore = $driver->fresh()->availability;
+        $dBefore = $driver->fresh()->status;
 
         $this->dispatch->confirm($trip, $this->fields(), self::TENANT_A, $this->actor);
 
         $this->assertSame($vBefore, $vehicle->fresh()->status, 'transport_vehicles is Person 2 territory');
-        $this->assertSame($dBefore, $driver->fresh()->availability, 'transport_drivers is Person 2 territory');
+        $this->assertSame($dBefore, $driver->fresh()->status, 'transport_drivers is Person 2 territory');
         // Specifically: still allocated/assigned, NOT in-operation/on-trip.
-        $this->assertSame(VehicleStatus::ALLOCATED, $vehicle->fresh()->status);
-        $this->assertSame(DriverAvailability::ASSIGNED, $driver->fresh()->availability);
+        $this->assertSame(Vehicle::STATUS_ALLOCATED, $vehicle->fresh()->status);
+        $this->assertSame(DriverProfile::ON_TRIP, $driver->fresh()->status);
     }
 
     /**
@@ -444,12 +444,25 @@ class DispatchTest extends TestCase
         $this->assertNotInstanceOf(PendingFleetResourceGateway::class, app(FleetResourceGateway::class));
 
         [$trip] = $this->readyTrip();
-        $this->dispatch->confirm($trip, $this->fields(), self::TENANT_A, $this->actor);
+
+        // The unmigrated case, built on purpose. The fixtures are Fleet's now,
+        // so a trip only points at transport_vehicles if a test makes it: the
+        // trip's own reference is left on a legacy row whose id Fleet does
+        // not have — the shape of the repoint's `never_valid` references.
+        $legacyId = (int) Vehicle::withTrashed()->max('id') + 1000;
+        (new TransportVehicle())->forceFill([
+            'id' => $legacyId, 'tenant_id' => self::TENANT_A,
+            'registration_number' => 'MH12UN'.self::uniqueSeq(4),
+        ])->save();
+        $trip->forceFill(['vehicle_id' => $legacyId])->save();
+        $this->assertNull(Vehicle::withTrashed()->find($legacyId), 'precondition: Fleet must not know this vehicle');
+
+        $this->dispatch->confirm($trip->fresh(), $this->fields(), self::TENANT_A, $this->actor);
 
         $entry = $trip->auditTrail()->where('action', 'transport.trip.status_changed')->get()
             ->first(fn ($e) => ($e->new_values['status'] ?? null) === TripStatus::DISPATCHED);
 
-        // The fixture's vehicle exists only in transport_vehicles, so Fleet
+        // The trip's vehicle exists only in transport_vehicles, so Fleet
         // cannot find it and says so instead of claiming success.
         $this->assertFalse($entry->context['fleet_state_applied']);
     }
@@ -624,7 +637,7 @@ class DispatchTest extends TestCase
         $this->assertFalse($stored->blocks(), 'precondition: the check passed at pre-trip');
 
         // Time passes. The licence lapses in the yard.
-        $driver->forceFill(['licence_valid_until' => now()->subDay()->toDateString()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()->toDateString()])->save();
 
         try {
             $this->dispatch->confirm($trip->fresh(), $this->fields(), self::TENANT_A, $this->actor);
@@ -645,7 +658,7 @@ class DispatchTest extends TestCase
     public function test_revalidation_names_the_check_that_lapsed(): void
     {
         [$trip, , $driver] = $this->readyTrip();
-        $driver->forceFill(['licence_valid_until' => now()->subDay()->toDateString()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()->toDateString()])->save();
 
         $live = $this->pretrip->revalidate($trip->fresh(), self::TENANT_A);
 
@@ -661,7 +674,7 @@ class DispatchTest extends TestCase
     public function test_revalidation_writes_nothing(): void
     {
         [$trip, , $driver] = $this->readyTrip();
-        $driver->forceFill(['licence_valid_until' => now()->subDay()->toDateString()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()->toDateString()])->save();
 
         $before = $this->pretrip->checksFor($trip->fresh(), self::TENANT_A)
             ->map(fn ($c) => [$c->check_key, $c->result, $c->completed_at?->toIso8601String()])->all();
@@ -695,11 +708,11 @@ class DispatchTest extends TestCase
     public function test_fixing_the_lapse_reopens_dispatch(): void
     {
         [$trip, , $driver] = $this->readyTrip();
-        $driver->forceFill(['licence_valid_until' => now()->subDay()->toDateString()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()->toDateString()])->save();
 
         $this->assertFalse($this->pretrip->revalidate($trip->fresh(), self::TENANT_A)['ready']);
 
-        $driver->forceFill(['licence_valid_until' => now()->addYear()->toDateString()])->save();
+        $driver->forceFill(['licence_expiry' => now()->addYear()->toDateString()])->save();
 
         $moved = $this->dispatch->confirm($trip->fresh(), $this->fields(), self::TENANT_A, $this->actor);
         $this->assertSame(TripStatus::DISPATCHED, $moved->status);
@@ -712,7 +725,7 @@ class DispatchTest extends TestCase
 
         // A licence expiring mid-trip is a transit exception (SNG-TRN-013), not
         // a reason to refuse an amendment to a trip that has already left.
-        $driver->forceFill(['licence_valid_until' => now()->subDay()->toDateString()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()->toDateString()])->save();
 
         $amended = $this->dispatch->amend(
             $trip->fresh(), ['dispatch_instructions' => 'Call on arrival'], 'Customer request',
@@ -853,7 +866,7 @@ class DispatchTest extends TestCase
 
         // The distinction that matters: incompleteness does not block, a
         // failure does — even one the policy only just started asking for.
-        $driver->forceFill(['licence_valid_until' => now()->subDay()->toDateString()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()->toDateString()])->save();
 
         $live = $this->pretrip->revalidate($trip->fresh(), self::TENANT_A);
 

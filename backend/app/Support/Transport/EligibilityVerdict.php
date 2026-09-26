@@ -28,10 +28,24 @@ namespace App\Support\Transport;
  */
 final class EligibilityVerdict
 {
-    /** One check result. */
-    public static function check(string $key, string $label, bool $required, bool $passed, string $detail): array
-    {
-        return compact('key', 'label', 'required', 'passed', 'detail');
+    /**
+     * One check result.
+     *
+     * `$owner` is the desk that can clear a failure — D-150. Optional because
+     * not every rule has one: a capacity mismatch is nobody's to clear, it is
+     * the wrong truck for the load. Where a rule DOES belong to somebody,
+     * naming them is the difference between "blocked" and a dispatcher knowing
+     * who to ring.
+     */
+    public static function check(
+        string $key,
+        string $label,
+        bool $required,
+        bool $passed,
+        string $detail,
+        ?string $owner = null,
+    ): array {
+        return compact('key', 'label', 'required', 'passed', 'detail', 'owner');
     }
 
     /**
@@ -49,9 +63,37 @@ final class EligibilityVerdict
             'subject'  => $subject,
             'eligible' => $blocking === [],
             'checks'   => $checks,
-            // Pre-extracted so a UI and a log line do not each re-derive them.
-            'blockers' => array_map(fn ($c) => $c['detail'], $blocking),
-            'warnings' => array_map(fn ($c) => $c['detail'], $warnings),
+            // ── ONE SHAPE, ALWAYS — D-150 ────────────────────────────────
+            // These were plain strings, while Fleet's driver WARNINGS came
+            // through as {code, why, owner}. The same response carried two
+            // shapes for one idea, and the component that had to read both got
+            // it wrong the first time it was touched: D-147's `reason()`
+            // rendered the object correctly and the string as EMPTY, so an
+            // ineligible driver showed with no reason at all.
+            //
+            // A component absorbing two shapes is how a third appears. The
+            // service emits one, and EligibilityVerdictShapeTest holds it.
+            'blockers' => array_map(fn ($c) => self::reason($c), $blocking),
+            'warnings' => array_map(fn ($c) => self::reason($c), $warnings),
         ], $context);
+    }
+
+    /**
+     * A check's failure, as the one shape everything downstream reads.
+     *
+     * Deliberately the same keys Fleet's own blockers use — `code`, `why`,
+     * `owner` — so a verdict that passes Fleet's reasons through and one that
+     * builds its own are indistinguishable to a reader.
+     *
+     * @param  array<string,mixed>  $check
+     * @return array{code:string,why:string,owner:string|null}
+     */
+    private static function reason(array $check): array
+    {
+        return [
+            'code'  => $check['key'],
+            'why'   => $check['detail'],
+            'owner' => $check['owner'] ?? null,
+        ];
     }
 }

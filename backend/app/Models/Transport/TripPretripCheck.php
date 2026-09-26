@@ -215,15 +215,21 @@ class TripPretripCheck extends Model
      * The reasons a checklist is not READY, in the tone BRWM §70 requires:
      * say what is wrong and what to do, never merely that something failed.
      *
+     * The same `{code, why, owner}` shape an eligibility verdict emits — D-150.
+     * The passport and the pre-trip panel read these through the same
+     * `reason()` as the allocation panel, which renders a bare string as EMPTY.
+     * `owner` is null: no document names a desk for a pre-trip check, and
+     * inventing one would be a rule nobody made.
+     *
      * @param  Collection<int,self>|iterable<self>  $checks
-     * @return array<int,string>
+     * @return array<int,array{code:string,why:string,owner:null}>
      */
     public static function blockersOf(iterable $checks): array
     {
         $rows = $checks instanceof Collection ? $checks : collect($checks);
 
         return $rows->filter(fn (self $c) => $c->blocks())
-            ->map(fn (self $c) => $c->label().': '.($c->detail ?? 'failed'))
+            ->map(fn (self $c) => $c->reason($c->label().': '.($c->detail ?? 'failed')))
             ->values()
             ->all();
     }
@@ -233,15 +239,21 @@ class TripPretripCheck extends Model
      * honour UX §36 without having to re-derive the distinction.
      *
      * @param  Collection<int,self>|iterable<self>  $checks
-     * @return array<int,string>
+     * @return array<int,array{code:string,why:string,owner:null}>
      */
     public static function warningsOf(iterable $checks): array
     {
         $rows = $checks instanceof Collection ? $checks : collect($checks);
 
         return $rows->filter(fn (self $c) => $c->isWarning())
-            ->map(fn (self $c) => $c->label().': '.($c->detail ?? 'needs attention'))
+            ->map(fn (self $c) => $c->reason($c->label().': '.($c->detail ?? 'needs attention')))
             ->values()
             ->all();
+    }
+
+    /** @return array{code:string,why:string,owner:null} */
+    private function reason(string $why): array
+    {
+        return ['code' => $this->check_key, 'why' => $why, 'owner' => null];
     }
 }

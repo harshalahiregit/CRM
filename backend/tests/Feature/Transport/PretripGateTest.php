@@ -118,7 +118,7 @@ class PretripGateTest extends TestCase
             'name' => 'Ramesh '.Str::random(4),
             'licence_number' => 'RJ14'.self::uniqueSeq(6),
             'licence_class' => 'HMV',
-            'licence_valid_until' => now()->addYears(2)->toDateString(),
+            'licence_expiry' => now()->addYears(2)->toDateString(),
         ], $tenantId, $this->actor);
     }
 
@@ -214,8 +214,8 @@ class PretripGateTest extends TestCase
         [$trip, $vehicle, $driver] = $this->readyTrip();
         $this->pretrip->passPretrip($trip, self::TENANT_A, $this->actor);
 
-        $this->assertSame(VehicleStatus::ALLOCATED, $vehicle->fresh()->status);
-        $this->assertSame(DriverAvailability::ASSIGNED, $driver->fresh()->availability);
+        $this->assertSame(Vehicle::STATUS_ALLOCATED, $vehicle->fresh()->status);
+        $this->assertSame(DriverProfile::ON_TRIP, $driver->fresh()->status);
         $this->assertNotNull($this->assignmentFor($trip));
     }
 
@@ -225,7 +225,7 @@ class PretripGateTest extends TestCase
     {
         // BRW-048's own example is "Dispatch blocked — Driver licence expired."
         [$trip, , $driver] = $this->readyTrip();
-        $driver->forceFill(['licence_valid_until' => now()->subDay()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()])->save();
         $this->pretrip->generate($trip, self::TENANT_A, $this->actor);
 
         try {
@@ -287,7 +287,7 @@ class PretripGateTest extends TestCase
         $v = $this->vehicle(); $d = $this->driver();
         $this->alloc->assign($trip, $v->id, $d->id, self::TENANT_A, $this->actor);
         $trip = $trip->fresh();
-        $d->forceFill(['licence_valid_until' => now()->subDay()])->save();
+        $d->forceFill(['licence_expiry' => now()->subDay()])->save();
 
         $this->pretrip->generate($trip, self::TENANT_A, $this->actor);
         foreach ($this->pretrip->checksFor($trip, self::TENANT_A) as $check) {
@@ -385,7 +385,7 @@ class PretripGateTest extends TestCase
         // Same discipline as ticket 009's refused allocation: a block is exactly
         // the event an auditor asks about later.
         [$trip, , $driver] = $this->readyTrip();
-        $driver->forceFill(['licence_valid_until' => now()->subDay()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()])->save();
         $this->pretrip->generate($trip, self::TENANT_A, $this->actor);
 
         try {
@@ -405,7 +405,7 @@ class PretripGateTest extends TestCase
     public function test_a_refusal_changes_no_state(): void
     {
         [$trip, $vehicle, $driver] = $this->readyTrip();
-        $driver->forceFill(['licence_valid_until' => now()->subDay()])->save();
+        $driver->forceFill(['licence_expiry' => now()->subDay()])->save();
         $this->pretrip->generate($trip, self::TENANT_A, $this->actor);
 
         try {
@@ -414,8 +414,8 @@ class PretripGateTest extends TestCase
         }
 
         $this->assertSame(TripStatus::ALLOCATED, $trip->fresh()->status);
-        $this->assertSame(VehicleStatus::ALLOCATED, $vehicle->fresh()->status);
-        $this->assertSame(DriverAvailability::ASSIGNED, $driver->fresh()->availability);
+        $this->assertSame(Vehicle::STATUS_ALLOCATED, $vehicle->fresh()->status);
+        $this->assertSame(DriverProfile::ON_TRIP, $driver->fresh()->status);
     }
 
     /* ══════════ crew release — while the checklist is in progress ══════════ */
@@ -526,8 +526,8 @@ class PretripGateTest extends TestCase
 
         $this->alloc->release($this->assignmentFor($trip), self::TENANT_A, $this->actor);
 
-        $this->assertSame(VehicleStatus::AVAILABLE, $vehicle->fresh()->status);
-        $this->assertSame(DriverAvailability::AVAILABLE, $driver->fresh()->availability);
+        $this->assertSame(Vehicle::STATUS_AVAILABLE, $vehicle->fresh()->status);
+        $this->assertSame(DriverProfile::AVAILABLE, $driver->fresh()->status);
     }
 
     public function test_releasing_from_pretrip_ok_invalidates_the_passed_checklist(): void
@@ -569,6 +569,7 @@ class PretripGateTest extends TestCase
 
         // A brand-new crew.
         $v2 = $this->vehicle(); $d2 = $this->driver();
+        $this->alloc = app(AllocationService::class);   // D-152: a fresh directory read — this crew is new
         $this->alloc->assign($trip->fresh(), $v2->id, $d2->id, self::TENANT_A, $this->actor);
         $this->assertSame(TripStatus::ALLOCATED, $trip->fresh()->status);
 
@@ -587,6 +588,7 @@ class PretripGateTest extends TestCase
         $this->alloc->release($this->assignmentFor($trip), self::TENANT_A, $this->actor);
 
         $v2 = $this->vehicle(); $d2 = $this->driver();
+        $this->alloc = app(AllocationService::class);   // D-152: a fresh directory read — this crew is new
         $this->alloc->assign($trip->fresh(), $v2->id, $d2->id, self::TENANT_A, $this->actor);
 
         $checks = $this->pretrip->generate($trip->fresh(), self::TENANT_A, $this->actor);
@@ -596,8 +598,8 @@ class PretripGateTest extends TestCase
             $this->assertTrue($check->satisfied(), $check->check_key.': '.$check->detail);
             $this->assertFalse($check->isCompleted(), 'a fresh evaluation is not a confirmation');
         }
-        $this->assertStringContainsString($v2->displayName(), $checks->firstWhere('check_key', PretripCheckKey::VEHICLE_ASSIGNED)->detail);
-        $this->assertStringContainsString($d2->displayName(), $checks->firstWhere('check_key', PretripCheckKey::DRIVER_ASSIGNED)->detail);
+        $this->assertStringContainsString($v2->registration_number, $checks->firstWhere('check_key', PretripCheckKey::VEHICLE_ASSIGNED)->detail);
+        $this->assertStringContainsString($d2->name, $checks->firstWhere('check_key', PretripCheckKey::DRIVER_ASSIGNED)->detail);
     }
 
     public function test_the_full_release_recrew_repass_cycle_works(): void
@@ -607,6 +609,7 @@ class PretripGateTest extends TestCase
         $this->alloc->release($this->assignmentFor($trip), self::TENANT_A, $this->actor);
 
         $v2 = $this->vehicle(); $d2 = $this->driver();
+        $this->alloc = app(AllocationService::class);   // D-152: a fresh directory read — this crew is new
         $this->alloc->assign($trip->fresh(), $v2->id, $d2->id, self::TENANT_A, $this->actor);
 
         $this->pretrip->generate($trip->fresh(), self::TENANT_A, $this->actor);

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Transport;
 
 use App\Models\Tenant;
+use App\Domains\Fleet\Models\DriverProfile;
 use App\Models\Transport\TransportDriver;
 use App\Models\Transport\TransportOrder;
 use App\Models\Transport\TransportTrip;
@@ -359,8 +360,8 @@ class DispatchApiTest extends TestCase
         $a = $this->user(); Sanctum::actingAs($a);
         $trip = $this->readyTrip(actor: $a);
 
-        TransportDriver::forTenant(self::TENANT_A)->first()
-            ->forceFill(['licence_valid_until' => now()->subDay()->toDateString()])->save();
+        DriverProfile::forCompany(self::TENANT_A)->first()   // the crew is a Fleet driver
+            ->forceFill(['licence_expiry' => now()->subDay()->toDateString()])->save();
 
         $res = $this->getJson($this->url($trip))->assertOk();
 

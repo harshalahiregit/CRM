@@ -7,6 +7,7 @@ use App\Exceptions\BusinessException;
 use App\Exceptions\ResourceNotFoundException;
 use App\Models\Transport\TransportDocument;
 use App\Domains\Fleet\Models\DriverProfile;
+use App\Domains\Fleet\Services\DriverService;
 use App\Models\Transport\TransportTrip;
 use App\Services\Transport\Contracts\FleetResourceGateway;
 use App\Services\Transport\TripEventRecorder;
@@ -71,6 +72,9 @@ use Illuminate\Support\Facades\Log;
  */
 class AllocationService
 {
+    /** The licence states Fleet blocks on — DriverService::blockersFor(). */
+    private const FLEET_LICENCE_BLOCKING = ['expired', 'unknown'];
+
     public function __construct(
         private TripAssignmentService $assignments,
         private VehicleEligibilityService $vehicleEligibility,
@@ -81,6 +85,8 @@ class AllocationService
         // TAKEN; nothing ever told it when one came free — `markReleased()` sat
         // on the interface with no caller in the codebase. D-119.
         private FleetResourceGateway $fleet,
+        // Fleet's own licence verdict, for the refusal's document status — D-150.
+        private DriverService $fleetDrivers,
     ) {
     }
 
@@ -602,7 +608,12 @@ class AllocationService
         ]);
 
         throw new BusinessException(
-            'That '.$kind.' cannot be allocated. '.FleetResourceName::of($resource).': '.implode(' ', $verdict['blockers']),
+            'That '.$kind.' cannot be allocated. '.FleetResourceName::of($resource).': '.implode(' ', array_map(
+                // D-150: blockers are {code, why, owner}. The desk stays in the
+                // sentence, as it was when Fleet's owner was flattened into it.
+                fn (array $b) => $b['owner'] ? $b['why'].' ('.$b['owner'].')' : $b['why'],
+                $verdict['blockers'],
+            )),
             422
         );
     }
@@ -614,7 +625,11 @@ class AllocationService
             return AllocationScope::BR_VEHICLE_OVERLAP;   // BR-P0-003
         }
 
-        if ($kind === 'driver' && array_intersect(['availability', 'lifecycle', 'licence', 'documents'], $failedKeys)) {
+        // Since D-134 a driver's licence, medical, lifecycle and availability
+        // are ONE check, `fleet` — Fleet's verdict. The old four keys can no
+        // longer be emitted, and matching only them left `rule` null on every
+        // driver refusal (D-150). `assignment` stays unmapped: it never was.
+        if ($kind === 'driver' && in_array('fleet', $failedKeys, true)) {
             return AllocationScope::BR_DRIVER_BLOCKED;    // BR-P0-004
         }
 
@@ -640,6 +655,9 @@ class AllocationService
             'assignment'   => 'STOS-DB §199; RTM PLN-006',
             'licence'      => 'BR-P0-004; STOS-CMP §22; BRM BR-048',
             'documents'    => 'BR-P0-004; BRW-029; STOS-CMP §24',
+            // D-134: the four rules above, now one Fleet verdict — cited as
+            // the union of what they cited, nothing added.
+            'fleet'        => 'BR-P0-004; BRW-028; BRW-029; STOS-CMP §22; RTM PLN-004',
         ];
 
         return array_values(array_intersect_key($map, array_flip($failedKeys)));
@@ -673,10 +691,21 @@ class AllocationService
             $status['fleet'] = collect($verdict['checks'] ?? [])
                 ->firstWhere('key', 'fleet')['detail'] ?? 'Refused by Fleet.';
 
+            // `state` is Fleet's licence verdict, copied as-is — D-150. `valid`
+            // is not a second opinion on it: it is the line Fleet itself draws
+            // when it decides to block. DriverService::blockersFor() refuses a
+            // licence that is `expired` or `unknown` and only warns on
+            // `expiring`, so those two, and only those, are not valid here.
+            // (Fleet's list(ready_only) is stricter — it wants `valid` alone —
+            // but that answers "no warnings", not "may this driver be refused".)
+            $licence = $this->fleetDrivers->licenceVerdict($resource);
+
             $status['licence'] = [
                 'number'      => $resource->licence_number,
                 'class'       => $resource->licence_class,
                 'valid_until' => $resource->licence_expiry?->toDateString(),
+                'state'       => $licence['state'],
+                'valid'       => ! in_array($licence['state'], self::FLEET_LICENCE_BLOCKING, true),
             ];
 
             return $status;

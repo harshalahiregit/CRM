@@ -15,6 +15,19 @@ Authority for who rules on what: the Conflict Resolution matrix in
 defects do: a rule consciously set aside needs to be as findable as a rule broken by accident, and
 a verbal approval is not an artefact.
 
+### This file is a grep target before it is a document
+
+Any heading that states a **state** — *proposed*, *not built*, *deferred*, *blocked*, *awaiting* —
+is a claim that goes stale silently, because nothing re-reads it. So:
+
+> **A `Proposed, NOT built` section is REPLACED, never appended to, the moment the proposal ships —
+> by a `Built` section naming the file path and the test. The heading must not survive, because the
+> heading is what a grep finds.**
+
+D-134 described a class as proposed for two days after it existed, in a folder it was not in. The
+entry was not lying; nobody had re-read it. **When a proposal ships, grep this file for its heading
+before closing the work** — it is one command, and it is in the TEAM-CONTRACTS checklist.
+
 - [RULING-001](#ruling-001--the-client-portal-is-being-built-without-step-12-tickets) — the client
   portal is being built without Step 12 tickets (B-09). Two endpoints, one permission value.
   Retroactive ticket outstanding.
@@ -4941,45 +4954,22 @@ Because it trades one blank picker for another. `crm_client_contact:1` — Rajes
 would then be the invisible one. Every CRM-sourced driver would disappear to reveal ours. **Not
 done.**
 
-### Proposed, NOT built
+### Built — `app/Support/Transport/CompositeDriverDirectory.php`
 
-A `CompositeDriverDirectory` in **our** tree implementing `App\Domains\Fleet\Contracts\DriverDirectory`:
-`people()` concatenates both sources, `find()` dispatches on the `source` prefix, `describe()` names
-both.
+`people()` concatenates both registers and sorts by name; `find()` **dispatches on the source
+prefix** rather than trying both; `describe()` names both. A fourth mode `both`, with `auto`
+resolving to it whenever the CRM is present. Neither underlying directory was touched.
 
-Implementing P2's interface is not editing P2's code — the contract exists precisely for this, and
-its own docblock says *"Swapping the implementation swaps the source. Nothing above this line has to
-know which one is in use."* The refs are already namespaced (`stos:` vs `crm_*:`), so a merge cannot
-collide, and each implementation already returns null for refs it does not own.
+Test: `tests/Feature/Transport/CompositeDriverDirectoryTest.php`.
 
-It became a fourth mode (`auto` | `crm` | `standalone` | `both`), with `auto` resolving to `both`
-when the CRM is present **and** `stos_drivers` is non-empty.
+**It lived in `app/Domains/Fleet/Directory/` for two days and was moved on 2026-09-25.** The line is
+drawn at **whose tree, not whose concept**: the decision this class encodes — that `auto` resolves
+to both sources — is ours, made in our provider and our config. P2's two directories each answer for
+one source because that is all either of them is. Its test moved with it, on the same grounds.
 
-### Built and verified
-
-`CompositeDriverDirectory` — `people()` concatenates and sorts by name, `find()` **dispatches on the
-source prefix** rather than trying both, `describe()` names both registers. Neither underlying
-directory was touched.
-
-The picker went from one candidate to three:
-
-```
-#1  eligible=no   No licence is on file for this driver. (Fleet compliance desk)
-#2  eligible=yes  Cleared by Fleet
-#3  eligible=yes  Cleared by Fleet
-```
-
-`CompositeDriverDirectoryTest` — five tests, and one of them guards the property the namespacing
-buys: **each register must keep REFUSING the other's handles.** `find()` dispatches instead of
-trying both precisely so a refusal can never silently become a fallback; if it did, two registers
-could answer for one handle and a ref would stop naming one person.
-
-Broken two ways before it was trusted: reverted to CRM-only → **red**, naming the invisible driver;
-made the CRM directory answer for a `stos:` handle → **red** on the refusal guard.
-
-One test passed *vacuously* on the first run — the CRM register was empty in the fixture, so its
-loop iterated nothing and showed a tick. Fixed by seeding a CRM contact and asserting the list is
-non-empty first.
+The picker went from one candidate to three. One of its five tests passed *vacuously* on the first
+run — the CRM register was empty in the fixture, so its loop iterated nothing and showed a tick —
+which is fixed and is one of the five instances behind [D-149](#d-149--a-guard-that-stops-guarding-does-not-go-red).
 
 ---
 
@@ -5664,3 +5654,331 @@ is not usually alone.*
 `TransportDrivers.jsx` also has an "Add driver" form and no way out, and was left alone: it is
 **unrouted** — the placeholder screen retired in September — so nothing can reach it. Noted rather
 than fixed, because fixing dead code hides that it is dead.
+
+---
+
+## D-149 — the cross-tenant guard on the master surface stopped asserting anything
+
+**Raised:** 2026-09-25, attributing the fixture debt. **P1.** **The rule holds; the guard does not.**
+
+### What it looked like
+
+```
+test_a_tenant_cannot_read_or_write_another_tenants_master_records
+  Failed asserting that 200 is identical to 404
+  ➜ $this->getJson("/api/transport/vehicles/{$vehicleId}")->assertNotFound();
+```
+
+Which reads exactly like a cross-tenant leak on a read endpoint.
+
+### What it is
+
+The test builds its fixture with `POST /vehicles`, which now answers **409** under the read-only
+ruling. So `json('data.id')` is **null**, the URL collapses to `/api/transport/vehicles/` — the
+index — and 200 is the correct answer to the question actually asked.
+
+**Isolation is intact.** Checked directly rather than assumed:
+
+```
+tenant 1 owns legacy vehicle #35
+  as tenant 1: FOUND MH 12 DEMO 01
+  as tenant 2: ResourceNotFoundException — Vehicle not found.
+```
+
+### Why it is a defect anyway
+
+The guard for cross-tenant access to the entire master surface now **asserts nothing about
+tenancy**. It would pass or fail for reasons unrelated to it. A guard that has stopped guarding is
+the shape of [D-145](#d-145--fleet-accepts-two-drivers-with-the-same-licence-number) and
+[D-146](#d-146--fleet-can-delete-a-vehicle-that-is-on-a-live-trip), and this is the third in a week.
+
+**Five in two weeks, and every one was found by a person noticing, not by the suite:** the leak
+test's original vacuity, the composite test's empty CRM register, D-145, D-146, and this. A
+proposal for making that mechanical is owed with the block's results.
+
+### Repair
+
+The fixture creates through Fleet, or inserts directly; the assertion is unchanged, because the rule
+it states is still exactly right.
+
+---
+
+## D-150 — one shape for a blocker, everywhere
+
+**Raised:** 2026-09-25, following D-147. **P1.** **Fixed.**
+
+### What was wrong
+
+D-147 fixed the crash by making `reason()` read `{code, why, owner}`, on the belief that every
+producer was Fleet now. It was not. Three producers still emitted **plain strings**:
+
+```
+EligibilityVerdict::make()        blockers/warnings = the check's detail, a string
+DriverEligibilityService          Fleet's owner flattened into the sentence: "why (owner)"
+TripPretripCheck::blockersOf()    "Label: detail" — read by the passport and the pre-trip panel
+TripPretripCheck::warningsOf()    same
+```
+
+A string reaching `reason()` has no `owner` and no `why`, so it rendered **EMPTY**. An ineligible
+driver showed on the picker with no reason at all; the Container 360 readiness box and the pre-trip
+panel's warnings printed a bullet and nothing after it. That is the bug D-147 was written to fix,
+arriving by the other door. No crash, no test, nothing red.
+
+The first consumer also broke quietly: `AllocationService` built its 422 refusal with
+`implode(' ', $verdict['blockers'])`, which against objects is *"Array to string conversion"*.
+
+### What changed
+
+- `EligibilityVerdict::make()` emits `{code, why, owner}` for every blocker and warning.
+  `code` is the check key; `owner` is optional on `check()`, null where no desk owns the rule.
+- `DriverEligibilityService` carries Fleet's owner as a **field**, and joins **every** Fleet
+  blocker's `why`, not the first.
+- `TripPretripCheck::blockersOf()` / `warningsOf()` emit the same shape, `owner: null` — no
+  document names a desk for a pre-trip check, and inventing one would be a rule nobody made.
+  `PretripService::refusalMessage()` reads `why`.
+- `AllocationService`'s refusal sentence reads `why (owner)` — the desk stays in the 422 text.
+- The three `reason()` readers keep no string branch. The backend owns the shape.
+
+**Nothing in `app/Domains/Fleet/**` was touched.** Fleet's shape was already `{code, why, owner}`.
+
+### The eligibility tests, rewritten not recounted
+
+Four tests asserted `assertCount(5, …checks)`, the pre-D-134 driver contract. It is two on
+purpose. `assertCount(2)` would pass on "Fit to drive: no" with no reason and no desk, so each now
+asserts what a dispatcher needs: a clean driver carries no blocker and every check says what it
+verified; a refused one carries a `why` and a named `owner`.
+
+| File | Test | Now asserts |
+|---|---|---|
+| TransportEligibilityTest | a_clean_driver_is_eligible | no blockers; every check passed with a detail; `fleet` = "Cleared by Fleet" |
+| TransportEligibilityTest | a_driver_with_no_licence_is_blocked | blocker `why` says no licence; owner = Fleet compliance desk |
+| TransportEligibilityTest | an_expiring_licence_warns_without_blocking | eligible; `driver_license_expiring` warning with `why` and owner |
+| TransportEligibilityTest | an_expired_licence_blocks_the_driver | one blocker, "expired", owner named — **BRWM §70 line held** |
+| TransportAllocationTest | the_audit_row_carries_every_eligibility_check | `fleet` and `assignment` both on the row, passed, with detail |
+| TransportAllocationRefusalAuditTest | the_row_records_every_check_not_only_the_failures | one failure; the passing `assignment` check still recorded; blocker has why + owner |
+| TransportAllocationApiTest | assigning_both_allocates_the_trip | driver verdict eligible, no blockers, `fleet` check present |
+
+The other `assertCount(5` lines count pre-trip checklist items (PretripApi, PretripGate,
+PretripGeneration, PretripEvidenceAudit, PretripScope), CMP §23's compliance states
+(TransportMasterAudit), registry rows (ExceptionScope, TripEventRegistry). Not eligibility. Untouched.
+
+Seven more tests read `blockers[0]` as a string and now read `['why']` — the same assertion,
+against the new shape.
+
+### How it is proved
+
+- **Test, broken 2 ways.** `EligibilityVerdictShapeTest` (6 tests): blockers made plain strings →
+  5 red; `owner` dropped → 4 red; restored → 6 green. Its warnings test passes under both breaks
+  because driver warnings are Fleet's own, passed through — it guards Fleet's shape, not ours.
+- **Suite, `--filter=Transport`, against HEAD measured in a separate worktree:**
+  `89 failed · 1058 passed` → `80 failed · 1073 passed` (3 skipped both). Nine cleared, none new;
+  the other six passes are the new shape tests.
+- **Frontend build:** succeeds.
+- **Not walked in a browser.** The empty-reason render is inferred from the code, not seen.
+
+### Left red, on purpose — each needs a ruling, not a test edit
+
+1. **BRWM §70's tone is gone from driver refusals.** Two tests
+   (`an_expired_licence_blocks_the_driver`, `an_expired_licence_returns_422_with_the_reason`) ask
+   for "assign another eligible driver". Fleet's sentence stops at "cannot be dispatched". The
+   sentence is Fleet's; the requirement is ours. Held, not weakened.
+2. ~~**Driver refusals no longer carry `rule: BR-P0-004`.**~~ **Closed.** `ruleFor()` matched only
+   `availability/lifecycle/licence/documents`, which no driver verdict can emit since D-134 — the
+   only keys are `fleet` and `assignment`. It now maps `fleet` → BR-P0-004 and the four dead keys
+   are gone from it. `assignment` stays unmapped, as it always was. `sourcesFor()` gained `fleet`,
+   cited as the union of the four rules it replaced — no new citation.
+   **Proved by test, broken 2 ways:** `test_a_fleet_refusal_is_logged_against_br_p0_004` (new) —
+   old keys restored → red; mapped to `assignment` → red; restored → green. Transport suite
+   unchanged otherwise: `80 failed · 1074 passed`.
+   **The licence-validity half — closed too.** The repoint (685a1a67) had dropped
+   `document_status.licence.valid`. Ruled by the owner: validity is read from Fleet, never
+   re-derived here. The row now carries Fleet's `DriverService::licenceVerdict()` `state`
+   verbatim (`unknown | expired | expiring | valid`) beside `valid`, which is false exactly for
+   the states Fleet's own `blockersFor()` refuses on — `expired` and `unknown`. `expiring` is
+   valid: Fleet only warns on it. Fleet's `list(ready_only)` is stricter (it wants `valid` alone),
+   but that answers "no warnings", not "why was this driver refused". No Fleet file touched.
+   **Proved by test, broken 2 ways:**
+   `test_expired_licence_is_logged_against_br_p0_004_with_document_status` — now green, and
+   asserts `state = expired` as well. `valid` hard-coded true → red; Fleet's `state` dropped →
+   red; restored → green. Transport: `80 failed · 1074 passed` → `79 failed · 1075 passed`, no
+   test newly red.
+3. **CMP §20 configurability.** `driver.check.licence.required` no longer does anything: Fleet's
+   whole verdict is gated by `driver.check.lifecycle.required`. Whether licence alone may be advisory
+   is a business rule.
+4. **Transport's `driver.required_documents` policy is no longer consulted.** A driver missing a
+   policy-required document is eligible. Is that policy retired, or does Fleet own it now?
+
+Four more in `TransportEligibilityTest` (on leave, inactive, blocked, candidate listing) call the
+legacy `TransportDriverService` on a Fleet profile. Fixture debt — the next task.
+
+---
+
+## D-151 — the pre-trip "driver documents" item passed every driver
+
+**Raised:** 2026-09-25, classifying the red Transport tests. **P1 — ours, a D-134 leftover.** **Fixed.**
+
+### What was wrong
+
+`PretripService::evaluateDriverDocuments()` borrowed the driver verdict's `licence` and `documents`
+checks. D-134 collapsed those into one `fleet` check, so the borrow matched **nothing**, nothing
+failed, and the item graded **PASS** for every driver. **A driver whose licence lapsed after
+allocation was stopped neither at pre-trip nor at dispatch revalidation.** The expiring-licence
+warning was dead too: it read `expiring_soon`, which the driver verdict no longer carries.
+
+No test was needed to find it. Twenty were already red about it, filed as fixture debt.
+
+### What the old checks covered, and what Fleet can answer
+
+Read from the service as it stood before the repoint (`685a1a67^`):
+
+| Old check | Covered | Fleet code |
+|---|---|---|
+| `licence` | expired | `driver_license_expired` — blocker |
+| `licence` | no licence **number** | `driver_license_unrecorded` — blocker, but Fleet means no **expiry date**. We now follow Fleet's meaning. |
+| `licence` | not yet valid (`licence_valid_from` in future) | **none** — gap (i) |
+| `licence` / `expiring_soon` | expiring inside the window | `driver_license_expiring` — warning |
+| `documents` | medical certificate expired | `driver_medical_expired` — blocker |
+| `documents` / `expiring_soon` | medical expiring | `driver_medical_expiring` — warning |
+| `documents` | any other driver document expired | **none** — gap (ii) |
+| `documents` | `driver.required_documents` missing | **none** — gap (iii) |
+
+### What changed — owner's ruling, option (b)
+
+The item now reads Fleet's reason codes for the driver (`App\Support\Transport\PretripDriverDocuments`):
+
+- **FAIL** on `driver_license_expired`, `driver_license_unrecorded`, `driver_medical_expired`, with each
+  blocker's `why` and `(owner)`. That's BRW-048's exact reason, in Fleet's words.
+- **PASS_WARNING** on `driver_license_expiring`, `driver_medical_expiring`.
+- **Not read:** `driver_unavailable`. Allocation sets the driver ON_TRIP and Fleet answers that with
+  `driver_unavailable`, so reading it would fail every allocated driver. Also not read:
+  `driver_not_onboarded` and `driver_medical_unrecorded`.
+- **Read fresh:** `DriverEligibilityService::fleetRecordNow()` skips the per-instance cache
+  ([D-152](#d-152--the-driver-eligibility-cache-lives-as-long-as-the-object)). Pre-trip and
+  revalidation exist to catch what changed since allocation.
+- **One thing Fleet does not supply.** Fleet computes `warnings` only for drivers it would still offer,
+  and an allocated driver is ON_TRIP, so it never gets one. In that case the warning is read from
+  Fleet's own `licence` / `medical` verdict (`state: expiring`, `message`), under the code Fleet would
+  have given it. The owner string is guarded against Fleet's whenever Fleet does compute warnings.
+
+### An empty read can no longer pass
+
+Both paths now **fail loudly** (an `error` log line, and an item detail that says *could not be
+verified*) instead of passing:
+
+- **Driver:** the Fleet row must carry the `licence.state` and `medical.state` its codes are derived
+  from, and every code those states imply must actually be present. A renamed code fails the item.
+- **Vehicle:** `fromBorrowedChecks()` fails when the keys it borrows match no check in the verdict.
+  The vehicle path is otherwise unchanged.
+
+### How it is proved
+
+- **Test:** `PretripDriverDocumentsTest`, 8 new tests. A licence lapsed after allocation → CRITICAL_FAIL
+  with Fleet's sentence and desk; medical expired → fail; licence expiring → PASS_WARNING; an
+  allocated (ON_TRIP) driver with valid papers → PASS, with Fleet's own `driver_unavailable` asserted as
+  the precondition; a row with no verdicts, a renamed code, an unknown driver, and a vehicle borrow that
+  matches nothing → never PASS.
+- **Broken, two ways per guard, each red, each restored:** dropping `driver_license_expired`, and
+  borrowing `driver_unavailable` (the trap); the schema check disabled, and schema errors graded PASS;
+  the empty-borrow block removed, and an empty borrow graded PASS; the warning silenced.
+- **Suite:** Transport `79 failed · 1075 passed` → `64 failed · 1098 passed`. 15 cleared and 8 new;
+  none newly red. The other 5 pre-trip reds now fail only on fixture debt.
+
+### Left open — owner decisions, not ours to build
+
+- **(i) Licence not yet valid.** `driver_profiles.licence_valid_from` exists (the unify migration copied
+  it over), but Fleet's `licenceVerdict()` ignores it. The old Transport check failed on it.
+  **Owner: Fleet (P2).**
+- **(ii) Expiry of every driver document other than medical** (police verification, ID proof,
+  training certificate, customer qualification, the general driver document) is checked **nowhere**
+  since D-134, neither at allocation nor at pre-trip. These documents can still be filed against a Fleet
+  driver. Documents are P3's; the eligibility rule is Fleet's. **Needs a ruling on who enforces it.**
+- **(iii) The required-documents policy.** The same gap as D-150 "left red" #4.
+
+---
+
+## D-152 — the driver eligibility cache lives as long as the object
+
+**Raised:** 2026-09-25, classifying the red Transport tests. **P1.** **Recorded, not fixed.**
+
+`DriverEligibilityService::$fleetCache` holds Fleet's whole driver directory for the lifetime of the
+service instance (added in `9f86e884` so one screen did not read the directory once per driver). Its
+docblock reasons that the service is resolved per request, and in a web request that holds.
+
+**It does not hold in a long-running process.** In a queue worker, or under Octane, one instance can
+outlive many changes. A driver created after the first read then answers *"This driver is not in the
+fleet directory"*, and a licence that lapses after it answers with its old state.
+
+Four tests show exactly this, because each holds one `AllocationService` from `setUp`. With the cache
+disabled in a throwaway worktree, 3 of the 4 passed; the fourth then failed on unrelated fixture debt.
+
+**Decision: recorded only.** Tests will use a fresh service instance. Pre-trip already reads fresh
+(`fleetRecordNow()`, D-151), because it's the one path whose purpose is catching change.
+
+---
+
+## D-141 — Fleet's vehicle model does not populate `registration_normalized`
+
+**Raised:** 2026-09-23, repointing the plate search (D-140). **Owner: Person 2 (Fleet).** **Open.**
+Entry written 2026-09-26: the number was used in code comments and in `POSITION-2026-09-25.md` §4
+but never had an entry here.
+
+`vehicles.registration_normalized` exists and was filled for the migrated rows, but Fleet's
+`Vehicle` model does not populate it on save. Every vehicle created through Fleet has it **NULL**.
+Separately, Fleet's `VehicleService::normalisePlate()` stores `registration_number` itself
+normalised (`MH 12 AB 4455` → `MH12AB4455`).
+
+**Effect on Transport:** a search that relies on the normalised column finds no Fleet-created
+vehicle by a spaced or lowercase plate.
+
+**Our workaround is D-153.** A third clause in `TransportSearchService::vehicle()` compares the
+normalised input with `registration_number` as stored. **Once D-141 is fixed, that clause can be
+removed.** We did not touch Fleet's model; it is P2's.
+
+**Asked of Person 2:** populate `registration_normalized` on create and update (the same rule as
+`normalisePlate()`), and backfill the rows created since the repoint.
+
+---
+
+## D-153 — a plate typed with spaces could not find a Fleet vehicle
+
+**Raised:** 2026-09-25, moving the search fixtures onto Fleet. **P1 — our search.** **Fixed (workaround); the real fix is D-141, owed by P2.**
+
+### What was wrong
+
+Fleet's `VehicleService` stores `registration_number` already normalised (`normalisePlate()`:
+upper-case, A–Z/0–9 only, so `MH 12 AB 4455` is stored as `MH12AB4455`), and leaves
+`registration_normalized` NULL (D-141). `TransportSearchService::vehicle()` matched:
+
+```
+registration_normalized = <normalised input>    ← NULL on every Fleet-created vehicle
+registration_number     = <raw input>           ← only the exact stored form
+```
+
+So `MH 12 AB 4455` and `mh12ab4455` found **no vehicle created in Fleet**. Every vehicle created since
+the read-only ruling is created in Fleet. The legacy fixture had hidden this: `transport_vehicles`
+rows carry their own normalised column, so the search test kept passing against a table search no
+longer reads.
+
+### What changed
+
+One clause in `vehicle()`: the **normalised input** is also compared with `registration_number` as
+stored. Our normaliser (`TransportVehicle::normalizeRegistration()`) is the same rule as Fleet's
+`normalisePlate()`, so this is still an exact match, and the stored side is still never normalised
+in SQL. Both earlier clauses stay. The comment says the clause can go once D-141 populates
+`registration_normalized`. No Fleet file touched.
+
+### How it is proved
+
+- **Test:** `a_vehicle_registration_resolves_however_it_is_spaced` (spaced, lowercase, hyphenated)
+  now passes on a Fleet fixture. New: `a_normalised_plate_matches_exactly_and_only_in_its_own_tenant`
+  checks that a plate one character off does not resolve to the near-miss vehicle, and that tenant B's
+  vehicle with the same plate is not returned to tenant A. Both rows are first shown to be findable,
+  so the misses are real.
+- **Broken:** clause removed → both red; the stored side normalised in SQL against the raw input → both
+  red; the match loosened to a prefix → the new test red. Restored → green.
+- **Suite:** Transport `19 failed · 1144 passed` → `18 failed · 1146 passed`, none newly red.
+
+### Owed
+
+**D-141 (P2):** Fleet's model should populate `registration_normalized` on save. When it does, this
+clause is redundant and should be removed.
