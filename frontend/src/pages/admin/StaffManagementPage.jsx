@@ -117,6 +117,26 @@ export default function StaffManagementPage() {
     if (user?.role === 'admin') fetchStaff()
   }, [search, designationFilter, statusFilter, pagination.current_page])
 
+  /*
+   | Pick up a department or job title added in the other tab — SIR-000008.
+   |
+   | The staff form links out to HR → Organization Setup in a new tab, because
+   | those are records and this modal must not become a second place to create
+   | them. Without this, you would add the department over there, come back, and
+   | still not find it in the dropdown.
+   |
+   | Only while the modal is open: these are three GETs, and firing them on every
+   | tab switch for somebody just reading the staff list is noise for nothing.
+   */
+  useEffect(() => {
+    if (! showStaffModal) return
+
+    const refresh = () => { fetchDesignations(); fetchDepartments(); fetchJobTitles() }
+    window.addEventListener('focus', refresh)
+
+    return () => window.removeEventListener('focus', refresh)
+  }, [showStaffModal, fetchDesignations, fetchDepartments, fetchJobTitles])
+
   // ── Actions ───────────────────────────────────────────────────────────────
   const handleToggleStatus = async (member) => {
     try {
