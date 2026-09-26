@@ -6000,3 +6000,34 @@ saved before that. But the backfill is a migration, and on the dev database it i
 1 of 3 Fleet vehicles still has `registration_normalized` NULL (read-only count). Any install that
 has not run it has rows only the third clause can find. **Remove the clause once that migration has
 run everywhere**, which is the owner's call on the dev DB. Until then it costs one extra `OR`.
+
+---
+
+## D-155 — `TripAssignment::active()` is a contract with Fleet, not an internal scope
+
+**Recorded:** 2026-09-26, after P2's D-146 fix landed (`eaead3dd`). **P1 owns it; P2 depends on
+it.** **Not a defect; a recorded dependency.**
+
+`TripAssignment::active()` (`whereIn status AssignmentStatus::ACTIVE_STATES` =
+`assigned, confirmed, active`) now decides what **Fleet refuses**, not only what Transport
+double-books:
+
+| Fleet reader | Uses it for |
+|---|---|
+| `Fleet\Integration\TripCommitmentReader` | D-146: a vehicle or driver on an active assignment cannot be retired or stood down, naming the trip |
+| `Fleet\Integration\TripHistoryReader` | T-49 utilisation: "working" time mirrors `active()` (plus `released` for ended trips) |
+
+P2 chose this deliberately. His header says *"The meaning of 'committed' is Ops', not ours"*, because
+choosing trip statuses inside Fleet would invent an availability rule.
+
+**The rule this records:** narrowing or widening `active()`, or `AssignmentStatus::ACTIVE_STATES`
+behind it, changes Fleet's guard with no change in Fleet's code. **Any change to either needs a
+heads-up to Person 2 before it merges.** `ACTIVE_STATES` is already load-bearing for BR-P0-003 (a
+unique index over a generated column); this adds a second, cross-module reason.
+
+**One property to know:** both readers **degrade to "not committed"** when the read fails or Ops is
+absent. That is P2's choice, so Fleet can run standalone. So a query that breaks here doesn't make
+Fleet refuse; it makes Fleet allow. That's another reason a change to this scope must be tested
+against his D-146 test before merging.
+
+A pointer comment now sits on `scopeActive()` itself, where the next person to change it will read it.
