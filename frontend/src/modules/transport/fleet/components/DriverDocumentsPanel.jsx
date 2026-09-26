@@ -70,7 +70,7 @@ export default function DriverDocumentsPanel({ driver, onChanged }) {
   // dropdown when the real message is "save this driver first".
   if (isError) {
     return (
-      <div className="flex items-start gap-2 rounded-xl px-3 py-2 text-[11px]"
+      <div className="flex items-start gap-2 rounded-xl px-3 py-2 text-[13px]"
         style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
         <AlertTriangle size={13} style={{ marginTop: 1, flexShrink: 0 }} />
         <span>{error?.message
@@ -83,9 +83,9 @@ export default function DriverDocumentsPanel({ driver, onChanged }) {
   const documents = data?.documents ?? []
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {/* ── The one that gates dispatch ───────────────────────── */}
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         {Object.entries(gating).map(([type, g]) => (
           <div key={type} className="flex items-center gap-2 rounded-xl px-3 py-2"
             style={{
@@ -97,8 +97,8 @@ export default function DriverDocumentsPanel({ driver, onChanged }) {
               : <AlertTriangle size={13} style={{ color: 'var(--color-warning-500, #f59e0b)' }} />}
 
             <div className="min-w-0 flex-1">
-              <p className="text-[11px] font-bold" style={{ color: 'var(--text-h)' }}>{g.label}</p>
-              <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+              <p className="text-[13px] font-bold" style={{ color: 'var(--text-h)' }}>{g.label}</p>
+              <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
                 {g.verified
                   ? `Verified · valid to ${g.valid_until ?? '—'}`
                   : g.awaiting
@@ -110,7 +110,7 @@ export default function DriverDocumentsPanel({ driver, onChanged }) {
             {/* The date the driver is actually gated on, which may still be a
                 hand-typed one from before documents became the master. */}
             {g.driver_date && (
-              <span className="text-[10px] shrink-0" style={{ color: 'var(--text-muted)' }}>
+              <span className="text-[12px] shrink-0" style={{ color: 'var(--text-muted)' }}>
                 gate: {g.driver_date}
               </span>
             )}
@@ -121,7 +121,7 @@ export default function DriverDocumentsPanel({ driver, onChanged }) {
       {/* ── Everything on file ────────────────────────────────── */}
       {documents.length > 0 && (
         <div className="space-y-1">
-          <p className="text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>On file</p>
+          <p className="text-[13px] font-bold" style={{ color: 'var(--text-muted)' }}>On file</p>
 
           {documents.map((d) => (
             <div key={d.id} className="flex items-center gap-2 rounded-lg px-3 py-1.5"
@@ -129,11 +129,11 @@ export default function DriverDocumentsPanel({ driver, onChanged }) {
               <FileText size={11} style={{ color: STOS_ACCENT }} />
 
               <div className="min-w-0 flex-1">
-                <p className="text-[10px] font-semibold truncate" style={{ color: 'var(--text-h)' }}>
+                <p className="text-[12px] font-semibold truncate" style={{ color: 'var(--text-h)' }}>
                   {d.document_type} {d.document_number ? `· ${d.document_number}` : ''}
                   {d.version > 1 ? ` · v${d.version}` : ''}
                 </p>
-                <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
                   {d.valid_until ? `valid to ${d.valid_until}` : 'no expiry recorded'}
                   {d.status === 'superseded' ? ' · superseded' : ''}
                   {d.rejection_reason ? ` · rejected: ${d.rejection_reason}` : ''}
@@ -144,7 +144,7 @@ export default function DriverDocumentsPanel({ driver, onChanged }) {
 
               {d.file_name && (
                 <button type="button" onClick={() => viewDoc(d.id)}
-                  className="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-lg shrink-0"
+                  className="flex items-center gap-1 text-[12px] font-semibold px-2 py-1 rounded-lg shrink-0"
                   style={{ color: STOS_ACCENT, border: '1px solid var(--border)' }}>
                   <Eye size={11} /> View
                 </button>
@@ -154,12 +154,12 @@ export default function DriverDocumentsPanel({ driver, onChanged }) {
                 <div className="flex items-center gap-1 shrink-0">
                   <button type="button" onClick={() => verify.mutate({ id: d.id, verdict: 'VERIFIED' })}
                     disabled={verify.isPending}
-                    className="text-[10px] font-bold px-2 py-1 rounded-lg disabled:opacity-60"
+                    className="text-[12px] font-bold px-2 py-1 rounded-lg disabled:opacity-60"
                     style={{ background: 'var(--color-success-500, #10b981)', color: '#fff' }}>
                     Verify
                   </button>
                   <button type="button" onClick={() => { setRejecting(d.id); setReason('') }}
-                    className="text-[10px] font-semibold px-2 py-1 rounded-lg"
+                    className="text-[12px] font-semibold px-2 py-1 rounded-lg"
                     style={{ color: 'var(--color-danger-500)', border: '1px solid var(--border)' }}>
                     Reject
                   </button>
@@ -179,11 +179,11 @@ export default function DriverDocumentsPanel({ driver, onChanged }) {
             style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text)' }} />
           <div className="flex items-center justify-end gap-2">
             <button type="button" onClick={() => setRejecting(null)}
-              className="text-[11px] font-semibold px-3 py-1.5 rounded-lg"
+              className="text-[13px] font-semibold px-3 py-1.5 rounded-lg"
               style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
             <button type="button" disabled={reason.trim() === '' || verify.isPending}
               onClick={() => verify.mutate({ id: rejecting, verdict: 'REJECTED', why: reason.trim() })}
-              className="text-[11px] font-bold px-3 py-1.5 rounded-lg disabled:opacity-60"
+              className="text-[13px] font-bold px-3 py-1.5 rounded-lg disabled:opacity-60"
               style={{ background: 'var(--color-danger-500)', color: '#fff' }}>Reject</button>
           </div>
         </div>
@@ -195,15 +195,15 @@ export default function DriverDocumentsPanel({ driver, onChanged }) {
             onDone={() => { setAdding(false); done() }} />
         : (
           <button type="button" onClick={() => { setAdding(true); setErr('') }}
-            className="flex items-center gap-1 text-[11px] font-semibold" style={{ color: STOS_ACCENT }}>
+            className="flex items-center gap-1 text-[13px] font-semibold" style={{ color: STOS_ACCENT }}>
             <Upload size={11} /> File a document
           </button>
         )}
 
-      {isLoading && <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Loading…</p>}
+      {isLoading && <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>Loading…</p>}
 
       {err && (
-        <p className="text-[11px] px-3 py-2 rounded-lg"
+        <p className="text-[13px] px-3 py-2 rounded-lg"
           style={{ background: 'color-mix(in srgb, var(--color-danger-500) 12%, transparent)', color: 'var(--color-danger-500)' }}>
           {err}
         </p>
@@ -222,7 +222,7 @@ function VerificationChip({ state }) {
   const [label, colour] = map[state] ?? [state, 'var(--text-muted)']
 
   return (
-    <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0"
+    <span className="inline-flex items-center gap-1 text-[11px] font-bold px-1.5 py-0.5 rounded shrink-0"
       style={{ background: `color-mix(in srgb, ${colour} 14%, transparent)`, color: colour }}>
       {state === 'VERIFIED' ? <Check size={9} /> : <Clock size={9} />} {label}
     </span>
@@ -270,27 +270,27 @@ function UploadForm({ driver, types, onCancel, onDone }) {
 
       <input type="file" accept=".pdf,.jpg,.jpeg,.png" multiple
         onChange={(e) => setFiles([...(e.target.files ?? [])])}
-        className="w-full text-[10px]" style={{ color: 'var(--text-muted)' }} />
+        className="w-full text-[12px]" style={{ color: 'var(--text-muted)' }} />
       {files.length > 1 && (
-        <p className="text-[10px]" style={{ color: STOS_ACCENT }}>{files.length} files selected — each is filed separately.</p>
+        <p className="text-[12px]" style={{ color: STOS_ACCENT }}>{files.length} files selected — each is filed separately.</p>
       )}
 
       {/* Said before they press save, not after. */}
       {gates && (
-        <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+        <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
           A licence gates dispatch. Filing it does not clear the driver — they stay blocked until
           somebody verifies it.
         </p>
       )}
 
-      {err && <p className="text-[10px]" style={{ color: 'var(--color-danger-500)' }}>{err}</p>}
+      {err && <p className="text-[12px]" style={{ color: 'var(--color-danger-500)' }}>{err}</p>}
 
       <div className="flex items-center justify-end gap-2">
         <button type="button" onClick={onCancel}
-          className="text-[11px] font-semibold px-3 py-1.5 rounded-lg"
+          className="text-[13px] font-semibold px-3 py-1.5 rounded-lg"
           style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
         <button type="button" onClick={() => save.mutate()} disabled={save.isPending || files.length === 0}
-          className="flex items-center gap-1 text-[11px] font-bold px-3 py-1.5 rounded-lg disabled:opacity-60"
+          className="flex items-center gap-1 text-[13px] font-bold px-3 py-1.5 rounded-lg disabled:opacity-60"
           style={{ background: STOS_ACCENT, color: '#fff' }}>
           <Check size={11} /> {save.isPending ? 'Filing…' : (files.length > 1 ? `File ${files.length}` : 'File')}
         </button>
@@ -299,5 +299,5 @@ function UploadForm({ driver, types, onCancel, onDone }) {
   )
 }
 
-const cell = 'w-full text-[11px] rounded-lg px-2 py-1.5'
+const cell = 'w-full text-[13px] rounded-lg px-2 py-1.5'
 const inputStyle = { background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text)' }

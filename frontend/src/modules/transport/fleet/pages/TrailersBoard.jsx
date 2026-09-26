@@ -82,7 +82,7 @@ export default function TrailersBoard() {
             <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
             <input value={term} onChange={(e) => setTerm(e.target.value)} placeholder="Registration…"
               aria-label="Search trailers"
-              className="text-xs rounded-xl pl-7 pr-3 py-2 w-44"
+              className="text-sm rounded-xl pl-7 pr-3 py-2 w-44"
               style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text)' }} />
           </div>
           <button type="button" onClick={() => setAdding(true)}
@@ -93,7 +93,7 @@ export default function TrailersBoard() {
         </div>
       </header>
 
-      <p className="flex items-start gap-1.5 text-[11px] mb-3 rounded-xl px-3 py-2"
+      <p className="flex items-start gap-1.5 text-[13px] mb-3 rounded-xl px-3 py-2"
         style={{ background: 'var(--bg-input)', color: 'var(--text-muted)' }}>
         <Container size={12} className="shrink-0 mt-0.5" style={{ color: STOS_ACCENT }} />
         <span>
@@ -141,20 +141,20 @@ export default function TrailersBoard() {
               <HealthChip tone={STATUS_TONE[t.status] || 'grey'} size="sm">
                 {TRAILER_STATUS_LABELS[t.status] || t.status}
               </HealthChip>
-              <span className="text-[10px] px-1.5 py-0.5 rounded"
+              <span className="text-[12px] px-1.5 py-0.5 rounded"
                 style={{ background: 'var(--bg-input)', color: 'var(--text-muted)' }}>
                 {TRAILER_TYPE_LABELS[t.trailer_type] || t.trailer_type}
               </span>
               {t.capacity_tonnes != null && (
-                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{t.capacity_tonnes} t</span>
+                <span className="text-[12px]" style={{ color: 'var(--text-muted)' }}>{t.capacity_tonnes} t</span>
               )}
               {t.axles != null && (
-                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{t.axles} axles</span>
+                <span className="text-[12px]" style={{ color: 'var(--text-muted)' }}>{t.axles} axles</span>
               )}
 
               <div className="ml-auto flex items-center gap-1.5">
                 <button type="button" onClick={() => setHistoryFor(t)}
-                  className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg"
+                  className="flex items-center gap-1 text-[13px] font-semibold px-2 py-1 rounded-lg"
                   style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
                   <History size={11} /> History
                 </button>
@@ -162,7 +162,7 @@ export default function TrailersBoard() {
                   ? <UncoupleButton trailer={t} />
                   : (
                     <button type="button" onClick={() => setCoupling(t)}
-                      className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-lg"
+                      className="flex items-center gap-1 text-[13px] font-bold px-2 py-1 rounded-lg"
                       style={{ background: STOS_ACCENT, color: '#fff' }}>
                       <Link2 size={11} /> Couple
                     </button>
@@ -170,7 +170,7 @@ export default function TrailersBoard() {
               </div>
             </div>
 
-            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+            <p className="text-[13px] mt-1" style={{ color: 'var(--text-muted)' }}>
               {t.coupled_to
                 ? <>Under <span className="font-semibold" style={{ color: 'var(--text-h)' }}>{t.coupled_to}</span> since {fmtWhen(t.coupled_at)}</>
                 : 'Not coupled.'}
@@ -179,7 +179,7 @@ export default function TrailersBoard() {
             {/* A lapsed trailer stops the truck it is under, so it says which
                 paper and does not leave a reader guessing. */}
             {t.status === 'COMPLIANCE_BLOCKED' && (
-              <p className="flex items-start gap-1.5 text-[11px] mt-1" style={{ color: 'var(--color-danger-500)' }}>
+              <p className="flex items-start gap-1.5 text-[13px] mt-1" style={{ color: 'var(--color-danger-500)' }}>
                 <AlertTriangle size={11} className="shrink-0 mt-0.5" />
                 A document has lapsed — any tractor this is coupled to cannot be dispatched.
               </p>
@@ -199,7 +199,7 @@ function Summary({ tone, count, label }) {
   return (
     <div className="flex items-center gap-2 rounded-xl px-3 py-2" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
       <HealthChip tone={tone}>{count}</HealthChip>
-      <span className="text-[11px] font-semibold" style={{ color: 'var(--text-muted)' }}>{label}</span>
+      <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>{label}</span>
     </div>
   )
 }
@@ -217,11 +217,11 @@ function UncoupleButton({ trailer }) {
   return (
     <>
       <button type="button" onClick={() => { setErr(''); go.mutate() }} disabled={go.isPending}
-        className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg disabled:opacity-60"
+        className="flex items-center gap-1 text-[13px] font-semibold px-2 py-1 rounded-lg disabled:opacity-60"
         style={{ color: 'var(--text-h)', border: '1px solid var(--border)' }}>
         <Unlink size={11} /> {go.isPending ? 'Uncoupling…' : 'Uncouple'}
       </button>
-      {err && <span className="text-[10px]" style={{ color: 'var(--color-danger-500)' }}>{err}</span>}
+      {err && <span className="text-[12px]" style={{ color: 'var(--color-danger-500)' }}>{err}</span>}
     </>
   )
 }
@@ -255,14 +255,14 @@ function CoupleDialog({ trailer, onClose }) {
   return (
     <Dialog title={`Couple ${trailer.trailer_number}`} onClose={onClose}>
       <div className="px-5 py-4 space-y-3">
-        <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+        <p className="text-[13px]" style={{ color: 'var(--text-muted)' }}>
           Recording a coupling that has already happened in the yard. A tractor already pulling
           something is refused — uncouple that first.
         </p>
         <Select size="sm" value={vehicleId} onChange={setVehicleId} placeholder="Choose a tractor"
           options={options} ariaLabel="Vehicle" />
         {err && (
-          <p className="text-[11px] px-3 py-2 rounded-lg"
+          <p className="text-[13px] px-3 py-2 rounded-lg"
             style={{ background: 'color-mix(in srgb, var(--color-danger-500) 12%, transparent)', color: 'var(--color-danger-500)' }}>
             {err}
           </p>
@@ -285,15 +285,15 @@ function HistoryDialog({ trailer, onClose }) {
   return (
     <Dialog title={`${trailer.trailer_number} — coupling history`} onClose={onClose}>
       <div className="px-5 py-4 space-y-2 overflow-y-auto" style={{ maxHeight: '50vh' }}>
-        <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+        <p className="text-[13px]" style={{ color: 'var(--text-muted)' }}>
           Every tractor this trailer has been under. Kept whole — this is what answers "which
           trailer was on that truck" when a load spoils or a claim is filed.
         </p>
 
-        {isLoading && <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Loading…</p>}
+        {isLoading && <p className="text-[13px]" style={{ color: 'var(--text-muted)' }}>Loading…</p>}
 
         {!isLoading && rows.length === 0 && (
-          <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>It has never been coupled.</p>
+          <p className="text-[13px]" style={{ color: 'var(--text-muted)' }}>It has never been coupled.</p>
         )}
 
         {rows.map((r) => (
@@ -302,10 +302,10 @@ function HistoryDialog({ trailer, onClose }) {
               <span className="text-xs font-bold" style={{ color: 'var(--text-h)' }}>{r.registration_number}</span>
               {r.open && <HealthChip tone="blue" size="sm">Now</HealthChip>}
               {r.hours_coupled != null && (
-                <span className="ml-auto text-[10px]" style={{ color: 'var(--text-muted)' }}>{r.hours_coupled} h</span>
+                <span className="ml-auto text-[12px]" style={{ color: 'var(--text-muted)' }}>{r.hours_coupled} h</span>
               )}
             </div>
-            <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+            <p className="text-[12px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
               {fmtWhen(r.coupled_at)} → {r.uncoupled_at ? fmtWhen(r.uncoupled_at) : 'still coupled'}
               {r.reason ? ` · ${r.reason}` : ''}
             </p>
@@ -369,7 +369,7 @@ function TrailerDialog({ onClose }) {
         {/* FOUR dates, not five. There is no PUC field because a trailer has no
             engine, and offering one would invite somebody to record a
             certificate that cannot exist for it. */}
-        <p className="text-[11px] font-bold pt-1" style={{ color: 'var(--text-muted)' }}>
+        <p className="text-[13px] font-bold pt-1" style={{ color: 'var(--text-muted)' }}>
           Papers — a lapsed one blocks any tractor it is coupled to
         </p>
         <div className="grid grid-cols-2 gap-3">
@@ -392,7 +392,7 @@ function TrailerDialog({ onClose }) {
         </div>
 
         {err && (
-          <p className="text-[11px] px-3 py-2 rounded-lg"
+          <p className="text-[13px] px-3 py-2 rounded-lg"
             style={{ background: 'color-mix(in srgb, var(--color-danger-500) 12%, transparent)', color: 'var(--color-danger-500)' }}>
             {err}
           </p>
@@ -408,7 +408,7 @@ function TrailerDialog({ onClose }) {
 function Dialog({ title, onClose, children }) {
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 pt-[10vh] bg-black/50">
-      <div className="w-full max-w-md rounded-2xl overflow-hidden flex flex-col"
+      <div className="w-full max-w-3xl rounded-2xl overflow-hidden flex flex-col"
         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', maxHeight: '84vh' }}
         onKeyDown={(e) => { if (e.key === 'Escape') onClose?.() }}>
         <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
@@ -442,13 +442,13 @@ function Footer({ onClose, onSave, busy, label }) {
   )
 }
 
-const inputClass = 'w-full text-xs rounded-xl px-3 py-2'
+const inputClass = 'w-full text-sm rounded-xl px-3 py-2'
 const inputStyle = { background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text)' }
 
 function Field({ label, children }) {
   return (
     <div>
-      <label className="text-[11px] font-bold block mb-1" style={{ color: 'var(--text-muted)' }}>{label}</label>
+      <label className="text-[13px] font-semibold block mb-1.5" style={{ color: 'var(--text-h)' }}>{label}</label>
       {children}
     </div>
   )

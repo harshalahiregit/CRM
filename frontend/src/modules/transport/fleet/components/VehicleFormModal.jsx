@@ -169,7 +169,7 @@ export default function VehicleFormModal({ open, onClose, vehicle = null, onSave
     <div className="fixed inset-0 z-[60] flex items-start justify-center p-4 pt-[8vh] bg-black/50">
       <form
         onSubmit={submit}
-        className="w-full max-w-lg rounded-2xl overflow-hidden flex flex-col"
+        className="w-full max-w-3xl rounded-2xl overflow-hidden flex flex-col"
         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', maxHeight: '84vh' }}
         onKeyDown={(e) => { if (e.key === 'Escape') onClose?.() }}
       >
@@ -180,10 +180,10 @@ export default function VehicleFormModal({ open, onClose, vehicle = null, onSave
               <Truck size={15} style={{ color: STOS_ACCENT }} />
             </span>
             <div>
-              <h2 className="font-bold" style={{ color: 'var(--text-h)', fontSize: 15 }}>
+              <h2 className="font-bold" style={{ color: 'var(--text-h)', fontSize: 17 }}>
                 {editing ? 'Edit vehicle' : 'Add a vehicle'}
               </h2>
-              <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              <p className="text-[13px]" style={{ color: 'var(--text-muted)' }}>
                 {editing ? vehicle.registration_number : 'The static facts. Everything else attaches to this record.'}
               </p>
             </div>
@@ -334,7 +334,7 @@ export default function VehicleFormModal({ open, onClose, vehicle = null, onSave
                   placeholder="GS-0014" className={inputClass} style={inputStyle} />
               </Field>
 
-              <p className="flex items-start gap-1.5 text-[11px] -mt-1" style={{ color: 'var(--text-muted)' }}>
+              <p className="flex items-start gap-1.5 text-[13px] -mt-1" style={{ color: 'var(--text-muted)' }}>
                 <Info size={12} className="shrink-0 mt-0.5" />
                 A reefer reports body temperature and genset state, and raises an excursion when the genset
                 is off above the set point.
@@ -345,13 +345,13 @@ export default function VehicleFormModal({ open, onClose, vehicle = null, onSave
           {/* The five statutory papers. The VERDICT is derived from these dates
               by the server and is deliberately not typeable — see the note. */}
           <div>
-            <label className="text-[11px] font-bold block mb-1" style={{ color: 'var(--text-muted)' }}>
+            <label className="text-[13px] font-semibold block mb-1.5" style={{ color: 'var(--text-h)' }}>
               Document expiry dates
             </label>
             <div className="grid grid-cols-2 gap-2">
               {EXPIRY_DOCUMENTS.map(({ field, label }) => (
                 <div key={field}>
-                  <label htmlFor={`stos-${field}`} className="text-[10px] block mb-0.5" style={{ color: 'var(--text-muted)' }}>
+                  <label htmlFor={`stos-${field}`} className="text-[12px] block mb-0.5" style={{ color: 'var(--text-muted)' }}>
                     {label}
                   </label>
                   <input id={`stos-${field}`} type="date" value={form[field]}
@@ -359,7 +359,7 @@ export default function VehicleFormModal({ open, onClose, vehicle = null, onSave
                 </div>
               ))}
             </div>
-            <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+            <p className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>
               Compliance status is calculated from these — a lapsed document blocks dispatch automatically, and is
               rechecked nightly. A blank date reads as &ldquo;not recorded&rdquo;, which does not block on its own.
             </p>
@@ -384,7 +384,7 @@ export default function VehicleFormModal({ open, onClose, vehicle = null, onSave
 
           {/* Say why a field they might expect is missing, rather than leaving
               them hunting for it. */}
-          <p className="flex items-start gap-1.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          <p className="flex items-start gap-1.5 text-[13px]" style={{ color: 'var(--text-muted)' }}>
             <Info size={12} className="shrink-0 mt-0.5" />
             Operational status is not set here — a vehicle comes off the road when a job card is opened and goes
             back on when it is closed and released.
@@ -415,16 +415,16 @@ export default function VehicleFormModal({ open, onClose, vehicle = null, onSave
   )
 }
 
-const inputClass = 'w-full text-xs rounded-xl px-3 py-2'
+const inputClass = 'w-full text-sm rounded-xl px-3 py-2'
 const inputStyle = { background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text)' }
 
 function Field({ label, hint, error, children }) {
   return (
     <div>
-      <label className="text-[11px] font-bold block mb-1" style={{ color: 'var(--text-muted)' }}>{label}</label>
+      <label className="text-[13px] font-semibold block mb-1.5" style={{ color: 'var(--text-h)' }}>{label}</label>
       {children}
-      {error && <p className="text-[10px] mt-1 font-semibold" style={{ color: 'var(--color-danger-500)' }}>{error}</p>}
-      {hint && !error && <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>{hint}</p>}
+      {error && <p className="text-[12px] mt-1 font-semibold" style={{ color: 'var(--color-danger-500)' }}>{error}</p>}
+      {hint && !error && <p className="text-[12px] mt-1" style={{ color: 'var(--text-muted)' }}>{hint}</p>}
     </div>
   )
 }

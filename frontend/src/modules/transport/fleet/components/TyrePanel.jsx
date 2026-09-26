@@ -330,7 +330,7 @@ function Dialog({ title, children, onClose, onSubmit, busy, err }) {
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 pt-[14vh] bg-black/50">
       <form onSubmit={onSubmit}
-        className="w-full max-w-sm rounded-2xl overflow-hidden"
+        className="w-full max-w-lg rounded-2xl overflow-hidden"
         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
         onKeyDown={(e) => { if (e.key === 'Escape') onClose?.() }}>
         <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>

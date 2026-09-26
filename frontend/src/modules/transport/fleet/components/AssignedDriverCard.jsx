@@ -161,7 +161,7 @@ function DriverPicker({ open, onClose, vehicle, onChanged }) {
 
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 pt-[10vh] bg-black/50">
-      <div className="w-full max-w-md rounded-2xl overflow-hidden flex flex-col"
+      <div className="w-full max-w-3xl rounded-2xl overflow-hidden flex flex-col"
         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', maxHeight: '76vh' }}
         onKeyDown={(e) => { if (e.key === 'Escape') onClose?.() }}>
 

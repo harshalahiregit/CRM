@@ -327,13 +327,13 @@ function AddDriverDialog({ onClose, onAdded }) {
 
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 pt-[8vh] bg-black/50">
-      <div className="w-full max-w-lg rounded-2xl overflow-hidden flex flex-col"
+      <div className="w-full max-w-3xl rounded-2xl overflow-hidden flex flex-col"
         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', maxHeight: '84vh' }}
         onKeyDown={(e) => { if (e.key === 'Escape') onClose?.() }}>
-        <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
+        <div className="flex items-start justify-between gap-3 px-6 pt-5 pb-4" style={{ borderBottom: '1px solid var(--border)' }}>
           <div>
-            <h2 className="font-bold" style={{ color: 'var(--text-h)', fontSize: 14 }}>Add a driver</h2>
-            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            <h2 className="font-bold" style={{ color: 'var(--text-h)', fontSize: 17 }}>Add a driver</h2>
+            <p className="text-[12.5px] mt-0.5 leading-snug" style={{ color: 'var(--text-muted)' }}>
               For your own drivers. People who are already a customer or vendor contact appear on the board automatically.
             </p>
           </div>
@@ -343,7 +343,7 @@ function AddDriverDialog({ onClose, onAdded }) {
         </div>
 
         <form onSubmit={(e) => { e.preventDefault(); setErr(''); if (form.name.trim()) add.mutate() }}>
-          <div className="px-5 py-4 space-y-3">
+          <div className="px-6 py-5 space-y-4">
             <Field label="Full name">
               <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder="Ramesh Kumar" autoFocus className={inputClass} style={inputStyle} />
@@ -377,7 +377,7 @@ function AddDriverDialog({ onClose, onAdded }) {
             )}
           </div>
 
-          <div className="flex items-center justify-end gap-2 px-5 py-3"
+          <div className="flex items-center justify-end gap-2 px-6 py-4"
             style={{ background: 'var(--bg-input)', borderTop: '1px solid var(--border)' }}>
             <button type="button" onClick={onClose} className="text-xs font-semibold px-4 py-2 rounded-xl"
               style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
@@ -441,10 +441,10 @@ function LicenceDialog({ driver, onClose }) {
         className="w-full max-w-3xl rounded-2xl overflow-hidden flex flex-col"
         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', maxHeight: '84vh' }}
         onKeyDown={(e) => { if (e.key === 'Escape') onClose?.() }}>
-        <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
+        <div className="flex items-start justify-between gap-3 px-6 pt-5 pb-4" style={{ borderBottom: '1px solid var(--border)' }}>
           <div>
-            <h2 className="font-bold" style={{ color: 'var(--text-h)', fontSize: 14 }}>{driver.name}</h2>
-            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            <h2 className="font-bold" style={{ color: 'var(--text-h)', fontSize: 17 }}>{driver.name}</h2>
+            <p className="text-[12.5px] mt-0.5 leading-snug" style={{ color: 'var(--text-muted)' }}>
               {driver.employer || 'No employer'} · {driver.directory}
             </p>
           </div>
@@ -454,7 +454,7 @@ function LicenceDialog({ driver, onClose }) {
         </div>
 
         <form onSubmit={(e) => { e.preventDefault(); setErr(''); save.mutate() }} className="overflow-y-auto">
-        <div className="px-5 py-4 space-y-3">
+        <div className="px-6 py-5 space-y-4">
           <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
             Name, phone and employer come from the directory and are edited there. Only the licence and availability
             below belong to Transport.
@@ -495,7 +495,7 @@ function LicenceDialog({ driver, onClose }) {
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 px-5 py-3"
+        <div className="flex items-center justify-end gap-2 px-6 py-4"
           style={{ background: 'var(--bg-input)', borderTop: '1px solid var(--border)' }}>
           <button type="button" onClick={onClose} className="text-xs font-semibold px-4 py-2 rounded-xl"
             style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}>Cancel</button>
@@ -519,15 +519,15 @@ function LicenceDialog({ driver, onClose }) {
   )
 }
 
-const inputClass = 'w-full text-xs rounded-xl px-3 py-2'
+const inputClass = 'w-full text-sm rounded-xl px-3.5 py-2.5'
 const inputStyle = { background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text)' }
 
 function Field({ label, hint, children }) {
   return (
     <div>
-      <label className="text-[11px] font-bold block mb-1" style={{ color: 'var(--text-muted)' }}>{label}</label>
+      <label className="text-[13px] font-semibold block mb-1.5" style={{ color: 'var(--text-h)' }}>{label}</label>
       {children}
-      {hint && <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>{hint}</p>}
+      {hint && <p className="text-[12px] mt-1.5 leading-snug" style={{ color: 'var(--text-muted)' }}>{hint}</p>}
     </div>
   )
 }
