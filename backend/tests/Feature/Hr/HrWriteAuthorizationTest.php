@@ -324,9 +324,26 @@ class HrWriteAuthorizationTest extends TestCase
     {
         Sanctum::actingAs($this->user($role, "portal-{$role}@writes.test", 'hr_executive'));
 
-        $this->putJson("/api/hr/employees/{$this->someoneElse->id}/detail",
-            ['bank_account_number' => '123'])->assertForbidden();
-        $this->postJson('/api/hr/loans', ['employee_id' => $this->someoneElse->id])->assertForbidden();
+        // Refused, by whichever layer gets there first.
+        //
+        // This asserted 403 exactly. Portal identities used to reach the
+        // authorization check because ScopeResolver handed them GLOBAL scope —
+        // they had no staff role, and "no role means global" was written for
+        // colleagues who predate the roles table. They now resolve to OWN, so the
+        // employee is out of their scope and assertTenant answers 404 first,
+        // which that controller documents as deliberate: "out of scope should
+        // look like not there".
+        //
+        // 404 refuses at least as hard as 403 and leaks less, so the assertion
+        // accepts either. What must not move is the line below it: nothing is
+        // written. That is what this test is actually for.
+        foreach ([
+            $this->putJson("/api/hr/employees/{$this->someoneElse->id}/detail", ['bank_account_number' => '123']),
+            $this->postJson('/api/hr/loans', ['employee_id' => $this->someoneElse->id]),
+        ] as $response) {
+            $this->assertContains($response->status(), [403, 404],
+                "A {$role} account must be refused; got {$response->status()}.");
+        }
 
         $this->assertDatabaseMissing('hr_employee_details', ['bank_account_number' => '123']);
     }
