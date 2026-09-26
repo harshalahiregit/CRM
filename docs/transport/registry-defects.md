@@ -4503,6 +4503,45 @@ ledger on the row id was right; applying it without checking the value was the g
 
 ---
 
+## D-203 — the masters move still flattens FINANCED and CONTRACTED on a fresh migrate
+
+**Raised:** 2026-09-26, completing T-03. **Found: P2. Enforcement: P1's file.**
+
+### Measured
+
+`move_transport_masters_into_fleet` (2027_01_02) maps legacy ownership onto Fleet's:
+
+```
+'FINANCED'   => 'owned',      // the financier vanishes
+'CONTRACTED' => 'attached',   // a contract becomes an owner-driver
+```
+
+It was correct when written — the Fleet `vehicles` table only had four ownership values and could
+not store the other two. T-03 has now put all six of §10 on the table, so the reason for the
+flattening is gone, but the mapping still runs: on any fresh `migrate`, a legacy FINANCED truck
+still lands as `owned` and a CONTRACTED one as `attached`. §10 lists ownership as what drives EMI,
+asset cost and profitability, and each reads the distinction this destroys.
+
+### Fixed on the Fleet side, not here
+
+`Vehicle::OWNERSHIPS` now holds all six (T-03), migration `2027_01_18` uppercases and remaps the
+live rows, and onboarding accepts all six. What remains is one file: `mapOwnership` should map
+`FINANCED => 'FINANCED'` and `CONTRACTED => 'CONTRACTED'` (and uppercase the rest) now that the
+target can hold them. That is P1's masters move, so it is his change — messaged, not edited. Rows
+already flattened on installs that have run the move cannot be recovered; this only stops it
+happening again.
+
+### Also closed in the same pass — for the record
+
+- **T-03** — ownership vocabulary completed and uppercased; `market` folded into OTHER (never in
+  §10, never used, and spot hire is not a standing contract).
+- **D-141** (P1's finding) — `vehicles.registration_normalized` is now derived in
+  `Vehicle::booted()`, out of `$fillable`, with `VehicleService` delegating to the one
+  `Vehicle::normaliseRegistration()`. The plate search workaround (their D-153) can come out once
+  this is on master.
+
+---
+
 ## D-127 — the client portal table has no pagination, and one customer already has 35 rows
 
 **Raised:** 2026-09-22, walking the Shipments screen. **P3's component** (`ClientPortalRecords`).
@@ -5363,7 +5402,7 @@ Retiring it would have removed the only statement in the codebase that a licence
 
 **A guard disappearing in a cleanup is worse than a guard failing**, because nothing goes red.
 
-### Not fixed here
+### Not fixed here (P1)
 
 It is his master, his request layer and his index, and a unique index cannot go on until the
 existing rows are checked — the same shape as D-131. Our test stays **red and in place** until he
@@ -5371,6 +5410,48 @@ answers: a red test naming a real missing guard is worth more than a green suite
 the rule.
 
 See `LIST-tests-proposed-for-retirement.md` for the six that do retire and what takes over each.
+
+### FIXED, 2026-09-25 — P2
+
+Measured first, on the tree as pushed: `PUT /v1/fleet/drivers/{source}/{id}` accepted a licence
+another driver already held and answered **200**. Confirmed by running the new tests against that
+code: `Failed asserting that 200 is identical to 422`.
+
+**The column was already there, which is worse than it being absent.** `2027_01_02` brought
+`licence_normalized` across with the move so the legacy value would survive, and nothing has
+written it since — every save through Fleet set `licence_number` and left it alone. A column that
+looks like a guard, is not one, and drifts away from the value it claims to describe.
+
+Three parts, because one would not hold:
+
+| Part | Where | What it catches |
+|---|---|---|
+| Unique index `(company_id, licence_normalized)` | `2027_01_16_000001` | every writer, including seeders, repair scripts and tinker |
+| Derived on save | `DriverProfile::booted()` | the normalised value can no longer drift from the number |
+| A named refusal | `DriverService::refuseADuplicateLicence()` | the person typing it reads *who* already holds it |
+
+`licence_normalized` is deliberately **out of `$fillable`**: a caller setting it by hand could put
+a value under the index that no licence number normalises to, which is the one way to defeat the
+guard from inside the model.
+
+**Decisions worth recording.** NULL is not claimed — many drivers may have no licence recorded,
+which is a normal state, and both engines allow many NULLs under a unique index; a blank
+normalises to NULL rather than `''` so blanks do not collide. The index is workspace-scoped,
+matching every other rule in the module: two companies on one installation may both employ the
+same person. And the migration **refuses and names the profiles** if duplicates already exist
+rather than picking a winner — two profiles with one licence is two records for one human being,
+and which is real is a question about people. MySQL would refuse anyway, with a message naming a
+value and no person.
+
+**Not carried over:** `driver_code` and `hr_employee_id` uniqueness. Both columns exist on
+`driver_profiles` only as migration residue — nothing in Fleet writes or reads either, because a
+person is resolved through `DriverDirectory`. An index on a column no code maintains is the exact
+failure this defect is about, so it waits until something uses them.
+
+Tests: 5 in `DriverDirectoryTest`, including the one asserting the **database** refuses it with the
+service bypassed entirely. P1's `duplicate_licence_and_duplicate_employee_link_are_rejected` stays
+red — it drives the retired legacy endpoint, and it is his to retire now that Fleet enforces the
+rule it was holding open.
 
 ---
 
@@ -5417,11 +5498,52 @@ records that there is no foreign key to catch it either. The two defects meet he
 Group 3's six retirements each name the Fleet test taking over, and each was checked. These three
 were not, and the difference was one `grep`. Added to the pre-merge checklist.
 
-### Not fixed here
+### Not fixed here (P1)
 
 Fleet's delete is his endpoint, and what it should do about a live assignment is his call: refuse,
 or release first and say so. Either needs Fleet to read something it currently never reads, which
 is a boundary decision, not a patch.
+
+### FIXED, 2026-09-25 — P2
+
+**The call: refuse, and name the trip.** Release-first was rejected. Retiring a truck and releasing
+it from a journey are two decisions, and a screen that quietly does the second on the way to the
+first takes a running trip's vehicle away from the dispatcher who is watching it. The refusal
+names the trip, which puts the release one click away for whoever should be making that call.
+
+**The boundary.** `Fleet\Integration\TripCommitmentReader` — the third file in the package that
+already holds this seam, beside `TripTimelinePublisher` and `TransportFleetResourceGateway`. A
+query in the service would have put Ops' schema inside Fleet's business logic, where the next
+change to `trip_assignments` breaks a retirement screen nobody connected to it.
+
+**What "committed" means is Ops', not ours.** `TripAssignment::active()` and nothing else.
+Deliberately not a list of trip statuses chosen in Fleet: picking which statuses still hold a
+vehicle would be inventing an availability rule here, and Ops already carries that meaning in one
+place, releases it explicitly, and enforces it under BR-P0-003 — `ResourceCommitmentService` reads
+it exactly this way and says so in its own header.
+
+**Fleet's own `ON_TRIP` status is not used as the test.** It is written by the dispatch gateway,
+which is explicitly allowed to fail without stopping a departure, so a truck can be rolling with
+the status not yet flipped. Asking the assignment asks the thing that is authoritative.
+
+**The driver half.** Fleet has no driver delete, so the equivalent is the status change that takes
+somebody out of service — SUSPENDED, ON_LEAVE or INACTIVE while a trip holds them. Their paperwork
+is **not** blocked: a licence renewal arriving while the driver is on the road is ordinary, and
+refusing it would mean the expiry that blocks the next dispatch could not be cleared until they
+got back.
+
+**It degrades.** Fleet runs as its own application with no Ops module around it — the driver
+directory already has a standalone mode for the same reason. No `trip_assignments` table means
+nothing is committed, which is a true answer rather than a crash on every retirement. A read that
+fails for any other reason is logged and answered the same way: a retirement is a deliberate act
+by a person at a screen, and blocking every one of them because a read failed is a worse failure
+than the one being guarded against.
+
+Tests: 6 in `RetiringAnAssetInUseTest`, making the same three claims P1's red tests make. Verified
+against the unfixed code: **3 of the 6 fail**, and they are exactly the three that assert a
+refusal. P1's three in `TransportMasterAllocationAuditTest` stay red — they drive the retired
+legacy endpoints, and they are his to retire now that the rule they were holding open is enforced
+where the assets live.
 
 ---
 

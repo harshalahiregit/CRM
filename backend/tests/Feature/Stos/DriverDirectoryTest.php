@@ -85,7 +85,15 @@ class DriverDirectoryTest extends TestCase
 
         // Nobody imported them, nobody re-typed them.
         $this->assertSame(40, $data['counts']['total']);
-        $this->assertSame('CrmDriverDirectory', $data['source']);
+
+        // D-144(i) — this asserted `CrmDriverDirectory`, which is the binding
+        // Person 1's D-134 fix deliberately replaced: after the D-62 move both
+        // the CRM directory and the STOS register hold real people, and
+        // choosing one hid the other. He left the test red rather than edit my
+        // file, which is the right way round. The claim the test actually
+        // makes — forty people entered in the CRM appear here with nobody
+        // re-typing them — is unchanged, and is asserted below.
+        $this->assertSame('CompositeDriverDirectory', $data['source']);
 
         $first = collect($data['drivers'])->firstWhere('name', 'Driver 01');
         $this->assertSame('Sharma Transport Pvt Ltd', $first['employer']);
@@ -204,6 +212,49 @@ class DriverDirectoryTest extends TestCase
             ->assertOk()->assertJsonPath('data.licence.state', 'expiring');
     }
 
+    public function test_a_licence_that_has_not_started_yet_is_not_valid(): void
+    {
+        // D-151(i) — licence_valid_from was ignored, so a licence dated to begin
+        // next week read as valid on an unexpired expiry, and the driver was
+        // dispatchable on a licence that had not taken effect. The old Transport
+        // check refused it.
+        $this->vendorWithWorkers(1);
+        $url = '/api/v1/fleet/drivers/crm_tpv_worker/1';
+
+        // A real, unexpired licence: on expiry alone this is 'valid'.
+        $this->actingAs($this->user())->putJson($url, ['licence_expiry' => now()->addYear()->toDateString()])
+            ->assertOk()->assertJsonPath('data.licence.state', 'valid');
+
+        // But it does not take effect until next week. No Fleet write path sets
+        // this column yet (it came across with the move), so set it directly.
+        DriverProfile::query()->update(['licence_valid_from' => now()->addWeek()->toDateString()]);
+
+        $drivers = $this->actingAs($this->user())->getJson('/api/v1/fleet/drivers')->json('data.drivers');
+        $this->assertSame('not_yet_valid', $drivers[0]['licence']['state']);
+
+        // And it blocks: the driver is excluded from eligibility, naming why.
+        $eligibility = $this->actingAs($this->user())->getJson('/api/v1/fleet/drivers/eligible')->json('data');
+        $this->assertEmpty($eligibility['eligible']);
+        $codes = collect($eligibility['excluded'][0]['blockers'])->pluck('code');
+        $this->assertContains('driver_license_not_yet_valid', $codes);
+    }
+
+    public function test_a_licence_already_in_effect_is_judged_on_its_expiry(): void
+    {
+        // The other side: a start date in the PAST must not change anything —
+        // the verdict falls through to the ordinary expiry arithmetic.
+        $this->vendorWithWorkers(1);
+        $url = '/api/v1/fleet/drivers/crm_tpv_worker/1';
+
+        $this->actingAs($this->user())->putJson($url, ['licence_expiry' => now()->addYear()->toDateString()])
+            ->assertOk()->assertJsonPath('data.licence.state', 'valid');
+
+        DriverProfile::query()->update(['licence_valid_from' => now()->subYear()->toDateString()]);
+
+        $drivers = $this->actingAs($this->user())->getJson('/api/v1/fleet/drivers')->json('data.drivers');
+        $this->assertSame('valid', $drivers[0]['licence']['state']);
+    }
+
     public function test_an_overlay_cannot_be_written_for_somebody_who_does_not_exist(): void
     {
         $this->actingAs($this->user())
@@ -273,6 +324,105 @@ class DriverDirectoryTest extends TestCase
         // No exception, and the description tells the truth about what is left.
         $this->assertIsArray($directory->people(self::COMPANY));
         $this->assertStringNotContainsString('TPV workforce', $directory->describe());
+    }
+
+    /* ── D-145: one licence, one driver ─────────────────────────── */
+
+    public function test_a_second_driver_cannot_be_given_a_licence_another_driver_holds(): void
+    {
+        // Two real people in the directory, as a vendor would supply them.
+        $this->vendorWithWorkers(2);
+
+        $this->actingAs($this->user())
+            ->putJson('/api/v1/fleet/drivers/crm_tpv_worker/1', ['licence_number' => 'RJ14 20110012345'])
+            ->assertOk();
+
+        // The same licence written differently is the SAME licence — this is
+        // why the check normalises rather than comparing the typed strings.
+        $refusal = $this->actingAs($this->user())
+            ->putJson('/api/v1/fleet/drivers/crm_tpv_worker/2', ['licence_number' => 'rj-14-2011-0012345'])
+            ->assertStatus(422);
+
+        // The refusal names the person who holds it, not a column.
+        $this->assertStringContainsString('Driver 01', $refusal->json('message'));
+
+        $this->assertSame(1, DriverProfile::whereNotNull('licence_number')->count());
+    }
+
+    public function test_a_driver_may_have_their_own_licence_corrected(): void
+    {
+        // The guard must not fire on the holder themselves, or nobody could
+        // ever fix a typo in a licence number they already saved.
+        $this->vendorWithWorkers(1);
+
+        $this->actingAs($this->user())
+            ->putJson('/api/v1/fleet/drivers/crm_tpv_worker/1', ['licence_number' => 'RJ1420110012345'])
+            ->assertOk();
+
+        $this->actingAs($this->user())
+            ->putJson('/api/v1/fleet/drivers/crm_tpv_worker/1', [
+                'licence_number' => 'RJ1420110012345', 'licence_class' => 'HMV',
+            ])->assertOk();
+
+        $this->assertSame('HMV', DriverProfile::first()->licence_class);
+    }
+
+    public function test_many_drivers_may_have_no_licence_recorded_yet(): void
+    {
+        // "Not recorded yet" is a normal state — a profile exists to hold a
+        // medical date or a vehicle assignment before anybody types a licence.
+        // If blanks collided under the unique index, the second save would
+        // fail, and the register would be unusable for exactly the drivers
+        // whose paperwork is still being chased.
+        $this->vendorWithWorkers(3);
+
+        foreach ([1, 2, 3] as $person) {
+            $this->actingAs($this->user())
+                ->putJson('/api/v1/fleet/drivers/crm_tpv_worker/'.$person, ['status' => DriverProfile::AVAILABLE])
+                ->assertOk();
+        }
+
+        $this->assertSame(3, DriverProfile::count());
+        $this->assertSame(3, DriverProfile::whereNull('licence_normalized')->count());
+    }
+
+    public function test_the_database_refuses_a_duplicate_licence_even_without_the_service(): void
+    {
+        // The service gives the readable sentence; the index is what actually
+        // holds the rule. A seeder, a repair script or a tinker session does
+        // not go through the service, and D-145 happened because the only
+        // enforcement lived on a table that became read-only.
+        $this->vendorWithWorkers(2);
+
+        DriverProfile::create([
+            'company_id' => self::COMPANY, 'source' => 'crm_tpv_worker', 'source_id' => 1,
+            'licence_number' => 'RJ1420110012345', 'status' => DriverProfile::AVAILABLE,
+        ]);
+
+        $this->expectException(\Illuminate\Database\QueryException::class);
+
+        DriverProfile::create([
+            'company_id' => self::COMPANY, 'source' => 'crm_tpv_worker', 'source_id' => 2,
+            'licence_number' => 'rj-14-2011-0012345', 'status' => DriverProfile::AVAILABLE,
+        ]);
+    }
+
+    public function test_two_workspaces_may_each_record_the_same_person(): void
+    {
+        // The index is scoped to the workspace, matching every other rule in
+        // this module: two companies on one installation may legitimately both
+        // employ the same driver, and neither may see the other's register.
+        $this->vendorWithWorkers(1, self::COMPANY);
+        $this->vendorWithWorkers(1, self::OTHER);
+
+        foreach ([self::COMPANY, self::OTHER] as $company) {
+            $this->actingAs($this->user('staff', $company))
+                ->putJson('/api/v1/fleet/drivers/crm_tpv_worker/'.($company === self::COMPANY ? 1 : 2), [
+                    'licence_number' => 'RJ1420110012345',
+                ])->assertOk();
+        }
+
+        $this->assertSame(2, DriverProfile::withoutGlobalScopes()->whereNotNull('licence_number')->count());
     }
 
     public function test_a_portal_login_cannot_read_the_driver_directory(): void

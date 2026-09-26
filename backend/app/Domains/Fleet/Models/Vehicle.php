@@ -24,7 +24,50 @@ class Vehicle extends Model
     protected $table = 'vehicles';
 
     public const TYPES      = ['truck', 'trailer', 'tipper', 'tanker', 'reefer', 'lcv', 'other'];
-    public const OWNERSHIPS = ['owned', 'leased', 'attached', 'market'];
+
+    /**
+     * T-03 — ownership, the full vocabulary of STOS-FLEET §10, UPPERCASE.
+     *
+     * The model shipped with four values — owned/leased/attached/market — and
+     * §10 names six: Owned, Financed, Leased, Contracted, Attached, Other.
+     * Two were simply missing, and their absence was not harmless: the masters
+     * move (2027_01_02) had to FLATTEN what it could not store — FINANCED became
+     * owned and CONTRACTED became attached — so a financed truck arrived looking
+     * paid-for and a contracted one looking like an owner-driver's. §10 lists
+     * ownership as what drives "asset cost; EMI; profitability; utilization",
+     * and each of those reads the distinction the flattening destroyed.
+     *
+     * `market` is gone, and it folds into OTHER, not CONTRACTED. It was never
+     * in §10 — it was the model's own invention — and no row has ever held it
+     * (measured). Spot-market hire is a one-off, not a standing contract, so
+     * calling it CONTRACTED would assert an agreement that does not exist;
+     * OTHER, §10's own catch-all, is the honest home for "an arrangement
+     * outside the five named ones".
+     *
+     * UPPERCASE because it is a database enum and 12.S11 rules those uppercase,
+     * exactly as vehicle status and driver status already are. The API still
+     * speaks the lowercase code through the label map.
+     */
+    public const OWNERSHIP_OWNED      = 'OWNED';
+    public const OWNERSHIP_FINANCED   = 'FINANCED';
+    public const OWNERSHIP_LEASED     = 'LEASED';
+    public const OWNERSHIP_CONTRACTED = 'CONTRACTED';
+    public const OWNERSHIP_ATTACHED   = 'ATTACHED';
+    public const OWNERSHIP_OTHER      = 'OTHER';
+
+    public const OWNERSHIPS = [
+        self::OWNERSHIP_OWNED, self::OWNERSHIP_FINANCED, self::OWNERSHIP_LEASED,
+        self::OWNERSHIP_CONTRACTED, self::OWNERSHIP_ATTACHED, self::OWNERSHIP_OTHER,
+    ];
+
+    public const OWNERSHIP_LABELS = [
+        self::OWNERSHIP_OWNED      => 'Owned',
+        self::OWNERSHIP_FINANCED   => 'Financed',
+        self::OWNERSHIP_LEASED     => 'Leased',
+        self::OWNERSHIP_CONTRACTED => 'Contracted',
+        self::OWNERSHIP_ATTACHED   => 'Attached',
+        self::OWNERSHIP_OTHER      => 'Other',
+    ];
 
     /**
      * T-01 — the vocabulary the D-62 union migration documents.
@@ -135,6 +178,40 @@ class Vehicle extends Model
      */
     public const MANUALLY_SETTABLE = [self::STATUS_AVAILABLE, self::STATUS_IDLE, self::STATUS_RETIRED];
     public const COMPLIANCE = ['compliant', 'expiring', 'expired', 'blocked'];
+
+    /**
+     * D-141 — the normalised plate is derived, never supplied. Same disease
+     * P1 found in the licence: `registration_normalized` was added by the D-62
+     * union with an index over it, but nothing wrote it on save, so it sat
+     * empty and the plate search had to normalise every row at query time to
+     * work around it (their D-153). A column shaped like a guard that is not
+     * one.
+     *
+     * Written on every save so the index always sees the same shape, whichever
+     * path wrote the row — the service, a seeder, the masters move or tinker.
+     * `registration_normalized` is out of `$fillable` for the same reason
+     * `licence_normalized` is on the driver: a caller setting it by hand could
+     * put a value under the index that no plate normalises to.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (self $vehicle) {
+            $vehicle->registration_normalized = filled($vehicle->registration_number)
+                ? self::normaliseRegistration((string) $vehicle->registration_number)
+                : null;
+        });
+    }
+
+    /**
+     * One plate, one form. "MH 12 AB 1234", "MH-12-AB-1234" and "mh12ab1234"
+     * are one truck, so the unique index and the search mean something. Shared
+     * so the model and `VehicleService` cannot drift to two definitions of
+     * "the same plate".
+     */
+    public static function normaliseRegistration(string $plate): string
+    {
+        return preg_replace('/[^A-Z0-9]/', '', strtoupper(trim($plate))) ?? '';
+    }
 
     protected $fillable = [
         'company_id',

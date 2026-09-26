@@ -296,7 +296,7 @@ class FleetContractsAndAssetsTest extends TestCase
     {
         $response = $this->actingAs($this->user())->postJson('/api/v1/fleet/vehicles', [
             'registration_number' => 'MH12ZZ0001',
-            'vehicle_type' => 'truck', 'ownership_type' => 'owned',
+            'vehicle_type' => 'truck', 'ownership_type' => 'OWNED',
             'puc_expiry' => now()->subDay()->toDateString(),
             'compliance_status' => 'compliant',        // an attempt to override
         ])->assertStatus(201);
