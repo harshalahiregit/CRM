@@ -15,7 +15,10 @@
     },
     "android": {
       "package": "com.sangoe.driver",
-      "permissions": ["CAMERA"],
+      "permissions": [
+        "CAMERA",
+        "READ_MEDIA_IMAGES"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#0b1220",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -24,10 +27,19 @@
       }
     },
     "plugins": [
-      ["expo-image-picker", { "cameraPermission": "Used to photograph the signed proof of delivery." }]
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Used to photograph the signed proof of delivery.",
+          "photosPermission": "Used to attach a photo of the signed proof of delivery."
+        }
+      ]
     ],
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "updates": {
+      "enabled": false
     }
   }
 }

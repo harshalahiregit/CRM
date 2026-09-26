@@ -3,16 +3,17 @@ import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, ScrollView,
 import { theme } from '../theme'
 import { api } from '../api'
 import { setToken, setUser, getBaseUrl, setBaseUrl } from '../storage'
+import { DEFAULT_SERVER } from '../config'
 
-export default function LoginScreen({ onLoggedIn }) {
+export default function LoginScreen({ onLoggedIn, onRegister }) {
   const [server, setServer] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
-  // Remember the server address between sessions.
-  useEffect(() => { getBaseUrl().then((u) => u && setServer(u)) }, [])
+  // Pre-fill the live server; remember a custom one if the driver set it.
+  useEffect(() => { getBaseUrl().then((u) => setServer(u || DEFAULT_SERVER)) }, [])
 
   const submit = async () => {
     setErr('')
@@ -57,6 +58,12 @@ export default function LoginScreen({ onLoggedIn }) {
         <TouchableOpacity onPress={submit} disabled={busy} activeOpacity={0.85}
           style={{ backgroundColor: theme.accent, borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginTop: 28, opacity: busy ? 0.6 : 1 }}>
           {busy ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontSize: 16, fontWeight: '800' }}>Sign in</Text>}
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={onRegister} style={{ alignItems: 'center', marginTop: 20 }}>
+          <Text style={{ color: theme.textMuted, fontSize: 14.5 }}>
+            New driver?  <Text style={{ color: theme.accent, fontWeight: '700' }}>Register</Text>
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>

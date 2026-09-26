@@ -3,6 +3,7 @@ import { View, ActivityIndicator, StatusBar } from 'react-native'
 import { theme } from './src/theme'
 import { getToken, getUser } from './src/storage'
 import LoginScreen from './src/screens/LoginScreen'
+import RegisterScreen from './src/screens/RegisterScreen'
 import TripsScreen from './src/screens/TripsScreen'
 import TripDetailScreen from './src/screens/TripDetailScreen'
 
@@ -31,7 +32,13 @@ export default function App() {
       )}
 
       {screen === 'login' && (
-        <LoginScreen onLoggedIn={(u) => { setUser(u); setScreen('trips') }} />
+        <LoginScreen
+          onLoggedIn={(u) => { setUser(u); setScreen('trips') }}
+          onRegister={() => setScreen('register')} />
+      )}
+
+      {screen === 'register' && (
+        <RegisterScreen onDone={() => setScreen('login')} onBack={() => setScreen('login')} />
       )}
 
       {screen === 'trips' && (

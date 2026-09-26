@@ -27,7 +27,7 @@ async function request(path, { method = 'GET', body, isForm = false } = {}) {
   try {
     res = await fetch(`${base}/api${path}`, { method, headers, body: payload })
   } catch (networkError) {
-    const e = new Error('Could not reach the server. Check the address and that you are on the same network.')
+    const e = new Error('Could not reach the server. Check the server address and your internet connection.')
     e.status = 0
     throw e
   }
@@ -49,6 +49,10 @@ async function request(path, { method = 'GET', body, isForm = false } = {}) {
 
 export const api = {
   login: (email, password) => request('/auth/login', { method: 'POST', body: { email, password } }),
+
+  // Self-registration — files a request the office must approve before the
+  // driver can sign in. Public, no token needed.
+  register: (data) => request('/driver/register', { method: 'POST', body: data }),
 
   // Trips. NOTE: /transport/trips is the office list today; a driver-scoped
   // "my trips" endpoint is Dev 1's to add (see the message in docs). For now
