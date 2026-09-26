@@ -312,9 +312,12 @@ class PretripSchemaPolicyTest extends TestCase
         );
 
         $this->assertCount(1, $blockers);
-        $this->assertStringContainsString('Driver documents valid', $blockers[0]);
-        $this->assertStringContainsString('Licence expired', $blockers[0]);
-        $this->assertStringContainsString('assign a compliant driver', $blockers[0]);
+        $this->assertStringContainsString('Driver documents valid', $blockers[0]['why']);
+        $this->assertStringContainsString('Licence expired', $blockers[0]['why']);
+        // D-150 — the same shape as an eligibility blocker, so one reader serves both.
+        $this->assertSame(PretripCheckKey::DRIVER_DOCUMENTS, $blockers[0]['code']);
+        $this->assertArrayHasKey('owner', $blockers[0]);
+        $this->assertStringContainsString('assign a compliant driver', $blockers[0]['why']);
     }
 
     public function test_readiness_never_returns_the_unreachable_status(): void

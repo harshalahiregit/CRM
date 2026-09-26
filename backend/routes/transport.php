@@ -307,6 +307,22 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('transport')->gr
      * window in which NOTHING in the system checks. We are not discovering
      * someone else's gap; our own ruling is what would create it. Held until
      * P2 adds the guard or rules that he does not want it.
+     *
+     * ── WHEN THIS HOLD IS LIFTED, FOUR TESTS MOVE WITH IT ────────────────
+     * A temporary decision is quietly becoming an assumption in the suite. The
+     * absent route answers **405**, and four security tests now expect that
+     * where they used to expect 403, 401 or 201:
+     *
+     *   TransportMasterApiTest::a_client_cannot_reach_the_master_surface_at_all
+     *   TransportMasterApiTest::an_unauthenticated_request_is_refused
+     *   TransportMasterApiTest::only_owner_or_admin_may_delete_a_master_record
+     *   TransportMasterApiTest::a_tenant_cannot_read_or_write_another_tenants…
+     *
+     * When D-145 is answered and this route is registered with the ordinary
+     * refusal, those four expect **409** instead — and each is a real rule, so
+     * none of them may simply be deleted to make the suite green. Written here
+     * rather than remembered, because the person lifting the hold will be
+     * reading this comment and not that list.
      */
     Route::middleware('transport.permission:'.TransportPermission::DRIVER_UPDATE)->group(function () {
         Route::put('/drivers/{id}',          [TransportDriverController::class, 'update'])->whereNumber('id');

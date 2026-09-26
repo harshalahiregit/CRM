@@ -249,6 +249,19 @@ export const VEHICLE_STATUS_LABELS = {
 export const vehicleStatusLabel = (status) =>
   VEHICLE_STATUS_LABELS[status] || String(status || '').replace(/_/g, ' ').toLowerCase()
 
+// T-03 — ownership, the six values of STOS-FLEET §10.
+export const VEHICLE_OWNERSHIP_LABELS = {
+  OWNED:      'Owned',
+  FINANCED:   'Financed',
+  LEASED:     'Leased',
+  CONTRACTED: 'Contracted',
+  ATTACHED:   'Attached',
+  OTHER:      'Other',
+}
+
+export const vehicleOwnershipLabel = (type) =>
+  VEHICLE_OWNERSHIP_LABELS[type] || String(type || '').replace(/_/g, ' ').toLowerCase()
+
 /** Traffic light. One definition, so no two screens disagree about red. */
 export const TONES = {
   green: { dot: 'var(--color-success-500, #10b981)', label: 'Healthy' },

@@ -116,10 +116,11 @@ class PretripApiTest extends TestCase
             'name' => 'Ramesh '.Str::random(4),
             'licence_number' => 'RJ14'.self::uniqueSeq(6),
             'licence_class' => 'HMV',
-            'licence_valid_until' => now()->addYears(2)->toDateString(),
+            'licence_expiry' => now()->addYears(2)->toDateString(),
         ], $tenantId, $actor);
 
-        $this->alloc->assign($trip->fresh(), $v->id, $d->id, $tenantId, $actor);
+        // D-152 — a fresh directory read each time: the driver above is new.
+        app(AllocationService::class)->assign($trip->fresh(), $v->id, $d->id, $tenantId, $actor);
 
         return $trip->fresh();
     }
@@ -405,8 +406,8 @@ class PretripApiTest extends TestCase
             $this->patchJson($this->url($trip).'/'.$c->id)->assertOk();
         }
 
-        $driver = TransportDriver::forTenant(self::TENANT_A)->firstOrFail();
-        $driver->forceFill(['licence_valid_until' => now()->subDay()])->save();
+        $driver = DriverProfile::forCompany(self::TENANT_A)->firstOrFail();   // the crew is a Fleet driver
+        $driver->forceFill(['licence_expiry' => now()->subDay()])->save();
         $this->postJson($this->url($trip))->assertOk();
 
         $res = $this->patchJson($this->url($trip, 'pass-pretrip'))->assertStatus(422);

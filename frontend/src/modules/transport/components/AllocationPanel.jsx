@@ -204,21 +204,23 @@ const named = (value, isSet, id) => {
 
 
 /**
- * A blocker or a warning, as a sentence — D-147.
+ * A blocker or a warning, as a sentence — D-150.
  *
- * These arrived as strings until the eligibility services were repointed at
- * Fleet (D-134). Fleet answers with `{code, why, owner}` — the owner being the
- * desk that can clear it — and rendering that object straight into JSX is the
- * "Objects are not valid as a React child" crash the owner hit.
+ * ONE shape, not two. `EligibilityVerdict` emits `{code, why, owner}` for
+ * every blocker and every warning, driver and vehicle alike.
  *
- * Shaped to match `DriversBoard` and `VehicleAllocationModal`, which already
- * print `why (owner)`. Naming the desk is the point: "Blocked" on its own
- * sends a dispatcher hunting; "the compliance desk holds this one" does not.
+ * D-147's version accepted both an object and a plain string, and got the
+ * string wrong: `r?.owner` was undefined so it fell through to `r?.why ?? ''`
+ * and rendered EMPTY. An ineligible driver showed with no reason at all — the
+ * bug it was written to fix, arriving by the other door.
  *
- * No string fallback. Every producer of these is Fleet now, one shape, and a
- * dual-shape reader is how two shapes survive.
+ * There is deliberately no string branch now. If a string ever reaches here
+ * again this renders nothing and EligibilityVerdictShapeTest goes red, which
+ * is the correct order: the service is wrong, not the component.
+ *
+ * `owner` is optional — a capacity mismatch is nobody's to clear.
  */
-const reason = (r) => (r?.owner ? `${r.why} (${r.owner})` : r?.why ?? '')
+const reason = (r) => (r?.owner ? `${r.why} (${r.owner})` : (r?.why ?? ''))
 
 export default function AllocationPanel({ trip, assignment, canAssign, onChanged }) {
   const toast = useToast()

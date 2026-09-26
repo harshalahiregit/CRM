@@ -884,3 +884,30 @@ licence uniqueness (**D-145**).
 Both were found by one `grep` each, after the list was written and before anything was deleted.
 **A guard that disappears in a cleanup never goes red** — which is what makes this cheaper to do
 than to skip.
+
+### Whose tree, not whose concept
+
+The question "may this live in another developer's folder" has been asked three times in different
+costumes. The rule that settles all of them:
+
+> **The line is drawn at whose TREE, not whose CONCEPT.** A class implementing someone's interface
+> belongs wherever the DECISION it encodes belongs.
+
+`CompositeDriverDirectory` implements P2's `DriverDirectory` and sat beside his two implementations
+for two days, which is where a reader would look for it. It is in `app/Support/Transport/` now,
+because the decision it encodes — that `auto` resolves to both sources — is **ours**, made in our
+provider and our config. His two directories each answer for one source because that is all either
+of them is; choosing to ask both is not a Fleet fact.
+
+**The test moves with the class**, on the same grounds. A test tree that disagrees with the source
+tree is the register-versus-code problem in another costume.
+
+### When a proposal ships, grep for its own heading
+
+The register is a grep target before it is a document. A heading that states a state — *proposed*,
+*not built*, *deferred*, *blocked*, *awaiting* — goes stale silently, because nothing re-reads it.
+
+> **A `Proposed, NOT built` section is REPLACED, never appended to, the moment the proposal ships —
+> by a `Built` section naming the file path and the test.**
+
+One command, before closing the work.

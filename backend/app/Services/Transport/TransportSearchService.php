@@ -443,9 +443,20 @@ class TransportSearchService
         // where it is not, an exactly typed plate still does.
         //
         // Who should populate it is D-141, and it is P2's model.
+        //
+        // ── THE THIRD CLAUSE — D-153 ─────────────────────────────────────
+        // Fleet's VehicleService already STORES `registration_number`
+        // normalised (normalisePlate(): upper-case, A–Z/0–9 only — the same
+        // rule as TransportVehicle::normalizeRegistration()). So while
+        // `registration_normalized` is NULL, the normalised INPUT matched
+        // nothing, and "MH 12 AB 4455" or "mh12ab4455" found no Fleet-created
+        // vehicle at all. The input is compared with the stored value as it
+        // is — still exact, the stored side still untouched. Remove this
+        // clause once D-141 populates `registration_normalized`.
         $v = Vehicle::forCompany($tenantId)
             ->where(fn ($q) => $q->where('registration_normalized', $normalised)
-                ->orWhere('registration_number', $term))
+                ->orWhere('registration_number', $term)
+                ->orWhere('registration_number', $normalised))
             ->first();
 
         // The path here is the FALLBACK — where the user goes when the chain

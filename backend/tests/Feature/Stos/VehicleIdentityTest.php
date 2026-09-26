@@ -50,7 +50,7 @@ class VehicleIdentityTest extends TestCase
         return array_merge([
             'registration_number' => 'MH12AB'.random_int(1000, 9999),
             'vehicle_type'   => 'truck',
-            'ownership_type' => 'owned',
+            'ownership_type' => 'OWNED',
         ], $over);
     }
 
@@ -167,5 +167,98 @@ class VehicleIdentityTest extends TestCase
 
         $this->assertEquals(31.5, $data['capacity_tonnes']);
         $this->assertSame('BharatBenz', $data['manufacturer']);
+    }
+
+    /* ── T-03: ownership, the full §10 vocabulary ────────────────── */
+
+    public function test_all_six_ownership_types_are_accepted(): void
+    {
+        // The two that were missing are the point: a financed truck and a
+        // contracted one used to be flattened to owned/attached by the move,
+        // and §10 lists ownership as what drives EMI and profitability.
+        foreach (Vehicle::OWNERSHIPS as $ownership) {
+            $data = $this->actingAs($this->user())
+                ->postJson('/api/v1/fleet/vehicles', $this->payload(['ownership_type' => $ownership]))
+                ->assertCreated()->json('data');
+
+            $this->assertSame($ownership, $data['ownership_type']);
+        }
+
+        $this->assertSame(6, count(Vehicle::OWNERSHIPS));
+    }
+
+    public function test_a_lowercase_ownership_type_is_refused(): void
+    {
+        // The stored enum is UPPERCASE (12.S11). The form sends the code the
+        // enum uses; a lowercase value is a caller not speaking the contract,
+        // and letting it through is how a column ends up with two spellings of
+        // one value that no index or filter can group.
+        $this->actingAs($this->user())
+            ->postJson('/api/v1/fleet/vehicles', $this->payload(['ownership_type' => 'owned']))
+            ->assertStatus(422)->assertJsonValidationErrors('ownership_type');
+    }
+
+    public function test_market_is_no_longer_a_value(): void
+    {
+        // It was never in §10 and no row ever held it. It folds into OTHER, not
+        // CONTRACTED — spot hire is not a standing contract.
+        $this->assertNotContains('MARKET', Vehicle::OWNERSHIPS);
+        $this->assertNotContains('market', Vehicle::OWNERSHIPS);
+
+        $this->actingAs($this->user())
+            ->postJson('/api/v1/fleet/vehicles', $this->payload(['ownership_type' => 'MARKET']))
+            ->assertStatus(422)->assertJsonValidationErrors('ownership_type');
+    }
+
+    public function test_a_migrated_row_with_a_flattened_ownership_is_still_readable(): void
+    {
+        // Same rule as the fuel type above — the vocabulary is enforced on input
+        // only, so a row the move left as lowercase 'owned' still opens.
+        $vehicle = Vehicle::create($this->payload(['company_id' => self::COMPANY]));
+        DB::table('vehicles')->where('id', $vehicle->id)->update(['ownership_type' => 'owned']);
+
+        $data = $this->actingAs($this->user())
+            ->getJson("/api/v1/fleet/vehicles/{$vehicle->id}/passport")
+            ->assertOk()->json('data.vehicle');
+
+        $this->assertSame('owned', $data['ownership_type']);
+    }
+
+    /* ── D-141: the normalised plate is derived on save ──────────── */
+
+    public function test_the_normalised_plate_is_written_on_save(): void
+    {
+        // The column existed with an index and nothing wrote it, so the search
+        // had to normalise every row at query time. It is derived now, whichever
+        // way the plate was typed.
+        $vehicle = Vehicle::create($this->payload([
+            'company_id' => self::COMPANY, 'registration_number' => 'MH 12 XY 4242',
+        ]));
+
+        $this->assertSame('MH12XY4242', $vehicle->fresh()->registration_normalized);
+    }
+
+    public function test_the_normalised_plate_follows_a_correction(): void
+    {
+        $vehicle = Vehicle::create($this->payload([
+            'company_id' => self::COMPANY, 'registration_number' => 'MH12XY4242',
+        ]));
+
+        $vehicle->update(['registration_number' => 'MH-14-ZZ-0001']);
+
+        $this->assertSame('MH14ZZ0001', $vehicle->fresh()->registration_normalized);
+    }
+
+    public function test_the_normalised_plate_cannot_be_set_by_hand(): void
+    {
+        // Out of $fillable and re-derived on every save: a caller cannot put a
+        // value under the index that the plate does not normalise to. That is
+        // the one way D-141's guard could be defeated from inside the model.
+        $vehicle = Vehicle::create($this->payload([
+            'company_id' => self::COMPANY, 'registration_number' => 'MH12XY4242',
+            'registration_normalized' => 'SOMETHING_ELSE',
+        ]));
+
+        $this->assertSame('MH12XY4242', $vehicle->fresh()->registration_normalized);
     }
 }

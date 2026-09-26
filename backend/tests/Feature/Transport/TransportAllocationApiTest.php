@@ -114,7 +114,7 @@ class TransportAllocationApiTest extends TestCase
             'name' => 'Ramesh '.Str::random(4),
             'licence_number' => 'RJ14'.self::uniqueSeq(6),
             'licence_class' => 'HMV',
-            'licence_valid_until' => now()->addYears(2)->toDateString(),
+            'licence_expiry' => now()->addYears(2)->toDateString(),
         ], $tenantId, $actor);
     }
 
@@ -136,7 +136,12 @@ class TransportAllocationApiTest extends TestCase
         $this->assertSame($d->id, $body['data']['assignment']['driver_id']);
         // The verdict travels with the answer, so the client needs no second call.
         $this->assertCount(4, $body['data']['eligibility']['vehicle']['checks']);
-        $this->assertCount(5, $body['data']['eligibility']['driver']['checks']);
+        // D-150 — was a count of the pre-D-134 five. An allocated driver's
+        // verdict must say it is clear, with nothing blocking.
+        $driverVerdict = $body['data']['eligibility']['driver'];
+        $this->assertTrue($driverVerdict['eligible']);
+        $this->assertSame([], $driverVerdict['blockers']);
+        $this->assertContains('fleet', array_column($driverVerdict['checks'], 'key'));
         $this->assertNotEmpty($body['data']['audit']);
     }
 
@@ -241,7 +246,7 @@ class TransportAllocationApiTest extends TestCase
         $trip = $this->approvedTrip();
         $d = $this->fleetDriver([
             'name' => 'Lapsed', 'licence_number' => 'MH0199',
-            'licence_valid_until' => now()->subDay()->toDateString(),
+            'licence_expiry' => now()->subDay()->toDateString(),
         ], self::TENANT_A, $admin);
 
         $body = $this->postJson("/api/transport/trips/{$trip->id}/assign", ['driver_id' => $d->id])
@@ -318,7 +323,7 @@ class TransportAllocationApiTest extends TestCase
         $row = collect($body['vehicles'])->firstWhere('subject.id', $tooSmall->id);
         $this->assertNotNull($row);
         $this->assertFalse($row['eligible']);
-        $this->assertStringContainsString('below', $row['blockers'][0]);
+        $this->assertStringContainsString('below', $row['blockers'][0]['why']);
     }
 
     public function test_candidates_reports_the_trips_current_assignment(): void
@@ -346,8 +351,8 @@ class TransportAllocationApiTest extends TestCase
 
         $this->assertSame(TripStatus::APPROVED, $body['trip']['status']);
         $this->assertSame('released', $body['assignment']['status']);
-        $this->assertSame(VehicleStatus::AVAILABLE, $v->fresh()->status);
-        $this->assertSame(DriverAvailability::AVAILABLE, $d->fresh()->availability);
+        $this->assertSame(Vehicle::STATUS_AVAILABLE, $v->fresh()->status);
+        $this->assertSame(DriverProfile::AVAILABLE, $d->fresh()->status);
     }
 
     public function test_releasing_a_trip_with_no_assignment_is_refused(): void
