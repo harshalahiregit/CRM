@@ -5885,9 +5885,16 @@ verified*) instead of passing:
 
 ### Left open — owner decisions, not ours to build
 
-- **(i) Licence not yet valid.** `driver_profiles.licence_valid_from` exists (the unify migration copied
-  it over), but Fleet's `licenceVerdict()` ignores it. The old Transport check failed on it.
-  **Owner: Fleet (P2).**
+- ~~**(i) Licence not yet valid.**~~ **Closed 2026-09-26.** Fleet's `licenceVerdict()` now returns
+  `not_yet_valid` from `licence_valid_from`, and blocks with `driver_license_not_yet_valid` (P2,
+  `eaead3dd`). **Our follow-up:** pre-trip had only the five ruled codes, so this licence **passed**
+  pre-trip until `PretripDriverDocuments` learned the sixth code. It also now **fails closed**: any
+  licence or medical state not on its known list fails the item, naming the state (*"unrecognised
+  Fleet licence state 'x'"*), and the error is logged. It never passes. Proved by
+  `PretripDriverDocumentsTest` (a not-yet-valid licence fails with Fleet's sentence and desk; an
+  invented licence or medical state fails), broken two ways each: the code dropped from FAILS, the
+  state dropped from the known list, the fail-closed check disabled, and an unknown state graded PASS.
+  Each red, then restored.
 - **(ii) Expiry of every driver document other than medical** (police verification, ID proof,
   training certificate, customer qualification, the general driver document) is checked **nowhere**
   since D-134, neither at allocation nor at pre-trip. These documents can still be filed against a Fleet
@@ -5937,6 +5944,10 @@ removed.** We did not touch Fleet's model; it is P2's.
 **Asked of Person 2:** populate `registration_normalized` on create and update (the same rule as
 `normalisePlate()`), and backfill the rows created since the repoint.
 
+**Done by Person 2, 2026-09-26 (`eaead3dd`).** The value is derived in `Vehicle::booted()`, and
+migration `2027_01_18_000001` backfills older rows. **Closed on Fleet's side.** The D-153 clause stays
+until that migration has run on every install (see D-153).
+
 ---
 
 ## D-153 — a plate typed with spaces could not find a Fleet vehicle
@@ -5983,6 +5994,13 @@ in SQL. Both earlier clauses stay. The comment says the clause can go once D-141
 **D-141 (P2):** Fleet's model should populate `registration_normalized` on save. When it does, this
 clause is redundant and should be removed.
 
+**Checked 2026-09-26, after P2's fix landed (`eaead3dd`). The clause stays.** Fleet now derives the
+column on save, and `2027_01_18_000001_complete_and_uppercase_vehicle_ownership` backfills rows
+saved before that. But the backfill is a migration, and on the dev database it is **Pending**:
+1 of 3 Fleet vehicles still has `registration_normalized` NULL (read-only count). Any install that
+has not run it has rows only the third clause can find. **Remove the clause once that migration has
+run everywhere**, which is the owner's call on the dev DB. Until then it costs one extra `OR`.
+
 ---
 
 ## D-154 — a release wiped the pre-trip record of a trip that had already left
@@ -6028,3 +6046,34 @@ is **not** changed.
 automatically?** Today delivery frees the resources (`freeResources()`), but the assignment row
 stays active, and a person can still "release" it by hand after closure. That is how
 TRP-2026-000034 came to be released two days after it closed.
+
+---
+
+## D-155 — `TripAssignment::active()` is a contract with Fleet, not an internal scope
+
+**Recorded:** 2026-09-26, after P2's D-146 fix landed (`eaead3dd`). **P1 owns it; P2 depends on
+it.** **Not a defect; a recorded dependency.**
+
+`TripAssignment::active()` (`whereIn status AssignmentStatus::ACTIVE_STATES` =
+`assigned, confirmed, active`) now decides what **Fleet refuses**, not only what Transport
+double-books:
+
+| Fleet reader | Uses it for |
+|---|---|
+| `Fleet\Integration\TripCommitmentReader` | D-146: a vehicle or driver on an active assignment cannot be retired or stood down, naming the trip |
+| `Fleet\Integration\TripHistoryReader` | T-49 utilisation: "working" time mirrors `active()` (plus `released` for ended trips) |
+
+P2 chose this deliberately. His header says *"The meaning of 'committed' is Ops', not ours"*, because
+choosing trip statuses inside Fleet would invent an availability rule.
+
+**The rule this records:** narrowing or widening `active()`, or `AssignmentStatus::ACTIVE_STATES`
+behind it, changes Fleet's guard with no change in Fleet's code. **Any change to either needs a
+heads-up to Person 2 before it merges.** `ACTIVE_STATES` is already load-bearing for BR-P0-003 (a
+unique index over a generated column); this adds a second, cross-module reason.
+
+**One property to know:** both readers **degrade to "not committed"** when the read fails or Ops is
+absent. That is P2's choice, so Fleet can run standalone. So a query that breaks here doesn't make
+Fleet refuse; it makes Fleet allow. That's another reason a change to this scope must be tested
+against his D-146 test before merging.
+
+A pointer comment now sits on `scopeActive()` itself, where the next person to change it will read it.

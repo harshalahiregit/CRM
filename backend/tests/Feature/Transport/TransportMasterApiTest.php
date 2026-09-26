@@ -2,6 +2,9 @@
 
 namespace Tests\Feature\Transport;
 
+use App\Domains\Fleet\Models\DriverProfile;
+use App\Domains\Fleet\Services\DriverService;
+use App\Exceptions\BusinessException;
 use App\Models\Tenant;
 use App\Models\Transport\TransportDriver;
 use App\Models\Transport\TransportVehicle;
@@ -15,6 +18,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
 use Illuminate\Support\Facades\DB;
+use Tests\Concerns\CreatesFleetResources;
 use Tests\TestCase;
 
 /**
@@ -31,6 +35,7 @@ use Tests\TestCase;
 class TransportMasterApiTest extends TestCase
 {
     use RefreshDatabase;
+    use CreatesFleetResources;
 
     private const TENANT_A = 1;
     private const TENANT_B = 2;
@@ -136,17 +141,54 @@ class TransportMasterApiTest extends TestCase
 
     /* ══════════ DRIVER CRUD ══════════ */
 
+    /**
+     * D-145, rewritten 2026-09-26 — the rule now lives in Fleet (P2, eaead3dd).
+     *
+     * This was the ONLY guard on licence uniqueness while drivers were created
+     * here. Creation moved to Fleet (the read-only ruling), and this test was
+     * kept red until Fleet held the rule. It now proves both halves: the legacy
+     * create stays closed, and Fleet refuses the duplicate, naming the holder.
+     */
     public function test_duplicate_licence_and_duplicate_employee_link_are_rejected(): void
     {
-        $this->actingAsAdmin();
-        $this->postJson('/api/transport/drivers', $this->driverPayload(['licence_number' => 'RJ14 20110012345', 'hr_employee_id' => 500]))->assertCreated();
+        $admin = $this->actingAsAdmin();
 
-        $this->postJson('/api/transport/drivers', $this->driverPayload(['licence_number' => 'rj-14-2011-0012345']))
-            ->assertStatus(422)->assertJsonValidationErrors('licence_normalized_probe');
+        // (a) The legacy create is closed. `POST /drivers` is still HELD —
+        //     absent, so 405 — pending the hold's lift now that D-145 is
+        //     answered (see routes/transport.php); then it answers 409 like
+        //     every other legacy write. Either way nothing is written here.
+        $this->postJson('/api/transport/drivers', $this->driverPayload(['licence_number' => 'RJ14 20110012345']))
+            ->assertStatus(405);
+        $this->assertSame(0, DB::table('transport_drivers')->where('tenant_id', self::TENANT_A)->count());
 
-        // INT §76 — "Avoid duplicate driver profiles."
-        $this->postJson('/api/transport/drivers', $this->driverPayload(['hr_employee_id' => 500]))
-            ->assertStatus(422)->assertJsonValidationErrors('hr_employee_id');
+        // (b) Fleet holds the rule: the same licence, typed differently, for
+        //     a different person is refused, and the holder is named.
+        $this->fleetDriver(['name' => 'Ramesh Holder', 'licence_number' => 'RJ14 20110012345'], self::TENANT_A, $admin);
+        $second = DB::table('stos_drivers')->insertGetId([
+            'company_id' => self::TENANT_A, 'name' => 'Suresh Second', 'phone' => '98'.self::uniqueSeq(8),
+            'designation' => 'Driver', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $fleet = app(DriverService::class);
+
+        try {
+            $fleet->saveProfile(self::TENANT_A, 'stos', $second, ['licence_number' => 'rj-14-2011-0012345'], $admin->id);
+            $this->fail('Fleet accepted a licence another driver already holds');
+        } catch (BusinessException $e) {
+            $this->assertStringContainsString('already recorded against Ramesh Holder', $e->getMessage());
+        }
+        $this->assertSame(0, DriverProfile::forCompany(self::TENANT_A)
+            ->where('source', 'stos')->where('source_id', $second)->count(), 'the refused profile was written anyway');
+
+        // Control: the same person with their own licence is accepted — so the
+        // refusal above was the duplicate, and nothing else about the request.
+        $fleet->saveProfile(self::TENANT_A, 'stos', $second, ['licence_number' => 'RJ14 20119999999'], $admin->id);
+
+        // INT §76 — "Avoid duplicate driver profiles." One person, one profile:
+        // saving the same person again updates, it never adds a second.
+        $fleet->saveProfile(self::TENANT_A, 'stos', $second,
+            ['licence_number' => 'RJ14 20119999999', 'licence_class' => 'HMV'], $admin->id);
+        $this->assertSame(1, DriverProfile::forCompany(self::TENANT_A)
+            ->where('source', 'stos')->where('source_id', $second)->count());
     }
 
     /* ══════════ Admin edit + delete — the reported bug ══════════ */

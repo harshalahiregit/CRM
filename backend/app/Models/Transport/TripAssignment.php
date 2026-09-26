@@ -96,7 +96,16 @@ class TripAssignment extends Model
 
     /* ── Scopes. Composed AFTER forTenant(), never instead of it. ────── */
 
-    /** The states in which a vehicle and driver are occupied (BR-P0-003). */
+    /**
+     * The states in which a vehicle and driver are occupied (BR-P0-003).
+     *
+     * ── A CROSS-MODULE CONTRACT — D-155 ──────────────────────────────────
+     * Fleet reads this meaning directly: `Fleet\Integration\TripCommitmentReader`
+     * (D-146 — a vehicle or driver on an active assignment cannot be retired or
+     * stood down) and `TripHistoryReader` (utilisation). Narrowing or widening
+     * it, or AssignmentStatus::ACTIVE_STATES behind it, changes what Fleet
+     * refuses. Any change needs a heads-up to Person 2 first.
+     */
     public function scopeActive(Builder $query): Builder
     {
         return $query->whereIn('status', AssignmentStatus::ACTIVE_STATES);

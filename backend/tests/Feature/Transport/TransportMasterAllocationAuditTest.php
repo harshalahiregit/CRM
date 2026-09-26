@@ -25,6 +25,8 @@ use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
 use App\Domains\Fleet\Models\DriverProfile;
 use App\Domains\Fleet\Models\Vehicle;
+use App\Domains\Fleet\Services\DriverService;
+use App\Domains\Fleet\Services\VehicleService;
 use Tests\Concerns\CreatesFleetResources;
 use Tests\TestCase;
 
@@ -418,53 +420,87 @@ class TransportMasterAllocationAuditTest extends TestCase
      */
     public function test_a_vehicle_with_an_active_assignment_cannot_be_deleted(): void
     {
-        $this->actAs('admin');
+        // D-146, rewritten 2026-09-26 — the rule now lives in Fleet (P2,
+        // eaead3dd, read through Fleet\Integration\TripCommitmentReader).
+        $admin = $this->actAs('admin');
         $trip = $this->approvedTrip();
         $v = $this->seedVehicle(); $d = $this->seedDriver();
         $this->postJson("/api/transport/trips/{$trip->id}/assign", ['vehicle_id' => $v->id, 'driver_id' => $d->id])->assertOk();
 
-        $body = $this->deleteJson("/api/transport/vehicles/{$v->id}", ['reason' => 'duplicate'])
-            ->assertStatus(422)->json();
+        // (a) The legacy delete stays closed — the read-only ruling.
+        $this->deleteJson("/api/transport/vehicles/{$v->id}", ['reason' => 'duplicate'])->assertStatus(409);
 
-        $this->assertStringContainsString($trip->trip_number, $body['message'], 'the message must name the trip');
-        $this->assertStringContainsString('Release the assignment first', $body['message']);
-        $this->assertStringContainsString('retire the vehicle', $body['message']);
+        // (b) Fleet refuses to take it out of use, and names the trip.
+        try {
+            app(VehicleService::class)->retire($v->id, self::A, $admin->id);
+            $this->fail('Fleet retired a vehicle that is on a live trip');
+        } catch (BusinessException $e) {
+            $this->assertStringContainsString($trip->trip_number, $e->getMessage(), 'the message must name the trip');
+            $this->assertStringContainsString('Release it from the trip first', $e->getMessage());
+        }
 
         // Nothing was destroyed and nothing was orphaned.
-        $this->assertNotNull(TransportVehicle::forTenant(self::A)->find($v->id));
+        $this->assertNotNull(Vehicle::forCompany(self::A)->find($v->id));
         $assignment = TripAssignment::forTenant(self::A)->forTrip($trip->id)->first();
         $this->assertNotNull($assignment->vehicle, 'the relation still resolves — no orphan');
     }
 
     public function test_a_driver_with_an_active_assignment_cannot_be_deleted(): void
     {
-        $this->actAs('admin');
+        // D-146, the driver half. Fleet has no driver delete; its equivalent is
+        // standing the driver down, and that is what it refuses.
+        $admin = $this->actAs('admin');
         $trip = $this->approvedTrip();
         $v = $this->seedVehicle(); $d = $this->seedDriver();
         $this->postJson("/api/transport/trips/{$trip->id}/assign", ['vehicle_id' => $v->id, 'driver_id' => $d->id])->assertOk();
 
-        $body = $this->deleteJson("/api/transport/drivers/{$d->id}")->assertStatus(422)->json();
+        // (a) The legacy delete stays closed.
+        $this->deleteJson("/api/transport/drivers/{$d->id}")->assertStatus(409);
 
-        $this->assertStringContainsString($trip->trip_number, $body['message']);
-        $this->assertStringContainsString('deactivate the driver', $body['message']);
-        $this->assertNotNull(TransportDriver::forTenant(self::A)->find($d->id));
+        // (b) Fleet refuses to stand them down, and names the trip.
+        try {
+            app(DriverService::class)->saveProfile(self::A, $d->source, (int) $d->source_id,
+                ['licence_number' => $d->licence_number, 'status' => DriverProfile::INACTIVE], $admin->id);
+            $this->fail('Fleet stood down a driver who is on a live trip');
+        } catch (BusinessException $e) {
+            $this->assertStringContainsString($trip->trip_number, $e->getMessage());
+            $this->assertStringContainsString('Release them from the trip first', $e->getMessage());
+        }
+        $this->assertSame(DriverProfile::ON_TRIP, $d->fresh()->status, 'the refusal changed nothing');
     }
 
     /** Released assignments are history — they must not pin a record forever. */
     public function test_deletion_succeeds_once_the_assignment_is_released(): void
     {
-        $this->actAs('admin');
+        $admin = $this->actAs('admin');
         $trip = $this->approvedTrip();
         $v = $this->seedVehicle(); $d = $this->seedDriver();
         $this->postJson("/api/transport/trips/{$trip->id}/assign", ['vehicle_id' => $v->id, 'driver_id' => $d->id])->assertOk();
 
-        $this->deleteJson("/api/transport/vehicles/{$v->id}")->assertStatus(422);
+        // D-146, rewritten 2026-09-26. While held: Fleet refuses.
+        try {
+            app(VehicleService::class)->retire($v->id, self::A, $admin->id);
+            $this->fail('Fleet retired a vehicle that is on a live trip');
+        } catch (BusinessException) {
+            // expected — the other test asserts the wording
+        }
 
         $this->deleteJson("/api/transport/trips/{$trip->id}/assign", ['reason' => 'off hire'])->assertOk();
 
-        // Now both may go, even though the released assignment still references them.
-        $this->deleteJson("/api/transport/vehicles/{$v->id}")->assertOk();
-        $this->deleteJson("/api/transport/drivers/{$d->id}")->assertOk();
+        // The legacy delete stays closed whatever the assignment — the
+        // read-only ruling does not depend on it.
+        $this->deleteJson("/api/transport/vehicles/{$v->id}")->assertStatus(409);
+        $this->deleteJson("/api/transport/drivers/{$d->id}")->assertStatus(409);
+
+        // Released, Fleet lets both go, even though the released assignment
+        // still references them. This is also the control for the two tests
+        // above: with no ACTIVE assignment the same calls succeed, so their
+        // refusals come from the live trip and nothing else.
+        app(VehicleService::class)->retire($v->id, self::A, $admin->id);
+        $this->assertNull(Vehicle::forCompany(self::A)->find($v->id), 'retired');
+        app(DriverService::class)->saveProfile(self::A, $d->source, (int) $d->source_id,
+            ['licence_number' => $d->licence_number, 'status' => DriverProfile::INACTIVE], $admin->id);
+        $this->assertSame(DriverProfile::INACTIVE, $d->fresh()->status);
 
         // History survives the masters it describes.
         $released = TripAssignment::forTenant(self::A)->forTrip($trip->id)->first();

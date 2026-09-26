@@ -152,6 +152,46 @@ class PretripDriverDocumentsTest extends TestCase
         $this->assertSame(PretripResult::PASS, $item->result, $item->detail);
     }
 
+    /**
+     * D-151(i), closed by Fleet on 26 Sep: a licence that has not started yet.
+     * Fleet added `not_yet_valid` and `driver_license_not_yet_valid`; before
+     * pre-trip learned the code, that driver passed.
+     */
+    public function test_a_licence_that_has_not_started_yet_fails_pretrip_with_fleets_reason(): void
+    {
+        [$trip, $driver] = $this->allocatedTrip();
+        $driver->forceFill(['licence_valid_from' => now()->addDays(5)->toDateString()])->save();
+
+        $item = $this->driverItem($trip);
+
+        $this->assertSame(PretripResult::CRITICAL_FAIL, $item->result);
+        $this->assertStringContainsString('does not take effect until', $item->detail, "Fleet's own sentence");
+        $this->assertStringContainsString('(Fleet compliance desk)', $item->detail);
+    }
+
+    /** Fail closed: a state Fleet invents tomorrow must stop the driver, not wave them through. */
+    public function test_a_state_fleet_has_not_told_us_about_fails_closed(): void
+    {
+        $row = [
+            'licence'  => ['state' => 'suspended_by_rto', 'message' => 'Suspended by the RTO.'],
+            'medical'  => ['state' => 'valid', 'message' => 'Medical valid.'],
+            'blockers' => [],
+            'warnings' => [],
+        ];
+
+        [$result, $detail, $error] = PretripDriverDocuments::judge($row, 'Driver X', true);
+
+        $this->assertSame(PretripResult::CRITICAL_FAIL, $result, 'an unknown state must never grade PASS');
+        $this->assertStringContainsString("unrecognised Fleet licence state 'suspended_by_rto'", $detail);
+        $this->assertNotNull($error, 'the caller must get something to log');
+
+        $row['licence']['state'] = 'valid';
+        $row['medical']['state'] = 'lapsed';
+        [$result, $detail] = PretripDriverDocuments::judge($row, 'Driver X', true);
+        $this->assertSame(PretripResult::CRITICAL_FAIL, $result);
+        $this->assertStringContainsString("unrecognised Fleet medical state 'lapsed'", $detail);
+    }
+
     /* ══════════ an empty read can never pass ══════════ */
 
     public function test_a_fleet_row_without_the_verdicts_this_reads_fails_loudly(): void
