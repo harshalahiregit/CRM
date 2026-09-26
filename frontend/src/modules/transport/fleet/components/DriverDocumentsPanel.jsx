@@ -27,7 +27,7 @@ export default function DriverDocumentsPanel({ driver, onChanged }) {
   const source = driver?.source
   const personId = driver?.source_id
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['stos-driver-documents', source, personId],
     queryFn: () => stosApi.driverDocuments.forDriver(source, personId),
     enabled: Boolean(source && personId),
@@ -45,6 +45,22 @@ export default function DriverDocumentsPanel({ driver, onChanged }) {
   })
 
   if (!driver) return null
+
+  // No profile yet is the common case for a directory person who has never been
+  // saved as a driver: forDriver() answers 404 with the sentence saying what to
+  // do first. Show THAT, not an empty "File a document" form whose type list is
+  // blank because the request that fills it failed — which reads as a broken
+  // dropdown when the real message is "save this driver first".
+  if (isError) {
+    return (
+      <div className="flex items-start gap-2 rounded-xl px-3 py-2 text-[11px]"
+        style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+        <AlertTriangle size={13} style={{ marginTop: 1, flexShrink: 0 }} />
+        <span>{error?.message
+          || 'This person has no driver profile yet. Save their licence details above first, then you can file documents against them.'}</span>
+      </div>
+    )
+  }
 
   const gating = data?.gating ?? {}
   const documents = data?.documents ?? []
