@@ -328,6 +328,22 @@ export const driverAvailabilityCfg = (a) => ({
 }[a] || { label: a || '—', color: 'var(--text-muted)', bg: 'var(--bg-input)' })
 
 /**
+ * A Fleet vehicle's status — `Vehicle::STATUSES`, UPPERCASE as Fleet stores
+ * them. The picker's vehicle candidates carry this in `subject.status`, and
+ * vehicleStatusCfg (the legacy master's lowercase list) showed it raw.
+ */
+export const fleetVehicleStatusCfg = (s) => ({
+  AVAILABLE:          { label: 'Available',          color: '#34d399', bg: 'rgba(52,211,153,0.14)' },
+  ALLOCATED:          { label: 'Allocated',          color: '#38bdf8', bg: 'rgba(56,189,248,0.14)' },
+  IN_TRANSIT:         { label: 'In transit',         color: '#818cf8', bg: 'rgba(129,140,248,0.14)' },
+  UNDER_MAINTENANCE:  { label: 'Under maintenance',  color: '#fb923c', bg: 'rgba(251,146,60,0.16)' },
+  COMPLIANCE_BLOCKED: { label: 'Compliance blocked', color: '#f87171', bg: 'rgba(248,113,113,0.16)' },
+  IDLE:               { label: 'Idle',               color: '#a78bfa', bg: 'rgba(167,139,250,0.14)' },
+  BREAKDOWN:          { label: 'Breakdown',          color: '#f87171', bg: 'rgba(248,113,113,0.16)' },
+  RETIRED:            { label: 'Retired',            color: '#64748b', bg: 'rgba(100,116,139,0.14)' },
+}[s] || { label: s || '—', color: 'var(--text-muted)', bg: 'var(--bg-input)' })
+
+/**
  * A Fleet driver's status — `DriverProfile::STATUSES`, UPPERCASE as Fleet
  * stores them. The allocation picker's driver candidates carry this in
  * `subject.status`; they have no `availability` (that was the legacy master's
