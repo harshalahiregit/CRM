@@ -5944,6 +5944,10 @@ removed.** We did not touch Fleet's model; it is P2's.
 **Asked of Person 2:** populate `registration_normalized` on create and update (the same rule as
 `normalisePlate()`), and backfill the rows created since the repoint.
 
+**Done by Person 2, 2026-09-26 (`eaead3dd`).** The value is derived in `Vehicle::booted()`, and
+migration `2027_01_18_000001` backfills older rows. **Closed on Fleet's side.** The D-153 clause stays
+until that migration has run on every install (see D-153).
+
 ---
 
 ## D-153 — a plate typed with spaces could not find a Fleet vehicle
@@ -5989,3 +5993,10 @@ in SQL. Both earlier clauses stay. The comment says the clause can go once D-141
 
 **D-141 (P2):** Fleet's model should populate `registration_normalized` on save. When it does, this
 clause is redundant and should be removed.
+
+**Checked 2026-09-26, after P2's fix landed (`eaead3dd`). The clause stays.** Fleet now derives the
+column on save, and `2027_01_18_000001_complete_and_uppercase_vehicle_ownership` backfills rows
+saved before that. But the backfill is a migration, and on the dev database it is **Pending**:
+1 of 3 Fleet vehicles still has `registration_normalized` NULL (read-only count). Any install that
+has not run it has rows only the third clause can find. **Remove the clause once that migration has
+run everywhere**, which is the owner's call on the dev DB. Until then it costs one extra `OR`.
