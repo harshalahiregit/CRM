@@ -5794,6 +5794,29 @@ disabled in a throwaway worktree, 3 of the 4 passed; the fourth then failed on u
 
 ---
 
+## D-141 — Fleet's vehicle model does not populate `registration_normalized`
+
+**Raised:** 2026-09-23, repointing the plate search (D-140). **Owner: Person 2 (Fleet).** **Open.**
+Entry written 2026-09-26: the number was used in code comments and in `POSITION-2026-09-25.md` §4
+but never had an entry here.
+
+`vehicles.registration_normalized` exists and was filled for the migrated rows, but Fleet's
+`Vehicle` model does not populate it on save. Every vehicle created through Fleet has it **NULL**.
+Separately, Fleet's `VehicleService::normalisePlate()` stores `registration_number` itself
+normalised (`MH 12 AB 4455` → `MH12AB4455`).
+
+**Effect on Transport:** a search that relies on the normalised column finds no Fleet-created
+vehicle by a spaced or lowercase plate.
+
+**Our workaround is D-153.** A third clause in `TransportSearchService::vehicle()` compares the
+normalised input with `registration_number` as stored. **Once D-141 is fixed, that clause can be
+removed.** We did not touch Fleet's model; it is P2's.
+
+**Asked of Person 2:** populate `registration_normalized` on create and update (the same rule as
+`normalisePlate()`), and backfill the rows created since the repoint.
+
+---
+
 ## D-153 — a plate typed with spaces could not find a Fleet vehicle
 
 **Raised:** 2026-09-25, moving the search fixtures onto Fleet. **P1 — our search.** **Fixed (workaround); the real fix is D-141, owed by P2.**
