@@ -169,6 +169,12 @@ export const ROUTE_CONTEXT_MAP = [
   { pattern: '/app/transport/containers/:id', module: 'transport', section: 'containers', screen: 'container-passport', entityType: 'container' },
   { pattern: '/app/transport/fleet', module: 'transport', section: 'fleet', screen: 'fleet-overview' },
   { pattern: '/app/transport/fleet/vehicles/:id', module: 'transport', section: 'fleet', screen: 'vehicle-passport', entityType: 'vehicle' },
+  // Fleet's trailer and tyre registers. Without these the widget fell back to
+  // route-prefix detection and reported no section and no screen at all —
+  // "Report an Issue is not detecting SECTION, SCREEN, RECORD", which is a
+  // gap in this map every time, never a fault in the widget.
+  { pattern: '/app/transport/trailers', module: 'transport', section: 'fleet', screen: 'trailer-list' },
+  { pattern: '/app/transport/tyres', module: 'transport', section: 'fleet', screen: 'tyre-list' },
   { pattern: '/app/transport/workshop', module: 'transport', section: 'fleet', screen: 'workshop' },
   // 'vehicles' and 'drivers' render the same Fleet screens as above -- kept so
   // an existing bookmark still reports against the screen it actually shows.
@@ -263,6 +269,12 @@ export const ROUTE_CONTEXT_MAP = [
   { pattern: '/app/helpdesk/widget', module: 'helpdesk', section: 'widget', screen: 'widget' },
   { pattern: '/app/hr', module: 'hr', section: 'hr', screen: 'hr-list' },
   { pattern: '/app/hr/advances', module: 'hr', section: 'advances', screen: 'advances' },
+  // HR's configuration screens, which had no entries at all.
+  { pattern: '/app/hr/approval-workflows', module: 'hr', section: 'configuration', screen: 'approval-workflows' },
+  { pattern: '/app/hr/clearance-departments', module: 'hr', section: 'configuration', screen: 'clearance-departments' },
+  { pattern: '/app/hr/configuration', module: 'hr', section: 'configuration', screen: 'hr-configuration' },
+  { pattern: '/app/hr/onboarding-checklist', module: 'hr', section: 'configuration', screen: 'onboarding-checklist' },
+  { pattern: '/app/hr/posh-committees', module: 'hr', section: 'configuration', screen: 'posh-committees' },
   { pattern: '/app/hr/attendance-reports', module: 'hr', section: 'attendance-reports', screen: 'attendance-reports' },
   { pattern: '/app/hr/company-approvals', module: 'hr', section: 'company-approvals', screen: 'company-approvals' },
   { pattern: '/app/hr/corrections', module: 'hr', section: 'corrections', screen: 'corrections' },
@@ -324,6 +336,12 @@ export const ROUTE_CONTEXT_MAP = [
   { pattern: '/app/meetings/:id', module: 'meetings', section: 'meetings', screen: 'meetings-details', entityType: 'meeting' },
   { pattern: '/app/meetings/:id/edit', module: 'meetings', section: 'meetings', screen: 'meetings-edit', entityType: 'meeting' },
   { pattern: '/app/meetings/new', module: 'meetings', section: 'new', screen: 'new' },
+  // The registers, listed BEFORE they can be mistaken for a meeting.
+  // '/app/meetings/registers' was matching '/app/meetings/:id' and reporting
+  // a meeting whose id was the word "registers" — a confidently wrong record,
+  // which is worse for whoever picks the issue up than an empty one.
+  { pattern: '/app/meetings/registers', module: 'meetings', section: 'meetings', screen: 'meetings-registers' },
+  { pattern: '/app/meetings/registers/:register', module: 'meetings', section: 'meetings', screen: 'meetings-registers-details', entityType: 'meetings_register', entityParam: 'register' },
   { pattern: '/app/modules', module: 'modules', section: 'modules', screen: 'modules-list' },
   { pattern: '/app/profile', module: 'profile', section: 'profile', screen: 'profile-list' },
   { pattern: '/app/purchase', module: 'purchase', section: 'purchase', screen: 'purchase-list' },

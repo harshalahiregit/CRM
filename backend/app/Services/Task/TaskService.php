@@ -812,6 +812,34 @@ class TaskService
             ->map(fn ($i) => (int) $i)->filter()->unique()->values()->all();
     }
 
+    /**
+     * Remove a checklist line.
+     *
+     * A checklist is a scratchpad — a line gets added by mistake, or the work it
+     * described stops being part of the task — and there was no way to take one
+     * off, only to tick it, which reads as "we did it" and is the wrong record.
+     *
+     * The assignee rows go with it. They are the line's own pivot and mean
+     * nothing without it; leaving them behind is what puts a user id in a
+     * notification query for a line that no longer exists.
+     */
+    public function deleteChecklistItem(int $itemId, int $tenantId): int
+    {
+        $item = TaskChecklistItem::forTenant($tenantId)->find($itemId);
+        if (! $item) {
+            throw new BusinessException('Checklist item not found.', 404);
+        }
+
+        $taskId = (int) $item->task_id;
+
+        DB::transaction(function () use ($item) {
+            $item->assignees()->delete();
+            $item->delete();
+        });
+
+        return $taskId;
+    }
+
     public function toggleChecklistItem(int $itemId, int $tenantId, int $userId): TaskChecklistItem
     {
         $item = TaskChecklistItem::forTenant($tenantId)->find($itemId);

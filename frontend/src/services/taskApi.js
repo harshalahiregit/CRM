@@ -45,6 +45,8 @@ export const taskApi = {
   // Edit an item in place — used to (re)assign it or fix its text.
   updateChecklistItem: (itemId, data) => api.patch(`/tasks/checklist/${itemId}`, data).then(unwrap).catch(handleErr),
   toggleChecklist: (itemId) => api.patch(`/tasks/checklist/${itemId}/toggle`).then(unwrap).catch(handleErr),
+  // Remove an item outright — ticking it says "done", this says "never mind".
+  deleteChecklistItem: (itemId) => api.delete(`/tasks/checklist/${itemId}`).then(unwrap).catch(handleErr),
   // Subtasks — the recursive tree. `tree` returns every level in one response
   // (the server carries root_id, so depth costs nothing), each node with its own
   // rolled-up progress. `move` re-parents; parent_id null pops it to the top.

@@ -88,6 +88,25 @@ class TaskChecklistController extends Controller
         }
     }
 
+    /** Remove a checklist line outright. */
+    public function destroy(Request $request, int $item)
+    {
+        $tenantId = $request->user()->tenant_id;
+
+        // Which task it belongs to is only knowable from the row, and the access
+        // check has to happen BEFORE the delete — checking afterwards would
+        // already have destroyed the line it was meant to protect.
+        $row = \App\Models\Task\TaskChecklistItem::forTenant($tenantId)->find($item);
+        if (! $row) {
+            return $this->error('Checklist item not found.', 404);
+        }
+        $this->guardTask($request, (int) $row->task_id);
+
+        $taskId = $this->tasks->deleteChecklistItem($item, $tenantId);
+
+        return $this->success(['id' => $item, 'task_id' => $taskId], 'Item removed');
+    }
+
     public function toggle(Request $request, int $item)
     {
         return $this->success($this->tasks->toggleChecklistItem($item, $request->user()->tenant_id, $request->user()->id), 'Item toggled');

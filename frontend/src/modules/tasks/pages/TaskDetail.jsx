@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import ReactQuill from 'react-quill'
 import 'react-quill/dist/quill.snow.css'
 import { RICH_MODULES, RICH_FORMATS } from '@/lib/quillConfig'
@@ -21,7 +21,8 @@ import QuickTaskModal from '@/components/task/QuickTaskModal'
 import RaiseTicketModal from '../../helpdesk/components/RaiseTicketModal'
 import { taskApi, TASK_STATUS, TASK_PRIORITY, TASK_ACCENT, relLabel, fmtDuration } from '@/services/taskApi'
 import Select from '@/components/ui/Select'
-import SearchPicker, { InputModal } from '@/components/ui/SearchPicker'
+import SearchPicker, { InputModal, ConfirmModal } from '@/components/ui/SearchPicker'
+import { useGoBack } from '@/hooks/useGoBack'
 import { useAuth } from '@/context/AuthContext'
 import { useStatuses, statusOptions } from '@/hooks/useStatuses'
 import TaskFormDrawer, { PeopleChips } from '../components/TaskFormDrawer'
@@ -99,7 +100,33 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
   const id = idProp ?? params.id
   const embedded = Boolean(onClose)
   const navigate = useNavigate()
+  const location = useLocation()
   const { user } = useAuth()
+
+  /* Where the back arrow goes: back, in the ordinary sense of the word.
+   *
+   * It was hard-wired to /app/tasks, so wherever you opened a task from — the
+   * board, a project, a ticket, a search, a notification — pressing back put
+   * you in the global task list. That is not where you were.
+   *
+   * Naming every possible origin was the wrong shape of fix: it only knows the
+   * routes somebody remembered to teach it, and every new screen that links to
+   * a task silently goes back to being wrong. The browser already knows where
+   * you came from, so the arrow just goes there.
+   *
+   * `history.state.idx` is React Router's own counter for this tab's session.
+   * Zero means this page IS the session — a pasted link, a new tab, an email —
+   * and there is nothing behind it to go back to. Calling navigate(-1) there
+   * would either do nothing or throw the user out of the app entirely, so that
+   * case falls back to a real destination: whatever linked here said, else the
+   * task's own project, else the list.
+   */
+  const stateBack = location.state?.backTo || null
+
+  // Falls back to the task list only when there is no history behind this page
+  // (a pasted link, a new tab). The per-task fallback — its own project — is
+  // resolved below, once the task is loaded, and applied to the same handler.
+  const { goBack, hasHistory, backLabel } = useGoBack('/app/tasks', 'Back to tasks')
   const [showAmount, setShowAmount] = useState(false)   // PR1 — reveal masked billable amount
   const qc = useQueryClient()
 
@@ -178,6 +205,9 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [picker, setPicker] = useState(null)      // 'assignee' | 'follower' | 'template'
   const [assignItemId, setAssignItemId] = useState(null)  // checklist item being (re)assigned
+  const [editItemId, setEditItemId] = useState(null)      // checklist item whose text is being edited
+  const [editItemText, setEditItemText] = useState('')
+  const [confirmItem, setConfirmItem] = useState(null)    // checklist item pending delete
   const [savingTpl, setSavingTpl] = useState(false)
   const [newItem, setNewItem] = useState('')
   const [newSubtask, setNewSubtask] = useState('')
@@ -229,6 +259,13 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
   const toggleItem  = useMutation(mut((iid) => taskApi.toggleChecklist(iid)))
   // (Re)assign a single checklist line to a person, or clear it (userId = null).
   const assignItem  = useMutation(mut(({ itemId, userIds }) => taskApi.updateChecklistItem(itemId, { assigned_to: userIds })))
+  // Rename a line and remove one. The list could only be added to and ticked,
+  // so a typo stayed a typo and a line added by mistake had to be ticked as if
+  // it were done — which is a false record of the work, not a tidy-up.
+  const renameItem  = useMutation(mut(({ itemId, description }) => taskApi.updateChecklistItem(itemId, { description }),
+    () => { invalidate(); setEditItemId(null); setEditItemText('') }))
+  const deleteItem  = useMutation(mut((itemId) => taskApi.deleteChecklistItem(itemId),
+    () => { invalidate(); setConfirmItem(null) }))
   // Subtasks. Every write invalidates the tree AND the task itself, because
   // ticking a leaf five levels down changes the bar at the top of this modal.
   const afterTree = () => { invalidate(); qc.invalidateQueries({ queryKey: ['task-tree', id] }) }
@@ -248,7 +285,7 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
   })
   const remove      = useMutation({
     mutationFn: () => taskApi.remove(id),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['tasks'] }); embedded ? onClose?.() : navigate('/app/tasks') },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['tasks'] }); embedded ? onClose?.() : navigate(stateBack || '/app/tasks') },
     onError: onErr,
   })
   const copy        = useMutation({
@@ -276,10 +313,24 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
     return (
       <div className="p-6 rounded-2xl" style={{ border: '1px solid color-mix(in srgb, var(--color-danger-500) 30%, transparent)', background: 'var(--bg-card)' }}>
         <p className="text-sm" style={{ color: 'var(--color-danger-500)' }}>{error?.message}</p>
-        <button onClick={() => navigate('/app/tasks')} className="text-xs mt-3 underline" style={{ color: 'var(--text-muted)' }}>Back to tasks</button>
+        <button onClick={goBack} className="text-xs mt-3 underline" style={{ color: 'var(--text-muted)' }}>{backLabel}</button>
       </div>
     )
   }
+
+  /* The cold-link destination — used ONLY when there is no history behind this
+   * page (a pasted URL, a new tab, a link from an email). With history the
+   * arrow simply goes back, wherever back was, and none of this applies.
+   *
+   * A task on a project belongs to that project, so a cold visit still lands
+   * somewhere sensible rather than in the global list. A deleted project leaves
+   * rel_type behind on the task, so rel_missing wins: sending someone to a page
+   * that no longer exists is worse than sending them to the list.
+   */
+  const coldBackTo = stateBack
+    || (task.rel_type === 'project' && task.rel_id && !task.rel_missing ? `/app/projects/${task.rel_id}?group=tasks` : null)
+    || '/app/tasks'
+  const coldBackLabel = coldBackTo === '/app/tasks' ? 'Back to tasks' : 'Back to project tasks'
 
   // Guarded: an unrecognised status/priority used to throw on .color here.
   const st = statusMap[task.status] || { label: task.status, color: 'var(--text-muted)' }
@@ -360,8 +411,8 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
   return (
     <div className={embedded ? '' : 'max-w-4xl mx-auto'}>
       {!embedded && (
-        <button onClick={() => navigate('/app/tasks')} className="flex items-center gap-1.5 text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-          <ArrowLeft size={13} /> Back to tasks
+        <button onClick={() => (hasHistory ? goBack() : navigate(coldBackTo))} className="flex items-center gap-1.5 text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+          <ArrowLeft size={13} /> {hasHistory ? backLabel : coldBackLabel}
         </button>
       )}
 
@@ -627,6 +678,40 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                     : [c.assignee?.name || peopleById[c.assigned_to]?.name]
                   ).filter(Boolean)
                   const owner = owners[0]
+
+                  // Editing swaps the whole line for an input, because the tick
+                  // box and the text are the same button — leaving it clickable
+                  // while you type means the first stray click marks it done.
+                  if (editItemId === c.id) {
+                    const saveEdit = () => {
+                      const next = editItemText.trim()
+                      if (!next || next === c.description) { setEditItemId(null); setEditItemText(''); return }
+                      renameItem.mutate({ itemId: c.id, description: next })
+                    }
+                    return (
+                      <li key={c.id} className="flex items-center gap-1.5">
+                        <input autoFocus value={editItemText} onChange={e => setEditItemText(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') { e.preventDefault(); saveEdit() }
+                            if (e.key === 'Escape') { setEditItemId(null); setEditItemText('') }
+                          }}
+                          maxLength={500} aria-label="Checklist item text"
+                          className="flex-1 min-w-0 text-xs"
+                          style={{ padding: '6px 9px', borderRadius: 9, border: `1px solid ${TASK_ACCENT}`, background: 'var(--bg-input)', color: 'var(--text-h)', outline: 'none' }} />
+                        <button onClick={saveEdit} disabled={renameItem.isPending} title="Save" aria-label="Save"
+                          className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 disabled:opacity-40"
+                          style={{ background: TASK_ACCENT, color: '#fff' }}>
+                          <CheckSquare size={12} />
+                        </button>
+                        <button onClick={() => { setEditItemId(null); setEditItemText('') }} title="Cancel" aria-label="Cancel"
+                          className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0"
+                          style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+                          <X size={12} />
+                        </button>
+                      </li>
+                    )
+                  }
+
                   return (
                   <li key={c.id} className="flex items-center gap-2 group">
                     <button onClick={() => toggleItem.mutate(c.id)} className="flex items-start gap-2 text-left flex-1 min-w-0">
@@ -636,6 +721,21 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
                       <span className="text-xs" style={{ color: c.finished ? 'var(--text-muted)' : 'var(--text-h)', textDecoration: c.finished ? 'line-through' : 'none' }}>
                         {c.description}
                       </span>
+                    </button>
+                    {/* Edit / delete. Dimmed rather than hidden: hover-to-reveal
+                        does not exist on a touch screen, and a control you
+                        cannot discover is the same as one that is not there. */}
+                    <button onClick={() => { setEditItemId(c.id); setEditItemText(c.description || '') }}
+                      title="Edit this item" aria-label="Edit this item"
+                      className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 opacity-50 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                      style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+                      <Pencil size={11} />
+                    </button>
+                    <button onClick={() => setConfirmItem(c)}
+                      title="Delete this item" aria-label="Delete this item"
+                      className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 opacity-50 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                      style={{ border: '1px solid var(--border)', color: 'var(--color-danger-500)' }}>
+                      <Trash2 size={11} />
                     </button>
                     <button onClick={() => setAssignItemId(c.id)}
                       className="flex items-center gap-1 text-[10px] font-semibold px-1.5 py-1 rounded-lg shrink-0 transition-opacity"
@@ -1068,6 +1168,14 @@ export default function TaskDetail({ idProp = null, onClose = null }) {
         title="Assign this item" subtitle="Tick everyone who is on this line — staff, vendors or third-party vendors."
         emptyText="No people available." accent={TASK_ACCENT} allowClear clearLabel="Take everyone off"
       />
+
+      {/* A checklist line is gone for good — unlike the task itself, there is no
+          trash for one, so it is worth one click of confirmation. */}
+      <ConfirmModal open={Boolean(confirmItem)} onClose={() => setConfirmItem(null)}
+        onConfirm={() => deleteItem.mutate(confirmItem.id)}
+        title="Remove this checklist item?"
+        message={`“${confirmItem?.description || ''}” will be taken off the list. This one cannot be undone.`}
+        confirmLabel="Remove" danger />
     </div>
   )
 }

@@ -33,6 +33,8 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tasks')->group(
     Route::patch('/checklist/{item}/toggle', [TaskChecklistController::class, 'toggle']);
     // Edit / (re)assign a single checklist item.
     Route::patch('/checklist/{item}',        [TaskChecklistController::class, 'update']);
+    // Take a line off the list entirely (ticking it is not the same as removing it).
+    Route::delete('/checklist/{item}',       [TaskChecklistController::class, 'destroy']);
     // Trash: list soft-deleted tasks and put one back. Before /{task} so "trash"
     // isn't captured as a task id.
     Route::get('/trash',                    [TaskController::class, 'trash']);
