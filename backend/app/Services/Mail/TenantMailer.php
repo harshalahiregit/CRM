@@ -101,8 +101,20 @@ class TenantMailer
         Mail::mailer($mailerName)->send([], [], function ($m) use ($to, $subject, $html, $text, $settings, $from, $attachments, $replyTo) {
             $m->to($to)->subject($subject)->html($html);
 
-            if ($text !== null && $text !== '') {
-                $m->text($text);
+            /* Always multipart/alternative, never HTML on its own.
+             *
+             * A message with an HTML body and no text alternative is one of the
+             * oldest and heaviest spam signals there is — genuine bulk senders
+             * all ship both parts, and filters score accordingly. Most callers
+             * here pass a hand-written text version; the ones that do not were
+             * sending HTML alone, and those are the mails that land in Junk.
+             *
+             * The generated version is a plain reading of the same content, not
+             * a stub: a caller's own text part is always better and still wins.
+             */
+            $plain = ($text !== null && $text !== '') ? $text : self::plainTextFrom($html);
+            if ($plain !== '') {
+                $m->text($plain);
             }
             // Raw in-memory attachments — the calendar invite that rides along
             // with a meeting invitation has no file on disk to attach.
@@ -240,9 +252,97 @@ class TenantMailer
             // mail servers whose certificate is self-signed or issued for a
             // different hostname — otherwise STARTTLS fails outright.
             'verify_peer' => (bool) ($settings->verify_peer ?? true),
+            // What this server calls itself in the SMTP greeting.
+            //
+            // Unset, Symfony says EHLO [127.0.0.1] (or the box's internal
+            // hostname), and a receiving server that is handed a bare IP or a
+            // name with no public DNS behind it treats the message as far more
+            // likely to be junk. It is one of the cheapest spam signals there
+            // is to emit and one of the cheapest to stop emitting.
+            //
+            // The From address's own domain is the right answer: it is the
+            // domain whose SPF and DKIM this message is being sent under, so
+            // the greeting, the envelope and the visible sender all agree.
+            'local_domain' => self::greetingDomain($settings->from_email),
         ]]);
 
         return 'tenant';
+    }
+
+    /**
+     * A readable text/plain rendering of an HTML email body.
+     *
+     * Not a sanitiser and not a converter — it exists so that no message leaves
+     * this application as HTML alone. Scripts, styles and head go entirely
+     * (their contents are not content); block edges become line breaks so the
+     * result reads as paragraphs rather than one run-on line; links keep their
+     * href in brackets, because a text-only reader that cannot see "click here"
+     * still needs somewhere to go.
+     */
+    public static function plainTextFrom(string $html): string
+    {
+        $s = preg_replace('#<(script|style|head)\b[^>]*>.*?</\1>#is', ' ', $html) ?? $html;
+
+        // Keep the destination of a link, which stripping tags would discard.
+        $s = preg_replace_callback(
+            '#<a\b[^>]*href=(["\'])(.*?)\1[^>]*>(.*?)</a>#is',
+            function ($m) {
+                $label = trim(html_entity_decode(strip_tags($m[3]), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+                $href  = trim($m[2]);
+
+                if ($href === '' || $label === $href) {
+                    return $label !== '' ? $label : $href;
+                }
+
+                // Parentheses, not angle brackets: the strip_tags() below reads
+                // "<https://…>" as a tag and swallows the whole link.
+                return $label === '' ? $href : $label.' ('.$href.')';
+            },
+            $s,
+        ) ?? $s;
+
+        $s = preg_replace('#<br\s*/?>#i', "\n", $s) ?? $s;
+        // Cells get a separator, not a paragraph break — these emails lay their
+        // detail out in tables, and without this "Code" and "PV-0001" arrive
+        // welded together as "CodePV-0001".
+        $s = preg_replace('#</(td|th)>#i', ': ', $s) ?? $s;
+        $s = preg_replace('#</(p|div|tr|li|h[1-6]|table)>#i', "\n\n", $s) ?? $s;
+
+        $s = html_entity_decode(strip_tags($s), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+        // Collapse the whitespace a table-based email leaves behind, without
+        // collapsing the paragraph breaks just created.
+        $s = preg_replace('/[ \t\x{00A0}]+/u', ' ', $s) ?? $s;
+        $s = preg_replace('/ ?\n ?/', "\n", $s) ?? $s;
+        // The separator left dangling by a row's last cell, and by an empty one.
+        $s = preg_replace('/:\s*(?=\n|$)/', '', $s) ?? $s;
+        $s = preg_replace('/(?<=\n|^):\s*/', '', $s) ?? $s;
+        $s = preg_replace('/\n{3,}/', "\n\n", $s) ?? $s;
+
+        return trim($s);
+    }
+
+    /**
+     * The domain to greet the receiving server with — the sender's own, falling
+     * back to APP_URL's host, and never a bare localhost.
+     */
+    public static function greetingDomain(?string $fromEmail): ?string
+    {
+        $domain = $fromEmail && str_contains($fromEmail, '@')
+            ? trim(substr(strrchr($fromEmail, '@'), 1))
+            : null;
+
+        if (! $domain) {
+            $domain = parse_url((string) config('app.url'), PHP_URL_HOST) ?: null;
+        }
+
+        // A localhost greeting is worse than none: Symfony's own default at
+        // least uses the machine's hostname, which may resolve.
+        if (! $domain || $domain === 'localhost' || $domain === '127.0.0.1') {
+            return null;
+        }
+
+        return $domain;
     }
 
     /**

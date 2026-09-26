@@ -247,6 +247,27 @@ class PurchaseActivationNotifier
             if (! $fresh || ! $fresh->email) {
                 return;
             }
+
+            /* Do not mail a login link only this server can open.
+             *
+             * With FRONTEND_URL unset the portal link resolves to
+             * http://localhost:5173, so the vendor gets a Login button that
+             * lands on their own machine and a temporary password they have
+             * nowhere to use. The send "succeeds", the log says delivered, and
+             * the first anybody hears of it is the vendor saying the button
+             * does nothing.
+             *
+             * Better to refuse, say why, and let the admin resend once the URL
+             * is configured — the credentials are still on the vendor record,
+             * so nothing is lost by waiting. */
+            if (FrontendUrl::publicBase() === null) {
+                Log::channel('purchase')->error('Purchase welcome-credentials e-mail withheld: FRONTEND_URL is not configured, so the portal link would point at localhost.', [
+                    'purchase_vendor_id' => $fresh->id,
+                ]);
+
+                return;
+            }
+
             $ctx = $this->context($fresh, $pw);
             $status = $this->channels->emailHtml(
                 $fresh->email,

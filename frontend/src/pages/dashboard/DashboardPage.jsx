@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/context/AuthContext'
 import MyAttendanceCard from '@/modules/hr/components/MyAttendanceCard'
@@ -163,9 +164,13 @@ export default function DashboardPage() {
   // number replaced too, because the substitution swapped the whole object.
   //
   // The endpoint returns real counts now, so zero is allowed to mean zero.
+  // Whose activity the feed is showing. 'mine' is the default and the server
+  // agrees — the dashboard should open on your own work, not the company's.
+  const [activityScope, setActivityScope] = useState('mine')
+
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['dashboard'],
-    queryFn: () => api.get('/dashboard').then(r => r.data.data),
+    queryKey: ['dashboard', activityScope],
+    queryFn: () => api.get('/dashboard', { params: { activity_scope: activityScope } }).then(r => r.data.data),
   })
 
   const kpis = [
@@ -244,6 +249,22 @@ export default function DashboardPage() {
             <p className="text-sm mt-1.5" style={{ color: 'var(--text-muted)' }}>
               Here's what's happening in your workspace today.
             </p>
+            {/* The real last sign-in, replacing the login page's hard-coded
+                "📍 Pune, Maharashtra · Chrome" — which said the same thing to
+                every person who ever opened it. No city: turning an IP into a
+                place needs a service this deployment does not have, and
+                guessing one is what went wrong the first time. Absent entirely
+                on a first sign-in, rather than an empty row. */}
+            {data?.last_sign_in && (
+              <p className="text-[11px] mt-2 flex items-center gap-1.5 flex-wrap" style={{ color: 'var(--text-muted)' }}>
+                <Clock size={11} />
+                <span>Last sign-in {new Date(data.last_sign_in.at).toLocaleString()}</span>
+                {(data.last_sign_in.browser || data.last_sign_in.device) && (
+                  <span>· {[data.last_sign_in.browser, data.last_sign_in.device].filter(Boolean).join(' on ')}</span>
+                )}
+                {data.last_sign_in.ip && <span>· {data.last_sign_in.ip}</span>}
+              </p>
+            )}
           </div>
           {/* Floating 3D badge */}
           <div
@@ -363,11 +384,33 @@ export default function DashboardPage() {
                 is only exposed per record (AuditTimeline). Sending them to a
                 404 would be worse than the dead button. Restore this the day
                 that page exists. */}
+
+            {/* Mine / Everyone. The feed used to be company-wide for anyone
+                entitled to it, with nothing saying so and no way back. The
+                toggle only appears for a reader the server says may widen it,
+                so it is never a control that does nothing. */}
+            {data?.activity_scope?.can_widen && (
+              <div className="flex items-center rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+                {[{ k: 'mine', l: 'Mine' }, { k: 'all', l: 'Everyone' }].map(o => (
+                  <button key={o.k} onClick={() => setActivityScope(o.k)}
+                    className="text-[10px] font-bold px-2.5 py-1.5"
+                    style={activityScope === o.k
+                      ? { background: 'var(--color-primary-500)', color: '#fff' }
+                      : { background: 'transparent', color: 'var(--text-muted)' }}>
+                    {o.l}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div className="space-y-0">
             {recentActivity.length === 0 ? (
               <p className="text-xs py-6 text-center" style={{ color: 'var(--text-muted)' }}>
-                {isLoading ? 'Loading…' : 'Nothing recorded yet. Activity appears here as your team works.'}
+                {isLoading
+                  ? 'Loading…'
+                  : activityScope === 'all'
+                    ? 'Nothing recorded yet. Activity appears here as your team works.'
+                    : 'Nothing recorded against you yet. Your own actions appear here as you work.'}
               </p>
             ) : recentActivity.map((item, i) => (
               <ActivityItem key={i} idx={i} {...item} />

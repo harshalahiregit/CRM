@@ -741,6 +741,53 @@ html.light .header-3d {
 }
 
 /* ══════════════════════════════════════════════════════════════
+   PASTED TEXT THAT CARRIES ITS OWN COLOUR
+   ══════════════════════════════════════════════════════════════
+   Stored rich text (task descriptions and comments, notes, proposals) keeps
+   whatever the author pasted. Word, Google Docs, Outlook and Quill's own colour
+   picker all write an explicit near-black on the span — correct on the white
+   page it came from, invisible on a dark card, which is exactly what "text is
+   not visible in dark mode" was.
+
+   The text itself is not wrong and must not be rewritten on save: the same row
+   is read in both themes, and in light mode that black is right. So the theme
+   overrides it at render time instead, and only for the handful of values that
+   actually mean "default body text" — a deliberate red or green still comes
+   through, because losing an author's highlight is its own bug.
+
+   The mirror problem (white pasted onto the light theme's white card) is
+   handled the same way underneath. */
+
+html.dark :is(.rte-body, .rich-content, .task-comment-html, .ql-editor)
+  :is([style*="color:#000"], [style*="color: #000"],
+      [style*="color:rgb(0,0,0)"], [style*="color: rgb(0, 0, 0)"],
+      [style*="color:rgba(0,0,0"], [style*="color: rgba(0, 0, 0"],
+      [style*="color:black"], [style*="color: black"],
+      [style*="color:windowtext"], [style*="color: windowtext"],
+      [style*="color:#111"], [style*="color: #111"],
+      [style*="color:#212529"], [style*="color: #212529"],
+      [style*="color:#222"], [style*="color: #222"],
+      [style*="color:#333"], [style*="color: #333"],
+      [style*="color:#1f1f1f"], [style*="color: #1f1f1f"],
+      [style*="color:rgb(31,31,31)"], [style*="color: rgb(31, 31, 31)"],
+      [style*="color:rgb(32,33,36)"], [style*="color: rgb(32, 33, 36)"],
+      [style*="color:rgb(33,37,41)"], [style*="color: rgb(33, 37, 41)"]),
+html.dark :is(.rte-body, .rich-content, .task-comment-html, .ql-editor)
+  :is(font[color="#000000"], font[color="#000"], font[color="black"]) {
+  color: var(--text-body) !important;
+}
+
+html.light :is(.rte-body, .rich-content, .task-comment-html, .ql-editor)
+  :is([style*="color:#fff"], [style*="color: #fff"],
+      [style*="color:#FFF"], [style*="color: #FFF"],
+      [style*="color:rgb(255,255,255)"], [style*="color: rgb(255, 255, 255)"],
+      [style*="color:white"], [style*="color: white"]),
+html.light :is(.rte-body, .rich-content, .task-comment-html, .ql-editor)
+  :is(font[color="#ffffff"], font[color="#fff"], font[color="white"]) {
+  color: var(--text-body) !important;
+}
+
+/* ══════════════════════════════════════════════════════════════
    PROFILE SECTION SIDE-NAV (customer detail nav)
    ══════════════════════════════════════════════════════════════ */
 .profile-sidenav { position: sticky; top: 16px; align-self: flex-start; }

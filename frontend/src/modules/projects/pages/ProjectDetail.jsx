@@ -10,6 +10,7 @@ import { projectApi, PROJECT_STATUS, PROJECT_ACCENT } from '@/services/projectAp
 import { useDiscardGuard } from '@/lib/confirmClose'
 import { exportCsv, stampedName } from '@/lib/exportCsv'
 import { useAuth } from '@/context/AuthContext'
+import { useGoBack } from '@/hooks/useGoBack'
 import { useStatuses, statusOptions } from '@/hooks/useStatuses'
 import { taskApi, TASK_PRIORITY, TASK_ACCENT } from '@/services/taskApi'
 import Select from '@/components/ui/Select'
@@ -121,6 +122,10 @@ export default function ProjectDetail() {
   const { map: statusMap, list: statusList } = useStatuses('project')
 
   const [searchParams, setSearchParams] = useSearchParams()
+  // Back goes back, not to the project list. Same reason as the task page: a
+  // project reached from a customer, a task or a search sent you to /app/projects
+  // on the way out, which is a screen you may never have been on.
+  const { goBack, backLabel } = useGoBack('/app/projects', 'Back to projects')
   const [editing, setEditing] = useState(false)
   const [invoicing, setInvoicing] = useState(false)
   const [creatingTask, setCreatingTask] = useState(false)
@@ -213,7 +218,7 @@ export default function ProjectDetail() {
     return (
       <div className="p-6 rounded-2xl" style={{ border: '1px solid color-mix(in srgb, var(--color-danger-500) 30%, transparent)', background: 'var(--bg-card)' }}>
         <p className="text-sm" style={{ color: 'var(--color-danger-500)' }}>{error?.message}</p>
-        <button onClick={() => navigate('/app/projects')} className="text-xs mt-3 underline" style={{ color: 'var(--text-muted)' }}>Back to projects</button>
+        <button onClick={goBack} className="text-xs mt-3 underline" style={{ color: 'var(--text-muted)' }}>{backLabel}</button>
       </div>
     )
   }
@@ -242,8 +247,8 @@ export default function ProjectDetail() {
 
   return (
     <div className="max-w-5xl">
-      <button onClick={() => navigate('/app/projects')} className="flex items-center gap-1.5 text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-        <ArrowLeft size={13} /> Projects
+      <button onClick={goBack} className="flex items-center gap-1.5 text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+        <ArrowLeft size={13} /> {backLabel}
       </button>
 
       {/* Header */}
@@ -597,6 +602,26 @@ function TasksTab({ projectId, navigate, onNewTask, setAssignTask = () => {} }) 
   const setStatus = useMutation({ mutationFn: ({ id, status }) => taskApi.setStatus(id, status), onSuccess: refetch })
   const startTimer = useMutation({ mutationFn: (id) => taskApi.startTimer(id), onSuccess: refetch })
 
+  // Row actions. The table could open a task and change its status and nothing
+  // else, so renaming one or getting rid of one meant leaving the project — the
+  // three things you do most to a row were the three the row did not offer.
+  const [editing, setEditing] = useState(null)
+  const [confirmDelete, setConfirmDelete] = useState(null)
+  const [rowErr, setRowErr] = useState('')
+  const onRowErr = (e) => setRowErr(e?.message || 'That did not work. Try again.')
+  // Copy keeps the project link — a duplicate of a project task belongs to the
+  // same project, otherwise it lands in the global list and looks lost.
+  const copy = useMutation({
+    mutationFn: (id) => taskApi.copy(id),
+    onSuccess: () => { setRowErr(''); refetch() },
+    onError: onRowErr,
+  })
+  const remove = useMutation({
+    mutationFn: (id) => taskApi.remove(id),
+    onSuccess: () => { setRowErr(''); setConfirmDelete(null); refetch() },
+    onError: onRowErr,
+  })
+
   const uid = user?.id
   const mineOf = (t) => (t.assignees || []).some(a => a.user_id === uid || a.user?.id === uid)
 
@@ -680,14 +705,14 @@ function TasksTab({ projectId, navigate, onNewTask, setAssignTask = () => {} }) 
         <table className="w-full" style={{ borderCollapse: 'collapse', minWidth: 720 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              {['#', 'Name', 'Status', 'Start Date', 'Due Date', 'Assigned to', 'Tags', 'Priority'].map(h => (
-                <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 10.5, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{h}</th>
+              {['#', 'Name', 'Status', 'Start Date', 'Due Date', 'Assigned to', 'Tags', 'Priority', 'Actions'].map(h => (
+                <th key={h} style={{ padding: '10px 12px', textAlign: h === 'Actions' ? 'right' : 'left', fontSize: 10.5, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
-              <tr><td colSpan={8}><p className="text-xs text-center py-10" style={{ color: 'var(--text-muted)' }}>{q ? 'No matching tasks.' : 'No tasks linked to this project yet — click New Task.'}</p></td></tr>
+              <tr><td colSpan={9}><p className="text-xs text-center py-10" style={{ color: 'var(--text-muted)' }}>{q ? 'No matching tasks.' : 'No tasks linked to this project yet — click New Task.'}</p></td></tr>
             )}
             {rows.map(t => {
               const sm = statusMeta(t.status)
@@ -704,7 +729,12 @@ function TasksTab({ projectId, navigate, onNewTask, setAssignTask = () => {} }) 
                         <GitBranch size={9} /> {t.parent.name}
                       </span>
                     )}
-                    <button onClick={() => navigate(`/app/tasks/${t.id}`)} className="text-left font-semibold text-xs hover:underline" style={{ color: 'var(--text-h)' }}>{t.name}</button>
+                    {/* Carry where we came from. Without it the task page's back
+                        arrow lands on the global task list, which is not where
+                        you were. */}
+                    <button onClick={() => navigate(`/app/tasks/${t.id}`, {
+                      state: { backTo: `/app/projects/${projectId}?group=tasks`, backLabel: 'Back to project tasks' },
+                    })} className="text-left font-semibold text-xs hover:underline" style={{ color: 'var(--text-h)' }}>{t.name}</button>
                     <div className="mt-1">
                       <button onClick={() => startTimer.mutate(t.id)} disabled={startTimer.isPending}
                         className="inline-flex items-center gap-1 text-[10px] font-bold disabled:opacity-40" style={{ color: PROJECT_ACCENT }}>
@@ -768,13 +798,47 @@ function TasksTab({ projectId, navigate, onNewTask, setAssignTask = () => {} }) 
                       <span style={{ color: priorityColor(t.priority) }}>{t.priority}</span>
                     </span>
                   </td>
+                  <td style={{ padding: '9px 12px' }} onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center justify-end gap-1">
+                      <TaskRowBtn onClick={() => setEditing(t)} label="Edit"><Pencil size={12} /></TaskRowBtn>
+                      <TaskRowBtn onClick={() => copy.mutate(t.id)} label="Copy" disabled={copy.isPending}><Copy size={12} /></TaskRowBtn>
+                      <TaskRowBtn onClick={() => setConfirmDelete(t)} label="Delete" danger><Trash2 size={12} /></TaskRowBtn>
+                    </div>
+                  </td>
                 </tr>
               )
             })}
           </tbody>
         </table>
       </div>
+
+      {rowErr && (
+        <p className="text-xs px-3 py-2 rounded-lg"
+          style={{ background: 'color-mix(in srgb, var(--color-danger-500) 12%, transparent)', color: 'var(--color-danger-500)' }}>{rowErr}</p>
+      )}
+
+      {/* Edit in place. The link stays locked to this project so an edit from
+          here cannot silently move the task out of the project you are in. */}
+      <TaskFormDrawer open={Boolean(editing)} onClose={() => setEditing(null)} task={editing}
+        onSaved={() => { setEditing(null); refetch() }} />
+
+      <ConfirmModal open={Boolean(confirmDelete)} onClose={() => setConfirmDelete(null)}
+        onConfirm={() => remove.mutate(confirmDelete.id)}
+        title="Delete this task?"
+        message={`“${confirmDelete?.name}” goes to Trash and leaves this project's list. You can restore it from Tasks → Trash.`}
+        confirmLabel="Delete" danger />
     </div>
+  )
+}
+
+/* Square icon button for the task row's Edit / Copy / Delete. */
+function TaskRowBtn({ onClick, label, danger, disabled, children }) {
+  return (
+    <button type="button" onClick={onClick} aria-label={label} title={label} disabled={disabled}
+      className="w-7 h-7 rounded-lg flex items-center justify-center disabled:opacity-40"
+      style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: danger ? 'var(--color-danger-500)' : 'var(--text-muted)' }}>
+      {children}
+    </button>
   )
 }
 

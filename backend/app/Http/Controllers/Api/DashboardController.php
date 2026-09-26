@@ -42,7 +42,18 @@ class DashboardController extends Controller
             'win_rate'           => $this->winRate($tenantId),
             'revenue_this_month' => $this->revenueThisMonth($tenantId),
             'revenue_by_month'   => $this->revenueByMonth($tenantId),
-            'recent_activity'    => $this->recentActivity($tenantId, $request->user()),
+            'recent_activity'    => $this->recentActivity($tenantId, $request->user(), $request),
+        ];
+
+        // Whose activity this feed is showing, and whether the reader is
+        // allowed to widen it. The feed used to be silently company-wide for
+        // anyone entitled to it, with nothing on screen saying so and no way to
+        // narrow it back to yourself.
+        $data['last_sign_in'] = $this->lastSignIn($request);
+
+        $data['activity_scope'] = [
+            'showing'  => $this->activityScope($request),
+            'can_widen' => app(StaffPermissionService::class)->scope($request->user(), 'reports') === 'global',
         ];
 
         // Which figures this deployment can actually produce. The UI hides a
@@ -95,19 +106,89 @@ class DashboardController extends Controller
      * work they do daily; they lose sight of other people's, which they were
      * never meant to have.
      */
-    private function recentActivity(int $tenantId, $user, int $limit = 6): array
+    /**
+     * The sign-in BEFORE this one — what "was that me?" actually needs.
+     *
+     * The login screen used to answer this with two string literals, telling
+     * everyone who ever opened it that they last signed in from Pune on Chrome.
+     * The honest version is here instead, after sign-in, where the caller is
+     * known: it reports the previous session's own recorded device, browser
+     * and IP, and reports nothing where nothing was recorded.
+     *
+     * Deliberately no city. Turning an IP into a place needs a geo-IP service
+     * this deployment does not have, and guessing one is how "Pune" got here
+     * in the first place. An IP is coarse but true.
+     *
+     * Null on a first-ever sign-in, and null where session tracking is not
+     * migrated — the UI then shows nothing rather than an empty shell.
+     */
+    private function lastSignIn(Request $request): ?array
+    {
+        if (! Schema::hasTable('user_sessions')) {
+            return null;
+        }
+
+        $user = $request->user();
+
+        // Skip the session doing the asking: the newest row is the one that was
+        // created by the login currently on screen, and reporting it back as
+        // "last sign-in" would just be the clock.
+        $currentTokenId = $user->currentAccessToken()?->id;
+
+        $row = DB::table('user_sessions')
+            ->where('user_id', $user->id)
+            ->when($currentTokenId, fn ($q) => $q->where(fn ($w) => $w->whereNull('token_id')->orWhere('token_id', '!=', $currentTokenId)))
+            ->orderByDesc('created_at')->orderByDesc('id')
+            ->first(['device', 'browser', 'ip', 'created_at']);
+
+        if (! $row) {
+            return null;
+        }
+
+        return [
+            'at'      => $row->created_at,
+            'device'  => $row->device ?: null,
+            'browser' => $row->browser ?: null,
+            'ip'      => $row->ip ?: null,
+        ];
+    }
+
+    /**
+     * Which feed the caller asked for. 'mine' unless they explicitly asked for
+     * everyone's — the default is the narrow one, because a landing page should
+     * not open on other people's work.
+     */
+    private function activityScope(Request $request): string
+    {
+        return $request->query('activity_scope') === 'all' ? 'all' : 'mine';
+    }
+
+    private function recentActivity(int $tenantId, $user, ?Request $request = null, int $limit = 6): array
     {
         if (! Schema::hasTable('audit_logs')) {
             return [];
         }
 
-        $global = app(StaffPermissionService::class)->scope($user, 'reports') === 'global';
+        // Two separate questions, and they were being answered as one.
+        //
+        // Being ENTITLED to the company's activity is not the same as ASKING
+        // for it. The feed widened itself the moment someone had the report
+        // scope, so an admin opening the dashboard was shown the whole
+        // company's actions — everyone's, unasked, on the first screen after
+        // login, with no way back to their own.
+        //
+        // Now the entitlement only decides whether "Everyone" is available at
+        // all; the request decides what is actually shown, and it shows the
+        // reader's own work unless they say otherwise.
+        $entitled = app(StaffPermissionService::class)->scope($user, 'reports') === 'global';
+        $wantsAll = $request !== null && $this->activityScope($request) === 'all';
+        $global   = $entitled && $wantsAll;
 
         return DB::table('audit_logs')
             ->where('tenant_id', $tenantId)
-            // Own actions only, unless entitled to the whole tenant's. Rows with
-            // no actor_id are system writes and belong to nobody, so a scoped
-            // reader does not see them either.
+            // Own actions only, unless entitled to the whole tenant's AND asking
+            // for them. Rows with no actor_id are system writes and belong to
+            // nobody, so a scoped reader does not see them either.
             ->when(! $global, fn ($q) => $q->where('actor_id', $user->id))
             ->orderByDesc('created_at')->orderByDesc('id')
             ->limit($limit)

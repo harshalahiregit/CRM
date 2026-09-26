@@ -3,7 +3,7 @@ import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-do
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Eye, EyeOff, ChevronDown, Shield, Zap, Globe, Lock, CheckCircle, User, Star } from 'lucide-react'
+import { Eye, EyeOff, ChevronDown, Shield, Zap, Lock, CheckCircle, User, Star } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { purchaseVendorAuthApi } from '@/services/purchaseVendorAuthApi'
 import { clientPortalApi } from '@/lib/clientPortalApi'
@@ -420,13 +420,21 @@ export default function LoginPage() {
           )}
         </div>
 
-        {/* Last login bar */}
-        <div className="mt-5 flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs" style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.15)', color: '#8b85a8' }}>
-          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: '#a78bfa' }} />
-          <span>Last login:</span>
-          <span className="font-medium flex items-center gap-1" style={{ color: '#edeaf8' }}>📍 Pune, Maharashtra</span>
-          <span className="flex items-center gap-1 ml-auto"><Globe size={11} /> Chrome</span>
-        </div>
+        {/* The "Last login: 📍 Pune, Maharashtra · Chrome" bar that used to sit
+            here has been removed rather than wired up.
+
+            Both values were string literals. Every visitor to this page, in any
+            city, on any browser, was told their last login was from Pune on
+            Chrome — and it is the one place in the product where a wrong
+            location actually matters, because "was that me?" is the question a
+            last-login line exists to answer. A fabricated answer to that
+            question is worse than no line at all.
+
+            It also cannot be made true here: nobody has identified themselves
+            yet on a login screen, so the server does not know whose last login
+            to report and should not be guessing from an unauthenticated
+            request. The real thing now lives on the dashboard, after sign-in,
+            built from the session record — see DashboardController::lastSignIn. */}
 
         {/* Brand footer */}
         <div className="mt-4 text-center space-y-2">

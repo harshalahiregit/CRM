@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Building2, Plus, RefreshCw, Eye, CalendarDays, Pencil } from 'lucide-react'
+import { Building2, Plus, RefreshCw, Eye, CalendarDays, Pencil, Hash } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
 // The add/edit form is shared with TPV — one component, one set of thirteen
 // fields, so the two cannot drift again. PurchaseVendorForm still exists and is
@@ -186,6 +186,16 @@ export default function PurchaseVendors() {
             page sideways rather than stacking. */}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button onClick={load} style={{ ...btn }}><RefreshCw size={14} /> Refresh</button>
+          {/* The vendor code's prefix, width and reset rule HAVE been
+              configurable all along — under Settings → Document Numbering,
+              one of thirty-odd formats in a single list, with nothing on this
+              screen pointing at it. "No option to set the prefix of the vendor
+              code in the settings" was a findability problem, so the link
+              lives next to the codes it controls and opens on that format. */}
+          <button onClick={() => navigate('/app/settings/numbering?type=purchase_vendor')} style={{ ...btn }}
+            title="Set the prefix, width and reset rule for vendor codes">
+            <Hash size={14} /> Code format
+          </button>
           <button onClick={() => navigate('/app/purchase/kickoff')} style={{ ...btn }}><CalendarDays size={14} /> Kickoff Meetings</button>
           <button onClick={() => { setErr(''); setModal({ company_name: '', email: '', ...PV_DEFAULTS }) }} style={{ ...btn, background: '#7C3AED', color: '#fff', border: 'none' }}><Plus size={14} /> New Vendor</button>
         </div>

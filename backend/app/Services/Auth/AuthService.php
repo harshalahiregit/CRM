@@ -209,6 +209,17 @@ class AuthService
             'registration_type'  => $vendor->registration_type,
         ]);
 
+        // Same silence as the TPV path had: the record was created, the log line
+        // was written, and the supplier was told nothing. The vendor code is
+        // already assigned here, so it goes out as the reference they can quote.
+        app(RegistrationAcknowledgement::class)->sent(
+            $vendor->tenant_id,
+            $vendor->email,
+            $vendor->company_name,
+            'Procurement Vendor Portal',
+            $vendor->purchase_vendor_code,
+        );
+
         return $vendor;
     }
 
@@ -289,6 +300,17 @@ class AuthService
         ]);
 
         Log::channel('auth')->info('TPV registered, pending approval', ['user_id' => $user->id]);
+
+        // Tell them it arrived. Until this, a self-registered TPV heard nothing
+        // between filling the form and an admin getting round to approving it —
+        // which is the whole of SIR-000050: registration completed, no email,
+        // no idea what happens next.
+        app(RegistrationAcknowledgement::class)->sent(
+            $tenantId,
+            $user->email,
+            $data['username'] ?? $user->name,
+            'Third-Party Vendor Portal',
+        );
 
         return $user;
     }
