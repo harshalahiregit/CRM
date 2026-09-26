@@ -4,6 +4,7 @@ namespace App\Domains\Fleet\Services;
 
 use App\Domains\Fleet\Contracts\DriverDirectory;
 use App\Domains\Fleet\Integration\TripCommitmentReader;
+use App\Domains\Fleet\Integration\TripCommitmentUnavailable;
 use App\Domains\Fleet\Models\DriverProfile;
 use App\Domains\Fleet\Models\Vehicle;
 use App\Exceptions\BusinessException;
@@ -331,7 +332,16 @@ class DriverService
             return;
         }
 
-        $commitment = $this->trips->forDriver((int) $profile->id, $companyId);
+        // D-204 — fail closed if the check cannot run: "could not tell" is not
+        // "free", and standing a driver down mid-trip is the outcome worth being
+        // cautious about.
+        try {
+            $commitment = $this->trips->forDriver((int) $profile->id, $companyId);
+        } catch (TripCommitmentUnavailable $e) {
+            throw new BusinessException(
+                'Could not check whether this driver is on a trip right now, so their status was not changed. Try again in a moment.'
+            );
+        }
 
         if ($commitment === null) {
             return;

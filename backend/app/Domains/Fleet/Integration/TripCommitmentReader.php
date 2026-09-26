@@ -63,6 +63,9 @@ class TripCommitmentReader
      */
     private function lookUp(string $column, int $id, int $companyId): ?array
     {
+        // No trip module installed is a real answer: nothing is committed. This
+        // is the only case that degrades OPEN — a standalone Fleet must still be
+        // able to retire a vehicle.
         if (! Schema::hasTable('trip_assignments')) {
             return null;
         }
@@ -74,12 +77,19 @@ class TripCommitmentReader
                 ->with(['trip:id,trip_number,status'])
                 ->first(['id', 'trip_id', $column]);
         } catch (Throwable $e) {
+            // D-204 — the table is there and the read failed. "Could not tell" is
+            // not "not committed": swallowing it to null would let a truck on a
+            // live trip be retired because the check errored. Signal it so the
+            // guard fails CLOSED. Table-absent above is the only open path.
             Log::channel('stos')->warning('Trip commitment could not be read', [
                 'company_id' => $companyId, 'column' => $column, 'id' => $id,
                 'error' => $e->getMessage(),
             ]);
 
-            return null;
+            throw new TripCommitmentUnavailable(
+                'Could not read trip assignments to check whether this asset is on a trip.',
+                previous: $e,
+            );
         }
 
         if (! $assignment) {

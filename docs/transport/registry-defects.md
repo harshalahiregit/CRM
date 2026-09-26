@@ -4516,13 +4516,13 @@ ledger on the row id was right; applying it without checking the value was the g
 
 ---
 
-## D-203 — the masters move still flattens FINANCED and CONTRACTED on a fresh migrate
+## D-203 — the masters move flattened FINANCED and CONTRACTED on a fresh migrate
 
-**Raised:** 2026-09-26, completing T-03. **Found: P2. Enforcement: P1's file.**
+**Raised:** 2026-09-26, completing T-03. **P2 — mine, found and fixed.**
 
 ### Measured
 
-`move_transport_masters_into_fleet` (2027_01_02) maps legacy ownership onto Fleet's:
+`move_transport_masters_into_fleet` (2027_01_02) mapped legacy ownership onto Fleet's:
 
 ```
 'FINANCED'   => 'owned',      // the financier vanishes
@@ -4531,18 +4531,17 @@ ledger on the row id was right; applying it without checking the value was the g
 
 It was correct when written — the Fleet `vehicles` table only had four ownership values and could
 not store the other two. T-03 has now put all six of §10 on the table, so the reason for the
-flattening is gone, but the mapping still runs: on any fresh `migrate`, a legacy FINANCED truck
-still lands as `owned` and a CONTRACTED one as `attached`. §10 lists ownership as what drives EMI,
-asset cost and profitability, and each reads the distinction this destroys.
+flattening was gone but the mapping still ran: on a fresh `migrate`, a legacy FINANCED truck landed
+as `owned` and a CONTRACTED one as `attached`. §10 lists ownership as what drives EMI, asset cost
+and profitability, and each reads the distinction this destroyed.
 
-### Fixed on the Fleet side, not here
+### Fixed — my own file
 
-`Vehicle::OWNERSHIPS` now holds all six (T-03), migration `2027_01_18` uppercases and remaps the
-live rows, and onboarding accepts all six. What remains is one file: `mapOwnership` should map
-`FINANCED => 'FINANCED'` and `CONTRACTED => 'CONTRACTED'` (and uppercase the rest) now that the
-target can hold them. That is P1's masters move, so it is his change — messaged, not edited. Rows
-already flattened on installs that have run the move cannot be recovered; this only stops it
-happening again.
+I first wrote this up as P1's to change; git corrected me (P1 checked): `2027_01_02_000002` is mine
+(b6784abe, 7b363c45). So `mapOwnership` now maps `FINANCED => 'FINANCED'`, `CONTRACTED =>
+'CONTRACTED'`, uppercases the rest, and folds `market => 'OTHER'` — a fresh migrate preserves all
+six end to end. Rows already flattened on installs that ran the old move cannot be recovered; this
+only stops it happening again. `2027_01_18` remaps and uppercases whatever those installs hold.
 
 ### Also closed in the same pass — for the record
 

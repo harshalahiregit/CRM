@@ -3,6 +3,7 @@
 namespace App\Domains\Fleet\Services;
 
 use App\Domains\Fleet\Integration\TripCommitmentReader;
+use App\Domains\Fleet\Integration\TripCommitmentUnavailable;
 use App\Domains\Fleet\Models\FuelTransaction;
 use App\Domains\Fleet\Models\Genset;
 use App\Domains\Fleet\Models\MaintenanceJob;
@@ -231,7 +232,17 @@ class VehicleService
         // soft-deletes the row every screen on that trip reads from, so the
         // journey in progress loses the asset it is about. The legacy master
         // refused this and the refusal did not come across with the move.
-        $commitment = $this->trips->forVehicle($id, $companyId);
+        //
+        // D-204 — if the check itself cannot run, refuse: "could not tell" is
+        // not "free". Better a retirement that must be retried than one that
+        // strands a live trip because the lookup errored.
+        try {
+            $commitment = $this->trips->forVehicle($id, $companyId);
+        } catch (TripCommitmentUnavailable $e) {
+            throw new BusinessException(
+                'Could not check whether this vehicle is on a trip right now, so it was not retired. Try again in a moment.'
+            );
+        }
 
         if ($commitment !== null) {
             throw new BusinessException(

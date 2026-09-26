@@ -296,13 +296,22 @@ return new class extends Migration
 
     private function mapOwnership(?string $ownership): string
     {
+        // D-203 — no longer flattens. This once mapped FINANCED→owned and
+        // CONTRACTED→attached because Fleet's `vehicles` could only hold four
+        // ownership values; T-03 gave it all six of §10, UPPERCASE (12.S11), so
+        // the move now preserves them. `market` folds into OTHER — it was never
+        // in §10 and spot hire is not a standing contract. Values land uppercase;
+        // 2027_01_18 remaps any that predate this and adds the unique-per-nothing
+        // index and the new default.
         return match (strtoupper((string) $ownership)) {
-            'OWNED'      => 'owned',
-            'LEASED'     => 'leased',
-            'ATTACHED'   => 'attached',
-            'CONTRACTED' => 'attached',
-            'FINANCED'   => 'owned',
-            default      => 'owned',
+            'OWNED'      => 'OWNED',
+            'LEASED'     => 'LEASED',
+            'ATTACHED'   => 'ATTACHED',
+            'CONTRACTED' => 'CONTRACTED',
+            'FINANCED'   => 'FINANCED',
+            'OTHER'      => 'OTHER',
+            'MARKET'     => 'OTHER',
+            default      => 'OWNED',
         };
     }
 

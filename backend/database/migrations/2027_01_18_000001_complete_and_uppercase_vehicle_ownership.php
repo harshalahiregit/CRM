@@ -21,11 +21,11 @@ use Illuminate\Support\Facades\Schema;
  * standing contract. OTHER is §10's own catch-all and the honest home for it.
  *
  * FINANCED and CONTRACTED are added to the vocabulary, not backfilled onto rows:
- * the masters move flattened them to owned/attached and that information is gone
- * from the moved rows. What this migration fixes is that no FUTURE onboarding or
- * re-migrate flattens them again. (The move's own `mapOwnership` still flattens;
- * that is P1's file and D-154 in the registry asks him to stop now that Fleet
- * can hold the values.)
+ * on installs where the masters move already ran, it flattened them to
+ * owned/attached and that information is gone from the moved rows. What this
+ * migration fixes is that no FUTURE onboarding flattens them again. The move's
+ * own `mapOwnership` (2027_01_02, my file) no longer flattens either — D-203 —
+ * so a fresh migrate now preserves FINANCED and CONTRACTED end to end.
  *
  * ── NORMALISED PLATE (D-141) ──────────────────────────────────────────────
  * `registration_normalized` was added with an index by the D-62 union and never
