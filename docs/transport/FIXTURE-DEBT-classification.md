@@ -240,3 +240,37 @@ nothing; only the exact stored form does. A one-line fix (match the normalised i
 **Skipped because it was another developer's file:** none. Every change was in
 `backend/tests/Feature/Transport/**`. `CreatesFleetResources` needed nothing: `moveFleetDriver()`
 already existed.
+
+## 8 · After Fleet's D-145 / D-146 fixes (26 September, master `1cd0fa13`)
+
+Fleet now holds both rules that four bucket-A tests were kept red for (P2, `eaead3dd`):
+- a licence belongs to one driver, refused with the holder named;
+- an asset on a live trip cannot be retired or stood down, refused with the trip named, read through
+  `Fleet\Integration\TripCommitmentReader`, which means `TripAssignment::active()`.
+
+**Moved out of bucket A — rewritten, not deleted.** Each now asserts both halves:
+
+| Test | (a) legacy endpoint | (b) the rule, through Fleet's public service |
+|---|---|---|
+| `TransportMasterApiTest::duplicate_licence_and_duplicate_employee_link_are_rejected` | `POST /transport/drivers` refused (405, still the D-145 hold) and nothing written | `DriverService::saveProfile()` refuses the same licence typed differently, naming the holder; a second save of one person never adds a second profile (INT §76) |
+| `TransportMasterAllocationAuditTest::a_vehicle_with_an_active_assignment_cannot_be_deleted` | `DELETE /transport/vehicles/{id}` → 409 | `VehicleService::retire()` refused, naming the trip; no orphan |
+| `…::a_driver_with_an_active_assignment_cannot_be_deleted` | `DELETE /transport/drivers/{id}` → 409 | `saveProfile(status INACTIVE)` refused, naming the trip; the driver is still ON_TRIP |
+| `…::deletion_succeeds_once_the_assignment_is_released` | both legacy deletes still 409 after release | after release Fleet retires the vehicle and stands the driver down; history keeps both ids |
+
+**Proved not vacuous.** For each refusal, the trigger was taken away once and the test went red:
+- the assignment released just before the Fleet call (vehicle and driver);
+- the second driver given a licence of their own (D-145).
+
+Each run failed on its own `fail()` line, and passed again after restoring. The fourth test is the
+standing control: with no *active* assignment the same Fleet calls succeed.
+
+**Other bucket-A tests unblocked by `1cd0fa13`:**
+- `DriverDirectoryTest::forty_workers_added_under_a_vendor_appear_in_transport_untouched` (D-144)
+  **passes on master now**. P2 changed his test. Nothing for us to do.
+- **Not unblocked, but now unblockable:** the D-145 hold on `POST /transport/drivers` can be lifted,
+  because Fleet has the guard. Lifting it (registering the ordinary 409 refusal) is a route change
+  for the owner to approve. It moves the four tests named in the hold's comment in
+  `routes/transport.php`, plus this file's `everything_requires_authentication` and the rewritten
+  D-145 test's `405`. Not done here.
+
+**Counts now:** Transport `13 failed · 1153 passed · 3 skipped`. A: 5 (was 10). B: 8.

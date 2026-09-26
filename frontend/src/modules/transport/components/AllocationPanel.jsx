@@ -7,7 +7,7 @@ import Modal from '@/components/ui/Modal'
 import { useToast } from '@/components/ui/Toast'
 import { transportAllocationApi, transportResourceCommitmentApi } from '@/services/transportApi'
 import { Chip } from './MasterFormFields'
-import { vehicleStatusCfg, driverAvailabilityCfg } from '../constants'
+import { fleetVehicleStatusCfg, fleetDriverStatusCfg } from '../constants'
 
 /**
  * Allocation panel on the trip detail page — SNG-TRN-009 step 8.
@@ -73,7 +73,8 @@ function CandidateRow({ row, kind, onPick, picking, commitment }) {
   const [open, setOpen] = useState(false)
   const s = row.subject
   const eligible = row.eligible
-  const statusChip = kind === 'vehicle' ? vehicleStatusCfg(s.status) : driverAvailabilityCfg(s.availability)
+  // Both are Fleet rows now: Fleet's own UPPERCASE status, read as a label.
+  const statusChip = kind === 'vehicle' ? fleetVehicleStatusCfg(s.status) : fleetDriverStatusCfg(s.status)
 
   /*
    * When one of OUR trips is holding this resource, the eligibility service
@@ -235,6 +236,19 @@ export default function AllocationPanel({ trip, assignment, canAssign, onChanged
   const [search, setSearch] = useState('')
   const [commitments, setCommitments] = useState({ vehicles: {}, drivers: {} })
 
+  // A way back out of the picker — ✕, Esc and the backdrop all land here.
+  // Not while a pick is in flight: closing then would hide its answer.
+  const closePicker = useCallback(() => {
+    if (!picking) setPicker(null)
+  }, [picking])
+
+  useEffect(() => {
+    if (!picker) return undefined
+    const onKey = (e) => { if (e.key === 'Escape') closePicker() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [picker, closePicker])
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -390,8 +404,27 @@ export default function AllocationPanel({ trip, assignment, canAssign, onChanged
         </p>
       )}
 
-      <Modal open={!!picker} onClose={() => setPicker(null)}
-        title={picker === 'vehicle' ? 'Choose a vehicle' : 'Choose a driver'} size="lg">
+      {/* The shared Modal takes no `title` and draws no close control, so the
+          picker brings its own header — the pattern TransportTripDetail's
+          modals use — with a ✕, Esc and a click outside. Nothing typed here is
+          worth keeping, so closing on the backdrop loses nothing. */}
+      <Modal open={!!picker} onClose={closePicker} closeOnBackdrop
+        style={{ maxWidth: 640, width: '92vw' }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+          paddingBottom: 12, marginBottom: 12, borderBottom: '1px solid var(--border)',
+        }}>
+          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: 'var(--text-h)' }}>
+            {picker === 'vehicle' ? 'Choose a vehicle' : 'Choose a driver'}
+          </h2>
+          <button type="button" onClick={closePicker} aria-label="Close" disabled={!!picking}
+            style={{
+              display: 'inline-flex', padding: 6, borderRadius: 8, border: 'none',
+              background: 'transparent', color: 'var(--text-muted)', cursor: picking ? 'not-allowed' : 'pointer',
+            }}>
+            <X size={16} />
+          </button>
+        </div>
         <div style={{ display: 'grid', gap: 12 }}>
           {/* Search first, because with fifty vehicles it is the only thing
               on this screen anyone uses. */}

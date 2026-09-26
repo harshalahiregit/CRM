@@ -5926,9 +5926,19 @@ verified*) instead of passing:
 
 ### Left open — owner decisions, not ours to build
 
-- **(i) Licence not yet valid.** `driver_profiles.licence_valid_from` exists (the unify migration copied
-  it over), but Fleet's `licenceVerdict()` ignores it. The old Transport check failed on it.
-  **Owner: Fleet (P2).**
+- ~~**(i) Licence not yet valid.**~~ **Closed 2026-09-26.** Fleet's `licenceVerdict()` now returns
+  `not_yet_valid` from `licence_valid_from`, and blocks with `driver_license_not_yet_valid` (P2,
+  `eaead3dd`). **Our follow-up:** pre-trip had only the five ruled codes, so this licence **passed**
+  pre-trip until `PretripDriverDocuments` learned the sixth code. It also now **fails closed**: any
+  licence or medical state not on its known list fails the item, naming the state (*"unrecognised
+  Fleet licence state 'x'"*), and the error is logged. It never passes. Proved by
+  `PretripDriverDocumentsTest` (a not-yet-valid licence fails with Fleet's sentence and desk; an
+  invented licence or medical state fails), broken two ways each: the code dropped from FAILS, the
+  state dropped from the known list, the fail-closed check disabled, and an unknown state graded PASS.
+  Each red, then restored.
+  **Cross-reference:** `c402bccc` resolves what P2 recorded as **D-204** (*"the pre-trip check does
+  not know Fleet's `not_yet_valid` licence state"*), including the fail-closed behaviour it asks for.
+  D-204 is his entry and is left as he wrote it.
 - **(ii) Expiry of every driver document other than medical** (police verification, ID proof,
   training certificate, customer qualification, the general driver document) is checked **nowhere**
   since D-134, neither at allocation nor at pre-trip. These documents can still be filed against a Fleet
@@ -5978,6 +5988,10 @@ removed.** We did not touch Fleet's model; it is P2's.
 **Asked of Person 2:** populate `registration_normalized` on create and update (the same rule as
 `normalisePlate()`), and backfill the rows created since the repoint.
 
+**Done by Person 2, 2026-09-26 (`eaead3dd`).** The value is derived in `Vehicle::booted()`, and
+migration `2027_01_18_000001` backfills older rows. **Closed on Fleet's side.** The D-153 clause stays
+until that migration has run on every install (see D-153).
+
 ---
 
 ## D-153 — a plate typed with spaces could not find a Fleet vehicle
@@ -6023,3 +6037,95 @@ in SQL. Both earlier clauses stay. The comment says the clause can go once D-141
 
 **D-141 (P2):** Fleet's model should populate `registration_normalized` on save. When it does, this
 clause is redundant and should be removed.
+
+**Checked 2026-09-26, after P2's fix landed (`eaead3dd`). The clause stays.** Fleet now derives the
+column on save, and `2027_01_18_000001_complete_and_uppercase_vehicle_ownership` backfills rows
+saved before that. But the backfill is a migration, and on the dev database it is **Pending**:
+1 of 3 Fleet vehicles still has `registration_normalized` NULL (read-only count). Any install that
+has not run it has rows only the third clause can find. **Remove the clause once that migration has
+run everywhere**, which is the owner's call on the dev DB. Until then it costs one extra `OR`.
+
+---
+
+## D-154 — a release wiped the pre-trip record of a trip that had already left
+
+**Raised:** 2026-09-26, from a browser walk of Container 360. **P1.** **Fixed. One owner question open.**
+
+### What was wrong
+
+`AllocationService::release()` called `PretripService::invalidate()` for **every** trip, whatever
+its status. Before departure that is right: the checklist is a gate, and a new crew must earn it
+again. After departure it is wrong. The checklist is then the record of what was checked before
+the trip left, and invalidating it rewrites that history.
+
+**Seen live:** TRP-2026-000034 closed on 19 Sep. Its crew was released by hand on 21 Sep with the
+reason "trip is done". The release reset its passed checklist to 5 × `pending`, and Container 360
+now says *"Not started · 0 of 5 pre-trip checks"* about a finished trip.
+
+**TRP-2026-000034's rows were not repaired.** They are history, and the audit trail
+(`transport.pretrip.invalidated`, 2026-09-21 11:20:06) records exactly what happened.
+
+### What changed
+
+`release()` invalidates only **before departure**, reading the status before its own revert
+rewrites it: APPROVED (a partial crew), ALLOCATED, PRETRIP_OK. That's the `$revertsOnRelease` set
+plus APPROVED. APPROVED is included because a trip holding only a vehicle can already have a
+checklist, and invalidating it on release was existing, correct behaviour. From DISPATCHED onward
+the pre-trip rows stay as they were. Whether release itself is allowed on a departed or closed trip
+is **not** changed.
+
+### How it is proved
+
+- **Test:** `ReleaseKeepsPretripHistoryTest`. A release at PRETRIP_OK still resets every row to
+  pending and reverts the trip, which is the existing behaviour. A release at DISPATCHED, IN_TRANSIT
+  and CLOSED leaves every row's result, evaluation time and confirmation stamp exactly as they were,
+  and does not move the trip.
+- **Broken two ways:** invalidating on every release (the old behaviour) → the 3 departed cases go
+  red; never invalidating → the pre-departure case goes red. Restored → green.
+- **Suite:** Transport `18 failed · 1148 passed` → `18 failed · 1152 passed`, none newly red.
+
+### Open — owner question
+
+**Should crew release be allowed on a closed trip, and should closure free the vehicle and driver
+automatically?** Today delivery frees the resources (`freeResources()`), but the assignment row
+stays active, and a person can still "release" it by hand after closure. That is how
+TRP-2026-000034 came to be released two days after it closed.
+
+---
+
+## D-155 — `TripAssignment::active()` is a contract with Fleet, not an internal scope
+
+**Recorded:** 2026-09-26, after P2's D-146 fix landed (`eaead3dd`). **P1 owns it; P2 depends on
+it.** **Not a defect; a recorded dependency.**
+
+`TripAssignment::active()` (`whereIn status AssignmentStatus::ACTIVE_STATES` =
+`assigned, confirmed, active`) now decides what **Fleet refuses**, not only what Transport
+double-books:
+
+| Fleet reader | Uses it for |
+|---|---|
+| `Fleet\Integration\TripCommitmentReader` | D-146: a vehicle or driver on an active assignment cannot be retired or stood down, naming the trip |
+| `Fleet\Integration\TripHistoryReader` | T-49 utilisation: "working" time mirrors `active()` (plus `released` for ended trips) |
+
+P2 chose this deliberately. His header says *"The meaning of 'committed' is Ops', not ours"*, because
+choosing trip statuses inside Fleet would invent an availability rule.
+
+**The rule this records:** narrowing or widening `active()`, or `AssignmentStatus::ACTIVE_STATES`
+behind it, changes Fleet's guard with no change in Fleet's code. **Any change to either needs a
+heads-up to Person 2 before it merges.** `ACTIVE_STATES` is already load-bearing for BR-P0-003 (a
+unique index over a generated column); this adds a second, cross-module reason.
+
+**How each reader behaves when the read breaks.** Updated 2026-09-26 after P2's `d8e0aabf`:
+
+- **`TripCommitmentReader`, the D-146 guard, now fails CLOSED.** A failed read of `trip_assignments`
+  throws `TripCommitmentUnavailable`, and the retire or stand-down is refused. The only open path is
+  when there's no `trip_assignments` table at all, so a standalone Fleet can still retire vehicles.
+  Read from his code, not assumed.
+- **`TripHistoryReader`, the utilisation report, still degrades to empty** on any read error. That's
+  harmless for a report.
+
+A broken change to this scope now makes Fleet **refuse**, which is loud, rather than allow. It must
+still be tested against his D-146 tests before merging: a scope that returns the wrong rows without
+erroring still changes what Fleet refuses, silently.
+
+A pointer comment now sits on `scopeActive()` itself, where the next person to change it will read it.
