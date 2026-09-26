@@ -166,6 +166,30 @@ class TransportSearchTest extends TestCase
         }
     }
 
+    /**
+     * D-153 — normalising the input must not loosen the match.
+     *
+     * The third clause compares a normalised plate with Fleet's stored one.
+     * That has to stay an exact match, and stay inside the tenant: a plate one
+     * character off is a different truck, and another company's truck with
+     * the same plate is not ours to show.
+     */
+    public function test_a_normalised_plate_matches_exactly_and_only_in_its_own_tenant(): void
+    {
+        $near = $this->fleetVehicle(['registration_number' => 'MH 12 AB 4456'], self::TENANT_A);
+        $theirs = $this->fleetVehicle(['registration_number' => 'MH 12 AB 4455'], self::TENANT_B);
+
+        // Controls: both rows are findable, so the misses below are real misses.
+        $this->assertSame($near->id, $this->search->resolve('mh 12 ab 4456', self::TENANT_A)['id'] ?? null);
+        $this->assertSame($theirs->id, $this->search->resolve('mh 12 ab 4455', self::TENANT_B)['id'] ?? null);
+
+        $hit = $this->search->resolve('mh 12 ab 4455', self::TENANT_A);
+
+        $this->assertNotSame($near->id, $hit['id'] ?? null, 'one character off is a different vehicle');
+        $this->assertNotSame($theirs->id, $hit['id'] ?? null, "another tenant's vehicle leaked through the plate search");
+        $this->assertNotSame('vehicle', $hit['type'] ?? null, 'tenant A has no vehicle with this plate');
+    }
+
     public function test_a_driver_name_resolves(): void
     {
         // The name lives in the directory, the id on the Fleet profile.

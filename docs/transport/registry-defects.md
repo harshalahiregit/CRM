@@ -5791,3 +5791,49 @@ disabled in a throwaway worktree, 3 of the 4 passed; the fourth then failed on u
 
 **Decision: recorded only.** Tests will use a fresh service instance. Pre-trip already reads fresh
 (`fleetRecordNow()`, D-151), because it's the one path whose purpose is catching change.
+
+---
+
+## D-153 — a plate typed with spaces could not find a Fleet vehicle
+
+**Raised:** 2026-09-25, moving the search fixtures onto Fleet. **P1 — our search.** **Fixed (workaround); the real fix is D-141, owed by P2.**
+
+### What was wrong
+
+Fleet's `VehicleService` stores `registration_number` already normalised (`normalisePlate()`:
+upper-case, A–Z/0–9 only, so `MH 12 AB 4455` is stored as `MH12AB4455`), and leaves
+`registration_normalized` NULL (D-141). `TransportSearchService::vehicle()` matched:
+
+```
+registration_normalized = <normalised input>    ← NULL on every Fleet-created vehicle
+registration_number     = <raw input>           ← only the exact stored form
+```
+
+So `MH 12 AB 4455` and `mh12ab4455` found **no vehicle created in Fleet**. Every vehicle created since
+the read-only ruling is created in Fleet. The legacy fixture had hidden this: `transport_vehicles`
+rows carry their own normalised column, so the search test kept passing against a table search no
+longer reads.
+
+### What changed
+
+One clause in `vehicle()`: the **normalised input** is also compared with `registration_number` as
+stored. Our normaliser (`TransportVehicle::normalizeRegistration()`) is the same rule as Fleet's
+`normalisePlate()`, so this is still an exact match, and the stored side is still never normalised
+in SQL. Both earlier clauses stay. The comment says the clause can go once D-141 populates
+`registration_normalized`. No Fleet file touched.
+
+### How it is proved
+
+- **Test:** `a_vehicle_registration_resolves_however_it_is_spaced` (spaced, lowercase, hyphenated)
+  now passes on a Fleet fixture. New: `a_normalised_plate_matches_exactly_and_only_in_its_own_tenant`
+  checks that a plate one character off does not resolve to the near-miss vehicle, and that tenant B's
+  vehicle with the same plate is not returned to tenant A. Both rows are first shown to be findable,
+  so the misses are real.
+- **Broken:** clause removed → both red; the stored side normalised in SQL against the raw input → both
+  red; the match loosened to a prefix → the new test red. Restored → green.
+- **Suite:** Transport `19 failed · 1144 passed` → `18 failed · 1146 passed`, none newly red.
+
+### Owed
+
+**D-141 (P2):** Fleet's model should populate `registration_normalized` on save. When it does, this
+clause is redundant and should be removed.
