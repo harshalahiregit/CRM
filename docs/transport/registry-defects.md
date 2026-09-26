@@ -5860,3 +5860,49 @@ in SQL. Both earlier clauses stay. The comment says the clause can go once D-141
 
 **D-141 (P2):** Fleet's model should populate `registration_normalized` on save. When it does, this
 clause is redundant and should be removed.
+
+---
+
+## D-154 — a release wiped the pre-trip record of a trip that had already left
+
+**Raised:** 2026-09-26, from a browser walk of Container 360. **P1.** **Fixed. One owner question open.**
+
+### What was wrong
+
+`AllocationService::release()` called `PretripService::invalidate()` for **every** trip, whatever
+its status. Before departure that is right: the checklist is a gate, and a new crew must earn it
+again. After departure it is wrong. The checklist is then the record of what was checked before
+the trip left, and invalidating it rewrites that history.
+
+**Seen live:** TRP-2026-000034 closed on 19 Sep. Its crew was released by hand on 21 Sep with the
+reason "trip is done". The release reset its passed checklist to 5 × `pending`, and Container 360
+now says *"Not started · 0 of 5 pre-trip checks"* about a finished trip.
+
+**TRP-2026-000034's rows were not repaired.** They are history, and the audit trail
+(`transport.pretrip.invalidated`, 2026-09-21 11:20:06) records exactly what happened.
+
+### What changed
+
+`release()` invalidates only **before departure**, reading the status before its own revert
+rewrites it: APPROVED (a partial crew), ALLOCATED, PRETRIP_OK. That's the `$revertsOnRelease` set
+plus APPROVED. APPROVED is included because a trip holding only a vehicle can already have a
+checklist, and invalidating it on release was existing, correct behaviour. From DISPATCHED onward
+the pre-trip rows stay as they were. Whether release itself is allowed on a departed or closed trip
+is **not** changed.
+
+### How it is proved
+
+- **Test:** `ReleaseKeepsPretripHistoryTest`. A release at PRETRIP_OK still resets every row to
+  pending and reverts the trip, which is the existing behaviour. A release at DISPATCHED, IN_TRANSIT
+  and CLOSED leaves every row's result, evaluation time and confirmation stamp exactly as they were,
+  and does not move the trip.
+- **Broken two ways:** invalidating on every release (the old behaviour) → the 3 departed cases go
+  red; never invalidating → the pre-departure case goes red. Restored → green.
+- **Suite:** Transport `18 failed · 1148 passed` → `18 failed · 1152 passed`, none newly red.
+
+### Open — owner question
+
+**Should crew release be allowed on a closed trip, and should closure free the vehicle and driver
+automatically?** Today delivery frees the resources (`freeResources()`), but the assignment row
+stays active, and a person can still "release" it by hand after closure. That is how
+TRP-2026-000034 came to be released two days after it closed.

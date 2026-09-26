@@ -487,6 +487,11 @@ class AllocationService
             // here would strand a trip with a vehicle it cannot use.
             $revertsOnRelease = [TripStatus::ALLOCATED, TripStatus::PRETRIP_OK];
 
+            // Read BEFORE the revert below rewrites the status — D-154.
+            $beforeDeparture = $trip && in_array(
+                $trip->status, [TripStatus::APPROVED, ...$revertsOnRelease], true,
+            );
+
             if ($trip && in_array($trip->status, $revertsOnRelease, true)) {
                 $from = $trip->status;
                 $trip->forceFill(['status' => TripStatus::APPROVED, 'updated_by' => $actor?->id])->save();
@@ -508,7 +513,18 @@ class AllocationService
             // before the trip can pass pre-trip again. See
             // PretripService::invalidate() for why the rows are reset rather
             // than deleted.
-            if ($trip) {
+            //
+            // ── ONLY BEFORE DEPARTURE — D-154 ────────────────────────────
+            // Once the trip has left, the checklist is no longer a gate but a
+            // record of what was checked before it went. TRP-2026-000034 was
+            // closed on 19 Sep; its crew was released by hand on 21 Sep and
+            // its passed checklist came back as five pending rows — Container
+            // 360 said "Not started" about a trip that had finished. Before
+            // departure (APPROVED with a partial crew, ALLOCATED, PRETRIP_OK)
+            // the old behaviour stands; after it, the rows stay as they were.
+            // Whether a release should be allowed that late at all is an owner
+            // question (D-154), not decided here.
+            if ($beforeDeparture) {
                 $this->pretrip->invalidate(
                     $trip,
                     $tenantId,
