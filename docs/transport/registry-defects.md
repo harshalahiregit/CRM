@@ -5885,9 +5885,16 @@ verified*) instead of passing:
 
 ### Left open — owner decisions, not ours to build
 
-- **(i) Licence not yet valid.** `driver_profiles.licence_valid_from` exists (the unify migration copied
-  it over), but Fleet's `licenceVerdict()` ignores it. The old Transport check failed on it.
-  **Owner: Fleet (P2).**
+- ~~**(i) Licence not yet valid.**~~ **Closed 2026-09-26.** Fleet's `licenceVerdict()` now returns
+  `not_yet_valid` from `licence_valid_from`, and blocks with `driver_license_not_yet_valid` (P2,
+  `eaead3dd`). **Our follow-up:** pre-trip had only the five ruled codes, so this licence **passed**
+  pre-trip until `PretripDriverDocuments` learned the sixth code. It also now **fails closed**: any
+  licence or medical state not on its known list fails the item, naming the state (*"unrecognised
+  Fleet licence state 'x'"*), and the error is logged. It never passes. Proved by
+  `PretripDriverDocumentsTest` (a not-yet-valid licence fails with Fleet's sentence and desk; an
+  invented licence or medical state fails), broken two ways each: the code dropped from FAILS, the
+  state dropped from the known list, the fail-closed check disabled, and an unknown state graded PASS.
+  Each red, then restored.
 - **(ii) Expiry of every driver document other than medical** (police verification, ID proof,
   training certificate, customer qualification, the general driver document) is checked **nowhere**
   since D-134, neither at allocation nor at pre-trip. These documents can still be filed against a Fleet
