@@ -55,6 +55,15 @@ export default function DriversBoard() {
     queryFn: () => stosApi.drivers.list(params),
   })
 
+  const qc = useQueryClient()
+
+  // Drivers who signed up in the app and are waiting for the office to let them in.
+  const registrations = useQuery({
+    queryKey: ['stos-driver-registrations'],
+    queryFn: () => stosApi.drivers.pendingRegistrations(),
+    refetchInterval: 30000, // a new sign-up appears within half a minute
+  })
+
   /**
    * Who can actually take a load right now.
    *
@@ -119,6 +128,13 @@ export default function DriversBoard() {
             style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text)' }} />
         </div>
       </header>
+
+      {/* Drivers waiting for the office to let them in (app sign-ups). */}
+      {(registrations.data?.registrations?.length > 0) && (
+        <PendingRegistrations
+          rows={registrations.data.registrations}
+          onChanged={() => { registrations.refetch(); qc.invalidateQueries({ queryKey: ['stos-drivers'] }) }} />
+      )}
 
       {/* Where these people come from — stated, not assumed. */}
       {data?.directory && (
@@ -542,6 +558,58 @@ function Field({ label, hint, children }) {
       <label className="text-[13px] font-semibold block mb-1.5" style={{ color: 'var(--text-h)' }}>{label}</label>
       {children}
       {hint && <p className="text-[12px] mt-1.5 leading-snug" style={{ color: 'var(--text-muted)' }}>{hint}</p>}
+    </div>
+  )
+}
+
+// The queue of app sign-ups waiting for the office's yes. Approve creates the
+// driver's login and their profile; reject turns them away with a reason.
+function PendingRegistrations({ rows, onChanged }) {
+  const [busy, setBusy] = useState(null)
+  const [err, setErr] = useState('')
+
+  const act = async (id, fn) => {
+    setBusy(id); setErr('')
+    try { await fn(); onChanged?.() }
+    catch (e) { setErr(e?.message || 'Could not complete that.') }
+    finally { setBusy(null) }
+  }
+
+  return (
+    <div className="mb-3 rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-warning-500, #f59e0b)' }}>
+      <div className="px-4 py-2.5 flex items-center gap-2" style={{ background: 'color-mix(in srgb, var(--color-warning-500) 14%, transparent)' }}>
+        <IdCard size={14} style={{ color: 'var(--color-warning-500, #f59e0b)' }} />
+        <span className="text-[13px] font-bold" style={{ color: 'var(--text-h)' }}>
+          {rows.length} driver{rows.length === 1 ? '' : 's'} waiting for approval
+        </span>
+      </div>
+      <div className="divide-y" style={{ background: 'var(--bg-card)' }}>
+        {rows.map((r) => (
+          <div key={r.id} className="px-4 py-3 flex items-center gap-3 flex-wrap" style={{ borderColor: 'var(--border)' }}>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold" style={{ color: 'var(--text-h)' }}>{r.name}</p>
+              <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
+                {r.email}{r.phone ? ` · ${r.phone}` : ''}{r.licence_number ? ` · licence ${r.licence_number}` : ''}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button type="button" disabled={busy === r.id}
+                onClick={() => act(r.id, () => stosApi.drivers.approveRegistration(r.id))}
+                className="text-[12px] font-bold px-3 py-1.5 rounded-lg disabled:opacity-60"
+                style={{ background: 'var(--color-success-500, #10b981)', color: '#fff' }}>
+                {busy === r.id ? '…' : 'Approve'}
+              </button>
+              <button type="button" disabled={busy === r.id}
+                onClick={() => { const why = window.prompt('Reason for rejecting (optional):') ; if (why !== null) act(r.id, () => stosApi.drivers.rejectRegistration(r.id, why)) }}
+                className="text-[12px] font-semibold px-3 py-1.5 rounded-lg"
+                style={{ color: 'var(--color-danger-500)', border: '1px solid var(--border)' }}>
+                Reject
+              </button>
+            </div>
+          </div>
+        ))}
+        {err && <p className="px-4 py-2 text-[12px]" style={{ color: 'var(--color-danger-500)' }}>{err}</p>}
+      </div>
     </div>
   )
 }

@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\Transport\DeviceTokenController;
 use App\Http\Controllers\Api\V1\Transport\GensetController;
 use App\Http\Controllers\Api\V1\Transport\DriverController;
 use App\Http\Controllers\Api\V1\Transport\DriverDocumentController;
+use App\Http\Controllers\Api\V1\Transport\DriverRegistrationController;
 use App\Http\Controllers\Api\V1\Transport\FleetController;
 use App\Http\Controllers\Api\V1\Transport\FleetReportController;
 use App\Http\Controllers\Api\V1\Transport\FuelController;
@@ -47,6 +48,11 @@ Route::prefix('v1/telemetry')->middleware('stos.device')->group(function () {
     // single ping. Same auth, same validation per reading.
     Route::post('/ingest/batch', [TelemetryIngestionController::class, 'ingestBatch']);
 });
+
+// ── Driver self-registration (public) ──────────────────────────────────
+// A driver has no login yet, so this is open. It files a PENDING request; an
+// admin approves it below before any account exists.
+Route::post('driver/register', [DriverRegistrationController::class, 'register']);
 
 Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('v1/fleet')->group(function () {
 
@@ -113,6 +119,11 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('v1/fleet')->gro
     Route::get('/drivers', [DriverController::class, 'index']);
     // Register a driver STOS owns itself (not a CRM contact) into stos_drivers.
     Route::post('/drivers', [DriverController::class, 'register']);
+
+    // Driver self-registrations awaiting the admin's yes.
+    Route::get('/driver-registrations', [DriverRegistrationController::class, 'pending']);
+    Route::post('/driver-registrations/{registration}/approve', [DriverRegistrationController::class, 'approve'])->where('registration', '[0-9]+');
+    Route::post('/driver-registrations/{registration}/reject', [DriverRegistrationController::class, 'reject'])->where('registration', '[0-9]+');
     // The crew half of allocation. Same response shape as eligible vehicles,
     // because a dispatch board shows them side by side.
     Route::get('/drivers/eligible', [DriverController::class, 'eligible']);

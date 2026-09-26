@@ -63,6 +63,11 @@ export const stosApi = {
     /** Register a driver STOS owns itself (not a CRM contact) into its own register. */
     register: (data) => api.post('/v1/fleet/drivers', data).then(unwrap).catch(handleErr),
 
+    /** Driver self-registrations from the app, awaiting admin approval. */
+    pendingRegistrations: () => api.get('/v1/fleet/driver-registrations').then(unwrap).catch(handleErr),
+    approveRegistration: (id) => api.post(`/v1/fleet/driver-registrations/${id}/approve`).then(unwrap).catch(handleErr),
+    rejectRegistration: (id, reason) => api.post(`/v1/fleet/driver-registrations/${id}/reject`, { reason }).then(unwrap).catch(handleErr),
+
     /** Who can take a load right now, and who cannot — with the reason and whose desk owns it. */
     eligible: (params = {}) => api.get('/v1/fleet/drivers/eligible', { params }).then(unwrap).catch(handleErr),
     saveProfile: (source, personId, data) =>
