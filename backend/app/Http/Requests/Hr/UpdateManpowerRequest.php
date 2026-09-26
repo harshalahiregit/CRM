@@ -34,10 +34,13 @@ class UpdateManpowerRequest extends FormRequest
             'criticality'         => 'nullable|in:Low,Medium,High,Business Critical',
             'salary_min'          => 'nullable|numeric|min:0',
             'salary_max'          => 'nullable|numeric|min:0|gte:salary_min',
+            // Unlimited, matching StoreManpowerRequest — see the reasoning there.
+            // An edit that refused what the create accepted would save the record
+            // once and never let it be touched again.
             'required_skills'     => 'nullable|array',
-            'required_skills.*'   => 'string|max:2000',
+            'required_skills.*'   => 'string',
             'preferred_skills'    => 'nullable|array',
-            'preferred_skills.*'  => 'string|max:2000',
+            'preferred_skills.*'  => 'string',
             'job_description'     => 'nullable|string',
             'justification'       => 'nullable|string',
             'required_by_date'    => 'nullable|date|after_or_equal:today',
@@ -55,7 +58,7 @@ class UpdateManpowerRequest extends FormRequest
             'shift'                  => ['nullable', Rule::in($this->allowedShifts())],
             'budget'                 => 'nullable|numeric|min:0',
             'certifications'         => 'nullable|array',
-            'certifications.*'       => 'string|max:2000',
+            'certifications.*'       => 'string',
             'hiring_reason'          => 'nullable|in:New Position,Replacement,Expansion,Contract',
             'replacement_employee_id' => 'nullable|required_if:hiring_reason,Replacement|exists:hr_employees,id',
             'cost_center'            => 'nullable|string|max:100',

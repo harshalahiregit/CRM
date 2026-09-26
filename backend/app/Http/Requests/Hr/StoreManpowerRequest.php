@@ -42,17 +42,21 @@ class StoreManpowerRequest extends FormRequest
             // that said only "Validation failed" and named no field. Nobody could
             // see what to shorten.
             //
-            // 2000 is roughly 300 words, which is "a paragraph or more" with room
-            // to spare. It costs nothing to store: required_skills,
-            // preferred_skills and certifications are json columns holding the
-            // whole array, not varchars, so the old 60 and 100 were not the
-            // database's limits — they were guesses about how people write.
-            // The count is capped at 30 entries in the form, so the worst case is
-            // well inside anything MySQL will carry.
+            // NO LENGTH LIMIT, by decision. It was 60, then 2000, and a cap is
+            // still somebody guessing how long a requirement ought to be. These
+            // three are TEXT columns holding the whole array as json, so the
+            // database was never the constraint.
+            //
+            // What remains is not a validation limit and cannot be removed here:
+            // MySQL's max_allowed_packet bounds the whole request body. Past it
+            // the request fails at the connection rather than as a clean 422.
+            // That ceiling is megabytes and the form caps the list at 30 entries,
+            // so it is far outside anything a person types — but it is the reason
+            // "unlimited" is a statement about intent rather than about physics.
             'required_skills'     => 'nullable|array',
-            'required_skills.*'   => 'string|max:2000',
+            'required_skills.*'   => 'string',
             'preferred_skills'    => 'nullable|array',
-            'preferred_skills.*'  => 'string|max:2000',
+            'preferred_skills.*'  => 'string',
             'job_description'     => 'nullable|string',
             'justification'       => 'nullable|string',
             // Business rule (SPK-1): a request cannot be needed in the past.
@@ -73,7 +77,7 @@ class StoreManpowerRequest extends FormRequest
             // Same reasoning as the skills above — a json column, and a
             // certification is often named in full with its issuing body.
             'certifications'         => 'nullable|array',
-            'certifications.*'       => 'string|max:2000',
+            'certifications.*'       => 'string',
             'hiring_reason'          => 'nullable|in:New Position,Replacement,Expansion,Contract',
             // Replacement employee only makes sense for a replacement hire.
             'replacement_employee_id' => 'nullable|required_if:hiring_reason,Replacement|exists:hr_employees,id',
