@@ -70,6 +70,75 @@ class ClientPortalService
     }
 
     /**
+     * Who is signed in to the portal, for another module to scope by.
+     *
+     * The single supported way for code outside the Customer module to answer
+     * "which customer is this request for". Transport asked for it (MS-001 v1.1
+     * §4/§6) so that its client-facing endpoints do not read client_contacts
+     * directly, which would put a second, drifting copy of these rules in
+     * another module.
+     *
+     * ── WHY NOT client_contacts.user_id ─────────────────────────────────────
+     * Because it is dead. The column dates from the July design, when a portal
+     * contact was expected to have a `users` row with role='client' behind it.
+     * The portal was rebuilt on contact-side auth (client_contacts.password /
+     * portal_status, migration 2026_10_15_000002) and nothing has written
+     * user_id since. A customer does not sign in as a User at all —
+     * EnsureClientPortalAccess refuses a User token outright — so there is no
+     * users row to bridge from.
+     *
+     * ── NULL MEANS "NOT A PORTAL REQUEST" ───────────────────────────────────
+     * Returned rather than thrown, so the caller decides its own status code.
+     * Null covers every way this can fail to be a customer: a staff or vendor
+     * token, no token, a deactivated contact, one whose portal access was never
+     * switched on, and one whose customer has been removed or switched off. The
+     * same five questions EnsureClientPortalAccess asks, asked again here — a
+     * route that forgets the middleware still gets null rather than a context.
+     *
+     * ── ABOUT `transport` ───────────────────────────────────────────────────
+     * There is no per-contact transport ROLE and deliberately so: the portal's
+     * gate is one flag per section (see PERMISSIONS above), granted by whoever
+     * invited the contact. `permissions` is the full granted list and
+     * `can_transport` is the one flag Transport needs, named so a caller cannot
+     * mistake it for a staff capability. If a finer grain is ever needed it
+     * belongs in this list, not in a parallel scheme.
+     *
+     * @return array{contact_id:int, client_id:int, tenant_id:int, permissions:list<string>, can_transport:bool}|null
+     */
+    public function currentContext(\Illuminate\Http\Request $request): ?array
+    {
+        // Prefer what the middleware already resolved; fall back to the token so
+        // this is still correct if it is called before or without it.
+        $contact = $request->attributes->get('clientContact') ?? $request->user();
+
+        if (! $contact instanceof ClientContact) {
+            return null;
+        }
+
+        if ($contact->active === false || $contact->portal_status !== 'active') {
+            return null;
+        }
+
+        // Excludes soft-deleted customers by default; `active` is the Status
+        // switch on the customers list.
+        $client = $contact->client;
+
+        if (! $client || ! $client->active) {
+            return null;
+        }
+
+        $granted = is_array($contact->permissions) ? array_values($contact->permissions) : [];
+
+        return [
+            'contact_id'    => (int) $contact->id,
+            'client_id'     => (int) $client->id,
+            'tenant_id'     => (int) $contact->tenant_id,
+            'permissions'   => $granted,
+            'can_transport' => $this->can($contact, 'transport'),
+        ];
+    }
+
+    /**
      * The portal landing page.
      *
      * The old CRM showed a greeting, a projects summary and an invoice figure.
