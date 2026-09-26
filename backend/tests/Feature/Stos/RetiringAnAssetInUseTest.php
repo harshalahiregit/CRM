@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Stos;
 
+use App\Domains\Fleet\Integration\TripCommitmentReader;
+use App\Domains\Fleet\Integration\TripCommitmentUnavailable;
 use App\Domains\Fleet\Models\DriverProfile;
 use App\Domains\Fleet\Models\Vehicle;
 use App\Models\Tenant;
@@ -221,5 +223,50 @@ class RetiringAnAssetInUseTest extends TestCase
 
         $this->actingAs($this->user())->deleteJson('/api/v1/fleet/vehicles/'.$vehicle->id)->assertOk();
         $this->assertNull(Vehicle::forCompany(self::COMPANY)->find($vehicle->id));
+    }
+
+    /* ── 5 · D-204 — the check failing is not "free" ──────────────── */
+
+    /** A reader whose reads throw as if the query errored, table present. */
+    private function bindFailingReader(): void
+    {
+        $this->app->bind(TripCommitmentReader::class, fn () => new class extends TripCommitmentReader {
+            public function forVehicle(int $vehicleId, int $companyId): ?array
+            {
+                throw new TripCommitmentUnavailable('simulated read failure');
+            }
+
+            public function forDriver(int $driverId, int $companyId): ?array
+            {
+                throw new TripCommitmentUnavailable('simulated read failure');
+            }
+        });
+    }
+
+    public function test_a_read_error_refuses_the_retirement_rather_than_allowing_it(): void
+    {
+        // Table absent degrades open (standalone Fleet); a read that ERRORS must
+        // not. "Could not tell" is not "not on a trip" — refuse and keep the
+        // vehicle, so a lookup failure cannot strand a live trip.
+        $vehicle = $this->vehicle();
+        $this->bindFailingReader();
+
+        $this->actingAs($this->user())
+            ->deleteJson('/api/v1/fleet/vehicles/'.$vehicle->id)
+            ->assertStatus(422);
+
+        $this->assertNotNull(Vehicle::forCompany(self::COMPANY)->find($vehicle->id));
+    }
+
+    public function test_a_read_error_refuses_standing_a_driver_down(): void
+    {
+        $driver = $this->driver();
+        $this->bindFailingReader();
+
+        $this->actingAs($this->user())
+            ->putJson('/api/v1/fleet/drivers/stos/'.$driver->source_id, ['status' => DriverProfile::INACTIVE])
+            ->assertStatus(422);
+
+        $this->assertSame(DriverProfile::AVAILABLE, $driver->fresh()->status);
     }
 }

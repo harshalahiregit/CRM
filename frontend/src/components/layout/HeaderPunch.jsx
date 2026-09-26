@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Clock, LogIn, LogOut, Coffee, Play } from 'lucide-react'
-import { hrApi } from '@/services/hrApi'
 import { useAuth } from '@/context/AuthContext'
 import { useToast } from '@/components/ui/Toast'
-import { getLocation, buildNote } from '@/lib/punchEvidence'
+import { usePunch } from '@/modules/hr/hooks/usePunch'
 import { hrTime } from '@/modules/hr/constants'
 import { useMyAttendanceToday, useRefreshMyAttendanceToday } from '@/modules/hr/hooks/useMyAttendanceToday'
 import SelfieCapture from '@/modules/hr/components/SelfieCapture'
@@ -41,27 +40,17 @@ export default function HeaderPunch() {
   // Hidden for the same reasons as before: no module, no employee record, or a
   // genuine failure. Nothing belongs in the chrome that the person cannot act on.
   const hidden = ! hasHrModule || today.unlinked || !! today.error
-  const [busy, setBusy] = useState(false)
   const [open, setOpen] = useState(false)
   const [now, setNow] = useState(() => Date.now())
-  const [policy, setPolicy] = useState({ selfie: false, location: true })
   const [selfieFor, setSelfieFor] = useState(null) // 'in' | 'out' while the camera dialog is open
   const popRef = useRef(null)
   const toast = useToast()
 
   const load = refresh
 
-  // What this workspace asks for on a web punch. Failing to read it must not
-  // disable punching, so the defaults stand: location asked, selfie not.
-  useEffect(() => {
-    if (!hasHrModule) return
-    hrApi.settings.mine()
-      .then(s => setPolicy({
-        selfie: !!s?.web_punch_require_selfie,
-        location: s?.web_punch_require_location !== false,
-      }))
-      .catch(() => {})
-  }, [hasHrModule])
+  // The policy, the evidence and the request all live in usePunch now, so the
+  // dashboard card cannot punch differently from this pill.
+  const { punch: doPunch, breakAction, busy, needsSelfie } = usePunch({ enabled: hasHrModule })
 
   // Tick only while a shift is actually open, so an idle tab is not re-rendering
   // once a second for a timer nobody is looking at.
@@ -86,18 +75,10 @@ export default function HeaderPunch() {
   const can = data.can ?? {}
   const onBreak = !!can.break_end
 
-  const act = async (fn, done) => {
-    setBusy(true)
-    try {
-      await fn()
-      await load()
-      toast.success(done)
-      setOpen(false)
-    } catch (e) {
-      toast.error(e?.response?.data?.message || 'That did not work. Try again.')
-    } finally {
-      setBusy(false)
-    }
+  const act = async (which) => {
+    const res = await breakAction(which)
+    res.ok ? toast.success(res.message) : toast.error(res.message)
+    if (res.ok) setOpen(false)
   }
 
   /**
@@ -109,22 +90,13 @@ export default function HeaderPunch() {
    * itself always offers a way through without a photo.
    */
   const punch = async (side, selfieBlob, selfieReason) => {
-    const location = policy.location ? await getLocation() : null
-    const evidence = {
-      latitude: location?.ok ? location.latitude : undefined,
-      longitude: location?.ok ? location.longitude : undefined,
-      selfie: selfieBlob || undefined,
-      verificationNote: buildNote({
-        location, selfie: selfieBlob, selfieReason,
-        requireSelfie: policy.selfie, requireLocation: policy.location,
-      }),
-    }
-    const call = side === 'out' ? hrApi.attendance.me.checkOut : hrApi.attendance.me.checkIn
-    await act(() => call(evidence), side === 'out' ? 'Clocked out' : 'Clocked in')
+    const res = await doPunch(side, selfieBlob, selfieReason)
+    res.ok ? toast.success(res.message) : toast.error(res.message)
+    if (res.ok) setOpen(false)
   }
 
   /** Opens the camera first when this workspace asks for a photo. */
-  const startPunch = (side) => (policy.selfie ? setSelfieFor(side) : punch(side))
+  const startPunch = (side) => (needsSelfie ? setSelfieFor(side) : punch(side))
 
   /** "2h 14m" since clock-in. Hours matter, seconds do not. */
   const elapsed = () => {
@@ -178,11 +150,11 @@ export default function HeaderPunch() {
 
           {can.break_start && (
             <PopAction icon={Coffee} label="Start break" disabled={busy}
-              onClick={() => act(hrApi.attendance.me.breakStart, 'Break started')} />
+              onClick={() => act('start')} />
           )}
           {can.break_end && (
             <PopAction icon={Play} label="End break" disabled={busy}
-              onClick={() => act(hrApi.attendance.me.breakEnd, 'Break ended')} />
+              onClick={() => act('end')} />
           )}
           {can.check_out && (
             <PopAction icon={LogOut} label="Clock out" tone="#f87171" disabled={busy}

@@ -107,15 +107,26 @@ class AuthController extends Controller
     /* ─────────────────────────────────────────────
      | POST /api/auth/register/client
      ───────────────────────────────────────────── */
+    /**
+     * A customer signing itself up.
+     *
+     * Returns the customer and contact rather than a user, because a customer is
+     * not a User — see AuthService::registerClient(), which explains why the
+     * orphaned role='client' row this used to mint could never sign in.
+     *
+     * Deliberately thin: no id is echoed that the caller could act on, since
+     * nothing here is authenticated yet.
+     */
     public function registerClient(ClientRegisterRequest $request): JsonResponse
     {
-        $user = $this->authService->registerClient($request->validated() + $request->only(
+        $result = $this->authService->registerClient($request->validated() + $request->only(
             'address', 'city', 'state', 'country'
         ));
 
         return $this->success([
-            'user' => (new UserResource($user))->resolve(),
-        ], 'Client registration submitted. Awaiting admin approval.', 201);
+            'company' => $result['client']->company,
+            'email'   => $result['contact']->email,
+        ], 'Registration submitted. Your account manager will enable portal access.', 201);
     }
 
     /* ─────────────────────────────────────────────

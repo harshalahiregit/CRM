@@ -34,10 +34,40 @@ export function useMyAttendanceToday({ enabled = true } = {}) {
     queryKey: KEY,
     enabled,
     retry: false,
-    // Punches are the only thing that moves this, and they invalidate it
-    // explicitly. Without a stale window the shared cache would still refetch
-    // per mount and the duplicate requests would come back by another route.
-    staleTime: 60_000,
+
+    /*
+     | ── THE SAME SHIFT, WHEREVER IT WAS PUNCHED ─────────────────────────────
+     |
+     | A punch can arrive from three places: the header pill, the attendance card
+     | on either dashboard, or the SangoeTrack phone app. All of them move ONE
+     | row — hr_attendance is unique on (tenant, employee, date) — so a browser
+     | showing yesterday's idea of that row is showing something that is simply
+     | not true any more.
+     |
+     | The header and both dashboards share this query key, so a punch from any
+     | of them updates the others the moment it lands. The phone cannot do that;
+     | it writes straight to the API and the browser is never told. These three
+     | settings are what close that gap, and they override the app-wide defaults
+     | in main.jsx (staleTime 5 minutes, refetchOnWindowFocus false) which are
+     | right for a customer list and wrong for a running shift.
+     |
+     | There are no websockets here — BROADCAST_CONNECTION is `log` and the
+     | frontend has no Echo client — so this is as close to live as the stack
+     | honestly gets. It is one small GET; the cost is not the concern, showing a
+     | stale Clock-in button to somebody already clocked in is.
+     */
+    staleTime: 15_000,
+
+    // Punched on the phone, then switched back to the browser: the answer is
+    // correct by the time the tab is looked at.
+    refetchOnWindowFocus: true,
+
+    // And without switching tabs, for a dashboard left open on a second screen.
+    // react-query pauses this while the tab is hidden, which is why there is no
+    // refetchIntervalInBackground here — a background tab polling attendance is
+    // work nobody asked for.
+    refetchInterval: 30_000,
+
     queryFn: async () => {
       const res = await hrApi.attendance.me.today()
       return res.data

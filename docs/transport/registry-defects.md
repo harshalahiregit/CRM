@@ -4516,13 +4516,13 @@ ledger on the row id was right; applying it without checking the value was the g
 
 ---
 
-## D-203 — the masters move still flattens FINANCED and CONTRACTED on a fresh migrate
+## D-203 — the masters move flattened FINANCED and CONTRACTED on a fresh migrate
 
-**Raised:** 2026-09-26, completing T-03. **Found: P2. Enforcement: P1's file.**
+**Raised:** 2026-09-26, completing T-03. **P2 — mine, found and fixed.**
 
 ### Measured
 
-`move_transport_masters_into_fleet` (2027_01_02) maps legacy ownership onto Fleet's:
+`move_transport_masters_into_fleet` (2027_01_02) mapped legacy ownership onto Fleet's:
 
 ```
 'FINANCED'   => 'owned',      // the financier vanishes
@@ -4531,18 +4531,17 @@ ledger on the row id was right; applying it without checking the value was the g
 
 It was correct when written — the Fleet `vehicles` table only had four ownership values and could
 not store the other two. T-03 has now put all six of §10 on the table, so the reason for the
-flattening is gone, but the mapping still runs: on any fresh `migrate`, a legacy FINANCED truck
-still lands as `owned` and a CONTRACTED one as `attached`. §10 lists ownership as what drives EMI,
-asset cost and profitability, and each reads the distinction this destroys.
+flattening was gone but the mapping still ran: on a fresh `migrate`, a legacy FINANCED truck landed
+as `owned` and a CONTRACTED one as `attached`. §10 lists ownership as what drives EMI, asset cost
+and profitability, and each reads the distinction this destroyed.
 
-### Fixed on the Fleet side, not here
+### Fixed — my own file
 
-`Vehicle::OWNERSHIPS` now holds all six (T-03), migration `2027_01_18` uppercases and remaps the
-live rows, and onboarding accepts all six. What remains is one file: `mapOwnership` should map
-`FINANCED => 'FINANCED'` and `CONTRACTED => 'CONTRACTED'` (and uppercase the rest) now that the
-target can hold them. That is P1's masters move, so it is his change — messaged, not edited. Rows
-already flattened on installs that have run the move cannot be recovered; this only stops it
-happening again.
+I first wrote this up as P1's to change; git corrected me (P1 checked): `2027_01_02_000002` is mine
+(b6784abe, 7b363c45). So `mapOwnership` now maps `FINANCED => 'FINANCED'`, `CONTRACTED =>
+'CONTRACTED'`, uppercases the rest, and folds `market => 'OTHER'` — a fresh migrate preserves all
+six end to end. Rows already flattened on installs that ran the old move cannot be recovered; this
+only stops it happening again. `2027_01_18` remaps and uppercases whatever those installs hold.
 
 ### Also closed in the same pass — for the record
 
@@ -4552,6 +4551,48 @@ happening again.
   `Vehicle::booted()`, out of `$fillable`, with `VehicleService` delegating to the one
   `Vehicle::normaliseRegistration()`. The plate search workaround (their D-153) can come out once
   this is on master.
+
+---
+
+## D-204 — the pre-trip check does not know Fleet's `not_yet_valid` licence state
+
+**Raised:** 2026-09-26, reviewing P1's D-151 merge against my D-151(i). **Found: P2. Fix: P1's file.**
+**Live on master — both halves are already there.**
+
+### Measured
+
+My D-151(i) added a licence verdict state `not_yet_valid` and, with it, a blocker code
+`driver_license_not_yet_valid` from `DriverService::blockersFor()`. P1's `PretripDriverDocuments`
+(D-151) reads Fleet's blocker codes and fails on a fixed list:
+
+```
+FAILS = ['driver_license_expired', 'driver_license_unrecorded', 'driver_medical_expired']
+```
+
+`driver_license_not_yet_valid` is in neither `FAILS` nor `WARNS`, so pre-trip **passes** a driver
+whose licence has not taken effect. And its `schemaError()` guard — the one that catches "Fleet's
+codes have changed" — is keyed on the states it already knows (`expired / unknown / expiring`), so a
+brand-new fail-state produces no code it looks for and slips through the guard silently. A guard that
+protects against the change it anticipated, not the one that happened.
+
+### Why it is only a gap, not a red test
+
+Allocation eligibility already blocks `not_yet_valid` (my `blockersFor` emits the code, and
+`DriverDirectoryTest` proves the driver is excluded), so in the normal flow such a driver never
+reaches pre-trip. It bites only if a licence's `licence_valid_from` is corrected to a future date
+**after** the driver was allocated — which is the same post-allocation class D-151 exists to catch.
+28 tests across both suites are green; this is missing coverage for a new state, not a regression.
+
+### The fix, P1's file (`PretripDriverDocuments`)
+
+```php
+const FAILS = [..., 'driver_license_not_yet_valid'];
+// and in IMPLIED['licence']:
+'not_yet_valid' => 'driver_license_not_yet_valid',
+```
+
+Better still, fail closed: a licence or medical blocker code the pre-trip does not recognise should
+FAIL, not pass — then the next new Fleet state cannot reopen this gap. Left to P1; messaged.
 
 ---
 

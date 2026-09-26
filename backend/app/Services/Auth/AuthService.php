@@ -3,6 +3,8 @@
 namespace App\Services\Auth;
 
 use App\Exceptions\BusinessException;
+use App\Models\Customer\Client;
+use App\Models\Customer\ClientContact;
 use App\Models\Hr\HrExternalCompany;
 use App\Models\Purchase\PurchaseVendor;
 use App\Models\Tenant;
@@ -291,27 +293,106 @@ class AuthService
         return $user;
     }
 
-    public function registerClient(array $data): User
+    /**
+     * Customer self-registration.
+     *
+     * ── WHAT THIS USED TO DO, AND WHY IT COULD NEVER WORK ───────────────────
+     * It created one `users` row with role='client', status='pending', no
+     * tenant_id, no client and no contact — then told the person "Awaiting admin
+     * approval". Three things made that a promise nobody could keep:
+     *
+     *   1. No endpoint anywhere activates a pending client user. TPV, vendor and
+     *      company all have one; client never did. So the wait was permanent.
+     *   2. Even activated, it could not be used. EnsureClientPortalAccess
+     *      requires the token subject to BE a ClientContact; a User token is
+     *      refused. The customer portal does not authenticate against `users`.
+     *   3. Nothing linked the row to a customer, so there was no data to show it.
+     *
+     * The rest of the codebase already agrees on where a customer identity
+     * lives: forgot-password for role=client goes to ClientPortalAuthService,
+     * and the login screen's "Client / Customer" option posts to
+     * /client-portal/login. registerClient was the one outlier.
+     *
+     * ── WHAT IT DOES NOW ────────────────────────────────────────────────────
+     * It creates the two records the portal actually reads, in the state that
+     * means "not approved yet":
+     *
+     *   · Client        — active = false, so ClientPortalAuthService::login()
+     *                     refuses any contact under it (it checks clients.active).
+     *   · ClientContact — primary, portal_status = 'inactive', so login refuses
+     *                     this contact specifically. Both gates already existed
+     *                     and are asserted by ClientPortalAuthHardeningTest.
+     *
+     * No `users` row. A customer is not staff, and the dead role='client' rows
+     * were the thing confusing every reader of this flow. Existing legacy rows
+     * are untouched — see StaffManagementController::manageable(), which carries
+     * one on purpose.
+     *
+     * ── APPROVAL NEEDS NO NEW ENDPOINT ──────────────────────────────────────
+     * Staff already have both controls: the Status switch writes clients.active,
+     * and POST /api/customers/{client}/contacts/{contact}/invite grants portal
+     * access. Approving is switching the customer on and inviting the contact.
+     * Until then the person's own password is stored but every door is shut, and
+     * the refusal they get — "Portal access has not been enabled for this
+     * contact" — is true, which is more than the old flow managed.
+     *
+     * The tenant comes from AgencyContext, the same resolver registerCompany()
+     * uses. A public form has no tenant context, and a second way of answering
+     * "which tenant does a self-registration belong to" would be a second answer
+     * that could drift from the first.
+     *
+     * @return array{client: Client, contact: ClientContact}
+     */
+    public function registerClient(array $data): array
     {
-        $user = User::create([
-            'name'     => trim($data['first_name'].' '.$data['last_name']),
-            'email'    => $data['email'],
-            'password' => Hash::make($data['password']),
-            'role'     => 'client',
-            'status'   => 'pending',
-            'phone'    => $data['phone'],
-            'company'  => $data['company'],
-            'meta'     => [
-                'address' => $data['address'] ?? null,
-                'city'    => $data['city'] ?? null,
-                'state'   => $data['state'] ?? null,
-                'country' => $data['country'] ?? null,
-            ],
-        ]);
+        return DB::transaction(function () use ($data) {
+            $tenantId = AgencyContext::tenantId();
 
-        Log::channel('auth')->info('Client registered, pending approval', ['user_id' => $user->id]);
+            $client = Client::create([
+                'tenant_id' => $tenantId,
+                'company'   => $data['company'],
+                'phone'     => $data['phone'],
+                'address'   => $data['address'] ?? null,
+                'city'      => $data['city'] ?? null,
+                'state'     => $data['state'] ?? null,
+                'country'   => $data['country'] ?? null,
+                // Not approved. This is the gate login() checks, not a cosmetic
+                // flag: a contact under an inactive customer cannot sign in.
+                'active'    => false,
+                // Distinguishes "signed up, waiting" from "customer we switched
+                // off", which otherwise look identical on the customers list.
+                'lifecycle_status' => 'Prospect',
+                // Nobody added them; they added themselves. The column is
+                // nullable for exactly this case.
+                'added_by'  => null,
+            ]);
 
-        return $user;
+            $contact = ClientContact::create([
+                'tenant_id'  => $tenantId,
+                'client_id'  => $client->id,
+                'first_name' => $data['first_name'],
+                'last_name'  => $data['last_name'],
+                'email'      => $data['email'],
+                'phone'      => $data['phone'],
+                'is_primary' => true,
+                'active'     => true,
+                // The password they chose, kept so approval does not force them
+                // through a set-password email they did not ask for. The
+                // `password` cast hashes it; login() checks it FIRST, before any
+                // status message, so a wrong password still says nothing about
+                // whether the account exists.
+                'password'   => $data['password'],
+                // Self-registration proves nothing about the mailbox, so this
+                // stays null until they follow a link. Access is off regardless.
+                'portal_status' => 'inactive',
+            ]);
+
+            Log::channel('auth')->info('Customer self-registered, awaiting approval', [
+                'client_id' => $client->id, 'contact_id' => $contact->id, 'tenant_id' => $tenantId,
+            ]);
+
+            return ['client' => $client, 'contact' => $contact];
+        });
     }
 
     /**

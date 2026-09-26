@@ -53,7 +53,21 @@ class ClientService
             'active'           => (clone $clients)->where('active', true)->count(),
             'inactive'         => (clone $clients)->where('active', false)->count(),
             'contacts'         => (clone $contacts)->count(),
-            'with_portal'      => (clone $contacts)->whereNotNull('user_id')->count(),
+            /*
+             | Portal access is portal_status, NOT user_id.
+             |
+             | This counted `whereNotNull('user_id')` — the column from the July
+             | design, when a portal contact was expected to have a users row
+             | behind it. The portal was rebuilt on contact-side auth
+             | (client_contacts.password / portal_status, migration
+             | 2026_10_15_000002) and nothing has written user_id since, so this
+             | reported 0 however many contacts could actually sign in.
+             |
+             | 'invited' and 'active' is the same pair ClientPortalAuthService
+             | ::portalAccountFor() treats as "has a portal account", and the
+             | count has to mean what the login gate means or the two disagree.
+             */
+            'with_portal'      => (clone $contacts)->whereIn('portal_status', ['invited', 'active'])->count(),
             'added_this_month' => (clone $clients)
                 ->whereMonth('created_at', now()->month)
                 ->whereYear('created_at', now()->year)
