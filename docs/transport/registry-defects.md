@@ -4555,6 +4555,48 @@ happening again.
 
 ---
 
+## D-204 — the pre-trip check does not know Fleet's `not_yet_valid` licence state
+
+**Raised:** 2026-09-26, reviewing P1's D-151 merge against my D-151(i). **Found: P2. Fix: P1's file.**
+**Live on master — both halves are already there.**
+
+### Measured
+
+My D-151(i) added a licence verdict state `not_yet_valid` and, with it, a blocker code
+`driver_license_not_yet_valid` from `DriverService::blockersFor()`. P1's `PretripDriverDocuments`
+(D-151) reads Fleet's blocker codes and fails on a fixed list:
+
+```
+FAILS = ['driver_license_expired', 'driver_license_unrecorded', 'driver_medical_expired']
+```
+
+`driver_license_not_yet_valid` is in neither `FAILS` nor `WARNS`, so pre-trip **passes** a driver
+whose licence has not taken effect. And its `schemaError()` guard — the one that catches "Fleet's
+codes have changed" — is keyed on the states it already knows (`expired / unknown / expiring`), so a
+brand-new fail-state produces no code it looks for and slips through the guard silently. A guard that
+protects against the change it anticipated, not the one that happened.
+
+### Why it is only a gap, not a red test
+
+Allocation eligibility already blocks `not_yet_valid` (my `blockersFor` emits the code, and
+`DriverDirectoryTest` proves the driver is excluded), so in the normal flow such a driver never
+reaches pre-trip. It bites only if a licence's `licence_valid_from` is corrected to a future date
+**after** the driver was allocated — which is the same post-allocation class D-151 exists to catch.
+28 tests across both suites are green; this is missing coverage for a new state, not a regression.
+
+### The fix, P1's file (`PretripDriverDocuments`)
+
+```php
+const FAILS = [..., 'driver_license_not_yet_valid'];
+// and in IMPLIED['licence']:
+'not_yet_valid' => 'driver_license_not_yet_valid',
+```
+
+Better still, fail closed: a licence or medical blocker code the pre-trip does not recognise should
+FAIL, not pass — then the next new Fleet state cannot reopen this gap. Left to P1; messaged.
+
+---
+
 ## D-127 — the client portal table has no pagination, and one customer already has 35 rows
 
 **Raised:** 2026-09-22, walking the Shipments screen. **P3's component** (`ClientPortalRecords`).
