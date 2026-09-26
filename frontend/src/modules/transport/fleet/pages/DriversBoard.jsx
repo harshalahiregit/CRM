@@ -455,10 +455,24 @@ function LicenceDialog({ driver, onClose }) {
 
         <form onSubmit={(e) => { e.preventDefault(); setErr(''); save.mutate() }} className="overflow-y-auto">
         <div className="px-6 py-5 space-y-4">
-          <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+          <p className="text-[12px] leading-snug" style={{ color: 'var(--text-muted)' }}>
             Name, phone and employer come from the directory and are edited there. Only the licence and availability
             below belong to Transport.
           </p>
+
+          {/* Everything on record for this person, in one place. */}
+          <div className="rounded-xl p-4" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+            <div className="grid grid-cols-2 gap-x-5 gap-y-3">
+              <Detail label="Phone" value={driver.phone} />
+              <Detail label="Designation" value={driver.designation} />
+              <Detail label="Employer" value={driver.employer} />
+              <Detail label="Directory" value={driver.directory} />
+              <Detail label="Reference" value={driver.ref} />
+              <Detail label="Licence status" value={driver.licence?.message || driver.licence?.state} />
+              {driver.profile?.licence_expiry && <Detail label="Licence expires" value={driver.profile.licence_expiry} />}
+              {driver.profile?.medical_expiry && <Detail label="Medical expires" value={driver.profile.medical_expiry} />}
+            </div>
+          </div>
 
           <Field label="Licence number">
             <input value={form.licence_number} onChange={(e) => setForm({ ...form, licence_number: e.target.value })}
@@ -528,6 +542,16 @@ function Field({ label, hint, children }) {
       <label className="text-[13px] font-semibold block mb-1.5" style={{ color: 'var(--text-h)' }}>{label}</label>
       {children}
       {hint && <p className="text-[12px] mt-1.5 leading-snug" style={{ color: 'var(--text-muted)' }}>{hint}</p>}
+    </div>
+  )
+}
+
+// A read-only label/value pair for the details block.
+function Detail({ label, value }) {
+  return (
+    <div>
+      <p className="text-[11.5px] font-semibold" style={{ color: 'var(--text-muted)' }}>{label}</p>
+      <p className="text-[13.5px] mt-0.5 break-words" style={{ color: 'var(--text-h)' }}>{value || '—'}</p>
     </div>
   )
 }
