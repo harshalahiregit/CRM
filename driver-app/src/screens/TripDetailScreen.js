@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Image } from 'react-native'
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
 import { theme } from '../theme'
 import { api } from '../api'
 import { StatusPill } from './TripsScreen'
 import { JOURNEY, journeyIndex } from '../status'
+import { useLayout } from '../responsive'
 
 export default function TripDetailScreen({ trip: initial, onBack }) {
+  const { topInset, f, gutter, maxContent } = useLayout()
   const [trip, setTrip] = useState(initial)
   const [docs, setDocs] = useState([])
   const [loading, setLoading] = useState(true)
@@ -74,51 +76,54 @@ export default function TripDetailScreen({ trip: initial, onBack }) {
   }
 
   const step = journeyIndex(trip.status)
+  const pods = docs.filter((d) => d.document_type === 'pod')
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.bg }}>
-      <View style={{ paddingTop: 56, paddingHorizontal: 20, paddingBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-        <TouchableOpacity onPress={onBack}><Text style={{ color: theme.accent, fontSize: 16, fontWeight: '700' }}>‹ Back</Text></TouchableOpacity>
+    <View style={{ flex: 1, backgroundColor: theme.bg, paddingTop: topInset }}>
+      <View style={{ paddingTop: f(12), paddingHorizontal: gutter, paddingBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+        <TouchableOpacity onPress={onBack} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <Text style={{ color: theme.accent, fontSize: f(16), fontWeight: '700' }}>‹ Back</Text>
+        </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 48 }}>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: gutter, paddingTop: 4, paddingBottom: 48, width: '100%', maxWidth: maxContent, alignSelf: 'center' }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={{ color: theme.text, fontSize: 24, fontWeight: '900' }}>{trip.trip_number || `Trip #${trip.id}`}</Text>
-          <StatusPill status={trip.status} />
+          <Text style={{ color: theme.text, fontSize: f(24), fontWeight: '900', flex: 1, paddingRight: 10 }} numberOfLines={1}>{trip.trip_number || `Trip #${trip.id}`}</Text>
+          <StatusPill status={trip.status} f={f} />
         </View>
-        {trip.route ? <Text style={{ color: theme.textMuted, fontSize: 15, marginTop: 6 }}>{trip.route}</Text> : null}
-        {trip.dispatch_destination ? <Row label="Destination" value={trip.dispatch_destination} /> : null}
-        {trip.planned_arrival_at ? <Row label="Planned arrival" value={fmt(trip.planned_arrival_at)} /> : null}
+        {trip.route ? <Text style={{ color: theme.textMuted, fontSize: f(15), marginTop: 6 }}>{trip.route}</Text> : null}
+        {trip.dispatch_destination ? <Row label="Destination" value={trip.dispatch_destination} f={f} /> : null}
+        {trip.planned_arrival_at ? <Row label="Planned arrival" value={fmt(trip.planned_arrival_at)} f={f} /> : null}
 
         {/* Journey — read-only for now. Becomes tappable once Dev 1 adds
             driver-reportable departed/arrived/delivered events. */}
-        <Section title="Journey">
+        <Section title="Journey" f={f}>
           {JOURNEY.map((s, i) => (
             <View key={s.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 }}>
               <View style={{ width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
                 backgroundColor: i <= step ? theme.accent : theme.input, borderWidth: i <= step ? 0 : 1, borderColor: theme.border }}>
                 {i <= step ? <Text style={{ color: '#fff', fontSize: 12, fontWeight: '900' }}>✓</Text> : null}
               </View>
-              <Text style={{ color: i <= step ? theme.text : theme.textMuted, fontSize: 15, fontWeight: i === step ? '800' : '500' }}>{s.label}</Text>
+              <Text style={{ color: i <= step ? theme.text : theme.textMuted, fontSize: f(15), fontWeight: i === step ? '800' : '500', flex: 1 }}>{s.label}</Text>
             </View>
           ))}
-          <Text style={{ color: theme.textMuted, fontSize: 12.5, marginTop: 4 }}>
+          <Text style={{ color: theme.textMuted, fontSize: f(12.5), marginTop: 4 }}>
             Progress is set by the office for now. Driver-tap updates are coming.
           </Text>
         </Section>
 
         {/* POD — the one the driver owns today. */}
-        <Section title="Proof of delivery">
+        <Section title="Proof of delivery" f={f}>
           {loading ? <ActivityIndicator color={theme.accent} /> : (
             <>
-              {docs.filter((d) => d.document_type === 'pod').length === 0 ? (
-                <Text style={{ color: theme.textMuted, fontSize: 14, marginBottom: 12 }}>No proof of delivery filed yet.</Text>
+              {pods.length === 0 ? (
+                <Text style={{ color: theme.textMuted, fontSize: f(14), marginBottom: 12 }}>No proof of delivery filed yet.</Text>
               ) : (
-                docs.filter((d) => d.document_type === 'pod').map((d) => (
+                pods.map((d) => (
                   <View key={d.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                    <Text style={{ color: theme.success, fontSize: 14 }}>✓</Text>
-                    <Text style={{ color: theme.text, fontSize: 14, flex: 1 }} numberOfLines={1}>{d.file_name || 'POD'}</Text>
-                    <Text style={{ color: theme.textMuted, fontSize: 12.5 }}>{d.verification_status === 'VERIFIED' ? 'verified' : 'to verify'}</Text>
+                    <Text style={{ color: theme.success, fontSize: f(14) }}>✓</Text>
+                    <Text style={{ color: theme.text, fontSize: f(14), flex: 1 }} numberOfLines={1}>{d.file_name || 'POD'}</Text>
+                    <Text style={{ color: theme.textMuted, fontSize: f(12.5) }}>{d.verification_status === 'VERIFIED' ? 'verified' : 'to verify'}</Text>
                   </View>
                 ))
               )}
@@ -128,12 +133,12 @@ export default function TripDetailScreen({ trip: initial, onBack }) {
               ) : (
                 <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
                   <TouchableOpacity onPress={() => addPod(true)} activeOpacity={0.85}
-                    style={{ flex: 1, backgroundColor: theme.accent, borderRadius: 14, paddingVertical: 15, alignItems: 'center' }}>
-                    <Text style={{ color: '#fff', fontSize: 15, fontWeight: '800' }}>📷  Take photo</Text>
+                    style={{ flex: 1, backgroundColor: theme.accent, borderRadius: 14, paddingVertical: f(15), alignItems: 'center' }}>
+                    <Text style={{ color: '#fff', fontSize: f(15), fontWeight: '800' }}>📷  Take photo</Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => addPod(false)} activeOpacity={0.85}
-                    style={{ flex: 1, borderRadius: 14, paddingVertical: 15, alignItems: 'center', borderWidth: 1, borderColor: theme.border }}>
-                    <Text style={{ color: theme.text, fontSize: 15, fontWeight: '700' }}>🖼  From gallery</Text>
+                    style={{ flex: 1, borderRadius: 14, paddingVertical: f(15), alignItems: 'center', borderWidth: 1, borderColor: theme.border }}>
+                    <Text style={{ color: theme.text, fontSize: f(15), fontWeight: '700' }}>🖼  From gallery</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -145,19 +150,19 @@ export default function TripDetailScreen({ trip: initial, onBack }) {
   )
 }
 
-function Section({ title, children }) {
+function Section({ title, children, f }) {
   return (
     <View style={{ backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1, borderRadius: 16, padding: 16, marginTop: 18 }}>
-      <Text style={{ color: theme.textMuted, fontSize: 13, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 14 }}>{title}</Text>
+      <Text style={{ color: theme.textMuted, fontSize: f(13), fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 14 }}>{title}</Text>
       {children}
     </View>
   )
 }
-function Row({ label, value }) {
+function Row({ label, value, f }) {
   return (
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
-      <Text style={{ color: theme.textMuted, fontSize: 14 }}>{label}</Text>
-      <Text style={{ color: theme.text, fontSize: 14, fontWeight: '600' }}>{value}</Text>
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10, gap: 12 }}>
+      <Text style={{ color: theme.textMuted, fontSize: f(14) }}>{label}</Text>
+      <Text style={{ color: theme.text, fontSize: f(14), fontWeight: '600', flex: 1, textAlign: 'right' }}>{value}</Text>
     </View>
   )
 }

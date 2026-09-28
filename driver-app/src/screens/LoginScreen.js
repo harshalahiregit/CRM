@@ -4,8 +4,10 @@ import { theme } from '../theme'
 import { api } from '../api'
 import { setToken, setUser, getBaseUrl, setBaseUrl } from '../storage'
 import { DEFAULT_SERVER } from '../config'
+import { useLayout } from '../responsive'
 
 export default function LoginScreen({ onLoggedIn, onRegister }) {
+  const { topInset, f, gutter, maxContent } = useLayout()
   const [server, setServer] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -36,52 +38,54 @@ export default function LoginScreen({ onLoggedIn, onRegister }) {
   }
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: theme.bg }}>
-      <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 24 }}>
-        <Text style={{ color: theme.text, fontSize: 28, fontWeight: '900', marginBottom: 4 }}>Sangoé Driver</Text>
-        <Text style={{ color: theme.textMuted, fontSize: 15, marginBottom: 32 }}>Sign in to see your trip.</Text>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: theme.bg, paddingTop: topInset }}>
+      <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: gutter, paddingVertical: f(28) }} keyboardShouldPersistTaps="handled">
+        <View style={{ width: '100%', maxWidth: maxContent, alignSelf: 'center' }}>
+          <Text style={{ color: theme.text, fontSize: f(28), fontWeight: '900', marginBottom: 4 }}>Sangoé Driver</Text>
+          <Text style={{ color: theme.textMuted, fontSize: f(15), marginBottom: f(32) }}>Sign in to see your trip.</Text>
 
-        <Label>Server address</Label>
-        <Input value={server} onChangeText={setServer} placeholder="http://192.168.1.5:8000"
-          autoCapitalize="none" keyboardType="url" />
-        <Hint>The address the office gives you — the machine STOS runs on.</Hint>
+          <Label f={f}>Server address</Label>
+          <Input f={f} value={server} onChangeText={setServer} placeholder="http://192.168.1.5:8000"
+            autoCapitalize="none" keyboardType="url" />
+          <Hint f={f}>The address the office gives you — the machine STOS runs on.</Hint>
 
-        <Label style={{ marginTop: 18 }}>Email</Label>
-        <Input value={email} onChangeText={setEmail} placeholder="you@company.com"
-          autoCapitalize="none" keyboardType="email-address" />
+          <Label f={f} style={{ marginTop: f(18) }}>Email</Label>
+          <Input f={f} value={email} onChangeText={setEmail} placeholder="you@company.com"
+            autoCapitalize="none" keyboardType="email-address" />
 
-        <Label style={{ marginTop: 18 }}>Password</Label>
-        <Input value={password} onChangeText={setPassword} placeholder="••••••••" secureTextEntry />
+          <Label f={f} style={{ marginTop: f(18) }}>Password</Label>
+          <Input f={f} value={password} onChangeText={setPassword} placeholder="••••••••" secureTextEntry />
 
-        {err ? <Text style={{ color: theme.danger, fontSize: 14, marginTop: 16 }}>{err}</Text> : null}
+          {err ? <Text style={{ color: theme.danger, fontSize: f(14), marginTop: 16 }}>{err}</Text> : null}
 
-        <TouchableOpacity onPress={submit} disabled={busy} activeOpacity={0.85}
-          style={{ backgroundColor: theme.accent, borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginTop: 28, opacity: busy ? 0.6 : 1 }}>
-          {busy ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontSize: 16, fontWeight: '800' }}>Sign in</Text>}
-        </TouchableOpacity>
+          <TouchableOpacity onPress={submit} disabled={busy} activeOpacity={0.85}
+            style={{ backgroundColor: theme.accent, borderRadius: 14, paddingVertical: f(16), alignItems: 'center', marginTop: f(28), opacity: busy ? 0.6 : 1 }}>
+            {busy ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontSize: f(16), fontWeight: '800' }}>Sign in</Text>}
+          </TouchableOpacity>
 
-        <TouchableOpacity onPress={onRegister} style={{ alignItems: 'center', marginTop: 20 }}>
-          <Text style={{ color: theme.textMuted, fontSize: 14.5 }}>
-            New driver?  <Text style={{ color: theme.accent, fontWeight: '700' }}>Register</Text>
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity onPress={onRegister} style={{ alignItems: 'center', marginTop: f(20) }}>
+            <Text style={{ color: theme.textMuted, fontSize: f(14.5) }}>
+              New driver?  <Text style={{ color: theme.accent, fontWeight: '700' }}>Register</Text>
+            </Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   )
 }
 
-function Label({ children, style }) {
-  return <Text style={[{ color: theme.text, fontSize: 14, fontWeight: '700', marginBottom: 8 }, style]}>{children}</Text>
+function Label({ children, style, f }) {
+  return <Text style={[{ color: theme.text, fontSize: f(14), fontWeight: '700', marginBottom: 8 }, style]}>{children}</Text>
 }
-function Hint({ children }) {
-  return <Text style={{ color: theme.textMuted, fontSize: 12.5, marginTop: 6 }}>{children}</Text>
+function Hint({ children, f }) {
+  return <Text style={{ color: theme.textMuted, fontSize: f(12.5), marginTop: 6 }}>{children}</Text>
 }
-function Input(props) {
+function Input({ f, ...props }) {
   return (
     <TextInput
       placeholderTextColor={theme.textMuted}
       {...props}
       style={{ backgroundColor: theme.input, borderColor: theme.border, borderWidth: 1, borderRadius: 12,
-        paddingHorizontal: 14, paddingVertical: 14, color: theme.text, fontSize: 16 }} />
+        paddingHorizontal: 14, paddingVertical: f(14), color: theme.text, fontSize: f(16) }} />
   )
 }
