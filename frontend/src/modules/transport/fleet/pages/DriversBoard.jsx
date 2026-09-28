@@ -89,6 +89,20 @@ export default function DriversBoard() {
   const drivers = data?.drivers ?? []
   const counts = data?.counts
 
+  // A driver is open — show their full profile in place of the board (the app
+  // shell keeps the sidebar and header). The licence editor opens over it.
+  if (viewing) {
+    return (
+      <>
+        <DriverProfilePage
+          driver={viewing}
+          onClose={() => setViewing(null)}
+          onEditLicence={(d) => setEditing(d)} />
+        <LicenceDialog driver={editing} onClose={() => setEditing(null)} />
+      </>
+    )
+  }
+
   return (
     <div className="max-w-5xl">
       {/* D-148 — the way out. The vehicle passport has had one since it was
@@ -293,13 +307,6 @@ export default function DriversBoard() {
           </section>
         ))}
       </div>
-
-      {viewing && (
-        <DriverProfilePage
-          driver={viewing}
-          onClose={() => setViewing(null)}
-          onEditLicence={(d) => setEditing(d)} />
-      )}
 
       <LicenceDialog driver={editing} onClose={() => setEditing(null)} />
 
