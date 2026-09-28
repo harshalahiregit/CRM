@@ -53,8 +53,9 @@ The thing that turns "prototype" into "real app". Everything else is built on it
 - [x] A3. Shared UI primitives (`src/ui.js`): `Screen`, `AppBar`, `Button`
   (primary/secondary/ghost/danger + loading + pressed), `Card`, `Field` (focus
   ring, hint, error), `Pill`, `SectionLabel`, `EmptyState`, `Loading`, `Divider`.
-- [~] A4. Motion: press feedback + pull-to-refresh done; screen transitions and
-  skeletons still to add.
+- [x] A4. Motion: press feedback, pull-to-refresh, screen entrance animations
+  (fade + rise on every screen change) and skeleton loaders on the dashboard and
+  profile. `Enter` and `Skeleton` in src/ui.js.
 - [ ] A5. Iconography + brand: consistent icon set, splash, app icon, empty-state
   art. (Using emoji placeholders today.)
 - [x] A6. Re-skinned Login, Register, Trips (home) and Trip detail on the system.

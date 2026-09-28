@@ -5,7 +5,7 @@ import { api } from '../api'
 import { signOut } from '../storage'
 import { statusLabel, statusColor } from '../status'
 import { useLayout } from '../responsive'
-import { AppBar, Card, Loading, EmptyState, Button, Pill } from '../ui'
+import { AppBar, Card, EmptyState, Button, Pill, Skeleton } from '../ui'
 
 /**
  * "Driver Today" — the home dashboard. Readiness first (can I drive?), then the
@@ -64,7 +64,17 @@ export default function TripsScreen({ user, onOpen, onProfile, onSignOut }) {
         </View>}
       />
 
-      {loading ? <Loading label="Loading your day…" /> : err ? (
+      {loading ? (
+        <View style={{ paddingHorizontal: gutter, paddingTop: f(8), width: '100%', maxWidth: maxContent, alignSelf: 'center' }}>
+          <Skeleton height={f(90)} radius={16} />
+          <Skeleton height={f(14)} width="35%" style={{ marginTop: f(24) }} />
+          <Skeleton height={f(150)} radius={16} style={{ marginTop: f(14) }} />
+          <View style={{ flexDirection: 'row', gap: f(10), marginTop: f(20) }}>
+            <Skeleton height={f(78)} radius={16} style={{ flex: 1 }} />
+            <Skeleton height={f(78)} radius={16} style={{ flex: 1 }} />
+          </View>
+        </View>
+      ) : err ? (
         <EmptyState icon="⚠️" title="Couldn't load" subtitle={err}
           action={<Button title="Try again" variant="secondary" onPress={() => { setLoading(true); load() }} />} />
       ) : (

@@ -2,13 +2,40 @@
 //
 // Every screen is built from these, so the whole app shares one look, one set of
 // spacing, one way a button presses. This is what makes it read as a real app.
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   View, Text, TextInput, Pressable, ScrollView, ActivityIndicator,
-  KeyboardAvoidingView, Platform,
+  KeyboardAvoidingView, Platform, Animated,
 } from 'react-native'
 import { theme, radius, shadow } from './theme'
 import { useLayout } from './responsive'
+
+// A short fade + rise on mount — the entrance every screen and card uses so the
+// app moves instead of snapping. Cheap (native driver), subtle, fast.
+export function Enter({ children, style, delay = 0, distance = 12 }) {
+  const a = useRef(new Animated.Value(0)).current
+  useEffect(() => {
+    Animated.timing(a, { toValue: 1, duration: 280, delay, useNativeDriver: true }).start()
+  }, [a, delay])
+  return (
+    <Animated.View style={[{ opacity: a, transform: [{ translateY: a.interpolate({ inputRange: [0, 1], outputRange: [distance, 0] }) }] }, style]}>
+      {children}
+    </Animated.View>
+  )
+}
+
+// A pulsing placeholder block for loading states — reads as "content is coming",
+// not "the screen is empty".
+export function Skeleton({ height = 16, width = '100%', radius: r = 10, style }) {
+  const a = useRef(new Animated.Value(0.35)).current
+  useEffect(() => {
+    Animated.loop(Animated.sequence([
+      Animated.timing(a, { toValue: 0.85, duration: 750, useNativeDriver: true }),
+      Animated.timing(a, { toValue: 0.35, duration: 750, useNativeDriver: true }),
+    ])).start()
+  }, [a])
+  return <Animated.View style={[{ height, width, borderRadius: r, backgroundColor: theme.elevated, opacity: a }, style]} />
+}
 
 // A page. Handles the status-bar inset, the keyboard, optional scrolling, and
 // centres content with a max width on big screens.
