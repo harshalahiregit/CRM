@@ -4,7 +4,7 @@ import * as ImagePicker from 'expo-image-picker'
 import { theme, radius } from '../theme'
 import { api } from '../api'
 import { useLayout } from '../responsive'
-import { AppBar, Card, SectionLabel, Button, Pill, Loading } from '../ui'
+import { AppBar, Card, SectionLabel, Button, Pill, Skeleton } from '../ui'
 
 export default function ProfileScreen({ user, onBack }) {
   const { f, gutter, maxContent, topInset, bottomInset } = useLayout()
@@ -69,7 +69,15 @@ export default function ProfileScreen({ user, onBack }) {
     <View style={{ flex: 1, backgroundColor: theme.bg, paddingTop: topInset }}>
       <AppBar title="My profile" subtitle={p?.name} onBack={onBack} />
 
-      {loading ? <Loading label="Loading your profile…" /> : err ? (
+      {loading ? (
+        <View style={{ paddingHorizontal: gutter, paddingTop: f(8), width: '100%', maxWidth: maxContent, alignSelf: 'center' }}>
+          <Skeleton height={f(84)} radius={16} />
+          <Skeleton height={f(14)} width="30%" style={{ marginTop: f(24) }} />
+          <Skeleton height={f(140)} radius={16} style={{ marginTop: f(14) }} />
+          <Skeleton height={f(14)} width="30%" style={{ marginTop: f(20) }} />
+          <Skeleton height={f(120)} radius={16} style={{ marginTop: f(14) }} />
+        </View>
+      ) : err ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: f(28) }}>
           <Text style={{ color: theme.danger, fontSize: f(15), textAlign: 'center', marginBottom: f(16) }}>{err}</Text>
           <Button title="Try again" variant="secondary" onPress={() => { setLoading(true); load() }} />
