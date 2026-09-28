@@ -120,11 +120,14 @@ The thing that turns "prototype" into "real app". Everything else is built on it
 
 ## PHASE E — Home dashboard "Driver Today"  *(Dev 2 shell + [Dev 1] data)*
 
-- [ ] E1. A dashboard as the post-login home: current assignment card (trip #,
-  vehicle reg, container/consignment #), next required milestone, document
-  readiness, and a big primary action ("Start pre-trip", "Continue trip").
-- [ ] E2. Empty/available state when no trip is assigned.
-- [ ] E3. Quick actions: report incident, request fuel, emergency.
+- [~] E1. "Driver Today" dashboard is the post-login home: a document-readiness /
+  clearance card (real, from /v1/me/driver, best-effort so it never breaks the
+  home), the active trip up top with an Open-trip action, then the rest. Still to
+  add: next-required-milestone and container/consignment # — those need Dev 1's
+  driver-scoped trip data (today trips come from the office list).
+- [x] E2. Empty/available state when no trip is assigned.
+- [~] E3. Quick actions: Profile + Documents shortcuts done; report-incident,
+  request-fuel and emergency wait on Dev 1 / the cost endpoints (F7, F8, G2).
 
 ---
 

@@ -1,15 +1,22 @@
 import { useState, useEffect, useCallback } from 'react'
-import { View, Text, Pressable, FlatList, RefreshControl } from 'react-native'
+import { View, Text, Pressable, ScrollView, RefreshControl } from 'react-native'
 import { theme, radius } from '../theme'
 import { api } from '../api'
 import { signOut } from '../storage'
 import { statusLabel, statusColor } from '../status'
 import { useLayout } from '../responsive'
-import { AppBar, Card, Loading, EmptyState, Button } from '../ui'
+import { AppBar, Card, Loading, EmptyState, Button, Pill } from '../ui'
 
+/**
+ * "Driver Today" — the home dashboard. Readiness first (can I drive?), then the
+ * active trip, then everything else. The readiness card is best-effort: if the
+ * self-service endpoint is not reachable (e.g. not deployed on this server yet)
+ * the home screen still works, it just hides that card.
+ */
 export default function TripsScreen({ user, onOpen, onProfile, onSignOut }) {
   const { f, gutter, maxContent, topInset, bottomInset } = useLayout()
   const [trips, setTrips] = useState([])
+  const [me, setMe] = useState(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [err, setErr] = useState('')
@@ -17,11 +24,15 @@ export default function TripsScreen({ user, onOpen, onProfile, onSignOut }) {
   const load = useCallback(async () => {
     setErr('')
     try {
-      const result = await api.trips({ open: 1, per_page: 50 })
-      const rows = Array.isArray(result) ? result : (result?.data ?? [])
+      const [tripResult, meResult] = await Promise.all([
+        api.trips({ open: 1, per_page: 50 }),
+        api.me().catch(() => null),   // best-effort — never fail the home on this
+      ])
+      const rows = Array.isArray(tripResult) ? tripResult : (tripResult?.data ?? [])
       setTrips(rows)
+      setMe(meResult)
     } catch (e) {
-      setErr(e?.message || 'Could not load your trips.')
+      setErr(e?.message || 'Could not load your day.')
     } finally {
       setLoading(false); setRefreshing(false)
     }
@@ -30,12 +41,15 @@ export default function TripsScreen({ user, onOpen, onProfile, onSignOut }) {
   useEffect(() => { load() }, [load])
   const onRefresh = () => { setRefreshing(true); load() }
 
-  const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'
+  const hour = new Date().getHours()
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+  const active = trips[0]
+  const rest = trips.slice(1)
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg, paddingTop: topInset }}>
       <AppBar
-        title="My trips"
+        title="Today"
         subtitle={user?.name ? `${greeting}, ${user.name.split(' ')[0]}` : greeting}
         right={<View style={{ flexDirection: 'row', alignItems: 'center', gap: f(14) }}>
           <Pressable onPress={onProfile} hitSlop={12} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
@@ -50,47 +64,113 @@ export default function TripsScreen({ user, onOpen, onProfile, onSignOut }) {
         </View>}
       />
 
-      {loading ? (
-        <Loading label="Loading your trips…" />
-      ) : err ? (
-        <EmptyState icon="⚠️" title="Couldn't load your trips" subtitle={err}
-          action={<Button title="Try again" variant="secondary" onPress={load} />} />
-      ) : trips.length === 0 ? (
-        <EmptyState icon="🛣️" title="No active trips" subtitle="When the office assigns you a trip, it shows up here. Pull down to refresh." />
+      {loading ? <Loading label="Loading your day…" /> : err ? (
+        <EmptyState icon="⚠️" title="Couldn't load" subtitle={err}
+          action={<Button title="Try again" variant="secondary" onPress={() => { setLoading(true); load() }} />} />
       ) : (
-        <FlatList
-          data={trips}
-          keyExtractor={(t) => String(t.id)}
-          contentContainerStyle={{ paddingHorizontal: gutter, paddingTop: f(4), paddingBottom: f(28) + bottomInset, width: '100%', maxWidth: maxContent, alignSelf: 'center' }}
+        <ScrollView showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} colors={[theme.primary]} />}
-          ItemSeparatorComponent={() => <View style={{ height: f(12) }} />}
-          renderItem={({ item }) => <TripCard trip={item} onPress={() => onOpen(item)} f={f} />}
-        />
+          contentContainerStyle={{ paddingHorizontal: gutter, paddingTop: f(4), paddingBottom: f(28) + bottomInset, width: '100%', maxWidth: maxContent, alignSelf: 'center' }}>
+
+          {/* Readiness (best-effort) */}
+          {me?.eligibility ? <ReadinessCard elig={me.eligibility} onProfile={onProfile} f={f} /> : null}
+
+          {/* Active trip */}
+          <Text style={{ color: theme.textFaint, fontSize: f(12), fontWeight: '800', letterSpacing: 0.7, textTransform: 'uppercase', marginTop: me?.eligibility ? f(20) : 0, marginBottom: f(12) }}>
+            {active ? 'Your trip' : 'Trips'}
+          </Text>
+
+          {active ? (
+            <Card onPress={() => onOpen(active)}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: f(10) }}>
+                <Text style={{ color: theme.text, fontSize: f(19), fontWeight: '900', flex: 1 }} numberOfLines={1}>{active.trip_number || `Trip #${active.id}`}</Text>
+                <StatusPill status={active.status} f={f} />
+              </View>
+              {active.route ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: f(8), marginTop: f(10) }}>
+                  <Text style={{ fontSize: f(13) }}>📍</Text>
+                  <Text style={{ color: theme.textMuted, fontSize: f(14), flex: 1 }} numberOfLines={2}>{active.route}</Text>
+                </View>
+              ) : null}
+              {active.dispatch_destination ? <Text style={{ color: theme.textFaint, fontSize: f(13), marginTop: f(4) }} numberOfLines={1}>To: {active.dispatch_destination}</Text> : null}
+              <View style={{ marginTop: f(14) }}><Button title="Open trip" onPress={() => onOpen(active)} /></View>
+            </Card>
+          ) : (
+            <Card>
+              <View style={{ alignItems: 'center', paddingVertical: f(12) }}>
+                <Text style={{ fontSize: f(34), marginBottom: f(8) }}>🛣️</Text>
+                <Text style={{ color: theme.text, fontSize: f(15.5), fontWeight: '800' }}>No active trip</Text>
+                <Text style={{ color: theme.textMuted, fontSize: f(13.5), textAlign: 'center', marginTop: f(4) }}>When the office assigns you a trip, it appears here. Pull to refresh.</Text>
+              </View>
+            </Card>
+          )}
+
+          {/* Quick actions */}
+          <Text style={{ color: theme.textFaint, fontSize: f(12), fontWeight: '800', letterSpacing: 0.7, textTransform: 'uppercase', marginTop: f(20), marginBottom: f(12) }}>Quick actions</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: f(10) }}>
+            <QuickAction icon="👤" label="My profile" onPress={onProfile} f={f} />
+            <QuickAction icon="📄" label="Documents" onPress={onProfile} f={f} />
+          </View>
+
+          {/* Other trips */}
+          {rest.length > 0 ? (
+            <>
+              <Text style={{ color: theme.textFaint, fontSize: f(12), fontWeight: '800', letterSpacing: 0.7, textTransform: 'uppercase', marginTop: f(20), marginBottom: f(12) }}>More trips</Text>
+              <View style={{ gap: f(12) }}>
+                {rest.map((t) => (
+                  <Card key={t.id} onPress={() => onOpen(t)}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: f(10) }}>
+                      <Text style={{ color: theme.text, fontSize: f(16), fontWeight: '800', flex: 1 }} numberOfLines={1}>{t.trip_number || `Trip #${t.id}`}</Text>
+                      <StatusPill status={t.status} f={f} />
+                    </View>
+                    {t.route ? <Text style={{ color: theme.textMuted, fontSize: f(13.5), marginTop: f(6) }} numberOfLines={1}>{t.route}</Text> : null}
+                  </Card>
+                ))}
+              </View>
+            </>
+          ) : null}
+        </ScrollView>
       )}
     </View>
   )
 }
 
-function TripCard({ trip, onPress, f }) {
+function ReadinessCard({ elig, onProfile, f }) {
+  const ok = elig.eligible
   return (
-    <Card onPress={onPress}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: f(10) }}>
-        <Text style={{ color: theme.text, fontSize: f(18), fontWeight: '800', flex: 1 }} numberOfLines={1}>{trip.trip_number || `Trip #${trip.id}`}</Text>
-        <StatusPill status={trip.status} f={f} />
-      </View>
-      {trip.route ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: f(8), marginTop: f(10) }}>
-          <Text style={{ fontSize: f(13) }}>📍</Text>
-          <Text style={{ color: theme.textMuted, fontSize: f(14), flex: 1 }} numberOfLines={1}>{trip.route}</Text>
+    <View style={{ backgroundColor: ok ? theme.successTint : theme.warningTint, borderRadius: radius.lg, padding: f(16) }}>
+      <View style={{ flexDirection: 'row', gap: f(12), alignItems: 'flex-start' }}>
+        <Text style={{ fontSize: f(22) }}>{ok ? '✅' : '⏳'}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: ok ? theme.success : theme.warning, fontSize: f(15.5), fontWeight: '900' }}>
+            {ok ? 'Cleared to drive' : 'Not cleared yet'}
+          </Text>
+          <Text style={{ color: theme.textMuted, fontSize: f(13.5), marginTop: f(4), lineHeight: f(19) }}>{elig.message}</Text>
+          {!ok && elig.blocking?.length ? (
+            <View style={{ marginTop: f(8) }}>
+              {elig.blocking.map((b, i) => (
+                <Text key={i} style={{ color: theme.text, fontSize: f(13) }}>• {b.label}{b.awaiting ? '  (waiting for the office)' : ''}</Text>
+              ))}
+              <Pressable onPress={onProfile} style={({ pressed }) => ({ marginTop: f(10), opacity: pressed ? 0.6 : 1 })}>
+                <Text style={{ color: theme.primary, fontSize: f(13.5), fontWeight: '800' }}>Go to my documents  ›</Text>
+              </Pressable>
+            </View>
+          ) : null}
         </View>
-      ) : null}
-      {trip.dispatch_destination ? (
-        <Text style={{ color: theme.textFaint, fontSize: f(13), marginTop: f(4) }} numberOfLines={1}>To: {trip.dispatch_destination}</Text>
-      ) : null}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: f(12) }}>
-        <Text style={{ color: theme.primary, fontSize: f(13.5), fontWeight: '800' }}>Open  ›</Text>
       </View>
-    </Card>
+    </View>
+  )
+}
+
+function QuickAction({ icon, label, onPress, f }) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => ({
+      flexGrow: 1, minWidth: '46%', backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1,
+      borderRadius: radius.lg, padding: f(16), opacity: pressed ? 0.85 : 1, transform: [{ scale: pressed ? 0.99 : 1 }],
+    })}>
+      <Text style={{ fontSize: f(22) }}>{icon}</Text>
+      <Text style={{ color: theme.text, fontSize: f(14), fontWeight: '700', marginTop: f(8) }}>{label}</Text>
+    </Pressable>
   )
 }
 
