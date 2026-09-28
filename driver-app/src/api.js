@@ -68,4 +68,11 @@ export const api = {
   // POD — the one trip action a driver is allowed today. Multipart upload of
   // the signed sheet's photo.
   uploadPod: (id, formData) => request(`/transport/trips/${id}/pod`, { method: 'POST', body: formData, isForm: true }),
+
+  // ── The driver's own profile & documents (Phase C) ──────────────────────
+  // Self-scoped: the server resolves "me" from the token, so there is no id to
+  // pass. Returns profile, documents, the types that can be filed, and whether
+  // the driver is cleared to drive.
+  me: () => request('/v1/me/driver'),
+  uploadDocument: (formData) => request('/v1/me/driver/documents', { method: 'POST', body: formData, isForm: true }),
 }
