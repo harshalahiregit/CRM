@@ -1,5 +1,15 @@
 # Driver app — trip-action endpoints Dispatch (Dev 1) needs to build
 
+> **Status (2026-09-28):** Raza (Ops, SNG-TRN-026) accepted these and is writing
+> the **authoritative** contract covering all FIVE driver endpoints — the two
+> existing (my-trips + trip progress) plus the three below — with exact
+> request/response shapes, to send before he codes. **This file is provisional;
+> match the app to his doc when it arrives.** Two open points he'll spell out:
+> (a) where the pre-trip inspection record lives, and (b) M12 waits on the
+> milestone-list owner (sign-off item 21). **Fleet (me) owns the "hold vehicle on
+> critical defect" side** of pre-trip — wire it once his `/pretrip` returns the
+> defect signal.
+
 The Sangoé Driver app now has the UI for three trip-journey actions. They POST
 to the endpoints below, which are **Dispatch's (Ops) to build** — they write to
 the trip / milestone / exception machine, which Fleet does not own. Until they
