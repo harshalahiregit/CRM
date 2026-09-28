@@ -1,24 +1,22 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { X, IdCard, FileText, Activity, UserRound, Building2, Pencil } from 'lucide-react'
+import { ArrowLeft, IdCard, FileText, Activity, UserRound, Building2, Pencil } from 'lucide-react'
 import { STOS_ACCENT } from '@/services/stosApi'
 import HealthChip from './HealthChip'
 import DriverDocumentsPanel from './DriverDocumentsPanel'
 
-const LICENCE_TONE = { valid: 'ok', expiring: 'warn', expired: 'bad', unknown: 'muted' }
+const LICENCE_TONE = { valid: 'green', expiring: 'amber', expired: 'red', unknown: 'amber' }
 const DRIVER_STATUS_LABELS = {
   AVAILABLE: 'Available', ON_TRIP: 'On trip', RESTING: 'Resting',
   SUSPENDED: 'Suspended', OFF_DUTY: 'Off duty', UNAVAILABLE: 'Unavailable',
 }
 
 /**
- * The full driver profile — a whole page, not a cramped dialog. Everything the
- * office holds on one driver, in one place: who they are, their paperwork (view
- * and approve), and their activity. The licence and availability are edited
- * through the existing card, opened from here.
- *
- * Opens over the board and closes only via ✕ (never a backdrop click), matching
- * the rest of STOS.
+ * The full driver profile — a page inside the app shell (the sidebar and header
+ * stay), not a modal and not a full-screen takeover. Everything the office holds
+ * on one driver: who they are, their paperwork (view and approve), and their
+ * activity. Licence and availability are edited through the existing card,
+ * opened from here.
  */
 export default function DriverProfilePage({ driver, onClose, onEditLicence }) {
   const qc = useQueryClient()
@@ -26,7 +24,6 @@ export default function DriverProfilePage({ driver, onClose, onEditLicence }) {
   if (!driver) return null
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['stos-drivers'] })
-
   const tabs = [
     { key: 'overview', label: 'Overview', icon: UserRound },
     { key: 'documents', label: 'Documents', icon: FileText },
@@ -34,91 +31,88 @@ export default function DriverProfilePage({ driver, onClose, onEditLicence }) {
   ]
 
   return (
-    <div className="fixed inset-0 z-[90] flex flex-col" style={{ background: 'var(--bg-global)' }}>
-      {/* Header */}
-      <header className="flex items-start justify-between gap-3 px-6 py-4 shrink-0"
-        style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-        <div className="flex items-center gap-3 min-w-0">
-          <span className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0"
-            style={{ background: `color-mix(in srgb, ${STOS_ACCENT} 14%, transparent)` }}>
-            <UserRound size={20} style={{ color: STOS_ACCENT }} />
-          </span>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="font-bold truncate" style={{ color: 'var(--text-h)', fontSize: 19 }}>{driver.name}</h1>
-              <HealthChip tone={LICENCE_TONE[driver.licence?.state]} size="sm">
-                {driver.licence?.state === 'unknown' ? 'no licence' : `licence ${driver.licence?.state}`}
-              </HealthChip>
-              {driver.medical?.state && driver.medical.state !== 'valid' && (
-                <HealthChip tone={LICENCE_TONE[driver.medical.state]} size="sm">
-                  {driver.medical.state === 'unknown' ? 'no medical' : `medical ${driver.medical.state}`}
+    <div>
+      {/* Back to the board */}
+      <button type="button" onClick={onClose}
+        className="flex items-center gap-1.5 text-xs font-semibold mb-4"
+        style={{ color: 'var(--text-muted)' }}>
+        <ArrowLeft size={14} /> Back to drivers
+      </button>
+
+      {/* Header card */}
+      <section className="rounded-2xl p-5 mb-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0"
+              style={{ background: `color-mix(in srgb, ${STOS_ACCENT} 14%, transparent)` }}>
+              <UserRound size={22} style={{ color: STOS_ACCENT }} />
+            </span>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="font-bold truncate" style={{ color: 'var(--text-h)', fontSize: 20 }}>{driver.name}</h1>
+                <HealthChip tone={LICENCE_TONE[driver.licence?.state]} size="sm">
+                  {driver.licence?.state === 'unknown' ? 'no licence' : `licence ${driver.licence?.state}`}
                 </HealthChip>
-              )}
-              {driver.profile?.status && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded"
-                  style={{ background: 'var(--bg-input)', color: 'var(--text-muted)' }}>
-                  {DRIVER_STATUS_LABELS[driver.profile.status] || driver.profile.status}
-                </span>
-              )}
+                {driver.medical?.state && driver.medical.state !== 'valid' && (
+                  <HealthChip tone={LICENCE_TONE[driver.medical.state]} size="sm">
+                    {driver.medical.state === 'unknown' ? 'no medical' : `medical ${driver.medical.state}`}
+                  </HealthChip>
+                )}
+                {driver.profile?.status && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded"
+                    style={{ background: 'var(--bg-input)', color: 'var(--text-muted)' }}>
+                    {DRIVER_STATUS_LABELS[driver.profile.status] || driver.profile.status}
+                  </span>
+                )}
+              </div>
+              <p className="flex items-center gap-1 text-[12.5px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                {driver.employer && <><Building2 size={11} /> {driver.employer} · </>}
+                {driver.phone || 'no phone'} · from {driver.directory}
+              </p>
             </div>
-            <p className="flex items-center gap-1 text-[12px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
-              {driver.employer && <><Building2 size={11} /> {driver.employer} · </>}
-              {driver.phone || 'no phone'} · from {driver.directory}
-            </p>
           </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
           <button type="button" onClick={() => onEditLicence?.(driver)}
-            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl"
+            className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl shrink-0"
             style={{ background: STOS_ACCENT, color: '#fff' }}>
             <Pencil size={13} /> Edit licence & availability
           </button>
-          <button type="button" onClick={onClose} aria-label="Close"
-            className="w-9 h-9 rounded-xl flex items-center justify-center"
-            style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
-            <X size={16} />
-          </button>
         </div>
-      </header>
 
-      {/* Tabs */}
-      <nav className="flex gap-1 px-4 shrink-0" style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-        {tabs.map((t) => {
-          const on = tab === t.key
-          const Icon = t.icon
-          return (
-            <button key={t.key} type="button" onClick={() => setTab(t.key)}
-              className="flex items-center gap-1.5 text-xs font-bold px-4 py-3"
-              style={{ color: on ? STOS_ACCENT : 'var(--text-muted)', borderBottom: on ? `2px solid ${STOS_ACCENT}` : '2px solid transparent' }}>
-              <Icon size={14} /> {t.label}
-            </button>
-          )
-        })}
-      </nav>
+        {/* Tabs */}
+        <nav className="flex gap-1 mt-4 -mb-1" style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+          {tabs.map((t) => {
+            const on = tab === t.key
+            const Icon = t.icon
+            return (
+              <button key={t.key} type="button" onClick={() => setTab(t.key)}
+                className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg"
+                style={{ color: on ? '#fff' : 'var(--text-muted)', background: on ? STOS_ACCENT : 'transparent' }}>
+                <Icon size={14} /> {t.label}
+              </button>
+            )
+          })}
+        </nav>
+      </section>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-4xl mx-auto px-6 py-6">
-          {tab === 'overview' && <Overview driver={driver} />}
-          {tab === 'documents' && (
-            <section className="rounded-2xl p-5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-              <h2 className="text-sm font-bold mb-1" style={{ color: 'var(--text-h)' }}>Paperwork</h2>
-              <p className="text-[12px] mb-4" style={{ color: 'var(--text-muted)' }}>
-                Documents the driver uploaded from the app arrive here as “to verify”. Open one to view the file, then approve or reject it.
-              </p>
-              <DriverDocumentsPanel driver={driver} onChanged={refresh} />
-            </section>
-          )}
-          {tab === 'activity' && <ActivityTab />}
-        </div>
-      </div>
+      {tab === 'overview' && <Overview driver={driver} />}
+      {tab === 'documents' && (
+        <section className="rounded-2xl p-5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+          <h2 className="text-sm font-bold mb-1" style={{ color: 'var(--text-h)' }}>Paperwork</h2>
+          <p className="text-[12px] mb-4" style={{ color: 'var(--text-muted)' }}>
+            Documents the driver uploaded from the app arrive here as “to verify”. Open one to view the file, then approve or reject it.
+          </p>
+          <DriverDocumentsPanel driver={driver} onChanged={refresh} />
+        </section>
+      )}
+      {tab === 'activity' && <ActivityTab />}
     </div>
   )
 }
 
 function Overview({ driver }) {
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <section className="rounded-2xl p-5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
         <h2 className="text-sm font-bold mb-4" style={{ color: 'var(--text-h)' }}>Details</h2>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4">
