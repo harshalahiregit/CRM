@@ -6,6 +6,7 @@ import { stosApi, STOS_ACCENT, LICENCE_CLASSES, SETTABLE_DRIVER_STATUSES, DRIVER
 import Select from '@/components/ui/Select'
 import HealthChip from '../components/HealthChip'
 import DriverDocumentsPanel from '../components/DriverDocumentsPanel'
+import DriverProfilePage from '../components/DriverProfilePage'
 
 /**
  * Drivers — read live from the customer/vendor directory, never re-entered.
@@ -45,6 +46,7 @@ export default function DriversBoard() {
   const [term, setTerm] = useState('')
   const [driversOnly, setDriversOnly] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [viewing, setViewing] = useState(null)
   const [adding, setAdding] = useState(false)
   const [readyOnly, setReadyOnly] = useState(false)
 
@@ -282,15 +284,22 @@ export default function DriversBoard() {
                 )}
               </div>
 
-              <button onClick={() => setEditing(d)}
+              <button onClick={() => (d.profile ? setViewing(d) : setEditing(d))}
                 className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl shrink-0"
                 style={{ background: d.profile ? 'var(--bg-input)' : STOS_ACCENT, color: d.profile ? 'var(--text-h)' : '#fff', border: d.profile ? '1px solid var(--border)' : 'none' }}>
-                <IdCard size={13} /> {d.profile ? 'Licence' : 'Add licence'}
+                <IdCard size={13} /> {d.profile ? 'Open profile' : 'Add licence'}
               </button>
             </div>
           </section>
         ))}
       </div>
+
+      {viewing && (
+        <DriverProfilePage
+          driver={viewing}
+          onClose={() => setViewing(null)}
+          onEditLicence={(d) => setEditing(d)} />
+      )}
 
       <LicenceDialog driver={editing} onClose={() => setEditing(null)} />
 
