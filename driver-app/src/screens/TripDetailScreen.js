@@ -7,6 +7,7 @@ import { StatusPill } from './TripsScreen'
 import { JOURNEY, journeyIndex } from '../status'
 import { useLayout } from '../responsive'
 import { AppBar, Card, SectionLabel, Button, Pill } from '../ui'
+import { PretripModal, IncidentModal, HandoverModal } from './TripActions'
 
 export default function TripDetailScreen({ trip: initial, onBack }) {
   const { f, gutter, maxContent, topInset, bottomInset } = useLayout()
@@ -14,6 +15,7 @@ export default function TripDetailScreen({ trip: initial, onBack }) {
   const [docs, setDocs] = useState([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
+  const [action, setAction] = useState(null) // 'pretrip' | 'incident' | 'handover'
 
   const load = useCallback(async () => {
     try {
@@ -86,6 +88,19 @@ export default function TripDetailScreen({ trip: initial, onBack }) {
           {trip.vehicle_registration ? <Row label="Vehicle" value={trip.vehicle_registration} f={f} /> : null}
         </Card>
 
+        {/* Trip actions (Phase F). These write to Dispatch's trip machine; the
+            sheets say "not switched on yet" if the office hasn't enabled them. */}
+        <View style={{ marginTop: f(18) }}>
+          <SectionLabel>Actions</SectionLabel>
+          <View style={{ gap: f(10) }}>
+            <Button title="Pre-trip inspection" icon="🧰" variant="secondary" onPress={() => setAction('pretrip')} />
+            <View style={{ flexDirection: 'row', gap: f(10) }}>
+              <View style={{ flex: 1 }}><Button title="Report incident" icon="⚠️" variant="secondary" onPress={() => setAction('incident')} /></View>
+              <View style={{ flex: 1 }}><Button title="Handover" icon="🤝" variant="secondary" onPress={() => setAction('handover')} /></View>
+            </View>
+          </View>
+        </View>
+
         {/* Journey */}
         <View style={{ marginTop: f(18) }}>
           <SectionLabel>Journey</SectionLabel>
@@ -141,6 +156,10 @@ export default function TripDetailScreen({ trip: initial, onBack }) {
           </Card>
         </View>
       </ScrollView>
+
+      <PretripModal tripId={trip.id} visible={action === 'pretrip'} onClose={() => setAction(null)} onDone={load} />
+      <IncidentModal tripId={trip.id} visible={action === 'incident'} onClose={() => setAction(null)} onDone={load} />
+      <HandoverModal tripId={trip.id} visible={action === 'handover'} onClose={() => setAction(null)} onDone={load} />
     </View>
   )
 }
