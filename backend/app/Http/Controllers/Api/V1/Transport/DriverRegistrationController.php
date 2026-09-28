@@ -62,10 +62,13 @@ class DriverRegistrationController extends Controller
     {
         $this->denyExternal($request);
 
-        return $this->success(
-            $this->registrations->approve($this->companyId($request), $registration, (int) $request->user()->id),
-            'Driver approved — they can now sign in'
-        );
+        $result = $this->registrations->approve($this->companyId($request), $registration, (int) $request->user()->id);
+
+        $message = ($result['emailed'] ?? false)
+            ? 'Driver approved — a sign-in email was sent to them'
+            : 'Driver approved — they can now sign in (email not sent; check Settings → Email)';
+
+        return $this->success($result, $message);
     }
 
     /** ADMIN — reject with a reason. No account is created. */

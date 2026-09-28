@@ -5,6 +5,7 @@ namespace App\Domains\Fleet\Services;
 use App\Domains\Fleet\Models\DriverProfile;
 use App\Exceptions\BusinessException;
 use App\Models\User;
+use App\Services\Mail\TenantMailer;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -19,6 +20,10 @@ use Illuminate\Support\Facades\Log;
  */
 class DriverRegistrationService
 {
+    public function __construct(private TenantMailer $mailer)
+    {
+    }
+
     /**
      * File a driver's request to join. Returns nothing usable to log in with —
      * that is the design.
@@ -90,7 +95,7 @@ class DriverRegistrationService
             throw new BusinessException('An account with that email already exists.');
         }
 
-        return DB::transaction(function () use ($reg, $tenantId, $adminUserId) {
+        $result = DB::transaction(function () use ($reg, $tenantId, $adminUserId) {
             // The login. `password` is already hashed on the request, so it is
             // moved across as-is — the driver's chosen password just works.
             $user = new User();
@@ -107,7 +112,7 @@ class DriverRegistrationService
             // The person in STOS's own driver register, plus the licence overlay,
             // so the approved driver appears on the board like any other.
             $personId = DB::table('stos_drivers')->insertGetId([
-                'company_id' => $tenantId, 'name' => $reg->name, 'phone' => $reg->phone,
+                'company_id' => $tenantId, 'user_id' => $user->id, 'name' => $reg->name, 'phone' => $reg->phone,
                 'designation' => 'Driver', 'created_at' => now(), 'updated_at' => now(),
             ]);
 
@@ -128,6 +133,70 @@ class DriverRegistrationService
 
             return ['id' => $reg->id, 'user_id' => $user->id, 'name' => $reg->name, 'email' => $reg->email];
         });
+
+        // Tell the driver they are in — AFTER the account exists, so we never
+        // email a welcome for a login that a rollback threw away. Best-effort:
+        // the approval already succeeded, so a mail problem (no SMTP set up, a
+        // slow host) must not undo it. We record whether it went.
+        $result['emailed'] = $this->sendApprovalEmail($tenantId, $reg->name, $reg->email);
+
+        return $result;
+    }
+
+    /**
+     * The welcome email. It confirms the account is live and tells the driver to
+     * sign in with the password THEY chose at registration — we never store or
+     * send the plaintext password, so there is nothing secret to leak here.
+     */
+    private function sendApprovalEmail(int $tenantId, string $name, string $email): bool
+    {
+        $first = trim(explode(' ', trim($name))[0] ?: 'there');
+        $subject = 'Your Sangoé Driver account is approved';
+
+        $html = <<<HTML
+            <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1f2937;">
+              <div style="background:#0a0f1c;padding:24px 28px;border-radius:14px 14px 0 0;">
+                <span style="color:#eef3fb;font-size:20px;font-weight:800;">🚚 Sangoé Driver</span>
+              </div>
+              <div style="border:1px solid #e5e7eb;border-top:0;border-radius:0 0 14px 14px;padding:28px;">
+                <p style="font-size:16px;margin:0 0 14px;">Hi {$first},</p>
+                <p style="font-size:15px;line-height:22px;margin:0 0 16px;">
+                  Good news — the office has <strong>approved your driver account</strong>.
+                  You can now sign in to the Sangoé Driver app.
+                </p>
+                <table style="background:#f3f4f6;border-radius:10px;padding:16px;width:100%;margin:0 0 16px;">
+                  <tr><td style="font-size:13px;color:#6b7280;padding:2px 0;">Email</td></tr>
+                  <tr><td style="font-size:15px;font-weight:700;padding:0 0 8px;">{$email}</td></tr>
+                  <tr><td style="font-size:13px;color:#6b7280;padding:2px 0;">Password</td></tr>
+                  <tr><td style="font-size:15px;font-weight:700;">The password you chose when you registered</td></tr>
+                </table>
+                <p style="font-size:14px;line-height:21px;color:#4b5563;margin:0 0 6px;">
+                  Open the Sangoé Driver app, enter the email and password above, and you're in.
+                  If you forgot your password, ask the office to reset it.
+                </p>
+              </div>
+              <p style="font-size:12px;color:#9ca3af;text-align:center;margin:16px 0 0;">
+                You received this because your driver registration was approved.
+              </p>
+            </div>
+            HTML;
+
+        $text = "Hi {$first},\n\nYour Sangoé Driver account is approved. "
+            . "Sign in to the app with:\n  Email: {$email}\n  Password: the one you chose at registration\n\n"
+            . "If you forgot it, ask the office to reset it.";
+
+        try {
+            $this->mailer->sendRawHtml($tenantId, $email, $subject, $html, $text);
+            Log::channel('stos')->info('Driver approval email sent', ['tenant_id' => $tenantId, 'email' => $email]);
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::channel('stos')->warning('Driver approval email not sent', [
+                'tenant_id' => $tenantId, 'email' => $email, 'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
     }
 
     /** Reject with a reason. No account is created. */

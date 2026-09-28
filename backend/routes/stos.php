@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\V1\Transport\GensetController;
 use App\Http\Controllers\Api\V1\Transport\DriverController;
 use App\Http\Controllers\Api\V1\Transport\DriverDocumentController;
 use App\Http\Controllers\Api\V1\Transport\DriverRegistrationController;
+use App\Http\Controllers\Api\V1\Transport\DriverSelfController;
 use App\Http\Controllers\Api\V1\Transport\FleetController;
 use App\Http\Controllers\Api\V1\Transport\FleetReportController;
 use App\Http\Controllers\Api\V1\Transport\FuelController;
@@ -61,6 +62,16 @@ Route::post('driver/register', [DriverRegistrationController::class, 'register']
 // from here, so a code change reaches phones without re-installing the APK.
 Route::get('app-updates/manifest', [AppUpdateController::class, 'manifest'])->name('app-updates.manifest');
 Route::get('app-updates/asset', [AppUpdateController::class, 'asset'])->name('app-updates.asset');
+
+// ── The driver, acting on their OWN record (Sangoé Driver app) ──────────
+// auth only, no admin/staff gate: every action is scoped to the signed-in
+// driver inside the service (resolved from the user, never an id in the path),
+// so there is no cross-driver access here to gate. External roles are refused
+// in the controller.
+Route::middleware('auth:sanctum')->prefix('v1/me')->group(function () {
+    Route::get('/driver', [DriverSelfController::class, 'me']);
+    Route::post('/driver/documents', [DriverSelfController::class, 'storeDocument']);
+});
 
 Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('v1/fleet')->group(function () {
 
