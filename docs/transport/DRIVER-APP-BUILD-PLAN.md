@@ -53,8 +53,9 @@ The thing that turns "prototype" into "real app". Everything else is built on it
 - [x] A3. Shared UI primitives (`src/ui.js`): `Screen`, `AppBar`, `Button`
   (primary/secondary/ghost/danger + loading + pressed), `Card`, `Field` (focus
   ring, hint, error), `Pill`, `SectionLabel`, `EmptyState`, `Loading`, `Divider`.
-- [~] A4. Motion: press feedback + pull-to-refresh done; screen transitions and
-  skeletons still to add.
+- [x] A4. Motion: press feedback, pull-to-refresh, screen entrance animations
+  (fade + rise on every screen change) and skeleton loaders on the dashboard and
+  profile. `Enter` and `Skeleton` in src/ui.js.
 - [ ] A5. Iconography + brand: consistent icon set, splash, app icon, empty-state
   art. (Using emoji placeholders today.)
 - [x] A6. Re-skinned Login, Register, Trips (home) and Trip detail on the system.
@@ -120,11 +121,14 @@ The thing that turns "prototype" into "real app". Everything else is built on it
 
 ## PHASE E — Home dashboard "Driver Today"  *(Dev 2 shell + [Dev 1] data)*
 
-- [ ] E1. A dashboard as the post-login home: current assignment card (trip #,
-  vehicle reg, container/consignment #), next required milestone, document
-  readiness, and a big primary action ("Start pre-trip", "Continue trip").
-- [ ] E2. Empty/available state when no trip is assigned.
-- [ ] E3. Quick actions: report incident, request fuel, emergency.
+- [~] E1. "Driver Today" dashboard is the post-login home: a document-readiness /
+  clearance card (real, from /v1/me/driver, best-effort so it never breaks the
+  home), the active trip up top with an Open-trip action, then the rest. Still to
+  add: next-required-milestone and container/consignment # — those need Dev 1's
+  driver-scoped trip data (today trips come from the office list).
+- [x] E2. Empty/available state when no trip is assigned.
+- [~] E3. Quick actions: Profile + Documents shortcuts done; report-incident,
+  request-fuel and emergency wait on Dev 1 / the cost endpoints (F7, F8, G2).
 
 ---
 
@@ -134,9 +138,9 @@ Build the UI now; wire milestone writes as Dev 1's endpoints land.
 
 - [ ] F1. **Assignment review & accept/reject** — details, route, cargo, special
   handling; Accept (timestamp) / Reject (mandatory reason code). **[Dev 1]**
-- [ ] F2. **Pre-trip inspection** — digital checklist (brakes, tyres, lights,
-  genset, docs); a critical defect logs an exception and blocks vehicle release.
-  *(inspection is Fleet-side; block interacts with [Dev 1] release)*
+- [~] F2. **Pre-trip inspection** — checklist UI built (brakes, tyres, coupling,
+  lights, genset, fluids, docs; critical items flagged). POSTs `/pretrip`; needs
+  Dev 1's endpoint to record + block release. See the contract doc.
 - [ ] F3. **Document checklist** — required driver + vehicle papers, missing-doc
   alerts. *(driver docs = Phase C; vehicle docs = Fleet)*
 - [ ] F4. **Dispatch & pickup M01–M05** — yard departure, container-yard arrival,
@@ -146,16 +150,18 @@ Build the UI now; wire milestone writes as Dev 1's endpoints land.
 - [ ] F6. **Transit mode & telemetry** — low-distraction driving screen: route
   progress, next stop, reefer temp + generator state; cold-chain guardrail alert.
   *(telemetry = Dev 2; route/next-stop = [Dev 1])*
-- [ ] F7. **Exception & incident reporting** — breakdown/accident/delay/deviation/
-  document issue, with photo + GPS. **[Dev 1 escalation]**
+- [~] F7. **Exception & incident reporting** — form built (type + description +
+  photo). POSTs `/incidents`; needs Dev 1's endpoint + escalation. GPS optional,
+  wireable on request.
 - [ ] F8. **Fuel requests & expense claims** — diesel advance against trip budget;
   receipt uploads (FASTag/toll/parking/repair). *(cost = Dev 2; budget = [Dev 1])*
 - [ ] F9. **Unloading & delivery M10–M11** — destination arrival, gate entry,
   detention start, document collection. **[Dev 1]**
 - [ ] F10. **POD capture** — camera-first: signature, stamp, photo, condition
   remarks. *(enhance existing POD)*
-- [ ] F11. **Handover feedback M12** — 10-second prompt (Good/Okay/Issue +
-  category); locked after submit. **[Dev 1]**
+- [~] F11. **Handover feedback M12** — 10-second prompt built (Good/Okay/Issue +
+  category + note). POSTs `/handover-feedback`; needs Dev 1's endpoint + the
+  lock-after-submit. See the contract doc.
 - [ ] F12. **Trip closure** — completion, return to available / prompt physical
   document return. **[Dev 1]**
 
