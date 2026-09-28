@@ -199,6 +199,62 @@ class DriverRegistrationService
         }
     }
 
+    /**
+     * ADMIN — set a new password for a driver's app login. The reliable way back
+     * in when a driver can't sign in: the office types a new password, tells the
+     * driver, and they're in. Only applies to STOS's own drivers, who are the
+     * ones that have an app login.
+     */
+    public function resetPasswordByAdmin(int $companyId, string $source, int $personId, string $newPassword): array
+    {
+        if ($source !== 'stos') {
+            throw new BusinessException('Only a driver with an app login can have their password reset here.', 422);
+        }
+
+        $person = DB::table('stos_drivers')
+            ->where('company_id', $companyId)->where('id', $personId)->whereNull('deleted_at')->first();
+
+        if (! $person || ! $person->user_id) {
+            throw new BusinessException('This driver does not have an app login.', 404);
+        }
+
+        $user = User::find($person->user_id);
+        if (! $user) {
+            throw new BusinessException('That login no longer exists.', 404);
+        }
+
+        // The `password` cast hashes it, so we assign the plaintext once here.
+        $user->password = $newPassword;
+        $user->save();
+
+        Log::channel('stos')->info('Driver password reset by admin', [
+            'company_id' => $companyId, 'user_id' => $user->id, 'stos_driver_id' => $personId,
+        ]);
+
+        return ['ok' => true, 'email' => $user->email];
+    }
+
+    /**
+     * PUBLIC — a driver forgot their password. We do not reset it here (that would
+     * let anyone reset anyone's); we log the request so the office can reset it
+     * from the board, and always answer the same way so the endpoint never
+     * reveals whether an email is registered.
+     */
+    public function requestPasswordReset(int $tenantId, string $email): array
+    {
+        $email = strtolower(trim($email));
+        $user = User::where('email', $email)->first();
+
+        if ($user) {
+            Log::channel('stos')->info('Driver password reset requested', ['tenant_id' => $tenantId, 'email' => $email]);
+        }
+
+        return [
+            'status'  => 'ok',
+            'message' => 'If that email has an account, the office can reset it. Ask them, then sign in with the new password.',
+        ];
+    }
+
     /** Reject with a reason. No account is created. */
     public function reject(int $tenantId, int $id, int $adminUserId, ?string $reason): array
     {

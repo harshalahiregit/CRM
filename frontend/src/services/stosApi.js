@@ -75,6 +75,9 @@ export const stosApi = {
     // The REGULAR assignment the allocation engine reads. Pass null to clear.
     assign: (source, personId, vehicleId) =>
       api.put(`/v1/fleet/drivers/${source}/${personId}/assign`, { vehicle_id: vehicleId }).then(unwrap).catch(handleErr),
+    // Set a new password for a driver's app login (STOS's own drivers only).
+    resetPassword: (source, personId, password) =>
+      api.post(`/v1/fleet/drivers/${source}/${personId}/reset-password`, { password }).then(unwrap).catch(handleErr),
   },
 
   /**

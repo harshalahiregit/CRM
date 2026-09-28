@@ -55,6 +55,9 @@ Route::prefix('v1/telemetry')->middleware('stos.device')->group(function () {
 // A driver has no login yet, so this is open. It files a PENDING request; an
 // admin approves it below before any account exists.
 Route::post('driver/register', [DriverRegistrationController::class, 'register']);
+// A driver forgot their password — logged so the office can reset it; the reply
+// never reveals whether the email is registered.
+Route::post('driver/forgot-password', [DriverRegistrationController::class, 'forgotPassword']);
 
 // ── Driver-app over-the-air updates (public) ────────────────────────────
 // The Sangoé Driver app checks these before anyone signs in, so they cannot
@@ -143,6 +146,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('v1/fleet')->gro
     Route::get('/driver-registrations', [DriverRegistrationController::class, 'pending']);
     Route::post('/driver-registrations/{registration}/approve', [DriverRegistrationController::class, 'approve'])->where('registration', '[0-9]+');
     Route::post('/driver-registrations/{registration}/reject', [DriverRegistrationController::class, 'reject'])->where('registration', '[0-9]+');
+    // Set a new password for a driver's app login (the office's reset button).
+    Route::post('/drivers/{source}/{person}/reset-password', [DriverRegistrationController::class, 'resetPassword'])
+        ->where('source', '[a-z_]+')->where('person', '[0-9]+');
     // The crew half of allocation. Same response shape as eligible vehicles,
     // because a dispatch board shows them side by side.
     Route::get('/drivers/eligible', [DriverController::class, 'eligible']);

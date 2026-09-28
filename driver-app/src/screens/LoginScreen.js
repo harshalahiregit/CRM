@@ -7,7 +7,7 @@ import { DEFAULT_SERVER } from '../config'
 import { useLayout } from '../responsive'
 import { Screen, Field, Button } from '../ui'
 
-export default function LoginScreen({ onLoggedIn, onRegister }) {
+export default function LoginScreen({ onLoggedIn, onRegister, onForgot }) {
   const { f } = useLayout()
   const [server, setServer] = useState('')
   const [email, setEmail] = useState('')
@@ -57,7 +57,11 @@ export default function LoginScreen({ onLoggedIn, onRegister }) {
       <View style={{ height: f(24) }} />
       <Button title="Sign in" onPress={submit} loading={busy} />
 
-      <Pressable onPress={onRegister} hitSlop={10} style={({ pressed }) => ({ alignItems: 'center', marginTop: f(22), opacity: pressed ? 0.6 : 1 })}>
+      <Pressable onPress={onForgot} hitSlop={10} style={({ pressed }) => ({ alignItems: 'center', marginTop: f(16), opacity: pressed ? 0.6 : 1 })}>
+        <Text style={{ color: theme.primary, fontSize: f(14), fontWeight: '700' }}>Forgot password?</Text>
+      </Pressable>
+
+      <Pressable onPress={onRegister} hitSlop={10} style={({ pressed }) => ({ alignItems: 'center', marginTop: f(16), opacity: pressed ? 0.6 : 1 })}>
         <Text style={{ color: theme.textMuted, fontSize: f(14.5) }}>
           New driver?  <Text style={{ color: theme.primary, fontWeight: '800' }}>Register</Text>
         </Text>

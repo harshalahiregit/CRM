@@ -5,6 +5,7 @@ import { getToken, getUser } from './src/storage'
 import { Enter, Loading } from './src/ui'
 import LoginScreen from './src/screens/LoginScreen'
 import RegisterScreen from './src/screens/RegisterScreen'
+import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen'
 import TripsScreen from './src/screens/TripsScreen'
 import TripDetailScreen from './src/screens/TripDetailScreen'
 import ProfileScreen from './src/screens/ProfileScreen'
@@ -28,8 +29,9 @@ export default function App() {
   const render = () => {
     switch (screen) {
       case 'loading': return <Loading />
-      case 'login': return <LoginScreen onLoggedIn={(u) => { setUser(u); setScreen('trips') }} onRegister={() => setScreen('register')} />
+      case 'login': return <LoginScreen onLoggedIn={(u) => { setUser(u); setScreen('trips') }} onRegister={() => setScreen('register')} onForgot={() => setScreen('forgot')} />
       case 'register': return <RegisterScreen onDone={() => setScreen('login')} onBack={() => setScreen('login')} />
+      case 'forgot': return <ForgotPasswordScreen onBack={() => setScreen('login')} />
       case 'trips': return <TripsScreen user={user} onOpen={(t) => { setTrip(t); setScreen('detail') }} onProfile={() => setScreen('profile')} onSignOut={() => { setUser(null); setScreen('login') }} />
       case 'detail': return trip ? <TripDetailScreen trip={trip} onBack={() => setScreen('trips')} /> : null
       case 'profile': return <ProfileScreen user={user} onBack={() => setScreen('trips')} />
