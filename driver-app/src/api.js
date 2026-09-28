@@ -75,4 +75,19 @@ export const api = {
   // the driver is cleared to drive.
   me: () => request('/v1/me/driver'),
   uploadDocument: (formData) => request('/v1/me/driver/documents', { method: 'POST', body: formData, isForm: true }),
+
+  // ── The trip journey (Phase F) — Dev 1 (Ops) endpoints ──────────────────
+  // These write to the trip/milestone machine, which is Dispatch's. Until the
+  // office enables them on the server they answer 404/405; the screens catch
+  // that and say "not switched on yet" rather than failing hard. The exact
+  // contract is in docs/transport/DRIVER-APP-TRIP-ACTIONS-CONTRACT.md.
+  submitPretrip: (id, body) => request(`/transport/trips/${id}/pretrip`, { method: 'POST', body }),
+  reportIncident: (id, formData) => request(`/transport/trips/${id}/incidents`, { method: 'POST', body: formData, isForm: true }),
+  handoverFeedback: (id, body) => request(`/transport/trips/${id}/handover-feedback`, { method: 'POST', body }),
+}
+
+// True when a call failed only because the endpoint is not enabled yet (not a
+// real error) — the screens use this to show "coming soon", not "it broke".
+export function isNotEnabled(e) {
+  return e?.status === 404 || e?.status === 405 || e?.status === 501
 }

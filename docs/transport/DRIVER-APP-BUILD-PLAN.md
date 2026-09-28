@@ -138,9 +138,9 @@ Build the UI now; wire milestone writes as Dev 1's endpoints land.
 
 - [ ] F1. **Assignment review & accept/reject** — details, route, cargo, special
   handling; Accept (timestamp) / Reject (mandatory reason code). **[Dev 1]**
-- [ ] F2. **Pre-trip inspection** — digital checklist (brakes, tyres, lights,
-  genset, docs); a critical defect logs an exception and blocks vehicle release.
-  *(inspection is Fleet-side; block interacts with [Dev 1] release)*
+- [~] F2. **Pre-trip inspection** — checklist UI built (brakes, tyres, coupling,
+  lights, genset, fluids, docs; critical items flagged). POSTs `/pretrip`; needs
+  Dev 1's endpoint to record + block release. See the contract doc.
 - [ ] F3. **Document checklist** — required driver + vehicle papers, missing-doc
   alerts. *(driver docs = Phase C; vehicle docs = Fleet)*
 - [ ] F4. **Dispatch & pickup M01–M05** — yard departure, container-yard arrival,
@@ -150,16 +150,18 @@ Build the UI now; wire milestone writes as Dev 1's endpoints land.
 - [ ] F6. **Transit mode & telemetry** — low-distraction driving screen: route
   progress, next stop, reefer temp + generator state; cold-chain guardrail alert.
   *(telemetry = Dev 2; route/next-stop = [Dev 1])*
-- [ ] F7. **Exception & incident reporting** — breakdown/accident/delay/deviation/
-  document issue, with photo + GPS. **[Dev 1 escalation]**
+- [~] F7. **Exception & incident reporting** — form built (type + description +
+  photo). POSTs `/incidents`; needs Dev 1's endpoint + escalation. GPS optional,
+  wireable on request.
 - [ ] F8. **Fuel requests & expense claims** — diesel advance against trip budget;
   receipt uploads (FASTag/toll/parking/repair). *(cost = Dev 2; budget = [Dev 1])*
 - [ ] F9. **Unloading & delivery M10–M11** — destination arrival, gate entry,
   detention start, document collection. **[Dev 1]**
 - [ ] F10. **POD capture** — camera-first: signature, stamp, photo, condition
   remarks. *(enhance existing POD)*
-- [ ] F11. **Handover feedback M12** — 10-second prompt (Good/Okay/Issue +
-  category); locked after submit. **[Dev 1]**
+- [~] F11. **Handover feedback M12** — 10-second prompt built (Good/Okay/Issue +
+  category + note). POSTs `/handover-feedback`; needs Dev 1's endpoint + the
+  lock-after-submit. See the contract doc.
 - [ ] F12. **Trip closure** — completion, return to available / prompt physical
   document return. **[Dev 1]**
 
