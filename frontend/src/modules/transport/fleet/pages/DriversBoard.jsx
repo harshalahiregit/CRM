@@ -91,11 +91,17 @@ export default function DriversBoard() {
 
   // A driver is open — show their full profile in place of the board (the app
   // shell keeps the sidebar and header). The licence editor opens over it.
+  //
+  // Re-derive the driver from the LIVE list, not the snapshot taken when the row
+  // was clicked: verifying a document refetches ['stos-drivers'], and the
+  // Overview (licence/medical dates, clearance) must reflect that, not the stale
+  // object. Fall back to the snapshot only until the refetch lands.
   if (viewing) {
+    const current = drivers.find((d) => d.ref === viewing.ref) || viewing
     return (
       <>
         <DriverProfilePage
-          driver={viewing}
+          driver={current}
           onClose={() => setViewing(null)}
           onEditLicence={(d) => setEditing(d)} />
         <LicenceDialog driver={editing} onClose={() => setEditing(null)} />
