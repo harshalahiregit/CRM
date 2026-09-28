@@ -54,6 +54,9 @@ export const api = {
   // driver can sign in. Public, no token needed.
   register: (data) => request('/driver/register', { method: 'POST', body: data }),
 
+  // Forgot password — the office resets it from the board; this just tells them.
+  forgotPassword: (email) => request('/driver/forgot-password', { method: 'POST', body: { email } }),
+
   // Trips. NOTE: /transport/trips is the office list today; a driver-scoped
   // "my trips" endpoint is Dev 1's to add (see the message in docs). For now
   // the app shows open trips and will point at the driver endpoint when it

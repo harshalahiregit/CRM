@@ -53,6 +53,30 @@ class DriverSelfServiceTest extends TestCase
         return User::where('email', 'ramesh@alpha.test')->firstOrFail();
     }
 
+    public function test_an_approved_driver_logs_in_with_the_password_they_chose(): void
+    {
+        $this->approvedDriver(); // ramesh@alpha.test / secret123, approved
+
+        $this->postJson('/api/auth/login', [
+            'email' => 'ramesh@alpha.test', 'password' => 'secret123',
+        ])->assertOk();
+    }
+
+    public function test_admin_reset_lets_a_driver_log_in_with_the_new_password(): void
+    {
+        $driver = $this->approvedDriver();
+        $admin = User::where('email', 'admin@alpha.test')->firstOrFail();
+        $person = \DB::table('stos_drivers')->where('user_id', $driver->id)->firstOrFail();
+
+        $this->actingAs($admin, 'sanctum')
+            ->postJson("/api/v1/fleet/drivers/stos/{$person->id}/reset-password", ['password' => 'newpass456'])
+            ->assertOk();
+
+        // Old password stops working; the new one signs in.
+        $this->postJson('/api/auth/login', ['email' => 'ramesh@alpha.test', 'password' => 'secret123'])->assertStatus(401);
+        $this->postJson('/api/auth/login', ['email' => 'ramesh@alpha.test', 'password' => 'newpass456'])->assertOk();
+    }
+
     public function test_a_driver_sees_their_own_profile_and_is_blocked_until_documents_are_verified(): void
     {
         $driver = $this->approvedDriver();

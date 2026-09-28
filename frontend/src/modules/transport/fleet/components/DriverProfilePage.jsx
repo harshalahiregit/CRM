@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, IdCard, FileText, Activity, UserRound, Building2, Pencil } from 'lucide-react'
-import { STOS_ACCENT } from '@/services/stosApi'
+import { stosApi, STOS_ACCENT } from '@/services/stosApi'
 import HealthChip from './HealthChip'
 import DriverDocumentsPanel from './DriverDocumentsPanel'
 
@@ -139,7 +139,49 @@ function Overview({ driver }) {
           </p>
         </div>
       </section>
+
+      {/* App login — only STOS's own drivers have one. */}
+      {driver.source === 'stos' && <AppLogin driver={driver} />}
     </div>
+  )
+}
+
+function AppLogin({ driver }) {
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null) // { ok, text }
+
+  const reset = async () => {
+    const pw = window.prompt(`Set a new app password for ${driver.name} (at least 6 characters). Tell them the new password after.`)
+    if (pw === null) return
+    if (pw.trim().length < 6) { setMsg({ ok: false, text: 'Password must be at least 6 characters.' }); return }
+    setBusy(true); setMsg(null)
+    try {
+      await stosApi.drivers.resetPassword(driver.source, driver.source_id, pw)
+      setMsg({ ok: true, text: 'Password reset. Tell the driver their new password — they can sign in with it now.' })
+    } catch (e) {
+      setMsg({ ok: false, text: e?.message || 'Could not reset the password.' })
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <section className="rounded-2xl p-5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+      <h2 className="text-sm font-bold mb-1" style={{ color: 'var(--text-h)' }}>App login</h2>
+      <p className="text-[12.5px] mb-3 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+        If this driver can't sign in, set a new password here and tell them.
+      </p>
+      <button type="button" onClick={reset} disabled={busy}
+        className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl disabled:opacity-60"
+        style={{ background: 'var(--bg-input)', color: 'var(--text-h)', border: '1px solid var(--border)' }}>
+        <IdCard size={13} /> {busy ? 'Resetting…' : 'Reset password'}
+      </button>
+      {msg && (
+        <p className="text-[12px] mt-3 px-3 py-2 rounded-lg"
+          style={{ background: msg.ok ? 'color-mix(in srgb, var(--color-success-500, #10b981) 12%, transparent)' : 'color-mix(in srgb, var(--color-danger-500) 12%, transparent)',
+            color: msg.ok ? 'var(--color-success-500, #10b981)' : 'var(--color-danger-500)' }}>
+          {msg.text}
+        </p>
+      )}
+    </section>
   )
 }
 

@@ -71,6 +71,30 @@ class DriverRegistrationController extends Controller
         return $this->success($result, $message);
     }
 
+    /** PUBLIC — a driver forgot their password; log it, tell them to ask the office. */
+    public function forgotPassword(Request $request): JsonResponse
+    {
+        $data = $request->validate(['email' => 'required|email|max:190']);
+
+        return $this->success(
+            $this->registrations->requestPasswordReset(self::DEFAULT_TENANT, $data['email']),
+            'Request noted'
+        );
+    }
+
+    /** ADMIN — set a new password for a driver's app login. */
+    public function resetPassword(Request $request, string $source, int $person): JsonResponse
+    {
+        $this->denyExternal($request);
+
+        $data = $request->validate(['password' => 'required|string|min:6|max:100']);
+
+        return $this->success(
+            $this->registrations->resetPasswordByAdmin($this->companyId($request), $source, $person, $data['password']),
+            'Password reset — tell the driver their new password'
+        );
+    }
+
     /** ADMIN — reject with a reason. No account is created. */
     public function reject(Request $request, int $registration): JsonResponse
     {
