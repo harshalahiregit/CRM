@@ -34,7 +34,7 @@ export default function DriverProfilePage({ driver, onClose, onEditLicence }) {
   ]
 
   return (
-    <div className="fixed inset-0 z-[70] flex flex-col" style={{ background: 'var(--bg)' }}>
+    <div className="fixed inset-0 z-[90] flex flex-col" style={{ background: 'var(--bg-global)' }}>
       {/* Header */}
       <header className="flex items-start justify-between gap-3 px-6 py-4 shrink-0"
         style={{ background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
