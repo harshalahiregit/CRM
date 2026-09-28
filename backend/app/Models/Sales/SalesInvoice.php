@@ -176,7 +176,12 @@ class SalesInvoice extends Model
      */
     public function customer()
     {
-        return $this->belongsTo(\App\Models\Customer\Client::class, 'client_id');
+        // withTrashed: an issued document must always name who it was billed to.
+        // Client soft-deletes, so without this the relation resolves to null the
+        // moment a customer is removed and the Client column on every invoice of
+        // theirs goes blank — in lists and in the PDF. Deleting one customer
+        // silently anonymised their whole billing history.
+        return $this->belongsTo(\App\Models\Customer\Client::class, 'client_id')->withTrashed();
     }
 
     /**
@@ -188,6 +193,16 @@ class SalesInvoice extends Model
      */
     public function getClientAttribute(): ?string
     {
-        return $this->customer?->company;
+        $customer = $this->customer;
+        if (! $customer) {
+            return null;
+        }
+
+        // Say so when the customer is gone. The name alone would read as a live
+        // account, and someone would chase a payment from a company that has been
+        // removed from the workspace.
+        return $customer->trashed()
+            ? $customer->company.' (deleted)'
+            : $customer->company;
     }
 }

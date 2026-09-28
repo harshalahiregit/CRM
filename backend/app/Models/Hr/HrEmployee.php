@@ -9,6 +9,20 @@ class HrEmployee extends Model
 {
     use Auditable;
 
+    /**
+     * Keep department_id / designation_id in step with the names on every save.
+     *
+     * Both forms, the SangoeTrack importer and the onboarding conversion all
+     * write the text and none of them wrote the link, so the org chart and the
+     * reporting rollups — which read the FK — saw an empty company. Doing it
+     * here means no caller has to remember. See OrgLink for why an unknown name
+     * creates a record rather than being dropped.
+     */
+    protected static function booted(): void
+    {
+        static::saving(fn (self $employee) => \App\Support\Hr\OrgLink::apply($employee));
+    }
+
     protected $table = 'hr_employees';
 
     /** Employee codes read SNE-YYYY-NNN. */
@@ -50,15 +64,33 @@ class HrEmployee extends Model
         'tenant_id','user_id','candidate_id','onboarding_id','employee_code',
         'name','email','phone','dob','gender','address','department','designation',
         'department_id','designation_id','grade_id','job_role_id',
+        // The tenant's own employment classification — Permanent, Contract,
+        // Intern, whatever they configured. Null means none chosen; there was
+        // never a legacy string on this table to inherit from.
+        'employment_type_id',
         'reporting_manager_name','reporting_manager_id',
         // `location` is the office/city (free text, unchanged). `work_state` is the
         // statutory jurisdiction Professional Tax is levied under — the two are NOT
         // interchangeable, which is why PT no longer reads `location`.
         'location','work_state','shift','official_email','project_id',
+        // Grouping ABOVE department, which every payroll report subtotals by, and
+        // the skill category that decides which minimum-wage floor applies.
+        'branch','division','unit','zone','category',
+        // The salary register's DOLeft, and pay withheld for this run.
+        'exit_date','hold_salary',
+        // Stronger than deactivating, and a different thing from hold_salary:
+        // hold is a temporary withholding for somebody still employed, this is
+        // a decision that the person is not re-engaged. MUST be listed — create()
+        // drops any key not whitelisted.
+        'blacklisted','blacklist_reason','blacklisted_at',
         // #43 — the individual's own skills, carried from the candidate on hire.
         // Compared against the department/designation/grade/role skill profile.
         'skills',
         'joining_date','probation_end_date','confirmation_date','status',
+        // A standing notice period for this person. NULL means "inherit" —
+        // the exit policy matched to their grade, then the exit type's
+        // default. 0 is a real value meaning no notice is served.
+        'notice_days',
         // #29 — what this person is, and whether they belong on the org chart.
         // MUST be listed here: create() silently drops any key not whitelisted,
         // so an omission would leave every new hire on the default.
@@ -86,9 +118,16 @@ class HrEmployee extends Model
         'include_in_org_chart' => 'boolean',
         'app_login_enabled'    => 'boolean',
         'joining_date'         => 'date',
+        'exit_date'            => 'date',
+        'hold_salary'          => 'boolean',
+        'blacklisted'          => 'boolean',
+        'blacklisted_at'       => 'datetime',
         'dob'                  => 'date',
         'probation_end_date'   => 'date',
         'confirmation_date'    => 'date',
+        // 'integer' leaves null as null, which is what keeps "no override"
+        // distinguishable from an explicit zero.
+        'notice_days'          => 'integer',
         'sangoetrack_user_id'  => 'integer',
         'sangoetrack_synced_at' => 'datetime',
     ];
@@ -150,6 +189,11 @@ class HrEmployee extends Model
         return $this->belongsTo(HrDepartment::class, 'department_id');
     }
 
+    public function employmentType()
+    {
+        return $this->belongsTo(HrEmploymentType::class, 'employment_type_id');
+    }
+
     public function designationRef()
     {
         return $this->belongsTo(HrDesignation::class, 'designation_id');
@@ -169,6 +213,17 @@ class HrEmployee extends Model
     public function reportingManager()
     {
         return $this->belongsTo(HrEmployee::class, 'reporting_manager_id');
+    }
+
+    /**
+     * Personal, bank, identity and statutory detail.
+     *
+     * A separate row created on demand: most of it is blank for most people, and
+     * these are the fields most likely to need their own permission later.
+     */
+    public function detail()
+    {
+        return $this->hasOne(HrEmployeeDetail::class, 'employee_id');
     }
 
     /*

@@ -49,6 +49,28 @@ class HrCandidate extends Model
     ];
 
     /**
+     * Unknown experience is zero years, not NULL.
+     *
+     * The column is `decimal(4,1) NOT NULL default 0` while StoreCandidateRequest
+     * validates it `nullable|numeric`. Those two disagree, and the gap is exactly
+     * the common case: the Add Candidate form posts an empty string, `nullable`
+     * turns it into null, and the insert then fails against a NOT NULL column.
+     *
+     * The user saw "Experience years is required — please fill it in and save
+     * again" on a field the form does not mark as required, because
+     * ApiErrorMapper turns a database rejection into a friendly "required"
+     * sentence. The field is genuinely optional; the write was the problem.
+     *
+     * Normalised on the model rather than in the form or the controller so every
+     * writer is covered — the Add Candidate form, the public careers portal, the
+     * importer — instead of whichever one somebody remembers.
+     */
+    public function setExperienceYearsAttribute($value): void
+    {
+        $this->attributes['experience_years'] = ($value === null || $value === '') ? 0 : $value;
+    }
+
+    /**
      * Has the AI engine actually run for this candidate?
      *
      * This is the correct gate for "AI screening completed" — NOT `ai_score > 0`.

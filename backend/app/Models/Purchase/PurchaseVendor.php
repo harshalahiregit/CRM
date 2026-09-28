@@ -5,6 +5,7 @@ namespace App\Models\Purchase;
 use App\Models\Traits\Auditable;
 use App\Models\Traits\BelongsToTenant;
 use App\Models\User;
+use App\Support\Purchase\PurchaseOnboardingStatus as OnboardingStatus;
 use App\Support\Purchase\PurchaseRegistrationType as RegistrationType;
 use App\Support\Purchase\PurchaseVendorStatus as Status;
 use Illuminate\Auth\Authenticatable as AuthenticatableTrait;
@@ -34,12 +35,18 @@ class PurchaseVendor extends Model implements AuthenticatableContract
         'purchase_vendor_code', 'company_name', 'legal_name', 'vendor_type', 'registration_type',
         'email', 'phone', 'website', 'category',
         'registration_number', 'gst_number', 'pan_number',
+        // The person we deal with, and the company details self-registration
+        // collects. These used to live on a hidden second `users` row.
+        'contact_person', 'contact_designation', 'company_phone', 'manpower', 'msme',
         // Vendor-master profile/financial fields (Purchase-owned)
         'balance', 'balance_as_of', 'currency', 'language',
         'bank_details', 'payment_terms', 'return_policy',
         'address', 'city', 'state', 'country', 'pincode',
         'status', 'approved_at', 'approved_by', 'notes',
-        'access_token', 'access_expires_at',
+        // Temporary -> Permanent promotion (Purchase-owned, mirrors TPV).
+        'converted_to_permanent_at', 'converted_by',
+        'access_token', 'access_expires_at', 'access_status', 'access_reminders_sent',
+        'access_extended_at', 'access_extended_by', 'extension_reason', 'validity_days',
         // Portal auth (Purchase-owned)
         'password', 'portal_status', 'email_verified_at', 'email_verification_token',
         'password_reset_token', 'password_reset_expires_at', 'last_login_at', 'last_login_ip',
@@ -54,7 +61,11 @@ class PurchaseVendor extends Model implements AuthenticatableContract
         'balance'                   => 'decimal:2',
         'balance_as_of'             => 'date',
         'approved_at'               => 'datetime',
+        'converted_to_permanent_at' => 'datetime',
         'access_expires_at'         => 'datetime',
+        'access_reminders_sent'     => 'array',
+        'access_extended_at'        => 'datetime',
+        'validity_days'             => 'integer',
         'email_verified_at'         => 'datetime',
         'password_reset_expires_at' => 'datetime',
         'last_login_at'             => 'datetime',
@@ -74,7 +85,7 @@ class PurchaseVendor extends Model implements AuthenticatableContract
         'email_verification_token', 'password_reset_token',
     ];
 
-    protected $appends = ['status_label', 'registration_type_label', 'validity_countdown'];
+    protected $appends = ['status_label', 'registration_type_label', 'validity_countdown', 'can_register_workers'];
 
     /* ── Portal auth helpers ────────────────────────────────────────────── */
 
@@ -170,6 +181,51 @@ class PurchaseVendor extends Model implements AuthenticatableContract
     }
 
     /**
+     * May a workforce be registered against this vendor right now?
+     *
+     * Onboarding first, everything else after. There is no other answer.
+     *
+     * An APPROVED onboarding, or nothing — no exceptions, no fallbacks:
+     *
+     *   no onboarding record     no. Not "activated by hand, so allow it": a
+     *                            vendor with no onboarding has not onboarded.
+     *                            Both portals create the record the moment the
+     *                            vendor opens Onboarding, so this strands
+     *                            nobody — it just makes them start.
+     *   onboarding not Approved  no, whatever the status column says. The two
+     *                            disagree constantly — a vendor can sit Active
+     *                            with its onboarding at step 1 — and reading
+     *                            `status` was what let the reported vendors
+     *                            into the Add Worker picker.
+     *   stopped vendor           no, even with an approved onboarding: a
+     *                            blacklisted company does not keep adding people.
+     *
+     * An earlier pass carved out an exception for workforce categories, on the
+     * reading that their flow puts Workforce before Approvals. It is not needed:
+     * PurchaseOnboardingService::submit requires the company profile and the
+     * documents and nothing else, so no vendor has to register a worker in order
+     * to be approved. The exception only widened the hole.
+     *
+     * Exposed as one boolean so the forms never re-derive it and drift.
+     */
+    public function getCanRegisterWorkersAttribute(): bool
+    {
+        // Stopped outranks everything, including an Approved onboarding: a
+        // blacklisted vendor does not get to keep adding people.
+        if (in_array($this->status, [
+            Status::ON_HOLD, Status::REJECTED, Status::BLACKLISTED, Status::INACTIVE,
+        ], true)) {
+            return false;
+        }
+
+        $onboarding = $this->relationLoaded('onboarding')
+            ? $this->getRelation('onboarding')
+            : $this->onboarding()->first();
+
+        return $onboarding !== null && $onboarding->status === OnboardingStatus::APPROVED;
+    }
+
+    /**
      * The registration type this vendor was created with, as a display label.
      * Falls back to Standard Vendor for rows predating the column.
      */
@@ -202,6 +258,23 @@ class PurchaseVendor extends Model implements AuthenticatableContract
         }
 
         return $this->access_expires_at->getTimestamp() <= now()->getTimestamp();
+    }
+
+    /**
+     * Seconds left on the window, never negative. Purchase's own answer.
+     *
+     * A permanent vendor and a temporary one whose window has not been given an
+     * end date both read as PHP_INT_MAX rather than 0: zero means "expired", and
+     * a vendor with no expiry has not expired — it has no clock. Returning 0
+     * there would expire every vendor the moment a sweep looked at them.
+     */
+    public function accessSecondsRemaining(): int
+    {
+        if (! $this->isTemporary() || ! $this->access_expires_at) {
+            return PHP_INT_MAX;
+        }
+
+        return max(0, $this->access_expires_at->getTimestamp() - now()->getTimestamp());
     }
 
     /**

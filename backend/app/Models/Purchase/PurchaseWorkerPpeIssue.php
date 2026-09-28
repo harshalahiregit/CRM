@@ -26,8 +26,13 @@ class PurchaseWorkerPpeIssue extends Model
 
     protected $fillable = [
         'tenant_id', 'purchase_worker_id', 'issued_by', 'inventory_item_id',
+        // Set instead of inventory_item_id when the kit came off the vendor's
+        // OWN PPE list rather than the central store.
+        'vendor_ppe_item_id',
         'item', 'qty', 'size', 'issued_date', 'notes', 'status',
         'returned_qty', 'returned_at', 'returned_by', 'return_notes',
+        // §18 — a rule may demand the gear be checked, not merely handed over.
+        'verified_at', 'verified_by', 'verification_notes',
     ];
 
     protected $casts = [
@@ -35,6 +40,7 @@ class PurchaseWorkerPpeIssue extends Model
         'returned_qty' => 'float',
         'issued_date'  => 'date',
         'returned_at'  => 'datetime',
+        'verified_at'  => 'datetime',
     ];
 
     public function worker()
@@ -45,6 +51,12 @@ class PurchaseWorkerPpeIssue extends Model
     public function product()
     {
         return $this->belongsTo(Product::class, 'inventory_item_id');
+    }
+
+    /** The vendor's own PPE item this issue drew from, when not from Inventory. */
+    public function vendorItem()
+    {
+        return $this->belongsTo(PurchaseVendorPpeItem::class, 'vendor_ppe_item_id');
     }
 
     /** Still held: issued and not fully handed back. */

@@ -3,6 +3,11 @@
 // the queue, the dashboard and any badge render identically. Keys match the
 // backend App\Support\Hr\ManpowerRequestStatus values.
 
+// Read, not hooked: hrTime() below is a plain function called from tables and
+// print sheets, so it reaches the tenant's clock settings through this rather
+// than hardcoding them. No cycle — useFormats imports react and lib/api only.
+import { localizationNow } from '@/hooks/useFormats'
+
 export const MR_STATUS = {
   DRAFT:              'Draft',
   L1_PENDING:         'L1_Pending',
@@ -50,6 +55,26 @@ export const JOB_STATUS = {
   CANCELLED:        'Cancelled',
   ON_HOLD:          'On_Hold',
 }
+
+/**
+ * The statuses where a job is live and can receive candidates.
+ *
+ * Mirrors JobPostingStatus::LIVE. It exists because the Candidates form filtered
+ * on `status === 'Active'`, and 'Active' is a LEGACY value — the migration maps
+ * it to 'Published' (see LEGACY_MAP, and the legacy alias left in
+ * JOB_STATUS_CONFIG below for old rows). After that migration no job posting
+ * holds 'Active' any more, so the "Applying For" picker matched nothing and a
+ * candidate could not be attached to a job at all.
+ *
+ * The legacy value is included rather than dropped: a workspace that has not run
+ * the migration would otherwise break the other way.
+ */
+export const JOB_LIVE_STATUSES = [
+  JOB_STATUS.PUBLISHED,
+  JOB_STATUS.HIRING,
+  JOB_STATUS.PARTIALLY_FILLED,
+  'Active',
+]
 
 export const JOB_STATUS_CONFIG = {
   Draft:            { label: 'Draft',            color: '#6b7280', bg: 'rgba(107,114,128,0.15)' },
@@ -251,14 +276,178 @@ export const EMPLOYEE_LEVELS = ['Intern', 'Junior', 'Mid-level', 'Senior', 'Lead
 export const EMPLOYMENT_TYPES = ['Full-time', 'Part-time', 'Contract', 'Internship']
 export const PRIORITIES = ['Low', 'Medium', 'High', 'Critical']
 
-// Frontend role gating — mirrors User::canApproveL1/L2/canManageHrQueue on the
-// backend (the backend is the source of truth; this only hides buttons).
-export const canApproveL1 = (u) => u?.role === 'admin' || ['department_head', 'hiring_manager'].includes(u?.internal_role)
-export const canApproveL2 = (u) => u?.role === 'admin' || ['project_manager', 'senior_executive'].includes(u?.internal_role)
-export const canManageHrQueue = (u) => u?.role === 'admin' || u?.internal_role === 'hr_executive' || ['hr_recruiter', 'hr_executive'].includes(u?.internal_role)
+// Frontend gating for the three HR authority questions. The backend remains the
+// source of truth; these only decide whether a button is worth showing.
+//
+// They used to REBUILD the rules here from role strings, which was a fair copy
+// when written and stopped being one twice over:
+//
+//   • canManageHrQueue gained a fourth clause — hr_employees:view_global — so a
+//     CUSTOM ROLE configured in HR Settings passed the server while this hid the
+//     buttons. A role you can create but not use is worse than no roles at all.
+//   • canApproveL1/L2 gained the account-type guard, so a portal login carrying
+//     'department_head' was still offered approval buttons it would be refused.
+//
+// So they now read the server's own answer, sent on /auth/me as
+// permissions.capabilities. The signature is unchanged — every existing call
+// site still passes the user object — and a new role works with no deploy.
+//
+// Undefined until /auth/me returns, which coerces to false: the closed state
+// shows first, because a button that appears and then vanishes is worse than one
+// that appears a moment late.
+const capability = (u, key) => !!u?.permissions?.capabilities?.[key]
+
+export const canApproveL1 = (u) => capability(u, 'approve_l1')
+export const canApproveL2 = (u) => capability(u, 'approve_l2')
+export const canManageHrQueue = (u) => capability(u, 'hr_manage')
 
 // Job identifier + apply links (SPK-1) — shared by the card and table views
 // so the same job always reads identically in both.
 export const jobCode = (id) => id ? `JOB-${String(id).padStart(4, '0')}` : '—'
 export const publicApplyUrl = (slug, id) => (slug && id) ? `${window.location.origin}/careers/${slug}/jobs/${id}` : null
 export const internalApplyUrl = (id) => id ? `${window.location.origin}/app/hr/jobs/${id}` : null
+
+/*
+|------------------------------------------------------------------------------
+| Attendance clock times
+|------------------------------------------------------------------------------
+|
+| Storage is UTC and stays UTC — config/app.php says so, and warns that setting
+| it to Asia/Kolkata "to fix attendance times" broke numbering and localisation
+| instead. So the conversion belongs here, in presentation, done once.
+|
+| It was not done once. The Attendance Register parsed the timestamp and let the
+| browser localise it; four other screens took a substring of the ISO string,
+| which is the UTC clock face with the date cut off. Same record, two answers,
+| 5 hours 30 minutes apart — a punch at 10:53 IST read 05:23 on the dashboard.
+|
+| TWO SHAPES ARRIVE HERE, and telling them apart is the whole job:
+|
+|   hr_attendance.check_in            datetime, cast, serialised "…T09:28:00Z"
+|                                     → an INSTANT. Must be converted.
+|   hr_attendance_corrections
+|     .requested_check_in             a `time` column, value "09:15"
+|                                     → a WALL-CLOCK time. Already local; it
+|                                       carries no date and no zone, so parsing
+|                                       it as an instant would invent both.
+|
+| Converting the second would be the same bug pointing the other way, which is
+| why this does not simply call new Date() on everything.
+*/
+
+/** Does this value carry a date, and therefore a zone? */
+const isInstant = (v) => /^\d{4}-\d{2}-\d{2}[T ]/.test(String(v))
+
+/**
+ * An attendance clock time as HH:MM in the reader's local zone.
+ *
+ * Accepts either shape above. Bare times pass through trimmed to HH:MM;
+ * timestamps are parsed and localised — the same conversion the Attendance
+ * Register already did, now shared so the screens cannot disagree again.
+ *
+ * An unparseable timestamp returns the dash rather than "Invalid Date": a
+ * clock face is read at a glance and a wrong one is worse than an absent one.
+ */
+export const hrTime = (v) => {
+  if (v === null || v === undefined || v === '') return '—'
+
+  const s = String(v)
+  const l = localizationNow()
+
+  // The tenant's setting, the same one useFormats() reads. It was hardcoded to a
+  // 24-hour clock here, so a checkout read "14:30" on an attendance card while
+  // every other screen in the product said "02:30 pm" for the same instant.
+  const hour12 = String(l.time_format) !== '24'
+
+  if (!isInstant(s)) {
+    /*
+     | A bare wall-clock time — "09:15", "09:15:00" — from a `time` column such
+     | as hr_attendance_corrections.requested_check_in. It carries no date and no
+     | zone, so it must NOT be converted; doing so would invent an offset for a
+     | value that never had one. Only the clock face changes, and it has to,
+     | otherwise the correction queue shows 24-hour times beside the 12-hour
+     | card it is asking to correct.
+     */
+    const m = s.match(/^(\d{1,2}):(\d{2})/)
+    if (!m) return '—'
+
+    const h = Number(m[1])
+    if (!hour12) return `${m[1].padStart(2, '0')}:${m[2]}`
+
+    const suffix = h < 12 ? 'am' : 'pm'
+    const h12 = h % 12 === 0 ? 12 : h % 12
+    return `${String(h12).padStart(2, '0')}:${m[2]} ${suffix}`
+  }
+
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return '—'
+
+  /*
+   | Converted in the TENANT's timezone rather than the browser's.
+   |
+   | config/app.php is explicit that storage stays UTC and presentation converts
+   | per tenant. This previously leant on the viewer's own clock, which is right
+   | for a team sitting in one place and wrong the moment somebody opens the
+   | register from another country — they would read their own local time for
+   | somebody else's shift.
+   */
+  /*
+   | hourCycle, not hour12, and the difference is not cosmetic.
+   |
+   | `hour12: true` on en-GB selects the h11 cycle, which counts 0–11: noon
+   | renders as "00:00 pm" and midnight as "00:00 am". A night shift punched at
+   | midnight would have read 00:00 am, which looks like a plausible time and is
+   | the wrong one. 'h12' counts 1–12 and gives 12:00 am / 12:00 pm.
+   */
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: l.timezone || undefined,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: hour12 ? 'h12' : 'h23',
+  }).format(d)
+}
+
+/**
+ * Two attendance times compared on the same footing.
+ *
+ * The correction queue shows "now → asked for", where `now` is a stored
+ * timestamp and `asked for` is a wall-clock time the employee typed. Comparing
+ * their raw strings compared a UTC clock face against a local one: an approver
+ * reviewing a request to change nothing saw a five-and-a-half hour move, and
+ * the "(no change)" hint never fired. Normalising both through hrTime() first
+ * is what makes the two comparable at all.
+ */
+export const hrTimeEquals = (a, b) => hrTime(a) === hrTime(b)
+
+/**
+ * A stored date as the YYYY-MM-DD that <input type="date"> will actually show.
+ *
+ * `joining_date` is a date column, but Eloquent casts it to a Carbon instance
+ * and serialises it as a full instant — "2025-01-01T00:00:00.000000Z". An
+ * <input type="date"> accepts ONLY "YYYY-MM-DD"; handed anything else it
+ * silently renders empty rather than complaining. So opening any employee for
+ * editing showed Joining Date, Date of Birth, Probation End and Confirmation
+ * Date as blank — Joining Date beside a required marker, on a record whose card
+ * two lines above read "Joined 01 Jan 2025".
+ *
+ * The value was never lost: form state kept the ISO string and saving preserved
+ * the date. It was a display fault, and a convincing one — it reads as missing
+ * data, and the obvious response is to retype a date that was already right.
+ *
+ * Truncates rather than converting. These are calendar dates: a joining date is
+ * the day on the contract, not an instant. Running "2025-01-01T00:00:00Z"
+ * through a local-time conversion moves it to 31 December for every reader west
+ * of Greenwich, which is the timezone bug this codebase has already paid for
+ * once on attendance. Taking the first ten characters keeps the day the server
+ * sent.
+ */
+export const hrDateInput = (v) => {
+  if (!v) return ''
+
+  const s = String(v)
+
+  // Already the shape the input wants, possibly with an instant glued on.
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
+
+  return ''
+}

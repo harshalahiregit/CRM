@@ -27,6 +27,8 @@ class OnboardingService
     public function __construct(
         private EmployeeService $employeeService,
         private CandidateService $candidateService,
+        private EmployeeDetailService $employeeDetails,
+        private OnboardingPortalToken $portalToken,
     ) {
     }
 
@@ -75,7 +77,6 @@ class OnboardingService
             // post-interview transition. HR sets the real title on the offer.
             'position'            => optional($candidate->jobPosting)->title ?? 'To Be Assigned',
             'department'          => optional($candidate->jobPosting)->department,
-            'access_token'        => Str::random(48),
             'status'              => 'Pending',
             'verification_status' => 'Pending',
             'invited_at'          => now(),
@@ -85,12 +86,16 @@ class OnboardingService
         $candidate->update(['final_decision' => 'Selected', 'stage' => 'Offer']);
         $candidate->recordAudit('Selected — Onboarding Started', null, null, ['onboarding_id' => $onboarding->id]);
 
-        $link = $this->portalLink($onboarding);
+        // The raw token exists here and in the e-mail below, and nowhere else.
+        // It is not stored, not audited and not logged — only its hash is kept,
+        // so this link cannot be recovered afterwards. Losing it means issuing
+        // a new one, which revokes this.
+        $link = $this->portalLink($this->portalToken->issue($onboarding));
 
         // Congratulations Email (best-effort).
         if ($candidate->email) {
             try {
-                Mail::to($candidate->email)->send(new \App\Mail\OnboardingWelcomeMail($onboarding, $link));
+                app(\App\Services\Mail\TenantMailer::class)->send($candidate->tenant_id, $candidate->email, new \App\Mail\OnboardingWelcomeMail($onboarding, $link));
             } catch (\Throwable $e) {
                 Log::channel('hr')->error('Onboarding congrats email failed', ['onboarding_id' => $onboarding->id, 'error' => $e->getMessage()]);
             }
@@ -108,10 +113,23 @@ class OnboardingService
         return $onboarding->load('candidate');
     }
 
-    /** Resolve an onboarding by its public portal token. */
+    /**
+     * Resolve an onboarding by its public portal token.
+     *
+     * THE ONE DOOR. Every public portal route — the dashboard, each form
+     * section, the child collections, document upload and final submission —
+     * comes through here, so expiry and revocation are enforced for all of
+     * them by enforcing them once. A route that resolved a record any other
+     * way would be outside the lifecycle entirely, which is why there is no
+     * other lookup.
+     *
+     * The refusal is deliberately identical for every cause: unknown,
+     * malformed, expired and revoked all read the same. Saying which would
+     * confirm that a token was once real.
+     */
     public function byToken(string $token): HrOnboarding
     {
-        $onboarding = HrOnboarding::where('access_token', $token)->with(['candidate', 'documents'])->first();
+        $onboarding = $this->portalToken->resolve($token);
 
         if (! $onboarding) {
             throw new BusinessException('Onboarding link is invalid or has expired.', 404);
@@ -166,14 +184,22 @@ class OnboardingService
             'progress'            => $this->progressSteps($candidate, $onboarding),
             'verification_status' => $onboarding->verification_status,
             // Existing offer surfaced read-only so the candidate never has to leave the
-            // portal. Every value already lives on hr_offers — nothing new is stored and
-            // no new endpoint is introduced; the Offer tab reuses /offer/{token}.
+            // portal. Every value already lives on hr_offers — nothing new is stored.
+            //
+            // NO OFFER TOKEN IS HANDED OVER HERE ANY MORE. This used to return
+            // the offer's raw access_token and a ready-made public letter URL
+            // built from it, so the candidate's onboarding session leaked a
+            // second, separate bearer credential into the browser — and the
+            // onboarding portal is exactly where a leaked credential does the
+            // most damage, since it is reached by a link too.
+            //
+            // The Offer tab now runs on the onboarding token the candidate is
+            // already holding, through /api/onboarding/{token}/offer/*. Same
+            // person, same credential, one fewer secret in flight.
             'offer' => $offer ? [
                 'exists'               => true,
                 'id'                   => $offer->id,
-                'token'                => $offer->access_token,
                 'status'               => $offer->status,
-                'letter_url'           => $offer->access_token ? url('/api/offer/'.$offer->access_token.'/letter') : null,
                 'generated_at'         => optional($offer->generated_at)->toIso8601String(),
                 'sent_at'              => optional($offer->sent_at)->toIso8601String(),
                 'viewed_at'            => optional($offer->viewed_at)->toIso8601String(),
@@ -511,6 +537,11 @@ class OnboardingService
                 'phone'                  => $candidate?->phone,
                 'department'             => $onboarding->department ?? optional($offer)->department,
                 'designation'            => $onboarding->position ?? optional($offer)->position,
+                // The id is the hierarchy edge the org chart, the advance ladder
+                // and the app's approval queue all walk. Passed straight through
+                // — never inferred from the name, which may well be somebody who
+                // is not an employee record at all.
+                'reporting_manager_id'   => $onboarding->reporting_manager_id,
                 'reporting_manager_name' => $manager,
                 'joining_date'           => $onboarding->joining_date ?? optional($offer)->joining_date,
                 'status'                 => 'Active',
@@ -520,6 +551,16 @@ class OnboardingService
                 'probation_optional'     => true,
             ], $onboarding->tenant_id);
         }
+
+        // Carry across what the joiner already filled in themselves — bank
+        // account, UAN, emergency contact, permanent address. It was collected
+        // on the onboarding form and then left there: HR re-typed all of it from
+        // a document the person had already completed. Only fills blanks, so a
+        // correction made after conversion is never overwritten.
+        $this->employeeDetails->carryFromOnboarding(
+            $employee,
+            \App\Models\Hr\HrEmployeeOnboarding::where('onboarding_id', $onboarding->id)->first()?->profile,
+        );
 
         // Auto-complete every remaining onboarding step — no manual ticking.
         $onboarding->update([
@@ -547,9 +588,16 @@ class OnboardingService
         return $employee;
     }
 
-    private function portalLink(HrOnboarding $onboarding): string
+    /**
+     * The portal URL for a token that was just issued.
+     *
+     * Takes the RAW token as an argument rather than reading it off the
+     * record, because the record no longer holds it — only its hash. That is
+     * what makes the link unrecoverable once it has been sent.
+     */
+    public function portalLink(string $rawToken): string
     {
-        return rtrim(config('hr_publishing.onboarding_portal_url'), '/').'/'.$onboarding->access_token;
+        return rtrim(config('hr_publishing.onboarding_portal_url'), '/').'/'.$rawToken;
     }
 
     /* ─────────────────────────────────────────────────────────────────────
@@ -584,7 +632,9 @@ class OnboardingService
         $record = HrOnboarding::create([...$data, 'status' => 'Pending']);
 
         if ($candidate && $candidate->email) {
-            Mail::to($candidate->email)->send(
+            app(\App\Services\Mail\TenantMailer::class)->send(
+                $candidate->tenant_id,
+                $candidate->email,
                 new \App\Mail\OnboardingWelcomeMail($record)
             );
         }
@@ -603,10 +653,32 @@ class OnboardingService
         return $onboarding->fresh();
     }
 
-    public function toggleStep(HrOnboarding $onboarding, string $step): HrOnboarding
+    /**
+     * @param  int|null|false  $managerId  false = not supplied, leave as is;
+     *                                     null = clear it; an int = set it.
+     */
+    public function toggleStep(HrOnboarding $onboarding, string $step, $managerId = false): HrOnboarding
     {
         $col = 'step_'.$step;
-        $onboarding->update([$col => ! $onboarding->$col]);
+
+        // The "Reporting Manager Assigned" step can now carry the answer. Picking
+        // somebody MARKS the step done rather than toggling it, because choosing
+        // a manager and then having the step flip off is not what anybody means
+        // by picking one.
+        if ($step === 'manager_assigned' && $managerId !== false) {
+            $manager = $managerId === null ? null : HrEmployee::where('tenant_id', $onboarding->tenant_id)
+                ->find($managerId);
+
+            $onboarding->update([
+                'reporting_manager_id'   => $manager?->id,
+                // Kept in step so every existing read of the name still works,
+                // including the two employee-create paths further down this file.
+                'reporting_manager_name' => $manager?->name ?? ($managerId === null ? null : $onboarding->reporting_manager_name),
+                $col                     => $manager !== null,
+            ]);
+        } else {
+            $onboarding->update([$col => ! $onboarding->$col]);
+        }
 
         $steps = [
             $onboarding->step_doc_verification,
@@ -627,6 +699,8 @@ class OnboardingService
                 'name'                   => $onboarding->candidate_name,
                 'department'             => $onboarding->department,
                 'designation'            => $onboarding->position,
+                // Same as the other create path above — id and name together.
+                'reporting_manager_id'   => $onboarding->reporting_manager_id,
                 'reporting_manager_name' => $onboarding->reporting_manager_name,
                 'joining_date'           => $onboarding->joining_date,
                 'status'                 => 'Active',

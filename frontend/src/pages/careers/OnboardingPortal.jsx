@@ -83,7 +83,9 @@ export default function OnboardingPortal() {
         {tab === 'profile' && <ProfileTab token={token} data={data} onSaved={load} />}
         {tab === 'documents' && <DocumentsTab token={token} data={data} onChanged={load} />}
         {tab === 'form' && <OnboardingFormTab token={token} data={data} onChanged={load} onGoDocs={() => setTab('documents')} />}
-        {tab === 'offer' && data.offer?.exists && <OfferPortal token={data.offer.token} embedded />}
+        {/* The candidate's own onboarding token — the offer's raw token is no
+            longer returned to the browser, and is no longer needed here. */}
+        {tab === 'offer' && data.offer?.exists && <OfferPortal token={token} via="onboarding" embedded />}
         {tab === 'tasks' && <TasksTab tasks={data.tasks} />}
         {tab === 'notifications' && <NotificationsTab items={data.notifications} />}
         {tab === 'timeline' && <Card title="Activity Timeline"><AuditTimeline entries={data.timeline} /></Card>}

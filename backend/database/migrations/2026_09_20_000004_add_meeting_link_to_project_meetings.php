@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * A generated (or pasted) online-meeting link on a project meeting — so a
- * Zoom / Google Meet / Jitsi link lives with the meeting and attendees can join
+ * Zoom / Google Meet / Teams link lives with the meeting and attendees can join
  * straight from the Meetings tab.
  */
 return new class extends Migration

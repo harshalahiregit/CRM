@@ -12,6 +12,7 @@ import { createPortal } from 'react-dom'
 import { Smile, AtSign, Paperclip, BarChart3, Plus, Video } from 'lucide-react'
 import { meetingLinkApi } from '@/services/meetingLinkApi'
 import InlineMentions from './InlineMentions'
+import { insertMentionIntoQuill } from './mentionMarker'
 
 // A small, clean, work-appropriate set — enough to react without a heavy
 // emoji-library dependency (there is no Node on the live host; we keep the
@@ -93,12 +94,13 @@ function insertIntoTextarea(textareaRef, value, onChange, text) {
   if (el) requestAnimationFrame(() => { el.focus(); const pos = start + text.length; el.setSelectionRange(pos, pos) })
 }
 
-// The composer's "Meeting" menu — mirrors the reference (Zoom / Google Meet /
-// Jitsi). Keys must match MeetingLinkService::PLATFORMS on the backend.
+// The composer's "Meeting" menu — the platforms calls are actually held on.
+// Keys must match MeetingLinkService::PLATFORMS on the backend, which
+// validates against that list and rejects anything else.
 const MEET_PLATFORMS = [
   { key: 'google_meet', label: 'Google Meet' },
   { key: 'zoom', label: 'Zoom' },
-  { key: 'jitsi', label: 'Jitsi' },
+  { key: 'teams', label: 'Microsoft Teams' },
 ]
 
 export default function EditorActionBar({
@@ -132,7 +134,20 @@ export default function EditorActionBar({
   const pickEmoji = (e) => { insert(e); setEmojiOpen(false) }
   const pickPerson = (p) => {
     const name = (p.name || p.label || '').replace(/\s+/g, ' ').trim()
-    if (name) insert(`@${name} `)
+    if (!name) { setMentionOpen(false); setQ(''); return }
+
+    // In a rich editor the mention carries the person's id, so the notification
+    // does not depend on the server guessing them back out of their name — see
+    // mentionMarker. A textarea can only hold text, so it keeps "@Name".
+    const quill = quillRef?.current?.getEditor?.()
+    if (quill && !textareaRef) {
+      const range = quill.getSelection(true) || { index: quill.getLength(), length: 0 }
+      insertMentionIntoQuill(quill, range.index, p, name)
+      quill.focus()
+    } else {
+      insert(`@${name} `)
+    }
+
     setMentionOpen(false); setQ('')
   }
 
@@ -227,7 +242,7 @@ export default function EditorActionBar({
         </button>
       )}
 
-      {/* Meeting — Zoom / Google Meet / Jitsi link into the message */}
+      {/* Meeting — Zoom / Google Meet / Teams link into the message */}
       {meeting && (
         <div className="relative">
           <button ref={meetingBtn} type="button" onClick={() => { setMeetingOpen(v => !v); setEmojiOpen(false); setMentionOpen(false); setQuickOpen(false) }}

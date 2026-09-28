@@ -2,6 +2,7 @@
 
 namespace App\Services\Hr;
 
+use App\Models\User;
 use App\Repositories\Hr\TrainingReportRepository;
 use Illuminate\Support\Carbon;
 
@@ -19,14 +20,14 @@ class TrainingReportService
     ) {
     }
 
-    public function dashboard(int $tenantId): array
+    public function dashboard(int $tenantId, ?User $actor = null): array
     {
-        return $this->repo->dashboard($tenantId);
+        return $this->repo->dashboard($tenantId, $actor);
     }
 
-    public function employees(int $tenantId, array $f): array
+    public function employees(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->employees($tenantId, $f)->map(fn ($r) => [
+        return $this->repo->employees($tenantId, $f, $actor)->map(fn ($r) => [
             'employee_name' => $r->name, 'employee_code' => $r->employee_code, 'department' => $r->department, 'designation' => $r->designation,
             'program' => $r->program_name, 'session' => $r->session_title, 'trainer' => $r->trainer_name,
             'attendance' => $r->attendance_status, 'status' => $r->status,
@@ -34,9 +35,9 @@ class TrainingReportService
         ])->all();
     }
 
-    public function departments(int $tenantId, array $f): array
+    public function departments(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->departments($tenantId, $f)->map(function ($r) {
+        return $this->repo->departments($tenantId, $f, $actor)->map(function ($r) {
             $a = (int) $r->assignments;
 
             return [
@@ -47,9 +48,9 @@ class TrainingReportService
         })->all();
     }
 
-    public function programs(int $tenantId, array $f): array
+    public function programs(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->programs($tenantId, $f)->map(function ($r) {
+        return $this->repo->programs($tenantId, $f, $actor)->map(function ($r) {
             $assessed = (int) $r->assessed;
 
             return [
@@ -61,26 +62,26 @@ class TrainingReportService
         })->all();
     }
 
-    public function trainers(int $tenantId, array $f): array
+    public function trainers(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->trainers($tenantId, $f)->map(fn ($r) => [
+        return $this->repo->trainers($tenantId, $f, $actor)->map(fn ($r) => [
             'trainer' => $r->trainer, 'sessions' => (int) $r->sessions,
             'assignments' => (int) $r->assignments, 'completed' => (int) $r->completed,
         ])->all();
     }
 
-    public function attendance(int $tenantId, array $f): array
+    public function attendance(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->attendance($tenantId, $f)->map(fn ($r) => [
+        return $this->repo->attendance($tenantId, $f, $actor)->map(fn ($r) => [
             'employee_name' => $r->name, 'employee_code' => $r->employee_code, 'department' => $r->department,
             'program' => $r->program_name, 'session' => $r->session_title, 'trainer' => $r->trainer_name,
             'attendance' => $r->attendance_status,
         ])->all();
     }
 
-    public function assessments(int $tenantId, array $f): array
+    public function assessments(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->assessments($tenantId, $f)->map(fn ($r) => [
+        return $this->repo->assessments($tenantId, $f, $actor)->map(fn ($r) => [
             'employee_name' => $r->name, 'employee_code' => $r->employee_code, 'department' => $r->department,
             'program' => $r->program_name, 'assessment' => $r->assessment_name,
             'total' => (float) $r->total_marks, 'obtained' => (float) $r->obtained_marks,
@@ -88,26 +89,26 @@ class TrainingReportService
         ])->all();
     }
 
-    public function certificates(int $tenantId, array $f): array
+    public function certificates(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->certificates($tenantId, $f)->map(fn ($r) => [
+        return $this->repo->certificates($tenantId, $f, $actor)->map(fn ($r) => [
             'employee_name' => $r->name, 'employee_code' => $r->employee_code, 'department' => $r->department,
             'program' => $r->program_name, 'certificate_number' => $r->certificate_number,
             'issue_date' => $r->issue_date, 'expiry_date' => $r->expiry_date, 'status' => $r->status,
         ])->all();
     }
 
-    public function completion(int $tenantId, array $f): array
+    public function completion(int $tenantId, array $f, ?User $actor = null): array
     {
         return array_map(fn ($r) => [
             'employee_name' => $r['employee_name'], 'employee_code' => $r['employee_code'], 'department' => $r['department'],
             'program' => $r['program'], 'attendance' => $r['attendance'], 'assessment' => $r['assessment_result'],
             'quiz' => $r['quiz_passed'] === null ? '—' : ($r['quiz_passed'] ? 'Passed' : 'Failed'),
             'completion' => $r['completion_percentage'], 'certified' => $r['certified'] ? 'Yes' : 'No', 'status' => $r['status'],
-        ], $this->completion->list($tenantId, $f)['data']);
+        ], $this->completion->list($tenantId, $f, $actor)['data']);
     }
 
-    public function trends(int $tenantId, array $f): array
+    public function trends(int $tenantId, array $f, ?User $actor = null): array
     {
         $year = (int) ($f['year'] ?? now()->year);
         $months = [];
@@ -115,7 +116,7 @@ class TrainingReportService
             $months[$m] = ['month' => self::MONTHS[$m], 'trainings' => 0, 'completed' => 0, 'sessions' => 0,
                 'hours' => 0.0, 'certificates' => 0, '_pass' => 0, '_assessed' => 0];
         }
-        foreach ($this->repo->trendAssignments($tenantId, $year) as $r) {
+        foreach ($this->repo->trendAssignments($tenantId, $year, $actor) as $r) {
             $m = $this->m($r->start_at); if (! $m) continue;
             $months[$m]['trainings']++;
             if ($r->status === 'Completed') { $months[$m]['completed']++; }
@@ -127,12 +128,12 @@ class TrainingReportService
                 $months[$m]['hours'] += max(0, Carbon::parse($r->end_at)->floatDiffInHours(Carbon::parse($r->start_at)));
             }
         }
-        foreach ($this->repo->trendAssessments($tenantId, $year) as $r) {
+        foreach ($this->repo->trendAssessments($tenantId, $year, $actor) as $r) {
             $m = $this->m($r->start_at); if (! $m) continue;
             $months[$m]['_assessed']++;
             if ($r->result === 'Pass') { $months[$m]['_pass']++; }
         }
-        foreach ($this->repo->trendCertificates($tenantId, $year) as $r) {
+        foreach ($this->repo->trendCertificates($tenantId, $year, $actor) as $r) {
             $m = $this->m($r->issue_date); if (! $m) continue;
             $months[$m]['certificates']++;
         }
@@ -147,42 +148,42 @@ class TrainingReportService
         }, $months));
     }
 
-    public function filterOptions(int $tenantId): array
+    public function filterOptions(int $tenantId, ?User $actor = null): array
     {
-        return $this->repo->filterOptions($tenantId);
+        return $this->repo->filterOptions($tenantId, $actor);
     }
 
     /* ── Export rows (CSV / PDF share the shaped data) ────── */
-    public function exportRows(string $report, int $tenantId, array $f): array
+    public function exportRows(string $report, int $tenantId, array $f, ?User $actor = null): array
     {
         return match ($report) {
             'departments' => ['title' => 'Training Department Report',
                 'headers' => ['Department', 'Assignments', 'Completed', 'Certified', 'Avg Score', 'Completion %'],
-                'rows' => array_map(fn ($d) => [$d['department'], $d['assignments'], $d['completed'], $d['certified'], $d['avg_score'], $d['completion_pct']], $this->departments($tenantId, $f))],
+                'rows' => array_map(fn ($d) => [$d['department'], $d['assignments'], $d['completed'], $d['certified'], $d['avg_score'], $d['completion_pct']], $this->departments($tenantId, $f, $actor))],
             'programs' => ['title' => 'Training Program Report',
                 'headers' => ['Program', 'Code', 'Sessions', 'Assignments', 'Completed', 'Avg Score', 'Pass %'],
-                'rows' => array_map(fn ($p) => [$p['program'], $p['code'], $p['sessions'], $p['assignments'], $p['completed'], $p['avg_score'], $p['pass_pct']], $this->programs($tenantId, $f))],
+                'rows' => array_map(fn ($p) => [$p['program'], $p['code'], $p['sessions'], $p['assignments'], $p['completed'], $p['avg_score'], $p['pass_pct']], $this->programs($tenantId, $f, $actor))],
             'trainers' => ['title' => 'Trainer Report',
                 'headers' => ['Trainer', 'Sessions', 'Assignments', 'Completed'],
-                'rows' => array_map(fn ($t) => [$t['trainer'], $t['sessions'], $t['assignments'], $t['completed']], $this->trainers($tenantId, $f))],
+                'rows' => array_map(fn ($t) => [$t['trainer'], $t['sessions'], $t['assignments'], $t['completed']], $this->trainers($tenantId, $f, $actor))],
             'attendance' => ['title' => 'Training Attendance Report',
                 'headers' => ['Employee', 'Code', 'Department', 'Program', 'Session', 'Trainer', 'Attendance'],
-                'rows' => array_map(fn ($a) => [$a['employee_name'], $a['employee_code'], $a['department'], $a['program'], $a['session'], $a['trainer'], $a['attendance']], $this->attendance($tenantId, $f))],
+                'rows' => array_map(fn ($a) => [$a['employee_name'], $a['employee_code'], $a['department'], $a['program'], $a['session'], $a['trainer'], $a['attendance']], $this->attendance($tenantId, $f, $actor))],
             'assessments' => ['title' => 'Training Assessment Report',
                 'headers' => ['Employee', 'Department', 'Program', 'Assessment', 'Total', 'Obtained', 'Percentage', 'Result'],
-                'rows' => array_map(fn ($a) => [$a['employee_name'], $a['department'], $a['program'], $a['assessment'], $a['total'], $a['obtained'], $a['percentage'], $a['result']], $this->assessments($tenantId, $f))],
+                'rows' => array_map(fn ($a) => [$a['employee_name'], $a['department'], $a['program'], $a['assessment'], $a['total'], $a['obtained'], $a['percentage'], $a['result']], $this->assessments($tenantId, $f, $actor))],
             'certificates' => ['title' => 'Training Certificate Report',
                 'headers' => ['Employee', 'Department', 'Program', 'Certificate No', 'Issue Date', 'Expiry Date', 'Status'],
-                'rows' => array_map(fn ($c) => [$c['employee_name'], $c['department'], $c['program'], $c['certificate_number'], $c['issue_date'], $c['expiry_date'] ?? '—', $c['status']], $this->certificates($tenantId, $f))],
+                'rows' => array_map(fn ($c) => [$c['employee_name'], $c['department'], $c['program'], $c['certificate_number'], $c['issue_date'], $c['expiry_date'] ?? '—', $c['status']], $this->certificates($tenantId, $f, $actor))],
             'completion' => ['title' => 'Training Completion Report',
                 'headers' => ['Employee', 'Department', 'Program', 'Attendance', 'Assessment', 'Quiz', 'Completion %', 'Certified', 'Status'],
-                'rows' => array_map(fn ($c) => [$c['employee_name'], $c['department'], $c['program'], $c['attendance'] ?? '—', $c['assessment'] ?? '—', $c['quiz'], $c['completion'], $c['certified'], $c['status']], $this->completion($tenantId, $f))],
+                'rows' => array_map(fn ($c) => [$c['employee_name'], $c['department'], $c['program'], $c['attendance'] ?? '—', $c['assessment'] ?? '—', $c['quiz'], $c['completion'], $c['certified'], $c['status']], $this->completion($tenantId, $f, $actor))],
             'trends' => ['title' => 'Training Monthly Trends',
                 'headers' => ['Month', 'Trainings', 'Completed', 'Sessions', 'Hours', 'Certificates', 'Completion %', 'Pass %'],
-                'rows' => array_map(fn ($t) => [$t['month'], $t['trainings'], $t['completed'], $t['sessions'], $t['hours'], $t['certificates'], $t['completion_pct'], $t['pass_pct']], $this->trends($tenantId, $f))],
+                'rows' => array_map(fn ($t) => [$t['month'], $t['trainings'], $t['completed'], $t['sessions'], $t['hours'], $t['certificates'], $t['completion_pct'], $t['pass_pct']], $this->trends($tenantId, $f, $actor))],
             default => ['title' => 'Employee Training Report',
                 'headers' => ['Employee', 'Department', 'Program', 'Session', 'Trainer', 'Attendance', 'Status', 'Completion %', 'Certificate'],
-                'rows' => array_map(fn ($e) => [$e['employee_name'], $e['department'], $e['program'], $e['session'], $e['trainer'], $e['attendance'] ?? '—', $e['status'], $e['completion'], $e['certificate'] ?? '—'], $this->employees($tenantId, $f))],
+                'rows' => array_map(fn ($e) => [$e['employee_name'], $e['department'], $e['program'], $e['session'], $e['trainer'], $e['attendance'] ?? '—', $e['status'], $e['completion'], $e['certificate'] ?? '—'], $this->employees($tenantId, $f, $actor))],
         };
     }
 

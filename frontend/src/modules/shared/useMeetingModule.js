@@ -1,6 +1,7 @@
 import { useLocation } from 'react-router-dom'
 import { kickoffApi } from '@/services/kickoffApi'
 import { purchaseKickoffApi } from '@/services/purchaseKickoffApi'
+import { meetingModuleFor } from './meetingModules'
 
 /**
  * Meeting-module context — the same idea as useVendorModule(), for the meeting
@@ -18,36 +19,34 @@ import { purchaseKickoffApi } from '@/services/purchaseKickoffApi'
  * Open/In_Progress/Pending_Verification/Closed/Reopened/Cancelled for actions),
  * so a page written against one renders the other unchanged.
  *
- *   key   : 'shared' | 'purchase'
+ * WHICH module a path belongs to, and every link out of it, now comes from
+ * meetingModules.js. This hook used to carry its own copy of that decision and
+ * the API layer carried another, and the two drifted -- see the note in that
+ * file. All this adds is the API client, which is the one thing a path table
+ * has no business importing.
+ *
+ *   key   : 'shared' | 'purchase' | 'meetings'
  *   api   : the meeting api client
  *   base  : route base for links back into the module
  *   label : user-facing module name
  */
 export function useMeetingModule() {
   const { pathname } = useLocation()
-
-  if (pathname.startsWith('/app/purchase')) {
-    return {
-      key: 'purchase',
-      // The adapter, not purchaseApi.kickoff directly — it presents Purchase's
-      // engine under the shared method names and reconciles three argument
-      // shapes that differ between the two clients.
-      api: purchaseKickoffApi,
-      base: '/app/purchase',
-      label: 'Purchase',
-      // Purchase meetings are scoped to a vendor and carry no project link, so
-      // the project filter is hidden rather than shown permanently empty.
-      hasProjects: false,
-      meetingPath: (id) => `/app/purchase/kickoff/${id}`,
-    }
-  }
+  const mod = meetingModuleFor(pathname)
 
   return {
-    key: 'shared',
-    api: kickoffApi,
-    base: '/app/tpv',
-    label: 'Meetings',
-    hasProjects: true,
-    meetingPath: (id) => `/app/tpv/kickoff/${id}`,
+    key: mod.key,
+    // The adapter for Purchase, not purchaseApi.kickoff directly -- it presents
+    // Purchase's engine under the shared method names and reconciles three
+    // argument shapes that differ between the two clients.
+    api: mod.key === 'purchase' ? purchaseKickoffApi : kickoffApi,
+    base: mod.base,
+    label: mod.label,
+    hasProjects: mod.hasProjects,
+    listPath: mod.list,
+    newPath: mod.create,
+    meetingPath: mod.detail,
+    editPath: mod.edit,
+    registersPath: mod.registers,
   }
 }

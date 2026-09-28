@@ -1,7 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, MoreVertical, Edit, Trash2, Power, UserCheck, UserX, Shield, RefreshCw } from 'lucide-react'
+import { Plus, Search, MoreVertical, Edit, Trash2, Power, UserCheck, UserX, Shield, ShieldOff, RefreshCw } from 'lucide-react'
 import api from '@/lib/api'
+import { readFieldErrors } from '@/services/apiError'
 import { useAuth } from '@/context/AuthContext'
 import StaffModal from '@/components/admin/StaffModal'
 import RolesModal from '@/components/admin/RolesModal'
@@ -26,6 +28,9 @@ export default function StaffManagementPage() {
       },
     })
   }, [queryClient])
+  const [searchParams, setSearchParams] = useSearchParams()
+  /** Sequence of the newest staff-list request; older answers are discarded. */
+  const staffRequestSeq = useRef(0)
   const [stats, setStats]       = useState({ total_staff: 0, active_staff: 0, inactive_staff: 0 })
   const [staff, setStaff]       = useState([])
   const [loading, setLoading]   = useState(true)
@@ -44,6 +49,7 @@ export default function StaffManagementPage() {
   // Meta dropdowns
   const [designations, setDesignations] = useState([])
   const [departments,  setDepartments]  = useState([])
+  const [jobTitles,    setJobTitles]    = useState([])
 
   // Toast
   const [toast, setToast] = useState(null)
@@ -67,6 +73,10 @@ export default function StaffManagementPage() {
     } catch {}
   }, [])
 
+  // Departments and job titles are RECORDS now, maintained under HR ->
+  // Organization Setup. They used to be a hardcoded list merged with whatever
+  // anyone had typed, which is why the same department existed three times and
+  // could not be renamed. Both arrive as {id, name}.
   const fetchDepartments = useCallback(async () => {
     try {
       const res = await api.get('/admin/staff/departments')
@@ -74,7 +84,27 @@ export default function StaffManagementPage() {
     } catch {}
   }, [])
 
+  const fetchJobTitles = useCallback(async () => {
+    try {
+      const res = await api.get('/admin/staff/job-titles')
+      if (res.data?.data) setJobTitles(res.data.data)
+    } catch {}
+  }, [])
+
   const fetchStaff = useCallback(async () => {
+    // Which request this is. The search box fires one per keystroke and there is
+    // no debounce, so several are in flight at once and they do not come back in
+    // the order they were sent — a slow early response was overwriting a fast
+    // later one and leaving the list showing results for a query the person had
+    // already changed. Reproduced by arriving with ?search=priya: the box read
+    // "priya" and the rows were the unfiltered eight, because the empty-search
+    // response landed last and won.
+    //
+    // A sequence number rather than an AbortController: the earlier request is
+    // still worth completing for the cache, it simply must not be allowed to
+    // paint. Anything but the newest answer is dropped.
+    const seq = ++staffRequestSeq.current
+
     setLoading(true)
     try {
       const res = await api.get('/admin/staff', {
@@ -86,24 +116,75 @@ export default function StaffManagementPage() {
           page:        pagination.current_page,
         },
       })
+
+      if (seq !== staffRequestSeq.current) return
+
       setStaff(res.data.data.staff)
       setPagination(res.data.data.pagination)
-    } catch {
-      showToast('Failed to load staff list', 'error')
+    } catch (e) {
+      if (seq !== staffRequestSeq.current) return
+      showToast(readFieldErrors(e).summary, 'error')
     } finally {
-      setLoading(false)
+      if (seq === staffRequestSeq.current) setLoading(false)
     }
   }, [search, designationFilter, statusFilter, pagination.current_page, pagination.per_page])
 
   useEffect(() => {
     if (!user) return
     if (user?.role !== 'admin') { window.location.href = '/app/dashboard'; return }
-    fetchStats(); fetchDesignations(); fetchDepartments()
+    fetchStats(); fetchDesignations(); fetchDepartments(); fetchJobTitles()
   }, [user])
 
   useEffect(() => {
     if (user?.role === 'admin') fetchStaff()
   }, [search, designationFilter, statusFilter, pagination.current_page])
+
+  /*
+   | Pick up a department or job title added in the other tab — SIR-000008.
+   |
+   | The staff form links out to HR → Organization Setup in a new tab, because
+   | those are records and this modal must not become a second place to create
+   | them. Without this, you would add the department over there, come back, and
+   | still not find it in the dropdown.
+   |
+   | Only while the modal is open: these are three GETs, and firing them on every
+   | tab switch for somebody just reading the staff list is noise for nothing.
+   */
+  useEffect(() => {
+    if (! showStaffModal) return
+
+    const refresh = () => { fetchDesignations(); fetchDepartments(); fetchJobTitles() }
+    window.addEventListener('focus', refresh)
+
+    return () => window.removeEventListener('focus', refresh)
+  }, [showStaffModal, fetchDesignations, fetchDepartments, fetchJobTitles])
+
+  /**
+   * Arrive with an intention, not just at an address.
+   *
+   * HR → Employees creates people here, because a login and an employment record
+   * have to be made together. Its "Add Employee" button navigated to this page
+   * and stopped: you pressed Add Employee, landed on a list of people who already
+   * exist, and nothing said why you were here or what to do next.
+   *
+   *   ?new=1        open the create form
+   *   ?search=NAME  filter to one person — used by "Manage account" on an
+   *                 employee, so the admin does not have to find them again
+   *
+   * The parameter is consumed once and removed, so a refresh or a back button
+   * does not reopen a form the person has already dealt with.
+   */
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setSelectedStaff(null)
+      setShowStaffModal(true)
+    }
+
+    const wanted = searchParams.get('search')
+    if (wanted) setSearch(wanted)
+
+    if (searchParams.get('new') || wanted) setSearchParams({}, { replace: true })
+  }, [searchParams, setSearchParams])
 
   // ── Actions ───────────────────────────────────────────────────────────────
   const handleToggleStatus = async (member) => {
@@ -111,8 +192,8 @@ export default function StaffManagementPage() {
       await api.patch(`/admin/staff/${member.id}/toggle-status`, {})
       showToast(`${member.name}'s status updated`)
       fetchStaff(); fetchStats(); invalidateDirectory()
-    } catch {
-      showToast('Failed to update status', 'error')
+    } catch (e) {
+      showToast(readFieldErrors(e).summary, 'error')
     }
     setActionMenuOpen(null)
   }
@@ -123,8 +204,13 @@ export default function StaffManagementPage() {
       showToast(`${selectedStaff.name} deleted`)
       fetchStaff(); fetchStats(); invalidateDirectory()
       setShowDeleteModal(false); setSelectedStaff(null)
-    } catch {
-      showToast('Failed to delete staff member', 'error')
+    } catch (e) {
+      // The server refuses this for reasons worth reading — the founding
+      // administrator cannot be deleted, you cannot delete your own account —
+      // and `catch {}` with a fixed string threw every one of them away. The
+      // modal stays open so the person can see the message beside the button
+      // they just pressed.
+      showToast(readFieldErrors(e).summary, 'error')
     }
   }
 
@@ -176,7 +262,7 @@ export default function StaffManagementPage() {
           className="px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2"
           style={{ background:'var(--bg-input)', border:'1px solid var(--border)', color:'var(--text-p)' }}
         >
-          <Shield size={16} /> Roles
+          <Shield size={16} /> Access Roles
         </button>
         <button
           onClick={() => { setSelectedStaff(null); setShowStaffModal(true) }}
@@ -222,7 +308,9 @@ export default function StaffManagementPage() {
         {[
           {
             value: designationFilter, onChange: v => setDesignationFilter(v),
-            options: [{ value:'', label:'All Roles' }, ...designations.map(d => ({ value:d.value, label:d.label }))],
+            // This filter runs on internal_role, which is the ACCESS role's slug —
+            // the endpoint that feeds it is misleadingly named `designations`.
+            options: [{ value:'', label:'All Access Roles' }, ...designations.map(d => ({ value:d.value, label:d.label }))],
           },
           {
             value: statusFilter, onChange: v => setStatusFilter(v),
@@ -260,7 +348,14 @@ export default function StaffManagementPage() {
           <table className="w-full">
             <thead style={{ background: 'rgba(124,58,237,0.04)', borderBottom: '1px solid var(--border)' }}>
               <tr>
-                {['Staff Member','Role / Designation','Departments','Profile Group','Status','Last Active','Actions'].map(h => (
+                {/* "Access Role", to separate it from HR's Job Roles — that column is
+                    the permission role, and the designation under it is the job title. */}
+                {/* "Member Of", not "Departments". This column is meta.member_departments —
+                    the departments an ACCOUNT belongs to for ticket routing, which is a
+                    different thing from the one department the person works in. Sharing a
+                    name with the employee's department made an empty routing list read as
+                    a contradiction of the HR screen. */}
+                {['Staff Member','Access Role / Designation','Member Of','Account Status','Last Active','Actions'].map(h => (
                   <th key={h} className="px-5 py-3.5 text-left text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
                     {h}
                   </th>
@@ -331,8 +426,13 @@ export default function StaffManagementPage() {
                     <td className="px-5 py-4">
                       <div>
                         <div className="text-sm font-semibold" style={{ color: 'var(--text-h)' }}>{formatRole(member.internal_role)}</div>
-                        {member.designation && (
-                          <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{member.designation}</div>
+                        {/* The job title and the home department, both read from the
+                            employee record that owns them — so this cannot disagree with
+                            the HR screen the way it used to. */}
+                        {(member.designation || member.department) && (
+                          <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                            {[member.designation, member.department].filter(Boolean).join(' · ')}
+                          </div>
                         )}
                       </div>
                     </td>
@@ -358,15 +458,26 @@ export default function StaffManagementPage() {
                       </div>
                     </td>
 
-                    {/* Profile Group */}
+                    {/* Status — the ACCOUNT's, plus why sign-in is closed when it is.
+                        These are two different questions and the screen used to answer
+                        only one: an employee whose HR record was Inactive still showed a
+                        plain ACTIVE badge here, next to a login that no longer works. */}
                     <td className="px-5 py-4">
-                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                        {meta.profile_group || member.department || '—'}
-                      </span>
+                      <StatusBadge status={member.status}/>
+                      {member.access_blocked_reason && (
+                        <div className="flex items-start gap-1 mt-1.5 max-w-[190px]">
+                          <ShieldOff size={11} style={{ color:'#f59e0b', flexShrink:0, marginTop:2 }}/>
+                          <span className="text-[10px] leading-tight" style={{ color:'#f59e0b' }}>
+                            {member.access_blocked_reason}
+                          </span>
+                        </div>
+                      )}
+                      {member.employment_status && !member.access_blocked_reason && (
+                        <div className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+                          Employment: {member.employment_status}
+                        </div>
+                      )}
                     </td>
-
-                    {/* Status */}
-                    <td className="px-5 py-4"><StatusBadge status={member.status}/></td>
 
                     {/* Last Active */}
                     <td className="px-5 py-4">
@@ -473,6 +584,7 @@ export default function StaffManagementPage() {
         <StaffModal
           staff={selectedStaff}
           departments={departments}
+          jobTitles={jobTitles}
           onClose={() => { setShowStaffModal(false); setSelectedStaff(null) }}
           onSuccess={() => {
             fetchStaff(); fetchStats(); invalidateDirectory()

@@ -80,6 +80,52 @@ class VendorEmployeeService
      * a vendor's PRIMARY account (vendors.user_id / matching email) or one of its
      * EMPLOYEES (tpv_contacts.user_id). Returns the vendor id or null.
      */
+    /**
+     * The reverse of resolveVendorIdForUser: every login that can read this
+     * vendor's portal.
+     *
+     * All three routes in, because all three are real: the vendor master's own
+     * `user_id`, a User sharing the master's email (how an older vendor login was
+     * linked before `user_id` existed), and every contact granted access. Missing
+     * any of them means notifying a vendor whose staff never see it.
+     *
+     * Inactive logins are excluded — a deactivated account cannot open the portal,
+     * so a bell row for it is a message nobody will ever read.
+     *
+     * @return int[]
+     */
+    public function portalUserIds(int $vendorId, int $tenantId): array
+    {
+        $vendor = Vendor::where('tenant_id', $tenantId)->find($vendorId);
+        if (! $vendor) {
+            return [];
+        }
+
+        $ids = collect([$vendor->user_id]);
+
+        if ($vendor->email) {
+            $ids = $ids->merge(
+                User::where('tenant_id', $tenantId)->where('email', $vendor->email)->pluck('id')
+            );
+        }
+
+        $ids = $ids->merge(
+            TpvContact::where('tenant_id', $tenantId)->where('vendor_id', $vendorId)->pluck('user_id')
+        );
+
+        $ids = $ids->filter()->map(fn ($i) => (int) $i)->unique();
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
+        return User::where('tenant_id', $tenantId)
+            ->whereIn('id', $ids)
+            ->where('status', 'active')
+            ->pluck('id')
+            ->map(fn ($i) => (int) $i)
+            ->all();
+    }
+
     public function resolveVendorIdForUser(User $user): ?int
     {
         $primary = Vendor::where('tenant_id', $user->tenant_id)

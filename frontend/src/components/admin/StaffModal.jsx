@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { X, Eye, EyeOff, RefreshCw, User, Shield, ChevronRight, ChevronDown, Check, Monitor, Activity, StickyNote } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { X, Eye, EyeOff, RefreshCw, User, Shield, ChevronRight, ChevronDown, Check, Monitor, Activity, StickyNote, RotateCcw } from 'lucide-react'
 import { AccountTab, ActivityTab, NotesTab } from './StaffRecordTabs'
 import api from '@/lib/api'
 import { useAuth } from '@/context/AuthContext'
@@ -10,16 +10,17 @@ const TIMEZONES = [
   'Asia/Tokyo','Europe/London','Europe/Paris','America/New_York',
   'America/Los_Angeles','America/Chicago','Australia/Sydney',
 ]
-const PROFILE_GROUPS = [
-  'Standard Staff','Senior Staff','Management','IT Admin',
-  'Support Team','Sales Team','HR Team','Finance Team','Operations Team',
-]
-const MEMBER_DEPARTMENTS = [
-  'Support','IT','Billing','Passwords','HR','Misuse',
-  'Compliance','Sales','IT Projects','Marketing','Finance','Operations',
-]
 
 // ── Full Permissions Matrix ─────────────────────────────────────────────────
+// The keys here and App\Support\Hr\StaffPermission::MODULES are ONE vocabulary
+// kept in two files, and StaffPermissionModuleParityTest fails the build if they
+// disagree. A key missing here can never be ticked; a key missing there can
+// never be granted, because sanitise() discards it on the way in and out.
+//
+// They had already drifted: hr_attendance and self existed server-side with no
+// row here, so the only way to grant either was to pick a role template and
+// inherit it. The six rows at the bottom close that gap and add the parts of HR
+// the grid could not previously say anything about.
 const PERMISSION_MODULES = [
   { key:'contacts',        label:'Contacts',              actions:['view_own','view_global','create','edit','delete'] },
   { key:'deals',           label:'Deals',                 actions:['view_own','view_global','create','edit','delete'] },
@@ -37,13 +38,46 @@ const PERMISSION_MODULES = [
   { key:'inventory',       label:'Inventory',             actions:['view_global','create','edit','delete'] },
   { key:'goals',           label:'Goals',                 actions:['view_global','create','edit','delete'] },
   { key:'surveys',         label:'Surveys',               actions:['view_global','create','edit','delete'] },
-  { key:'appointments',    label:'Appointments',          actions:['view','create','edit','delete','approve','view_reports'] },
+  // The standard five, like every other row. This offered 'view', 'approve'
+  // and 'view_reports' — none of which are capabilities, so ticking them
+  // saved nothing and the box came back empty with no error shown.
+  { key:'appointments',    label:'Appointments',          actions:['view_own','view_global','create','edit','delete'] },
   { key:'delivery_notes',  label:'Delivery Notes',        actions:['view_own','view_global'] },
   { key:'hr_recruitment',  label:'HR Recruitment',        actions:['view_own','view_global','create','edit','delete'] },
   { key:'hr_checklists',   label:'HR Layoff Checklists',  actions:['view_own','view_global','create','edit','delete'] },
   { key:'hr_settings',     label:'HR Settings',           actions:['view_global','create','edit','delete'] },
   { key:'affiliates',      label:'Affiliate Management',  actions:['view_global','create','edit','delete'] },
   { key:'staff_mgmt',      label:'Staff Management',      actions:['view_global','create','edit','delete'] },
+  // Existed server-side with no checkbox until now.
+  { key:'hr_attendance',   label:'HR Attendance',         actions:['view_own','view_global','create','edit','delete'] },
+  // "My own record" — clocking yourself in, your own leave and claims. Separate
+  // from every row above, which are all about other people's records.
+  { key:'self',            label:'My Own Record',         actions:['view_own','create','edit'] },
+  // The parts of HR that could not be described at all. Nothing reads these yet
+  // — HR authority still runs through one canManageHrQueue() check — so ticking
+  // them grants nothing today. They are here so a role can be written down
+  // before the enforcement is moved onto it.
+  { key:'hr_employees',    label:'HR Employees',          actions:['view_own','view_global','create','edit','delete'] },
+  { key:'hr_payroll',      label:'HR Payroll',            actions:['view_own','view_global','create','edit','delete'] },
+  { key:'hr_leave',        label:'HR Leave',              actions:['view_own','view_global','create','edit','delete'] },
+  { key:'hr_exit',         label:'HR Exit',               actions:['view_own','view_global','create','edit','delete'] },
+  // Narrow authorities that used to be hardcoded to role slugs. Each offers
+  // view_global only: on a module this specific, "sees all of it" and "may act
+  // on it" are the same statement, which is how hr_employees already works.
+  { key:'hr_onboarding',   label:'Employee Onboarding',   actions:['view_global'] },
+  { key:'hr_manpower_l1',  label:'Manpower Approval (L1)', actions:['view_global'] },
+  { key:'hr_manpower_l2',  label:'Manpower Approval (L2)', actions:['view_global'] },
+  { key:'hr_ai_jd',        label:'AI Job Descriptions',   actions:['view_global'] },
+  // Raising a POSH complaint, and nothing else. It grants NO access to any
+  // case — not even the one the holder just raised — so it is safe to give to
+  // whoever takes complaints at the door. Deliberately not implied by admin,
+  // HR Settings or the HR queue, which is why it needs its own box: without
+  // one, nobody could raise a case at all.
+  { key:'hr_posh_intake',  label:'POSH Complaint Intake', actions:['view_global'] },
+  // Aggregate counts only — by period, status and outcome. It opens no case
+  // and never will: case access comes from committee membership on that case
+  // and from nothing else.
+  { key:'hr_posh_reports', label:'POSH Reports',          actions:['view_global'] },
 ]
 
 const ACTION_LABELS = {
@@ -67,9 +101,7 @@ const EMPTY_FORM = {
   first_name:'', last_name:'', email:'', phone:'', password:'',
   internal_role:'', staff_role_id:'', department:'', designation:'', status:'active',
   is_moderator:false, use_firstname_as_username:false,
-  profile_group:'Standard Staff', priority:1,
-  specialty:'', bio:'', nb_type:'',
-  jabber_language:'System Default', timezone:'System Default',
+  bio:'', timezone:'System Default',
   staff_signature:'',
   member_departments:[],
   permissions:{},
@@ -82,7 +114,37 @@ const EMPTY_FORM = {
 // `designations` is gone from the signature: roles are fetched here from
 // /admin/roles now, so the parent no longer has to pass a list that came from a
 // different source than the permissions did.
-export default function StaffModal({ staff, departments, onClose, onSuccess }) {
+/**
+ * Where departments and job titles are actually created — SIR-000008.
+ *
+ * "Option to add designation, department etc." on the staff screen. Both are
+ * RECORDS maintained under HR → Organization Setup, deliberately: they used to
+ * be free text merged with a hardcoded list, which is how the same department
+ * came to exist three times with no way to rename it. Putting an "add" back here
+ * would walk straight into that again.
+ *
+ * So this is a way to GET there rather than a second place to create. It opens a
+ * new tab on purpose — this sits inside a modal, and navigating in place would
+ * throw away a half-filled staff form. StaffManagementPage refetches the lists
+ * when the window comes back, so whatever was added in the other tab is in the
+ * dropdown by the time you look.
+ *
+ * Deliberately not an inline "+": the HR create endpoints are mounted under
+ * auth:sanctum with no permission gate, so any authenticated user can already
+ * create an org record. Wiring a button to that from a second screen would
+ * spread the gap rather than close it. Raised separately.
+ */
+function OrgSetupLink() {
+  return (
+    <a href="/app/hr/organization-setup" target="_blank" rel="noopener noreferrer"
+      className="font-semibold underline decoration-dotted"
+      style={{ color: '#a78bfa' }}>
+      HR &rarr; Organization Setup
+    </a>
+  )
+}
+
+export default function StaffModal({ staff, departments = [], jobTitles = [], onClose, onSuccess }) {
   const [activeTab,     setActiveTab]     = useState('profile')
   const { user: actor } = useAuth()
 
@@ -109,15 +171,34 @@ export default function StaffModal({ staff, departments, onClose, onSuccess }) {
    */
   const [roles,         setRoles]         = useState([])
   const [permSearch,    setPermSearch]    = useState('')
-  const [expandedGroup, setExpandedGroup] = useState(null)
+  /*
+   | SIR-000009 — "Staff permission settings are not fully visible to assign
+   | permission."
+   |
+   | This was a single-open accordion starting with NOTHING open: six groups, 23
+   | modules, and opening one closed the last. Assigning a realistic set meant
+   | ticking blind, because you could never see what you had already granted.
+   |
+   | Now a Set, so groups stay open together, and every group starts open — the
+   | complaint was invisibility, so the default answers it. The modal already
+   | scrolls (overflow-y-auto, maxHeight 92vh), which is why nothing structural
+   | needed changing to let them all sit open at once.
+   */
+  const [collapsedGroups, setCollapsedGroups] = useState(() => new Set())
 
-  // Grouped modules for collapsible sections
+  // Grouped modules for collapsible sections.
+  //
+  // A key missing from every group NEVER RENDERS, whatever PERMISSION_MODULES
+  // says — this is the second half of the drift that hid hr_attendance and self.
+  // The parity test checks these keys too, not just the matrix above, because a
+  // row nobody can see is the same as a row that does not exist.
   const MODULE_GROUPS = [
     { label:'CRM Core',     keys:['contacts','deals','tasks','projects','customers','vendors'] },
     { label:'Finance',      keys:['invoices','estimates','expenses','credit_notes','delivery_notes'] },
     { label:'Operations',   keys:['appointments','tickets','inventory','goals','surveys'] },
-    { label:'HR Module',    keys:['hr_recruitment','hr_checklists','hr_settings'] },
+    { label:'HR Module',    keys:['hr_recruitment','hr_checklists','hr_settings','hr_attendance','hr_employees','hr_payroll','hr_leave','hr_exit','hr_onboarding','hr_manpower_l1','hr_manpower_l2','hr_ai_jd','hr_posh_intake','hr_posh_reports'] },
     { label:'System',       keys:['reports','email_templates','affiliates','staff_mgmt'] },
+    { label:'Personal',     keys:['self'] },
   ]
 
   useEffect(() => {
@@ -146,12 +227,7 @@ export default function StaffModal({ staff, departments, onClose, onSuccess }) {
         status:                   staff.status || 'active',
         is_moderator:             meta.is_moderator || false,
         use_firstname_as_username:meta.use_firstname_as_username || false,
-        profile_group:            meta.profile_group || 'Standard Staff',
-        priority:                 meta.priority || 1,
-        specialty:                meta.specialty || '',
         bio:                      meta.bio || '',
-        nb_type:                  meta.nb_type || '',
-        jabber_language:          meta.jabber_language || 'System Default',
         timezone:                 meta.timezone || 'System Default',
         staff_signature:          meta.staff_signature || '',
         member_departments:       meta.member_departments || [],
@@ -169,34 +245,116 @@ export default function StaffModal({ staff, departments, onClose, onSuccess }) {
   }
 
   // ── Permission helpers ──────────────────────────────────────────────────
-  const hasPermission = (module, action) =>
-    (formData.permissions[module] || []).includes(action)
+  //
+  // formData.permissions holds PERSONAL OVERRIDES ONLY, and is saved to
+  // users.meta.permissions verbatim. It is not the effective permission set.
+  //
+  // The server resolves the two with array_replace(role, own) per MODULE, and
+  // the three states that produces are the whole model:
+  //
+  //   module absent        → inherit whatever the role grants, live
+  //   module present, list → this person gets exactly this, role ignored
+  //   module present, []   → this person gets NOTHING here, role ignored
+  //
+  // The last one is why an override cannot be stored as an empty list meaning
+  // "no opinion": un-ticking every box for a module is a real decision and has
+  // to survive. Absent and empty are different answers.
 
+  /**
+   * Must an access role be chosen before this form will submit?
+   *
+   * New account: yes — deciding permissions at creation is the point.
+   * Existing account that has one: yes, so an edit cannot quietly drop it.
+   * Existing account that has none: no. See the Access Role field below.
+   */
+  const roleRequired = !staff || Boolean(staff.staff_role_id)
+
+  /**
+   * Does an employee record own this account's person details?
+   *
+   * `employee_id` is attached by StaffManagementController::withEmployeeIdentity,
+   * which is also where the displayed name, email, phone, department and
+   * designation come from. When it is present, HR is the editor for those and
+   * this form is the editor for the account: status, access role, permissions,
+   * password, mail identity.
+   */
+  const linkedEmployee = Boolean(staff?.employee_id)
+
+  /** What the currently selected role grants, or {} when no role is assigned. */
+  const inheritedPermissions = useMemo(() => {
+    const role = roles.find(r => String(r.id) === String(formData.staff_role_id))
+    return role?.permissions || {}
+  }, [roles, formData.staff_role_id])
+
+  /** Whether this module has been decided for this person specifically. */
+  const isOverridden = (module) =>
+    Object.prototype.hasOwnProperty.call(formData.permissions, module)
+
+  /** The effective grant for a module — the override if there is one, else the role's. */
+  const grantFor = (module) =>
+    (isOverridden(module) ? formData.permissions[module] : inheritedPermissions[module]) || []
+
+  const hasPermission = (module, action) => grantFor(module).includes(action)
+
+  /**
+   * Touching a checkbox on an INHERITED module converts it to an override,
+   * seeded from what it was inheriting.
+   *
+   * Seeding matters: overrides replace the role at module level, so starting
+   * from an empty list would silently strip every other capability the role
+   * gave for that module the moment somebody added one.
+   */
   const togglePermission = (module, action) => {
     setFormData(prev => {
-      const current = prev.permissions[module] || []
-      const next    = current.includes(action)
-        ? current.filter(a => a !== action)
-        : [...current, action]
+      const base = Object.prototype.hasOwnProperty.call(prev.permissions, module)
+        ? prev.permissions[module]
+        : (inheritedPermissions[module] || [])
+      const next = base.includes(action) ? base.filter(a => a !== action) : [...base, action]
       return { ...prev, permissions: { ...prev.permissions, [module]: next } }
     })
   }
 
   const toggleAllModule = (module) => {
-    const mod  = PERMISSION_MODULES.find(m => m.key === module)
+    const mod = PERMISSION_MODULES.find(m => m.key === module)
     if (!mod) return
-    const curr = formData.permissions[module] || []
+    const curr = grantFor(module)
     const all  = curr.length === mod.actions.length ? [] : [...mod.actions]
     setFormData(prev => ({...prev, permissions:{...prev.permissions, [module]:all}}))
   }
 
   /**
-   * Choosing a role assigns it and pre-fills the grid from ITS definition.
+   * Hand a module back to the role.
    *
-   * The permissions come from the role record, so what is shown here is what
-   * the server will actually enforce. The grid stays editable afterwards —
-   * anything changed becomes a personal override for that module, which is how
-   * "the Accounts role plus one extra thing" gets expressed.
+   * Deleting the key is the only way to express "no opinion" — setting it to []
+   * would deny the module outright, which is the opposite of what an admin means
+   * when they undo an override.
+   */
+  const resetModuleToRole = (module) => {
+    setFormData(prev => {
+      const next = { ...prev.permissions }
+      delete next[module]
+      return { ...prev, permissions: next }
+    })
+  }
+
+  /**
+   * Choosing a role LINKS to it. It no longer copies.
+   *
+   * It used to set `permissions` to the role's own grants, which looked like
+   * pre-filling a form and was in fact a snapshot: those grants were written to
+   * this person's meta.permissions, and from then on the role record was dead
+   * weight for them. Editing "HR Executive" afterwards changed nothing for
+   * anybody already holding it, because array_replace() hands the per-user copy
+   * the win for every module it names.
+   *
+   * Leaving `permissions` alone is the entire fix. The role is read live on
+   * every request, so a change to it reaches its holders immediately, and an
+   * override is now something an admin has to actually make rather than
+   * something that happens to them for picking a role from a dropdown.
+   *
+   * Existing overrides are deliberately NOT cleared here. Somebody may be on
+   * "Accounts plus one extra thing", and swapping their role is not a statement
+   * about the extra thing.
    */
   const applyRole = (roleId) => {
     const role = roles.find(r => String(r.id) === String(roleId))
@@ -207,18 +365,32 @@ export default function StaffModal({ staff, departments, onClose, onSuccess }) {
       // The slug is what the server writes to internal_role anyway; keeping the
       // form in step means the profile field never shows something stale.
       internal_role: role?.slug || prev.internal_role,
-      permissions:   role ? (role.permissions || {}) : {},
     }))
   }
 
+  /** Override every module to everything — an explicit decision, not inheritance. */
   const selectAllPermissions = () => {
     const all = {}
     PERMISSION_MODULES.forEach(m => { all[m.key] = [...m.actions] })
     setFormData(prev => ({...prev, permissions:all}))
   }
 
+  /**
+   * Drop every override.
+   *
+   * With a role assigned this hands the whole grid back to it, which is why the
+   * button says "Reset to role" in that case; with no role it leaves the person
+   * with nothing, which is what "Clear all" always meant.
+   */
   const clearAllPermissions = () => {
     setFormData(prev => ({...prev, permissions:{}}))
+  }
+
+  /** Override every module to DENY — the only way to say "this person, nothing". */
+  const denyAllPermissions = () => {
+    const none = {}
+    PERMISSION_MODULES.forEach(m => { none[m.key] = [] })
+    setFormData(prev => ({...prev, permissions:none}))
   }
 
   const toggleDept = (dept) => {
@@ -236,22 +408,36 @@ export default function StaffModal({ staff, departments, onClose, onSuccess }) {
     setErrors({})
     setLoading(true)
     const fullName = [formData.first_name, formData.last_name].filter(Boolean).join(' ')
+
+    // The employee record owns the person's details when there is one, and this
+    // form shows them read-only. Posting them back would be sending values this
+    // form never let anybody change — harmless today, because the server writes
+    // them through to the same owner, but it is the shape that lets a second
+    // editor grow back.
+    const identity = linkedEmployee ? {} : {
+      name: fullName,
+      email: formData.email,
+      phone: formData.phone,
+      department: formData.department,
+      designation: formData.designation,
+    }
+
     const payload  = {
-      name: fullName, email: formData.email, phone: formData.phone,
-      password: formData.password, internal_role: formData.internal_role,
+      ...identity,
+      password: formData.password,
+      // Sent only when there is one. The backend rule is `sometimes|required`,
+      // which means "if the key is here it must not be empty" — posting
+      // internal_role: '' for an account that legitimately has no access role
+      // is a 422, and it would have replaced the browser's silent refusal with a
+      // server one rather than fixing anything.
+      ...(formData.internal_role ? { internal_role: formData.internal_role } : {}),
       staff_role_id: formData.staff_role_id || null,
-      department: formData.department, designation: formData.designation,
       status: formData.status,
       administrator: formData.administrator,
       meta: {
         is_moderator:              formData.is_moderator,
         use_firstname_as_username: formData.use_firstname_as_username,
-        profile_group:             formData.profile_group,
-        priority:                  formData.priority,
-        specialty:                 formData.specialty,
         bio:                       formData.bio,
-        nb_type:                   formData.nb_type,
-        jabber_language:           formData.jabber_language,
         timezone:                  formData.timezone,
         staff_signature:           formData.staff_signature,
         member_departments:        formData.member_departments,
@@ -293,7 +479,10 @@ export default function StaffModal({ staff, departments, onClose, onSuccess }) {
       .filter(m => m && (!permSearch || m.label.toLowerCase().includes(permSearch.toLowerCase()))),
   })).filter(g => g.modules.length > 0)
 
-  const totalGranted = Object.values(formData.permissions).reduce((s,a)=>s+a.length,0)
+  // Counted on the EFFECTIVE grant, not on the overrides, or the tab would read
+  // "0 permissions" for somebody inheriting a full role and doing nothing wrong.
+  const totalGranted    = PERMISSION_MODULES.reduce((s,m)=>s+grantFor(m.key).length,0)
+  const overrideCount   = Object.keys(formData.permissions).length
 
   return (
     <div
@@ -399,83 +588,83 @@ export default function StaffModal({ staff, departments, onClose, onSuccess }) {
                 </label>
               </div>
 
-              {/* Profile Group */}
-              <div>
-                <label style={lbl}>Profile Group</label>
-                <select value={formData.profile_group} onChange={e=>set('profile_group',e.target.value)} style={inp('profile_group')}>
-                  {PROFILE_GROUPS.map(g=><option key={g}>{g}</option>)}
-                </select>
-              </div>
+              {/* Identity — SHOWN here, OWNED by the employee record.
+                  ────────────────────────────────────────────────────────────
+                  When this account belongs to an employee, these five fields are
+                  read-only and point at HR. Two editors for one fact is what
+                  produced the divergence in the first place: an employee's email
+                  was changed in HR while the account kept the old one, and both
+                  screens went on insisting they were right.
 
-              {/* First + Last Name */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label style={lbl}>First Name *</label>
-                  <input type="text" value={formData.first_name} onChange={e=>set('first_name',e.target.value)}
-                    required placeholder="Rahul" style={inp('first_name')}/>
-                  {errors.name&&<p className="text-[10px] mt-1" style={{ color:'#ef4444' }}>{errors.name[0]}</p>}
+                  This is a display change, not a permission one. Nothing is
+                  hidden — the values are the employee's, read live — and an
+                  account with no employee record keeps every field editable,
+                  because then there is no other place to edit them. */}
+              {linkedEmployee ? (
+                <div className="rounded-xl p-3" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+                  <div className="flex items-start justify-between gap-3 mb-2.5">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-wide" style={{ color:'var(--text-muted)' }}>
+                        Person details
+                      </p>
+                      <p className="text-[10px] mt-0.5" style={{ color:'var(--text-muted)' }}>
+                        Owned by the HR employee record ({staff.employee_code || `#${staff.employee_id}`}). Edit them there and they update here.
+                      </p>
+                    </div>
+                    <a href={`/app/hr/employees/${staff.employee_id}`}
+                      className="px-2.5 py-1 rounded-lg text-[10px] font-black whitespace-nowrap"
+                      style={{ background:'var(--bg-card)', color:'var(--text-h)', border:'1px solid var(--border)' }}>
+                      Edit in HR
+                    </a>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                    {[
+                      ['Name',        [formData.first_name, formData.last_name].filter(Boolean).join(' ')],
+                      ['Email',       formData.email],
+                      ['Phone',       formData.phone],
+                      ['Department',  formData.department],
+                      ['Designation', formData.designation],
+                    ].map(([label, value]) => (
+                      <div key={label}>
+                        <p style={lbl}>{label}</p>
+                        <p className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{value || '—'}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div>
-                  <label style={lbl}>Last Name</label>
-                  <input type="text" value={formData.last_name} onChange={e=>set('last_name',e.target.value)}
-                    placeholder="Sharma" style={inp('last_name')}/>
-                </div>
-              </div>
+              ) : (
+                <>
+                  {/* First + Last Name */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label style={lbl}>First Name *</label>
+                      <input type="text" value={formData.first_name} onChange={e=>set('first_name',e.target.value)}
+                        required placeholder="Rahul" style={inp('first_name')}/>
+                      {errors.name&&<p className="text-[10px] mt-1" style={{ color:'#ef4444' }}>{errors.name[0]}</p>}
+                    </div>
+                    <div>
+                      <label style={lbl}>Last Name</label>
+                      <input type="text" value={formData.last_name} onChange={e=>set('last_name',e.target.value)}
+                        placeholder="Sharma" style={inp('last_name')}/>
+                    </div>
+                  </div>
 
-              {/* Email */}
-              <div>
-                <label style={lbl}>Email Address *</label>
-                <input type="email" value={formData.email} onChange={e=>set('email',e.target.value)}
-                  required placeholder="rahul@sangoe.com" style={inp('email')}/>
-                {errors.email&&<p className="text-[10px] mt-1" style={{ color:'#ef4444' }}>{errors.email[0]}</p>}
-              </div>
+                  {/* Email */}
+                  <div>
+                    <label style={lbl}>Email Address *</label>
+                    <input type="email" value={formData.email} onChange={e=>set('email',e.target.value)}
+                      required placeholder="rahul@sangoe.com" style={inp('email')}/>
+                    {errors.email&&<p className="text-[10px] mt-1" style={{ color:'#ef4444' }}>{errors.email[0]}</p>}
+                  </div>
 
-              {/* Priority */}
-              <div>
-                <label style={lbl}>Priority (1–10)</label>
-                <div className="flex items-center gap-3">
-                  <button type="button" onClick={()=>set('priority',Math.max(1,formData.priority-1))}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-lg"
-                    style={{ background:'var(--bg-input)', border:'1px solid var(--border)', color:'var(--text-h)' }}>−</button>
-                  <input type="range" min="1" max="10" value={formData.priority}
-                    onChange={e=>set('priority',Number(e.target.value))}
-                    className="flex-1" style={{ accentColor:'#7C3AED' }}/>
-                  <button type="button" onClick={()=>set('priority',Math.min(10,formData.priority+1))}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-lg"
-                    style={{ background:'var(--bg-input)', border:'1px solid var(--border)', color:'var(--text-h)' }}>+</button>
-                  <span className="w-10 h-8 rounded-lg flex items-center justify-center text-sm font-black"
-                    style={{ background:'rgba(124,58,237,0.12)', color:'#7C3AED' }}>{formData.priority}</span>
-                </div>
-              </div>
-
-              {/* Phone */}
-              <div>
-                <label style={lbl}>Phone</label>
-                <input type="text" value={formData.phone} onChange={e=>set('phone',e.target.value)}
-                  placeholder="+91 98765 43210" style={inp('phone')}/>
-              </div>
-
-              {/* Specialty + NB Type */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label style={lbl}>Specialty</label>
-                  <input type="text" value={formData.specialty} onChange={e=>set('specialty',e.target.value)}
-                    placeholder="e.g., Recruitment" style={inp('specialty')}/>
-                </div>
-                <div>
-                  <label style={lbl}>NB Type</label>
-                  <input type="text" value={formData.nb_type} onChange={e=>set('nb_type',e.target.value)}
-                    placeholder="e.g., Full-time" style={inp('nb_type')}/>
-                </div>
-              </div>
-
-              {/* Jabber Language */}
-              <div>
-                <label style={lbl}>Jabber Language / Locale</label>
-                <select value={formData.jabber_language} onChange={e=>set('jabber_language',e.target.value)} style={inp('jabber_language')}>
-                  {['System Default','English','Hindi','Marathi','Gujarati','Tamil','Telugu','Bengali'].map(l=><option key={l}>{l}</option>)}
-                </select>
-              </div>
+                  {/* Phone */}
+                  <div>
+                    <label style={lbl}>Phone</label>
+                    <input type="text" value={formData.phone} onChange={e=>set('phone',e.target.value)}
+                      placeholder="+91 98765 43210" style={inp('phone')}/>
+                  </div>
+                </>
+              )}
 
               {/* Staff Signature */}
               <div>
@@ -496,34 +685,72 @@ export default function StaffModal({ staff, departments, onClose, onSuccess }) {
               {/* Designation + Department */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label style={lbl}>Role *</label>
+                  <label style={lbl}>Access Role {roleRequired && '*'}</label>
                   {/* One selector, not two. This used to set internal_role while a separate
                       "Role Template" dropdown on the Permissions tab set the permissions —
-                      from a different list, so the two disagreed. */}
-                  <select value={formData.staff_role_id || ''} onChange={e=>applyRole(e.target.value)} required style={inp('internal_role')}>
-                    <option value="">Select Role</option>
+                      from a different list, so the two disagreed.
+
+                      "Access Role", not "Role": HR Organization Setup has Job Roles, which
+                      are org-chart titles and grant nothing. Two screens calling two
+                      different things "Role" is why people expected a designation here.
+
+                      Required on a NEW account, and on an existing one that already has a
+                      role — you may change it, not silently drop it. Required on NEITHER
+                      when the account has none, because plenty legitimately do not: 7 of 11
+                      real accounts, Super Admin among them, whose permissions come from
+                      being an admin rather than from a template. Marking it required
+                      unconditionally made those records permanently uneditable — the form
+                      could not validate, so pressing Update sent no request at all and
+                      said nothing. */}
+                  <select value={formData.staff_role_id || ''} onChange={e=>applyRole(e.target.value)}
+                    required={roleRequired} style={inp('internal_role')}>
+                    <option value="">{roleRequired ? 'Select Role' : 'No access role'}</option>
                     {roles.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
                   </select>
                   <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
-                    Sets the permissions below. You can still change any of them for this person.
+                    {roleRequired
+                      ? 'Sets the permissions below. You can still change any of them for this person.'
+                      : 'This account has no access role — its permissions come from its account type. Choosing one sets the permissions below.'}
                   </p>
                   {errors.internal_role&&<p className="text-[10px] mt-1" style={{ color:'#ef4444' }}>{errors.internal_role[0]}</p>}
                 </div>
-                <div>
-                  <label style={lbl}>Department</label>
-                  <select value={formData.department} onChange={e=>set('department',e.target.value)} style={inp('department')}>
-                    <option value="">Select Department</option>
-                    {departments.map(d=><option key={d} value={d}>{d}</option>)}
-                  </select>
-                </div>
+                {/* Shown in the Person details block above when an employee owns
+                    them, so they are not offered twice on one form. */}
+                {!linkedEmployee && (
+                  <div>
+                    <label style={lbl}>Department</label>
+                    <select value={formData.department} onChange={e=>set('department',e.target.value)} style={inp('department')}>
+                      <option value="">Select Department</option>
+                      {departments.map(d=><option key={d.id} value={d.name}>{d.name}</option>)}
+                    </select>
+                    <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+                      Managed under <OrgSetupLink />.
+                    </p>
+                  </div>
+                )}
               </div>
 
-              {/* Job Title */}
-              <div>
-                <label style={lbl}>Job Title</label>
-                <input type="text" value={formData.designation} onChange={e=>set('designation',e.target.value)}
-                  placeholder="e.g., Senior HR Executive" style={inp('designation')}/>
-              </div>
+              {/* Job Title — a designation record, not free text. Distinct from
+                  the Access Role above: an access role decides what somebody may
+                  DO, a job title is what they ARE. Two Senior Engineers can hold
+                  different access roles. */}
+              {!linkedEmployee && (
+                <div>
+                  <label style={lbl}>Job Title</label>
+                  <select value={formData.designation} onChange={e=>set('designation',e.target.value)} style={inp('designation')}>
+                    <option value="">Select Job Title</option>
+                    {jobTitles.map(t=><option key={t.id} value={t.name}>{t.name}</option>)}
+                    {/* A title typed before designations became records would vanish
+                        from the dropdown and silently clear on the next save. */}
+                    {formData.designation && !jobTitles.some(t=>t.name===formData.designation) && (
+                      <option value={formData.designation}>{formData.designation}</option>
+                    )}
+                  </select>
+                  <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+                    Managed under <OrgSetupLink />.
+                  </p>
+                </div>
+              )}
 
               {/* Status */}
               <div>
@@ -542,6 +769,34 @@ export default function StaffModal({ staff, departments, onClose, onSuccess }) {
                     </label>
                   ))}
                 </div>
+
+                {/* Employment and access are two different questions, and this
+                    screen used to answer only one — an ACTIVE badge sat beside a
+                    login the auth gate refuses, with nothing to explain it.
+                    Account Status above is what an admin sets here; this says what
+                    it adds up to once employment is taken into account, and why
+                    when the answer is no. Derived, never a second switch. */}
+                {staff && (
+                  <div className="mt-3 rounded-xl p-2.5" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[10px] font-black uppercase tracking-wide" style={{ color:'var(--text-muted)' }}>
+                        Can sign in
+                      </span>
+                      <span className="text-xs font-bold"
+                        style={{ color: staff.access_blocked_reason ? '#f59e0b' : '#10b981' }}>
+                        {staff.access_blocked_reason ? 'No' : 'Yes'}
+                      </span>
+                    </div>
+                    {staff.access_blocked_reason && (
+                      <p className="text-[10px] mt-1" style={{ color:'#f59e0b' }}>{staff.access_blocked_reason}</p>
+                    )}
+                    {linkedEmployee && staff.employment_status && (
+                      <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+                        Employment: {staff.employment_status} — changed on the employee record, not here.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Password */}
@@ -618,6 +873,13 @@ export default function StaffModal({ staff, departments, onClose, onSuccess }) {
                   style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
                   <span className="text-xs font-semibold" style={{ color:'var(--text-muted)' }}>
                     {totalGranted} permission{totalGranted!==1?'s':''} granted
+                    {/* Said plainly, because "12 granted" is a different fact
+                        depending on where the 12 came from. */}
+                    {formData.staff_role_id
+                      ? overrideCount > 0
+                        ? ` — inherited from the role, with ${overrideCount} module${overrideCount!==1?'s':''} overridden`
+                        : ' — all inherited from the role'
+                      : ' — set directly on this person'}
                   </span>
                   <div className="flex gap-2">
                     <button type="button" onClick={selectAllPermissions}
@@ -625,20 +887,47 @@ export default function StaffModal({ staff, departments, onClose, onSuccess }) {
                       style={{ background:'rgba(16,185,129,0.1)', color:'#10b981', border:'1px solid rgba(16,185,129,0.2)' }}>
                       Select All
                     </button>
-                    <button type="button" onClick={clearAllPermissions}
-                      className="px-3 py-1.5 rounded-lg text-xs font-bold"
-                      style={{ background:'rgba(239,68,68,0.1)', color:'#f87171', border:'1px solid rgba(239,68,68,0.2)' }}>
-                      Clear All
-                    </button>
+                    {/* With a role, an empty override map means "inherit"; without
+                        one it means "nothing". Two different acts, so two buttons
+                        rather than one whose meaning silently depends on state. */}
+                    {formData.staff_role_id ? (
+                      <>
+                        <button type="button" onClick={denyAllPermissions}
+                          className="px-3 py-1.5 rounded-lg text-xs font-bold"
+                          style={{ background:'rgba(239,68,68,0.1)', color:'#f87171', border:'1px solid rgba(239,68,68,0.2)' }}>
+                          Deny All
+                        </button>
+                        <button type="button" onClick={clearAllPermissions} disabled={overrideCount===0}
+                          className="px-3 py-1.5 rounded-lg text-xs font-bold disabled:opacity-40"
+                          style={{ background:'rgba(124,58,237,0.1)', color:'#a78bfa', border:'1px solid rgba(124,58,237,0.2)' }}>
+                          Reset to Role
+                        </button>
+                      </>
+                    ) : (
+                      <button type="button" onClick={clearAllPermissions}
+                        className="px-3 py-1.5 rounded-lg text-xs font-bold"
+                        style={{ background:'rgba(239,68,68,0.1)', color:'#f87171', border:'1px solid rgba(239,68,68,0.2)' }}>
+                        Clear All
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
 
-              {/* Member Departments */}
+              {/* Member Departments — the departments this person also works
+                  across, beyond their own. Drawn from the department records so
+                  there is one list; it used to be twelve names hardcoded in this
+                  file, which is why 'Passwords' and 'Misuse' were on it. */}
               <div>
                 <label style={lbl}>Member Departments</label>
+                {departments.length === 0 && (
+                  <p className="text-[11px] mb-2" style={{ color:'var(--text-muted)' }}>
+                    No departments yet — add them under HR &rarr; Organization Setup.
+                  </p>
+                )}
                 <div className="grid grid-cols-3 gap-2">
-                  {MEMBER_DEPARTMENTS.map(dept=>{
+                  {departments.map(d=>{
+                    const dept = d.name
                     const checked = formData.member_departments.includes(dept)
                     return (
                       <label key={dept} onClick={()=>toggleDept(dept)}
@@ -658,19 +947,43 @@ export default function StaffModal({ staff, departments, onClose, onSuccess }) {
 
               {/* Permissions Table — Grouped & Collapsible */}
               <div className="space-y-3">
-                <label style={lbl}>Module Permissions</label>
+                <div className="flex items-center justify-between gap-3">
+                  <label style={lbl}>Module Permissions</label>
+                  {/* Kept for anyone who wants the grid tidy again. Hidden while
+                      searching, when open/closed is decided by the matches. */}
+                  {!permSearch && (
+                    <button type="button"
+                      onClick={()=>setCollapsedGroups(prev=>
+                        prev.size ? new Set() : new Set(filteredGroups.map(g=>g.label)))}
+                      className="text-[11px] font-bold px-2.5 py-1 rounded-lg transition-colors"
+                      style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>
+                      {collapsedGroups.size ? 'Expand all' : 'Collapse all'}
+                    </button>
+                  )}
+                </div>
 
                 {filteredGroups.map(group=>{
-                  const isOpen = expandedGroup===group.label || permSearch.length>0
+                  // Searching still forces every match open, as it did before —
+                  // a hit you cannot see is not a hit.
+                  const isOpen = permSearch.length>0 || !collapsedGroups.has(group.label)
                   // Count granted in this group
-                  const groupGranted = group.modules.reduce((s,m)=>s+(formData.permissions[m.key]||[]).length,0)
+                  // Effective, matching the header count — a group of fully
+                  // inherited modules is not an empty group.
+                  const groupGranted = group.modules.reduce((s,m)=>s+grantFor(m.key).length,0)
 
                   return (
                     <div key={group.label} className="rounded-xl overflow-hidden"
                       style={{ border:'1px solid var(--border)' }}>
                       {/* Group Header */}
                       <button type="button"
-                        onClick={()=>setExpandedGroup(isOpen&&!permSearch?null:group.label)}
+                        onClick={()=>setCollapsedGroups(prev=>{
+                          // A no-op while searching: the group is open because it
+                          // matched, and collapsing it would hide the result.
+                          if (permSearch) return prev
+                          const next = new Set(prev)
+                          next.has(group.label) ? next.delete(group.label) : next.add(group.label)
+                          return next
+                        })}
                         className="w-full flex items-center justify-between px-4 py-3 text-left transition-all"
                         style={{ background:'rgba(124,58,237,0.04)', borderBottom: isOpen?'1px solid var(--border)':'none' }}>
                         <div className="flex items-center gap-2">
@@ -702,8 +1015,8 @@ export default function StaffModal({ staff, departments, onClose, onSuccess }) {
                                 style={{ borderBottom:i<group.modules.length-1?'1px solid var(--border)':'none' }}>
                                 <div className="grid px-4 py-3 items-start gap-4"
                                   style={{ gridTemplateColumns:'1fr 1fr' }}>
-                                  {/* Module Name + select all */}
-                                  <div className="flex items-center gap-2 pt-0.5">
+                                  {/* Module Name + select all + where this grant came from */}
+                                  <div className="flex items-center gap-2 pt-0.5 flex-wrap">
                                     <div onClick={()=>toggleAllModule(mod.key)}
                                       className="w-4 h-4 rounded flex items-center justify-center cursor-pointer flex-shrink-0 transition-all"
                                       style={{
@@ -714,6 +1027,31 @@ export default function StaffModal({ staff, departments, onClose, onSuccess }) {
                                       {someChecked&&!allChecked&&<div className="w-1.5 h-1.5 rounded-sm bg-purple-400"/>}
                                     </div>
                                     <span className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{mod.label}</span>
+
+                                    {/* Only meaningful when a role is assigned — with
+                                        no role every grant is personal by definition,
+                                        and a badge on all 29 rows says nothing. */}
+                                    {formData.staff_role_id && (
+                                      isOverridden(mod.key) ? (
+                                        <span className="flex items-center gap-1">
+                                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide"
+                                            style={{ background:'rgba(251,191,36,0.15)', color:'#fbbf24' }}>
+                                            {grantFor(mod.key).length===0 ? 'Denied' : 'Custom'}
+                                          </span>
+                                          <button type="button" title="Hand this module back to the role"
+                                            onClick={()=>resetModuleToRole(mod.key)}
+                                            className="p-0.5 rounded hover:opacity-100 opacity-60"
+                                            style={{ color:'var(--text-muted)' }}>
+                                            <RotateCcw size={11}/>
+                                          </button>
+                                        </span>
+                                      ) : (
+                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide"
+                                          style={{ background:'rgba(124,58,237,0.12)', color:'#a78bfa' }}>
+                                          Role
+                                        </span>
+                                      )
+                                    )}
                                   </div>
 
                                   {/* Permission checkboxes */}

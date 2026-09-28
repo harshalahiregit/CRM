@@ -65,17 +65,24 @@ const SUPPORTING = [
 // renders "coming soon" is worse, because it looks finished from the outside.
 // Flip the flag in the same commit that adds the page.
 const TRACK = [
-  { label: 'Attendance',      path: '/app/hr/track/attendance',     icon: Clock,         ready: true  },
-  { label: 'Corrections',     path: '/app/hr/track/corrections',    icon: PenLine,       ready: true  },
-  { label: 'Leave',           path: '/app/hr/track/leave',          icon: CalendarOff,   ready: true  },
-  { label: 'Reimbursements',  path: '/app/hr/track/reimbursements', icon: Receipt,       ready: true  },
-  { label: 'Advances',        path: '/app/hr/track/advances',       icon: Wallet,        ready: true  },
-  { label: 'Salaries',        path: '/app/hr/track/payroll',        icon: IndianRupee,   ready: true  },
-  { label: 'Staff Directory', path: '/app/hr/track/staff',          icon: Contact,       ready: true  },
-  { label: 'Demo Requests',   path: '/app/hr/track/demo-requests',  icon: MessageSquare, ready: true  },
-  { label: 'Reports',         path: '/app/hr/track/reports',        icon: BarChart3,     ready: true  },
-  { label: 'Holidays',        path: '/app/hr/track/holidays',       icon: PartyPopper,   ready: true  },
-  { label: 'Settings',        path: '/app/hr/track/settings',       icon: Settings,      ready: true  },
+  // All native now. These pointed at /app/hr/track/* — screens that read and
+  // wrote to track.sangoe.in — while the CRM's own equivalents sat built and
+  // unreachable, which is why the menu still showed SangoeTrack's data.
+  //
+  // 'Staff Directory' is gone rather than repointed: it listed the people who
+  // can log into the phone app, and that is the app-access toggle on Employees
+  // above. Two near-identical lists in one sidebar is how somebody edits the
+  // wrong one.
+  { label: 'Attendance',      path: '/app/hr/attendance',           icon: Clock,         ready: true  },
+  { label: 'Corrections',     path: '/app/hr/corrections',          icon: PenLine,       ready: true  },
+  { label: 'Leave',           path: '/app/hr/leave-management',     icon: CalendarOff,   ready: true  },
+  { label: 'Reimbursements',  path: '/app/hr/expense-claims',       icon: Receipt,       ready: true  },
+  { label: 'Advances',        path: '/app/hr/advances',             icon: Wallet,        ready: true  },
+  { label: 'Salaries',        path: '/app/hr/payroll',              icon: IndianRupee,   ready: true  },
+  { label: 'Demo Requests',   path: '/app/hr/demo-requests',        icon: MessageSquare, ready: true  },
+  { label: 'Reports',         path: '/app/hr/attendance-reports',   icon: BarChart3,     ready: true  },
+  { label: 'Holidays',        path: '/app/hr/holidays',             icon: PartyPopper,   ready: true  },
+  { label: 'Settings',        path: '/app/hr/settings',             icon: Settings,      ready: true  },
 ]
 
 const PHASE_BANDS = [

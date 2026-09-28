@@ -26,12 +26,16 @@ class OfferService
 {
     public const DOC_DISK = 'hr_documents';
 
+    /** The fallback when offer_validity_days is unset or unusable. */
+    private const DEFAULT_VALIDITY_DAYS = 7;
+
     public function __construct(
         private CandidateService $candidateService,
         private OnboardingService $onboardingService,
         private EmployeeOnboardingService $employeeOnboardingService,
         private NotificationService $notifications,
         private SalaryStructureService $salaryStructures,
+        private OfferPortalToken $portalToken,
     ) {
     }
 
@@ -101,11 +105,20 @@ class OfferService
         // Salary Engine: derive CTC + freeze the breakup when a structure is linked.
         $data = $this->applySalaryStructure($data, $tenantId);
 
+        // NO PORTAL CREDENTIAL IS MINTED HERE, and that is a change from what
+        // this line used to do. It minted one at creation, which made sense
+        // when the plaintext could be read back later to build the link. It
+        // cannot now: the raw value exists for the length of this method and
+        // then is gone forever, so a token issued here could never reach
+        // anybody and would be dead state that still had to be defended.
+        //
+        // An offer gets its credential when it is first DELIVERED — see send()
+        // — which also means an offer that is drafted and never sent never has
+        // one at all.
         $offer = HrOffer::create([
             ...$data,
             'tenant_id'    => $tenantId,
             'status'       => 'Generated',
-            'access_token' => Str::random(48),
             'generated_at' => now(),
         ]);
 
@@ -137,13 +150,26 @@ class OfferService
             throw new BusinessException('This offer must be approved before it can be sent.', 422);
         }
 
-        if (empty($offer->access_token)) {
-            $offer->update(['access_token' => Str::random(48)]);
-        }
+        // EVERY SEND RE-KEYS THE OFFER. This used to mint a token only when the
+        // column was empty, so a re-send mailed the same link out again.
+        //
+        // That is no longer possible and the reason is worth stating rather
+        // than working around: only the hash is stored, so the previous link
+        // cannot be reconstructed to be mailed a second time. Re-sending
+        // therefore issues a new credential and the old one stops resolving in
+        // the same write.
+        //
+        // The candidate always holds the newest email, so the flow they see is
+        // unchanged. What changes is that an OLDER offer email stops working —
+        // which is the correct reading of "resend the offer link" and, until
+        // now, was something HR had no way to do at all.
+        $raw = $this->portalToken->issue($offer);
 
         $offer->update(['status' => 'Sent', 'sent_at' => now(), 'expired_at' => null]);
 
-        $link = $this->portalLink($offer);
+        // Built in memory from the raw token and used immediately below. It is
+        // never returned to the caller and never written down.
+        $link = $this->portalLink($raw);
         $candidate = $offer->candidate;
 
         // Offer Sent → keep the candidate on the Offer stage (idempotent; mirrors create()).
@@ -153,7 +179,7 @@ class OfferService
 
         if ($candidate && $candidate->email) {
             try {
-                Mail::to($candidate->email)->send(new \App\Mail\OfferLetterMail($offer, $link));
+                app(\App\Services\Mail\TenantMailer::class)->send($candidate->tenant_id, $candidate->email, new \App\Mail\OfferLetterMail($offer, $link));
             } catch (\Throwable $e) {
                 Log::channel('hr')->error('Offer email failed', ['offer_id' => $offer->id, 'error' => $e->getMessage()]);
             }
@@ -170,9 +196,21 @@ class OfferService
 
     /* ─────────────── Candidate offer portal (public, token-scoped) ─────────── */
 
+    /**
+     * The offer behind a portal link, or one refusal.
+     *
+     * THE ONLY WAY A RAW TOKEN BECOMES AN OFFER. Every public route goes
+     * through here and the resolver behind it; there is no second lookup and
+     * no `where('access_token', ...)` left anywhere in the application.
+     *
+     * The message is unchanged and is still the same for every cause —
+     * malformed, unknown, revoked, or superseded by a re-key — because saying
+     * which one it was would confirm that a token exists.
+     */
     public function byToken(string $token): HrOffer
     {
-        $offer = HrOffer::where('access_token', $token)->with('candidate')->first();
+        $offer = $this->portalToken->resolve($token);
+
         if (! $offer) {
             throw new BusinessException('Offer link is invalid or has expired.', 404);
         }
@@ -313,13 +351,29 @@ class OfferService
         }
     }
 
-    /** HR regenerates an expired/declined offer with a fresh validity + token. */
+    /**
+     * HR regenerates an expired/declined offer with a fresh validity + link.
+     *
+     * The old credential is KILLED HERE rather than replaced here. Everything
+     * else this method does is untouched — status back to Generated, validity
+     * moved on, every lifecycle timestamp and acceptance fingerprint cleared,
+     * the letter re-rendered — because those are the business meaning of
+     * regenerating and none of them is affected by how a token is stored.
+     *
+     * What changes is only the credential half: the previous link stops
+     * resolving immediately, and the replacement is minted by the next send()
+     * that actually delivers it. Minting one here instead would produce a raw
+     * token with nowhere to go, since regenerate emails nothing.
+     */
     public function regenerate(HrOffer $offer, ?string $validityDate): HrOffer
     {
+        if ($this->portalToken->isLive($offer)) {
+            $this->portalToken->revoke($offer, null, 'Offer regenerated');
+        }
+
         $offer->update([
             'status'        => 'Generated',
-            'access_token'  => Str::random(48),
-            'validity_date' => $validityDate ?: optional($offer->validity_date)->addDays(7) ?? now()->addDays(7),
+            'validity_date' => $validityDate ?: optional($offer->validity_date)->addDays($this->validityDays((int) $offer->tenant_id)) ?? now()->addDays($this->validityDays((int) $offer->tenant_id)),
             'generated_at'  => now(),
             'sent_at'       => null, 'viewed_at' => null, 'accepted_at' => null,
             'declined_at'   => null, 'expired_at' => null,
@@ -448,7 +502,20 @@ class OfferService
             'version'                   => $offer->version + 1,
             'sent_at'                   => null, 'viewed_at' => null, 'declined_at' => null, 'expired_at' => null,
             'submitted_for_approval_at' => null, 'approved_by' => null, 'approved_at' => null,
-            'access_token'              => $offer->access_token ?: Str::random(48),
+            // REVISING DOES NOT RE-KEY, exactly as before. The line that used to
+            // sit here read `$offer->access_token ?: Str::random(48)` — keep the
+            // existing token, mint one only if there wasn't one.
+            //
+            // Keeping it is still technically possible under hashing, because
+            // nothing needs to reconstruct the raw value: the candidate's link
+            // hashes to the same row it always did. So the credential is simply
+            // left alone, and the `?:` half is dropped because minting a token
+            // nobody can be given is dead state.
+            //
+            // It is also the right business answer. Revising drops the offer
+            // back to Draft, so the candidate cannot act on it until HR sends
+            // again — and that send re-keys. The old link is therefore already
+            // superseded by the time the revised terms reach anybody.
         ]));
 
         // 3. Re-render the letter for the new version (the old PDF is preserved on the revision).
@@ -473,7 +540,7 @@ class OfferService
             throw new BusinessException('Only a sent or expired offer can be extended.', 422);
         }
 
-        $newValidity = $validityDate ?: now()->addDays(7)->toDateString();
+        $newValidity = $validityDate ?: now()->addDays($this->validityDays((int) $offer->tenant_id))->toDateString();
         $wasExpired  = $offer->status === 'Expired';
         $offer->update([
             'validity_date' => $newValidity,
@@ -483,7 +550,25 @@ class OfferService
         ]);
 
         optional($offer->candidate)->recordAudit('Offer Extended', null, null, ['valid_until' => $newValidity]);
-        $this->whatsApp($offer, '⏳ Your offer validity has been extended. View & respond: '.$this->portalLink($offer));
+
+        // A SECOND DELIVERY, so it re-keys like the first. This message carries
+        // a working portal link, and the link it used to carry was rebuilt from
+        // the stored plaintext. That is gone, so the choice is between sending
+        // a fresh credential or dropping the link out of the message.
+        //
+        // Dropping it would be the regression: the candidate gets told their
+        // offer was extended and given no way to open it. So extend() issues
+        // its own token and sends that, on the same rule send() follows —
+        // anything that hands a candidate a link hands them a new one.
+        //
+        // GUARDED, because unlike send() this is the ONLY delivery here. If the
+        // candidate has no WhatsApp the message never goes out, and re-keying
+        // anyway would kill the link they are holding and replace it with one
+        // nobody was told about.
+        if ($this->canWhatsApp($offer)) {
+            $raw = $this->portalToken->issue($offer);
+            $this->whatsApp($offer, '⏳ Your offer validity has been extended. View & respond: '.$this->portalLink($raw));
+        }
         Log::channel('hr')->info('Offer extended', ['offer_id' => $offer->id, 'valid_until' => $newValidity]);
 
         return $offer->fresh('candidate');
@@ -742,15 +827,66 @@ class OfferService
         ];
     }
 
-    private function portalLink(HrOffer $offer): string
+    /**
+     * The candidate-facing URL for a raw token.
+     *
+     * TAKES THE RAW TOKEN, NOT THE OFFER, and that signature is the guarantee.
+     * It used to read $offer->access_token, which meant any caller holding an
+     * offer could rebuild the secret link. There is nothing to read now, so a
+     * link can only be built by whoever has just been handed the raw value by
+     * OfferPortalToken::issue() — which is send() and the explicit HR reissue
+     * endpoint, and nothing else.
+     *
+     * Public because the reissue endpoint needs it to show HR the link once.
+     */
+    /**
+     * How many days an offer stays open when nobody names a date.
+     *
+     * Seven was written into three separate expressions — the offer raised
+     * automatically from onboarding, regenerating one, and extending one — so a
+     * company that gives candidates a fortnight had to retype the date every
+     * time or accept a week.
+     *
+     * A DEFAULT, NOT A RULE. An explicit validity_date always wins, and an
+     * offer deliberately created without one still has none: a blank validity
+     * is a supported state and this does not quietly fill it in. Only the three
+     * places that already invented a date consult it.
+     *
+     * Guarded rather than trusted: a zero or negative setting would mint an
+     * offer that expired before it was sent, so an unusable value falls back to
+     * the seven days that were there before.
+     */
+    private function validityDays(int $tenantId): int
     {
-        return rtrim(config('hr_publishing.offer_portal_url'), '/').'/'.$offer->access_token;
+        $days = app(\App\Services\Settings\SettingsService::class)
+            ->get($tenantId, \App\Support\Hr\HrSetting::GROUP, 'offer_validity_days');
+
+        return (is_numeric($days) && (int) $days >= 1) ? (int) $days : self::DEFAULT_VALIDITY_DAYS;
+    }
+
+    public function portalLink(string $rawToken): string
+    {
+        return rtrim(config('hr_publishing.offer_portal_url'), '/').'/'.$rawToken;
+    }
+
+    /**
+     * Whether a WhatsApp to this candidate would actually go out.
+     *
+     * Split out of whatsApp() so extend() can ask BEFORE it issues a token —
+     * see the note there. The two must agree, which is why there is one
+     * condition rather than two copies of it.
+     */
+    private function canWhatsApp(HrOffer $offer): bool
+    {
+        $candidate = $offer->candidate;
+
+        return $candidate && $candidate->canReceiveWhatsApp();
     }
 
     private function whatsApp(HrOffer $offer, string $message): void
     {
         $candidate = $offer->candidate;
-        if (! $candidate || ! $candidate->canReceiveWhatsApp()) {
+        if (! $this->canWhatsApp($offer)) {
             return;
         }
         try {

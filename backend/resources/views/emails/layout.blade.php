@@ -81,6 +81,23 @@
 <body>
     <div class="container">
         <div class="header">
+            {{-- The mark is embedded rather than linked, so no client has to
+                 fetch it (which it would either block, or load and report the
+                 open back to us). But embedded has to mean cid:, NOT a data:
+                 URI -- Gmail, Outlook and Apple Mail all strip data: image
+                 sources, which is why this header was arriving as a broken
+                 image icon on every mail the system sends.
+
+                 $message exists only when a Mailable is rendering this. A few
+                 paths render the layout as plain HTML with nothing to attach
+                 to; there the wordmark below carries the branding on its own,
+                 because no logo reads better than a broken one. --}}
+            @php $brandLogo = isset($message) ? \App\Support\Brand::logoFile() : null; @endphp
+            @if($brandLogo)
+                <img src="{{ $message->embedData($brandLogo['data'], $brandLogo['name'], $brandLogo['mime']) }}"
+                     alt="{{ config('app.name') }}" width="150"
+                     style="height:42px;width:auto;display:block;margin:0 auto 8px;border:0;outline:none;text-decoration:none;">
+            @endif
             <h1>{{ config('app.name') }}</h1>
         </div>
         <div class="content">

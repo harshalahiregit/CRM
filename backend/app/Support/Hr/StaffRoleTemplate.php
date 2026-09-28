@@ -32,7 +32,8 @@ class StaffRoleTemplate
                 'projects' => ['view_own'],
                 'expenses' => ['view_own', 'create'],
                 'tickets' => ['view_own', 'create'],
-                'appointments' => ['view'],
+                'appointments' => ['view_global'],
+                'self' => ['view_own', 'create', 'edit'],
             ],
         ],
         'team_lead' => [
@@ -43,9 +44,10 @@ class StaffRoleTemplate
                 'tasks' => ['view_own', 'view_global', 'create', 'edit'],
                 'projects' => ['view_own', 'view_global', 'create', 'edit'],
                 'reports' => ['view_global'],
-                'appointments' => ['view', 'create', 'edit'],
+                'appointments' => ['view_global', 'create', 'edit'],
                 'tickets' => ['view_own', 'view_global', 'create', 'edit'],
                 'goals' => ['view_global', 'create'],
+                'self' => ['view_own', 'create', 'edit'],
             ],
         ],
         'senior_executive' => [
@@ -61,8 +63,11 @@ class StaffRoleTemplate
                 'credit_notes' => ['view_own', 'view_global'],
                 'customers' => ['view_own', 'view_global', 'create', 'edit'],
                 'reports' => ['view_global'],
-                'appointments' => ['view', 'create', 'edit'],
+                'appointments' => ['view_global', 'create', 'edit'],
                 'tickets' => ['view_own', 'view_global', 'create', 'edit'],
+                'self' => ['view_own', 'create', 'edit'],
+                // canApproveL2's hardcoded list, said in permissions.
+                'hr_manpower_l2' => ['view_global'],
             ],
         ],
         'project_manager' => [
@@ -76,10 +81,13 @@ class StaffRoleTemplate
                 'estimates' => ['view_own', 'view_global', 'create', 'edit'],
                 'expenses' => ['view_own', 'view_global', 'create', 'edit'],
                 'reports' => ['view_global'],
-                'appointments' => ['view', 'create', 'edit', 'approve'],
+                'appointments' => ['view_global', 'create', 'edit'],
                 'tickets' => ['view_own', 'view_global', 'create', 'edit'],
                 'goals' => ['view_global', 'create', 'edit'],
                 'surveys' => ['view_global'],
+                'self' => ['view_own', 'create', 'edit'],
+                // canApproveL2's hardcoded list, said in permissions.
+                'hr_manpower_l2' => ['view_global'],
             ],
         ],
         'department_head' => [
@@ -97,11 +105,17 @@ class StaffRoleTemplate
                 'vendors' => ['view_own', 'view_global', 'create', 'edit'],
                 'reports' => ['view_global'],
                 'email_templates' => ['view_global'],
-                'appointments' => ['view', 'create', 'edit', 'delete', 'approve', 'view_reports'],
+                'appointments' => ['view_global', 'create', 'edit'],
                 'tickets' => ['view_own', 'view_global', 'create', 'edit', 'delete'],
                 'goals' => ['view_global', 'create', 'edit'],
                 'surveys' => ['view_global', 'create'],
                 'staff_mgmt' => ['view_global'],
+                'self' => ['view_own', 'create', 'edit'],
+                // The authority this role already had through canApproveL1's
+                // hardcoded slug list, now said in permissions so a custom role
+                // can hold it too. The slug clause remains, so nothing changes
+                // for anyone already holding this role.
+                'hr_manpower_l1' => ['view_global'],
             ],
         ],
         'hr_recruiter' => [
@@ -112,9 +126,16 @@ class StaffRoleTemplate
                 'hr_recruitment' => ['view_own', 'view_global', 'create', 'edit', 'delete'],
                 'hr_checklists' => ['view_own', 'view_global', 'create', 'edit'],
                 'reports' => ['view_global'],
-                'appointments' => ['view', 'create', 'edit'],
+                'appointments' => ['view_global', 'create', 'edit'],
                 'surveys' => ['view_global', 'create'],
                 'goals' => ['view_global'],
+                'self' => ['view_own', 'create', 'edit'],
+                'hr_attendance' => ['view_own', 'view_global', 'create', 'edit', 'delete'],
+                // The two authorities this role already had through
+                // canManageOnboarding's and canGenerateAiJd's hardcoded slug
+                // lists, now said in permissions.
+                'hr_onboarding' => ['view_global'],
+                'hr_ai_jd' => ['view_global'],
             ],
         ],
         'hr_executive' => [
@@ -127,9 +148,15 @@ class StaffRoleTemplate
                 'hr_settings' => ['view_global', 'create', 'edit'],
                 'reports' => ['view_global'],
                 'staff_mgmt' => ['view_global'],
-                'appointments' => ['view', 'create', 'edit'],
+                'appointments' => ['view_global', 'create', 'edit'],
                 'surveys' => ['view_global', 'create'],
                 'goals' => ['view_global', 'create'],
+                'self' => ['view_own', 'create', 'edit'],
+                'hr_attendance' => ['view_own', 'view_global', 'create', 'edit', 'delete'],
+                // canManageOnboarding's hardcoded list, said in permissions.
+                // NOT hr_ai_jd: canGenerateAiJd admits hr_recruiter and
+                // hr_manager only, and an HR Executive was never on that list.
+                'hr_onboarding' => ['view_global'],
             ],
         ],
         'hiring_manager' => [
@@ -140,7 +167,10 @@ class StaffRoleTemplate
                 'hr_recruitment' => ['view_own', 'view_global', 'create', 'edit'],
                 'hr_checklists' => ['view_own', 'view_global'],
                 'reports' => ['view_global'],
-                'appointments' => ['view', 'create', 'edit', 'approve'],
+                'appointments' => ['view_global', 'create', 'edit'],
+                'self' => ['view_own', 'create', 'edit'],
+                // canApproveL1's hardcoded list, said in permissions.
+                'hr_manpower_l1' => ['view_global'],
             ],
         ],
         // These two existed nowhere, which is why the advance ladder had no
@@ -156,8 +186,110 @@ class StaffRoleTemplate
                 'customers' => ['view_own', 'view_global'],
                 'vendors' => ['view_own', 'view_global'],
                 'reports' => ['view_global'],
+                'self' => ['view_own', 'create', 'edit'],
             ],
         ],
+        /*
+         | VOCABULARY ONLY — a legal name for users.internal_role, granting
+         | nothing.
+         |
+         | routes/sangoetrack.php gates 32 routes on role:admin,hr,manager, and
+         | EnsureUserHasRole matches those names against users.internal_role as
+         | plain strings. Neither was a staff_roles slug, so the only place they
+         | were written down was access_roles — a table with no rows and no
+         | reader, which is how a gate came to reference a vocabulary nothing
+         | defined.
+         |
+         | Their permission sets are EMPTY and must stay empty. They exist so the
+         | legal vocabulary is explicit and an admin can assign them deliberately;
+         | they are not a way to grant HR access, and `hr` is deliberately NOT a
+         | coarse synonym for hr_executive here. Anyone who needs HR authority
+         | gets a role that carries it.
+         */
+        'hr' => [
+            'label'              => 'HR (SangoeTrack)',
+            'permissions'        => [],
+            'is_vocabulary_only' => true,
+        ],
+        'manager' => [
+            'label'              => 'Manager (SangoeTrack)',
+            'permissions'        => [],
+            'is_vocabulary_only' => true,
+        ],
+
+        /*
+         | The two standard roles the product named and the templates did not
+         | carry.
+         |
+         | HR Executive and HR Recruiter both existed, but neither is the person
+         | who ADMINISTERS HR — who configures the module, edits anybody's
+         | employee record and owns leave and exit. And nothing anywhere
+         | described somebody who runs payroll without also running recruitment:
+         | 'accounts' is the finance role, scoped to invoices and expenses, and
+         | it grants no HR module at all.
+         |
+         | Both are built from the existing permission vocabulary. No new
+         | capability, module or scope is introduced for them.
+         */
+        'hr_admin' => [
+            'label'       => 'HR Admin',
+            'permissions' => [
+                // The whole HR module, including the settings that configure it.
+                'hr_employees' => ['view_own', 'view_global', 'create', 'edit', 'delete'],
+                'hr_attendance' => ['view_own', 'view_global', 'create', 'edit', 'delete'],
+                'hr_leave' => ['view_own', 'view_global', 'create', 'edit', 'delete'],
+                'hr_exit' => ['view_own', 'view_global', 'create', 'edit', 'delete'],
+                'hr_recruitment' => ['view_own', 'view_global', 'create', 'edit', 'delete'],
+                'hr_checklists' => ['view_own', 'view_global', 'create', 'edit', 'delete'],
+                'hr_settings' => ['view_global', 'create', 'edit'],
+                'staff_mgmt' => ['view_global'],
+                'reports' => ['view_global'],
+                'appointments' => ['view_global', 'create', 'edit'],
+                'surveys' => ['view_global', 'create'],
+                'goals' => ['view_global', 'create'],
+                'self' => ['view_own', 'create', 'edit'],
+
+                // DELIBERATELY ABSENT: hr_payroll. Administering HR and running
+                // payroll are different jobs, and a workspace that wants one
+                // person doing both gives them both roles rather than having
+                // that decided here. Also absent: hr_posh_intake and
+                // hr_posh_reports, which are granted deliberately and never by
+                // inheritance — the person who takes a POSH complaint is
+                // deliberately not entitled to read the file afterwards.
+                //
+                // And absent for a reason found rather than chosen:
+                // hr_onboarding. HrCapabilityGrantTest pins that capability to
+                // exactly the roles canManageOnboarding()'s old hardcoded list
+                // named — hr_executive and hr_recruiter — and adding a third
+                // holder broke it. Widening who may run onboarding is a product
+                // decision, not something a new role template should make on
+                // the way past, so the pinned set is left exactly as it was.
+            ],
+        ],
+        'payroll_admin' => [
+            'label'       => 'Payroll Admin',
+            'permissions' => [
+                // Payroll itself, and the reads it cannot run without.
+                'hr_payroll' => ['view_own', 'view_global', 'create', 'edit', 'delete'],
+                // Payroll is calculated FROM attendance and leave, so both are
+                // readable — and neither is writable, because correcting an
+                // attendance record is the HR queue's decision and not
+                // something the person running the numbers should do to their
+                // own inputs.
+                'hr_attendance' => ['view_own', 'view_global'],
+                'hr_leave' => ['view_own', 'view_global'],
+                // Read-only on employees: payroll needs the establishment, not
+                // the ability to edit somebody's record.
+                'hr_employees' => ['view_own', 'view_global'],
+                'reports' => ['view_global'],
+                'self' => ['view_own', 'create', 'edit'],
+
+                // DELIBERATELY ABSENT: hr_settings. Payroll reads the statutory
+                // rules and HR settings; it does not get to change the rules it
+                // is measured by.
+            ],
+        ],
+
         'director' => [
             'label'       => 'Director',
             'permissions' => [
@@ -171,6 +303,7 @@ class StaffRoleTemplate
                 'vendors' => ['view_own', 'view_global'],
                 'reports' => ['view_global'],
                 'staff_mgmt' => ['view_global'],
+                'self' => ['view_own', 'create', 'edit'],
             ],
         ],
     ];

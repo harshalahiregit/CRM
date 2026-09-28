@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
-import { CalendarDays, CheckCircle2, MapPin, Video } from 'lucide-react'
+import { CalendarDays, CheckCircle2, MapPin } from 'lucide-react'
 import { purchasePortalApi } from '@/services/purchasePortalApi'
 import { KIT3D_STYLE, InfoBox } from '@/components/ui/kit3d'
+import MeetingJoinGate from '@/components/portal/MeetingJoinGate'
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : '—')
 
@@ -48,9 +49,12 @@ export default function PurchasePortalKickoff() {
             ))}
           </div>
 
-          {meeting.meeting_link && (
-            <a href={meeting.meeting_link} target="_blank" rel="noopener noreferrer" style={{ ...linkBtn, marginBottom: 10 }}><Video size={15} /> Join Online Meeting</a>
-          )}
+          {/* The link is not in this payload until attendance is marked — see
+              MeetingAttendanceGate. Same component the governance list and the
+              dashboard use, so the three cannot drift apart again. */}
+          <div style={{ marginBottom: 10 }}>
+            <MeetingJoinGate meeting={meeting} onMark={purchasePortalApi.governance.markAttendance} />
+          </div>
 
           {meeting.mom_available
             ? <InfoBox>Minutes of Meeting (MOM) are available. Open the Governance → Meetings tab to read the minutes and download any documents.</InfoBox>
@@ -62,4 +66,3 @@ export default function PurchasePortalKickoff() {
 }
 
 const primaryBtn = { display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 18px', borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 800, color: '#fff', background: 'linear-gradient(145deg,#a78bfa,#7C3AED)', boxShadow: '0 8px 20px -6px rgba(124,58,237,.6)' }
-const linkBtn = { display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 18px', borderRadius: 10, textDecoration: 'none', fontSize: 13, fontWeight: 700, color: 'var(--text-h)', background: 'var(--bg-input)', border: '1px solid var(--border)' }

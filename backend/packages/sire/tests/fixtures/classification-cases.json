@@ -1,0 +1,120 @@
+{
+  "_comment": [
+    "EXECUTABLE SPECIFICATION for SIRE issue classification.",
+    "Run by tests/classification.test.mjs and",
+    "backend/tests/Unit/Sire/SireClassifierTest.php.",
+    "",
+    "The cases that matter most are the ones where the right answer is silence.",
+    "A recommender that always answers is a recommender that is often wrong, and",
+    "the cost of a confident wrong severity is someone believing it."
+  ],
+  "cases": [
+    {
+      "name": "unanimous neighbours give a clear recommendation",
+      "neighbours": [
+        { "weight": 0.9, "category": "bug", "severity": "major", "priority": "p2", "module": "sales" },
+        { "weight": 0.8, "category": "bug", "severity": "major", "priority": "p2", "module": "sales" },
+        { "weight": 0.7, "category": "bug", "severity": "major", "priority": "p2", "module": "sales" },
+        { "weight": 0.6, "category": "bug", "severity": "major", "priority": "p2", "module": "sales" },
+        { "weight": 0.5, "category": "bug", "severity": "major", "priority": "p2", "module": "sales" }
+      ],
+      "expect": {
+        "category": { "value": "bug", "confidence": 1, "abstained": false },
+        "severity": { "value": "major", "confidence": 1 },
+        "priority": { "value": "p2", "confidence": 1 }
+      }
+    },
+    {
+      "name": "two agreeing neighbours do NOT report full confidence",
+      "neighbours": [
+        { "weight": 1, "category": "bug", "severity": "minor", "priority": "p3" },
+        { "weight": 1, "category": "bug", "severity": "minor", "priority": "p3" }
+      ],
+      "expect": {
+        "category": { "value": "bug", "confidence": 0.4, "abstained": false }
+      }
+    },
+    {
+      "name": "a single neighbour is not evidence and the field abstains",
+      "neighbours": [{ "weight": 1, "category": "bug", "severity": "critical", "priority": "p1" }],
+      "expect": {
+        "category": { "value": null, "abstained": true },
+        "severity": { "value": null, "abstained": true }
+      }
+    },
+    {
+      "name": "no neighbours at all abstains on everything",
+      "neighbours": [],
+      "expect": {
+        "category": { "value": null, "abstained": true },
+        "severity": { "value": null, "abstained": true },
+        "priority": { "value": null, "abstained": true },
+        "overall_confidence": null
+      }
+    },
+    {
+      "name": "a split vote still picks a winner when the margin is clear",
+      "neighbours": [
+        { "weight": 1, "category": "bug", "severity": "major", "priority": "p2" },
+        { "weight": 1, "category": "bug", "severity": "major", "priority": "p2" },
+        { "weight": 1, "category": "bug", "severity": "minor", "priority": "p3" },
+        { "weight": 1, "category": "change", "severity": "minor", "priority": "p3" },
+        { "weight": 1, "category": "bug", "severity": "major", "priority": "p2" }
+      ],
+      "expect": {
+        "category": { "value": "bug", "confidence": 0.8 },
+        "severity": { "value": "major", "confidence": 0.6 }
+      }
+    },
+    {
+      "name": "heavier neighbours count for more than numerous weak ones",
+      "neighbours": [
+        { "weight": 0.95, "category": "security" },
+        { "weight": 0.90, "category": "security" },
+        { "weight": 0.36, "category": "bug" },
+        { "weight": 0.36, "category": "bug" },
+        { "weight": 0.36, "category": "bug" }
+      ],
+      "expect": { "category": { "value": "security" } }
+    },
+    {
+      "name": "an even split across four values withholds the recommendation",
+      "neighbours": [
+        { "weight": 1, "severity": "critical" },
+        { "weight": 1, "severity": "major" },
+        { "weight": 1, "severity": "minor" },
+        { "weight": 1, "severity": "trivial" }
+      ],
+      "expect": { "severity": { "value": null, "abstained": true, "confidence": 0.2 } }
+    },
+    {
+      "name": "neighbours missing a field are excluded from that field only",
+      "neighbours": [
+        { "weight": 1, "category": "bug", "severity": null },
+        { "weight": 1, "category": "bug", "severity": null },
+        { "weight": 1, "category": "bug", "severity": "major" }
+      ],
+      "expect": {
+        "category": { "value": "bug", "abstained": false },
+        "severity": { "value": null, "abstained": true }
+      }
+    },
+    {
+      "name": "a captured module outranks any vote — it is an observation, not a guess",
+      "captured_module": "sales",
+      "neighbours": [
+        { "weight": 1, "module": "hr" }, { "weight": 1, "module": "hr" },
+        { "weight": 1, "module": "hr" }, { "weight": 1, "module": "hr" },
+        { "weight": 1, "module": "hr" }
+      ],
+      "expect": { "module": { "value": "sales", "confidence": 0.95, "source": "captured" } }
+    },
+    {
+      "name": "with no captured module the vote decides",
+      "neighbours": [
+        { "weight": 1, "module": "hr" }, { "weight": 1, "module": "hr" }, { "weight": 1, "module": "hr" }
+      ],
+      "expect": { "module": { "value": "hr", "source": "neighbours" } }
+    }
+  ]
+}

@@ -10,6 +10,11 @@ use App\Http\Controllers\Api\Hr\ResumeController;
 use App\Http\Controllers\Api\Hr\InterviewController;
 use App\Http\Controllers\Api\Hr\InterviewQuestionController;
 use App\Http\Controllers\Api\Hr\OfferController;
+use App\Http\Controllers\Api\Hr\OnboardingChecklistController;
+use App\Http\Controllers\Api\Hr\PoshCaseController;
+use App\Http\Controllers\Api\Hr\PoshCaseWorkController;
+use App\Http\Controllers\Api\Hr\PoshReportController;
+use App\Http\Controllers\Api\Hr\PoshCommitteeController;
 use App\Http\Controllers\Api\Hr\OnboardingController;
 use App\Http\Controllers\Api\Hr\EmployeeAssetController;
 use App\Http\Controllers\Api\Hr\EmployeeController;
@@ -18,6 +23,8 @@ use App\Http\Controllers\Api\Hr\MyAttendanceController;
 use App\Http\Controllers\Api\Hr\AdvanceController;
 use App\Http\Controllers\Api\Hr\AttendanceReportController;
 use App\Http\Controllers\Api\Hr\MyAdvanceController;
+use App\Http\Controllers\Api\Hr\ApprovalWorkflowController;
+use App\Http\Controllers\Api\Hr\ClearanceDepartmentController;
 use App\Http\Controllers\Api\Hr\AttendanceCorrectionController;
 use App\Http\Controllers\Api\Hr\MyAttendanceCorrectionController;
 use App\Http\Controllers\Api\Hr\DemoRequestController;
@@ -43,16 +50,23 @@ use App\Http\Controllers\Api\Hr\OrgChartController;
 use App\Http\Controllers\Api\Hr\EmployeeScoreController;
 use App\Http\Controllers\Api\Hr\ExitQuestionnaireController;
 use App\Http\Controllers\Api\Hr\VariableEarningController;
+use App\Http\Controllers\Api\Hr\DirectoryController;
+use App\Http\Controllers\Api\Hr\LetterController;
 use App\Http\Controllers\Api\Hr\PayrollRunController;
+use App\Http\Controllers\Api\Hr\PayrollWorkflowController;
 use App\Http\Controllers\Api\Hr\PayslipController;
 use App\Http\Controllers\Api\Hr\PayrollReportController;
+use App\Http\Controllers\Api\Hr\StatutoryRegisterController;
 use Illuminate\Support\Facades\Route;
 
 // ── HR Module Routes (Sanctum) ──────────────────────────────────────────
 Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
 
-    // Dashboard
-    Route::get('/dashboard', [HRDashboardController::class, 'index']);
+    // Dashboard — company-wide headcount, attrition and attendance figures.
+    // Sat in this auth-only group with no check inside the controller either, so
+    // any signed-in account could read them.
+    Route::get('/dashboard', [HRDashboardController::class, 'index'])
+        ->middleware('permission:hr_attendance,view_global');
 
     // Manpower Requests — L1/L2 Approval Workflow → HR Queue → JD → Job Posting
     Route::get('/manpower-requests',                            [ManpowerRequestController::class, 'index']);
@@ -86,13 +100,16 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::patch('/manpower-requests/{manpowerRequest}/assign-manager', [ManpowerRequestController::class, 'assignManager']);
 
     // Job Postings — Recruitment Workspace
-    Route::get('/jobs',                            [JobPostingController::class, 'index']);
-    Route::get('/jobs/stats',                      [JobPostingController::class, 'stats']);
+    Route::get('/jobs',                            [JobPostingController::class, 'index'])
+        ->middleware('permission:hr_recruitment,view_global');
+    Route::get('/jobs/stats',                      [JobPostingController::class, 'stats'])
+        ->middleware('permission:hr_recruitment,view_global');
     Route::get('/jobs/channels',                   [JobPostingController::class, 'channels']);
     Route::post('/jobs/bulk',                      [JobPostingController::class, 'bulk']);
     Route::post('/jobs/analyze-jd',                [JobPostingController::class, 'analyzeJd']);
     Route::post('/jobs',                           [JobPostingController::class, 'store']);
-    Route::get('/jobs/{jobPosting}',               [JobPostingController::class, 'show']);
+    Route::get('/jobs/{jobPosting}',               [JobPostingController::class, 'show'])
+        ->middleware('permission:hr_recruitment,view_global');
     Route::put('/jobs/{jobPosting}',               [JobPostingController::class, 'update']);
     Route::patch('/jobs/{jobPosting}/status',      [JobPostingController::class, 'updateStatus']);
     Route::patch('/jobs/{jobPosting}/external-id', [JobPostingController::class, 'updateExternalId']);
@@ -111,18 +128,40 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     // #13 — reconcile the ledger with what the channel currently reports.
     Route::post('/jobs/{jobPosting}/sync/{channel}',        [JobPostingController::class, 'syncChannel']);
 
-    // Candidates
-    Route::get('/candidates',                           [CandidateController::class, 'index']);
-    Route::get('/candidates/recruiters',                [CandidateController::class, 'recruiters']);
+    /*
+     | Candidate reads are recruitment data, and were readable by anyone signed in.
+     |
+     | The sidebar hides Recruitment, Candidates, Interviews, Offers, Employees,
+     | Payroll and Staff Management from a staff account with no permission role —
+     | verified in the browser. Typing /app/hr/candidates into the address bar
+     | still listed every candidate with name, email, phone, expected CTC and the
+     | stage they had reached. The UI stated the intent; the API did not enforce it.
+     |
+     | These reads now carry the same gate attendance already uses
+     | (`permission:hr_attendance,view_global` on its own routes). Administrators
+     | bypass it, and a recruiter holding hr_recruitment/view_global passes — the
+     | permission grid is how that access is meant to be granted.
+     |
+     | Writes are unaffected: CandidateController already checks canManageHrQueue()
+     | on every mutation, and keeps doing so.
+     */
+    Route::get('/candidates',                           [CandidateController::class, 'index'])
+        ->middleware('permission:hr_recruitment,view_global');
+    Route::get('/candidates/recruiters',                [CandidateController::class, 'recruiters'])
+        ->middleware('permission:hr_recruitment,view_global');
     Route::post('/candidates',                          [CandidateController::class, 'store']);
     Route::post('/candidates/linkedin-parse',           [CandidateController::class, 'linkedinParse']);
-    Route::get('/candidates/{candidate}/score',         [CandidateController::class, 'score']);
-    Route::get('/candidates/{candidate}/journey',       [CandidateController::class, 'journey']);
-    Route::get('/candidates/{candidate}/communications', [CandidateController::class, 'communications']);
+    Route::get('/candidates/{candidate}/score',         [CandidateController::class, 'score'])
+        ->middleware('permission:hr_recruitment,view_global');
+    Route::get('/candidates/{candidate}/journey',       [CandidateController::class, 'journey'])
+        ->middleware('permission:hr_recruitment,view_global');
+    Route::get('/candidates/{candidate}/communications', [CandidateController::class, 'communications'])
+        ->middleware('permission:hr_recruitment,view_global');
     Route::get('/candidates/{candidate}/communication-preview', [CandidateController::class, 'communicationPreview']);
     Route::post('/candidates/{candidate}/communicate',  [CandidateController::class, 'communicate']);
     Route::post('/candidates/{candidate}/reminder',     [CandidateController::class, 'scheduleReminder']);
-    Route::get('/candidates/{candidate}',               [CandidateController::class, 'show']);
+    Route::get('/candidates/{candidate}',               [CandidateController::class, 'show'])
+        ->middleware('permission:hr_recruitment,view_global');
     Route::put('/candidates/{candidate}',               [CandidateController::class, 'update']);
     Route::patch('/candidates/{candidate}/stage',       [CandidateController::class, 'updateStage']);
     Route::patch('/candidates/{candidate}/decision',    [CandidateController::class, 'updateDecision']);
@@ -130,25 +169,31 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::delete('/candidates/{candidate}',            [CandidateController::class, 'destroy']);
     // Resume upload / download / delete
     Route::post('/candidates/{candidate}/resume',       [ResumeController::class, 'upload']);
-    Route::get('/candidates/{candidate}/resume',        [ResumeController::class, 'download']);
+    Route::get('/candidates/{candidate}/resume',        [ResumeController::class, 'download'])
+        ->middleware('permission:hr_recruitment,view_global');
     Route::delete('/candidates/{candidate}/resume',     [ResumeController::class, 'delete']);
     // #15 — re-read an already-uploaded resume for Dept / Designation / Present Co.
     // / Reference. Runs automatically on upload; this is the button for the
     // resumes that were already on disk before that existed.
     Route::post('/candidates/{candidate}/resume/extract', [ResumeController::class, 'extract']);
     // Collaborative notes thread
-    Route::get('/candidates/{candidate}/notes',                 [CandidateNoteController::class, 'index']);
+    Route::get('/candidates/{candidate}/notes',                 [CandidateNoteController::class, 'index'])
+        ->middleware('permission:hr_recruitment,view_global');
     Route::post('/candidates/{candidate}/notes',                [CandidateNoteController::class, 'store']);
     Route::delete('/candidates/{candidate}/notes/{note}',       [CandidateNoteController::class, 'destroy']);
     // Documents (typed, beyond the primary resume)
-    Route::get('/candidates/{candidate}/documents',             [CandidateDocumentController::class, 'index']);
+    Route::get('/candidates/{candidate}/documents',             [CandidateDocumentController::class, 'index'])
+        ->middleware('permission:hr_recruitment,view_global');
     Route::post('/candidates/{candidate}/documents',            [CandidateDocumentController::class, 'store']);
-    Route::get('/candidates/{candidate}/documents/{document}',  [CandidateDocumentController::class, 'download']);
+    Route::get('/candidates/{candidate}/documents/{document}',  [CandidateDocumentController::class, 'download'])
+        ->middleware('permission:hr_recruitment,view_global');
     Route::delete('/candidates/{candidate}/documents/{document}',[CandidateDocumentController::class, 'destroy']);
 
     // Interviews
-    Route::get('/interviews',                               [InterviewController::class, 'index']);
-    Route::get('/interviews/stats',                         [InterviewController::class, 'stats']);
+    Route::get('/interviews',                               [InterviewController::class, 'index'])
+        ->middleware('permission:hr_recruitment,view_global');
+    Route::get('/interviews/stats',                         [InterviewController::class, 'stats'])
+        ->middleware('permission:hr_recruitment,view_global');
     Route::get('/interview-panel/users',                    [InterviewController::class, 'panelUsers']);
     Route::get('/interview-panel/organizations',            [InterviewController::class, 'panelOrganizations']);
     // #10 — interview question bank, sets, AI generation and round integration.
@@ -183,7 +228,9 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::delete('/interviews/{interviewRound}',           [InterviewController::class, 'destroy']);
 
     // Offers
-    Route::get('/offers',                           [OfferController::class, 'index']);
+    // Offers carry compensation. Same gate as the candidate reads above.
+    Route::get('/offers',                           [OfferController::class, 'index'])
+        ->middleware('permission:hr_recruitment,view_global');
     Route::get('/offers/joining-buckets',           [OfferController::class, 'joiningBuckets']);
     Route::post('/offers',                          [OfferController::class, 'store']);
     Route::get('/offers/{offer}',                   [OfferController::class, 'show']);
@@ -198,6 +245,12 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::patch('/offers/{offer}/revise',          [OfferController::class, 'revise']);
     Route::patch('/offers/{offer}/extend',          [OfferController::class, 'extend']);
     Route::get('/offers/{offer}/revisions',         [OfferController::class, 'revisions']);
+    // Authenticated, tenant-scoped offer letter for HR — replaces staff reading
+    // the candidate's public /api/offer/{token}/letter route.
+    Route::get('/offers/{offer}/letter',            [OfferController::class, 'letter']);
+    // Controlled reissue / revocation of the candidate's portal credential.
+    Route::post('/offers/{offer}/portal-link',      [OfferController::class, 'issuePortalLink']);
+    Route::delete('/offers/{offer}/portal-link',    [OfferController::class, 'revokePortalLink']);
     Route::delete('/offers/{offer}',                [OfferController::class, 'destroy']);
 
     // Onboarding
@@ -208,6 +261,12 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/onboarding/{onboarding}/documents/{document}', [OnboardingController::class, 'downloadDocument']);
     Route::patch('/onboarding/{onboarding}/documents/{document}/verify', [OnboardingController::class, 'verifyDocument']);
     Route::patch('/onboarding/{onboarding}/step',       [OnboardingController::class, 'toggleStep']);
+    // The candidate's portal credential. Issuing returns the raw link ONCE and
+    // revokes whatever was live before it; there is deliberately no GET, because
+    // the raw value is not stored and cannot be handed back a second time.
+    Route::post('/onboarding/{onboarding}/portal-link',   [OnboardingController::class, 'issuePortalLink']);
+    Route::delete('/onboarding/{onboarding}/portal-link', [OnboardingController::class, 'revokePortalLink']);
+
     Route::delete('/onboarding/{onboarding}',           [OnboardingController::class, 'destroy']);
 
     // #37 — the employee's Projects / Tasks / Tickets / KB, with jump links.
@@ -249,6 +308,45 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/employees',                [EmployeeController::class, 'index']);
     Route::post('/employees',               [EmployeeController::class, 'store']);
     Route::get('/employees/{employee}/profile', [EmployeeController::class, 'profile']);
+    // The extended record. Declared beside /profile so both sit under the same
+    // tenant assertion the controller makes.
+    Route::get('/employees/{employee}/detail',  [EmployeeController::class, 'detail']);
+    Route::put('/employees/{employee}/detail',  [EmployeeController::class, 'updateDetail']);
+
+    /*
+    | Entry-to-exit letters.
+    |
+    | The offer, appointment and confirmation ends of the list were built; the
+    | exit end was not, so the one document a departing person actually needs —
+    | the thing their next employer asks for — was typed by hand.
+    |
+    | Each refuses to issue early, because of what it ASSERTS: a relieving
+    | letter states that dues are settled, and issuing one before clearance
+    | means certifying that in writing to a third party who will rely on it.
+    */
+    /*
+    | Where the staff and employee directories disagree.
+    |
+    | The instruction was one directory, not two. They are not merged, because
+    | they are not duplicates: `users` is a login account and `hr_employees` is
+    | an employment record, neither contains the other, and Tasks, Helpdesk and
+    | ticket threads all resolve their assignable-people lists from the staff
+    | side. The complaint was that somebody is added in one place and missing
+    | from the other — which is a reconciliation problem, solved by showing the
+    | gap rather than by a migration across four other modules.
+    */
+    Route::get('/directory/reconciliation', [DirectoryController::class, 'reconciliation']);
+    Route::post('/employees/{employee}/link-login', [DirectoryController::class, 'link'])->whereNumber('employee');
+    Route::post('/employees/{employee}/provision-login', [DirectoryController::class, 'provision'])->whereNumber('employee');
+    Route::post('/employees/{employee}/unlink-login', [DirectoryController::class, 'unlink'])->whereNumber('employee');
+    Route::post('/employees/{employee}/resync-login', [DirectoryController::class, 'resync'])->whereNumber('employee');
+    Route::post('/directory/dismiss', [DirectoryController::class, 'dismiss']);
+    Route::post('/directory/restore', [DirectoryController::class, 'restore']);
+
+    Route::get('/employees/{employee}/letters', [LetterController::class, 'available'])->whereNumber('employee');
+    Route::get('/employees/{employee}/letters/{type}', [LetterController::class, 'download'])
+        ->whereNumber('employee')
+        ->whereIn('type', \App\Services\Hr\LetterService::TYPES);
 
     // Exit Interview (SPK-1) — internal form, reuses the employee record for prefill.
     Route::get('/exit-interviews',                        [ExitInterviewController::class, 'index']);
@@ -272,12 +370,23 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::post('/variable-earnings/{id}/approve',  [VariableEarningController::class, 'approve'])->whereNumber('id');
     Route::post('/variable-earnings/{id}/reject',   [VariableEarningController::class, 'reject'])->whereNumber('id');
     Route::delete('/variable-earnings/{id}',        [VariableEarningController::class, 'destroy'])->whereNumber('id');
-    Route::get('/employees/{employee}/attendance', [AttendanceController::class, 'employeeAttendance']);
+        // One employee's attendance calendar. An unprivileged account could read any
+    // colleague's dates, Late flags and check-in times by id; their OWN attendance
+    // has its own /hr/me/attendance routes and is unaffected.
+Route::get('/employees/{employee}/attendance', [AttendanceController::class, 'employeeAttendance'])
+        ->middleware('permission:hr_attendance,view_global');
 
     // Assets — read-only views onto the Inventory register. HRMS owns no asset data.
-    Route::get('/employees/{employee}/assets/summary', [EmployeeAssetController::class, 'summary']);
-    Route::get('/employees/{employee}/assets/{asset}', [EmployeeAssetController::class, 'show'])->where('asset', '[0-9]+');
-    Route::get('/employees/{employee}/assets',         [EmployeeAssetController::class, 'index']);
+    //
+    // Gated: this is the serial number of the laptop and phone issued to a named
+    // colleague. The controller makes no check of its own, so until now any
+    // signed-in account could walk the employee ids and read the lot.
+    Route::get('/employees/{employee}/assets/summary', [EmployeeAssetController::class, 'summary'])
+        ->middleware('permission:hr_attendance,view_global');
+    Route::get('/employees/{employee}/assets/{asset}', [EmployeeAssetController::class, 'show'])
+        ->where('asset', '[0-9]+')->middleware('permission:hr_attendance,view_global');
+    Route::get('/employees/{employee}/assets',         [EmployeeAssetController::class, 'index'])
+        ->middleware('permission:hr_attendance,view_global');
 
     Route::get('/employees/{employee}',     [EmployeeController::class, 'show']);
     Route::put('/employees/{employee}',     [EmployeeController::class, 'update']);
@@ -310,6 +419,13 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::put('/org-roles/{id}',       [OrganizationController::class, 'updateRole']);
     Route::delete('/org-roles/{id}',    [OrganizationController::class, 'destroyRole']);
 
+    // Employment Types — Permanent, Contract, Intern, or whatever this company
+    // calls them. An org master like the four above, managed on the same screen.
+    Route::get('/employment-types',         [OrganizationController::class, 'employmentTypes']);
+    Route::post('/employment-types',        [OrganizationController::class, 'storeEmploymentType']);
+    Route::put('/employment-types/{id}',    [OrganizationController::class, 'updateEmploymentType']);
+    Route::delete('/employment-types/{id}', [OrganizationController::class, 'destroyEmploymentType']);
+
     // ── Payroll → Salary Components master (Phase 1). No hard delete — status toggle only.
     //    The /payroll/* prefix reserves the namespace for future phases (structures, etc.).
     Route::get('/payroll/salary-components',              [SalaryComponentController::class, 'index']);
@@ -336,18 +452,52 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::patch('/payroll/employees/{employeeId}/salary/{id}/status',   [EmployeeSalaryController::class, 'updateStatus'])->whereNumber('id');
 
     // Payroll → Payroll Processing (Phase 4). Monthly runs + frozen snapshots.
-    Route::get('/payroll/runs',                 [PayrollRunController::class, 'index']);
+        // Payroll runs are money. Gated like the rest of the module.
+Route::get('/payroll/runs',                 [PayrollRunController::class, 'index'])
+        ->middleware('permission:hr_payroll,view_global');
     Route::post('/payroll/runs',                [PayrollRunController::class, 'store']);
-    Route::get('/payroll/runs/{id}',            [PayrollRunController::class, 'show']);
+    Route::get('/payroll/runs/{id}',            [PayrollRunController::class, 'show'])
+        ->middleware('permission:hr_payroll,view_global');
     Route::post('/payroll/runs/{id}/process',   [PayrollRunController::class, 'process']);
-    Route::get('/payroll/runs/{id}/records',    [PayrollRunController::class, 'records']);
+    Route::get('/payroll/runs/{id}/records',    [PayrollRunController::class, 'records'])
+        ->middleware('permission:hr_payroll,view_global');
     Route::get('/payroll/records/{id}/lines',   [PayrollRunController::class, 'recordLines'])->whereNumber('id');
     Route::patch('/payroll/runs/{id}/status',   [PayrollRunController::class, 'updateStatus']);
 
+    /*
+    | The stepped run: Pre-check → Inputs → Calculate → Approve → Disburse.
+    |
+    | These sit BESIDE /process rather than replacing it. `process` still does
+    | the arithmetic and is still what a plain one-click month calls; these add
+    | the question of who chose the employees and who agreed to the amounts.
+    | A run that never touches them behaves exactly as it did before.
+    */
+    Route::get('/payroll/runs/{id}/precheck',      [PayrollWorkflowController::class, 'precheck'])->whereNumber('id');
+    Route::post('/payroll/runs/{id}/employees',    [PayrollWorkflowController::class, 'selectEmployees'])->whereNumber('id');
+    Route::post('/payroll/runs/{id}/confirm-inputs', [PayrollWorkflowController::class, 'confirmInputs'])->whereNumber('id');
+
+    Route::get('/payroll/runs/{id}/adjustments',   [PayrollWorkflowController::class, 'adjustments'])->whereNumber('id');
+    Route::post('/payroll/records/{id}/adjustments', [PayrollWorkflowController::class, 'addAdjustment'])->whereNumber('id');
+    Route::delete('/payroll/adjustments/{id}',     [PayrollWorkflowController::class, 'removeAdjustment'])->whereNumber('id');
+
+    Route::post('/payroll/runs/{id}/approve',      [PayrollWorkflowController::class, 'approve'])->whereNumber('id');
+    Route::post('/payroll/runs/{id}/reject',       [PayrollWorkflowController::class, 'reject'])->whereNumber('id');
+
+    Route::post('/payroll/records/{id}/payment',   [PayrollWorkflowController::class, 'markPayment'])->whereNumber('id');
+    Route::post('/payroll/runs/{id}/payments',     [PayrollWorkflowController::class, 'markAllPayments'])->whereNumber('id');
+    Route::post('/payroll/runs/{id}/release-payslips', [PayrollWorkflowController::class, 'releasePayslips'])->whereNumber('id');
+    Route::post('/payroll/records/{id}/payslip-visibility', [PayrollWorkflowController::class, 'setPayslipVisibility'])->whereNumber('id');
+
     // Payroll → Payslips (Phase 5). Generated from a completed run; PDF via dompdf.
-    Route::get('/payroll/payslips',                    [PayslipController::class, 'index']);
-    Route::get('/payroll/payslips/{id}',               [PayslipController::class, 'show']);
-    Route::get('/payroll/payslips/{id}/download',       [PayslipController::class, 'download']);
+        // Payslips and their PDF. The JSON and the download are gated together —
+    // protecting the list and leaving /download open is the classic version of
+    // this mistake.
+Route::get('/payroll/payslips',                    [PayslipController::class, 'index'])
+        ->middleware('permission:hr_payroll,view_global');
+    Route::get('/payroll/payslips/{id}',               [PayslipController::class, 'show'])
+        ->middleware('permission:hr_payroll,view_global');
+    Route::get('/payroll/payslips/{id}/download',       [PayslipController::class, 'download'])
+        ->middleware('permission:hr_payroll,view_global');
     Route::post('/payroll/runs/{id}/generate-payslips', [PayslipController::class, 'generate']);
     Route::get('/employees/{employeeId}/payslips',      [PayslipController::class, 'employeePayslips']);
 
@@ -448,6 +598,19 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     Route::get('/payroll/reports/departments', [PayrollReportController::class, 'departments']);
     Route::get('/payroll/reports/components',  [PayrollReportController::class, 'components']);
     Route::get('/payroll/reports/trends',      [PayrollReportController::class, 'trends']);
+
+    // Statutory registers — the documents a month is FILED with, as opposed to
+    // the reports above, which are for reading. Keyed by payroll run because a
+    // register must reflect what was actually paid, not a fresh calculation.
+    Route::get('/payroll/runs/{run}/registers/pf',   [StatutoryRegisterController::class, 'pf'])->whereNumber('run');
+    Route::get('/payroll/runs/{run}/registers/esic', [StatutoryRegisterController::class, 'esic'])->whereNumber('run');
+    Route::get('/payroll/runs/{run}/registers/pt',   [StatutoryRegisterController::class, 'pt'])->whereNumber('run');
+    Route::get('/payroll/runs/{run}/registers/lwf',  [StatutoryRegisterController::class, 'lwf'])->whereNumber('run');
+
+    // The salary transfer advice. Separate from the registers because it moves
+    // money rather than reporting on it.
+    Route::get('/payroll/runs/{run}/bank-advice',     [StatutoryRegisterController::class, 'bankAdvice'])->whereNumber('run');
+    Route::get('/payroll/runs/{run}/bank-advice.csv', [StatutoryRegisterController::class, 'bankAdviceCsv'])->whereNumber('run');
     Route::get('/payroll/reports/export',      [PayrollReportController::class, 'export']);
 
     // Enterprise Salary Reports (Phase 2) — read-only over structures/snapshots/revisions.
@@ -459,7 +622,9 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
     // Attendance
     Route::get('/attendance/stats',          [AttendanceController::class, 'stats']);
     Route::get('/attendance/export',         [AttendanceController::class, 'export']);
-    Route::get('/attendance',                [AttendanceController::class, 'index']);
+        // The whole workforce's attendance register.
+Route::get('/attendance',                [AttendanceController::class, 'index'])
+        ->middleware('permission:hr_attendance,view_global');
     Route::post('/attendance',               [AttendanceController::class, 'storeManual']);
     // ── Self service ────────────────────────────────────────────────────
     // Clocking YOURSELF in, from the CRM dashboard or the HR module. No
@@ -543,7 +708,17 @@ Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
 // Gated on the GROUP rather than inside each method: a method that forgets the
 // check is how a list-everything endpoint ends up open, which is exactly what
 // happened in the first draft of ReimbursementController.
-Route::middleware(['auth:sanctum', 'hr.manage'])->prefix('hr')->group(function () {
+//
+// `permission:hr_attendance,view_global` REPLACES the old `hr.manage` gate. That
+// gate was a hardcoded list of role strings, so changing who may run HR meant
+// editing PHP and deploying. This reads the permission grid an admin ticks in
+// Staff Management, which is the whole point of the grid existing.
+//
+// Nobody loses access in the swap: `permissions:sync` grants hr_attendance to
+// exactly the roles canManageHrQueue() admitted (hr_executive, hr_recruiter),
+// and admins bypass the grid entirely. `permissions:audit` proves it per user
+// by running both rules side by side.
+Route::middleware(['auth:sanctum', 'permission:hr_attendance,view_global'])->prefix('hr')->group(function () {
     // ── Demo requests ───────────────────────────────────────────────────
     // Inbound enquiries. Unclaimed ones (tenant_id null) are visible to every
     // workspace until somebody starts working on one.
@@ -556,6 +731,53 @@ Route::middleware(['auth:sanctum', 'hr.manage'])->prefix('hr')->group(function (
     // The controls that used to be constants — the advance thresholds above all.
     Route::get('/settings',  [HrSettingsController::class, 'index']);
     Route::put('/settings',  [HrSettingsController::class, 'update']);
+
+    // ── POSH committees ─────────────────────────────────────────────────
+    // Committee composition, its own role vocabulary and its members. Gated
+    // on hr_settings inside the controller. CONFIGURATION ONLY — no case data
+    // is reachable here, and case access will never come through this gate.
+    Route::get('/posh-committees',                       [PoshCommitteeController::class, 'index']);
+    Route::post('/posh-committees',                      [PoshCommitteeController::class, 'store']);
+    Route::put('/posh-committees/{id}',                  [PoshCommitteeController::class, 'update'])->whereNumber('id');
+    Route::patch('/posh-committees/{id}/status',         [PoshCommitteeController::class, 'setStatus'])->whereNumber('id');
+    Route::delete('/posh-committees/{id}',               [PoshCommitteeController::class, 'destroy'])->whereNumber('id');
+    Route::post('/posh-committees/{id}/roles',           [PoshCommitteeController::class, 'storeRole'])->whereNumber('id');
+    Route::put('/posh-committees/{id}/roles/{roleId}',   [PoshCommitteeController::class, 'updateRole'])->whereNumber('id')->whereNumber('roleId');
+    Route::delete('/posh-committees/{id}/roles/{roleId}',[PoshCommitteeController::class, 'destroyRole'])->whereNumber('id')->whereNumber('roleId');
+    Route::put('/posh-committees/{id}/members',          [PoshCommitteeController::class, 'setMembers'])->whereNumber('id');
+
+    // ── Exit clearance departments ──────────────────────────────────────
+    // Who may sign off each department. Gated on hr_settings inside the
+    // controller: actioning clearances must not confer the right to decide
+    // who actions them.
+    Route::get('/clearance-departments',                 [ClearanceDepartmentController::class, 'index']);
+    Route::post('/clearance-departments',                [ClearanceDepartmentController::class, 'store']);
+    Route::post('/clearance-departments/reorder',        [ClearanceDepartmentController::class, 'reorder']);
+    Route::put('/clearance-departments/{id}',            [ClearanceDepartmentController::class, 'update'])->whereNumber('id');
+    Route::patch('/clearance-departments/{id}/status',   [ClearanceDepartmentController::class, 'setStatus'])->whereNumber('id');
+    Route::put('/clearance-departments/{id}/authorities',[ClearanceDepartmentController::class, 'authorities'])->whereNumber('id');
+    Route::delete('/clearance-departments/{id}',         [ClearanceDepartmentController::class, 'destroy'])->whereNumber('id');
+
+    // ── Onboarding checklist master ─────────────────────────────────────
+    // The 27 tasks that used to be a PHP constant. Gated on hr_settings
+    // inside the controller, like the approval workflows below: configuring
+    // what everybody must do is not the same authority as doing it.
+    Route::get('/onboarding-checklist',                  [OnboardingChecklistController::class, 'index']);
+    Route::post('/onboarding-checklist',                 [OnboardingChecklistController::class, 'store']);
+    Route::post('/onboarding-checklist/reorder',         [OnboardingChecklistController::class, 'reorder']);
+    Route::post('/onboarding-checklist/adopt-defaults',  [OnboardingChecklistController::class, 'adoptDefaults']);
+    Route::put('/onboarding-checklist/{id}',             [OnboardingChecklistController::class, 'update'])->whereNumber('id');
+    Route::patch('/onboarding-checklist/{id}/status',    [OnboardingChecklistController::class, 'setStatus'])->whereNumber('id');
+    Route::delete('/onboarding-checklist/{id}',          [OnboardingChecklistController::class, 'destroy'])->whereNumber('id');
+
+    // ── Approval workflows ──────────────────────────────────────────────
+    // Who approves what, in what order. Gated on hr_settings inside the
+    // controller, not on the HR-queue predicate: an approver must not be able
+    // to edit the ladder they stand on.
+    Route::get('/approval-workflows',                     [ApprovalWorkflowController::class, 'index']);
+    Route::get('/approval-workflows/{process}',           [ApprovalWorkflowController::class, 'show']);
+    Route::put('/approval-workflows/{process}',           [ApprovalWorkflowController::class, 'save']);
+    Route::patch('/approval-workflows/{process}/status',  [ApprovalWorkflowController::class, 'setStatus']);
 
     // ── Attendance corrections ──────────────────────────────────────────
     Route::get('/corrections',                 [AttendanceCorrectionController::class, 'index']);
@@ -604,4 +826,96 @@ Route::middleware(['auth:sanctum', 'hr.advances'])->prefix('hr')->group(function
     Route::post('/advances/{id}/disburse',                 [AdvanceController::class, 'disburse']);
     Route::post('/advances/{id}/note',                     [AdvanceController::class, 'note']);
     Route::get('/advances/{id}/attachments/{attachmentId}', [AdvanceController::class, 'attachment']);
+});
+
+// A punch selfie. Signed, not authenticated: the attendance register renders
+// these in an <img>, which sends no Authorization header. See the controller.
+Route::get('/hr/attendance/{attendance}/selfie/{which}',
+    [\App\Http\Controllers\Api\Hr\AttendanceSelfieController::class, 'show'])
+    ->whereIn('which', ['in', 'out'])
+    ->name('hr.attendance.selfie')
+    ->middleware('signed');
+
+/*
+|--------------------------------------------------------------------------
+| POSH cases — members only
+|--------------------------------------------------------------------------
+|
+| Their own group, with NO permission middleware, and that is deliberate.
+|
+| Authorisation is PoshAccessResolver and nothing else: not a permission, not
+| a data scope, not the HR queue, not committee membership, not being an
+| administrator. A harassment complaint may name any of those people, so none
+| of them is a way in.
+|
+| A permission gate here would also answer the wrong question in the wrong
+| way. It refuses with 403 before the resolver runs, and a 403 says "this
+| exists and you may not see it" — which on this data is itself a disclosure.
+| Every refusal has to be the same 404.
+|
+| There is deliberately NO index route. A list is an enumeration surface.
+*/
+Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
+    Route::get('/posh-cases/{id}',         [PoshCaseController::class, 'show'])->whereNumber('id');
+    Route::get('/posh-cases/{id}/members', [PoshCaseController::class, 'members'])->whereNumber('id');
+
+    // Intake. The ONE route here that is not gated on case membership,
+    // because there is no case yet to be a member of. hr_posh_intake, which
+    // is not admin, not hr_settings and not the HR queue — and which grants
+    // no access to what it creates.
+    Route::post('/posh-cases', [PoshCaseWorkController::class, 'store']);
+
+    // Everything below resolves the case through PoshAccessResolver first.
+    Route::patch('/posh-cases/{id}/acknowledge', [PoshCaseWorkController::class, 'acknowledge'])->whereNumber('id');
+    Route::patch('/posh-cases/{id}/withdraw',    [PoshCaseWorkController::class, 'withdraw'])->whereNumber('id');
+    Route::patch('/posh-cases/{id}/close',       [PoshCaseWorkController::class, 'close'])->whereNumber('id');
+
+    Route::get('/posh-cases/{id}/thread',   [PoshCaseWorkController::class, 'thread'])->whereNumber('id');
+    Route::post('/posh-cases/{id}/messages', [PoshCaseWorkController::class, 'message'])->whereNumber('id');
+    Route::post('/posh-cases/{id}/notes',    [PoshCaseWorkController::class, 'note'])->whereNumber('id');
+
+    Route::get('/posh-cases/{id}/attachments',      [PoshCaseWorkController::class, 'attachments'])->whereNumber('id');
+    Route::post('/posh-cases/{id}/attachments',     [PoshCaseWorkController::class, 'upload'])->whereNumber('id');
+    Route::get('/posh-cases/{id}/attachments/{attachmentId}', [PoshCaseWorkController::class, 'download'])
+        ->whereNumber('id')->whereNumber('attachmentId');
+
+    Route::get('/posh-cases/{id}/inquiry',         [PoshCaseWorkController::class, 'inquiry'])->whereNumber('id');
+    Route::post('/posh-cases/{id}/inquiry',        [PoshCaseWorkController::class, 'openInquiry'])->whereNumber('id');
+    Route::post('/posh-cases/{id}/inquiry/decide', [PoshCaseWorkController::class, 'decide'])->whereNumber('id');
+
+    Route::get('/posh-cases/{id}/findings',          [PoshCaseWorkController::class, 'findings'])->whereNumber('id');
+    Route::put('/posh-cases/{id}/findings',          [PoshCaseWorkController::class, 'saveFindings'])->whereNumber('id');
+    Route::post('/posh-cases/{id}/findings/record',  [PoshCaseWorkController::class, 'recordFindings'])->whereNumber('id');
+    Route::post('/posh-cases/{id}/findings/publish', [PoshCaseWorkController::class, 'publishFindings'])->whereNumber('id');
+
+    // The complainant's link. Issuing is can_manage_case + active membership,
+    // exactly like running the case — NOT hr_posh_intake, which would put the
+    // credential in the hands of whoever takes complaints at the door, and not
+    // hr_settings or admin, neither of which can reach the case at all.
+    //
+    // There is deliberately no GET: a token list would be an inventory of live
+    // credentials, and the raw values are unrecoverable in any case.
+    Route::post('/posh-cases/{id}/tokens', [PoshCaseWorkController::class, 'issueToken'])->whereNumber('id');
+    Route::delete('/posh-cases/{id}/tokens/{tokenId}', [PoshCaseWorkController::class, 'revokeToken'])
+        ->whereNumber('id')->whereNumber('tokenId');
+
+    // hr_settings authority, and it grants NO case-content access.
+    Route::post('/posh-cases/{id}/reconstitute', [PoshCaseWorkController::class, 'reconstitute'])->whereNumber('id');
+});
+
+/*
+| POSH aggregate reporting.
+|
+| Counts only — period, status, outcome — and gated on its own capability.
+| Sits apart from the case routes above because it answers a different
+| question: how many complaints, in what state. hr_posh_reports grants no
+| access to a single case and is never consulted by the access resolver.
+|
+| auth:sanctum ONLY, with the capability checked inside the controller. The
+| main HR group requires hr_attendance, and sitting inside it would mean a
+| compliance officer needed attendance permission to read a complaint count —
+| two unrelated authorities welded together, and a 403 from the wrong gate.
+*/
+Route::middleware('auth:sanctum')->prefix('hr')->group(function () {
+    Route::get('/posh-reports/summary', [PoshReportController::class, 'summary']);
 });

@@ -1,0 +1,13 @@
+{
+    "_comment": "SIRE install answers for this host (Sangoe OS CRM). Keeps the install reproducible on the deploy box, where the installer cannot prompt. Regenerate with: php artisan sire:install --non-interactive --config=packages/sire/install-answers.json",
+
+    "sire.tenant.strategy": "user_attribute",
+    "sire.tenant.attribute": "tenant_id",
+
+    "sire.host.auth_middleware": ["auth:sanctum"],
+
+    "sire.login_types.admin": ["admin"],
+    "sire.login_types.internal_user": ["staff"],
+    "sire.login_types.customer": ["client"],
+    "sire.login_types.vendor": ["vendor", "third_party_vendor"]
+}

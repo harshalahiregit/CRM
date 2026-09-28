@@ -16,6 +16,9 @@ class TpvWorkerPpeIssue extends Model
 
     protected $fillable = [
         'tenant_id','tpv_worker_id','issued_by','inventory_item_id',
+        // Set instead of inventory_item_id when the kit came off the vendor's
+        // OWN PPE list rather than the central store.
+        'vendor_ppe_item_id',
         'project','site',
         'item','qty','size','issued_date','notes',
         // Return lifecycle. Quantities still live in Inventory — these only record
@@ -23,6 +26,8 @@ class TpvWorkerPpeIssue extends Model
         'status','returned_qty','returned_at','returned_by','return_notes',
         // §17 — a replacement chains a new issue to the one it superseded.
         'replaced_by_id',
+        // §18 — a rule may demand the gear be checked, not merely handed over.
+        'verified_at','verified_by','verification_notes',
     ];
 
     /**
@@ -46,12 +51,19 @@ class TpvWorkerPpeIssue extends Model
         'issued_date'  => 'date',
         'returned_qty' => 'decimal:3',
         'returned_at'  => 'datetime',
+        'verified_at'  => 'datetime',
     ];
 
     /** The Inventory product this issue drew from — the single source of stock. */
     public function product()
     {
         return $this->belongsTo(\App\Models\Inventory\Product::class, 'inventory_item_id');
+    }
+
+    /** The vendor's own PPE item this issue drew from, when not from Inventory. */
+    public function vendorItem()
+    {
+        return $this->belongsTo(TpvVendorPpeItem::class, 'vendor_ppe_item_id');
     }
 
     protected $appends = ['item_label'];

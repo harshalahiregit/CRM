@@ -23,7 +23,11 @@ class LeaveApplicationController extends Controller
 
     public function index(Request $request)
     {
-        return response()->json($this->service->list($this->tenant($request), $request->only(['employee_id', 'leave_type_id', 'status', 'department', 'from', 'to'])));
+        return response()->json($this->service->list(
+            $this->tenant($request),
+            $request->only(['employee_id', 'leave_type_id', 'status', 'department', 'from', 'to']),
+            $request->user(),
+        ));
     }
 
     /**
@@ -43,6 +47,17 @@ class LeaveApplicationController extends Controller
             'half_day'      => 'nullable|boolean',
         ]);
 
+        // The employee id arrives in the request body, so it is checked here,
+        // like show()/submit()/cancel() below. A preview answers with the
+        // employee's shift pattern, their weekly offs and their policy name —
+        // small, but it is somebody's working pattern, and an unchecked id also
+        // confirms which employee ids exist.
+        //
+        // On the controller rather than in the service, for the reason given on
+        // assertInScope(): the attendance app calls this same service.
+        app(\App\Services\Auth\ScopeResolver::class)
+            ->assertCanActOnEmployee($request->user(), (int) $data['employee_id']);
+
         return response()->json($this->service->preview(
             (int) $data['employee_id'], (int) $request->user()->tenant_id,
             $data['from_date'], $data['to_date'],
@@ -52,6 +67,8 @@ class LeaveApplicationController extends Controller
 
     public function show(Request $request, int $id)
     {
+        $this->assertInScope($request, $id);
+
         return response()->json($this->service->show($id, $this->tenant($request)));
     }
 
@@ -84,6 +101,7 @@ class LeaveApplicationController extends Controller
     public function submit(Request $request, int $id)
     {
         $this->can($request);
+        $this->assertInScope($request, $id);
 
         return response()->json($this->service->submit($id, $this->tenant($request), $request->user()));
     }
@@ -91,13 +109,37 @@ class LeaveApplicationController extends Controller
     public function cancel(Request $request, int $id)
     {
         $this->can($request);
+        $this->assertInScope($request, $id);
 
         return response()->json($this->service->cancel($id, $this->tenant($request), $request->user()));
+    }
+
+    /**
+     * Whose application is this, and may this actor touch it?
+     *
+     * Same reasoning as LeaveApprovalController: the check lives on the CRM's
+     * controller rather than inside LeaveApplicationService, because the
+     * attendance app calls apply() on that same service and must not change.
+     *
+     * Permission has already run — this asks only whose record it is.
+     */
+    private function assertInScope(Request $request, int $id): void
+    {
+        $employeeId = HrLeaveApplication::where('tenant_id', $this->tenant($request))
+            ->whereKey($id)
+            ->value('employee_id');
+
+        app(\App\Services\Auth\ScopeResolver::class)
+            ->assertCanActOnEmployee($request->user(), $employeeId);
     }
 
     public function attachment(Request $request, int $id)
     {
         $app = HrLeaveApplication::where('tenant_id', $this->tenant($request))->findOrFail($id);
+        // A download is a read, and the file is the most sensitive part of the
+        // record — a medical certificate more often than not.
+        app(\App\Services\Auth\ScopeResolver::class)
+            ->assertCanActOnEmployee($request->user(), $app->employee_id);
         abort_if(empty($app->attachment_path) || ! Storage::disk(self::DOC_DISK)->exists($app->attachment_path), 404, 'No attachment');
 
         return Storage::disk(self::DOC_DISK)->download($app->attachment_path, 'leave-'.$app->id.'.'.pathinfo($app->attachment_path, PATHINFO_EXTENSION));

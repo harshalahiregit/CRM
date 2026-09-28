@@ -15,6 +15,26 @@ export default class ErrorBoundary extends Component {
     console.error('ErrorBoundary caught an error:', error, info)
   }
 
+  /**
+   * Clear the error when `resetKey` changes — the route, usually.
+   *
+   * A boundary LATCHES: once it has caught, it keeps rendering the fallback
+   * until its state is cleared, so without this a single crashed page would
+   * follow the user to every screen they tried next, and only a manual reload
+   * would get them out.
+   *
+   * Deliberately not `key={pathname}` at the call site, which would do the same
+   * job by remounting. That remounts the entire page subtree on every
+   * navigation, including between two routes that share a component, and would
+   * quietly change fetch-and-state behaviour across the whole app to fix an
+   * error path. This touches nothing unless an error is actually on screen.
+   */
+  componentDidUpdate(prevProps) {
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false, error: null })
+    }
+  }
+
   handleReset = () => {
     this.setState({ hasError: false, error: null })
     if (this.props.onReset) this.props.onReset()

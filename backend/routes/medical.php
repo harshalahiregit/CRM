@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\Medical\DoctorGeneralController;
+use App\Http\Controllers\Api\Medical\DoctorOptionsController;
 use App\Http\Controllers\Api\Medical\DoctorPortalController;
 use App\Http\Controllers\Api\Medical\GeneralMedicalAdminController;
 use App\Http\Controllers\Api\Medical\MedicalDoctorController;
@@ -27,10 +28,26 @@ use Illuminate\Support\Facades\Route;
 
 /* ── Doctor portal — the Internal Medical Flow ───────────────────────────── */
 
+/* ── Internal-doctor picker ─────────────────────────
+ |
+ | Any signed-in User may read this: a staff member filling in a worker's
+ | medical has to be able to name the doctor who examined them. It is NOT the
+ | admin directory (that stays role:admin) — this returns a name, a licence
+ | and a clinic, and nothing else about the person.
+ */
+
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::get('/medical/doctor-options', [DoctorOptionsController::class, 'index']);
+});
+
 Route::middleware(['auth:sanctum', 'role:doctor'])->prefix('doctor')->group(function () {
     Route::get('/me',        [DoctorPortalController::class, 'me']);
     Route::put('/me',        [DoctorPortalController::class, 'updateProfile']);
     Route::get('/summary',   [DoctorPortalController::class, 'summary']);
+    // The doctor's own signature / stamp / photograph. They live on the private
+    // disk, so this is the only way to see them — scoped to the caller.
+    Route::get('/me/{kind}', [DoctorPortalController::class, 'evidence'])
+        ->whereIn('kind', ['signature', 'stamp', 'photo']);
 
     // {module} is tpv | purchase — a doctor picks the side, then the vendor,
     // then the worker. A side the doctor does not serve 404s.
@@ -82,6 +99,14 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('medical/doctors')->gr
     // A password set at creation is shown once and only hashed after that,
     // so without this an admin who mislaid it had no way back into the account.
     Route::post('/{doctor}/reset-password', [MedicalDoctorController::class, 'resetPassword'])->whereNumber('doctor');
+    // Invite the doctor to set their own password. The preferred route: nobody
+    // but the doctor ever learns it, so a certificate they signed could not
+    // have been signed by the admin who created the account.
+    Route::post('/{doctor}/invite', [MedicalDoctorController::class, 'invite'])->whereNumber('doctor');
+    // Make an EXISTING internal user a doctor. Creating one required an unused
+    // email, so a company doctor who already had a staff login was stuck with
+    // two accounts.
+    Route::post('/promote', [MedicalDoctorController::class, 'promote']);
     // Deactivates; never deletes — an issued certificate must keep its author.
     Route::delete('/{doctor}', [MedicalDoctorController::class, 'destroy'])->whereNumber('doctor');
 });

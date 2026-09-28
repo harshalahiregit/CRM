@@ -21,18 +21,20 @@ class HolidayService
     {
     }
 
-    public function list(int $tenantId, array $f): array
+    public function list(int $tenantId, array $f, ?User $actor = null): array
     {
         return [
-            'data'  => $this->repo->list($tenantId, $f)->map(fn ($h) => $this->present($h))->all(),
+            // The calendar itself is tenant-wide; only an employee_id FILTER
+            // inside $f is scope-checked, in the repository.
+            'data'  => $this->repo->list($tenantId, $f, $actor)->map(fn ($h) => $this->present($h))->all(),
             'stats' => $this->repo->stats($tenantId, ! empty($f['year']) && $f['year'] !== 'All' ? (int) $f['year'] : null),
         ];
     }
 
     /** Flat holiday list for the calendar grid (the frontend lays out the month). */
-    public function calendar(int $tenantId, array $f): array
+    public function calendar(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->list($tenantId, $f)->map(fn ($h) => $this->present($h))->all();
+        return $this->repo->list($tenantId, $f, $actor)->map(fn ($h) => $this->present($h))->all();
     }
 
     public function show(int $id, int $tenantId): array

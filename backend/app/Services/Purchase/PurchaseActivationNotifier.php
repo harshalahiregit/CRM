@@ -2,6 +2,7 @@
 
 namespace App\Services\Purchase;
 
+use App\Models\Purchase\PurchaseDocument;
 use App\Models\Purchase\PurchaseNotificationLog as LogEntry;
 use App\Models\Purchase\PurchaseVendor;
 use App\Services\Notifications\NotificationService;
@@ -50,6 +51,181 @@ class PurchaseActivationNotifier
         });
     }
 
+    /**
+     * "You are now a permanent vendor."
+     *
+     * The counterpart of the TPV notice, and the reason it matters is that the
+     * vendor has been watching a countdown. Nothing else on their portal
+     * announces that it has gone, so a conversion nobody tells them about looks
+     * from their side exactly like a system that has forgotten to expire them.
+     */
+    public function onConvertedToPermanent(PurchaseVendor $vendor): void
+    {
+        $id = $vendor->id;
+
+        DB::afterCommit(function () use ($id) {
+            $fresh = PurchaseVendor::find($id);
+            if (! $fresh || ! $fresh->email) {
+                return;
+            }
+
+            $ctx = $this->context($fresh, null);
+            $plain = 'Your account with '.$ctx['companyName'].' is now a permanent vendor account. '
+                .'The temporary access period no longer applies, and your vendor code is '
+                .$fresh->purchase_vendor_code.'.';
+
+            /*
+             * Promotion raises the paperwork. A temporary vendor files three
+             * documents; a permanent one files eleven. The vendor passed on the
+             * three, was activated, and is then silently non-compliant on eight
+             * more that nobody has asked them for — their portal drops from
+             * complete to 18% with no explanation and no request. Naming them
+             * here is the only point at which the vendor learns.
+             */
+            $outstanding = array_map(
+                fn ($t) => PurchaseDocument::typeLabel($t),
+                PurchaseDocumentService::conversionContext(
+                    $fresh->converted_to_permanent_at,
+                    PurchaseDocument::requiredFor($fresh->vendor_type ?? 'standard'),
+                    $fresh->documents()->pluck('type')->all(),
+                )['newly_required'] ?? [],
+            );
+            $ctx['newlyRequired'] = $outstanding;
+
+            if ($outstanding !== []) {
+                $plain .= ' A permanent account is asked for more paperwork than a temporary one. '
+                    .'Please upload the following in your portal under Documents: '
+                    .implode(', ', $outstanding).'.';
+            }
+
+            $status = $this->channels->emailHtml(
+                $fresh->email,
+                'You are now a permanent vendor',
+                view('emails.purchase.converted_to_permanent', $ctx)->render(),
+                ['vendor_id' => $fresh->id, 'event' => 'converted_to_permanent'],
+                $plain,
+                $fresh->tenant_id,
+            );
+
+            if ($status !== 'sent') {
+                Log::channel('purchase')->warning('Purchase conversion e-mail not delivered', [
+                    'purchase_vendor_id' => $fresh->id, 'status' => $status,
+                ]);
+            }
+        });
+    }
+
+    /**
+     * "Your access now runs to <date>."
+     *
+     * Sent because the vendor has been watching a countdown and may already have
+     * had warnings about it. Moving the date without saying so leaves them
+     * planning around an expiry that is no longer there.
+     */
+    public function onAccessExtended(PurchaseVendor $vendor): void
+    {
+        $id = $vendor->id;
+
+        DB::afterCommit(function () use ($id) {
+            $fresh = PurchaseVendor::find($id);
+            if (! $fresh || ! $fresh->email) {
+                return;
+            }
+
+            $until = optional($fresh->access_expires_at)->format('d M Y');
+            $ctx = $this->context($fresh, null) + ['until' => $until];
+            $plain = 'Your temporary access to the '.$ctx['companyName']
+                .' procurement portal has been extended to '.$until.'.';
+
+            $status = $this->channels->emailHtml(
+                $fresh->email,
+                'Your temporary access has been extended',
+                view('emails.purchase.access_extended', $ctx)->render(),
+                ['vendor_id' => $fresh->id, 'event' => 'access_extended'],
+                $plain,
+                $fresh->tenant_id,
+            );
+
+            if ($status !== 'sent') {
+                Log::channel('purchase')->warning('Purchase extension notice not delivered', [
+                    'purchase_vendor_id' => $fresh->id, 'status' => $status,
+                ]);
+            }
+        });
+    }
+
+    /** "Your temporary access ends in N." Sent once per threshold. */
+    public function onAccessExpiring(PurchaseVendor $vendor, string $threshold): void
+    {
+        $labels = ['7d' => '7 days', '3d' => '3 days', '1d' => '1 day', '6h' => '6 hours'];
+        $when = $labels[$threshold] ?? $threshold;
+        $id = $vendor->id;
+
+        DB::afterCommit(function () use ($id, $when, $threshold) {
+            $fresh = PurchaseVendor::find($id);
+            if (! $fresh || ! $fresh->email) {
+                return;
+            }
+
+            $ctx = $this->context($fresh, null) + ['when' => $when];
+            $plain = 'Your temporary access to the '.$ctx['companyName'].' procurement portal ends in '
+                .$when.'. Contact your administrator if you need it extended.';
+
+            $status = $this->channels->emailHtml(
+                $fresh->email,
+                'Your temporary access ends in '.$when,
+                view('emails.purchase.access_expiring', $ctx)->render(),
+                ['vendor_id' => $fresh->id, 'event' => 'access_expiring', 'threshold' => $threshold],
+                $plain,
+                $fresh->tenant_id,
+            );
+
+            if ($status !== 'sent') {
+                Log::channel('purchase')->warning('Purchase expiry reminder not delivered', [
+                    'purchase_vendor_id' => $fresh->id, 'threshold' => $threshold, 'status' => $status,
+                ]);
+            }
+        });
+    }
+
+    /**
+     * "Your temporary access has expired."
+     *
+     * Sent after the fact, deliberately: the vendor is already locked out by the
+     * time this lands, and a message explaining why beats a login screen that
+     * refuses them with no reason.
+     */
+    public function onAccessExpired(PurchaseVendor $vendor): void
+    {
+        $id = $vendor->id;
+
+        DB::afterCommit(function () use ($id) {
+            $fresh = PurchaseVendor::find($id);
+            if (! $fresh || ! $fresh->email) {
+                return;
+            }
+
+            $ctx = $this->context($fresh, null);
+            $plain = 'Your temporary access to the '.$ctx['companyName'].' procurement portal has expired. '
+                .'Please contact your administrator.';
+
+            $status = $this->channels->emailHtml(
+                $fresh->email,
+                'Your temporary access has expired',
+                view('emails.purchase.access_expired', $ctx)->render(),
+                ['vendor_id' => $fresh->id, 'event' => 'access_expired'],
+                $plain,
+                $fresh->tenant_id,
+            );
+
+            if ($status !== 'sent') {
+                Log::channel('purchase')->warning('Purchase expiry notice not delivered', [
+                    'purchase_vendor_id' => $fresh->id, 'status' => $status,
+                ]);
+            }
+        });
+    }
+
     /** Admin-triggered resend. Always sends, always logged. */
     public function resend(PurchaseVendor $vendor): LogEntry
     {
@@ -71,6 +247,27 @@ class PurchaseActivationNotifier
             if (! $fresh || ! $fresh->email) {
                 return;
             }
+
+            /* Do not mail a login link only this server can open.
+             *
+             * With FRONTEND_URL unset the portal link resolves to
+             * http://localhost:5173, so the vendor gets a Login button that
+             * lands on their own machine and a temporary password they have
+             * nowhere to use. The send "succeeds", the log says delivered, and
+             * the first anybody hears of it is the vendor saying the button
+             * does nothing.
+             *
+             * Better to refuse, say why, and let the admin resend once the URL
+             * is configured — the credentials are still on the vendor record,
+             * so nothing is lost by waiting. */
+            if (FrontendUrl::publicBase() === null) {
+                Log::channel('purchase')->error('Purchase welcome-credentials e-mail withheld: FRONTEND_URL is not configured, so the portal link would point at localhost.', [
+                    'purchase_vendor_id' => $fresh->id,
+                ]);
+
+                return;
+            }
+
             $ctx = $this->context($fresh, $pw);
             $status = $this->channels->emailHtml(
                 $fresh->email,

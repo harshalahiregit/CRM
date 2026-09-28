@@ -3,6 +3,7 @@
 namespace App\Services\Purchase;
 
 use App\Exceptions\BusinessException;
+use App\Support\Shared\MomGate;
 use App\Models\Purchase\PurchaseContact;
 use App\Models\Purchase\PurchaseKickoffDocument;
 use App\Models\Purchase\PurchaseKickoffMeeting;
@@ -24,6 +25,7 @@ use App\Support\Purchase\PurchaseMomApprovalStatus as MomStatus;
 use App\Support\Purchase\PurchaseMomActionStatus;
 use App\Support\Purchase\PurchaseMomIssueStatus;
 use App\Support\Shared\BusinessTime;
+use App\Services\Shared\MeetingPartyDirectory;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
@@ -147,9 +149,38 @@ class PurchaseKickoffService
     }
 
     /** Schedule a kickoff against a Purchase vendor. */
+    /**
+     * A kick-off happens once per vendor — see KickoffOnce, the same rule and
+     * the same message the shared engine uses.
+     *
+     * The default meeting type IS kickoff, so the common way to break this is
+     * leaving the picker alone on a meeting meant to be a progress review.
+     */
+    private function assertKickoffIsTheFirst(?string $type, int $vendorId, int $tenantId, ?int $excludeId = null): void
+    {
+        if (! \App\Support\Shared\KickoffOnce::applies($type)) {
+            return;
+        }
+
+        $existing = PurchaseKickoffMeeting::where('tenant_id', $tenantId)
+            ->where('purchase_vendor_id', $vendorId)
+            ->where('meeting_type', \App\Support\Shared\KickoffOnce::TYPE)
+            ->whereNotIn('status', \App\Support\Shared\KickoffOnce::IGNORED_STATUSES)
+            ->when($excludeId, fn ($q) => $q->whereKeyNot($excludeId))
+            ->orderBy('id')
+            ->first();
+
+        if ($existing) {
+            throw new BusinessException(\App\Support\Shared\KickoffOnce::message($existing), 422);
+        }
+    }
+
     public function schedule(array $data, User $actor): PurchaseKickoffMeeting
     {
         $vendor = $this->resolveVendor($data['purchase_vendor_id'], $actor->tenant_id);
+
+        $type = $data['meeting_type'] ?? \App\Support\Purchase\PurchaseMeetingTypeCatalog::DEFAULT;
+        $this->assertKickoffIsTheFirst($type, $vendor->id, $actor->tenant_id);
 
         $meeting = PurchaseKickoffMeeting::create([
             'tenant_id'              => $actor->tenant_id,
@@ -157,7 +188,7 @@ class PurchaseKickoffService
             'purchase_vendor_id'     => $vendor->id,
             'purchase_onboarding_id' => $data['purchase_onboarding_id'] ?? $this->onboardingIdFor($vendor),
             'title'                  => $data['title'] ?? $this->defaultTitle($vendor),
-            'meeting_type' => $data['meeting_type'] ?? \App\Support\Purchase\PurchaseMeetingTypeCatalog::DEFAULT,
+            'meeting_type'           => $type,
             'reference'              => $data['reference'] ?? null,
             'agenda'                 => $data['agenda'] ?? null,
             // Born a draft — saving records the meeting but tells nobody. Going
@@ -237,6 +268,15 @@ class PurchaseKickoffService
         // reschedule keeps the meeting's length instead of stretching it.
         $effEnd = $this->rescheduledEnd($data, $meeting->scheduled_at, $meeting->end_at, $meeting->tenant_id);
 
+        // Changing an existing meeting's type INTO a kick-off is the other way
+        // to end up with two. Excludes itself, so re-saving the only kick-off
+        // does not refuse its own existence.
+        if (array_key_exists('meeting_type', $data)) {
+            $this->assertKickoffIsTheFirst(
+                $data['meeting_type'], (int) $meeting->purchase_vendor_id, (int) $meeting->tenant_id, $meeting->id,
+            );
+        }
+
         $meeting->update(array_filter([
             'title'             => $data['title'] ?? null,
             'meeting_type'      => $data['meeting_type'] ?? null,
@@ -286,7 +326,7 @@ class PurchaseKickoffService
         }
 
         if ($wasPublished && $meeting->scheduled_at && ($scheduleChanged || array_key_exists('participants', $data))) {
-            $this->notifyParticipants($meeting->fresh('participants'), true);
+            $this->notifyParticipantsAfterResponse($meeting->fresh('participants'), true);
         }
 
         return $this->find($meeting->id, $actor->tenant_id);
@@ -336,7 +376,7 @@ class PurchaseKickoffService
         // Publishing sends the invitation to the roster (mandatory) and shares
         // the join link. Reminders read the live scheduled_at each run.
         if ($isPublishing) {
-            $this->notifyParticipants($meeting->fresh('participants'), false);
+            $this->notifyParticipantsAfterResponse($meeting->fresh('participants'), false);
         }
 
         $verb = $isPublishing
@@ -446,6 +486,42 @@ class PurchaseKickoffService
      * Invitation e-mail to every participant with an address (sent on publish and
      * when a published meeting's time/place/roster changes). Carries the join link.
      */
+
+    /**
+     * The same notify, after the response has gone out.
+     *
+     * notifyParticipants() opens one SMTP session per participant, inline. On
+     * the shared engine that timed out a publish at exactly thirty seconds —
+     *
+     *   Maximum execution time of 30 seconds exceeded
+     *     at symfony/mailer/Transport/Smtp/Stream/SocketStream.php:154
+     *
+     * — and this engine does the same thing on the same click, so it has the
+     * same fault whether or not anyone has hit it yet.
+     *
+     * Worse than slow: the meeting is updated BEFORE the mail runs, so the
+     * publish succeeded and the organiser was told it had failed. Pressing the
+     * button again then answered "Cannot move a Scheduled meeting to
+     * Scheduled" — the error that actually reached the screen.
+     *
+     * `terminating` runs this once the response is flushed, in the same
+     * process. No queue worker is needed, which matters because there is not
+     * one. Nothing waits on a result: notifyParticipants() returns void and
+     * both callers discard it.
+     */
+    private function notifyParticipantsAfterResponse(PurchaseKickoffMeeting $meeting, bool $isUpdate): void
+    {
+        app()->terminating(function () use ($meeting, $isUpdate) {
+            try {
+                $this->notifyParticipants($meeting, $isUpdate);
+            } catch (\Throwable $e) {
+                Log::channel('purchase')->warning('Purchase kickoff participant notify failed', [
+                    'meeting_id' => $meeting->id, 'error' => $e->getMessage(),
+                ]);
+            }
+        });
+    }
+
     private function notifyParticipants(PurchaseKickoffMeeting $meeting, bool $isUpdate): void
     {
         // The same news, in the vendor's bell. E-mail reaches named people; this
@@ -474,10 +550,13 @@ class PurchaseKickoffService
             $where .= " Location: {$meeting->location}.";
         }
         if ($meeting->meeting_link) {
-            $where .= " Join link: {$meeting->meeting_link}";
-            if ($meeting->meeting_passcode) {
-                $where .= " (passcode {$meeting->meeting_passcode})";
-            }
+            // Not the link itself. It is released when the participant marks
+            // attendance in the portal, which is the only evidence there is of
+            // who turned up to a call held on Google Meet, Zoom or Teams — see
+            // MeetingAttendanceGate. Putting it here put the meeting one click
+            // from the inbox and left the register empty.
+            $where .= ' This meeting is online. Open it in the portal and mark your attendance to get the joining link: '
+                .\App\Support\FrontendUrl::to('/purchase-portal/governance');
         }
 
         $subject = ($isUpdate ? 'Updated: ' : 'Invitation: ')."{$meeting->title}";
@@ -486,14 +565,35 @@ class PurchaseKickoffService
             .($vendorName ? " with {$vendorName}" : '')
             .", scheduled for {$when}.{$where}";
 
-        foreach ($meeting->participants as $participant) {
-            if ($participant->email) {
+        /*
+         * The vendor's own account address, and the person who called the
+         * meeting.
+         *
+         * This used to e-mail the typed participant roster and nobody else, so a
+         * meeting scheduled for a vendor without anybody hand-adding a
+         * participant row invited no one at all, and the organiser never got a
+         * copy of what they had sent. The vendor and the organiser are the two
+         * people certainly involved, and neither had to be on the roster.
+         *
+         * De-duplicated by address, so somebody already listed is not written to
+         * twice.
+         */
+        $sent = [];
+        $send = function (?string $to) use (&$sent, $subject, $body, $meeting) {
+            $key = strtolower(trim((string) $to));
+            if ($key === '' || isset($sent[$key])) {
+                return;
+            }
+            $sent[$key] = true;
             $this->notifications->email(
-                $participant->email, $subject, $body,
+                $to, $subject, $body,
                 ['category' => 'Purchase', 'purchase_kickoff_meeting_id' => $meeting->id],
                 $meeting->tenant_id,
             );
-        }
+        };
+
+        foreach ($meeting->participants as $participant) {
+            $send($participant->email);
 
             // And in the bell, for participants who have a login. E-mail alone
             // means a meeting invitation lives only in an inbox somebody may
@@ -509,6 +609,9 @@ class PurchaseKickoffService
                 );
             }
         }
+
+        $send($meeting->vendor?->email);
+        $send($meeting->creator?->email);
     }
 
     /** The vendor's most recent earlier meeting (for continuity — Meeting.docx §11). */
@@ -601,6 +704,8 @@ class PurchaseKickoffService
     /** Attach an uploaded Minutes-of-Meeting document as the current MOM. */
     public function uploadMom(PurchaseKickoffMeeting $meeting, UploadedFile $file, User $actor): PurchaseKickoffMeeting
     {
+        MomGate::assertCompleted($meeting->status, 'upload');
+
         $name = 'mom-'.Str::random(12).'.'.$file->getClientOriginalExtension();
         $path = $file->storeAs("tenant-{$meeting->tenant_id}/meeting-{$meeting->id}", $name, self::DISK);
 
@@ -616,6 +721,9 @@ class PurchaseKickoffService
      */
     public function generateMom(PurchaseKickoffMeeting $meeting, User $actor): PurchaseKickoffMeeting
     {
+        // Minutes describe a meeting that happened — see MomGate.
+        MomGate::assertCompleted($meeting->status, 'generate');
+
         // The structured registers are loaded too — the MOM prints them, and a
         // lazy-load inside the Blade would be a query per row.
         $meeting->loadMissing(
@@ -825,12 +933,31 @@ class PurchaseKickoffService
             }
             // 6-state attendance (§6): status drives the boolean; a bare boolean still works.
             $status = $row['attendance_status'] ?? null;
+
+            /*
+             * The times the admin types, and who typed them — the same four
+             * columns as the shared roster, written the same way. See the note
+             * in KickoffMeetingService::markAttendance(): these are the official
+             * record, joined_at/left_at remain the observed evidence for it.
+             */
+            $changes = [
+                'attendance_source' => \App\Services\Shared\MeetingJoinRecorder::SOURCE_MANUAL,
+                'marked_by' => $actor->id,
+                'marked_at' => now(),
+            ];
+            foreach (['in_at', 'out_at'] as $field) {
+                if (array_key_exists($field, $row)) {
+                    $changes[$field] = $row[$field] ?: null;
+                }
+            }
+
             if ($status && in_array($status, PurchaseKickoffParticipant::ATTENDANCE, true)) {
                 $attended = in_array($status, PurchaseKickoffParticipant::ATTENDING, true);
-                $participant->update(['attendance_status' => $status, 'attended' => $attended]);
+                // A tick made by hand outranks anything observed — see MeetingJoinRecorder.
+                $participant->update($changes + ['attendance_status' => $status, 'attended' => $attended]);
             } else {
                 $attended = ! empty($row['attended']);
-                $participant->update(['attended' => $attended, 'attendance_status' => $attended ? 'Present' : 'Absent']);
+                $participant->update($changes + ['attended' => $attended, 'attendance_status' => $attended ? 'Present' : 'Absent']);
             }
             $attended ? $present++ : $absent++;
         }
@@ -1054,14 +1181,34 @@ class PurchaseKickoffService
             .' Please close it off, or reschedule it if it still needs to happen.';
 
         foreach ($meeting->participants as $participant) {
-            if (! $participant->email) {
-                continue;
+            if ($participant->email) {
+                $this->notifications->email(
+                    $participant->email, $subject, $body,
+                    ['category' => 'System', 'purchase_kickoff_meeting_id' => $meeting->id],
+                    $meeting->tenant_id,
+                );
             }
-            $this->notifications->email(
-                $participant->email, $subject, $body,
-                ['category' => 'System', 'purchase_kickoff_meeting_id' => $meeting->id],
-                $meeting->tenant_id,
-            );
+
+            // And in the bell, as the invitation already does. This notice went
+            // out by e-mail only, so a participant with a login and no address
+            // was never told the meeting had lapsed — and one with both heard
+            // about it only in a mailbox they may never open.
+            if ($participant->user_id) {
+                try {
+                    app(\App\Services\NotificationService::class)->notify(
+                        (int) $participant->user_id,
+                        (int) $meeting->tenant_id,
+                        'purchase_kickoff_expired',
+                        $subject,
+                        $body,
+                        '/app/purchase/kickoff/'.$meeting->id,
+                    );
+                } catch (\Throwable $e) {
+                    Log::channel('purchase')->warning('Participant expiry bell failed', [
+                        'meeting_id' => $meeting->id, 'user_id' => $participant->user_id, 'error' => $e->getMessage(),
+                    ]);
+                }
+            }
         }
 
         $this->tellVendor(
@@ -1107,9 +1254,12 @@ class PurchaseKickoffService
         $when = $meeting->scheduled_at ? $meeting->scheduled_at->format('d M Y, g:i A T') : 'a date to be confirmed';
         $lead = $offsetMinutes >= 1440 ? (intdiv($offsetMinutes, 1440).' day(s)')
             : ($offsetMinutes >= 60 ? (intdiv($offsetMinutes, 60).' hour(s)') : $offsetMinutes.' minutes');
-        $where = $meeting->mode === 'online'
-            ? ($meeting->meeting_link ? " Join link: {$meeting->meeting_link}" : '')
-            : ($meeting->location ? " at {$meeting->location}" : '');
+        $online = $meeting->mode === 'online' && $meeting->meeting_link;
+        // A reminder carries the way IN to the meeting, not the way past it —
+        // see MeetingAttendanceGate. Staff go to the console, everyone else to
+        // the portal; one URL for both sends half of them to a login screen
+        // they have no account for.
+        $where = $online ? '' : ($meeting->location ? " at {$meeting->location}" : '');
         $subject = "Reminder: {$meeting->title} in {$lead}";
         $body = "This is a reminder that the meeting \"{$meeting->title}\""
             .($vendorName ? " with {$vendorName}" : '')
@@ -1119,8 +1269,13 @@ class PurchaseKickoffService
             if (! $participant->email) {
                 continue;
             }
+            $go = $online
+                ? ' Mark your attendance to get the joining link: '.($participant->user_id
+                    ? \App\Support\FrontendUrl::to('/app/purchase/kickoff/'.$meeting->id)
+                    : \App\Support\FrontendUrl::to('/purchase-portal/governance'))
+                : '';
             $this->notifications->email(
-                $participant->email, $subject, $body,
+                $participant->email, $subject, $body.$go,
                 ['category' => 'Purchase', 'purchase_kickoff_meeting_id' => $meeting->id],
                 $meeting->tenant_id,
             );
@@ -1492,6 +1647,10 @@ class PurchaseKickoffService
                 'designation'                 => $p['designation'] ?? null,
                 'role'                        => $p['role'] ?? null,
                 'side'                        => $p['side'] ?? null,
+                // Which of the four attendance-sheet columns, and where the
+                // person was picked from — see the shared engine's twin of this.
+                'party'                       => MeetingPartyDirectory::isParty($p['party'] ?? null) ? $p['party'] : null,
+                'party_ref'                   => isset($p['party_ref']) ? substr((string) $p['party_ref'], 0, 64) : null,
                 'attended'                    => ! empty($p['attended']),
             ]);
         }

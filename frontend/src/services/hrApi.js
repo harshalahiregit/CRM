@@ -18,6 +18,37 @@ const api = axios.create({ baseURL: BASE })
 attachMediaCompression(api)
 
 /**
+ * Post a clock-in or clock-out, with whatever evidence the browser could gather.
+ *
+ * Multipart only when there is actually a file: a plain JSON body is cheaper and
+ * far easier to read in a network log, and most punches carry no photo.
+ *
+ * `evidence` is { latitude, longitude, address, selfie (Blob), verificationNote }
+ * and every key is optional — a punch with none of them is still a valid punch.
+ */
+function punch(action, evidence = {}) {
+  const { latitude, longitude, address, selfie, verificationNote } = evidence
+  const url = `/hr/me/attendance/${action}`
+
+  if (selfie) {
+    const fd = new FormData()
+    if (latitude != null) fd.append('latitude', String(latitude))
+    if (longitude != null) fd.append('longitude', String(longitude))
+    if (address) fd.append('address', address)
+    if (verificationNote) fd.append('verification_note', verificationNote)
+    fd.append('selfie', selfie, 'punch.jpg')
+    return api.post(url, fd, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data)
+  }
+
+  const body = {}
+  if (latitude != null) body.latitude = String(latitude)
+  if (longitude != null) body.longitude = String(longitude)
+  if (address) body.address = address
+  if (verificationNote) body.verification_note = verificationNote
+  return api.post(url, body).then(r => r.data)
+}
+
+/**
  * Fields plus files as multipart.
  *
  * `files[]` — the brackets matter: Laravel reads `files` as an array from that
@@ -231,8 +262,20 @@ export const hrApi = {
     extend:        (id, validity) => api.patch(`/hr/offers/${id}/extend`, { validity_date: validity }).then(r => r.data),
     revisions:     (id)          => api.get(`/hr/offers/${id}/revisions`).then(r => r.data),
     delete:        (id)          => api.delete(`/hr/offers/${id}`).then(r => r.data),
-    // Public candidate offer-portal link built from the stored token.
-    portalUrl:     (token)       => `${window.location.origin}/offer/${token}`,
+
+    // The offer letter, for staff. Authenticated and tenant-scoped, so it goes
+    // through the axios instance as a blob rather than being an <a href>.
+    // HR screens used to read this PDF through the CANDIDATE's public portal
+    // URL, which is why the candidate's bearer token had to be published in
+    // ordinary API payloads. It is not published any more, and this is what
+    // replaced it.
+    letterBlob:    (id)          => api.get(`/hr/offers/${id}/letter`, { responseType: 'blob' }).then(r => r.data),
+
+    // Mint a candidate portal link. The raw token comes back exactly once, in
+    // this response, and any previously issued link stops working. There is
+    // deliberately no "read the current link" call — only a hash is stored.
+    issuePortalLink: (id)        => api.post(`/hr/offers/${id}/portal-link`).then(r => r.data),
+    revokePortalLink:(id, reason) => api.delete(`/hr/offers/${id}/portal-link`, { data: { reason } }).then(r => r.data),
   },
 
   // ── Onboarding ──────────────────────────────────────────────────────
@@ -240,13 +283,25 @@ export const hrApi = {
     list:           (params={})   => api.get('/hr/onboarding', { params }).then(r => r.data),
     get:            (id)          => api.get(`/hr/onboarding/${id}`).then(r => r.data),
     start:          (data)        => api.post('/hr/onboarding', data).then(r => r.data),
-    toggleStep:     (id, step)    => api.patch(`/hr/onboarding/${id}/step`, { step }).then(r => r.data),
+    // reportingManagerId is only meaningful on the 'manager_assigned' step, and
+    // is sent ONLY when supplied — an explicit null clears the manager, whereas
+    // omitting the key leaves it alone and plain-toggles the step as before.
+    toggleStep:     (id, step, reportingManagerId) => api.patch(`/hr/onboarding/${id}/step`,
+      reportingManagerId === undefined ? { step } : { step, reporting_manager_id: reportingManagerId || null }
+    ).then(r => r.data),
     updateChecklist:(id, checklist)=> api.patch(`/hr/onboarding/${id}/step`, { checklist }).then(r => r.data),
     verify:         (id, data)    => api.patch(`/hr/onboarding/${id}/verify`, data).then(r => r.data),
     documentUrl:    (id, docId)   => `${BASE}/hr/onboarding/${id}/documents/${docId}`,
     documentBlob:   (id, docId)   => api.get(`/hr/onboarding/${id}/documents/${docId}`, { responseType: 'blob' }).then(r => r.data),
     verifyDocument: (id, docId, data) => api.patch(`/hr/onboarding/${id}/documents/${docId}/verify`, data).then(r => r.data),
     delete:         (id)          => api.delete(`/hr/onboarding/${id}`).then(r => r.data),
+
+    // Mint a candidate portal link. The raw token comes back exactly once, in
+    // this response, and any previously issued link stops working. There is
+    // deliberately no "read the current link" call — only a hash is stored, so
+    // seeing the link again means replacing it. Mirrors offers.issuePortalLink.
+    issuePortalLink: (id)         => api.post(`/hr/onboarding/${id}/portal-link`).then(r => r.data),
+    revokePortalLink:(id, reason) => api.delete(`/hr/onboarding/${id}/portal-link`, { data: { reason } }).then(r => r.data),
   },
 
   // ── Employees ───────────────────────────────────────────────────────
@@ -257,6 +312,42 @@ export const hrApi = {
     list:   (params = {}) => api.get('/hr/employees', { params }).then(r => Array.isArray(r.data) ? r.data : (r.data?.data ?? [])),
     listPaged: (params = {}) => api.get('/hr/employees', { params }).then(r => r.data),
     stats:  ()            => api.get('/hr/employees/stats').then(r => r.data),
+
+    /*
+     | Entry-to-exit letters. `letters()` asks the server which can be issued
+     | and WHY NOT for the rest — "not yet" and "never" look the same on a
+     | disabled button, and HR needs to know whether they are waiting on
+     | clearance or looking at the wrong person.
+     */
+    letters: (employeeId) => api.get(`/hr/employees/${employeeId}/letters`).then(r => r.data?.data ?? []),
+    // Blob, not JSON: this is the PDF itself.
+    letterPdf: (employeeId, type) =>
+      api.get(`/hr/employees/${employeeId}/letters/${type}`, { responseType: 'blob' }).then(r => r.data),
+
+    // Where the staff and employee directories disagree.
+    reconciliation: () => api.get('/hr/directory/reconciliation').then(r => r.data?.data ?? {}),
+    linkLogin: (employeeId, userId) =>
+      api.post(`/hr/employees/${employeeId}/link-login`, { user_id: userId }).then(r => r.data),
+    // Creates the account when there is none, links it when an address already
+    // matches. Returns a one-time password when it created one.
+    provisionLogin: (employeeId) =>
+      api.post(`/hr/employees/${employeeId}/provision-login`).then(r => r.data?.data ?? r.data),
+    // Breaks a link that points at a missing or another workspace's account.
+    unlinkLogin: (employeeId) =>
+      api.post(`/hr/employees/${employeeId}/unlink-login`).then(r => r.data?.data ?? r.data),
+    // Pushes the employee's identity onto its login — the same one-way sync a
+    // save performs, run on demand to settle an identity mismatch.
+    resyncLogin: (employeeId) =>
+      api.post(`/hr/employees/${employeeId}/resync-login`).then(r => r.data?.data ?? r.data),
+    dismissDirectoryIssue: (key) =>
+      api.post('/hr/directory/dismiss', { key }).then(r => r.data?.data ?? r.data),
+    restoreDirectoryIssue: (key) =>
+      api.post('/hr/directory/restore', { key }).then(r => r.data?.data ?? r.data),
+    // The extended record — personal, address, education, emergency contact,
+    // bank, identity, statutory. Always returns every key (null where unset) so
+    // the form renders without special-casing a person nobody has filled in yet.
+    detail:     (id)       => api.get(`/hr/employees/${id}/detail`).then(r => r.data?.data ?? {}),
+    saveDetail: (id, data) => api.put(`/hr/employees/${id}/detail`, data).then(r => r.data?.data ?? {}),
     // Work-state vocabulary for the statutory jurisdiction field. Served by the
     // backend so the options offered and the states PT rules are keyed by are one list.
     workStates: ()        => api.get('/hr/employees/work-states').then(r => r.data?.data ?? []),
@@ -324,6 +415,14 @@ export const hrApi = {
       update: (id, data)   => api.put(`/hr/org-roles/${id}`, data).then(r => r.data),
       delete: (id)         => api.delete(`/hr/org-roles/${id}`).then(r => r.data),
     },
+    // Permanent, Contract, Intern — whatever this company calls them. Nothing
+    // is seeded; the list is entirely the workspace's own.
+    employmentTypes: {
+      list:   ()           => api.get('/hr/employment-types').then(r => r.data),
+      create: (data)       => api.post('/hr/employment-types', data).then(r => r.data),
+      update: (id, data)   => api.put(`/hr/employment-types/${id}`, data).then(r => r.data),
+      delete: (id)         => api.delete(`/hr/employment-types/${id}`).then(r => r.data),
+    },
   },
 
   // ── Payroll → Salary Components master (Phase 1) ────────────────────────
@@ -363,6 +462,29 @@ export const hrApi = {
       generatePayslips: (id)   => api.post(`/hr/payroll/runs/${id}/generate-payslips`).then(r => r.data),
       // Frozen component + statutory breakdown behind one processed record.
       recordLines: (recordId)  => api.get(`/hr/payroll/records/${recordId}/lines`).then(r => r.data?.data ?? []),
+
+      /*
+       | The stepped run: Pre-check → Inputs → Calculate → Approve → Disburse.
+       |
+       | These sit beside `process` rather than replacing it. `process` is still
+       | what does the arithmetic; these add who chose the employees and who
+       | agreed to the amounts.
+       */
+      precheck:        (id)               => api.get(`/hr/payroll/runs/${id}/precheck`).then(r => r.data?.data ?? {}),
+      selectEmployees: (id, employeeIds)  => api.post(`/hr/payroll/runs/${id}/employees`, { employee_ids: employeeIds }).then(r => r.data?.data ?? {}),
+      confirmInputs:   (id)               => api.post(`/hr/payroll/runs/${id}/confirm-inputs`).then(r => r.data),
+
+      adjustments:     (id)               => api.get(`/hr/payroll/runs/${id}/adjustments`).then(r => r.data?.data ?? []),
+      addAdjustment:   (recordId, body)   => api.post(`/hr/payroll/records/${recordId}/adjustments`, body).then(r => r.data?.data ?? {}),
+      removeAdjustment:(adjustmentId)     => api.delete(`/hr/payroll/adjustments/${adjustmentId}`).then(r => r.data),
+
+      approve:         (id, note)         => api.post(`/hr/payroll/runs/${id}/approve`, { note }).then(r => r.data),
+      reject:          (id, note)         => api.post(`/hr/payroll/runs/${id}/reject`, { note }).then(r => r.data),
+
+      markPayment:     (recordId, payment_status, note) => api.post(`/hr/payroll/records/${recordId}/payment`, { payment_status, note }).then(r => r.data),
+      markAllPayments: (id, payment_status)            => api.post(`/hr/payroll/runs/${id}/payments`, { payment_status }).then(r => r.data),
+      releasePayslips: (id, visible)                   => api.post(`/hr/payroll/runs/${id}/release-payslips`, { visible }).then(r => r.data),
+      setPayslipVisible: (recordId, visible)           => api.post(`/hr/payroll/records/${recordId}/payslip-visibility`, { visible }).then(r => r.data),
     },
     // Statutory rule book — every rate, ceiling and slab is configured here.
     // Nothing statutory is hardcoded in the app, so an empty rule book means
@@ -402,6 +524,22 @@ export const hrApi = {
       departments: (params = {})  => api.get('/hr/payroll/reports/departments', { params }).then(r => r.data),
       components:  (params = {})  => api.get('/hr/payroll/reports/components', { params }).then(r => r.data),
       trends:      (params = {})  => api.get('/hr/payroll/reports/trends', { params }).then(r => r.data),
+    },
+    // The statutory registers — the documents a month is FILED with, keyed by
+    // payroll run so they show what was actually paid rather than a fresh
+    // calculation that could disagree with the payslips already issued.
+    registers: {
+      pf:   (runId) => api.get(`/hr/payroll/runs/${runId}/registers/pf`).then(r => r.data?.data),
+      esic: (runId) => api.get(`/hr/payroll/runs/${runId}/registers/esic`).then(r => r.data?.data),
+      pt:   (runId) => api.get(`/hr/payroll/runs/${runId}/registers/pt`).then(r => r.data?.data),
+      lwf:  (runId) => api.get(`/hr/payroll/runs/${runId}/registers/lwf`).then(r => r.data?.data),
+    },
+    // The salary transfer advice. Anybody who cannot be paid by transfer comes
+    // back WITH the reason, so the screen can say "42 paid, 3 not" rather than a
+    // total nobody can reconcile against headcount.
+    bank: {
+      advice: (runId) => api.get(`/hr/payroll/runs/${runId}/bank-advice`).then(r => r.data?.data),
+      csvUrl: (runId) => `/hr/payroll/runs/${runId}/bank-advice.csv`,
       // CSV (Excel) or PDF export → triggers a browser download.
       export: (report, format, params = {}) => api.get('/hr/payroll/reports/export', { params: { ...params, report, format }, responseType: 'blob' }).then(r => {
         const url = URL.createObjectURL(r.data)
@@ -493,6 +631,8 @@ export const hrApi = {
       list:       (params = {})  => api.get('/hr/leave/balances', { params }).then(r => r.data),
       forEmployee:(employeeId)   => api.get(`/hr/leave/balances/${employeeId}`).then(r => r.data),
       assign:     (data)         => api.post('/hr/leave/balances/assign', data).then(r => r.data),
+      // One policy, a whole group. scope: all | department | designation | grade | employees
+      assignBulk: (data)         => api.post('/hr/leave/balances/assign-bulk', data).then(r => r.data),
       allocate:   (data)         => api.post('/hr/leave/balances/allocate', data).then(r => r.data),
       adjust:     (data)         => api.post('/hr/leave/balances/adjust', data).then(r => r.data),
       history:    (balanceId)    => api.get(`/hr/leave/balances/history/${balanceId}`).then(r => r.data),
@@ -535,6 +675,16 @@ export const hrApi = {
       create:    (data)        => api.post('/hr/leave/holidays', data).then(r => r.data),
       update:    (id, data)    => api.put(`/hr/leave/holidays/${id}`, data).then(r => r.data),
       setStatus: (id, active)  => api.patch(`/hr/leave/holidays/${id}/status`, { is_active: active }).then(r => r.data),
+    },
+    // Company events — something happening, not a day off. Separate from
+    // holidays because the attendance app keeps two lists and draws them
+    // differently on its calendar.
+    events: {
+      list:      (params = {}) => api.get('/hr/leave/events', { params }).then(r => r.data),
+      get:       (id)          => api.get(`/hr/leave/events/${id}`).then(r => r.data),
+      create:    (data)        => api.post('/hr/leave/events', data).then(r => r.data),
+      update:    (id, data)    => api.put(`/hr/leave/events/${id}`, data).then(r => r.data),
+      setStatus: (id, active)  => api.patch(`/hr/leave/events/${id}/status`, { is_active: active }).then(r => r.data),
     },
     // Leave Reports & Analytics (final phase) — read-only.
     reports: {
@@ -879,8 +1029,12 @@ export const hrApi = {
       // they can only ever touch the caller's own record.
       me: {
         today:      () => api.get('/hr/me/attendance/today').then(r => r.data),
-        checkIn:    () => api.post('/hr/me/attendance/check-in').then(r => r.data),
-        checkOut:   () => api.post('/hr/me/attendance/check-out').then(r => r.data),
+        // A punch may carry evidence: coordinates, a selfie, and a note saying
+        // why either is missing. All optional — the server never refuses a punch
+        // for want of them — so `punch` is what both the header button and the
+        // HR card post, with or without anything in it.
+        checkIn:    (evidence) => punch('check-in', evidence),
+        checkOut:   (evidence) => punch('check-out', evidence),
         breakStart: () => api.post('/hr/me/attendance/break-start').then(r => r.data),
         breakEnd:   () => api.post('/hr/me/attendance/break-end').then(r => r.data),
       },
@@ -977,6 +1131,12 @@ export const hrApi = {
     markAllRead: ()            => api.post('/hr/notifications/mark-all-read').then(r => r.data),
     forEmployee: (employeeId)  => api.get(`/hr/notifications/employee/${employeeId}`).then(r => r.data),
     resend:      (id)          => api.post(`/hr/notifications/${id}/resend`).then(r => r.data),
+    // Announcements composed by hand. Multipart, because one can carry a PDF.
+    announcements: {
+      audience: ()     => api.get('/hr/notifications/announcements/audience').then(r => r.data),
+      send:     (form) => api.post('/hr/notifications/announcements', form,
+                          { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data),
+    },
     // Templates
     templates: {
       list:      (params = {}) => api.get('/hr/notifications/templates', { params }).then(r => r.data),
@@ -1228,6 +1388,81 @@ export const hrApi = {
     save:   (values) => api.put('/hr/settings', values).then(r => r.data?.data),
     // The short allowlist an employee's own screens may read.
     mine:   ()       => api.get('/hr/me/settings').then(r => r.data?.data ?? {}),
+  },
+
+  /**
+   * POSH committee configuration.
+   *
+   * Configuration only — this surface exposes no complaint or case data, and
+   * case access will never come through it. Each committee reports `blockers`:
+   * what stands between it and being switched on, so the screen can say what
+   * is missing rather than waiting for a failed save to explain it.
+   */
+  poshCommittees: {
+    list:       ()          => api.get('/hr/posh-committees').then(r => r.data?.data),
+    create:     (data)      => api.post('/hr/posh-committees', data).then(r => r.data?.data),
+    update:     (id, data)  => api.put(`/hr/posh-committees/${id}`, data).then(r => r.data?.data),
+    setActive:  (id, active) => api.patch(`/hr/posh-committees/${id}/status`, { is_active: active }).then(r => r.data?.data),
+    remove:     (id)        => api.delete(`/hr/posh-committees/${id}`).then(r => r.data),
+    addRole:    (id, data)  => api.post(`/hr/posh-committees/${id}/roles`, data).then(r => r.data?.data),
+    updateRole: (id, roleId, data) => api.put(`/hr/posh-committees/${id}/roles/${roleId}`, data).then(r => r.data?.data),
+    removeRole: (id, roleId) => api.delete(`/hr/posh-committees/${id}/roles/${roleId}`).then(r => r.data?.data),
+    setMembers: (id, members) => api.put(`/hr/posh-committees/${id}/members`, { members }).then(r => r.data?.data),
+  },
+
+  /**
+   * Exit-clearance departments, and who may sign off each of them.
+   *
+   * list() returns the departments AND the workspace's users and staff roles
+   * to choose from, so the screen keeps no copy of either. Each department
+   * reports its own `authorization`:
+   *
+   *   fallback      nobody configured — anyone on the HR queue may act
+   *   configured    only the named users and role members may act
+   *   misconfigured somebody is configured but none of them can currently act
+   */
+  clearanceDepartments: {
+    list:        ()          => api.get('/hr/clearance-departments').then(r => r.data?.data),
+    create:      (data)      => api.post('/hr/clearance-departments', data).then(r => r.data?.data),
+    update:      (id, data)  => api.put(`/hr/clearance-departments/${id}`, data).then(r => r.data?.data),
+    setActive:   (id, active) => api.patch(`/hr/clearance-departments/${id}/status`, { is_active: active }).then(r => r.data?.data),
+    remove:      (id)        => api.delete(`/hr/clearance-departments/${id}`).then(r => r.data),
+    reorder:     (ids)       => api.post('/hr/clearance-departments/reorder', { ids }).then(r => r.data?.data),
+    authorities: (id, userIds, roleIds) =>
+      api.put(`/hr/clearance-departments/${id}/authorities`,
+        { user_ids: userIds, staff_role_ids: roleIds }).then(r => r.data?.data),
+  },
+
+  /**
+   * The onboarding checklist every new joiner receives.
+   *
+   * list() returns the items AND the vocabulary the form renders from
+   * (categories, owner roles), so the screen keeps no copy of either. The
+   * items are a TEMPLATE: an onboarding already under way holds its own copy
+   * and is unaffected by anything edited here.
+   */
+  onboardingChecklist: {
+    list:      ()          => api.get('/hr/onboarding-checklist').then(r => r.data?.data),
+    create:    (data)      => api.post('/hr/onboarding-checklist', data).then(r => r.data?.data),
+    update:    (id, data)  => api.put(`/hr/onboarding-checklist/${id}`, data).then(r => r.data?.data),
+    setActive: (id, active) => api.patch(`/hr/onboarding-checklist/${id}/status`, { is_active: active }).then(r => r.data?.data),
+    remove:    (id)        => api.delete(`/hr/onboarding-checklist/${id}`).then(r => r.data),
+    reorder:   (ids)       => api.post('/hr/onboarding-checklist/reorder', { ids }).then(r => r.data?.data),
+    adoptDefaults: ()      => api.post('/hr/onboarding-checklist/adopt-defaults').then(r => r.data?.data),
+  },
+
+  /**
+   * Approval workflows — who approves what, in what order.
+   *
+   * show() returns the ladder AND the options the form renders from (approver
+   * types, this workspace's roles and users, the conditions this process
+   * understands), so the screen keeps no copy of the vocabulary.
+   */
+  approvalWorkflows: {
+    list:      ()                => api.get('/hr/approval-workflows').then(r => r.data?.data ?? []),
+    show:      (process)         => api.get(`/hr/approval-workflows/${process}`).then(r => r.data),
+    save:      (process, data)   => api.put(`/hr/approval-workflows/${process}`, data).then(r => r.data),
+    setStatus: (process, active) => api.patch(`/hr/approval-workflows/${process}/status`, { is_active: active }).then(r => r.data),
   },
 
   /** Inbound demo enquiries. */

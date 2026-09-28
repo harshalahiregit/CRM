@@ -88,11 +88,36 @@ export function AuthProvider({ children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  /* ── WHAT THIS PERSON MAY DO ──────────────────────────────────────────
+     Resolved on the server and sent with the user, because the screens cannot
+     work it out. They were guessing from `role`, which is why the sidebar
+     rendered every HR management item for everybody and each one 403'd when
+     clicked — and no guess could have been right anyway: the advances gate asks
+     whether anyone REPORTS to you, which is a database question.
+
+     Fails CLOSED. An older cached user has no `permissions` key, and answering
+     "yes, probably" there would put management screens in front of people who
+     will only be refused by the server a moment later. /auth/me refreshes on
+     mount, so the closed state lasts until that returns. */
+  const perms = user?.permissions
+
+  const can = useCallback((module, capability) =>
+    !!perms?.can?.[module]?.includes(capability), [perms])
+
+  // 'global' | 'own' | null — what WIDTH of a module they see. This is the
+  // distinction that decides whether somebody gets the management screen or
+  // their own records, so it is answered directly rather than inferred.
+  const scopeOf = useCallback((module) => perms?.scope?.[module] ?? null, [perms])
+
+  const canSee = useCallback((module) => scopeOf(module) !== null, [scopeOf])
+
   return (
     <AuthContext.Provider value={{
       user, tenant, loading,
       isAuthenticated,
       login, register, logout, refreshUser,
+      can, scopeOf, canSee,
+      isAdmin: !!perms?.is_admin,
     }}>
       {children}
     </AuthContext.Provider>

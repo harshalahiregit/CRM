@@ -28,12 +28,16 @@ class LeaveApplicationService
         private LeaveApplicationRepository $repo,
         private EmployeeLeaveBalanceRepository $balances,
         private ShiftService $shifts,
+        // Nothing told the employee their leave had been submitted, approved or
+        // rejected. They had to open the app and look.
+        private RequestNotifier $notifier,
     ) {
     }
 
-    public function list(int $tenantId, array $f): array
+    /** @param  User|null  $actor  Whose view this is; null is unscoped, as before. */
+    public function list(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->filtered($tenantId, $f)->map(fn ($a) => $this->present($a))->all();
+        return $this->repo->filtered($tenantId, $f, $actor)->map(fn ($a) => $this->present($a))->all();
     }
 
     public function show(int $id, int $tenantId): array
@@ -41,9 +45,105 @@ class LeaveApplicationService
         return $this->present($this->find($id, $tenantId), true);
     }
 
+    /**
+     * One person cannot be on leave twice on the same day.
+     *
+     * There was no check at all. Reproduced against the running API: an approved
+     * 5–6 October, then a second application for 5 October, both accepted. The
+     * employee ends up holding two claims on one day, each of which will deduct
+     * from the balance when approved, and attendance and payroll then disagree
+     * about whether that day was worked.
+     *
+     * Only applications that still HOLD the day block a new one. A cancelled or
+     * rejected request released its dates and must not stand in the way of
+     * re-applying — which is the normal thing to do after a rejection.
+     *
+     * Standard interval overlap: two ranges collide unless one ends before the
+     * other starts. Half-days are treated as occupying the day, which is the
+     * safe direction — a morning and an afternoon request on one date is a
+     * refinement, not a reason to let a full double-booking through.
+     */
+    private function assertNoOverlap(int $employeeId, int $tenantId, Carbon $from, Carbon $to, ?int $ignoreId = null): void
+    {
+        $clash = HrLeaveApplication::where('tenant_id', $tenantId)
+            ->where('employee_id', $employeeId)
+            ->whereIn('status', ['Draft', 'Submitted', 'Approved'])
+            ->when($ignoreId, fn ($q) => $q->where('id', '!=', $ignoreId))
+            ->whereDate('from_date', '<=', $to->toDateString())
+            ->whereDate('to_date', '>=', $from->toDateString())
+            ->first();
+
+        if (! $clash) {
+            return;
+        }
+
+        throw new BusinessException(sprintf(
+            'This overlaps leave already %s for %s to %s. Cancel that request first, or choose different dates.',
+            strtolower($clash->status),
+            Carbon::parse($clash->from_date)->format('d M Y'),
+            Carbon::parse($clash->to_date)->format('d M Y'),
+        ), 422);
+    }
+
     public function forEmployee(int $employeeId, int $tenantId): array
     {
         return $this->repo->forEmployee($employeeId, $tenantId)->map(fn ($a) => $this->present($a))->all();
+    }
+
+    /**
+     * Leave only after probation, where the policy says so.
+     *
+     * HR set this out on 5 Sep: "आफ्टर प्रोबेशन अपना लीव एप्लीकेबल होगा — बिफोर
+     * प्रोबेशन अपना जो मैंने लीव लिया डिडक्ट होना चाहिए मेरे सैलरी से". The flag
+     * to express it, `probation_allowed`, already existed on the leave policy;
+     * it was stored, validated in the controller, cast on the model, and read by
+     * nothing. A probationer could apply and be approved exactly like anybody
+     * else, which is the same class of failure as the late-mark thresholds.
+     *
+     * ── Why the FROM date and not today ──
+     *
+     * Somebody two days from confirmation applying for leave the following month
+     * is asking for leave they will be entitled to. Refusing on today's date
+     * would make them wait and reapply for something already permissible.
+     *
+     * ── Why a missing probation_end_date permits ──
+     *
+     * A blank date means nobody recorded a probation period, not that it runs
+     * forever. Treating absence as an active probation would block leave for
+     * every employee predating the field.
+     */
+    private function assertProbationAllows(HrEmployee $employee, $policy, Carbon $from, int $tenantId): void
+    {
+        // The workspace-wide switch. Off means probation never blocks leave,
+        // whatever the individual policies say — some businesses grant leave
+        // from day one and should not have to edit every policy to express it.
+        $enabled = (bool) app(\App\Services\Settings\SettingsService::class)
+            ->get($tenantId, 'payroll', 'probation_blocks_leave', true);
+
+        if (! $enabled) {
+            return;
+        }
+
+        if ($policy && (bool) ($policy->probation_allowed ?? false)) {
+            return;   // this policy explicitly permits leave during probation
+        }
+
+        $end = $employee->probation_end_date;
+        if (! $end) {
+            return;
+        }
+
+        // Confirmed early? Then probation is over whatever the original end date said.
+        if ($employee->confirmation_date && Carbon::parse($employee->confirmation_date)->lte($from)) {
+            return;
+        }
+
+        if ($from->lte(Carbon::parse($end))) {
+            throw new BusinessException(
+                'Leave is available after probation ends on '.Carbon::parse($end)->format('d M Y').
+                '. Leave taken before then is unpaid and comes off the salary.'
+            );
+        }
     }
 
     public function apply(array $data, int $tenantId, ?User $actor = null): array
@@ -63,6 +163,9 @@ class LeaveApplicationService
         if ($to->lt($from)) {
             throw new BusinessException('The end date cannot be before the start date.');
         }
+        $this->assertProbationAllows($employee, $policy, $from, $tenantId);
+        $this->assertNoOverlap($employee->id, $tenantId, $from, $to, $data['id'] ?? null);
+
         $halfDay = (bool) ($data['half_day'] ?? false);
         $days = $this->computeDays($from, $to, $halfDay, (bool) ($policy->weekends_count ?? false), $employee->id, $tenantId);
         if ($days <= 0) {
@@ -180,6 +283,10 @@ class LeaveApplicationService
         }
         $app->update(['status' => HrLeaveApplication::SUBMITTED, 'applied_at' => now(), 'updated_by' => $actor?->id]);
         $app->recordAudit('Leave Submitted', $actor);
+
+        $this->notifier->tell($app->employee, 'Leave', 'submitted',
+            'Your leave from '.$app->from_date.' to '.$app->to_date.' is with your approver.',
+            $actor);
 
         return $this->show($id, $tenantId);
     }

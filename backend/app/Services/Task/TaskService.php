@@ -57,6 +57,8 @@ class TaskService
         private \App\Services\StatusService $statuses,
         private TaskTreeService $tree,
         private TaskNotifier $notifier,
+        private TaskVendorLinkNotifier $vendorNotifier,
+        private \App\Services\Shared\PartyAssignmentService $parties,
         ?CustomerServiceContract $customers = null,
     ) {
         $this->customers = $customers ?? new MockCustomerService();
@@ -111,10 +113,10 @@ class TaskService
         // worth on a list, and erring toward showing LESS here is safe.
         $predicate = function ($q) use ($userId, $pids) {
             $q->where('created_by', $userId)->orWhere('is_public', true);
-            if (Schema::hasTable('task_assignees')) {
+            if ($this->tableExists('task_assignees')) {
                 $q->orWhereHas('assignees', fn ($a) => $a->where('user_id', $userId));
             }
-            if (Schema::hasTable('task_followers')) {
+            if ($this->tableExists('task_followers')) {
                 $q->orWhereHas('followers', fn ($f) => $f->where('user_id', $userId));
             }
             if (! empty($pids)) {
@@ -124,7 +126,7 @@ class TaskService
 
         return $query->where(function ($outer) use ($predicate) {
             $outer->where($predicate);
-            if (Schema::hasColumn('tasks', 'root_id')) {
+            if ($this->columnExists('tasks', 'root_id')) {
                 $outer->orWhereHas('rootTask', fn ($r) => $r->where($predicate));
             }
         });
@@ -178,10 +180,10 @@ class TaskService
         if ((int) $task->created_by === $userId || $task->is_public) {
             return true;
         }
-        if (Schema::hasTable('task_assignees') && $task->assignees()->where('user_id', $userId)->exists()) {
+        if ($this->tableExists('task_assignees') && $task->assignees()->where('user_id', $userId)->exists()) {
             return true;
         }
-        if (Schema::hasTable('task_followers') && $task->followers()->where('user_id', $userId)->exists()) {
+        if ($this->tableExists('task_followers') && $task->followers()->where('user_id', $userId)->exists()) {
             return true;
         }
 
@@ -214,9 +216,16 @@ class TaskService
         $tasks = $this->decorateMany($this->tasks->filtered($tenantId, $filters, $visibility), $tenantId);
 
         // Batched — one tag query for the whole page, not one per row.
-        $tagMap = $this->tags->tagsForMany('task', $tasks->pluck('id')->all(), $tenantId);
+        $ids = $tasks->pluck('id')->all();
+        $tagMap = $this->tags->tagsForMany('task', $ids, $tenantId);
+        // Same batching reason: a board of fifty tasks must not become fifty
+        // queries for the chips beside each name.
+        $partyMap = $this->parties->forSubjects(\App\Models\Shared\PartyAssignee::SUBJECT_TASK, $ids);
 
-        return $tasks->each(fn (Task $t) => $t->setAttribute('tags', $tagMap[$t->id] ?? []));
+        return $tasks->each(function (Task $t) use ($tagMap, $partyMap) {
+            $t->setAttribute('tags', $tagMap[$t->id] ?? []);
+            $t->setAttribute('party_assignees', $partyMap[$t->id] ?? []);
+        });
     }
 
     public function show(int $id, int $tenantId): Task
@@ -234,6 +243,10 @@ class TaskService
         // for the same work.
         $task->setAttribute('progress', $this->tree->progressForTask($task, $tenantId));
         $task->setAttribute('ancestry', $this->tree->ancestryOf($task, $tenantId));
+        // People at the client / vendor / TPV who own this one. A separate
+        // attribute from `assignees` because they are not users and the screen
+        // must not blur the two — see PartyAssignmentService.
+        $task->setAttribute('party_assignees', $this->parties->forSubject(\App\Models\Shared\PartyAssignee::SUBJECT_TASK, $task->id));
         // PR1 — the effective billable amount (fixed if set, else rate × hours).
         // Visibility is gated to admins in the controller.
         $task->setAttribute('billable_amount_effective', $task->effectiveBillableAmount());
@@ -347,13 +360,31 @@ class TaskService
         }
         $this->syncRelations($task->id, $relations, $tenantId);
 
+        // Filing a task against a vendor is how a Purchase vendor is reached at
+        // all — it has no User to assign — so the link itself has to announce
+        // itself. See TaskVendorLinkNotifier.
+        $this->notifyVendorLink($task, $userId);
+
         $task = $this->decorateRelation($task->fresh('creator'), $tenantId);
         $task->setAttribute('tags', $this->tags->tagsFor('task', $task->id, $tenantId));
 
         return $task;
     }
 
-    public function update(int $id, array $data, int $tenantId): Task
+    /**
+     * Ring the vendor a task is filed against, if it is filed against one.
+     *
+     * Kept in one place so create() and update() cannot drift apart — a task
+     * linked on the edit screen has to notify exactly as one linked at creation.
+     */
+    private function notifyVendorLink(Task $task, ?int $actorId): void
+    {
+        if (in_array($task->rel_type, ['tpv_vendor', 'purchase_vendor'], true) && $task->rel_id) {
+            $this->vendorNotifier->linked($task, (string) $task->rel_type, (int) $task->rel_id, $actorId);
+        }
+    }
+
+    public function update(int $id, array $data, int $tenantId, ?int $actorId = null): Task
     {
         $task = $this->find($id, $tenantId);
 
@@ -375,7 +406,17 @@ class TaskService
             $task->deadline_notified = false;
         }
 
+        // Captured BEFORE the save, because after it isDirty() is clean again.
+        // Only a genuine change announces itself: editing a description on a task
+        // that has been linked to the same vendor for a month must not tell them
+        // it is new.
+        $linkChanged = $task->isDirty('rel_type') || $task->isDirty('rel_id');
+
         $task->save();
+
+        if ($linkChanged) {
+            $this->notifyVendorLink($task, $actorId);
+        }
 
         if ($tags !== null) {
             $this->tags->sync('task', $task->id, $tags, $tenantId);
@@ -662,26 +703,30 @@ class TaskService
 
     public function listChecklist(int $taskId, int $tenantId): Collection
     {
-        return $this->find($taskId, $tenantId)->checklistItems()->with('assignee:id,name')->get();
+        return $this->find($taskId, $tenantId)
+            ->checklistItems()
+            ->with(['assignee:id,name', 'assignees.user:id,name'])
+            ->get();
     }
 
-    public function addChecklistItem(int $taskId, string $description, int $tenantId, ?int $assignedTo = null): TaskChecklistItem
+    public function addChecklistItem(int $taskId, string $description, int $tenantId, array|int|null $assignedTo = null): TaskChecklistItem
     {
         $task = $this->find($taskId, $tenantId);
         $order = ((int) $task->checklistItems()->max('order')) + 1;
 
-        return $task->checklistItems()->create([
+        $item = $task->checklistItems()->create([
             'tenant_id'   => $tenantId,
             'description' => $description,
             'order'       => $order,
-            'assigned_to' => $assignedTo,
-        ])->load('assignee:id,name');
+        ]);
+
+        return $this->assignChecklistItem($item, $this->userIdList($assignedTo), $tenantId);
     }
 
     /**
-     * Edit a checklist item in place — used to (re)assign it to a person or fix
-     * its text. Only the keys passed are touched, so assigning someone never
-     * clears the description and vice-versa.
+     * Edit a checklist item in place — used to (re)assign it or fix its text.
+     * Only the keys passed are touched, so assigning someone never clears the
+     * description and vice-versa.
      */
     public function updateChecklistItem(int $itemId, array $data, int $tenantId): TaskChecklistItem
     {
@@ -690,10 +735,109 @@ class TaskService
             throw new BusinessException('Checklist item not found.', 404);
         }
 
-        $item->fill(array_intersect_key($data, array_flip(['description', 'assigned_to'])));
-        $item->save();
+        if (array_key_exists('description', $data)) {
+            $item->description = $data['description'];
+            $item->save();
+        }
 
-        return $item->load('assignee:id,name');
+        // Absent means "leave the people alone"; present-but-empty means
+        // "take everyone off". null and [] must not be the same as not sending
+        // the key at all, or renaming a line would silently unassign it.
+        if (array_key_exists('assigned_to', $data)) {
+            return $this->assignChecklistItem($item, $this->userIdList($data['assigned_to']), $tenantId);
+        }
+
+        return $item->load(['assignee:id,name', 'assignees.user:id,name']);
+    }
+
+    /**
+     * Put a checklist line on a set of people — the whole set, replacing whoever
+     * was on it.
+     *
+     * A line used to hold ONE user id, so "Priya and Rohit are doing this"
+     * became two lines, or one line with one name and the other person told
+     * verbally. The pivot is now the truth and `assigned_to` is kept pointing at
+     * the first of the set, so the notification leg and anything outside this
+     * module that reads the column keep working. This is the only place either
+     * is written.
+     *
+     * @param  int[]  $userIds
+     */
+    public function assignChecklistItem(TaskChecklistItem $item, array $userIds, int $tenantId): TaskChecklistItem
+    {
+        $valid = $userIds
+            ? User::where('tenant_id', $tenantId)->whereIn('id', $userIds)
+                ->whereNotIn('role', self::NON_ASSIGNABLE_ROLES)
+                ->pluck('id')->map(fn ($i) => (int) $i)->all()
+            : [];
+
+        if (count($valid) !== count(array_unique($userIds))) {
+            throw new BusinessException('One or more selected people cannot be assigned in this workspace.', 422);
+        }
+
+        // Preserve the order they were picked in — the first is the one the
+        // mirror column and the single-name callers will show.
+        $ordered = array_values(array_filter($userIds, fn ($id) => in_array($id, $valid, true)));
+
+        DB::transaction(function () use ($item, $ordered, $tenantId) {
+            $item->assignees()->whereNotIn('user_id', $ordered ?: [0])->delete();
+
+            $existing = $item->assignees()->pluck('user_id')->map(fn ($i) => (int) $i)->all();
+            foreach (array_diff($ordered, $existing) as $uid) {
+                $item->assignees()->create(['tenant_id' => $tenantId, 'user_id' => $uid]);
+            }
+
+            $item->forceFill(['assigned_to' => $ordered[0] ?? null])->save();
+        });
+
+        return $item->load(['assignee:id,name', 'assignees.user:id,name']);
+    }
+
+    /**
+     * One id, a list of ids, or nothing — all the shapes the API accepts.
+     *
+     * The endpoint took a single `assigned_to` integer before this, and old
+     * callers still send one. Normalising here rather than at each call site is
+     * what lets both shapes mean the same thing.
+     *
+     * @return int[]
+     */
+    private function userIdList(array|int|null $input): array
+    {
+        if ($input === null || $input === '') {
+            return [];
+        }
+
+        return collect(is_array($input) ? $input : [$input])
+            ->map(fn ($i) => (int) $i)->filter()->unique()->values()->all();
+    }
+
+    /**
+     * Remove a checklist line.
+     *
+     * A checklist is a scratchpad — a line gets added by mistake, or the work it
+     * described stops being part of the task — and there was no way to take one
+     * off, only to tick it, which reads as "we did it" and is the wrong record.
+     *
+     * The assignee rows go with it. They are the line's own pivot and mean
+     * nothing without it; leaving them behind is what puts a user id in a
+     * notification query for a line that no longer exists.
+     */
+    public function deleteChecklistItem(int $itemId, int $tenantId): int
+    {
+        $item = TaskChecklistItem::forTenant($tenantId)->find($itemId);
+        if (! $item) {
+            throw new BusinessException('Checklist item not found.', 404);
+        }
+
+        $taskId = (int) $item->task_id;
+
+        DB::transaction(function () use ($item) {
+            $item->assignees()->delete();
+            $item->delete();
+        });
+
+        return $taskId;
     }
 
     public function toggleChecklistItem(int $itemId, int $tenantId, int $userId): TaskChecklistItem
@@ -716,7 +860,19 @@ class TaskService
         return $this->find($taskId, $tenantId)->comments()->with('user:id,name', 'attachments')->get();
     }
 
-    public function addComment(int $taskId, string $content, int $tenantId, int $userId, array $files = []): TaskComment
+    /**
+     * Post a comment on a task.
+     *
+     * $userId is the author when the author is a User (staff, TPV). It is null
+     * for an author that has no User row -- a Purchase vendor writing from its
+     * portal -- and $author then carries who it actually was:
+     *
+     *     ['kind' => 'purchase_vendor', 'id' => 7, 'name' => 'Acme Ltd']
+     *
+     * The name is snapshotted rather than joined, because the shared Task module
+     * must not learn how to read a Purchase table. See TaskComment.
+     */
+    public function addComment(int $taskId, string $content, int $tenantId, ?int $userId, array $files = [], ?array $author = null): TaskComment
     {
         $task = $this->find($taskId, $tenantId);
 
@@ -728,7 +884,12 @@ class TaskService
         $content = \App\Support\HtmlSanitizer::clean($content);
 
         $comment = $task->comments()->create([
-            'tenant_id' => $tenantId, 'user_id' => $userId, 'content' => $content,
+            'tenant_id'   => $tenantId,
+            'user_id'     => $userId,
+            'content'     => $content,
+            'author_kind' => $author['kind'] ?? 'user',
+            'author_id'   => $author['id'] ?? $userId,
+            'author_name' => $author['name'] ?? null,
         ]);
 
         // Attachments dropped on the comment are stored as task files carrying this
@@ -743,10 +904,15 @@ class TaskService
                 'file_size'   => $file->getSize(),
                 'mime_type'   => $file->getClientMimeType(),
                 'uploaded_by' => $userId,
+                'author_kind' => $author['kind'] ?? 'user',
+                'author_id'   => $author['id'] ?? $userId,
+                'author_name' => $author['name'] ?? null,
             ]);
         }
 
-        $author = User::find($userId)?->name ?? 'Someone';
+        // Who the notifications will say this came from. A non-User author has
+        // only the name it supplied -- there is nothing to look up.
+        $author = $author['name'] ?? ($userId ? (User::find($userId)?->name ?? 'Someone') : 'Someone');
         $excerpt = Str::limit(trim(strip_tags($content)), 120) ?: 'shared a file';
 
         // @mentioned people are told they were named; everyone else watching gets
@@ -784,30 +950,134 @@ class TaskService
     }
 
     /**
+     * The same thread, written to by a vendor that is not a User.
+     *
+     * A thin, deliberately named front door onto addComment() so the portal
+     * controllers do not each hand-assemble an author array -- and so anyone
+     * reading the portal code can see at a glance that a vendor comment lands in
+     * the SAME task_comments thread the admin reads, not a parallel one.
+     */
+    public function addVendorComment(int $taskId, string $content, int $tenantId, string $kind, int $vendorId, string $vendorName, array $files = []): TaskComment
+    {
+        return $this->addComment($taskId, $content, $tenantId, null, $files, [
+            'kind' => $kind,
+            'id'   => $vendorId,
+            'name' => $vendorName,
+        ]);
+    }
+
+    /**
      * Resolve "@Name Surname" mentions to staff ids. Names are matched longest-first
      * so "@Anna Marie" doesn't get claimed by a user called "Anna".
      */
-    private function mentionedUserIds(string $content, int $tenantId, int $actorId): array
+    /**
+     * The shortest name that may be matched from free text.
+     *
+     * Names are matched as substrings, so a two-letter name turns every comment
+     * containing "@Dr..." — "@Drive the update over" — into a notification for
+     * whoever is called Dr. Anyone with a name this short is reachable through
+     * the picker, which carries an id and needs no guessing.
+     */
+    private const MIN_LOOSE_MENTION = 4;
+
+    /**
+     * Who was @mentioned in this comment.
+     *
+     * Two ways in, and the order matters.
+     *
+     * The picker inserts a marker carrying the person's id
+     * (`<span data-mention="12">@Priya Sharma</span>`), which is exact: it
+     * survives a rename, a middle name, a nickname, and cannot match the wrong
+     * person. That is now the primary path.
+     *
+     * The fallback reads plain "@Name" text, for a comment typed without the
+     * picker, and it used to be the ONLY path — which is why mentions barely
+     * worked. It required the person's full name, character for character:
+     * "@Priya" reached nobody, and "@Priya Sharma" reached nobody either
+     * whenever the editor put a non-breaking space between the words, which a
+     * browser does routinely. Both are handled here, and the loose match is
+     * bounded so short names stop matching the insides of ordinary words.
+     */
+    private function mentionedUserIds(string $content, int $tenantId, ?int $actorId): array
     {
-        if (! str_contains($content, '@')) {
-            return [];
+        $hits = [];
+
+        // 1. Explicit markers from the picker — an id, not a guess.
+        if (preg_match_all('~data-mention=["\'](\d{1,12})["\']~i', $content, $m)) {
+            $hits = array_map('intval', $m[1]);
         }
 
-        $text = strip_tags($content);
+        if (! str_contains($content, '@')) {
+            return $this->keepMentionable($hits, $tenantId, $actorId);
+        }
+
+        // 2. Free text. &nbsp; (and its entity) read as ordinary spaces, and runs
+        //    of whitespace collapse, so "@Priya&nbsp;Sharma" is "@Priya Sharma".
+        $text = html_entity_decode(strip_tags($content), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $text = preg_replace('~[\x{00A0}\s]+~u', ' ', $text);
+
         $staff = User::where('tenant_id', $tenantId)
             ->whereNotIn('role', self::EXTERNAL_ROLES)
-            ->where('id', '!=', $actorId)
+            // Guarded: a null actor is a non-User author, and `id != NULL` is
+            // never true, which would hand back an empty roster.
+            ->when($actorId, fn ($q) => $q->where('id', '!=', $actorId))
             ->get(['id', 'name'])
+            // Longest first, so "@Priya Sharma" is credited to Priya Sharma and
+            // not to a colleague who happens to be called Priya.
             ->sortByDesc(fn ($u) => mb_strlen((string) $u->name));
 
-        $hits = [];
         foreach ($staff as $u) {
-            if ($u->name && stripos($text, '@'.$u->name) !== false) {
-                $hits[] = (int) $u->id;
+            $name = trim((string) $u->name);
+            if ($name === '' || in_array((int) $u->id, $hits, true)) {
+                continue;
+            }
+
+            // The whole name, then the first name on its own — people type what
+            // they call each other, which is almost never the full record.
+            foreach ($this->mentionForms($name) as $form) {
+                if (mb_strlen($form) < self::MIN_LOOSE_MENTION) {
+                    continue;
+                }
+                // Ends on a word boundary, so "@Ann" does not match "@Annabel".
+                if (preg_match('~@'.preg_quote($form, '~').'\b~iu', $text)) {
+                    $hits[] = (int) $u->id;
+                    break;
+                }
             }
         }
 
-        return array_values(array_unique($hits));
+        return $this->keepMentionable($hits, $tenantId, $actorId);
+    }
+
+    /** "Priya Sharma" is written as itself, or as "Priya". */
+    private function mentionForms(string $name): array
+    {
+        $first = explode(' ', $name)[0];
+
+        return $first !== $name ? [$name, $first] : [$name];
+    }
+
+    /**
+     * Only real, internal colleagues — and never the author.
+     *
+     * The marker in the HTML is whatever reached the server, so an id in it is
+     * a claim, not a fact: it is checked against the same roster the loose match
+     * uses before anybody is notified.
+     */
+    private function keepMentionable(array $ids, int $tenantId, ?int $actorId): array
+    {
+        $ids = array_values(array_unique(array_filter($ids)));
+        if (! $ids) {
+            return [];
+        }
+
+        return User::where('tenant_id', $tenantId)
+            ->whereNotIn('role', self::EXTERNAL_ROLES)
+            ->when($actorId, fn ($q) => $q->where('id', '!=', $actorId))
+            ->whereIn('id', $ids)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
     }
 
     /* ── Timers ─────────────────────────────────────────────────── */
@@ -1260,7 +1530,7 @@ class TaskService
             : $this->scopeVisible(Task::forTenant($tenantId), $tenantId, $userId);
         $today = now()->toDateString();
 
-        $mine = Schema::hasTable('task_assignees')
+        $mine = $this->tableExists('task_assignees')
             ? (clone $base())->whereHas('assignees', fn ($q) => $q->where('user_id', $userId))
                 ->where('status', '!=', 'complete')->count()
             : 0;
@@ -1307,11 +1577,20 @@ class TaskService
         if ($action === 'priority' && ! in_array($value, ['low', 'medium', 'high', 'urgent'], true)) {
             throw new BusinessException('Unknown priority.', 422);
         }
+        // 'assign' takes one id or several. It took a single id before, and the
+        // bulk bar still sends one when only one is picked, so both shapes have
+        // to mean the same thing — see userIdList().
+        $assignIds = [];
         if ($action === 'assign') {
-            $ok = User::where('tenant_id', $tenantId)->whereKey((int) $value)
-                ->whereNotIn('role', self::NON_ASSIGNABLE_ROLES)->exists();
-            if (! $ok) {
-                throw new BusinessException('That person cannot be assigned in this workspace.', 422);
+            $assignIds = $this->userIdList(is_array($value) ? $value : (int) $value);
+            if (! $assignIds) {
+                throw new BusinessException('Choose at least one person to assign.', 422);
+            }
+
+            $ok = User::where('tenant_id', $tenantId)->whereIn('id', $assignIds)
+                ->whereNotIn('role', self::NON_ASSIGNABLE_ROLES)->count();
+            if ($ok !== count($assignIds)) {
+                throw new BusinessException('One or more selected people cannot be assigned in this workspace.', 422);
             }
         }
 
@@ -1323,9 +1602,12 @@ class TaskService
                 'priority' => $task->update(['priority' => $value]),
                 // Adds to the existing set rather than replacing it — "assign these
                 // 10 tasks to Priya" should not unassign everyone else.
+                // Adds to whoever is already on each task rather than
+                // replacing them — bulk assign is "also put these people on
+                // it", not "these people and nobody else".
                 'assign'   => $this->syncAssignees(
                     $task->id,
-                    $task->assignees()->pluck('user_id')->push((int) $value)->unique()->all(),
+                    $task->assignees()->pluck('user_id')->merge($assignIds)->unique()->all(),
                     $tenantId, $userId,
                 ),
                 default    => null,
@@ -1362,15 +1644,25 @@ class TaskService
     /** Attach resolved customer data for customer-linked tasks (no cross-module join). */
     private function decorateRelation(Task $task, int $tenantId): Task
     {
-        if ($task->rel_type === 'customer' && $task->rel_id) {
-            $customer = $this->customers->getCustomer((int) $task->rel_id, $tenantId);
-            $task->setAttribute('customer', $customer);
-            $task->setAttribute('rel_label', $customer['name'] ?? $customer['company'] ?? "Customer #{$task->rel_id}");
-            $task->setAttribute('rel_url', null);
-        } elseif ($task->rel_id) {
-            [$label, $url] = $this->resolveRelLabel($task->rel_type, (int) $task->rel_id, $tenantId);
+        if ($task->rel_id) {
+            // Through the SAME resolver the list uses. These were two code paths
+            // that answered the same question differently — the single-task view
+            // resolved a customer through the directory service and everything
+            // else through resolveRelLabel(), so the label on the board and the
+            // label in the modal could disagree, and only one of them knew when
+            // the target had been deleted.
+            [$label, $url, $found] = $this->labelsFor($task->rel_type, [(int) $task->rel_id], $tenantId)[(int) $task->rel_id]
+                ?? [null, null, false];
+
             $task->setAttribute('rel_label', $label);
             $task->setAttribute('rel_url', $url);
+            $task->setAttribute('rel_missing', $label !== null && ! $found);
+
+            if ($task->rel_type === 'customer') {
+                $task->setAttribute('customer', $found
+                    ? $this->customers->getCustomer((int) $task->rel_id, $tenantId)
+                    : null);
+            }
         }
 
         // Additional "Related To" links (many-per-task), each with a resolved label.
@@ -1380,46 +1672,53 @@ class TaskService
     }
 
     /**
-     * Batch-decorate a list. One query per rel_type instead of one per row —
-     * decorating in a map() is an N+1 the moment a real customer service is bound.
+     * Batch-decorate a list: every task's link label in a handful of queries,
+     * regardless of how many rows there are.
+     *
+     * This used to batch projects, tickets and vendors and then hand CUSTOMER
+     * rows back to the single-row path — which fetched the client, its primary
+     * contact, and the task's additional relations, one row at a time. On a
+     * board with a dozen customer tasks that was forty extra queries, and it is
+     * the bulk of why the list felt slow.
+     *
+     * Now every rel_type goes through labelsFor(), which is one query per TYPE,
+     * and the additional relations are fetched for the whole page at once.
      */
     private function decorateMany(Collection $tasks, int $tenantId): Collection
     {
-        $ids = fn (string $type) => $tasks->where('rel_type', $type)->pluck('rel_id')->filter()->unique()->all();
+        // One label map per rel_type present on the page — at most eight queries
+        // for any number of rows, and usually two or three.
+        $labels = [];
+        foreach ($tasks->pluck('rel_type')->filter()->unique() as $type) {
+            $ids = $tasks->where('rel_type', $type)->pluck('rel_id')->filter()->all();
+            $labels[$type] = $this->labelsFor($type, $ids, $tenantId);
+        }
 
-        $projects = ($p = $ids('project'))
-            ? Project::forTenant($tenantId)->whereIn('id', $p)->pluck('name', 'id')
-            : collect();
-        $tickets = ($t = $ids('ticket'))
-            ? Ticket::forTenant($tenantId)->whereIn('id', $t)->pluck('subject', 'id')
-            : collect();
-        $tpvVendors = ($v = $ids('tpv_vendor')) && Schema::hasTable('vendors')
-            ? \App\Models\Vendor\Vendor::forTenant($tenantId)->whereIn('id', $v)->pluck('company_name', 'id')
-            : collect();
-        $purchaseVendors = ($pv = $ids('purchase_vendor')) && Schema::hasTable('purchase_vendors')
-            ? \App\Models\Purchase\PurchaseVendor::forTenant($tenantId)->whereIn('id', $pv)->pluck('company_name', 'id')
-            : collect();
+        $relations = $this->relationsForMany($tasks->pluck('id')->all(), $tenantId);
 
-        return $tasks->map(function (Task $task) use ($tenantId, $projects, $tickets, $tpvVendors, $purchaseVendors) {
+        return $tasks->map(function (Task $task) use ($labels, $relations) {
+            $task->setAttribute('relations', $relations[$task->id] ?? []);
+
             if (! $task->rel_id) {
                 return $task;
             }
-            $id = (int) $task->rel_id;
 
-            [$label, $url] = match ($task->rel_type) {
-                'project' => [$projects[$id] ?? "Project #{$id}", "/app/projects/{$id}"],
-                'ticket'  => [$tickets[$id] ?? "Ticket #{$id}", "/app/helpdesk/tickets/{$id}"],
-                'tpv_vendor'      => [$tpvVendors[$id] ?? "TPV Vendor #{$id}", "/app/tpv/vendors/{$id}"],
-                'purchase_vendor' => [$purchaseVendors[$id] ?? "Purchase Vendor #{$id}", "/app/purchase/vendors/{$id}"],
-                default   => [null, null],
-            };
-
-            if ($task->rel_type === 'customer') {
-                return $this->decorateRelation($task, $tenantId);
-            }
-
+            [$label, $url, $found] = $labels[$task->rel_type][(int) $task->rel_id] ?? [null, null, false];
             $task->setAttribute('rel_label', $label);
             $task->setAttribute('rel_url', $url);
+            // Deleting a vendor, project or ticket does not touch the tasks that
+            // point at it, so a dangling link is ordinary and has to be legible
+            // rather than silently broken.
+            $task->setAttribute('rel_missing', $label !== null && ! $found);
+
+            // A customer link also carries the record itself — kept because
+            // consumers outside this module read it, but built from the label
+            // map rather than a fresh query per row.
+            if ($task->rel_type === 'customer' && $label !== null) {
+                $task->setAttribute('customer', [
+                    'id' => (int) $task->rel_id, 'name' => $label, 'company' => $label,
+                ]);
+            }
 
             return $task;
         });
@@ -1434,37 +1733,137 @@ class TaskService
     private function resolveRelLabel(?string $relType, int $relId, int $tenantId): array
     {
         return match ($relType) {
-            'project' => Schema::hasTable('projects')
+            'project' => $this->tableExists('projects')
                 ? [Project::forTenant($tenantId)->whereKey($relId)->value('name') ?? "Project #{$relId}", "/app/projects/{$relId}"]
                 : [null, null],
-            'ticket' => Schema::hasTable('tickets')
+            'ticket' => $this->tableExists('tickets')
                 ? [Ticket::forTenant($tenantId)->whereKey($relId)->value('subject') ?? "Ticket #{$relId}", "/app/helpdesk/tickets/{$relId}"]
                 : [null, null],
             // Customer + contract links come from the Sales/Customer modules.
-            'customer' => Schema::hasTable('clients')
+            'customer' => $this->tableExists('clients')
                 ? [\App\Models\Customer\Client::forTenant($tenantId)->whereKey($relId)->value('company') ?? "Customer #{$relId}", "/app/customers/{$relId}"]
                 : [null, null],
-            'contract' => Schema::hasTable('sales_contracts')
+            'contract' => $this->tableExists('sales_contracts')
                 ? [\App\Models\Sales\SalesContract::forTenant($tenantId)->whereKey($relId)->value('subject') ?? "Contract #{$relId}", "/app/sales/contracts/{$relId}"]
                 : [null, null],
             // Vendor links. TPV and Purchase are separate modules with separate
             // tables -- a task relates to one or the other, never a shared "vendor".
-            'tpv_vendor' => Schema::hasTable('vendors')
-                ? [\App\Models\Vendor\Vendor::forTenant($tenantId)->whereKey($relId)->value('company_name') ?? "TPV Vendor #{$relId}", "/app/tpv/vendors/{$relId}"]
+            'tpv_vendor' => $this->tableExists('vendors')
+                ? [\App\Models\Vendor\Vendor::forTenant($tenantId)->whereKey($relId)->value('company_name') ?? "TPV Vendor #{$relId}", "/app/tpv/view/{$relId}"]
                 : [null, null],
-            'purchase_vendor' => Schema::hasTable('purchase_vendors')
+            'purchase_vendor' => $this->tableExists('purchase_vendors')
                 ? [\App\Models\Purchase\PurchaseVendor::forTenant($tenantId)->whereKey($relId)->value('company_name') ?? "Purchase Vendor #{$relId}", "/app/purchase/vendors/{$relId}"]
                 : [null, null],
             // Lead lives in the Sales module; Meeting is the shared Kickoff meeting.
-            'lead' => Schema::hasTable('leads')
+            'lead' => $this->tableExists('leads')
                 ? [\App\Models\Sales\Lead::forTenant($tenantId)->whereKey($relId)->value('name') ?? "Lead #{$relId}", "/app/sales/leads/{$relId}"]
                 : [null, null],
-            'meeting' => Schema::hasTable('kickoff_meetings')
+            'meeting' => $this->tableExists('kickoff_meetings')
                 ? [\App\Models\Shared\KickoffMeeting::forTenant($tenantId)->whereKey($relId)->value('title') ?? "Meeting #{$relId}", null]
                 : [null, null],
             default => [null, null],
         };
     }
+
+    /**
+     * Labels + deep links for MANY records of one rel_type, in one query.
+     *
+     * resolveRelLabel() answers the same question for a single id, and reading a
+     * list through it is the N+1 this replaces: a board of sixty tasks fired a
+     * query per row for its link, and two more per row for a customer link,
+     * because decorateMany() batched projects, tickets and vendors but handed
+     * customers straight back to the single-row path.
+     *
+     * The table guard stays — a module that is not installed must not fatal the
+     * task list — but it is asked once per TYPE rather than once per row.
+     *
+     * The third element says whether the record was actually FOUND. A link
+     * whose target has been deleted still gets a label — "#41" beside a task is
+     * meaningless, "Project #41" at least says what it was pointing at — but the
+     * screen has to be able to tell that apart from a live link, or it offers an
+     * "open" button that goes to a page with nothing on it.
+     *
+     * @param  int[]  $ids
+     * @return array<int,array{0:?string,1:?string,2:bool}>  id => [label, url, found]
+     */
+    private function labelsFor(?string $relType, array $ids, int $tenantId): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+        if (! $relType || ! $ids) {
+            return [];
+        }
+
+        // table, display column, and how to build the deep link.
+        $spec = match ($relType) {
+            'project'         => ['projects', Project::class, 'name', fn ($id) => "/app/projects/{$id}", 'Project'],
+            'ticket'          => ['tickets', Ticket::class, 'subject', fn ($id) => "/app/helpdesk/tickets/{$id}", 'Ticket'],
+            'customer'        => ['clients', \App\Models\Customer\Client::class, 'company', fn ($id) => "/app/customers/{$id}", 'Customer'],
+            'contract'        => ['sales_contracts', \App\Models\Sales\SalesContract::class, 'subject', fn ($id) => "/app/sales/contracts/{$id}", 'Contract'],
+            // /app/tpv/VIEW/{id}, not /vendors/{id}. The TPV module's vendor
+            // LIST is at /app/tpv/vendors and the workspace is at /app/tpv/view
+            // — Purchase puts both under /vendors, so the obvious guess is right
+            // there and wrong here, and it 404'd on vendors that exist.
+            'tpv_vendor'      => ['vendors', \App\Models\Vendor\Vendor::class, 'company_name', fn ($id) => "/app/tpv/view/{$id}", 'TPV Vendor'],
+            'purchase_vendor' => ['purchase_vendors', \App\Models\Purchase\PurchaseVendor::class, 'company_name', fn ($id) => "/app/purchase/vendors/{$id}", 'Purchase Vendor'],
+            'lead'            => ['leads', \App\Models\Sales\Lead::class, 'name', fn ($id) => "/app/sales/leads/{$id}", 'Lead'],
+            // A meeting has no page of its own to link to.
+            'meeting'         => ['kickoff_meetings', \App\Models\Shared\KickoffMeeting::class, 'title', fn () => null, 'Meeting'],
+            default           => null,
+        };
+
+        if (! $spec || ! $this->tableExists($spec[0])) {
+            return [];
+        }
+
+        [, $model, $column, $url, $noun] = $spec;
+
+        $names = $model::forTenant($tenantId)->whereIn('id', $ids)->pluck($column, 'id');
+
+        $out = [];
+        foreach ($ids as $id) {
+            $found = isset($names[$id]);
+            $out[$id] = [
+                $found ? $names[$id] : "{$noun} #{$id}",
+                // No deep link to a record that is not there.
+                $found ? $url($id) : null,
+                $found,
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Schema::hasTable(), asked once per table per request.
+     *
+     * The task module calls these guards sixteen times across a single list
+     * request. On SQLite each is a cheap read of sqlite_master; on MySQL each is
+     * a round trip to information_schema, which is where the tens of
+     * milliseconds go. The schema cannot change mid-request, so the first answer
+     * is the only one worth paying for.
+     */
+    private function tableExists(string $table): bool
+    {
+        return $this->tableCache[$table] ??= Schema::hasTable($table);
+    }
+
+    private function columnExists(string $table, string $column): bool
+    {
+        return $this->columnCache["$table.$column"] ??= Schema::hasColumn($table, $column);
+    }
+
+    /*
+     * Per-instance, not static. A static cache would outlive the request and, in
+     * the test suite, carry one test's answer into the next — where
+     * RefreshDatabase has rebuilt the schema in between. The service is resolved
+     * once or twice per request, which is where all the repetition is anyway.
+     */
+
+    /** @var array<string,bool> */
+    private array $tableCache = [];
+
+    /** @var array<string,bool> */
+    private array $columnCache = [];
 
     /** rel_types a task may link to (primary link + the additional relations). */
     public const REL_TYPES = ['project', 'ticket', 'customer', 'contract', 'tpv_vendor', 'purchase_vendor', 'lead', 'meeting'];
@@ -1506,15 +1905,54 @@ class TaskService
     /** The additional relations of a task, each decorated with a label + url. */
     public function relationsFor(Task $task, int $tenantId): array
     {
-        return $task->relations()->get()->map(function ($r) use ($tenantId) {
-            if ($r->rel_type === 'customer') {
-                $c = $this->customers->getCustomer((int) $r->rel_id, $tenantId);
-                return ['rel_type' => $r->rel_type, 'rel_id' => (int) $r->rel_id,
-                    'label' => $c['name'] ?? $c['company'] ?? "Customer #{$r->rel_id}", 'url' => null];
-            }
-            [$label, $url] = $this->resolveRelLabel($r->rel_type, (int) $r->rel_id, $tenantId);
-            return ['rel_type' => $r->rel_type, 'rel_id' => (int) $r->rel_id,
-                'label' => $label ?? "{$r->rel_type} #{$r->rel_id}", 'url' => $url];
-        })->all();
+        return $this->relationsForMany([$task->id], $tenantId)[$task->id] ?? [];
+    }
+
+    /**
+     * The same, for a whole page of tasks — one query for the links, then one
+     * per rel_type for their labels.
+     *
+     * The single-row version above now goes through this, so there is one
+     * implementation of what a decorated relation looks like rather than two
+     * that drifted: the old per-row path resolved a customer through the
+     * directory service and everything else through resolveRelLabel(), and the
+     * two disagreed about the fallback label.
+     *
+     * @param  int[]  $taskIds
+     * @return array<int,array<int,array<string,mixed>>>  task_id => relations
+     */
+    public function relationsForMany(array $taskIds, int $tenantId): array
+    {
+        $taskIds = array_values(array_filter(array_map('intval', $taskIds)));
+        if (! $taskIds) {
+            return [];
+        }
+
+        $rows = \App\Models\Task\TaskRelation::whereIn('task_id', $taskIds)->get();
+        if ($rows->isEmpty()) {
+            return [];
+        }
+
+        $labels = [];
+        foreach ($rows->pluck('rel_type')->filter()->unique() as $type) {
+            $labels[$type] = $this->labelsFor(
+                $type, $rows->where('rel_type', $type)->pluck('rel_id')->all(), $tenantId
+            );
+        }
+
+        $out = [];
+        foreach ($rows as $r) {
+            $id = (int) $r->rel_id;
+            [$label, $url, $found] = $labels[$r->rel_type][$id] ?? [null, null, false];
+            $out[(int) $r->task_id][] = [
+                'rel_type' => $r->rel_type,
+                'rel_id'   => $id,
+                'label'    => $label ?? "{$r->rel_type} #{$id}",
+                'url'      => $url,
+                'missing'  => ! $found,
+            ];
+        }
+
+        return $out;
     }
 }

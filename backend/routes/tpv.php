@@ -75,6 +75,7 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     // Step 1 — Kickoff PDF: stream, acknowledge, and log view/download/print.
     Route::get('/onboarding/{onboarding}/kickoff',         [TpvOnboardingController::class, 'kickoffPdf']);
     Route::get('/onboarding/{onboarding}/work-start-letter', [TpvOnboardingController::class, 'workStartLetter']);
+    Route::get('/onboarding/{onboarding}/kickoff-data', [TpvOnboardingController::class, 'kickoffData']);
     Route::post('/onboarding/{onboarding}/kickoff/accept', [TpvOnboardingController::class, 'acceptKickoff']);
     Route::post('/onboarding/{onboarding}/kickoff/log',    [TpvOnboardingController::class, 'logKickoffEvent']);
     Route::post('/onboarding/{onboarding}/profile',   [TpvOnboardingController::class, 'saveProfile']);
@@ -118,6 +119,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::get('/vendors/{vendor}/customers/search',          [\App\Http\Controllers\Api\Vendor\VendorController::class, 'searchCustomers']);
     Route::post('/vendors/{vendor}/customers/link',           [\App\Http\Controllers\Api\Vendor\VendorController::class, 'linkCustomer']);
     Route::post('/vendors/{vendor}/customers',                [\App\Http\Controllers\Api\Vendor\VendorController::class, 'storeCustomer']);
+    // Correcting a linked customer in place. Numeric {client} so this cannot
+    // shadow the static /customers/search route declared above.
+    Route::put('/vendors/{vendor}/customers/{client}',        [\App\Http\Controllers\Api\Vendor\VendorController::class, 'updateCustomer'])->whereNumber('client');
     // Employees (enhancement #2/#9/#10) — the vendor's assignable people. index()
     // feeds the assignee cascade; grant-access provisions a login so an employee
     // can be assigned work and see it. Static segments stay ahead of wildcards.
@@ -189,6 +193,14 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::post('/ppe/issues/{issue}/return',             [\App\Http\Controllers\Api\Tpv\PpeController::class, 'returnIssue']);
     Route::post('/ppe/issues/{issue}/replace',            [\App\Http\Controllers\Api\Tpv\PpeController::class, 'replaceIssue']);
     Route::post('/ppe/issues/{issue}/use',                [\App\Http\Controllers\Api\Tpv\PpeController::class, 'markUsed']);
+    // Signs off that issued gear was checked, satisfying a rule that sets
+    // verification_required. Until this existed that flag could be configured
+    // but never met, so nothing read it.
+    Route::post('/ppe/issues/{issue}/verify',             [\App\Http\Controllers\Api\Tpv\PpeController::class, 'verifyIssue']);
+    // One vendor's OWN PPE list (its stock, not Inventory) — read-only for admin,
+    // shown in the vendor workspace. The vendor keeps it from its portal.
+    Route::get('/ppe/vendors/{vendor}/items',             [\App\Http\Controllers\Api\Tpv\VendorPpeItemController::class, 'index'])->whereNumber('vendor');
+    Route::get('/ppe/vendors/{vendor}/items/{item}/image', [\App\Http\Controllers\Api\Tpv\VendorPpeItemController::class, 'image'])->whereNumber('vendor')->whereNumber('item');
     Route::get('/workers/stats',                          [TpvWorkerController::class, 'stats']);
     Route::get('/workers',                                [TpvWorkerController::class, 'index']);
     Route::post('/workers',                               [TpvWorkerController::class, 'store']);
@@ -202,6 +214,9 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::post('/workers/{worker}/medical',              [TpvWorkerController::class, 'saveMedical']);
     Route::post('/workers/{worker}/mark-medical',         [TpvWorkerController::class, 'markMedical']);
     Route::post('/workers/{worker}/induction',            [TpvWorkerController::class, 'saveInduction']);
+    // Group session — many workers, one trainer signature. Skips (with a reason)
+    // any worker who cannot be inducted instead of failing the whole group.
+    Route::post('/workers/bulk-induction',                [TpvWorkerController::class, 'saveGroupInduction']);
     Route::post('/workers/{worker}/mark-induction',       [TpvWorkerController::class, 'markInduction']);
     // Issuing and returning PPE lives on the /ppe routes above, which move Inventory
     // stock. This one only records a deliberate skip of the step.
@@ -286,6 +301,10 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tpv')->group(fu
     Route::post('/medical/{medical}/comment',             [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'comment'])->whereNumber('medical');
     Route::get('/medical/{medical}/certificate',          [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'certificate'])->whereNumber('medical');
     Route::get('/medical/{medical}/document',             [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'document'])->whereNumber('medical');
+    // The examination's signature and camera photo. Off the public disk
+    // now — they are the proof of presence, not decoration.
+    Route::get('/medical/{medical}/evidence/{kind}', [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'evidence'])
+        ->whereNumber('medical')->whereIn('kind', ['signature', 'capture']);
     Route::post('/workers/{worker}/medical/external',     [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'storeExternal'])->whereNumber('worker');
     Route::get('/workers/{worker}/medical-history',       [\App\Http\Controllers\Api\Tpv\TpvMedicalController::class, 'workerHistory'])->whereNumber('worker');
     Route::get('/competency',                             [\App\Http\Controllers\Api\Tpv\TpvCompetencyController::class, 'index']);

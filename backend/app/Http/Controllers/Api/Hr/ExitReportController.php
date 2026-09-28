@@ -27,56 +27,56 @@ class ExitReportController extends Controller
         $this->gate($request);
         $this->audit($request, 'Exit Report Viewed');
 
-        return response()->json($this->service->dashboard($this->tenant($request)));
+        return response()->json($this->service->dashboard($this->tenant($request), $request->user()));
     }
 
     public function employees(Request $request)
     {
         $this->gate($request);
 
-        return response()->json($this->service->employees($this->tenant($request), $this->filters($request)));
+        return response()->json($this->service->employees($this->tenant($request), $this->filters($request), $request->user()));
     }
 
     public function departments(Request $request)
     {
         $this->gate($request);
 
-        return response()->json($this->service->departments($this->tenant($request), $this->filters($request)));
+        return response()->json($this->service->departments($this->tenant($request), $this->filters($request), $request->user()));
     }
 
     public function exitTypes(Request $request)
     {
         $this->gate($request);
 
-        return response()->json($this->service->exitTypes($this->tenant($request), $this->filters($request)));
+        return response()->json($this->service->exitTypes($this->tenant($request), $this->filters($request), $request->user()));
     }
 
     public function settlements(Request $request)
     {
         $this->gate($request);
 
-        return response()->json($this->service->settlements($this->tenant($request), $this->filters($request)));
+        return response()->json($this->service->settlements($this->tenant($request), $this->filters($request), $request->user()));
     }
 
     public function clearances(Request $request)
     {
         $this->gate($request);
 
-        return response()->json($this->service->clearances($this->tenant($request), $this->filters($request)));
+        return response()->json($this->service->clearances($this->tenant($request), $this->filters($request), $request->user()));
     }
 
     public function trends(Request $request)
     {
         $this->gate($request);
 
-        return response()->json($this->service->trends($this->tenant($request), $this->filters($request)));
+        return response()->json($this->service->trends($this->tenant($request), $this->filters($request), $request->user()));
     }
 
     public function filterOptions(Request $request)
     {
         $this->gate($request);
 
-        return response()->json($this->service->filterOptions($this->tenant($request)));
+        return response()->json($this->service->filterOptions($this->tenant($request), $request->user()));
     }
 
     /** CSV or PDF export. report=employees|departments|exit-types|settlements|clearances|trends, format=csv|pdf. */
@@ -85,7 +85,7 @@ class ExitReportController extends Controller
         $this->gate($request);
         $report = $request->query('report', 'employees');
         $format = $request->query('format', 'csv');
-        $data   = $this->service->exportRows($report, $this->tenant($request), $this->filters($request));
+        $data   = $this->service->exportRows($report, $this->tenant($request), $this->filters($request), $request->user());
         $base   = str_replace(' ', '_', strtolower($data['title']));
 
         $this->audit($request, 'Exit Report Exported', ['report' => $report, 'format' => $format]);

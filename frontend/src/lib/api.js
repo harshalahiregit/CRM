@@ -2,6 +2,8 @@ import axios from 'axios'
 import { attachMediaCompression } from './mediaCompress'
 import { getToken, clearAuth } from '@/lib/authStorage'
 import { isSessionFailure } from '@/lib/sessionFailure'
+import { recordRequestFailure } from '@/lib/requestFailures'
+import { recordFailedRequest } from '@/lib/sire/requestLog'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api',
@@ -34,12 +36,25 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    // FIRST in the branch. SIRE attaches the last few failed requests to a bug
+    // report, and a failure that has already happened cannot be collected
+    // afterwards -- so it has to be recorded before the session-expiry path
+    // below redirects away. Metadata only; never throws, never alters the
+    // rejection. See lib/sire/requestLog.js.
+    recordFailedRequest(error)
+
     if (isSessionFailure(error, !!getToken())) {
       clearAuth()
       if (!window.location.pathname.startsWith('/auth')) {
         window.location.href = '/auth/login'
       }
     }
+    // Recorded before the rejection travels on, because most callers end in
+    // `.catch(() => setRows([]))` and the failure would otherwise vanish there.
+    // Nothing about the rejection changes — pages that DO handle their errors
+    // are unaffected.
+    recordRequestFailure(error)
+
     return Promise.reject(error)
   },
 )

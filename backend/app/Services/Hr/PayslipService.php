@@ -37,21 +37,21 @@ class PayslipService
     ) {
     }
 
-    public function list(int $tenantId, array $filters): array
+    public function list(int $tenantId, array $filters, ?User $actor = null): array
     {
-        return $this->repo->filtered($tenantId, $filters)->map(fn ($p) => $this->present($p))->all();
+        return $this->repo->filtered($tenantId, $filters, $actor)->map(fn ($p) => $this->present($p))->all();
     }
 
-    public function show(int $id, int $tenantId): array
+    public function show(int $id, int $tenantId, ?User $actor = null): array
     {
-        return $this->present($this->find($id, $tenantId));
+        return $this->present($this->find($id, $tenantId, $actor));
     }
 
-    public function forEmployee(int $employeeId, int $tenantId): array
+    public function forEmployee(int $employeeId, int $tenantId, ?User $actor = null): array
     {
         $this->assertEmployee($employeeId, $tenantId);
 
-        return $this->repo->forEmployee($employeeId, $tenantId)->map(fn ($p) => $this->present($p))->all();
+        return $this->repo->forEmployee($employeeId, $tenantId, $actor)->map(fn ($p) => $this->present($p))->all();
     }
 
     /**
@@ -90,10 +90,23 @@ class PayslipService
                     'payslip_number'    => $number,
                     'payslip_month'     => $run->payroll_month,
                     'payslip_year'      => $run->payroll_year,
-                    'gross_salary'      => $record->gross_salary,
+                    // PERIOD figures, not the structure snapshot.
+                    //
+                    // This used to copy $record->total_deductions and
+                    // $record->net_salary, which are the frozen salary-structure
+                    // values: deductions 0 and net == gross, for every employee,
+                    // always. A payslip therefore told somebody their net was
+                    // ₹48,478 with no deductions while ₹1,800 PF and ₹200 PT had
+                    // been withheld and ₹46,478 reached their bank — and an
+                    // Indian payslip that does not show PF and PT is not just
+                    // confusing, it is not a payslip.
+                    //
+                    // netPayable() is the single definition of take-home and is
+                    // reused rather than re-derived here; see HrPayrollRecord.
+                    'gross_salary'      => $record->periodGross(),
                     'total_benefits'    => $record->total_benefits,
-                    'total_deductions'  => $record->total_deductions,
-                    'net_salary'        => $record->net_salary,
+                    'total_deductions'  => $record->periodDeductions(),
+                    'net_salary'        => $record->netPayable(),
                     'breakdown'         => $this->buildBreakdown($record, $tenantId),
                     'status'            => HrPayslip::GENERATED,
                     'generated_by'      => $actor?->id,
@@ -121,7 +134,10 @@ class PayslipService
     /** Prepare a payslip file for download (rendering the PDF if missing). Audited. */
     public function download(int $id, int $tenantId, ?User $actor = null): array
     {
-        $payslip = $this->find($id, $tenantId);
+        // The actor was already here for the audit line but was not reaching
+        // the lookup, so the PDF was the one payslip surface scope never saw —
+        // the export path around the list.
+        $payslip = $this->find($id, $tenantId, $actor);
 
         if (empty($payslip->pdf_path) || ! Storage::disk(self::DOC_DISK)->exists($payslip->pdf_path)) {
             $payslip->update(['pdf_path' => $this->renderPdf($payslip)]);
@@ -244,9 +260,9 @@ class PayslipService
         ];
     }
 
-    private function find(int $id, int $tenantId): HrPayslip
+    private function find(int $id, int $tenantId, ?User $actor = null): HrPayslip
     {
-        $payslip = $this->repo->findForTenant($id, $tenantId);
+        $payslip = $this->repo->findForTenant($id, $tenantId, $actor);
         if (! $payslip) {
             throw new BusinessException('Payslip not found', 404);
         }

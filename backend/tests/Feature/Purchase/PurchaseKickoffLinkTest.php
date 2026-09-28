@@ -77,16 +77,16 @@ class PurchaseKickoffLinkTest extends TestCase
         $meeting = $this->meeting();
         Sanctum::actingAs($this->admin());
 
-        $res = $this->postJson("/api/purchase/kickoff/{$meeting->id}/generate-link", ['platform' => 'jitsi'])
+        $res = $this->postJson("/api/purchase/kickoff/{$meeting->id}/generate-link", ['platform' => 'google_meet'])
             ->assertOk();
 
         $link = $res->json('link.link');
         $this->assertNotEmpty($link);
-        $this->assertStringStartsWith('https://meet.jit.si/', $link);
+        $this->assertStringStartsWith('https://meet.google.com/', $link);
 
         // And it is stored on the meeting, not just returned.
         $this->assertSame($link, $meeting->fresh()->meeting_link);
-        $this->assertSame('jitsi', $meeting->fresh()->meeting_platform);
+        $this->assertSame('google_meet', $meeting->fresh()->meeting_platform);
     }
 
     public function test_the_stored_link_reads_back(): void
@@ -94,10 +94,10 @@ class PurchaseKickoffLinkTest extends TestCase
         $meeting = $this->meeting();
         Sanctum::actingAs($this->admin());
 
-        $this->postJson("/api/purchase/kickoff/{$meeting->id}/generate-link", ['platform' => 'jitsi'])->assertOk();
+        $this->postJson("/api/purchase/kickoff/{$meeting->id}/generate-link", ['platform' => 'google_meet'])->assertOk();
 
         $this->getJson("/api/purchase/kickoff/{$meeting->id}/link")->assertOk()
-            ->assertJsonPath('platform', 'jitsi');
+            ->assertJsonPath('platform', 'google_meet');
     }
 
     public function test_another_tenants_meeting_is_not_reachable(): void
@@ -137,26 +137,44 @@ class PurchaseKickoffLinkTest extends TestCase
         $res = $this->postJson("/api/purchase/kickoff/{$meeting->id}/generate-link")->assertOk();
 
         // meet.example.com is not a meeting. Anything that resolves to the stub
-        // falls through to Jitsi, which is a genuine room.
+        // falls through to the default platform's own start-now URL, which is.
         $this->assertStringNotContainsString('example.com', $res->json('link.link'));
-        $this->assertStringStartsWith('https://meet.jit.si/', $res->json('link.link'));
+        $this->assertStringStartsWith('https://meet.google.com/', $res->json('link.link'));
     }
 
     public function test_the_legacy_stub_platform_is_accepted_not_rejected(): void
     {
-        // Every meeting created before Jitsi existed here stored
-        // meeting_platform = "stub", and the detail page sends the STORED
-        // platform back when Generate is pressed. Rejecting it 422d as
-        // "Validation failed" on exactly those meetings.
+        // Meetings created before this stored meeting_platform = "stub", and
+        // the detail page sends the STORED platform back when Generate is
+        // pressed. Rejecting it 422d as "Validation failed" on exactly those
+        // meetings.
         $meeting = $this->meeting(['meeting_platform' => 'stub']);
         Sanctum::actingAs($this->admin());
 
         $res = $this->postJson("/api/purchase/kickoff/{$meeting->id}/generate-link", ['platform' => 'stub'])
             ->assertOk();
 
-        // Accepted, and quietly upgraded to a room that actually opens.
-        $this->assertStringStartsWith('https://meet.jit.si/', $res->json('link.link'));
-        $this->assertSame('jitsi', $meeting->fresh()->meeting_platform);
+        // Accepted, and quietly upgraded to a platform that actually opens.
+        $this->assertStringStartsWith('https://meet.google.com/', $res->json('link.link'));
+        $this->assertSame('google_meet', $meeting->fresh()->meeting_platform);
+    }
+
+    public function test_the_retired_jitsi_platform_is_accepted_not_rejected(): void
+    {
+        // The same trap one retirement later. Every meeting scheduled while the
+        // call ran inside the CRM stored meeting_platform = "jitsi", and the
+        // detail page still posts it straight back. It must not 422 them, and
+        // it must not hand back a meet.jit.si room either — that is the thing
+        // being removed.
+        $meeting = $this->meeting(['meeting_platform' => 'jitsi']);
+        Sanctum::actingAs($this->admin());
+
+        $res = $this->postJson("/api/purchase/kickoff/{$meeting->id}/generate-link", ['platform' => 'jitsi'])
+            ->assertOk();
+
+        $this->assertStringNotContainsString('jit.si', $res->json('link.link'));
+        $this->assertStringStartsWith('https://meet.google.com/', $res->json('link.link'));
+        $this->assertSame('google_meet', $meeting->fresh()->meeting_platform);
     }
 
     public function test_a_meeting_with_a_stored_stub_platform_regenerates_without_a_platform_argument(): void
@@ -168,7 +186,7 @@ class PurchaseKickoffLinkTest extends TestCase
 
         $res = $this->postJson("/api/purchase/kickoff/{$meeting->id}/generate-link")->assertOk();
 
-        $this->assertStringStartsWith('https://meet.jit.si/', $res->json('link.link'));
+        $this->assertStringStartsWith('https://meet.google.com/', $res->json('link.link'));
     }
 
     public function test_a_platform_nobody_offers_is_still_refused(): void
@@ -194,7 +212,7 @@ class PurchaseKickoffLinkTest extends TestCase
             'scheduled_at'       => now()->addDays(3)->toDateTimeString(),
             'end_at'             => now()->addDays(3)->addHour()->toDateTimeString(),
             'mode'               => 'online',
-            'meeting_platform'   => 'jitsi',
+            'meeting_platform'   => 'google_meet',
         ])->assertSuccessful();
 
         $id = $res->json('id') ?? $res->json('data.id') ?? $res->json('meeting.id');
@@ -202,7 +220,7 @@ class PurchaseKickoffLinkTest extends TestCase
 
         $meeting = PurchaseKickoffMeeting::find($id);
         $this->assertNotEmpty($meeting->meeting_link, 'an online meeting is scheduled WITH its join link');
-        $this->assertStringStartsWith('https://meet.jit.si/', $meeting->meeting_link);
+        $this->assertStringStartsWith('https://meet.google.com/', $meeting->meeting_link);
     }
 
     public function test_an_in_person_meeting_gets_no_join_link(): void

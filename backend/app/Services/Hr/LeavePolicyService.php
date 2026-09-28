@@ -3,6 +3,7 @@
 namespace App\Services\Hr;
 
 use App\Exceptions\BusinessException;
+use App\Models\Hr\HrDepartment;
 use App\Models\Hr\HrDesignation;
 use App\Models\Hr\HrGrade;
 use App\Models\Hr\HrLeavePolicy;
@@ -104,6 +105,9 @@ class LeavePolicyService
         if (! empty($data['designation_id']) && ! HrDesignation::where('tenant_id', $tenantId)->where('id', $data['designation_id'])->exists()) {
             throw new BusinessException('Selected designation is invalid.');
         }
+        if (! empty($data['department_id']) && ! HrDepartment::where('tenant_id', $tenantId)->where('id', $data['department_id'])->exists()) {
+            throw new BusinessException('Selected department is invalid.');
+        }
     }
 
     /** Keep only mappings whose leave type belongs to this tenant. */
@@ -143,6 +147,7 @@ class LeavePolicyService
 
         if (array_key_exists('grade_id', $d))       { $attrs['grade_id'] = $d['grade_id'] ?: null; }
         if (array_key_exists('designation_id', $d)) { $attrs['designation_id'] = $d['designation_id'] ?: null; }
+        if (array_key_exists('department_id', $d))  { $attrs['department_id'] = $d['department_id'] ?: null; }
         foreach (['probation_allowed', 'notice_period_allowed', 'weekends_count', 'holidays_count', 'half_day_allowed', 'negative_balance_allowed', 'is_active'] as $b) {
             if (array_key_exists($b, $d)) {
                 $attrs[$b] = (bool) $d[$b];
@@ -158,6 +163,7 @@ class LeavePolicyService
             'id' => $p->id, 'name' => $p->name, 'applies_to' => $p->applies_to,
             'grade_id' => $p->grade_id, 'grade_name' => $p->grade?->name,
             'designation_id' => $p->designation_id, 'designation_name' => $p->designation?->name,
+            'department_id' => $p->department_id, 'department_name' => $p->department?->name,
             'probation_allowed' => $p->probation_allowed, 'notice_period_allowed' => $p->notice_period_allowed,
             'weekends_count' => $p->weekends_count, 'holidays_count' => $p->holidays_count,
             'half_day_allowed' => $p->half_day_allowed, 'negative_balance_allowed' => $p->negative_balance_allowed,

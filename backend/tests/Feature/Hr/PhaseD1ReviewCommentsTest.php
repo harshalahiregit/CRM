@@ -81,26 +81,38 @@ class PhaseD1ReviewCommentsTest extends TestCase
 
     /* ── #7 — Approve after rejection ─────────────────────────────────── */
 
-    public function test_an_l1_rejection_reversed_lands_on_l2_pending_not_the_hr_queue(): void
+    public function test_an_l1_rejection_reversed_returns_to_l1_pending_not_past_it(): void
     {
         $mr = $this->rejectedAt('L1');
 
         $result = $this->service()->reconsider($mr, $this->admin, 'Headcount re-approved by Finance');
 
-        // The whole point: reversing an L1 rejection must not skip Management.
-        $this->assertSame(Status::L2_PENDING, $result->status);
-        $this->assertSame('approved', $result->l1_status);
+        /*
+         | Reversing a rejection and granting an approval are two decisions.
+         |
+         | This used to reopen AND approve in one click, so reconsidering an L1
+         | rejection landed on L2 Pending. With L1 restored as a real rung that
+         | is the same shape as the defect this phase removed — an approval
+         | recorded without anybody deciding it — so reconsider now only
+         | un-rejects. The approver approves afterwards through the normal
+         | guarded path.
+         */
+        $this->assertSame(Status::L1_PENDING, $result->status);
+        $this->assertSame('pending', $result->l1_status);
         $this->assertNull($result->rejection_reason);
+        $this->assertNull($result->l1_approver_id, 'reopening must not stamp an approver');
     }
 
-    public function test_an_l2_rejection_reversed_reaches_the_hr_queue(): void
+    public function test_an_l2_rejection_reversed_returns_to_l2_pending(): void
     {
         $mr = $this->rejectedAt('L2');
 
         $result = $this->service()->reconsider($mr, $this->admin, 'Budget released');
 
-        $this->assertSame(Status::READY_FOR_HR, $result->status);
-        $this->assertSame('approved', $result->l2_status);
+        // Same rule at L2, and it must not skip forward into the HR queue.
+        $this->assertSame(Status::L2_PENDING, $result->status);
+        $this->assertSame('pending', $result->l2_status);
+        $this->assertNotSame(Status::READY_FOR_HR, $result->status);
     }
 
     public function test_reversing_an_l2_rejection_keeps_l1s_original_approval(): void
@@ -164,11 +176,11 @@ class PhaseD1ReviewCommentsTest extends TestCase
 
         $result = $this->service()->submit($mr->fresh(), $requester);
 
-        // L2_Pending, not L1_Pending: submit() auto-approves L1 unconditionally
-        // (the SPK-1 rule that the creator no longer approves L1 by hand). So a
-        // resubmit and a reconsider of an L1 rejection converge on the same
-        // place, which is what makes the two routes safe to offer side by side.
-        $this->assertSame(Status::L2_PENDING, $result->status);
+        // L1_Pending: a resubmitted request goes back to the Department Head,
+        // the same place a fresh submission lands. Submission no longer
+        // auto-approves L1, so a resubmit and a reconsider of an L1 rejection
+        // still converge — now on L1 Pending rather than past it.
+        $this->assertSame(Status::L1_PENDING, $result->status);
         $this->assertNull($result->rejection_reason, 'a resubmit clears the previous rejection');
     }
 
@@ -181,7 +193,7 @@ class PhaseD1ReviewCommentsTest extends TestCase
             ->assertStatus(422);
     }
 
-    public function test_the_reconsider_endpoint_approves_with_remarks(): void
+    public function test_the_reconsider_endpoint_reopens_with_remarks(): void
     {
         Sanctum::actingAs($this->admin);
         $mr = $this->rejectedAt('L1');
@@ -189,7 +201,7 @@ class PhaseD1ReviewCommentsTest extends TestCase
         $this->postJson("/api/hr/manpower-requests/{$mr->id}/reconsider", ['remarks' => 'Cleared by Finance'])
             ->assertOk();
 
-        $this->assertSame(Status::L2_PENDING, $mr->fresh()->status);
+        $this->assertSame(Status::L1_PENDING, $mr->fresh()->status);
     }
 
     /* ── #3 — Hiring Manager filter ───────────────────────────────────── */

@@ -83,8 +83,8 @@ class SangoeTrackLeaveSyncTest extends TestCase
     private function fakeLeaves(array $rows): void
     {
         Http::fake([
-            'track.test/api/login'      => Http::response(['token' => 'jwt-abc'], 200),
-            'track.test/api/Hrm/leaves' => Http::response(['data' => $rows], 200),
+            'track.test/api/Hrm/login'      => Http::response(['token' => 'jwt-abc'], 200),
+            'track.test/api/Hrm/get-leaves' => Http::response(['data' => $rows], 200),
         ]);
     }
 
@@ -291,8 +291,8 @@ class SangoeTrackLeaveSyncTest extends TestCase
         $this->balance($employee, $type);
 
         Http::fake([
-            'track.test/api/login'      => Http::response(['token' => 'jwt-abc'], 200),
-            'track.test/api/Hrm/leaves' => Http::sequence()
+            'track.test/api/Hrm/login'      => Http::response(['token' => 'jwt-abc'], 200),
+            'track.test/api/Hrm/get-leaves' => Http::sequence()
                 ->push(['data' => [['id' => 9011, 'leave_type' => 'Casual Leave', 'from_date' => '2026-09-07', 'to_date' => '2026-09-07', 'status' => 'Pending']]], 200)
                 ->push(['data' => [['id' => 9011, 'leave_type' => 'Casual Leave', 'from_date' => '2026-09-07', 'to_date' => '2026-09-09', 'status' => 'Pending']]], 200),
         ]);

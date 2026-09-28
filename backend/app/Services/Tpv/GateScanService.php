@@ -283,16 +283,34 @@ class GateScanService
         return $query->latest('scanned_at')->limit(200)->get();
     }
 
-    public function gateStats(int $tenantId): array
+    /**
+     * The four gate counters.
+     *
+     * `$vendorId` narrows every one of them to that vendor's own workers, which
+     * is what the vendor portal needs: the same four numbers the admin sees,
+     * counting only their people. A scan belongs to a WORKER and a vendor owns
+     * workers, so the narrowing goes through that relation rather than becoming
+     * a second, divergent query — the same reasoning as gateLog() above.
+     */
+    public function gateStats(int $tenantId, ?int $vendorId = null): array
     {
         $today = now()->toDateString();
-        $scans = TpvGateScan::forTenant($tenantId)->whereDate('scanned_at', $today);
+
+        $ownWorkers = $vendorId
+            ? TpvWorker::forTenant($tenantId)->where('vendor_id', $vendorId)->select('id')
+            : null;
+
+        $scans = TpvGateScan::forTenant($tenantId)->whereDate('scanned_at', $today)
+            ->when($ownWorkers, fn ($q) => $q->whereIn('tpv_worker_id', $ownWorkers));
+
+        $attendance = fn () => TpvGateAttendance::forTenant($tenantId)->forDate($today)
+            ->when($ownWorkers, fn ($q) => $q->whereIn('tpv_worker_id', $ownWorkers));
 
         return [
-            'scans_today'   => (clone $scans)->count(),
-            'denied_today'  => (clone $scans)->denied()->count(),
-            'on_site_now'   => TpvGateAttendance::forTenant($tenantId)->forDate($today)->onSite()->count(),
-            'checked_in_today' => TpvGateAttendance::forTenant($tenantId)->forDate($today)->count(),
+            'scans_today'      => (clone $scans)->count(),
+            'denied_today'     => (clone $scans)->denied()->count(),
+            'on_site_now'      => $attendance()->onSite()->count(),
+            'checked_in_today' => $attendance()->count(),
         ];
     }
 

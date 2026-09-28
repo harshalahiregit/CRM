@@ -3,11 +3,14 @@
 namespace App\Services\Auth;
 
 use App\Exceptions\BusinessException;
+use App\Models\Customer\Client;
+use App\Models\Customer\ClientContact;
 use App\Models\Hr\HrExternalCompany;
 use App\Models\Purchase\PurchaseVendor;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Models\Vendor\Vendor;
+use App\Services\Hr\EmployeeIdentityService;
 use App\Services\Purchase\PurchaseVendorService;
 use App\Support\AgencyContext;
 use App\Support\Purchase\PurchaseRegistrationType;
@@ -36,7 +39,7 @@ class AuthService
         // their own account by guessing at them from elsewhere.
         $throttleKey = 'login:'.strtolower($data['email']).'|'.request()->ip();
 
-        $user = $this->findUserForLogin($data['email'], $data['role']);
+        $user = $this->findUserForLogin($data['email'], $data['role'] ?? null);
         [$maxAttempts, $decayMinutes] = $this->lockoutPolicy($user);
 
         if ($maxAttempts > 0 && RateLimiter::tooManyAttempts($throttleKey, $maxAttempts)) {
@@ -140,69 +143,39 @@ class AuthService
      * exactly like the TPV flow. Purchase owns purchase_vendors; no shared
      * Vendor row and no staging table is involved.
      */
-    public function registerVendor(array $data): User
-    {
-        return DB::transaction(fn () => $this->createVendorAccount($data));
-    }
-
-    private function createVendorAccount(array $data): User
-    {
-        $user = User::create([
-            'name'              => trim($data['first_name'].' '.$data['last_name']),
-            'email'             => $data['email'],
-            'password'          => Hash::make($data['password']),
-            'role'              => 'vendor',
-            'status'            => 'pending',
-            'vendor_type'       => $data['vendor_type'],
-            'access_expires_at' => $data['vendor_type'] === 'temporary' ? now()->addDays(5)->toDateString() : null,
-            'phone'             => $data['phone'] ?? null,
-            'company'           => $data['company_name'],
-            'designation'       => $data['designation'] ?? null,
-            'meta'              => [
-                'category'      => $data['category'] ?? null,
-                'website'       => $data['website'] ?? null,
-                'address'       => $data['address'] ?? null,
-                'city'          => $data['city'] ?? null,
-                'state'         => $data['state'] ?? null,
-                'country'       => $data['country'] ?? null,
-                'pincode'       => $data['pincode'] ?? null,
-                'company_phone' => $data['company_phone'] ?? null,
-                'manpower'      => $data['manpower'] ?? null,
-                'msme'          => $data['msme'] ?? null,
-            ],
-        ]);
-
-        $this->createPurchaseVendorFor($user, $data);
-
-        Log::channel('auth')->info('Vendor registered, pending approval', ['user_id' => $user->id]);
-
-        return $user;
-    }
-
     /**
-     * Mirror the registration into the Purchase module's own vendor master so
-     * the record shows up in Purchase → Vendors straight away — the same way a
-     * TPV registration lands in the TPV list.
+     * Self-registration for a Purchase vendor.
      *
-     * Purchase-owned end to end: purchase_vendors only, the Purchase code
-     * generator, the Purchase registration-type enum. No shared Vendor row, no
-     * staging/pending table, and nothing from TPV.
+     * Creates ONE record: the Purchase vendor. It used to create two — a vendor
+     * AND a `users` row with role `vendor`, status `pending` and no tenant,
+     * which existed only to hold the contact fields purchase_vendors had no
+     * columns for. That row appeared on no screen (Staff Management lists only
+     * staff and admins), belonged to no workspace, and could not sign in
+     * anywhere. Three had accumulated on the live workspace unseen.
+     *
+     * It also broke password resets: the reset searched logins first, found the
+     * pending row, refused it as inactive, and never reached the vendor account
+     * that could have sent a link. The supplier was told to check an inbox that
+     * would receive nothing.
+     *
+     * The vendor signs in through the Purchase Vendor option with this same
+     * e-mail and password — it is stored on the vendor record — once an admin
+     * has activated them.
      */
-    private function createPurchaseVendorFor(User $user, array $data): void
+    public function registerVendor(array $data): PurchaseVendor
+    {
+        return DB::transaction(fn () => $this->createPurchaseVendorFrom($data));
+    }
+
+    private function createPurchaseVendorFrom(array $data): PurchaseVendor
     {
         $tenantId = AgencyContext::tenantId();
 
-        // Idempotent: never mint a second record for the same tenant + email.
-        if (PurchaseVendor::withTrashed()->where('tenant_id', $tenantId)->where('email', $user->email)->exists()) {
-            return;
-        }
-
         $vendor = PurchaseVendor::create([
             'tenant_id'            => $tenantId,
-            'user_id'              => $user->id,
             'purchase_vendor_code' => app(PurchaseVendorService::class)->nextVendorCode($tenantId),
             'company_name'         => $data['company_name'],
-            'email'                => $user->email,
+            'email'                => $data['email'],
             'phone'                => $data['phone'] ?? null,
             'website'              => $data['website'] ?? null,
             'category'             => $data['category'] ?? null,
@@ -211,6 +184,14 @@ class AuthService
             'state'                => $data['state'] ?? null,
             'country'              => $data['country'] ?? null,
             'pincode'              => $data['pincode'] ?? null,
+
+            // Previously carried on the hidden user row and its meta bag.
+            'contact_person'       => trim($data['first_name'].' '.$data['last_name']),
+            'contact_designation'  => $data['designation'] ?? null,
+            'company_phone'        => $data['company_phone'] ?? null,
+            'manpower'             => $data['manpower'] ?? null,
+            'msme'                 => $data['msme'] ?? null,
+
             'vendor_type'          => $data['vendor_type'] === 'temporary' ? 'temporary' : 'standard',
             // The chooser's selection, stored verbatim — never inferred later.
             'registration_type'    => PurchaseRegistrationType::normalize($data['vendor_type'] ?? null),
@@ -220,15 +201,26 @@ class AuthService
             // Registered, but the portal stays shut until an admin activates —
             // provision() flips this to 'active' on approval.
             'portal_status'        => 'Registered',
-            // Same credentials, so after activation they sign into the Purchase
-            // portal as this very PurchaseVendor (no second account).
             'password'             => Hash::make($data['password']),
         ]);
 
         Log::channel('purchase')->info('Purchase vendor created from self-registration', [
-            'purchase_vendor_id' => $vendor->id, 'user_id' => $user->id,
+            'purchase_vendor_id' => $vendor->id,
             'registration_type'  => $vendor->registration_type,
         ]);
+
+        // Same silence as the TPV path had: the record was created, the log line
+        // was written, and the supplier was told nothing. The vendor code is
+        // already assigned here, so it goes out as the reference they can quote.
+        app(RegistrationAcknowledgement::class)->sent(
+            $vendor->tenant_id,
+            $vendor->email,
+            $vendor->company_name,
+            'Procurement Vendor Portal',
+            $vendor->purchase_vendor_code,
+        );
+
+        return $vendor;
     }
 
     public function registerTPV(array $data): User
@@ -309,30 +301,120 @@ class AuthService
 
         Log::channel('auth')->info('TPV registered, pending approval', ['user_id' => $user->id]);
 
+        // Tell them it arrived. Until this, a self-registered TPV heard nothing
+        // between filling the form and an admin getting round to approving it —
+        // which is the whole of SIR-000050: registration completed, no email,
+        // no idea what happens next.
+        app(RegistrationAcknowledgement::class)->sent(
+            $tenantId,
+            $user->email,
+            $data['username'] ?? $user->name,
+            'Third-Party Vendor Portal',
+        );
+
         return $user;
     }
 
-    public function registerClient(array $data): User
+    /**
+     * Customer self-registration.
+     *
+     * ── WHAT THIS USED TO DO, AND WHY IT COULD NEVER WORK ───────────────────
+     * It created one `users` row with role='client', status='pending', no
+     * tenant_id, no client and no contact — then told the person "Awaiting admin
+     * approval". Three things made that a promise nobody could keep:
+     *
+     *   1. No endpoint anywhere activates a pending client user. TPV, vendor and
+     *      company all have one; client never did. So the wait was permanent.
+     *   2. Even activated, it could not be used. EnsureClientPortalAccess
+     *      requires the token subject to BE a ClientContact; a User token is
+     *      refused. The customer portal does not authenticate against `users`.
+     *   3. Nothing linked the row to a customer, so there was no data to show it.
+     *
+     * The rest of the codebase already agrees on where a customer identity
+     * lives: forgot-password for role=client goes to ClientPortalAuthService,
+     * and the login screen's "Client / Customer" option posts to
+     * /client-portal/login. registerClient was the one outlier.
+     *
+     * ── WHAT IT DOES NOW ────────────────────────────────────────────────────
+     * It creates the two records the portal actually reads, in the state that
+     * means "not approved yet":
+     *
+     *   · Client        — active = false, so ClientPortalAuthService::login()
+     *                     refuses any contact under it (it checks clients.active).
+     *   · ClientContact — primary, portal_status = 'inactive', so login refuses
+     *                     this contact specifically. Both gates already existed
+     *                     and are asserted by ClientPortalAuthHardeningTest.
+     *
+     * No `users` row. A customer is not staff, and the dead role='client' rows
+     * were the thing confusing every reader of this flow. Existing legacy rows
+     * are untouched — see StaffManagementController::manageable(), which carries
+     * one on purpose.
+     *
+     * ── APPROVAL NEEDS NO NEW ENDPOINT ──────────────────────────────────────
+     * Staff already have both controls: the Status switch writes clients.active,
+     * and POST /api/customers/{client}/contacts/{contact}/invite grants portal
+     * access. Approving is switching the customer on and inviting the contact.
+     * Until then the person's own password is stored but every door is shut, and
+     * the refusal they get — "Portal access has not been enabled for this
+     * contact" — is true, which is more than the old flow managed.
+     *
+     * The tenant comes from AgencyContext, the same resolver registerCompany()
+     * uses. A public form has no tenant context, and a second way of answering
+     * "which tenant does a self-registration belong to" would be a second answer
+     * that could drift from the first.
+     *
+     * @return array{client: Client, contact: ClientContact}
+     */
+    public function registerClient(array $data): array
     {
-        $user = User::create([
-            'name'     => trim($data['first_name'].' '.$data['last_name']),
-            'email'    => $data['email'],
-            'password' => Hash::make($data['password']),
-            'role'     => 'client',
-            'status'   => 'pending',
-            'phone'    => $data['phone'],
-            'company'  => $data['company'],
-            'meta'     => [
-                'address' => $data['address'] ?? null,
-                'city'    => $data['city'] ?? null,
-                'state'   => $data['state'] ?? null,
-                'country' => $data['country'] ?? null,
-            ],
-        ]);
+        return DB::transaction(function () use ($data) {
+            $tenantId = AgencyContext::tenantId();
 
-        Log::channel('auth')->info('Client registered, pending approval', ['user_id' => $user->id]);
+            $client = Client::create([
+                'tenant_id' => $tenantId,
+                'company'   => $data['company'],
+                'phone'     => $data['phone'],
+                'address'   => $data['address'] ?? null,
+                'city'      => $data['city'] ?? null,
+                'state'     => $data['state'] ?? null,
+                'country'   => $data['country'] ?? null,
+                // Not approved. This is the gate login() checks, not a cosmetic
+                // flag: a contact under an inactive customer cannot sign in.
+                'active'    => false,
+                // Distinguishes "signed up, waiting" from "customer we switched
+                // off", which otherwise look identical on the customers list.
+                'lifecycle_status' => 'Prospect',
+                // Nobody added them; they added themselves. The column is
+                // nullable for exactly this case.
+                'added_by'  => null,
+            ]);
 
-        return $user;
+            $contact = ClientContact::create([
+                'tenant_id'  => $tenantId,
+                'client_id'  => $client->id,
+                'first_name' => $data['first_name'],
+                'last_name'  => $data['last_name'],
+                'email'      => $data['email'],
+                'phone'      => $data['phone'],
+                'is_primary' => true,
+                'active'     => true,
+                // The password they chose, kept so approval does not force them
+                // through a set-password email they did not ask for. The
+                // `password` cast hashes it; login() checks it FIRST, before any
+                // status message, so a wrong password still says nothing about
+                // whether the account exists.
+                'password'   => $data['password'],
+                // Self-registration proves nothing about the mailbox, so this
+                // stays null until they follow a link. Access is off regardless.
+                'portal_status' => 'inactive',
+            ]);
+
+            Log::channel('auth')->info('Customer self-registered, awaiting approval', [
+                'client_id' => $client->id, 'contact_id' => $contact->id, 'tenant_id' => $tenantId,
+            ]);
+
+            return ['client' => $client, 'contact' => $contact];
+        });
     }
 
     /**
@@ -423,15 +505,33 @@ class AuthService
         return [max(0, $max), max(1, $decay)];
     }
 
-    private function findUserForLogin(string $email, string $role): ?User
+    private function findUserForLogin(string $email, ?string $role): ?User
     {
+        // No role given — the shape the app posts. users.email is unique, so the
+        // address alone identifies the account; the role only ever narrowed a
+        // search that could not return two rows anyway.
+        if ($role === null || $role === '') {
+            return User::with('tenant')->where('email', $email)->first();
+        }
+
+        /*
+         * "Staff" is the door every employee comes through, and a doctor is an
+         * employee. The login page no longer offers a Doctor entry — an
+         * examining doctor is hired like anybody else and should not have to
+         * know they are a special case to sign in — so `staff` has to admit
+         * them, or the only remaining door would be shut to them.
+         *
+         * `role=doctor` is still accepted by LoginRequest and still works, so
+         * saved links and anything already pointing at it keep working.
+         */
         if ($role === 'staff') {
             return User::with('tenant')
                 ->where('email', $email)
-                ->where(function ($query) {
-                    $query->where('role', 'staff')
-                          ->orWhereIn('role', ['hr_executive', 'hiring_manager']); // Backward compatibility
-                })
+                ->whereIn('role', [
+                    'staff',
+                    'doctor',
+                    'hr_executive', 'hiring_manager',   // Backward compatibility
+                ])
                 ->first();
         }
 
@@ -476,17 +576,17 @@ class AuthService
         // (VendorService), revoking TPV access. Only the TPV path was safe,
         // and only by accident — it also sets access_expires_at, which IS
         // checked below. The others left a working login behind.
+        // Named before the allowlist below catches it, so somebody who was
+        // deactivated is told that, rather than the generic "not active" --
+        // they need to know it was a decision, not a data problem.
         if ($user->status === 'inactive') {
-            throw new BusinessException('This account has been deactivated. Contact your administrator.', 403);
+            throw new BusinessException('Your account has been deactivated. Contact your administrator.', 403);
         }
 
         if ($user->status === 'rejected') {
             throw new BusinessException('Your registration was rejected. Contact support.', 403);
         }
 
-        if ($user->status === 'inactive') {
-            throw new BusinessException('Your account has been deactivated. Contact your administrator.', 403);
-        }
 
         // Anything that is not one of the five known values — including null on a
         // row written before the column had a default — is refused rather than
@@ -502,6 +602,24 @@ class AuthService
 
         if ($user->access_expires_at && $user->access_expires_at->isPast()) {
             throw new BusinessException('Your temporary access has expired. Contact your administrator.', 403);
+        }
+
+        // Employment, which is a different question from the account.
+        //
+        // Everything above asks whether this LOGIN is allowed — suspended,
+        // pending approval, deactivated by an administrator. None of it looked at
+        // whether the person still works here. An employee set to Inactive on the
+        // HR screen kept a working login: users.status stayed 'active' because
+        // nothing joined the two, and HR had no reason to think a second switch
+        // existed. Asked last so the account's own reasons keep their specific
+        // wording; a suspended account should say suspended, not talk about HR.
+        if ($reason = app(EmployeeIdentityService::class)->employmentRefusalReason($user)) {
+            Log::channel('auth')->warning('Login refused: employment is not active', [
+                'user_id'   => $user->id,
+                'tenant_id' => $user->tenant_id,
+            ]);
+
+            throw new BusinessException($reason, 403);
         }
     }
 }

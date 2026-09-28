@@ -3,6 +3,8 @@ import { HardHat, Stethoscope, GraduationCap, DoorOpen, ShieldAlert } from 'luci
 import { tpvApi } from '@/services/tpvApi'
 import { SectionTable, Pill } from './VendorSectionTable'
 import VendorAddModal from './VendorAddModal'
+import { useDoctorOptions, doctorSelectOptions } from '@/components/medical/InternalDoctorSelect'
+import VendorPpeItemsPanel from '@/components/vendor/VendorPpeItemsPanel'
 
 /**
  * The five vendor-detail sections backed by data the TPV module already holds:
@@ -86,6 +88,17 @@ export function VendorWorkforce({ vendorId, manage }) {
         { key: 'status', label: 'Status', render: r => <Pill value={r.status} good={['active']} bad={['blocked', 'rejected', 'inactive']} /> },
       ]}
     />
+    {/* The vendor's OWN PPE — its stock, kept from its portal, never Inventory.
+        Read-only here; what its workers hold shows on each worker's PPE step. */}
+    <VendorPpeItemsPanel
+      client={{
+        list: () => tpvApi.ppe.vendorItems(vendorId),
+        imageBlob: (id) => tpvApi.ppe.vendorItemImage(vendorId, id),
+      }}
+      scopeKey={`tpv-admin-${vendorId}`}
+      title="Vendor's own PPE"
+      accent="#f59e0b"
+    />
     </>
   )
 }
@@ -93,6 +106,7 @@ export function VendorWorkforce({ vendorId, manage }) {
 export function VendorMedical({ vendorId, manage }) {
   const { rows, loading, error, reload } = useVendorWorkers(vendorId)
   const [adding, setAdding] = useState(false)
+  const doctors = useDoctorOptions('tpv')
 
   return (
     <>
@@ -120,6 +134,12 @@ export function VendorMedical({ vendorId, manage }) {
           // Certificate currency window. Left blank, the server defaults it to
           // exam date + 1 year; once past, activation is blocked and the gate denies.
           { name: 'valid_until', label: 'Valid until', type: 'date', help: 'Defaults to exam date + 1 year if left blank' },
+          // Pick one of our own doctors, or leave it and type any name in
+          // Examiner below. Choosing one makes the server copy their licence
+          // and clinic from the directory — see DoctorOptions on the server.
+          { name: 'doctor_user_id', label: 'Internal doctor', type: 'select',
+            options: doctorSelectOptions(doctors),
+            help: 'Optional. Leave blank and type the name in Examiner instead.' },
           { name: 'examiner_name', label: 'Examiner' },
           { name: 'clinic_name', label: 'Clinic' },
           { name: 'restrictions', label: 'Restrictions', type: 'textarea' },

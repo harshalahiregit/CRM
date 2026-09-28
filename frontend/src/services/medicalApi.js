@@ -140,6 +140,19 @@ export const medicalApi = {
     updateProfile: (data)    => api.put('/doctor/me', data).then(r => r.data).catch(handleErr),
     summary:       ()        => api.get('/doctor/summary').then(r => r.data?.data ?? r.data).catch(handleErr),
 
+    /**
+     * The doctor's own signature, stamp or photograph.
+     *
+     * These live on the private disk now, so an <img src> cannot reach them —
+     * a plain URL carries no bearer token. Fetched as a blob and handed back as
+     * an object URL, which is the same thing the certificate PDFs already do.
+     * The caller must revoke it when the picture goes away.
+     */
+    evidenceUrl: (kind) =>
+      api.get(`/doctor/me/${kind}`, { responseType: 'blob' })
+        .then(r => URL.createObjectURL(r.data))
+        .catch(() => null),
+
     // Every call carries the side the doctor is working on: 'tpv' | 'purchase'.
     // These return { data, meta } — meta says how many matched in total, so a
     // list can admit what it is not showing instead of silently stopping.
@@ -210,6 +223,19 @@ export const medicalApi = {
     certificate: (module, id) => openPdf(`/${module}/medical/${id}/certificate`),
     document:    (module, id) => openPdf(`/${module}/medical/${id}/document`),
 
+    /**
+     * The signature or camera photo taken at the examination.
+     *
+     * They moved off the publicly-served disk — they are the proof the doctor
+     * was with that person, and a folder the web server hands to anyone is no
+     * place for it. So a plain <img src> can no longer reach them: fetched as a
+     * blob and handed back as an object URL, which the caller revokes.
+     */
+    evidenceUrl: (module, id, kind) =>
+      api.get(`/${module}/medical/${id}/evidence/${kind}`, { responseType: 'blob' })
+        .then(r => URL.createObjectURL(r.data))
+        .catch(() => null),
+
     // External intake.
     storeExternal: (module, workerId, payload) =>
       upload(
@@ -261,6 +287,14 @@ export const medicalApi = {
   },
 
   /* ── Doctor directory (admin) ─────────────────────────────────────── */
+  // Internal doctors, as pickable options. Deliberately NOT doctors.list
+  // below: that is the admin directory and returns the whole profile. This is
+  // a name, a licence and a clinic, readable by any signed-in user — naming
+  // the examining doctor is not an admin job.
+  doctorOptions: (module) =>
+    api.get('/medical/doctor-options', { params: module ? { module } : {} })
+      .then(r => r.data?.data ?? r.data).catch(handleErr),
+
   doctors: {
     list:   (params = {}) => api.get('/medical/doctors', { params }).then(r => r.data?.data ?? r.data).catch(handleErr),
     create: (data)        => api.post('/medical/doctors', data).then(r => r.data).catch(handleErr),
@@ -269,6 +303,17 @@ export const medicalApi = {
     resetPassword: (id, password) =>
       api.post(`/medical/doctors/${id}/reset-password`, password ? { password } : {})
         .then(r => r.data).catch(handleErr),
+    // Email the doctor a one-time link to set their own password. The route to
+    // prefer: nobody but the doctor ever learns it, so a certificate they
+    // signed could not have been signed by the admin who made the account.
+    invite: (id) => api.post(`/medical/doctors/${id}/invite`).then(r => r.data).catch(handleErr),
+    // Make an EXISTING internal user a doctor. Creating one needs an unused
+    // email, so a company doctor already on staff had nowhere to go.
+    promote: (data) => api.post('/medical/doctors/promote', data).then(r => r.data).catch(handleErr),
+    // Who could be made one. The admin staff list, which is where internal
+    // people actually live — there is no separate doctor-candidate register.
+    candidates: (params = {}) =>
+      api.get('/admin/staff', { params }).then(r => r.data?.data ?? r.data).catch(handleErr),
     // Deactivates; an issued certificate must keep naming its author.
     deactivate: (id)      => api.delete(`/medical/doctors/${id}`).then(r => r.data).catch(handleErr),
   },

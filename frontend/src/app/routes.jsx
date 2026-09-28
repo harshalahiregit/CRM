@@ -42,12 +42,6 @@ const PublicScanAccess = lazy(() => import('@/pages/public/PublicScanAccess'))
 
 // HR Module (lazy)
 const HRLayout = lazy(() => import('@/modules/hr/HRLayout'))
-// SangoeTrack screens — read and write track.sangoe.in, store nothing here.
-const TrackAttendance     = lazy(() => import('@/modules/hr/pages/track/TrackAttendance'))
-const TrackCorrections    = lazy(() => import('@/modules/hr/pages/track/TrackCorrections'))
-const TrackLeave          = lazy(() => import('@/modules/hr/pages/track/TrackLeave'))
-const TrackReimbursements = lazy(() => import('@/modules/hr/pages/track/TrackReimbursements'))
-// The CRM's own expense claims — the native replacement for the track/ pair above.
 const Reimbursements   = lazy(() => import('@/modules/hr/pages/Reimbursements'))
 const MyReimbursements = lazy(() => import('@/modules/hr/pages/MyReimbursements'))
 const Advances        = lazy(() => import('@/modules/hr/pages/Advances'))
@@ -57,14 +51,12 @@ const MyLeave = lazy(() => import('@/modules/hr/pages/MyLeave'))
 const MyCorrections = lazy(() => import('@/modules/hr/pages/MyCorrections'))
 const Corrections   = lazy(() => import('@/modules/hr/pages/Corrections'))
 const HrSettings    = lazy(() => import('@/modules/hr/pages/HrSettings'))
+const OnboardingChecklistSettings = lazy(() => import('@/modules/hr/pages/OnboardingChecklistSettings'))
+const ClearanceDepartmentSettings = lazy(() => import('@/modules/hr/pages/ClearanceDepartmentSettings'))
+const PoshCommitteeSettings = lazy(() => import('@/modules/hr/pages/PoshCommitteeSettings'))
+const ApprovalWorkflows = lazy(() => import('@/modules/hr/pages/ApprovalWorkflows'))
 const DemoRequests  = lazy(() => import('@/modules/hr/pages/DemoRequests'))
-const TrackAdvances       = lazy(() => import('@/modules/hr/pages/track/TrackAdvances'))
-const TrackStaff          = lazy(() => import('@/modules/hr/pages/track/TrackStaff'))
-const TrackPayroll        = lazy(() => import('@/modules/hr/pages/track/TrackPayroll'))
-const TrackDemoRequests   = lazy(() => import('@/modules/hr/pages/track/TrackDemoRequests'))
-const TrackReports        = lazy(() => import('@/modules/hr/pages/track/TrackReports'))
-const TrackHolidays       = lazy(() => import('@/modules/hr/pages/track/TrackHolidays'))
-const TrackSettings       = lazy(() => import('@/modules/hr/pages/track/TrackSettings'))
+const Holidays            = lazy(() => import('@/modules/hr/pages/Holidays'))
 const HRDashboard = lazy(() => import('@/modules/hr/pages/HRDashboard'))
 const ManpowerRequests = lazy(() => import('@/modules/hr/pages/ManpowerRequests'))
 const JobPostings = lazy(() => import('@/modules/hr/pages/JobPostings'))
@@ -83,6 +75,7 @@ const RecruiterWorkspace = lazy(() => import('@/modules/hr/pages/RecruiterWorksp
 const CompanyApprovals = lazy(() => import('@/modules/hr/pages/CompanyApprovals'))
 const Attendance = lazy(() => import('@/modules/hr/pages/Attendance'))
 const OrganizationSetup = lazy(() => import('@/modules/hr/pages/OrganizationSetup'))
+const HrConfiguration = lazy(() => import('@/modules/hr/pages/HrConfiguration'))
 // #29 — organisation chart, derived from the employee reporting hierarchy.
 const OrgChart = lazy(() => import('@/modules/hr/pages/OrgChart'))
 // #10 — interview question bank + AI generation.
@@ -138,7 +131,6 @@ const Commission = lazy(() => import('@/modules/sales/pages/Commission'))
 const SettingsLayout = lazy(() => import('@/modules/settings/SettingsLayout'))
 // Roles and departments as data — created from Settings rather than by a
 // developer. Staff JOB roles only; account types stay in code (each is a portal).
-const RolesSettings = lazy(() => import('@/modules/settings/pages/RolesSettings'))
 const DepartmentsSettings = lazy(() => import('@/modules/settings/pages/DepartmentsSettings'))
 const GeneralBrandingSettings = lazy(() => import('@/modules/settings/pages/GeneralBrandingSettings'))
 const LocalizationSettings = lazy(() => import('@/modules/settings/pages/LocalizationSettings'))
@@ -149,6 +141,7 @@ const UploadSettings = lazy(() => import('@/modules/settings/pages/UploadSetting
 const SecuritySettings = lazy(() => import('@/modules/settings/pages/SecuritySettings'))
 const NotificationPreferences = lazy(() => import('@/modules/settings/pages/NotificationPreferences'))
 const MailSettings = lazy(() => import('@/modules/settings/pages/MailSettings'))
+const WhatsAppSettings = lazy(() => import('@/modules/settings/pages/WhatsAppSettings'))
 const CustomFieldsSettings = lazy(() => import('@/modules/settings/pages/CustomFieldsSettings'))
 const CompanyFinanceSettings = lazy(() => import('@/modules/settings/pages/CompanyFinanceSettings'))
 const TaxRatesSettings = lazy(() => import('@/modules/settings/pages/TaxRatesSettings'))
@@ -210,6 +203,31 @@ const TicketThread = lazy(() => import('@/modules/helpdesk/components/TicketThre
 const PublicArticle = lazy(() => import('@/modules/helpdesk/public/PublicArticle'))
 const PublicKb = lazy(() => import('@/modules/helpdesk/public/PublicKb'))
 const PublicTicketView = lazy(() => import('@/modules/helpdesk/public/PublicTicketView'))
+const PublicSupport = lazy(() => import('@/modules/helpdesk/public/PublicSupport'))
+
+// SIRE Module (lazy) -- the engineering defect track. Not the Helpdesk: a ticket
+// closes when the requester is satisfied, a SIRE case when the fix ships verified.
+const SireLayout = lazy(() => import('@/modules/sire/SireLayout'))
+const SireDashboard = lazy(() => import('@/modules/sire/pages/DashboardPage'))
+const SireMyWork = lazy(() => import('@/modules/sire/pages/MyWorkPage'))
+const SireIssueDetail = lazy(() => import('@/modules/sire/pages/IssueDetailPage'))
+const SireReleaseBoard = lazy(() => import('@/modules/sire/pages/ReleaseBoardPage'))
+const SireReleaseDetail = lazy(() => import('@/modules/sire/pages/ReleaseDetailPage'))
+const SireReleaseNotes = lazy(() => import('@/modules/sire/pages/ReleaseNotesPage'))
+const SireQuality = lazy(() => import('@/modules/sire/pages/QualityDashboardPage'))
+const SireInsights = lazy(() => import('@/modules/sire/pages/EngineeringInsightsPage'))
+const SireRecurrenceDetail = lazy(() => import('@/modules/sire/pages/RecurrenceDetailPage'))
+
+// STOS Module (lazy) -- Sangoe Transport OS. This shell is the FLEET & ASSET
+// control tower (Developer 2); the CEO / Operations / Driver towers read trip
+// and invoice data owned by other developers and are not stubbed here.
+// Fleet screens (Person 2), inside the Transport module since the D-62 merge.
+const FleetOverview = lazy(() => import('@/modules/transport/fleet/pages/FleetOverview'))
+const FleetTrailers = lazy(() => import('@/modules/transport/fleet/pages/TrailersBoard'))
+const FleetTyres = lazy(() => import('@/modules/transport/fleet/pages/TyresBoard'))
+const FleetVehiclePassport = lazy(() => import('@/modules/transport/fleet/pages/VehiclePassportView'))
+const FleetWorkshop = lazy(() => import('@/modules/transport/fleet/pages/MaintenanceBoard'))
+const FleetDrivers = lazy(() => import('@/modules/transport/fleet/pages/DriversBoard'))
 
 // Projects Module (lazy)
 const ProjectList = lazy(() => import('@/modules/projects/pages/ProjectList'))
@@ -246,6 +264,21 @@ const InventoryManufacturing = lazy(() => import('@/modules/inventory/pages/Inve
 // Purchase Module (lazy) — pages land here as they're built
 const PurchaseLayout = lazy(() => import('@/modules/purchase/PurchaseLayout'))
 
+// Sangoe Transport OS (STOS) — SNG-TRN-006 orders, SNG-TRN-007 trips.
+const TransportLayout      = lazy(() => import('@/modules/transport/TransportLayout'))
+const TransportFinder      = lazy(() => import('@/modules/transport/pages/TransportFinder'))
+const TransportOrders      = lazy(() => import('@/modules/transport/pages/TransportOrders'))
+const TransportOrderDetail = lazy(() => import('@/modules/transport/pages/TransportOrderDetail'))
+const TransportTrips       = lazy(() => import('@/modules/transport/pages/TransportTrips'))
+const TransportConsignments = lazy(() => import('@/modules/transport/pages/TransportConsignments'))
+const TransportContainers = lazy(() => import('@/modules/transport/pages/TransportContainers'))
+const ContainerPassport = lazy(() => import('@/modules/transport/pages/ContainerPassport'))
+const TransportTripDetail  = lazy(() => import('@/modules/transport/pages/TransportTripDetail'))
+const TransportVehicles    = lazy(() => import('@/modules/transport/pages/TransportVehicles'))
+const TransportVehicleDetail = lazy(() => import('@/modules/transport/pages/TransportVehicleDetail'))
+const TransportDrivers     = lazy(() => import('@/modules/transport/pages/TransportDrivers'))
+const TransportDriverDetail  = lazy(() => import('@/modules/transport/pages/TransportDriverDetail'))
+
 const PurchaseRequests = lazy(() => import('@/modules/purchase/pages/PurchaseRequests'))
 const PurchaseOrders = lazy(() => import('@/modules/purchase/pages/PurchaseOrders'))
 const PurchaseGoodsReceived = lazy(() => import('@/modules/purchase/pages/PurchaseGoodsReceived'))
@@ -280,6 +313,25 @@ const PurchaseReports = lazy(() => import('@/modules/purchase/pages/PurchaseRepo
 const PurchaseSettings = lazy(() => import('@/modules/purchase/pages/PurchaseSettings'))
 // Purchase Vendor admin — Purchase-owned pages (no TPV components).
 const PurchaseVendors = lazy(() => import('@/modules/purchase/pages/PurchaseVendors'))
+
+// ── Contract module ─────────────────────────────────────────────────────
+// Its own module, not part of Sales: an agreement is signed with customers AND
+// vendors, so it belongs to neither of their sidebars. Sales, Purchase and TPV
+// keep the contract features they already had.
+const ContractsList = lazy(() => import('@/modules/contract/pages/Contracts'))
+const ContractForm = lazy(() => import('@/modules/contract/pages/ContractForm'))
+const ContractRecord = lazy(() => import('@/modules/contract/pages/ContractDetail'))
+const ContractSignPortal = lazy(() => import('@/modules/contract/pages/ContractSignPortal'))
+// A party's own contracts, inside whichever portal they log into. One page; the
+// api client differs because each portal authenticates a different identity.
+const PortalContractsTpv = lazy(() => import('@/modules/contract/pages/portals/TpvContractsPage'))
+const PortalContractsPurchase = lazy(() => import('@/modules/contract/pages/portals/PurchaseContractsPage'))
+const PortalContractsClient = lazy(() => import('@/modules/contract/pages/portals/ClientContractsPage'))
+// "Assigned to me" — ONE screen for all three portals. Unlike the contract pages
+// above it takes no api client, because here the three really do read the same
+// URL: the server works out who is asking from the token.
+const PortalAssignedTasks = lazy(() => import('@/modules/tasks/portal/PortalAssignedTasks'))
+
 const PurchaseVendorDetailLayout = lazy(() => import('@/modules/purchase/pages/vendor-detail/PurchaseVendorDetailLayout'))
 const PurchaseVendorOnboardingWizard = lazy(() => import('@/modules/purchase/pages/PurchaseVendorOnboardingWizard'))
 const PurchaseWorkforce = lazy(() => import('@/modules/purchase/pages/PurchaseWorkforce'))
@@ -306,6 +358,7 @@ const PurchaseCompetency = lazy(() => import('@/modules/purchase/pages/PurchaseC
 
 // Purchase Vendor Portal (lazy) — independent PurchaseVendor auth.
 const PurchasePortalShell = lazy(() => import('@/pages/purchase-portal/PurchasePortalShell'))
+const PurchasePortalStrikes = lazy(() => import('@/pages/purchase-portal/PurchasePortalStrikes'))
 const PurchasePortalDashboard = lazy(() => import('@/pages/purchase-portal/PurchasePortalDashboard'))
 const PurchasePortalCommercial = lazy(() => import('@/pages/purchase-portal/PurchasePortalCommercial'))
 const PurchaseMyContacts = lazy(() => import('@/pages/purchase-portal/PurchaseMyContacts'))
@@ -318,12 +371,13 @@ const PurchasePortalDocuments = lazy(() => import('@/pages/purchase-portal/Purch
 const PurchasePortalApproval = lazy(() => import('@/pages/purchase-portal/PurchasePortalApproval'))
 const PurchasePortalKickoff = lazy(() => import('@/pages/purchase-portal/PurchasePortalKickoff'))
 const PurchasePortalPpe = lazy(() => import('@/pages/purchase-portal/PurchasePortalPpe'))
+const PurchasePortalWorkforceShell = lazy(() => import('@/pages/purchase-portal/PurchasePortalWorkforceShell'))
+const PurchaseWorkforceDashboard = lazy(() => import('@/modules/purchase/pages/PurchaseWorkforceDashboard'))
 const PurchasePortalSupport = lazy(() => import('@/pages/purchase-portal/PurchasePortalSupport'))
 const PurchasePortalProfile = lazy(() => import('@/pages/purchase-portal/PurchasePortalProfile'))
-const PurchasePortalWorkforce = lazy(() => import('@/pages/purchase-portal/PurchasePortalWorkforce'))
+
 const PurchasePortalCompliance = lazy(() => import('@/pages/purchase-portal/PurchasePortalCompliance'))
 const PurchasePortalGovernance = lazy(() => import('@/pages/purchase-portal/PurchasePortalGovernance'))
-const PurchaseVendorRegister = lazy(() => import('@/pages/purchase-portal/PurchaseVendorRegister'))
 const PurchaseVendorForgotPassword = lazy(() => import('@/pages/purchase-portal/PurchaseVendorForgotPassword'))
 const PurchaseVendorResetPassword = lazy(() => import('@/pages/purchase-portal/PurchaseVendorResetPassword'))
 const PurchaseVendorVerifyEmail = lazy(() => import('@/pages/purchase-portal/PurchaseVendorVerifyEmail'))
@@ -337,6 +391,7 @@ const ClientPortalRecords = lazy(() => import('@/pages/client-portal/ClientPorta
 const ClientPortalProfile = lazy(() => import('@/pages/client-portal/ClientPortalProfile'))
 const ClientPortalFeedback = lazy(() => import('@/pages/client-portal/ClientPortalFeedback'))
 const ClientPortalStatement = lazy(() => import('@/pages/client-portal/ClientPortalStatement'))
+const ClientPortalShipment = lazy(() => import('@/pages/client-portal/ClientPortalShipment'))
 const PurchaseVendorPortalGuard = lazy(() => import('@/pages/purchase-portal/PurchaseVendorPortalGuard'))
 
 // TPV Module (lazy) — pages land here as they're built
@@ -407,10 +462,6 @@ const KickoffMeetings = lazy(() => import('@/modules/shared/pages/KickoffMeeting
 const MeetingRegisters = lazy(() => import('@/modules/shared/pages/MeetingRegisters'))
 const KickoffMeetingCreate = lazy(() => import('@/modules/shared/pages/KickoffMeetingCreate'))
 const KickoffMeetingDetail = lazy(() => import('@/modules/shared/pages/KickoffMeetingDetail'))
-// The meeting run inside the CRM: the call beside its own agenda, roster and
-// notes. Full-height and outside the module shell's padding, so the video has
-// the screen.
-const MeetingRoom = lazy(() => import('@/modules/shared/pages/MeetingRoom'))
 
 // Vendor Self-Service Portal — its own chrome, gated to vendor roles. Every
 // endpoint resolves the vendor from the token (EnsureVendorPortalAccess).
@@ -425,6 +476,9 @@ const MyContacts = lazy(() => import('@/pages/vendor-portal/MyContacts'))
 const MyOverview = lazy(() => import('@/pages/vendor-portal/MyOverview'))
 const MyCustomers = lazy(() => import('@/pages/vendor-portal/MyCustomers'))
 const MyKb = lazy(() => import('@/pages/vendor-portal/MyKb'))
+// Training was a placeholder in BOTH portals while the register behind it had
+// existed for months. One page, two APIs — the My Work pattern.
+const MyTraining = lazy(() => import('@/pages/vendor-portal/MyTraining'))
 const MyWork = lazy(() => import('@/pages/vendor-portal/MyWork'))
 const MyPerformance = lazy(() => import('@/pages/vendor-portal/MyPerformance'))
 const MyHsse = lazy(() => import('@/pages/vendor-portal/MyHsse'))
@@ -493,9 +547,17 @@ function RootRedirect() {
   const { isAuthenticated, user } = useAuth()
   if (!isAuthenticated) return <Navigate to="/auth/login" replace />
   const role = user?.role
-  if (role === 'third_party_vendor') return <Navigate to="/vendor-portal/dashboard" replace />
-  // No 'vendor' branch: a Purchase Vendor is never a User session. They sign in at
-  // /auth/login?role=purchase_vendor and hold a PurchaseVendor token under its own storage key.
+  // Both vendor spellings, because both are real User roles and the portal
+  // below admits both. This used to read "No 'vendor' branch: a Purchase Vendor
+  // is never a User session" -- true of purchase_vendor, and nothing to do with
+  // `vendor`, which three users actually hold. The two were conflated, so a
+  // vendor opening / was sent to /app, which blocks that role and bounces back
+  // to the same place: an infinite redirect, not a wrong page.
+  //
+  // purchase_vendor is genuinely absent: it signs in at
+  // /auth/login?role=purchase_vendor and holds a PurchaseVendor token under its
+  // own storage key, never a User session.
+  if (role === 'third_party_vendor' || role === 'vendor') return <Navigate to="/vendor-portal/dashboard" replace />
   if (role === 'company') return <Navigate to="/company-portal/dashboard" replace />
   if (role === 'doctor') return <Navigate to="/doctor-portal/dashboard" replace />
   return <Navigate to="/app/dashboard" replace />
@@ -623,20 +685,15 @@ export default function AppRoutes() {
           <Route path="my-corrections" element={<S><MyCorrections /></S>} />
           <Route path="corrections" element={<S><Corrections /></S>} />
           <Route path="settings" element={<S><HrSettings /></S>} />
+          <Route path="onboarding-checklist" element={<S><OnboardingChecklistSettings /></S>} />
+          <Route path="clearance-departments" element={<S><ClearanceDepartmentSettings /></S>} />
+          <Route path="posh-committees" element={<S><PoshCommitteeSettings /></S>} />
+          <Route path="approval-workflows" element={<S><ApprovalWorkflows /></S>} />
           <Route path="demo-requests" element={<S><DemoRequests /></S>} />
-            {/* SangoeTrack — live from track.sangoe.in. Namespaced under track/
-                so the CRM's own attendance page above keeps its route. */}
-            <Route path="track/attendance" element={<S><TrackAttendance /></S>} />
-            <Route path="track/corrections" element={<S><TrackCorrections /></S>} />
-            <Route path="track/leave" element={<S><TrackLeave /></S>} />
-            <Route path="track/reimbursements" element={<S><TrackReimbursements /></S>} />
-            <Route path="track/advances" element={<S><TrackAdvances /></S>} />
-            <Route path="track/staff" element={<S><TrackStaff /></S>} />
-            <Route path="track/payroll" element={<S><TrackPayroll /></S>} />
-            <Route path="track/demo-requests" element={<S><TrackDemoRequests /></S>} />
-            <Route path="track/reports" element={<S><TrackReports /></S>} />
-            <Route path="track/holidays" element={<S><TrackHolidays /></S>} />
-            <Route path="track/settings" element={<S><TrackSettings /></S>} />
+            <Route path="holidays" element={<S><Holidays /></S>} />
+          {/* An index of every HR master and where it is maintained. Links
+              only — it owns no data and duplicates no API. */}
+          <Route path="configuration" element={<S><HrConfiguration /></S>} />
           <Route path="organization-setup" element={<S><OrganizationSetup /></S>} />
           <Route path="org-chart" element={<S><OrgChart /></S>} />
           <Route path="interview-questions" element={<S><InterviewQuestionBank /></S>} />
@@ -743,6 +800,21 @@ export default function AppRoutes() {
           <Route path="settings" element={<S><SupportSettings /></S>} />
         </Route>
 
+        {/* SIRE MODULE (issue -> verified fix) */}
+        <Route path="sire" element={<ProtectedRoute blockRoles={['client', 'third_party_vendor', 'vendor', 'company', 'doctor']}><S><SireLayout /></S></ProtectedRoute>}>
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<S><SireDashboard /></S>} />
+          <Route path="my-work" element={<S><SireMyWork /></S>} />
+          <Route path="cases/:id" element={<S><SireIssueDetail /></S>} />
+          <Route path="releases" element={<S><SireReleaseBoard /></S>} />
+          <Route path="releases/:id" element={<S><SireReleaseDetail /></S>} />
+          <Route path="release-notes/:noteId" element={<S><SireReleaseNotes /></S>} />
+          <Route path="quality" element={<S><SireQuality /></S>} />
+          <Route path="insights" element={<S><SireInsights /></S>} />
+          <Route path="recurring/:id" element={<S><SireRecurrenceDetail /></S>} />
+        </Route>
+
+
         {/* PURCHASE MODULE (procure-to-pay) */}
         <Route path="purchase" element={<S><PurchaseLayout /></S>}>
           <Route index element={<Navigate to="dashboard" replace />} />
@@ -842,7 +914,6 @@ export default function AppRoutes() {
           <Route path="kickoff/new" element={<S><KickoffMeetingCreate /></S>} />
           <Route path="kickoff/:id/edit" element={<S><KickoffMeetingCreate /></S>} />
           <Route path="kickoff/:id" element={<S><KickoffMeetingDetail /></S>} />
-          <Route path="kickoff/:id/room" element={<S><MeetingRoom /></S>} />
           {/* The SAME register screen TPV uses. useMeetingModule() resolves the
               Purchase engine on this path, so decisions, issues and the open
               action backlog now read ACROSS meetings here too — previously they
@@ -858,6 +929,37 @@ export default function AppRoutes() {
           <Route path="reports" element={<S><PurchaseReports /></S>} />
           {/* Settings — Purchase-owned config + vendor-category master */}
           <Route path="settings" element={<S><PurchaseSettings /></S>} />
+        </Route>
+
+        {/* Sangoe Transport OS — orders and trips only; later clusters arrive
+            with the tickets that build them. */}
+        <Route path="transport" element={<S><TransportLayout /></S>}>
+          {/* CTD §4 — "the preferred entry point". This slot held a redirect to
+              the Orders list, which meant Transport opened on a table and the
+              one search that understands transport identifiers was reachable
+              only from inside the Containers page or from ⌘K. */}
+          <Route index element={<S><TransportFinder /></S>} />
+          <Route path="orders" element={<S><TransportOrders /></S>} />
+          <Route path="orders/:id" element={<S><TransportOrderDetail /></S>} />
+          <Route path="trips" element={<S><TransportTrips /></S>} />
+          <Route path="consignments" element={<S><TransportConsignments /></S>} />
+          <Route path="containers" element={<S><TransportContainers /></S>} />
+          <Route path="containers/:id" element={<S><ContainerPassport /></S>} />
+          <Route path="trips/:id" element={<S><TransportTripDetail /></S>} />
+          {/* Fleet (Person 2), merged in 2026-09-17 — D-62.
+              P1's placeholder Vehicles/Drivers screens are unrouted here rather
+              than deleted: removing the files is P1's step under TEAM-CONTRACTS
+              §1a, and unrouting is what actually ends the duplicate UI.
+              The old paths still resolve so nobody's bookmark breaks. */}
+          <Route path="fleet" element={<S><FleetOverview /></S>} />
+          <Route path="fleet/vehicles/:id" element={<S><FleetVehiclePassport /></S>} />
+          <Route path="workshop" element={<S><FleetWorkshop /></S>} />
+          <Route path="vehicles" element={<S><FleetOverview /></S>} />
+          <Route path="vehicles/:id" element={<S><FleetVehiclePassport /></S>} />
+          <Route path="trailers" element={<S><FleetTrailers /></S>} />
+          <Route path="tyres" element={<S><FleetTyres /></S>} />
+          <Route path="drivers" element={<S><FleetDrivers /></S>} />
+          <Route path="drivers/:id" element={<S><FleetDrivers /></S>} />
         </Route>
 
         {/* TPV MODULE */}
@@ -909,7 +1011,6 @@ export default function AppRoutes() {
               before :id so "edit" is never captured as a meeting id. */}
           <Route path="kickoff/:id/edit" element={<S><KickoffMeetingCreate /></S>} />
           <Route path="kickoff/:id" element={<S><KickoffMeetingDetail /></S>} />
-          <Route path="kickoff/:id/room" element={<S><MeetingRoom /></S>} />
           {/* Meeting.docx §9's "searchable Decision Register", §10's issue
               register and §8's action backlog — across every meeting, not one. */}
           <Route path="meetings/registers" element={<S><MeetingRegisters /></S>} />
@@ -991,7 +1092,28 @@ export default function AppRoutes() {
             the customer's Meetings tab 404'd. Same components, no module
             chrome, alongside Tasks and Projects which are equally cross-module. */}
         <Route path="meetings" element={<S><KickoffMeetings /></S>} />
+        {/* Scheduling lives here too now that Meetings is a company-wide module:
+            every internal role can call one, and sending them to /app/tpv to do
+            it would put a vendor module in the way of a team catch-up. Static
+            "new" before ":id" so it is not parsed as a meeting id. */}
+        <Route path="meetings/new" element={<S><KickoffMeetingCreate /></S>} />
+        {/* The cross-meeting registers, on the neutral path too. They existed
+            only under /app/purchase and /app/tpv, so the one module that reads
+            across EVERY meeting could not open the register that reads across
+            every meeting -- you had to go into a vendor module to see it, which
+            is the complaint that made Meetings its own module (SIR-000030).
+            Static "registers" before ":id", or it is parsed as a meeting id. */}
+        <Route path="meetings/registers" element={<S><MeetingRegisters /></S>} />
+        <Route path="meetings/registers/:register" element={<S><MeetingRegisters /></S>} />
+        <Route path="meetings/:id/edit" element={<S><KickoffMeetingCreate /></S>} />
         <Route path="meetings/:id" element={<S><KickoffMeetingDetail /></S>} />
+
+        {/* The Contract module. Static "new" before ":id" so it is not parsed
+            as a contract id. */}
+        <Route path="contracts" element={<S><ContractsList /></S>} />
+        <Route path="contracts/new" element={<S><ContractForm /></S>} />
+        <Route path="contracts/:id/edit" element={<S><ContractForm /></S>} />
+        <Route path="contracts/:id" element={<S><ContractRecord /></S>} />
 
         {/* Inventory OS — Phase 1 foundation */}
         <Route path="inventory" element={<S><InventoryDashboard /></S>} />
@@ -1022,6 +1144,7 @@ export default function AppRoutes() {
           <Route index element={<Navigate to="general" replace />} />
           <Route path="general" element={<S><GeneralBrandingSettings /></S>} />
           <Route path="mail" element={<S><MailSettings /></S>} />
+          <Route path="whatsapp" element={<S><WhatsAppSettings /></S>} />
           <Route path="custom-fields" element={<S><CustomFieldsSettings /></S>} />
           <Route path="company" element={<S><CompanyFinanceSettings /></S>} />
           <Route path="tax-rates" element={<S><TaxRatesSettings /></S>} />
@@ -1036,7 +1159,12 @@ export default function AppRoutes() {
           <Route path="notification-preferences" element={<S><NotificationPreferences /></S>} />
           <Route path="recycle-bin" element={<S><RecycleBinSettings /></S>} />
           <Route path="statuses" element={<S><StatusManager /></S>} />
-          <Route path="roles" element={<S><RolesSettings /></S>} />
+          {/* /settings/roles retired: it managed a second staff-role catalogue
+              (access_roles) beside the live one. staff_roles owns the vocabulary,
+              permissions and scope together, and is maintained in Staff
+              Management — the UI route /app/admin/staff, whose Roles button opens
+              the permission grid. (/admin/roles is that screen's API, not a page;
+              naming it here sent people looking for a route that never existed.) */}
           <Route path="departments" element={<S><DepartmentsSettings /></S>} />
           {/* Each module's own settings, reachable from the one Setup panel as
               well as from inside the module. Same component either way, so the
@@ -1052,6 +1180,9 @@ export default function AppRoutes() {
       <Route path="/kb/a/:slug" element={<S><PublicArticle /></S>} />
       <Route path="/kb/:key" element={<S><PublicKb /></S>} />
       <Route path="/ticket/:ref" element={<S><PublicTicketView /></S>} />
+      {/* The shareable support link. Same widget key as /kb/:key and the embed
+          snippet, so one key gives a site its help centre AND its contact form. */}
+      <Route path="/support/:key" element={<S><PublicSupport /></S>} />
 
       {/* Public Web-to-Lead form (no auth) */}
       <Route path="/f/:token" element={<S><PublicLeadForm /></S>} />
@@ -1059,6 +1190,12 @@ export default function AppRoutes() {
       {/* Public proposal portal (share link / QR target) */}
       <Route path="/portal/proposals/:token" element={<S><ProposalPortal /></S>} />
       <Route path="/portal/contracts/:token" element={<S><ContractPortal /></S>} />
+      {/* The Contract module's own signing page. A customer or vendor opens this
+          from an e-mailed link and has no account, so it sits outside the app
+          shell entirely. Distinct path from the Sales portal above, which serves
+          that module's own contracts. */}
+      <Route path="/contracts/sign/:token" element={<S><ContractSignPortal /></S>} />
+      <Route path="/contracts/verify/:token" element={<S><ContractSignPortal /></S>} />
 
       {/* Vendor Self-Service Portal — vendor / third_party_vendor only.
           Purchase-side vendors see Dashboard + Documents + Orders + Invoices.
@@ -1083,6 +1220,7 @@ export default function AppRoutes() {
         <Route path="compliance"        element={<S><VendorPortalCompliance /></S>} />
         <Route path="governance"        element={<S><VendorPortalGovernance /></S>} />
         <Route path="support"           element={<S><PortalSupport /></S>} />
+        <Route path="agreements"        element={<S><PortalContractsTpv /></S>} />
         <Route path="onboarding"        element={<S><PortalOnboardingEntry /></S>} />
         <Route path="onboarding/:id"    element={<S><TpvOnboardingWizard /></S>} />
 
@@ -1108,8 +1246,15 @@ export default function AppRoutes() {
         {/* Medical — the External Medical Flow. The vendor files certificates
             its own doctor signed and answers the quality team about them. */}
         <Route path="medical"           element={<S><VendorMedicalPanel base="/portal" /></S>} />
+        <Route path="training"          element={<S><MyTraining /></S>} />
         <Route path="projects"          element={<S><MyWork view="projects" /></S>} />
         <Route path="tasks"             element={<S><MyWork view="tasks" /></S>} />
+        {/* Two task lists here, and they are genuinely two things: `tasks` above
+            is what was assigned to THIS LOGIN as a user, this one is what was
+            assigned by name to the vendor's contacts, who have no login of their
+            own. Merging them would need one of the two kinds of assignment to
+            pretend to be the other. */}
+        <Route path="team-tasks"        element={<S><PortalAssignedTasks /></S>} />
         <Route path="tickets"           element={<S><MyWork view="tickets" /></S>} />
         <Route path="expenses"          element={<S><MyWork view="expenses" /></S>} />
         <Route path="risk-score"        element={<S><MyPerformance view="risk" /></S>} />
@@ -1134,7 +1279,11 @@ export default function AppRoutes() {
           deleted because activation e-mails, bookmarks and printed onboarding
           packs already point here — those must land on the form, not a 404. */}
       <Route path="/purchase-portal/login" element={<Navigate to="/auth/login?role=purchase_vendor" replace />} />
-      <Route path="/purchase-portal/register"        element={<S><PurchaseVendorRegister /></S>} />
+      {/* The Purchase portal's own registration form is retired — there is one
+          register page for every identity now. Redirected rather than deleted:
+          the old path is in sent invitations and vendor bookmarks, and a 404
+          there reads as "this company stopped taking suppliers". */}
+      <Route path="/purchase-portal/register" element={<Navigate to="/auth/register" replace />} />
       <Route path="/purchase-portal/forgot-password" element={<S><PurchaseVendorForgotPassword /></S>} />
       <Route path="/purchase-portal/reset-password"  element={<S><PurchaseVendorResetPassword /></S>} />
 
@@ -1152,10 +1301,19 @@ export default function AppRoutes() {
         <Route path="statement"    element={<S><ClientPortalStatement /></S>} />
         <Route path="profile"      element={<S><ClientPortalProfile /></S>} />
         <Route path="feedback" element={<S><ClientPortalFeedback /></S>} />
+        <Route path="agreements"   element={<S><PortalContractsClient /></S>} />
+        {/* Work assigned to THIS contact by name. The client portal had no task
+            screen at all, so a task given to a client's coordinator reached them
+            only as an email with nowhere to go back to. */}
+        <Route path="my-tasks"     element={<S><PortalAssignedTasks /></S>} />
         {['invoices', 'payments', 'credit-notes', 'estimates', 'proposals',
-          'contracts', 'projects', 'tickets', 'files', 'notes', 'contacts'].map(v => (
+          'contracts', 'projects', 'tickets', 'shipments', 'files', 'notes', 'contacts'].map(v => (
           <Route key={v} path={v} element={<S><ClientPortalRecords view={v} /></S>} />
         ))}
+        {/* One shipment. A page of its own rather than a row-expand, because the
+            shared records table is a table — giving it a detail mode for one
+            screen changes it for the other eleven. */}
+        <Route path="shipments/:id" element={<S><ClientPortalShipment /></S>} />
       </Route>
       <Route path="/purchase-portal/verify-email"    element={<S><PurchaseVendorVerifyEmail /></S>} />
 
@@ -1174,6 +1332,11 @@ export default function AppRoutes() {
             + Approve/Reject/Hold) and is unaffected.
             PurchasePortalOnboarding resolves the record from the token via
             onboarding.self() — no id in the URL. */}
+        <Route path="agreements" element={<S><PortalContractsPurchase /></S>} />
+        {/* Tasks assigned to this vendor's own contacts. The Purchase portal has
+            no per-contact login — the vendor signs in as the company — so this
+            is its team's work, with each row naming whose it is. */}
+        <Route path="tasks"      element={<S><PortalAssignedTasks /></S>} />
         <Route path="onboarding" element={<S><PurchasePortalOnboarding /></S>} />
         <Route path="documents"  element={<S><PurchasePortalDocuments /></S>} />
         <Route path="compliance" element={<S><PurchasePortalCompliance /></S>} />
@@ -1181,11 +1344,27 @@ export default function AppRoutes() {
         <Route path="approval"   element={<S><PurchasePortalApproval /></S>} />
         <Route path="kickoff"    element={<S><PurchasePortalKickoff /></S>} />
         {/* My Workforce — unlocked once the vendor is Active. The 5-step worker
-            lifecycle; step 5 (badge) is read-only here, activation is admin-only. */}
-        <Route path="workforce"  element={<S><PurchasePortalWorkforce /></S>} />
+            lifecycle; step 5 (badge) is read-only here, activation is admin-only.
+
+            These are the SAME components the Purchase admin module uses, the way
+            TPV has always mounted TpvWorkers/TpvWorkerWizard on both surfaces.
+            They previously could not be: the portal client named the identical
+            endpoints differently (`workers.list` vs `workforce.workers`), so a
+            541-line copy of the screen existed instead — a different layout with
+            a cut-down wizard beside a 2,244-line one the portal never used. */}
+        <Route path="workforce" element={<S><PurchasePortalWorkforceShell /></S>}>
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard"   element={<S><PurchaseWorkforceDashboard /></S>} />
+          <Route path="workers"     element={<S><PurchaseWorkers /></S>} />
+          <Route path="workers/:id" element={<S><PurchaseWorkerWizard /></S>} />
+          <Route path="ppe"         element={<S><PurchasePortalPpe /></S>} />
+          <Route path="attendance"  element={<S><PurchaseWorkforceAttendance /></S>} />
+          <Route path="strikes"     element={<S><PurchasePortalStrikes /></S>} />
+        </Route>
         <Route path="ppe"        element={<S><PurchasePortalPpe /></S>} />
         {/* Medical — the Purchase mirror of the External Medical Flow. */}
         <Route path="medical"    element={<S><VendorMedicalPanel base="/portal/purchase" /></S>} />
+        <Route path="training"   element={<S><MyTraining api={PP_API} /></S>} />
         <Route path="profile"    element={<S><PurchasePortalProfile /></S>} />
         <Route path="support"    element={<S><PurchasePortalSupport /></S>} />
 
@@ -1205,9 +1384,14 @@ export default function AppRoutes() {
 
         {/* Parity with the TPV portal — same shared pages, Purchase api client. */}
         <Route path="customers"   element={<S><MyCustomers api={PP_API} /></S>} />
-        <Route path="projects"    element={<S><MyWork view="projects" api={PP_API} caps={{ ticketWrite: false }} /></S>} />
+        {/* Purchase used to mount these read-only (caps.ticketWrite:false), which
+            hid Raise Ticket AND made every row unclickable, so a Purchase vendor
+            could see tickets and neither open nor open one. The portal now has
+            the raise/detail/reply endpoints the TPV portal has always had, so
+            both portals mount MyWork the same way. */}
+        <Route path="projects"    element={<S><MyWork view="projects" api={PP_API} /></S>} />
         <Route path="tasks"       element={<S><MyWork view="tasks" api={PP_API} /></S>} />
-        <Route path="tickets"     element={<S><MyWork view="tickets" api={PP_API} caps={{ ticketWrite: false }} /></S>} />
+        <Route path="tickets"     element={<S><MyWork view="tickets" api={PP_API} /></S>} />
         <Route path="expenses"    element={<S><MyWork view="expenses" api={PP_API} /></S>} />
         <Route path="feedback"    element={<S><MyPerformance view="feedback" api={PP_API} /></S>} />
         <Route path="penalty"     element={<S><MyPerformance view="penalty" api={PP_API} /></S>} />

@@ -115,23 +115,82 @@ export default function PurchaseVendorForm({ value, onChange, mode = 'create' })
         </Field>
         {/* Vendor Type drives the temporary access window, so it is an explicit
             choice rather than a silent default the admin never sees. Same values
-            and labels as the TPV form, so the two modules stay consistent. */}
+            and labels as the TPV form, so the two modules stay consistent.
+
+            Fixed once the vendor exists. It used to stay editable, and changing
+            it wrote vendor_type alone — but isTemporary() reads registration_type
+            first, so the row stayed temporary, kept its expiry and was still
+            locked out when the window shut, while this screen said Permanent and
+            the save returned 200. Promotion is its own action, with its own audit
+            trail and its own email: the Convert to Permanent button on the vendor
+            workspace. The server refuses the change here either way. */}
         <Field label="Vendor Type *">
-          <select value={v.vendor_type || ''} onChange={set('vendor_type')} style={inputStyle}>
-            <option value="">Select…</option>
-            <option value="standard">Permanent</option>
-            <option value="temporary">Temporary</option>
-          </select>
+          {mode === 'create' ? (
+            <select value={v.vendor_type || ''} onChange={set('vendor_type')} style={inputStyle}>
+              <option value="">Select…</option>
+              <option value="standard">Permanent</option>
+              <option value="temporary">Temporary</option>
+            </select>
+          ) : (
+            <>
+              <input readOnly value={v.vendor_type === 'temporary' ? 'Temporary' : 'Permanent'}
+                style={{ ...inputStyle, opacity: 0.7, cursor: 'not-allowed' }} />
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                {v.vendor_type === 'temporary'
+                  ? 'Use “Convert to Permanent” on the vendor workspace to promote this vendor.'
+                  : 'A permanent vendor cannot be made temporary.'}
+              </div>
+            </>
+          )}
+        </Field>
+        {/* Collected at self-registration and previously kept on a hidden login
+            row, so it never appeared on any screen. A supplier is a company,
+            but the person who answers is who anybody actually needs. */}
+        <Field label="Contact person">
+          <input value={v.contact_person || ''} onChange={set('contact_person')} placeholder="Ravi Menon" style={inputStyle} />
+        </Field>
+        <Field label="Designation">
+          <input value={v.contact_designation || ''} onChange={set('contact_designation')} placeholder="Director" style={inputStyle} />
         </Field>
         <Field label="Phone">
           <input value={v.phone || ''} onChange={set('phone')} placeholder="+91 …" style={inputStyle} />
         </Field>
+        <Field label="Company phone">
+          <input value={v.company_phone || ''} onChange={set('company_phone')} placeholder="Switchboard, if different" style={inputStyle} />
+        </Field>
         <Field label="Website">
           <input value={v.website || ''} onChange={set('website')} placeholder="https://…" style={inputStyle} />
+        </Field>
+        {/* Free text on purpose — suppliers answer "50-100" as often as a
+            number, and refusing that at registration loses a supplier over a
+            field nobody reports on. */}
+        <Field label="Manpower">
+          <input value={v.manpower || ''} onChange={set('manpower')} placeholder="e.g. 50-100" style={inputStyle} />
+        </Field>
+        <Field label="MSME">
+          <input value={v.msme || ''} onChange={set('msme')} placeholder="Registration number, or Yes / No" style={inputStyle} />
         </Field>
         <Field label="Email">
           <input value={v.email || ''} onChange={set('email')} placeholder="vendor@company.com" style={inputStyle} />
         </Field>
+
+        {/* Create only. On an edit this field would look like "change their
+            password", which it is not — that is the vendor's own reset flow,
+            and offering it here would let an admin silently lock a vendor out
+            of an account they are already using. */}
+        {mode === 'create' && (
+          <Field label="Portal password" full>
+            <input
+              type="text" value={v.password || ''} onChange={set('password')}
+              placeholder="Leave blank to generate one automatically"
+              autoComplete="new-password" data-1p-ignore data-lpignore="true"
+              style={inputStyle} />
+            <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 5 }}>
+              E-mailed to the vendor either way — this message is the only place the
+              password is ever readable, so nothing here can show it again later.
+            </p>
+          </Field>
+        )}
       </Section>
 
       {/* 2 — Billing & Shipping */}

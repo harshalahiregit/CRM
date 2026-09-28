@@ -1,6 +1,6 @@
 /**
  * Professional salary sheet — the enterprise CTC breakdown, exactly in the order
- * Earnings → Gross → Employer Contribution → CTC → Deductions → Net (In Hand), with
+ * Earnings → Gross → Employer Contribution → CTC → Deductions → Structure Net, with
  * Monthly and Yearly columns. Pure presentation: it renders the `breakdown` object
  * returned by the Salary Formula Engine (SalaryStructureService::preview / show).
  * Reused by the Salary Builder preview and the read-only Employee Profile section.
@@ -77,7 +77,10 @@ export default function SalarySheet({ breakdown, employeeName, structureName }) 
 
         {/* Net */}
         <div className="mt-1 mb-1 rounded-lg px-3" style={{ background: 'rgba(16,185,129,0.08)' }}>
-          <Total label="Net Salary (In Hand)" monthly={b.net_salary?.monthly} yearly={b.net_salary?.yearly} color="#059669" strong />
+          {/* "In Hand" belongs to Net Payable on a payroll record, not to the
+              structure: statutory deductions are resolved per period and are
+              not in this figure. */}
+          <Total label="Structure Net" monthly={b.net_salary?.monthly} yearly={b.net_salary?.yearly} color="#059669" strong />
         </div>
       </div>
     </div>

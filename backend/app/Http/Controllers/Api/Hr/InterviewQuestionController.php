@@ -170,9 +170,27 @@ class InterviewQuestionController extends Controller
         ));
     }
 
-    /** Scoring is the interviewer's job, so this is NOT gated on the HR queue. */
+    /**
+     * Gated on the HR queue — a deliberate STOPGAP, not the end state.
+     *
+     * This used to be ungated on the reasoning that "scoring is the interviewer's
+     * job". The intent was right and the implementation did not express it: the
+     * endpoint asked nothing at all, so any signed-in staff member could score
+     * any candidate's round, which was verified.
+     *
+     * "Interviewer" is not something the code can currently answer — it would
+     * mean checking the round's interviewer_id (and the `interviewers` list) and
+     * that is a change to who may act, not a plugging of a hole. So the coarse
+     * HR gate goes on now and the narrower rule is left as follow-up work.
+     *
+     * The cost of the stopgap: an interviewer who is NOT HR can no longer score
+     * from this endpoint. That is a real reduction and it is the reason this
+     * comment exists rather than the change being silent.
+     */
     public function evaluate(Request $request, HrInterviewRound $interviewRound)
     {
+        $this->can($request);
+
         $data = $request->validate([
             'answers'                       => 'required|array',
             'answers.*.id'                  => 'required|integer',

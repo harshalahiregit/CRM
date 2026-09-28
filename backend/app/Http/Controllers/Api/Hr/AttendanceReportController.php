@@ -12,6 +12,15 @@ use Illuminate\Http\Request;
  * Read-only. Nothing here changes a figure, so a payroll run cannot be affected
  * by somebody looking at it — which is what makes it safe to give to everyone
  * who needs to see the numbers.
+ *
+ * Permission is on the route: this controller sits in the hr group carrying
+ * `permission:hr_attendance,view_global`, so the grid has already decided
+ * whether the caller may open an attendance report. The actor passed below
+ * answers the separate question of whose attendance appears on it (Phase 7).
+ *
+ * The actor is supplied HERE rather than inside AttendanceReportService,
+ * because the mobile Attendance App calls that same service and must not
+ * change. It calls monthly() without an actor, which stays unscoped.
  */
 class AttendanceReportController extends Controller
 {
@@ -32,7 +41,8 @@ class AttendanceReportController extends Controller
                 (int) $request->user()->tenant_id,
                 $data['month'],
                 $data['department'] ?? null,
-                isset($data['employee_id']) ? (int) $data['employee_id'] : null
+                isset($data['employee_id']) ? (int) $data['employee_id'] : null,
+                $request->user()
             ),
         ]);
     }
@@ -43,7 +53,7 @@ class AttendanceReportController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'data'   => $this->reports->byDepartment((int) $request->user()->tenant_id, $data['month']),
+            'data'   => $this->reports->byDepartment((int) $request->user()->tenant_id, $data['month'], $request->user()),
         ]);
     }
 
@@ -54,7 +64,7 @@ class AttendanceReportController extends Controller
         return response()->json([
             'status' => 'success',
             'data'   => $this->reports->forEmployee(
-                (int) $request->user()->tenant_id, $employeeId, $data['month']
+                (int) $request->user()->tenant_id, $employeeId, $data['month'], $request->user()
             ),
         ]);
     }

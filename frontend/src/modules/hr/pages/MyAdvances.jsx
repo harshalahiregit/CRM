@@ -24,6 +24,21 @@ const inr = n =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 })
     .format(Number(n) || 0)
 
+
+/**
+ * A date somebody can read.
+ *
+ * These fields arrive as full ISO timestamps — "2026-09-03T00:00:00.000000Z" —
+ * and were interpolated bare, so the cards showed the timestamp while the audit
+ * lines right below them were formatted properly.
+ */
+const day = v => {
+  if (!v) return ''
+  const d = new Date(v)
+  return Number.isNaN(d.getTime())
+    ? String(v).slice(0, 10)
+    : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
 const MAX_FILES = 10
 const MAX_MB    = 10
 const ACCEPT    = '.pdf,.png,.jpg,.jpeg,.webp,.heic'
@@ -293,7 +308,7 @@ export default function MyAdvances() {
               <div className="flex-1 min-w-[180px]">
                 <p className="text-sm font-bold truncate" style={{ color: 'var(--text-h)' }}>{r.purpose}</p>
                 <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                  {r.reference}{r.required_date && ` · needed by ${r.required_date}`}
+                  {r.reference}{r.required_date && ` · needed by ${day(r.required_date)}`}
                 </p>
               </div>
               <span className="text-sm font-bold" style={{ color: 'var(--text-h)', fontVariantNumeric: 'tabular-nums' }}>

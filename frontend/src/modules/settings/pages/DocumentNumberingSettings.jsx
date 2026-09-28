@@ -48,8 +48,14 @@ export default function DocumentNumberingSettings() {
     settingsApi.numbering.list()
       .then(d => {
         setCatalogue(d)
-        const first = d?.types?.[0]
-        if (first) { setSelected(first.key); setServer(first.config); setForm(pick(first.config)); setPreview(first.config?.preview || '') }
+        // ?type= opens straight on one format. There are thirty-odd types in
+        // this list and no hint from the screen that wanted one which it is, so
+        // the modules that own a number now link here with it named — see the
+        // Purchase vendor list, where "no option to set the vendor code prefix"
+        // meant the option existed and nothing pointed at it.
+        const wanted = new URLSearchParams(window.location.search).get('type')
+        const open = (wanted && d?.types?.find(t => t.key === wanted)) || d?.types?.[0]
+        if (open) { setSelected(open.key); setServer(open.config); setForm(pick(open.config)); setPreview(open.config?.preview || '') }
       })
       .catch(e => toast.error(e.message))
   }, [])

@@ -8,6 +8,7 @@ use App\Models\Hr\HrEmployee;
 use App\Models\Hr\HrEmployeeSalary;
 use App\Models\Hr\HrPayrollRecord;
 use App\Models\Hr\HrPayrollRun;
+use App\Models\Hr\HrPayrollRunEmployee;
 use App\Models\User;
 use App\Models\Hr\HrPayrollRecordLine;
 use App\Repositories\Hr\PayrollRunRepository;
@@ -37,6 +38,12 @@ class PayrollService
         private SettingsService $settings,
         private LoanDeductionService $loans,
         private VariableEarningService $variableEarnings,
+        // Attendance-derived pay. Both were settings and columns that nothing
+        // read: the late-mark thresholds were captured in September and never
+        // enforced, and `hr_attendance.overtime_hours` has been stamped on every
+        // day since attendance was built without ever reaching a payslip.
+        private \App\Services\Hr\Payroll\LateMarkDeductionService $lateMarks,
+        private \App\Services\Hr\Payroll\OvertimeService $overtime,
     ) {
     }
 
@@ -108,13 +115,76 @@ class PayrollService
             throw new BusinessException('This payroll run is cancelled.');
         }
 
+        // The salary that applied IN THIS PERIOD — not whichever row is active today.
+        //
+        // This used to filter on `status = ACTIVE` alone, so a revision made in
+        // July silently became the basis for a June run reprocessed afterwards:
+        // the June record would carry July's CTC and July's components, and
+        // nothing in the output said so. The effective dates existed on the row
+        // the whole time and payroll was the one service not reading them.
+        //
+        // A superseded row is deliberately eligible here. For an earlier period
+        // the INACTIVE row is the correct one — restricting to ACTIVE is exactly
+        // what caused the bug.
+        [$periodStart, $periodEnd] = $this->periodBounds($run->payroll_year, $run->payroll_month);
+
         $salaries = HrEmployeeSalary::where('tenant_id', $tenantId)
-            ->where('status', HrEmployeeSalary::ACTIVE)
+            ->where(fn ($q) => $q
+                ->whereNull('effective_from')
+                ->orWhereDate('effective_from', '<=', $periodEnd))
+            ->where(fn ($q) => $q
+                ->whereNull('effective_to')
+                ->orWhereDate('effective_to', '>=', $periodStart))
             // `work_state` is loaded because Professional Tax is resolved per state;
             // without it the constrained eager load returns a null state and every
             // state-specific PT rule silently fails to match.
-            ->with('employee:id,name,work_state')
+            // gender and dob join work_state for the same reason the comment above
+            // gives: a constrained eager load returns NULL for anything not named,
+            // so leaving them out means gender-neutral PT slabs and an EPS
+            // contribution for somebody past 58 — silently, on every run.
+            ->with('employee:id,name,work_state,gender,dob')
+            ->orderBy('employee_id')
+            ->orderBy('effective_from')
+            ->orderBy('revision_no')
             ->get();
+
+        // One salary per employee: the LAST revision that had taken effect by the
+        // end of the period. Ordered above, so the last match wins.
+        //
+        // Mid-period revisions are NOT pro-rated. Pro-rating a month across two
+        // structures is a real calculation with real edge cases (statutory wage
+        // ceilings, PT slabs, a changed PF applicability mid-month), and guessing
+        // at it would produce a confident wrong number. Where two revisions apply
+        // to one period the run is annotated instead, so somebody can decide.
+        $midPeriodRevisions = [];
+        $salaries = $salaries
+            ->groupBy('employee_id')
+            ->map(function ($rows) use ($periodStart, &$midPeriodRevisions) {
+                $startedInside = $rows->filter(fn ($s) => $s->effective_from
+                    && $s->effective_from->gt($periodStart));
+
+                if ($startedInside->isNotEmpty() && $rows->count() > 1) {
+                    $midPeriodRevisions[] = $rows->first()->employee_id;
+                }
+
+                return $rows->last();
+            })
+            ->values();
+
+        // Honour the Pre-check selection when one was made.
+        //
+        // A run with NO selection rows keeps the original behaviour — every
+        // active salary — because that is what every existing run and test
+        // expects, and because "pay everybody" is the correct default for the
+        // ordinary month. Once HR has chosen, the choice wins, and anybody the
+        // pre-check blocked is excluded rather than paid with missing details.
+        $selected = HrPayrollRunEmployee::where('payroll_run_id', $run->id)
+            ->whereNull('blocked_reason')
+            ->pluck('employee_id');
+
+        if ($selected->isNotEmpty()) {
+            $salaries = $salaries->whereIn('employee_id', $selected->all())->values();
+        }
 
         if ($salaries->isEmpty()) {
             throw new BusinessException('No employees have an active salary to process. Assign salaries first.');
@@ -122,7 +192,7 @@ class PayrollService
 
         $period = $this->period($run->payroll_year, $run->payroll_month);
 
-        DB::transaction(function () use ($run, $salaries, $tenantId, $period, $actor) {
+        DB::transaction(function () use ($run, $salaries, $tenantId, $period, $actor, $midPeriodRevisions) {
             $run->update(['status' => HrPayrollRun::PROCESSING]);
             $run->recordAudit('Payroll Started', $actor, null, ['period' => $period, 'employees' => $salaries->count()]);
 
@@ -136,7 +206,7 @@ class PayrollService
 
             $run->records()->delete(); // clean slate if a Draft run is (re)processed
 
-            $gross = $deductions = $net = 0.0;
+            $gross = $deductions = $net = $payable = 0.0;
             $count = 0;
 
             foreach ($salaries as $salary) {
@@ -189,9 +259,26 @@ class PayrollService
                 // same money cannot be paid twice by a later run.
                 $variableTotal = $this->variableEarnings->markPaid($record, $tenantId, $period);
 
+                // Attendance-derived pay for this period. Both are computed
+                // AFTER the record exists so they can use its payable days —
+                // a day is worth gross ÷ payable days, and a flat 30 quietly
+                // overcharges anybody paid for part of a month.
+                $days = (float) ($record->payable_days ?: 0);
+                $late = $this->lateMarks->forEmployee(
+                    (int) $salary->employee_id, $tenantId, $period, (float) $salary->gross_salary, $days
+                );
+                $ot = $this->overtime->forEmployee(
+                    (int) $salary->employee_id, $tenantId, $period, (float) $salary->gross_salary, $days
+                );
+
                 $stamp = array_filter([
                     'loan_deduction'    => $loanTotal > 0 ? $loanTotal : null,
                     'variable_earnings' => $variableTotal > 0 ? $variableTotal : null,
+                    'late_marks'          => $late['late_marks'] > 0 ? $late['late_marks'] : null,
+                    'late_mark_deduction' => $late['amount'] > 0 ? $late['amount'] : null,
+                    'late_mark_reason'    => $late['reason'],
+                    'overtime_hours'      => $ot['hours'] > 0 ? $ot['hours'] : null,
+                    'overtime_amount'     => $ot['amount'] > 0 ? $ot['amount'] : null,
                 ], fn ($v) => $v !== null);
 
                 if ($stamp !== []) {
@@ -200,22 +287,57 @@ class PayrollService
 
                 $this->storeLines($record, array_merge($lines, $loanLines), $tenantId);
 
-                $gross      += (float) $salary->gross_salary;
-                $deductions += (float) $salary->total_deductions;
-                $net        += (float) $salary->net_salary;
+                // Run totals are what a human reads on the payroll screen, so they
+                // are the PERIOD figures, not the structure snapshot. These used
+                // to accumulate $salary->total_deductions (0 for every structure
+                // that defines no deductions of its own — i.e. all of them) and
+                // $salary->net_salary (== gross), which is how the hub came to
+                // show "Gross ₹1,34,808 · Deductions ₹0" directly above a
+                // "Statutory ₹8,261" tile computed from the same run.
+                //
+                // The per-record snapshot columns are untouched; only the run
+                // summary changes, and it now agrees with total_payable.
+                $gross      += $record->periodGross();
+                $deductions += $record->periodDeductions();
+                $net        += $record->netPayable();
+                // The bank figure, from the one definition of it. Accumulated
+                // here rather than derived later so the run total and the
+                // advice cannot drift apart.
+                $payable    += $record->netPayable();
                 $count++;
             }
 
             $run->update([
                 'status'           => HrPayrollRun::COMPLETED,
+                // Calculated, NOT agreed. The run now waits on the reporting
+                // manager; `status` records that the arithmetic is done and
+                // locked, `stage` records that nobody has signed it yet.
+                'stage'            => HrPayrollRun::STAGE_APPROVE,
                 'total_employees'  => $count,
                 'total_gross'      => round($gross, 2),
                 'total_deductions' => round($deductions, 2),
                 'total_net'        => round($net, 2),
+                'total_payable'    => round($payable, 2),
                 'processed_by'     => $actor?->id,
                 'processed_at'     => now(),
             ]);
             $run->recordAudit('Payroll Completed', $actor, null, ['employees' => $count, 'total_net' => round($net, 2)]);
+
+            // A revision that took effect part-way through this period was NOT
+            // pro-rated — the later structure was used for the whole month. Said
+            // out loud in the audit trail and the log, because the alternative is
+            // a figure nobody can explain six months from now.
+            if ($midPeriodRevisions !== []) {
+                $run->recordAudit('Mid-period salary revision not pro-rated', $actor, null, [
+                    'employee_ids' => array_values(array_unique($midPeriodRevisions)),
+                    'period'       => $period,
+                    'applied'      => 'the revision effective latest within the period, for the whole period',
+                ]);
+                Log::channel('hr')->warning('Payroll: mid-period salary revision not pro-rated', [
+                    'run_id' => $run->id, 'tenant_id' => $tenantId, 'period' => $period,
+                    'employee_ids' => array_values(array_unique($midPeriodRevisions)),
+                ]);
+            }
         });
 
         $this->log('Payroll processed', $tenantId, $run->id);
@@ -252,9 +374,25 @@ class PayrollService
 
         $lines = array_merge($structure['lines'] ?? [], $variableLines);
 
+        // Loaded here rather than eager-loaded on the salary query: it is one row
+        // per employee per run, and putting it in that constrained select is how
+        // the gender/dob omission happened in the first place.
+        $detail = $salary->employee?->detail;
+
         $stat = $this->statutory->forSalary($lines, $tenantId, [
             'state' => $this->workStateFor($salary->employee, $tenantId),
             'date'  => Carbon::parse($period.'-01'),
+            // Maharashtra's PT thresholds differ by gender, and EPS membership
+            // ends at 58 — both visible in the filed registers. Without these the
+            // engine falls back to gender-neutral slabs and keeps paying a pension
+            // contribution for somebody who can no longer be a member.
+            'gender'    => $salary->employee->gender ?? null,
+            'age_years' => $salary->employee->dob
+                ? Carbon::parse($salary->employee->dob)->age
+                : null,
+            // Voluntary PF is the employee's own choice, held on their record.
+            'vpf_amount'  => $detail?->vpf_amount,
+            'vpf_percent' => $detail?->vpf_percent,
             // Employee context switches TDS from a 12x projection to the
             // year-to-date engine, which reads the months already paid.
             'employee_id'    => $salary->employee_id,
@@ -326,11 +464,26 @@ class PayrollService
             'payroll_year'     => $run->payroll_year,
             'period_label'     => $this->periodLabel($run->payroll_year, $run->payroll_month),
             'status'           => $run->status,
+            // Where the run sits in the approval chain, which is a different
+            // question from whether it has been computed. See HrPayrollRun.
+            'stage'            => $run->stage ?? HrPayrollRun::STAGE_PRECHECK,
+            'stage_index'      => $run->stageIndex(),
+            'stages'           => HrPayrollRun::STAGES,
+            'is_approved'      => $run->isApproved(),
             'total_employees'  => $run->total_employees,
             'total_gross'      => (float) $run->total_gross,
             'total_deductions' => (float) $run->total_deductions,
             'total_net'        => (float) $run->total_net,
+            // What the bank is asked for, as against the sum of the frozen
+            // structure figures. The two differ by the statutory split, this
+            // period's variable earnings, loan instalments and adjustments.
+            'total_payable'    => (float) $run->total_payable,
             'processed_at'     => optional($run->processed_at)->toIso8601String(),
+            'approved_at'      => optional($run->approved_at)->toIso8601String(),
+            'approved_by'      => $run->approvedBy?->name,
+            'approval_note'    => $run->approval_note,
+            'disbursed_at'     => optional($run->disbursed_at)->toIso8601String(),
+            'disbursed_by'     => $run->disbursedBy?->name,
             'created_at'       => optional($run->created_at)->toIso8601String(),
         ];
 
@@ -348,9 +501,35 @@ class PayrollService
             $out['loan_recovery'] = $this->runLoanTotals($run);
             // #31 — what the run paid out in commissions/incentives.
             $out['variable_earnings'] = $this->variableEarnings->runTotals($run->id, (int) $run->tenant_id);
+            // Disburse-stage progress: how many transfers accounts has settled.
+            $out['payments'] = $this->runPaymentTotals($run);
         }
 
         return $out;
+    }
+
+    /**
+     * What accounts has settled on this run.
+     *
+     * Counted per person rather than inferred from the run's stage: transfers
+     * fail one at a time, and a run being finished says nothing about whether a
+     * particular person's money arrived.
+     */
+    private function runPaymentTotals(HrPayrollRun $run): array
+    {
+        $byStatus = HrPayrollRecord::where('payroll_run_id', $run->id)
+            ->selectRaw('payment_status, COUNT(*) c')
+            ->groupBy('payment_status')
+            ->pluck('c', 'payment_status');
+
+        return [
+            'pending'  => (int) ($byStatus[HrPayrollRecord::PAY_PENDING] ?? 0),
+            'paid'     => (int) ($byStatus[HrPayrollRecord::PAY_PAID] ?? 0),
+            'hold'     => (int) ($byStatus[HrPayrollRecord::PAY_HOLD] ?? 0),
+            'failed'   => (int) ($byStatus[HrPayrollRecord::PAY_FAILED] ?? 0),
+            'released' => HrPayrollRecord::where('payroll_run_id', $run->id)
+                ->where('payslip_visible', true)->count(),
+        ];
     }
 
     /**
@@ -436,14 +615,34 @@ class PayrollService
             // #31 — commission/incentive paid this period, kept beside the frozen
             // snapshot rather than folded into it.
             'variable_earnings' => (float) $r->variable_earnings,
-            // What actually reaches the bank: the frozen net, PLUS this period's
-            // variable earnings, less the statutory split and any loan instalment.
-            // `net_salary` itself is left untouched — it is the frozen snapshot
-            // every existing consumer already reads.
-            'net_payable'       => round(
-                (float) $r->net_salary + (float) $r->variable_earnings
-                - (float) $r->statutory_deductions - (float) $r->loan_deduction, 2
-            ),
+            // HR's additions net of deductions for this month only.
+            'adjustment_total'  => (float) $r->adjustment_total,
+            // Attendance-derived. The reason travels with the figure so a
+            // payslip can answer "why is my salary short?" on its own.
+            'late_marks'          => (int) $r->late_marks,
+            'late_mark_deduction' => (float) $r->late_mark_deduction,
+            'late_mark_reason'    => $r->late_mark_reason,
+            'overtime_hours'      => (float) $r->overtime_hours,
+            'overtime_amount'     => (float) $r->overtime_amount,
+            // What actually reaches the bank. Defined once, on the model — this
+            // used to be spelled out here AND in BankAdviceService, and the two
+            // spellings disagreed, which is how PF was paid to the government
+            // and to the employee at the same time.
+            'net_payable'       => $r->netPayable(),
+            // The period figures beside the structure snapshot above, so a screen
+            // never has to choose between `gross_salary` (structure) and what the
+            // employee actually earned and lost this month. `total_deductions` is
+            // kept as-is for anything still reading it; `period_deductions` is the
+            // one to show a human.
+            'period_gross'      => $r->periodGross(),
+            'period_deductions' => $r->periodDeductions(),
+            'employer_contributions' => $r->employerContributions(),
+            // Set by accounts at the Disburse stage. "The run completed" is a
+            // statement about arithmetic; this is about money arriving.
+            'payment_status'    => $r->payment_status ?? HrPayrollRecord::PAY_PENDING,
+            'paid_at'           => optional($r->paid_at)->toIso8601String(),
+            'payment_note'      => $r->payment_note,
+            'payslip_visible'   => (bool) $r->payslip_visible,
         ] + $this->presentStatutory($r);
     }
 
@@ -519,6 +718,21 @@ class PayrollService
     private function period(int $year, int $month): string
     {
         return sprintf('%04d-%02d', $year, $month);
+    }
+
+    /**
+     * First and last calendar day of a payroll period.
+     *
+     * Used to decide which salary revision applied during the period, rather
+     * than which one happens to be active today.
+     *
+     * @return array{0: Carbon, 1: Carbon}
+     */
+    private function periodBounds(int $year, int $month): array
+    {
+        $start = Carbon::create($year, $month, 1)->startOfDay();
+
+        return [$start, $start->copy()->endOfMonth()];
     }
 
     private function periodLabel(int $year, int $month): string

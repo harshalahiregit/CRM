@@ -8,6 +8,7 @@ use App\Models\Hr\HrAdvanceSettlement;
 use App\Models\Hr\HrEmployee;
 use App\Models\User;
 use App\Support\Hr\AdvanceStage;
+use App\Support\Hr\Approval\ApprovalState;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -34,6 +35,9 @@ class AdvanceService
     public function __construct(
         private RequestThreadService $thread,
         private AdvanceTierService $tiers,
+        // Nothing in this flow told the employee anything: they requested an
+        // advance and heard nothing, it was approved and they heard nothing.
+        private RequestNotifier $notifier,
     ) {
     }
 
@@ -48,6 +52,7 @@ class AdvanceService
                 'reference'                => HrAdvance::nextReference((int) $employee->tenant_id),
                 'advance_type'             => $data['advance_type'] ?? null,
                 'category'                 => $data['category'] ?? null,
+                'department'               => $data['department'] ?? null,
                 'project_site'             => $data['project_site'] ?? null,
                 'purpose'                  => $data['purpose'],
                 'amount_requested'         => $data['amount_requested'],
@@ -56,6 +61,18 @@ class AdvanceService
                 'status'                   => AdvanceStage::PENDING,
             ]);
 
+            /*
+             | Freeze the approval thresholds for THIS request.
+             |
+             | ladderFor() used to read live settings on every call, so raising
+             | advance_manager_limit while a request sat at the manager rung
+             | silently shortened its ladder and that manager's approval became
+             | final on an amount two more people were meant to see. The
+             | snapshot records the policy as it stood when the advance was
+             | raised; the amount still re-shapes the ladder within it.
+             */
+            $this->tiers->snapshotLadder($advance, $actor);
+
             $this->thread->event(
                 $advance,
                 'submitted',
@@ -63,6 +80,12 @@ class AdvanceService
                 $actor,
                 ['amount_requested' => (float) $advance->amount_requested]
             );
+
+            // The employee gets told. Nothing in this flow told them anything:
+            // they requested an advance and heard nothing about it again.
+            $this->notifier->tell($employee, 'Advance', 'submitted',
+                'Your advance request for '.$this->money((float) $advance->amount_requested)
+                .' is with your approver.', $actor);
 
             return $advance;
         });
@@ -132,6 +155,7 @@ class AdvanceService
 
         return DB::transaction(function () use ($advance, $actor) {
             $advance->update(['status' => AdvanceStage::CANCELLED, 'held_from' => null, 'proposed_amount' => null]);
+            $this->tiers->closeLadder($advance, ApprovalState::CANCELLED);
             $this->thread->event($advance, 'cancelled', 'The employee withdrew this request.', $actor);
 
             return $advance->fresh();
@@ -196,6 +220,19 @@ class AdvanceService
                     . ($complete ? ' The request is ready to disburse.' : ''),
                 $actor, ['tier' => $tier, 'amount' => $final]);
 
+            // The ladder is finished: close the round so the frozen
+            // thresholds stop applying to a request nobody is deciding.
+            if ($complete) {
+                $this->tiers->closeLadder($advance);
+            }
+
+            $this->notifier->tell($advance->employee, 'Advance',
+                $complete ? 'approved' : 'part-approved',
+                $complete
+                    ? 'Your advance of '.$this->money($final).' was approved and is ready to be paid out.'
+                    : 'Your advance was approved by '.$tier.' and has moved to the next approver.',
+                $actor);
+
             return $advance->fresh();
         });
     }
@@ -224,7 +261,13 @@ class AdvanceService
                 'decided_at'      => now(),
             ]);
 
+            // Declining ends the ladder, so the round closes with it.
+            $this->tiers->closeLadder($advance, ApprovalState::REJECTED);
+
             $this->thread->event($advance, 'declined', 'Declined. Reason: ' . trim($reason), $actor, ['reason' => trim($reason)]);
+
+            $this->notifier->tell($advance->employee, 'Advance', 'declined',
+                'Your advance request was declined. '.trim($reason), $actor);
 
             return $advance->fresh();
         });
@@ -319,6 +362,11 @@ class AdvanceService
                 $this->money($paid) . ' disbursed by ' . str_replace('_', ' ', $mode)
                     . ($reference ? ' (' . trim($reference) . ')' : '') . '.',
                 $actor, ['amount' => $paid, 'mode' => $mode, 'reference' => trim((string) $reference) ?: null]);
+
+            // The one an employee most wants to hear: the money has gone out.
+            $this->notifier->tell($advance->employee, 'Advance', 'paid out',
+                $this->money($paid).' has been paid to you by '
+                .str_replace('_', ' ', $mode).'.', $actor);
 
             return $advance->fresh();
         });

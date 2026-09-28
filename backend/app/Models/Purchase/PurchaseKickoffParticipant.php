@@ -2,6 +2,7 @@
 
 namespace App\Models\Purchase;
 
+use App\Models\Traits\AdminMarkedAttendance;
 use App\Models\Traits\BelongsToTenant;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
@@ -13,7 +14,7 @@ use Illuminate\Database\Eloquent\Model;
  */
 class PurchaseKickoffParticipant extends Model
 {
-    use BelongsToTenant;
+    use AdminMarkedAttendance, BelongsToTenant;
 
     protected $table = 'purchase_kickoff_participants';
 
@@ -25,11 +26,47 @@ class PurchaseKickoffParticipant extends Model
         'tenant_id', 'purchase_kickoff_meeting_id', 'purchase_contact_id', 'user_id',
         'name', 'email', 'phone', 'organisation', 'designation', 'role', 'side',
         'attended', 'attendance_status',
+        // Which column of the four-column attendance sheet this person sits in
+        // — organiser | client | vendor | tpv — and where they were picked from.
+        // See MeetingPartyDirectory; party_ref is an opaque string, never a key.
+        'party', 'party_ref',
+        // Written by the live room, not typed by anyone: when this person
+        // arrived, when they were last seen, how long they were in the call,
+        // and the call's own id for them. See MeetingPresence.
+        'joined_at', 'left_at', 'seconds_in_call', 'participant_key', 'is_guest',
+        // Whether this was observed in the call, recorded when they pressed
+        // Join, or ticked by hand. See MeetingJoinRecorder.
+        'attendance_source',
+        // The ADMIN's own record of the meeting: the times they typed, and who
+        // typed them. joined_at/left_at above are observed and stay untouched —
+        // this is the official version, that is the evidence for it.
+        'in_at', 'out_at', 'marked_by', 'marked_at',
+        // Where and on what they joined from — the evidence behind the tick.
+        // Coordinates only exist if the person's browser offered them.
+        'join_ip', 'join_user_agent', 'join_device',
+        'join_latitude', 'join_longitude', 'join_location_label',
+        // The ORGANISER's decision, kept beside the claim above rather than on
+        // top of it — see MeetingAttendanceReview. NULL verdict means nobody has
+        // reviewed this person yet, which is not the same as absent.
+        'verdict', 'verdict_from', 'verdict_to', 'verdict_note', 'verdict_by', 'verdict_at',
     ];
 
     protected $casts = [
         'attended' => 'boolean',
+        'joined_at' => 'datetime',
+        'left_at' => 'datetime',
+        'seconds_in_call' => 'integer',
+        'is_guest' => 'boolean',
+        'in_at' => 'datetime',
+        'out_at' => 'datetime',
+        'marked_at' => 'datetime',
+        'verdict_from' => 'datetime',
+        'verdict_to' => 'datetime',
+        'verdict_at' => 'datetime',
     ];
+
+    /** Same appended pair as the shared roster — see KickoffAttendee. */
+    protected $appends = ['marked_by_name', 'attendance_minutes'];
 
     public function meeting()
     {

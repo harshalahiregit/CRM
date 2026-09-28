@@ -22,12 +22,23 @@ class StaffRole extends Model
     protected $table = 'staff_roles';
 
     protected $fillable = [
-        'tenant_id', 'name', 'slug', 'description', 'permissions', 'is_system',
+        // `permissions` says what the role may DO; `scope` says whose records it
+        // may do it to. Two halves of one answer, kept apart on purpose — see
+        // App\Support\Hr\DataScope. Defaults to 'global', which is the behaviour
+        // every role had before the column existed.
+        'tenant_id', 'name', 'slug', 'description', 'permissions', 'scope', 'is_system',
+        // A row that exists to declare a legal internal_role NAME and nothing
+        // else — `hr` and `manager`, which routes/sangoetrack.php gates on and
+        // which had previously been written down only in the unused
+        // access_roles table. Never a permission bypass: such a role grants
+        // exactly what its empty permission set grants.
+        'is_vocabulary_only',
     ];
 
     protected $casts = [
-        'permissions' => 'array',
-        'is_system'   => 'boolean',
+        'permissions'        => 'array',
+        'is_system'          => 'boolean',
+        'is_vocabulary_only' => 'boolean',
     ];
 
     protected $appends = ['granted_count'];

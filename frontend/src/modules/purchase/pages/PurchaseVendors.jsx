@@ -1,18 +1,40 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Building2, Plus, RefreshCw, CheckCircle2, Eye, CalendarDays, Pencil } from 'lucide-react'
+import { Building2, Plus, RefreshCw, Eye, CalendarDays, Pencil, Hash } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
-import PurchaseVendorForm, { validatePurchaseVendor } from '@/modules/purchase/components/PurchaseVendorForm'
+// The add/edit form is shared with TPV — one component, one set of thirteen
+// fields, so the two cannot drift again. PurchaseVendorForm still exists and is
+// still the vendor workspace's Profile tab, where the commercial fields live.
+import VendorMasterForm, { validateVendorMaster, VENDOR_MASTER_FIELDS } from '@/components/vendors/VendorMasterForm'
 import PurchaseRegistrationBadge from '@/modules/purchase/components/PurchaseRegistrationBadge'
 import TemporaryVendorValidityBadge from '@/modules/purchase/components/TemporaryVendorValidityBadge'
 import { PV_DEFAULTS } from '@/modules/purchase/components/purchaseVendorFormConstants'
 import TableToolbar from '@/components/ui/TableToolbar'
+import { useToast } from '@/components/ui/Toast'
+import ToggleSwitch from '@/components/ui/ToggleSwitch'
 
 /**
  * Purchase Vendors — the admin master list for the Purchase-owned vendor entity
  * (/api/purchase/vendors). Independent of the shared Vendor and of TPV.
  */
-const STATUS_COLORS = { Active: '#10b981', Pending_Approval: '#f59e0b', Draft: '#6b7280', On_Hold: '#f59e0b', Rejected: '#ef4444', Blacklisted: '#991b1b', Inactive: '#6b7280' }
+/**
+ * How far this vendor has got with onboarding.
+ *
+ * A vendor with no onboarding row reads "Not started" rather than an empty
+ * cell: blank is indistinguishable from a column that failed to load, and this
+ * one exists precisely so an admin can tell the difference before activating.
+ */
+const ONBOARDING_COLORS = {
+  Approved: '#10b981', Submitted: '#0ea5e9', In_Progress: '#f59e0b',
+  Draft: '#6b7280', Rejected: '#ef4444', On_Hold: '#f59e0b', Resubmit: '#f59e0b',
+}
+
+function onboardingBadge(status) {
+  const label = status ? String(status).replace(/_/g, ' ') : 'Not started'
+  const colour = status ? (ONBOARDING_COLORS[status] || '#6b7280') : '#9ca3af'
+
+  return <span style={{ fontSize: 11, fontWeight: 700, color: colour }}>{label}</span>
+}
 
 export default function PurchaseVendors() {
   const navigate = useNavigate()
@@ -23,6 +45,7 @@ export default function PurchaseVendors() {
   const [modal, setModal] = useState(null)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+  const toast = useToast()
   const [editLoadingId, setEditLoadingId] = useState(null)
 
   const load = useCallback(() => {
@@ -41,12 +64,36 @@ export default function PurchaseVendors() {
   const isEdit = Boolean(modal?.id)
 
   const save = async () => {
-    const invalid = validatePurchaseVendor(modal)
+    const invalid = validateVendorMaster(modal, { isNew: !isEdit })
     if (invalid) { setErr(invalid); return }
     setSaving(true); setErr('')
+
+    /*
+     * Send ONLY what this form collects.
+     *
+     * The edit path seeds itself from the full record, so posting `modal`
+     * wholesale sent back every column the form no longer shows — and any one
+     * of them that was already invalid rejected the save. A vendor whose
+     * website had been stored as "dfghhoiujkhj" could not be edited at all:
+     * "The website field format is invalid", about a field not on the screen,
+     * with nothing to type into to fix it.
+     *
+     * Omitting a field is not the same as clearing it — the columns are simply
+     * not in the payload, so the model keeps them. Payment terms, bank details
+     * and the rest survive an edit here and stay editable on the Profile tab.
+     */
+    const payload = Object.fromEntries(
+      VENDOR_MASTER_FIELDS.filter(k => modal[k] !== undefined).map(k => [k, modal[k] === '' ? null : modal[k]]),
+    )
+    // Only when one was actually typed; the API mints one otherwise.
+    if (modal.password) {
+      payload.password = modal.password
+      payload.password_confirmation = modal.password_confirmation
+    }
+
     try {
-      if (isEdit) await purchaseApi.vendors.update(modal.id, modal)
-      else await purchaseApi.vendors.create(modal)
+      if (isEdit) await purchaseApi.vendors.update(modal.id, payload)
+      else await purchaseApi.vendors.create(payload)
       setModal(null); load()
     } catch (e) {
       const errors = e?.response?.data?.errors
@@ -55,7 +102,34 @@ export default function PurchaseVendors() {
     } finally { setSaving(false) }
   }
 
-  const activate = async (id) => { try { await purchaseApi.vendors.approve(id); load() } catch { /* noop */ } }
+
+  /**
+   * Portal access on and off, the same control TPV has.
+   *
+   * The list previously showed the status as text with a one-way Activate
+   * button beside it, so switching a vendor OFF was not possible from the
+   * screen that displays whether they are on — it needed the edit form, which
+   * is not where anybody looks for a state they can already see.
+   *
+   * `busyId` keeps the row's switch inert while the server answers. Without it
+   * a second click during the round trip sends the opposite instruction, and
+   * the two land in whichever order the network chooses.
+   */
+  const [busyId, setBusyId] = useState(null)
+
+  const toggleStatus = async (v) => {
+    const next = v.status === 'Active' ? 'Inactive' : 'Active'
+    setBusyId(v.id)
+    try {
+      await purchaseApi.vendors.setStatus(v.id, next)
+      load()
+      toast.success(next === 'Active' ? 'Portal access enabled' : 'Portal access disabled')
+    } catch (e) {
+      toast.error(e?.response?.data?.message || 'That status could not be changed.')
+    } finally {
+      setBusyId(null)
+    }
+  }
 
   /**
    * Open the edit form on the FULL record, not the list row.
@@ -93,6 +167,7 @@ export default function PurchaseVendors() {
     { key: 'email',                label: 'Email' },
     { key: 'registration_type',    label: 'Type',     export: v => v.registration_type_label || v.registration_type || '' },
     { key: 'validity',             label: 'Remaining Validity', export: v => v.validity_countdown?.label || '' },
+    { key: 'onboarding',           label: 'Onboarding', export: v => (v.onboarding?.status || 'Not started').replace(/_/g, ' ') },
     { key: 'status',               label: 'Status',   export: v => v.status_label || v.status || '' },
     // Not on screen — the table has no room — but the single most useful
     // column in a spreadsheet, so the export carries it.
@@ -107,8 +182,20 @@ export default function PurchaseVendors() {
           <Building2 size={22} style={{ color: '#7C3AED' }} />
           <h1 style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-h)', margin: 0 }}>Purchase Vendors</h1>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        {/* Three buttons at ~150px each need 450px; on a phone they pushed the
+            page sideways rather than stacking. */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button onClick={load} style={{ ...btn }}><RefreshCw size={14} /> Refresh</button>
+          {/* The vendor code's prefix, width and reset rule HAVE been
+              configurable all along — under Settings → Document Numbering,
+              one of thirty-odd formats in a single list, with nothing on this
+              screen pointing at it. "No option to set the prefix of the vendor
+              code in the settings" was a findability problem, so the link
+              lives next to the codes it controls and opens on that format. */}
+          <button onClick={() => navigate('/app/settings/numbering?type=purchase_vendor')} style={{ ...btn }}
+            title="Set the prefix, width and reset rule for vendor codes">
+            <Hash size={14} /> Code format
+          </button>
           <button onClick={() => navigate('/app/purchase/kickoff')} style={{ ...btn }}><CalendarDays size={14} /> Kickoff Meetings</button>
           <button onClick={() => { setErr(''); setModal({ company_name: '', email: '', ...PV_DEFAULTS }) }} style={{ ...btn, background: '#7C3AED', color: '#fff', border: 'none' }}><Plus size={14} /> New Vendor</button>
         </div>
@@ -138,16 +225,26 @@ export default function PurchaseVendors() {
         title="Purchase Vendors"
       />
 
-      <div className="card-3d" style={{ overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+      {/* The table is eight columns and does not fit a narrow window.
+          `overflow: hidden` meant it was CLIPPED rather than scrolled: at 768px
+          the container is 418px against a 1029px table, so 611px of every row —
+          Status, Edit and View — was simply not on the screen and there was no
+          way to reach it. Nothing looked broken, which is why it survived.
+
+          overflowX:auto lets the table scroll inside its own card instead, and
+          minWidth stops the browser crushing eight columns into an unreadable
+          concertina on the way. overflowY stays hidden so the rounded corners
+          still clip the rows. */}
+      <div className="card-3d" style={{ overflowX: 'auto', overflowY: 'hidden' }}>
+        <table style={{ width: '100%', minWidth: 880, borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ background: 'var(--bg-input)' }}>
-              {['Code', 'Company', 'Email', 'Type', 'Remaining Validity', 'Status', ''].map((h) => <th key={h} style={th}>{h}</th>)}
+              {['Code', 'Company', 'Email', 'Type', 'Remaining Validity', 'Onboarding', 'Status', ''].map((h) => <th key={h} style={th}>{h}</th>)}
             </tr>
           </thead>
           <tbody>
-            {loading ? <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</td></tr>
-              : rows.length === 0 ? <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>No purchase vendors yet.</td></tr>
+            {loading ? <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</td></tr>
+              : rows.length === 0 ? <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>No purchase vendors yet.</td></tr>
               : rows.map((v) => (
                 <tr key={v.id} style={{ borderTop: '1px solid var(--border)' }}>
                   <td style={td}>{v.purchase_vendor_code}</td>
@@ -155,9 +252,22 @@ export default function PurchaseVendors() {
                   <td style={td}>{v.email || '—'}</td>
                   <td style={td}><PurchaseRegistrationBadge type={v.registration_type} label={v.registration_type_label} /></td>
                   <td style={td}><TemporaryVendorValidityBadge countdown={v.validity_countdown} compact /></td>
-                  <td style={td}><span style={{ fontSize: 11, fontWeight: 700, color: STATUS_COLORS[v.status] || '#6b7280' }}>{v.status_label || v.status}</span></td>
+                  {/* Activation no longer waits for onboarding, so this is how an
+                      admin sees what they are about to approve — "Not started" is
+                      a real answer, not a blank. */}
+                  <td style={td}>{onboardingBadge(v.onboarding?.status)}</td>
+                  <td style={td}>
+                    <ToggleSwitch
+                      on={v.status === 'Active'}
+                      busy={busyId === v.id}
+                      onChange={() => toggleStatus(v)} />
+                  </td>
                   <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    {v.status !== 'Active' && <button onClick={() => activate(v.id)} style={{ ...miniBtn, color: '#10b981' }}><CheckCircle2 size={13} /> Activate</button>}
+                    {/* The one-way Activate button is gone — the Status switch
+                        does the same thing and undoes it too. Both ran the full
+                        activation (portal login, access window, activation
+                        e-mail), so keeping both meant two controls for one
+                        decision, only one of which could reverse it. */}
                     <button onClick={() => openEdit(v)} disabled={editLoadingId === v.id} style={miniBtn}>
                       <Pencil size={13} /> {editLoadingId === v.id ? 'Opening…' : 'Edit'}
                     </button>
@@ -183,7 +293,19 @@ export default function PurchaseVendors() {
               </div>
             </div>
             <div style={{ padding: 20, overflowY: 'auto' }}>
-              <PurchaseVendorForm value={modal} onChange={setModal} mode={isEdit ? 'edit' : 'create'} />
+              {/* The same thirteen fields TPV asks for, from the same
+                  component. This used to be a twenty-eight field form asking
+                  for a return policy and an opening balance before anyone had
+                  agreed to buy anything. The commercial fields are untouched
+                  and still editable on the vendor's Profile tab; an edit here
+                  carries them through rather than clearing them. */}
+              <VendorMasterForm
+                value={modal}
+                onChange={setModal}
+                mode={isEdit ? 'edit' : 'create'}
+                moduleName="Purchase Vendor"
+                code={modal.purchase_vendor_code}
+              />
             </div>
             <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
               <span style={{ color: '#ef4444', fontSize: 12 }}>{err}</span>

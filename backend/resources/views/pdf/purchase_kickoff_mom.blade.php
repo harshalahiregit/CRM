@@ -11,7 +11,10 @@
      */
     $company  = $tenant->name ?? config('app.name');
     $brand    = $tenant->branding_color ?? '#7C3AED';
-    $logo     = $tenant->logo_url ?? null;
+    $logo     = $tenant->logo_url
+        // A tenant that has not uploaded its own mark still gets a
+        // document with a mark on it, rather than a blank header.
+        ?? \App\Support\Brand::logoDataUri();
     $meetingNo = 'PKO-' . str_pad((string) $meeting->id, 4, '0', STR_PAD_LEFT);
 
     $fmt   = fn ($d) => $d ? \Illuminate\Support\Carbon::parse($d)->format('d M Y, g:i A') : '—';
@@ -31,6 +34,51 @@
         'Present' => 'present', 'Late' => 'late', 'Absent' => 'absent',
         'Excused' => 'excused', 'Online' => 'online', 'Offline' => 'offline',
     ];
+    /**
+     * The ORGANISER's verdict — a separate record from the attendance mark above,
+     * and deliberately so. See MeetingAttendanceReview. Identical to the shared
+     * engine's minutes, because a Purchase vendor reading their minutes should
+     * not get a different document from a TPV one.
+     */
+    $verdictLabel = fn ($v) => \App\Support\Shared\AttendanceVerdict::label($v);
+    $verdictPill  = [
+        \App\Support\Shared\AttendanceVerdict::FULLY_PRESENT => 'present',
+        \App\Support\Shared\AttendanceVerdict::PARTIAL_ABSENT => 'late',
+        \App\Support\Shared\AttendanceVerdict::COMPLETE_ABSENT => 'absent',
+    ];
+    $window = function ($a) {
+        $mins = \App\Support\Shared\AttendanceVerdict::minutes($a->verdict_from, $a->verdict_to);
+
+        return $a->verdict_from->format('H:i').'–'.$a->verdict_to->format('H:i').($mins ? " ({$mins} min)" : '');
+    };
+    /**
+     * The ADMIN's record of when this person was in the meeting.
+     *
+     * Typed on the attendance grid, not observed — which is exactly why it is
+     * printed. joined_at/seconds_in_call only ever existed for people who
+     * pressed Join in the CRM, so before this the minutes could not say what
+     * time most attendees arrived or left.
+     */
+    $inOut = function ($a) {
+        if (! $a->in_at && ! $a->out_at) {
+            return null;
+        }
+        $f = fn ($d) => $d ? \Illuminate\Support\Carbon::parse($d)->format('H:i') : '—';
+
+        return $f($a->in_at).'–'.$f($a->out_at);
+    };
+    $markedNote = function ($a) {
+        if (! $a->marked_by_name && ! $a->marked_at) {
+            return null;
+        }
+        $who = $a->marked_by_name ?: 'the organiser';
+        $when = $a->marked_at ? \Illuminate\Support\Carbon::parse($a->marked_at)->format('d M Y') : null;
+
+        return 'Marked by '.$who.($when ? ' on '.$when : '');
+    };
+    $contradicts = fn ($a) => \App\Support\Shared\AttendanceVerdict::contradictsClaim((bool) $a->attended, $a->verdict);
+    $reviewed = $attendees->filter(fn ($a) => $a->verdict !== null)->count();
+
 
     $present = $attendees->filter(fn ($a) => $a->attended)->count();
 
@@ -129,14 +177,14 @@
     <tr><td class="k">Vendor</td><td>{{ $vendorName ?: '—' }}</td><td class="k">{{ $meeting->mode === 'online' ? 'Meeting Link' : 'Location' }}</td><td>{{ $meeting->location ?: '—' }}</td></tr>
 </table>
 
-<h2>Participants &amp; Attendance ({{ $present }}/{{ $attendees->count() }} attended)</h2>
+<h2>Participants &amp; Attendance ({{ $present }}/{{ $attendees->count() }} attended@if ($reviewed), {{ $reviewed }} reviewed by the organiser@endif)</h2>
 @if ($attendees->count())
     @if (count($breakdown))
         <p class="sub" style="margin:0 0 6px;">{{ implode(' · ', $breakdown) }}</p>
     @endif
     <table class="att">
         <thead>
-            <tr><th style="width:32%">Name</th><th style="width:22%">Role</th><th style="width:28%">Organisation</th><th style="width:18%">Attendance</th></tr>
+            <tr><th style="width:21%">Name</th><th style="width:14%">Role</th><th style="width:17%">Organisation</th><th style="width:17%">Marked</th><th style="width:14%">In / Out</th><th style="width:17%">Organiser's verdict</th></tr>
         </thead>
         <tbody>
             @foreach ($attendees as $a)
@@ -154,6 +202,37 @@
                         @else
                             <span class="pill unmarked">Not marked</span>
                         @endif
+                        {{-- Who put this on the record. An attendance entry with
+                             no author is an assertion nobody owns, and this
+                             document goes to the vendor. --}}
+                        @if ($markedNote($a))<div class="sub">{{ $markedNote($a) }}</div>@endif
+                    </td>
+                    {{-- In, out and how long — the admin's own entry, which is
+                         the official record. --}}
+                    <td>
+                        @if ($inOut($a))
+                            {{ $inOut($a) }}
+                            <div class="sub">{{ $a->attendance_minutes !== null ? $a->attendance_minutes.' min' : 'Duration not known' }}</div>
+                        @else
+                            <span class="sub">Not recorded</span>
+                        @endif
+                    </td>
+                    {{-- The organiser's decision, printed BESIDE the mark rather
+                         than instead of it. Where the two disagree the document
+                         has to show both, or "punched CRM attendance but did not
+                         join the call" becomes an accusation with no evidence. --}}
+                    <td>
+                        @if ($a->verdict)
+                            <span class="pill {{ $verdictPill[$a->verdict] ?? 'unmarked' }}">{{ $verdictLabel($a->verdict) }}</span>
+                            @if ($a->verdict_from && $a->verdict_to)
+                                <div class="sub">{{ $window($a) }}</div>
+                            @endif
+                            @if ($contradicts($a))
+                                <div class="sub" style="font-weight:700">Marked attendance in the CRM</div>
+                            @endif
+                        @else
+                            <span class="pill unmarked">Not reviewed</span>
+                        @endif
                     </td>
                 </tr>
             @endforeach
@@ -162,6 +241,8 @@
 @else
     <p class="muted">No participants recorded.</p>
 @endif
+
+@include('pdf.partials.join_evidence', ['attendees' => $attendees])
 
 <h2>Agenda</h2>
 @if ($agendaItems->count())

@@ -142,15 +142,18 @@ export default function TaskFormDrawer({
   const hideRates = !!taskSettings.hide_rates
   const requireMilestone = !!taskSettings.require_milestone
   const { data: staff = [] } = useQuery({ queryKey: ['task-staff'], queryFn: taskApi.staff, enabled: open })
-  // Vendors & TPVs are also assignable — work delegated to them shows on their
-  // portal dashboard. They go into the same assignee_ids array.
-  const { data: vendors = [] } = useQuery({ queryKey: ['task-vendors', 'vendor'], queryFn: () => taskApi.vendors('vendor'), enabled: open })
+  // TPVs are assignable too — work delegated to them shows on their portal
+  // dashboard. They go into the same assignee_ids array.
+  //
+  // The `vendor` role is gone (migration 2026_12_23_000001): a purchase vendor
+  // authenticates as itself out of purchase_vendors, so a vendor-role User was
+  // only ever a second login for the same supplier. Nothing creates one, so
+  // there is no roster to fetch and no group to fill.
   const { data: tpvs = [] } = useQuery({ queryKey: ['task-vendors', 'tpv'], queryFn: () => taskApi.vendors('tpv'), enabled: open })
   // Merged directory so a chip resolves a name whatever kind of person it is.
-  const people = useMemo(() => [...staff, ...vendors, ...tpvs], [staff, vendors, tpvs])
+  const people = useMemo(() => [...staff, ...tpvs], [staff, tpvs])
   const idSet = (list) => new Set(list.map(x => x.id))
   const staffIds = useMemo(() => idSet(staff), [staff])
-  const vendorIds = useMemo(() => idSet(vendors), [vendors])
   const tpvIds = useMemo(() => idSet(tpvs), [tpvs])
   const { data: tagSuggestions = [] } = useQuery({ queryKey: ['tags', 'task'], queryFn: () => tagApi.list('task'), enabled: open })
   const { data: templates = [] } = useQuery({ queryKey: ['task-templates'], queryFn: taskApi.templates, enabled: open })
@@ -510,19 +513,15 @@ export default function TaskFormDrawer({
                 onRemove={id => sf('follower_ids', form.follower_ids.filter(i => i !== id))}
                 onAdd={() => setPicker('follower')} />
             </Field>
-            <Field label="Vendors">
-              <PeopleChips ids={form.assignee_ids.filter(i => vendorIds.has(i))} staff={people} addLabel="Add vendor"
-                onRemove={id => sf('assignee_ids', form.assignee_ids.filter(i => i !== id))}
-                onAdd={() => setPicker('vendor')} />
-            </Field>
-            <Field label="Third-party vendors">
+            <Field label="Assignees (third-party)">
               <PeopleChips ids={form.assignee_ids.filter(i => tpvIds.has(i))} staff={people} addLabel="Add TPV"
                 onRemove={id => sf('assignee_ids', form.assignee_ids.filter(i => i !== id))}
                 onAdd={() => setPicker('tpv')} />
             </Field>
           </div>
           <p className="text-[11px] -mt-2" style={{ color: 'var(--text-muted)' }}>
-            Vendors &amp; third-party vendors see tasks assigned to them on their portal dashboard.
+            Third-party vendors see tasks assigned to them on their portal dashboard.
+            A purchase vendor is reached through Related To, not by assignment.
           </p>
 
           {!editing && templates.length > 0 && (
@@ -598,17 +597,15 @@ export default function TaskFormDrawer({
         title={`Add a ${(REL_TYPE_LABEL[addRelType] || addRelType).toLowerCase()} link`} subtitle="Search by name — the task can link to several things."
         emptyText={`No ${(REL_TYPE_LABEL[addRelType] || addRelType).toLowerCase()}s found.`} accent={TASK_ACCENT}
       />
+      {/* Multi-select. Staffing a new task is almost never one person, and one
+          pick per person meant reopening this three or four times before the
+          task even existed. */}
       <SearchPicker
+        multi confirmLabel="Assign"
         open={picker === 'assignee'} onClose={() => setPicker(null)}
-        onPick={it => it && !form.assignee_ids.includes(it.id) && sf('assignee_ids', [...form.assignee_ids, it.id])}
+        onConfirm={picked => sf('assignee_ids', [...new Set([...form.assignee_ids, ...picked.map(p => p.id)])])}
         items={staff.filter(s => !form.assignee_ids.includes(s.id)).map(s => ({ id: s.id, label: s.name, sublabel: s.role }))}
-        title="Assign to" subtitle="Staff member doing the work." emptyText="Everyone is already assigned." accent={TASK_ACCENT}
-      />
-      <SearchPicker
-        open={picker === 'vendor'} onClose={() => setPicker(null)}
-        onPick={it => it && !form.assignee_ids.includes(it.id) && sf('assignee_ids', [...form.assignee_ids, it.id])}
-        items={vendors.filter(s => !form.assignee_ids.includes(s.id)).map(s => ({ id: s.id, label: s.name, sublabel: s.email }))}
-        title="Assign a vendor" subtitle="They'll see it on their vendor portal." emptyText="No vendors available." accent={TASK_ACCENT}
+        title="Assign to" subtitle="Tick everyone doing the work." emptyText="Everyone is already assigned." accent={TASK_ACCENT}
       />
       {/* TPV assignee = a two-stage cascade (enhancement #9): pick the vendor,
           then ONLY its employees. Selecting an employee provisions a login if
@@ -618,13 +615,22 @@ export default function TaskFormDrawer({
         open={picker === 'tpv'} onClose={() => setPicker(null)} accent={TASK_ACCENT}
         excludeIds={form.assignee_ids}
         onPick={({ user_id }) => {
-          if (user_id && !form.assignee_ids.includes(user_id)) sf('assignee_ids', [...form.assignee_ids, user_id])
+          // setForm's UPDATER form, not sf(). The picker now calls this once per
+          // employee, and sf() takes a value computed from the render-time
+          // `form` — so three calls in one tick would each start from the same
+          // stale array and only the last would survive.
+          if (user_id) {
+            setForm(p => p.assignee_ids.includes(user_id)
+              ? p
+              : { ...p, assignee_ids: [...p.assignee_ids, user_id] })
+          }
           qc.invalidateQueries({ queryKey: ['task-vendors', 'tpv'] })
         }}
       />
       <SearchPicker
+        multi confirmLabel="Follow"
         open={picker === 'follower'} onClose={() => setPicker(null)}
-        onPick={it => it && !form.follower_ids.includes(it.id) && sf('follower_ids', [...form.follower_ids, it.id])}
+        onConfirm={picked => sf('follower_ids', [...new Set([...form.follower_ids, ...picked.map(p => p.id)])])}
         items={staff.filter(s => !form.follower_ids.includes(s.id)).map(s => ({ id: s.id, label: s.name, sublabel: s.role }))}
         title="Add follower" subtitle="Followers get updates but aren't doing the work." emptyText="Everyone is already following." accent={TASK_ACCENT}
       />
@@ -678,8 +684,13 @@ export function PeopleChips({ ids = [], staff = [], onRemove, onAdd, addLabel = 
           </button>
         </span>
       ))}
-      <button type="button" onClick={onAdd} className="text-xs font-bold px-2 py-1 rounded-lg"
-        style={{ border: '1px dashed var(--border)', color: 'var(--text-muted)' }}>+ {addLabel}</button>
+      {/* No label means there is nothing to add here — a read-only group, such
+          as assignees whose login has since been retired. A bare "+" would
+          invite a click that does nothing. */}
+      {addLabel ? (
+        <button type="button" onClick={onAdd} className="text-xs font-bold px-2 py-1 rounded-lg"
+          style={{ border: '1px dashed var(--border)', color: 'var(--text-muted)' }}>+ {addLabel}</button>
+      ) : null}
     </div>
   )
 }

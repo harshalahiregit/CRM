@@ -137,9 +137,28 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // STOS (Sangoe Transport OS) — fleet, telemetry ingestion, cost, workshop.
+        'stos' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/stos.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => env('LOG_DAILY_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
         'purchase' => [
             'driver' => 'daily',
             'path' => storage_path('logs/purchase.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => env('LOG_DAILY_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
+        // Transport OS (STOS). Module-scoped like every other domain channel, so a
+        // trip/allocation/policy failure is findable without grepping laravel.log.
+        'transport' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/transport.log'),
             'level' => env('LOG_LEVEL', 'debug'),
             'days' => env('LOG_DAILY_DAYS', 14),
             'replace_placeholders' => true,

@@ -53,7 +53,21 @@ class ClientService
             'active'           => (clone $clients)->where('active', true)->count(),
             'inactive'         => (clone $clients)->where('active', false)->count(),
             'contacts'         => (clone $contacts)->count(),
-            'with_portal'      => (clone $contacts)->whereNotNull('user_id')->count(),
+            /*
+             | Portal access is portal_status, NOT user_id.
+             |
+             | This counted `whereNotNull('user_id')` — the column from the July
+             | design, when a portal contact was expected to have a users row
+             | behind it. The portal was rebuilt on contact-side auth
+             | (client_contacts.password / portal_status, migration
+             | 2026_10_15_000002) and nothing has written user_id since, so this
+             | reported 0 however many contacts could actually sign in.
+             |
+             | 'invited' and 'active' is the same pair ClientPortalAuthService
+             | ::portalAccountFor() treats as "has a portal account", and the
+             | count has to mean what the login gate means or the two disagree.
+             */
+            'with_portal'      => (clone $contacts)->whereIn('portal_status', ['invited', 'active'])->count(),
             'added_this_month' => (clone $clients)
                 ->whereMonth('created_at', now()->month)
                 ->whereYear('created_at', now()->year)
@@ -142,8 +156,26 @@ class ClientService
 
         $client->update(['active' => ! $client->active]);
 
+        // Switching a customer off has to end the sessions that are already open.
+        //
+        // Refusing the next login is not enough on its own: a contact holding a
+        // token from before the switch would keep reading their dashboard until
+        // it expired, and the person who flipped the switch would have no way to
+        // know. Scoped to this customer's own contacts — never a blanket delete.
+        $revoked = 0;
+        if (! $client->active) {
+            $contactIds = $client->contacts()->pluck('id');
+            if ($contactIds->isNotEmpty()) {
+                $revoked = DB::table('personal_access_tokens')
+                    ->where('tokenable_type', ClientContact::class)
+                    ->whereIn('tokenable_id', $contactIds)
+                    ->delete();
+            }
+        }
+
         Log::channel('customer')->info('Client status toggled', [
             'client_id' => $client->id, 'tenant_id' => $tenantId, 'active' => $client->active,
+            'portal_sessions_revoked' => $revoked,
         ]);
 
         return $client;

@@ -375,8 +375,19 @@ function QuoteFormModal({ rfq, onClose, onDone }) {
 
 /* ── List page ────────────────────────────────────────────────────────────── */
 export default function PurchasePortalCommercial({ view }) {
-  if (view === 'statement') return <PageWrap><StatementView /></PageWrap>
-
+  /*
+   * Every hook runs before any return, including the statement one.
+   *
+   * All the Commercial tabs are the SAME component at the SAME position in the
+   * route tree, differing only by the `view` prop, so React reuses one instance
+   * across them rather than remounting. The statement check used to sit above
+   * these hooks, which meant the statement tab rendered 0 hooks and every other
+   * tab rendered 4 — and navigating from Statement to Orders threw "Rendered
+   * more hooks than during the previous render", taking the whole screen down.
+   *
+   * `cfg` is undefined on the statement view and every hook below already
+   * tolerates that, so running them costs nothing.
+   */
   const cfg = VIEWS[view]
   const [rows, setRows] = useState(null)
   const [openId, setOpenId] = useState(null)
@@ -384,6 +395,8 @@ export default function PurchasePortalCommercial({ view }) {
 
   const reload = () => cfg?.list().then(d => setRows(Array.isArray(d) ? d : (d?.data || []))).catch(() => setRows([]))
   useEffect(() => { setRows(null); setOpenId(null); reload() }, [view])
+
+  if (view === 'statement') return <PageWrap><StatementView /></PageWrap>
 
   if (!cfg) return <PageWrap><Empty /></PageWrap>
 

@@ -15,7 +15,7 @@ class Ticket extends Model
     protected $fillable = [
         'tenant_id', 'subject', 'description', 'status', 'priority',
         'assigned_to', 'created_by', 'customer_id', 'department_id', 'service_id', 'project_id', 'due_date', 'source',
-        'requester_name', 'requester_email',
+        'requester_name', 'requester_email', 'cc',
         'merged_into_id', 'ai_summary', 'ai_summary_at', 'email_token',
         'first_responded_at', 'resolved_at', 'last_reply_at', 'sla_paused_at', 'sla_paused_seconds',
     ];
@@ -65,6 +65,9 @@ class Ticket extends Model
         'last_reply_at'      => 'datetime',
         'sla_paused_at'      => 'datetime',
         'sla_paused_seconds' => 'integer',
+        // Standing copy list, applied to every outbound message on this ticket.
+        // Distinct from ticket_replies.cc, which copies ONE message.
+        'cc'                 => 'array',
     ];
 
     // Computed SLA snapshot attached to every serialized ticket.

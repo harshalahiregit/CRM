@@ -110,6 +110,14 @@ class MeetingDocComplianceTest extends TestCase
         // An intentionally undated meeting cannot be published — leave it a draft.
         if (! empty($payload['scheduled_at'])) {
             $m = $this->svc()->transition($m, KickoffStatus::SCHEDULED, [], $this->actor);
+
+            // Invitations are sent after the response is flushed now: one SMTP
+            // session per recipient inside the request timed a real publish out
+            // at thirty seconds. A test calls the service directly, so nothing
+            // would ever terminate the application and the mail would sit
+            // unsent. Terminating here asks the honest question — by the time
+            // the request was over, did the invitations go?
+            $this->app->terminate();
         }
 
         return $m;
@@ -166,13 +174,18 @@ class MeetingDocComplianceTest extends TestCase
         $rows = MeetingDistribution::where('kickoff_meeting_id', $m->id)
             ->where('kind', MeetingDistribution::KIND_INVITE)->get();
 
-        $this->assertCount(3, $rows, 'every participant is accounted for');
-        $this->assertSame(2, $rows->where('status', MeetingDistribution::SENT)->count());
+        // The three typed participants, plus the two people who are involved
+        // whether or not anybody listed them: the vendor the meeting is about,
+        // and the person who called it. Building the list from the roster alone
+        // meant a meeting with an empty roster invited nobody at all and still
+        // reported success — see MeetingInvitationReachTest.
+        $this->assertCount(5, $rows, 'every participant is accounted for');
+        $this->assertSame(4, $rows->where('status', MeetingDistribution::SENT)->count());
         // Someone with no address is recorded honestly rather than as delivered.
         $this->assertSame(1, $rows->where('status', MeetingDistribution::SKIPPED)->count());
         // §13's recipient groups are derived, not guessed.
         $this->assertEqualsCanonicalizing(
-            ['internal', 'vendor', 'management'],
+            ['internal', 'vendor', 'management', 'vendor', 'internal'],
             $rows->pluck('party')->all()
         );
     }
@@ -246,17 +259,17 @@ class MeetingDocComplianceTest extends TestCase
 
         $reg = app(MeetingRegisterService::class);
 
-        $decisions = $reg->decisions($this->actor->tenant_id);
+        $decisions = $reg->decisions($this->actor->tenant_id, [], $this->actor);
         $this->assertCount(1, $decisions);
         $this->assertSame($m->meeting_no, $decisions[0]['meeting_no'], 'a register row points back at its meeting');
         $this->assertSame($this->vendor->company_name, $decisions[0]['vendor']);
 
-        $this->assertCount(1, $reg->issues($this->actor->tenant_id));
-        $this->assertCount(1, $reg->actions($this->actor->tenant_id));
+        $this->assertCount(1, $reg->issues($this->actor->tenant_id, [], $this->actor));
+        $this->assertCount(1, $reg->actions($this->actor->tenant_id, [], $this->actor));
 
         // Filters narrow rather than crash on an unknown value.
-        $this->assertCount(0, $reg->decisions($this->actor->tenant_id, ['vendor' => 'Nobody Ltd']));
-        $this->assertCount(1, $reg->decisions($this->actor->tenant_id, ['search' => 'Mobilise']));
+        $this->assertCount(0, $reg->decisions($this->actor->tenant_id, ['vendor' => 'Nobody Ltd'], $this->actor));
+        $this->assertCount(1, $reg->decisions($this->actor->tenant_id, ['search' => 'Mobilise'], $this->actor));
     }
 
     /* ── §10 — every escalation target creates a real record ──────────── */

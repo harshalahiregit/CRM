@@ -99,14 +99,25 @@ class PurchasePortalKickoffSummaryTest extends TestCase
         $this->assertNull($m['meeting_link']);
     }
 
-    public function test_a_meeting_in_progress_keeps_its_link(): void
+    /**
+     * The distinction this draws against the expired case above is whether the
+     * meeting is still JOINABLE — and it still is. What changed is that the
+     * link was briefly earned rather than given — that toll has gone, because
+     * MeetingLinkAnnouncer e-mails the real room to every participant the
+     * moment the organiser pastes it. See MeetingAttendanceGate.
+     */
+    public function test_a_meeting_in_progress_is_joinable_and_carries_its_room(): void
     {
         $this->meeting('Running now', -10);
 
         $m = $this->summary();
 
         $this->assertTrue($m['is_live']);
-        $this->assertNotNull($m['meeting_link']);
+        $this->assertTrue($m['has_meeting_link'], 'the dashboard still knows this is an online meeting');
+        $this->assertSame('https://meet.example.test/room', $m['meeting_link'],
+            'a real room is handed over — it was e-mailed to them anyway');
+        // Still offered, and now asked for on its own terms rather than sold.
+        $this->assertTrue($m['can_mark_attendance']);
     }
 
     /** A draft is invisible to the vendor everywhere else; it must be here too. */

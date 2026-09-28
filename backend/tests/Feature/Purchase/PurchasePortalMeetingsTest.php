@@ -112,15 +112,34 @@ class PurchasePortalMeetingsTest extends TestCase
         $this->assertNull($row['meeting_link']);
     }
 
-    public function test_a_meeting_in_progress_keeps_its_link(): void
+    /**
+     * The distinction this draws against the expired case above is whether the
+     * meeting is still JOINABLE — and it still is. What changed is that the
+     * link was briefly earned rather than given — that toll has gone, because
+     * MeetingLinkAnnouncer e-mails the real room to every participant the
+     * moment the organiser pastes it. See MeetingAttendanceGate.
+     */
+    public function test_a_meeting_in_progress_is_joinable_and_carries_its_room(): void
     {
         $this->asVendor();
-        $this->meeting('Running', -10);
+        $meeting = $this->meeting('Running', -10);
 
-        $row = $this->getJson('/api/portal/purchase/meetings')->assertOk()->json('data.0');
+        $res = $this->getJson('/api/portal/purchase/meetings')->assertOk();
+        $row = $res->json('data.0');
 
         $this->assertTrue($row['is_live']);
-        $this->assertNotNull($row['meeting_link']);
+        $this->assertTrue($row['has_meeting_link'], 'the portal still knows this is an online meeting');
+        $this->assertSame('https://meet.example.test/room', $row['meeting_link'],
+            'a real room is handed over — it was e-mailed to them anyway');
+        $this->assertFalse($row['attendance_marked'], 'and it cost them nothing to get it');
+
+        // Marking attendance still records what it always recorded.
+        $this->postJson("/api/portal/purchase/meetings/{$meeting->id}/attendance")->assertOk()
+            ->assertJsonPath('attendance_marked', true);
+
+        $this->assertNotNull(
+            $this->getJson('/api/portal/purchase/meetings')->assertOk()->json('data.0.meeting_link')
+        );
     }
 
     public function test_drafts_stay_invisible_to_the_vendor(): void

@@ -26,30 +26,31 @@ class ProbationExtensionService
     {
     }
 
-    public function list(int $tenantId, array $f): array
+    public function list(int $tenantId, array $f, ?User $actor = null): array
     {
         return [
-            'data'  => $this->repo->list($tenantId, $f)->map(fn ($e) => $this->present($e))->all(),
-            'stats' => $this->repo->stats($tenantId),
+            'data'  => $this->repo->list($tenantId, $f, $actor)->map(fn ($e) => $this->present($e))->all(),
+            // Counted over the same population as the rows above it.
+            'stats' => $this->repo->stats($tenantId, $actor),
         ];
     }
 
     public function show(int $id, int $tenantId, ?User $actor = null): array
     {
-        $extension = $this->find($id, $tenantId);
+        $extension = $this->find($id, $tenantId, $actor);
         $extension->recordAudit('Probation Extension Viewed', $actor);
 
         return $this->present($extension, true);
     }
 
-    public function forEmployee(int $employeeId, int $tenantId): array
+    public function forEmployee(int $employeeId, int $tenantId, ?User $actor = null): array
     {
-        return $this->repo->forEmployee($employeeId, $tenantId)->map(fn ($e) => $this->present($e, true))->all();
+        return $this->repo->forEmployee($employeeId, $tenantId, $actor)->map(fn ($e) => $this->present($e, true))->all();
     }
 
-    public function history(int $tenantId, array $f): array
+    public function history(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->history($tenantId, $f)->map(fn ($e) => $this->present($e))->all();
+        return $this->repo->history($tenantId, $f, $actor)->map(fn ($e) => $this->present($e))->all();
     }
 
     /* ── Request ──────────────────────────────────────────── */
@@ -86,12 +87,12 @@ class ProbationExtensionService
         $extension->recordAudit('Probation Extension Requested', $actor, $data['reason'] ?? null, ['days' => $days, 'employee' => $probation->employee?->name]);
         $this->log('Probation extension requested', $tenantId, $extension->id);
 
-        return $this->present($this->find($extension->id, $tenantId), true);
+        return $this->present($this->find($extension->id, $tenantId, $actor), true);
     }
 
     public function update(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $extension = $this->find($id, $tenantId);
+        $extension = $this->find($id, $tenantId, $actor);
         if (in_array($extension->status, HrProbationExtension::TERMINAL, true)) {
             throw new BusinessException("A {$extension->status} extension can no longer be edited.");
         }
@@ -111,12 +112,12 @@ class ProbationExtensionService
         $extension->update($attrs);
         $extension->recordAudit('Probation Extension Updated', $actor);
 
-        return $this->present($this->find($id, $tenantId), true);
+        return $this->present($this->find($id, $tenantId, $actor), true);
     }
 
     public function approve(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $extension = $this->find($id, $tenantId);
+        $extension = $this->find($id, $tenantId, $actor);
         $this->assertPending($extension);
         $probation = $extension->probation;
         $this->assertExtendable($probation);
@@ -142,12 +143,12 @@ class ProbationExtensionService
         $extension->recordAudit('Probation Extension Approved', $actor, $data['hr_comments'] ?? null, ['new_end' => $extension->extended_end_date]);
         $this->log('Probation extension approved', $tenantId, $extension->id);
 
-        return $this->present($this->find($id, $tenantId), true);
+        return $this->present($this->find($id, $tenantId, $actor), true);
     }
 
     public function reject(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $extension = $this->find($id, $tenantId);
+        $extension = $this->find($id, $tenantId, $actor);
         $this->assertPending($extension);
         $extension->update([
             'status' => HrProbationExtension::REJECTED,
@@ -159,7 +160,7 @@ class ProbationExtensionService
         $extension->recordAudit('Probation Extension Rejected', $actor, $data['hr_comments'] ?? null);
         $this->log('Probation extension rejected', $tenantId, $extension->id);
 
-        return $this->present($this->find($id, $tenantId), true);
+        return $this->present($this->find($id, $tenantId, $actor), true);
     }
 
     /* ── Guards + helpers ─────────────────────────────────── */
@@ -247,9 +248,9 @@ class ProbationExtensionService
         return $out;
     }
 
-    private function find(int $id, int $tenantId): HrProbationExtension
+    private function find(int $id, int $tenantId, ?User $actor = null): HrProbationExtension
     {
-        $extension = $this->repo->find($id, $tenantId);
+        $extension = $this->repo->find($id, $tenantId, $actor);
         if (! $extension) {
             throw new BusinessException('Probation extension not found', 404);
         }

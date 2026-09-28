@@ -1,0 +1,875 @@
+<?php
+
+namespace App\Support\Transport;
+
+/**
+ * The Transport permission vocabulary and matrix (SNG-TRN-028).
+ *
+ * Two things live here, and they come from two different places:
+ *
+ *  1. PERMISSION KEYS — specified. Step 11's API registry names them directly:
+ *     transport.order.create (API-001), transport.trip.create (API-002),
+ *     transport.trip.view (API-013), transport.trip.assign (API-004).
+ *
+ *  2. THE MATRIX — specified. Step 11's Permissions sheet, PERM-001..PERM-013,
+ *     gives Domain x Action x Role. Only the rows this ticket needs are encoded;
+ *     the rest arrive with the tickets that own them, so nothing here is a guess
+ *     about advances, expenses, POD or collections.
+ *
+ * Step 11's rule is "deny by default": a key that is not listed is denied, and
+ * an unknown key is a bug in the caller rather than a reason to allow.
+ *
+ * ── ONE THING IS NOT SPECIFIED ────────────────────────────────────────────
+ * Step 11's matrix uses STOS's own role names — CEO/Owner, Operations,
+ * Dispatcher, Accounts, Approver, Driver, Customer, Supplier, Admin. Sangoe's
+ * users carry role = admin|staff|client|vendor|third_party_vendor|company plus
+ * an internal_role. NO DOCUMENT MAPS ONE VOCABULARY ONTO THE OTHER.
+ *
+ * ROLE_MAP below is therefore the single inferred element in this file, kept in
+ * one place precisely so it is visible and cheap to correct. It is deliberately
+ * conservative: it grants only what the Sangoe role plainly implies and leaves
+ * every ambiguous case unmapped (and therefore denied) rather than guessing
+ * upward. It is flagged for confirmation and must not be widened silently.
+ */
+final class TransportPermission
+{
+    /* ── STOS roles, exactly as Step 11 names its matrix columns ───────── */
+    public const ROLE_OWNER      = 'owner';
+    public const ROLE_OPERATIONS = 'operations';
+    public const ROLE_DISPATCHER = 'dispatcher';
+    public const ROLE_ACCOUNTS   = 'accounts';
+    public const ROLE_APPROVER   = 'approver';
+    public const ROLE_DRIVER     = 'driver';
+    public const ROLE_CUSTOMER   = 'customer';
+    public const ROLE_SUPPLIER   = 'supplier';
+    public const ROLE_ADMIN      = 'admin';
+
+    public const ROLES = [
+        self::ROLE_OWNER, self::ROLE_OPERATIONS, self::ROLE_DISPATCHER,
+        self::ROLE_ACCOUNTS, self::ROLE_APPROVER, self::ROLE_DRIVER,
+        self::ROLE_CUSTOMER, self::ROLE_SUPPLIER, self::ROLE_ADMIN,
+    ];
+
+    /* ── Scope qualifiers used by Step 11's matrix ──────────────────────── */
+    /** Full access to every record in the tenant. */
+    public const SCOPE_ALL = 'all';
+    /** Step 11 writes "Own" — only records belonging to this actor. */
+    public const SCOPE_OWN = 'own';
+    /** Step 11 writes "Assigned" — only records this actor is assigned to. */
+    public const SCOPE_ASSIGNED = 'assigned';
+
+    /* ── Permission keys, from the Step 11 API registry ─────────────────── */
+    public const ORDER_VIEW   = 'transport.order.view';
+    public const ORDER_CREATE = 'transport.order.create';
+    public const ORDER_UPDATE = 'transport.order.update';
+    public const TRIP_VIEW    = 'transport.trip.view';
+    public const TRIP_CREATE  = 'transport.trip.create';
+    public const TRIP_ASSIGN  = 'transport.trip.assign';
+
+    /* ── Advances (SNG-TRN-011) ─────────────────────────────────────────
+     *
+     * ADVANCE_REQUEST is named by the registry: API-005's Permission column
+     * reads `transport.advance.request` exactly.
+     *
+     * ADVANCE_APPROVE is not. PERM-007 "Advance / approve" exists in the
+     * Permissions sheet, but the API registry has no approve endpoint to name
+     * its key — API-005 is the only advance row and it is the request. The key
+     * is therefore built from PERM-007's own Domain and Action rather than
+     * invented, the same construction D-8 records for the master-data keys.
+     *
+     * Reads are deliberately NOT given a key of their own. There is no
+     * PERM row for viewing an advance, and inventing one would be FORBID-001;
+     * a trip's advances are part of that trip, so they sit behind TRIP_VIEW.
+     */
+    public const ADVANCE_REQUEST = 'transport.advance.request';
+    public const ADVANCE_APPROVE = 'transport.advance.approve';
+
+    /* ── Costs (SNG-TRN-012). NOT IN THE REGISTRY — see D-58. ────────────
+     *
+     * The Permissions sheet has thirteen rows and covers Trip, Advance,
+     * Expense, POD, Collection, ControlRoom and Registry. There is NO Cost
+     * domain, and no API row names a cost key either — the API-007 the ticket
+     * cites is `POST .../exceptions`. So these are constructed from the domain
+     * and action, the same precedent D-8, D-21 and D-45 record.
+     *
+     * COST_RECORD is modelled on PERM-008 `Expense/submit` rather than on a
+     * trip row, because submitting what a trip cost is the nearest act the
+     * registry actually grants — and because the one thing that should not
+     * happen is a cost key that is WIDER than the expense key covering the
+     * same money.
+     *
+     * There is deliberately no COST_APPROVE. Approval is PERM-009 and it
+     * belongs to `trip_expenses`, a separate LOCKED table this ticket does not
+     * build. A key with no operation behind it is a promise the code does not
+     * keep.
+     */
+    public const COST_VIEW    = 'transport.cost.view';
+    public const COST_RECORD  = 'transport.cost.record';
+    public const COST_RETRACT = 'transport.cost.retract';
+
+    /* ── POD (SNG-TRN-014) ───────────────────────────────────────────────
+     *
+     * POD_SUBMIT is SPECIFIED. API-008's Permission column reads
+     * `transport.pod.submit` exactly, and PERM-010 `POD / submit` gives the
+     * matrix row. Nothing here is constructed.
+     *
+     * POD_VERIFY is NOT. The Permissions sheet has thirteen rows and no
+     * document-verify row anywhere — an open item already recorded in
+     * TEAM-CONTRACTS §4. STT-008 nevertheless requires somebody to perform
+     * "Verify POD", so the key is built from that transition's own domain and
+     * action, the same construction D-8, D-21 and D-45 record.
+     *
+     * Submitting and verifying are deliberately separate keys, and that
+     * separation is the control: PERM-010 lets a Driver submit their own POD
+     * and a Supplier submit against trips assigned to them. Neither may then
+     * decide that it is valid and unlock billing on it.
+     */
+    public const POD_SUBMIT = 'transport.pod.submit';
+    public const POD_VERIFY = 'transport.pod.verify';
+
+    /* ── Billing trigger (SNG-TRN-015) ───────────────────────────────────
+     *
+     * SPECIFIED. API-010's Permission column reads `transport.billing.prepare`
+     * exactly. The MATRIX row is not — the Permissions sheet has no Billing
+     * domain at all, which is D-60.
+     *
+     * "Prepare billing" is not "raise an invoice". Transport declares a trip
+     * billable; Accounts posts the invoice and emits EVT-010. So the row below
+     * is modelled on PERM-005 `Trip / close` — the nearest act of comparable
+     * consequence that the registry does grant — and NOT on anything wider.
+     */
+    public const BILLING_PREPARE = 'transport.billing.prepare';
+
+    /* ── Recording that Accounts raised the invoice (STT-010) — D-106 ─────
+     *
+     * CONSTRUCTED. No API row and no PERM row covers it: Step 11 gives the
+     * transition an actor ("Accounts") and no key to gate it with.
+     *
+     * Modelled on PERM-011 `Collection / record` rather than on BILLING_PREPARE,
+     * and the difference is the point. Preparing billing is Transport saying a
+     * trip is ready; this is recording that money has been invoiced against it,
+     * which is the nearest act the registry actually grants — and PERM-011
+     * pointedly EXCLUDES Operations. Whoever ran the trip does not get to
+     * declare it invoiced.
+     */
+    public const BILLING_INVOICED = 'transport.billing.invoiced';
+
+    /* ── Collections (SNG-TRN-016) ───────────────────────────────────────
+     *
+     * COLLECTION_RECORD is SPECIFIED twice over, which is rare in this package:
+     * API-011's Permission column reads `transport.collection.record` exactly,
+     * AND PERM-011 `Collection / record` gives the matrix row. Nothing here is
+     * constructed.
+     *
+     * COLLECTION_VIEW is not. There is no Collection view row, and the ageing
+     * report is tenant-wide rather than hanging off one trip — so it cannot sit
+     * behind TRIP_VIEW the way a trip's own paperwork does. Constructed from the
+     * domain, and deliberately no wider than PERM-011 plus Operations, who chase
+     * what they dispatched.
+     */
+    public const COLLECTION_VIEW   = 'transport.collection.view';
+    public const COLLECTION_RECORD = 'transport.collection.record';
+
+    /* ── Master data (SNG-TRN-003 / 004). NOT IN THE REGISTRY — see D-8. ── */
+    public const VEHICLE_VIEW   = 'transport.vehicle.view';
+    public const VEHICLE_CREATE = 'transport.vehicle.create';
+    public const VEHICLE_UPDATE = 'transport.vehicle.update';
+    public const VEHICLE_DELETE = 'transport.vehicle.delete';
+    public const DRIVER_VIEW    = 'transport.driver.view';
+    public const DRIVER_CREATE  = 'transport.driver.create';
+    public const DRIVER_UPDATE  = 'transport.driver.update';
+    public const DRIVER_DELETE  = 'transport.driver.delete';
+
+    /* ── Pre-trip checks (SNG-TRN-010). NOT IN THE REGISTRY — see D-21. ── */
+    public const PRETRIP_VIEW    = 'transport.pretrip.view';
+    public const PRETRIP_PERFORM = 'transport.pretrip.perform';
+
+    /* ── Consignment. NOT IN THE REGISTRY — see D-45. ───────────────────── */
+    public const CONSIGNMENT_VIEW   = 'transport.consignment.view';
+    public const CONSIGNMENT_CREATE = 'transport.consignment.create';
+    public const CONSIGNMENT_UPDATE = 'transport.consignment.update';
+    public const CONSIGNMENT_DELETE = 'transport.consignment.delete';
+
+    /* ── Trip approval — PERM-003, DERIVED KEY (D-8/D-45 precedent). ────── */
+    // PERM-003 exists in Step 11's Permissions registry and names the roles
+    // exactly; it does NOT name a key string. The key below follows this
+    // module's own convention, like TRIP_DISPATCH before it.
+    public const TRIP_APPROVE = 'transport.trip.approve';
+
+    /* ── Container. NOT IN THE REGISTRY — see D-45, same precedent. ─────── */
+    public const CONTAINER_VIEW   = 'transport.container.view';
+    public const CONTAINER_CREATE = 'transport.container.create';
+    // Attach AND detach. They are one authority — deciding what is on a
+    // consignment — and splitting them would let someone attach a container
+    // they could not then remove.
+    public const CONTAINER_ATTACH = 'transport.container.attach';
+
+    // There is deliberately NO CONTAINER_UPDATE and NO CONTAINER_DELETE.
+    // ContainerService offers neither operation: the container number IS the
+    // identity, and editing it would silently rewrite the history that
+    // STOS-CTD §7 requires be maintained. A key with no operation behind it is
+    // a promise the code does not keep.
+
+    /* ── Dispatch. NOT IN THE REGISTRY — see D-18/D-21. ─────────────────── */
+    public const TRIP_DISPATCH = 'transport.trip.dispatch';
+
+    /* ── Exceptions — KEY SPECIFIED, MATRIX ROW NOT. D-31. ─────────────── */
+    // API-007's Permission column reads `transport.exception.create` exactly, so
+    // unlike D-8 and D-21 the KEY is specified. Step 11's Permissions sheet has
+    // no Exception row at all, so who holds it is not.
+    //
+    // Raising is modelled on PERM-006 `Advance/request` — the widest "anyone
+    // doing the work may record a problem" grant the registry makes, including
+    // the Dispatcher, who is the person most likely to be standing next to the
+    // problem. An exception nobody on the ground can raise is a register that
+    // only ever hears second-hand.
+    public const EXCEPTION_CREATE = 'transport.exception.create';
+
+    // Acknowledging takes ownership and starts an SLA; resolving closes one.
+    // Both are modelled on PERM-005 `Trip/close` — the nearest act of
+    // comparable consequence the registry grants — and both therefore EXCLUDE
+    // the Dispatcher, who may raise but may not sign off. Constructed, not
+    // quoted; flagged with the rest of the derived rows.
+    public const EXCEPTION_MANAGE = 'transport.exception.manage';
+
+    /* ── Delivery — DERIVED KEY, PERM-004's row. D-8/D-45 precedent. ────── */
+    // Step 11 has no permission row for recording a delivery, and D-108 records
+    // that STT-007 has no API row to name a key either.
+    //
+    // RTM STOS-REQ-OPS-010's actor is Operations. FRS TRP-P0-013's is
+    // "Driver/Delivery", but that row is POD CAPTURE — P3's, gated by PERM-010,
+    // where the Driver already holds `own`. The state change is not the POD, and
+    // keeping the two apart is what preserves the boundary: a driver submits
+    // their proof, an operator confirms the trip arrived.
+    public const TRIP_DELIVER = 'transport.trip.deliver';
+
+    /* ── Closure — API-009's key VERBATIM, PERM-005's row VERBATIM. ─────── */
+    // The only permission in this module that needs no derivation at all:
+    // API-009 names the string and PERM-005 names the roles.
+    public const TRIP_CLOSE = 'transport.trip.close';
+
+    /**
+     * The matrix. Role => scope, for each permission.
+     *
+     * Trip rows are PERM-001 and PERM-002 verbatim.
+     *
+     * ORDER rows carry a caveat: Step 11's Permissions sheet has NO Order row at
+     * all — it covers Trip, Advance, Expense, POD, Collection, ControlRoom and
+     * Registry only, despite API-001 naming transport.order.create. Rather than
+     * invent an Order matrix, the Order rows below mirror the Trip rows, which
+     * is the narrowest defensible reading (an order is the trip's parent, and
+     * nobody who may not create a trip has any reason to create its order).
+     * FLAGGED: confirm or replace.
+     */
+    public const MATRIX = [
+        // PERM-006 — Advance request: Owner Y, Operations Y, Dispatcher Y,
+        // Accounts Y, Driver "Own". Approver N, Customer N, Supplier N.
+        //
+        // Driver holds Own and nothing wider, which is the row working: a driver
+        // asks for their own advance and cannot see, let alone raise, anybody
+        // else's. Approver is absent on purpose — PERM-007 is where they act,
+        // and letting them raise the request they will later approve would
+        // collapse the two rungs into one person.
+        self::ADVANCE_REQUEST => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_DRIVER     => self::SCOPE_OWN,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        // PERM-007 — Advance approve: Owner Y, Accounts Y, Approver Y, Admin Y.
+        // Operations N, Dispatcher N, Driver N, Customer N, Supplier N.
+        //
+        // This row is the financial control, and the denials carry it. Operations
+        // and Dispatcher may raise an advance under PERM-006 and may not approve
+        // one here; the two rows differ in exactly that place, which is
+        // segregation of duties expressed as data rather than as a convention
+        // somebody remembers. STOS-FIN §129 and BRW §75 both ask for it, and
+        // TripAdvanceService enforces the narrower rule on top — not even an
+        // Owner approves the request they themselves raised.
+        self::ADVANCE_APPROVE => [
+            self::ROLE_OWNER    => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS => self::SCOPE_ALL,
+            self::ROLE_APPROVER => self::SCOPE_ALL,
+            self::ROLE_ADMIN    => self::SCOPE_ALL,
+        ],
+        // CONSTRUCTED — no Cost row exists in Step 11. See D-58.
+        //
+        // Viewing follows PERM-001 `Trip/view`, because a trip's costs are part
+        // of that trip. Customer and Supplier are dropped from it deliberately:
+        // PERM-001 shows them a trip, and what a haul cost us is not something
+        // the counterparty on that haul gets to read.
+        self::COST_VIEW => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        // CONSTRUCTED, mirroring PERM-008 `Expense/submit` exactly: Owner Y,
+        // Operations Y, Dispatcher Y, Accounts Y, Driver Own, Admin Y.
+        // Approver N — approving is a different act from reporting a spend, and
+        // PERM-009 is where that lives.
+        self::COST_RECORD => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_DRIVER     => self::SCOPE_OWN,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        // CONSTRUCTED, and narrower than recording on purpose. Taking a cost
+        // back out of the margin changes a reported figure, so it sits with the
+        // roles that answer for the figure — Owner, Accounts, Admin. A driver
+        // who mis-keyed their own fuel asks Accounts; they do not silently
+        // rewrite the trip's profitability themselves.
+        self::COST_RETRACT => [
+            self::ROLE_OWNER    => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS => self::SCOPE_ALL,
+            self::ROLE_ADMIN    => self::SCOPE_ALL,
+        ],
+        // PERM-010 — POD submit: Owner Y, Operations Y, Dispatcher Y,
+        // Driver Own, Supplier Assigned, Admin Y. Accounts N, Approver N,
+        // Customer N. Reproduced verbatim; nothing inferred.
+        //
+        // Driver "Own" and Supplier "Assigned" are the row working as intended —
+        // the people physically at the delivery are the ones holding the signed
+        // sheet. Accounts is absent here and present on POD_VERIFY below, which
+        // is the segregation: whoever hands in the proof does not get to rule on
+        // it.
+        self::POD_SUBMIT => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_DRIVER     => self::SCOPE_OWN,
+            self::ROLE_SUPPLIER   => self::SCOPE_ASSIGNED,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        // CONSTRUCTED — no document-verify row exists in Step 11.
+        //
+        // Modelled on PERM-005 `Trip / close` rather than on PERM-010, because
+        // verifying a POD is what STT-008 calls "Unlock billing" and that is a
+        // financial act, not a clerical one. Owner, Operations, Accounts,
+        // Approver, Admin — exactly PERM-005's set.
+        //
+        // Driver and Supplier are absent, and that is the whole point of
+        // splitting this from POD_SUBMIT. The party that produced the evidence
+        // does not get to certify it.
+        self::POD_VERIFY => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        // Key SPECIFIED by API-010; matrix row CONSTRUCTED — no Billing domain
+        // exists in the Permissions sheet (D-60). Mirrors PERM-005
+        // `Trip / close`: Owner, Operations, Accounts, Approver, Admin.
+        //
+        // Dispatcher is absent though PERM-005 also omits them, and that reads
+        // correctly here — deciding a customer may be charged is not a
+        // dispatcher's call. Driver, Customer and Supplier obviously not.
+        self::BILLING_PREPARE => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        // CONSTRUCTED — D-106. PERM-011's set exactly: Owner, Accounts,
+        // Approver, Admin. NARROWER than BILLING_PREPARE above by one role, and
+        // that one role is the whole reason for a separate key: Operations may
+        // mark a trip ready to invoice and may not then declare that it WAS
+        // invoiced. Saying money moved is a finance act.
+        self::BILLING_INVOICED => [
+            self::ROLE_OWNER    => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS => self::SCOPE_ALL,
+            self::ROLE_APPROVER => self::SCOPE_ALL,
+            self::ROLE_ADMIN    => self::SCOPE_ALL,
+        ],
+        // PERM-011 — Collection record: Owner Y, Accounts Y, Approver Y,
+        // Admin Y. Operations N, Dispatcher N, Driver N, Customer N,
+        // Supplier N. Reproduced verbatim; nothing inferred.
+        //
+        // Operations being absent is the row working: recording that money
+        // arrived is a finance act, and the person who ran the trip is not the
+        // person who should be able to say it was paid for.
+        self::COLLECTION_RECORD => [
+            self::ROLE_OWNER    => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS => self::SCOPE_ALL,
+            self::ROLE_APPROVER => self::SCOPE_ALL,
+            self::ROLE_ADMIN    => self::SCOPE_ALL,
+        ],
+        // CONSTRUCTED — no Collection view row exists (D-61).
+        //
+        // PERM-011's set, plus Operations. Reading the ageing report is not
+        // recording a receipt, and somebody has to be able to see that the trip
+        // they dispatched has not been paid for — a blocker only finance can
+        // read is a blocker nobody chases. Deliberately no wider: Customer and
+        // Supplier must never see the tenant's receivables book.
+        self::COLLECTION_VIEW => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        // PERM-002 — Trip create: Owner Y, Operations Y, Dispatcher Y, Admin Y.
+        self::TRIP_CREATE => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        // PERM-004 — Trip assign: Owner Y, Operations Y, Dispatcher Y, Admin Y.
+        // Accounts N, Approver N, Driver N, Customer N, Supplier N.
+        //
+        // Identical to PERM-002's row, and that is the registry's choice rather
+        // than a copy: whoever may create a trip may crew it. Written out in full
+        // anyway instead of aliased to TRIP_CREATE, because the two are separate
+        // registry rows that a later revision may separate in fact — PERM-003 and
+        // PERM-005 already differ from both by excluding Dispatcher.
+        //
+        // Note what this row denies. Accounts and Approver can view, approve and
+        // close a trip but cannot crew one; Supplier holds "Assigned" scope on
+        // PERM-001 yet gets a flat N here, so a supplier can watch a trip they are
+        // attached to and never choose its vehicle or driver. That asymmetry is
+        // the point of the row.
+        self::TRIP_ASSIGN => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        // PERM-001 — Trip view: Owner/Ops/Dispatcher/Accounts/Approver/Admin all;
+        // Driver "Own", Customer "Own", Supplier "Assigned".
+        self::TRIP_VIEW => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+            self::ROLE_DRIVER     => self::SCOPE_OWN,
+            self::ROLE_CUSTOMER   => self::SCOPE_OWN,
+            self::ROLE_SUPPLIER   => self::SCOPE_ASSIGNED,
+        ],
+        // Mirrors PERM-002 — see the caveat above.
+        self::ORDER_CREATE => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        self::ORDER_UPDATE => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        /* ── Master data rows — REGISTRY DEFECT D-8 ─────────────────────
+         *
+         * Step 11's Permissions sheet has THIRTEEN rows and covers only Trip,
+         * Advance, Expense, POD, Collection, ControlRoom and Registry. There is
+         * no Vehicle or Driver domain anywhere in it, and the API registry
+         * (API-001…015) has no master-data endpoint to borrow a key from. So
+         * unlike PERM-004, none of the rows below is quoted from the registry.
+         *
+         * They are the narrowest reading that lets tickets 003 and 004 ship
+         * their FE half at all, derived from the two things the package does say:
+         *
+         *   Both tickets' user story is "As an OPERATOR, I can maintain…", which
+         *   maps to Operations; and PERM-013 (Registry modify) restricts master
+         *   configuration to Owner and Admin. Master data sits between the two,
+         *   so writes go to Owner/Operations/Admin and deletion — the only
+         *   irreversible act — narrows to Owner/Admin.
+         *
+         *   Reads are wider than writes but narrower than PERM-001: Accounts and
+         *   Approver need to see a vehicle to reason about cost and approval.
+         *   Driver, Customer and Supplier get NOTHING, because PERM-001 grants
+         *   them only "Own"/"Assigned" scope on a trip and there is no such thing
+         *   as "your own" fleet master. Deny by default wins where the registry
+         *   is silent.
+         *
+         * FLAGGED. Must be confirmed or replaced by the System Architect; see
+         * docs/transport/registry-defects.md, D-8.
+         */
+        self::VEHICLE_VIEW => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        self::VEHICLE_CREATE => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        self::VEHICLE_UPDATE => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        // Irreversible, so narrowest. FLEET §7 gives RETIRED/SOLD as the normal
+        // end of a vehicle's life; deletion is for a record created in error.
+        self::VEHICLE_DELETE => [
+            self::ROLE_OWNER => self::SCOPE_ALL,
+            self::ROLE_ADMIN => self::SCOPE_ALL,
+        ],
+
+        self::DRIVER_VIEW => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        self::DRIVER_CREATE => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        self::DRIVER_UPDATE => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        self::DRIVER_DELETE => [
+            self::ROLE_OWNER => self::SCOPE_ALL,
+            self::ROLE_ADMIN => self::SCOPE_ALL,
+        ],
+
+        /* ── Pre-trip rows — REGISTRY DEFECT D-21 ──────────────────────
+         *
+         * Step 11's Permissions sheet has no Pretrip or Dispatch domain, so as
+         * with D-8 nothing below is quoted. Worse than D-8, though: three
+         * documents name three DIFFERENT actors for the same act, and one of
+         * them is not a role this package defines.
+         *
+         *   FRS TRP-P0-005   "Supervisor/Driver", plus "Supervisor sign-off
+         *                     for critical failures"
+         *   UAT-004          "Supervisor"
+         *   OPS §35          "Driver must complete required inspection"
+         *   Step 11 SM-TRP   `allocated` and `dispatched` are owned by the
+         *                     DISPATCHER
+         *
+         * SUPERVISOR IS NOT ONE OF STEP 11's NINE ROLES. It appears in no role
+         * list anywhere in the 42 documents. Read against the nine that do
+         * exist, a transport supervisor is Operations — the role that owns
+         * operational execution — and the state owner is Dispatcher. Both get
+         * the rows below.
+         *
+         * DRIVER IS NAMED BY TWO DOCUMENTS AND IS NOT IMPLEMENTABLE. This is
+         * recorded rather than quietly dropped: `transport_drivers` links only
+         * to an optional `hr_employee_id` and has NO user account, so a driver
+         * cannot authenticate at all. OPS §33's driver app does not exist, and
+         * SNG-TRN-026 (Offline Field Mode, P1, Backlog) is the ticket that would
+         * create one. Until then a checklist is completed by staff on the
+         * driver's behalf, and granting ROLE_DRIVER here would be a row that can
+         * never be exercised — see UNIMPLEMENTABLE_ACTORS below.
+         *
+         * The shape follows PERM-004 (Trip assign) exactly, and deliberately:
+         * whoever may crew a trip is who may certify that crew fit to leave.
+         * Accounts and Approver can view but not perform, which mirrors their N
+         * on PERM-004; Customer and Supplier get nothing at all, because a
+         * dispatch block names a specific driver's expired licence and PERM-001
+         * gives them only Own/Assigned scope on the trip itself.
+         *
+         * ONE KEY FOR ALL THREE WRITE ACTIONS — generate, complete and pass the
+         * gate. FRS implies a split (Driver completes, Supervisor signs off,
+         * Dispatcher dispatches), but with Driver unimplementable the actor set
+         * is identical for all three, and inventing a distinction the role model
+         * cannot express would be exactly the over-reach FORBID-001 forbids.
+         *
+         * FLAGGED. Must be confirmed or replaced by Security + Architecture; see
+         * docs/transport/registry-defects.md, D-21.
+         */
+        self::PRETRIP_VIEW => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        self::PRETRIP_PERFORM => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+
+        /* ── Dispatch — no registry row, same defect family as D-21 ─────
+         *
+         * Step 11's Permissions sheet has no Dispatch domain and the API
+         * registry names no dispatch endpoint, so unlike API-007's
+         * transport.exception.create there is not even a key to quote.
+         *
+         * The row below is NOT a guess about who dispatches, though — SM-TRP
+         * states it outright: `dispatched` is owned by the **Dispatcher**, and
+         * so is `allocated`. So this mirrors PERM-004 exactly, as pre-trip
+         * does: whoever may crew a trip and certify it fit to leave is who may
+         * release it. Accounts and Approver keep their N from PERM-004.
+         *
+         * FLAGGED for Security + Architecture, with D-18 and D-21.
+         */
+        self::TRIP_DISPATCH => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+
+        // Mirrors PERM-004 exactly, like TRIP_DISPATCH above it. The dispatcher
+        // who released the trip is the person the delivery call reaches, and
+        // STT-007's own actor is the TripEngine acting for Operations.
+        //
+        // Driver is N HERE and `own` under PERM-010 for the POD itself. That is
+        // the split, not an oversight: confirming a trip is delivered changes
+        // its state for everyone downstream; submitting proof does not.
+        // PERM-006's set — Owner, Operations, Dispatcher, Accounts, Admin.
+        // Approver is absent because PERM-006 omits them, and a Driver holds
+        // `own` there against their own advance; there is no "own exception",
+        // so Driver is absent rather than guessed at.
+        self::EXCEPTION_CREATE => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+
+        // PERM-005's set. The Dispatcher may RAISE and may not SIGN OFF, which
+        // is the same separation POD_SUBMIT and POD_VERIFY already draw.
+        self::EXCEPTION_MANAGE => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+
+        self::TRIP_DELIVER => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+
+        // PERM-005 `Trip / close`, VERBATIM — Owner Y, Operations Y,
+        // Dispatcher N, Accounts Y, Approver Y, Driver N, Customer N,
+        // Supplier N, Admin Y.
+        //
+        // THE DISPATCHER DENIAL IS THE POINT, and it is tested as a refusal
+        // exactly as PERM-003's is. Closing a trip settles it commercially; the
+        // person who moved the truck is not the person who signs it off. Note
+        // that PERM-005 and PERM-003 are the only two Trip rows that exclude the
+        // Dispatcher, and they are the two commercial acts.
+        self::TRIP_CLOSE => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+
+        // Mirrors PERM-001.
+        /*
+         * Consignment mirrors Order, which mirrors Trip. Step 11's Permissions
+         * sheet has thirteen rows — Trip, Advance, Expense, POD, Collection,
+         * ControlRoom, Registry — and no Consignment row, exactly as it has no
+         * Order row (D-45). Mirroring the parent is the narrowest defensible
+         * reading: a consignment is the commercial description of an order's
+         * cargo, so whoever may read or write the order may read or write what
+         * it is carrying.
+         *
+         * DELETE is deliberately NARROWER than update, following VEHICLE_DELETE:
+         * removing a shipment record is not an ordinary edit, and the service
+         * already refuses it once a trip is carrying the consignment.
+         */
+        self::CONSIGNMENT_VIEW => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+            // NO customer grant, deliberately — and this is the one place
+            // Consignment does NOT mirror Order. ORDER_VIEW gives the customer
+            // SCOPE_OWN, but TransportPermissionService::scope() states that
+            // "'own' and 'assigned' narrowing arrives with the tickets that own
+            // it" — the narrowing is NOT implemented. That grant is harmless
+            // today only because the whole /api/transport group sits behind
+            // role:admin,staff, so no customer can reach any route to use it.
+            //
+            // Copying it here would add a second latent grant that becomes a
+            // cross-customer leak the day a customer-facing transport route is
+            // added — and STOS-CTD's Digital Passport is exactly such a route.
+            // Recorded as D-46. The grant belongs to the ticket that implements
+            // the narrowing, not to this one.
+        ],
+        self::CONSIGNMENT_CREATE => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        self::CONSIGNMENT_UPDATE => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        self::CONSIGNMENT_DELETE => [
+            self::ROLE_OWNER => self::SCOPE_ALL,
+            self::ROLE_ADMIN => self::SCOPE_ALL,
+        ],
+
+        /*
+         * Container — mirrors Consignment, including the omission.
+         *
+         * NO customer grant on CONTAINER_VIEW, for the D-46 reason recorded
+         * above: 'own' narrowing is not implemented, so the grant would become
+         * a cross-customer leak the day a customer-facing route appears — and
+         * STOS-CTD's Digital Passport, which is container-keyed, is exactly
+         * that route.
+         */
+        self::CONTAINER_VIEW => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        self::CONTAINER_CREATE => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+        self::CONTAINER_ATTACH => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+        ],
+
+        /*
+         * PERM-003 | Trip | approve, copied ROW FOR ROW from Step 11:
+         *
+         *   CEO/Owner Y · Operations Y · Dispatcher N · Accounts Y
+         *   Approver  Y · Driver     N · Customer   N · Supplier N · Admin Y
+         *
+         * THE DISPATCHER DENIAL IS THE POINT, NOT AN OVERSIGHT. Dispatcher holds
+         * TRIP_CREATE, TRIP_ASSIGN and TRIP_DISPATCH — they run the trip. They
+         * may not approve it. That single N is the clearest statement in the
+         * whole registry that approval is a controlled commercial decision and
+         * not an operational step, and it is the reason D-58 concluded this is a
+         * human decision rather than a calculation.
+         *
+         * It is NOT softened because it makes a demo awkward: the demo signs in
+         * as admin, which PERM-003 grants. TripApprovalTest asserts the denial,
+         * not only the grants.
+         */
+        self::TRIP_APPROVE => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+            // ROLE_DISPATCHER is deliberately absent — PERM-003 says N.
+        ],
+
+        self::ORDER_VIEW => [
+            self::ROLE_OWNER      => self::SCOPE_ALL,
+            self::ROLE_OPERATIONS => self::SCOPE_ALL,
+            self::ROLE_DISPATCHER => self::SCOPE_ALL,
+            self::ROLE_ACCOUNTS   => self::SCOPE_ALL,
+            self::ROLE_APPROVER   => self::SCOPE_ALL,
+            self::ROLE_ADMIN      => self::SCOPE_ALL,
+            self::ROLE_CUSTOMER   => self::SCOPE_OWN,
+        ],
+    ];
+
+    /**
+     * Sangoe role/internal_role  ->  STOS matrix role.
+     *
+     * THE ONE INFERRED ELEMENT IN THIS FILE. No approved document maps these two
+     * vocabularies. Conservative on purpose: an unmapped identity resolves to
+     * null and is denied, rather than being promoted to a role it may not hold.
+     *
+     * Keys are checked most specific first: internal_role, then role.
+     */
+    public const ROLE_MAP = [
+        // internal_role (only meaningful when role = staff)
+        'internal:transport_owner'      => self::ROLE_OWNER,
+        'internal:transport_operations' => self::ROLE_OPERATIONS,
+        'internal:transport_dispatcher' => self::ROLE_DISPATCHER,
+        'internal:accounts'             => self::ROLE_ACCOUNTS,
+
+        // role
+        'role:admin'  => self::ROLE_ADMIN,
+        // A generic staff member is Operations — the broadest role that still
+        // cannot approve or record money. Everything narrower is opt-in above.
+        'role:staff'  => self::ROLE_OPERATIONS,
+        'role:client' => self::ROLE_CUSTOMER,
+        // vendor / third_party_vendor / company are intentionally UNMAPPED:
+        // Step 11's Supplier column grants only "Assigned" scope, and no
+        // assignment concept exists until SNG-TRN-009. Mapping them now would
+        // grant access with no way to narrow it.
+    ];
+
+    /**
+     * Actors the folder names for an action that this system cannot express.
+     *
+     * D-21. FRS TRP-P0-005 and OPS §35 both put the driver at the centre of the
+     * pre-trip inspection, and neither is wrong about the business — a driver
+     * walking round the vehicle IS the inspection. What does not exist is a way
+     * for that person to sign in: transport_drivers carries an optional
+     * hr_employee_id and no user account, and no ticket before SNG-TRN-026
+     * creates one.
+     *
+     * Kept as data so the omission is a recorded decision a later ticket can
+     * search for, rather than a permission row that silently never appears.
+     */
+    public const UNIMPLEMENTABLE_ACTORS = [
+        self::PRETRIP_PERFORM => [
+            self::ROLE_DRIVER => 'FRS TRP-P0-005 and OPS §35 name the driver as the actor, but transport_drivers has no user account and cannot authenticate. Deferred with SNG-TRN-026.',
+        ],
+    ];
+
+    public static function isPermission(string $key): bool
+    {
+        return array_key_exists($key, self::MATRIX);
+    }
+
+    public static function isRole(string $role): bool
+    {
+        return in_array($role, self::ROLES, true);
+    }
+
+    /** Every permission key this scaffold knows about. */
+    public static function all(): array
+    {
+        return array_keys(self::MATRIX);
+    }
+
+    /**
+     * The scope a STOS role has for a permission, or null when it has none.
+     * Unknown key or unknown role both resolve to null — deny by default.
+     */
+    public static function scopeFor(string $permission, ?string $stosRole): ?string
+    {
+        if ($stosRole === null || ! self::isPermission($permission)) {
+            return null;
+        }
+
+        return self::MATRIX[$permission][$stosRole] ?? null;
+    }
+}

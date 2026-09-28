@@ -25,15 +25,23 @@ class LeaveApprovalService
         private LeaveApplicationRepository $repo,
         private EmployeeLeaveBalanceService $balanceService,
         private EmployeeLeaveBalanceRepository $balances,
+        private RequestNotifier $notifier,
     ) {
     }
 
-    /** Approval queue — every application, filterable, plus status counters. */
-    public function queue(int $tenantId, array $f): array
+    /**
+     * Approval queue — every application, filterable, plus status counters.
+     *
+     * `stats` is deliberately left tenant-wide for now. Scoping the counters
+     * means re-running the narrowing inside a grouped count, and a header that
+     * disagrees with the list is worse than one that is honestly the whole
+     * tenant. Noted as a known limitation of this phase rather than half-done.
+     */
+    public function queue(int $tenantId, array $f, ?User $actor = null): array
     {
         return [
-            'data'  => $this->repo->filtered($tenantId, $f)->map(fn ($a) => $this->present($a))->all(),
-            'stats' => $this->repo->statusCounts($tenantId),
+            'data'  => $this->repo->filtered($tenantId, $f, $actor)->map(fn ($a) => $this->present($a))->all(),
+            'stats' => $this->repo->statusCounts($tenantId, $actor),
         ];
     }
 
@@ -70,6 +78,18 @@ class LeaveApprovalService
                 'decision_remarks' => $remarks, 'updated_by' => $actor?->id,
             ]);
             $app->recordAudit('Leave Approved', $actor, $remarks, ['days' => (float) $app->days]);
+
+            // Formatted, because these dates are cast to datetime and a bare
+            // concatenation puts "2026-12-15 00:00:00" in front of the employee
+            // — in a WhatsApp message and a push, where there is no second
+            // chance to read it. A single day says one date, not the same one
+            // twice.
+            $from = $app->from_date?->format('d M Y');
+            $to   = $app->to_date?->format('d M Y');
+            $when = ($from === $to) ? "on {$from}" : "from {$from} to {$to}";
+
+            $this->notifier->tell($app->employee, 'Leave', 'approved',
+                "Your leave {$when} was approved.", $actor);
         });
         $this->log('Leave approved', $tenantId, $app->id);
 
@@ -88,6 +108,9 @@ class LeaveApprovalService
             'decision_remarks' => $remarks, 'updated_by' => $actor?->id,
         ]);
         $app->recordAudit('Leave Rejected', $actor, $remarks);
+
+        $this->notifier->tell($app->employee, 'Leave', 'rejected',
+            'Your leave request was rejected.'.($remarks ? ' '.trim($remarks) : ''), $actor);
         $this->log('Leave rejected', $tenantId, $app->id);
 
         return $this->present($this->find($id, $tenantId), true, $tenantId);

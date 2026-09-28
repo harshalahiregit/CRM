@@ -8,9 +8,9 @@ use App\Mail\Task\TaskActivityMail;
 use App\Mail\Task\TaskDueMail;
 use App\Models\Task\Task;
 use App\Models\User;
+use App\Services\Mail\TenantMailer;
 use App\Services\NotificationService;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 
 /**
  * Every task alert — in-app bell and email — is decided here.
@@ -39,6 +39,7 @@ class TaskNotifier
         private NotificationService $notifications,
         private TaskConfigService $config,
         private TaskTreeService $tree,
+        private TenantMailer $mailer,
     ) {
     }
 
@@ -90,6 +91,59 @@ class TaskNotifier
             $task->tenant_id, $this->emails($userIds),
             fn () => new SubtaskAssignedMail($task, $this->tree->ancestryOf($task, $task->tenant_id), $actor),
             "assignment of task {$task->id}",
+        );
+    }
+
+    /**
+     * A task was handed to named people at a client, a vendor or a TPV.
+     *
+     * Separate from subtaskAssigned() because the recipients are not users. They
+     * have an email address and — for a client contact — sometimes a portal
+     * login, but there is no users row to ring a bell on, and emails() only
+     * knows how to turn user ids into addresses. So the addresses come straight
+     * off the assignment rows, which is also why those rows carry the email in
+     * the first place.
+     *
+     * A contact with no email is still assigned; they simply are not told by
+     * this system, and whoever assigned them is the one who knows that.
+     *
+     * @param  \App\Models\Shared\PartyAssignee[]  $added
+     */
+    public function partyAssigned(Task $task, array $added, ?int $actorId): void
+    {
+        if (! $added || ! $this->config->on($task->tenant_id, 'notify_assigned')) {
+            return;
+        }
+
+        $actor = $this->name($actorId);
+
+        // Anyone among them who DOES have a login in this system gets the bell
+        // as well, so the portal badge agrees with the inbox.
+        $userIds = [];
+        foreach ($added as $row) {
+            $contact = $row->party();
+            if ($contact && ! empty($contact->user_id)) {
+                $userIds[] = (int) $contact->user_id;
+            }
+        }
+        $userIds = array_values(array_unique(array_diff($userIds, [(int) $actorId])));
+
+        if ($userIds) {
+            $this->bell(
+                $userIds, $task->tenant_id, 'task.assigned',
+                "{$actor} assigned you: {$task->name}",
+                $this->trail($task), $this->link($task), $actorId,
+            );
+        }
+
+        $addresses = array_values(array_unique(array_filter(
+            array_map(fn ($row) => (string) ($row->email ?? ''), $added)
+        )));
+
+        $this->mail(
+            $task->tenant_id, $addresses,
+            fn () => new SubtaskAssignedMail($task, $this->tree->ancestryOf($task, $task->tenant_id), $actor),
+            "party assignment of task {$task->id}",
         );
     }
 
@@ -159,7 +213,12 @@ class TaskNotifier
      *
      * @param  int[]  $userIds  recipients the caller already worked out
      */
-    public function activity(Task $task, array $userIds, string $type, string $title, ?string $body, int $actorId): void
+    /**
+     * $actorId is nullable because the actor is not always a User: a Purchase
+     * vendor commenting from its portal is a PurchaseVendor, and there is no user
+     * id that would honestly stand in for it. Null simply excludes nobody.
+     */
+    public function activity(Task $task, array $userIds, string $type, string $title, ?string $body, ?int $actorId): void
     {
         $userIds = array_values(array_diff(array_map('intval', $userIds), [$actorId]));
         if (! $userIds || ! $this->config->on($task->tenant_id, 'notify_activity')) {
@@ -265,11 +324,48 @@ class TaskNotifier
             return;
         }
 
-        try {
-            Mail::to($addresses)->send($make());
-        } catch (\Throwable $e) {
-            Log::warning("Task mail failed ({$what}): {$e->getMessage()}");
-        }
+        /*
+         * Through the TENANT's SMTP, never the global mailer.
+         *
+         * This was `Mail::to(...)->send(...)`, which resolves
+         * config('mail.default') — and that is env('MAIL_MAILER', 'log'). A
+         * deployment running `config:cache` does not read .env at all, so the
+         * literal default won: every task e-mail was written to storage/logs
+         * and the send reported success. "I assigned a task and no mail came"
+         * has one cause, and this was it.
+         *
+         * TenantMailer refuses outright when Settings → Email is not set up,
+         * which is a visible failure instead of a silent log line.
+         */
+        /*
+         * AFTER the response, not during it.
+         *
+         * Opening an SMTP session to the tenant's mail host and waiting for it
+         * to accept the message takes about eleven seconds from here. That was
+         * happening inside the save: somebody edited a task, and the request sat
+         * on a socket until the mail server answered before the browser was told
+         * anything had been saved. On a single-threaded dev server it is worse
+         * still — every other request queues behind it, which is why the report
+         * of a slow save came with a failed /helpdesk/tickets/status-counts, the
+         * sidebar's poll giving up while it waited its turn.
+         *
+         * `terminating` runs the callback once the response has been flushed, in
+         * this same process. No queue worker is involved — which matters,
+         * because there is not one running — so the mail still goes out on this
+         * request, just not while anybody is watching the spinner.
+         *
+         * A failure is logged, exactly as before. There is nothing to report to
+         * a caller that has already been answered, which is why only a
+         * fire-and-forget notification may use this path; anything that tells
+         * somebody "sent" or "failed" still sends inline.
+         */
+        app()->terminating(function () use ($tenantId, $addresses, $make, $what) {
+            try {
+                $this->mailer->send($tenantId, $addresses, $make());
+            } catch (\Throwable $e) {
+                Log::warning("Task mail failed ({$what}): {$e->getMessage()}");
+            }
+        });
     }
 
     /* ── Small helpers ──────────────────────────────────────────── */

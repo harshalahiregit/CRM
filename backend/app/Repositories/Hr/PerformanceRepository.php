@@ -9,6 +9,8 @@ use App\Models\Hr\HrKpi;
 use App\Models\Hr\HrPerformanceReview;
 use App\Models\Hr\HrPromotionRecommendation;
 use Illuminate\Database\Eloquent\Collection;
+use App\Models\User;
+use App\Repositories\Hr\Concerns\ScopesEmployeeData;
 
 /**
  * Read queries for the Performance Management module. Tenant-scoped; no writes.
@@ -16,6 +18,8 @@ use Illuminate\Database\Eloquent\Collection;
  */
 class PerformanceRepository
 {
+    use ScopesEmployeeData;
+
     /* ── KPIs ─────────────────────────────────────────────── */
     public function kpis(int $tenantId, array $f): Collection
     {
@@ -47,24 +51,24 @@ class PerformanceRepository
     }
 
     /* ── Employee goal assignments ────────────────────────── */
-    public function employeeGoals(int $tenantId, array $f): Collection
+    public function employeeGoals(int $tenantId, array $f, ?User $actor = null): Collection
     {
-        return HrEmployeeGoal::where('tenant_id', $tenantId)
+        return $this->scopeToEmployees(HrEmployeeGoal::where('tenant_id', $tenantId), $actor)
             ->with(['goal:id,title,weightage,target,due_date', 'employee:id,name,employee_code,department'])
             ->when(! empty($f['employee_id']), fn ($q) => $q->where('employee_id', $f['employee_id']))
             ->when(! empty($f['status']) && $f['status'] !== 'All', fn ($q) => $q->where('status', $f['status']))
             ->orderByDesc('id')->get();
     }
 
-    public function findEmployeeGoal(int $id, int $tenantId): ?HrEmployeeGoal
+    public function findEmployeeGoal(int $id, int $tenantId, ?User $actor = null): ?HrEmployeeGoal
     {
-        return HrEmployeeGoal::where('tenant_id', $tenantId)->find($id);
+        return $this->scopeToEmployees(HrEmployeeGoal::where('tenant_id', $tenantId), $actor)->find($id);
     }
 
     /* ── Reviews ──────────────────────────────────────────── */
-    public function reviews(int $tenantId, array $f): Collection
+    public function reviews(int $tenantId, array $f, ?User $actor = null): Collection
     {
-        return HrPerformanceReview::where('tenant_id', $tenantId)
+        return $this->scopeToEmployees(HrPerformanceReview::where('tenant_id', $tenantId), $actor)
             ->with('employee:id,name,employee_code,department,designation')
             ->when(! empty($f['employee_id']), fn ($q) => $q->where('employee_id', $f['employee_id']))
             ->when(! empty($f['review_type']) && $f['review_type'] !== 'All', fn ($q) => $q->where('review_type', $f['review_type']))
@@ -73,53 +77,68 @@ class PerformanceRepository
             ->orderByDesc('id')->get();
     }
 
-    public function findReview(int $id, int $tenantId): ?HrPerformanceReview
+    public function findReview(int $id, int $tenantId, ?User $actor = null): ?HrPerformanceReview
     {
-        return HrPerformanceReview::where('tenant_id', $tenantId)
+        return $this->scopeToEmployees(HrPerformanceReview::where('tenant_id', $tenantId), $actor)
             ->with(['employee:id,name,employee_code,department,designation', 'kpiRatings'])
             ->find($id);
     }
 
     /* ── Recommendations ──────────────────────────────────── */
-    public function promotions(int $tenantId, array $f): Collection
+    public function promotions(int $tenantId, array $f, ?User $actor = null): Collection
     {
-        return HrPromotionRecommendation::where('tenant_id', $tenantId)
+        return $this->scopeToEmployees(HrPromotionRecommendation::where('tenant_id', $tenantId), $actor)
             ->with('employee:id,name,employee_code,department,designation')
             ->when(! empty($f['employee_id']), fn ($q) => $q->where('employee_id', $f['employee_id']))
             ->when(! empty($f['status']) && $f['status'] !== 'All', fn ($q) => $q->where('status', $f['status']))
             ->orderByDesc('id')->get();
     }
 
-    public function findPromotion(int $id, int $tenantId): ?HrPromotionRecommendation
+    public function findPromotion(int $id, int $tenantId, ?User $actor = null): ?HrPromotionRecommendation
     {
-        return HrPromotionRecommendation::where('tenant_id', $tenantId)->find($id);
+        return $this->scopeToEmployees(HrPromotionRecommendation::where('tenant_id', $tenantId), $actor)->find($id);
     }
 
-    public function increments(int $tenantId, array $f): Collection
+    public function increments(int $tenantId, array $f, ?User $actor = null): Collection
     {
-        return HrIncrementRecommendation::where('tenant_id', $tenantId)
+        return $this->scopeToEmployees(HrIncrementRecommendation::where('tenant_id', $tenantId), $actor)
             ->with('employee:id,name,employee_code,department,designation')
             ->when(! empty($f['employee_id']), fn ($q) => $q->where('employee_id', $f['employee_id']))
             ->when(! empty($f['status']) && $f['status'] !== 'All', fn ($q) => $q->where('approval_status', $f['status']))
             ->orderByDesc('id')->get();
     }
 
-    public function findIncrement(int $id, int $tenantId): ?HrIncrementRecommendation
+    public function findIncrement(int $id, int $tenantId, ?User $actor = null): ?HrIncrementRecommendation
     {
-        return HrIncrementRecommendation::where('tenant_id', $tenantId)->find($id);
+        return $this->scopeToEmployees(HrIncrementRecommendation::where('tenant_id', $tenantId), $actor)->find($id);
     }
 
     /* ── Dashboard aggregates ─────────────────────────────── */
-    public function dashboard(int $tenantId): array
+    /**
+     * The performance dashboard tiles.
+     *
+     * Every figure here is an aggregate over an employee-level table, so each
+     * one takes the scope. An average is the most disclosing of them: an
+     * unscoped avg_rating next to a scoped review list lets somebody infer the
+     * ratings of people they cannot open.
+     *
+     * total_employees scopes on 'id' because the count is over hr_employees
+     * itself, where the employee id IS the primary key.
+     */
+    public function dashboard(int $tenantId, ?User $actor = null): array
     {
+        $goals     = fn () => $this->scopeToEmployees(HrEmployeeGoal::where('tenant_id', $tenantId), $actor);
+        $reviews   = fn () => $this->scopeToEmployees(HrPerformanceReview::where('tenant_id', $tenantId), $actor);
+        $reviewed  = fn () => $reviews()->whereIn('status', ['Reviewed', 'Approved']);
+
         return [
-            'total_employees'   => \App\Models\Hr\HrEmployee::where('tenant_id', $tenantId)->count(),
-            'goals_assigned'    => HrEmployeeGoal::where('tenant_id', $tenantId)->count(),
-            'goals_completed'   => HrEmployeeGoal::where('tenant_id', $tenantId)->where('status', 'Completed')->count(),
-            'reviews_pending'   => HrPerformanceReview::where('tenant_id', $tenantId)->whereIn('status', ['Draft', 'Submitted'])->count(),
-            'reviews_completed' => HrPerformanceReview::where('tenant_id', $tenantId)->whereIn('status', ['Reviewed', 'Approved'])->count(),
-            'avg_rating'        => round((float) HrPerformanceReview::where('tenant_id', $tenantId)->whereIn('status', ['Reviewed', 'Approved'])->avg('overall_rating'), 2),
-            'promotion_eligible'=> HrPromotionRecommendation::where('tenant_id', $tenantId)->where('eligible', true)->count(),
+            'total_employees'   => $this->scopeToEmployees(\App\Models\Hr\HrEmployee::where('tenant_id', $tenantId), $actor, 'id')->count(),
+            'goals_assigned'    => $goals()->count(),
+            'goals_completed'   => $goals()->where('status', 'Completed')->count(),
+            'reviews_pending'   => $reviews()->whereIn('status', ['Draft', 'Submitted'])->count(),
+            'reviews_completed' => $reviewed()->count(),
+            'avg_rating'        => round((float) $reviewed()->avg('overall_rating'), 2),
+            'promotion_eligible'=> $this->scopeToEmployees(HrPromotionRecommendation::where('tenant_id', $tenantId), $actor)->where('eligible', true)->count(),
         ];
     }
 }

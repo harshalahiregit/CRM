@@ -10,6 +10,11 @@ import { useVendorModule } from '@/modules/tpv/useVendorModule'
 import { kickoffApi } from '@/services/kickoffApi'
 import { koStatusCfg, koModeLabel, fmtDateTime } from '@/modules/shared/kickoffConstants'
 import { useAuth } from '@/context/AuthContext'
+import WorkStartLetterCard from '@/components/portal/WorkStartLetterCard'
+import KickoffMomReview from '@/components/portal/KickoffMomReview'
+import VendorDocumentsPanel from '@/components/vendor/VendorDocumentsPanel'
+import { TPV_DOC_CATALOG } from '@/components/vendor/documentCatalog'
+import { readFieldErrors, prettyField } from '@/services/apiError'
 import AuditTimeline from '@/components/ui/AuditTimeline'
 import TemporaryAccessBanner from '@/modules/tpv/components/TemporaryAccessBanner'
 import {
@@ -20,11 +25,9 @@ import {
   KIT3D_STYLE, labelStyle, inputStyle, Overlay, ModalFooter, InfoBox,
   Field, TextInput, StatusBadge as StatusPill,
 } from '@/components/ui/kit3d'
-import PortalStepProgress from '@/components/ui/PortalStepProgress'
 import '@/pages/vendor-portal/portal.css'
 
 const STEP_ICONS = { kickoff: ClipboardList, profile: UserCheck, documents: FileText, review: ShieldCheck, confirmation: Check, submission: Rocket }
-const STEP_COLORS = { kickoff: '#8b5cf6', profile: '#0ea5e9', documents: '#f59e0b', review: '#a855f7', confirmation: '#14b8a6', submission: '#10b981' }
 
 const EMPTY_PROFILE = {
   // Personal Information
@@ -69,6 +72,22 @@ function validateProfile(f, acctConfirm) {
   return e
 }
 
+/**
+ * One line naming what is wrong, for the top of a long form.
+ *
+ * `validateProfile` writes terse hints meant to sit beside a box ("6 digits"),
+ * which say nothing on their own — so they are paired with the field's name.
+ */
+function summarise(errs) {
+  const entries = Object.entries(errs).filter(([, v]) => v)
+  if (entries.length === 0) return null
+  if (entries.length === 1) {
+    const [k, v] = entries[0]
+    return `${prettyField(k)}: ${v}`
+  }
+  return `Please correct ${entries.length} fields — they are marked in red below.`
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 export default function TpvOnboardingWizard() {
   const { id } = useParams()
@@ -110,9 +129,35 @@ export default function TpvOnboardingWizard() {
 
   const editable = isOnboardingEditable(onboarding?.status)
 
-  const goStep = (step) => {
+  /**
+   * A step with a form registers how to persist it, so leaving the step keeps
+   * what was typed.
+   *
+   * Moving through the wizard used to switch the panel and nothing else: a
+   * vendor who filled in half the profile and pressed the next step lost every
+   * word of it, with no warning and nothing to go back to. The server accepts a
+   * partial profile — every field on it is nullable — so what has been entered
+   * is stored as a draft on the way past, and the strict check stays where it
+   * belongs, on Save & Continue and on submission.
+   */
+  const flushRef = useRef(null)
+  const registerFlush = useCallback((fn) => { flushRef.current = fn }, [])
+
+  const goStep = async (step) => {
+    // Never trap somebody on a step: a draft that will not save is a reason to
+    // say so, not a reason to refuse to move.
+    let flushed = false
+    try { flushed = await flushRef.current?.() } catch { /* the step reports its own error */ }
+    flushRef.current = null
+
     setActive(step)
     if (editable) api.onboarding.setStep(id, step).catch(() => {})
+
+    // Each step seeds itself from `onboarding`. Without this refetch it seeds
+    // from the copy loaded when the page opened — so a draft that WAS stored
+    // came back as an empty form, and saving that form then wrote the stale
+    // values back over the good ones.
+    if (flushed) load(true)
   }
 
   if (loading || !onboarding || !progress) {
@@ -123,8 +168,6 @@ export default function TpvOnboardingWizard() {
   const steps  = progress.steps || []
   const activeStep = steps.find(s => s.step === active) || steps[0]
 
-  // Map backend steps to PortalStepProgress shape (portal-only)
-  const portalSteps = steps.map(s => ({ key: s.key, label: s.label }))
 
   return (
     <div style={{ padding: isPortal ? 0 : 24, minHeight: '100vh', background: 'var(--bg-global)' }}>
@@ -158,12 +201,9 @@ export default function TpvOnboardingWizard() {
         <InfoBox tone="danger"><strong>Sent back for revision:</strong> {onboarding.remarks}</InfoBox>
       )}
 
-      {/* Portal users: modern horizontal step progress ABOVE the existing stepper */}
-      {isPortal && portalSteps.length > 0 && (
-        <PortalStepProgress steps={portalSteps} current={active} total={6} />
-      )}
-
-      {/* Stepper — existing 3D knob stepper (shown for admin; portal also shows it as secondary nav) */}
+      {/* One progress indicator, the Purchase one. The portal used to stack a
+          second horizontal bar on top of this, so the two engines disagreed
+          about what the top of the same wizard looked like. */}
       <Stepper steps={steps} active={active} onGo={goStep} />
 
       {/* Step body — wrapped in a clean card for portal users */}
@@ -176,11 +216,11 @@ export default function TpvOnboardingWizard() {
         boxShadow: '0 2px 16px rgba(0,0,0,0.08)',
       } : { marginTop: 18 }}>
         {active === 1 && <StepKickoff onboarding={onboarding} editable={editable} onAcknowledged={refresh} onContinue={() => goStep(2)} api={api} />}
-        {active === 2 && <StepProfile onboarding={onboarding} editable={editable} onSaved={refresh} onBack={() => goStep(1)} onContinue={() => goStep(3)} api={api} user={user} />}
+        {active === 2 && <StepProfile onboarding={onboarding} editable={editable} onSaved={refresh} onBack={() => goStep(1)} onContinue={() => goStep(3)} registerFlush={registerFlush} api={api} user={user} />}
         {active === 3 && <StepDocuments checklist={progress.documents} vendorId={vendor.id} onboarding={onboarding} editable={editable} manage={manage} admin={false} onChanged={refresh} onBack={() => goStep(2)} onContinue={() => goStep(4)} api={api} user={user} />}
         {active === 4 && <StepDocuments checklist={progress.documents} vendorId={vendor.id} editable={editable} manage={manage} admin={admin} reviewMode onChanged={refresh} onContinue={() => goStep(5)} api={api} />}
         {active === 5 && <StepConfirmation onboarding={onboarding} progress={progress} editable={editable} onSaved={refresh} onBack={() => goStep(4)} onContinue={() => goStep(6)} onSubmitted={refresh} api={api} />}
-        {active === 6 && <StepSubmission onboarding={onboarding} vendor={vendor} admin={admin} onChanged={refresh} onBack={() => goStep(5)} api={api} user={user} engagement={cfg.engagement} />}
+        {active === 6 && <StepSubmission onboarding={onboarding} vendor={vendor} admin={admin} onChanged={refresh} onBack={() => goStep(5)} api={api} user={user} engagement={cfg.engagement} isPortal={isPortal} />}
       </div>
 
       {/* Audit */}
@@ -194,27 +234,29 @@ export default function TpvOnboardingWizard() {
   )
 }
 
-// ── Stepper — extruded 3D knobs with live completion ─────────────────────────
+/**
+ * Step tracker — the Purchase presentation, shared.
+ *
+ * TPV drew each step in its own colour with a third line of detail and stretched
+ * the row to fill the width; Purchase draws one accent, fixed-width knobs and a
+ * connector, and puts the detail in the tooltip. Same wizard, two looks — so
+ * this is now Purchase's, and the detail still reaches the reader on hover.
+ */
 function Stepper({ steps, active, onGo }) {
   return (
-    <div className="pr-glass" style={{ padding: 16, overflowX: 'auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', width: 'max-content', minWidth: '100%', gap: 0 }}>
+    <div className="pr-glass" style={{ padding: 14, marginBottom: 16, overflowX: 'auto' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 0, minWidth: 'max-content' }}>
         {steps.map((s, i) => {
           const Icon = STEP_ICONS[s.key] || FileText
-          const color = STEP_COLORS[s.key] || '#7C3AED'
-          const isActive = s.step === active
-          const lit = s.complete || isActive
+          const on = s.step === active
+          const lit = s.complete || on
           return (
-            <div key={s.key} style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 140 }}>
+            <div key={s.key} style={{ display: 'flex', alignItems: 'center' }}>
               <button type="button" onClick={() => onGo(s.step)} title={s.detail}
-                className="pr-node" style={{
-                  flex: 1, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 13px', borderRadius: 15, cursor: 'pointer',
-                  background: lit ? `linear-gradient(135deg, ${color}26, ${color}0f)` : 'var(--bg-input)',
-                  border: `1.5px solid ${isActive ? color : s.complete ? color + '55' : 'var(--border)'}`,
-                  opacity: lit ? 1 : 0.6,
-                  boxShadow: isActive ? `0 10px 26px -8px ${color}88, inset 0 1px 0 rgba(255,255,255,.14)` : 'inset 0 1px 0 var(--card-shine)',
-                }}>
-                <span style={{ position: 'relative', width: 34, height: 34, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `linear-gradient(145deg, ${color}, ${color}aa)`, color: '#fff', boxShadow: lit ? `0 6px 14px -3px ${color}99, inset 0 1px 0 rgba(255,255,255,.4)` : 'none', flexShrink: 0 }}>
+                style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 13px', borderRadius: 13, cursor: 'pointer', minWidth: 150,
+                  background: lit ? 'linear-gradient(135deg, rgba(124,58,237,.2), rgba(124,58,237,.06))' : 'var(--bg-input)',
+                  border: `1.5px solid ${on ? '#7C3AED' : s.complete ? 'rgba(124,58,237,0.4)' : 'var(--border)'}`, opacity: lit ? 1 : 0.65 }}>
+                <span style={{ position: 'relative', width: 32, height: 32, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(145deg,#a78bfa,#7C3AED)', color: '#fff', flexShrink: 0 }}>
                   <Icon size={15} />
                   {s.complete && (
                     <span style={{ position: 'absolute', right: -4, bottom: -4, width: 15, height: 15, borderRadius: '50%', background: '#10b981', border: '2px solid var(--bg-card)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -222,14 +264,13 @@ function Stepper({ steps, active, onGo }) {
                     </span>
                   )}
                 </span>
-                <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2, textAlign: 'left', minWidth: 0 }}>
-                  <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Step {s.step}</span>
-                  <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text-h)', whiteSpace: 'nowrap' }}>{s.label}</span>
-                  <span style={{ fontSize: 9.5, fontWeight: 700, color, whiteSpace: 'nowrap' }}>{s.detail}</span>
+                <span style={{ textAlign: 'left', lineHeight: 1.2 }}>
+                  <span style={{ display: 'block', fontSize: 8.5, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Step {s.step}</span>
+                  <span style={{ display: 'block', fontSize: 12.5, fontWeight: 800, color: 'var(--text-h)', whiteSpace: 'nowrap' }}>{s.label}</span>
                 </span>
               </button>
               {i < steps.length - 1 && (
-                <div className={`pr-flow${s.complete ? '' : ' pr-flow-dim'}`} style={{ width: 20, height: 3, borderRadius: 4, margin: '0 4px', flexShrink: 0, background: `linear-gradient(90deg, ${color}, ${STEP_COLORS[steps[i + 1].key] || '#7C3AED'})` }} />
+                <div style={{ width: 18, height: 3, borderRadius: 4, margin: '0 4px', flexShrink: 0, background: s.complete ? '#7C3AED' : 'var(--border)' }} />
               )}
             </div>
           )
@@ -305,6 +346,9 @@ function StepKickoff({ onboarding, editable, onAcknowledged, onContinue, api }) 
 
   // PDF Preview State
   const [pdfUrl, setPdfUrl] = useState(null)
+  // The minutes as data. The PDF stays for View/Download; this is what the
+  // vendor actually reads.
+  const [mom, setMom] = useState(null)
   const [pdfErr, setPdfErr] = useState(null)
   const [zoom, setZoom] = useState(100)
   const [checked, setChecked] = useState(!!onboarding.acknowledged)
@@ -330,6 +374,31 @@ function StepKickoff({ onboarding, editable, onAcknowledged, onContinue, api }) 
   }, [onboarding.vendor?.id, isPortal])
 
   useEffect(() => { loadMeeting() }, [loadMeeting])
+
+  /*
+   * The minutes, fetched on their own — and from the ONBOARDING, not a meeting
+   * this screen picked for itself.
+   *
+   * Two earlier mistakes, both worth naming. First this hung off the PDF
+   * download's `.then()`, so the text waited on a blob and never ran at all on
+   * the portal (loadMeeting bails there — kickoffApi is the admin workspace and
+   * answers a vendor 403), leaving "Loading the minutes…" forever. Then it
+   * resolved its own meeting out of the governance list while the PDF resolved a
+   * different one through findKickoffMeeting(), so a populated document sat
+   * beside empty sections.
+   *
+   * `kickoffData` uses the SAME server-side resolver as `kickoffPdf`. One
+   * resolver, one meeting — the only arrangement in which the screen and the
+   * document cannot disagree.
+   */
+  useEffect(() => {
+    let alive = true
+    api.onboarding.kickoffData(onboarding.id)
+      .then(d => { if (alive) setMom(d?.meeting ? d : {}) })
+      .catch(() => { if (alive) setMom({}) })   // always resolves, never spins
+
+    return () => { alive = false }
+  }, [onboarding.id, api])
 
   // Load MOM PDF
   useEffect(() => {
@@ -420,7 +489,7 @@ function StepKickoff({ onboarding, editable, onAcknowledged, onContinue, api }) 
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* State 1: Kickoff Not Completed / MOM Not Sent */}
       {(!readyForAck && !acknowledged) ? (
-        <Panel title="Kickoff MOM Review &amp; Acknowledgement" sub="Step 1 of 6 · Kickoff Meeting">
+        <Panel title="Kickoff MOM Review &amp; Acknowledgement" sub="Step 2 of 7 · Kickoff Meeting">
           <div style={{ padding: '24px 20px', borderRadius: 14, textAlign: 'center', background: 'rgba(239,68,68,0.06)', border: '1.5px dashed rgba(239,68,68,0.3)' }}>
             <AlertTriangle size={32} style={{ color: '#ef4444', marginBottom: 10, display: 'inline-block' }} />
             <h3 style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-h)', margin: '0 0 6px' }}>
@@ -450,7 +519,7 @@ function StepKickoff({ onboarding, editable, onAcknowledged, onContinue, api }) 
         /* State 2 & 3: Ready for Ack OR Already Acknowledged */
         <Panel
           title="Kickoff MOM Review &amp; Acknowledgement"
-          sub="Step 1 of 6 · Review Minutes of Meeting"
+          sub="Step 2 of 7 · Review Minutes of Meeting"
           actions={acknowledged && (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 999, background: 'rgba(16,185,129,0.12)', color: '#10b981', fontSize: 12, fontWeight: 800, border: '1px solid rgba(16,185,129,0.3)' }}>
               <CheckCircle size={14} /> MOM Acknowledged
@@ -502,23 +571,17 @@ function StepKickoff({ onboarding, editable, onAcknowledged, onContinue, api }) 
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
               <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-h)' }}>Minutes of Meeting PDF</span>
               <div style={{ flex: 1 }} />
-              <button style={tbBtn} onClick={() => setZoom(z => Math.max(60, z - 10))}><ZoomOut size={13} /> Zoom out</button>
-              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-h)', minWidth: 42, textAlign: 'center' }}>{zoom}%</span>
-              <button style={tbBtn} onClick={() => setZoom(z => Math.min(200, z + 10))}><ZoomIn size={13} /> Zoom in</button>
               <button style={tbBtn} onClick={doView}><Eye size={13} /> View PDF</button>
               <button style={tbBtn} onClick={doDownload}><Download size={13} /> Download PDF</button>
             </div>
 
-            <div style={{ height: 500, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 12, background: '#525659' }}>
-              {pdfUrl ? (
-                <div style={{ width: `${zoom}%`, height: `${zoom}%`, transformOrigin: 'top left' }}>
-                  <iframe title="Kickoff MOM Document" src={pdfUrl} style={{ width: '100%', height: 500 * (zoom / 100), border: 'none' }} />
-                </div>
-              ) : (
-                <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#cbd5e1' }}>
-                  <Loader size={20} /> <span style={{ marginLeft: 8, fontSize: 13 }}>Loading Minutes document…</span>
-                </div>
-              )}
+            {/* The minutes as INFORMATION, the way the Purchase portal shows them.
+                This was an embedded PDF in a zoomable grey viewer — a page image
+                that does not reflow on a phone and cannot be searched by the
+                person who has to act on it. The PDF is still one click away, for
+                the two things a PDF is actually for. */}
+            <div style={{ padding: '4px 2px' }}>
+              <KickoffMomReview mom={mom} />
             </div>
           </div>
 
@@ -655,7 +718,7 @@ function getImageUrl(url) {
 }
 
 // ── Step 2 — Profile form ────────────────────────────────────────────────────
-function StepProfile({ onboarding, editable, onSaved, onBack, onContinue, api, user }) {
+function StepProfile({ onboarding, editable, onSaved, onBack, onContinue, registerFlush, api, user }) {
   const getInitialProfile = useCallback(() => {
     const p = onboarding?.profile || {}
     const v = onboarding?.vendor || {}
@@ -737,6 +800,11 @@ function StepProfile({ onboarding, editable, onSaved, onBack, onContinue, api, u
   const [errs, setErrs] = useState({})
   const [saving, setSaving] = useState(false)
   const [saved, setSaved]   = useState(false)
+  // One line at the top of a long form saying what is wrong, so a red border on
+  // a box three screens down is not the only signal that the button did nothing.
+  const [summary, setSummary] = useState(null)
+  // What a draft save could not store yet. Not a failure — a note.
+  const [skipped, setSkipped] = useState({})
 
   useEffect(() => {
     const init = getInitialProfile()
@@ -746,7 +814,13 @@ function StepProfile({ onboarding, editable, onSaved, onBack, onContinue, api, u
     }
   }, [getInitialProfile])
 
-  const set = (k) => (e) => { setF(p => ({ ...p, [k]: e.target.value })); setErrs(x => ({ ...x, [k]: undefined })); setSaved(false) }
+  // Has anything been typed since the last successful save? Read by the flush
+  // below, which runs from a callback registered once — so it must be a ref,
+  // not state it would have closed over stale.
+  const dirty = useRef(false)
+  const markDirty = () => { dirty.current = true; setSaved(false) }
+
+  const set = (k) => (e) => { setF(p => ({ ...p, [k]: e.target.value })); setErrs(x => ({ ...x, [k]: undefined })); markDirty() }
 
   const handlePhotoChange = (e) => {
     const file = e.target.files?.[0]
@@ -768,7 +842,7 @@ function StepProfile({ onboarding, editable, onSaved, onBack, onContinue, api, u
     const reader = new FileReader()
     reader.onload = (evt) => {
       setF(p => ({ ...p, profile_photo: evt.target.result }))
-      setSaved(false)
+      markDirty()
     }
     reader.readAsDataURL(file)
   }
@@ -776,29 +850,84 @@ function StepProfile({ onboarding, editable, onSaved, onBack, onContinue, api, u
   const handleRemovePhoto = () => {
     setF(p => ({ ...p, profile_photo: '' }))
     setErrs(p => ({ ...p, profile_photo: undefined }))
-    setSaved(false)
+    markDirty()
   }
+
+  /**
+   * Send whatever has been entered. No client-side gate — see saveDraft.
+   *
+   * A cleared box is sent as null rather than dropped. The server MERGES what
+   * arrives onto the stored profile, so a dropped key reads as "leave it as it
+   * was" — which made deleting a value impossible: it came back on the next
+   * load. Every rule on this form is `nullable`, so null says "empty" honestly.
+   */
+  const persist = async (draft = false) => {
+    const normalised = { ...f,
+      gst_number: f.gst_number ? f.gst_number.toUpperCase() : '',
+      pan_number: f.pan_number ? f.pan_number.toUpperCase() : '',
+      bank_ifsc:  f.bank_ifsc ? f.bank_ifsc.toUpperCase() : '' }
+    const payload = Object.fromEntries(
+      Object.entries(normalised).map(([k, v]) => [k, v === '' || v === undefined ? null : v]),
+    )
+    const res = await api.onboarding.saveProfile(onboarding.id, payload, draft)
+    dirty.current = false
+    setSkipped(res?.skipped || {})
+
+    const updatedProfile = res?.onboarding?.profile || res?.data?.onboarding?.profile || res?.profile
+    if (updatedProfile?.profile_photo) {
+      setF(p => ({ ...p, profile_photo: updatedProfile.profile_photo }))
+    }
+    return res
+  }
+
+  /**
+   * Keep the half-filled form when the vendor moves to another step.
+   *
+   * Deliberately WITHOUT validateProfile: a half-filled form is exactly what
+   * this is for, and refusing to store it because it is half-filled is the
+   * behaviour being fixed.
+   *
+   * Sent as a DRAFT, which is the part that was missing: the profile's bank block
+   * carries `required_with` both ways, so an account number typed without its
+   * IFSC made the whole save a 422 — swallowed right here, so the vendor came
+   * back to a step with everything else they had typed gone. On the draft path
+   * the server stores every field that stands on its own and names the rest.
+   */
+  const saveDraft = async () => {
+    if (!editable || !dirty.current) return false
+    try {
+      await persist(true)
+      return true
+    } catch {
+      // Still not a reason to trap somebody on a step; the strict save reports it.
+      return false
+    }
+  }
+
+  // Registered once, and read through refs, so the flush the wizard calls is
+  // always looking at what is on screen now.
+  const draftRef = useRef(saveDraft)
+  draftRef.current = saveDraft
+  useEffect(() => {
+    registerFlush?.(() => draftRef.current())
+    return () => registerFlush?.(null)
+  }, [registerFlush])
 
   const save = async (navigateNext = false) => {
     const e = validateProfile(f, acctConfirm)
     setErrs(e)
-    if (Object.keys(e).length > 0) return false
+    setSummary(null)
+    if (Object.keys(e).length > 0) {
+      // This form is long enough that the offending box is usually scrolled off
+      // screen. Marking it red and saying nothing else looked like the button
+      // simply did nothing, so what is wrong is also said at the top.
+      setSummary(summarise(e))
+      return false
+    }
 
     setSaving(true)
     try {
-      // Normalise identifiers, then drop empties so the stored profile stays clean.
-      const normalised = { ...f,
-        gst_number: f.gst_number ? f.gst_number.toUpperCase() : '',
-        pan_number: f.pan_number ? f.pan_number.toUpperCase() : '',
-        bank_ifsc:  f.bank_ifsc ? f.bank_ifsc.toUpperCase() : '' }
-      const payload = Object.fromEntries(Object.entries(normalised).filter(([, v]) => v !== '' && v !== null))
-      const res = await api.onboarding.saveProfile(onboarding.id, payload)
-      
-      const updatedProfile = res?.onboarding?.profile || res?.data?.onboarding?.profile || res?.profile
-      if (updatedProfile?.profile_photo) {
-        setF(p => ({ ...p, profile_photo: updatedProfile.profile_photo }))
-      }
-
+      await persist()
       setSaved(true)
 
       if (navigateNext && onContinue) {
@@ -808,15 +937,15 @@ function StepProfile({ onboarding, editable, onSaved, onBack, onContinue, api, u
 
       return true
     } catch (err) {
-      if (err?.response?.data?.errors) {
-        const backendErrs = {}
-        Object.entries(err.response.data.errors).forEach(([k, v]) => {
-          const key = k.replace(/^profile\./, '')
-          backendErrs[key] = Array.isArray(v) ? v[0] : v
-        })
-        setErrs(backendErrs)
+      // The server's headline for a 422 is always the words "Validation failed",
+      // which name nothing. The per-field detail is read first and shown against
+      // the boxes themselves, with a summary at the top of the form.
+      const { map, list, summary: line } = readFieldErrors(err, 'profile.')
+      if (list.length) {
+        setErrs(map)
+        setSummary(summarise(map))
       } else {
-        alert(err?.response?.data?.message || 'Failed to save profile')
+        setSummary(line)
       }
       return false
     } finally {
@@ -829,6 +958,9 @@ function StepProfile({ onboarding, editable, onSaved, onBack, onContinue, api, u
       <TextInput value={f[key]} onChange={set(key)} disabled={!editable}
         style={errs[key] ? { borderColor: '#ef4444' } : undefined} {...props} />
       {errs[key] && <div style={{ color: '#ef4444', fontSize: 11, marginTop: 3 }}>{errs[key]}</div>}
+      {!errs[key] && skipped[key] && (
+        <div style={{ color: '#d97706', fontSize: 11, marginTop: 3 }}>Not saved yet — {skipped[key]}</div>
+      )}
     </Field>
   )
 
@@ -841,6 +973,30 @@ function StepProfile({ onboarding, editable, onSaved, onBack, onContinue, api, u
         </button>
       )}>
       {!editable && <InfoBox>This onboarding is no longer editable — the profile is shown read-only.</InfoBox>}
+
+      {/* Why the save did not go through, at the top, where it is read. */}
+      {summary && (
+        <div role="alert" style={{ margin: '0 0 14px', padding: '10px 12px', borderRadius: 9, border: '1px solid #ef4444', background: 'rgba(239,68,68,.08)', color: '#ef4444', fontSize: 12.5, fontWeight: 600 }}>
+          {summary}
+          {Object.values(errs).filter(Boolean).length > 1 && (
+            <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontWeight: 500 }}>
+              {Object.entries(errs).filter(([, v]) => v).map(([k, v]) => (
+                <li key={k}>{prettyField(k)}: {v}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* A draft kept what stood on its own; these still need finishing. */}
+      {!summary && Object.keys(skipped).length > 0 && (
+        <div role="status" style={{ margin: '0 0 14px', padding: '10px 12px', borderRadius: 9, border: '1px solid #d97706', background: 'rgba(217,119,6,.08)', color: '#b45309', fontSize: 12.5, fontWeight: 600 }}>
+          Your draft was saved. {Object.keys(skipped).length === 1 ? 'One field is' : `${Object.keys(skipped).length} fields are`} still unfinished and {Object.keys(skipped).length === 1 ? 'was' : 'were'} not stored:
+          <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontWeight: 500 }}>
+            {Object.entries(skipped).map(([k, v]) => <li key={k}>{v}</li>)}
+          </ul>
+        </div>
+      )}
 
       <ProfileSection title="Personal Information">
         {/* Circular Avatar Preview */}
@@ -1048,1094 +1204,79 @@ function ProfileSection({ title, children }) {
   )
 }
 
-// ── Steps 3 & 4 — Document checklist grid ────────────────────────────────────
-// ── Steps 3 & 4 — Document checklist grid ────────────────────────────────────
-// ── Steps 3 & 4 — Document checklist grid ────────────────────────────────────
-// ── Step 3 — Statutory Documents Upload (Enterprise Experience) ─────────────
-const DOC_CATEGORIES = {
-  company_registration: 'Company Documents',
-  company_pan: 'Company Documents',
-  gst: 'Company Documents',
-  udyam_certificate: 'Company Documents',
-  shop_act: 'Company Documents',
+// ── Steps 3 & 4 — Statutory documents ────────────────────────────
 
-  insurance_wcp: 'Compliance Documents',
-  pf_no: 'Compliance Documents',
-  esic_no: 'Compliance Documents',
-  bocw_registration: 'Compliance Documents',
-  clr: 'Compliance Documents',
-  mlwf: 'Compliance Documents',
-  mscb: 'Compliance Documents',
-  labour_license: 'Compliance Documents',
-
-  loi_wo_po: 'Financial Documents',
-  bank_proof: 'Financial Documents',
-  cancelled_cheque: 'Financial Documents',
-
-  subcontractor_decl: 'Other Documents',
-  other: 'Other Documents',
-}
-
-const STANDARD_REQUIRED_DOCS = [
-  { type: 'company_registration', label: 'Company Registration Certificate', required: true },
-  { type: 'company_pan', label: 'Company PAN Card', required: true },
-  { type: 'insurance_wcp', label: 'Insurance [WCP]', required: true },
-  { type: 'gst', label: 'GST Certificate', required: true },
-  { type: 'pf_no', label: 'PF Registration', required: true },
-  { type: 'esic_no', label: 'ESIC Registration', required: true },
-  { type: 'bocw_registration', label: 'BOCW Registration', required: true },
-  { type: 'clr', label: 'CLR [Contract Labour Registration]', required: true },
-  { type: 'mlwf', label: 'MLWF [Maharashtra Labour Welfare]', required: true },
-  { type: 'mscb', label: 'MSCB Certificate', required: true },
-  { type: 'udyam_certificate', label: 'Udyam Certificate', required: true },
-  { type: 'other', label: 'Other Document (Optional)', required: false },
-  { type: 'subcontractor_decl', label: 'Subcontractor Declaration (Optional)', required: false },
-]
-
-const COMPLIANCE_PROVIDERS = [
-  {
-    id: 'business_badhega',
-    name: 'BusinessBadhega.com',
-    desc: 'Registration & compliance experts',
-    badge: 'Recommended',
-    badgeTone: 'orange',
-    logoBg: 'linear-gradient(135deg, #f97316, #ea580c)',
-    logoText: 'BB',
-  },
-  {
-    id: 'legaldesk',
-    name: 'LegalDesk',
-    desc: 'Legal documentation & CA services',
-    badge: 'New',
-    badgeTone: 'green',
-    logoBg: 'linear-gradient(135deg, #10b981, #059669)',
-    logoText: 'LD',
-  },
-  {
-    id: 'vakilsearch',
-    name: 'VakilSearch',
-    desc: 'CA & CS assisted registrations',
-    badge: 'Partner',
-    badgeTone: 'purple',
-    logoBg: 'linear-gradient(135deg, #7C3AED, #5b21b6)',
-    logoText: 'VS',
-  },
-]
-
-function getDocCategory(type) {
-  return DOC_CATEGORIES[type] || 'Company Documents'
-}
-
+/**
+ * Step 3 (vendor uploads) and step 4 (admin reviews) — one panel, both engines.
+ *
+ * This step used to be a thousand lines living here, and Purchase had its own
+ * flat list somewhere else. Two implementations of the same screen is how every
+ * Purchase document defect this month started, so the whole thing now lives in
+ * VendorDocumentsPanel and the engine is expressed as data: an api and a
+ * catalog. What TPV shows and what Purchase shows cannot drift again, because
+ * there is only one of them.
+ *
+ * Nothing was dropped in the move — grouping, search, status filters, sorting,
+ * drag-and-drop, preview, version history, delete, the rejection rationale, the
+ * sample download and the provider directory all came across. Two things were
+ * fixed on the way: approved and rejected rows had opaque light backgrounds
+ * (#f0fdf4 / #fef2f2) under var(--text-h), which in dark mode is #edeaf8 — so
+ * the rows a vendor most needed to read were the two they could not; and errors
+ * were reported through alert() rather than on the page.
+ */
 function StepDocuments({ checklist, vendorId, onboarding, editable, manage, admin, reviewMode, onChanged, onBack, onContinue, api, user }) {
-  const [busy, setBusy]                 = useState(null)
-  const [uploadProgress, setProgressVal]= useState(0)
-  const [reviewing, setRev]             = useState(null)
-  const [autoRefresh, setAutoRefresh]   = useState(true)
-  const [historyDoc, setHistoryDoc]     = useState(null)
-  const [previewDoc, setPreviewDoc]     = useState(null)
-  const [selectedProviderReq, setSelectedProviderReq] = useState(null) // { provider, docRow }
-  const [providerSections, setProviderSections]       = useState({}) // { [docType]: boolean }
-  const [providerSearch, setProviderSearch]           = useState({}) // { [docType]: string }
-  const [stagedFiles, setStagedFiles]     = useState({}) // { [docType]: string }
-  const [submittedRequests, setSubmittedRequests]     = useState([])
-  const [searchQuery, setSearchQuery]   = useState('')
-  const [statusFilter, setStatusFilter] = useState('ALL')
-  const [sortBy, setSortBy]             = useState('STATUS')
-  const [openSections, setOpenSections] = useState({
-    'Company Documents': true,
-    'Compliance Documents': true,
-    'Financial Documents': true,
-    'Other Documents': true,
-  })
-
-  const inputs = useRef({})
-
-  const s = checklist?.summary || {}
-  const backendRows = checklist?.required || []
-  const complete = !!checklist?.complete
-
-  // Combine backend rows with standard documents list
-  const rawRowsMap = new Map(backendRows.map(r => [r.type, r]))
-  const rawRows = STANDARD_REQUIRED_DOCS.map(def => {
-    const existing = rawRowsMap.get(def.type)
-    if (existing) {
-      return {
-        ...existing,
-        type_label: def.label,
-        required: true,
-      }
-    }
-    return {
-      type: def.type,
-      type_label: def.label,
-      required: false, // Optional for this vendor type
-      uploaded: false,
-      status: 'missing',
-      original_name: null,
-      document_id: null,
-    }
-  })
-
-  // Append any extra backend documents not in standard list
-  backendRows.forEach(r => {
-    if (!STANDARD_REQUIRED_DOCS.some(d => d.type === r.type)) {
-      rawRows.push({ ...r, required: true })
-    }
-  })
-
-  const totalRequired = s.required || rawRows.filter(r => r.required).length || 0
-  const totalUploaded = s.uploaded || rawRows.filter(r => r.required && (r.uploaded || stagedFiles[r.type])).length || 0
-  const totalApproved = s.approved || rawRows.filter(r => r.status === DOC_STATUS.APPROVED).length || 0
-  const totalPending  = s.pending  || rawRows.filter(r => (r.uploaded || stagedFiles[r.type]) && r.status !== DOC_STATUS.APPROVED && r.status !== DOC_STATUS.REJECTED).length || 0
-  const totalRejected = s.rejected || rawRows.filter(r => r.status === DOC_STATUS.REJECTED).length || 0
-  const totalMissing  = Math.max(0, totalRequired - totalUploaded)
-  const pct           = s.progress_percent ?? (totalRequired ? Math.round((totalApproved / totalRequired) * 100) : 0)
-
-  useEffect(() => {
-    if (!reviewMode || !autoRefresh) return undefined
-    const id = setInterval(() => {
-      if (document.hidden || busy || reviewing) return
-      onChanged()
-    }, 15000)
-    return () => clearInterval(id)
-  }, [reviewMode, autoRefresh, busy, reviewing]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const pickFile = (type) => inputs.current[type]?.click()
-
-  const onFile = async (row, file) => {
-    if (!file) return
-    const ext = (file.name || '').split('.').pop().toLowerCase()
-    const allowed = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx']
-    if (!allowed.includes(ext)) {
-      alert(`Invalid file format .${ext}. Allowed formats: PDF, JPG, JPEG, PNG, DOC, DOCX`)
-      return
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      alert('File size exceeds the maximum limit of 10 MB.')
-      return
-    }
-
-    setStagedFiles(prev => ({ ...prev, [row.type]: file.name }))
-    setBusy(row.type)
-    setProgressVal(30)
-    const pTimer = setInterval(() => {
-      setProgressVal(p => (p < 90 ? p + 20 : p))
-    }, 200)
-
-    try {
-      if (row.document_id && row.status === DOC_STATUS.REJECTED) {
-        await api.documents.resubmit(row.document_id, file)
-      } else {
-        await api.documents.upload(vendorId, row.type, file)
-      }
-      setProgressVal(100)
-      onChanged()
-    } catch (e) {
-      alert(e?.response?.data?.message || 'Upload failed')
-    } finally {
-      clearInterval(pTimer)
-      setTimeout(() => {
-        setBusy(null)
-        setProgressVal(0)
-      }, 400)
-    }
-  }
-
-  const handleDrop = (e, row) => {
-    e.preventDefault()
-    if (!editable || row.status === DOC_STATUS.APPROVED) return
-    const file = e.dataTransfer?.files?.[0]
-    if (file) onFile(row, file)
-  }
-
-  const viewPreview = async (row) => {
-    try {
-      const url = await api.documents.open(row.document_id)
-      const ext = (row.original_name || '').split('.').pop().toLowerCase()
-      if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
-        setPreviewDoc({ url, name: row.type_label, ext, type: 'image' })
-      } else if (ext === 'pdf') {
-        setPreviewDoc({ url, name: row.type_label, ext, type: 'pdf' })
-      } else {
-        window.open(url, '_blank')
-      }
-    } catch {
-      alert('Could not open document preview.')
-    }
-  }
-
-  const del = async (row) => {
-    if (!confirm(`Remove the uploaded ${row.type_label}?`)) return
-    try {
-      await api.documents.delete(row.document_id)
-      onChanged()
-    } catch (e) {
-      alert(e?.response?.data?.message || 'Delete failed')
-    }
-  }
-
-  const runReview = async (remarks) => {
-    const { row, decision } = reviewing
-    try {
-      await api.documents.review(row.document_id, decision, remarks)
-      setRev(null)
-      onChanged()
-    } catch (e) {
-      alert(e?.response?.data?.message || 'Review failed')
-    }
-  }
-
-  const handleDownloadSample = () => {
-    const sampleContent = "Subcontractor Declaration Sample Document Content"
-    const blob = new Blob([sampleContent], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'Subcontractor_Declaration_Sample.docx'
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  const toggleSection = (category) => {
-    setOpenSections(prev => ({ ...prev, [category]: !prev[category] }))
-  }
-
-  const toggleProviderSection = (docType) => {
-    setProviderSections(prev => ({ ...prev, [docType]: !prev[docType] }))
-  }
-
-  // Filter & Search Logic
-  const filteredRows = rawRows.filter(row => {
-    const matchesSearch = row.type_label.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (row.original_name && row.original_name.toLowerCase().includes(searchQuery.toLowerCase()))
-
-    let matchesStatus = true
-    if (statusFilter === 'APPROVED') matchesStatus = row.status === DOC_STATUS.APPROVED
-    else if (statusFilter === 'PENDING') matchesStatus = row.uploaded && row.status !== DOC_STATUS.APPROVED && row.status !== DOC_STATUS.REJECTED
-    else if (statusFilter === 'REJECTED') matchesStatus = row.status === DOC_STATUS.REJECTED
-    else if (statusFilter === 'MISSING') matchesStatus = !row.uploaded && row.status !== DOC_STATUS.APPROVED
-
-    return matchesSearch && matchesStatus
-  })
-
-  // Sort Logic
-  const sortedRows = [...filteredRows].sort((a, b) => {
-    if (sortBy === 'NAME') return a.type_label.localeCompare(b.type_label)
-    if (sortBy === 'STATUS') {
-      const rank = (status, uploaded) => {
-        if (status === DOC_STATUS.REJECTED) return 1
-        if (!uploaded) return 2
-        if (status !== DOC_STATUS.APPROVED) return 3
-        return 4
-      }
-      return rank(a.status, a.uploaded) - rank(b.status, b.uploaded)
-    }
-    return 0
-  })
-
-  // Group by category
-  const groupedCategories = ['Company Documents', 'Compliance Documents', 'Financial Documents', 'Other Documents'].reduce((acc, cat) => {
-    acc[cat] = sortedRows.filter(r => getDocCategory(r.type) === cat)
-    return acc
-  }, {})
-
   return (
     <Panel
       title={reviewMode ? 'Document Verification Review' : 'Upload Legal Documents'}
-      sub={reviewMode ? 'Approve or reject each submitted vendor compliance document' : `Upload each required document · ${rawRows.length} Documents`}
+      sub={reviewMode
+        ? 'Approve or reject each submitted vendor compliance document'
+        : 'Upload each required document — they are reviewed one by one'}
     >
-      {reviewMode && !admin && <InfoBox>Only an admin can approve or reject documents. You can see live review status here.</InfoBox>}
-      {!reviewMode && !editable && <InfoBox>This onboarding is locked — documents can no longer be changed.</InfoBox>}
-
-      {/* Document Upload Guidelines Banner */}
-      <div style={{
-        background: 'linear-gradient(135deg, rgba(59,130,246,0.06), rgba(147,51,234,0.06))',
-        border: '1px solid rgba(59,130,246,0.2)', borderRadius: 12, padding: 16, marginBottom: 20
-      }}>
-        <h4 style={{ margin: '0 0 6px', fontSize: 14, fontWeight: 800, color: 'var(--text-h)', display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Info size={16} style={{ color: '#3b82f6' }} /> Document Upload Guidelines
-        </h4>
-        <p style={{ margin: '0 0 4px', fontSize: 12.5, color: 'var(--text-muted)' }}>
-          Accepted formats: <strong>PDF, JPG, JPEG, PNG</strong> — Max 10MB per file.
-        </p>
-        <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)' }}>
-          Fields marked <span style={{ color: '#ef4444', fontWeight: 800 }}>*</span> are mandatory. Don't have a document? Click <strong>"Don't have this document?"</strong> under any field to connect with a provider.
-        </p>
-      </div>
-
-      {/* Live Upload Progress Notification */}
-      {busy && (
-        <div style={{ marginBottom: 16, padding: '12px 16px', borderRadius: 10, background: 'rgba(14,165,233,0.1)', border: '1px solid #0ea5e9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: '#0284c7', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-            <Loader size={15} /> Uploading documents... {uploadProgress}%
-          </span>
-          <div style={{ width: 140, height: 6, borderRadius: 999, background: 'rgba(14,165,233,0.2)', overflow: 'hidden' }}>
-            <div style={{ width: `${uploadProgress}%`, height: '100%', background: '#0284c7', transition: 'width 0.2s' }} />
-          </div>
-        </div>
-      )}
-
-      {/* Top Enterprise Summary Card */}
-      <div style={{
-        background: 'linear-gradient(135deg, rgba(30,27,75,0.04), rgba(124,58,237,0.06))',
-        border: '1px solid var(--border)', borderRadius: 16, padding: 20, marginBottom: 24,
-        boxShadow: '0 4px 16px rgba(0,0,0,0.03)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 12 }}>
-          <div>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-h)' }}>Document Progress Overview</h3>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{totalApproved} of {totalRequired} Mandatory Documents Approved ({pct}%)</span>
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <ReviewStat label="Required" value={totalRequired} color="#7C3AED" />
-            <ReviewStat label="Uploaded" value={totalUploaded} color="#0ea5e9" />
-            <ReviewStat label="Approved" value={totalApproved} color="#10b981" />
-            <ReviewStat label="Pending" value={totalPending} color="#f59e0b" />
-            <ReviewStat label="Rejected" value={totalRejected} color="#ef4444" />
-            <ReviewStat label="Missing" value={totalMissing} color="#6b7280" />
-          </div>
-        </div>
-
-        {/* Progress Bar */}
-        <div style={{ height: 10, borderRadius: 999, background: 'var(--bg-input)', overflow: 'hidden', border: '1px solid var(--border)' }}>
+      <VendorDocumentsPanel
+        api={api.documents}
+        catalog={TPV_DOC_CATALOG}
+        vendorId={vendorId}
+        checklist={checklist}
+        onboarding={onboarding}
+        user={user}
+        editable={editable}
+        manage={manage}
+        admin={admin}
+        reviewMode={reviewMode}
+        onChanged={onChanged}
+        footer={({ complete }) => (
           <div style={{
-            width: `${pct}%`, height: '100%',
-            background: 'linear-gradient(90deg, #0ea5e9, #10b981)',
-            borderRadius: 999, transition: 'width 0.4s ease'
-          }} />
-        </div>
-      </div>
-
-      {/* Search, Filter & Sort Controls */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flex: 1, minWidth: 260 }}>
-          <input
-            type="text"
-            placeholder="Search documents by name or file..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            style={{
-              padding: '8px 14px', borderRadius: 9, border: '1px solid var(--border)',
-              background: 'var(--bg-input)', color: 'var(--text-h)', fontSize: 12.5, flex: 1, outline: 'none'
-            }}
-          />
-        </div>
-
-        {/* Status Filter Pills */}
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {['ALL', 'APPROVED', 'PENDING', 'REJECTED', 'MISSING'].map(st => (
+            marginTop: 22, paddingTop: 16, borderTop: '1px solid var(--border)',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12,
+          }}>
+            {onBack
+              ? <button type="button" onClick={onBack} style={wizardGhostBtn}><ArrowLeft size={15} /> Back</button>
+              : <span />}
             <button
-              key={st}
-              onClick={() => setStatusFilter(st)}
+              type="button"
+              onClick={onContinue}
+              disabled={reviewMode && !complete}
               style={{
-                padding: '6px 12px', borderRadius: 8, fontSize: 11.5, fontWeight: 700,
-                border: statusFilter === st ? 'none' : '1px solid var(--border)',
-                background: statusFilter === st ? 'linear-gradient(135deg,#7C3AED,#5b21b6)' : 'var(--bg-card)',
-                color: statusFilter === st ? '#fff' : 'var(--text-muted)', cursor: 'pointer'
+                display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 24px', borderRadius: 10,
+                border: 'none', color: '#fff', fontWeight: 800, fontSize: 13,
+                background: (!reviewMode || complete) ? 'linear-gradient(135deg,#7C3AED,#5b21b6)' : 'rgba(124,58,237,0.35)',
+                cursor: (!reviewMode || complete) ? 'pointer' : 'not-allowed',
+                opacity: (!reviewMode || complete) ? 1 : 0.75,
               }}
             >
-              {st.charAt(0) + st.slice(1).toLowerCase()}
+              Continue <ArrowRight size={15} />
             </button>
-          ))}
-        </div>
-
-        {/* Sort Select */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>Sort:</span>
-          <select
-            value={sortBy}
-            onChange={e => setSortBy(e.target.value)}
-            style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-h)', fontSize: 12 }}
-          >
-            <option value="STATUS">Priority / Status</option>
-            <option value="NAME">Document Name</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Grouped Accordions */}
-      {Object.entries(groupedCategories).map(([category, items]) => {
-        if (items.length === 0) return null
-        const isOpen = openSections[category]
-        const catApproved = items.filter(i => i.status === DOC_STATUS.APPROVED).length
-
-        return (
-          <div key={category} style={{ marginBottom: 18, border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden', background: 'var(--bg-card)' }}>
-            {/* Category Header */}
-            <div
-              onClick={() => toggleSection(category)}
-              style={{
-                display: 'flex', alignItems: 'center', justify: 'space-between', padding: '14px 18px',
-                background: 'var(--bg-input)', cursor: 'pointer', userSelect: 'none'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <FileText size={18} style={{ color: '#7C3AED' }} />
-                <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-h)' }}>{category}</span>
-                <span style={{ fontSize: 11.5, fontWeight: 700, background: 'rgba(124,58,237,0.12)', color: '#7C3AED', padding: '2px 8px', borderRadius: 12 }}>
-                  {catApproved} / {items.length} Approved
-                </span>
-              </div>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>
-                {isOpen ? 'Collapse ▲' : 'Expand ▼'}
-              </span>
-            </div>
-
-            {/* Category Body Card Items */}
-            {isOpen && (
-              <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
-                {items.map(row => {
-                  const fileNameDisplay = row.original_name || stagedFiles[row.type] || null
-                  const isUploadedOrStaged = row.uploaded || !!stagedFiles[row.type]
-                  const statusLabel = isUploadedOrStaged && (row.status === 'missing' || !row.status) ? DOC_STATUS.UPLOADED : row.status
-                  const cfg = docStatusCfg(statusLabel)
-                  const isBusy = busy === row.type
-                  const approved = row.status === DOC_STATUS.APPROVED
-                  const rejected = row.status === DOC_STATUS.REJECTED
-                  const provReq  = submittedRequests.find(r => r.docType === row.type)
-
-                  return (
-                    <div
-                      key={row.type}
-                      style={{
-                        padding: 18, borderRadius: 14, border: `1.5px solid ${rejected ? '#fecaca' : approved ? '#a7f3d0' : 'var(--border)'}`,
-                        background: rejected ? '#fef2f2' : approved ? '#f0fdf4' : 'var(--bg-card)',
-                        boxShadow: '0 2px 10px rgba(0,0,0,0.02)'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'flex-start', justify: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-                        {/* Title & Badges */}
-                        <div style={{ flex: 1, minWidth: 260 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-h)' }}>
-                              {row.type_label} {row.required && <span style={{ color: '#ef4444', fontWeight: 800 }}>*</span>}
-                            </span>
-                            {row.required ? (
-                              <span style={{ fontSize: 10, fontWeight: 800, color: '#ef4444', border: '1px solid #fca5a5', padding: '1px 6px', borderRadius: 6, background: '#fef2f2' }}>Required</span>
-                            ) : (
-                              <span style={{ fontSize: 10, fontWeight: 700, color: '#6b7280', border: '1px solid var(--border)', padding: '1px 6px', borderRadius: 6 }}>Optional</span>
-                            )}
-                            <StatusPill cfg={cfg} />
-                          </div>
-
-                          {/* Drag & Drop Upload Dropzone Box */}
-                          {!reviewMode && editable && !approved && (
-                            <div
-                              onDragOver={e => e.preventDefault()}
-                              onDrop={e => handleDrop(e, row)}
-                              style={{
-                                marginTop: 12, padding: '14px 16px', borderRadius: 10,
-                                border: '2px dashed var(--border)', background: 'var(--bg-input)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap'
-                              }}
-                            >
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <Upload size={18} style={{ color: '#7C3AED' }} />
-                                <div>
-                                  <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-h)' }}>
-                                    Drag &amp; Drop file here or
-                                  </div>
-                                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
-                                    {fileNameDisplay ? `Selected: ${fileNameDisplay}` : 'No file selected (Max 10 MB — PDF, JPG, PNG)'}
-                                  </div>
-                                </div>
-                              </div>
-
-                              <button
-                                type="button"
-                                onClick={() => pickFile(row.type)}
-                                disabled={isBusy}
-                                style={{
-                                  padding: '7px 14px', borderRadius: 8, background: '#7C3AED', color: '#fff',
-                                  border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6
-                                }}
-                              >
-                                {isBusy ? 'Uploading...' : 'Choose File'}
-                              </button>
-                            </div>
-                          )}
-
-                          {/* Uploaded File Metadata Display */}
-                          {fileNameDisplay && (
-                            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <FileText size={14} style={{ color: '#10b981' }} />
-                              <span>Uploaded file: <strong>{fileNameDisplay}</strong></span>
-                              <span style={{ fontSize: 11, background: '#e0f2fe', color: '#0369a1', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>Status: Uploaded</span>
-                            </div>
-                          )}
-
-                          {/* Provider Request Status Pill Banner */}
-                          {provReq && (
-                            <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: '#fff7ed', border: '1px solid #fed7aa', fontSize: 12, color: '#c2410c', display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <Clock size={14} /> Provider Callback Requested ({provReq.providerName}) — Status: Pending
-                            </div>
-                          )}
-
-                          {/* Subcontractor Declaration Sample Download Box */}
-                          {row.type === 'subcontractor_decl' && (
-                            <div style={{ marginTop: 10, padding: '10px 14px', borderRadius: 8, background: 'rgba(124,58,237,0.06)', border: '1px dashed #a78bfa', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-                              <span style={{ fontSize: 12, color: 'var(--text-h)', fontWeight: 600 }}>Download the sample, fill it in, and upload the signed copy.</span>
-                              <button
-                                type="button"
-                                onClick={handleDownloadSample}
-                                style={{
-                                  padding: '6px 14px', borderRadius: 8, background: 'linear-gradient(135deg,#7C3AED,#5b21b6)', color: '#fff',
-                                  border: 'none', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6
-                                }}
-                              >
-                                <Download size={13} /> Download Sample (.docx)
-                              </button>
-                            </div>
-                          )}
-
-                          {/* Don't have this document? Small Pill Button */}
-                          {!approved && (
-                            <div style={{ marginTop: 10 }}>
-                              <button
-                                type="button"
-                                onClick={() => toggleProviderSection(row.type)}
-                                style={{
-                                  display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px',
-                                  borderRadius: 20, border: '1px solid #cbd5e1', background: providerSections[row.type] ? '#eff6ff' : 'var(--bg-card)',
-                                  color: providerSections[row.type] ? '#1d4ed8' : 'var(--text-muted)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer'
-                                }}
-                              >
-                                <HelpCircle size={13} /> Don't have this document? {providerSections[row.type] ? '▲' : '▼'}
-                              </button>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Actions Toolbar */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                          <input
-                            type="file"
-                            accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                            style={{ display: 'none' }}
-                            ref={el => { inputs.current[row.type] = el }}
-                            onChange={e => { onFile(row, e.target.files?.[0]); e.target.value = '' }}
-                          />
-
-                          {/* Admin Review Action Buttons */}
-                          {reviewMode && admin && row.uploaded && !approved && (
-                            <>
-                              <MiniBtn onClick={() => setRev({ row, decision: 'approve' })} color="#10b981" icon={CheckCircle}>Approve</MiniBtn>
-                              <MiniBtn onClick={() => setRev({ row, decision: 'reject' })} color="#ef4444" icon={XCircle}>Reject</MiniBtn>
-                            </>
-                          )}
-
-                          {/* Upload / Choose file Button */}
-                          {!reviewMode && editable && !approved && (
-                            <MiniBtn onClick={() => pickFile(row.type)} color={rejected ? '#f59e0b' : '#7C3AED'} icon={rejected ? RotateCcw : Upload} disabled={isBusy}>
-                              {isBusy ? 'Uploading...' : rejected ? 'Upload New Version' : isUploadedOrStaged ? 'Replace File' : 'Browse File'}
-                            </MiniBtn>
-                          )}
-
-                          {/* View Preview Button */}
-                          {row.uploaded && (
-                            <MiniBtn onClick={() => viewPreview(row)} color="var(--text-muted)" icon={Eye} border>View / Download</MiniBtn>
-                          )}
-
-                          {/* History Button */}
-                          {row.uploaded && row.document_id && (
-                            <MiniBtn onClick={() => setHistoryDoc(row.document_id)} color="var(--text-muted)" icon={History} border>History</MiniBtn>
-                          )}
-
-                          {/* Delete Button */}
-                          {!reviewMode && editable && row.uploaded && !approved && (
-                            <MiniBtn onClick={() => del(row)} color="#ef4444" icon={Trash2} border />
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Rejected Banner Alert */}
-                      {rejected && row.remarks && (
-                        <div style={{ marginTop: 12, padding: 10, borderRadius: 8, background: '#fee2e2', border: '1px solid #fca5a5', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                          <AlertTriangle size={15} style={{ color: '#dc2626', flexShrink: 0, marginTop: 1 }} />
-                          <div style={{ fontSize: 12, color: '#991b1b' }}>
-                            <strong>Rejection Rationale:</strong> {row.remarks}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* SERVICE PROVIDERS Expanded Section Card */}
-                      {providerSections[row.type] && (
-                        <div style={{
-                          marginTop: 14, padding: 16, borderRadius: 12, border: '1px solid #e2e8f0',
-                          background: '#f8fafc', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)'
-                        }}>
-                          {/* Header */}
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                            <span style={{ fontSize: 12, fontWeight: 900, letterSpacing: '0.05em', color: '#334155' }}>SERVICE PROVIDERS</span>
-                            <span style={{ fontSize: 10.5, fontWeight: 700, color: '#64748b', background: '#e2e8f0', padding: '2px 8px', borderRadius: 10 }}>powered by our network</span>
-                          </div>
-
-                          {/* Search Box */}
-                          <div style={{ marginBottom: 12 }}>
-                            <input
-                              type="text"
-                              placeholder="Search providers..."
-                              value={providerSearch[row.type] || ''}
-                              onChange={e => setProviderSearch(prev => ({ ...prev, [row.type]: e.target.value }))}
-                              style={{
-                                width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #cbd5e1',
-                                background: '#ffffff', color: '#1e293b', fontSize: 12, outline: 'none'
-                              }}
-                            />
-                          </div>
-
-                          {/* Provider Cards List */}
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            {COMPLIANCE_PROVIDERS.filter(pr => pr.name.toLowerCase().includes((providerSearch[row.type] || '').toLowerCase()) || pr.desc.toLowerCase().includes((providerSearch[row.type] || '').toLowerCase())).map(pr => (
-                              <div
-                                key={pr.id}
-                                onClick={() => setSelectedProviderReq({ provider: pr, docRow: row })}
-                                style={{
-                                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px',
-                                  borderRadius: 10, border: '1px solid #e2e8f0', background: '#ffffff', cursor: 'pointer',
-                                  transition: 'all 0.2s ease', boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
-                                }}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                                  <div style={{
-                                    width: 38, height: 38, borderRadius: 10, background: pr.logoBg,
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
-                                    fontWeight: 900, fontSize: 14, flexShrink: 0
-                                  }}>
-                                    {pr.logoText}
-                                  </div>
-                                  <div>
-                                    <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{pr.name}</div>
-                                    <div style={{ fontSize: 11.5, color: '#64748b' }}>{pr.desc}</div>
-                                  </div>
-                                </div>
-
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                  <span style={{
-                                    fontSize: 10.5, fontWeight: 800, padding: '3px 8px', borderRadius: 6,
-                                    background: pr.badgeTone === 'orange' ? '#fff7ed' : pr.badgeTone === 'green' ? '#f0fdf4' : '#faf5ff',
-                                    color: pr.badgeTone === 'orange' ? '#c2410c' : pr.badgeTone === 'green' ? '#15803d' : '#6b21a8',
-                                    border: `1px solid ${pr.badgeTone === 'orange' ? '#ffedd5' : pr.badgeTone === 'green' ? '#dcfce7' : '#f3e8ff'}`
-                                  }}>
-                                    {pr.badge}
-                                  </span>
-                                  <ChevronRight size={16} style={{ color: '#94a3b8' }} />
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-
-                          {/* Bottom Link */}
-                          <div style={{ marginTop: 12, textAlign: 'center' }}>
-                            <button
-                              type="button"
-                              onClick={() => alert('Suggest a Provider: Contact support@company.com to recommend a new compliance partner.')}
-                              style={{ border: 'none', background: 'none', color: '#f97316', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}
-                            >
-                              Suggest / Request a New Provider
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
           </div>
-        )
-      })}
-
-      {/* Step 3 Bottom Navigation Toolbar */}
-      <div style={{
-        marginTop: 24, paddingTop: 16, borderTop: '1px solid var(--border)',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12
-      }}>
-        <button
-          type="button"
-          onClick={onBack}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 20px', borderRadius: 10,
-            border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-h)',
-            fontWeight: 700, fontSize: 13, cursor: 'pointer'
-          }}
-        >
-          <ArrowLeft size={16} /> Back
-        </button>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button
-            type="button"
-            onClick={onChanged}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 20px', borderRadius: 10,
-              border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-h)',
-              fontWeight: 700, fontSize: 13, cursor: 'pointer'
-            }}
-          >
-            Save Draft
-          </button>
-
-          <button
-            type="button"
-            onClick={onContinue}
-            disabled={reviewMode && !complete}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 24px', borderRadius: 10,
-              border: 'none',
-              background: (!reviewMode || complete) ? 'linear-gradient(135deg,#7C3AED,#5b21b6)' : 'rgba(124,58,237,0.35)',
-              color: '#fff', fontWeight: 800, fontSize: 13,
-              cursor: (!reviewMode || complete) ? 'pointer' : 'not-allowed',
-              opacity: (!reviewMode || complete) ? 1 : 0.75,
-              boxShadow: (!reviewMode || complete) ? '0 4px 14px rgba(124,58,237,0.3)' : 'none'
-            }}
-          >
-            Continue <ArrowRight size={16} />
-          </button>
-        </div>
-      </div>
-
-      {/* Review Modal */}
-      {reviewing && (
-        <ReviewModal reviewing={reviewing} onClose={() => setRev(null)} onConfirm={runReview} />
-      )}
-
-      {/* Version History Drawer */}
-      {historyDoc && (
-        <VersionHistoryDrawer documentId={historyDoc} manage={manage} editable={editable} api={api}
-          onClose={() => setHistoryDoc(null)} onRestored={() => { setHistoryDoc(null); onChanged() }} />
-      )}
-
-      {/* Modal Document Viewer */}
-      {previewDoc && (
-        <Overlay onClose={() => setPreviewDoc(null)} width={previewDoc.type === 'image' ? 680 : 850} showClose={false}>
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justify: 'space-between' }}>
-            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--text-h)' }}>{previewDoc.name}</h3>
-            <button onClick={() => setPreviewDoc(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 18 }}>✕</button>
-          </div>
-          <div style={{ padding: 20, textAlign: 'center', maxHeight: 600, overflowY: 'auto' }}>
-            {previewDoc.type === 'image' ? (
-              <img src={previewDoc.url} alt={previewDoc.name} style={{ maxWidth: '100%', maxHeight: 520, borderRadius: 8, objectFit: 'contain' }} />
-            ) : (
-              <iframe src={previewDoc.url} style={{ width: '100%', height: 500, border: 'none', borderRadius: 8 }} title={previewDoc.name} />
-            )}
-          </div>
-          <ModalFooter>
-            <a href={previewDoc.url} target="_blank" download style={{ padding: '8px 16px', borderRadius: 8, background: '#7C3AED', color: '#fff', textDecoration: 'none', fontSize: 12, fontWeight: 700 }}>Download File</a>
-          </ModalFooter>
-        </Overlay>
-      )}
-
-      {/* Provider Request Modal */}
-      {selectedProviderReq && (
-        <ProviderRequestModal
-          provider={selectedProviderReq.provider}
-          docRow={selectedProviderReq.docRow}
-          onboarding={onboarding}
-          user={user}
-          onClose={() => setSelectedProviderReq(null)}
-          onSubmitSuccess={(reqData) => {
-            setSubmittedRequests(prev => [...prev, reqData])
-          }}
-        />
-      )}
+        )}
+      />
     </Panel>
   )
 }
 
-function ProviderRequestModal({ provider, docRow, onboarding, user, onClose, onSubmitSuccess }) {
-  const p = onboarding?.profile || {}
-  const v = onboarding?.vendor || {}
-  const u = user || {}
-
-  const initialFullName = p.full_name || p.contact_person || v.vendor_name || v.company_name || u.name || ''
-  const initialEmail = p.email || p.contact_email || v.email || u.email || ''
-  const initialMobile = p.mobile || p.contact_mobile || v.phone || u.phone || ''
-  const initialCompany = p.company_name || v.company_name || v.company || ''
-
-  const [fullName, setFullName] = useState(initialFullName)
-  const [email, setEmail] = useState(initialEmail)
-  const [mobile, setMobile] = useState(initialMobile)
-  const [countryCode, setCountryCode] = useState('+91')
-  const [companyName, setCompanyName] = useState(initialCompany)
-  const [notes, setNotes] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [success, setSuccess] = useState(false)
-
-  const handleSubmit = (e) => {
-    e.preventDefault()
-    setSubmitting(true)
-
-    setTimeout(() => {
-      setSubmitting(false)
-      setSuccess(true)
-      if (onSubmitSuccess) {
-        onSubmitSuccess({
-          vendorId: v.id || onboarding?.vendor_id,
-          providerId: provider.id,
-          providerName: provider.name,
-          docType: docRow.type,
-          docLabel: docRow.type_label,
-          fullName,
-          email,
-          mobile: `${countryCode} ${mobile}`,
-          companyName,
-          notes,
-          createdAt: new Date().toISOString(),
-          status: 'Pending'
-        })
-      }
-    }, 500)
-  }
-
-  return (
-    <Overlay onClose={onClose} width={540} showClose={false}>
-      {/* Orange Gradient Header */}
-      <div style={{
-        background: 'linear-gradient(135deg, #f97316, #ea580c)',
-        padding: '24px 24px 20px', color: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16,
-        position: 'relative'
-      }}>
-        <button
-          onClick={onClose}
-          style={{
-            position: 'absolute', top: 16, right: 16, border: 'none', background: 'rgba(255,255,255,0.2)',
-            color: '#fff', width: 28, height: 28, borderRadius: '50%', cursor: 'pointer', fontSize: 16, fontWeight: 700
-          }}
-        >
-          ✕
-        </button>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{
-            width: 48, height: 48, borderRadius: 12, background: provider.logoBg,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
-            fontWeight: 900, fontSize: 18, boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
-          }}>
-            {provider.logoText}
-          </div>
-          <div>
-            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#fff' }}>{provider.name}</h3>
-            <p style={{ margin: '2px 0 0', fontSize: 12.5, opacity: 0.9 }}>{provider.desc}</p>
-          </div>
-        </div>
-
-        <div style={{ marginTop: 14 }}>
-          <span style={{
-            display: 'inline-block', padding: '4px 10px', borderRadius: 20,
-            background: 'rgba(255,255,255,0.25)', color: '#fff', fontSize: 11.5, fontWeight: 700,
-            backdropFilter: 'blur(4px)'
-          }}>
-            📄 {docRow.type_label}
-          </span>
-        </div>
-      </div>
-
-      <div style={{ padding: 24 }}>
-        {success ? (
-          <div style={{ padding: 20, borderRadius: 12, background: '#f0fdf4', border: '1px solid #bbf7d0', textAlign: 'center' }}>
-            <CheckCircle size={36} style={{ color: '#16a34a', marginBottom: 10, margin: '0 auto' }} />
-            <h4 style={{ margin: '8px 0 6px', fontSize: 16, fontWeight: 800, color: '#15803d' }}>Request Submitted Successfully</h4>
-            <p style={{ margin: 0, fontSize: 13, color: '#166534' }}>
-              Our partner <strong>{provider.name}</strong> will contact you shortly regarding your <strong>{docRow.type_label}</strong>.
-            </p>
-            <button
-              onClick={onClose}
-              style={{
-                marginTop: 18, padding: '9px 24px', borderRadius: 8, background: '#16a34a', color: '#fff',
-                border: 'none', fontWeight: 700, fontSize: 13, cursor: 'pointer'
-              }}
-            >
-              Done
-            </button>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit}>
-            {/* Information Banner */}
-            <div style={{
-              padding: '12px 14px', borderRadius: 10, background: '#fff7ed', border: '1px solid #fed7aa',
-              fontSize: 12.5, color: '#9a3412', marginBottom: 18, lineHeight: 1.5
-            }}>
-              Fill in your details. <strong>{provider.name}</strong> will contact you within 24 hours to help obtain your <strong>{docRow.type_label}</strong>.
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
-              <Field label="Full Name *">
-                <TextInput value={fullName} onChange={e => setFullName(e.target.value)} required />
-              </Field>
-              <Field label="Email Address *">
-                <TextInput type="email" value={email} onChange={e => setEmail(e.target.value)} required />
-              </Field>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
-              <Field label="Mobile Number *">
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <select
-                    value={countryCode}
-                    onChange={e => setCountryCode(e.target.value)}
-                    style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-h)', fontSize: 12.5 }}
-                  >
-                    <option value="+91">🇮🇳 +91</option>
-                    <option value="+1">🇺🇸 +1</option>
-                    <option value="+44">🇬🇧 +44</option>
-                    <option value="+971">🇦🇪 +971</option>
-                  </select>
-                  <TextInput value={mobile} onChange={e => setMobile(e.target.value)} placeholder="Mobile Number" required style={{ flex: 1 }} />
-                </div>
-              </Field>
-              <Field label="Company Name">
-                <TextInput value={companyName} onChange={e => setCompanyName(e.target.value)} />
-              </Field>
-            </div>
-
-            <Field label="Notes (Optional)">
-              <textarea
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-                rows={3}
-                placeholder="Specify any additional requirements or notes for the compliance provider..."
-                style={{ ...inputStyle, resize: 'vertical' }}
-              />
-            </Field>
-
-            <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-              <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
-                Your details are shared only with the selected provider. <a href="#" onClick={e => { e.preventDefault(); alert('We share your details securely with compliance partners solely to assist with document acquisition.') }} style={{ color: '#f97316', textDecoration: 'underline' }}>Learn more</a>
-              </span>
-
-              <button
-                type="submit"
-                disabled={submitting}
-                style={{
-                  padding: '10px 22px', borderRadius: 10, border: 'none',
-                  background: 'linear-gradient(135deg, #f97316, #ea580c)', color: '#fff',
-                  fontWeight: 800, fontSize: 13, cursor: 'pointer', boxShadow: '0 4px 14px rgba(249,115,22,0.3)',
-                  opacity: submitting ? 0.7 : 1
-                }}
-              >
-                {submitting ? 'Sending Request…' : 'Send Request to Provider'}
-              </button>
-            </div>
-          </form>
-        )}
-      </div>
-    </Overlay>
-  )
-}
-
-function VersionHistoryDrawer({ documentId, manage, editable, onClose, onRestored, api }) {
-  const [versions, setVersions] = useState(null)
-  const [busy, setBusy] = useState(null)
-
-  const load = () => api.documents.versions(documentId).then(d => setVersions(d?.data ?? d ?? [])).catch(() => setVersions([]))
-  useEffect(() => { load() }, [documentId]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const download = async (v) => {
-    setBusy(`d${v.id}`)
-    try {
-      const blob = await api.documents.downloadVersion(documentId, v.id)
-      const url = URL.createObjectURL(blob); window.open(url, '_blank', 'noopener')
-      setTimeout(() => URL.revokeObjectURL(url), 60000)
-    } catch { alert('Could not download this version.') } finally { setBusy(null) }
-  }
-
-  const restore = async (v) => {
-    if (!confirm(`Restore version ${v.version_no}? The document returns to Pending review.`)) return
-    setBusy(`r${v.id}`)
-    try { await api.documents.restoreVersion(documentId, v.id); onRestored() }
-    catch (e) { alert(e?.response?.data?.message || 'Restore failed'); setBusy(null) }
-  }
-
-  return (
-    <Overlay onClose={onClose} width={560}>
-      <div style={{ padding: '20px 22px 6px' }}>
-        <h2 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: 'var(--text-h)' }}>Version History</h2>
-        <p style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--text-muted)' }}>Every upload, replace, resubmit and restore is kept.</p>
-      </div>
-      <div style={{ padding: '10px 22px 18px', maxHeight: 460, overflowY: 'auto' }}>
-        {versions === null ? (
-          <div style={{ padding: 20, textAlign: 'center' }}><Loader size={18} /></div>
-        ) : versions.length === 0 ? (
-          <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No versions recorded yet.</p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {versions.map(v => (
-              <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 12, background: 'var(--bg-input)', border: `1px solid ${v.is_current ? 'rgba(16,185,129,0.4)' : 'var(--border)'}` }}>
-                <div style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(124,58,237,0.14)', color: '#a78bfa', fontWeight: 800, fontSize: 12 }}>v{v.version_no}</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-h)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {v.original_name || `Version ${v.version_no}`}
-                    {v.is_current && <span style={{ fontSize: 10, fontWeight: 800, color: '#10b981' }}>● Current</span>}
-                    {v.restored_from_version_id && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>restored</span>}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{v.status_at_capture || '—'} · {fmtDate(v.created_at)}</div>
-                </div>
-                <MiniBtn onClick={() => download(v)} color="var(--text-muted)" icon={busy === `d${v.id}` ? Loader : Download} border>Download</MiniBtn>
-                {manage && editable && !v.is_current && (
-                  <MiniBtn onClick={() => restore(v)} color="#f59e0b" icon={busy === `r${v.id}` ? Loader : RotateCcw}>Restore</MiniBtn>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </Overlay>
-  )
-}
-
-const ReviewStat = ({ label, value, color }) => (
-  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 11px', borderRadius: 10, background: `${color}14`, border: `1px solid ${color}44` }}>
-    <span style={{ fontSize: 14, fontWeight: 800, color }}>{value}</span>
-    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>{label}</span>
-  </span>
-)
-
-const MiniBtn = ({ onClick, color, icon: Icon, border, disabled, children }) => (
-  <button onClick={onClick} disabled={disabled}
-    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, padding: '5px 9px', borderRadius: 7,
-      border: border ? '1px solid var(--border)' : 'none', background: border ? 'var(--bg-card)' : `${color}1f`, color,
-      cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1 }}>
-    <Icon size={11} /> {children}
-  </button>
-)
-
-const DocSummary = ({ s, complete }) => (
-  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-    {[['Approved', s.approved, '#10b981'], ['Pending', s.pending, '#f59e0b'], ['Rejected', s.rejected, '#ef4444']].map(([l, n, c]) => (
-      <span key={l} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 999, background: `${c}18`, border: `1px solid ${c}44`, fontSize: 11, fontWeight: 700, color: c }}>
-        {n || 0} {l}
-      </span>
-    ))}
-    {complete && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 800, color: '#10b981' }}><CheckCircle size={12} /> Complete</span>}
-  </div>
-)
-
-function ReviewModal({ reviewing, onClose, onConfirm }) {
-  const { row, decision } = reviewing
-  const isReject = decision === 'reject'
-  const [remarks, setRemarks] = useState('')
-  const [loading, setLoading] = useState(false)
-  const go = async () => { setLoading(true); await onConfirm(remarks); setLoading(false) }
-
-  return (
-    <Overlay onClose={() => !loading && onClose()} width={460}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-        {isReject ? <XCircle size={22} color="#ef4444" /> : <CheckCircle size={22} color="#10b981" />}
-        <h3 style={{ color: 'var(--text-h)', margin: 0, fontSize: 16, fontWeight: 800 }}>{isReject ? 'Reject' : 'Approve'} Document</h3>
-      </div>
-      <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 14 }}>
-        <strong style={{ color: 'var(--text-h)' }}>{row.type_label}</strong> — {row.original_name}
-      </p>
-      {isReject && <InfoBox tone="danger">The vendor will be able to resubmit this document.</InfoBox>}
-      <label style={labelStyle}>{isReject ? 'Reason for rejection *' : 'Remarks (optional)'}</label>
-      <textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={3}
-        placeholder={isReject ? 'e.g. Illegible scan, please re-upload' : 'Add remarks…'}
-        style={{ ...inputStyle, resize: 'vertical', borderColor: isReject && !remarks ? '#ef444480' : 'var(--border)' }} />
-      <ModalFooter onClose={onClose} onConfirm={go} loading={loading} disabled={isReject && !remarks}
-        confirmLabel={isReject ? 'Reject' : 'Approve'} color={isReject ? '#ef4444' : '#10b981'} />
-    </Overlay>
-  )
+const wizardGhostBtn = {
+  display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 20px', borderRadius: 10,
+  border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-h)',
+  fontWeight: 700, fontSize: 13, cursor: 'pointer',
 }
 
 // ── Step 5 — Confirmation ────────────────────────────────────────────────────
@@ -2249,7 +1390,7 @@ function StepConfirmation({ onboarding, progress, editable, onSaved, onBack, onC
 }
 
 // ── Step 6 — Admin approval panel ────────────────────────────────────────────
-function StepSubmission({ onboarding, vendor, admin, onChanged, onBack, api, user, engagement = 'tpv' }) {
+function StepSubmission({ onboarding, vendor, admin, onChanged, onBack, api, user, engagement = 'tpv', isPortal = false }) {
   const navigate = useNavigate()
   const [modal, setModal]     = useState(null)  // 'approve' | 'reject' | 'hold' | 'resubmit'
   const [remarks, setRemarks] = useState('')
@@ -2368,33 +1509,16 @@ function StepSubmission({ onboarding, vendor, admin, onChanged, onBack, api, use
             </div>
           </div>
 
-          {/* 📄 WORK START LETTER — the formal HSSE approval-to-commence-work,
-              issued on approval. TPV-only (Purchase issues its own). */}
-          {engagement === 'tpv' && (
-            <div style={{ marginBottom: 14 }}>
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    const blob = await api.onboarding.workStartLetter(onboarding.id)
-                    window.open(URL.createObjectURL(blob), '_blank', 'noopener')
-                  } catch (e) {
-                    alert(e?.response?.data?.message || 'Work start letter is not available yet.')
-                  }
-                }}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 10,
-                  border: '1px solid #6ee7b7', background: 'rgba(255,255,255,0.9)', color: '#047857',
-                  fontWeight: 800, fontSize: 13, cursor: 'pointer',
-                }}
-              >
-                <FileText size={16} /> View HSSE Work Start Letter
-              </button>
-            </div>
-          )}
+          {/* The HSSE clearance to commence work — the document, not the status.
+              It used to sit below the Approved pill behind `engagement === 'tpv'`,
+              whose comment claimed Purchase issued its own. Purchase issued it and
+              showed it to nobody, so the gate came out and the card is shared. */}
+          <WorkStartLetterCard api={api} onboardingId={onboarding.id}
+            company={onboarding.vendor?.company_name} />
 
-          {/* 🚀 START WORKFORCE CTA BUTTON — TPV-only (purchase vendors have no workforce) */}
-          {engagement === 'tpv' && (
+          {/* Start Workforce. This was TPV-only on the grounds that "purchase
+              vendors have no workforce" — they do, and now have the same rail,
+              so the CTA points at whichever engine the vendor belongs to. */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, paddingTop: 10, borderTop: '1px dashed #6ee7b7' }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: '#065f46' }}>
               Your account is active and verified. You are ready to start onboarding site workers.
@@ -2402,8 +1526,13 @@ function StepSubmission({ onboarding, vendor, admin, onChanged, onBack, api, use
             <button
               type="button"
               onClick={() => {
-                if (admin && vendorId) navigate(`/app/tpv/workforce/vendor/${vendorId}/dashboard`)
-                else navigate('/vendor-portal/workforce')
+                if (engagement === 'purchase') {
+                  navigate(isPortal ? '/purchase-portal/workforce' : '/app/purchase/workers')
+                } else if (admin && vendorId) {
+                  navigate(`/app/tpv/workforce/vendor/${vendorId}/dashboard`)
+                } else {
+                  navigate('/vendor-portal/workforce')
+                }
               }}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 26px', borderRadius: 12,
@@ -2415,7 +1544,6 @@ function StepSubmission({ onboarding, vendor, admin, onChanged, onBack, api, use
               <Rocket size={18} /> Start Workforce
             </button>
           </div>
-          )}
         </div>
       )}
 

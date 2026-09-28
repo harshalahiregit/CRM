@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Purchase;
 
+use App\Http\Requests\Concerns\SavesProfileDrafts;
 use App\Rules\Gstin;
 use App\Rules\Ifsc;
 use Illuminate\Foundation\Http\FormRequest;
@@ -13,6 +14,8 @@ use Illuminate\Foundation\Http\FormRequest;
  */
 class SavePurchaseOnboardingProfileRequest extends FormRequest
 {
+    use SavesProfileDrafts;
+
     public function authorize(): bool
     {
         return true;
@@ -20,8 +23,11 @@ class SavePurchaseOnboardingProfileRequest extends FormRequest
 
     public function rules(): array
     {
-        return [
-            'profile' => 'required|array',
+        return $this->relaxForDraft([
+            'profile' => $this->profileRule(),
+            // Set by the wizard when it is only keeping what has been typed
+            // so far. See SavesProfileDrafts.
+            'draft' => 'sometimes|boolean',
 
             'profile.contact_person'      => 'nullable|string',
             'profile.designation'         => 'nullable|string',
@@ -63,6 +69,33 @@ class SavePurchaseOnboardingProfileRequest extends FormRequest
             'profile.state'   => 'nullable|string|max:120',
             'profile.country' => 'nullable|string|max:120',
             'profile.pincode' => 'nullable|digits:6',
-        ];
+
+            // ── Parity with TPV ─────────────────────────────────────────────
+            // Purchase's rule set was a strict SUBSET of TPV's: 33 of its 48
+            // fields, with nothing going the other way. That gap is not a policy
+            // difference, it is a copy that never caught up — and it is the same
+            // hazard that lost the registered address on every save, because
+            // `validated()` silently drops any key no rule matches.
+            //
+            // The two forms are one flow for one kind of vendor, so the shape
+            // they accept is the same shape. `profile` is a JSON column, so this
+            // is purely additive: no migration, and nothing already stored moves.
+            'profile.dob'                 => 'nullable|date',
+            'profile.gender'              => 'nullable|string|in:Male,Female,Other',
+            'profile.profile_photo'       => 'nullable|string',
+            'profile.emergency_contact'   => 'nullable|string',
+            'profile.emergency_phone'     => 'nullable|string',
+            'profile.authorized_id_proof' => 'nullable|string|max:120',
+            'profile.estimated_workforce' => 'nullable|integer|min:0',
+            'profile.company_reg_date'    => 'nullable|date',
+            'profile.registration_date'   => 'nullable|date',
+
+            'profile.linkedin'  => 'nullable|string',
+            'profile.facebook'  => 'nullable|string|max:250',
+            'profile.twitter'   => 'nullable|string|max:250',
+            'profile.instagram' => 'nullable|string|max:250',
+            'profile.youtube'   => 'nullable|string|max:250',
+            'profile.portfolio' => 'nullable|string|max:250',
+        ]);
     }
 }

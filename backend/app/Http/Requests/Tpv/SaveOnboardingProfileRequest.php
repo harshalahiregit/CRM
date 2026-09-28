@@ -2,12 +2,15 @@
 
 namespace App\Http\Requests\Tpv;
 
+use App\Http\Requests\Concerns\SavesProfileDrafts;
 use App\Rules\Gstin;
 use App\Rules\Ifsc;
 use Illuminate\Foundation\Http\FormRequest;
 
 class SaveOnboardingProfileRequest extends FormRequest
 {
+    use SavesProfileDrafts;
+
     public function authorize(): bool
     {
         return true;
@@ -15,11 +18,14 @@ class SaveOnboardingProfileRequest extends FormRequest
 
     public function rules(): array
     {
-        return [
+        return $this->relaxForDraft([
             // TPV-specific step-2 profile. Free-form within a bounded shape so the
             // wizard can evolve its fields without a migration each time. All keys
             // are optional so partial (draft) saves and legacy profiles stay valid.
-            'profile'                    => 'required|array',
+            'profile' => $this->profileRule(),
+            // Set by the wizard when it is only keeping what has been typed
+            // so far. See SavesProfileDrafts.
+            'draft' => 'sometimes|boolean',
 
             // ── Existing (legacy) keys — unchanged, kept valid ──────────────
             'profile.contact_person'     => 'nullable|string',
@@ -86,6 +92,6 @@ class SaveOnboardingProfileRequest extends FormRequest
             'profile.state'   => 'nullable|string|max:120',
             'profile.country' => 'nullable|string|max:120',
             'profile.pincode' => 'nullable|digits:6',
-        ];
+        ]);
     }
 }

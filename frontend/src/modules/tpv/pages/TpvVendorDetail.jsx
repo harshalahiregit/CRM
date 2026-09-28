@@ -1,11 +1,18 @@
+import PartyContractList from '@/modules/contract/components/PartyContractList'
+import { ONBOARDING_TOTAL_STEPS, stepsOrNotStarted } from '@/lib/vendors/onboardingSteps'
+import { contractsForParty } from '@/services/contractModuleApi'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, Building2, User, Phone, Loader2, ShieldCheck, CheckCircle, XCircle, PauseCircle, CornerUpLeft, Clock, AlertTriangle,
   Briefcase, IndianRupee, ClipboardCheck, BarChart3, ChevronDown, ChevronRight, Mail, HardHat, Ban,
-  Users, FileText, Paperclip, StickyNote,
+  Users, FileText, Paperclip, StickyNote, Lock,
 } from 'lucide-react'
+import { isWorkspaceUnlocked, isSectionUnlocked, lockNav, lockNotice } from '@/lib/vendors/workspaceLock'
+import LockedSection from '@/components/vendors/LockedSection'
+import OnboardingSteps from '@/components/vendors/OnboardingSteps'
+import VendorAccessControls from '@/components/vendors/VendorAccessControls'
 
 const NOTIF_COLORS = { sent: '#10b981', failed: '#ef4444', skipped: '#94a3b8', queued: '#0ea5e9' }
 
@@ -109,6 +116,12 @@ export default function TpvVendorDetail() {
   const [resending, setResending] = useState(false)
   const [notice, setNotice] = useState(null)
   const [showTimeline, setShowTimeline] = useState(false)
+  /*
+   * The onboarding steps, for the decision panel and for anything locked.
+   * `v.tpv_onboarding` carries the status and the pointer but not the step
+   * list, which is computed per request — so it is asked for separately.
+   */
+  const [lockSteps, setLockSteps] = useState(null)
 
   // Slug ↔ label lookup so the ?tab= query param survives reloads and drives history.
   const bySlug = useMemo(() => {
@@ -138,34 +151,36 @@ export default function TpvVendorDetail() {
     } finally { setResending(false) }
   }
 
-  // Compliance suspension (admin). The nightly sweep does this automatically on
-  // expired statutory docs; these are the manual overrides.
-  const suspendVendor = async () => {
-    const reason = window.prompt('Reason for suspending this vendor (required):')
-    if (reason == null) return
-    if (!reason.trim()) { alert('A reason is required to suspend.'); return }
-    try { await cfg.api.vendors.suspend(id, reason.trim()); load() }
-    catch (e) { alert(e?.response?.data?.message || 'Could not suspend the vendor.') }
-  }
-  const reinstateVendor = async () => {
-    if (!confirm('Reinstate this vendor to Active? Their login and site access are restored.')) return
-    try { await cfg.api.vendors.reinstate(id); load() }
-    catch (e) { alert(e?.response?.data?.message || 'Could not reinstate the vendor.') }
-  }
-  const offboardVendor = async () => {
-    if (!confirm('Offboard this vendor? This ENDS the engagement: the login is locked and every on-site worker is terminated. This is not auto-reversible.')) return
-    const reason = window.prompt('Reason for offboarding (required):')
-    if (reason == null) return
-    if (!reason.trim()) { alert('A reason is required to offboard.'); return }
-    try { await cfg.api.vendors.offboard(id, reason.trim()); load() }
-    catch (e) { alert(e?.response?.data?.message || 'Could not offboard the vendor.') }
-  }
+  /*
+   * Suspend / Reinstate / Offboard used to be three buttons in the header,
+   * driven from here. They are gone from the header, replaced by the three
+   * access-window controls this workspace actually needed — see the note beside
+   * VendorAccessControls below.
+   *
+   * None of the three capabilities is lost. The nightly compliance sweep still
+   * suspends a vendor whose statutory documents have lapsed, and reinstates on
+   * its own terms; Offboarding is a screen of its own in the Performance group
+   * of this workspace, where the checklist, the reason and the worker
+   * terminations belong — rather than behind a window.confirm that summarised
+   * all of that in one sentence and then did it.
+   */
 
   const load = useCallback(() => {
     setLoad(true)
     cfg.api.vendors.get(id).then(r => { setV(r?.data ?? r); setLoad(false) }).catch(() => setLoad(false))
   }, [id, cfg.api])
   useEffect(() => { load() }, [load])
+
+  const onboardingId = (v?.tpv_onboarding || v?.tpvOnboarding)?.id
+  useEffect(() => {
+    if (!onboardingId) return undefined
+    let alive = true
+    tpvApi.onboarding.progress(onboardingId)
+      .then(p => { if (alive) setLockSteps(Array.isArray(p?.steps) ? p.steps : null) })
+      .catch(() => {})
+
+    return () => { alive = false }
+  }, [onboardingId])
 
   if (loading) return <div style={wrap}><style>{KIT3D_STYLE}</style><Loader2 size={22} className="rfq-spin" style={{ color: '#a78bfa' }} /></div>
   if (!v) return <div style={wrap}><style>{KIT3D_STYLE}</style><p style={{ color: 'var(--text-muted)' }}>Vendor not found.</p></div>
@@ -176,6 +191,25 @@ export default function TpvVendorDetail() {
     || (v.onboardings && v.onboardings[0]) || null
   const obStatus = activeOnboarding?.status || 'Draft'
   const obCfg = obStatusCfg(obStatus)
+
+  /*
+   * Until this vendor is onboarded the workspace shows the four sections that
+   * step actually needs — Overview, Profile, Contact, Documents — and not the
+   * other forty, which would every one of them open an empty screen for a
+   * company there is nothing to show for yet. The same rule and the same four
+   * on the Purchase side; see lib/vendors/workspaceLock.
+   *
+   * The SECTION refuses too, not just the sidebar entry. The tab is chosen by
+   * ?tab= here, so hiding the entry left the locked half of the workspace one
+   * hand-typed query string away. Still not a permission — an admin who wants
+   * a locked section approves the onboarding, which is the thing they were
+   * going to have to do anyway.
+   */
+  const unlocked = isWorkspaceUnlocked(v, activeOnboarding)
+  // Items here are plain label strings, so lockNav's default key reader — the
+  // item itself — is the right one; Purchase passes it.key instead.
+  const { groups: navGroups, hidden } = lockNav(NAV_GROUPS, unlocked)
+  const lockedNotice = lockNotice(v, activeOnboarding, hidden)
 
   const handleAdminDecision = async () => {
     if ((decisionModal === 'reject' || decisionModal === 'hold' || decisionModal === 'resubmit') && !remarks.trim()) {
@@ -255,28 +289,29 @@ export default function TpvVendorDetail() {
                   <Mail size={13} /> {resending ? 'Sending…' : 'Resend Activation Email'}
                 </button>
               )}
-              {manage && isActive && (
-                <button onClick={suspendVendor}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--bg-card)', border: '1px solid rgba(249,115,22,0.4)', color: '#f97316', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                  <Ban size={13} /> Suspend
-                </button>
-              )}
-              {manage && v.status === 'Suspended' && (
-                <button onClick={reinstateVendor}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--bg-card)', border: '1px solid rgba(16,185,129,0.4)', color: '#10b981', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                  <ShieldCheck size={13} /> Reinstate
-                </button>
-              )}
-              {manage && !['Offboarded', 'Draft', 'Pending_Approval'].includes(v.status) && (
-                <button onClick={offboardVendor}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, background: 'var(--bg-card)', border: '1px solid rgba(100,116,139,0.4)', color: '#64748b', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                  <XCircle size={13} /> Offboard
-                </button>
-              )}
-              {v.status === 'Suspended' && v.suspension_reason && (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: '#f97316', fontWeight: 600 }}>
-                  <AlertTriangle size={12} /> {v.suspension_reason}
-                </span>
+              {/* Convert to Permanent / Extend Access / Close Access — the three
+                  a temporary vendor's window actually needs, and the same
+                  component Purchase runs.
+
+                  Suspend and Offboard used to sit here instead. Both are much
+                  blunter: Suspend pauses a vendor, Offboard ends the engagement,
+                  locks the login and terminates every on-site worker, and is not
+                  reversible. Neither answers "the shutdown slipped by a week",
+                  so that got done by editing dates in the database. The three
+                  endpoints below existed on TPV the whole time with no button in
+                  the app pointing at any of them.
+
+                  Offboarding is not lost — it is its own screen, in the
+                  Performance group of this workspace, where the checklist and
+                  the reason belong. */}
+              {manage && cfg.access && (
+                <VendorAccessControls
+                  vendor={v}
+                  onConvert={() => cfg.access.convert(v.id)}
+                  onExtend={(data) => cfg.access.extend(v.id, data)}
+                  onExpire={() => cfg.access.expire(v.id)}
+                  onDone={(text, ok) => { setNotice({ ok, text }); if (ok) load() }}
+                />
               )}
               {notice && <span style={{ fontSize: 12, fontWeight: 700, color: notice.ok ? '#10b981' : '#ef4444' }}>{notice.text}</span>}
               {v.last_notification && (
@@ -315,11 +350,17 @@ export default function TpvVendorDetail() {
 
       </div>
 
-      {/* Onboarding Decision — prominent, directly under the header. Only for
-          admins/staff, and only once the vendor has an onboarding to decide on. */}
-      {manage && activeOnboarding && (
+      {/* Onboarding Decision — prominent, directly under the header, for
+          admins and staff.
+          NOT gated on the onboarding RECORD any more. A vendor nobody has
+          started has no record, and this panel is the only thing on the screen
+          that names the steps or says where to begin — so the one vendor that
+          needed the guidance was the one vendor that got none, under a header
+          still reading "Onboarding: Draft", because that pill falls back to
+          Draft when the record is absent. */}
+      {manage && (
         <OnboardingDecisionPanel
-          vendor={v} onboarding={activeOnboarding} api={cfg.api}
+          vendor={v} onboarding={activeOnboarding} api={cfg.api} steps={stepsOrNotStarted(lockSteps)}
           onDecision={kind => { setDecisionModal(kind); setRemarks('') }}
         />
       )}
@@ -336,7 +377,7 @@ export default function TpvVendorDetail() {
           maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', overscrollBehavior: 'contain',
           scrollbarGutter: 'stable', paddingRight: 2,
         }}>
-          {NAV_GROUPS.map(({ group, icon: GIcon, items }) => {
+          {navGroups.map(({ group, icon: GIcon, items }) => {
             const open = !collapsed[group]
             return (
               <div key={group} style={{ marginBottom: 6 }}>
@@ -382,12 +423,38 @@ export default function TpvVendorDetail() {
               </div>
             )
           })}
+
+          {/* Where the other forty went. A workspace that silently drops most
+              of its nav is as confusing as one that shows forty empty screens —
+              this names the reason and what ends it. */}
+          {lockedNotice && (
+            <div style={lockNote}>
+              <Lock size={12} style={{ color: '#f59e0b', flexShrink: 0, marginTop: 1 }} />
+              <span>
+                <strong style={{ color: 'var(--text-h)' }}>{lockedNotice.unlocks}</strong>
+                <span style={{ display: 'block', marginTop: 2 }}>{lockedNotice.reason}</span>
+              </span>
+            </div>
+          )}
         </nav>
 
         <div style={{ flex: 1, minWidth: 0 }}>
-          <SectionContent tab={active} v={v} isActive={isActive} manage={manage} api={cfg.api} moduleName={cfg.moduleName}
-          onDecision={kind => { setDecisionModal(kind); setRemarks('') }}
-          onReload={load} />
+          {/* Locked at the section, not only on the sidebar. The tab is chosen
+              by ?tab= in the URL here, so hiding the menu entry left the whole
+              locked half of the workspace one hand-typed query string away. */}
+          {isSectionUnlocked(active, unlocked) ? (
+            <SectionContent tab={active} v={v} isActive={isActive} manage={manage} api={cfg.api} moduleName={cfg.moduleName}
+            onDecision={kind => { setDecisionModal(kind); setRemarks('') }}
+            onReload={load} />
+          ) : (
+            <LockedSection
+              label={active}
+              steps={lockSteps}
+              notice={lockedNotice}
+              overviewHref="?tab=overview"
+              hrefFor={(section) => `?tab=${section === 'meeting' ? 'meetings' : section}`}
+            />
+          )}
         </div>
       </div>
 
@@ -435,6 +502,9 @@ export default function TpvVendorDetail() {
 
 /** Routes the active section to live data or the shared placeholder. */
 function SectionContent({ tab, v, isActive, manage, api, moduleName, onDecision, onReload }) {
+  // Rendered as <SectionContent />, so a hook here is legal. Needed by the
+  // Agreements tab, which links through to the Contract module.
+  const navigate = useNavigate()
   switch (tab) {
     case 'Overview':
       return <VendorOverview vendor={v} api={api} isActive={isActive} />
@@ -492,8 +562,30 @@ function SectionContent({ tab, v, isActive, manage, api, moduleName, onDecision,
     // `notes` (notable_*) — so neither introduces a vendor-specific store.
     // Commercial — all seven read the Purchase module through the optional
     // vendors.purchase_vendor_id link. One component; the tab picks the document.
-    case 'Quotation':
+    // Contracts shows BOTH sources under one tab.
+    //
+    // The Contract module's agreements sit on top, because that is where a
+    // contract is written now. Below them is the original Purchase-linked view
+    // (VendorCommercial reads purchase_contracts through
+    // vendors.purchase_vendor_id) -- kept, not replaced: it is a working feature
+    // and would show rows the moment a TPV vendor is linked to a purchase
+    // vendor that has any.
+    //
+    // Two separate tabs was the alternative, and it is what caused somebody to
+    // open "Contracts", see nothing, and reasonably conclude their contract had
+    // not saved.
     case 'Contracts':
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <PartyContractList
+            fetcher={() => contractsForParty('vendor', v.id)}
+            onOpen={(r) => navigate(`/app/contracts/${r.id}`)}
+            title="Agreements"
+            emptyText="No agreements with this vendor yet - create one from the Contracts module." />
+          <VendorCommercial tab={tab} vendorId={v.id} vendorName={v.company_name} manage={manage} />
+        </div>
+      )
+    case 'Quotation':
     case 'Purchase Order':
     case 'Purchase Invoice':
     case 'Debit Note':
@@ -754,7 +846,7 @@ function VendorOverview({ vendor, api, isActive }) {
  * but disabled, listing exactly what is missing, so an incomplete onboarding can
  * never be approved by accident.
  */
-function OnboardingDecisionPanel({ vendor, onboarding, api, onDecision }) {
+function OnboardingDecisionPanel({ vendor, onboarding, api, onDecision, steps = null }) {
   const [docs, setDocs] = useState(null)
   const status = onboarding?.status || 'Draft'
   const step = onboarding?.current_step || 1
@@ -791,7 +883,7 @@ function OnboardingDecisionPanel({ vendor, onboarding, api, onDecision }) {
           <ShieldCheck size={16} style={{ color: tint }} /> Onboarding Decision
         </span>
         <span style={{ flex: 1 }} />
-        <StatusPill label="Step" value={`${step} of 6`} tone="#7C3AED" />
+        <StatusPill label="Step" value={`${step} of ${onboarding?.total_steps || ONBOARDING_TOTAL_STEPS}`} tone="#7C3AED" />
         <StatusPill label="Onboarding" value={obc.label} tone={obc.color} />
         <StatusPill label="Account" value={accountActive ? 'Active' : (vendor.status_label || vendor.status)} tone={accountActive ? '#0ca30c' : '#8a94a6'} />
       </div>
@@ -800,15 +892,22 @@ function OnboardingDecisionPanel({ vendor, onboarding, api, onDecision }) {
         <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text-muted)' }}>
           <strong style={{ color: 'var(--text-h)' }}>{vendor.company_name || vendor.vendor_code}</strong>
           {' — '}{approved
-            ? 'onboarding approved and the account is activated (Step 6).'
+            ? 'onboarding approved and the account is activated.'
             : decidable
               ? 'has completed all steps and is waiting for your decision.'
               : 'is still progressing through onboarding.'}
         </p>
 
+        {/* The strip Purchase has had since SIR-000006 and TPV never got.
+            "Step 3 of 7" says where a vendor is, not what the steps are or
+            which one is next -- which was the whole of that issue, still live
+            on this side of the house. Clickable: each one goes to the section
+            that completes it. */}
+        {!approved && <OnboardingSteps steps={steps} hrefFor={(section) => `?tab=${section === 'meeting' ? 'meetings' : section}`} />}
+
         {approved ? (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 9, padding: '10px 14px', borderRadius: 10, background: 'color-mix(in srgb, #0ca30c 12%, transparent)', border: '1px solid color-mix(in srgb, #0ca30c 30%, transparent)', color: '#0ca30c', fontSize: 12.5, fontWeight: 700 }}>
-            <CheckCircle size={16} /> Step 6 — Account Activated. The vendor can now access the active portal.
+            <CheckCircle size={16} /> Onboarding complete — account activated. The vendor can now access the portal.
           </div>
         ) : (
           <>
@@ -1055,3 +1154,4 @@ function Grid({ rows }) {
 const wrap = { padding: 24, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-global)' }
 const backBtn = { width: 38, height: 38, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)', flexShrink: 0 }
 const groupBtn = { display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 10px', cursor: 'pointer', background: 'none', border: 'none', color: 'var(--text-h)', fontSize: 11.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em' }
+const lockNote = { display: 'flex', alignItems: 'flex-start', gap: 7, margin: '8px 4px 2px', padding: '9px 10px', borderRadius: 9, background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.22)', fontSize: 11, lineHeight: 1.45, color: 'var(--text-muted)' }

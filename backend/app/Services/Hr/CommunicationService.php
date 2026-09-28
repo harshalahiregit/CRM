@@ -137,9 +137,13 @@ class CommunicationService
                 // A transport failure must still be recorded, otherwise the send
                 // throws and the history shows nothing at all for the attempt.
                 try {
-                    Mail::html(nl2br(e($body)), function ($m) use ($candidate, $subject) {
-                        $m->to($candidate->email)->subject($subject ?: 'Update on your application');
-                    });
+                    // Tenant SMTP, never the global mailer.
+                    app(\App\Services\Mail\TenantMailer::class)->sendRawHtml(
+                        $candidate->tenant_id,
+                        $candidate->email,
+                        $subject ?: 'Update on your application',
+                        nl2br(e($body)),
+                    );
                 } catch (\Throwable $e) {
                     $status = 'Failed';
                     Log::channel('hr')->error('Candidate email failed', [

@@ -1,2 +1,34 @@
 {
+  // ── Format-on-save is OFF for this repository, deliberately ──────────────
+  //
+  // This repo has no prettier/eslint formatting config, so each editor applies
+  // its own defaults. On 2026-09-15 that silently realigned 115 lines of HR
+  // lazy-import declarations in frontend/src/app/routes.jsx while the file was
+  // open — a file all three developers append to. The actual change being made
+  // was two lines; the commit carried 117 insertions and 115 deletions, and
+  // would have given Person 2 and Person 3 a conflict on every HR import line.
+  //
+  // TEAM-CONVENTIONS.md §3 names these append-only shared files by name:
+  //   backend/routes/api.php
+  //   frontend/src/app/routes.jsx
+  //   frontend/src/components/layout/Sidebar.jsx
+  //   frontend/src/modules/registry.js
+  // plus bootstrap/providers.php and DatabaseSeeder.php.
+  //
+  // Reformatting any of them is never the change you intended to make.
+  "editor.formatOnSave": false,
+  "editor.formatOnPaste": false,
+  "editor.formatOnType": false,
+
+  // Trimming trailing whitespace is the same hazard in a smaller coat: it
+  // rewrites lines nobody touched.
+  "files.trimTrailingWhitespace": false,
+  "files.insertFinalNewline": false,
+
+  // If a future team decision adds a shared formatter config, turn these back
+  // on in the SAME commit that adds it — so the whole repo is reformatted once,
+  // deliberately, rather than a few lines at a time by whoever opens a file.
+  "[javascriptreact]": { "editor.formatOnSave": false },
+  "[javascript]": { "editor.formatOnSave": false },
+  "[php]": { "editor.formatOnSave": false }
 }

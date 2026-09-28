@@ -58,6 +58,30 @@ class EnsureClientPortalAccess
             ], 403);
         }
 
+        /*
+         | And the customer itself must still be live.
+         |
+         | ClientPortalAuthService::login() checks this, and that was read as the
+         | whole fix — but login happens once and a token lasts. Switching a
+         | customer off with ClientController::toggleActive() revokes nothing, so
+         | every contact under it kept working normally until their token aged
+         | out. Whoever flipped the switch believed access was cut.
+         |
+         | Checked on every request rather than by deleting tokens at toggle
+         | time, because this holds however the column comes to be false — a
+         | direct edit, an import, a future bulk action — instead of only in the
+         | one code path somebody remembered.
+         |
+         | A soft-deleted customer needs no case of its own: `$contact->client`
+         | already excludes trashed rows, which is the 403 above.
+         */
+        if (! $client->active) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'This account is no longer active. Please speak to your account manager.',
+            ], 403);
+        }
+
         $request->attributes->set('clientContact', $contact);
         $request->attributes->set('portalClient', $client);
 

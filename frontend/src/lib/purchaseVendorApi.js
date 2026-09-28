@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { attachMediaCompression } from './mediaCompress'
 import { isSessionFailure } from '@/lib/sessionFailure'
+import { recordRequestFailure } from '@/lib/requestFailures'
 
 /**
  * Dedicated axios instance for the Purchase Vendor portal. It carries the
@@ -44,6 +45,11 @@ pvApi.interceptors.response.use(
         window.location.href = '/auth/login?role=purchase_vendor'
       }
     }
+    // Recorded before the rejection travels on: most portal callers end in
+    // `.catch(() => setRows([]))`, where the failure would otherwise vanish and
+    // be shown to the vendor as an empty list.
+    recordRequestFailure(error)
+
     return Promise.reject(error)
   },
 )

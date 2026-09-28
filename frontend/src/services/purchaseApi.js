@@ -10,6 +10,27 @@ import api from '@/lib/api'
 const upload = (url, formData) =>
   api.post(url, formData, { headers: { 'Content-Type': undefined } }).then(r => r.data)
 
+/*
+ * Endpoints that answer through the ApiResponse trait wrap their payload one
+ * level deeper: { status, message, data: { ... } }. Most of this file predates
+ * that trait and reads `r.data`, so the two shapes are unwrapped separately
+ * rather than by guessing per call.
+ */
+const unwrap = (r) => r.data?.data ?? r.data
+
+/*
+ * Rethrow with the SERVER's message.
+ *
+ * An axios error's own `.message` is "Request failed with status code 422",
+ * which tells the person nothing. These endpoints refuse a save by naming the
+ * question at fault — "Every answer to 'Turnover' scores the same" — and that
+ * sentence is the whole value of the response.
+ */
+const handleErr = (e) => {
+  const said = e?.response?.data?.message || e?.response?.data?.error
+  throw said ? Object.assign(new Error(said), { response: e.response }) : e
+}
+
 export const purchaseApi = {
   // ── Unified procure-to-pay dashboard ────────────────────────────────
   dashboard: {
@@ -56,7 +77,10 @@ export const purchaseApi = {
     list:    (params = {}) => api.get('/purchase/contracts', { params }).then(r => r.data),
     stats:   ()            => api.get('/purchase/contracts/stats').then(r => r.data),
     get:     (id)          => api.get(`/purchase/contracts/${id}`).then(r => r.data),
-    referenceable: (vendorId) => api.get('/purchase/contracts/referenceable', { params: { vendor_id: vendorId } }).then(r => r.data),
+    // purchase_vendor_id, not vendor_id: the controller validates that name and
+    // answered 422 on every vendor selection, so contract referencing on a
+    // purchase order was silently dead.
+    referenceable: (vendorId) => api.get('/purchase/contracts/referenceable', { params: { purchase_vendor_id: vendorId } }).then(r => r.data),
     create:  (data)        => api.post('/purchase/contracts', data).then(r => r.data),
     update:  (id, data)    => api.put(`/purchase/contracts/${id}`, data).then(r => r.data),
     delete:  (id)          => api.delete(`/purchase/contracts/${id}`).then(r => r.data),
@@ -158,6 +182,14 @@ export const purchaseApi = {
 
   // ── Purchase Vendor master — the Purchase-owned entity (/purchase/vendors) ─
   // Fully independent of the shared /vendors table and of TPV.
+  // The prequalification questionnaire itself — the questions and the
+  // drop-down answers on the vendor form. Admin-only, enforced server-side.
+  prequalificationCatalogue: {
+    get:   () => api.get('/purchase/settings/prequalification').then(unwrap).catch(handleErr),
+    save:  (sections) => api.put('/purchase/settings/prequalification', { sections }).then(unwrap).catch(handleErr),
+    reset: () => api.post('/purchase/settings/prequalification/reset').then(unwrap).catch(handleErr),
+  },
+
   vendors: {
     list:      (params = {}) => api.get('/purchase/vendors', { params }).then(r => r.data),
     stats:     ()            => api.get('/purchase/vendors/stats').then(r => r.data),
@@ -168,6 +200,33 @@ export const purchaseApi = {
     setStatus: (id, status)  => api.patch(`/purchase/vendors/${id}/status`, { status }).then(r => r.data),
     approve:   (id)          => api.post(`/purchase/vendors/${id}/approve`).then(r => r.data),   // admin-only
     resendActivation: (id)   => api.post(`/purchase/vendors/${id}/resend-activation`).then(r => r.data), // admin-only
+    // Temporary -> Permanent. Admin-only, and the counterpart of TPV's
+    // tpvApi.access.convert. Purchase had the temporary side complete — a
+    // registration type, an access window, an expiry that shuts the portal —
+    // and no way out of it, so a temporary vendor could only expire.
+    convertToPermanent: (id) => api.post(`/purchase/vendors/${id}/convert`).then(r => r.data),
+    // The rest of the window's life, mirroring tpvApi.access. Purchase had only
+    // the promotion for a while, which left an admin choosing between
+    // "permanent for ever" and "locked out on the day" when the job needed
+    // three more days.
+    access: {
+      extend: (id, data) => api.post(`/purchase/vendors/${id}/access/extend`, data).then(r => r.data),
+      expire: (id)       => api.post(`/purchase/vendors/${id}/access/expire`).then(r => r.data),
+      status: (id)       => api.get(`/purchase/vendors/${id}/access/status`).then(r => r.data),
+    },
+    // Performance: the index was already computed server-side and only wanted a
+    // tab; awards and referrals are new Purchase-owned tables.
+    vpi:    (id)         => api.get(`/purchase/vendors/${id}/vpi`).then(r => r.data),
+    awards: {
+      list:   (id)         => api.get(`/purchase/vendors/${id}/awards`).then(r => r.data),
+      grant:  (id, data)   => api.post(`/purchase/vendors/${id}/awards`, data).then(r => r.data),
+      remove: (id, awardId) => api.delete(`/purchase/vendors/${id}/awards/${awardId}`).then(r => r.data),
+    },
+    referrals: {
+      list:      (id)             => api.get(`/purchase/vendors/${id}/referrals`).then(r => r.data),
+      create:    (id, data)       => api.post(`/purchase/vendors/${id}/referrals`, data).then(r => r.data),
+      setStatus: (id, rid, status) => api.patch(`/purchase/vendors/${id}/referrals/${rid}/status`, { status }).then(r => r.data),
+    },
     delete:    (id)          => api.delete(`/purchase/vendors/${id}`).then(r => r.data),
 
     // ── Vendor detail workspace tabs ─────────────────────────────────────
@@ -179,6 +238,13 @@ export const purchaseApi = {
     customers: {
       list:   (vid)       => api.get(`/purchase/vendors/${vid}/customers`).then(r => r.data),
       create: (vid, data) => api.post(`/purchase/vendors/${vid}/customers`, data).then(r => r.data),
+      // search and link were missing here while TPV had them, and the Customer
+      // tab renders the SAME panel for both modules. Calling a method that is
+      // not defined throws inside the promise chain, so the panel never left
+      // "Searching..." -- no toast, nothing in the network tab, just a spinner.
+      search: (vid, q)    => api.get(`/purchase/vendors/${vid}/customers/search`, { params: { q } }).then(r => r.data),
+      link:   (vid, clientId) => api.post(`/purchase/vendors/${vid}/customers/link`, { client_id: clientId }).then(r => r.data),
+      update: (vid, clientId, data) => api.put(`/purchase/vendors/${vid}/customers/${clientId}`, data).then(r => r.data),
     },
 
     // Commercial: native. Every purchase document already keys to
@@ -314,6 +380,22 @@ export const purchaseApi = {
     // mint and read it on their own route rather than the shared engine's.
     generateLink: (id, platform = null) => api.post(`/purchase/kickoff/${id}/generate-link`, { platform }).then(r => r.data),
     getLink:      (id) => api.get(`/purchase/kickoff/${id}/link`).then(r => r.data),
+    setLink:      (id, link) => api.put(`/purchase/kickoff/${id}/link`, { link }).then(r => r.data),
+    // Send the room link to everybody again — the twin of the shared engine's.
+    announceLink: (id) => api.post(`/purchase/kickoff/${id}/link/announce`).then(r => r.data),
+    // Mark MYSELF present, which is what releases the joining link to a staff
+    // attendee who did not organise the meeting. Distinct from markAttendance
+    // (`attendance`), which is the organiser ticking other people's rows afterwards —
+    // same URL, different verb and different authority. See
+    // MeetingAttendanceGate.
+    // Same contract as the shared engine — see whereAmI.
+    markOwnAttendance: (id, where = {}) => api.post(`/purchase/kickoff/${id}/attendance`, where).then(r => r.data),
+    // The organiser's verdict on who actually attended — the three slabs, stored
+    // BESIDE each person's own attendance mark rather than over it, so "punched
+    // CRM attendance but did not join the call" stays writable. Authority is the
+    // organiser's or an admin's; the register is readable by any staff.
+    attendanceRegister: (id) => api.get(`/purchase/kickoff/${id}/attendance/register`).then(r => r.data),
+    reviewAttendance: (id, rows) => api.post(`/purchase/kickoff/${id}/attendance/review`, { rows }).then(r => r.data),
     // WRITES carried items into an existing meeting.
     carryForward: (id)    => api.post(`/purchase/kickoff/${id}/carry-forward`).then(r => r.data),
     // READS what a new meeting could carry — the meeting form's preview. Same
@@ -332,6 +414,13 @@ export const purchaseApi = {
     // Participant pickers + the live vendor snapshot a meeting is planned
     // against. `vendors` lists PURCHASE vendors — the shared engine's picker
     // reads the separate `vendors` table, whose ids are unrelated.
+    // Category-wise picker. Purchase's vendor category lists purchase_vendors;
+    // everything else is the same directory the shared engine uses.
+    participants: ()         => api.get('/purchase/kickoff/participants').then(r => r.data),
+    // The four-column attendance sheet — same two endpoints as the shared engine.
+    parties: ()              => api.get('/purchase/kickoff/parties').then(r => r.data),
+    partyPeople: (party, entityId) =>
+      api.get('/purchase/kickoff/party-people', { params: { party, entity_id: entityId } }).then(r => r.data),
     staff:        ()         => api.get('/purchase/kickoff/staff').then(r => r.data),
     vendors:      ()         => api.get('/purchase/kickoff/vendors').then(r => r.data),
     // excludeMeetingId = the meeting being edited, so it is not counted as
@@ -378,6 +467,9 @@ export const purchaseApi = {
     attendance: (id, rows) => api.patch(`/purchase/kickoff/${id}/attendance`, { rows }).then(r => r.data),
     // Live meeting room autosave — same shape as the shared engine.
     roomNotes: (id, payload) => api.post(`/purchase/kickoff/${id}/room/notes`, payload).then(r => r.data),
+    // Who is in the call right now — a snapshot of the whole room, posted
+    // repeatedly while the meeting runs. See the backend's MeetingPresence.
+    roomPresence: (id, payload) => api.post(`/purchase/kickoff/${id}/room/presence`, payload).then(r => r.data),
     // Manual reminder — email is a real send; whatsapp/sms are queued stubs.
     remind: (id)          => api.post(`/purchase/kickoff/${id}/remind`).then(r => r.data),
     generateMom: (id)     => api.post(`/purchase/kickoff/${id}/mom/generate`).then(r => r.data),
@@ -451,6 +543,23 @@ export const purchaseApi = {
   // Tenant-scoped server-side: vendor_id here only FILTERS, it never authorises.
   // Badge activation is role:admin on the backend — the UI hides the button for
   // staff, and the endpoint refuses them regardless.
+  /**
+   * PPE requirement matrix — role needs item. Purchase had no matrix at all, so
+   * its gate accepted any single item as "equipped"; these rules let the badge
+   * and the site gate name what is actually missing.
+   */
+  ppe: {
+    requirements:      ()          => api.get('/purchase/ppe/requirements').then(r => r.data),
+    addRequirement:    (data)      => api.post('/purchase/ppe/requirements', data).then(r => r.data),
+    updateRequirement: (id, data)  => api.put(`/purchase/ppe/requirements/${id}`, data).then(r => r.data),
+    deleteRequirement: (id)        => api.delete(`/purchase/ppe/requirements/${id}`).then(r => r.data),
+    workerCompliance:  (workerId)  => api.get(`/purchase/ppe/compliance/workers/${workerId}`).then(r => r.data),
+    // One vendor's OWN PPE list (its stock, not Inventory) — read-only here;
+    // the vendor keeps it from its portal. Parity with tpvApi.ppe.vendorItems.
+    vendorItems:     (vendorId)         => api.get(`/purchase/ppe/vendors/${vendorId}/items`).then(r => r.data),
+    vendorItemImage: (vendorId, itemId) => api.get(`/purchase/ppe/vendors/${vendorId}/items/${itemId}/image`, { responseType: 'blob' }).then(r => URL.createObjectURL(r.data)),
+  },
+
   workforce: {
     workers:  (params = {}) => api.get('/purchase/workforce/workers', { params }).then(r => r.data),
     worker:   (id)          => api.get(`/purchase/workforce/workers/${id}`).then(r => r.data),
@@ -472,14 +581,37 @@ export const purchaseApi = {
     // Purchase's own tables. Staff may add and correct workers and record their
     // medical/induction evidence; ACTIVATION stays admin-only server-side.
     stats:         ()          => api.get('/purchase/workforce/workers/stats').then(r => r.data),
+    // Bulk import. The vendor is the one the operator PICKED — never guessed.
+    uploadWorkers: (file, vendorId) => { const fd = new FormData(); fd.append('worker_file', file);
+      fd.append('vendor_id', vendorId);
+      return api.post('/purchase/workforce/workers/upload', fd).then(r => r.data) },
     createWorker:  (data)      => api.post('/purchase/workforce/workers', data).then(r => r.data),
     updateWorker:  (id, data)  => api.put(`/purchase/workforce/workers/${id}`, data).then(r => r.data),
     deleteWorker:  (id)        => api.delete(`/purchase/workforce/workers/${id}`).then(r => r.data),
     saveMedical:   (id, data)  => api.post(`/purchase/workforce/workers/${id}/medical`, data).then(r => r.data),
+    /*
+     * Many fitness certificates at once, keyed by worker_code.
+     *
+     * The importer, its batch record and its per-row error list all existed
+     * server-side and nothing in the UI ever called them, so a vendor arriving
+     * with a stack of certificates had to be entered one worker at a time
+     * (SIR-000015). `certificates[]` is optional: name each file after the
+     * worker_code and it is filed against that row.
+     */
+    bulkMedical:   (file, vendorId, certificates = []) => {
+      const fd = new FormData()
+      fd.append('file', file)
+      if (vendorId) fd.append('vendor_id', vendorId)
+      certificates.forEach(c => fd.append('certificates[]', c))
+      return api.post('/purchase/medical/bulk', fd).then(r => r.data)
+    },
+    medicalBatches: () => api.get('/purchase/medical/batches').then(r => r.data?.data ?? r.data),
     // Step 3 needs BOTH — a worker with an induction but no training never
     // clears the step and so can never be badged.
     saveTraining:  (id, data)  => api.post(`/purchase/workforce/workers/${id}/training`, data).then(r => r.data),
     saveInduction: (id, data)  => api.post(`/purchase/workforce/workers/${id}/induction`, data).then(r => r.data),
+    // Group session: { worker_ids[], ...session, signature_data } → { saved[], skipped[] }
+    bulkInduction: (data)      => api.post('/purchase/workforce/workers/bulk-induction', data).then(r => r.data),
     badge:         (id)        => api.get(`/purchase/workforce/workers/${id}/badge`).then(r => r.data),
     // PPE from the admin side — the catalogue of kit, and issuing it at the gate.
     // Both existed in the service but were reachable only from the vendor portal.
@@ -500,6 +632,19 @@ export const purchaseApi = {
     // Non-person crossings (TPV §20) — equipment / material / vehicle / visitor.
     events:      (params = {}) => api.get('/purchase/gate/events', { params }).then(r => r.data?.data ?? r.data),
     storeEvent:  (data)        => api.post('/purchase/gate/events', data).then(r => r.data),
+  },
+
+  // ── Safety strikes (mirror of TPV's) ───────────────────────────────────
+  // Three active strikes, or one Critical, terminates site access. Voiding is
+  // an appeal upheld: the row stays on the ledger and stops counting.
+  strikes: {
+    list:   (params = {}) => api.get('/purchase/strikes', { params }).then(r => r.data?.data ?? r.data),
+    stats:  ()            => api.get('/purchase/strikes/stats').then(r => r.data),
+    forWorker: (workerId) => api.get(`/purchase/workforce/workers/${workerId}/strikes`).then(r => r.data),
+    // Returns { strike, terminated, active_count } — the caller must say when
+    // issuing one has just ended somebody's site access.
+    issue:  (workerId, data) => api.post(`/purchase/workforce/workers/${workerId}/strikes`, data).then(r => r.data),
+    void:   (strikeId, reason) => api.post(`/purchase/strikes/${strikeId}/void`, { reason }).then(r => r.data),
   },
 
   // ── Workforce Competency & Skill Matrix (mirror of TPV §15) ─────────────
@@ -523,6 +668,29 @@ export const purchaseApi = {
   },
 
   // ── Non-Conformance Reports (mirror of TPV §24 — purchase_ncrs) ─────────
+  /* The three registers Purchase served but had no client for. Their routes and
+     vendor_id filtering were already in place; only the JS was missing, which
+     is why the vendor workspace had no tab for any of them while TPV did. */
+  permits: {
+    list:   (params = {}) => api.get('/purchase/permits', { params }).then(r => r.data),
+    stats:  ()            => api.get('/purchase/permits/stats').then(r => r.data),
+    get:    (id)          => api.get(`/purchase/permits/${id}`).then(r => r.data),
+    create: (data)        => api.post('/purchase/permits', data).then(r => r.data),
+  },
+
+  visitors: {
+    list:     (params = {}) => api.get('/purchase/visitors', { params }).then(r => r.data),
+    create:   (data)        => api.post('/purchase/visitors', data).then(r => r.data),
+    checkout: (id)          => api.post(`/purchase/visitors/${id}/checkout`).then(r => r.data),
+  },
+
+  workPackages: {
+    list:   (params = {}) => api.get('/purchase/work-packages', { params }).then(r => r.data),
+    get:    (id)          => api.get(`/purchase/work-packages/${id}`).then(r => r.data),
+    create: (data)        => api.post('/purchase/work-packages', data).then(r => r.data),
+    update: (id, data)    => api.put(`/purchase/work-packages/${id}`, data).then(r => r.data),
+  },
+
   ncrs: {
     list:       (params = {}) => api.get('/purchase/ncrs', { params }).then(r => r.data),
     create:     (data)        => api.post('/purchase/ncrs', data).then(r => r.data),
@@ -696,14 +864,25 @@ export const purchaseApi = {
     },
   },
 
-  // A vendor-bound document api matching the shape PurchaseVendorDocuments wants,
-  // so the same component works for admin (bound to a vendorId) and the portal.
+  /**
+   * A vendor-bound document api, in the shape VendorDocumentsPanel expects.
+   *
+   * The panel is shared with the portal, where the vendor is resolved from the
+   * token and there is no id to pass — so every method here takes the portal's
+   * argument list and supplies the vendorId itself. `upload` in particular must
+   * accept (vendorId, type, file): it used to take (type, file), so the shared
+   * panel's call would have sent the type as the vendor.
+   */
   documentsFor: (vendorId) => ({
-    checklist: ()          => purchaseApi.documents.checklist(vendorId),
-    upload:    (type, file) => purchaseApi.documents.upload(vendorId, type, file),
+    checklist: ()            => purchaseApi.documents.checklist(vendorId),
+    upload:    (_v, type, file) => purchaseApi.documents.upload(vendorId, type, file),
     resubmit:  (docId, file) => purchaseApi.documents.resubmit(docId, file),
     review:    (docId, decision, remarks) => purchaseApi.documents.review(docId, decision, remarks),
-    open:      (docId)      => purchaseApi.documents.open(docId),
+    delete:    (docId)       => purchaseApi.documents.delete(docId),
+    versions:  (docId)       => purchaseApi.documents.versions(docId),
+    downloadVersion: (docId, versionId) => purchaseApi.documents.downloadVersion(docId, versionId),
+    restoreVersion:  (docId, versionId) => purchaseApi.documents.restoreVersion(docId, versionId),
+    open:      (docId)       => purchaseApi.documents.open(docId),
   }),
 }
 

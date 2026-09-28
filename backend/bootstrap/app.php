@@ -8,6 +8,23 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
+// SIRE is copy-installed at packages/sire rather than pulled through Composer,
+// so its namespace is registered here as well as in composer.json's PSR-4 map.
+// Once `composer dump-autoload` has run, Composer's own loader answers first and
+// this closure never fires; it exists so the module works on a box (like the
+// deploy target) where Composer is not installed. Additive and idempotent.
+spl_autoload_register(static function (string $class): void {
+    if (! str_starts_with($class, 'Sire\\')) {
+        return;
+    }
+
+    $path = __DIR__.'/../packages/sire/src/'.str_replace('\\', '/', substr($class, 5)).'.php';
+
+    if (is_file($path)) {
+        require $path;
+    }
+});
+
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web:      __DIR__.'/../routes/web.php',
@@ -29,6 +46,12 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->api(append: [
             \App\Http\Middleware\EnforceIdleTimeout::class,
             \App\Http\Middleware\ConfigureTenantMail::class,
+            // Every document that leaves the system is recorded here — who,
+            // when, from what device and address. Applied to the whole API
+            // rather than to each of the fifty-odd file endpoints, because the
+            // endpoint somebody forgets to annotate is the one that gets asked
+            // about. See LogDocumentAccess.
+            \App\Http\Middleware\LogDocumentAccess::class,
         ]);
 
         // Register custom middleware aliases
@@ -39,6 +62,13 @@ return Application::configure(basePath: dirname(__DIR__))
             'client.portal' => \App\Http\Middleware\EnsureClientPortalAccess::class,
             'company.portal' => \App\Http\Middleware\EnsureCompanyPortalAccess::class,
             'temp.access' => \App\Http\Middleware\EnsureTemporaryAccessNotExpired::class,
+            // Onboarding first: an unapproved vendor may not write to the
+            // operational portal. Must run AFTER a portal gate, which is what
+            // resolves the vendor onto the request.
+            'vendor.onboarded' => \App\Http\Middleware\EnsureVendorOnboardingComplete::class,
+            // STOS telemetry ingest: hardware presents a shared secret, not a
+            // session. Fails closed when no token is configured.
+            'stos.device' => \App\Http\Middleware\EnsureTelemetryDeviceToken::class,
             // Staff permission grid — 'permission:module,capability'.
             'permission' => \App\Http\Middleware\EnsureStaffPermission::class,
             // The HR queue gate, so a route group carries it rather than each method.
@@ -46,6 +76,9 @@ return Application::configure(basePath: dirname(__DIR__))
             // Advances have their own door: the approvers are a line manager,
             // accounts and a director, none of whom satisfy hr.manage.
             'hr.advances' => \App\Http\Middleware\EnsureCanAccessAdvances::class,
+            // Transport OS permission gate — 'transport.permission:<key>'.
+            // Applied to route groups so a new route is covered by default.
+            'transport.permission' => \App\Http\Middleware\EnsureTransportPermission::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
@@ -62,6 +95,24 @@ return Application::configure(basePath: dirname(__DIR__))
         // JSON error responses for API routes
         $exceptions->render(function (\Throwable $e, Request $request) {
             if ($request->is('api/*') || $request->wantsJson()) {
+                // The attendance app is not the React frontend and cannot read the
+                // shape below. It tests `status == 1` as an INTEGER, treats any
+                // non-200 as a failure whose body it toasts and then discards, and
+                // SangoeTrack answers 403 for a rejected field rather than 422.
+                //
+                // Left on the generic branch, a missing field toasted the literal
+                // words "Validation failed" and named nothing, so whoever was
+                // holding the phone could not tell which box to fix. The first
+                // real message is promoted to `message` for exactly that reason;
+                // `errors` still carries the full set.
+                if ($e instanceof ValidationException && $request->is('api/Hrm/*')) {
+                    return \App\Support\Hrm\HrmResponse::invalid(
+                        collect($e->errors())->flatten()->first()
+                            ?: 'Please check the details and try again.',
+                        $e->errors(),
+                    );
+                }
+
                 // Preserve the existing {status, message, errors} shape the frontend
                 // was already built against for form-validation failures.
                 if ($e instanceof ValidationException) {

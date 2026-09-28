@@ -242,13 +242,49 @@ h1,h2,h3,h4,h5,h6 { color: var(--text-h); font-family: 'Plus Jakarta Sans','Inte
   box-shadow: var(--shadow-hover-3d);
 }
 
+/*
+ * The app frame's left offset.
+ *
+ * The header and the main content both have to sit beside the sidebar on a
+ * desktop and ignore it on a phone, where the sidebar is not rendered at all.
+ * Both used to do it with an inline `paddingLeft: 260px` / `left: 260px`, and
+ * an inline style cannot carry a media query — so on a 390px screen the content
+ * started 260px in and had 130px left to live in. That is the whole of the
+ * "responsiveness issue": not one page, every page.
+ *
+ * The width is still owned by React (it changes when the sidebar collapses) and
+ * arrives as a custom property; the breakpoint is owned by CSS, which is the
+ * only place that can express it.
+ */
+.app-shifted { padding-left: 0; }
+.app-shifted-left { left: 0; }
+
+@media (min-width: 768px) {
+  .app-shifted { padding-left: var(--sidebar-w, 260px); }
+  .app-shifted-left { left: var(--sidebar-w, 260px); }
+}
+
 /* 3D Sidebar */
 .sidebar-3d {
   position: fixed;
   left: 0; top: 0;
   height: 100%;
   z-index: 40;
-  display: flex;
+  /*
+   * `display` is deliberately NOT set here.
+   *
+   * The element is `hidden md:flex` — none on a phone, flex from 768px up,
+   * because below that the nav is the slide-in drawer AppShell renders instead.
+   * `display: flex` used to sit in this block, and since a plain class beats
+   * nothing and this file is written after Tailwind's utilities, it beat
+   * `.hidden` on equal specificity. So the 260px desktop sidebar rendered on
+   * every phone, permanently, on top of the drawer that was supposed to replace
+   * it — and the layout below reserved another 260px of padding for it, leaving
+   * a 390px screen about 130px of usable width.
+   *
+   * Nothing else uses this class: the `.sidebar` alias below is legacy and
+   * unreferenced, and the one <aside> that carries it also carries `flex-col`.
+   */
   flex-direction: column;
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border);
@@ -544,6 +580,40 @@ html.light .header-3d {
     background: rgba(26,21,53,0.3);
     backdrop-filter: blur(12px);
   }
+  /*
+   * Report Issue must clear every overlay in the app, including the one it was
+   * opened from. The button sits at z-[10000] -- above HR dialogs (9999), the
+   * Select portal (1500), Sales dialogs (130), the palette and toasts (100) --
+   * so its own modal has to come out above that, or clicking the button opens
+   * a form behind the popup you were trying to report.
+   *
+   * :has() rather than a prop because .modal-backdrop is created inside ui/Modal
+   * and portalled to <body>; nothing outside can reach it to set a z-index.
+   */
+  .modal-backdrop:has(.sire-report-modal) { z-index: 10001; }
+
+  /*
+   * Report Issue is the tallest modal in the application -- captured context,
+   * two long text fields, three triage selects, three capture buttons and a
+   * thumbnail strip. .modal-box sets no max-height and no overflow, and on a
+   * phone the backdrop aligns to flex-end, so anything that does not fit is
+   * clipped off the TOP: the detected context and the title field, the two
+   * things the reporter needs first.
+   *
+   * Scoped to this modal rather than added to .modal-box, which every other
+   * screen in the CRM shares.
+   */
+  .sire-report-modal {
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  @media (max-width: 640px) {
+    /* A bottom sheet already sits against the bottom edge, so it only needs
+       room for the status bar rather than a gutter at both ends. */
+    .sire-report-modal { max-height: calc(100dvh - 3rem); }
+  }
+
   .modal-box {
     @apply rounded-2xl p-5 w-full max-w-md mx-4 animate-scale-in;
     background: var(--bg-card);
@@ -668,6 +738,53 @@ html.light .header-3d {
   .rte-body iframe, .rich-content iframe { max-width: 100%; aspect-ratio: 16 / 9; width: 560px; border: 0; border-radius: 10px; margin: 0.5em 0; }
   .rte-body figure, .rich-content figure { margin: 0.6em 0; }
   .rte-body figcaption, .rich-content figcaption { font-size: 0.8em; color: var(--text-muted); text-align: center; margin-top: 0.3em; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PASTED TEXT THAT CARRIES ITS OWN COLOUR
+   ══════════════════════════════════════════════════════════════
+   Stored rich text (task descriptions and comments, notes, proposals) keeps
+   whatever the author pasted. Word, Google Docs, Outlook and Quill's own colour
+   picker all write an explicit near-black on the span — correct on the white
+   page it came from, invisible on a dark card, which is exactly what "text is
+   not visible in dark mode" was.
+
+   The text itself is not wrong and must not be rewritten on save: the same row
+   is read in both themes, and in light mode that black is right. So the theme
+   overrides it at render time instead, and only for the handful of values that
+   actually mean "default body text" — a deliberate red or green still comes
+   through, because losing an author's highlight is its own bug.
+
+   The mirror problem (white pasted onto the light theme's white card) is
+   handled the same way underneath. */
+
+html.dark :is(.rte-body, .rich-content, .task-comment-html, .ql-editor)
+  :is([style*="color:#000"], [style*="color: #000"],
+      [style*="color:rgb(0,0,0)"], [style*="color: rgb(0, 0, 0)"],
+      [style*="color:rgba(0,0,0"], [style*="color: rgba(0, 0, 0"],
+      [style*="color:black"], [style*="color: black"],
+      [style*="color:windowtext"], [style*="color: windowtext"],
+      [style*="color:#111"], [style*="color: #111"],
+      [style*="color:#212529"], [style*="color: #212529"],
+      [style*="color:#222"], [style*="color: #222"],
+      [style*="color:#333"], [style*="color: #333"],
+      [style*="color:#1f1f1f"], [style*="color: #1f1f1f"],
+      [style*="color:rgb(31,31,31)"], [style*="color: rgb(31, 31, 31)"],
+      [style*="color:rgb(32,33,36)"], [style*="color: rgb(32, 33, 36)"],
+      [style*="color:rgb(33,37,41)"], [style*="color: rgb(33, 37, 41)"]),
+html.dark :is(.rte-body, .rich-content, .task-comment-html, .ql-editor)
+  :is(font[color="#000000"], font[color="#000"], font[color="black"]) {
+  color: var(--text-body) !important;
+}
+
+html.light :is(.rte-body, .rich-content, .task-comment-html, .ql-editor)
+  :is([style*="color:#fff"], [style*="color: #fff"],
+      [style*="color:#FFF"], [style*="color: #FFF"],
+      [style*="color:rgb(255,255,255)"], [style*="color: rgb(255, 255, 255)"],
+      [style*="color:white"], [style*="color: white"]),
+html.light :is(.rte-body, .rich-content, .task-comment-html, .ql-editor)
+  :is(font[color="#ffffff"], font[color="#fff"], font[color="white"]) {
+  color: var(--text-body) !important;
 }
 
 /* ══════════════════════════════════════════════════════════════

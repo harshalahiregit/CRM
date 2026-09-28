@@ -222,13 +222,177 @@ class EmployeeIdentityService
     }
 
     /**
+     * Employment statuses that still leave a person able to sign in.
+     *
+     * An allowlist, for the same reason AuthService::assertUserCanLogin uses one:
+     * a status added later is refused until somebody deliberately admits it,
+     * rather than silently granting access the day it appears in a dropdown.
+     *
+     * 'On Leave' is in. Somebody on maternity leave still has to read a payslip,
+     * apply for more leave and see the holiday calendar — being away is not the
+     * same as being gone, and the leave module would be unusable to exactly the
+     * people who need it. 'Inactive' is the one that means gone.
+     */
+    public const EMPLOYMENT_STATUSES_THAT_MAY_SIGN_IN = ['Active', 'On Leave'];
+
+    /**
+     * Why employment blocks this login, or null when it does not.
+     *
+     * The gap this closes: hr_employees.status was a label on an HR screen and
+     * nothing else. Deactivating an employee left `users.status` at 'active' and
+     * `app_login_enabled` at true, so the person kept a working CRM login and a
+     * working attendance app — verified by logging in as one. HR believed they
+     * had revoked access; nothing had.
+     *
+     * Deliberately narrow:
+     *
+     *   No linked employee → not our question. Portal accounts, the system admin
+     *   of a workspace that does not use HR, an API integration login: none of
+     *   them have an hr_employees row, and inventing one to judge them by would
+     *   break logins that are working correctly today.
+     *
+     *   The founding admin of a tenant is exempt. Staff Management already
+     *   refuses to demote or delete them (see foundingAdminId — the old CRM's
+     *   cant_remove_main_admin) precisely so a workspace can never be left with
+     *   nobody in charge. Without the same exemption here, one careless edit on
+     *   the HR Employees screen — a screen that says nothing about access —
+     *   would lock every administrator out of the tenant with no way back in.
+     *   The refusal is logged either way, so the exemption is visible when it
+     *   is used rather than being a silent hole.
+     */
+    public function employmentRefusalReason(User $user): ?string
+    {
+        $employee = $this->employeeFor($user);
+
+        if ($employee === null) {
+            return null;
+        }
+
+        if (in_array((string) $employee->status, self::EMPLOYMENT_STATUSES_THAT_MAY_SIGN_IN, true)) {
+            return null;
+        }
+
+        if ($this->isFoundingAdmin($user)) {
+            Log::channel('auth')->warning('Founding admin signed in with an inactive employee record', [
+                'user_id'         => $user->id,
+                'employee_id'     => $employee->id,
+                'employee_status' => $employee->status,
+                'tenant_id'       => $user->tenant_id,
+            ]);
+
+            return null;
+        }
+
+        return 'Your employment record is not active. Contact HR.';
+    }
+
+    /**
+     * The earliest admin in the tenant — the account the workspace was created
+     * with. Mirrors StaffManagementController::foundingAdminId(); per-tenant
+     * rather than a global row id, so a second workspace has its own.
+     */
+    private function isFoundingAdmin(User $user): bool
+    {
+        if ($user->role !== 'admin') {
+            return false;
+        }
+
+        return (int) $user->id === (int) User::where('tenant_id', $user->tenant_id)
+            ->where('role', 'admin')
+            ->min('id');
+    }
+
+    /**
+     * Push the employee's identity fields onto the login attached to them.
+     *
+     * The ONE synchronisation point, called from both write paths (the HR
+     * employee form and Staff Management), so there is no second answer to keep
+     * in step with this one.
+     *
+     * Direction is deliberate and one-way: hr_employees owns who the person is,
+     * `users` owns how they get in. Editing an employee's phone number in HR and
+     * finding Staff Management still showing the old one — or worse, blank — was
+     * the whole complaint. Writing back the other way as well would make two
+     * owners and a race, which is what produced the divergence in the first
+     * place.
+     *
+     * `users.email` moves with it because it IS the credential: leaving a login
+     * on an address HR has retired means somebody signs in as an identity the
+     * employee record no longer claims. It is skipped, loudly, when another
+     * account already holds that address — the column is globally unique and a
+     * collision is a decision for a human, not something to resolve implicitly.
+     *
+     * Nothing else on the account is touched: not the password, not the status,
+     * not the permission role, not meta. Those belong to the account.
+     */
+    public function syncLoginFromEmployee(HrEmployee $employee, ?User $actor = null): ?User
+    {
+        if (! $employee->user_id) {
+            return null;
+        }
+
+        $user = User::where('tenant_id', $employee->tenant_id)->find($employee->user_id);
+
+        if (! $user) {
+            return null;
+        }
+
+        $changes = [];
+
+        foreach ([
+            'name'        => $employee->name,
+            'phone'       => $employee->phone,
+            'department'  => $employee->department,
+            'designation' => $employee->designation,
+        ] as $column => $value) {
+            $value = is_string($value) ? trim($value) : $value;
+
+            if ($value !== null && $value !== '' && (string) $user->{$column} !== (string) $value) {
+                $changes[$column] = $value;
+            }
+        }
+
+        $email = trim((string) ($employee->official_email ?: $employee->email));
+
+        if ($email !== '' && strcasecmp($email, (string) $user->email) !== 0) {
+            $takenBy = User::where('email', $email)->where('id', '!=', $user->id)->value('id');
+
+            if ($takenBy) {
+                Log::channel('hr')->warning('Employee email not pushed to the login — address already in use', [
+                    'employee_id' => $employee->id,
+                    'user_id'     => $user->id,
+                    'taken_by'    => $takenBy,
+                ]);
+            } else {
+                $changes['email'] = $email;
+            }
+        }
+
+        if ($changes === []) {
+            return $user;
+        }
+
+        $user->forceFill($changes)->save();
+
+        Log::channel('hr')->info('Login updated from its employee record', [
+            'employee_id' => $employee->id,
+            'user_id'     => $user->id,
+            'fields'      => array_keys($changes),
+            'by'          => $actor?->id,
+        ]);
+
+        return $user;
+    }
+
+    /**
      * May this login sign in to the attendance app?
      *
-     * Three things must all hold, and each is a different question with a
+     * Four things must all hold, and each is a different question with a
      * different owner:
      *
      *   the CRM account is active   — Staff Management, via users.status
      *   they are an employee        — there is an hr_employees row linked to them
+     *   they are still employed     — hr_employees.status
      *   HR has granted app access   — hr_employees.app_login_enabled
      *
      * Deliberately separate from the CRM login gate. An office admin has a
@@ -250,7 +414,15 @@ class EmployeeIdentityService
 
         $employee = $this->employeeFor($user);
 
-        return $employee !== null && $employee->app_login_enabled === true;
+        if ($employee === null || $employee->app_login_enabled !== true) {
+            return false;
+        }
+
+        // The same gate the CRM login applies. Leaving it out here would mean a
+        // deactivated employee was refused at the CRM sign-in page and still
+        // clocking in from the phone in their pocket — the app is the half that
+        // actually records attendance, so it is the half that matters most.
+        return in_array((string) $employee->status, self::EMPLOYMENT_STATUSES_THAT_MAY_SIGN_IN, true);
     }
 
     /**
@@ -263,8 +435,17 @@ class EmployeeIdentityService
             return 'Your account is not active. Contact your administrator.';
         }
 
-        if ($this->employeeFor($user) === null) {
+        $employee = $this->employeeFor($user);
+
+        if ($employee === null) {
             return 'You do not have an employee record. Contact HR.';
+        }
+
+        // Named before the generic message below, so somebody who was
+        // deactivated is told that rather than being sent to ask HR for an app
+        // permission they already have.
+        if (! in_array((string) $employee->status, self::EMPLOYMENT_STATUSES_THAT_MAY_SIGN_IN, true)) {
+            return 'Your employment record is not active. Contact HR.';
         }
 
         if (! $this->mayUseApp($user)) {

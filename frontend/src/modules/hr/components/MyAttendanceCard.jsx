@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Clock, LogIn, LogOut, Coffee, Play } from 'lucide-react'
-import { hrApi } from '@/services/hrApi'
+import { hrTime } from '@/modules/hr/constants'
 import { useToast } from '@/components/ui/Toast'
+import { useMyAttendanceToday, useRefreshMyAttendanceToday } from '@/modules/hr/hooks/useMyAttendanceToday'
+import { usePunch } from '@/modules/hr/hooks/usePunch'
+import SelfieCapture from '@/modules/hr/components/SelfieCapture'
 
 /**
  * Clock yourself in and out.
@@ -17,41 +20,45 @@ import { useToast } from '@/components/ui/Toast'
  * would be alarming and useless. It says what is missing and who fixes it.
  */
 export default function MyAttendanceCard({ compact = false }) {
-  const [state, setState] = useState({ loading: true, data: null, unlinked: false, error: null })
-  const [busy, setBusy] = useState(false)
+  // Shared with HeaderPunch, which is on every page: one request and one cached
+  // 403 between them instead of two of each. See useMyAttendanceToday.
+  const today = useMyAttendanceToday()
+  const refresh = useRefreshMyAttendanceToday()
+  const state = {
+    loading: today.loading,
+    data: today.data,
+    unlinked: today.unlinked,
+    error: today.unlinked ? today.unlinkedMessage : today.error,
+  }
+  // Busy now comes from usePunch, so the buttons disable for the real request
+  // rather than for a local flag this component used to keep in parallel.
   const toast = useToast()
 
-  const load = async () => {
-    try {
-      const res = await hrApi.attendance.me.today()
-      setState({ loading: false, data: res.data, unlinked: false, error: null })
-    } catch (e) {
-      // 403 here means "your login has no employee record" — expected for many
-      // people right now, so it is a state rather than a failure.
-      if (e?.response?.status === 403) {
-        setState({ loading: false, data: null, unlinked: true, error: e?.response?.data?.message || null })
-        return
-      }
-      setState({ loading: false, data: null, unlinked: false, error: e?.response?.data?.message || 'Could not load your attendance.' })
-    }
-  }
+  const load = refresh
 
-  useEffect(() => { load() }, [])
+  /*
+   | The same punch the header makes — usePunch owns the evidence.
+   |
+   | This card used to call checkIn() bare: no location, no selfie, no
+   | verification note, whatever the workspace required. So a person clocking in
+   | from a dashboard left a weaker record than the same person clocking in from
+   | the top bar, and a workspace that REQUIRED a selfie could be walked past by
+   | choosing the other control.
+   */
+  const { punch, breakAction, busy: punching, needsSelfie } = usePunch()
+  const [selfieFor, setSelfieFor] = useState(null) // 'in' | 'out' while the camera is open
 
-  const act = async (fn, done) => {
-    setBusy(true)
-    try {
-      await fn()
-      await load()
-      toast.success(done)
-    } catch (e) {
-      toast.error(e?.response?.data?.message || 'That did not work. Try again.')
-    } finally {
-      setBusy(false)
-    }
-  }
+  const report = (res) => (res.ok ? toast.success(res.message) : toast.error(res.message))
 
-  const time = (v) => (v ? String(v).slice(11, 16) || String(v).slice(0, 5) : '—')
+  const doPunch = async (side, blob, reason) => { setSelfieFor(null); report(await punch(side, blob, reason)) }
+
+  // The camera opens first when this workspace asks for a photo, exactly as it
+  // does in the header.
+  const startPunch = (side) => (needsSelfie ? setSelfieFor(side) : doPunch(side))
+
+  // Was a substring of the ISO string, which showed the UTC clock face — this
+  // card read 05:23 for a punch the register showed as 10:53. hrTime converts.
+  const time = hrTime
 
   if (state.loading) {
     // A skeleton the same shape and height as the loaded card, so the button
@@ -104,7 +111,7 @@ export default function MyAttendanceCard({ compact = false }) {
   const Btn = ({ onClick, icon: Icon, label, tone }) => (
     <button
       onClick={onClick}
-      disabled={busy}
+      disabled={punching}
       className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold disabled:opacity-50 transition-all"
       style={tone === 'primary'
         ? { background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff' }
@@ -146,14 +153,23 @@ export default function MyAttendanceCard({ compact = false }) {
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">
-        {can.check_in    && <Btn onClick={() => act(hrApi.attendance.me.checkIn,    'Clocked in')}  icon={LogIn}  label="Clock in"  tone="primary" />}
-        {can.check_out   && <Btn onClick={() => act(hrApi.attendance.me.checkOut,   'Clocked out')} icon={LogOut} label="Clock out" tone="primary" />}
-        {can.break_start && <Btn onClick={() => act(hrApi.attendance.me.breakStart, 'Break started')} icon={Coffee} label="Start break" />}
-        {can.break_end   && <Btn onClick={() => act(hrApi.attendance.me.breakEnd,   'Break ended')} icon={Play}   label="End break" />}
+        {can.check_in    && <Btn onClick={() => startPunch('in')}  icon={LogIn}  label="Clock in"  tone="primary" />}
+        {can.check_out   && <Btn onClick={() => startPunch('out')} icon={LogOut} label="Clock out" tone="primary" />}
+        {can.break_start && <Btn onClick={async () => report(await breakAction('start'))} icon={Coffee} label="Start break" />}
+        {can.break_end   && <Btn onClick={async () => report(await breakAction('end'))}   icon={Play}   label="End break" />}
         {!can.check_in && !can.check_out && !can.break_start && !can.break_end && (
           <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Done for today.</span>
         )}
       </div>
+
+      {/* The same camera the header opens, for the same reason. */}
+      {selfieFor && (
+        <SelfieCapture
+          title={selfieFor === 'out' ? 'Photo for your clock-out' : 'Photo for your clock-in'}
+          onCancel={() => setSelfieFor(null)}
+          onDone={({ blob, reason }) => doPunch(selfieFor, blob, reason)}
+        />
+      )}
     </div>
   )
 }

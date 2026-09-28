@@ -32,8 +32,10 @@ class EnsureCanAccessAdvances
             return response()->json(['status' => 'error', 'message' => 'Unauthenticated'], 401);
         }
 
-        // Portal identities carry their own columns and must never satisfy a
-        // staff gate — the same guard the other HR middleware makes.
+        // Portal identities must never satisfy a staff gate. The instanceof check
+        // alone does NOT achieve that and the comment here used to claim it did:
+        // clients, vendors and external companies are rows in `users` too, so
+        // they ARE Users. The account type is checked in hasBusinessHere().
         if (! $user instanceof User || ! $this->hasBusinessHere($user)) {
             return response()->json([
                 'status'  => 'error',
@@ -46,6 +48,19 @@ class EnsureCanAccessAdvances
 
     private function hasBusinessHere(User $user): bool
     {
+        // Only an account that works inside the CRM, whatever rung it stands on.
+        //
+        // First, because each of the three tests below would otherwise admit a
+        // portal login on its own: the tier loop matches internal_role with no
+        // regard for role (a CLIENT carrying 'director' passed straight through
+        // it), and managesAnyone() asks only whether an employee row points at
+        // this user id. An advance says what somebody is doing and how much they
+        // needed; a customer contact has no business reading that, let alone
+        // approving it.
+        if (! $user->isStaffAccount()) {
+            return false;
+        }
+
         // Admins and HR oversee the process.
         if ($user->isAdmin() || $user->canManageHrQueue()) {
             return true;

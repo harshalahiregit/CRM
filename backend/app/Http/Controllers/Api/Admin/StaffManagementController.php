@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Hr\HrDepartment;
+use App\Models\Hr\HrDesignation;
+use App\Models\Hr\HrEmployee;
 use App\Models\Shared\Note;
 use App\Services\Shared\NoteService;
 use App\Models\StaffRole;
@@ -10,6 +13,7 @@ use App\Models\User;
 use App\Services\Auth\SessionService;
 use App\Services\Auth\StaffRoleService;
 use App\Services\Hr\EmployeeIdentityService;
+use App\Services\Hr\EmployeeService;
 use Illuminate\Support\Facades\DB;
 use App\Support\Hr\StaffPermission;
 use Illuminate\Http\Request;
@@ -124,7 +128,10 @@ class StaffManagementController extends Controller
             return response()->json([
                 'status' => 'success',
                 'data' => [
-                    'staff' => $staff->items(),
+                    'staff' => $this->withEmployeeIdentity(
+                        $tenantId,
+                        array_map(fn ($u) => $u->toArray(), $staff->items()),
+                    ),
                     'pagination' => [
                         'current_page' => $staff->currentPage(),
                         'last_page' => $staff->lastPage(),
@@ -158,7 +165,7 @@ class StaffManagementController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'data' => $staff,
+            'data' => $this->withEmployeeIdentity($tenantId, [$staff->toArray()])[0],
         ]);
     }
 
@@ -348,11 +355,66 @@ class StaffManagementController extends Controller
 
         $staff->update($updateData);
 
+        // Identity fields belong to the employee record, and this screen now
+        // DISPLAYS them from there (see withEmployeeIdentity). Writing them only
+        // to the account row would be worse than the divergence it replaced: the
+        // admin types a new phone number, saves, and the list redraws with the
+        // old one, because the owner never heard about the edit. So the edit goes
+        // to the owner.
+        //
+        // Employment status is deliberately NOT here. Hiring and leaving are HR
+        // decisions made on the HR screen; this form's Account Status closes an
+        // account without claiming the person has left the company.
+        $this->pushIdentityToEmployee($staff, $updateData);
+
         return response()->json([
             'status'  => 'success',
             'message' => 'Staff member updated successfully',
-            'data'    => $staff->fresh(),
+            'data'    => $this->withEmployeeIdentity($tenantId, [$staff->fresh()->toArray()])[0],
         ]);
+    }
+
+    /**
+     * Carry an account edit through to the employee record that owns the field.
+     *
+     * Only the fields the admin actually submitted, and only when they differ —
+     * an untouched form must not stamp the account's stale copy back onto the
+     * record it was copied from.
+     */
+    private function pushIdentityToEmployee(User $staff, array $updateData): void
+    {
+        $employee = HrEmployee::where('tenant_id', $staff->tenant_id)
+            ->where('user_id', $staff->id)
+            ->first();
+
+        if (! $employee) {
+            return;
+        }
+
+        $changes = [];
+
+        foreach (['name', 'email', 'phone', 'department', 'designation'] as $field) {
+            if (! array_key_exists($field, $updateData)) {
+                continue;
+            }
+
+            $value = is_string($updateData[$field]) ? trim($updateData[$field]) : $updateData[$field];
+
+            if ($value !== null && $value !== '' && (string) $employee->{$field} !== (string) $value) {
+                $changes[$field] = $value;
+            }
+        }
+
+        if ($changes === []) {
+            return;
+        }
+
+        // Through the service, not a raw update: department and designation are
+        // NOT NULL name columns paired with master ids, and OrgLink's saving hook
+        // is what keeps the id in step with the name. A direct write here would
+        // leave an employee whose department reads "Engineering" and whose
+        // department_id still points at Management.
+        app(EmployeeService::class)->update($employee, $changes, request()->user());
     }
 
     /**
@@ -566,9 +628,111 @@ class StaffManagementController extends Controller
         return response()->json(['status' => 'success', 'message' => 'Note removed.']);
     }
 
+    /**
+     * The accounts this screen is responsible for.
+     *
+     * `role IN (staff, admin)` was the whole rule, and it quietly lost people.
+     * An actual employee — Vikram Rao, an active Director with an hr_employees
+     * row — carries `role = 'client'` because his login was created through a
+     * portal path years before the HR module existed. He shows up in HR
+     * Employees and on the org chart, and vanished from the only screen that can
+     * change his account. Nobody could find him to fix him, which is the loop
+     * that keeps legacy rows legacy.
+     *
+     * So the rule is now "a staff or admin login, OR a login some employee is
+     * linked to". Being linked to an employee record is the definitive statement
+     * that this account belongs to a person this company employs; no role string
+     * outranks it.
+     *
+     * This widens a LISTING, not a permission. Nothing here grants the account
+     * anything: `role` still decides what its holder may do, every route in this
+     * group is still behind role:admin, and a portal account with no employee
+     * link is still invisible exactly as before.
+     */
     private function manageable(int $tenantId)
     {
-        return User::where('tenant_id', $tenantId)->whereIn('role', ['staff', 'admin']);
+        return User::where('tenant_id', $tenantId)
+            ->where(function ($q) use ($tenantId) {
+                $q->whereIn('role', ['staff', 'admin'])
+                    ->orWhereIn('id', HrEmployee::where('tenant_id', $tenantId)
+                        ->whereNotNull('user_id')
+                        ->select('user_id'));
+            });
+    }
+
+    /**
+     * Overlay the employee record's identity fields onto the account rows.
+     *
+     * hr_employees owns name, email, phone, department and designation (see
+     * EmployeeIdentityService::syncLoginFromEmployee). The account row carries
+     * copies, and copies drift: this screen was showing "N/A" for a department
+     * the HR screen showed as Engineering, for the same person, at the same
+     * moment. Reading the owner here means the two screens cannot disagree even
+     * if a copy is stale.
+     *
+     * The employment and access fields ride along so the UI can say WHY somebody
+     * cannot sign in, instead of showing an ACTIVE badge beside a login that the
+     * auth gate now refuses.
+     *
+     * One query for the whole page, not one per row.
+     */
+    private function withEmployeeIdentity(int $tenantId, array $rows): array
+    {
+        $userIds = array_values(array_filter(array_map(fn ($r) => $r['id'] ?? null, $rows)));
+
+        if ($userIds === []) {
+            return $rows;
+        }
+
+        $employees = HrEmployee::where('tenant_id', $tenantId)
+            ->whereIn('user_id', $userIds)
+            ->get(['id', 'user_id', 'employee_code', 'name', 'email', 'official_email',
+                   'phone', 'department', 'designation', 'status', 'app_login_enabled'])
+            ->keyBy('user_id');
+
+        $signInStatuses = EmployeeIdentityService::EMPLOYMENT_STATUSES_THAT_MAY_SIGN_IN;
+
+        return array_map(function (array $row) use ($employees, $signInStatuses) {
+            $e = $employees->get($row['id'] ?? null);
+
+            $row['employee_id']       = $e?->id;
+            $row['employee_code']     = $e?->employee_code;
+            $row['employment_status'] = $e?->status;
+            $row['app_login_enabled'] = $e ? (bool) $e->app_login_enabled : null;
+
+            if (! $e) {
+                // No employee record is a legitimate state — a portal account, an
+                // integration login, an admin in a workspace that does not use
+                // HR. Say so plainly rather than leaving the field ambiguous.
+                $row['access_blocked_reason'] = $row['status'] === 'active'
+                    ? null
+                    : 'This account is '.$row['status'].'.';
+
+                return $row;
+            }
+
+            foreach (['name', 'phone', 'department', 'designation'] as $field) {
+                $value = is_string($e->{$field}) ? trim($e->{$field}) : $e->{$field};
+
+                if ($value !== null && $value !== '') {
+                    $row[$field] = $value;
+                }
+            }
+
+            $email = trim((string) ($e->official_email ?: $e->email));
+
+            if ($email !== '') {
+                $row['email'] = $email;
+            }
+
+            $row['access_blocked_reason'] = match (true) {
+                $row['status'] !== 'active'                              => 'This account is '.$row['status'].'.',
+                ! in_array((string) $e->status, $signInStatuses, true)   => 'Employment is '.$e->status.' — sign-in is blocked.',
+                default                                                  => null,
+            };
+
+            return $row;
+        }, $rows);
     }
 
     /**
@@ -644,14 +808,62 @@ class StaffManagementController extends Controller
         $staff = $this->manageable($tenantId)
             ->findOrFail($id);
 
-        // Prevent deleting staff if they have active assignments
-        // You can add additional checks here based on your business logic
+        // The two guards the original "add additional checks here" comment stood
+        // in for. Both were reproducible in the browser.
 
-        $staff->delete();
+        // 1. A workspace must not be able to delete its way to having nobody in
+        //    charge. Demotion is already refused for this account
+        //    (roleChangeError); deleting it is the same outcome by a shorter
+        //    route, and there is no way back from it.
+        if ((int) $staff->id === $this->foundingAdminId($tenantId)) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'The founding administrator cannot be deleted. Transfer ownership first.',
+            ], 422);
+        }
+
+        if ((int) $staff->id === (int) $request->user()->id) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'You cannot delete your own account.',
+            ], 422);
+        }
+
+        // 2. Do not leave a pointer to a row that is gone. hr_employees.user_id
+        //    is not a foreign key with a cascade, so deleting the account left
+        //    the employee pointing at nothing — which the directory panel then
+        //    reports as a blocking "linked to account #35, which no longer
+        //    exists". The application was manufacturing the exact corruption it
+        //    detects, on a 200.
+        //
+        //    The link is cleared rather than the delete refused: removing a login
+        //    for somebody who has left is ordinary admin work, and the employment
+        //    record must survive it — payroll, attendance and service history all
+        //    hang off that row. The employee lands in "employed, no login", which
+        //    is a normal state the panel already knows how to resolve.
+        $employee = HrEmployee::where('tenant_id', $tenantId)
+            ->where('user_id', $staff->id)
+            ->first();
+
+        DB::transaction(function () use ($staff, $employee, $request) {
+            if ($employee) {
+                $employee->update(['user_id' => null]);
+
+                \Illuminate\Support\Facades\Log::channel('hr')->info('Employee unlinked because its login was deleted', [
+                    'employee_id' => $employee->id,
+                    'user_id'     => $staff->id,
+                    'by'          => $request->user()->id,
+                ]);
+            }
+
+            $staff->delete();
+        });
 
         return response()->json([
-            'status' => 'success',
-            'message' => 'Staff member deleted successfully',
+            'status'  => 'success',
+            'message' => $employee
+                ? "Staff member deleted. {$employee->name} remains an employee with no login."
+                : 'Staff member deleted successfully',
         ]);
     }
 
@@ -685,54 +897,80 @@ class StaffManagementController extends Controller
     }
 
     /**
-     * Get available departments
+     * The departments this workspace has, as records.
+     *
+     * This used to merge a hardcoded list of eight names with
+     * `DISTINCT users.department` — free text, so "Operations", "operations" and
+     * "Ops" were three departments, none of them renameable, and the org chart
+     * (which reads `hr_employees.department_id`) saw almost nobody. The records
+     * and the screen that manages them already existed under HR ->
+     * Organization Setup; nothing pointed at them.
+     *
+     * Reading them here means there is ONE list, maintained in ONE place, and an
+     * admin adding a department gets it everywhere without a developer.
+     *
+     * Inactive departments are still returned when somebody is already in one,
+     * so retiring a department does not blank the field on the people who were
+     * in it — their record would otherwise silently lose its department the next
+     * time anybody pressed Save.
      */
     public function departments(Request $request): JsonResponse
     {
-        try {
-            \Log::info('Departments endpoint called');
-            
-            $tenantId = $request->user()->tenant_id;
+        $tenantId = (int) $request->user()->tenant_id;
 
-            // Get unique departments from existing staff
-            $existingDepts = $this->manageable($tenantId)
-                ->whereNotNull('department')
-                ->distinct()
-                ->pluck('department')
-                ->toArray();
+        $inUse = HrEmployee::where('tenant_id', $tenantId)
+            ->whereNotNull('department_id')
+            ->distinct()
+            ->pluck('department_id');
 
-            // Predefined departments
-            $predefinedDepts = [
-                'HR',
-                'Engineering',
-                'Sales',
-                'Marketing',
-                'Finance',
-                'Operations',
-                'Product',
-                'Customer Support',
-            ];
+        $departments = HrDepartment::where('tenant_id', $tenantId)
+            ->where(fn ($q) => $q->where('is_active', true)->orWhereIn('id', $inUse))
+            ->orderBy('name')
+            ->get(['id', 'name', 'code', 'is_active']);
 
-            // Merge and remove duplicates
-            $allDepts = array_unique(array_merge($predefinedDepts, $existingDepts));
-            sort($allDepts);
+        return response()->json([
+            'status' => 'success',
+            'data'   => $departments->map(fn (HrDepartment $d) => [
+                'id'        => $d->id,
+                'name'      => $d->name,
+                'code'      => $d->code,
+                'is_active' => (bool) $d->is_active,
+            ])->values(),
+        ]);
+    }
 
-            \Log::info('Departments fetched', ['count' => count($allDepts)]);
+    /**
+     * The job titles this workspace has, as records.
+     *
+     * Separate from designations() above, which — despite the name — returns
+     * staff ROLES (the permission templates). A person's job title and their
+     * permission role are different things: two people can both be "Senior
+     * Engineer" while only one of them may approve an expense. Conflating them
+     * is why the staff form had a free-text "Job Title" box next to a "Role"
+     * dropdown and neither knew about the other.
+     */
+    public function jobTitles(Request $request): JsonResponse
+    {
+        $tenantId = (int) $request->user()->tenant_id;
 
-            return response()->json([
-                'status' => 'success',
-                'data' => $allDepts,
-            ]);
-        } catch (\Exception $e) {
-            \Log::error('Departments endpoint error', [
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            
-            return response()->json([
-                'status' => 'error',
-                'message' => $e->getMessage(),
-            ], 500);
-        }
+        $inUse = HrEmployee::where('tenant_id', $tenantId)
+            ->whereNotNull('designation_id')
+            ->distinct()
+            ->pluck('designation_id');
+
+        $designations = HrDesignation::where('tenant_id', $tenantId)
+            ->where(fn ($q) => $q->where('is_active', true)->orWhereIn('id', $inUse))
+            ->orderBy('name')
+            ->get(['id', 'name', 'code', 'is_active']);
+
+        return response()->json([
+            'status' => 'success',
+            'data'   => $designations->map(fn (HrDesignation $d) => [
+                'id'        => $d->id,
+                'name'      => $d->name,
+                'code'      => $d->code,
+                'is_active' => (bool) $d->is_active,
+            ])->values(),
+        ]);
     }
 }

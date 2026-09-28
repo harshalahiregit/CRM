@@ -7,10 +7,25 @@ use App\Models\Traits\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * A staff JOB role — what lands in `users.internal_role`.
+ * LEGACY — retired. Nothing in the application reads or writes this any more.
  *
- * Not an account type. See the migration for why the two are different things
- * and why only this one is editable.
+ * This was a second staff-role catalogue beside `staff_roles`. Both wrote
+ * `users.internal_role`; only `staff_roles` carried permissions, so this one
+ * could never be the authority — it was a role manager that granted nothing,
+ * with a routed Settings screen and no rows in it.
+ *
+ * `staff_roles` owns the vocabulary now, together with the permissions and the
+ * scope. The two slugs that existed ONLY here — `hr` and `manager`, which
+ * routes/sangoetrack.php gates on via `role:admin,hr,manager` — are
+ * vocabulary-only entries in StaffRoleTemplate, so that gate is unaffected.
+ *
+ * The class and its table are kept on purpose rather than deleted: this
+ * environment cannot see production, and if rows exist there somebody needs a
+ * way to read them before anything is dropped. Removing the create/update/
+ * delete PATH is what stops a second source of authority; dropping the data is
+ * a separate, later decision.
+ *
+ * DO NOT wire this back up. New role work belongs in App\Models\StaffRole.
  */
 class AccessRole extends Model
 {

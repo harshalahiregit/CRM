@@ -16,7 +16,14 @@ const MAX_RENDER = 200
  * can't be styled — this replaces it with a token-driven popover so the list
  * matches the app in both light and dark.
  *
- * options: [{ value, label, dot? }]  — `dot` paints a small colour chip (status/priority).
+ * options: [{ value, label, dot?, disabled?, keywords? }]
+ *   dot       — a small colour chip (status/priority).
+ *   disabled  — shown but not selectable. For a list where an absent row and an
+ *               unavailable one are DIFFERENT facts: "the helmet is not on the
+ *               list" and "the helmet has run out" send the reader to different
+ *               places, and hiding the second one disguises it as the first.
+ *   keywords  — extra text the filter matches but the row does not show, so a
+ *               product can be found by SKU without putting the SKU in the label.
  * searchable: 'auto' (default — filter box appears past SEARCH_THRESHOLD) | true | false
  */
 export default function Select({
@@ -49,14 +56,16 @@ export default function Select({
 
   const searchEnabled = searchable === true || (searchable !== false && options.length > SEARCH_THRESHOLD)
 
-  // Case-insensitive match on label (and value, so a SKU/id typed straight in
-  // still finds its row). No query → the list is untouched.
+  // Case-insensitive match on label, value (so an id typed straight in still
+  // finds its row) and any extra keywords the caller attached. No query → the
+  // list is untouched.
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!searchEnabled || !q) return options
     return options.filter(o =>
       String(o.label ?? '').toLowerCase().includes(q) ||
-      String(o.value ?? '').toLowerCase().includes(q))
+      String(o.value ?? '').toLowerCase().includes(q) ||
+      String(o.keywords ?? '').toLowerCase().includes(q))
   }, [options, query, searchEnabled])
 
   const capped = filtered.length > MAX_RENDER ? filtered.slice(0, MAX_RENDER) : filtered
@@ -123,12 +132,25 @@ export default function Select({
     listRef.current?.children[active]?.scrollIntoView({ block: 'nearest' })
   }, [active, open])
 
-  const pick = (opt) => { onChange?.(opt.value); setOpen(false) }
+  const pick = (opt) => {
+    // A disabled row is there to be READ, not chosen.
+    if (!opt || opt.disabled) return
+    onChange?.(opt.value)
+    setOpen(false)
+  }
+
+  /** The next selectable row in a direction, or where we already were. */
+  const step = useCallback((from, dir) => {
+    for (let i = from + dir; i >= 0 && i < capped.length; i += dir) {
+      if (!capped[i]?.disabled) return i
+    }
+    return from
+  }, [capped])
 
   // Shared arrow/enter handling for both the closed control and the filter input.
   const navKeys = (e) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setActive(i => Math.min(capped.length - 1, i + 1)) }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(i => Math.max(0, i - 1)) }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive(i => step(i, 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(i => step(i, -1)) }
     else if (e.key === 'Enter') { e.preventDefault(); if (capped[active]) pick(capped[active]) }
     else if (e.key === 'Escape') { e.preventDefault(); setOpen(false) }
   }
@@ -137,7 +159,10 @@ export default function Select({
     if (disabled) return
     if (!open && (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown')) {
       e.preventDefault(); setOpen(true)
-      setActive(Math.max(0, options.findIndex(o => String(o.value) === String(value))))
+      // Land on the current value, or on the first row that can actually be
+      // chosen -- opening onto a disabled row makes Enter do nothing.
+      const at = options.findIndex(o => String(o.value) === String(value))
+      setActive(at >= 0 ? at : Math.max(0, options.findIndex(o => !o.disabled)))
       return
     }
     if (!open) return
@@ -184,7 +209,14 @@ export default function Select({
       {open && pos && createPortal(
         <div
           ref={popRef}
-          className="fixed z-[80] rounded-xl flex flex-col overflow-hidden"
+          // z-1500 clears every modal in the app (Overlay is 1000, the widest is
+          // 1300) and stays under the toast layer (9998). At the old z-80 this
+          // popover was portalled to <body> exactly like the modal, so the two
+          // were siblings in the same stacking context and 80 lost to 1000: the
+          // dropdown opened UNDERNEATH the dialog that contained it. Every
+          // select inside every modal was unusable -- the list was there, drawn,
+          // and unreachable.
+          className="fixed z-[1500] rounded-xl flex flex-col overflow-hidden"
           style={{
             left: pos.left,
             right: pos.right,
@@ -230,19 +262,22 @@ export default function Select({
             )}
             {capped.map((o, i) => {
               const isSel = String(o.value) === String(value)
+              const off = !!o.disabled
               return (
-                <li key={String(o.value)} role="option" aria-selected={isSel}>
+                <li key={String(o.value)} role="option" aria-selected={isSel} aria-disabled={off}>
                   <button
                     type="button"
-                    onMouseEnter={() => setActive(i)}
+                    disabled={off}
+                    onMouseEnter={() => { if (!off) setActive(i) }}
                     onClick={() => pick(o)}
                     className="w-full flex items-center gap-2 text-left transition-colors"
                     style={{
                       padding: '8px 12px',
                       fontSize: fs,
                       fontWeight: isSel ? 700 : 500,
-                      color: isSel ? 'var(--color-support-500)' : 'var(--text-body)',
-                      background: active === i ? 'color-mix(in srgb, var(--color-support-500) 10%, transparent)' : 'transparent',
+                      cursor: off ? 'not-allowed' : 'pointer',
+                      color: off ? 'var(--text-faint)' : isSel ? 'var(--color-support-500)' : 'var(--text-body)',
+                      background: !off && active === i ? 'color-mix(in srgb, var(--color-support-500) 10%, transparent)' : 'transparent',
                     }}
                   >
                     {o.dot && <span style={{ width: 8, height: 8, borderRadius: '50%', background: o.dot, flexShrink: 0 }} />}

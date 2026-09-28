@@ -1,3 +1,4 @@
+import { medicalApi } from '@/services/medicalApi'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
@@ -5,8 +6,12 @@ import {
   Check, AlertTriangle, ShieldCheck, Loader,
 } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
+import InternalDoctorSelect from '@/components/medical/InternalDoctorSelect'
+import { useVendorModule } from '@/modules/tpv/useVendorModule'
+import GroupInductionModal from '@/components/vendor/GroupInductionModal'
 import { useAuth } from '@/context/AuthContext'
 import AuditTimeline from '@/components/ui/AuditTimeline'
+import Select from '@/components/ui/Select'
 import { canApprovePR, canManagePR, fmtDate } from '../constants'
 import {
   KIT3D_STYLE, labelStyle, inputStyle, Overlay, ModalFooter, InfoBox,
@@ -51,12 +56,22 @@ const ID_PROOF_TYPES = ['Aadhaar', 'PAN', 'Voter ID', 'Driving Licence', 'Passpo
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 export default function PurchaseWorkerWizard() {
+  /*
+   * Admin screen and portal screen are the same screen — the TPV convention.
+   * `useVendorModule` resolves the client from the PATH, because a Purchase
+   * vendor holds a PurchaseVendor token and has no `user.role` to test. Each
+   * step resolves it for itself rather than having it drilled through six
+   * levels of props.
+   */
+  const { api, portal: isPortal } = useVendorModule()
+
   const { id: routeId } = useParams()
   const navigate = useNavigate()
   const { user } = useAuth()
   const admin  = canApprovePR(user)   // activation is role:admin server-side
-  const manage = canManagePR(user)
-  const backHref = '/app/purchase/workers'
+  // A vendor manages its own people — see PurchaseWorkers for why.
+  const manage = canManagePR(user) || isPortal
+  const backHref = isPortal ? '/purchase-portal/workforce/workers' : '/app/purchase/workers'
 
   // `workers/new` opens the wizard with nothing registered yet — Step 1 creates
   // the worker, and every later step addresses it by the id the API hands back.
@@ -74,7 +89,7 @@ export default function PurchaseWorkerWizard() {
   const load = useCallback(async (keepStep = false) => {
     if (!workerId) { setLoading(false); return }
     try {
-      const res = await purchaseApi.workforce.worker(workerId)
+      const res = await api.workforce.worker(workerId)
       const w = res?.worker ?? res?.data?.worker
       setWorker(w)
       setReadiness(res?.readiness ?? res?.data?.readiness ?? null)
@@ -94,6 +109,26 @@ export default function PurchaseWorkerWizard() {
   const onCreated = (created) => { pinnedStep.current = 2; setWorkerId(String(created.id)) }
 
   const progress = useMemo(() => buildProgress(worker, readiness), [worker, readiness])
+
+  /**
+   * A step with a form registers how to persist it, so leaving the step keeps
+   * what was typed.
+   *
+   * Changing step used to swap the panel and nothing else: half a worker's
+   * details, typed and then abandoned by pressing the next step, were gone with
+   * no warning. The worker endpoint takes a partial update, so what has been
+   * entered is stored on the way past.
+   */
+  const flushRef = useRef(null)
+  const registerFlush = useCallback((fn) => { flushRef.current = fn }, [])
+
+  const goStep = async (step) => {
+    // Never trap somebody on a step: a draft that will not save is a reason to
+    // say so, not a reason to refuse to move.
+    try { await flushRef.current?.() } catch { /* the step reports its own error */ }
+    flushRef.current = null
+    setActive(step)
+  }
 
   if (loading) {
     return <div style={{ padding: 24, color: 'var(--text-muted)' }}>Loading worker…</div>
@@ -162,19 +197,37 @@ export default function PurchaseWorkerWizard() {
           <ul style={{ margin: 0, paddingLeft: 28, color: '#f59e0b', fontSize: 12, lineHeight: 1.7 }}>
             {progress.blockers.map((b, i) => <li key={i}>{b}</li>)}
           </ul>
+
+          {/* Whose move it is. Naming the blocker is not the same as saying what
+              to do about it — and when the answer is "nothing", saying so stops
+              the vendor searching for a document they have already sent. */}
+          {progress.medical_clearance && !progress.medical_clearance.cleared && (
+            <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed rgba(245,158,11,0.35)', fontSize: 12, lineHeight: 1.6 }}>
+              {progress.medical_clearance.action ? (
+                <span style={{ color: 'var(--text-h)' }}>
+                  <strong>What to do:</strong> {progress.medical_clearance.action}
+                </span>
+              ) : (
+                <span style={{ color: 'var(--text-muted)' }}>
+                  <strong style={{ color: 'var(--text-h)' }}>Nothing is needed from you.</strong>{' '}
+                  The quality team is reviewing the certificate; the badge unblocks itself once they approve it.
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
       {worker.status === WORKER_STATUS.TERMINATED && worker.notes && (
         <InfoBox tone="danger"><strong>Terminated:</strong> {lastNoteLine(worker.notes)}</InfoBox>
       )}
 
-      <Stepper steps={steps} active={active} onGo={setActive} />
+      <Stepper steps={steps} active={active} onGo={goStep} />
 
       <div style={{ marginTop: 18 }}>
-        {active === 1 && <StepProfile worker={worker} editable={editable} onSaved={refresh} onNext={() => setActive(2)} />}
-        {active === 2 && <Step2Medical worker={worker} editable={editable} onSaved={refresh} onNext={() => setActive(3)} />}
-        {active === 3 && <StepInduction worker={worker} readiness={readiness} editable={editable} onSaved={refresh} onNext={() => setActive(4)} />}
-        {active === 4 && <StepPpe worker={worker} manage={manage} onChanged={refresh} onNext={() => setActive(5)} />}
+        {active === 1 && <StepProfile worker={worker} editable={editable} onSaved={refresh} onNext={() => goStep(2)} registerFlush={registerFlush} />}
+        {active === 2 && <Step2Medical worker={worker} editable={editable} onSaved={refresh} onNext={() => goStep(3)} />}
+        {active === 3 && <StepInduction worker={worker} readiness={readiness} editable={editable} onSaved={refresh} onNext={() => goStep(4)} />}
+        {active === 4 && <StepPpe worker={worker} manage={manage} onChanged={refresh} onNext={() => goStep(5)} />}
         {active === 5 && <StepBadge worker={worker} badge={badge} progress={progress} admin={admin} onChanged={refresh} />}
       </div>
 
@@ -218,7 +271,13 @@ function buildProgress(worker, readiness) {
   const blockers = []
   if (worker) {
     if (!r.documents_ok)  blockers.push('No documents are on file for this worker.')
-    if (!r.medical_ok)    blockers.push('No current medical fitness certificate on record.')
+    // The medical module's own verdict, which knows the difference between "you
+    // have not sent one" and "we have it and have not looked yet". The flat
+    // string this replaced said the certificate was missing even when it was
+    // sitting in the quality queue, which sent vendors hunting for nothing.
+    if (!r.medical_ok) {
+      blockers.push(r.medical_clearance?.message || 'No current medical fitness certificate on record.')
+    }
     if (!r.training_ok)   blockers.push('No completed, unexpired training on record.')
     if (!r.induction_ok)  blockers.push('Site induction has not been completed.')
     if (!r.competency_ok) {
@@ -332,7 +391,9 @@ const apiError = (e, fallback) => {
 }
 
 // ── Step 1 — Profile ─────────────────────────────────────────────────────────
-function StepProfile({ worker, editable, onCreated, onSaved, onNext }) {
+function StepProfile({ worker, editable, onCreated, onSaved, onNext, registerFlush }) {
+  const { api, portal: isPortal } = useVendorModule()
+
   const creating = !worker
   const [f, setF] = useState({
     vendor_id: worker?.purchase_vendor_id ? String(worker.purchase_vendor_id) : '',
@@ -344,17 +405,23 @@ function StepProfile({ worker, editable, onCreated, onSaved, onNext }) {
   })
   const [saving, setSaving] = useState(false)
   const [saved, setSaved]   = useState(false)
-  const set = (k) => (e) => { setF(p => ({ ...p, [k]: e.target.value })); setSaved(false) }
+  // Has anything been typed since the last successful save? Read by the flush
+  // below, which is registered once, so it must be a ref rather than state that
+  // callback would have closed over stale.
+  const dirty = useRef(false)
+  const set = (k) => (e) => { setF(p => ({ ...p, [k]: e.target.value })); setSaved(false); dirty.current = true }
 
   // The vendor the worker is supplied by. Only needed while registering — the FK
   // is fixed at creation and the API refuses to move a worker between vendors.
   const [vendors, setVendors] = useState([])
   useEffect(() => {
     if (!creating) return
+    // A vendor in its own portal has one employer and no list to choose from.
+    if (isPortal) return
     purchaseApi.vendors.list({ per_page: 200 })
       .then(d => setVendors(d?.data ?? d ?? []))
       .catch(() => setVendors([]))
-  }, [creating])
+  }, [creating, isPortal])
 
   // Site work has a statutory floor; surface it before the profile is saved.
   const age = ageOf(f.dob)
@@ -362,6 +429,32 @@ function StepProfile({ worker, editable, onCreated, onSaved, onNext }) {
   // Only an Aadhaar number has the fixed 12-digit shape worth checking.
   const aadhaarish = f.id_proof_type === 'Aadhaar'
   const badAadhaar = aadhaarish && f.id_proof_number && !/^\d{12}$/.test(f.id_proof_number)
+
+  /**
+   * Keep the half-filled form when the user moves to another step.
+   *
+   * Only for a worker that already exists: while REGISTERING there is no record
+   * to attach a draft to, and quietly creating one from a half-typed form would
+   * put unnamed workers on the roster.
+   */
+  const saveDraft = async () => {
+    if (creating || !editable || !dirty.current || !worker?.id) return
+    try {
+      const payload = Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v === '' ? null : v]))
+      delete payload.vendor_id
+      await api.workforce.updateWorker(worker.id, payload)
+      dirty.current = false
+    } catch { /* a lost draft must not block navigation */ }
+  }
+
+  // Registered once, read through a ref, so the flush the wizard calls always
+  // sees what is on screen now.
+  const draftRef = useRef(saveDraft)
+  draftRef.current = saveDraft
+  useEffect(() => {
+    registerFlush?.(() => draftRef.current())
+    return () => registerFlush?.(null)
+  }, [registerFlush])
 
   const save = async () => {
     if (creating && !f.vendor_id) { alert('Select the vendor this worker is supplied by.'); return }
@@ -374,13 +467,13 @@ function StepProfile({ worker, editable, onCreated, onSaved, onNext }) {
       const payload = Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v === '' ? null : v]))
       if (creating) {
         payload.vendor_id = Number(f.vendor_id)
-        const created = await purchaseApi.workforce.createWorker(payload)
+        const created = await api.workforce.createWorker(payload)
         setSaved(true)
         onCreated(created?.worker ?? created)
         return
       }
       delete payload.vendor_id   // create-only; update() rejects nothing but never reads it
-      await purchaseApi.workforce.updateWorker(worker.id, payload)
+      await api.workforce.updateWorker(worker.id, payload)
       setSaved(true); onSaved()
     } catch (e) {
       alert(apiError(e, creating ? 'Failed to register worker' : 'Failed to save profile'))
@@ -477,6 +570,10 @@ function StepProfile({ worker, editable, onCreated, onSaved, onNext }) {
  * the badge gate reads, so it carries the truthful outcome and nothing else.
  */
 function Step2Medical({ worker, editable, onSaved, onNext }) {
+  // portal, because the doctor picker below narrows to this vendor's own
+  // doctors when a vendor is driving it rather than staff.
+  const { api, portal: isPortal } = useVendorModule()
+
   // Newest first — the top row is the current fitness the readiness gate reads.
   const history = useMemo(() => sortMedicals(worker.medicals), [worker.medicals])
   const m = history[0] || {}
@@ -517,7 +614,18 @@ function Step2Medical({ worker, editable, onSaved, onNext }) {
   const [mhAnswers, setMhAnswers] = useState(m.screening_responses && typeof m.screening_responses === 'object' ? m.screening_responses : {})
 
   const [sigTab, setSigTab]         = useState('upload')
-  const [sigPreview, setSigPreview] = useState(m.signature_path ? `/storage/${m.signature_path}` : null)
+  // The signature on record moved off the publicly-served disk, so it can
+  // no longer be shown by URL — it is fetched through the authenticated
+  // route and revoked when this step goes away.
+  const [sigPreview, setSigPreview] = useState(null)
+
+  useEffect(() => {
+    if (!m.id || !m.signature_path) return
+    let url = null
+    medicalApi.admin.evidenceUrl('purchase', m.id, 'signature')
+      .then(u => { url = u; if (u) setSigPreview(u) })
+    return () => { if (url) URL.revokeObjectURL(url) }
+  }, [m.id, m.signature_path])
   const [stampText, setStampText]   = useState('')
   const [stampFont, setStampFont]   = useState('bold 20px Arial')
   const [stampColor, setStampColor] = useState('#0d47a1')
@@ -796,6 +904,11 @@ function Step2Medical({ worker, editable, onSaved, onNext }) {
         exam_type: isExternal ? 'external' : 'internal',
         clinic_name: f.organization_name || null,
         examiner_name: (isExternal ? f.external_doctor_name : f.doctor_name) || null,
+        // Only meaningful for an internal exam: an external doctor is by
+        // definition not one of ours. The registration number typed here used
+        // to be folded into the remarks and lost as a field; picking a doctor
+        // now records it properly, from their profile.
+        doctor_user_id: isExternal ? null : (f.doctor_user_id || null),
         blood_group: f.blood_group || null,
         restrictions: f.doctor_comments || null,
         // The prose stays — it is what a reader sees on the record — but the
@@ -823,7 +936,7 @@ function Step2Medical({ worker, editable, onSaved, onNext }) {
         })
       }
 
-      await purchaseApi.workforce.saveMedical(worker.id, payload)
+      await api.workforce.saveMedical(worker.id, payload)
       setSaved(true)
       onSaved()
       if (onNext) onNext()
@@ -940,6 +1053,21 @@ function Step2Medical({ worker, editable, onSaved, onNext }) {
           {/* Doctor Details */}
           <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-h)', marginBottom: 12, borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>👨‍⚕️ Doctor Details</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 20 }}>
+            {/* Pick one of our own doctors and the three boxes below fill
+                themselves; leave it alone and they behave exactly as they always
+                did. The Purchase mirror of the TPV wizard's picker. */}
+            <div style={{ gridColumn: '1 / -1' }}>
+              <InternalDoctorSelect
+                module="purchase" portal={isPortal} value={f.doctor_user_id}
+                onPick={d => setF(p => ({
+                  ...p,
+                  doctor_user_id: d?.user_id ?? null,
+                  doctor_name: d ? (d.name || '') : p.doctor_name,
+                  organization_name: d?.clinic_name || p.organization_name,
+                  doctor_registration: d?.license_no || p.doctor_registration,
+                }))}
+              />
+            </div>
             <Field label="Doctor Name *"><TextInput value={f.doctor_name} onChange={set('doctor_name')} placeholder="Dr. Full Name" /></Field>
             <Field label="Hospital / Organisation *"><TextInput value={f.organization_name} onChange={set('organization_name')} placeholder="Hospital or Clinic" /></Field>
             <Field label="Registration No *"><TextInput value={f.doctor_registration} onChange={set('doctor_registration')} placeholder="Medical Reg. Number" /></Field>
@@ -1205,6 +1333,8 @@ const INDUCTION_TOPICS = ['Site Safety Rules', 'PPE Usage', 'Work at Height', 'E
  * vendor in its own portal, so the gate can still hold after this step is done.
  */
 function StepInduction({ worker, readiness, editable, onSaved, onNext }) {
+  const { api } = useVendorModule()
+
   const history = useMemo(() => sortInductions(worker.inductions), [worker.inductions])
   const ind = history[0] || {}
 
@@ -1272,7 +1402,7 @@ function StepInduction({ worker, readiness, editable, onSaved, onNext }) {
         ? (f.start_time ? Math.round((now - new Date(f.start_time)) / 60000) : 15)
         : f.duration_minutes
 
-      await purchaseApi.workforce.saveInduction(worker.id, buildInductionPayload({
+      await api.workforce.saveInduction(worker.id, buildInductionPayload({
         type: f.induction_type, trainer: finalTrainer, location: f.location, duration: dur, topics,
       }))
       setSaved(true)
@@ -1299,7 +1429,7 @@ function StepInduction({ worker, readiness, editable, onSaved, onNext }) {
   const openGroupModal = async () => {
     setLoadingWorkers(true)
     try {
-      const res = await purchaseApi.workforce.workers(worker.purchase_vendor_id ? { vendor_id: worker.purchase_vendor_id } : {})
+      const res = await api.workforce.workers(worker.purchase_vendor_id ? { vendor_id: worker.purchase_vendor_id } : {})
       const list = res?.data ?? res ?? []
       setVendorWorkers(Array.isArray(list) ? list : [])
       setGroupModalOpen(true)
@@ -1472,8 +1602,11 @@ function StepInduction({ worker, readiness, editable, onSaved, onNext }) {
       </div>
 
       {groupModalOpen && (
-        <WizardGroupInductionModal
+        <GroupInductionModal
+          engine="purchase"
+          api={api}
           workers={vendorWorkers.length > 0 ? vendorWorkers : [worker]}
+          preselectIds={[worker.id]}
           onClose={() => setGroupModalOpen(false)}
           onCompleted={() => { setGroupModalOpen(false); onSaved() }}
         />
@@ -1509,108 +1642,10 @@ function buildInductionPayload({ type, trainer, location, duration, topics }) {
       `Location: ${location}`,
       `Duration: ${duration || 15} min`,
       `Topics: ${topics.length ? topics.join(', ') : '—'}`,
-    ].join('\n').slice(0, 2000),
+    // purchase_worker_inductions.remarks is a string(500) and the portal route
+    // validates max:500 — a longer slice could only ever be refused.
+    ].join('\n').slice(0, 500),
   }
-}
-
-/** One session, many workers — the same induction saved against each in turn. */
-function WizardGroupInductionModal({ workers, onClose, onCompleted }) {
-  const [selectedIds, setSelectedIds] = useState(workers.map(w => w.id))
-  const [f, setF] = useState({
-    induction_type: 'General Safety',
-    trainer: 'Safety Officer – Rahul Sharma',
-    custom_trainer: '',
-    location: 'Site Office',
-  })
-  const [topics, setTopics] = useState(['Site Safety Rules', 'PPE Usage', 'Emergency Response'])
-  const [saving, setSaving] = useState(false)
-  const [progressMsg, setProgressMsg] = useState('')
-
-  const set = (k) => (e) => setF(p => ({ ...p, [k]: e.target.value }))
-  const toggleTopic = (t) => setTopics(p => p.includes(t) ? p.filter(x => x !== t) : [...p, t])
-
-  const activeWorkers = workers.filter(w => selectedIds.includes(w.id))
-
-  const saveGroupInduction = async () => {
-    const finalTrainer = f.trainer === 'Other / Custom Trainer...' ? f.custom_trainer : f.trainer
-    if (!finalTrainer.trim()) { alert('Trainer Name is required.'); return }
-    if (!f.location.trim()) { alert('Location is required.'); return }
-    if (activeWorkers.length === 0) { alert('Select at least one worker.'); return }
-
-    setSaving(true)
-    try {
-      // One request per worker: the endpoint records a single worker's induction,
-      // so the loop is the batch — and a failure part-way leaves the workers
-      // already saved genuinely inducted rather than rolling them back.
-      let count = 0
-      for (const w of activeWorkers) {
-        count++
-        setProgressMsg(`Saving worker ${count}/${activeWorkers.length}: ${w.full_name}...`)
-        await purchaseApi.workforce.saveInduction(w.id, buildInductionPayload({
-          type: f.induction_type, trainer: finalTrainer, location: f.location, duration: 15, topics,
-        }))
-      }
-      alert(`Group induction completed for ${activeWorkers.length} workers!`)
-      onCompleted()
-    } catch (e) {
-      alert(apiError(e, 'Group induction save failed'))
-    } finally {
-      setSaving(false)
-      setProgressMsg('')
-    }
-  }
-
-  return (
-    <Overlay onClose={() => !saving && onClose()} width={820}>
-      <h2 style={{ fontSize: 18, fontWeight: 900, color: 'var(--text-h)', margin: '0 0 14px' }}>
-        👥 Group Induction Session ({activeWorkers.length} Selected)
-      </h2>
-
-      {/* Worker Checkbox Selector Strip */}
-      <div style={{ padding: 10, borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', marginBottom: 14, display: 'flex', flexWrap: 'wrap', gap: 10, maxHeight: 100, overflowY: 'auto' }}>
-        {workers.map(w => (
-          <label key={w.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 20, background: selectedIds.includes(w.id) ? '#e0f2fe' : 'var(--bg-card)', border: '1px solid var(--border)', fontSize: 11.5, cursor: 'pointer', fontWeight: selectedIds.includes(w.id) ? 800 : 500 }}>
-            <input type="checkbox" checked={selectedIds.includes(w.id)} onChange={e => {
-              const checked = e.target.checked
-              setSelectedIds(p => checked ? [...p, w.id] : p.filter(x => x !== w.id))
-            }} style={{ width: 14, height: 14 }} />
-            {w.full_name} ({w.worker_code})
-          </label>
-        ))}
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 14 }}>
-        <Field label="Induction Type *">
-          <SelectInput value={f.induction_type} onChange={set('induction_type')} pairs options={INDUCTION_TYPES} />
-        </Field>
-        <Field label="Trainer *">
-          <select value={f.trainer} onChange={set('trainer')} style={inputStyle}>
-            {TRAINER_PRESETS.map(grp => (
-              <optgroup key={grp.group} label={grp.group}>
-                {grp.items.map(item => <option key={item} value={item}>{item}</option>)}
-              </optgroup>
-            ))}
-          </select>
-          {f.trainer === 'Other / Custom Trainer...' && (
-            <input type="text" value={f.custom_trainer} onChange={set('custom_trainer')} placeholder="Enter trainer full name..." style={{ ...inputStyle, marginTop: 6 }} />
-          )}
-        </Field>
-        <Field label="Location *"><TextInput value={f.location} onChange={set('location')} placeholder="e.g. Site Office" /></Field>
-      </div>
-
-      <h3 style={{ fontSize: 13, fontWeight: 800, color: 'var(--text-h)', margin: '0 0 8px' }}>📚 Topics Covered</h3>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-        {INDUCTION_TOPICS.map(t => (
-          <button type="button" key={t} onClick={() => toggleTopic(t)} style={{ padding: '5px 12px', borderRadius: 20, border: '1.5px solid', fontSize: 11, fontWeight: 800, cursor: 'pointer', background: topics.includes(t) ? '#7c3aed' : 'var(--bg-input)', color: topics.includes(t) ? '#fff' : 'var(--text-muted)', borderColor: topics.includes(t) ? '#7c3aed' : 'var(--border)' }}>
-            {topics.includes(t) ? '✓ ' : '+ '}{t}
-          </button>
-        ))}
-      </div>
-
-      {progressMsg && <div style={{ padding: '6px 12px', background: '#e0f2fe', color: '#0369a1', fontSize: 12, fontWeight: 700, marginBottom: 10 }}>⏳ {progressMsg}</div>}
-      <ModalFooter onClose={onClose} onConfirm={saveGroupInduction} loading={saving} disabled={activeWorkers.length === 0} confirmLabel={`Save Group Induction (${activeWorkers.length} Workers)`} />
-    </Overlay>
-  )
 }
 
 // ── Step 4 — PPE, issued from Inventory ──────────────────────────────────────
@@ -1627,6 +1662,8 @@ function WizardGroupInductionModal({ workers, onClose, onCompleted }) {
  * profile has stopped being a draft.
  */
 function StepPpe({ worker, manage, onChanged, onNext }) {
+  const { api } = useVendorModule()
+
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [acting, setActing] = useState(null)
@@ -1635,17 +1672,45 @@ function StepPpe({ worker, manage, onChanged, onNext }) {
 
   const load = useCallback(() => {
     setLoading(true)
-    purchaseApi.workforce.ppe(worker.id)
+    api.workforce.ppe(worker.id)
       .then(setData)
       .catch(() => setData(null))
       .finally(() => setLoading(false))
   }, [worker.id])
   useEffect(() => { load() }, [load])
 
+  /*
+   * Issue a kit.
+   *
+   * This step could only ever RETURN PPE and show what was held — there was no
+   * way to give a worker anything, so "PPE list is not showing to select" was
+   * literally true: no list was rendered here at all, and step 4 could never be
+   * cleared from the screen that owns it.
+   */
+  const [catalogue, setCatalogue] = useState([])
+  useEffect(() => {
+    if (!manage) return
+    api.workforce.ppeCatalogue()
+      .then(rows => setCatalogue(Array.isArray(rows) ? rows : rows?.data ?? []))
+      .catch(() => setCatalogue([]))
+  }, [manage]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const issueKit = async (payload) => {
+    setBusy(true); setErr(null)
+    try {
+      await api.workforce.issuePpe(worker.id, payload)
+      load()
+      // Issuing writes current_step 4, which is what the badge step checks.
+      onChanged()
+    } catch (e) {
+      setErr(apiError(e, 'Could not issue that item.'))
+    } finally { setBusy(false) }
+  }
+
   const giveBack = async (issueId, condition, qty) => {
     setBusy(true); setErr(null)
     try {
-      await purchaseApi.workforce.returnPpe(issueId, { condition, qty })
+      await api.workforce.returnPpe(issueId, { condition, qty })
       setActing(null)
       load()
       // Handing everything back drops the worker out of "PPE issued".
@@ -1688,6 +1753,8 @@ function StepPpe({ worker, manage, onChanged, onNext }) {
       </div>
 
       {err && <InfoBox tone="danger">{err}</InfoBox>}
+
+      {manage && <IssuePpeForm catalogue={catalogue} busy={busy} onIssue={issueKit} />}
 
       {/* What the worker is currently holding — the list the gate's PPE check reads. */}
       {compliance && (
@@ -1792,6 +1859,102 @@ const PPE_TONE = {
 }
 
 /** Return / lost / damaged, with a quantity so partial returns are possible. */
+/** In stock / low / out — the same three states the Inventory screen shows. */
+const PPE_STOCK_DOT = { in_stock: '#0ca30c', low_stock: '#f59e0b', out_of_stock: '#d03b3b' }
+
+/**
+ * Pick an item and give it to the worker.
+ *
+ * Out-of-stock items are shown and disabled rather than hidden: "the helmet is
+ * not on the list" and "the helmet has run out" are different problems, and
+ * only one of them is solved by looking somewhere else.
+ *
+ * TYPE TO SEARCH, not just a dropdown. A native <select> makes you read the
+ * whole list, and this one is as long as the tenant's PPE category -- six items
+ * on a new workspace and a hundred-odd on a real one, where a store-keeper at
+ * the gate with a queue in front of them is scrolling for "gloves". The filter
+ * matches the SKU as well as the name, and the SKU is kept OUT of the label so
+ * it can be searched without making every row twice as long to read.
+ */
+function IssuePpeForm({ catalogue, busy, onIssue }) {
+  const [productId, setProductId] = useState('')
+  const [qty, setQty] = useState(1)
+  const [size, setSize] = useState('')
+  const [notes, setNotes] = useState('')
+
+  const chosen = catalogue.find(c => String(c.product_id) === String(productId))
+  const short = chosen && Number(qty) > Number(chosen.available)
+
+  const submit = (e) => {
+    e.preventDefault()
+    if (!productId || busy) return
+    onIssue({ product_id: Number(productId), qty: Number(qty) || 1, size: size || null, notes: notes || null })
+    setProductId(''); setQty(1); setSize(''); setNotes('')
+  }
+
+  if (!catalogue.length) {
+    return (
+      <InfoBox tone="info">
+        No PPE items are set up in Inventory yet, so there is nothing to issue.
+        Add them under Inventory → Products with a PPE category.
+      </InfoBox>
+    )
+  }
+
+  return (
+    <form onSubmit={submit} style={{ padding: '12px 16px', borderRadius: 10, marginBottom: 18, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+      <p style={{ margin: '0 0 8px', fontSize: 10.5, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+        Issue an item
+      </p>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        <div style={{ flex: 1, minWidth: 230 }}>
+          <Select
+            value={productId}
+            onChange={setProductId}
+            /* Always on. `auto` only shows the box past eight options, and a
+               fresh workspace has six -- the one place the list is short is the
+               one place somebody is learning where things are. */
+            searchable
+            placeholder="Search PPE by name or SKU…"
+            options={catalogue.map(c => ({
+              value: String(c.product_id),
+              label: `${c.name} · ${Number(c.available) > 0 ? `${c.available} available` : 'out of stock'}`,
+              keywords: c.sku ?? '',
+              disabled: Number(c.available) <= 0,
+              dot: PPE_STOCK_DOT[c.status],
+            }))}
+          />
+        </div>
+        <input type="number" min="1" value={qty} onChange={e => setQty(e.target.value)}
+          title="Quantity" style={{ ...ppeInp, width: 74, textAlign: 'right' }} />
+        <input value={size} onChange={e => setSize(e.target.value)} placeholder="Size"
+          style={{ ...ppeInp, width: 90 }} />
+        <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Note (optional)"
+          style={{ ...ppeInp, flex: 1, minWidth: 140 }} />
+        <button type="submit" disabled={!productId || busy}
+          style={{
+            padding: '8px 14px', borderRadius: 9, border: 'none', cursor: productId && !busy ? 'pointer' : 'not-allowed',
+            background: productId && !busy ? 'linear-gradient(135deg,#f59e0b,#d97706)' : 'var(--bg-card)',
+            color: productId && !busy ? '#fff' : 'var(--text-muted)', fontWeight: 800, fontSize: 12.5,
+          }}>
+          {busy ? 'Issuing…' : 'Issue'}
+        </button>
+      </div>
+      {short && (
+        <p style={{ margin: '8px 0 0', fontSize: 11.5, color: '#f59e0b' }}>
+          Only {chosen.available} in stock — issuing more will take the item below zero.
+        </p>
+      )}
+    </form>
+  )
+}
+
+const ppeInp = {
+  padding: '8px 10px', borderRadius: 8, fontSize: 12.5,
+  background: 'var(--bg-card)', border: '1px solid var(--border)',
+  color: 'var(--text-h)', outline: 'none',
+}
+
 function PpeReturnDialog({ row, outstanding, busy, onClose, onConfirm }) {
   const [qty, setQty] = useState(outstanding)
   const [condition, setCondition] = useState('returned')
@@ -1829,6 +1992,8 @@ function PpeReturnDialog({ row, outstanding, busy, onClose, onConfirm }) {
 
 // ── Step 5 — Access Control 3D Pass & Card Status ────────────────────────────
 function StepBadge({ worker, badge, progress, admin, onChanged }) {
+  const { api } = useVendorModule()
+
   const [isFlipped, setIsFlipped] = useState(false)
 
   const [editModalOpen, setEditModalOpen] = useState(false)
@@ -1865,7 +2030,7 @@ function StepBadge({ worker, badge, progress, admin, onChanged }) {
   const handleActivate = async () => {
     setActivating(true)
     try {
-      await purchaseApi.workforce.activate(worker.id, validUntil ? { valid_until: validUntil } : {})
+      await api.workforce.activate(worker.id, validUntil ? { valid_until: validUntil } : {})
       onChanged()
     } catch (e) {
       alert(apiError(e, 'Could not issue the entry badge.'))
@@ -1880,13 +2045,13 @@ function StepBadge({ worker, badge, progress, admin, onChanged }) {
   const suspendWorker = async () => {
     const reason = window.prompt('Reason for suspending this worker (optional):') ?? ''
     setBusy(true)
-    try { await purchaseApi.workforce.suspend(worker.id, reason.trim() || null); onChanged() }
+    try { await api.workforce.suspend(worker.id, reason.trim() || null); onChanged() }
     catch (e) { alert(apiError(e, 'Could not suspend this worker.')) }
     finally { setBusy(false) }
   }
   const reinstateWorker = async () => {
     setBusy(true)
-    try { await purchaseApi.workforce.reinstate(worker.id); onChanged() }
+    try { await api.workforce.reinstate(worker.id); onChanged() }
     catch (e) { alert(apiError(e, 'Could not reinstate this worker.')) }
     finally { setBusy(false) }
   }
@@ -1894,7 +2059,7 @@ function StepBadge({ worker, badge, progress, admin, onChanged }) {
     if (!window.confirm('Terminate this worker? This is permanent and stops their badge scanning at the gate.')) return
     const reason = window.prompt('Reason for termination (optional):') ?? ''
     setBusy(true)
-    try { await purchaseApi.workforce.terminate(worker.id, reason.trim() || null); onChanged() }
+    try { await api.workforce.terminate(worker.id, reason.trim() || null); onChanged() }
     catch (e) { alert(apiError(e, 'Could not terminate this worker.')) }
     finally { setBusy(false) }
   }
@@ -1902,7 +2067,7 @@ function StepBadge({ worker, badge, progress, admin, onChanged }) {
   const handleSaveEdit = async () => {
     setSavingEdit(true)
     try {
-      await purchaseApi.workforce.updateWorker(worker.id, editData)
+      await api.workforce.updateWorker(worker.id, editData)
       setEditModalOpen(false)
       onChanged()
     } catch (e) {

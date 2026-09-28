@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
-  Building2, LayoutDashboard, Receipt, CreditCard, FileX, Wallet, ClipboardList,
+  Building2, LayoutDashboard, Receipt, CreditCard, FileX, Wallet, ClipboardList, ListChecks,
   FileText, FileSignature, FolderKanban, LifeBuoy, Paperclip, StickyNote,
-  Users2, UserCircle2, LogOut, MessageSquareHeart,
+  Users2, UserCircle2, LogOut, MessageSquareHeart, Truck,
 } from 'lucide-react'
 import { clientPortalApi } from '@/lib/clientPortalApi'
 
@@ -28,11 +28,26 @@ const SECTIONS = [
   { group: 'Commercial', items: [
     { to: '/portal/estimates', label: 'Estimates', icon: ClipboardList,  perm: 'estimate' },
     { to: '/portal/proposals', label: 'Proposals', icon: FileText,       perm: 'proposal' },
-    { to: '/portal/contracts', label: 'Contracts', icon: FileSignature,  perm: 'contract' },
+    // One entry, pointing at the Contract module. The older /portal/contracts
+    // page reads client_contracts, which is empty in every tenant here, so two
+    // entries would have meant a customer clicking "Contracts", seeing nothing,
+    // and concluding their agreement was missing. The old page and its route are
+    // both still there — only this link moved.
+    { to: '/portal/agreements', label: 'Contracts', icon: FileSignature, perm: 'contract' },
   ]},
   { group: 'Work', items: [
     { to: '/portal/projects', label: 'Projects', icon: FolderKanban, perm: 'project' },
+    // Work assigned to THIS contact by name. No permission gate: being told
+    // what you have been asked to do is not a privilege somebody grants you,
+    // and the screen shows nothing except what is already addressed to them.
+    { to: '/portal/my-tasks', label: 'My Tasks', icon: ListChecks, perm: null },
     { to: '/portal/tickets',  label: 'Support',  icon: LifeBuoy,     perm: 'support' },
+  ]},
+  { group: 'Transport', items: [
+    // Gated on `transport`, which no contact holds yet — step 3 grants it. Until
+    // then this renders nothing at all, which is the correct behaviour and not a
+    // bug to work around: the server refuses the endpoint for the same reason.
+    { to: '/portal/shipments', label: 'Shipments', icon: Truck, perm: 'transport' },
   ]},
   { group: 'Your say', items: [
     // §10 — the customer answers the survey themselves. No permission gate:

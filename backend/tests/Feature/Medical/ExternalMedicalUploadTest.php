@@ -51,6 +51,7 @@ class ExternalMedicalUploadTest extends TestCase
             'tenant_id' => self::TENANT, 'company_name' => $name,
             'email' => $login->email, 'user_id' => $login->id, 'status' => 'Active',
         ]);
+        $this->markOnboarded($vendor);
 
         return [$vendor, $login];
     }

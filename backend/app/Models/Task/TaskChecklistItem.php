@@ -24,9 +24,25 @@ class TaskChecklistItem extends Model
         return $this->belongsTo(Task::class);
     }
 
-    /** Who this single item is on — a staff member, vendor, or TPV (all are Users). */
+    /**
+     * The FIRST person on this item, as a convenience for code that wants one
+     * name. Reads the mirror column — see assignees() for the real answer.
+     */
     public function assignee()
     {
         return $this->belongsTo(User::class, 'assigned_to');
+    }
+
+    /**
+     * Everyone this item is on — staff, vendors or TPVs (all are Users).
+     *
+     * This is the truth. `assigned_to` is a mirror of the first row of it, kept
+     * so the notification leg and anything outside this module that reads the
+     * column go on working; only TaskService::assignChecklistItem() writes
+     * either, and it writes both.
+     */
+    public function assignees()
+    {
+        return $this->hasMany(TaskChecklistItemAssignee::class, 'item_id');
     }
 }

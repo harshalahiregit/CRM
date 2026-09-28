@@ -3,10 +3,14 @@
 namespace App\Services\Hr;
 
 use App\Exceptions\BusinessException;
+use App\Models\Hr\HrDepartment;
+use App\Models\Hr\HrDesignation;
 use App\Models\Hr\HrEmployee;
+use App\Models\Hr\HrEmploymentType;
 use App\Models\Hr\HrOnboarding;
 use App\Models\User;
 use App\Repositories\Hr\EmployeeRepository;
+use App\Services\Hr\EmployeeIdentityService;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
@@ -20,9 +24,64 @@ class EmployeeService
     ) {
     }
 
-    public function list(int $tenantId, array $filters): LengthAwarePaginator
+    /** @param  User|null  $actor  Whose view this is; null is unscoped, as before. */
+    public function list(int $tenantId, array $filters, ?User $actor = null): LengthAwarePaginator
     {
-        return $this->employeeRepository->filtered($tenantId, $filters);
+        return $this->employeeRepository->filtered($tenantId, $filters, $actor);
+    }
+
+    /**
+     * Whether this employee may report to that one.
+     *
+     * Two rules, and both matter because OrgChartService groups the whole tenant
+     * by reporting_manager_id and walks down from the roots. A self-reference or
+     * a loop does not produce a wrong chart, it produces a chart that never
+     * finishes building — and AdvanceTierService walks the same edge to decide
+     * who approves an advance.
+     *
+     * Only reachable on UPDATE. At create there is no id yet, so neither rule can
+     * be broken, which is why create() does not call this.
+     *
+     * Existence and tenant are already settled by the request's Rule::exists, so
+     * this deliberately re-checks neither.
+     */
+    private function assertManagerIsUsable(HrEmployee $employee, $managerId): void
+    {
+        if ($managerId === null || $managerId === '') {
+            return;   // clearing the manager is always allowed
+        }
+
+        $managerId = (int) $managerId;
+
+        if ($managerId === (int) $employee->id) {
+            throw new BusinessException('An employee cannot report to themselves.', 422);
+        }
+
+        // Walk up from the proposed manager. If we arrive back at this employee,
+        // the edge would close a loop. Bounded by the number of employees so a
+        // loop that already exists in the data cannot hang the request.
+        $seen    = [];
+        $current = $managerId;
+        $limit   = HrEmployee::where('tenant_id', $employee->tenant_id)->count() + 1;
+
+        for ($i = 0; $i < $limit && $current !== null; $i++) {
+            if ((int) $current === (int) $employee->id) {
+                throw new BusinessException(
+                    'That would make the reporting line circular — '
+                    .'the person you picked already reports to this employee.',
+                    422
+                );
+            }
+
+            if (isset($seen[$current])) {
+                break;   // a pre-existing loop further up; not this edge's fault
+            }
+            $seen[$current] = true;
+
+            $current = HrEmployee::where('tenant_id', $employee->tenant_id)
+                ->whereKey($current)
+                ->value('reporting_manager_id');
+        }
     }
 
     /**
@@ -46,6 +105,7 @@ class EmployeeService
     public function create(array $data, int $tenantId, ?User $actor = null): HrEmployee
     {
         $data['tenant_id'] = $tenantId;
+        $data = $this->resolveOrgMasters($data, $tenantId);
 
         // Was `count() + 1`, which reuses a code as soon as anyone is deleted:
         // five employees, delete the third, and the next create asks for -005
@@ -110,6 +170,12 @@ class EmployeeService
 
     public function update(HrEmployee $employee, array $data, ?User $actor = null): HrEmployee
     {
+        if (array_key_exists('reporting_manager_id', $data)) {
+            $this->assertManagerIsUsable($employee, $data['reporting_manager_id']);
+        }
+
+        $data = $this->resolveOrgMasters($data, (int) $employee->tenant_id);
+
         $before = $employee->only(['department', 'designation', 'status', 'reporting_manager_name']);
 
         $employee->update($data);
@@ -119,9 +185,71 @@ class EmployeeService
         [$action, $meta] = $this->describeChange($before, $employee);
         $employee->recordAudit($action, $actor, null, $meta);
 
+        // The employee record owns who the person is; the login attached to it
+        // has to follow, or Staff Management goes on showing the name, phone,
+        // department and designation this edit just replaced. One call, one
+        // direction — see EmployeeIdentityService::syncLoginFromEmployee for why
+        // it is not two.
+        app(EmployeeIdentityService::class)->syncLoginFromEmployee($employee, $actor);
+
         Log::channel('hr')->info('Employee updated', ['employee_id' => $employee->id, 'tenant_id' => $employee->tenant_id, 'action' => $action]);
 
         return $employee;
+    }
+
+    /**
+     * Fill in the department/designation NAME from the master that was chosen.
+     *
+     * NAME → ID IS NOT DONE HERE. Support\Hr\OrgLink already does it, on a
+     * saving() hook, for every path that writes an employee — both forms, the
+     * SangoeTrack importer, the onboarding conversion — and it does it better
+     * than a service-layer copy could, matching case- and space-insensitively
+     * and deferring to an id the caller set deliberately. Repeating it here
+     * would be a second answer to a question that already has one.
+     *
+     * What OrgLink cannot do is the other direction. `department` and
+     * `designation` are NOT NULL, and now that the employee form submits ids
+     * instead of typed text there is no name in the payload at all — so the
+     * canonical spelling is copied off the master here, before the insert.
+     *
+     * The tenant check is the second reason this exists. It is the same
+     * question the request rules ask, asked again where the data is actually
+     * written, so a service-level caller cannot reach another workspace's
+     * master by passing an id that never went through validation. 404 rather
+     * than 422, and the same answer for "no such record" as for "not yours" —
+     * mirroring EmployeeMovementService::resolveDepartment(), which has
+     * resolved this correctly since transfers shipped.
+     */
+    private function resolveOrgMasters(array $data, int $tenantId): array
+    {
+        foreach ([
+            ['id' => 'department_id',  'name' => 'department',  'model' => HrDepartment::class,  'label' => 'Department'],
+            ['id' => 'designation_id', 'name' => 'designation', 'model' => HrDesignation::class, 'label' => 'Designation'],
+            // No name column beside it: hr_employees never carried an
+            // employment-type string, so there is nothing to keep in step and
+            // the id is the whole answer. It is here for the tenant check.
+            ['id' => 'employment_type_id', 'name' => null, 'model' => HrEmploymentType::class, 'label' => 'Employment type'],
+        ] as $f) {
+            if (empty($data[$f['id']])) {
+                continue;
+            }
+
+            $master = $f['model']::where('tenant_id', $tenantId)
+                ->find((int) $data[$f['id']]);
+
+            if (! $master) {
+                throw new BusinessException($f['label'].' not found', 404);
+            }
+
+            $data[$f['id']] = $master->id;
+
+            if ($f['name'] !== null) {
+                // The master's spelling, never the caller's.
+                $data[$f['name']] = $master->name;
+            }
+        }
+
+        return $data;
     }
 
     /** Map a set of changed fields to a human lifecycle event + metadata. */
@@ -193,7 +321,12 @@ class EmployeeService
                 'joining_date'     => optional($offer->joining_date)->toDateString(),
                 'probation_period' => $offer->probation_period,
                 'notice_period'    => $offer->notice_period,
-                'access_token'     => $offer->access_token,
+                // The offer id, so HR can fetch the letter through the
+                // authenticated, tenant-scoped endpoint. The candidate's portal
+                // token used to be handed over here instead, purely so the
+                // screen could build a public URL — an HR convenience that put
+                // a candidate's bearer credential into an internal API payload.
+                'id'               => $offer->id,
                 'accepted_at'      => optional($offer->accepted_at)->toIso8601String(),
             ] : null,
             'submission' => [

@@ -3,12 +3,15 @@
 namespace App\Http\Controllers\Api\Purchase;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Purchase\SaveGroupInductionRequest;
+use App\Models\Purchase\PurchaseVendor;
 use App\Models\Purchase\PurchaseWorker;
 use App\Models\Purchase\PurchaseWorkerMedical;
 use App\Models\Purchase\PurchaseWorkerPpeIssue;
 use App\Models\Purchase\PurchaseWorkerTraining;
 use App\Services\Purchase\PurchasePpeService;
 use App\Services\Purchase\PurchaseWorkforceService;
+use App\Support\Medical\DoctorOptions;
 use Illuminate\Http\Request;
 
 /**
@@ -59,6 +62,31 @@ class PurchaseWorkforceAdminController extends Controller
      * soft-deletes the worker and these child tables carry no FK, so orphaned
      * medicals would otherwise keep appearing on the tab.
      */
+
+    /**
+     * Bulk-register workers from a sheet, against the vendor the operator picked.
+     *
+     * The vendor is taken from `vendor_id` and nothing else. TPV learned this the
+     * hard way: it once fell back through the caller's own vendor link, then any
+     * vendor whose e-mail matched, then the first vendor in the tenant — so an
+     * import could land under a company nobody chose, which reads to everyone as
+     * "the upload said it worked and the workers vanished". A missing vendor is
+     * an error, not a guess.
+     */
+    public function uploadWorkers(Request $request)
+    {
+        $data = $request->validate([
+            'worker_file' => 'required|file|mimes:csv,xls,xlsx,txt,zip|max:20480',
+            'vendor_id' => 'required|integer',
+        ], [
+            'vendor_id.required' => 'Choose the vendor these workers belong to.',
+        ]);
+
+        $vendor = PurchaseVendor::forTenant($request->user()->tenant_id)->find($data['vendor_id']);
+        abort_unless($vendor, 404, 'Vendor not found.');
+
+        return response()->json($this->service->bulkUpload($request->file('worker_file'), $vendor));
+    }
 
     public function medicals(Request $request)
     {
@@ -181,6 +209,35 @@ class PurchaseWorkforceAdminController extends Controller
     }
 
     /**
+     * Record that issued gear was actually checked.
+     *
+     * Mirrors the TPV endpoint. A rule may set `verification_required`, and
+     * until now that flag was settable, saved and displayed while nothing read
+     * it and nothing could satisfy it — the item being in someone's hands is
+     * not the same as the item being fit to use.
+     */
+    public function verifyPpe(Request $request, PurchaseWorkerPpeIssue $issue)
+    {
+        abort_unless(
+            (int) $issue->tenant_id === (int) $request->user()->tenant_id,
+            404,
+            'PPE issue not found'
+        );
+
+        $data = $request->validate([
+            'notes' => 'nullable|string|max:500',
+        ]);
+
+        $issue->update([
+            'verified_at'        => now(),
+            'verified_by'        => $request->user()->id,
+            'verification_notes' => $data['notes'] ?? null,
+        ]);
+
+        return response()->json($issue->fresh());
+    }
+
+    /**
      * The PPE catalogue — what kit exists to issue.
      *
      * PurchasePpeService::catalogue() has always existed and was reachable only
@@ -209,9 +266,28 @@ class PurchaseWorkforceAdminController extends Controller
             'size'       => 'nullable|string|max:40',
             'issued_at'  => 'nullable|date',
             'notes'      => 'nullable|string|max:2000',
+            'warehouse_id' => 'nullable|integer',
         ]);
 
-        return response()->json($ppe->issue($worker, $data, $request->user()), 201);
+        /*
+         * The two names have to be reconciled here, and they never were.
+         *
+         * This endpoint speaks the catalogue's language -- ppeCatalogue() returns
+         * `product_id`, so that is what a caller sends. PurchasePpeService::issue
+         * reads `inventory_item_id` and `issued_date`. Neither key was ever
+         * translated, so every admin issue resolved a null product and came back
+         * 404 "That PPE item does not exist in Inventory", and a chosen date was
+         * silently dropped. The route had no test and nothing in the UI called
+         * it, so it stayed broken (SIR-000013).
+         */
+        return response()->json($ppe->issue($worker, [
+            'inventory_item_id' => $data['product_id'],
+            'qty'               => $data['qty'] ?? 1,
+            'size'              => $data['size'] ?? null,
+            'issued_date'       => $data['issued_at'] ?? null,
+            'notes'             => $data['notes'] ?? null,
+            'warehouse_id'      => $data['warehouse_id'] ?? null,
+        ], $request->user()), 201);
     }
 
     /**
@@ -386,7 +462,13 @@ class PurchaseWorkforceAdminController extends Controller
             // Examination depth — vitals, the scored screening, and the §16
             // capture. Recorded as data rather than folded into remarks, so the
             // fitness bands are computed instead of re-read out of a sentence.
-            'exam_type'           => 'nullable|string|max:60',
+            // Which in-house doctor was picked, if any. Everything else about
+            // them (licence, council, clinic) is looked up server-side from the
+            // directory -- never taken from the browser. See DoctorOptions.
+            'doctor_user_id'      => 'nullable|integer',
+            // Constrained, matching TPV's FormRequest. This accepted any
+            // 60-character string, so a typo became a new exam type.
+            'exam_type'           => 'nullable|in:internal,external',
             'clinic_name'         => 'nullable|string|max:150',
             'height_cm'           => 'nullable|numeric|between:100,250',
             'weight_kg'           => 'nullable|numeric|between:20,300',
@@ -403,7 +485,16 @@ class PurchaseWorkforceAdminController extends Controller
             'signature_data'      => 'nullable|string',
             'capture_photo'       => 'nullable|string',
             'geo_location'        => 'nullable|string|max:120',
+            // The certificate the examination produced. A fitness verdict with
+            // no document behind it is an assertion, and the vendor portal has
+            // always been able to attach one — the admin form could not.
+            'certificate_file'    => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:10240',
         ]);
+
+        if ($file = $request->file('certificate_file')) {
+            $data['file_path'] = $file->store("purchase/workforce/{$worker->id}/medical", 'local');
+        }
+        unset($data['certificate_file']);
 
         $data['expiry_date']   ??= $data['valid_until'] ?? null;
         $data['examiner_name'] ??= $data['provider'] ?? null;
@@ -412,6 +503,10 @@ class PurchaseWorkforceAdminController extends Controller
         // someone else or claim a different origin.
         $data['recorded_by'] = $request->user()->id;
         $data['system_ip']   = $request->ip();
+
+        // A picked in-house doctor becomes the record's doctor identity, copied
+        // from the directory rather than retyped. See DoctorOptions.
+        $data = DoctorOptions::applyTo($data, (int) $request->user()->tenant_id, 'purchase');
 
         return response()->json($this->service->saveMedical($worker, $data));
     }
@@ -436,7 +531,13 @@ class PurchaseWorkforceAdminController extends Controller
             'status'        => 'nullable|string|max:40',
             'score'         => 'nullable|numeric',
             'remarks'       => 'nullable|string|max:5000',
+            'certificate_file' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:10240',
         ]);
+
+        if ($file = $request->file('certificate_file')) {
+            $data['file_path'] = $file->store("purchase/workforce/{$worker->id}/training", 'local');
+        }
+        unset($data['certificate_file']);
 
         return response()->json($this->service->saveTraining($worker, $data));
     }
@@ -467,6 +568,19 @@ class PurchaseWorkforceAdminController extends Controller
         $data['recorded_by'] = $request->user()->id;
 
         return response()->json($this->service->saveInduction($worker, $data));
+    }
+
+    /** One group session saved against many workers; the trainer signs once. */
+    public function saveGroupInduction(SaveGroupInductionRequest $request)
+    {
+        $data = $request->validated();
+        $ids  = $data['worker_ids'];
+        unset($data['worker_ids']);
+        $data['recorded_by'] = $request->user()->id;
+
+        return response()->json($this->service->saveGroupInduction(
+            (int) $request->user()->tenant_id, null, $ids, $data
+        ));
     }
 
     /** The worker's badge — what the gate scans. */

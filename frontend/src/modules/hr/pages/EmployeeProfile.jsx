@@ -11,15 +11,16 @@ import { useAuth } from '@/context/AuthContext'
 import { canManageHrQueue } from '../constants'
 import EmployeeLifecyclePanel from '../components/EmployeeLifecyclePanel'
 import EmployeeLoanCard from '../components/EmployeeLoanCard'
+import EmployeeDetailPanel from '../components/EmployeeDetailPanel'
 import EmployeeScoreCard from '../components/EmployeeScoreCard'
 import EmployeeSkillsPanel from '../components/EmployeeSkillsPanel'      // #43
 import EmployeeAttendancePanel from '../components/EmployeeAttendancePanel' // #38
-import { useMasterData, withInactive } from '@/modules/hr/useMasterData'
-import { offerPortalApi } from '@/services/offerPortalApi'
+import { useMasterData, withInactive, withInactiveById } from '@/modules/hr/useMasterData'
 import AuditTimeline from '@/components/ui/AuditTimeline'
 import EmployeeNotifications from '@/modules/notifications/EmployeeNotifications'
 import EmployeeSalarySection from '@/modules/hr/components/EmployeeSalarySection'
 import EmployeeAssetsPanel from '@/modules/hr/components/EmployeeAssetsPanel'
+import EmployeeLetters from '@/modules/hr/components/EmployeeLetters'
 
 const DEPT_COLORS = { Engineering:'#3b82f6', Sales:'#10b981', HR:'#7C3AED', Operations:'#f59e0b', Product:'#ec4899', Marketing:'#f97316', Finance:'#6366f1' }
 const deptColor = d => DEPT_COLORS[d]||'#7C3AED'
@@ -203,7 +204,19 @@ export default function EmployeeProfile() {
     try { const blob = await hrApi.onboarding.documentBlob(data.onboarding_id, docId); const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name||'document'; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1500) }
     catch { showToast('Failed to download','error') }
   }
-  const offerLetterUrl = data.offer?.access_token ? offerPortalApi.letterUrl(data.offer.access_token) : null
+  // The offer letter now comes down the authenticated HR route as a blob. It
+  // used to be an <a href> pointing at the CANDIDATE's public portal URL, built
+  // from their bearer token — which is why that token had to be shipped in this
+  // screen's API payload at all. It no longer is.
+  const hasOfferLetter = !!data.offer?.id
+  const viewOfferLetter = async () => {
+    try {
+      const blob = await hrApi.offers.letterBlob(data.offer.id)
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener')
+      setTimeout(() => URL.revokeObjectURL(url), 30000)
+    } catch { showToast('Failed to open the offer letter', 'error') }
+  }
 
   const deactivate = async () => {
     if (e.status==='Inactive') return
@@ -364,22 +377,48 @@ export default function EmployeeProfile() {
 
         {tab==='personal' && (
           <div>
+            {/* Identity, from the employee row itself. Everything below comes
+                from the editable detail record — blood group, marital status,
+                nationality, father's name, permanent address and pincode used to
+                be repeated here as read-only copies of the onboarding form, so
+                each appeared TWICE on this tab: once uneditable and stale, once
+                editable. One field, one place. */}
             <Grid>
               <Field k="Full Name" v={e.name}/>
               <Field k="Date of Birth" v={fmtDate(e.dob) !== '—' ? fmtDate(e.dob) : fmtDate(data.submission?.personal?.dob)}/>
               <Field k="Gender" v={e.gender || data.submission?.personal?.gender}/>
-              <Field k="Blood Group" v={data.submission?.personal?.blood_group}/>
-              <Field k="Marital Status" v={data.submission?.personal?.marital_status}/>
-              <Field k="Nationality" v={data.recruitment?.nationality}/>
               <Field k="Mobile" v={e.phone}/>
               <Field k="Email" v={e.email}/>
-              <Field k="Father / Guardian" v={data.submission?.personal?.father_name}/>
               <Field k="Present Address" v={data.submission?.address?.current || e.address} full/>
-              <Field k="Permanent Address" v={data.submission?.address?.permanent} full/>
-              <Field k="City / State" v={[data.submission?.address?.city, data.submission?.address?.state].filter(Boolean).join(', ')}/>
-              <Field k="Pincode" v={data.submission?.address?.pincode}/>
-              <Field k="Emergency Contact" v={data.submission?.emergency?.name ? `${data.submission.emergency.name}${data.submission.emergency.relation?` (${data.submission.emergency.relation})`:''}${data.submission.emergency.phone?` · ${data.submission.emergency.phone}`:''}` : '—'} full/>
             </Grid>
+
+            {/* The editable record. Everything above is the identity summary
+                that comes off the employee row; everything below is stored on
+                hr_employee_details and can be corrected. It used to be read-only
+                and sourced from the onboarding form, so a wrong value entered
+                during onboarding stayed wrong and a directly-added employee
+                showed nothing at all. */}
+            <div className="mt-5">
+              <EmployeeDetailPanel
+                employeeId={id}
+                group="personal"
+                showToast={showToast}
+                fallback={{
+                  father_name:            data.submission?.personal?.father_name,
+                  mother_name:            data.submission?.personal?.mother_name,
+                  marital_status:         data.submission?.personal?.marital_status,
+                  blood_group:            data.submission?.personal?.blood_group,
+                  nationality:            data.recruitment?.nationality,
+                  permanent_address:      data.submission?.address?.permanent,
+                  permanent_city:         data.submission?.address?.city,
+                  permanent_state:        data.submission?.address?.state,
+                  permanent_pincode:      data.submission?.address?.pincode,
+                  emergency_name:         data.submission?.emergency?.name,
+                  emergency_relationship: data.submission?.emergency?.relation,
+                  emergency_phone:        data.submission?.emergency?.phone,
+                }}/>
+            </div>
+
             <AiInsight hint="Will flag missing personal details (emergency contact, blood group, nationality) needed for compliance." />
           </div>
         )}
@@ -390,7 +429,11 @@ export default function EmployeeProfile() {
               <Field k="Department" v={e.department}/>
               <Field k="Designation" v={e.designation}/>
               <Field k="Grade" v={gradeName || (e.grade_id ? '—' : 'Not assigned')}/>
-              <Field k="Role" v={roleName || (e.job_role_id ? '—' : 'Not assigned')}/>
+              {/* "Job Role" — this is hr_job_roles, an org-chart position. The
+                  permission role lives in Staff Management and is called an
+                  Access Role. Two screens calling both of them "Role" is why
+                  people went to HR looking for access control. */}
+              <Field k="Job Role" v={roleName || (e.job_role_id ? '—' : 'Not assigned')}/>
               <Field k="Reporting Manager" v={e.reporting_manager_name}/>
               <Field k="Joining Date" v={fmtDate(e.joining_date)}/>
               <Field k="Confirmation Date" v={fmtDate(e.confirmation_date)}/>
@@ -443,8 +486,8 @@ export default function EmployeeProfile() {
                         <button onClick={()=>viewDoc(doc.id)} className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded" style={{ background:'rgba(59,130,246,0.1)', color:'#60a5fa' }}><Eye size={11}/> View</button>
                         <button onClick={()=>downloadDoc(doc.id, doc.original_name)} className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded" style={{ background:'var(--bg-card)', color:'var(--text-muted)', border:'1px solid var(--border)' }}><Download size={11}/> Download</button>
                       </>
-                    ) : isOffer && offerLetterUrl ? (
-                      <a href={offerLetterUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded" style={{ background:'rgba(59,130,246,0.1)', color:'#60a5fa' }}><Eye size={11}/> View</a>
+                    ) : isOffer && hasOfferLetter ? (
+                      <button onClick={viewOfferLetter} className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded" style={{ background:'rgba(59,130,246,0.1)', color:'#60a5fa' }}><Eye size={11}/> View</button>
                     ) : (
                       <span className="text-[10px] font-semibold" style={{ color:'var(--text-muted)' }}>Not available</span>
                     )}
@@ -462,21 +505,22 @@ export default function EmployeeProfile() {
                 Renders nothing when the employee has no loans. */}
             <EmployeeLoanCard employeeId={id} />
 
-            <p className="text-[11px] font-bold uppercase mb-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Bank Details</p>
-            <Grid>
-              <Field k="Account Holder" v={data.submission?.bank?.account_name}/>
-              <Field k="Bank" v={data.submission?.bank?.bank_name}/>
-              <Field k="Account Number" v={data.submission?.bank?.account_number} mono/>
-              <Field k="IFSC" v={data.submission?.bank?.ifsc} mono/>
-              <Field k="Branch" v={data.submission?.bank?.branch}/>
-            </Grid>
-            <p className="text-[11px] font-bold uppercase mt-5 mb-2" style={{ color:'var(--text-muted)', letterSpacing:'0.04em' }}>Tax (read-only — managed under Payroll)</p>
-            <Grid>
-              <Field k="PAN" v={data.submission?.bank?.pan}/>
-              <Field k="Tax Regime" v={null}/>
-              <Field k="Investment Declaration" v={null}/>
-              <Field k="Form 16" v={null}/>
-            </Grid>
+            {/* Bank, identity and statutory numbers — editable, and the same
+                record payroll reads. These were read-only views of the
+                onboarding form: an IFSC typed wrongly there could never be
+                corrected, and payroll worked from a spreadsheet instead. */}
+            <EmployeeDetailPanel
+              employeeId={id}
+              group="bank"
+              showToast={showToast}
+              fallback={{
+                bank_account_holder_name: data.submission?.bank?.account_name,
+                bank_name:                data.submission?.bank?.bank_name,
+                bank_account_number:      data.submission?.bank?.account_number,
+                bank_ifsc:                data.submission?.bank?.ifsc,
+                bank_branch:              data.submission?.bank?.branch,
+                pan_number:               data.submission?.bank?.pan,
+              }}/>
 
             {/* Payroll — current salary + history (Payroll Phase 3). Read-only here;
                 assign/revise happens in Payroll → Employee Salary. */}
@@ -494,7 +538,9 @@ export default function EmployeeProfile() {
                   <Field k="Gross Salary" v={money(salary.current.gross_salary)}/>
                   <Field k="Benefits" v={money(salary.current.total_benefits)}/>
                   <Field k="Deductions" v={money(salary.current.total_deductions)}/>
-                  <Field k="Net Salary" v={money(salary.current.net_salary)}/>
+                  {/* The structure's net, not the month's take-home — see
+                      EmployeeSalarySection for why the distinction matters. */}
+                  <Field k="Structure Net" v={money(salary.current.net_salary)}/>
                 </Grid>
                 {salary.history?.length > 1 && (
                   <>
@@ -1060,20 +1106,17 @@ export default function EmployeeProfile() {
           </div>
         )}
 
+        {/* This was seven hardcoded letter names, every one of them reading
+            "Not available" — a list that looked like a feature and was a
+            picture of one. The three that are real now generate; the offer and
+            appointment letters continue to live in the Offer workflow, which is
+            where they are actually produced. */}
         {tab==='letters' && (
-          <div>
-            <div className="space-y-2">
-              {['Appointment Letter','Confirmation Letter','Probation Extension','Promotion Letter','Warning Letter','Experience Letter','Relieving Letter'].map(l=>(
-                <div key={l} className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background:'var(--bg-input)', border:'1px solid var(--border)' }}>
-                  <Mail size={13} style={{ color:'#a78bfa' }}/>
-                  <span className="text-xs font-semibold" style={{ color:'var(--text-h)' }}>{l}</span>
-                  <span className="ml-auto text-[10px] font-semibold" style={{ color:'var(--text-muted)' }}>Not available</span>
-                </div>
-              ))}
-            </div>
-            <IntegrationNote icon={FileText} title="Letters" subtitle="Future generated letters"
-              hint="System-generated letters with templates & placeholders will be produced here. The existing Offer Letter continues to live in the Offer workflow." />
-          </div>
+          <EmployeeLetters
+            employeeId={id}
+            employeeName={data?.employee?.name}
+            showToast={showToast}
+          />
         )}
 
         {tab==='work' && (
@@ -1138,14 +1181,16 @@ const IntegrationNote = ({ icon:Icon, title, subtitle, hint, chips, big }) => (
 
 // ── Edit modal (unchanged behaviour — same fields, same update API) ──
 function EditModal({ employee, onClose, onSaved, showToast }) {
-  const F = ['name','email','phone','department','designation','reporting_manager_name','joining_date','probation_end_date','confirmation_date','status']
+  // department_id / designation_id are what is SUBMITTED; the two names ride
+  // along only so a since-retired master still has a label in the dropdown.
+  const F = ['name','email','phone','department','designation','department_id','designation_id','reporting_manager_name','joining_date','probation_end_date','confirmation_date','notice_days','status']
   const [form, setForm] = useState(Object.fromEntries(F.map(k=>[k, employee[k] ?? (k==='status'?'Active':'')])))
   const [saving, setSaving] = useState(false)
   // Department / Designation / Reporting Manager from Org Setup master data (single
   // source, active-only). No hardcoded lists; saved-but-inactive values stay marked.
   const { masters } = useMasterData()
-  const deptOptions    = withInactive((masters.departments  || []).map(d => d.name), form.department)
-  const desigOptions   = withInactive((masters.designations || []).map(d => d.name), form.designation)
+  const deptOptions    = withInactiveById(masters.departments,  form.department_id,  form.department)
+  const desigOptions   = withInactiveById(masters.designations, form.designation_id, form.designation)
   const managerOptions = withInactive((masters.managers     || []).map(m => m.name), form.reporting_manager_name)
   const save = async () => {
     setSaving(true)
@@ -1165,15 +1210,28 @@ function EditModal({ employee, onClose, onSaved, showToast }) {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Department</label>
-              <select className="input-3d text-sm" value={form.department} onChange={e=>set('department',e.target.value)}>
+              <select className="input-3d text-sm" value={form.department_id||''} onChange={e=>set('department_id',e.target.value)}>
                 <option value="">Select...</option>{deptOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
             <div><label className="label">Designation</label>
-              <select className="input-3d text-sm" value={form.designation} onChange={e=>set('designation',e.target.value)}>
+              <select className="input-3d text-sm" value={form.designation_id||''} onChange={e=>set('designation_id',e.target.value)}>
                 <option value="">Select...</option>{desigOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
+          </div>
+          {/* Blank inherits the grade's exit policy and then the exit type
+              default; 0 means this person serves no notice. */}
+          <div>
+            <label className="label">Notice Period (days)</label>
+            <input type="number" min="0" max="365" className="input-3d text-sm"
+              placeholder="Leave blank to inherit from grade / exit type"
+              value={form.notice_days ?? ''} onChange={e=>set('notice_days',e.target.value)}/>
+            <p className="text-[10px] mt-1" style={{ color:'var(--text-muted)' }}>
+              {form.notice_days === '' || form.notice_days === null || form.notice_days === undefined
+                ? 'Inheriting from grade / exit type.'
+                : `Overridden: ${Number(form.notice_days)} day(s).`}
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Reporting Manager</label>

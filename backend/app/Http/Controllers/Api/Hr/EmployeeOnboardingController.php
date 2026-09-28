@@ -31,9 +31,28 @@ class EmployeeOnboardingController extends Controller
         abort_unless($request->user()->canManageOnboarding(), 403, 'You are not authorised to manage Employee Onboarding');
     }
 
+    /**
+     * Row-level tenancy, and then whose record it is.
+     *
+     * Every model-bound method on this controller passes through here —
+     * show/setStage/approvals directly, and the twelve education / experience /
+     * family / reference endpoints via childWrite() and childDelete() — so this
+     * is the one place the boundary has to hold.
+     *
+     * An onboarding with NO employee_id yet is a candidate who has not joined.
+     * It belongs to no employee, so no employee's privacy is at stake and it
+     * stays reachable: refusing it would strand exactly the pre-joining records
+     * this flow exists to move along, which is the opposite of the intent.
+     * Once joining populates employee_id, the record scopes like any other.
+     */
     private function assertTenant(Request $request, HrEmployeeOnboarding $o): void
     {
         abort_unless((int) $o->tenant_id === (int) $request->user()->tenant_id, 404);
+
+        if ($o->employee_id !== null) {
+            app(\App\Services\Auth\ScopeResolver::class)
+                ->assertCanActOnEmployee($request->user(), $o->employee_id);
+        }
     }
 
     /** Actor scope — HR only in Sprint 1; the seam for future ESS resolution. */
@@ -47,7 +66,7 @@ class EmployeeOnboardingController extends Controller
     {
         $this->assertCanManage($request);
 
-        return $this->success($this->service->dashboard($request->user()->tenant_id));
+        return $this->success($this->service->dashboard($request->user()->tenant_id, $request->user()));
     }
 
     /* ── List ── */
@@ -57,7 +76,8 @@ class EmployeeOnboardingController extends Controller
 
         return $this->success($this->service->list(
             $request->user()->tenant_id,
-            $request->only(['status', 'stage', 'search', 'sort', 'dir', 'per_page'])
+            $request->only(['status', 'stage', 'search', 'sort', 'dir', 'per_page']),
+            $request->user()
         ));
     }
 
@@ -74,9 +94,16 @@ class EmployeeOnboardingController extends Controller
         // candidate pipeline existed.
         $source = $request->query('source', 'all');
 
-        // Base scope: everyone still awaiting an onboarding record.
-        $base = fn () => HrEmployee::where('tenant_id', $tenantId)
-            ->whereDoesntHave('employeeOnboarding');
+        // Base scope: everyone still awaiting an onboarding record — and only
+        // those this actor may see. This picker is a directory read: it returns
+        // names, codes, designations and departments straight off hr_employees,
+        // so it takes the same boundary as the onboarding list it feeds.
+        $base = fn () => app(\App\Services\Auth\ScopeResolver::class)->applyToQuery(
+            HrEmployee::where('tenant_id', $tenantId)->whereDoesntHave('employeeOnboarding'),
+            $request->user(),
+            'id',
+            [\App\Support\Hr\DataScope::OWN, \App\Support\Hr\DataScope::DEPARTMENT, \App\Support\Hr\DataScope::TEAM],
+        );
 
         $employees = $base()
             ->when($source === 'candidate', fn ($q) => $q->whereNotNull('candidate_id'))

@@ -38,6 +38,7 @@ class MyAttendanceController extends Controller
     public function __construct(
         private AttendanceService $attendance,
         private EmployeeIdentityService $identity,
+        private \App\Services\Hr\Attendance\PunchEvidence $evidence,
     ) {
     }
 
@@ -122,13 +123,30 @@ class MyAttendanceController extends Controller
         // HR with a reason attached — not to a button on your own dashboard.
         $data = $request->validate([
             'shift' => 'nullable|in:'.implode(',', array_keys(HrAttendance::SHIFTS)),
+            // Punch evidence, all optional. A browser may have no camera and may
+            // refuse location; neither can stop somebody recording that they are
+            // at work, so none of these is required. What the client cannot do is
+            // stay silent about it — see verification_note.
+            'latitude'          => 'nullable|string|max:40',
+            'longitude'         => 'nullable|string|max:40',
+            'address'           => 'nullable|string|max:255',
+            'selfie'            => 'nullable|file|image|max:10240',
+            'verification_note' => 'nullable|string|max:120',
         ]);
 
         $record = $this->attendance->ensureRecord($employee, now()->toDateString(), $data['shift'] ?? null);
+        $result = $this->attendance->{$method}($record);
+
+        // Only a clock-in or clock-out carries evidence; starting a break is not
+        // a separate place or a separate face.
+        if (in_array($method, ['checkIn', 'checkOut'], true)) {
+            $this->evidence->record($request, $result, $employee, $method === 'checkOut' ? 'out' : 'in');
+            $result = $result->fresh('employee');
+        }
 
         return response()->json([
             'status' => 'success',
-            'data'   => $this->attendance->{$method}($record),
+            'data'   => $result,
         ]);
     }
 }

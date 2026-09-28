@@ -21,7 +21,11 @@ class CreditNoteService
 
     public function list(int $tenantId, array $filters): mixed
     {
-        $query = CreditNote::forTenant($tenantId)->with(['lineItems', 'customer:id,company']);
+        // `invoice` is eager-loaded so the list can show which invoice a note was
+        // raised against. The relation existed and was never loaded, so that
+        // column read "—" for every row however the note was created.
+        $query = CreditNote::forTenant($tenantId)
+            ->with(['lineItems', 'customer:id,company', 'invoice:id,number']);
 
         if (!empty($filters['status']) && $filters['status'] !== 'All') {
             $query->where('status', $filters['status']);

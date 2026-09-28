@@ -199,11 +199,18 @@ export const tpvApi = {
     create:   (data)        => api.post('/tpv/onboarding', data).then(r => r.data),
     delete:   (id)          => api.delete(`/tpv/onboarding/${id}`).then(r => r.data),
     // Wizard actions
-    saveProfile: (id, profile) => api.post(`/tpv/onboarding/${id}/profile`, { profile }).then(r => r.data),
+    // `draft` tells the server this is a half-filled form kept on the way past:
+    // what stands on its own is stored and the rest comes back in `skipped`,
+    // instead of one unfinished field failing the whole save.
+    saveProfile: (id, profile, draft = false) => api.post(`/tpv/onboarding/${id}/profile`, { profile, draft }).then(r => r.data),
     setStep:     (id, step)    => api.patch(`/tpv/onboarding/${id}/step`, { step }).then(r => r.data),
     submit:      (id, data = {}) => api.post(`/tpv/onboarding/${id}/submit`, data).then(r => r.data),
     // Step 1 — Kickoff PDF (blob), acknowledgement, and view/download/print logging.
     kickoffPdf:      (id)        => api.get(`/tpv/onboarding/${id}/kickoff`, { responseType: 'blob' }).then(r => r.data),
+    // The same minutes the PDF prints, as data — resolved by the SAME
+    // server-side resolver, so the screen and the document can never
+    // describe two different meetings.
+    kickoffData:     (id)        => api.get(`/tpv/onboarding/${id}/kickoff-data`).then(r => r.data),
     workStartLetter: (id)        => api.get(`/tpv/onboarding/${id}/work-start-letter`, { responseType: 'blob' }).then(r => r.data),
     acceptKickoff:   (id, comment) => api.post(`/tpv/onboarding/${id}/kickoff/accept`, comment ? { comment } : {}).then(r => r.data),
     logKickoffEvent: (id, event) => api.post(`/tpv/onboarding/${id}/kickoff/log`, { event }).then(r => r.data),
@@ -267,6 +274,8 @@ export const tpvApi = {
     saveMedical:     (id, data) => api.post(`/tpv/workers/${id}/medical`, data, data instanceof FormData ? { headers: { 'Content-Type': undefined } } : undefined).then(r => r.data),
     markMedical:     (id, data) => api.post(`/tpv/workers/${id}/mark-medical`, data).then(r => r.data),
     saveInduction:   (id, data) => api.post(`/tpv/workers/${id}/induction`, data).then(r => r.data),
+    // Group session: { worker_ids[], ...session, signature_data } → { saved[], skipped[] }
+    bulkInduction:   (data)     => api.post('/tpv/workers/bulk-induction', data).then(r => r.data),
     markInduction:   (id, data) => api.post(`/tpv/workers/${id}/mark-induction`, data).then(r => r.data),
     // Issuing/returning PPE lives on `ppe` below (it moves Inventory stock).
     // This only records a deliberate skip of the step.
@@ -436,6 +445,7 @@ export const tpvApi = {
       search: (vid, q)    => api.get(`/tpv/vendors/${vid}/customers/search`, { params: { q } }).then(r => r.data),
       // Link an existing customer to this vendor (sets clients.vendor_id).
       link:   (vid, clientId) => api.post(`/tpv/vendors/${vid}/customers/link`, { client_id: clientId }).then(r => r.data),
+      update: (vid, clientId, data) => api.put(`/tpv/vendors/${vid}/customers/${clientId}`, data).then(r => r.data),
     },
     // TPV-local vendor↔project engagements (§35) with the shed requirement.
     shedProjects: {
@@ -515,6 +525,10 @@ export const tpvApi = {
     holders:     (productId)      => api.get(`/tpv/ppe/item/${productId}/holders`).then(r => r.data),
     // Private file: fetched as a blob so the bearer token is sent.
     imageBlob:   (productId)      => api.get(`/tpv/ppe/item/${productId}/image`, { responseType: 'blob' }).then(r => URL.createObjectURL(r.data)),
+    // One vendor's OWN PPE list (its stock, not Inventory) — read-only here;
+    // the vendor keeps it from its portal.
+    vendorItems:     (vendorId)         => api.get(`/tpv/ppe/vendors/${vendorId}/items`).then(r => r.data),
+    vendorItemImage: (vendorId, itemId) => api.get(`/tpv/ppe/vendors/${vendorId}/items/${itemId}/image`, { responseType: 'blob' }).then(r => URL.createObjectURL(r.data)),
 
     // ── Requirement matrix: role → required PPE (admin-configurable) ──
     requirements:       ()          => api.get('/tpv/ppe/requirements').then(r => r.data),

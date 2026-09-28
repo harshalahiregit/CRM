@@ -3,10 +3,13 @@
 namespace App\Http\Controllers\Api\Hr;
 
 use App\Http\Controllers\Controller;
+use App\Models\Hr\HrApprovalAction;
 use App\Models\Hr\HrReimbursement;
+use App\Services\Hr\Approval\ApprovalEngine;
 use App\Services\Hr\ReimbursementService;
 use App\Services\Hr\RequestThreadService;
 use App\Services\Shared\AttachmentService;
+use App\Support\Hr\Approval\ApprovalProcess;
 use App\Support\Hr\ReimbursementStatus;
 use Illuminate\Http\Request;
 
@@ -23,18 +26,37 @@ use Illuminate\Http\Request;
  * instead, which left index() — the method that lists every claim in the tenant —
  * open to any authenticated user, because it does not go through that helper.
  *
- * Gated on canManageHrQueue, consistent with the rest of the HR module. When the
- * permission grid starts being enforced these move to
- * `permission:hr_attendance,edit` or a reimbursement module of its own — the
- * grid is read but not yet consulted, and switching one module across at a time
- * is the point of introducing it that way.
+ * Gated on `permission:hr_attendance,view_global` — the permission grid an admin
+ * ticks in Staff Management, not a role string in PHP. It was canManageHrQueue
+ * until the grid started being enforced; a finer split (a reimbursement module of
+ * its own, or `edit` for the approve routes) is a later refinement of the same
+ * mechanism rather than a different one.
+ *
+ * SCOPE is a separate question from that permission, and this controller used to
+ * answer it with "tenant". The DECISIONS were already scoped — approve() and
+ * decline() pass through ApprovalEngine::assertMayDecide(), whose second gate is
+ * assertCanActOnEmployee() — but reading was not, so a department-scoped user
+ * could list every claim in the workspace, open any of them, hold one, write a
+ * note on it, and download another department's receipts. The boundary was
+ * holding on the verb and leaking on the noun.
+ *
+ * index() is narrowed, and find() asserts. All four of the unscoped paths —
+ * show, hold, note and attachment — go through find(), so the assertion sits
+ * there rather than in each of them, which is also what puts the attachment
+ * download behind exactly the record's own authorisation.
+ *
+ * The engine still runs on the decision paths, unchanged. It refuses with the
+ * same 404 find() now does, so nothing about approving or declining moves.
  */
 class ReimbursementController extends Controller
 {
+    use \App\Repositories\Hr\Concerns\ScopesEmployeeData;
+
     public function __construct(
         private ReimbursementService $claims,
         private RequestThreadService $thread,
         private AttachmentService $attachments,
+        private ApprovalEngine $engine,
     ) {
     }
 
@@ -48,7 +70,13 @@ class ReimbursementController extends Controller
         ]);
 
         $claims = HrReimbursement::where('tenant_id', $request->user()->tenant_id)
+            // Whose claims this person may see. A global actor resolves to null
+            // and the query is left exactly as it was.
+            ->tap(fn ($q) => $this->scopeToEmployees($q, $request->user()))
             ->when($data['status'] ?? null, fn ($q, $s) => $q->where('status', $s))
+            // No separate guard on the filter: it intersects with the scope
+            // above, so an out-of-scope employee_id returns nothing rather than
+            // somebody else's claims.
             ->when($data['employee_id'] ?? null, fn ($q, $e) => $q->where('employee_id', $e))
             ->when($data['from'] ?? null, fn ($q, $d) => $q->whereDate('expense_date', '>=', $d))
             ->when($data['to'] ?? null, fn ($q, $d) => $q->whereDate('expense_date', '<=', $d))
@@ -86,6 +114,15 @@ class ReimbursementController extends Controller
         ]);
     }
 
+    /**
+     * Approve — through the configured ladder.
+     *
+     * Approving carries an optional amount: an approver may grant less than was
+     * claimed, with a reason. So on a multi-step ladder only the LAST rung's
+     * figure is applied — an intermediate approver records that they are
+     * content and nothing else. Until the ladder finishes, amount_approved
+     * stays null and payableAmount() returns null, so nothing is payable.
+     */
     public function approve(Request $request, int $id)
     {
         $data = $request->validate([
@@ -96,23 +133,144 @@ class ReimbursementController extends Controller
             'reason' => 'nullable|string|max:1000',
         ]);
 
-        $claim = $this->claims->approve(
-            $this->find($request, $id),
-            $request->user(),
-            isset($data['amount']) ? (float) $data['amount'] : null,
-            $data['reason'] ?? null
-        );
-
-        return $this->decided($claim, 'Claim approved.');
+        return $this->decide($request, $id, HrApprovalAction::APPROVED, $data['reason'] ?? null, $data);
     }
 
     public function decline(Request $request, int $id)
     {
         $data = $request->validate(['reason' => 'required|string|max:1000']);
 
-        $claim = $this->claims->decline($this->find($request, $id), $request->user(), $data['reason']);
+        return $this->decide($request, $id, HrApprovalAction::REJECTED, $data['reason'], $data);
+    }
 
-        return $this->decided($claim, 'Claim declined.');
+    /**
+     * One decision, through the engine, for both verbs.
+     *
+     * Three gates, still separate: the hr.manage middleware on the route group
+     * is the capability, the engine asserts the data scope against the claim's
+     * employee, and the ladder decides whether this claim is waiting on this
+     * person. The service keeps its own rules on top — most importantly
+     * assertNotOwnClaim(), so being named as an approver never lets somebody
+     * decide their own expenses.
+     *
+     * hold() and note() are NOT routed here. A hold pauses a claim to ask the
+     * employee something; it decides nothing, and the employee's reply returns
+     * the claim to the rung it came from.
+     */
+    private function decide(Request $request, int $id, string $action, ?string $reason, array $data)
+    {
+        $actor    = $request->user();
+        $tenantId = (int) $actor->tenant_id;
+        $claim    = $this->find($request, $id);
+
+        $approval = $this->approvalFor($claim, $tenantId);
+
+        /*
+         | Already decided, including by the attendance app.
+         |
+         | HrmAdminController decides claims through this same service with its
+         | own reporting-line check, and that path is deliberately unchanged.
+         | Close the engine's view so it does not contradict the record, then
+         | let the service raise its own "already been decided" message.
+         */
+        if ($claim->isDecided()) {
+            $this->engine->supersede($approval);
+
+            return $this->runDomainAction($claim, $actor, $action, $reason, $data);
+        }
+
+        $inspection = $this->engine->inspect($approval);
+        if (! $inspection['resolvable']) {
+            $this->engine->block($approval, $inspection['describe']);
+            abort(409, 'This claim cannot be decided yet: '.$inspection['describe'].'.');
+        }
+
+        $this->engine->assertMayDecide($approval, $actor);
+
+        // The service's own rule, asked BEFORE the rung is consumed: deciding
+        // your own claim is refused whatever the ladder says, and a refusal
+        // must not leave an approval action recorded behind it.
+        $this->assertNotOwnClaim($claim, $actor);
+
+        $result = $this->engine->decide($approval, $actor, $action, $reason);
+
+        if (! $result['final']) {
+            // Still climbing. amount_approved is untouched, so the claim is not
+            // payable and the employee is not told it was approved.
+            return response()->json([
+                'status'   => 1,
+                'message'  => 'Recorded. The claim is now with the next approver.',
+                'approval' => $this->approvalPayload($result['request']),
+                'data'     => $claim->fresh(),
+            ]);
+        }
+
+        return $this->runDomainAction($claim->fresh(), $actor, $action, $reason, $data, $result['request']);
+    }
+
+    /** The existing service call, unchanged, with the ladder's position attached. */
+    private function runDomainAction($claim, $actor, string $action, ?string $reason, array $data, $approval = null)
+    {
+        $decided = $action === HrApprovalAction::APPROVED
+            ? $this->claims->approve(
+                $claim, $actor,
+                isset($data['amount']) ? (float) $data['amount'] : null,
+                $reason
+            )
+            : $this->claims->decline($claim, $actor, (string) $reason);
+
+        $response = $this->decided(
+            $decided,
+            $action === HrApprovalAction::APPROVED ? 'Claim approved.' : 'Claim declined.'
+        );
+
+        if (! $approval) {
+            return $response;
+        }
+
+        $payload = $response->getData(true);
+        $payload['approval'] = $this->approvalPayload($approval);
+
+        return response()->json($payload);
+    }
+
+    /** This claim's open approval round, opened lazily on first decision. */
+    private function approvalFor($claim, int $tenantId)
+    {
+        return $this->engine->requestFor(
+            $claim,
+            ApprovalProcess::REIMBURSEMENT,
+            $tenantId,
+            (int) $claim->employee_id,
+            (float) $claim->amount_claimed,
+        );
+    }
+
+    /**
+     * Mirrors ReimbursementService::assertNotOwnClaim().
+     *
+     * Duplicated here rather than relied upon downstream because the service is
+     * only reached on the FINAL rung; without this, an employee named as an
+     * intermediate approver could consume a step on their own claim before the
+     * service ever saw it.
+     */
+    private function assertNotOwnClaim($claim, $actor): void
+    {
+        $employee = $claim->relationLoaded('employee') ? $claim->employee : $claim->employee()->first();
+
+        if ($employee && $employee->user_id !== null && (int) $employee->user_id === (int) $actor->id) {
+            abort(403, 'You cannot decide your own expense claim.');
+        }
+    }
+
+    private function approvalPayload($approval): array
+    {
+        return [
+            'state'        => $approval->state,
+            'current_step' => $approval->current_step,
+            'total_steps'  => count($approval->steps_snapshot ?: []),
+            'steps'        => $approval->steps_snapshot ?: [],
+        ];
     }
 
     public function hold(Request $request, int $id)
@@ -126,8 +284,31 @@ class ReimbursementController extends Controller
             'proposed_amount' => 'nullable|numeric|min:0.01',
         ]);
 
+        $claim = $this->find($request, $id);
+
+        /*
+         | A counter-offer binds, so only the last rung may make one.
+         |
+         | The employee accepts a proposal through their own screen, and
+         | ReimbursementService::acceptProposal() APPROVES the claim at the
+         | agreed figure. With a multi-step ladder that is a bypass: a manager
+         | on rung 1 could propose an amount, the employee could accept it, and
+         | the claim would be approved without finance ever seeing it.
+         |
+         | Holding to ASK something stays available at every rung — that is what
+         | a hold is for. It is only the binding offer that waits until the
+         | person making it is the one who can actually settle the claim.
+         */
+        if (isset($data['proposed_amount']) && ! $claim->isDecided()) {
+            $approval = $this->approvalFor($claim, (int) $request->user()->tenant_id);
+
+            if ($approval->isOpen() && ! $approval->isFinalStep()) {
+                abort(409, 'Only the final approver can propose an amount, because accepting one approves the claim. Hold with a question instead.');
+            }
+        }
+
         $claim = $this->claims->hold(
-            $this->find($request, $id),
+            $claim,
             $request->user(),
             $data['reason'],
             isset($data['proposed_amount']) ? (float) $data['proposed_amount'] : null
@@ -170,9 +351,25 @@ class ReimbursementController extends Controller
         return response()->download($f['path'], $f['filename'], ['Content-Type' => $f['mime']]);
     }
 
+    /**
+     * The one door show, hold, note, attachment and the decision paths share.
+     *
+     * The scope assertion sits here rather than in each of them, so a sixth
+     * caller added later inherits it — and so the attachment download is
+     * behind exactly the authorisation of the claim that owns the file, with
+     * no second rule to keep in step.
+     *
+     * 404, not 403. Refusing with "you may not see this" confirms the claim
+     * exists and belongs to somebody outside your department, which is the
+     * thing being withheld. The same reading the tenant guard beside it takes.
+     */
     private function find(Request $request, int $id): HrReimbursement
     {
-        return HrReimbursement::where('tenant_id', $request->user()->tenant_id)->findOrFail($id);
+        $claim = HrReimbursement::where('tenant_id', $request->user()->tenant_id)->findOrFail($id);
+
+        $this->assertEmployeeInScope($request->user(), $claim->employee_id);
+
+        return $claim;
     }
 
     private function decided(HrReimbursement $claim, string $message)

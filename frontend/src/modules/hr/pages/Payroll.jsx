@@ -3,7 +3,7 @@ import { useTheme } from '@/context/ThemeContext'
 import {
   Wallet, Coins, Search, Plus, Pencil, X, Power, Lock, Sparkles, Layers, Users, PlayCircle, ReceiptText,
   Trash2, IndianRupee, Eye, Calendar, CheckCircle2, Ban, Plug, Download, FileText, BarChart3, Copy, History,
-  Scale, AlertTriangle, Receipt, Landmark,
+  Scale, AlertTriangle, Receipt, Landmark, LayoutGrid, Banknote, ShieldCheck, SlidersHorizontal,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
@@ -14,6 +14,8 @@ import StatutorySettings from './StatutorySettings'
 import TaxDeclarations from './TaxDeclarations'
 import SalarySheet from '../components/SalarySheet'
 import VariableEarnings from '../components/VariableEarnings'
+import PayrollRunWizard from '../components/PayrollRunWizard'
+import PayrollHub from '../components/PayrollHub'
 
 const GRAD = 'linear-gradient(135deg,#7C3AED,#5b21b6)'
 // 'Benefit' retained for backward compatibility (legacy employer contribution).
@@ -22,30 +24,67 @@ const CALC_TYPES = ['Fixed', 'Percentage', 'Formula', 'Manual']
 const TYPE_C = { Earning:{c:'#10b981',bg:'rgba(16,185,129,0.12)'}, Employer:{c:'#3b82f6',bg:'rgba(59,130,246,0.12)'}, Deduction:{c:'#f87171',bg:'rgba(239,68,68,0.1)'}, Benefit:{c:'#3b82f6',bg:'rgba(59,130,246,0.12)'} }
 const money = v => v === null || v === undefined || v === '' ? '—' : `₹${Number(v).toLocaleString('en-IN')}`
 
-// Payroll module tabs. Only "Salary Components" is built (Phase 1); the rest are
-// reserved structure for future phases — shown, locked, never routed to a page.
-const TABS = [
-  { key:'components', label:'Salary Components', icon:Coins,       ready:true },
-  { key:'structures', label:'Salary Structures', icon:Layers,      ready:true },
-  { key:'employee',   label:'Employee Salary',   icon:Users,       ready:true },
-  { key:'statutory',  label:'Statutory Rules',   icon:Scale,       ready:true },
-  { key:'declarations', label:'Tax Declarations', icon:Receipt,    ready:true },
-  // #31 — commissions/incentives sit beside the salary masters they draw their
-  // component from, and before processing, which is what collects them.
-  { key:'variable',   label:'Commissions',       icon:Landmark,    ready:true },
-  { key:'processing', label:'Payroll Processing', icon:PlayCircle,  ready:true },
-  { key:'payslips',   label:'Payslips',          icon:ReceiptText, ready:true },
-  { key:'reports',    label:'Payroll Reports',   icon:BarChart3,   ready:true },
-  { key:'salary-reports', label:'Salary Reports', icon:FileText,   ready:true },
+/*
+ * Payroll is organised by WHAT YOU ARE DOING, not by which table you are editing.
+ *
+ * It used to be ten flat tabs that opened on Salary Components — a master data
+ * screen, and the one nobody needs on a Tuesday. The work has an order to it:
+ * run the month, look at the register, pay people, then keep the masters and
+ * the rules behind it. That order is what these sections are.
+ *
+ * Nothing was rewritten to do this. Every pane below is the same component it
+ * always was, re-homed under the section it belongs to — a tab that worked
+ * yesterday works today, from a different place.
+ */
+const SECTIONS = [
+  { key:'hub',      label:'Hub',               icon:LayoutGrid },
+  { key:'run',      label:'Run Payroll',       icon:PlayCircle,        panes:[
+      { key:'processing',     label:'Run Payroll' },
+  ]},
+  { key:'register', label:'Pay Register',      icon:FileText,          panes:[
+      { key:'salary-reports', label:'Salary Register' },
+  ]},
+  { key:'payout',   label:'Payout',            icon:Banknote,          panes:[
+      { key:'payslips',       label:'Payslips' },
+  ]},
+  { key:'people',   label:'People & Salaries', icon:Users,             panes:[
+      { key:'employee',       label:'Employee Salary' },
+      // #31 — commissions sit with the people they are paid to, and ahead of
+      // the run that collects them.
+      { key:'variable',       label:'Commissions' },
+  ]},
+  { key:'declarations', label:'Declarations',  icon:Receipt,           panes:[
+      { key:'declarations',   label:'Tax Declarations' },
+  ]},
+  { key:'compliance', label:'Compliance',      icon:ShieldCheck,       panes:[
+      { key:'statutory',      label:'Statutory Rules' },
+  ]},
+  { key:'insights', label:'Insights',          icon:BarChart3,         panes:[
+      { key:'reports',        label:'Payroll Reports' },
+  ]},
+  { key:'settings', label:'Settings',          icon:SlidersHorizontal, panes:[
+      { key:'components',     label:'Salary Components' },
+      { key:'structures',     label:'Salary Structures' },
+  ]},
 ]
+
+/** The first pane of a section — what opening that tab lands on. */
+const firstPane = (sectionKey) =>
+  SECTIONS.find(s => s.key === sectionKey)?.panes?.[0]?.key ?? null
 
 export default function Payroll() {
   useTheme()
-  const [tab, setTab] = useState('components')
+  // Opens on the Hub: which month is in flight and what is blocking it, rather
+  // than a master data table.
+  const [section, setSection] = useState('hub')
+  const [tab, setTab] = useState(null)
   const [toast, setToast] = useState(null)
   const showToast = (msg, type='success') => { setToast({msg,type}); setTimeout(()=>setToast(null),3000) }
 
-  const current = TABS.find(t => t.key === tab)
+  const currentSection = SECTIONS.find(s => s.key === section)
+  const panes = currentSection?.panes ?? []
+
+  const goTo = (sectionKey) => { setSection(sectionKey); setTab(firstPane(sectionKey)) }
 
   return (
     <div className="space-y-6 animate-[tiltIn_0.35s_ease_forwards]">
@@ -61,22 +100,41 @@ export default function Payroll() {
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* Sections — what you are doing */}
       <div className="flex gap-1.5 flex-wrap">
-        {TABS.map(t => {
-          const active = tab === t.key
+        {SECTIONS.map(s => {
+          const active = section === s.key
           return (
-            <button key={t.key} onClick={()=>setTab(t.key)}
+            <button key={s.key} onClick={()=>goTo(s.key)}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all"
               style={{ background: active ? GRAD : 'var(--bg-input)', color: active ? '#fff' : 'var(--text-muted)', border: active ? 'none' : '1px solid var(--border)' }}>
-              <t.icon size={15}/> {t.label}
-              {!t.ready && <Lock size={11} style={{ opacity:0.7 }}/>}
+              <s.icon size={15}/> {s.label}
             </button>
           )
         })}
       </div>
 
-      {tab === 'components' ? <SalaryComponents showToast={showToast} />
+      {/* Panes within a section. Hidden when a section holds only one, so a
+          single-pane section does not grow a tab bar with one tab in it. */}
+      {panes.length > 1 && (
+        <div className="flex gap-1.5 flex-wrap">
+          {panes.map(p => {
+            const active = tab === p.key
+            return (
+              <button key={p.key} onClick={()=>setTab(p.key)}
+                className="px-3 py-1.5 rounded-lg text-[12px] font-bold transition-all"
+                style={{ background: active ? 'rgba(124,58,237,0.14)' : 'transparent',
+                         color: active ? '#a78bfa' : 'var(--text-muted)',
+                         border: `1px solid ${active ? 'transparent' : 'var(--border)'}` }}>
+                {p.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {section === 'hub' ? <PayrollHub showToast={showToast} onGoTo={goTo} onOpenRun={()=>goTo('run')} />
+        : tab === 'components' ? <SalaryComponents showToast={showToast} />
         : tab === 'structures' ? <SalaryStructures showToast={showToast} />
         : tab === 'employee' ? <EmployeeSalary showToast={showToast} />
         : tab === 'statutory' ? <StatutorySettings showToast={showToast} />
@@ -86,14 +144,7 @@ export default function Payroll() {
         : tab === 'payslips' ? <Payslips showToast={showToast} />
         : tab === 'reports' ? <PayrollReports showToast={showToast} />
         : tab === 'salary-reports' ? <SalaryReports showToast={showToast} />
-        : (
-          <div className="card-3d flex flex-col items-center justify-center text-center" style={{ padding:'56px 20px' }}>
-            <div className="rounded-2xl flex items-center justify-center mb-3" style={{ width:60, height:60, background:'rgba(124,58,237,0.1)' }}><current.icon size={26} style={{ color:'#a78bfa' }}/></div>
-            <p className="text-sm font-black" style={{ color:'var(--text-h)' }}>{current.label}</p>
-            <p className="text-xs mt-1" style={{ color:'var(--text-muted)' }}>Coming in a future Payroll phase.</p>
-            <p className="text-[11px] mt-2 max-w-md" style={{ color:'var(--text-muted)' }}>This phase delivers the Salary Components master only. Structures, employee salary, processing and payslips build on top of it later.</p>
-          </div>
-        )}
+        : null}
     </div>
   )
 }
@@ -784,7 +835,9 @@ function ManageSalary({ employee, structures, onClose, onChanged, showToast }) {
                     <Row k="Gross Salary" v={inr(cur.gross_salary)} accent="#10b981"/>
                     <Row k="Benefits" v={inr(cur.total_benefits)} accent="#3b82f6"/>
                     <Row k="Deductions" v={inr(cur.total_deductions)} accent="#f87171"/>
-                    <Row k="Net Salary" v={inr(cur.net_salary)}/>
+                    {/* Structure figures, under "Current Salary" — the payroll
+                        month's take-home is Net Payable in the run list. */}
+                    <Row k="Structure Net" v={inr(cur.net_salary)}/>
                   </div>
                 ) : <p className="text-xs px-3 py-4 rounded-xl" style={{ background:'var(--bg-input)', color:'var(--text-muted)' }}>No salary assigned yet.</p>}
               </div>
@@ -883,6 +936,9 @@ function PayrollProcessing({ showToast }) {
   const [creating, setCreating] = useState(false)
   const [processingId, setProcessingId] = useState(null)
   const [view, setView] = useState(null)   // run being viewed (with records)
+  // The run currently being STEPPED THROUGH. Separate from `view`, which is the
+  // read-only summary of a finished run — this one is the working screen.
+  const [wizard, setWizard] = useState(null)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -890,6 +946,24 @@ function PayrollProcessing({ showToast }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   useEffect(() => { load() }, [load])
+
+  /**
+   * Open a run in the stepped screen, and re-read it after every action.
+   *
+   * The wizard holds no derived state of its own — each stage re-reads the run
+   * and its records from the server, so what it shows is what the server will
+   * enforce. A screen that decided locally when a run was approved would go on
+   * offering buttons the API has already started refusing.
+   */
+  const openWizard = async (run) => {
+    try {
+      const [full, records] = await Promise.all([
+        hrApi.payroll.runs.get(run.id),
+        hrApi.payroll.runs.records(run.id).catch(() => []),
+      ])
+      setWizard({ ...full, records })
+    } catch { showToast('Failed to open the run', 'error') }
+  }
 
   const process = async (run) => {
     setProcessingId(run.id)
@@ -913,6 +987,20 @@ function PayrollProcessing({ showToast }) {
 
   const completed = runs.filter(r => r.status === 'Completed')
   const latest = completed[0]
+
+  // The stepped screen takes over the tab while a run is open. It is the whole
+  // job for that month, not a dialog on top of a list.
+  if (wizard) {
+    return (
+      <PayrollRunWizard
+        run={wizard}
+        records={wizard.records || []}
+        showToast={showToast}
+        onChanged={() => { openWizard(wizard); load() }}
+        onClose={() => { setWizard(null); load() }}
+      />
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -939,7 +1027,7 @@ function PayrollProcessing({ showToast }) {
         : (
           <div className="card-3d overflow-x-auto" style={{ padding:'6px' }}>
             <table className="w-full text-sm" style={{ minWidth:820 }}>
-              <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Month','Employees','Gross','Deduction','Net','Status','Action'].map(h=><th key={h} className={`text-left px-3 py-3 label-caps whitespace-nowrap ${h==='Action'?'text-right':''}`}>{h}</th>)}</tr></thead>
+              <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Month','Employees','Gross','Deduction','Net','Stage','Status','Action'].map(h=><th key={h} className={`text-left px-3 py-3 label-caps whitespace-nowrap ${h==='Action'?'text-right':''}`}>{h}</th>)}</tr></thead>
               <tbody>
                 {runs.map(r => {
                   const st = RUN_ST[r.status] || {}
@@ -950,14 +1038,16 @@ function PayrollProcessing({ showToast }) {
                       <td className="px-3 py-2.5 font-semibold" style={{ color:'#10b981' }}>{inr(r.total_gross)}</td>
                       <td className="px-3 py-2.5 font-semibold" style={{ color:'#f87171' }}>{inr(r.total_deductions)}</td>
                       <td className="px-3 py-2.5 font-black" style={{ color:'#0ea5e9' }}>{inr(r.total_net)}</td>
+                      {/* Where the run sits in the approval chain — a different
+                          question from whether it has been calculated, which is
+                          what Status answers. */}
+                      <td className="px-3 py-2.5"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:'rgba(124,58,237,0.1)', color:'#a78bfa' }}>{r.stage || 'Pre-check'}</span></td>
                       <td className="px-3 py-2.5"><span className="text-[10px] font-bold px-2 py-0.5 rounded-lg" style={{ background:st.bg, color:st.c }}>{r.status}</span></td>
                       <td className="px-3 py-2.5">
                         <div className="flex gap-1.5 justify-end">
-                          {r.status === 'Draft' && <>
-                            <button onClick={()=>process(r)} disabled={processingId===r.id} className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white flex items-center gap-1" style={{ background:GRAD, opacity:processingId===r.id?0.7:1 }}><PlayCircle size={12}/> {processingId===r.id?'Processing…':'Process'}</button>
-                            <button onClick={()=>cancel(r)} title="Cancel" className="p-1.5 rounded-lg" style={{ background:'rgba(239,68,68,0.1)', color:'#f87171' }}><Ban size={13}/></button>
-                          </>}
-                          {r.status === 'Completed' && <button onClick={()=>openView(r)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg flex items-center gap-1" style={{ background:'rgba(124,58,237,0.1)', color:'#a78bfa' }}><Eye size={12}/> View</button>}
+                          {r.status !== 'Cancelled' && <button onClick={()=>openWizard(r)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white flex items-center gap-1" style={{ background:GRAD }}><PlayCircle size={12}/> {r.stage === 'Paid' ? 'Open' : 'Continue'}</button>}
+                          {r.status === 'Draft' && <button onClick={()=>cancel(r)} title="Cancel" className="p-1.5 rounded-lg" style={{ background:'rgba(239,68,68,0.1)', color:'#f87171' }}><Ban size={13}/></button>}
+                          {r.status === 'Completed' && <button onClick={()=>openView(r)} title="Summary" className="p-1.5 rounded-lg" style={{ background:'rgba(124,58,237,0.1)', color:'#a78bfa' }}><Eye size={13}/></button>}
                           {r.status === 'Cancelled' && <span className="text-[10px]" style={{ color:'var(--text-muted)' }}>—</span>}
                         </div>
                       </td>
@@ -978,7 +1068,10 @@ function PayrollProcessing({ showToast }) {
         </div>
       </div>
 
-      {creating && <CreateRunModal onClose={()=>setCreating(false)} onCreated={(run)=>{ setCreating(false); load(); process(run) }} showToast={showToast} />}
+      {/* A new run opens at Pre-check rather than processing immediately. The
+          old behaviour paid everybody the moment the month was chosen, which
+          is the decision the stepped flow exists to stop being automatic. */}
+      {creating && <CreateRunModal onClose={()=>setCreating(false)} onCreated={(run)=>{ setCreating(false); load(); openWizard(run) }} showToast={showToast} />}
       {view && <RunSummaryModal run={view} onClose={()=>setView(null)} />}
     </div>
   )
@@ -1007,10 +1100,10 @@ function CreateRunModal({ onClose, onCreated, showToast }) {
           <div><label className="label">Month</label><select className="input-3d text-sm" value={month} onChange={e=>setMonth(e.target.value)}>{MONTHS.map((m,i)=><option key={m} value={i+1}>{m}</option>)}</select></div>
           <div><label className="label">Year</label><select className="input-3d text-sm" value={year} onChange={e=>setYear(e.target.value)}>{years.map(y=><option key={y} value={y}>{y}</option>)}</select></div>
         </div>
-        <p className="text-[11px] mt-3" style={{ color:'var(--text-muted)' }}>The run is created then processed immediately from all employees with an active salary.</p>
+        <p className="text-[11px] mt-3" style={{ color:'var(--text-muted)' }}>The run opens at the pre-check, where you choose who is in it. Nothing is calculated or paid until you get there.</p>
         <div className="flex gap-3 pt-4">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-semibold" style={{ background:'var(--bg-input)', color:'var(--text-muted)', border:'1px solid var(--border)' }}>Cancel</button>
-          <button onClick={create} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:GRAD, opacity:saving?0.7:1 }}>{saving?'Creating…':'Create & Process'}</button>
+          <button onClick={create} disabled={saving} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background:GRAD, opacity:saving?0.7:1 }}>{saving?'Creating…':'Start run'}</button>
         </div>
       </div>
     </div>
@@ -1210,7 +1303,20 @@ function RecordRow({ r }) {
         </td>
         <td className="px-3 py-2.5" style={{ color:'#10b981' }}>{inr(r.gross_salary)}</td>
         <td className="px-3 py-2.5" style={{ color:'#f87171' }}>{inr(st?.total_deductions)}</td>
-        <td className="px-3 py-2.5" style={{ color:'#f87171' }}>{inr(r.total_deductions)}</td>
+        {/*
+          The "Deductions" column. It showed r.total_deductions, which is the
+          frozen SALARY-STRUCTURE figure — zero for every structure that defines
+          no deductions of its own, i.e. all of them, because PF, ESIC, PT and
+          TDS are statutory and resolved per period. So this column read ₹0 for
+          everybody, beside a Net of ₹14,000, while ₹360 had actually been
+          withheld and ₹13,640 reached the bank.
+
+          period_deductions is what the employee actually lost this month, and
+          the API has always sent it — PayrollService notes it is "the one to
+          show a human". Nothing about the payroll calculation changes here;
+          the row simply reads the field that was already there.
+        */}
+        <td className="px-3 py-2.5" style={{ color:'#f87171' }}>{inr(r.period_deductions ?? r.total_deductions)}</td>
         {/* #38 — the instalment payroll actually collected. Dashed when there is
             no loan, so a blank cell never reads as an unrecovered one. */}
         <td className="px-3 py-2.5" style={{ color: r.loan_deduction > 0 ? '#f59e0b' : 'var(--text-muted)' }}>

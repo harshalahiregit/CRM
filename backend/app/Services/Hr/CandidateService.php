@@ -63,9 +63,38 @@ class CandidateService
         }
 
         if ($candidate->email) {
-            Mail::to($candidate->email)->send(
-                new \App\Mail\ApplicationReceivedMail($candidate->load('jobPosting'))
-            );
+            /*
+             * The acknowledgement must not decide whether the candidate exists.
+             *
+             * It used to: TenantMailer throws when the workspace has no SMTP
+             * configured, and that exception escaped after the row was already
+             * written. The API answered 422 "Email is not set up yet. Add your
+             * SMTP server under Settings → Email", the UI treated it as a failed
+             * save and left the new candidate out of the list, and the candidate
+             * was in the database the whole time. Pressing Save again is then the
+             * natural thing to do.
+             *
+             * Reproduced on a workspace with no mail configured — which is every
+             * workspace until somebody sets one up, so adding a candidate was
+             * impossible before configuring email.
+             *
+             * Recording a person and telling them about it are two jobs. The
+             * first one succeeds on its own; the second is logged loudly enough
+             * to find, and the candidate's timeline below still shows they
+             * applied.
+             */
+            try {
+                // Tenant SMTP, never the global mailer.
+                app(\App\Services\Mail\TenantMailer::class)->send($candidate->tenant_id, $candidate->email,
+                    new \App\Mail\ApplicationReceivedMail($candidate->load('jobPosting'))
+                );
+            } catch (\Throwable $e) {
+                Log::channel('hr')->warning('Candidate acknowledgement email not sent', [
+                    'candidate_id' => $candidate->id,
+                    'tenant_id'    => $candidate->tenant_id,
+                    'reason'       => $e->getMessage(),
+                ]);
+            }
         }
 
         ApplicationReceivedNotification::send($candidate);
@@ -301,7 +330,7 @@ class CandidateService
                         default    => '',
                     };
 
-                    Mail::to($candidate->email)->send(
+                    app(\App\Services\Mail\TenantMailer::class)->send($candidate->tenant_id, $candidate->email,
                         new \App\Mail\ApplicationStatusMail($candidate->load('jobPosting'), $stage, $statusMessage)
                     );
                 } catch (\Throwable $e) {

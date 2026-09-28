@@ -35,6 +35,20 @@ export const portalApi = {
     tasks:    () => api.get('/portal/my-work/tasks').then(r => r.data?.data ?? r.data),
     taskStatuses:    () => api.get('/portal/my-work/task-statuses').then(r => r.data?.data ?? r.data),
     updateTaskStatus:(id, status) => api.patch(`/portal/my-work/tasks/${id}/status`, { status }).then(r => r.data?.data ?? r.data),
+    // One task in full — brief, checklist, conversation, files.
+    task:        (id) => api.get(`/portal/my-work/tasks/${id}`).then(r => r.data?.data ?? r.data),
+    commentTask: (id, { body = '', files = [] } = {}) => {
+      const fd = new FormData()
+      if (body) fd.append('body', body)
+      files.forEach(f => fd.append('files[]', f))
+      return upload(`/portal/my-work/tasks/${id}/comments`, fd)
+    },
+    // Task files are private: the download is an authenticated request, so it
+    // comes back as a blob rather than a link the browser could follow on its own.
+    taskFile: async (id, fileId) => {
+      const res = await api.get(`/portal/my-work/tasks/${id}/files/${fileId}`, { responseType: 'blob' })
+      return URL.createObjectURL(res.data)
+    },
     tickets:  () => api.get('/portal/my-work/tickets').then(r => r.data?.data ?? r.data),
     raiseTicket:  (body) => api.post('/portal/my-work/tickets', body).then(r => r.data),
     ticket:       (id) => api.get(`/portal/my-work/tickets/${id}`).then(r => r.data),
@@ -69,11 +83,16 @@ export const portalApi = {
     get:      (id) => api.get(`/portal/onboarding/${id}`).then(r => r.data),
     progress: (id) => api.get(`/portal/onboarding/${id}/progress`).then(r => r.data),
     // Wizard write actions
-    saveProfile:     (id, profile) => api.post(`/portal/onboarding/${id}/profile`, { profile }).then(r => r.data),
+    // `draft` — see tpvApi.saveProfile; both engines behave identically here.
+    saveProfile:     (id, profile, draft = false) => api.post(`/portal/onboarding/${id}/profile`, { profile, draft }).then(r => r.data),
     setStep:         (id, step)    => api.patch(`/portal/onboarding/${id}/step`, { step }).then(r => r.data),
     submit:          (id, data={}) => api.post(`/portal/onboarding/${id}/submit`, data).then(r => r.data),
     // Step 1 — Kickoff PDF
     kickoffPdf:      (id)          => api.get(`/portal/onboarding/${id}/kickoff`, { responseType: 'blob' }).then(r => r.data),
+    // The same minutes the PDF prints, as data — resolved by the SAME
+    // server-side resolver, so the screen and the document can never
+    // describe two different meetings.
+    kickoffData:     (id)        => api.get(`/portal/onboarding/${id}/kickoff-data`).then(r => r.data),
     workStartLetter: (id)          => api.get(`/portal/onboarding/${id}/work-start-letter`, { responseType: 'blob' }).then(r => r.data),
     acceptKickoff:   (id, comment) => api.post(`/portal/onboarding/${id}/kickoff/accept`, comment ? { comment } : {}).then(r => r.data),
     logKickoffEvent: (id, event)   => api.post(`/portal/onboarding/${id}/kickoff/log`, { event }).then(r => r.data),
@@ -85,8 +104,27 @@ export const portalApi = {
   },
 
   // ── Documents — mirrors tpvApi.documents shape ──────────────────────────
+  /*
+   * Compliance agencies a vendor can be handed off to when they do not hold a
+   * document yet. `list` returns only agencies with a lead address configured,
+   * so the panel offers nobody it cannot actually reach — the whole feature
+   * stays dark until Settings → Service Providers is filled in.
+   */
+  serviceProviders: {
+    list: () => api.get('/portal/service-providers').then(r => r.data),
+    requestCallback: (providerId, payload) =>
+      api.post(`/portal/service-providers/${providerId}/callback`, payload).then(r => r.data),
+  },
+
   documents: {
     checklist: () => api.get('/portal/documents').then(r => r.data),
+    // Nested under the namespace the panel is handed, so the same component
+    // reaches the right portal without knowing which one it is in.
+    serviceProviders: {
+      list: () => api.get('/portal/service-providers').then(r => r.data),
+      requestCallback: (providerId, payload) =>
+        api.post(`/portal/service-providers/${providerId}/callback`, payload).then(r => r.data),
+    },
     upload:    (_vendorId, type, file) => {
       const fd = new FormData()
       fd.append('type', type)
@@ -102,10 +140,19 @@ export const portalApi = {
       const res = await api.get(`/portal/documents/${documentId}/download`, { responseType: 'blob' })
       return URL.createObjectURL(res.data)
     },
-    // Admin-only
-    review: () => Promise.reject(new Error('Admin only')),
-    delete: () => Promise.reject(new Error('Admin only')),
-    versions: () => Promise.resolve([]),
+    // A vendor may take back and inspect its OWN work: delete an unapproved
+    // document it uploaded by mistake, and read the versions its own
+    // replacements archived. The onboarding wizard has always drawn Delete and
+    // History on the portal; both were stubs, so Delete answered "Admin only"
+    // and History always reported no history at all.
+    delete:   (documentId) => api.delete(`/portal/documents/${documentId}`).then(r => r.data),
+    versions: (documentId) => api.get(`/portal/documents/${documentId}/versions`).then(r => r.data),
+    downloadVersion: (documentId, versionId) =>
+      api.get(`/portal/documents/${documentId}/versions/${versionId}/download`, { responseType: 'blob' }).then(r => r.data),
+    // Genuinely admin-only: a vendor may never approve or reject its own
+    // document, and may not roll one back to a version an admin already judged.
+    review:         () => Promise.reject(new Error('Admin only')),
+    restoreVersion: () => Promise.reject(new Error('Admin only')),
   },
 
   // ── Contacts — mirrors tpvApi.contacts shape ────────────────────────────
@@ -125,6 +172,10 @@ export const portalApi = {
 
   // ── Workers — mirrors tpvApi.workers shape ──────────────────────────────
   // vendor_id in params is silently overridden server-side.
+  // Training across this vendor's workers. Read and write, so a certificate
+  // filed here can be seen again — it could be written and never read back.
+  trainings: () => api.get('/portal/trainings').then(r => r.data?.data ?? r.data),
+
   workers: {
     list:          (params={}) => api.get('/portal/workers', { params }).then(r => r.data),
     stats:         ()          => api.get('/portal/workers/stats').then(r => r.data),
@@ -133,7 +184,16 @@ export const portalApi = {
     create:        (data)      => api.post('/portal/workers', data).then(r => r.data),
     update:        (id, data)  => api.put(`/portal/workers/${id}`, data).then(r => r.data),
     saveMedical:   (id, data)  => api.post(`/portal/workers/${id}/medical`, data, data instanceof FormData ? { headers: { 'Content-Type': undefined } } : undefined).then(r => r.data),
+    // The in-house doctors this vendor may name on a medical. Fixed to the TPV
+    // module server-side — there is no parameter here to point elsewhere.
+    doctorOptions: () => api.get('/portal/medical/doctor-options').then(r => r.data?.data ?? r.data),
     saveInduction: (id, data)  => api.post(`/portal/workers/${id}/induction`, data).then(r => r.data),
+    // Group session over the vendor's own workers → { saved[], skipped[] }
+    bulkInduction: (data)      => api.post('/portal/workers/bulk-induction', data).then(r => r.data),
+    // The typed training catalogue. Multipart when a certificate is attached —
+    // axios must be left to set its own boundary, hence the undefined header.
+    saveTraining:  (id, data)  => api.post(`/portal/workers/${id}/training`, data,
+      data instanceof FormData ? { headers: { 'Content-Type': undefined } } : undefined).then(r => r.data),
     // Portal-owned, ownership-checked. These two used to hit the admin /tpv/*
     // routes, which forced third_party_vendor into the admin role gate.
     markPunch:       (id, punch_count, punch_reason) => api.post(`/portal/workers/${id}/mark-punch`, { punch_count, punch_reason }).then(r => r.data),
@@ -219,6 +279,16 @@ export const portalApi = {
     workerCompliance: (workerId)  => api.get(`/portal/ppe/compliance/workers/${workerId}`).then(r => r.data),
     // Private file: fetched as a blob so the bearer token is sent.
     imageBlob:   (productId)      => api.get(`/portal/ppe/item/${productId}/image`, { responseType: 'blob' }).then(r => URL.createObjectURL(r.data)),
+    // The vendor's OWN PPE list — its stock, never the company's Inventory.
+    // Issue one with issue(workerId, { vendor_ppe_item_id, qty }). Writes are
+    // FormData so a photo can ride along; update is POST for the same reason.
+    myItems: {
+      list:      ()             => api.get('/portal/ppe/my-items').then(r => r.data),
+      create:    (fd)           => upload('/portal/ppe/my-items', fd),
+      update:    (id, fd)       => upload(`/portal/ppe/my-items/${id}`, fd),
+      setActive: (id, isActive) => api.patch(`/portal/ppe/my-items/${id}/status`, { is_active: isActive }).then(r => r.data),
+      imageBlob: (id)           => api.get(`/portal/ppe/my-items/${id}/image`, { responseType: 'blob' }).then(r => URL.createObjectURL(r.data)),
+    },
   },
 
   // §32 "View compliance" — the vendor's own compliance register (read-only).
@@ -265,6 +335,18 @@ export const portalApi = {
     requestExtension:(payload)     => api.post('/portal/extensions/request', payload).then(r => r.data),
     meetings:        ()            => api.get('/portal/meetings').then(r => r.data),
     meetingMom:      (id)          => api.get(`/portal/meetings/${id}/mom`).then(r => r.data),
+    // Records that this person opened the meeting, then hands back the link.
+    // A meeting held on Google Meet or Teams runs where we cannot see it, so
+    // the click is the only evidence there is — and it is worth keeping.
+    // Marking attendance is what releases the joining link — it is not in the
+    // meetings payload until this returns. See MeetingAttendanceGate.
+    // `where` is { latitude, longitude } when the browser offered them, {}
+    // otherwise — see whereAmI. The address and device come from the request
+    // itself; only the coordinates have to travel in the body.
+    markAttendance:  (id, where = {}) => api.post(`/portal/meetings/${id}/attendance`, where).then(r => r.data),
+    // The minutes document itself. Distributing minutes the recipient cannot
+    // open is not distributing them — this had no route at all until now.
+    meetingMomFile:  (id)          => api.get(`/portal/meetings/${id}/mom/file`, { responseType: 'blob' }).then(r => r.data),
     meetingDocument: (id, docId)   => api.get(`/portal/meetings/${id}/documents/${docId}/download`, { responseType: 'blob' }).then(r => r.data),
     actions:         ()            => api.get('/portal/actions').then(r => r.data),
     respondAction:   (id, payload) => api.post(`/portal/actions/${id}/respond`, payload).then(r => r.data),

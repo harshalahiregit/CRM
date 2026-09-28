@@ -71,12 +71,19 @@ class AuthController extends Controller
      ───────────────────────────────────────────── */
     public function registerVendor(VendorRegisterRequest $request): JsonResponse
     {
-        $user = $this->authService->registerVendor($request->validated() + $request->only(
+        $vendor = $this->authService->registerVendor($request->validated() + $request->only(
             'category', 'website', 'address', 'city', 'state', 'country', 'pincode', 'company_phone', 'manpower', 'msme'
         ));
 
+        // A Purchase vendor, not a User — registration no longer mints a login
+        // row it would then have to hide. The code is returned so a supplier
+        // quoting "PV-0007" can be found without an email search.
         return $this->success([
-            'user' => (new UserResource($user))->resolve(),
+            'purchase_vendor' => [
+                'id'                   => $vendor->id,
+                'purchase_vendor_code' => $vendor->purchase_vendor_code,
+                'company_name'         => $vendor->company_name,
+            ],
         ], 'Vendor registration submitted. Awaiting admin approval.', 201);
     }
 
@@ -100,15 +107,26 @@ class AuthController extends Controller
     /* ─────────────────────────────────────────────
      | POST /api/auth/register/client
      ───────────────────────────────────────────── */
+    /**
+     * A customer signing itself up.
+     *
+     * Returns the customer and contact rather than a user, because a customer is
+     * not a User — see AuthService::registerClient(), which explains why the
+     * orphaned role='client' row this used to mint could never sign in.
+     *
+     * Deliberately thin: no id is echoed that the caller could act on, since
+     * nothing here is authenticated yet.
+     */
     public function registerClient(ClientRegisterRequest $request): JsonResponse
     {
-        $user = $this->authService->registerClient($request->validated() + $request->only(
+        $result = $this->authService->registerClient($request->validated() + $request->only(
             'address', 'city', 'state', 'country'
         ));
 
         return $this->success([
-            'user' => (new UserResource($user))->resolve(),
-        ], 'Client registration submitted. Awaiting admin approval.', 201);
+            'company' => $result['client']->company,
+            'email'   => $result['contact']->email,
+        ], 'Registration submitted. Your account manager will enable portal access.', 201);
     }
 
     /* ─────────────────────────────────────────────
@@ -144,8 +162,30 @@ class AuthController extends Controller
      ───────────────────────────────────────────── */
     public function forgotPassword(Request $request, NotificationService $notifications): JsonResponse
     {
-        $data = $request->validate(['email' => 'required|email']);
+        $data = $request->validate([
+            'email' => 'required|email',
+            // Optional. The login screen knows which identity the person picked,
+            // so it says so and we look in that one place. Left out — which is
+            // what happens when somebody clicks "Forgot password" without
+            // touching the dropdown — every store is searched instead.
+            'role'  => 'nullable|string',
+        ]);
         $email = $data['email'];
+        $role  = $data['role'] ?? null;
+
+        // An address can exist in more than one store: a supplier who also holds
+        // a staff account, say. Each identity gets its own link, each saying
+        // which account it is for, because sending only the first one found
+        // leaves the other permanently unreachable — and the person owns the
+        // mailbox either way, so nothing is disclosed that they did not already
+        // have.
+        $this->resetPurchaseVendorIfAsked($email, $role);
+        $this->resetClientContactIfAsked($email, $role);
+
+        // A role that belongs to another store means this one is not searched.
+        if ($role !== null && ! in_array($role, ['admin', 'staff', 'doctor', 'company', 'third_party_vendor', 'vendor'], true)) {
+            return $this->success(null, 'If that email is registered, a reset link has been sent.');
+        }
 
         $user = User::where('email', $email)->first();
 
@@ -179,13 +219,59 @@ class AuthController extends Controller
                     'This link can be used once and expires in '.$expiry.' minutes.',
                     'If you did not request this, you can ignore this email — your current password still works.',
                 ]),
-                ['user_id' => $user->id]
+                ['user_id' => $user->id],
+                // The tenant must be passed EXPLICITLY here. Every other caller
+                // omits it and lets the service fall back to the signed-in
+                // user's tenant — but nobody is signed in when they have
+                // forgotten their password, so that fallback resolved to null,
+                // the mailer was asked to send for no tenant at all, and it
+                // refused with "Email is not set up yet" while the workspace's
+                // SMTP sat correctly configured a row away. The endpoint still
+                // answered "a reset link has been sent", so the failure was
+                // invisible from the screen and lived only in the log.
+                $user->tenant_id,
             );
 
             Log::info('Password reset link issued', ['user_id' => $user->id]);
         }
 
         return $this->success(null, 'If that email is registered, a reset link has been sent.');
+    }
+
+    /**
+     * A Purchase vendor holds its own password, in its own table.
+     *
+     * Skipped when the login screen named a different identity. Both services
+     * already answer silently for an address they do not hold, so an unknown
+     * one is indistinguishable from a known one here too.
+     */
+    private function resetPurchaseVendorIfAsked(string $email, ?string $role): void
+    {
+        if ($role !== null && $role !== 'purchase_vendor') {
+            return;
+        }
+
+        try {
+            app(\App\Services\Purchase\PurchaseVendorPortalAuthService::class)->forgotPassword($email);
+        } catch (\Throwable $e) {
+            // One store failing must not stop the others being tried, and must
+            // not change the answer — the caller learns nothing either way.
+            Log::warning('Purchase vendor reset failed', ['error' => $e->getMessage()]);
+        }
+    }
+
+    /** A customer contact, likewise — client_contacts, not users. */
+    private function resetClientContactIfAsked(string $email, ?string $role): void
+    {
+        if ($role !== null && $role !== 'client') {
+            return;
+        }
+
+        try {
+            app(\App\Services\Customer\ClientPortalAuthService::class)->forgotPassword($email);
+        } catch (\Throwable $e) {
+            Log::warning('Client contact reset failed', ['error' => $e->getMessage()]);
+        }
     }
 
     /* ─────────────────────────────────────────────

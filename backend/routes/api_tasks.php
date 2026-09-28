@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\Task\TaskCommentController;
 use App\Http\Controllers\Api\Task\TaskConfigController;
 use App\Http\Controllers\Api\Task\TaskController;
 use App\Http\Controllers\Api\Task\TaskFileController;
+use App\Http\Controllers\Api\Task\TaskPartyController;
 use App\Http\Controllers\Api\Task\TaskReminderController;
 use App\Http\Controllers\Api\Task\TaskStaffController;
 use App\Http\Controllers\Api\Task\TaskSubtaskController;
@@ -32,9 +33,17 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tasks')->group(
     Route::patch('/checklist/{item}/toggle', [TaskChecklistController::class, 'toggle']);
     // Edit / (re)assign a single checklist item.
     Route::patch('/checklist/{item}',        [TaskChecklistController::class, 'update']);
+    // Take a line off the list entirely (ticking it is not the same as removing it).
+    Route::delete('/checklist/{item}',       [TaskChecklistController::class, 'destroy']);
     // Trash: list soft-deleted tasks and put one back. Before /{task} so "trash"
     // isn't captured as a task id.
     Route::get('/trash',                    [TaskController::class, 'trash']);
+
+    // Assignable people at OTHER companies — the two-stage picker.
+    // Ahead of /{task} for the usual reason: "parties" is not a task id.
+    Route::get('/parties/kinds',                [TaskPartyController::class, 'kinds']);
+    Route::get('/parties/{orgType}',            [TaskPartyController::class, 'organisations']);
+    Route::get('/parties/{orgType}/{org}',      [TaskPartyController::class, 'contacts'])->whereNumber('org');
 
     // Notification / email switches (read: any staff, write: admin).
     Route::get('/settings',  [TaskConfigController::class, 'index']);
@@ -57,6 +66,11 @@ Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('tasks')->group(
     // Assignees / followers
     Route::post('/{task}/assignees', [TaskController::class, 'assignees']);
     Route::post('/{task}/followers', [TaskController::class, 'followers']);
+    // The same idea for people who are not users: a named contact at a client,
+    // a vendor or a TPV. Kept as its own endpoint rather than a flag on
+    // /assignees because the two take different identifiers and merging them is
+    // how a contact id ends up written into a user_id column.
+    Route::post('/{task}/party-assignees', [TaskPartyController::class, 'sync']);
 
     // Subtasks — the recursive tree under a task. `tree` returns every level in
     // one response; `move` re-parents a branch (parent_id null pops it to the top).

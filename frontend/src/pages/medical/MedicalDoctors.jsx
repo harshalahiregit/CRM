@@ -24,6 +24,8 @@ export default function MedicalDoctors() {
   const [editing, setEditing] = useState(null)
   const [confirm, setConfirm] = useState(null)
   const [resetting, setResetting] = useState(null)
+  const [inviting, setInviting] = useState(null)
+  const [promoting, setPromoting] = useState(false)
   const [credentials, setCredentials] = useState(null)
 
   const load = useCallback(() => {
@@ -41,6 +43,21 @@ export default function MedicalDoctors() {
    * admin who did not write it down had no way back into the account and the
    * doctor was effectively locked out for good.
    */
+  /**
+   * Email the doctor a one-time link to set their own password.
+   *
+   * Preferred over resetting: a reset means an admin reads a password out, and
+   * a password an admin knows makes "Dr Rao signed this" a claim that does not
+   * survive being questioned.
+   */
+  const sendInvite = async (doctor) => {
+    setInviting(doctor.id)
+    try {
+      const res = await medicalApi.doctors.invite(doctor.id)
+      toast.success(res?.message || 'Invitation sent.')
+    } catch (e) { toast.error(e) } finally { setInviting(null) }
+  }
+
   const resetPassword = async () => {
     try {
       const res = await medicalApi.doctors.resetPassword(resetting.id)
@@ -71,6 +88,7 @@ export default function MedicalDoctors() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => setPromoting(true)} style={S.btn}>Existing user</button>
           <button onClick={() => setShowNew(true)} style={S.btnPrimary}><Plus size={15} /> Add a doctor</button>
           <button onClick={load} style={S.btn}><RefreshCw size={14} /> Refresh</button>
         </div>
@@ -119,8 +137,18 @@ export default function MedicalDoctors() {
                     <button onClick={() => setEditing(d)} style={{ ...S.btn, padding: '4px 10px', fontSize: 11.5 }}>Edit</button>
                     {d.is_active && (
                       <button
+                        onClick={() => sendInvite(d)}
+                        disabled={inviting === d.id}
+                        title="Email a one-time link so they set their own password — nobody else sees it"
+                        style={{ ...S.btn, padding: '4px 10px', fontSize: 11.5, marginLeft: 6 }}
+                      >
+                        {inviting === d.id ? 'Sending—' : 'Send invite'}
+                      </button>
+                    )}
+                    {d.is_active && (
+                      <button
                         onClick={() => setResetting(d)}
-                        title="Issue a new password — the current one cannot be read back"
+                        title="Issue a new password — you read it out, so prefer an invite where email works"
                         style={{ ...S.btn, padding: '4px 10px', fontSize: 11.5, marginLeft: 6 }}
                       >
                         Reset password
@@ -142,12 +170,20 @@ export default function MedicalDoctors() {
         </div>
       </div>
 
+      {promoting && (
+        <PromoteModal
+          onClose={() => setPromoting(false)}
+          onSaved={() => { load(); setPromoting(false) }}
+        />
+      )}
+
       <DoctorModal
         open={showNew}
         onClose={() => setShowNew(false)}
         onSaved={(res) => {
           load()
           // Shown once, to the admin who created it — never stored in the clear.
+          // On the invite route there is deliberately nothing to show.
           if (res?.temporary_password) setCredentials({ email: res.data?.user?.email, password: res.temporary_password })
         }}
       />
@@ -198,7 +234,7 @@ function DoctorModal({ open, doctor, onClose, onSaved }) {
       clinic_name: doctor.clinic_name || '', clinic_address: doctor.clinic_address || '',
       modules: doctor.modules || [],
     } : {
-      name: '', email: '', phone: '', password: '',
+      name: '', email: '', phone: '', password: '', delivery: 'invite',
       license_no: '', council: '', qualification: '', designation: '',
       clinic_name: '', clinic_address: '', modules: [],
     })
@@ -218,6 +254,9 @@ function DoctorModal({ open, doctor, onClose, onSaved }) {
       // An empty list means "both sides", which is the usual arrangement — send
       // null rather than [] so the server reads it that way.
       if (!payload.modules?.length) payload.modules = null
+      // A password left over from switching back to the invite would be read by
+      // the server as "hand it to the admin", which is the opposite of intent.
+      if (payload.delivery === 'invite') delete payload.password
       const res = isEdit
         ? await medicalApi.doctors.update(doctor.id, payload)
         : await medicalApi.doctors.create(payload)
@@ -243,7 +282,33 @@ function DoctorModal({ open, doctor, onClose, onSaved }) {
           <F label="Phone"><input value={form.phone || ''} onChange={e => set('phone', e.target.value)} style={S.input} /></F>
         </Row>
 
+        {/* How the doctor comes by their password.
+
+            The invite is the default and the one to prefer: the doctor sets it
+            themselves and nobody else ever learns it, so a certificate carrying
+            their licence number could not have been signed by the admin who
+            created the account. The other route stays because email on a site
+            is not always reliable. */}
         {!isEdit && (
+          <F label="How they get in">
+            <div style={{ display: 'grid', gap: 8 }}>
+              <Choice
+                checked={form.delivery !== 'password'}
+                onSelect={() => set('delivery', 'invite')}
+                title="Email them an invitation"
+                note="They set their own password from a one-time link. Nobody else ever sees it — recommended."
+              />
+              <Choice
+                checked={form.delivery === 'password'}
+                onSelect={() => set('delivery', 'password')}
+                title="Set a password now"
+                note="Shown to you once, to hand over yourself. For sites where email is unreliable."
+              />
+            </div>
+          </F>
+        )}
+
+        {!isEdit && form.delivery === 'password' && (
           <F label="Password" hint="Leave blank and one is generated, shown once">
             <input type="text" value={form.password || ''} onChange={e => set('password', e.target.value)} style={S.input} />
           </F>
@@ -325,6 +390,127 @@ function CredentialsModal({ credentials, onClose }) {
         <button onClick={onClose} style={S.btnPrimary}>Done</button>
       </div>
     </Modal>
+  )
+}
+
+/**
+ * Make somebody who already works here a doctor.
+ *
+ * Creating a doctor needs an unused email address, and staff management can
+ * only set admin or staff — so a company doctor who already had a staff login
+ * could not become one. The only way through was a second account on a second
+ * address: two logins for one person, and certificates attributed to whichever
+ * they happened to be signed in as.
+ *
+ * No password is involved and no invitation is sent. They already have a way
+ * in; only the role changes, and the practising profile is attached to it.
+ */
+function PromoteModal({ onClose, onSaved }) {
+  const toast = useToast()
+  const [people, setPeople] = useState(null)
+  const [form, setForm] = useState({ user_id: '', license_no: '', council: '', qualification: '' })
+  const [busy, setBusy] = useState(false)
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  useEffect(() => {
+    medicalApi.doctors.candidates({ per_page: 200 })
+      .then(d => setPeople(Array.isArray(d) ? d : (d?.data ?? [])))
+      .catch(() => setPeople([]))
+  }, [])
+
+  const save = async () => {
+    if (!form.user_id) return toast.error('Choose the person.')
+    if (!form.license_no.trim()) return toast.error('The licence number is required.')
+
+    setBusy(true)
+    try {
+      const res = await medicalApi.doctors.promote(form)
+      toast.success(res?.message || 'They can now examine.')
+      onSaved()
+    } catch (e) { toast.error(e) } finally { setBusy(false) }
+  }
+
+  return (
+    <Modal open onClose={onClose} style={{ width: 'min(560px, 96vw)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
+        <h2 style={{ margin: 0, fontSize: 15, fontWeight: 900, color: 'var(--text-h)' }}>Make an existing user a doctor</h2>
+        <button onClick={onClose} className="btn-icon"><X size={18} /></button>
+      </div>
+
+      <div style={{ padding: 16, display: 'grid', gap: 12 }}>
+        <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.55 }}>
+          For a doctor who already works here and already has a login. They keep the password they have —
+          nothing is emailed and nothing is reset.
+        </p>
+
+        <F label="Person">
+          <select value={form.user_id} onChange={e => set('user_id', e.target.value)} style={{ ...S.select, width: '100%' }}>
+            <option value="">Choose—</option>
+            {(people ?? []).map(u => (
+              <option key={u.id} value={u.id}>{u.name}{u.email ? ` — ${u.email}` : ''}</option>
+            ))}
+          </select>
+          {people?.length === 0 && (
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+              Nobody to show. Add them under Staff first, or use Add a doctor to create a new login.
+            </div>
+          )}
+        </F>
+
+        <Row>
+          <F label="Licence number" hint="Printed on every certificate they sign">
+            <input value={form.license_no} onChange={e => set('license_no', e.target.value)} style={S.input} />
+          </F>
+          <F label="Council"><input value={form.council} onChange={e => set('council', e.target.value)} style={S.input} /></F>
+        </Row>
+
+        <F label="Qualification">
+          <input value={form.qualification} onChange={e => set('qualification', e.target.value)} style={S.input} />
+        </F>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
+        <button onClick={onClose} style={S.btn}>Cancel</button>
+        <button onClick={save} disabled={busy} style={{ ...S.btnPrimary, opacity: busy ? 0.6 : 1 }}>
+          {busy ? 'Saving—' : 'Make them a doctor'}
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
+/**
+ * One of two ways to do something, with the consequence spelt out.
+ *
+ * A bare radio labelled "invite" or "password" makes the two look
+ * interchangeable. They are not: one of them means an admin ends up knowing a
+ * doctor's password, so the difference belongs on screen rather than in
+ * somebody's head.
+ */
+function Choice({ checked, onSelect, title, note }) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      style={{
+        display: 'flex', alignItems: 'flex-start', gap: 10, width: '100%', textAlign: 'left',
+        padding: '10px 12px', borderRadius: 11, cursor: 'pointer',
+        background: checked ? 'rgba(124,58,237,0.12)' : 'var(--bg-input)',
+        border: `1px solid ${checked ? 'rgba(124,58,237,0.45)' : 'var(--border)'}`,
+      }}
+    >
+      <span style={{
+        width: 15, height: 15, borderRadius: 999, marginTop: 2, flexShrink: 0,
+        border: `2px solid ${checked ? '#7C3AED' : 'var(--border)'}`,
+        background: checked ? '#7C3AED' : 'transparent',
+        boxShadow: checked ? 'inset 0 0 0 2px var(--bg-card)' : 'none',
+      }} />
+      <span style={{ minWidth: 0 }}>
+        <span style={{ display: 'block', fontSize: 13, fontWeight: 700, color: 'var(--text-h)' }}>{title}</span>
+        <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.45, marginTop: 2 }}>{note}</span>
+      </span>
+    </button>
   )
 }
 

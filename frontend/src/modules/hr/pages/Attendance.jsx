@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { useTheme } from '@/context/ThemeContext'
 import {
   Search, Plus, X, LogIn, LogOut, Coffee, Pencil, Download, Printer, CalendarCheck,
-  Users, UserCheck, UserX, Clock, Hourglass, Plane, Home, Sun, CalendarDays, Percent, Timer,
-} from 'lucide-react'
+  Users, UserCheck, UserX, Clock, Hourglass, Plane, Home, Sun, CalendarDays, Percent, Timer, MapPin } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { hrTime } from '../constants'
 
 const STATUSES = ['Present', 'Absent', 'Late', 'Half Day', 'Leave', 'Holiday', 'Weekend', 'Work From Home', 'Remote']
 const SHIFTS = ['General', 'Morning', 'Evening', 'Night', 'Custom']
@@ -18,8 +18,79 @@ export const ST_COLOR = s => ({
   Holiday:'#94a3b8', Weekend:'#94a3b8', 'Work From Home':'#8b5cf6', Remote:'#14b8a6',
 }[s] || '#94a3b8')
 const stStyle = s => { const c = ST_COLOR(s); return { c, bg:`${c}1f` } }
-const fmtT = t => t ? new Date(t).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false}) : '—'
+/*
+ | The Register was the screen that always converted, so the others were fixed to
+ | agree with it. It now defers to the same shared helper instead of carrying its
+ | own copy: it was the last place hardcoding a 24-hour clock and the browser's
+ | timezone, which would have left it reading 14:30 while every other attendance
+ | screen read 02:30 pm for the same punch.
+ */
+const fmtT = hrTime
 const today = () => new Date().toISOString().slice(0,10)
+
+/**
+ * Where a punch happened.
+ *
+ * The coordinates are the record; the address is shown when a caller supplied
+ * one. Links out to a map rather than embedding one — this is a dense register,
+ * and the question being asked of it is "was this the site?", which one click
+ * answers without turning every row into a map tile.
+ */
+function PunchLocation({ lat, lng, address, verification }) {
+  if (!lat || !lng) {
+    // A dash says nothing. When the punch recorded WHY there are no
+    // coordinates, show that instead — "declined" is worth asking about and an
+    // office desktop with no GPS is not.
+    const why = (verification || '').replace(/^(Verified|Unverified)\s*—\s*/, '')
+    return (
+      <span className="text-[11px]" style={{ color: 'var(--text-muted)' }} title={verification || ''}>
+        {why ? why.slice(0, 26) : '—'}
+      </span>
+    )
+  }
+
+  return (
+    <a href={`https://www.google.com/maps?q=${lat},${lng}`} target="_blank" rel="noreferrer"
+      className="inline-flex items-center gap-1 text-[11px] underline whitespace-nowrap"
+      style={{ color: '#a78bfa' }}
+      title={address || `${lat}, ${lng}`}>
+      <MapPin size={12} />
+      {address ? address.slice(0, 22) : `${Number(lat).toFixed(4)}, ${Number(lng).toFixed(4)}`}
+    </a>
+  )
+}
+
+/**
+ * The photo taken at the punch.
+ *
+ * A thumbnail that opens full size. The URL is signed and expires within the
+ * hour, so it is fetched with the row rather than held — a page left open all
+ * afternoon will need a refresh to view one again, which is the intended
+ * trade for not minting permanent public links to photographs of people.
+ */
+function PunchSelfie({ url, who, when }) {
+  const [open, setOpen] = useState(false)
+  if (!url) return <span style={{ color: 'var(--text-muted)' }}>—</span>
+
+  return (
+    <>
+      <button onClick={() => setOpen(true)} title={`${who} at ${when}`} className="block">
+        <img src={url} alt={`${who} at ${when}`} loading="lazy"
+          className="w-9 h-9 rounded-lg object-cover"
+          style={{ border: '1px solid var(--border)' }} />
+      </button>
+      {open && (
+        <div className="drawer-backdrop" onClick={() => setOpen(false)}>
+          <div className="card-3d" onClick={e => e.stopPropagation()}
+            style={{ maxWidth: 420, margin: '10vh auto', padding: 16 }}>
+            <p className="text-xs font-bold mb-2" style={{ color: 'var(--text-h)' }}>{who} — {when}</p>
+            <img src={url} alt={`${who} at ${when}`} className="w-full rounded-xl" />
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
 
 export default function Attendance() {
   const { isDark } = useTheme()
@@ -133,10 +204,10 @@ export default function Attendance() {
       {/* Attendance table */}
       <div className="card-3d overflow-x-auto" style={{ padding:'6px' }}>
         <table className="w-full text-sm" style={{ minWidth:1050 }}>
-          <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Employee','Emp ID','Department','Designation','Shift','Check In','Check Out','Break','Hours','OT','Status','Actions'].map(h=><th key={h} className="text-left px-3 py-3 label-caps whitespace-nowrap">{h}</th>)}</tr></thead>
+          <thead><tr style={{ borderBottom:'1px solid var(--border)' }}>{['Employee','Emp ID','Department','Designation','Shift','Check In','In Location','In Selfie','Check Out','Out Location','Out Selfie','IP','Break','Hours','OT','Status','Actions'].map(h=><th key={h} className="text-left px-3 py-3 label-caps whitespace-nowrap">{h}</th>)}</tr></thead>
           <tbody>
-            {loading ? <tr><td colSpan="12" className="text-center py-10" style={{ color:'var(--text-muted)' }}>Loading…</td></tr>
-              : rows.length===0 ? <tr><td colSpan="12" className="text-center py-10" style={{ color:'var(--text-muted)' }}>No attendance records for this date. Use “Mark Attendance”.</td></tr>
+            {loading ? <tr><td colSpan="17" className="text-center py-10" style={{ color:'var(--text-muted)' }}>Loading…</td></tr>
+              : rows.length===0 ? <tr><td colSpan="17" className="text-center py-10" style={{ color:'var(--text-muted)' }}>No attendance records for this date. Use “Mark Attendance”.</td></tr>
               : rows.map(r=>{
               const emp = r.employee || {}; const ss = stStyle(r.status)
               const brk = r.break_start && r.break_end ? `${fmtT(r.break_start)}–${fmtT(r.break_end)}` : r.break_start ? `${fmtT(r.break_start)}…` : '—'
@@ -148,7 +219,12 @@ export default function Attendance() {
                   <td className="px-3 py-2.5 whitespace-nowrap" style={{ color:'var(--text-muted)' }}>{emp.designation||'—'}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap" style={{ color:'var(--text-muted)' }}>{r.shift}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap" style={{ color:'var(--text-h)' }}>{fmtT(r.check_in)}</td>
+                  <td className="px-3 py-2.5"><PunchLocation lat={r.check_in_latitude} lng={r.check_in_longitude} address={r.check_in_address} verification={r.check_in_verification}/></td>
+                  <td className="px-3 py-2.5"><PunchSelfie url={r.check_in_selfie_url} who={emp.name} when="clock-in"/></td>
                   <td className="px-3 py-2.5 whitespace-nowrap" style={{ color:'var(--text-h)' }}>{fmtT(r.check_out)}</td>
+                  <td className="px-3 py-2.5"><PunchLocation lat={r.check_out_latitude} lng={r.check_out_longitude} address={r.check_out_address} verification={r.check_out_verification}/></td>
+                  <td className="px-3 py-2.5"><PunchSelfie url={r.check_out_selfie_url} who={emp.name} when="clock-out"/></td>
+                  <td className="px-3 py-2.5 whitespace-nowrap font-mono text-[10px]" style={{ color:'var(--text-muted)' }}>{r.check_in_ip || r.check_out_ip || '—'}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap text-xs" style={{ color:'var(--text-muted)' }}>{brk}</td>
                   <td className="px-3 py-2.5 font-bold whitespace-nowrap" style={{ color:'var(--text-h)' }}>{r.working_hours ?? '—'}</td>
                   <td className="px-3 py-2.5 font-bold whitespace-nowrap" style={{ color: r.overtime_hours>0?'#10b981':'var(--text-muted)' }}>{r.overtime_hours>0?r.overtime_hours:'—'}</td>

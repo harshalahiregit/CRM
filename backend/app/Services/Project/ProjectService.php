@@ -582,11 +582,125 @@ class ProjectService
         });
     }
 
+    /**
+     * A new milestone goes on the end of the list.
+     *
+     * `order` is what the milestone list sorts by, and nothing was choosing it:
+     * the form offered the number 1 as a default and sent it unchanged, so every
+     * milestone anybody created came in at 1. Three milestones, three 1s, and an
+     * ordered list whose order was decided by whatever the database returned.
+     *
+     * Chosen here rather than in the form because the API is the thing that has
+     * to be right — the next number depends on the other milestones, which the
+     * client would have to fetch and could race against. An explicit `order` in
+     * the payload still wins, so a deliberate reorder is untouched.
+     */
     public function createMilestone(int $projectId, array $data, int $tenantId): ProjectMilestone
     {
         $project = $this->find($projectId, $tenantId);
 
+        if (! isset($data['order'])) {
+            $data['order'] = (int) ProjectMilestone::forTenant($tenantId)
+                ->where('project_id', $project->id)
+                ->max('order') + 1;
+        }
+
         return $project->milestones()->create([...$data, 'tenant_id' => $tenantId]);
+    }
+
+    /**
+     * Create many milestones from one uploaded sheet.
+     *
+     * A plan arrives as a spreadsheet — twenty milestones with dates — and the
+     * only way in was a form, once per milestone. WorkerImport::read() already
+     * reads csv, xls and xlsx for the workforce importer and lives in
+     * Support\Shared for exactly this reason, so the file handling is not
+     * written twice.
+     *
+     * Columns: name, start date, due date, description, colour. Only the name is
+     * required; a row without one is a blank line, not a failure.
+     *
+     * Rows are taken one at a time rather than in a transaction: a sheet of
+     * twenty where row nine has a bad date should import nineteen and say what
+     * happened to the other, not refuse the lot. The caller gets the counts and
+     * the per-row reasons.
+     *
+     * @return array{created:int,skipped:int,errors:array<int,string>}
+     */
+    public function importMilestones(int $projectId, mixed $file, int $tenantId): array
+    {
+        $project = $this->find($projectId, $tenantId);
+
+        ['rows' => $rows, 'cleanup' => $cleanup] = \App\Support\Shared\WorkerImport::read($file);
+
+        $created = 0;
+        $skipped = 0;
+        $errors = [];
+
+        // Read the current top once and count up from it, so twenty new rows do
+        // not all land on the same order number.
+        $order = (int) ProjectMilestone::forTenant($tenantId)
+            ->where('project_id', $project->id)->max('order');
+
+        try {
+            foreach ($rows as $i => $row) {
+                $rowNo = $i + 2;                       // +1 header, +1 for 1-based
+                $name = trim((string) ($row[0] ?? ''));
+                if ($name === '') {
+                    continue;
+                }
+
+                $start = \App\Support\Shared\WorkerImport::parseDate($row[1] ?? null);
+                $due = \App\Support\Shared\WorkerImport::parseDate($row[2] ?? null);
+
+                // A date that was typed but not understood is a mistake worth
+                // reporting — silently importing it as "no date" loses the plan.
+                if (trim((string) ($row[1] ?? '')) !== '' && ! $start) {
+                    $errors[] = "Row {$rowNo}: could not read the start date \"".trim((string) $row[1]).'"';
+                    $skipped++;
+
+                    continue;
+                }
+                if (trim((string) ($row[2] ?? '')) !== '' && ! $due) {
+                    $errors[] = "Row {$rowNo}: could not read the due date \"".trim((string) $row[2]).'"';
+                    $skipped++;
+
+                    continue;
+                }
+
+                // A due date is what makes a milestone a milestone — the form has
+                // always required one and the column is NOT NULL. Said here as a
+                // row-level reason rather than left to fail as a database error,
+                // which would abandon the rest of the sheet.
+                if (! $due) {
+                    $errors[] = "Row {$rowNo}: {$name} has no due date — every milestone needs one.";
+                    $skipped++;
+
+                    continue;
+                }
+                if ($start && $due && $due < $start) {
+                    $errors[] = "Row {$rowNo}: {$name} finishes before it starts.";
+                    $skipped++;
+
+                    continue;
+                }
+
+                $project->milestones()->create([
+                    'tenant_id'   => $tenantId,
+                    'name'        => mb_substr($name, 0, 255),
+                    'start_date'  => $start,
+                    'due_date'    => $due,
+                    'description' => trim((string) ($row[3] ?? '')) ?: null,
+                    'color'       => trim((string) ($row[4] ?? '')) ?: null,
+                    'order'       => ++$order,
+                ]);
+                $created++;
+            }
+        } finally {
+            $cleanup();
+        }
+
+        return ['created' => $created, 'skipped' => $skipped, 'errors' => $errors];
     }
 
     public function updateMilestone(int $milestoneId, array $data, int $tenantId): ProjectMilestone
@@ -913,7 +1027,7 @@ class ProjectService
     {
         $rows = \App\Models\Project\ProjectExpense::forTenant($tenantId)
             ->where('project_id', $projectId)
-            ->with('creator:id,name')
+            ->with(['creator:id,name', 'expenseCategory:id,name'])
             ->orderByDesc('expense_date')->orderByDesc('id')
             ->get();
 
@@ -969,21 +1083,59 @@ class ProjectService
         ];
     }
 
+    /**
+     * What a caller may set on an expense.
+     *
+     * One list, used by both create and update, so a field added to the form
+     * cannot end up saveable on one path and silently dropped on the other —
+     * which is what happened to payment_mode on the client side.
+     */
+    private const EXPENSE_FIELDS = [
+        'title', 'category', 'expense_category_id', 'amount', 'currency',
+        'tax_percent', 'expense_date', 'reference_no', 'payment_mode',
+        'purchase_vendor_id', 'note', 'billable',
+    ];
+
     public function addExpense(int $projectId, array $data, int $tenantId, int $userId): \App\Models\Project\ProjectExpense
     {
         $this->find($projectId, $tenantId); // authorise/scope
 
-        return \App\Models\Project\ProjectExpense::create([
-            'tenant_id'    => $tenantId,
-            'project_id'   => $projectId,
-            'title'        => $data['title'],
-            'category'     => $data['category'] ?? null,
-            'amount'       => $data['amount'] ?? 0,
-            'expense_date' => $data['expense_date'],
-            'note'         => $data['note'] ?? null,
-            'billable'     => $data['billable'] ?? false,
-            'created_by'   => $userId,
-        ])->load('creator:id,name');
+        $exp = \App\Models\Project\ProjectExpense::create([
+            ...$this->expenseAttributes($data, $tenantId),
+            'tenant_id'  => $tenantId,
+            'project_id' => $projectId,
+            'created_by' => $userId,
+        ]);
+
+        // fresh(), so the row that comes back carries EVERY column rather than
+        // only the ones this request happened to set. Without it the create
+        // response and the list response are different shapes, and the form that
+        // re-opens a just-created expense finds fields missing.
+        return $exp->fresh(['creator:id,name', 'expenseCategory:id,name']);
+    }
+
+    /**
+     * Clean one expense payload.
+     *
+     * The category is stored twice on purpose: the id is the truth, and
+     * `category` keeps the label it had at the time. Without the label, every
+     * historical row blanks the moment a category is renamed or removed; without
+     * the id, "Travel", "travel" and "Travel " are three categories and no total
+     * can be trusted. A chosen category overwrites whatever was typed.
+     */
+    private function expenseAttributes(array $data, int $tenantId): array
+    {
+        $attrs = array_intersect_key($data, array_flip(self::EXPENSE_FIELDS));
+
+        if (! empty($attrs['expense_category_id'])) {
+            $cat = \App\Models\ExpenseCategory::forTenant($tenantId)->find($attrs['expense_category_id']);
+            if (! $cat) {
+                throw new BusinessException('That expense category no longer exists.', 422);
+            }
+            $attrs['category'] = $cat->name;
+        }
+
+        return $attrs;
     }
 
     public function updateExpense(int $expenseId, int $projectId, array $data, int $tenantId): \App\Models\Project\ProjectExpense
@@ -992,10 +1144,58 @@ class ProjectService
         if (! $exp) {
             throw new BusinessException('Expense not found.', 404);
         }
-        $exp->fill(array_intersect_key($data, array_flip(['title', 'category', 'amount', 'expense_date', 'note', 'billable'])));
+        $exp->fill($this->expenseAttributes($data, $tenantId));
         $exp->save();
 
-        return $exp->load('creator:id,name');
+        return $exp->load(['creator:id,name', 'expenseCategory:id,name']);
+    }
+
+    /**
+     * Store the receipt against an expense.
+     *
+     * Private disk, tenant-foldered, same as project files. Replacing a receipt
+     * deletes the old one rather than orphaning it — a receipt is a document
+     * somebody may be legally required to produce, so it is either the one on
+     * the row or gone.
+     */
+    public function attachExpenseReceipt(int $expenseId, int $projectId, mixed $file, int $tenantId): \App\Models\Project\ProjectExpense
+    {
+        $exp = \App\Models\Project\ProjectExpense::forTenant($tenantId)
+            ->where('project_id', $projectId)->find($expenseId);
+        if (! $exp) {
+            throw new BusinessException('Expense not found.', 404);
+        }
+
+        $old = $exp->receipt_path;
+
+        $path = $file->store("tenant-{$tenantId}/project-expenses/{$projectId}", 'local');
+
+        $exp->forceFill([
+            'receipt_path' => $path,
+            'receipt_name' => $file->getClientOriginalName(),
+        ])->save();
+
+        if ($old && $old !== $path) {
+            Storage::disk('local')->delete($old);
+        }
+
+        return $exp->load(['creator:id,name', 'expenseCategory:id,name']);
+    }
+
+    /** The receipt itself, streamed. */
+    public function expenseReceiptDownload(int $expenseId, int $projectId, int $tenantId)
+    {
+        $exp = \App\Models\Project\ProjectExpense::forTenant($tenantId)
+            ->where('project_id', $projectId)->find($expenseId);
+        if (! $exp || ! $exp->receipt_path) {
+            throw new BusinessException('No receipt is attached to this expense.', 404);
+        }
+
+        if (! Storage::disk('local')->exists($exp->receipt_path)) {
+            throw new BusinessException('The receipt file is missing from storage.', 404);
+        }
+
+        return Storage::disk('local')->download($exp->receipt_path, $exp->receipt_name ?: 'receipt');
     }
 
     public function deleteExpense(int $expenseId, int $projectId, int $tenantId): void

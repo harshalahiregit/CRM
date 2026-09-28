@@ -14,11 +14,13 @@ use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
  * Tenant-aware mail dispatch — the single entry point for all outgoing mail
  * in tenant context (proposal submit, OTP, contract send, …).
  *
- * Resolution rule (mirrors the old CRM's send-time settings lookup, but
- * per-tenant): a usable, enabled TenantMailSetting builds a dynamic SMTP
- * mailer for that tenant; otherwise we fall back to the global .env mailer.
- * A tenant config that exists-and-is-enabled but FAILS surfaces the error —
- * never a silent fallback, or misconfigured tenants would never notice.
+ * Resolution rule: a usable, enabled TenantMailSetting builds a dynamic SMTP
+ * mailer for that tenant. There is NO fallback. A tenant with no SMTP set up is
+ * told so, in words that name the screen to go to; a tenant whose SMTP fails
+ * gets the transport error. Neither is ever swallowed, because both of those
+ * used to end at the global .env mailer — which is `env('MAIL_MAILER', 'log')`,
+ * so on a deployment that never set it every message was written to a log file
+ * and the person who pressed Send was told it worked.
  */
 class TenantMailer
 {
@@ -76,6 +78,12 @@ class TenantMailer
      *
      * Unlike send(), transport errors are left to the caller to catch, because
      * NotificationService's contract is to record a status and never throw.
+     *
+     * `$replyTo` overrides the tenant's own reply address for one message. It
+     * exists for mail we send ON SOMEONE'S BEHALF: a compliance agency handed a
+     * vendor's callback request must be able to hit reply and reach the vendor,
+     * not our support inbox. Everything else leaves it null and keeps the
+     * tenant reply-to.
      */
     public function sendRawHtml(
         ?int $tenantId,
@@ -84,16 +92,29 @@ class TenantMailer
         string $html,
         ?string $text = null,
         array $attachments = [],
+        ?string $replyTo = null,
     ): void {
         $settings   = $tenantId ? $this->settingsFor($tenantId) : null;
         $mailerName = $this->configureMailer($settings);
         $from       = $this->effectiveFrom($settings);
 
-        Mail::mailer($mailerName)->send([], [], function ($m) use ($to, $subject, $html, $text, $settings, $from, $attachments) {
+        Mail::mailer($mailerName)->send([], [], function ($m) use ($to, $subject, $html, $text, $settings, $from, $attachments, $replyTo) {
             $m->to($to)->subject($subject)->html($html);
 
-            if ($text !== null && $text !== '') {
-                $m->text($text);
+            /* Always multipart/alternative, never HTML on its own.
+             *
+             * A message with an HTML body and no text alternative is one of the
+             * oldest and heaviest spam signals there is — genuine bulk senders
+             * all ship both parts, and filters score accordingly. Most callers
+             * here pass a hand-written text version; the ones that do not were
+             * sending HTML alone, and those are the mails that land in Junk.
+             *
+             * The generated version is a plain reading of the same content, not
+             * a stub: a caller's own text part is always better and still wins.
+             */
+            $plain = ($text !== null && $text !== '') ? $text : self::plainTextFrom($html);
+            if ($plain !== '') {
+                $m->text($plain);
             }
             // Raw in-memory attachments — the calendar invite that rides along
             // with a meeting invitation has no file on disk to attach.
@@ -105,7 +126,11 @@ class TenantMailer
             if ($from) {
                 $m->from($from['email'], $from['name']);
             }
-            if ($settings && $settings->reply_to) {
+            // A per-message reply address wins: the point of it is that the
+            // recipient should answer the person we are writing on behalf of.
+            if ($replyTo) {
+                $m->replyTo($replyTo);
+            } elseif ($settings && $settings->reply_to) {
                 $m->replyTo($settings->reply_to);
             }
         });
@@ -141,10 +166,57 @@ class TenantMailer
         return null;
     }
 
+    /**
+     * The tenant's own SMTP, or a refusal that says what to do about it.
+     *
+     * Public so the rule can be asserted directly and so a caller can pre-flight
+     * before doing expensive work it is about to throw away.
+     */
+    public function requireSettings(int $tenantId): TenantMailSetting
+    {
+        $s = TenantMailSetting::forTenant($tenantId)->first();
+
+        if (! $s) {
+            throw new BusinessException(
+                'Email is not set up yet. Add your SMTP server under Settings → Email, '
+                .'then send a test message to confirm it works.', 422);
+        }
+        if (! $s->enabled) {
+            throw new BusinessException(
+                'Email is switched off. Turn it on under Settings → Email.', 422);
+        }
+        if (empty($s->host) || empty($s->from_email)) {
+            throw new BusinessException(
+                'Email is only half configured — it needs both an SMTP host and a From address. '
+                .'Finish it under Settings → Email.', 422);
+        }
+
+        return $s;
+    }
+
     private function configureMailer(?TenantMailSetting $settings): string
     {
         if (! $settings) {
-            return config('mail.default');
+            // NO .env FALLBACK. Falling through to the global mailer is how mail
+            // disappeared without a word: config('mail.default') is
+            // env('MAIL_MAILER', 'log'), so a deployment that never set
+            // MAIL_MAILER wrote every message to a log file and reported success
+            // to the person who pressed Send. Worse, when it IS set, mail leaves
+            // from the .env account rather than the tenant's own domain, which
+            // fails SPF/DKIM and lands in spam. The tenant's SMTP is the only
+            // transport this application sends real mail through.
+            //
+            // Under `php artisan test` the transport is `array` and nothing goes
+            // anywhere, so there is no operator to protect and no delivery to
+            // misattribute -- the strict path is asserted through
+            // requireSettings() instead.
+            if (app()->runningUnitTests()) {
+                return config('mail.default');
+            }
+
+            throw new BusinessException(
+                'Email is not set up yet. Add your SMTP server under Settings → Email, '
+                .'then send a test message to confirm it works.', 422);
         }
 
         Mail::purge('tenant');
@@ -162,15 +234,147 @@ class TenantMailer
             'username'   => $settings->username,
             'password'   => $settings->password,
             'encryption' => $settings->encryption === 'none' ? null : $settings->encryption,
-            'timeout'    => 15,
+            // Measured against a real host: 6s for the TCP+TLS handshake alone
+            // and 11s for a complete send. 15s left almost no headroom, so a
+            // slow day timed out mid-send and read as "the button does nothing".
+            //
+            // But it must also finish BEFORE PHP gives up on the request, or the
+            // process is killed mid-socket and the caller gets a fatal error
+            // instead of a message it can show. That is what an unreachable mail
+            // host produced: max_execution_time is 30s under the dev server and
+            // this timeout was 30s too, so "Maximum execution time of 30 seconds
+            // exceeded … Smtp/Stream/SocketStream.php" reached the user as a
+            // frozen Publish button. We keep a few seconds of headroom, so the
+            // transport always loses the race and raises a real exception.
+            'timeout'    => self::socketTimeout(),
             // Symfony reads this from the transport options and, when false,
             // skips both peer and hostname checks. Needed for panel-managed
             // mail servers whose certificate is self-signed or issued for a
             // different hostname — otherwise STARTTLS fails outright.
             'verify_peer' => (bool) ($settings->verify_peer ?? true),
+            // What this server calls itself in the SMTP greeting.
+            //
+            // Unset, Symfony says EHLO [127.0.0.1] (or the box's internal
+            // hostname), and a receiving server that is handed a bare IP or a
+            // name with no public DNS behind it treats the message as far more
+            // likely to be junk. It is one of the cheapest spam signals there
+            // is to emit and one of the cheapest to stop emitting.
+            //
+            // The From address's own domain is the right answer: it is the
+            // domain whose SPF and DKIM this message is being sent under, so
+            // the greeting, the envelope and the visible sender all agree.
+            'local_domain' => self::greetingDomain($settings->from_email),
         ]]);
 
         return 'tenant';
+    }
+
+    /**
+     * A readable text/plain rendering of an HTML email body.
+     *
+     * Not a sanitiser and not a converter — it exists so that no message leaves
+     * this application as HTML alone. Scripts, styles and head go entirely
+     * (their contents are not content); block edges become line breaks so the
+     * result reads as paragraphs rather than one run-on line; links keep their
+     * href in brackets, because a text-only reader that cannot see "click here"
+     * still needs somewhere to go.
+     */
+    public static function plainTextFrom(string $html): string
+    {
+        $s = preg_replace('#<(script|style|head)\b[^>]*>.*?</\1>#is', ' ', $html) ?? $html;
+
+        // Keep the destination of a link, which stripping tags would discard.
+        $s = preg_replace_callback(
+            '#<a\b[^>]*href=(["\'])(.*?)\1[^>]*>(.*?)</a>#is',
+            function ($m) {
+                $label = trim(html_entity_decode(strip_tags($m[3]), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+                $href  = trim($m[2]);
+
+                if ($href === '' || $label === $href) {
+                    return $label !== '' ? $label : $href;
+                }
+
+                // Parentheses, not angle brackets: the strip_tags() below reads
+                // "<https://…>" as a tag and swallows the whole link.
+                return $label === '' ? $href : $label.' ('.$href.')';
+            },
+            $s,
+        ) ?? $s;
+
+        $s = preg_replace('#<br\s*/?>#i', "\n", $s) ?? $s;
+        // Cells get a separator, not a paragraph break — these emails lay their
+        // detail out in tables, and without this "Code" and "PV-0001" arrive
+        // welded together as "CodePV-0001".
+        $s = preg_replace('#</(td|th)>#i', ': ', $s) ?? $s;
+        $s = preg_replace('#</(p|div|tr|li|h[1-6]|table)>#i', "\n\n", $s) ?? $s;
+
+        $s = html_entity_decode(strip_tags($s), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+        // Collapse the whitespace a table-based email leaves behind, without
+        // collapsing the paragraph breaks just created.
+        $s = preg_replace('/[ \t\x{00A0}]+/u', ' ', $s) ?? $s;
+        $s = preg_replace('/ ?\n ?/', "\n", $s) ?? $s;
+        // The separator left dangling by a row's last cell, and by an empty one.
+        $s = preg_replace('/:\s*(?=\n|$)/', '', $s) ?? $s;
+        $s = preg_replace('/(?<=\n|^):\s*/', '', $s) ?? $s;
+        $s = preg_replace('/\n{3,}/', "\n\n", $s) ?? $s;
+
+        return trim($s);
+    }
+
+    /**
+     * The domain to greet the receiving server with — the sender's own, falling
+     * back to APP_URL's host, and never a bare localhost.
+     */
+    public static function greetingDomain(?string $fromEmail): ?string
+    {
+        $domain = $fromEmail && str_contains($fromEmail, '@')
+            ? trim(substr(strrchr($fromEmail, '@'), 1))
+            : null;
+
+        if (! $domain) {
+            $domain = parse_url((string) config('app.url'), PHP_URL_HOST) ?: null;
+        }
+
+        // A localhost greeting is worse than none: Symfony's own default at
+        // least uses the machine's hostname, which may resolve.
+        if (! $domain || $domain === 'localhost' || $domain === '127.0.0.1') {
+            return null;
+        }
+
+        return $domain;
+    }
+
+    /**
+     * How long a single SMTP conversation may take — and room for it to finish.
+     *
+     * The timeout itself stays generous, because it is measured: ~6s for the
+     * TCP+TLS handshake and ~11s for a complete send against the live host, so
+     * cutting it short turns a slow day into a message that never arrives.
+     *
+     * The bug was never the length; it was that PHP's own request limit is 30s
+     * too. An unreachable mail server held the socket until BOTH expired at
+     * once, and PHP won: "Maximum execution time of 30 seconds exceeded … in
+     * Smtp/Stream/SocketStream.php" is a FATAL error, not an exception, so the
+     * `catch` around every send never ran and the Publish button just froze.
+     *
+     * So we give the request more room than the transport needs. The transport
+     * then always loses the race, throws something catchable, and the caller
+     * reports "the mail server did not answer" instead of dying mid-socket.
+     */
+    private static function socketTimeout(): int
+    {
+        $timeout = max(5, (int) config('mail.tenant_timeout', 30));
+
+        // 0 means "no limit" (CLI, some FPM pools) — nothing to extend.
+        if ((int) ini_get('max_execution_time') > 0) {
+            // Resets the counter as well as raising it, which is right: each
+            // send deserves its own budget, not a share of one the request has
+            // already spent elsewhere.
+            @set_time_limit($timeout + 15);
+        }
+
+        return $timeout;
     }
 
     /**

@@ -1,26 +1,39 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ClipboardList, UserCheck, FileText, ShieldCheck, Check, Rocket,
   ArrowLeft, ArrowRight, Loader2, AlertTriangle, CheckCircle2, Eye, Download,
 } from 'lucide-react'
 import { purchasePortalApi } from '@/services/purchasePortalApi'
-import PurchaseVendorDocuments from '@/modules/purchase/components/PurchaseVendorDocuments'
+import VendorDocumentsPanel from '@/components/vendor/VendorDocumentsPanel'
+import { PURCHASE_DOC_CATALOG } from '@/components/vendor/documentCatalog'
+import WorkStartLetterCard from '@/components/portal/WorkStartLetterCard'
+import KickoffMomReview from '@/components/portal/KickoffMomReview'
+import MeetingJoinGate from '@/components/portal/MeetingJoinGate'
 import { KIT3D_STYLE, Field, TextInput } from '@/components/ui/kit3d'
+import { readFieldErrors } from '@/services/apiError'
 
 /**
  * Purchase Vendor Portal — onboarding wizard. Purchase-owned; consumes ONLY
  * purchasePortalApi (/portal/purchase/*). The authenticated PurchaseVendor is
  * resolved server-side from the token — there is no vendor id in any URL. No TPV
  * or shared-vendor imports; the documents step embeds the Purchase-owned
- * PurchaseVendorDocuments component.
+ * shared VendorDocumentsPanel.
  */
 const STEP_ICONS = { kickoff: ClipboardList, profile: UserCheck, documents: FileText, review: ShieldCheck, confirmation: Check, submission: Rocket }
 
+/**
+ * The keys here are the SERVER's field names, not display names.
+ *
+ * This form used to send `address`, which no rule on the server matched, so
+ * Laravel's `validated()` dropped it: the vendor typed their registered address,
+ * the save returned 200, and the address was gone — every time, silently. It is
+ * `registered_address`, the name both engines and the TPV form already use.
+ */
 const EMPTY_PROFILE = {
   company_name: '', legal_name: '', gst_number: '', pan_number: '', website: '',
   contact_person: '', contact_email: '', contact_mobile: '',
-  address: '', city: '', state: '', pincode: '',
+  registered_address: '', city: '', state: '', pincode: '',
   bank_account_holder: '', bank_name: '', bank_account_number: '', bank_ifsc: '',
   scope_of_work: '',
 }
@@ -50,9 +63,35 @@ export default function PurchasePortalOnboarding() {
   const pct = steps.length ? Math.round((done / steps.length) * 100) : 0
   const editable = onboarding && ['In_Progress', 'Rejected', 'Resubmit_Required'].includes(onboarding.status)
 
-  const goStep = (step) => {
+  /**
+   * A step with a form registers how to persist it, so leaving the step keeps
+   * what was typed.
+   *
+   * Moving through the wizard used to switch the panel and nothing else: a
+   * vendor who filled in half the profile and pressed the next step lost every
+   * word of it, with no warning and nothing to go back to. The server accepts a
+   * partial profile — every field on it is nullable — so what has been entered
+   * is stored as a draft on the way past, and the completeness check stays
+   * where it belongs, on Save & Continue and on submission.
+   */
+  const flushRef = useRef(null)
+  const registerFlush = useCallback((fn) => { flushRef.current = fn }, [])
+
+  const goStep = async (step) => {
+    // Never trap somebody on a step: a draft that will not save is a reason to
+    // say so, not a reason to refuse to move.
+    let flushed = false
+    try { flushed = await flushRef.current?.() } catch { /* the step reports its own error */ }
+    flushRef.current = null
+
     setActive(step)
     if (editable && onboarding) purchasePortalApi.onboarding.setStep(onboarding.id, step).catch(() => {})
+
+    // Each step unmounts when you leave it and seeds itself from `onboarding` on
+    // the way back. Without this refetch it seeds from the copy loaded when the
+    // page opened — so a draft that WAS stored still came back as an empty form,
+    // and saving that form then wrote the stale values over the good ones.
+    if (flushed) load(true)
   }
 
   if (loading) return <div style={{ padding: 24 }}><style>{KIT3D_STYLE}</style><div className="skeleton" style={{ height: 44, width: 260, borderRadius: 12, background: 'var(--border)' }} /></div>
@@ -114,11 +153,19 @@ export default function PurchasePortalOnboarding() {
       {/* Step body */}
       <div className="pr-glass" style={{ padding: 22 }}>
         {activeStep?.key === 'kickoff' && <StepKickoff onboarding={onboarding} editable={editable} onDone={() => load(true)} onContinue={() => goStep(2)} />}
-        {activeStep?.key === 'profile' && <StepProfile onboarding={onboarding} editable={editable} onSaved={() => load(true)} onContinue={() => goStep(3)} />}
+        {activeStep?.key === 'profile' && <StepProfile onboarding={onboarding} editable={editable} onSaved={() => load(true)} onContinue={() => goStep(3)} registerFlush={registerFlush} />}
         {activeStep?.key === 'documents' && (
           <div>
             <StepHead title="Statutory Documents" sub="Upload the required documents for review." />
-            <PurchaseVendorDocuments api={purchasePortalApi.documents} manage admin={false} onChanged={() => load(true)} />
+            <VendorDocumentsPanel
+              api={purchasePortalApi.documents}
+              catalog={PURCHASE_DOC_CATALOG}
+              onboarding={onboarding}
+              editable={editable}
+              manage
+              admin={false}
+              onChanged={() => load(true)}
+            />
             <StepNav onBack={() => goStep(2)} onContinue={() => goStep(4)} />
           </div>
         )}
@@ -163,14 +210,23 @@ function StepKickoff({ onboarding, editable, onDone, onContinue }) {
         const m = d?.meeting ?? null
         setMeeting(m)
 
-        // The minutes themselves, only once they have been approved and
-        // distributed — the endpoint enforces that, so a 403 here is a normal
-        // "not published yet", not an error worth showing.
-        if (m?.id && m.mom_available) {
-          try {
-            const detail = await purchasePortalApi.governance.meetingMom(m.id)
-            if (alive) setMom(detail)
-          } catch { /* not distributed yet */ }
+        /*
+         * The minutes come from the ONBOARDING, not from this card's meeting.
+         *
+         * The card is resolved by ownKickoff(); the PDF is resolved by
+         * resolveKickoffMeeting(). Those are two resolvers and can land on two
+         * meetings, which is how a populated document ends up beside empty
+         * sections. `kickoffData` uses the PDF's resolver, so the text and the
+         * document always describe the same meeting.
+         *
+         * Always settles — `{}` rather than null — so the panel can say "not
+         * published yet" instead of spinning forever.
+         */
+        try {
+          const detail = await purchasePortalApi.onboarding.kickoffData(onboarding.id)
+          if (alive) setMom(detail?.meeting ? detail : {})
+        } catch {
+          if (alive) setMom({})   // not distributed yet is a normal answer
         }
         if (!m) setErr('No kickoff meeting has been scheduled for you yet.')
       })
@@ -221,11 +277,23 @@ function StepKickoff({ onboarding, editable, onDone, onContinue }) {
     onContinue?.()
   }
 
-  const agenda    = mom?.agenda_items ?? mom?.agendaItems ?? []
-  const actions   = mom?.action_items ?? mom?.actionItems ?? []
-  const decisions = mom?.mom_decisions ?? mom?.momDecisions ?? []
-  const issues    = mom?.mom_issues ?? mom?.momIssues ?? []
-  const canAcknowledge = !!meeting
+  // One agreed shape from both portals (VendorMomView on the server). This
+  // screen used to read this engine's own relation names; when the payload was
+  // normalised those keys stopped existing and every section here would have
+  // read as empty.
+
+  /*
+   * You cannot accept minutes you were never shown.
+   *
+   * This was `!!meeting` — a meeting merely EXISTING was enough to tick "I have
+   * read and understood the Minutes of Meeting" and pass Step 1. So an
+   * onboarding could be acknowledged against a meeting whose minutes were still
+   * a draft and whose document would not open, and the record then claimed the
+   * vendor had read something never issued to them.
+   *
+   * The server refuses this too — a disabled checkbox is a courtesy, not a rule.
+   */
+  const canAcknowledge = !!meeting && !!meeting.mom_available
 
   return (
     <div>
@@ -250,10 +318,16 @@ function StepKickoff({ onboarding, editable, onDone, onContinue }) {
                 <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--text-h)' }}>{meeting.title || 'Kickoff Meeting'}</h3>
                 <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{meeting.status_label || meeting.status}</span>
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={openPdf} style={koGhostBtn}><Eye size={13} /> View MOM</button>
-                <button onClick={download} style={koGhostBtn}><Download size={13} /> Download PDF</button>
-              </div>
+              {/* Offered only when there is something to open. Showing them
+                  regardless meant every press answered "not available yet",
+                  which reads as a broken button rather than an unissued
+                  document. */}
+              {meeting.mom_available && (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={openPdf} style={koGhostBtn}><Eye size={13} /> View MOM</button>
+                  <button onClick={download} style={koGhostBtn}><Download size={13} /> Download PDF</button>
+                </div>
+              )}
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px 20px' }}>
@@ -262,11 +336,11 @@ function StepKickoff({ onboarding, editable, onDone, onContinue }) {
               <KoFact label="Location" value={meeting.location || '—'} />
             </div>
 
-            {meeting.meeting_link && (
-              <a href={meeting.meeting_link} target="_blank" rel="noopener noreferrer" style={koJoinBtn}>
-                Join the online meeting
-              </a>
-            )}
+            {/* The link is not in this payload until attendance is marked —
+                see MeetingAttendanceGate. */}
+            <div style={{ marginTop: 14 }}>
+              <MeetingJoinGate meeting={meeting} onMark={purchasePortalApi.governance.markAttendance} />
+            </div>
           </div>
 
           {/* The minutes, as information */}
@@ -279,50 +353,10 @@ function StepKickoff({ onboarding, editable, onDone, onContinue }) {
             <div style={koCard}>
               <h3 style={{ margin: '0 0 12px', fontSize: 13.5, fontWeight: 800, color: 'var(--text-h)' }}>Minutes of Meeting</h3>
 
-              {!mom ? (
-                <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Loading the minutes…</span>
-              ) : (
-                <div style={{ display: 'grid', gap: 14 }}>
-                  <KoSection title="Agenda" empty="No agenda was recorded.">
-                    {agenda.map((a, i) => (
-                      <li key={a.id ?? i} style={koLi}>{a.title || a.item || a.description}</li>
-                    ))}
-                  </KoSection>
-
-                  <KoSection title="Decisions" empty="No decisions were recorded.">
-                    {decisions.map((d, i) => (
-                      <li key={d.id ?? i} style={koLi}>
-                        {d.decision || d.description}
-                        {d.decided_by ? <span style={koMeta}> — {d.decided_by}</span> : null}
-                      </li>
-                    ))}
-                  </KoSection>
-
-                  <KoSection title="Action items" empty="No actions were assigned.">
-                    {actions.map((a, i) => (
-                      <li key={a.id ?? i} style={koLi}>
-                        {a.description || a.action}
-                        <span style={koMeta}>
-                          {a.owner ? ` — ${a.owner}` : ''}
-                          {a.due_date ? ` · due ${new Date(a.due_date).toLocaleDateString()}` : ''}
-                          {a.status ? ` · ${String(a.status).replace(/_/g, ' ')}` : ''}
-                        </span>
-                      </li>
-                    ))}
-                  </KoSection>
-
-                  {issues.length > 0 && (
-                    <KoSection title="Issues raised" empty="">
-                      {issues.map((it, i) => (
-                        <li key={it.id ?? i} style={koLi}>
-                          {it.description || it.issue}
-                          {it.status ? <span style={koMeta}> · {String(it.status).replace(/_/g, ' ')}</span> : null}
-                        </li>
-                      ))}
-                    </KoSection>
-                  )}
-                </div>
-              )}
+              {/* The shared minutes view — the same sections the PDF prints, and
+                  the same ones TPV now shows. This screen used to render its own
+                  four sections and read only the structured agenda rows. */}
+              <KickoffMomReview mom={mom} />
             </div>
           )}
 
@@ -337,9 +371,13 @@ function StepKickoff({ onboarding, editable, onDone, onContinue }) {
               </div>
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: editable ? 'pointer' : 'not-allowed', flex: 1, minWidth: 240 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: (editable && canAcknowledge) ? 'pointer' : 'not-allowed', flex: 1, minWidth: 240 }}>
                   <input type="checkbox" checked={checked} disabled={!editable || !canAcknowledge} onChange={e => setChecked(e.target.checked)} style={{ width: 17, height: 17, accentColor: '#7C3AED' }} />
-                  <span style={{ fontSize: 13, color: 'var(--text-h)', fontWeight: 600 }}>I have read and understood the Minutes of Meeting.</span>
+                  <span style={{ fontSize: 13, color: canAcknowledge ? 'var(--text-h)' : 'var(--text-muted)', fontWeight: 600 }}>
+                    {canAcknowledge
+                      ? 'I have read and understood the Minutes of Meeting.'
+                      : 'Nothing to acknowledge yet — the minutes of this meeting have not been issued.'}
+                  </span>
                 </label>
                 <button onClick={accept} disabled={!checked || busy || !editable} style={{ ...solidBtn, opacity: (!checked || !editable) ? 0.6 : 1 }}>
                   {busy ? <Loader2 size={14} className="pp-spin" /> : <Check size={15} />} Acknowledge &amp; Continue
@@ -362,46 +400,103 @@ function KoFact({ label, value }) {
   )
 }
 
-function KoSection({ title, empty, children }) {
-  const items = Array.isArray(children) ? children.filter(Boolean) : (children ? [children] : [])
-  return (
-    <div>
-      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6 }}>{title}</div>
-      {items.length === 0
-        ? (empty ? <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{empty}</span> : null)
-        : <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 5 }}>{items}</ul>}
-    </div>
-  )
-}
 
 const koCard = { padding: 16, borderRadius: 13, background: 'var(--bg-card)', border: '1px solid var(--border)', marginBottom: 14 }
 const koGhostBtn = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 13px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-h)', cursor: 'pointer', fontSize: 12, fontWeight: 700 }
-const koJoinBtn = { display: 'inline-flex', alignItems: 'center', gap: 7, marginTop: 14, padding: '9px 16px', borderRadius: 9, textDecoration: 'none', fontSize: 12.5, fontWeight: 800, color: '#fff', background: 'linear-gradient(145deg,#22c55e,#16a34a)' }
-const koLi = { fontSize: 12.5, color: 'var(--text-h)', lineHeight: 1.55 }
-const koMeta = { color: 'var(--text-muted)', fontWeight: 500 }
 
 /* ── Step 2 — Company profile ────────────────────────────────────────────────── */
-function StepProfile({ onboarding, editable, onSaved, onContinue }) {
+function StepProfile({ onboarding, editable, onSaved, onContinue, registerFlush }) {
   const [f, setF] = useState(() => ({ ...EMPTY_PROFILE, ...(onboarding.profile || {}) }))
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [err, setErr] = useState(null)
-  const set = (k) => (e) => { setF(p => ({ ...p, [k]: e.target.value })); setSaved(false) }
+  // Per-field messages, keyed by the field's own name, so the reason sits under
+  // the box it belongs to instead of only in a banner at the bottom.
+  const [errs, setErrs] = useState({})
+  // What a draft save could not store yet. Not a failure — a note.
+  const [skipped, setSkipped] = useState({})
+
+  // Has anything been typed since the last successful save? Read by the flush
+  // below, which is registered once, so it must be a ref rather than state that
+  // callback would have closed over stale.
+  const dirty = useRef(false)
+  const set = (k) => (e) => {
+    setF(p => ({ ...p, [k]: e.target.value }))
+    setErrs(p => (p[k] ? { ...p, [k]: undefined } : p))
+    setSaved(false)
+    dirty.current = true
+  }
+
+  /**
+   * Send the form.
+   *
+   * A cleared box is sent as null, not dropped. The server MERGES what arrives
+   * onto the stored profile, so a dropped key means "leave it as it was" — which
+   * made deleting a value impossible: it reappeared on the next load. Every rule
+   * on this form is `nullable`, so null is the honest way to say "empty".
+   */
+  const persist = async (draft = false) => {
+    const payload = Object.fromEntries(
+      Object.entries(f).map(([k, v]) => [k, v === '' || v === undefined ? null : v]),
+    )
+    const res = await purchasePortalApi.onboarding.saveProfile(onboarding.id, payload, draft)
+    dirty.current = false
+    setSkipped(res?.skipped || {})
+    return res
+  }
+
+  /**
+   * Keep the half-filled form when the vendor moves to another step.
+   *
+   * Sent as a draft: the server stores every field that stands on its own and
+   * names the rest. It used to be sent strictly, so an account number typed
+   * without its IFSC made the whole save a 422 — swallowed here, leaving the
+   * vendor to come back to a form with everything else they had typed missing.
+   */
+  const saveDraft = async () => {
+    if (!editable || !dirty.current) return false
+    try {
+      await persist(true)
+      return true
+    } catch {
+      // A draft that will not save is still not a reason to trap somebody on a
+      // step; the strict save on the way out reports it properly.
+      return false
+    }
+  }
+
+  // Registered once, read through a ref, so the flush the wizard calls always
+  // sees what is on screen now.
+  const draftRef = useRef(saveDraft)
+  draftRef.current = saveDraft
+  useEffect(() => {
+    registerFlush?.(() => draftRef.current())
+    return () => registerFlush?.(null)
+  }, [registerFlush])
 
   const save = async (thenContinue) => {
-    setSaving(true); setErr(null)
+    setSaving(true); setErr(null); setErrs({})
     try {
-      const payload = Object.fromEntries(Object.entries(f).filter(([, v]) => v !== '' && v != null))
-      await purchasePortalApi.onboarding.saveProfile(onboarding.id, payload)
+      await persist()
       setSaved(true); onSaved?.()
       if (thenContinue) onContinue?.()
     } catch (e) {
-      setErr(e?.response?.data?.message || Object.values(e?.response?.data?.errors || {})[0]?.[0] || 'Could not save profile.')
+      // The server's headline for a 422 is always the words "Validation failed",
+      // which name nothing. The per-field detail is what the vendor needs, so it
+      // is read first and shown against the boxes themselves.
+      const { map, summary } = readFieldErrors(e, 'profile.')
+      setErrs(map)
+      setErr(summary)
     } finally { setSaving(false) }
   }
 
   const F = (label, key, props = {}) => (
-    <Field label={label}><TextInput value={f[key] ?? ''} onChange={set(key)} disabled={!editable} {...props} /></Field>
+    <Field label={label}>
+      <TextInput value={f[key] ?? ''} onChange={set(key)} disabled={!editable}
+        style={errs[key] ? { borderColor: '#ef4444' } : undefined} {...props} />
+      {errs[key] && <div style={{ color: '#ef4444', fontSize: 11, marginTop: 3 }}>{errs[key]}</div>}
+      {!errs[key] && skipped[key] && <div style={{ color: '#d97706', fontSize: 11, marginTop: 3 }}>Not saved yet — {skipped[key]}</div>}
+    </Field>
   )
 
   return (
@@ -421,7 +516,7 @@ function StepProfile({ onboarding, editable, onSaved, onContinue }) {
         {F('Mobile', 'contact_mobile')}
       </ProfileSection>
       <ProfileSection title="Registered Address">
-        {F('Address', 'address')}
+        {F('Address', 'registered_address')}
         {F('City', 'city')}
         {F('State', 'state')}
         {F('Pincode', 'pincode', { maxLength: 6 })}
@@ -432,7 +527,24 @@ function StepProfile({ onboarding, editable, onSaved, onContinue }) {
         {F('Account Number', 'bank_account_number')}
         {F('IFSC', 'bank_ifsc')}
       </ProfileSection>
-      {err && <Banner tone="#ef4444" icon={AlertTriangle}>{err}</Banner>}
+      {err && (
+        <Banner tone="#ef4444" icon={AlertTriangle}>
+          {err}
+          {Object.values(errs).filter(Boolean).length > 1 && (
+            <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+              {Object.entries(errs).filter(([, m]) => m).map(([k, m]) => <li key={k} style={{ fontSize: 12 }}>{m}</li>)}
+            </ul>
+          )}
+        </Banner>
+      )}
+      {!err && Object.keys(skipped).length > 0 && (
+        <Banner tone="#d97706" icon={AlertTriangle}>
+          Your draft was saved. {Object.keys(skipped).length === 1 ? 'One field is' : `${Object.keys(skipped).length} fields are`} still unfinished and {Object.keys(skipped).length === 1 ? 'was' : 'were'} not stored:
+          <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+            {Object.entries(skipped).map(([k, m]) => <li key={k} style={{ fontSize: 12 }}>{m}</li>)}
+          </ul>
+        </Banner>
+      )}
       {editable && (
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 18, gap: 10, flexWrap: 'wrap' }}>
           <button onClick={() => save(false)} disabled={saving} style={ghostBtn}>{saving ? <Loader2 size={14} className="pp-spin" /> : saved ? <Check size={14} /> : null} {saved ? 'Saved' : 'Save Draft'}</button>
@@ -445,7 +557,7 @@ function StepProfile({ onboarding, editable, onSaved, onContinue }) {
 }
 
 /* ── Step 6 — Submission ─────────────────────────────────────────────────────── */
-function StepSubmission({ onboarding, editable, onSubmitted, onBack }) {
+function StepSubmission({ onboarding, editable, onSubmitted, onBack, navigate }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
   const submitted = ['Submitted', 'Under_Review', 'Approved'].includes(onboarding.status)
@@ -458,10 +570,27 @@ function StepSubmission({ onboarding, editable, onSubmitted, onBack }) {
 
   if (onboarding.status === 'Approved') {
     return (
-      <div style={{ textAlign: 'center', padding: '28px 16px' }}>
-        <div style={{ width: 60, height: 60, borderRadius: '50%', margin: '0 auto 14px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(16,185,129,0.14)' }}><CheckCircle2 size={30} style={{ color: '#10b981' }} /></div>
-        <h3 style={{ fontSize: 17, fontWeight: 900, color: 'var(--text-h)', margin: 0 }}>Onboarding Approved</h3>
-        <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '6px 0 0' }}>Your purchase-vendor account is active. Registration No. <strong style={{ color: 'var(--text-h)' }}>{onboarding.registration_number || '—'}</strong></p>
+      <div>
+        {/* The letter leads. "Approved" is a status; the work start letter is the
+            document the site asks to see before anybody is let through the gate.
+            Purchase generated it, stored it, showed it to administrators — and
+            never to the vendor it was about. */}
+        <WorkStartLetterCard api={purchasePortalApi} onboardingId={onboarding.id}
+          company={onboarding.vendor?.company_name} />
+
+        <div style={{ textAlign: 'center', padding: '18px 16px' }}>
+          <div style={{ width: 52, height: 52, borderRadius: '50%', margin: '0 auto 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(16,185,129,0.14)' }}>
+            <CheckCircle2 size={26} style={{ color: '#10b981' }} />
+          </div>
+          <h3 style={{ fontSize: 16, fontWeight: 900, color: 'var(--text-h)', margin: 0 }}>Onboarding Approved</h3>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '6px 0 0' }}>
+            Your purchase-vendor account is active. Registration No.{' '}
+            <strong style={{ color: 'var(--text-h)' }}>{onboarding.registration_number || '—'}</strong>
+          </p>
+          <button onClick={() => navigate('/purchase-portal/workforce')} style={{ ...solidBtn, marginTop: 14 }}>
+            <Rocket size={15} /> Start Workforce
+          </button>
+        </div>
       </div>
     )
   }
@@ -526,10 +655,13 @@ function StepNav({ onBack, onContinue }) {
   )
 }
 
+// Top-aligned and a block child, because a banner now carries a LIST of reasons
+// as well as a line of text — a <ul> inside a <span> is invalid, and centring it
+// against the icon puts a five-line message half a banner above its own icon.
 const Banner = ({ tone, icon: Icon, children }) => (
-  <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '11px 14px', borderRadius: 12, marginBottom: 14, background: `${tone}12`, border: `1px solid ${tone}55` }}>
-    <Icon size={15} style={{ color: tone, flexShrink: 0 }} />
-    <span style={{ fontSize: 13, color: 'var(--text-h)' }}>{children}</span>
+  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '11px 14px', borderRadius: 12, marginBottom: 14, background: `${tone}12`, border: `1px solid ${tone}55` }}>
+    <Icon size={15} style={{ color: tone, flexShrink: 0, marginTop: 2 }} />
+    <div style={{ fontSize: 13, color: 'var(--text-h)', minWidth: 0 }}>{children}</div>
   </div>
 )
 

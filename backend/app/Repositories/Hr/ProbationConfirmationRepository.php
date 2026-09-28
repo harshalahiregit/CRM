@@ -8,10 +8,14 @@ use App\Models\Hr\HrProbationExtension;
 use App\Models\Hr\HrProbationReview;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
+use App\Models\User;
+use App\Repositories\Hr\Concerns\ScopesEmployeeData;
 
 /** Read queries for Probation Confirmations (Phase 5). Tenant-scoped; no writes. */
 class ProbationConfirmationRepository
 {
+    use ScopesEmployeeData;
+
     private const EAGER = [
         'employee:id,name,employee_code,department,designation,grade_id', 'employee.grade:id,name',
         'probation:id,current_status,probation_start_date,probation_end_date,probation_policy_id,probation_type_id,extension_count',
@@ -20,9 +24,10 @@ class ProbationConfirmationRepository
         'latestExtension:id,extension_number,extension_days,extended_end_date,status',
     ];
 
-    public function list(int $tenantId, array $f): Collection
+    public function list(int $tenantId, array $f, ?User $actor = null): Collection
     {
-        return HrProbationConfirmation::where('tenant_id', $tenantId)
+        // Scope before the filters: a filter narrows within it, never past it.
+        return $this->scopeToEmployees(HrProbationConfirmation::where('tenant_id', $tenantId), $actor)
             ->with(self::EAGER)
             ->when(! empty($f['employee_id']), fn ($q) => $q->where('employee_id', $f['employee_id']))
             ->when(! empty($f['status']) && $f['status'] !== 'All', fn ($q) => $q->where('status', $f['status']))
@@ -36,20 +41,26 @@ class ProbationConfirmationRepository
             ->orderByDesc('id')->get();
     }
 
-    public function find(int $id, int $tenantId): ?HrProbationConfirmation
+    public function find(int $id, int $tenantId, ?User $actor = null): ?HrProbationConfirmation
     {
-        return HrProbationConfirmation::where('tenant_id', $tenantId)->with([...self::EAGER, 'auditLogs'])->find($id);
+        // Out of scope returns null, so the caller's 404 stands and the record
+        // looks absent rather than forbidden.
+        return $this->scopeToEmployees(HrProbationConfirmation::where('tenant_id', $tenantId), $actor)->with([...self::EAGER, 'auditLogs'])->find($id);
     }
 
-    public function forEmployee(int $employeeId, int $tenantId): Collection
+    public function forEmployee(int $employeeId, int $tenantId, ?User $actor = null): Collection
     {
+        $this->assertEmployeeInScope($actor, $employeeId);
+
         return HrProbationConfirmation::where('tenant_id', $tenantId)->where('employee_id', $employeeId)
             ->with([...self::EAGER, 'auditLogs'])->orderByDesc('id')->get();
     }
 
-    public function history(int $tenantId, array $f): Collection
+    public function history(int $tenantId, array $f, ?User $actor = null): Collection
     {
-        return HrProbationConfirmation::where('tenant_id', $tenantId)
+        // Same population as the live list — a history view is the same data
+        // with the decided rows kept.
+        return $this->scopeToEmployees(HrProbationConfirmation::where('tenant_id', $tenantId), $actor)
             ->whereIn('status', [HrProbationConfirmation::CONFIRMED, HrProbationConfirmation::REJECTED])
             ->with(self::EAGER)
             ->when(! empty($f['employee_id']), fn ($q) => $q->where('employee_id', $f['employee_id']))
@@ -80,9 +91,11 @@ class ProbationConfirmationRepository
             ->orderByDesc('extension_number')->first();
     }
 
-    public function stats(int $tenantId): array
+    public function stats(int $tenantId, ?User $actor = null): array
     {
-        $rows = HrProbationConfirmation::where('tenant_id', $tenantId)
+        // Aggregated over the scoped population rather than computed globally
+        // and trimmed afterwards: a total is a disclosure too.
+        $rows = $this->scopeToEmployees(HrProbationConfirmation::where('tenant_id', $tenantId), $actor)
             ->selectRaw("SUM(CASE WHEN status='Pending' THEN 1 ELSE 0 END) as pending,
                 SUM(CASE WHEN status='Approved' THEN 1 ELSE 0 END) as approved,
                 SUM(CASE WHEN status='Rejected' THEN 1 ELSE 0 END) as rejected,

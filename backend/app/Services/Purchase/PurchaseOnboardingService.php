@@ -8,6 +8,7 @@ use App\Models\Purchase\PurchaseVendor;
 use App\Models\User;
 use App\Services\Purchase\PurchaseApprovalService;
 use App\Services\Purchase\PurchaseDocumentService;
+use App\Services\Purchase\PurchaseKickoffService;
 use App\Support\Purchase\PurchaseApprovalStage;
 use App\Support\Purchase\PurchaseOnboardingStatus as Status;
 use App\Support\Purchase\PurchaseVendorStatus as VendorStatus;
@@ -156,6 +157,14 @@ class PurchaseOnboardingService
     private function furthestReachableStep(PurchaseOnboarding $onboarding): int
     {
         foreach ($this->stepStatus($onboarding)['steps'] as $s) {
+            // An ADMIN-ONLY step never holds the vendor up. Adding a contact is
+            // ours to do, and this method exists to stop a vendor skipping their
+            // OWN work -- stopping them at a step they are not allowed to touch
+            // would lock the wizard shut with no action available to open it.
+            if (($s['actor'] ?? null) === 'admin') {
+                continue;
+            }
+
             if (! $s['complete']) {
                 return (int) $s['step'];
             }
@@ -175,7 +184,8 @@ class PurchaseOnboardingService
 
         $onboarding->update([
             'profile'      => $merged,
-            'current_step' => max($onboarding->current_step, 3),
+            // Documents. One higher than it was: Add Contact is now step 1.
+            'current_step' => max($onboarding->current_step, 4),
         ]);
 
         $this->mirrorProfileToVendor($onboarding, $merged);
@@ -216,6 +226,7 @@ class PurchaseOnboardingService
     /** Per-step completion + document checklist (the wizard's live state). */
     public function stepStatus(PurchaseOnboarding $onboarding): array
     {
+        $contactCount = $onboarding->vendor ? $onboarding->vendor->contacts()->count() : 0;
         $checklist = $this->documentService->checklist($onboarding->vendor);
         $s = $checklist['summary'];
 
@@ -234,18 +245,33 @@ class PurchaseOnboardingService
 
         return [
             'current_step'       => $onboarding->current_step,
+            // Sent, not assumed. Every screen that drew "Step 3 of 6" had the 6
+            // typed into it, so adding one step meant finding six files.
+            'total_steps'        => Status::TOTAL_STEPS,
             'documents'          => $checklist,
             'category'           => $cfg['category'],
             'requires_workforce' => $cfg['requires_workforce'],
             'onboarding_steps'   => $cfg['onboarding_steps'],
             'workforce'          => $workforce,
             'steps' => [
-                ['step' => 1, 'key' => 'kickoff',      'label' => 'Kickoff MOM',     'complete' => (bool) $onboarding->acknowledged, 'detail' => $onboarding->acknowledged ? 'Acknowledged' : 'Awaiting acknowledgement'],
-                ['step' => 2, 'key' => 'profile',      'label' => 'Company Profile', 'complete' => $profileDone, 'detail' => $profileDone ? 'Saved' : 'Pending'],
-                ['step' => 3, 'key' => 'documents',    'label' => 'Documents',       'complete' => $allUploaded, 'detail' => "{$s['uploaded']}/{$s['required']} uploaded"],
-                ['step' => 4, 'key' => 'review',       'label' => 'Under Review',    'complete' => $allReviewed && $s['rejected'] === 0, 'detail' => $s['rejected'] > 0 ? "{$s['rejected']} rejected" : ($allReviewed ? 'All reviewed' : "{$s['pending']} pending")],
-                ['step' => 5, 'key' => 'confirmation', 'label' => 'Confirmation',    'complete' => $allApproved, 'detail' => "{$s['approved']}/{$s['required']} approved"],
-                ['step' => 6, 'key' => 'submission',   'label' => 'Admin Approval',  'complete' => $submitted,   'detail' => $onboarding->status_label],
+            // STEP 1 IS A CONTACT, and it comes before the kickoff on purpose.
+            //
+            // The kickoff meeting's Organiser, Chairperson and Coordinator
+            // pickers are fed from the parties' CONTACTS. A vendor with none
+            // gives three empty pickers, so the first thing the meeting asks
+            // for is the one thing nobody has entered yet -- and the meeting
+            // was step 1. The order was simply backwards.
+            //
+            // Complete at one contact. Not "a primary contact": the screen does
+            // not require anybody to mark one, so a rule about primaries would
+            // block a vendor who had done exactly what was asked.
+                ['step' => 1, 'key' => 'contacts',     'label' => 'Add Contact',     'actor' => 'admin', 'complete' => $contactCount > 0, 'detail' => $contactCount > 0 ? ($contactCount === 1 ? '1 added' : "{$contactCount} added") : 'None yet'],
+                ['step' => 2, 'key' => 'kickoff',      'label' => 'Kickoff MOM',     'complete' => (bool) $onboarding->acknowledged, 'detail' => $onboarding->acknowledged ? 'Acknowledged' : 'Awaiting acknowledgement'],
+                ['step' => 3, 'key' => 'profile',      'label' => 'Company Profile', 'complete' => $profileDone, 'detail' => $profileDone ? 'Saved' : 'Pending'],
+                ['step' => 4, 'key' => 'documents',    'label' => 'Documents',       'complete' => $allUploaded, 'detail' => "{$s['uploaded']}/{$s['required']} uploaded"],
+                ['step' => 5, 'key' => 'review',       'label' => 'Under Review',    'complete' => $allReviewed && $s['rejected'] === 0, 'detail' => $s['rejected'] > 0 ? "{$s['rejected']} rejected" : ($allReviewed ? 'All reviewed' : "{$s['pending']} pending")],
+                ['step' => 6, 'key' => 'confirmation', 'label' => 'Confirmation',    'complete' => $allApproved, 'detail' => "{$s['approved']}/{$s['required']} approved"],
+                ['step' => 7, 'key' => 'submission',   'label' => 'Admin Approval',  'complete' => $submitted,   'detail' => $onboarding->status_label],
             ],
         ];
     }
@@ -419,23 +445,50 @@ class PurchaseOnboardingService
     /* ── Step 1 — kickoff (Purchase-owned kickoff engine) ───────────────── */
 
     /** The Purchase kickoff meeting attached to this onboarding's vendor, if any. */
+    /**
+     * The kickoff meeting whose minutes Step 1 asks the vendor to acknowledge.
+     *
+     * Two things went wrong here, and together they produced a step that showed
+     * one meeting's minutes and offered another meeting's document:
+     *
+     *  - A pin to a CANCELLED meeting was honoured. Reschedule a kickoff twice
+     *     — cancel, redraft, hold — and the onboarding stayed pinned to the
+     *     cancelled first attempt, which has no approved minutes and no
+     *     document. Step 1 then asked the vendor to acknowledge the minutes of a
+     *     meeting that never happened, and every download 404'd.
+     *  - The fallback took the most recently CREATED kickoff whatever its state,
+     *     so a fresh draft outranked the meeting that was actually held.
+     *
+     * The order now follows what the step is for. A meeting whose minutes have
+     * been approved and issued is the only one there is anything to acknowledge
+     * about, so it wins; then a live pin; then the most recent meeting that was
+     * not cancelled. A cancelled meeting is never the answer.
+     */
     public function resolveKickoffMeeting(PurchaseOnboarding $onboarding): ?\App\Models\Purchase\PurchaseKickoffMeeting
     {
-        if ($onboarding->kickoff_meeting_id) {
-            $m = \App\Models\Purchase\PurchaseKickoffMeeting::forTenant($onboarding->tenant_id)->find($onboarding->kickoff_meeting_id);
-            if ($m) {
-                return $m;
-            }
+        $candidates = \App\Models\Purchase\PurchaseKickoffMeeting::forTenant($onboarding->tenant_id)
+            ->where('purchase_vendor_id', $onboarding->purchase_vendor_id)
+            // Only a Kickoff-typed meeting satisfies onboarding Step 1 — now that
+            // a vendor can have other meeting types (§9/§39), a Vendor Review or
+            // HSE meeting must not be mistaken for the kickoff.
+            ->where('meeting_type', \App\Support\Purchase\PurchaseMeetingTypeCatalog::DEFAULT)
+            ->where('status', '!=', \App\Support\Purchase\PurchaseKickoffStatus::CANCELLED)
+            ->latest()
+            ->get();
+
+        // Minutes the vendor can actually be asked about.
+        $issued = $candidates->first(
+            fn ($m) => \App\Support\Purchase\PurchaseMomApprovalStatus::isDistributable($m->mom_status)
+        );
+        if ($issued) {
+            return $issued;
         }
 
-        // Only a Kickoff-typed meeting satisfies onboarding Step 1 — now that a
-        // vendor can have other meeting types (§9/§39), a Vendor Review or HSE
-        // meeting must not be mistaken for the kickoff.
-        return \App\Models\Purchase\PurchaseKickoffMeeting::forTenant($onboarding->tenant_id)
-            ->where('purchase_vendor_id', $onboarding->purchase_vendor_id)
-            ->where('meeting_type', \App\Support\Purchase\PurchaseMeetingTypeCatalog::DEFAULT)
-            ->latest()
-            ->first();
+        $pinned = $onboarding->kickoff_meeting_id
+            ? $candidates->firstWhere('id', (int) $onboarding->kickoff_meeting_id)
+            : null;
+
+        return $pinned ?? $candidates->first();
     }
 
     /** Record the vendor's acknowledgement of the kickoff MOM (idempotent). */
@@ -447,6 +500,27 @@ class PurchaseOnboardingService
         $meeting = $this->resolveKickoffMeeting($onboarding);
         if (! $meeting) {
             throw new BusinessException('Kickoff meeting is not completed or MOM has not been sent yet.');
+        }
+
+        /*
+         * You cannot accept minutes you were never shown.
+         *
+         * The step asks the vendor to tick "I have read and understood the
+         * Minutes of Meeting", and nothing checked that there were any: an
+         * onboarding could be acknowledged, and Step 1 passed, against a meeting
+         * whose minutes were still a draft and whose document would not open.
+         * The record then said the vendor had read something that had never
+         * been issued to them — worthless as evidence, and unfair to the vendor.
+         *
+         * Both halves are required: minutes approved and issued, and a document
+         * on disk that the View button can actually return.
+         */
+        if (! \App\Support\Purchase\PurchaseMomApprovalStatus::isDistributable($meeting->mom_status)
+            || ! app(PurchaseKickoffService::class)->currentMomFile($meeting)) {
+            throw new BusinessException(
+                'The minutes of this meeting have not been issued yet, so there is nothing to acknowledge. '
+                .'They will appear here once the procurement team has approved and circulated them.'
+            );
         }
 
         // A PurchaseVendor has no `name` column — it signs as its company.
@@ -467,7 +541,8 @@ class PurchaseOnboardingService
                 'acknowledged_at' => now(),
                 'acknowledged_ip' => $meta['ip'] ?? null,
                 'status'          => $onboarding->status === Status::DRAFT ? Status::IN_PROGRESS : $onboarding->status,
-                'current_step'    => max($onboarding->current_step, 2),
+                // Company Profile, one higher since Add Contact took step 1.
+                'current_step'    => max($onboarding->current_step, 3),
             ]);
             $onboarding->recordAudit('Kickoff MOM Accepted', $this->actorUser($actor), null,
                 $meta, $this->actorLabel($actor));

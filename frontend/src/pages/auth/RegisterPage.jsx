@@ -39,9 +39,12 @@ const ACCOUNT_TYPES = [
     items: [
       {
         type: 'vendor',
-        title: 'Vendor',
-        desc: 'Register as a vendor / supplier',
-        badge: 'Vendor Access',
+        // "Purchase Vendor", because that is the module this registration lands
+        // in and the identity they sign in as. Plain "Vendor" read as the TPV
+        // kind, which registers through a different form entirely.
+        title: 'Purchase Vendor',
+        desc: 'Register as a supplier for procurement',
+        badge: 'Purchase Vendor Access',
         badgeStyle: 'bg-orange-100 text-orange-700',
         gradient: 'from-orange-50 to-amber-50',
         border: 'border-orange-100',
@@ -51,8 +54,8 @@ const ACCOUNT_TYPES = [
       },
       {
         type: 'temp_vendor',
-        title: 'Temporary Vendor',
-        desc: 'Short-term vendor / limited access',
+        title: 'Temporary Purchase Vendor',
+        desc: 'Short-term supplier / limited access',
         badge: 'Temporary Access',
         badgeStyle: 'bg-yellow-100 text-yellow-700',
         gradient: 'from-yellow-50 to-amber-50',

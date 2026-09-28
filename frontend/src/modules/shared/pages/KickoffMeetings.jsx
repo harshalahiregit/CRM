@@ -8,7 +8,7 @@ import {
 // Resolves per call to the meeting engine of the module in the URL — the
 // shared engine under /app/tpv, Purchase's under /app/purchase. Aliased to
 // the old name so the call sites below read unchanged.
-import { meetingEngineApi as kickoffApi, meetingBase } from '@/services/meetingEngineApi'
+import { meetingEngineApi as kickoffApi, meetingPaths } from '@/services/meetingEngineApi'
 import { useAuth } from '@/context/AuthContext'
 import {
   KO_STATUS, koStatusCfg, koModeLabel, fmtDate, fmtDateTime, isKoClosed,
@@ -84,6 +84,7 @@ export default function KickoffMeetings() {
       // slot had already passed while it was still open.
       case 'upcoming':     return m.timing_state === 'upcoming' || m.timing_state === 'live'
       case 'expired':      return m.timing_state === 'expired'
+      case 'held':         return m.timing_state === 'ended'
       // Completed meetings whose minutes are not yet distributed — the MOM is owed.
       case 'pending_mom':  return m.status === KO_STATUS.COMPLETED && m.mom_status !== 'Distributed'
       case 'open_actions': return (m.open_actions ?? 0) > 0
@@ -203,7 +204,7 @@ export default function KickoffMeetings() {
         </div>
         <div style={{ display: 'flex', gap: 9 }}>
           <button onClick={load} style={ghostBtn}><RefreshCw size={14} /> Refresh</button>
-          <button onClick={() => navigate(`${meetingBase()}/kickoff/new`)} style={solidBtn}><Plus size={15} /> Schedule meeting</button>
+          <button onClick={() => navigate(meetingPaths().create)} style={solidBtn}><Plus size={15} /> Schedule meeting</button>
         </div>
       </div>
 
@@ -269,6 +270,10 @@ export default function KickoffMeetings() {
           // used to hide inside "Upcoming" forever, which is why nothing ever
           // got chased.
           ['expired', 'Expired', AlertTriangle, data.filter(m => m.timing_state === 'expired').length],
+          // Meetings that were actually held, with the record of the call to
+          // show for it. Separated from Expired, which now means only "the slot
+          // went by and nothing happened".
+          ['held', 'Held', CheckCircle2, data.filter(m => m.timing_state === 'ended').length],
           ['pending_mom', 'Pending MOM', ClipboardCheck, data.filter(m => m.status === KO_STATUS.COMPLETED && m.mom_status !== 'Distributed').length],
           ['open_actions', 'Open Actions', ListChecks, data.filter(m => (m.open_actions ?? 0) > 0).length],
           ['templates', 'Templates', LayoutGrid, null],
@@ -396,10 +401,10 @@ export default function KickoffMeetings() {
           {[1, 2, 3].map(i => <div key={i} className="skeleton" style={{ height: 64, borderRadius: 12, background: 'var(--border)' }} />)}
         </div>
       ) : view === 'calendar' ? (
-        <MeetingCalendar data={rows} onOpen={(mid) => navigate(`${meetingBase()}/kickoff/${mid}`)} />
+        <MeetingCalendar data={rows} onOpen={(mid) => navigate(meetingPaths().detail(mid))} />
       ) : rows.length === 0 ? (
         <EmptyState filter={filter} search={search} onClearSearch={() => setSearch('')}
-          onNew={() => navigate(`${meetingBase()}/kickoff/new`)} />
+          onNew={() => navigate(meetingPaths().create)} />
       ) : (
         <div className="pr-glass" style={{ padding: 0, borderRadius: 16, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
@@ -423,7 +428,7 @@ export default function KickoffMeetings() {
                   const busyView = pdfBusy === `${m.id}:view`
                   const busyDl   = pdfBusy === `${m.id}:dl`
                   return (
-                    <tr key={m.id} className="ko-row" onClick={() => navigate(`${meetingBase()}/kickoff/${m.id}`)}
+                    <tr key={m.id} className="ko-row" onClick={() => navigate(meetingPaths().detail(m.id))}
                       style={{ cursor: 'pointer', borderTop: '1px solid var(--border)', background: selected.has(m.id) ? 'rgba(124,58,237,0.06)' : undefined }}>
                       {/* stopPropagation, or ticking a row opens it instead. */}
                       <td style={{ ...td, paddingRight: 0 }} onClick={e => e.stopPropagation()}>
@@ -460,8 +465,17 @@ export default function KickoffMeetings() {
                         {/* Status says what was decided; this says the slot has
                             passed and nobody closed it. Both, because
                             "Scheduled · EXPIRED" is the honest description. */}
-                        {m.is_expired && (
-                          <span title={`Ended ${m.ends_at ? new Date(m.ends_at).toLocaleString() : ''} and never closed`}
+                        {/* Held and finished. Not the same thing as expired,
+                            and this is the more common of the two once the
+                            call itself is recorded. */}
+                        {m.timing_state === 'ended' && (
+                          <span title={`Held ${m.actual_start_at || ''} to ${m.actual_end_at || ''}`}
+                            style={{ marginLeft: 6, padding: '3px 8px', borderRadius: 999, background: 'rgba(100,116,139,0.14)', color: '#475569', fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap' }}>
+                            ENDED{m.held_minutes ? ` · ${m.held_minutes}m` : ''}
+                          </span>
+                        )}
+                        {m.timing_state === 'expired' && (
+                          <span title={`Its slot passed ${m.ends_at ? new Date(m.ends_at).toLocaleString() : ''} and it was never held or closed`}
                             style={{ marginLeft: 6, padding: '3px 8px', borderRadius: 999, background: 'rgba(220,38,38,0.10)', color: '#b91c1c', fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap' }}>
                             EXPIRED
                           </span>
@@ -483,7 +497,7 @@ export default function KickoffMeetings() {
                           {/* Opens the full create/edit form — participants, MOM
                               items, mode and venue. The old inline modal only
                               carried a handful of fields. */}
-                          <ActionBtn title="Edit" icon={Pencil} color="#a78bfa" onClick={() => navigate(`${meetingBase()}/kickoff/${m.id}/edit`)} />
+                          <ActionBtn title="Edit" icon={Pencil} color="#a78bfa" onClick={() => navigate(meetingPaths().edit(m.id))} />
                           <ActionBtn title="Reminder" icon={BellRing} color="#f59e0b" onClick={() => setRemindFor(m)} />
                           <ActionBtn title="View PDF" icon={busyView ? Loader2 : Eye} color="#10b981" spin={busyView} onClick={() => handlePdf(m, false)} />
                           <ActionBtn title="Download PDF" icon={busyDl ? Loader2 : Download} color="#7C3AED" spin={busyDl} onClick={() => handlePdf(m, true)} />
@@ -1198,6 +1212,39 @@ function ConfirmDeleteMeetings({ targets, busy, onCancel, onConfirm }) {
   )
 }
 
+/** A datetime-local value from an ISO string, in the reader's own zone. */
+const toLocalInput = (iso) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+/** Whole minutes between two datetime-local values, or null when it is not a window. */
+const minutesBetween = (from, to) => {
+  if (!from || !to) return null
+  const a = new Date(from).getTime()
+  const b = new Date(to).getTime()
+  if (Number.isNaN(a) || Number.isNaN(b) || b <= a) return null
+  return Math.round((b - a) / 60000)
+}
+
+const timeLbl = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }
+const timeInput = {
+  padding: '5px 8px', fontSize: 11.5, borderRadius: 8, colorScheme: 'dark',
+  background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-body)',
+}
+
+/**
+ * The attendance grid — and the one place the in/out times are typed.
+ *
+ * The review panel (AttendanceReviewPanel) has a window too, but it belongs to
+ * the ORGANISER'S VERDICT and is dropped for any verdict but Partial Absent, so
+ * times entered there disappear the moment somebody is marked fully present.
+ * The admin needs to record when each person came and went whatever their
+ * status, so it lives here, beside the tick it describes, in their own columns.
+ */
 function AttendanceModal({ id, onClose, onDone }) {
   const [rows, setRows] = useState(null)
   const [title, setTitle] = useState('')
@@ -1215,6 +1262,12 @@ function AttendanceModal({ id, onClose, onDone }) {
         // value here — "not marked yet" — so it must survive the round trip.
         attendance_status: a.attendance_status ?? (a.attended ? 'Present' : null),
         remark: a.remark ?? '',
+        // The ADMIN's own in/out times — the official record. joined_at and
+        // seconds_in_call stay untouched underneath as the observed evidence.
+        in_at: toLocalInput(a.in_at),
+        out_at: toLocalInput(a.out_at),
+        marked_by_name: a.marked_by_name || null,
+        marked_at: a.marked_at || null,
       })))
     }).catch(() => setErr('Could not load the attendee list.'))
   }, [id])
@@ -1224,6 +1277,7 @@ function AttendanceModal({ id, onClose, onDone }) {
     setRows(rs => rs.map(r => (r.id === aid ? { ...r, attendance_status: r.attendance_status === val ? null : val } : r)))
 
   const setRemark = (aid, val) => setRows(rs => rs.map(r => (r.id === aid ? { ...r, remark: val } : r)))
+  const setField = (aid, patch) => setRows(rs => rs.map(r => (r.id === aid ? { ...r, ...patch } : r)))
 
   const save = async ({ notify = false } = {}) => {
     setSaving(true); setErr(null)
@@ -1232,6 +1286,8 @@ function AttendanceModal({ id, onClose, onDone }) {
         id: r.id,
         attendance_status: r.attendance_status,
         remark: r.remark || null,
+        in_at: r.in_at || null,
+        out_at: r.out_at || null,
       })))
       // The summary is the existing reminder mail — one endpoint, no new
       // notification path — sent after the save so it reflects what was stored.
@@ -1278,6 +1334,27 @@ function AttendanceModal({ id, onClose, onDone }) {
                     <SegBtn active={a.attendance_status === 'Offline'} color="#64748b" icon={Building2}    onClick={() => setStatus(a.id, 'Offline')}>Offline</SegBtn>
                   </div>
                 </div>
+                {/* The times the admin types. This is the official record of
+                    when the person was in the meeting: the CRM cannot see a
+                    call held on Google's or Zoom's servers, and joined_at only
+                    ever existed for the few who pressed Join here. Both ends or
+                    neither — half a window is not a duration. */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                  <label style={timeLbl}>In</label>
+                  <input type="datetime-local" value={a.in_at || ''}
+                    onChange={e => setField(a.id, { in_at: e.target.value })} style={timeInput} />
+                  <label style={timeLbl}>Out</label>
+                  <input type="datetime-local" value={a.out_at || ''}
+                    onChange={e => setField(a.id, { out_at: e.target.value })} style={timeInput} />
+                  <span style={{ fontSize: 11.5, fontWeight: 800, color: minutesBetween(a.in_at, a.out_at) === null ? 'var(--text-muted)' : '#10b981' }}>
+                    {minutesBetween(a.in_at, a.out_at) === null ? '— min' : `${minutesBetween(a.in_at, a.out_at)} min`}
+                  </span>
+                </div>
+                {a.marked_by_name && (
+                  <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-muted)' }}>
+                    Marked by {a.marked_by_name}{a.marked_at ? ` on ${new Date(a.marked_at).toLocaleDateString()}` : ''}
+                  </div>
+                )}
                 <input
                   value={a.remark}
                   onChange={e => setRemark(a.id, e.target.value)}
@@ -1399,15 +1476,7 @@ const ModalError = ({ children }) => (
 )
 
 // ISO timestamp → the value a <input type="datetime-local"> expects, in local time.
-function toLocalInput(iso) {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  const p = n => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
-}
-
-const th = { textAlign: 'left', padding: '11px 14px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)', whiteSpace: 'nowrap', background: 'var(--bg-card)' }
+const th ={ textAlign: 'left', padding: '11px 14px', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)', whiteSpace: 'nowrap', background: 'var(--bg-card)' }
 const td = { padding: '11px 14px', color: 'var(--text-h)', whiteSpace: 'nowrap', verticalAlign: 'middle' }
 
 const solidBtn = {

@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\Portal\VendorPortalController;
 use App\Http\Controllers\Api\Portal\VendorPortalMedicalController;
 use App\Http\Controllers\Api\Portal\VendorWorkController;
 use App\Http\Controllers\Api\Purchase\PurchaseVendorAuthController;
+use App\Http\Controllers\Api\Shared\ProviderCallbackController;
 use Illuminate\Support\Facades\Route;
 
 // ── Vendor "My Work" ────────────────────────────────────────────────────
@@ -22,6 +23,12 @@ Route::middleware(['auth:sanctum', 'role:vendor,third_party_vendor'])->prefix('p
     Route::get('/task-statuses', [VendorWorkController::class, 'taskStatuses']);
     // Vendor writes: advance an own task's status; log/list expenses on own projects.
     Route::patch('/tasks/{task}/status', [VendorWorkController::class, 'updateTaskStatus'])->where('task', '[0-9]+');
+    // One task in full — brief, checklist, conversation, files — plus the reply
+    // that makes it a conversation. Ownership is re-checked per route, never
+    // inherited from the list the vendor came from.
+    Route::get('/tasks/{task}', [VendorWorkController::class, 'task'])->where('task', '[0-9]+');
+    Route::post('/tasks/{task}/comments', [VendorWorkController::class, 'commentTask'])->where('task', '[0-9]+');
+    Route::get('/tasks/{task}/files/{file}', [VendorWorkController::class, 'downloadTaskFile'])->where(['task' => '[0-9]+', 'file' => '[0-9]+']);
     Route::get('/expenses', [VendorWorkController::class, 'expenses']);
     Route::post('/expenses', [VendorWorkController::class, 'storeExpense']);
     Route::get('/tickets',  [VendorWorkController::class, 'tickets']);
@@ -48,7 +55,7 @@ Route::middleware(['auth:sanctum', 'role:vendor,third_party_vendor'])->prefix('p
 //
 // NOTE: both middleware in ONE ->middleware([...]) call — chaining a second
 // ->middleware() replaces the first and silently drops auth:sanctum.
-Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('portal')->group(function () {
+Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access', 'vendor.onboarded'])->prefix('portal')->group(function () {
     Route::get('/me',                    [VendorPortalController::class, 'me']);
     // In-app (bell) notifications — the vendor reads/clears its own.
     Route::get('/notifications',             [VendorPortalController::class, 'notifications']);
@@ -61,9 +68,20 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     // Compliance documents — the portal's write actions. Ownership on resubmit/
     // download is enforced by the controller's assertOwned() (404 if not yours).
     Route::get('/documents',                        [VendorPortalController::class, 'documents']);
+
+    // "I do not hold this document — have someone call me." Hands a lead to a
+    // compliance agency and steps out; see ProviderCallbackService. Only
+    // agencies with a configured lead address are listed, so the whole feature
+    // stays dark until Settings → Service Providers is filled in.
+    Route::get('/service-providers',                        [ProviderCallbackController::class, 'index']);
+    Route::post('/service-providers/{provider}/callback',   [ProviderCallbackController::class, 'store'])
+        ->middleware('throttle:10,1');
     Route::post('/documents',                       [VendorPortalController::class, 'uploadDocument']);
     Route::post('/documents/{document}/resubmit',   [VendorPortalController::class, 'resubmitDocument']);
     Route::get('/documents/{document}/download',    [VendorPortalController::class, 'downloadDocument']);
+    Route::delete('/documents/{document}',          [VendorPortalController::class, 'deleteDocument']);
+    Route::get('/documents/{document}/versions',    [VendorPortalController::class, 'documentVersions']);
+    Route::get('/documents/{document}/versions/{version}/download', [VendorPortalController::class, 'downloadDocumentVersion']);
 
     Route::get('/orders',                [VendorPortalController::class, 'orders']);
     Route::get('/orders/{purchaseOrder}', [VendorPortalController::class, 'order']);
@@ -81,6 +99,8 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     Route::get('/onboarding/{onboarding}/progress',       [VendorPortalController::class, 'onboardingProgress']);
     Route::get('/onboarding/{onboarding}/kickoff',        [VendorPortalController::class, 'kickoffPdf']);
     Route::get('/onboarding/{onboarding}/work-start-letter', [VendorPortalController::class, 'workStartLetter']);
+    // The minutes as data, from the same resolver as the PDF above.
+    Route::get('/onboarding/{onboarding}/kickoff-data', [VendorPortalController::class, 'kickoffData']);
     Route::post('/onboarding/{onboarding}/kickoff/accept',[VendorPortalController::class, 'acceptKickoff']);
     Route::post('/onboarding/{onboarding}/kickoff/log',   [VendorPortalController::class, 'logKickoffEvent']);
     Route::post('/onboarding/{onboarding}/profile',       [VendorPortalController::class, 'saveProfile']);
@@ -132,6 +152,15 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     Route::get('/ppe/workers/{worker}',                   [VendorPortalController::class, 'workerPpe']);
     Route::post('/ppe/workers/{worker}/issue',            [VendorPortalController::class, 'issueWorkerPpe']);
     Route::post('/ppe/issues/{issue}/return',             [VendorPortalController::class, 'returnWorkerPpe']);
+    // The vendor's OWN PPE list — its stock, never the company's Inventory. The
+    // owner is the vendor behind the token; another vendor's item id is a 404.
+    // Issuing one uses the issue route above with `vendor_ppe_item_id`.
+    // Update is POST so a replacement photo can travel as multipart.
+    Route::get('/ppe/my-items',                           [\App\Http\Controllers\Api\Portal\VendorPortalPpeItemController::class, 'index']);
+    Route::post('/ppe/my-items',                          [\App\Http\Controllers\Api\Portal\VendorPortalPpeItemController::class, 'store']);
+    Route::post('/ppe/my-items/{item}',                   [\App\Http\Controllers\Api\Portal\VendorPortalPpeItemController::class, 'update'])->whereNumber('item');
+    Route::patch('/ppe/my-items/{item}/status',           [\App\Http\Controllers\Api\Portal\VendorPortalPpeItemController::class, 'setStatus'])->whereNumber('item');
+    Route::get('/ppe/my-items/{item}/image',              [\App\Http\Controllers\Api\Portal\VendorPortalPpeItemController::class, 'image'])->whereNumber('item');
     // The vendor's own work packages — read-only, for the worker-wizard deploy field.
     Route::get('/work-packages',                          [VendorPortalController::class, 'workPackages']);
     Route::get('/workers/stats',                          [VendorPortalController::class, 'workerStats']);
@@ -147,6 +176,9 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     Route::post('/workers/{worker}/medical',              [VendorPortalController::class, 'saveMedical']);
     // Medical module (External Medical Flow) — the vendor uploads third-party
     // certificates, sees the quality team's verdict and answers it.
+    // Who a vendor may name as the examining doctor. Narrow on purpose: a
+    // supplier gets names and licences, never the staff directory.
+    Route::get('/medical/doctor-options',                 [\App\Http\Controllers\Api\Medical\DoctorOptionsController::class, 'tpv']);
     Route::get('/medical',                                [VendorPortalMedicalController::class, 'index']);
     Route::get('/medical/template',                       [VendorPortalMedicalController::class, 'template']);
     Route::get('/medical/batches',                        [VendorPortalMedicalController::class, 'batches']);
@@ -158,6 +190,13 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     Route::get('/medical/{medical}/document',             [VendorPortalMedicalController::class, 'document'])->whereNumber('medical');
     Route::post('/workers/{worker}/medical/external',     [VendorPortalMedicalController::class, 'store'])->whereNumber('worker');
     Route::post('/workers/{worker}/induction',            [VendorPortalController::class, 'saveInduction']);
+    // Group session over the vendor's OWN workers — one trainer signature.
+    Route::post('/workers/bulk-induction',                [VendorPortalController::class, 'saveGroupInduction']);
+    // The typed training catalogue (§15). The portal could record an induction
+    // and nothing else, so a vendor could neither file a Work-at-Height
+    // certificate for their own worker nor see one filed for them.
+    Route::get('/trainings',                              [VendorPortalController::class, 'trainings']);
+    Route::post('/workers/{worker}/training',             [VendorPortalController::class, 'saveTraining']);
     // Punch + entry card. These were the portal's last two calls into the ADMIN
     // /tpv/* group, which is why third_party_vendor had been added to that
     // group's role gate — exposing every vendor's onboarding along with it.
@@ -184,7 +223,15 @@ Route::middleware(['auth:sanctum', 'vendor.portal', 'temp.access'])->prefix('por
     Route::post('/approvals/request',                     [$gov, 'requestApproval']);
     Route::post('/extensions/request',                    [$gov, 'requestExtension']);
     Route::get('/meetings',                               [$gov, 'meetings']);
+    // Marking attendance is what releases the join link — it is not in the
+    // meetings payload until this has been called. A meeting held on Google
+    // Meet, Zoom or Teams runs where we cannot see it, so this press is the
+    // only evidence of turning up there is. See MeetingAttendanceGate.
+    Route::post('/meetings/{kickoffMeeting}/attendance',  [$gov, 'markAttendance']);
     Route::get('/meetings/{kickoffMeeting}/mom',          [$gov, 'meetingMom']);
+    // The minutes DOCUMENT. Distributing minutes the recipient cannot open is
+    // not distributing them; until this existed the PDF was admin-only.
+    Route::get('/meetings/{kickoffMeeting}/mom/file',     [$gov, 'meetingMomFile']);
     Route::get('/meetings/{kickoffMeeting}/documents/{document}/download', [$gov, 'meetingDocument']);
     Route::get('/actions',                                [$gov, 'actions']);
     Route::post('/actions/{momItem}/respond',             [$gov, 'respondAction']);
@@ -207,10 +254,13 @@ Route::prefix('purchase-vendor')->group(function () {
 // The purchase.vendor.portal middleware requires the token subject to BE a
 // PurchaseVendor, isolating this portal from the shared vendor / TPV portal.
 // URLs are unchanged (/api/portal/purchase/*).
-Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/purchase')->group(function () {
+Route::middleware(['auth:sanctum', 'purchase.vendor.portal', 'vendor.onboarded'])->prefix('portal/purchase')->group(function () {
     Route::post('/logout',                            [PurchaseVendorAuthController::class, 'logout']);
     Route::get('/dashboard',                          [PurchasePortalController::class, 'dashboard']);
-    Route::get('/ppe',                                [\App\Http\Controllers\Api\Tpv\PpeController::class, 'catalogue']);
+    // Purchase's own catalogue endpoint, not TPV's PpeController: the shelf is the
+    // same, but TPV's "Issued" column counts TPV hand-outs, so every Purchase
+    // issue read as zero here.
+    Route::get('/ppe',                                [PurchasePortalWorkforceController::class, 'ppeCatalogue']);
     // NOT PpeController::summary — that one totals every issue in the tenant, so
     // it showed a Purchase vendor how much PPE the TPV vendors were holding. The
     // shelf is shared and stays tenant-wide; the issued figures are the vendor's own.
@@ -233,6 +283,8 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::get('/onboarding/{onboarding}',            [PurchasePortalController::class, 'onboardingShow']);
     Route::get('/onboarding/{onboarding}/progress',   [PurchasePortalController::class, 'onboardingProgress']);
     Route::get('/onboarding/{onboarding}/kickoff',        [PurchasePortalController::class, 'onboardingKickoffPdf']);
+    Route::get('/onboarding/{onboarding}/work-start-letter', [PurchasePortalController::class, 'workStartLetter']);
+    Route::get('/onboarding/{onboarding}/kickoff-data', [PurchasePortalController::class, 'onboardingKickoffData']);
     Route::post('/onboarding/{onboarding}/kickoff/accept',[PurchasePortalController::class, 'onboardingAcceptKickoff']);
     Route::post('/onboarding/{onboarding}/kickoff/log',   [PurchasePortalController::class, 'onboardingLogKickoffEvent']);
     Route::post('/onboarding/{onboarding}/profile',   [PurchasePortalController::class, 'saveProfile']);
@@ -242,11 +294,23 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     // §32 "View compliance" — the vendor's own compliance register (read-only).
     Route::get('/compliance',                         [PurchasePortalController::class, 'compliance']);
     Route::get('/documents',                          [PurchasePortalController::class, 'documents']);
+
+    // Same handoff as the TPV portal, same controller — the vendor is resolved
+    // from whichever token is presented.
+    Route::get('/service-providers',                      [ProviderCallbackController::class, 'index']);
+    Route::post('/service-providers/{provider}/callback', [ProviderCallbackController::class, 'store'])
+        ->middleware('throttle:10,1');
     Route::post('/documents',                         [PurchasePortalController::class, 'uploadDocument']);
     Route::post('/documents/{document}/resubmit',     [PurchasePortalController::class, 'resubmitDocument']);
     Route::get('/documents/{document}/download',      [PurchasePortalController::class, 'downloadDocument']);
+    Route::delete('/documents/{document}',            [PurchasePortalController::class, 'deleteDocument']);
+    Route::get('/documents/{document}/versions',      [PurchasePortalController::class, 'documentVersions']);
+    Route::get('/documents/{document}/versions/{version}/download', [PurchasePortalController::class, 'downloadDocumentVersion']);
 
     Route::get('/kickoff',                            [PurchasePortalController::class, 'kickoff']);
+    // The Kickoff tab's Accept button. Resolves the vendor's own onboarding
+    // from the token, so no id appears in the URL.
+    Route::post('/kickoff/accept',                    [PurchasePortalController::class, 'acceptKickoff']);
     // Acknowledgement removed — the vendor just views the approved minutes.
 
     // ── Contacts (own vendor only) ──────────────────────────────────────
@@ -268,6 +332,8 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::post('/workers/{worker}/documents',        [PurchasePortalWorkforceController::class, 'uploadDocument']);
     Route::post('/workers/{worker}/medical',          [PurchasePortalWorkforceController::class, 'saveMedical']);
     // Medical module (External Medical Flow) — Purchase mirror.
+    // The Purchase mirror of the TPV picker, fixed to the Purchase module.
+    Route::get('/medical/doctor-options',             [\App\Http\Controllers\Api\Medical\DoctorOptionsController::class, 'purchase']);
     Route::get('/medical',                            [PurchasePortalMedicalController::class, 'index']);
     Route::get('/medical/template',                   [PurchasePortalMedicalController::class, 'template']);
     Route::get('/medical/batches',                    [PurchasePortalMedicalController::class, 'batches']);
@@ -279,7 +345,14 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::get('/medical/{medical}/document',         [PurchasePortalMedicalController::class, 'document'])->whereNumber('medical');
     Route::post('/workers/{worker}/medical/external', [PurchasePortalMedicalController::class, 'store'])->whereNumber('worker');
     Route::post('/workers/{worker}/training',         [PurchasePortalWorkforceController::class, 'saveTraining']);
+    // Reading back what the portal writes. Training could be filed and never
+    // seen again; strikes could not be seen at all, and three of them end a
+    // worker's site access.
+    Route::get('/trainings',                          [PurchasePortalWorkforceController::class, 'trainings']);
+    Route::get('/strikes',                            [PurchasePortalWorkforceController::class, 'strikes']);
     Route::post('/workers/{worker}/induction',        [PurchasePortalWorkforceController::class, 'saveInduction']);
+    // Group session over the vendor's OWN workers — one trainer signature.
+    Route::post('/workers/bulk-induction',            [PurchasePortalWorkforceController::class, 'saveGroupInduction']);
 
     // ── Workforce step 4 (PPE) and step 5 (badge, read-only) ──────────────
     // Vendor-owned: every worker/issue id is resolved through the caller's own
@@ -290,6 +363,21 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::get('/workers/{worker}/ppe/compliance',    [PurchasePortalWorkforceController::class, 'workerPpeCompliance']);
     Route::post('/workers/{worker}/ppe/issue',        [PurchasePortalWorkforceController::class, 'issueWorkerPpe']);
     Route::post('/ppe/issues/{issue}/return',         [PurchasePortalWorkforceController::class, 'returnWorkerPpe']);
+    // The vendor's OWN PPE list — parity with the TPV portal's /ppe/my-items.
+    // Its stock, never the company's Inventory; owner is the token's vendor.
+    Route::get('/ppe/my-items',                       [\App\Http\Controllers\Api\Portal\PurchasePortalPpeItemController::class, 'index']);
+    Route::post('/ppe/my-items',                      [\App\Http\Controllers\Api\Portal\PurchasePortalPpeItemController::class, 'store']);
+    Route::post('/ppe/my-items/{item}',               [\App\Http\Controllers\Api\Portal\PurchasePortalPpeItemController::class, 'update'])->whereNumber('item');
+    Route::patch('/ppe/my-items/{item}/status',       [\App\Http\Controllers\Api\Portal\PurchasePortalPpeItemController::class, 'setStatus'])->whereNumber('item');
+    Route::get('/ppe/my-items/{item}/image',          [\App\Http\Controllers\Api\Portal\PurchasePortalPpeItemController::class, 'image'])->whereNumber('item');
+    // ── Site gate — READ ONLY. Recording a crossing is the security desk's act
+    // and stays admin-side; a vendor that could write its own scans could
+    // manufacture attendance. Scoped to the caller's own workers by the token.
+    Route::post('/workers/upload',                    [PurchasePortalWorkforceController::class, 'uploadWorkers']);
+    Route::get('/gate/stats',                         [PurchasePortalWorkforceController::class, 'gateStats']);
+    Route::get('/gate-log',                           [PurchasePortalWorkforceController::class, 'gateLog']);
+    Route::get('/gate/on-site',                       [PurchasePortalWorkforceController::class, 'onSite']);
+    Route::get('/workers/{worker}/attendance',        [PurchasePortalWorkforceController::class, 'workerAttendance']);
     Route::get('/workers/{worker}/badge',             [PurchasePortalWorkforceController::class, 'workerBadge']);
 
     // ── Commercial (own vendor only; read-only) ─────────────────────────
@@ -320,7 +408,18 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     Route::get('/work-tasks',                         [$ppar, 'tasks']);
     Route::get('/task-statuses',                      [$ppar, 'taskStatuses']);
     Route::patch('/tasks/{task}/status',              [$ppar, 'updateTaskStatus'])->where('task', '[0-9]+');
+    // Mirrors the TPV portal's task detail/reply/download, under Purchase's own
+    // prefix and its own ownership check.
+    Route::get('/work-tasks/{task}',                  [$ppar, 'task'])->where('task', '[0-9]+');
+    Route::post('/work-tasks/{task}/comments',        [$ppar, 'commentTask'])->where('task', '[0-9]+');
+    Route::get('/work-tasks/{task}/files/{file}',     [$ppar, 'downloadTaskFile'])->where(['task' => '[0-9]+', 'file' => '[0-9]+']);
     Route::get('/work-tickets',                       [$ppar, 'tickets']);
+    // The vendor raises and replies to its own support tickets - the TPV portal
+    // has had these since day one; Purchase had only the read above, which is
+    // why its Tickets screen was mounted read-only.
+    Route::post('/work-tickets',                      [$ppar, 'raiseTicket']);
+    Route::get('/work-tickets/{ticket}',              [$ppar, 'ticket'])->where('ticket', '[0-9]+');
+    Route::post('/work-tickets/{ticket}/reply',       [$ppar, 'replyTicket'])->where('ticket', '[0-9]+');
     Route::get('/expenses',                           [$ppar, 'expenses']);
     Route::post('/expenses',                          [$ppar, 'storeExpense']);
     Route::get('/feedback',                           [$ppar, 'feedback']);
@@ -342,13 +441,24 @@ Route::middleware(['auth:sanctum', 'purchase.vendor.portal'])->prefix('portal/pu
     // models (separate DB). No PPE requirement matrix (Purchase has none).
     $pgov = \App\Http\Controllers\Api\Portal\PurchasePortalGovernanceController::class;
     Route::get('/ncrs',                               [$pgov, 'ncrs']);
+    // The site's PPE rule, read-only — a badge refused for "mandatory PPE not
+    // issued" is only actionable if the vendor can see what is required.
+    Route::get('/ppe-matrix',                         [$pgov, 'ppeMatrix']);
     Route::post('/ncrs/{ncr}/respond',                [$pgov, 'respondNcr']);
     Route::get('/capas',                              [$pgov, 'capas']);
     Route::post('/capas/{capa}/evidence',             [$pgov, 'submitCapaEvidence']);
     Route::post('/approvals/request',                 [$pgov, 'requestApproval']);
     Route::post('/extensions/request',                [$pgov, 'requestExtension']);
     Route::get('/meetings',                           [$pgov, 'meetings']);
+    // Marking attendance is what releases the join link — it is not in the
+    // meetings payload until this has been called. A meeting held on Google
+    // Meet, Zoom or Teams runs where we cannot see it, so this press is the
+    // only evidence of turning up there is. See MeetingAttendanceGate.
+    Route::post('/meetings/{kickoff}/attendance',      [$pgov, 'markAttendance']);
     Route::get('/meetings/{kickoff}/mom',             [$pgov, 'meetingMom']);
+    // The minutes DOCUMENT. Distributing minutes the recipient cannot open is
+    // not distributing them; until this existed the PDF was admin-only.
+    Route::get('/meetings/{kickoff}/mom/file',         [$pgov, 'meetingMomFile']);
     Route::get('/meetings/{kickoff}/documents/{document}/download', [$pgov, 'meetingDocument']);
     Route::get('/actions',                            [$pgov, 'actions']);
     Route::post('/actions/{action}/respond',          [$pgov, 'respondAction']);
@@ -390,8 +500,33 @@ Route::middleware(['auth:sanctum', 'client.portal'])->prefix('portal/client')->g
     // a score they were told on the phone.
     Route::get('/feedback',      [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'myFeedback']);
     Route::post('/feedback',     [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'submitFeedback']);
+    // STOS-CLP §28 step 7. No client id in the path — the contact's own client
+    // comes off the token, like every route in this group.
+    Route::get('/transport/shipments', [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'transportShipments']);
+    // The first portal route that takes an id. The trip is constrained by the
+    // same where clause that scopes the list, so another customer's trip does
+    // not fail a check — it does not match, and the answer is 404.
+    Route::get('/transport/shipments/{id}', [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'transportShipment'])->whereNumber('id');
+
     Route::get('/notes',         [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'notes']);
     Route::get('/files',         [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'files']);
     Route::get('/contacts',      [\App\Http\Controllers\Api\Customer\ClientPortalController::class, 'contacts']);
 });
 
+
+// ── "Assigned to me", for people who are not staff ──────────────────────
+//
+// One endpoint for all three portals — client contact, purchase vendor, TPV —
+// because the rule is one rule and splitting it per portal is how it drifts.
+//
+// auth:sanctum ALONE, with no role: guard, and that is deliberate: the three
+// callers authenticate as three different things (a ClientContact, a
+// PurchaseVendor, a User with role third_party_vendor) and no role list can name
+// the first two. The gate is identity — PortalAssignedTaskController refuses
+// anyone PartyAssignmentService cannot resolve to a party, which is everybody else
+// including staff.
+Route::middleware('auth:sanctum')->prefix('portal')->group(function () {
+    Route::get('/assigned-tasks', [\App\Http\Controllers\Api\Portal\PortalAssignedTaskController::class, 'index']);
+    Route::get('/assigned-tasks/{task}', [\App\Http\Controllers\Api\Portal\PortalAssignedTaskController::class, 'show'])
+        ->whereNumber('task');
+});

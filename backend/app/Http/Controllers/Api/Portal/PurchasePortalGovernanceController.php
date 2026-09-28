@@ -12,8 +12,12 @@ use App\Models\Purchase\PurchaseWorker;
 use App\Models\Purchase\PurchaseWorkerTraining;
 use App\Services\Purchase\PurchaseApprovalRequestService;
 use App\Support\Purchase\PurchaseApprovalType;
+use App\Support\RichText;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use App\Services\Purchase\PurchaseKickoffService;
+use App\Services\Shared\MeetingAttendanceGate;
+use App\Support\Shared\VendorMomView;
 
 /**
  * §32 Purchase Vendor Portal — the governance-response half, mirroring the TPV
@@ -24,8 +28,47 @@ use Illuminate\Support\Facades\Storage;
  */
 class PurchasePortalGovernanceController extends Controller
 {
-    public function __construct(private PurchaseApprovalRequestService $approvals)
+    public function __construct(
+        private PurchaseApprovalRequestService $approvals,
+        // Required, not nullable-with-a-default: the container silently skips a
+        // parameter that has one, and every call through it would be a no-op.
+        private PurchaseKickoffService $kickoffService,
+    ) {
+    }
+
+    /**
+     * The PPE the vendor's own workers are required to hold.
+     *
+     * Read-only: the matrix is the site's rule, not the vendor's. Showing it
+     * matters because a badge refused for "mandatory PPE not issued" is only
+     * actionable if the vendor can see what the requirement actually is.
+     *
+     * Active rules only — an inactive rule is one the site has stood down, and
+     * listing it would have vendors issuing kit nobody asks for.
+     */
+    public function ppeMatrix(Request $request)
     {
+        $vendor = $this->vendor($request);
+
+        $rules = \App\Models\Purchase\PurchasePpeRequirement::where('tenant_id', $vendor->tenant_id)
+            ->where('is_active', true)
+            ->with('product:id,name,sku')
+            ->orderBy('scope_type')->orderBy('scope_value')
+            ->get()
+            ->map(fn ($r) => [
+                'scope_type' => $r->scope_type,
+                'scope_value' => $r->scope_value,
+                'hazard' => $r->hazard,
+                'activity' => $r->activity,
+                'ppe_class' => $r->ppe_class ?? 'mandatory',
+                'condition' => $r->condition,
+                'product' => $r->product?->name,
+                'qty' => $r->qty,
+                'replacement_frequency_days' => $r->replacement_frequency_days,
+                'verification_required' => (bool) $r->verification_required,
+            ]);
+
+        return response()->json(['rules' => $rules]);
     }
 
     private function vendor(Request $request): PurchaseVendor
@@ -163,17 +206,40 @@ class PurchasePortalGovernanceController extends Controller
             // Ordered by when the meeting IS, not by the order rows happened to
             // be written — the shared engine has always ordered this way and the
             // two portals listed the same vendor's meetings differently.
+            // The roster, as the TPV portal has always sent it. Purchase sent
+            // none at all, so a Purchase vendor opened their own meeting and
+            // could not see who was in it — including their own people. Same
+            // three columns, so the one portal screen renders both engines.
+            ->with('participants:id,purchase_kickoff_meeting_id,name,role')
+            // The agenda, so the meeting page is worth opening — that is the
+            // whole trade being offered in place of a link in the e-mail. Only
+            // the agenda columns: `discussion` and `decision` on the same table
+            // are the MINUTES, which the vendor may not see until they are
+            // approved and distributed.
+            ->with(['agendaItems' => fn ($q) => $q->select(
+                'id', 'purchase_kickoff_meeting_id', 'item', 'description', 'owner_names', 'duration_minutes', 'sort_order',
+            )->orderBy('sort_order')->orderBy('id')])
             ->latest('scheduled_at')->get();
 
         // The minutes are the vendor's to see only once approved+distributed.
-        $meetings->each(function ($m) {
+        $gate = app(MeetingAttendanceGate::class);
+
+        $meetings->each(function ($m) use ($gate, $v) {
             $m->setAttribute('mom_available', \App\Support\Purchase\PurchaseMomApprovalStatus::isDistributable($m->mom_status));
-            // A join link is offered only while the meeting is actually going
-            // to happen. "Not expired" is not the same test: a CANCELLED meeting
-            // is not expired either, and kept handing out a working link.
-            if (! in_array($m->timing_state, ['upcoming', 'live'], true)) {
-                $m->setAttribute('meeting_link', null);
+            // The join link is not in this payload until the vendor has marked
+            // attendance — see MeetingAttendanceGate. Withheld here rather than
+            // hidden in the page, because a link sitting in the JSON is readable
+            // whatever the page chooses to draw.
+            foreach ($gate->stateFor($m, $v) as $field => $value) {
+                $m->setAttribute($field, $value);
             }
+
+            // One agreed shape for both portals, as VendorMomView already does
+            // for the minutes: the shared engine calls this roster `attendees`
+            // and Purchase calls it `participants`, and one screen renders both.
+            // Sending only Purchase's own name would leave the roster invisible
+            // on this engine and nowhere for the reader to find out why.
+            $m->setAttribute('attendees', $m->participants);
         });
 
         return response()->json(['data' => $meetings]);
@@ -191,7 +257,86 @@ class PurchasePortalGovernanceController extends Controller
             'These minutes are not yet available.'
         );
 
-        return response()->json($kickoff->load(['agendaItems', 'actionItems', 'momDecisions', 'momIssues', 'documents']));
+        // Stamped HERE rather than where an administrator opens the document.
+        // "Viewed" on the distribution tracker is a claim about the recipient,
+        // and this is the only place the recipient is the one reading.
+        $this->kickoffService->markMomViewed($kickoff);
+
+        // One agreed shape for both portals. This engine used to hand its own
+        // models straight out, under names — action_items, mom_decisions — that
+        // the shared portal screen was not looking for, so a Purchase vendor
+        // opened their minutes and found only the agenda. See VendorMomView.
+        return response()->json(VendorMomView::for(
+            $kickoff,
+            (bool) $this->kickoffService->currentMomFile($kickoff),
+        ));
+    }
+
+
+    /**
+     * Mark attendance, and get the link in return.
+     *
+     * The meeting itself runs on Google Meet, Zoom or Teams — somewhere this
+     * system cannot see — so nothing here can tell who sat through it. What we
+     * CAN see is this account saying "I am attending", and that is the moment
+     * the link is handed over. Before it, the link is not in any response the
+     * vendor can read.
+     *
+     * It records what it can honestly claim: this account opened this meeting,
+     * at this time, from this device. Whether they actually stayed is the
+     * organiser's to judge, from this same log.
+     */
+    public function markAttendance(Request $request, PurchaseKickoffMeeting $kickoff, MeetingAttendanceGate $gate)
+    {
+        $v = $this->vendor($request);
+        abort_unless((int) $kickoff->tenant_id === (int) $v->tenant_id && (int) $kickoff->purchase_vendor_id === (int) $v->id, 404, 'Meeting not found');
+
+        /*
+         * A meeting scheduled FOR a vendor commonly has no roster row for that
+         * vendor. Without a row there is nowhere for the attendance to land, and
+         * the vendor would be locked out of their own meeting for ever. The
+         * identity is not guessed: it is the vendor record this request already
+         * authenticated as.
+         */
+        return response()->json($gate->mark($kickoff, $v, $request, [
+            'name' => $v->company_name ?: $v->name,
+            'email' => $v->email,
+            'organisation' => $v->company_name ?: $v->name,
+            'side' => 'external',
+            // A Purchase vendor seating itself belongs in the Vendor column —
+            // see the note on the TPV twin of this.
+            'party' => \App\Services\Shared\MeetingPartyDirectory::VENDOR,
+        ]));
+    }
+
+    /**
+     * The minutes document itself.
+     *
+     * The whole approve-then-distribute workflow exists to put this file in the
+     * vendor's hands, and there was no way for them to open it: the only route
+     * that served it sat behind role:admin,staff. The vendor was told their
+     * minutes had been distributed and given no means to read them.
+     */
+    public function meetingMomFile(Request $request, PurchaseKickoffMeeting $kickoff)
+    {
+        $v = $this->vendor($request);
+        abort_unless((int) $kickoff->tenant_id === (int) $v->tenant_id && (int) $kickoff->purchase_vendor_id === (int) $v->id, 404, 'Meeting not found');
+
+        abort_unless(
+            \App\Support\Purchase\PurchaseMomApprovalStatus::isDistributable($kickoff->mom_status),
+            403,
+            'These minutes are not yet available.'
+        );
+
+        $file = $this->kickoffService->currentMomFile($kickoff);
+        abort_unless($file, 404, 'No minutes document has been issued for this meeting.');
+
+        $this->kickoffService->markMomViewed($kickoff);
+
+        return response()->download($file['path'], 'Minutes-'.($kickoff->meeting_no ?: $kickoff->id).'.pdf', [
+            'Content-Type'        => $file['mime'],
+            'Content-Disposition' => 'inline; filename="Minutes-'.($kickoff->meeting_no ?: $kickoff->id).'.pdf"',
+        ]);
     }
 
     /** Download one of a meeting's labelled documents (only after approval). */
@@ -228,7 +373,16 @@ class PurchasePortalGovernanceController extends Controller
             ->whereIn('purchase_kickoff_meeting_id', $meetingIds)
             ->latest('id')->get();
 
-        return response()->json(['data' => $actions]);
+        // An action item's description is written in a rich editor, so it is
+        // HTML. Handing the model straight to the portal sent that HTML to a
+        // screen that renders text, and the vendor read a wall of `<span
+        // style=...>` and a base64 <img> src instead of the instruction. The
+        // `*_html` twin is what the portal renders; the plain one is the text.
+        return response()->json(['data' => $actions->map(fn ($a) => array_merge($a->toArray(), [
+            'description'      => RichText::toText($a->description),
+            'description_html' => RichText::display($a->description),
+            'remark_html'      => RichText::display($a->remark),
+        ]))]);
     }
 
     public function respondAction(Request $request, PurchaseMomActionItem $action)

@@ -21,14 +21,14 @@ class PerformanceReviewService
     {
     }
 
-    public function list(int $tenantId, array $f): array
+    public function list(int $tenantId, array $f, ?User $actor = null): array
     {
-        return $this->repo->reviews($tenantId, $f)->map(fn ($r) => $this->presentRow($r))->all();
+        return $this->repo->reviews($tenantId, $f, $actor)->map(fn ($r) => $this->presentRow($r))->all();
     }
 
-    public function show(int $id, int $tenantId): array
+    public function show(int $id, int $tenantId, ?User $actor = null): array
     {
-        return $this->presentFull($this->find($id, $tenantId));
+        return $this->presentFull($this->find($id, $tenantId, $actor));
     }
 
     public function create(array $data, int $tenantId, ?User $actor = null): array
@@ -73,7 +73,7 @@ class PerformanceReviewService
 
     public function update(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $review = $this->find($id, $tenantId);
+        $review = $this->find($id, $tenantId, $actor);
         if ($review->status === 'Approved') {
             throw new BusinessException('An approved review is finalized and cannot be modified.');
         }
@@ -111,7 +111,7 @@ class PerformanceReviewService
     /** Advance the review lifecycle. Approved is terminal. */
     public function setStatus(int $id, string $status, int $tenantId, ?User $actor = null): array
     {
-        $review = $this->find($id, $tenantId);
+        $review = $this->find($id, $tenantId, $actor);
         if (! in_array($status, HrPerformanceReview::STATUSES, true)) {
             throw new BusinessException('Invalid review status.');
         }
@@ -203,9 +203,9 @@ class PerformanceReviewService
         ];
     }
 
-    private function find(int $id, int $tenantId): HrPerformanceReview
+    private function find(int $id, int $tenantId, ?User $actor = null): HrPerformanceReview
     {
-        $review = $this->repo->findReview($id, $tenantId);
+        $review = $this->repo->findReview($id, $tenantId, $actor);
         if (! $review) {
             throw new BusinessException('Review not found', 404);
         }

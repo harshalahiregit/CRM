@@ -43,11 +43,16 @@ class TenantMailConfigurator
                 'username'     => $s->username,
                 'password'     => $s->password,   // decrypted by the model cast
                 'encryption'   => $s->encryption === 'none' ? null : $s->encryption,
-                'timeout'      => 15,
+                'timeout'      => (int) config('mail.tenant_timeout', 30),
                 // Panel-managed (Plesk/cPanel) self-signed certs: keep encryption,
                 // skip the peer/hostname check when the admin unticked "Verify TLS".
                 'verify_peer'  => (bool) ($s->verify_peer ?? true),
-                'local_domain' => parse_url((string) config('app.url', 'http://localhost'), PHP_URL_HOST),
+                // The sender's own domain, not APP_URL's host. With APP_URL
+                // unset this greeted every receiving server with EHLO localhost
+                // — a name that resolves nowhere, from an address claiming to
+                // be a real company, which is exactly the shape of a message
+                // spam filters are built to catch. See TenantMailer.
+                'local_domain' => TenantMailer::greetingDomain($s->from_email),
             ],
             // The visible From must match the SMTP identity (SPF/DKIM alignment),
             // so Mailables that don't set their own From use the tenant's sender.

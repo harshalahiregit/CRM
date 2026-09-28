@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useTheme } from '@/context/ThemeContext'
 import {
-  Building2, Tag, Layers, UserCog, Network,
+  Building2, Tag, Layers, UserCog, Network, BriefcaseBusiness,
   Plus, Pencil, Trash2, X, Users, AlertTriangle,
 } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
@@ -21,6 +21,10 @@ const GRAD = 'linear-gradient(135deg,#7C3AED,#5b21b6)'
 const MASTERS = {
   departments: {
     label: 'Departments', singular: 'Department', icon: Building2,
+    // `purpose` is what the empty state says. Three of these masters ship empty,
+    // and "No grades yet" told somebody nothing about whether that mattered or
+    // what a grade would do for them if they made one.
+    purpose: 'Departments group employees and appear on every employee form, the manpower request form and the department hierarchy.',
     api: () => hrApi.organization.departments,
     columns: [
       { key: 'name',           head: 'Department' },
@@ -39,6 +43,7 @@ const MASTERS = {
   },
   designations: {
     label: 'Designations', singular: 'Designation', icon: Tag,
+    purpose: 'Designations are job titles. They fill the Job Title picker on the employee and manpower request forms.',
     api: () => hrApi.organization.designations,
     columns: [
       { key: 'name',           head: 'Designation' },
@@ -57,6 +62,7 @@ const MASTERS = {
   },
   grades: {
     label: 'Grades', singular: 'Grade', icon: Layers,
+    purpose: 'Grades are seniority bands a designation sits in. They are optional — nothing is blocked without them, and an employee can be saved with no grade. A grade is what lets a notice period be inherited rather than typed on every record.',
     api: () => hrApi.organization.grades,
     columns: [
       { key: 'name',              head: 'Grade' },
@@ -73,11 +79,33 @@ const MASTERS = {
         hint: 'Compared against each employee’s own skills to score their fit for this position.' },
     ],
   },
+  employmentTypes: {
+    label: 'Employment Types', singular: 'Employment Type', icon: BriefcaseBusiness,
+    purpose: 'Employment types are how somebody is engaged — Full-time, Contract, Intern. They fill the Employment Type picker on the employee form, which reads "No employment types defined yet" until one exists.',
+    api: () => hrApi.organization.employmentTypes,
+    columns: [
+      { key: 'name',           head: 'Employment Type' },
+      { key: 'code',           head: 'Code' },
+      { key: 'employee_count', head: 'Employees', chip: true },
+    ],
+    fields: [
+      { key: 'name', label: 'Name', type: 'text', required: true, placeholder: 'e.g. Permanent' },
+      { key: 'code', label: 'Code', type: 'text', placeholder: 'e.g. PERM' },
+      { key: 'sort_order', label: 'Order', type: 'number',
+        hint: 'Controls the order this appears in the employee form. Lower comes first.' },
+      { key: 'description', label: 'Description', type: 'textarea', full: true },
+    ],
+  },
   roles: {
-    label: 'Roles', singular: 'Role', icon: UserCog,
+    // "Job Roles", not "Roles". Staff Management has Roles too, and those grant
+    // permissions — people arrived here looking for the access control and left
+    // having renamed an org-chart title. The database concept is untouched
+    // (hr_job_roles, /hr/organization/roles); only the words people read change.
+    label: 'Job Roles', singular: 'Job Role', icon: UserCog,
+    purpose: 'Job roles are org-chart positions, such as Team Lead. They are optional and grant no access — permissions are Access Roles, under Staff Management.',
     api: () => hrApi.organization.roles,
     columns: [
-      { key: 'name',           head: 'Role' },
+      { key: 'name',           head: 'Job Role' },
       { key: 'code',           head: 'Code' },
       { key: 'employee_count', head: 'Employees', chip: true },
     ],
@@ -93,7 +121,12 @@ const MASTERS = {
 
 const TABS = [
   ...Object.entries(MASTERS).map(([key, m]) => ({ key, label: m.label, icon: m.icon })),
-  { key: 'hierarchy', label: 'Hierarchy', icon: Network },
+  // "Department Hierarchy", not "Hierarchy". This tree is departments and their
+  // heads; HR → Org Chart is people and who they report to. They are different
+  // models — one employee can sit in a department whose head is not their
+  // reporting manager — and sharing the word made them look like one screen
+  // duplicated.
+  { key: 'hierarchy', label: 'Department Hierarchy', icon: Network },
 ]
 
 export default function OrganizationSetup() {
@@ -252,7 +285,16 @@ function MasterTab({ tabKey, options, onChanged, showToast }) {
       />
 
       {loading ? <HrLoading label={`Loading ${cfg.label.toLowerCase()}…`} />
-        : shown.length === 0 ? <HrEmpty icon={cfg.icon} title={rows.length ? `No matching ${cfg.label.toLowerCase()}` : `No ${cfg.label.toLowerCase()} yet`} hint={rows.length ? 'Nothing matches these filters.' : `Create your first ${cfg.singular.toLowerCase()} to start structuring the organization.`} />
+        : shown.length === 0 ? <HrEmpty icon={cfg.icon}
+            title={rows.length ? `No matching ${cfg.label.toLowerCase()}` : `No ${cfg.label.toLowerCase()} yet`}
+            hint={rows.length
+              ? 'Nothing matches these filters.'
+              // Says what the master is FOR, and whether anything is blocked
+              // without it. Three of these ship empty, and a bare "create your
+              // first one" left people unable to tell a missing prerequisite
+              // from an optional extra. The Add button is in the bar above,
+              // present whether or not the list has anything in it.
+              : `${cfg.purpose || ''} Use “Add ${cfg.singular}” above to create one.`} />
         : (
           <div className="card-3d overflow-x-auto" style={{ padding: '6px' }}>
             <table className="w-full text-sm" style={{ minWidth: 640 }}>

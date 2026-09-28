@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, Check, FileText, LayoutTemplate, Printer, Download, Send, UserPlus } from 'lucide-react'
+import api from '@/lib/api'
 import { proposalApi } from '@/services/proposalApi'
 import { proposalTemplateApi } from '@/services/proposalTemplateApi'
 import { customerApi } from '@/services/customerApi'
@@ -44,9 +45,19 @@ export default function ProposalWizard() {
   const [contacts, setContacts] = useState([])
   const [addingContact, setAddingContact] = useState(false)
   const [step, setStep] = useState(editing ? 1 : 0)
+  const [assignees, setAssignees] = useState([])
   // Launched from a customer profile? Lock that customer (Phase 1).
   const lockedClientId = params.get('client_id') || ''
-  const [form, setForm] = useState(() => ({ ...EMPTY, rel_id: lockedClientId }))
+  // …or from a lead profile — SIR-000034. Same idea, other arm of rel_type.
+  const lockedLeadId = params.get('lead_id') || ''
+  const locked = !!lockedClientId || !!lockedLeadId
+  // rel_type is seeded here rather than left to the effect below, so a wizard
+  // opened from a lead never renders a frame reading "Customer" first.
+  const [form, setForm] = useState(() => ({
+    ...EMPTY,
+    rel_type: lockedLeadId ? 'lead' : EMPTY.rel_type,
+    rel_id: lockedLeadId || lockedClientId,
+  }))
   const [savedId, setSavedId] = useState(id ? Number(id) : null)
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(editing)
@@ -54,6 +65,15 @@ export default function ProposalWizard() {
   const [savedProposal, setSavedProposal] = useState(null)
 
   const sf = (k, v) => setForm(p => ({ ...p, [k]: v }))
+
+  // Real users, so assigned_to is an id the backend accepts.
+  useEffect(() => {
+    let cancelled = false
+    api.get('/assignees')
+      .then(r => { if (!cancelled) setAssignees(r?.data?.data || []) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => { proposalTemplateApi.list().then(setTemplates).catch(() => {}) }, [])
   useEffect(() => {
@@ -105,6 +125,20 @@ export default function ProposalWizard() {
       // ignore fetch error
     }
   }
+
+  /**
+   * Started from a lead's profile — pull that lead's details in.
+   *
+   * Reuses handleRecipientChange rather than repeating the prefill, so the
+   * address block is filled by exactly the code that fills it when somebody
+   * picks the lead by hand. Skipped while editing: an existing proposal's own
+   * recipient is authoritative and must not be overwritten by a stale URL.
+   */
+  useEffect(() => {
+    if (editing || !lockedLeadId) return
+    handleRecipientChange('lead', lockedLeadId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, lockedLeadId])
 
   // Load for edit
   useEffect(() => {
@@ -306,11 +340,24 @@ export default function ProposalWizard() {
       {step === 1 && (
         <div className="card-3d max-w-3xl space-y-4" style={{ padding: '24px' }}>
           <div><label className="label">Subject *</label><input className="input-3d text-sm" value={form.subject} onChange={e => sf('subject', e.target.value)} placeholder="Website redesign proposal" /></div>
+
+          {/* The step is called Assignment and had no way to assign anybody.
+              The control existed only in a drawer in Proposals.jsx whose
+              setShowDrawer(true) is never called — dead code — so every proposal
+              was created unowned and the Assigned column always read "—". */}
+          <div>
+            <label className="label">Assigned Staff</label>
+            <select className="input-3d text-sm" value={form.assigned_to}
+              onChange={e => sf('assigned_to', e.target.value ? Number(e.target.value) : '')}>
+              <option value="">Unassigned</option>
+              {assignees.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          </div>
           
           <div className="grid md:grid-cols-3 gap-4">
             <div>
               <label className="label">Related To</label>
-              <select className="input-3d text-sm" value={form.rel_type} disabled={!!lockedClientId}
+              <select className="input-3d text-sm" value={form.rel_type} disabled={locked}
                 onChange={e => handleRecipientChange(e.target.value, '')}>
                 <option value="customer">Customer</option>
                 <option value="lead">Lead</option>
@@ -318,16 +365,20 @@ export default function ProposalWizard() {
             </div>
             <div>
               <label className="label">{form.rel_type === 'lead' ? 'Lead *' : 'Customer *'}</label>
-              <select className="input-3d text-sm" value={form.rel_id} disabled={!!lockedClientId}
+              <select className="input-3d text-sm" value={form.rel_id} disabled={locked}
                 onChange={e => handleRecipientChange(form.rel_type, e.target.value)}
-                style={lockedClientId ? { opacity: 0.7, cursor: 'not-allowed' } : undefined}>
+                style={locked ? { opacity: 0.7, cursor: 'not-allowed' } : undefined}>
                 <option value="">Select {form.rel_type === 'lead' ? 'lead' : 'customer'}…</option>
                 {form.rel_type === 'customer'
                   ? clients.map(c => <option key={c.id} value={c.id}>{c.company || c.name}</option>)
                   : leads.map(l => <option key={l.id} value={l.id}>{l.name || l.company} {l.company ? `(${l.company})` : ''}</option>)
                 }
               </select>
-              {lockedClientId && <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>🔒 Locked — started from this customer's profile.</p>}
+              {locked && (
+                <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                  🔒 Locked — started from this {lockedLeadId ? 'lead' : 'customer'}&apos;s profile.
+                </p>
+              )}
             </div>
             {form.rel_type === 'customer' ? (
               <div>

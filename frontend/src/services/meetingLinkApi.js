@@ -6,7 +6,7 @@ import { handleErr } from '@/services/apiError'
 const unwrap = (r) => r.data?.data ?? r.data
 
 export const meetingLinkApi = {
-  // platform: 'google_meet' | 'zoom' | 'jitsi'
+  // platform: 'google_meet' | 'zoom' | 'teams'
   create: (platform, title) => api.post('/meeting-links', { platform, title }).then(unwrap).catch(handleErr),
 }
 

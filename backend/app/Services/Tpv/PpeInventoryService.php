@@ -12,6 +12,7 @@ use App\Models\Tpv\TpvWorkerPpeIssue;
 use App\Models\User;
 use App\Services\Inventory\ConfigService;
 use App\Services\Inventory\StockService;
+use App\Support\Shared\PpeReplacement;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -48,8 +49,11 @@ class PpeInventoryService
         'lost'     => null,       // never coming back → already out of stock
     ];
 
-    public function __construct(private StockService $stock, private ConfigService $config)
-    {
+    public function __construct(
+        private StockService $stock,
+        private ConfigService $config,
+        private TpvVendorPpeItemService $vendorItems,
+    ) {
     }
 
     /**
@@ -121,9 +125,15 @@ class PpeInventoryService
     /**
      * The PPE catalogue with LIVE inventory figures — what the vendor sees.
      *
+     * `$issueModel` decides whose hand-outs the "Issued" column counts. The
+     * shelf is one tenant-wide fact, but TPV and Purchase keep their issues in
+     * separate tables — Purchase used to borrow this catalogue as-is and so
+     * showed TPV's issued figures (zero for every Purchase hand-out).
+     *
+     * @param  class-string<\Illuminate\Database\Eloquent\Model>  $issueModel
      * @return Collection<int, array<string, mixed>>
      */
-    public function catalogue(int $tenantId): Collection
+    public function catalogue(int $tenantId, string $issueModel = TpvWorkerPpeIssue::class): Collection
     {
         $ids = $this->ppeProductIds($tenantId);
         if ($ids === []) {
@@ -133,7 +143,7 @@ class PpeInventoryService
         $products = Product::forTenant($tenantId)->whereIn('category_id', $ids)->orderBy('name')->get();
 
         // Issued-and-still-held, per product, in one query rather than per row.
-        $issued = TpvWorkerPpeIssue::query()
+        $issued = $issueModel::query()
             ->where('tenant_id', $tenantId)
             ->where('status', 'issued')
             ->whereIn('inventory_item_id', $products->pluck('id'))
@@ -236,13 +246,18 @@ class PpeInventoryService
         return TpvWorkerPpeIssue::query()
             ->where('tenant_id', $tenantId)
             ->where('tpv_worker_id', $workerId)
-            ->with('product:id,name,sku')
+            ->with(['product:id,name,sku', 'vendorItem:id,name,category,size'])
             ->latest('issued_date')
             ->get()
             ->map(fn (TpvWorkerPpeIssue $i) => [
                 'id'          => $i->id,
-                'item'        => $i->product?->name ?: $i->item,
+                'item'        => $i->product?->name ?: ($i->vendorItem?->name ?: $i->item),
                 'sku'         => $i->product?->sku,
+                // Where the kit came from: the central store, or the vendor's
+                // own PPE list. Both are the worker's PPE; only the stock differs.
+                'source'      => $i->vendor_ppe_item_id ? 'vendor' : 'inventory',
+                'inventory_item_id'  => $i->inventory_item_id,
+                'vendor_ppe_item_id' => $i->vendor_ppe_item_id,
                 'qty'         => (float) $i->qty,
                 'returned_qty' => (float) $i->returned_qty,
                 'size'        => $i->size,
@@ -270,6 +285,14 @@ class PpeInventoryService
 
         if ($qty <= 0) {
             throw new BusinessException('Quantity must be greater than zero.', 422);
+        }
+
+        if (! empty($data['vendor_ppe_item_id'])) {
+            if (! empty($data['inventory_item_id'])) {
+                throw new BusinessException('Issue either an Inventory item or one of your own PPE items, not both.', 422);
+            }
+
+            return $this->issueVendorItem($worker, $data, $qty, $actor);
         }
 
         $product = Product::forTenant($tenantId)->find($data['inventory_item_id'] ?? null)
@@ -331,6 +354,43 @@ class PpeInventoryService
     }
 
     /**
+     * Issue from the vendor's OWN PPE list — the vendor's stock, not the company's.
+     *
+     * No Inventory movement is written: this stock never entered the ledger. The
+     * item must belong to the worker's own vendor, so neither a vendor nor an
+     * admin can hand one vendor's kit to another vendor's worker.
+     */
+    private function issueVendorItem(TpvWorker $worker, array $data, float $qty, ?User $actor): TpvWorkerPpeIssue
+    {
+        $tenantId = (int) $worker->tenant_id;
+
+        return DB::transaction(function () use ($worker, $data, $qty, $actor, $tenantId) {
+            $item = $this->vendorItems->draw((int) $worker->vendor_id, $tenantId, (int) $data['vendor_ppe_item_id'], $qty);
+
+            $issue = TpvWorkerPpeIssue::create([
+                'tenant_id'          => $tenantId,
+                'tpv_worker_id'      => $worker->id,
+                'inventory_item_id'  => null,
+                'vendor_ppe_item_id' => $item->id,
+                'item'               => $item->name,   // snapshot: survives a rename
+                'project'            => $data['project'] ?? $worker->project,
+                'site'               => $data['site'] ?? $worker->site,
+                'qty'                => $qty,
+                'size'               => $data['size'] ?? $item->size,
+                'issued_date'        => $data['issued_date'] ?? now()->toDateString(),
+                'issued_by'          => $actor?->id,
+                'notes'              => $data['notes'] ?? null,
+                'status'             => 'issued',
+                'returned_qty'       => 0,
+            ]);
+
+            $this->syncWorkerPpeState($worker);
+
+            return $issue->fresh(['product', 'vendorItem']);
+        });
+    }
+
+    /**
      * PPE required for one worker, from the role-based requirement matrix.
      *
      * A worker's requirements are the union of every rule that matches them: the
@@ -355,14 +415,56 @@ class PpeInventoryService
     /** Product ids this worker currently holds (issued and not fully handed back). */
     private function heldProductIds(TpvWorker $worker): Collection
     {
+        return $this->heldIssues($worker)->keys();
+    }
+
+    /**
+     * What the worker is currently holding, newest issue per product.
+     *
+     * Keyed by product so a requirement can ask one question of it, and keeping
+     * the whole issue rather than just the id because two of the three
+     * questions a rule can ask are about the ISSUE, not the product: when it
+     * was handed over (has it passed its replacement interval) and whether
+     * anyone checked it (does the rule demand verification).
+     *
+     * @return Collection<int, TpvWorkerPpeIssue>
+     */
+    private function heldIssues(TpvWorker $worker): Collection
+    {
         return TpvWorkerPpeIssue::query()
             ->where('tenant_id', $worker->tenant_id)
             ->where('tpv_worker_id', $worker->id)
             ->where('status', 'issued')
             ->whereRaw('qty > returned_qty')
-            ->pluck('inventory_item_id')
-            ->filter()
-            ->unique();
+            ->whereNotNull('inventory_item_id')
+            ->orderBy('issued_date')
+            ->orderBy('id')
+            ->get()
+            // Latest wins: a replacement handed over today is the one that
+            // counts, not the worn item it replaced.
+            ->keyBy('inventory_item_id');
+    }
+
+    /**
+     * Does this issue satisfy this rule, right now?
+     *
+     * Holding the item is necessary and not always sufficient. A rule may set a
+     * replacement interval, after which the gear no longer counts, and it may
+     * demand verification, in which case handing it over is not the same as it
+     * being fit to use. Both flags have been configurable on this matrix since
+     * it was built and neither was ever read.
+     */
+    private function issueSatisfies(?TpvWorkerPpeIssue $issue, TpvPpeRequirement $rule): bool
+    {
+        if (! $issue) {
+            return false;
+        }
+
+        if (PpeReplacement::isExpired($issue->issued_date, $rule->replacement_frequency_days)) {
+            return false;
+        }
+
+        return ! $rule->verification_required || $issue->verified_at !== null;
     }
 
     /**
@@ -373,23 +475,53 @@ class PpeInventoryService
     public function complianceFor(TpvWorker $worker): array
     {
         $required = $this->requiredFor($worker);
-        $held     = $this->heldProductIds($worker);
+        $held     = $this->heldIssues($worker);
 
-        $items = $required->map(fn (TpvPpeRequirement $r) => [
-            'product_id' => $r->product_id,
-            'name'       => $r->product->name,
-            'sku'        => $r->product->sku,
-            'qty'        => $r->qty,
-            'scope'      => $r->scope_type === 'all' ? 'All Workers' : $r->scope_value,
-            'hazard'     => $r->hazard,
-            'activity'   => $r->activity,
-            'ppe_class'  => $r->ppe_class ?? 'mandatory',
-            'replacement_frequency_days' => $r->replacement_frequency_days,
-            'verification_required'      => (bool) $r->verification_required,
-            'issued'     => $held->contains($r->product_id),
-        ])->values()->all();
+        $items = $required->map(function (TpvPpeRequirement $r) use ($held) {
+            $issue = $held->get($r->product_id);
 
-        // Only unheld MANDATORY items count as non-compliance (§18).
+            // "Issued" is now three separate facts, because a badge refused for
+            // expired gear and one refused for gear never handed over are not
+            // the same problem and must not read the same on screen.
+            $expired  = $issue && PpeReplacement::isExpired($issue->issued_date, $r->replacement_frequency_days);
+            $unverified = $issue && $r->verification_required && $issue->verified_at === null;
+
+            return [
+                'product_id' => $r->product_id,
+                'name'       => $r->product->name,
+                'sku'        => $r->product->sku,
+                'qty'        => $r->qty,
+                'scope'      => $r->scope_type === 'all' ? 'All Workers' : $r->scope_value,
+                'hazard'     => $r->hazard,
+                'activity'   => $r->activity,
+                'ppe_class'  => $r->ppe_class ?? 'mandatory',
+                'replacement_frequency_days' => $r->replacement_frequency_days,
+                'verification_required'      => (bool) $r->verification_required,
+                'held'          => (bool) $issue,
+                'issued_date'   => optional($issue?->issued_date)->toDateString(),
+                'replace_due_on' => optional(
+                    PpeReplacement::dueOn($issue?->issued_date, $r->replacement_frequency_days)
+                )->toDateString(),
+                'days_remaining' => $issue
+                    ? PpeReplacement::daysRemaining($issue->issued_date, $r->replacement_frequency_days)
+                    : null,
+                'expired'       => $expired,
+                'unverified'    => $unverified,
+                'verified_at'   => optional($issue?->verified_at)->toIso8601String(),
+                // Kept as the single yes/no the badge reads: held, in date, and
+                // verified where the rule asks for it.
+                'issued'        => (bool) $issue && ! $expired && ! $unverified,
+                'reason'        => match (true) {
+                    ! $issue    => 'Not issued',
+                    $expired    => 'Past replacement date',
+                    $unverified => 'Awaiting verification',
+                    default     => null,
+                },
+            ];
+        })->values()->all();
+
+        // Only MANDATORY items that do not satisfy their rule count as
+        // non-compliance (§18).
         $missing = collect($items)->filter(fn ($i) => $i['ppe_class'] === 'mandatory' && ! $i['issued'])->values();
 
         return [
@@ -409,11 +541,13 @@ class PpeInventoryService
      */
     public function missingMandatoryFor(TpvWorker $worker): Collection
     {
-        $held = $this->heldProductIds($worker);
+        $held = $this->heldIssues($worker);
 
         return $this->requiredFor($worker)
             ->filter(fn (TpvPpeRequirement $r) => $r->isMandatory())
-            ->reject(fn (TpvPpeRequirement $r) => $held->contains($r->product_id))
+            // Expired gear and unverified gear count as missing — that is the
+            // whole point of a replacement interval and of a verification flag.
+            ->reject(fn (TpvPpeRequirement $r) => $this->issueSatisfies($held->get($r->product_id), $r))
             ->map(fn (TpvPpeRequirement $r) => $r->product)
             ->values();
     }
@@ -567,7 +701,9 @@ class PpeInventoryService
         // the default warehouse. An explicit warehouse_id still wins; the tenant
         // default is the last resort.
         $movementType = self::RETURN_CONDITIONS[$condition];
-        $warehouseId  = $movementType
+        // Kit from the vendor's own list goes back on the vendor's shelf, not
+        // into a warehouse — so it needs no site at all.
+        $warehouseId  = $movementType && $issue->inventory_item_id
             ? $this->resolveWarehouseId(
                 (int) $issue->tenant_id,
                 $data['warehouse_id'] ?? $this->issuedFromWarehouseId($issue),
@@ -588,6 +724,10 @@ class PpeInventoryService
                     'reference_type' => 'ppe_issue',
                     'reference_id'   => $issue->id,
                 ], $tenantId, $actor?->id);
+            }
+
+            if ($movementType && $issue->vendor_ppe_item_id) {
+                $this->vendorItems->restock((int) $issue->vendor_ppe_item_id, $qty);
             }
 
             $returned = round((float) $issue->returned_qty + $qty, 3);
@@ -628,6 +768,7 @@ class PpeInventoryService
             // a stock shortfall aborts before the old issue is touched.
             $fresh = $this->issue($worker, [
                 'inventory_item_id' => $issue->inventory_item_id,
+                'vendor_ppe_item_id' => $issue->vendor_ppe_item_id,
                 'qty'               => $data['qty'] ?? (float) $issue->qty,
                 'size'              => $data['size'] ?? $issue->size,
                 'project'           => $data['project'] ?? $issue->project,

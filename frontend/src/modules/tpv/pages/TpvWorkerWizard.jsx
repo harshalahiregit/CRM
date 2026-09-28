@@ -1,3 +1,4 @@
+import { medicalApi } from '@/services/medicalApi'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import QRCode from 'qrcode'
@@ -7,8 +8,10 @@ import {
 } from 'lucide-react'
 import { tpvApi } from '@/services/tpvApi'
 import { portalApi } from '@/services/portalApi'
+import InternalDoctorSelect from '@/components/medical/InternalDoctorSelect'
 import { useAuth } from '@/context/AuthContext'
 import AuditTimeline from '@/components/ui/AuditTimeline'
+import GroupInductionModal from '@/components/vendor/GroupInductionModal'
 import {
   WORKER_STATUS, workerStatusCfg, vendorStatusCfg, fitnessCfg, FITNESS, BAND_COLORS,
   SKILL_CATEGORIES, GENDERS,
@@ -56,6 +59,26 @@ export default function TpvWorkerWizard() {
   }, [id, api])
   useEffect(() => { load() }, [load])
   const refresh = () => load(true)
+
+  /**
+   * A step with a form registers how to persist it, so leaving the step keeps
+   * what was typed.
+   *
+   * Changing step used to swap the panel and nothing else: half a worker's
+   * details, typed and then abandoned by pressing the next step, were gone with
+   * no warning. The worker endpoints take a partial update, so what has been
+   * entered is stored on the way past.
+   */
+  const flushRef = useRef(null)
+  const registerFlush = useCallback((fn) => { flushRef.current = fn }, [])
+
+  const goStep = async (step) => {
+    // Never trap somebody on a step: a draft that will not save is a reason to
+    // say so, not a reason to refuse to move.
+    try { await flushRef.current?.() } catch { /* the step reports its own error */ }
+    flushRef.current = null
+    setActive(step)
+  }
 
   if (loading || !worker || !progress) {
     return <div style={{ padding: 24, color: 'var(--text-muted)' }}>Loading worker…</div>
@@ -108,6 +131,24 @@ export default function TpvWorkerWizard() {
             {progress.blockers.map((b, i) => <li key={i}>{b}</li>)}
           </ul>
 
+          {/* Whose move it is. Naming the blocker is not the same as saying what
+              to do about it — and when the answer is "nothing", saying so stops
+              the vendor searching for a document they have already sent. */}
+          {progress.medical_clearance && !progress.medical_clearance.cleared && (
+            <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed rgba(245,158,11,0.35)', fontSize: 12, lineHeight: 1.6 }}>
+              {progress.medical_clearance.action ? (
+                <span style={{ color: 'var(--text-h)' }}>
+                  <strong>What to do:</strong> {progress.medical_clearance.action}
+                </span>
+              ) : (
+                <span style={{ color: 'var(--text-muted)' }}>
+                  <strong style={{ color: 'var(--text-h)' }}>Nothing is needed from you.</strong>{' '}
+                  The quality team is reviewing the certificate; the badge unblocks itself once they approve it.
+                </span>
+              )}
+            </div>
+          )}
+
           {/* The role's full PPE checklist, so "what's missing" is never a guess. */}
           {progress.ppe_compliance?.configured && !progress.ppe_compliance.compliant && (
             <PpeChecklist c={progress.ppe_compliance} />
@@ -118,13 +159,13 @@ export default function TpvWorkerWizard() {
         <InfoBox tone="danger"><strong>Terminated:</strong> {worker.remarks}</InfoBox>
       )}
 
-      <Stepper steps={steps} active={active} onGo={setActive} />
+      <Stepper steps={steps} active={active} onGo={goStep} />
 
       <div style={{ marginTop: 18 }}>
-        {active === 1 && <StepProfile worker={worker} editable={editable} onSaved={refresh} onNext={() => setActive(2)} api={api} />}
-        {active === 2 && <Step2Medical worker={worker} editable={editable} onSaved={refresh} onNext={() => setActive(3)} api={api} />}
-        {active === 3 && <StepInduction worker={worker} editable={editable} onSaved={refresh} onNext={() => setActive(4)} api={api} />}
-        {active === 4 && <StepPpe worker={worker} editable={editable} manage={manage} onChanged={refresh} onNext={() => setActive(5)} api={api} compliance={progress.ppe_compliance} />}
+        {active === 1 && <StepProfile worker={worker} editable={editable} onSaved={refresh} onNext={() => goStep(2)} registerFlush={registerFlush} api={api} />}
+        {active === 2 && <Step2Medical worker={worker} editable={editable} onSaved={refresh} onNext={() => goStep(3)} api={api} isPortal={isPortal} />}
+        {active === 3 && <StepInduction worker={worker} editable={editable} onSaved={refresh} onNext={() => goStep(4)} api={api} />}
+        {active === 4 && <StepPpe worker={worker} editable={editable} manage={manage} onChanged={refresh} onNext={() => goStep(5)} api={api} compliance={progress.ppe_compliance} />}
         {active === 5 && <StepBadge worker={worker} progress={progress} admin={admin} onChanged={refresh} api={api} />}
       </div>
 
@@ -212,7 +253,7 @@ const SaveBtn = ({ onClick, saving, saved, label = 'Save' }) => (
 )
 
 // ── Step 1 — Profile ─────────────────────────────────────────────────────────
-function StepProfile({ worker, editable, onSaved, onNext, api }) {
+function StepProfile({ worker, editable, onSaved, onNext, registerFlush, api }) {
   const [f, setF] = useState({
     name: worker.name || '', dob: worker.dob?.slice(0, 10) || '', gender: worker.gender || '',
     designation: worker.designation || '', skill_category: worker.skill_category || '',
@@ -224,7 +265,11 @@ function StepProfile({ worker, editable, onSaved, onNext, api }) {
   })
   const [saving, setSaving] = useState(false)
   const [saved, setSaved]   = useState(false)
-  const set = (k) => (e) => { setF(p => ({ ...p, [k]: e.target.value })); setSaved(false) }
+  // Has anything been typed since the last successful save? Read by the flush
+  // below, which is registered once, so it must be a ref rather than state that
+  // callback would have closed over stale.
+  const dirty = useRef(false)
+  const set = (k) => (e) => { setF(p => ({ ...p, [k]: e.target.value })); setSaved(false); dirty.current = true }
 
   // Work packages this worker can be deployed on — their own vendor's, so the
   // competency gate (Rule 4) reads the right activities. Read-only if unbadgeable.
@@ -242,11 +287,33 @@ function StepProfile({ worker, editable, onSaved, onNext, api }) {
   const age = f.dob ? Math.floor((Date.now() - new Date(f.dob)) / 31557600000) : null
   const underage = age !== null && age < 18
 
+  const persist = async () => {
+    const payload = Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v === '' ? null : v]))
+    await api.workers.update(worker.id, payload)
+    dirty.current = false
+  }
+
+  /** Keep the half-filled form when the user moves to another step. */
+  const saveDraft = async () => {
+    if (!editable || !dirty.current) return
+    // Quietly: this is a rescue on the way past, not a save the user asked for,
+    // so it must not throw an alert in front of a step they are leaving.
+    try { await persist() } catch { /* a lost draft must not block navigation */ }
+  }
+
+  // Registered once, read through a ref, so the flush the wizard calls always
+  // sees what is on screen now.
+  const draftRef = useRef(saveDraft)
+  draftRef.current = saveDraft
+  useEffect(() => {
+    registerFlush?.(() => draftRef.current())
+    return () => registerFlush?.(null)
+  }, [registerFlush])
+
   const save = async () => {
     setSaving(true)
     try {
-      const payload = Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v === '' ? null : v]))
-      await api.workers.update(worker.id, payload)
+      await persist()
       setSaved(true); onSaved()
     } catch (e) {
       const errObj = e?.response?.data?.errors
@@ -321,7 +388,11 @@ function StepProfile({ worker, editable, onSaved, onNext, api }) {
 }
 
 // ── Step 2 — Medical + screening ─────────────────────────────────────────────
-function Step2Medical({ worker, editable, onSaved, onNext, api }) {
+// isPortal, because the doctor picker below narrows to this vendor's own
+// doctors when a vendor is driving it rather than staff. It was read from the
+// wizard's scope, which this function is not inside — so opening the medical
+// step threw a ReferenceError and the page went blank.
+function Step2Medical({ worker, editable, onSaved, onNext, api, isPortal = false }) {
   const m = worker.medical || {}
   // Hydrate from the canonical tpv_worker_medicals columns (exam_type, examiner_name,
   // clinic_name, vision, height_cm, weight_kg, bp_systolic/diastolic, restrictions),
@@ -362,9 +433,18 @@ function Step2Medical({ worker, editable, onSaved, onNext, api }) {
   const [mhVer, setMhVer]   = useState(1)
   const [mhAnswers, setMhAnswers] = useState(m.screening_responses && typeof m.screening_responses === 'object' ? m.screening_responses : {})
   const [sigTab, setSigTab] = useState('upload')
-  const [sigPreview, setSigPreview] = useState(
-    m.signature_path ? `/storage/${m.signature_path}` : (m.signature_file ? `/storage/${m.signature_file}` : null)
-  )
+  // The signature on record moved off the publicly-served disk, so it can
+  // no longer be shown by URL — it is fetched through the authenticated
+  // route and revoked when this step goes away.
+  const [sigPreview, setSigPreview] = useState(null)
+
+  useEffect(() => {
+    if (!m.id || !m.signature_path) return
+    let url = null
+    medicalApi.admin.evidenceUrl('tpv', m.id, 'signature')
+      .then(u => { url = u; if (u) setSigPreview(u) })
+    return () => { if (url) URL.revokeObjectURL(url) }
+  }, [m.id, m.signature_path])
   const [stampText, setStampText]   = useState('')
   const [stampFont, setStampFont]   = useState('bold 20px Arial')
   const [stampColor, setStampColor] = useState('#0d47a1')
@@ -627,6 +707,9 @@ function Step2Medical({ worker, editable, onSaved, onNext, api }) {
         exam_date: new Date().toISOString().slice(0, 10),
         examiner_name: (isExternal ? f.external_doctor_name : f.doctor_name) || null,
         clinic_name: f.organization_name || null,
+        // Only meaningful for an internal exam: an external doctor is by
+        // definition not one of ours.
+        doctor_user_id: isExternal ? null : (f.doctor_user_id || null),
         height_cm: f.height ? Number(f.height) : null,
         weight_kg: f.weight ? Number(f.weight) : null,
         bp_systolic: Number.isFinite(sys) ? sys : null,
@@ -741,6 +824,24 @@ function Step2Medical({ worker, editable, onSaved, onNext, api }) {
           {/* Doctor Details */}
           <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-h)', marginBottom: 12, borderBottom: '1px solid var(--border)', paddingBottom: 6 }}>👨‍⚕️ Doctor Details</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 20 }}>
+            {/* Pick one of our own doctors and the three boxes below fill
+                themselves; leave it alone and they behave exactly as they always
+                did. The id is what lets the server copy the licence from the
+                directory — see InternalDoctorSelect. */}
+            <div style={{ gridColumn: '1 / -1' }}>
+              <InternalDoctorSelect
+                module="tpv" portal={isPortal} value={f.doctor_user_id}
+                onPick={d => setF(p => ({
+                  ...p,
+                  doctor_user_id: d?.user_id ?? null,
+                  // Auto-filled, and still editable: the picker is a shortcut,
+                  // not a lock. Clearing the choice leaves what was typed.
+                  doctor_name: d ? (d.name || '') : p.doctor_name,
+                  organization_name: d?.clinic_name || p.organization_name,
+                  doctor_registration: d?.license_no || p.doctor_registration,
+                }))}
+              />
+            </div>
             <Field label="Doctor Name *"><TextInput value={f.doctor_name} onChange={set('doctor_name')} placeholder="Dr. Full Name" /></Field>
             <Field label="Hospital / Organisation *"><TextInput value={f.organization_name} onChange={set('organization_name')} placeholder="Hospital or Clinic" /></Field>
             <Field label="Registration No *"><TextInput value={f.doctor_registration} onChange={set('doctor_registration')} placeholder="Medical Reg. Number" /></Field>
@@ -1364,203 +1465,16 @@ function StepInduction({ worker, editable, onSaved, onNext, api }) {
       </div>
 
       {groupModalOpen && (
-        <WizardGroupInductionModal
+        <GroupInductionModal
+          engine="tpv"
+          api={api}
           workers={vendorWorkers.length > 0 ? vendorWorkers : [worker]}
+          preselectIds={[worker.id]}
           onClose={() => setGroupModalOpen(false)}
           onCompleted={() => { setGroupModalOpen(false); onSaved() }}
-          api={api}
         />
       )}
     </Panel>
-  )
-}
-
-function WizardGroupInductionModal({ workers, onClose, onCompleted, api }) {
-  const [selectedIds, setSelectedIds] = useState(workers.map(w => w.id))
-  const [f, setF] = useState({
-    induction_type: 'General Safety',
-    trainer: 'Safety Officer – Rahul Sharma',
-    custom_trainer: '',
-    location: 'Site Office',
-  })
-
-  const [workerProofs, setWorkerProofs] = useState(
-    Object.fromEntries(workers.map(w => [w.id, { done: false, proofType: 'sig', sigData: '' }]))
-  )
-  const [activeWid, setActiveWid] = useState(workers[0]?.id || null)
-  const [saving, setSaving] = useState(false)
-  const [progressMsg, setProgressMsg] = useState('')
-
-  const canvasRef = useRef(null)
-  const isDrawing = useRef(false)
-
-  const set = (k) => (e) => setF(p => ({ ...p, [k]: e.target.value }))
-
-  const TRAINER_PRESETS = [
-    { group: 'Safety Team', items: ['Safety Officer – Rahul Sharma', 'Safety Supervisor – Priya Patel', 'HSE Lead – Amit Verma', 'HSSE Manager – Neha Singh', 'Safety Inspector – Ravi Kumar'] },
-    { group: 'HR Team', items: ['HR Manager – Sunita Joshi', 'HR Executive – Deepak Nair', 'HR Coordinator – Anjali Mehta'] },
-    { group: 'Site Management', items: ['Site Engineer – Vikram Rao', 'Project Manager – Suresh Pillai', 'Site Supervisor – Mohan Das'] },
-    { group: 'Custom', items: ['Other / Custom Trainer...'] },
-  ]
-
-  const startCanvasDraw = (e) => {
-    const canvas = canvasRef.current; if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    const rect = canvas.getBoundingClientRect()
-    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left
-    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top
-    ctx.beginPath(); ctx.moveTo(x, y)
-    isDrawing.current = true
-  }
-
-  const doCanvasDraw = (e) => {
-    if (!isDrawing.current) return
-    const canvas = canvasRef.current; if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    const rect = canvas.getBoundingClientRect()
-    const x = (e.clientX || e.touches?.[0]?.clientX) - rect.left
-    const y = (e.clientY || e.touches?.[0]?.clientY) - rect.top
-    ctx.lineTo(x, y); ctx.stroke()
-  }
-
-  const stopCanvasDraw = () => { isDrawing.current = false }
-  const clearCanvas = () => {
-    const canvas = canvasRef.current; if (!canvas) return
-    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height)
-  }
-
-  const confirmWorkerProof = (wid) => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const url = canvas.toDataURL('image/png')
-    setWorkerProofs(p => ({ ...p, [wid]: { ...p[wid], sigData: url, done: true } }))
-    clearCanvas()
-    const pending = workers.find(w => selectedIds.includes(w.id) && w.id !== wid && !workerProofs[w.id]?.done)
-    if (pending) setActiveWid(pending.id)
-  }
-
-  const activeWorkers = workers.filter(w => selectedIds.includes(w.id))
-  const signedCount = activeWorkers.filter(w => workerProofs[w.id]?.done).length
-  const allSigned = signedCount === activeWorkers.length && activeWorkers.length > 0
-
-  const saveGroupInduction = async () => {
-    const finalTrainer = f.trainer === 'Other / Custom Trainer...' ? f.custom_trainer : f.trainer
-    if (!finalTrainer.trim()) { alert('Trainer Name is required.'); return }
-    if (!f.location.trim()) { alert('Location is required.'); return }
-    if (!allSigned) { alert('All selected workers must confirm signature first.'); return }
-
-    setSaving(true)
-    try {
-      const now = new Date()
-      let count = 0
-      for (const w of activeWorkers) {
-        count++
-        setProgressMsg(`Saving worker ${count}/${activeWorkers.length}: ${w.name}...`)
-        const proof = workerProofs[w.id]
-        const payload = {
-          induction_type: f.induction_type,
-          trainer: finalTrainer,
-          location: f.location,
-          start_time: now.toISOString(),
-          end_time: now.toISOString(),
-          duration_minutes: 15,
-          signature_data: proof?.proofType === 'sig' ? proof?.sigData : null,
-          thumb_data: proof?.proofType === 'thumb' ? proof?.sigData : null,
-          topics: ['Site Safety Rules', 'PPE Usage', 'Emergency Response'],
-          passed: true,
-        }
-        await api.workers.saveInduction(w.id, payload)
-      }
-      alert(`Group induction completed for ${activeWorkers.length} workers!`)
-      onCompleted()
-    } catch (e) {
-      alert(e?.response?.data?.message || 'Group induction save failed')
-    } finally {
-      setSaving(false)
-      setProgressMsg('')
-    }
-  }
-
-  return (
-    <Overlay onClose={() => !saving && onClose()} width={820}>
-      <h2 style={{ fontSize: 18, fontWeight: 900, color: 'var(--text-h)', margin: '0 0 14px' }}>
-        👥 Group Induction Session ({activeWorkers.length} Selected)
-      </h2>
-
-      {/* Worker Checkbox Selector Strip */}
-      <div style={{ padding: 10, borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', marginBottom: 14, display: 'flex', flexWrap: 'wrap', gap: 10, maxHeight: 100, overflowY: 'auto' }}>
-        {workers.map(w => (
-          <label key={w.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 20, background: selectedIds.includes(w.id) ? '#e0f2fe' : 'var(--bg-card)', border: '1px solid var(--border)', fontSize: 11.5, cursor: 'pointer', fontWeight: selectedIds.includes(w.id) ? 800 : 500 }}>
-            <input type="checkbox" checked={selectedIds.includes(w.id)} onChange={e => {
-              const checked = e.target.checked
-              setSelectedIds(p => checked ? [...p, w.id] : p.filter(x => x !== w.id))
-            }} style={{ width: 14, height: 14 }} />
-            {w.name} ({w.worker_code})
-          </label>
-        ))}
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 14 }}>
-        <Field label="Induction Type *">
-          <SelectInput value={f.induction_type} onChange={set('induction_type')} pairs options={[
-            ['General Safety', 'General Safety'],
-            ['Activity Specific', 'Activity Specific'],
-            ['Site Specific', 'Site Specific'],
-            ['Client Specific', 'Client Specific'],
-            ['Emergency & Evacuation', 'Emergency & Evacuation'],
-            ['Fire Safety', 'Fire Safety'],
-            ['PPE Usage', 'PPE Usage'],
-            ['Toolbox Talk', 'Toolbox Talk'],
-          ]} />
-        </Field>
-        <Field label="Trainer *">
-          <select value={f.trainer} onChange={set('trainer')} style={inputStyle}>
-            {TRAINER_PRESETS.map(grp => (
-              <optgroup key={grp.group} label={grp.group}>
-                {grp.items.map(item => <option key={item} value={item}>{item}</option>)}
-              </optgroup>
-            ))}
-          </select>
-        </Field>
-        <Field label="Location *"><TextInput value={f.location} onChange={set('location')} placeholder="e.g. Site Office" /></Field>
-      </div>
-
-      {/* Progress */}
-      <div style={{ padding: 10, borderRadius: 8, background: '#f3e8ff', marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <strong style={{ fontSize: 12, color: '#6b21a8' }}>✍ Signature Progress</strong>
-        <strong style={{ fontSize: 12, color: '#6b21a8' }}>{signedCount} / {activeWorkers.length} Signed</strong>
-      </div>
-
-      {/* Cards */}
-      <div style={{ maxHeight: 300, overflowY: 'auto', marginBottom: 14 }}>
-        {activeWorkers.map(w => {
-          const proof = workerProofs[w.id] || {}
-          const isActive = activeWid === w.id
-          return (
-            <div key={w.id} style={{ borderRadius: 8, border: proof.done ? '2px solid #10b981' : isActive ? '2px solid #0284c7' : '1px solid var(--border)', marginBottom: 8, background: 'var(--bg-card)' }}>
-              <div onClick={() => setActiveWid(isActive ? null : w.id)} style={{ padding: '8px 12px', background: proof.done ? '#dcfce7' : isActive ? '#e0f2fe' : 'var(--bg-input)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <strong style={{ fontSize: 12.5, color: 'var(--text-h)' }}>{w.name} ({w.worker_code})</strong>
-                <span style={{ fontSize: 10.5, fontWeight: 800, padding: '2px 8px', borderRadius: 20, background: proof.done ? '#10b981' : '#f59e0b', color: '#fff' }}>
-                  {proof.done ? '✓ Signed' : 'Pending'}
-                </span>
-              </div>
-              {isActive && (
-                <div style={{ padding: 12 }}>
-                  <canvas ref={canvasRef} width={480} height={110} onMouseDown={startCanvasDraw} onMouseMove={doCanvasDraw} onMouseUp={stopCanvasDraw} onMouseLeave={stopCanvasDraw} onTouchStart={startCanvasDraw} onTouchMove={doCanvasDraw} onTouchEnd={stopCanvasDraw} style={{ background: '#fff', border: '2px dashed var(--border)', borderRadius: 8, cursor: 'crosshair', display: 'block', marginBottom: 8 }} />
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button type="button" onClick={clearCanvas} style={{ padding: '4px 10px', borderRadius: 6, background: '#ef4444', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 800 }}>Clear</button>
-                    <button type="button" onClick={() => confirmWorkerProof(w.id)} style={{ padding: '4px 12px', borderRadius: 6, background: '#10b981', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 800 }}>Confirm Signature</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-
-      {progressMsg && <div style={{ padding: '6px 12px', background: '#e0f2fe', color: '#0369a1', fontSize: 12, fontWeight: 700, marginBottom: 10 }}>⏳ {progressMsg}</div>}
-      <ModalFooter onClose={onClose} onConfirm={saveGroupInduction} loading={saving} disabled={!allSigned} confirmLabel={`Save Group Induction (${activeWorkers.length} Workers)`} />
-    </Overlay>
   )
 }
 

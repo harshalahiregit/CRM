@@ -26,12 +26,27 @@ export const taskApi = {
   // Step 4 sub-features
   assignees: (id, user_ids) => api.post(`/tasks/${id}/assignees`, { user_ids }).then(unwrap).catch(handleErr),
   followers: (id, user_ids) => api.post(`/tasks/${id}/followers`, { user_ids }).then(unwrap).catch(handleErr),
+
+  // People at OTHER companies — a named contact at a client, a vendor or a TPV.
+  // Separate from assignees() because they are not users: assignees() posts
+  // user ids, this posts {party_type, party_id} pairs. Merging the two is how a
+  // contact id ends up written into a user_id column.
+  parties: {
+    kinds: () => api.get('/tasks/parties/kinds').then(unwrap).catch(handleErr),
+    orgs: (orgType, search) => api.get(`/tasks/parties/${orgType}`, { params: { search } }).then(unwrap).catch(handleErr),
+    people: (orgType, orgId, search) =>
+      api.get(`/tasks/parties/${orgType}/${orgId}`, { params: { search } }).then(unwrap).catch(handleErr),
+    // `parties` is the list to END UP with, like assignees() — an empty array clears them.
+    sync: (id, parties) => api.post(`/tasks/${id}/party-assignees`, { parties }).then(unwrap).catch(handleErr),
+  },
   checklist: (id) => api.get(`/tasks/${id}/checklist`).then(unwrap).catch(handleErr),
   // A checklist item can carry an owner (staff / vendor / TPV) at create time.
   addChecklist: (id, description, assigned_to = null) => api.post(`/tasks/${id}/checklist`, { description, assigned_to }).then(unwrap).catch(handleErr),
   // Edit an item in place — used to (re)assign it or fix its text.
   updateChecklistItem: (itemId, data) => api.patch(`/tasks/checklist/${itemId}`, data).then(unwrap).catch(handleErr),
   toggleChecklist: (itemId) => api.patch(`/tasks/checklist/${itemId}/toggle`).then(unwrap).catch(handleErr),
+  // Remove an item outright — ticking it says "done", this says "never mind".
+  deleteChecklistItem: (itemId) => api.delete(`/tasks/checklist/${itemId}`).then(unwrap).catch(handleErr),
   // Subtasks — the recursive tree. `tree` returns every level in one response
   // (the server carries root_id, so depth costs nothing), each node with its own
   // rolled-up progress. `move` re-parents; parent_id null pops it to the top.

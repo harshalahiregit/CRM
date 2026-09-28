@@ -7,10 +7,16 @@ import MobileBottomNav from './MobileBottomNav'
 import CommandPalette from '@/components/CommandPalette'
 import IdleTimeoutWarning from '@/components/common/IdleTimeoutWarning'
 import AppNotificationToaster from '@/components/notifications/AppNotificationToaster'
+import ReportIssueRoot from '@/components/sire/ReportIssueRoot'
+import ErrorBoundary from '@/components/ErrorBoundary'
+import PageErrorFallback from '@/components/PageErrorFallback'
+import { canUseSire } from '@/lib/sire/access'
+import { useAuth } from '@/context/AuthContext'
 import clsx from 'clsx'
 import { useTheme } from '@/context/ThemeContext'
 
 export default function AppShell() {
+  const { user } = useAuth()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   // Owned here, not inside Sidebar: two Sidebars are mounted (the off-canvas
   // mobile drawer and the desktop one) and they must not disagree about which
@@ -69,7 +75,7 @@ export default function AppShell() {
         )}
         style={{ filter: isDark ? 'none' : 'drop-shadow(4px 0 24px rgba(124,58,237,0.12))' }}
       >
-        <Sidebar collapsed={false} onToggle={() => {}} openSection={openSection} toggleSection={toggleSection} isGroupOpen={isGroupOpen} toggleGroup={toggleGroup} />
+        <Sidebar inDrawer collapsed={false} onToggle={() => {}} openSection={openSection} toggleSection={toggleSection} isGroupOpen={isGroupOpen} toggleGroup={toggleGroup} />
       </div>
 
       {/* Desktop sidebar */}
@@ -92,11 +98,28 @@ export default function AppShell() {
 
       {/* Main content */}
       <main
-        className="transition-all duration-300 pt-16 pb-20 md:pb-6 min-h-screen"
-        style={{ paddingLeft: `${sidebarW}px` }}
+        className="app-shifted transition-all duration-300 pt-16 pb-20 md:pb-6 min-h-screen"
+        // The offset itself is a variable; the breakpoint lives in CSS, because
+        // an inline style cannot have one. See .app-shifted in index.css.
+        style={{ '--sidebar-w': `${sidebarW}px` }}
       >
         <div className={clsx('p-4 md:p-6', !fullBleed && 'max-w-[1440px] mx-auto')}>
-          <Outlet />
+          {/* A crashing PAGE must not take the application with it.
+              The only boundary used to be at the top of App.jsx, above the
+              providers and above this shell, so any page that threw replaced
+              everything -- sidebar, header, and the Report Issue button, which
+              lives a few lines below. Report Issue is meant to be on every
+              screen, and the screen it was missing from was the one that had
+              just broken in front of the user.
+              resetKey, because a boundary latches: without it, one crashed
+              page would follow the user to every route they tried next, and
+              only a manual reload would clear it. */}
+          <ErrorBoundary
+            resetKey={pathname}
+            fallback={(error, retry) => <PageErrorFallback error={error} onRetry={retry} />}
+          >
+            <Outlet />
+          </ErrorBoundary>
         </div>
       </main>
 
@@ -109,6 +132,10 @@ export default function AppShell() {
       <IdleTimeoutWarning />
       {/* On-screen notification pop-ups (persistent until the user reacts) */}
       <AppNotificationToaster />
+      {/* SIRE Report Issue -- one click from any screen. It captures the module,
+          screen, app version, browser and recent failed requests itself, so the
+          form only ever asks for a title and what happened. */}
+      {canUseSire(user) && <ReportIssueRoot />}
     </div>
   )
 }

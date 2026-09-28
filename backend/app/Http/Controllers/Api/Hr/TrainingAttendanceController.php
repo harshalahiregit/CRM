@@ -19,17 +19,17 @@ class TrainingAttendanceController extends Controller
 
     public function index(Request $request)
     {
-        return response()->json($this->service->list($this->tenant($request), $request->only(['training_session_id', 'employee_id', 'attendance_status', 'department'])));
+        return response()->json($this->service->list($this->tenant($request), $request->only(['training_session_id', 'employee_id', 'attendance_status', 'department']), $request->user()));
     }
 
     public function roster(Request $request, int $session)
     {
-        return response()->json($this->service->roster($session, $this->tenant($request)));
+        return response()->json($this->service->roster($session, $this->tenant($request), $request->user()));
     }
 
     public function show(Request $request, int $id)
     {
-        return response()->json($this->service->show($id, $this->tenant($request)));
+        return response()->json($this->service->show($id, $this->tenant($request), $request->user()));
     }
 
     public function store(Request $request)

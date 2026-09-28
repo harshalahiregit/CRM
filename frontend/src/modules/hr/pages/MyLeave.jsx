@@ -185,7 +185,9 @@ export default function MyLeave() {
           {balances.map(b => (
             <div key={b.id} className="rounded-xl" style={{ padding: 12, background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
               <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
-                {b.leave_type?.name || b.leave_type_name || 'Leave'}
+                {/* `leave_type` is the NAME, a string — not an object. Reading .name
+                    off it rendered every card as a generic "Leave". */}
+                {b.leave_type || b.leave_type_name || 'Leave'}
               </p>
               <p className="text-lg font-bold" style={{ color: 'var(--text-h)', fontVariantNumeric: 'tabular-nums' }}>
                 {b.available_balance ?? 0}
@@ -208,7 +210,7 @@ export default function MyLeave() {
                 </option>
                 {balances.map(b => (
                   <option key={b.leave_type_id} value={b.leave_type_id}>
-                    {b.leave_type?.name || b.leave_type_name} ({b.available_balance ?? 0} left)
+                    {b.leave_type || b.leave_type_name} ({b.available_balance ?? 0} left)
                   </option>
                 ))}
               </select>

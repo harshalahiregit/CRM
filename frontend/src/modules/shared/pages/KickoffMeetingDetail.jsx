@@ -1,15 +1,19 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, CheckCircle2, XCircle,
   Send, Copy, Upload, AlertTriangle, Loader2, FileText, ShieldCheck, History,
   Sparkles, Eye, Download, Video, ExternalLink, ClipboardCheck, ThumbsUp, Undo2, RotateCcw, ListChecks,
   Plus, Mail, MailCheck, Pencil, Building2, UserCheck, Briefcase, UserX, Trash2,
+  Monitor, Globe, Check,
 } from 'lucide-react'
 // Resolves per call to the meeting engine of the module in the URL — the
 // shared engine under /app/tpv, Purchase's under /app/purchase. Aliased to
 // the old name so the call sites below read unchanged.
-import { meetingEngineApi as kickoffApi, meetingBase } from '@/services/meetingEngineApi'
+import { meetingEngineApi as kickoffApi, meetingPaths } from '@/services/meetingEngineApi'
+import MeetingJoinGate from '@/components/portal/MeetingJoinGate'
+import { useAuth } from '@/context/AuthContext'
+import AttendanceReviewPanel from '@/components/meetings/AttendanceReviewPanel'
 import {
   KO_STATUS, koStatusCfg, koNextStatuses, koModeLabel, fmtDateTime, fmtDate,
   actStatusCfg, actNextStatuses, issueStatusCfg, issueNextStatuses, ISSUE_TO_INCIDENT_SEVERITY,
@@ -26,6 +30,11 @@ import SelectInput from '@/components/ui/SearchableSelectInput'
 export default function KickoffMeetingDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  // Opened from a vendor page (TPV/Purchase onboarding)? Then an admin gets a
+  // way straight back to it. Everyone else keeps only the list arrow.
+  const cameFrom = useLocation().state
+  const { user } = useAuth()
+  const backToVendor = user?.role === 'admin' && cameFrom?.from ? cameFrom : null
   const [m, setM]         = useState(null)
   const [loading, setLoad] = useState(true)
   const [err, setErr]     = useState(null)
@@ -33,6 +42,10 @@ export default function KickoffMeetingDetail() {
   const [publishBusy, setPublishBusy] = useState(false)   // "Send minutes to vendor" in flight
   const [action, setAction]   = useState(null)   // { to } transition modal
   const [linkData, setLinkData]     = useState(null)    // online meeting link data
+  // What happened when the room link was last mailed out: who it reached, and
+  // by name, who it could not. Held here rather than shown as a toast because
+  // an unreachable name is something the admin has to go and fix.
+  const [sendReport, setSendReport] = useState(null)
   const [genLinkBusy, setGenLinkBusy] = useState(false) // link generation in progress
 
   const load = () => kickoffApi.get(id).then(d => {
@@ -71,10 +84,16 @@ export default function KickoffMeetingDetail() {
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 18 }}>
-        <button onClick={() => navigate(`${meetingBase()}/kickoff`)} style={{ width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)', marginTop: 3, flexShrink: 0 }}>
+        <button onClick={() => navigate(meetingPaths().list)} style={{ width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)', marginTop: 3, flexShrink: 0 }}>
           <ArrowLeft size={16} />
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
+          {backToVendor && (
+            <button onClick={() => navigate(backToVendor.from)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 8, padding: '5px 11px', borderRadius: 8, cursor: 'pointer', background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.35)', color: '#a78bfa', fontSize: 12, fontWeight: 700 }}>
+              <ArrowLeft size={13} /> {backToVendor.fromLabel || 'Back'}
+            </button>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <h1 style={{ color: 'var(--text-h)', fontSize: 23, fontWeight: 900, margin: 0, letterSpacing: '-0.02em' }}>{m.title}</h1>
             {m.meeting_no && <span style={{ padding: '3px 9px', borderRadius: 7, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 11.5, fontWeight: 800, letterSpacing: '0.02em' }}>{m.meeting_no}</span>}
@@ -144,7 +163,7 @@ export default function KickoffMeetingDetail() {
               <Detail icon={Clock} label="Date & time" value={fmtDateTime(m.scheduled_at)} />
               <Detail icon={Clock} label="Duration" value={m.duration_minutes ? `${m.duration_minutes} min` : '—'} />
               {m.end_at && <Detail icon={Clock} label="End time" value={fmtDateTime(m.end_at)} />}
-              <Detail icon={MapPin} label={m.mode === 'online' ? 'Meeting link' : 'Location'} value={m.location || '—'} />
+              <Detail icon={MapPin} label="Location" value={m.location || '—'} />
               <Detail icon={CalendarDays} label="Mode" value={koModeLabel(m.mode)} />
               {m.chairperson && <Detail icon={Users} label="Chairperson" value={m.chairperson} />}
               {m.coordinator && <Detail icon={Users} label="Coordinator" value={m.coordinator} />}
@@ -169,6 +188,17 @@ export default function KickoffMeetingDetail() {
                 <MetaDetail icon={ShieldCheck} label="Confidentiality" value={m.confidentiality} />
               </div>
             )}
+            {/* What actually happened, beside what was booked. Until the call
+                itself was recorded there was nothing to show here — a meeting
+                held for seven minutes of its hour looked identical to one that
+                ran the full hour, and to one nobody attended at all. */}
+            <HeldRecord meeting={m} />
+
+            {/* The join link, in full. It was only ever a button, so nobody
+                could read it, copy it, or paste it to somebody who had not been
+                invited through the system. */}
+            <MeetingLinkRow meeting={m} />
+
             {m.status === KO_STATUS.DELAYED && m.delay_reason && (
               <div style={{ marginTop: 14, padding: '11px 13px', borderRadius: 11, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.32)' }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: '#f59e0b', marginBottom: 3 }}>DELAYED · originally {fmtDate(m.original_scheduled_at)}</div>
@@ -185,6 +215,20 @@ export default function KickoffMeetingDetail() {
               meeting={m}
               linkData={linkData}
               busy={genLinkBusy}
+              sendReport={sendReport}
+              onSetLink={async (link) => {
+                const res = await kickoffApi.setLink(m.id, link)
+                setM(res.meeting)
+                // Saving the room mails it to everyone invited — the server says
+                // who it will reach and, by name, who has no address anywhere.
+                setSendReport(res.notified || null)
+                // Re-read through the gate so the card gets this viewer's flags.
+                setLinkData(await kickoffApi.getLink(m.id).catch(() => res.link))
+              }}
+              onResend={async () => {
+                const res = await kickoffApi.announceLink(m.id)
+                setSendReport(res.notified || null)
+              }}
               onGenerate={async (platform) => {
                 setGenLinkBusy(true); setErr(null)
                 try {
@@ -228,8 +272,28 @@ export default function KickoffMeetingDetail() {
                           <span title="No e-mail address — this person cannot receive the invitation or the minutes"
                             style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#f59e0b' }}>no e-mail</span>
                         )}
+                        {/* Added by the call, not by whoever built the roster.
+                            Says so plainly, so an unexpected name reads as
+                            "somebody turned up" rather than a data error. */}
+                        {a.is_guest && (
+                          <span title="Joined the call under a name that was not on the roster"
+                            style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#a78bfa' }}>joined as guest</span>
+                        )}
                       </div>
-                      <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{[a.role, a.organisation].filter(Boolean).join(' · ') || '—'}</div>
+                      {/* Designation first: it comes from the person's own
+                          record and says why they were in the room. `role` is
+                          the meeting duty (Chair, Note-taker) and is set during
+                          the meeting rather than when the sheet is filled in —
+                          leading with it left most rows showing only a company
+                          name once the attendance grid stopped asking for it. */}
+                      <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{[a.designation || a.role, a.organisation].filter(Boolean).join(' · ') || '—'}</div>
+                      {/* Recorded by the call, not typed by anyone: this is the
+                          evidence behind the pill on the right. This row used to
+                          inline the "in the call" line and nothing else, while
+                          AttendanceEvidence — which also knows about a link
+                          join, a manual tick, and where the person joined from —
+                          sat below unreferenced. */}
+                      <AttendanceEvidence attendee={a} />
                     </div>
                     <AttendancePill attendee={a} />
                   </div>
@@ -237,6 +301,13 @@ export default function KickoffMeetingDetail() {
               </div>
             )}
           </div>
+
+          {/* The organiser's verdict on who actually attended.
+              Marking attendance in the CRM is what released the joining link;
+              it is not proof anybody stayed in a call held somewhere we cannot
+              see. This is where that gets decided — beside each person's own
+              mark, never over it. See MeetingAttendanceReview. */}
+          <AttendanceReviewPanel api={kickoffApi} meetingId={m.id} />
 
           {/* Minutes */}
           {m.minutes && (
@@ -247,7 +318,7 @@ export default function KickoffMeetingDetail() {
           )}
 
           {/* This subject's whole meeting history + rollup totals */}
-          <VendorHistoryCard m={m} onOpen={(mid) => navigate(`${meetingBase()}/kickoff/${mid}`)} />
+          <VendorHistoryCard m={m} onOpen={(mid) => navigate(meetingPaths().detail(mid))} />
         </div>
 
         {/* Right column */}
@@ -299,14 +370,14 @@ export default function KickoffMeetingDetail() {
           <ActionItemsCard m={m} meetingId={id} onChanged={load} onError={setErr} />
 
           {/* Agenda with its per-item discussion + decision (§7) */}
-          <AgendaCard m={m} onEdit={() => navigate(`${meetingBase()}/kickoff/${id}/edit`)} />
+          <AgendaCard m={m} onEdit={() => navigate(meetingPaths().edit(id))} />
 
           {/* Decision register (§9) */}
-          <DecisionsCard m={m} onEdit={() => navigate(`${meetingBase()}/kickoff/${id}/edit`)} />
+          <DecisionsCard m={m} onEdit={() => navigate(meetingPaths().edit(id))} />
 
           {/* Issues raised (§10) — track + escalate */}
           <IssuesCard m={m} meetingId={id} onChanged={load} onError={setErr}
-            onEdit={() => navigate(`${meetingBase()}/kickoff/${id}/edit`)} />
+            onEdit={() => navigate(meetingPaths().edit(id))} />
 
           {/* Who the invitation and the minutes actually reached (§13) */}
           <DistributionCard meetingId={id} m={m} onError={setErr} />
@@ -605,9 +676,16 @@ function DistributionCard({ meetingId, m, onError }) {
     setBusy(true); setNote(null); onError(null)
     try {
       const r = await kickoffApi.invite(meetingId)
+      // Naming the people nobody could reach, rather than reporting a count and
+      // letting "1 had no e-mail address" pass for success. Somebody put them on
+      // the roster; if the invitation never got to them, the organiser has to
+      // know WHO before the meeting rather than after it.
+      const missed = r.unreachable || []
       setNote(`Invitation sent to ${r.sent} recipient(s)`
         + (r.in_app ? `, ${r.in_app} in-app` : '')
-        + (r.skipped ? ` · ${r.skipped} had no e-mail address` : ''))
+        + (missed.length
+          ? ` · not told (no e-mail address and no login): ${missed.join(', ')}`
+          : (r.skipped ? ` · ${r.skipped} had no e-mail address` : '')))
       load()
     } catch (e) {
       onError(e?.response?.data?.message || 'Could not send the invitation.')
@@ -699,7 +777,7 @@ function DecisionsCard({ m, onEdit }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
         <SectionTitle icon={ShieldCheck}>Decisions <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: 12 }}>· {rows.length}</span></SectionTitle>
         <div style={{ display: 'flex', gap: 6 }}>
-          <a href={`${meetingBase()}/meetings/registers/decisions`} style={registerLink}>Decision Register</a>
+          <a href={meetingPaths().registers('decisions')} style={registerLink}>Decision Register</a>
           {onEdit && <button onClick={onEdit} style={addOnFormBtn}><Plus size={12} /> Add</button>}
         </div>
       </div>
@@ -742,7 +820,7 @@ function IssuesCard({ m, meetingId, onChanged, onError, onEdit }) {
         <SectionTitle icon={AlertTriangle}>Issues Raised <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: 12 }}>· {rows.length}</span></SectionTitle>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           {rows.length > 0 && <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{open} open</span>}
-          <a href={`${meetingBase()}/meetings/registers/issues`} style={registerLink}>Issue Register</a>
+          <a href={meetingPaths().registers('issues')} style={registerLink}>Issue Register</a>
           {onEdit && <button onClick={onEdit} style={addOnFormBtn}><Plus size={12} /> Add</button>}
         </div>
       </div>
@@ -921,7 +999,7 @@ function MomCard({ m, onUploaded, onError }) {
   const openPdf = async (download) => {
     setBusy(download ? 'dl' : 'view'); onError(null)
     try {
-      if (!m.mom_path) onUploaded(await kickoffApi.generateMom(m.id))
+      if (!hasDoc) onUploaded(await kickoffApi.generateMom(m.id))
       const blob = await kickoffApi.momBlob(m.id)
       const url = URL.createObjectURL(blob)
       if (download) {
@@ -937,11 +1015,18 @@ function MomCard({ m, onUploaded, onError }) {
     } finally { setBusy(null) }
   }
 
+  // Whether a minutes document exists, asked in a way both engines answer.
+  // This card gated everything on `mom_path`, which only the shared engine has,
+  // so on Purchase the View and Download buttons never appeared however many
+  // documents had been generated — and the generate button never changed its
+  // label, so people pressed it repeatedly and made duplicates.
+  const hasDoc = m.has_mom_document ?? !!m.mom_path
+
   return (
     <div className="pr-glass" style={{ padding: 20 }}>
       <SectionTitle icon={FileText}>Minutes document</SectionTitle>
 
-      {m.mom_path ? (
+      {hasDoc ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, padding: '11px 13px', borderRadius: 11, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)' }}>
           <FileText size={16} style={{ color: '#10b981', flexShrink: 0 }} />
           <span style={{ fontSize: 12.5, color: 'var(--text-h)', flex: 1 }}>MOM document ready</span>
@@ -959,11 +1044,11 @@ function MomCard({ m, onUploaded, onError }) {
       )}
 
       {/* Generate / View / Download */}
-      <div style={{ display: 'grid', gridTemplateColumns: m.mom_path ? '1fr 1fr' : '1fr', gap: 8, marginTop: 10 }}>
-        <MomBtn onClick={generate} busy={busy === 'gen'} icon={Sparkles} tone="#7C3AED">{m.mom_path ? 'Regenerate PDF' : 'Generate PDF'}</MomBtn>
-        {m.mom_path && <MomBtn onClick={() => openPdf(false)} busy={busy === 'view'} icon={Eye} tone="#10b981">View PDF</MomBtn>}
+      <div style={{ display: 'grid', gridTemplateColumns: hasDoc ? '1fr 1fr' : '1fr', gap: 8, marginTop: 10 }}>
+        <MomBtn onClick={generate} busy={busy === 'gen'} icon={Sparkles} tone="#7C3AED">{hasDoc ? 'Regenerate PDF' : 'Generate PDF'}</MomBtn>
+        {hasDoc && <MomBtn onClick={() => openPdf(false)} busy={busy === 'view'} icon={Eye} tone="#10b981">View PDF</MomBtn>}
       </div>
-      {m.mom_path && (
+      {hasDoc && (
         <MomBtn onClick={() => openPdf(true)} busy={busy === 'dl'} icon={Download} tone="#0ea5e9" full>Download PDF</MomBtn>
       )}
 
@@ -1262,7 +1347,10 @@ function VendorHistoryCard({ m, onOpen }) {
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, margin: '12px 0 14px' }}>
             <HStat label="Meetings"     value={t.meetings} />
-            <HStat label="Completed"    value={t.completed} color="#10b981" />
+            {/* "Held" is the calls that actually ran, counted from the record of
+                each one. "Completed" beside it is a status somebody set, and the
+                two routinely disagree — which is the point of showing both. */}
+            <HStat label="Held"         value={t.held} color={t.held ? '#10b981' : undefined} />
             <HStat label="Open actions" value={t.open_actions} color={t.open_actions ? '#f59e0b' : undefined} />
             <HStat label="Open issues"  value={t.open_issues} color={t.open_issues ? '#ef4444' : undefined} />
           </div>
@@ -1281,6 +1369,16 @@ function VendorHistoryCard({ m, onOpen }) {
                       {cur && <span style={{ fontSize: 9.5, fontWeight: 800, color: '#a78bfa' }}>THIS MEETING</span>}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{row.meeting_type_label} · {row.scheduled_at ? fmtDateTime(row.scheduled_at) : 'Unscheduled'}</div>
+                    {/* What the meeting did, under when it was booked. A history
+                        of scheduled times alone never said whether any of them
+                        happened. */}
+                    {row.actual_start_at && (
+                      <div style={{ fontSize: 10.5, color: '#10b981', marginTop: 2 }}>
+                        {row.actual_end_at
+                          ? `Held ${clockOf(row.actual_start_at)}–${clockOf(row.actual_end_at)}${row.held_minutes ? ` · ${row.held_minutes} min` : ''}`
+                          : 'In progress now'}
+                      </div>
+                    )}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                     {row.open_actions > 0 && <HPill tone="#f59e0b">{row.open_actions} act</HPill>}
@@ -1413,24 +1511,41 @@ function TransitionModal({ m, to, onClose, onDone }) {
  *   3. busy              → spinner
  */
 const PLATFORM_LABELS = {
-  jitsi:       'Jitsi Meet',
   google_meet: 'Google Meet',
   zoom:        'Zoom',
   teams:       'Microsoft Teams',
-  // Kept for meetings saved before Jitsi replaced it — the server regenerates
-  // those as Jitsi, but the stored value is still 'stub' until they do.
+  // Two retired values, still stored on older meetings: 'stub' was the
+  // placeholder link that opened nothing, and 'jitsi' the call the CRM used to
+  // run inside itself. Both are labelled rather than left to render as a raw
+  // key, and pressing Generate moves the meeting onto a real platform.
   stub:        'Generic Link',
+  jitsi:       'Jitsi Meet (retired)',
 }
 const PLATFORM_COLORS = {
-  jitsi:       '#1d76ba',
   google_meet: '#4285F4',
   zoom:        '#2D8CFF',
   teams:       '#6264A7',
   stub:        '#a78bfa',
+  jitsi:       '#a78bfa',
 }
 
-function OnlineMeetingCard({ meeting, linkData, busy, onGenerate }) {
+function OnlineMeetingCard({ meeting, linkData, busy, onGenerate, onSetLink, onResend, sendReport }) {
   const [copied, setCopied] = useState(false)
+  const [showPaste, setShowPaste] = useState(false)
+  const [resending, setResending] = useState(false)
+  const [resendErr, setResendErr] = useState(null)
+
+  const resend = async () => {
+    if (resending) return
+    setResending(true); setResendErr(null)
+    try { await onResend() } catch (e) {
+      setResendErr(e?.response?.data?.message || 'The link could not be sent. Please try again.')
+    } finally { setResending(false) }
+  }
+  // meet.google.com/new is a "start a meeting" button, not a room: everyone
+  // who opens it gets a different, empty meeting. The host starts the call
+  // with it and pastes the real room link back; attendees never receive it.
+  const isInstant = !!(linkData?.link_is_instant || linkData?.instant)
 
   const copy = () => {
     if (!linkData?.link) return
@@ -1439,7 +1554,7 @@ function OnlineMeetingCard({ meeting, linkData, busy, onGenerate }) {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const platform    = linkData?.platform ?? meeting.meeting_platform ?? 'jitsi'
+  const platform    = linkData?.platform ?? meeting.meeting_platform ?? 'google_meet'
   const color       = PLATFORM_COLORS[platform] ?? '#a78bfa'
   const platformLbl = PLATFORM_LABELS[platform]  ?? platform
 
@@ -1458,17 +1573,44 @@ function OnlineMeetingCard({ meeting, linkData, busy, onGenerate }) {
           <Loader2 size={16} className="ko-spin" style={{ color: '#a78bfa' }} />
           <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Generating meeting link…</span>
         </div>
+      ) : linkData?.link_pending ? (
+        <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.32)' }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: '#d97706', marginBottom: 3 }}>Waiting for the organiser</div>
+          <div style={{ fontSize: 12.5, color: 'var(--text-h)', lineHeight: 1.5 }}>
+            The meeting room has not been shared yet. It will appear here as soon as the organiser starts the call.
+          </div>
+        </div>
+      ) : isInstant && linkData?.link ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.32)' }}>
+            <div style={{ fontSize: 12.5, fontWeight: 800, color: '#d97706', marginBottom: 6 }}>Attendees cannot join yet — share the real room</div>
+            <ol style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: 'var(--text-h)', lineHeight: 1.7 }}>
+              <li>Click <strong>Start meeting</strong> — {platformLbl} opens a new room for you.</li>
+              <li>Copy that room's link from the browser (e.g. meet.google.com/abc-defg-hij).</li>
+              <li>Paste it below and press <strong>Save link</strong>. Everyone invited gets exactly that room.</li>
+            </ol>
+          </div>
+          <a href={linkData.link} target="_blank" rel="noopener noreferrer"
+            style={{ ...solidBtn, alignSelf: 'flex-start', textDecoration: 'none' }}>
+            <ExternalLink size={14} /> Start meeting
+          </a>
+          <PasteLinkBox onSave={onSetLink} />
+        </div>
+      ) : (linkData?.has_meeting_link && !linkData?.meeting_link) ? (
+        /* A link exists but this account has not earned it.
+           The organiser and an admin are not gated — they chose the platform and
+           generated the link — so this is the staff attendee's view: the same
+           trade the vendor gets in the portal, and the only way an internal
+           person ever reaches the register. Without it the attendance list would
+           carry the vendors who marked attendance and nobody from our side,
+           which reads as a meeting the vendor attended alone.
+           See MeetingAttendanceGate. */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <MeetingJoinGate meeting={{ ...linkData, mode: meeting.mode, status: meeting.status, is_expired: meeting.is_expired, is_live: meeting.is_live, id: meeting.id }}
+            onMark={kickoffApi.markOwnAttendance} />
+        </div>
       ) : linkData?.link ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {/* Run the call inside the CRM, next to the agenda and the roster.
-              Only Jitsi can do this: Meet and Teams refuse to be embedded and
-              Zoom needs a reviewed app, so those keep the plain Open link. */}
-          {platform === 'jitsi' && (
-            <a href={`${meetingBase()}/kickoff/${meeting.id}/room`}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '11px 14px', borderRadius: 11, background: 'linear-gradient(145deg,#34d399,#10b981)', color: '#fff', fontSize: 13, fontWeight: 800, textDecoration: 'none', boxShadow: '0 8px 20px -6px #10b98188' }}>
-              <Video size={15} /> Join here — with the agenda and notes
-            </a>
-          )}
           {/* Link row */}
           <div style={{ display: 'flex', gap: 7 }}>
             <input
@@ -1507,13 +1649,35 @@ function OnlineMeetingCard({ meeting, linkData, busy, onGenerate }) {
             )}
           </div>
 
-          {/* Regenerate */}
-          <button
-            onClick={() => onGenerate(platform)}
-            style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 13px', borderRadius: 9, cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)', background: 'var(--bg-card)', border: '1px solid var(--border)' }}
-          >
-            <Video size={12} /> Regenerate link
-          </button>
+          {linkData.can_set_link !== false && (
+            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+              <button
+                onClick={() => onGenerate(platform)}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 13px', borderRadius: 9, cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)', background: 'var(--bg-card)', border: '1px solid var(--border)' }}
+              >
+                <Video size={12} /> Regenerate link
+              </button>
+              <button
+                onClick={() => setShowPaste(v => !v)}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 13px', borderRadius: 9, cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)', background: 'var(--bg-card)', border: '1px solid var(--border)' }}
+              >
+                <Copy size={12} /> {showPaste ? 'Keep this link' : 'Use a different link'}
+              </button>
+              {/* Somebody always joins late, loses the mail, or is added to the
+                  roster after the link went out. Re-pasting the same URL would
+                  work, but reads as a mistake; this says what it does. */}
+              {!isInstant && onResend && (
+                <button
+                  onClick={resend} disabled={resending}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '7px 13px', borderRadius: 9, cursor: resending ? 'wait' : 'pointer', fontSize: 11.5, fontWeight: 700, color: '#0ea5e9', background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.35)', opacity: resending ? 0.6 : 1 }}
+                >
+                  {resending ? <Loader2 size={12} className="ko-spin" /> : <Send size={12} />} Resend link to everyone
+                </button>
+              )}
+            </div>
+          )}
+          <SendReport report={sendReport} error={resendErr} />
+          {showPaste && <PasteLinkBox onSave={async (l) => { await onSetLink(l); setShowPaste(false) }} />}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1526,8 +1690,96 @@ function OnlineMeetingCard({ meeting, linkData, busy, onGenerate }) {
           >
             <Video size={15} /> Generate Meeting Link
           </button>
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 4 }}>…or paste a room link you already have:</div>
+          <PasteLinkBox onSave={onSetLink} />
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * What the last send actually did.
+ *
+ * "Link sent to 7 people" on its own is the comfortable half. The half that
+ * matters is the other one: a participant with no e-mail address anywhere in
+ * the database is named here, because the only person who can fix that record
+ * is the one reading this card, and a silent skip is how a meeting starts with
+ * somebody missing and nobody knowing why.
+ */
+function SendReport({ report, error }) {
+  if (error) {
+    return (
+      <div style={{ padding: '9px 12px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.3)', fontSize: 12, color: '#b91c1c', fontWeight: 600 }}>
+        {error}
+      </div>
+    )
+  }
+  if (!report) return null
+
+  const unreachable = report.unreachable || []
+  const reached = report.reachable ?? report.sent ?? 0
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {report.smtp_ready === false ? (
+        <div style={{ padding: '9px 12px', borderRadius: 10, background: 'rgba(245,158,11,0.09)', border: '1px solid rgba(245,158,11,0.32)', fontSize: 12, color: '#b45309', fontWeight: 700 }}>
+          {report.smtp_reason || 'E-mail is not set up, so nothing was sent.'}
+        </div>
+      ) : (
+        <div style={{ padding: '9px 12px', borderRadius: 10, background: 'rgba(16,185,129,0.09)', border: '1px solid rgba(16,185,129,0.3)', fontSize: 12, color: '#059669', fontWeight: 700 }}>
+          Link sent to {reached} {reached === 1 ? 'person' : 'people'}.
+        </div>
+      )}
+      {unreachable.length > 0 && (
+        <div style={{ padding: '9px 12px', borderRadius: 10, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)' }}>
+          <div style={{ fontSize: 11.5, fontWeight: 800, color: '#b45309', marginBottom: 4 }}>
+            {unreachable.length} could not be reached — add an e-mail address to their record:
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 17, fontSize: 12, color: 'var(--text-h)', lineHeight: 1.6 }}>
+            {unreachable.map((u, i) => <li key={i}><strong>{u.name}</strong> — {u.reason}</li>)}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Organiser pastes a real Google Meet / Zoom / Teams room link. The server
+ *  refuses instant-start URLs and non-organisers, and says why. */
+function PasteLinkBox({ onSave }) {
+  const [val, setVal]   = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr]   = useState(null)
+
+  const save = async () => {
+    if (!val.trim()) return
+    setBusy(true); setErr(null)
+    try {
+      await onSave(val.trim())
+      setVal('')
+    } catch (e) {
+      const detail = Object.values(e?.response?.data?.errors || {}).flat()[0]
+      setErr(detail || e?.response?.data?.message || 'Could not save the link.')
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', gap: 7 }}>
+        <input
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') save() }}
+          placeholder="https://meet.google.com/abc-defg-hij"
+          style={{ flex: 1, padding: '9px 11px', borderRadius: 9, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-h)', fontSize: 12, fontFamily: 'monospace', minWidth: 0 }}
+        />
+        <button onClick={save} disabled={busy || !val.trim()}
+          style={{ ...solidBtn, padding: '0 14px', opacity: busy || !val.trim() ? 0.6 : 1 }}>
+          {busy ? <Loader2 size={13} className="ko-spin" /> : <Check size={13} />} Save link
+        </button>
+      </div>
+      {err && <div style={{ fontSize: 11.5, color: '#ef4444' }}>{err}</div>}
     </div>
   )
 }
@@ -1576,6 +1828,202 @@ const MetaDetail = ({ icon: Icon, label, value }) => value ? (
     <span style={{ fontSize: 12.5, color: 'var(--text-h)', fontWeight: 600 }}>{value}</span>
   </div>
 ) : null
+
+/**
+ * What the meeting actually did, as opposed to what it was booked to do.
+ *
+ * `scheduled_at` and `duration_minutes` are a plan somebody typed. These two
+ * columns are written by the live room as people arrive and leave, and the gap
+ * between them is usually the interesting part: an hour was booked, the call
+ * ran nineteen minutes. Nothing is shown at all for a meeting nobody joined
+ * through the room — an empty panel would read as "nobody came", which is a
+ * different and much stronger claim than "we have no record".
+ */
+function HeldRecord({ meeting: m }) {
+  if (!m.actual_start_at) return null
+
+  const booked = m.duration_minutes || null
+  const held = m.held_minutes
+  const running = !m.actual_end_at
+
+  return (
+    <div style={{
+      marginTop: 14, padding: '11px 13px', borderRadius: 11,
+      background: running ? 'rgba(16,185,129,0.08)' : 'rgba(148,163,184,0.10)',
+      border: `1px solid ${running ? 'rgba(16,185,129,0.32)' : 'var(--border)'}`,
+    }}>
+      <div style={{ fontSize: 11, fontWeight: 800, color: running ? '#10b981' : 'var(--text-muted)', marginBottom: 4, letterSpacing: '0.03em' }}>
+        {running ? 'IN PROGRESS NOW' : 'HELD'}
+      </div>
+      <div style={{ fontSize: 12.5, color: 'var(--text-h)' }}>
+        {running ? (
+          <>Started {fmtDateTime(m.actual_start_at)} — still running.</>
+        ) : (
+          <>
+            {fmtDateTime(m.actual_start_at)} to {clockOf(m.actual_end_at)}
+            {held !== null && held !== undefined && (
+              <> · ran <strong>{held < 1 ? 'under a minute' : `${held} min`}</strong></>
+            )}
+            {booked ? <span style={{ color: 'var(--text-muted)' }}> of {booked} min booked</span> : null}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The join link, readable and copyable.
+ *
+ * It existed only behind a "Join" button, so nobody could see where the meeting
+ * actually was, read it out over the phone, or send it to somebody the system
+ * had not invited — all of which people do.
+ */
+function MeetingLinkRow({ meeting: m }) {
+  const [copied, setCopied] = useState(false)
+  // An instant-start URL is not a room — copying it out would send people to
+  // empty meetings of their own. The Online Meeting card walks the host through it.
+  if (!m.meeting_link || INSTANT_START_URLS.includes(m.meeting_link.replace(/\/+$/, '').toLowerCase())) return null
+
+  const copy = () => {
+    navigator.clipboard?.writeText(m.meeting_link)
+      .then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800) })
+      .catch(() => {/* an unavailable clipboard is not worth an error banner */})
+  }
+
+  return (
+    <div style={{ marginTop: 14, padding: '11px 13px', borderRadius: 11, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5 }}>
+        <Video size={12} style={{ color: '#a78bfa' }} />
+        <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.03em' }}>MEETING LINK</span>
+        {m.meeting_passcode && (
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>· passcode <strong style={{ color: 'var(--text-h)' }}>{m.meeting_passcode}</strong></span>
+        )}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <a href={m.meeting_link} target="_blank" rel="noopener noreferrer"
+          style={{ fontSize: 12, color: '#a78bfa', fontWeight: 600, wordBreak: 'break-all', flex: '1 1 220px', minWidth: 0 }}>
+          {m.meeting_link}
+        </a>
+        <button onClick={copy} title="Copy the link"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 11.5, fontWeight: 700, background: 'var(--bg-card)', border: '1px solid var(--border)', color: copied ? '#10b981' : 'var(--text-h)', flexShrink: 0 }}>
+          <Copy size={12} /> {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Where an attendance mark came from.
+ *
+ * Three sources, and they are not equally strong. Being seen in the call says
+ * when somebody arrived and how long they stayed. A Join click says only that
+ * they opened the meeting — which for a call held on Google Meet or Teams is
+ * the only thing this system can honestly know. A hand-tick says a person
+ * decided, which outranks both.
+ *
+ * Shown because the difference matters to whoever reads the register later.
+ */
+function AttendanceEvidence({ attendee: a }) {
+  if (!a.joined_at && !a.attendance_source) return null
+
+  const line = (() => {
+    if (a.attendance_source === 'call' || (a.joined_at && a.seconds_in_call > 0)) {
+      return (
+        <div style={{ fontSize: 11, color: '#10b981', marginTop: 2 }}>
+          In the call {clockOf(a.joined_at)}–{clockOf(a.left_at)}
+          {a.seconds_in_call > 60 ? ` · ${Math.round(a.seconds_in_call / 60)} min` : ''}
+        </div>
+      )
+    }
+
+    if (a.attendance_source === 'link') {
+      return (
+        <div style={{ fontSize: 11, color: '#0ea5e9', marginTop: 2 }}>
+          Opened the meeting {clockOf(a.joined_at)}
+          <span style={{ color: 'var(--text-muted)' }}> · joined from the portal</span>
+        </div>
+      )
+    }
+
+    if (a.attendance_source === 'manual') {
+      return <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Marked by hand</div>
+    }
+
+    return a.joined_at
+      ? <div style={{ fontSize: 11, color: '#10b981', marginTop: 2 }}>In the call {clockOf(a.joined_at)}</div>
+      : null
+  })()
+
+  return <>{line}<JoinOrigin attendee={a} /></>
+}
+
+/**
+ * Where this person joined from — address, device, and location if they shared
+ * one.
+ *
+ * It answers the question somebody reading an attendance record asks next:
+ * everyone can see that a tick is there, and this is how it got there. All of
+ * it was previously buried in a free-text `remark` string on one of the two
+ * engines and nowhere at all on the other; see the join-evidence migration.
+ *
+ * "Location not shared" is printed rather than left blank, because a blank
+ * reads as a missing feature and this is a real answer: the person was asked
+ * and declined, or their device had nothing to offer. Nothing is looked up from
+ * the address — a city guessed by a third party would sit here looking exactly
+ * like one somebody actually gave.
+ */
+function JoinOrigin({ attendee: a }) {
+  if (!a.join_ip && !a.join_device && a.join_latitude == null) return null
+
+  const coords = a.join_latitude != null && a.join_longitude != null
+    ? `${Number(a.join_latitude).toFixed(5)}, ${Number(a.join_longitude).toFixed(5)}`
+    : null
+  const place = a.join_location_label || coords
+
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 8px', fontSize: 10.5, color: 'var(--text-muted)', marginTop: 3 }}>
+      {a.join_device && (
+        <span style={originChip} title="The device and browser the join came from">
+          <Monitor size={10} /> {a.join_device}
+        </span>
+      )}
+      {a.join_ip && (
+        <span style={originChip} title="The network address the join came from">
+          <Globe size={10} /> {a.join_ip}
+        </span>
+      )}
+      <span
+        style={originChip}
+        title={place
+          ? (a.join_location_label && coords ? `${a.join_location_label} · ${coords}` : undefined)
+          : 'This person did not share their location, or their device had none to give'}
+      >
+        <MapPin size={10} /> {place || 'Location not shared'}
+      </span>
+    </div>
+  )
+}
+
+const originChip = { display: 'inline-flex', alignItems: 'center', gap: 3, fontVariantNumeric: 'tabular-nums' }
+
+
+/**
+ * "14:32" in the reader's own timezone.
+ *
+ * These are machine instants stamped as the call happened — not the booked
+ * slot, which is a wall clock somebody typed and must not be re-localised. The
+ * Z is put back when the server sent the bare "Y-m-d H:i:s" form, without which
+ * the browser reads a UTC instant as local time.
+ */
+const clockOf = (v) => {
+  const raw = String(v || '').trim()
+  if (!raw) return '—'
+  const hasZone = /[Zz]$|[+-]\d\d:?\d\d$/.test(raw)
+  const d = new Date(raw.replace(' ', 'T') + (hasZone ? '' : 'Z'))
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
 
 /**
  * One attendee's recorded attendance (Meeting.docx §6).
@@ -1629,6 +2077,8 @@ const Banner = ({ tone, icon: Icon, children }) => (
     <span style={{ fontSize: 13, color: 'var(--text-h)' }}>{children}</span>
   </div>
 )
+
+const INSTANT_START_URLS = ['https://meet.google.com/new', 'https://zoom.us/start/videomeeting', 'https://teams.microsoft.com/start']
 
 const solidBtn = {
   display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 16px', borderRadius: 10, cursor: 'pointer',

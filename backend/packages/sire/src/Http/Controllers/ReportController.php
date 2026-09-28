@@ -1,0 +1,252 @@
+<?php
+
+namespace Sire\Http\Controllers;
+
+use Sire\Http\Controllers\Concerns\AssertsSireTenantOwnership;
+use Sire\Http\Controllers\Concerns\ResolvesSireUser;
+use Sire\Http\Controllers\Concerns\SireApiResponse;
+use Sire\Http\Requests\StoreReportRequest;
+use Sire\Models\Report;
+use Sire\Models\ReportCategory;
+use Sire\Models\ReportSeverity;
+use Sire\Support\SirePriority;
+use Sire\Contracts\SireAttachmentProvider;
+use Sire\Dto\SireAttachment;
+use Sire\Services\SireContextService;
+use Sire\Services\SireReportService;
+use Sire\Services\SireWorkflowService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+
+/**
+ * SIRE — report endpoints.
+ *
+ * MERGE NOTE: slice 2 already defines this controller. Take `store()` and
+ * `storeAttachment()` from here and leave the rest of that file alone.
+ */
+class ReportController extends SireController
+{
+    use SireApiResponse;
+    use ResolvesSireUser;
+    use AssertsSireTenantOwnership;
+
+    public function __construct(
+        private readonly SireReportService $reports,
+        private readonly SireWorkflowService $workflow,
+        private readonly SireContextService $context,
+        private readonly SireAttachmentProvider $attachments,
+    ) {
+    }
+
+    /**
+     * Create a report — including one filed by the global Report Issue button.
+     *
+     * tenant_id and reporter_id come from the authenticated token. They are never
+     * read from the request: StoreReportRequest strips them before validation,
+     * and there is no code path here that would accept them.
+     */
+    /**
+     * GET /sire/report-options — the three lists the Report Issue form needs.
+     *
+     * Deliberately NOT /sire/dashboard/options. That one carries tenants,
+     * modules and assignee rosters for the register's filter bar, and the global
+     * Report Issue button is reachable from every screen by every staff member,
+     * including people who never open the dashboard. REPORT-ISSUE.md is blunt
+     * about why this matters: an engineer who finds the button slow files a
+     * message in a chat channel instead, and that message is not tenant-scoped,
+     * not audited and not searchable.
+     *
+     * Three cheap reads, no joins, no counts.
+     */
+    public function options(Request $request): JsonResponse
+    {
+        $tenantId = (int) $this->sireUser()->tenantId;
+
+        return $this->success([
+            'categories' => ReportCategory::query()
+                ->forTenant($tenantId)
+                ->where('is_active', true)
+                ->orderBy('sort_order')
+                ->get(['id', 'name', 'code']),
+
+            'severities' => ReportSeverity::query()
+                ->forTenant($tenantId)
+                // level is the sort key, never code: a workspace may run three
+                // bands or six and call the top one anything it likes.
+                ->orderByDesc('level')
+                ->get(['id', 'name', 'code', 'level', 'color']),
+
+            'priorities' => collect(SirePriority::ALL)
+                ->map(fn (string $value) => [
+                    'value' => $value,
+                    'label' => SirePriority::LABELS[$value] ?? $value,
+                ])
+                ->values(),
+
+            // What the form should land on when the reporter says nothing. Sent
+            // by the server so a workspace that renames or reorders its bands
+            // does not need a frontend change to get a sane default.
+            'defaults' => [
+                'priority'    => SirePriority::P3,
+                // The MIDDLE of whatever scale this workspace runs, computed from
+                // the band count rather than hardcoded. A default of "High" is
+                // not a neutral starting point -- it is a claim, and one that
+                // every reporter who leaves it alone would be making by accident.
+                'severity_id' => ReportSeverity::query()
+                    ->forTenant($tenantId)
+                    ->orderByDesc('level')
+                    ->skip(intdiv(ReportSeverity::query()->forTenant($tenantId)->count(), 2))
+                    ->value('id'),
+            ],
+        ]);
+    }
+
+    public function store(StoreReportRequest $request): JsonResponse
+    {
+        $user     = $this->sireUser();
+        $tenantId = (int) $user->tenantId;
+        $data     = $request->validated();
+
+        $report = DB::transaction(function () use ($data, $tenantId, $user) {
+            $report = $this->reports->create($tenantId, $user, $data);
+
+            if (! empty($data['context'])) {
+                $this->context->capture($report, $data['context'], $tenantId);
+            }
+
+            // Report Issue files an issue; it does not leave a draft lying around.
+            //
+            // Nothing to do to honour that: there IS no draft state. create()
+            // stamps SireWorkflow::INITIAL ('new'), which is the filed state, and
+            // the workflow has no submit transition out of it -- the next move is
+            // triage, by someone else. submit is still accepted so the Report
+            // Issue payload keeps working, it simply describes what already
+            // happened.
+            //
+            // This replaced a call to SireWorkflowService::submit(), a method that
+            // does not exist on that service. Every report filed from the button
+            // sends submit:true, so the button 500'd on every use.
+
+            return $report->fresh();
+        });
+
+        return $this->success($this->reports->detail($report), 201);
+    }
+
+    /**
+     * One issue, with everything the detail screen renders.
+     *
+     * The file's MERGE NOTE says to take only store() and storeAttachment() from
+     * this slice and leave the rest alone -- but the slice that was meant to
+     * carry show() never landed, so IssueDetailPage called an endpoint that did
+     * not exist. Added here, in this controller's own idiom.
+     *
+     * Ownership is asserted before anything is read, and the miss is a 404 rather
+     * than a 403: a 403 would confirm the id belongs to somebody, which tells a
+     * caller in another tenant something true about data they may not see.
+     */
+    public function show(Report $report): JsonResponse
+    {
+        $this->assertTenantOwnership($report); // 404, not 403
+
+        return $this->success($this->reports->detail($report, $this->sireUser()));
+    }
+
+    /**
+     * Attach evidence -- a Report Issue screenshot, or QA proof of a failure.
+     *
+     * The owner is the ROUTE-BOUND model, never a value from the request body,
+     * so a file cannot be retargeted at another record by editing the payload.
+     *
+     * Validated twice on purpose: here, so the user gets a clear 422, and again
+     * inside the adapter against the SNIFFED mime type, because an `accept`
+     * attribute and a Content-Type header are both client-supplied hints.
+     */
+    public function storeAttachment(Request $request, Report $report): JsonResponse
+    {
+        $this->assertTenantOwnership($report); // 404, not 403
+
+        $request->validate([
+            'file' => ['required', 'file', 'image', 'max:8192'], // 8 MB; disk is tight on the box
+        ]);
+
+        $attachment = $this->attachments->store(
+            $report,
+            $request->file('file'),
+            $this->sireUser(),
+        );
+
+        return $this->success($attachment->toArray(), 201);
+    }
+
+    /**
+     * Stream one piece of evidence.
+     *
+     * The attachments disk is PRIVATE and has no public URL, so without this the
+     * screenshot a reporter attached could be listed but never actually seen --
+     * the descriptor's url pointed at /storage/..., which has no symlink and
+     * would not be safe if it did.
+     *
+     * Tenant ownership is asserted on the REPORT first, and the file is then
+     * resolved through the provider's own listing for that report. An id is a
+     * path here, so it is never concatenated into a disk read directly.
+     */
+    public function downloadAttachment(Request $request, Report $report, string $attachment)
+    {
+        $this->assertTenantOwnership($report); // 404, not 403
+
+        $requested = urldecode($attachment);
+
+        // Membership, not string surgery: the file must be one this report
+        // actually owns, which also makes traversal unexpressible.
+        //
+        // A bare FILENAME resolves as well as the full stored path. An id is a
+        // path here, and a path in a URL segment encodes its slashes as %2F,
+        // which the production web server (Plesk, Apache behind nginx) answers
+        // with its own 404 before the request ever reaches Laravel -- so
+        // evidence that had uploaded perfectly read "Could not load" on live
+        // while local dev, which passes %2F straight through, looked healthy.
+        // The directory comes from the route-bound report regardless, so the
+        // filename is all the URL ever needed to carry. Full-path ids still
+        // match, so any link already in flight keeps working.
+        $match = null;
+
+        foreach ($this->attachments->listFor($report) as $candidate) {
+            $id = (string) $candidate->id;
+
+            if ($id === $requested || basename($id) === $requested) {
+                $match = $candidate;
+                break;
+            }
+        }
+
+        abort_if($match === null, 404);
+
+        // Read the PROVIDER's path, never the request's. The matched descriptor
+        // is the only thing that reaches Storage, so no request string is ever
+        // used as a disk path.
+        $path = (string) $match->id;
+
+        $disk = Storage::disk((string) config('sire.attachments.disk'));
+
+        abort_unless($disk->exists($path), 404);
+
+        return $disk->response($path, $match->name, [
+            'Content-Type'        => $match->mime ?: 'application/octet-stream',
+            'Content-Disposition' => 'inline; filename="'.addslashes($match->name).'"',
+        ]);
+    }
+
+    /** Evidence already attached to this issue. */
+    public function indexAttachments(Request $request, Report $report): JsonResponse
+    {
+        $this->assertTenantOwnership($report);
+
+        return $this->success(array_map(
+            fn (SireAttachment $a) => $a->toArray(),
+            $this->attachments->listFor($report),
+        ));
+    }
+}

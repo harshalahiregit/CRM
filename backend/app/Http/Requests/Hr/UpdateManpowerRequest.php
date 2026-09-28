@@ -26,14 +26,21 @@ class UpdateManpowerRequest extends FormRequest
             'location'            => 'nullable|string|max:150',
             'employee_level'      => 'nullable|string|max:60',
             'experience_required' => 'nullable|string|max:100',
-            'education'           => 'nullable|string|max:150',
+            // Kept identical to StoreManpowerRequest — see the reasoning there.
+            // An edit that refused what the create accepted would be worse than
+            // either limit on its own: the record saves once and can never be
+            // touched again.
+            'education'           => 'nullable|string|max:255',
             'criticality'         => 'nullable|in:Low,Medium,High,Business Critical',
             'salary_min'          => 'nullable|numeric|min:0',
             'salary_max'          => 'nullable|numeric|min:0|gte:salary_min',
+            // Unlimited, matching StoreManpowerRequest — see the reasoning there.
+            // An edit that refused what the create accepted would save the record
+            // once and never let it be touched again.
             'required_skills'     => 'nullable|array',
-            'required_skills.*'   => 'string|max:60',
+            'required_skills.*'   => 'string',
             'preferred_skills'    => 'nullable|array',
-            'preferred_skills.*'  => 'string|max:60',
+            'preferred_skills.*'  => 'string',
             'job_description'     => 'nullable|string',
             'justification'       => 'nullable|string',
             'required_by_date'    => 'nullable|date|after_or_equal:today',
@@ -41,14 +48,45 @@ class UpdateManpowerRequest extends FormRequest
             // Enterprise fields (SPK-1) — all optional, backward compatible.
             'hiring_manager_id'      => 'nullable|exists:hr_employees,id',
             'work_mode'              => 'nullable|in:Onsite,Remote,Hybrid',
-            'shift'                  => 'nullable|in:Day,Night,Rotational,Flexible',
+            // As the store rule, plus whatever this requisition already holds.
+            //
+            // Existing rows carry the legacy names, and a workspace that has
+            // since configured its own shifts would otherwise be unable to save
+            // ANY edit to an old requisition — the untouched shift field would
+            // fail validation and take the whole update down with it. The rule
+            // applies to a shift being changed, not to one being carried.
+            'shift'                  => ['nullable', Rule::in($this->allowedShifts())],
             'budget'                 => 'nullable|numeric|min:0',
             'certifications'         => 'nullable|array',
-            'certifications.*'       => 'string|max:100',
+            'certifications.*'       => 'string',
             'hiring_reason'          => 'nullable|in:New Position,Replacement,Expansion,Contract',
             'replacement_employee_id' => 'nullable|required_if:hiring_reason,Replacement|exists:hr_employees,id',
             'cost_center'            => 'nullable|string|max:100',
         ];
+    }
+
+    /**
+     * The shift names this particular update may save.
+     *
+     * The workspace's configured shifts, plus the value already stored on the
+     * requisition being edited so an existing row stays editable. Nothing is
+     * backfilled and nothing already saved is invalidated — the old value
+     * remains valid for the row that holds it, and for no other.
+     *
+     * @return array<int, string>
+     */
+    private function allowedShifts(): array
+    {
+        $allowed = \App\Services\Hr\OrganizationService::shiftOptions((int) $this->user()->tenant_id);
+
+        $current = $this->route('manpowerRequest');
+        $stored  = is_object($current) ? $current->shift : null;
+
+        if ($stored !== null && $stored !== '' && ! in_array($stored, $allowed, true)) {
+            $allowed[] = $stored;
+        }
+
+        return $allowed;
     }
 
     public function messages(): array

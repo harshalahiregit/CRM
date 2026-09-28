@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { Mail, MailOpen, SlidersHorizontal, IndianRupee, Tags, Building2, Network, Palette, UploadCloud, ShieldCheck, Bell, Globe, Coins, Hash, Trash2, Shield, Users, Wallet, LifeBuoy, ShoppingCart, HardHat } from 'lucide-react'
+import { Mail, MailOpen, MessageCircle, SlidersHorizontal, IndianRupee, Tags, Building2, Network, Palette, UploadCloud, ShieldCheck, Bell, Globe, Coins, Hash, Trash2, Shield, Users, Wallet, LifeBuoy, ShoppingCart, HardHat } from 'lucide-react'
 
 // Section registry — new settings pages plug in here.
 //
@@ -27,6 +27,7 @@ const SECTIONS = [
 
   { group: 'Communication', label: 'Email / SMTP', path: 'mail', icon: Mail },
   { group: 'Communication', label: 'Email Templates', path: 'email-templates', icon: MailOpen },
+  { group: 'Communication', label: 'WhatsApp', path: 'whatsapp', icon: MessageCircle },
   { group: 'Communication', label: 'Notifications', path: 'notification-preferences', icon: Bell },
 
   // The module tabs the brief asked for, so a module's settings no longer need

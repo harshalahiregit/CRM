@@ -3,6 +3,8 @@
 namespace App\Repositories\Shared;
 
 use App\Models\Shared\KickoffMeeting;
+use App\Models\User;
+use App\Support\Shared\MeetingVisibility;
 use App\Repositories\BaseRepository;
 use App\Support\Shared\KickoffStatus as Status;
 use App\Support\Shared\MomActionStatus;
@@ -11,10 +13,17 @@ class KickoffMeetingRepository extends BaseRepository
 {
     protected string $modelClass = KickoffMeeting::class;
 
-    /** Tenant-scoped, filtered listing for the registry. */
-    public function filtered(int $tenantId, array $filters)
+    /**
+     * Tenant-scoped, filtered listing for the registry.
+     *
+     * $viewer is required, not optional-with-a-default: an optional viewer means
+     * a future caller that forgets it silently gets every meeting in the tenant,
+     * which is the exact failure this scoping exists to prevent. Pass null only
+     * to mean "no viewer, show everything", and mean it.
+     */
+    public function filtered(int $tenantId, array $filters, ?User $viewer)
     {
-        $query = KickoffMeeting::forTenant($tenantId)
+        $query = MeetingVisibility::apply(KickoffMeeting::forTenant($tenantId), $viewer)
             // Attendee names ride along so the calendar's Participant filter works
             // without a second fetch (Meeting.docx §15).
             ->with(['creator:id,name', 'kickoffable', 'subjects.subject', 'attendees:id,kickoff_meeting_id,name'])
@@ -82,9 +91,11 @@ class KickoffMeetingRepository extends BaseRepository
             ->find($id);
     }
 
-    public function stats(int $tenantId): array
+    public function stats(int $tenantId, ?User $viewer): array
     {
-        $base = fn () => KickoffMeeting::forTenant($tenantId);
+        // Counts have to narrow with the list, or the header says "12 meetings"
+        // over a table showing three and the difference looks like a bug.
+        $base = fn () => MeetingVisibility::apply(KickoffMeeting::forTenant($tenantId), $viewer);
 
         return [
             'total' => $base()->count(),

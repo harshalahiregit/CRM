@@ -196,8 +196,29 @@ class ClientPortalAuthService
             throw new BusinessException('This contact has been deactivated. Please speak to your account manager.', 403);
         }
 
+        // Was portal access granted to THIS contact?
+        //
+        // Restored, and it must stay ahead of the customer check below. These
+        // are two different questions and answering only the second one lets a
+        // contact who was never given portal access sign in, provided their
+        // customer is active — a wider hole than the one the customer check was
+        // added to close. ClientPortalAuthHardeningTest and ClientPortalTest
+        // both assert this 403 and both caught its removal.
         if ($contact->portal_status !== 'active') {
             throw new BusinessException('Portal access has not been enabled for this contact.', 403);
+        }
+
+        // And is the customer itself still live?
+        //
+        // The Status switch on the customer list writes clients.active and
+        // NOTHING read it — so switching a customer off left every one of its
+        // contacts able to sign in and read their dashboard. That is worse than a
+        // control that visibly fails: whoever flipped it believed access was cut.
+        // A removed customer is treated the same way; its contacts are soft
+        // deleted with it, but a token issued beforehand must not outlive it.
+        $client = $contact->client()->withTrashed()->first();
+        if (! $client || $client->trashed() || ! $client->active) {
+            throw new BusinessException('This account is no longer active. Please speak to your account manager.', 403);
         }
 
         $contact->forceFill([

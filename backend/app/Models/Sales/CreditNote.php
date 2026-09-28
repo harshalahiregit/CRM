@@ -97,7 +97,9 @@ class CreditNote extends Model
      */
     public function customer()
     {
-        return $this->belongsTo(\App\Models\Customer\Client::class, 'client_id');
+        // withTrashed — see SalesInvoice::customer(). A deleted customer must not
+        // blank out the documents they were issued.
+        return $this->belongsTo(\App\Models\Customer\Client::class, 'client_id')->withTrashed();
     }
 
     /**
@@ -109,6 +111,14 @@ class CreditNote extends Model
      */
     public function getClientAttribute(): ?string
     {
-        return $this->customer?->company;
+        $customer = $this->customer;
+        if (! $customer) {
+            return null;
+        }
+
+        // See SalesInvoice::getClientAttribute() — a removed customer says so.
+        return $customer->trashed()
+            ? $customer->company.' (deleted)'
+            : $customer->company;
     }
 }

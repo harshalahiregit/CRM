@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { KeyRound, Loader2, MailCheck, ArrowLeft } from 'lucide-react'
 import api from '@/lib/api'
 
@@ -16,6 +16,13 @@ import api from '@/lib/api'
  * account" would turn this page into a way to test which emails are registered.
  */
 export default function ForgotPasswordPage() {
+  // The login screen passes ?role= when the visitor picked one. It narrows the
+  // search to that identity's own store; without it the server looks in all of
+  // them, because somebody who clicks "Forgot password" without touching the
+  // dropdown still has to be able to recover their account.
+  const [params] = useSearchParams()
+  const role = params.get('role') || undefined
+
   const [email, setEmail] = useState('')
   const [busy, setBusy]   = useState(false)
   const [sent, setSent]   = useState(false)
@@ -27,7 +34,7 @@ export default function ForgotPasswordPage() {
 
     setBusy(true); setErr(null)
     try {
-      await api.post('/auth/forgot-password', { email: email.trim() })
+      await api.post('/auth/forgot-password', { email: email.trim(), role })
       setSent(true)
     } catch (e2) {
       // 422 is a malformed address; 429 is the rate limiter. Anything else is

@@ -74,14 +74,18 @@ class TaskTreeService
     /** Same as progressFor() but for a task you already have in hand. */
     public function progressForTask(Task $task, int $tenantId): array
     {
+        $closed = $this->closedKey($tenantId);
         [$byParent, $checklist] = $this->load($task, $tenantId);
-        $tally = $this->tally($task->id, $byParent, $checklist, $this->closedKey($tenantId));
+        $tally = $this->tally($task->id, $byParent, $checklist, $closed);
 
         return [
             'percent'  => $tally['total'] > 0 ? (int) round($tally['done'] / $tally['total'] * 100) : 0,
             'done'     => $tally['done'],
             'total'    => $tally['total'],
             'subtasks' => $this->countDescendants($task->id, $byParent),
+            // The same work, split the two ways a person actually reads it.
+            // See breakdown().
+            'breakdown' => $this->breakdown($task->id, $byParent, $checklist, $closed),
         ];
     }
 
@@ -290,6 +294,52 @@ class TaskTreeService
     }
 
     /**
+     * The two tallies a person reads off a row, kept apart.
+     *
+     * `percent` is one number over everything underneath, which is the right
+     * answer for a progress bar and the wrong answer for a human scanning a
+     * list: "60%" does not say whether four checklist lines are ticked or two
+     * subtasks are finished, and at fifty tasks on screen that is the only
+     * thing anybody is actually trying to read.
+     *
+     * So each node also reports:
+     *
+     *   checklist — its OWN checklist items, done/total. Items belong to the
+     *               task they are on; they never roll sideways.
+     *   subtasks  — its DIRECT children only, done/total. Direct, not deep,
+     *               because "3 of 6 subtasks" is a sentence about this task;
+     *               the deep number is what `percent` already is.
+     *
+     * A subtask counts as done when its own branch is finished — closed status
+     * for a leaf, 100% for a branch — so a parent whose children are all ticked
+     * never reads as 2/3.
+     *
+     * @return array{checklist:array{done:int,total:int},subtasks:array{done:int,total:int}}
+     */
+    private function breakdown(int $taskId, array $byParent, array $checklist, string $closed): array
+    {
+        $kids = $byParent[$taskId] ?? [];
+        $doneKids = 0;
+
+        foreach ($kids as $child) {
+            $cid = (int) $child->id;
+            $sub = $this->tally($cid, $byParent, $checklist, $closed);
+
+            // A branch is done when everything in it is; a leaf when it is closed.
+            $finished = $sub['total'] > 0
+                ? $sub['done'] === $sub['total']
+                : $child->status === $closed;
+
+            $doneKids += $finished ? 1 : 0;
+        }
+
+        return [
+            'checklist' => $checklist[$taskId] ?? ['done' => 0, 'total' => 0],
+            'subtasks'  => ['done' => $doneKids, 'total' => count($kids)],
+        ];
+    }
+
+    /**
      * Count the leaves under a task. See progressFor() for what a leaf is.
      *
      * @return array{done:int,total:int}
@@ -346,6 +396,10 @@ class TaskTreeService
                     'name'    => $a->user->name ?? null,
                 ])->all(),
                 'checklist'   => $checklist[$id] ?? ['done' => 0, 'total' => 0],
+                // Its own two tallies, so a row can say "2/5 subtasks · 3/6
+                // items" without the reader having to work out which of the
+                // rolled-up numbers came from where.
+                'breakdown'   => $this->breakdown($id, $byParent, $checklist, $closed),
                 'progress'    => [
                     'percent' => $tally['total'] > 0 ? (int) round($tally['done'] / $tally['total'] * 100) : 0,
                     'done'    => $tally['done'],

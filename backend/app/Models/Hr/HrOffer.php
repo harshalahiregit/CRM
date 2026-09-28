@@ -27,15 +27,37 @@ class HrOffer extends Model
         'salary_structure_id','salary_breakdown',
         'joining_date','probation_period','notice_period','validity_date',
         'status','letter_path','sent_at','accepted_at','rejection_reason',
-        // Offer portal (Sprint 2)
-        'access_token','generated_at','viewed_at','declined_at','expired_at','joining_confirmed_at',
+        // Offer portal (Sprint 2). access_token is NOT fillable any more and
+        // token_hash never was: the credential is written only by
+        // OfferPortalToken, through forceFill. Leaving them mass-assignable
+        // would let any future update() put a plaintext token back in the
+        // column this hardening exists to empty.
+        'generated_at','viewed_at','declined_at','expired_at','joining_confirmed_at',
         'accepted_ip','accepted_device','accepted_browser','accepted_name','accepted_signature','clarification','clarification_at','pre_joining',
         // Lifecycle: approval / withdraw / versioning.
         'submitted_for_approval_at','approved_by','approved_at','withdrawn_at','withdraw_reason','version',
     ];
 
+    /**
+     * The portal credential never leaves the server.
+     *
+     * access_token is the emptied legacy plaintext column and token_hash is the
+     * credential itself; neither belongs in a response. This model is returned
+     * directly by OfferController@show/store/send/updateStatus/regenerate/
+     * withdraw/revise/extend and by OfferService::list(), so hiding it here is
+     * what keeps it out of all nine at once rather than relying on every future
+     * endpoint to remember.
+     *
+     * A hash is not a secret in the way the raw token is, but publishing it
+     * would hand an attacker the exact value to search a stolen database dump
+     * for, and nothing in the product has any use for it.
+     */
+    protected $hidden = ['access_token', 'token_hash'];
+
     protected $casts = [
         'joining_date'         => 'date',
+        'token_issued_at'      => 'datetime',
+        'token_revoked_at'     => 'datetime',
         'validity_date'        => 'date',
         'sent_at'              => 'datetime',
         'accepted_at'          => 'datetime',

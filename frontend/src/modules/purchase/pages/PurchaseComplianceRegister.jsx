@@ -124,17 +124,41 @@ function Matrix({ vendorId, statuses, onChanged }) {
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 8, paddingTop: 12 }}>
+      {/* Each cell is two rows, not one.
+          All four pieces — dot, label, status select and date — used to sit on a
+          single flex line inside a 280px column. A select showing "Under Review"
+          plus a date input needing ~120px leave the label block almost nothing,
+          and because it carried minWidth:0 it shrank rather than pushing back:
+          the status text wrapped to two lines and ran under the select, so the
+          cell read "UnderUnder Review / Review". Stacking the controls beneath
+          the heading gives both rows the full width and holds at any size. */}
       {matrix.map(c => (
-        <div key={c.category} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 11px', borderRadius: 9, background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-          <span style={{ width: 9, height: 9, borderRadius: '50%', background: STATUS_TONE[c.status] || '#94a3b8', flexShrink: 0 }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-h)' }}>{c.category_label}</div>
-            <div style={{ fontSize: 10.5, color: STATUS_TONE[c.status] || 'var(--text-muted)' }}>{fmt(c.status)}{c.valid_until ? ` · to ${new Date(c.valid_until).toLocaleDateString()}` : ''}</div>
+        <div key={c.category} style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: '9px 11px', borderRadius: 9, background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, minWidth: 0 }}>
+            <span style={{ width: 9, height: 9, borderRadius: '50%', marginTop: 4, background: STATUS_TONE[c.status] || '#94a3b8', flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-h)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {c.category_label}
+              </div>
+              {/* One line, clipped rather than wrapped — a long status plus a
+                  date is what overflowed in the first place. */}
+              <div style={{ fontSize: 10.5, color: STATUS_TONE[c.status] || 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                title={`${fmt(c.status)}${c.valid_until ? ` · to ${new Date(c.valid_until).toLocaleDateString()}` : ''}`}>
+                {fmt(c.status)}{c.valid_until ? ` · to ${new Date(c.valid_until).toLocaleDateString()}` : ''}
+              </div>
+            </div>
           </div>
-          <select value={c.stored_status || 'Under_Review'} onChange={e => save(c.category, { status: e.target.value })} style={sel} title="Set status">
-            {opts.map(s => <option key={s} value={s}>{fmt(s)}</option>)}
-          </select>
-          <input type="date" defaultValue={c.valid_until || ''} onBlur={e => save(c.category, { valid_until: e.target.value })} style={{ ...sel, width: 120 }} title="Valid until" />
+
+          <div style={{ display: 'flex', gap: 6 }}>
+            {/* minWidth:0 on a flex child that is a <select> is what stops it
+                refusing to shrink below its longest option. */}
+            <select value={c.stored_status || 'Under_Review'} onChange={e => save(c.category, { status: e.target.value })}
+              style={{ ...sel, flex: 1, minWidth: 0 }} title="Set status">
+              {opts.map(s => <option key={s} value={s}>{fmt(s)}</option>)}
+            </select>
+            <input type="date" defaultValue={c.valid_until || ''} onBlur={e => save(c.category, { valid_until: e.target.value })}
+              style={{ ...sel, width: 132, flexShrink: 0 }} title="Valid until" />
+          </div>
         </div>
       ))}
     </div>

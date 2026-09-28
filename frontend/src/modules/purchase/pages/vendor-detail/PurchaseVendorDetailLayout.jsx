@@ -1,11 +1,17 @@
 import { useState, useEffect, useCallback } from 'react'
+import { ONBOARDING_TOTAL_STEPS, stepsOrNotStarted } from '@/lib/vendors/onboardingSteps'
 import { useParams, useNavigate, NavLink, Routes, Route, Navigate } from 'react-router-dom'
-import { ArrowLeft, Building2, CheckCircle2, CheckCircle, XCircle, PauseCircle, CornerUpLeft, ShieldCheck, ChevronDown, ChevronRight, Mail } from 'lucide-react'
+import { ArrowLeft, Building2, CheckCircle2, CheckCircle, XCircle, PauseCircle, CornerUpLeft, ShieldCheck, ChevronDown, ChevronRight, Mail, Lock } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
 import { Overlay, ModalFooter } from '@/components/ui/kit3d'
 import { VENDOR_NAV_GROUPS } from './vendorDetailNav'
 import { TAB_ELEMENTS } from './vendorDetailTabs'
+import { KIT3D_STYLE as GLASS_STYLE } from '@/components/ui/kit3d'
 import { VendorWorkspaceContext } from './vendorWorkspaceContext'
+import { isWorkspaceUnlocked, isSectionUnlocked, lockNav, lockNotice } from '@/lib/vendors/workspaceLock'
+import LockedSection from '@/components/vendors/LockedSection'
+import OnboardingSteps from '@/components/vendors/OnboardingSteps'
+import VendorAccessControls from '@/components/vendors/VendorAccessControls'
 import PurchaseRegistrationBadge from '@/modules/purchase/components/PurchaseRegistrationBadge'
 
 /**
@@ -65,6 +71,8 @@ export default function PurchaseVendorDetailLayout() {
   const [resending, setResending] = useState(false)
   const [notice, setNotice] = useState(null)
   const [showTimeline, setShowTimeline] = useState(false)
+  // The temporary-access window — Convert / Extend / Close — is its own
+  // component now, shared with TPV. Its state went with it.
 
   // Onboarding decision state (approve / reject / hold / send-back).
   const [decision, setDecision] = useState(null)
@@ -85,7 +93,23 @@ export default function PurchaseVendorDetailLayout() {
 
   useEffect(() => { load() }, [load])
 
-  const activate = async () => { try { await purchaseApi.vendors.approve(id); load() } catch { /* noop */ } }
+  /**
+   * Activation can be REFUSED — an already-active vendor, or the onboarding
+   * gate. Swallowing that left the button looking dead: nothing moved, nothing
+   * appeared, and the reason existed only in the server log. Reported through
+   * the same notice banner the resend already uses, so the page has one place
+   * that answers "what just happened".
+   */
+  const activate = async () => {
+    setNotice(null)
+    try {
+      await purchaseApi.vendors.approve(id)
+      load()
+      setNotice({ ok: true, text: 'Vendor activated.' })
+    } catch (e) {
+      setNotice({ ok: false, text: e?.response?.data?.message || 'That vendor could not be activated.' })
+    }
+  }
 
   // Runs the chosen onboarding decision. Reject / Hold / Send-Back require remarks;
   // Approve also really activates the account (portal login + activation email)
@@ -125,6 +149,25 @@ export default function PurchaseVendorDetailLayout() {
       setNotice({ ok: false, text: e?.response?.data?.message || 'Could not send the activation email.' })
     } finally { setResending(false) }
   }
+  /*
+   * The steps, for the locked screens to teach from.
+   *
+   * The decision panel below fetches these too, and deliberately still does:
+   * it renders on Overview, which is never locked, so the two never load at
+   * the same time. Sharing one fetch would mean lifting state through a
+   * component that does not otherwise care about it.
+   */
+  const [lockSteps, setLockSteps] = useState(null)
+  useEffect(() => {
+    if (!onboarding?.id) return undefined
+    let alive = true
+    purchaseApi.onboarding.progress(onboarding.id)
+      .then(p => { if (alive) setLockSteps(Array.isArray(p?.steps) ? p.steps : null) })
+      .catch(() => {})
+
+    return () => { alive = false }
+  }, [onboarding?.id])
+
   const toggle = (title) => setCollapsed((c) => ({ ...c, [title]: !c[title] }))
 
   if (loading) return <div style={{ padding: 24, color: 'var(--text-muted)' }}>Loading vendor…</div>
@@ -132,8 +175,35 @@ export default function PurchaseVendorDetailLayout() {
 
   const statusColor = STATUS_COLORS[vendor.status] || '#6b7280'
 
+  /*
+   * Until this vendor is onboarded the workspace shows the four sections that
+   * step actually needs — Overview, Profile, Contact, Documents — and not the
+   * other forty, which would every one of them load an empty list for a company
+   * there is nothing to load anything for yet. See lib/vendors/workspaceLock.
+   *
+   * ROUTING IS GUARDED TOO, which it was not. Hiding the entry left the route
+   * live, so a locked section still opened from a bookmark, a pasted link, or
+   * the module's own registers -- Purchase -> Prequalification lists every
+   * vendor and picking one walked into a workspace that was meant to be shut.
+   * The route now renders LockedSection instead. Still not a permission: an
+   * admin who wants the section approves the onboarding, which is the thing
+   * they were going to have to do anyway. The server decides what is allowed.
+   */
+  const unlocked = isWorkspaceUnlocked(vendor, onboarding)
+  const { groups: navGroups, hidden } = lockNav(BUILT_NAV_GROUPS, unlocked, (it) => it.key)
+  // Not `notice` — that name is already the activation banner's state above.
+  const lockedNotice = lockNotice(vendor, onboarding, hidden)
+
   return (
     <div style={{ padding: 20 }}>
+      {/* Several panels on this page are built on .pr-glass, which lives in
+          this stylesheet — and the admin shell does not inject it. Without this
+          the Prequalification and Due Diligence panels, and every card in the
+          Workforce group, render with no background at all and the page shows
+          straight through them. Injected once here so every tab is covered,
+          including ones added later. */}
+      <style>{GLASS_STYLE}</style>
+
       {/* Header */}
       <div className="card-3d" style={{ padding: 16, marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
@@ -169,13 +239,26 @@ export default function PurchaseVendorDetailLayout() {
                 <Mail size={14} /> {resending ? 'Sending…' : 'Resend Activation Email'}
               </button>
             )}
+            {/* Convert to Permanent / Extend Access / Close Access. Shared with
+                TPV, which had the same three endpoints and no button pointing at
+                any of them. */}
+            <VendorAccessControls
+              vendor={vendor}
+              onConvert={() => purchaseApi.vendors.convertToPermanent(id)}
+              onExtend={(data) => purchaseApi.vendors.access.extend(id, data)}
+              onExpire={() => purchaseApi.vendors.access.expire(id)}
+              onDone={(text, ok) => { setNotice({ ok, text }); if (ok) load() }}
+            />
           </div>
         </div>
       </div>
 
-      {/* Onboarding Decision — prominent, directly under the header, once the
-          vendor has an onboarding to decide on. */}
-      {onboarding && (
+      {/* Onboarding Decision — prominent, directly under the header.
+          Shown whether or not an onboarding RECORD exists. A vendor nobody has
+          started has none, and this panel is the only place the steps are
+          named, so gating it on the record hid the instructions from exactly
+          the vendor who needed them. */}
+      {(
         <OnboardingDecisionPanel
           vendor={vendor} onboarding={onboarding}
           onDecision={kind => { setDecision(kind); setRemarks('') }}
@@ -225,7 +308,7 @@ export default function PurchaseVendorDetailLayout() {
       {/* Two-pane: sidebar + content */}
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
         <nav className="card-3d" style={{ width: 236, flexShrink: 0, position: 'sticky', top: 16, padding: 10, maxHeight: 'calc(100vh - 130px)', overflowY: 'auto' }}>
-          {BUILT_NAV_GROUPS.map((group) => {
+          {navGroups.map((group) => {
             const isCollapsed = collapsed[group.title]
             return (
               <div key={group.title} style={{ marginBottom: 6 }}>
@@ -242,14 +325,47 @@ export default function PurchaseVendorDetailLayout() {
               </div>
             )
           })}
+
+          {/* Where the other forty went. A workspace that silently drops most
+              of its nav is as confusing as one that shows forty empty screens —
+              this names the reason and what ends it. */}
+          {lockedNotice && (
+            <div style={lockNote}>
+              <Lock size={12} style={{ color: '#f59e0b', flexShrink: 0, marginTop: 1 }} />
+              <span>
+                <strong style={{ color: 'var(--text-h)' }}>{lockedNotice.unlocks}</strong>
+                <span style={{ display: 'block', marginTop: 2 }}>{lockedNotice.reason}</span>
+              </span>
+            </div>
+          )}
         </nav>
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <VendorWorkspaceContext.Provider value={{ vendor, onboarding, reload: load }}>
             <Routes>
               <Route index element={<Navigate to={`/app/purchase/vendors/${id}/overview`} replace />} />
+              {/* THE LOCK IS HERE, not only on the sidebar.
+                   lockNav removes a locked entry from the menu, and that is all
+                   it does -- the route stayed live, so the section still opened
+                   from a bookmark, a pasted URL, or the module's own registers.
+                   Purchase -> Prequalification lists every vendor and picking
+                   one walked straight into a workspace that was meant to be
+                   shut. Refusing at the route closes every one of those doors
+                   at once. */}
               {BUILT_NAV_ITEMS.map((it) => (
-                <Route key={it.key} path={it.key} element={TAB_ELEMENTS[it.key]} />
+                <Route
+                  key={it.key}
+                  path={it.key}
+                  element={isSectionUnlocked(it.key, unlocked) ? TAB_ELEMENTS[it.key] : (
+                    <LockedSection
+                      label={it.label}
+                      steps={lockSteps}
+                      notice={lockedNotice}
+                      overviewHref={`/app/purchase/vendors/${id}/overview`}
+                      hrefFor={(section) => `/app/purchase/vendors/${id}/${section === 'contact' ? 'contacts' : section}`}
+                    />
+                  )}
+                />
               ))}
               <Route path="*" element={<Navigate to={`/app/purchase/vendors/${id}/overview`} replace />} />
             </Routes>
@@ -288,6 +404,7 @@ export default function PurchaseVendorDetailLayout() {
           </div>
         </Overlay>
       )}
+
     </div>
   )
 }
@@ -310,11 +427,32 @@ function OnboardingDecisionPanel({ vendor, onboarding, onDecision }) {
   const approved = status === 'Approved'
   const accountActive = vendor.status === 'Active'
 
+  /*
+   * The steps, named, from the server.
+   *
+   * The panel already said "Step 1 of 6", which tells an admin where the vendor
+   * is but not what the steps ARE or which one is next — the whole of
+   * SIR-000006 ("onboarding step are not visible clearly to move to the next
+   * step"). PurchaseOnboardingService::stepStatus already returns every step
+   * with its label, completion and a one-line detail, and the vendor's own
+   * portal has rendered it all along; only the admin side never asked for it.
+   */
+  const [steps, setSteps] = useState(null)
+
   useEffect(() => {
     let alive = true
     purchaseApi.documents.checklist(vendor.id).then(d => { if (alive) setDocs(d) }).catch(() => {})
     return () => { alive = false }
   }, [vendor.id])
+
+  useEffect(() => {
+    if (!onboarding?.id) return undefined
+    let alive = true
+    purchaseApi.onboarding.progress(onboarding.id)
+      .then(p => { if (alive) setSteps(Array.isArray(p?.steps) ? p.steps : null) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [onboarding?.id])
 
   const decidable = ['Submitted', 'Under_Review'].includes(status)
   const rejectedDocs = docs?.summary?.rejected ?? 0
@@ -335,7 +473,7 @@ function OnboardingDecisionPanel({ vendor, onboarding, onDecision }) {
           <ShieldCheck size={16} style={{ color: tint }} /> Onboarding Decision
         </span>
         <span style={{ flex: 1 }} />
-        <StatusPill label="Step" value={`${step} of 6`} tone="#7C3AED" />
+        <StatusPill label="Step" value={`${step} of ${steps?.length || ONBOARDING_TOTAL_STEPS}`} tone="#7C3AED" />
         <StatusPill label="Onboarding" value={oc.label} tone={oc.color} />
         <StatusPill label="Account" value={accountActive ? 'Active' : (vendor.status_label || vendor.status)} tone={accountActive ? '#0ca30c' : '#8a94a6'} />
       </div>
@@ -347,9 +485,20 @@ function OnboardingDecisionPanel({ vendor, onboarding, onDecision }) {
             : decidable ? 'has completed all steps and is waiting for your decision.'
               : 'is still progressing through onboarding.'}
         </p>
+        {/* Where the vendor actually is, step by step. */}
+        {/* Clickable. Each step goes to the section that completes it —
+            the strip used to name the outstanding step and leave the
+            reader to find which of forty sidebar entries does it. */}
+        {(
+          <OnboardingSteps
+            steps={stepsOrNotStarted(steps)}
+            hrefFor={(section) => `/app/purchase/vendors/${vendor.id}/${section === 'contact' ? 'contacts' : section}`}
+          />
+        )}
+
         {approved ? (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 9, padding: '10px 14px', borderRadius: 10, background: 'color-mix(in srgb, #0ca30c 12%, transparent)', border: '1px solid color-mix(in srgb, #0ca30c 30%, transparent)', color: '#0ca30c', fontSize: 12.5, fontWeight: 700 }}>
-            <CheckCircle size={16} /> Step 6 — Account Activated. The vendor can now access the active portal.
+            <CheckCircle size={16} /> Onboarding complete — account activated. The vendor can now access the portal.
           </div>
         ) : (
           <>
@@ -403,4 +552,5 @@ const actBtn = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: 
 const pill = { fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 999, border: '1px solid var(--border)', background: 'var(--bg-input)' }
 const groupBtn = { display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '8px 8px', background: 'none', border: 'none', color: 'var(--text-h)', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.04em', cursor: 'pointer' }
 const navItem = { display: 'flex', alignItems: 'center', gap: 9, padding: '7px 10px 7px 14px', fontSize: 12.5, borderRadius: 8, marginBottom: 1, color: 'var(--text-muted)', fontWeight: 500, textDecoration: 'none', borderLeft: '2px solid transparent' }
+const lockNote = { display: 'flex', alignItems: 'flex-start', gap: 7, margin: '8px 4px 2px', padding: '9px 10px', borderRadius: 9, background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.22)', fontSize: 11, lineHeight: 1.45, color: 'var(--text-muted)' }
 const navItemActive = { color: '#a78bfa', background: 'rgba(124,58,237,0.12)', fontWeight: 700, borderLeft: '2px solid #7C3AED' }

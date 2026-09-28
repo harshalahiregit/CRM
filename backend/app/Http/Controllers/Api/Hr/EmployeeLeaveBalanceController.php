@@ -19,12 +19,12 @@ class EmployeeLeaveBalanceController extends Controller
 
     public function index(Request $request)
     {
-        return response()->json($this->service->list($this->tenant($request), $request->only(['employee_id', 'leave_type_id', 'status'])));
+        return response()->json($this->service->list($this->tenant($request), $request->only(['employee_id', 'leave_type_id', 'status']), $request->user()));
     }
 
     public function forEmployee(Request $request, int $employee)
     {
-        return response()->json($this->service->forEmployee($employee, $this->tenant($request)));
+        return response()->json($this->service->forEmployee($employee, $this->tenant($request), $request->user()));
     }
 
     public function assign(Request $request)
@@ -37,6 +37,24 @@ class EmployeeLeaveBalanceController extends Controller
         ]);
 
         return response()->json($this->service->assignPolicy($data, $this->tenant($request), $request->user()), 201);
+    }
+
+    /** One policy, a whole department (or designation, grade, list, or everyone). */
+    public function assignBulk(Request $request)
+    {
+        $this->can($request);
+        $data = $request->validate([
+            'leave_policy_id' => 'required|integer',
+            'scope'           => 'required|string|in:all,department,designation,grade,employees',
+            'department_id'   => 'nullable|integer',
+            'designation_id'  => 'nullable|integer',
+            'grade_id'        => 'nullable|integer',
+            'employee_ids'    => 'nullable|array',
+            'employee_ids.*'  => 'integer',
+            'effective_from'  => 'nullable|date',
+        ]);
+
+        return response()->json($this->service->assignPolicyToMany($data, $this->tenant($request), $request->user()), 201);
     }
 
     public function allocate(Request $request)
@@ -66,7 +84,7 @@ class EmployeeLeaveBalanceController extends Controller
 
     public function history(Request $request, int $balance)
     {
-        return response()->json($this->service->history($balance, $this->tenant($request)));
+        return response()->json($this->service->history($balance, $this->tenant($request), $request->user()));
     }
 
     private function tenant(Request $request): int

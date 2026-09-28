@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { HardHat, Gavel, HelpCircle, ShieldCheck, Package } from 'lucide-react'
+import { HardHat, Gavel, HelpCircle, ShieldCheck, FileSignature, ListChecks } from 'lucide-react'
 import { purchasePortalApi } from '@/services/purchasePortalApi'
 import { purchaseVendorAuthApi } from '@/services/purchaseVendorAuthApi'
 import PortalShell from '@/pages/vendor-portal/PortalShell'
@@ -32,6 +32,7 @@ export default function PurchasePortalShell() {
         contact:    'contacts',
         // External Medical Flow — upload certificates, answer the quality team.
         medical:    'medical',
+        training:   'training',
         comply:     'compliance',
         documents:  'documents',
         kb:         'kb',
@@ -69,8 +70,15 @@ export default function PurchasePortalShell() {
           group: 'Workforce & Support',
           items: [
             { key: 'workforce',  label: 'My Workforce',    icon: HardHat,     to: 'workforce', gate: v => v?.status === 'Active' },
-            { key: 'ppe',        label: 'PPE Stock',       icon: Package,     to: 'ppe' },
             { key: 'governance', label: 'Governance',      icon: Gavel,       to: 'governance' },
+            // The Contract module's agreements. Distinct from the Commercial
+            // section's Contracts view, which serves purchase_contracts — that
+            // feature has live rows and is left exactly as it was.
+            { key: 'agreements', label: 'Agreements',      icon: FileSignature, to: 'agreements' },
+            // Tasks assigned by name to this vendor's own contacts. There is no
+            // per-contact login on this portal — the vendor signs in as the
+            // company — so it is the team's work, each row naming whose it is.
+            { key: 'tasks',      label: 'Team Tasks',      icon: ListChecks, to: 'tasks' },
             { key: 'approval',   label: 'Approval Status', icon: ShieldCheck, to: 'approval' },
             { key: 'support',    label: 'Support',         icon: HelpCircle,  to: 'support' },
           ],

@@ -13,6 +13,7 @@ use App\Services\Helpdesk\Contracts\CustomerServiceContract;
 use App\Services\Helpdesk\Mocks\MockCustomerService;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class HelpdeskService
 {
@@ -380,8 +381,28 @@ class HelpdeskService
             'source'          => $data['source'] ?? 'internal',
             'requester_name'  => $data['requester_name'] ?? null,
             'requester_email' => $data['requester_email'] ?? null,
+            // Standing copy list for every outbound message on this ticket.
+            // Normalised here so "A@x.com " and "a@x.com" are one person, and a
+            // requester who is already the To is not also Cc'd their own mail.
+            'cc'              => $this->normaliseCc($data['cc'] ?? null, $data['requester_email'] ?? null),
             'project_id'      => $projectId,
         ]);
+
+        // Tags need the ticket to exist first, so they are attached rather than
+        // written with it. Failing here must not lose the ticket — the ticket is
+        // the record, the tags are how it is filed.
+        if (! empty($data['tags'])) {
+            try {
+                // Ids are already proven to belong to this tenant by
+                // StoreTicketRequest (TenantRules::ticketTag), so this is the
+                // same link TicketTagService::attach writes, in one call.
+                $ticket->tags()->syncWithoutDetaching(
+                    array_fill_keys($data['tags'], ['tenant_id' => $tenantId]),
+                );
+            } catch (\Throwable $e) {
+                Log::warning("Ticket #{$ticket->id} created but tagging failed: {$e->getMessage()}");
+            }
+        }
 
         // Acknowledge the requester with their ticket number (email threading on).
         $this->mail->sendAcknowledgement($ticket);
@@ -406,6 +427,60 @@ class HelpdeskService
         }
 
         return $this->decorateWithCustomer($ticket->fresh('assignee'), $tenantId);
+    }
+
+    /**
+     * People a ticket can be raised for, for the Contact field.
+     *
+     * Through the customer contract, never a join: Helpdesk does not read the
+     * Customer module's tables. Reduced to what the picker needs so an agent
+     * choosing a contact fills in a name and address they cannot mistype.
+     *
+     * @return array<int, array{id:int,name:string,email:?string}>
+     */
+    public function listCustomersFor(int $tenantId): array
+    {
+        return collect($this->customers->listCustomers($tenantId))
+            ->map(fn ($c) => [
+                'id'    => (int) ($c['id'] ?? 0),
+                'name'  => (string) ($c['name'] ?? 'Unnamed'),
+                'email' => $c['email'] ?? null,
+            ])
+            ->filter(fn ($c) => $c['id'] > 0)
+            ->sortBy('name')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Tidy a Cc list into something worth storing.
+     *
+     * Lower-cased and de-duplicated so "A@x.com " and "a@x.com" are one person,
+     * invalid entries dropped rather than saved to fail later, and the requester
+     * removed — they are the To of every message on this ticket, and Cc'ing
+     * somebody their own mail is how a thread turns into two threads.
+     *
+     * @param  mixed  $cc
+     * @return string[]|null  null rather than [] so an empty list reads as unset
+     */
+    private function normaliseCc($cc, ?string $requesterEmail): ?array
+    {
+        if (! is_array($cc)) {
+            return null;
+        }
+
+        $to = strtolower(trim((string) $requesterEmail));
+
+        $clean = collect($cc)
+            ->filter(fn ($e) => is_string($e))
+            ->map(fn ($e) => strtolower(trim($e)))
+            ->filter(fn ($e) => $e !== '' && filter_var($e, FILTER_VALIDATE_EMAIL))
+            ->reject(fn ($e) => $to !== '' && $e === $to)
+            ->unique()
+            ->values()
+            ->all();
+
+        return $clean ?: null;
     }
 
     /**

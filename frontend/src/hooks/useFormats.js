@@ -78,9 +78,13 @@ function formatTimeWith(l, value) {
   if (!value) return '—'
   const d = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(d.getTime())) return '—'
+  // hourCycle rather than hour12: `hour12: true` on en-GB selects the h11 cycle,
+  // which counts 0–11, so noon rendered as "00:00 pm" and midnight as
+  // "00:00 am". 'h12' counts 1–12 and gives 12:00 pm / 12:00 am.
   return new Intl.DateTimeFormat('en-GB', {
     timeZone: l.timezone || undefined,
-    hour: '2-digit', minute: '2-digit', hour12: String(l.time_format) !== '24',
+    hour: '2-digit', minute: '2-digit',
+    hourCycle: String(l.time_format) === '24' ? 'h23' : 'h12',
   }).format(d)
 }
 
@@ -111,3 +115,16 @@ export function useFormats() {
 }
 
 export const invalidateFormats = () => { cache = null }
+
+/**
+ * The tenant's localization settings, readable outside React.
+ *
+ * useFormats() is a hook, so a plain helper — hrTime(), a table formatter, a
+ * print sheet — cannot reach these values and ends up hardcoding a timezone and
+ * a clock format instead. That is how HR's screens came to show a 24-hour clock
+ * while the rest of the app honoured the tenant's 12-hour setting.
+ *
+ * Returns the fallback until the hook has fetched once, which is the same
+ * contract useFormats() itself renders on first paint.
+ */
+export const localizationNow = () => (cache || FALLBACK).localization

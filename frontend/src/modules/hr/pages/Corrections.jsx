@@ -11,9 +11,13 @@
  * rather than something to discover at payroll.
  */
 
+import { useNavigate } from 'react-router-dom'
+import { GRAD } from '@/components/ui/brand'
+import { useAuth } from '@/context/AuthContext'
 import { useState, useEffect, useCallback } from 'react'
-import { PenLine, Check, X, PauseCircle, Lock, RefreshCw, ArrowRight } from 'lucide-react'
+import { PenLine, Check, X, PauseCircle, Lock, RefreshCw, ArrowRight, Plus } from 'lucide-react'
 import { hrApi } from '@/services/hrApi'
+import { hrTime, hrTimeEquals } from '@/modules/hr/constants'
 import { HrLoading, HrEmpty } from '@/components/ui/HrState'
 import { useToast } from '@/components/ui/Toast'
 import RequestThread from '../components/RequestThread'
@@ -31,7 +35,17 @@ const TABS = [
   { key: 'rejected', label: 'Rejected' },
 ]
 
-const hhmm = t => (t ? (String(t).length > 8 ? String(t).slice(11, 16) : String(t).slice(0, 5)) : '—')
+/*
+ * The two sides of this screen are different SHAPES, and the old helper read
+ * them on different footings: `now.check_in` is a stored UTC timestamp and was
+ * sliced to its UTC clock face, while `requested_check_in` is a wall-clock
+ * time the employee typed. So the approver compared 09:28 UTC against 15:00
+ * local — a request to move a punch by two minutes looked like a five-hour
+ * move, and a request that changed nothing never showed "(no change)".
+ *
+ * hrTime normalises both to local before they are compared or displayed.
+ */
+const hhmm = hrTime
 const day  = d => (d ? String(d).slice(0, 10) : '—')
 
 function Pill({ status }) {
@@ -45,7 +59,7 @@ function Pill({ status }) {
 /** Now → asked for, side by side. The comparison IS the decision. */
 function Change({ label, from, to }) {
   if (!to) return null
-  const same = hhmm(from) === hhmm(to)
+  const same = hrTimeEquals(from, to)
   return (
     <div className="flex items-center gap-1.5 text-[11px]">
       <span className="uppercase tracking-wider font-bold" style={{ color: 'var(--text-muted)', minWidth: 74 }}>{label}</span>
@@ -58,6 +72,8 @@ function Change({ label, from, to }) {
 }
 
 export default function Corrections() {
+  const navigate = useNavigate()
+  const { can: mayDo } = useAuth()
   const toast = useToast()
 
   const [tab,     setTab]     = useState('open')
@@ -142,11 +158,25 @@ export default function Corrections() {
             Approving writes the day and recomputes the hours.
           </p>
         </div>
+        {/* my-own-button — this page lists everybody's; somebody still needs to
+            raise their own, and the form for it already exists on the personal
+            page. Navigating there rather than duplicating the form keeps one
+            place where a request is created, and keeps that page reachable now
+            that it is out of the admin's menu. */}
+        <div className="flex items-center gap-2">
+        {mayDo('self', 'create') && (
+        <button onClick={() => navigate('/app/hr/my-corrections')} title="Raise a correction for your own attendance"
+          className="rounded-lg text-xs font-bold flex items-center gap-1.5 text-white"
+          style={{ padding: '7px 12px', background: GRAD }}>
+          <Plus size={13} /> Raise Correction
+        </button>
+        )}
         <button onClick={load} disabled={loading}
           className="rounded-lg text-xs font-semibold flex items-center gap-1.5"
           style={{ padding: '7px 12px', background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-p)' }}>
           <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> Refresh
         </button>
+        </div>
       </div>
 
       <div className="flex gap-1.5 flex-wrap">

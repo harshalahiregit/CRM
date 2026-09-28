@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Plus, RefreshCw, Search, Eye, Trash2, HardHat, QrCode, AlertTriangle } from 'lucide-react'
+import { Plus, RefreshCw, Search, Eye, Trash2, HardHat, QrCode, AlertTriangle, Upload } from 'lucide-react'
 import { purchaseApi } from '@/services/purchaseApi'
+import { useVendorModule } from '@/modules/tpv/useVendorModule'
+import GroupInductionModal from '@/components/vendor/GroupInductionModal'
+import { readFieldErrors } from '@/services/apiError'
 import { useAuth } from '@/context/AuthContext'
 import { canManagePR } from '../constants'
 import {
@@ -13,7 +16,7 @@ import {
 // and PurchaseWorkforceService writes. Purchase calls the initial state 'Pending'
 // where TPV calls it 'Draft', so the stats endpoint still returns that count under
 // its `draft` key; the labels here follow Purchase, not the payload.
-const WORKER_STATUS = {
+export const WORKER_STATUS = {
   PENDING:    'Pending',
   ACTIVE:     'Active',
   SUSPENDED:  'Suspended',
@@ -27,7 +30,7 @@ const WORKER_STATUS_CONFIG = {
   [WORKER_STATUS.TERMINATED]: { label: 'Terminated', color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
   [WORKER_STATUS.INACTIVE]:   { label: 'Inactive',   color: '#64748b', bg: 'rgba(100,116,139,0.15)' },
 }
-const workerStatusCfg = (s) => WORKER_STATUS_CONFIG[s] || WORKER_STATUS_CONFIG[WORKER_STATUS.PENDING]
+export const workerStatusCfg = (s) => WORKER_STATUS_CONFIG[s] || WORKER_STATUS_CONFIG[WORKER_STATUS.PENDING]
 
 // Medical verdicts — App\Support\Purchase\PurchaseMedicalFitness. Fit AND
 // Fit-with-restrictions are passing, so the amber one is not a failure badge.
@@ -71,14 +74,48 @@ export default function PurchaseWorkers() {
   const { vendorId: routeVendorId } = useParams()   // present inside a vendor-scoped route
   const [searchParams] = useSearchParams()
   const { user } = useAuth()
-  const manage = canManagePR(user)
+  const manageRole = canManagePR(user)
+
+  /*
+   * One register, two surfaces — the way TPV has always done it.
+   *
+   * TpvWorkers picks its client with `isPortal ? portalApi : tpvApi` and is
+   * mounted by both the admin route and the vendor portal. Purchase hardcoded
+   * the admin client here, so its portal could not use this screen and a
+   * separate, smaller one was written instead — a different layout showing less
+   * of the same data.
+   *
+   * The portal is resolved from the PATH, not from a role: a Purchase vendor
+   * holds a PurchaseVendor token and has no `user.role` to test.
+   */
+  const cfg = useVendorModule()
+  const api = cfg.api
+  const isPortal = cfg.portal
+
+  /*
+   * A vendor manages its OWN people.
+   *
+   * `canManagePR` reads a staff role, and a Purchase vendor has none — it holds
+   * a PurchaseVendor token, so every `manage` gate would have been false and the
+   * vendor would have lost the Register button on their own workforce screen.
+   * TPV grants the same way (`manage || isPortal`).
+   *
+   * This reveals only what the vendor may actually do: register a worker, delete
+   * one still pending, issue PPE. ACTIVATION is a separate `admin` gate that
+   * stays false here, and the portal client refuses it outright — whether a
+   * worker may walk on site is the site's decision, not the vendor's.
+   */
+  const manage = manageRole || isPortal
 
   // Vendor scope. The register lives on its own path today, so ?vendor_id= is how
   // the vendor workspace deep-links one company's people; a future nested route
   // supplies the same value as a path param and nothing else has to change.
   const vendorId = routeVendorId || searchParams.get('vendor_id') || ''
 
-  const workerHref = (wid) => `/app/purchase/workers/${wid}`
+  // The portal keeps clean URLs with no vendor id in the path.
+  const workerHref = (wid) => isPortal
+    ? `/purchase-portal/workforce/workers/${wid}`
+    : `/app/purchase/workers/${wid}`
 
   const [rows, setRows]       = useState([])
   const [stats, setStats]     = useState({})
@@ -86,6 +123,8 @@ export default function PurchaseWorkers() {
   const [search, setSearch]   = useState('')
   const [filterStatus, setFilterStatus] = useState(searchParams.get('status') || 'All')
   const [creating, setCreating] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadingMedical, setUploadingMedical] = useState(false)
   const [selectedIds, setSelectedIds] = useState([])
   const [groupInducting, setGroupInducting] = useState(false)
   const [viewMode, setViewMode] = useState('cards')
@@ -95,20 +134,24 @@ export default function PurchaseWorkers() {
     try {
       // vendor_id only FILTERS — the server scopes by tenant, so a tampered id
       // narrows the list and never widens it.
-      const listRes = await purchaseApi.workforce.workers(vendorId ? { vendor_id: vendorId } : {})
+      // The portal sends no scope at all — the server reads the vendor from the
+      // token and would 404 anyone else's worker regardless.
+      const listRes = await api.workforce.workers(
+        isPortal ? {} : (vendorId ? { vendor_id: vendorId } : {}),
+      )
       const list = Array.isArray(listRes?.data ?? listRes) ? (listRes.data ?? listRes) : []
       setRows(list)
       // stats is tenant-wide, so a vendor-scoped view derives its own counters
       // rather than showing totals that contradict the rows underneath them.
-      if (vendorId) {
+      if (isPortal || vendorId) {
         setStats(deriveWorkerStats(list))
       } else {
-        const statRes = await purchaseApi.workforce.stats()
+        const statRes = await api.workforce.stats()
         setStats(statRes?.data ?? statRes ?? {})
       }
     } catch (e) { console.error('Failed to load workers', e) }
     finally { setLoading(false) }
-  }, [vendorId])
+  }, [vendorId, isPortal, api])
   useEffect(() => { fetchAll() }, [fetchAll])
 
   const filtered = rows.filter(r => {
@@ -120,7 +163,7 @@ export default function PurchaseWorkers() {
 
   const remove = async (r) => {
     if (!confirm(`Delete pending worker ${r.full_name}?`)) return
-    try { await purchaseApi.workforce.deleteWorker(r.id); fetchAll() }
+    try { await api.workforce.deleteWorker(r.id); fetchAll() }
     catch (e) { alert(e?.response?.data?.message || 'Delete failed') }
   }
 
@@ -146,7 +189,6 @@ export default function PurchaseWorkers() {
     setSelectedIds(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id])
   }
 
-  const selectedWorkers = rows.filter(r => selectedIds.includes(r.id))
 
   return (
     <div style={{ padding: '24px 32px' }}>
@@ -156,16 +198,20 @@ export default function PurchaseWorkers() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: 'var(--text-h)', letterSpacing: '-0.02em' }}>
-            Workforce Register
+            {isPortal ? 'My Workforce' : 'Workforce Register'}
           </h1>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-muted)' }}>
-            Registered personnel · 5-step statutory onboarding tracking
+            {isPortal
+              ? 'Your registered personnel · 5-step statutory onboarding'
+              : 'Registered personnel · 5-step statutory onboarding tracking'}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          {selectedIds.length > 0 && (
+          {/* Always reachable for whoever may record inductions — the modal has
+              its own picker, so ticking rows first is optional (ticks carry over). */}
+          {(manage || selectedIds.length > 0) && (
             <button onClick={() => setGroupInducting(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 10, background: 'linear-gradient(135deg,#8b5cf6,#6d28d9)', color: '#fff', fontWeight: 800, border: 'none', cursor: 'pointer', fontSize: 13, boxShadow: '0 8px 20px -4px rgba(139,92,246,0.5)' }}>
-              👥 Group Induction ({selectedIds.length} Selected)
+              👥 Group Induction{selectedIds.length > 0 ? ` (${selectedIds.length} Selected)` : ''}
             </button>
           )}
 
@@ -184,6 +230,20 @@ export default function PurchaseWorkers() {
           </button>
           {/* Staff may register and correct workers; ACTIVATION stays admin-only,
               and it lives in the wizard's step 5, not here. */}
+          {manage && (
+            <button onClick={() => setUploading(true)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', borderRadius: 10, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>
+              <Upload size={15} /> Bulk Upload
+            </button>
+          )}
+          {/* The second half of the same request: a stack of fitness
+              certificates is as common as a sheet of workers. */}
+          {manage && !isPortal && (
+            <button onClick={() => setUploadingMedical(true)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 16px', borderRadius: 10, background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-h)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>
+              <Upload size={15} /> Bulk Medical
+            </button>
+          )}
           {manage && (
             <button onClick={() => setCreating(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 10, background: 'linear-gradient(135deg,#7C3AED,#6d28d9)', color: '#fff', fontWeight: 700, border: 'none', cursor: 'pointer', fontSize: 13 }}>
               <Plus size={15} /> Register Worker
@@ -356,8 +416,12 @@ export default function PurchaseWorkers() {
         </div>
       )}
 
-      {creating && <CreateModal vendorId={vendorId} onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); navigate(workerHref(id)) }} />}
-      {groupInducting && <GroupInductionModal workers={selectedWorkers} onClose={() => setGroupInducting(false)} onCompleted={() => { setGroupInducting(false); setSelectedIds([]); fetchAll() }} />}
+      {uploading && <BulkUploadModal vendorId={vendorId} api={api} isPortal={isPortal}
+        onClose={() => setUploading(false)} onUploaded={() => { setUploading(false); fetchAll() }} />}
+      {uploadingMedical && <BulkMedicalModal vendorId={vendorId}
+        onClose={() => setUploadingMedical(false)} onUploaded={() => { setUploadingMedical(false); fetchAll() }} />}
+      {creating && <CreateModal vendorId={vendorId} api={api} isPortal={isPortal} onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); navigate(workerHref(id)) }} />}
+      {groupInducting && <GroupInductionModal engine="purchase" api={api} workers={rows} preselectIds={selectedIds} onClose={() => setGroupInducting(false)} onCompleted={() => { setGroupInducting(false); setSelectedIds([]); fetchAll() }} />}
     </div>
   )
 }
@@ -370,139 +434,270 @@ export default function PurchaseWorkers() {
  * survive the save. The per-worker chips flip as each POST lands, which is why the
  * loop is sequential: a half-finished batch still shows precisely how far it got.
  */
-function GroupInductionModal({ workers, onClose, onCompleted }) {
-  const [f, setF] = useState({
-    induction_date: new Date().toISOString().slice(0, 10),
-    conducted_by: 'Safety Officer – Rahul Sharma',
-    custom_conducted_by: '',
-    status: 'Completed',
-    remarks: '',
-  })
-  const [done, setDone] = useState({})          // { [workerId]: true } as each save lands
-  const [saving, setSaving] = useState(false)
-  const [progressMsg, setProgressMsg] = useState('')
+/**
+ * Bulk worker import — the TPV modal, for Purchase.
+ *
+ * The two things that make an import trustworthy, and that a bare "3 skipped"
+ * destroys: it says WHICH rows did not land and WHY, and it never guesses whose
+ * workers these are. On the portal the vendor is the caller, so no id is sent;
+ * on the admin surface the operator must pick one.
+ */
+const NEWLINE = String.fromCharCode(10)
 
-  const set = (k) => (e) => setF(p => ({ ...p, [k]: e.target.value }))
+/**
+ * Import many medical certificates at once.
+ *
+ * Rows are matched to workers by `worker_code`, which is why the template is
+ * worth downloading rather than guessing at: a sheet without that column is
+ * refused outright. Certificates are optional and matched the same way -- name
+ * the file after the worker_code and it is filed against that row.
+ *
+ * Every rejected row is listed with its line number and the reason, because a
+ * batch that reports "18 imported" and nothing else leaves nobody able to find
+ * the two that did not.
+ */
+function BulkMedicalModal({ vendorId, onClose, onUploaded }) {
+  const [vendors, setVendors] = useState([])
+  const [vid, setVid] = useState(vendorId ? String(vendorId) : '')
+  const [file, setFile] = useState(null)
+  const [certs, setCerts] = useState([])
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState(null)
+  // Shown in the modal rather than as a browser dialog: a modal dialog throws
+  // the reader out of the form and loses the file they already picked.
+  const [err, setErr] = useState('')
 
-  const TRAINER_PRESETS = [
-    { group: 'Safety Team', items: ['Safety Officer – Rahul Sharma', 'Safety Supervisor – Priya Patel', 'HSE Lead – Amit Verma', 'HSSE Manager – Neha Singh', 'Safety Inspector – Ravi Kumar'] },
-    { group: 'HR Team', items: ['HR Manager – Sunita Joshi', 'HR Executive – Deepak Nair', 'HR Coordinator – Anjali Mehta'] },
-    { group: 'Site Management', items: ['Site Engineer – Vikram Rao', 'Project Manager – Suresh Pillai', 'Site Supervisor – Mohan Das'] },
-    { group: 'Custom', items: ['Other / Custom Trainer...'] },
-  ]
+  useEffect(() => {
+    if (vendorId) return
+    purchaseApi.vendors.list({ per_page: 200 })
+      .then(res => setVendors(Array.isArray(res?.data ?? res) ? (res.data ?? res) : []))
+      .catch(() => {})
+  }, [vendorId])
 
-  const doneCount = Object.values(done).filter(Boolean).length
-
-  const saveGroupInduction = async () => {
-    const conductedBy = f.conducted_by === 'Other / Custom Trainer...' ? f.custom_conducted_by : f.conducted_by
-    if (!conductedBy.trim()) { alert('Conducted By is required.'); return }
-    if (!f.induction_date) { alert('Induction Date is required.'); return }
-
-    setSaving(true)
-    try {
-      let count = 0
-      for (const w of workers) {
-        count++
-        setProgressMsg(`Saving worker ${count}/${workers.length}: ${w.full_name}...`)
-        await purchaseApi.workforce.saveInduction(w.id, {
-          induction_date: f.induction_date,
-          status:         f.status,
-          conducted_by:   conductedBy,
-          remarks:        f.remarks || null,
-        })
-        setDone(p => ({ ...p, [w.id]: true }))
-      }
-      alert(`Successfully saved induction for ${workers.length} workers!`)
-      onCompleted()
-    } catch (e) {
-      alert(e?.response?.data?.message || 'Group induction save failed')
-    } finally {
-      setSaving(false)
-      setProgressMsg('')
-    }
+  const downloadSample = () => {
+    const csv = [
+      'worker_code,exam_date,valid_until,fitness_status,doctor_name,doctor_license_no,clinic_name,blood_group,height_cm,weight_kg,bp_systolic,bp_diastolic,restrictions,remarks',
+      'PW-0001,2026-09-01,2027-09-01,Fit,Dr A Mehta,MH-99213,City Clinic,B+,172,68,120,80,,Cleared for all site work',
+      'PW-0002,2026-09-01,2027-03-01,Fit_With_Restrictions,Dr A Mehta,MH-99213,City Clinic,O+,165,72,130,85,No work at height,Review in six months',
+    ].join(NEWLINE)
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'purchase_medical_bulk_upload_sample.csv'
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   }
 
+  const doUpload = async () => {
+    if (!file) { setErr('Choose the certificate sheet first.'); return }
+    setBusy(true); setErr('')
+    try { setResult(await purchaseApi.workforce.bulkMedical(file, vid ? Number(vid) : null, certs)) }
+    catch (e) { setErr(readFieldErrors(e).summary) }
+    finally { setBusy(false) }
+  }
+
+  const batch = result?.data ?? result
+  const errors = Array.isArray(batch?.errors) ? batch.errors : []
+
   return (
-    <Overlay onClose={() => !saving && onClose()} width={820}>
-      <div style={{ marginBottom: 16 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 900, color: 'var(--text-h)', margin: 0 }}>
-          👥 Group Induction Session ({workers.length} Workers Selected)
-        </h2>
-        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Apply one session's details to every selected worker</span>
+    <Overlay onClose={() => !busy && onClose()} width={660}>
+      <h2 style={{ color: 'var(--text-h)', margin: '0 0 4px', fontSize: 18, fontWeight: 800 }}>Bulk Medical Upload</h2>
+      <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '0 0 16px' }}>
+        One row per certificate, matched to a worker by <strong>worker_code</strong>. CSV or XLSX.
+      </p>
+
+      <div style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+        <div>
+          <strong style={{ fontSize: 12.5, display: 'block', color: 'var(--text-h)' }}>Need the template?</strong>
+          <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Every column the importer reads, with two example rows.</span>
+        </div>
+        <button onClick={downloadSample} style={{ padding: '7px 13px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-h)', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
+          Download sample
+        </button>
       </div>
 
-      {/* Session Details */}
-      <div style={{ padding: 14, borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)', marginBottom: 16 }}>
-        <strong style={{ fontSize: 12.5, color: '#0284c7', display: 'block', marginBottom: 10 }}>📋 Session Details (Applies to all selected workers)</strong>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 10 }}>
-          <Field label="Induction Date *">
-            <TextInput type="date" value={f.induction_date} onChange={set('induction_date')} />
-          </Field>
-          <Field label="Conducted By *">
-            <select value={f.conducted_by} onChange={set('conducted_by')} style={inputStyle}>
-              {TRAINER_PRESETS.map(grp => (
-                <optgroup key={grp.group} label={grp.group}>
-                  {grp.items.map(item => <option key={item} value={item}>{item}</option>)}
-                </optgroup>
-              ))}
-            </select>
-          </Field>
-          {/* Step 3 only clears on a Completed induction, so the outcome is a
-              choice here rather than an assumption. */}
-          <Field label="Outcome *">
-            <SelectInput value={f.status} onChange={set('status')} pairs options={[['Completed', 'Completed'], ['Pending', 'Pending']]} />
-          </Field>
-          {f.conducted_by === 'Other / Custom Trainer...' && (
-            <Field label="Trainer Name *" full>
-              <TextInput value={f.custom_conducted_by} onChange={set('custom_conducted_by')} placeholder="Who conducted this induction?" />
+      {err && (
+        <p style={{ margin: '0 0 12px', padding: '9px 12px', borderRadius: 9, fontSize: 12.5, color: '#b91c1c', background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.25)' }}>
+          {err}
+        </p>
+      )}
+
+      {!result ? (
+        <>
+          {/* Optional, and it narrows the worker_code lookup to one vendor --
+              worth doing where two vendors use overlapping codes. */}
+          {!vendorId && (
+            <Field label="Vendor (optional — narrows the worker_code match)" full>
+              <SelectInput value={vid} onChange={e => setVid(e.target.value)} pairs
+                options={[['', 'Any vendor'], ...vendors.map(v => [String(v.id), v.company_name])]} />
             </Field>
           )}
-          <Field label="Remarks" full>
-            <TextInput value={f.remarks} onChange={set('remarks')} placeholder="Topics covered, site rules briefed, observations…" />
+
+          <Field label="Certificate sheet *" full>
+            <input type="file" accept=".csv,.txt,.xlsx"
+              onChange={e => setFile(e.target.files?.[0] || null)}
+              style={{ ...inputStyle, padding: 8 }} />
           </Field>
-        </div>
-      </div>
 
-      {/* Save Progress Bar */}
-      <div style={{ padding: 12, borderRadius: 10, background: 'linear-gradient(135deg, #f3e8ff, #e9d5ff)', border: '1px solid #c084fc', marginBottom: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-          <strong style={{ fontSize: 12.5, color: '#6b21a8' }}>📝 Induction Records Progress</strong>
-          <span style={{ fontSize: 12, fontWeight: 900, color: '#6b21a8' }}>{doneCount} / {workers.length} Recorded</span>
-        </div>
-        <div style={{ height: 8, borderRadius: 999, background: '#d8b4fe', overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${Math.round((doneCount / Math.max(workers.length, 1)) * 100)}%`, background: 'linear-gradient(90deg, #10b981, #059669)', transition: 'width 0.3s' }} />
-        </div>
-      </div>
-
-      {/* Per-worker rows */}
-      <div style={{ maxHeight: 340, overflowY: 'auto', marginBottom: 16 }}>
-        {workers.map(w => (
-          <div key={w.id} style={{ borderRadius: 10, border: done[w.id] ? '2px solid #10b981' : '1px solid var(--border)', marginBottom: 8, overflow: 'hidden', background: 'var(--bg-card)' }}>
-            <div style={{ padding: '10px 14px', background: done[w.id] ? '#dcfce7' : 'var(--bg-input)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <strong style={{ fontSize: 13, color: 'var(--text-h)' }}>{w.full_name}</strong>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>({w.worker_code || 'W-0001'})</span>
-              </div>
-              <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 10px', borderRadius: 20, background: done[w.id] ? '#10b981' : '#f59e0b', color: '#fff' }}>
-                {done[w.id] ? '✓ Recorded' : 'Pending'}
-              </span>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {progressMsg && (
-        <div style={{ padding: '8px 12px', borderRadius: 8, background: '#e0f2fe', color: '#0369a1', fontSize: 12, fontWeight: 700, marginBottom: 12 }}>
-          ⏳ {progressMsg}
+          <Field label="Scanned certificates (optional)" full>
+            <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png"
+              onChange={e => setCerts(Array.from(e.target.files || []))}
+              style={{ ...inputStyle, padding: 8 }} />
+            <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)', marginTop: 4 }}>
+              Name each file after the worker_code it belongs to — e.g. PW-0001.pdf.
+              {certs.length > 0 && <strong> {certs.length} selected.</strong>}
+            </span>
+          </Field>
+        </>
+      ) : (
+        <div style={{ padding: 14, borderRadius: 12, marginBottom: 8, background: batch?.failed_count ? 'rgba(245,158,11,.08)' : 'rgba(16,185,129,.08)', border: `1px solid ${batch?.failed_count ? '#fcd34d' : '#6ee7b7'}` }}>
+          <strong style={{ display: 'block', marginBottom: 8, fontSize: 13.5, color: batch?.failed_count ? '#92400e' : '#047857' }}>
+            {result?.message || `${batch?.created_count ?? 0} certificate(s) imported.`}
+          </strong>
+          {errors.length > 0 && (
+            <>
+              <span style={{ fontSize: 11.5, fontWeight: 800, color: '#b91c1c' }}>Rejected rows</span>
+              <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 12, color: '#b91c1c' }}>
+                {errors.map((e, i) => (
+                  <li key={i}>Row {e.row}{e.worker_code ? ` (${e.worker_code})` : ''}: {e.error}</li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       )}
 
-      <ModalFooter onClose={onClose} onConfirm={saveGroupInduction} loading={saving} confirmLabel={`Complete Group Induction (${workers.length} Workers)`} />
+      <ModalFooter onClose={onClose} onConfirm={result ? onUploaded : doUpload}
+        loading={busy} confirmLabel={result ? 'Done' : 'Upload & Process'} />
     </Overlay>
   )
 }
 
-function CreateModal({ vendorId, onClose, onCreated }) {
+function BulkUploadModal({ vendorId, api, isPortal, onClose, onUploaded }) {
+  const [file, setFile] = useState(null)
+  const [vid, setVid] = useState(vendorId ? String(vendorId) : '')
+  const [vendors, setVendors] = useState([])
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState(null)
+
+  useEffect(() => {
+    if (isPortal || vendorId) return
+    purchaseApi.vendors.list({ per_page: 200 })
+      .then(res => setVendors(Array.isArray(res?.data ?? res) ? (res.data ?? res) : []))
+      .catch(() => {})
+  }, [isPortal, vendorId])
+
+  // The same column order TPV's template uses, so one sheet serves both engines.
+  const downloadSample = () => {
+    const csv = [
+      'Full Name,Gender,DOB,Mobile,Blood Group,Designation,Skill Category,ID Number,Photo Filename',
+      'Suresh Patil,Male,1990-05-15,9876543210,B+,Electrician,Skilled,123456789012,',
+      'Priya Sharma,Female,1995-02-10,9876543212,A+,Helper,Unskilled,345678901234,',
+    ].join(NEWLINE)
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'purchase_workforce_bulk_upload_sample.csv'
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  const blockedTarget = (() => {
+    if (isPortal) return null
+    const v = vendors.find(x => String(x.id) === String(vid || vendorId))
+    return v && v.can_register_workers === false ? v : null
+  })()
+
+  const doUpload = async () => {
+    if (!file) { alert('Choose a CSV, Excel or ZIP file first.'); return }
+    const target = isPortal ? undefined : Number(vid || vendorId)
+    if (!isPortal && !target) { alert('Choose the vendor these workers belong to.'); return }
+
+    setBusy(true)
+    try { setResult(await api.workforce.uploadWorkers(file, target)) }
+    catch (e) { alert(readFieldErrors(e).summary) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <Overlay onClose={() => !busy && onClose()} width={640}>
+      <h2 style={{ color: 'var(--text-h)', margin: '0 0 4px', fontSize: 18, fontWeight: 800 }}>Bulk Worker Upload</h2>
+      <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: '0 0 16px' }}>
+        CSV, XLS, XLSX or a ZIP holding the sheet plus photos. Columns: Full Name, Gender, DOB,
+        Mobile, Blood Group, Designation, Skill Category, ID Number, Photo Filename (optional).
+      </p>
+
+      <div style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+        <div>
+          <strong style={{ fontSize: 12.5, display: 'block', color: 'var(--text-h)' }}>Need the template?</strong>
+          <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>A sample CSV with the right headers and three example rows.</span>
+        </div>
+        <button onClick={downloadSample} style={{ padding: '7px 13px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-h)', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
+          Download sample
+        </button>
+      </div>
+
+      {!isPortal && !vendorId && (
+        <Field label="Employing Vendor *" full>
+          <SelectInput value={vid} onChange={e => setVid(e.target.value)} pairs
+            options={[['', 'Select vendor…'],
+              ...vendors.filter(v => v.can_register_workers !== false).map(v => [String(v.id), v.company_name])]} />
+          {vendors.some(v => v.can_register_workers === false) && (
+            <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)', marginTop: 5 }}>
+              Vendors whose onboarding is not approved are not listed.
+            </span>
+          )}
+        </Field>
+      )}
+
+      {/* Forty rows refused one at a time is worse than one refusal up front. */}
+      {blockedTarget && (
+        <InfoBox tone="danger">
+          <strong>{blockedTarget.company_name}</strong> is {blockedTarget.status_label || blockedTarget.status} —
+          its workforce cannot be uploaded yet. Approve the vendor&rsquo;s onboarding first.
+        </InfoBox>
+      )}
+
+      {!result ? (
+        <Field label="Worker file *" full>
+          <input type="file" accept=".csv,.xls,.xlsx,.txt,.zip"
+            onChange={e => setFile(e.target.files?.[0] || null)}
+            style={{ ...inputStyle, padding: 8 }} />
+        </Field>
+      ) : (
+        <div style={{ padding: 14, borderRadius: 12, marginBottom: 8, background: result.status === 'success' ? 'rgba(16,185,129,.08)' : 'rgba(245,158,11,.08)', border: `1px solid ${result.status === 'success' ? '#6ee7b7' : '#fcd34d'}` }}>
+          <strong style={{ display: 'block', marginBottom: 8, fontSize: 13.5, color: result.status === 'success' ? '#047857' : '#92400e' }}>
+            {result.message}
+          </strong>
+
+          {/* Name the rows that did not land. A bare count is indistinguishable
+              from an import that silently failed. */}
+          {result.duplicates?.length > 0 && (
+            <>
+              <span style={{ fontSize: 11.5, fontWeight: 800, color: '#92400e' }}>Already registered</span>
+              <ul style={{ margin: '4px 0 8px', paddingLeft: 18, fontSize: 12, color: '#92400e' }}>
+                {result.duplicates.map((d, i) => <li key={i}>{d}</li>)}
+              </ul>
+            </>
+          )}
+          {result.errors?.length > 0 && (
+            <>
+              <span style={{ fontSize: 11.5, fontWeight: 800, color: '#b91c1c' }}>Could not be read</span>
+              <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 12, color: '#b91c1c' }}>
+                {result.errors.map((e, i) => <li key={i}>{e}</li>)}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+
+      <ModalFooter onClose={onClose} onConfirm={result ? onUploaded : doUpload}
+        loading={busy} disabled={!result && !!blockedTarget} confirmLabel={result ? 'Done' : 'Upload & Process'} />
+    </Overlay>
+  )
+}
+
+function CreateModal({ vendorId, api, isPortal, onClose, onCreated }) {
   const [vendors, setVendors] = useState([])
   const [f, setF] = useState({
     vendor_id: vendorId ? String(vendorId) : '',
@@ -515,17 +710,37 @@ function CreateModal({ vendorId, onClose, onCreated }) {
   const set = (k) => (e) => setF(p => ({ ...p, [k]: e.target.value }))
 
   useEffect(() => {
+    // A vendor registering its own worker has exactly one employer and no
+    // business listing the others — the server assigns it from the token.
+    if (isPortal) return
     purchaseApi.vendors.list({ per_page: 200 })
       .then(res => setVendors(Array.isArray(res?.data ?? res) ? (res.data ?? res) : []))
       .catch(() => {})
-  }, [])
+  }, [isPortal])
 
   const age = ageOf(f.dob)
   const isAgeException = age !== null && (age < 18 || age > 60)
+  // Split once: what may be picked, and what is deliberately not offered.
+  const eligibleVendors = vendors.filter(v => v.can_register_workers !== false)
+  const hiddenVendors = vendors.filter(v => v.can_register_workers === false)
+
   const chosen = vendors.find(v => String(v.id) === String(f.vendor_id))
+  /*
+   * The server decides, and says so on the payload.
+   *
+   * Comparing status to 'Active' here would be wrong: a workforce category
+   * (security, housekeeping, manpower) registers its people at onboarding step
+   * 3, BEFORE the approval at step 4, so that check would disable the very form
+   * those vendors are meant to use. `can_register_workers` is the same rule the
+   * service enforces, computed once on the model.
+   *
+   * `chosen` is undefined until the vendor list lands, so an unknown vendor is
+   * not treated as a blocked one — that would disable the form while loading.
+   */
+  const blockedVendor = !isPortal && !!chosen && chosen.can_register_workers === false
 
   const create = async () => {
-    if (!f.vendor_id) { alert('Vendor is required.'); return }
+    if (!isPortal && !f.vendor_id) { alert('Vendor is required.'); return }
     if (!f.full_name?.trim()) { alert('Full Name is required.'); return }
     if (!f.gender) { alert('Gender is required.'); return }
     if (!f.dob) { alert('Date of Birth is required.'); return }
@@ -539,7 +754,9 @@ function CreateModal({ vendorId, onClose, onCreated }) {
       // `purchase_vendor_id`, not `vendor_id` — the latter names a company on
       // the shared vendors table, whose ids are unrelated to these.
       const { vendor_id: _drop, ...rest } = payload
-      const w = await purchaseApi.workforce.createWorker({ ...rest, purchase_vendor_id: Number(f.vendor_id) })
+      const w = await api.workforce.createWorker(
+        isPortal ? rest : { ...rest, purchase_vendor_id: Number(f.vendor_id) },
+      )
       onCreated(w?.id ?? w?.data?.id)
     } catch (e) {
       const errObj = e?.response?.data?.errors
@@ -554,23 +771,50 @@ function CreateModal({ vendorId, onClose, onCreated }) {
       <h2 style={{ color: 'var(--text-h)', margin: '0 0 4px', fontSize: 18, fontWeight: 800 }}>➕ Worker Registration (Step 1)</h2>
       <p style={{ color: 'var(--text-muted)', fontSize: 12, margin: '0 0 16px' }}>Step 1 of 5 — Personal, Work Details &amp; ID Proof.</p>
 
-      {chosen && chosen.status !== 'Active' && (
+      {/*
+        A vendor that is not approved has no workforce to enter yet.
+
+        This used to warn and then let the registration through, which put people
+        on the books who could never be badged and left nobody sure why
+        (SIR-000014). The server refuses it now; this says so first, so the
+        refusal is not a surprise at the end of a five-step form.
+      */}
+      {blockedVendor && (
         <InfoBox tone="danger">
-          <strong>{chosen.company_name}</strong> is {chosen.status_label || chosen.status}. You can register workers now,
-          but no badge can be issued until that vendor's onboarding is approved.
+          <strong>{chosen.company_name}</strong> is {chosen.status_label || chosen.status} —
+          workers cannot be registered against it yet. Approve the vendor&rsquo;s onboarding
+          first, then add its workforce.
         </InfoBox>
       )}
 
+      {/* A vendor in its own portal is the employer — there is nothing to pick. */}
+      {!isPortal && (
       <Field label="Employing Vendor *" full>
         {vendorId ? (
           <div style={{ ...inputStyle, display: 'flex', alignItems: 'center', opacity: 0.9 }}>
             {chosen ? `${chosen.company_name} · ${chosen.status_label || chosen.status}` : 'Loading vendor…'}
           </div>
         ) : (
+          <>
           <SelectInput value={f.vendor_id} onChange={set('vendor_id')} pairs
-            options={[['', 'Select vendor…'], ...vendors.map(v => [String(v.id), `${v.company_name} · ${v.status_label || v.status}`])]} />
+            options={[['', 'Select vendor…'], ...eligibleVendors.map(v => [String(v.id), v.company_name])]} />
+          {/*
+            Vendors whose onboarding is not approved are LEFT OUT rather than
+            shown greyed: the report asked for them not to be offered at all, and
+            a list you can pick from but not submit is the confusion it names.
+            The count is still said out loud, so nobody concludes their vendor
+            has vanished.
+          */}
+          {hiddenVendors.length > 0 && (
+            <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)', marginTop: 5 }}>
+              {hiddenVendors.length} vendor{hiddenVendors.length > 1 ? 's are' : ' is'} not listed — onboarding not approved yet
+              ({hiddenVendors.slice(0, 3).map(v => v.company_name).join(', ')}{hiddenVendors.length > 3 ? '…' : ''}).
+            </span>
+          )}
+          </>
         )}
       </Field>
+      )}
 
       {/* Personal Info Section */}
       <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10, borderBottom: '1px solid var(--border)', paddingBottom: 4, marginTop: 10 }}>
@@ -631,7 +875,7 @@ function CreateModal({ vendorId, onClose, onCreated }) {
         <Field label="Notes" full><TextInput value={f.notes} onChange={set('notes')} placeholder="Anything the site should know about this worker" /></Field>
       </div>
 
-      <ModalFooter onClose={onClose} onConfirm={create} loading={saving} disabled={!f.vendor_id || !f.full_name || !f.dob} confirmLabel="Save &amp; Continue to Step 2 →" />
+      <ModalFooter onClose={onClose} onConfirm={create} loading={saving} disabled={(!isPortal && !f.vendor_id) || blockedVendor || !f.full_name || !f.dob} confirmLabel="Save &amp; Continue to Step 2 →" />
     </Overlay>
   )
 }

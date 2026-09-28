@@ -9,18 +9,16 @@ export const settingsApi = {
   },
   // ST2 — global recycle bin: list soft-deleted records + restore one.
   recycleBin: {
-    list:    () => api.get('/settings/recycle-bin').then(r => r.data).catch(handleErr),
+    // Filtering is server-side: with sixty-odd registered types, fetching
+    // everything to filter in the browser would mean sixty queries per keystroke.
+    list:    (params = {}) => api.get('/settings/recycle-bin', { params }).then(r => r.data).catch(handleErr),
     restore: (type, id) => api.post('/settings/recycle-bin/restore', { type, id }).then(r => r.data).catch(handleErr),
   },
   // Roles & Departments — maintained from Settings instead of by a developer.
-  // `roles` are staff JOB roles (users.internal_role); account types are
-  // returned alongside, read-only, because each one is a whole portal.
-  roles: {
-    list:   () => api.get('/settings/roles').then(r => r.data).catch(handleErr),
-    create: (data) => api.post('/settings/roles', data).then(r => r.data).catch(handleErr),
-    update: (id, data) => api.put(`/settings/roles/${id}`, data).then(r => r.data).catch(handleErr),
-    remove: (id) => api.delete(`/settings/roles/${id}`).then(r => r.data).catch(handleErr),
-  },
+  // `roles` retired: /settings/roles managed a second staff-role catalogue
+  // (access_roles) beside the live one. staff_roles owns the vocabulary,
+  // permissions and scope together; Staff Management maintains it at
+  // /admin/roles, which is what RolesModal.jsx already calls.
   departments: {
     list:   () => api.get('/settings/departments').then(r => r.data?.data ?? r.data).catch(handleErr),
     create: (data) => api.post('/settings/departments', data).then(r => r.data).catch(handleErr),
@@ -57,6 +55,13 @@ export const settingsApi = {
     get: () => api.get('/settings/mail').then(r => r.data).catch(handleErr),
     update: (data) => api.put('/settings/mail', data).then(r => r.data).catch(handleErr),
     test: (to) => api.post('/settings/mail/test', { to }).then(r => r.data).catch(handleErr),
+  },
+  whatsapp: {
+    get:    ()     => api.get('/settings/whatsapp').then(r => r.data).catch(handleErr),
+    update: (data) => api.put('/settings/whatsapp', data).then(r => r.data).catch(handleErr),
+    // A read against Meta — proves the token works without spending a message.
+    verify: ()     => api.post('/settings/whatsapp/verify').then(r => r.data).catch(handleErr),
+    test:   (to)   => api.post('/settings/whatsapp/test', { to }).then(r => r.data).catch(handleErr),
   },
   company: {
     get: () => api.get('/settings/company').then(r => r.data).catch(handleErr),

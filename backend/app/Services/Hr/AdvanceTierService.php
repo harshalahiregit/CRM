@@ -3,9 +3,13 @@
 namespace App\Services\Hr;
 
 use App\Models\Hr\HrAdvance;
+use App\Models\Hr\HrApprovalRequest;
 use App\Models\Hr\HrEmployee;
 use App\Models\User;
 use App\Services\Settings\SettingsService;
+use App\Support\Hr\Approval\ApprovalProcess;
+use App\Support\Hr\Approval\ApprovalState;
+use App\Support\Hr\Approval\ApproverType;
 use App\Support\Hr\AdvanceStage;
 use App\Support\Hr\HrSetting;
 
@@ -49,21 +53,31 @@ class AdvanceTierService
     }
 
     /**
-     * How high the ladder actually goes for a given amount.
+     * Which rungs this advance has to climb.
      *
      * SangoeTrack's tiers were fixed in code, so a ₹500 advance took the same
-     * three signatures as a ₹5,00,000 one. Two thresholds change that:
-     * at or below the manager limit only the manager is needed; at or below the
-     * accounts limit a director is not. Zero — the default — means no shortcut,
-     * so behaviour is unchanged until somebody sets them.
+     * three signatures as a ₹5,00,000 one. Two thresholds change that: at or
+     * below the manager limit only the manager is needed; at or below the
+     * accounts limit a director is not. Zero means no shortcut.
+     *
+     * The THRESHOLDS come from the request's snapshot once it has one, and from
+     * live settings only when it does not. That is the whole of the fix: this
+     * method used to read settings on every call, so raising
+     * advance_manager_limit while a request sat at the manager rung silently
+     * shortened its ladder and the manager's approval became final on an
+     * amount two more people were supposed to see.
+     *
+     * The AMOUNT is still read live, and deliberately so. An approver may
+     * reduce the figure as they sign, and a smaller advance genuinely needs
+     * fewer rungs — that is existing behaviour and this does not change it.
+     * Freezing the thresholds without freezing the amount is exactly the line:
+     * the company's policy at submission time, applied to whatever is actually
+     * being approved now.
      */
     public function ladderFor(HrAdvance $advance): array
     {
         $amount = $advance->effectiveAmount();
-        $s      = $this->settings->getGroup((int) $advance->tenant_id, HrSetting::GROUP);
-
-        $managerLimit  = (float) ($s['advance_manager_limit'] ?? 0);
-        $accountsLimit = (float) ($s['advance_accounts_limit'] ?? 0);
+        ['manager' => $managerLimit, 'accounts' => $accountsLimit] = $this->limitsFor($advance);
 
         if ($managerLimit > 0 && $amount <= $managerLimit) {
             return [AdvanceStage::MANAGER];
@@ -74,6 +88,140 @@ class AdvanceTierService
         }
 
         return AdvanceStage::LADDER;
+    }
+
+    /**
+     * The thresholds in force for this request — frozen if it has been snapped.
+     *
+     * Reading the snapshot HERE rather than in a controller is what protects
+     * both callers. The attendance app decides advances through
+     * AdvanceService::approve() directly, and this is the method that answers
+     * "whose turn is it" underneath it, so the phone gets the same frozen
+     * ladder the CRM does without one line of the app changing.
+     *
+     * @return array{manager: float, accounts: float}
+     */
+    public function limitsFor(HrAdvance $advance): array
+    {
+        $frozen = $this->frozenLimits($advance);
+
+        if ($frozen !== null) {
+            return $frozen;
+        }
+
+        $s = $this->settings->getGroup((int) $advance->tenant_id, HrSetting::GROUP);
+
+        return [
+            'manager'  => (float) ($s['advance_manager_limit'] ?? 0),
+            'accounts' => (float) ($s['advance_accounts_limit'] ?? 0),
+        ];
+    }
+
+    /**
+     * The thresholds recorded on this advance's open approval round, if any.
+     *
+     * Stored as the min_amount on each rung of the engine's steps_snapshot,
+     * which is where that column already means "the figure above which this
+     * step applies" for every other migrated process.
+     *
+     * @return array{manager: float, accounts: float}|null
+     */
+    private function frozenLimits(HrAdvance $advance): ?array
+    {
+        if (! $advance->exists) {
+            return null;
+        }
+
+        $snapshot = HrApprovalRequest::where('subject_type', $advance->getMorphClass())
+            ->where('subject_id', $advance->getKey())
+            ->whereIn('state', ApprovalState::OPEN)
+            ->latest('id')
+            ->value('steps_snapshot');
+
+        if (! $snapshot) {
+            return null;
+        }
+
+        $steps = is_array($snapshot) ? $snapshot : json_decode((string) $snapshot, true);
+        if (! is_array($steps)) {
+            return null;
+        }
+
+        $by = [];
+        foreach ($steps as $step) {
+            $by[$step['name'] ?? ''] = (float) ($step['conditions']['min_amount'] ?? 0);
+        }
+
+        // Absent keys read as 0, which ladderFor() already treats as "no limit"
+        // — the same meaning an unset setting has.
+        return [
+            'manager'  => $by[AdvanceStage::ACCOUNTS] ?? 0.0,
+            'accounts' => $by[AdvanceStage::DIRECTOR] ?? 0.0,
+        ];
+    }
+
+    /**
+     * Freeze the thresholds for a newly submitted advance.
+     *
+     * Called once, when the request is raised. The rungs are named by tier and
+     * each carries the figure above which it applies, so the snapshot records
+     * the policy rather than a pre-truncated list — which is what lets the
+     * amount keep re-shaping the ladder afterwards.
+     */
+    public function snapshotLadder(HrAdvance $advance, ?User $actor = null): void
+    {
+        $existing = HrApprovalRequest::where('subject_type', $advance->getMorphClass())
+            ->where('subject_id', $advance->getKey())
+            ->whereIn('state', ApprovalState::OPEN)
+            ->exists();
+
+        if ($existing) {
+            return;
+        }
+
+        $s = $this->settings->getGroup((int) $advance->tenant_id, HrSetting::GROUP);
+        $managerLimit  = (float) ($s['advance_manager_limit'] ?? 0);
+        $accountsLimit = (float) ($s['advance_accounts_limit'] ?? 0);
+
+        HrApprovalRequest::create([
+            'tenant_id'      => $advance->tenant_id,
+            'subject_type'   => $advance->getMorphClass(),
+            'subject_id'     => $advance->getKey(),
+            'process'        => ApprovalProcess::ADVANCE,
+            'employee_id'    => $advance->employee_id,
+            'steps_snapshot' => [
+                [
+                    'step_order' => 1, 'name' => AdvanceStage::MANAGER,
+                    'approver_type' => ApproverType::REPORTING_MANAGER,
+                    'approver_ref' => null, 'levels_up' => 1, 'conditions' => [],
+                ],
+                [
+                    'step_order' => 2, 'name' => AdvanceStage::ACCOUNTS,
+                    'approver_type' => ApproverType::LEGACY_HR_QUEUE,
+                    'approver_ref' => null, 'levels_up' => 1,
+                    'conditions' => ['min_amount' => $managerLimit],
+                ],
+                [
+                    'step_order' => 3, 'name' => AdvanceStage::DIRECTOR,
+                    'approver_type' => ApproverType::LEGACY_HR_QUEUE,
+                    'approver_ref' => null, 'levels_up' => 1,
+                    'conditions' => ['min_amount' => $accountsLimit],
+                ],
+            ],
+            'current_step' => 1,
+            'state'        => ApprovalState::PENDING,
+            'amount'       => $advance->effectiveAmount(),
+            'opened_at'    => now(),
+        ]);
+    }
+
+    /** Close the round when the advance leaves the approval ladder. */
+    public function closeLadder(HrAdvance $advance, string $state = ApprovalState::APPROVED): void
+    {
+        HrApprovalRequest::where('subject_type', $advance->getMorphClass())
+            ->where('subject_id', $advance->getKey())
+            ->whereIn('state', ApprovalState::OPEN)
+            ->update(['state' => $state, 'closed_at' => now()]);
     }
 
     /**
@@ -189,8 +337,32 @@ class AdvanceTierService
         );
     }
 
+    /**
+     * Whether this person stands on the accounts or director rung by role.
+     *
+     * The account type is checked first, and it has to be: TIER_ROLES is matched
+     * against internal_role, which is a free string every account carries —
+     * clients, vendors, external companies and doctors are rows in `users` too.
+     * A client whose internal_role read 'director' therefore held an approval
+     * rung, and this method is consulted by HrmAdminController::deny(), which is
+     * the door to all twenty attendance-app admin screens: the dashboard, the
+     * employee list, payroll, salaries and the advance approvals.
+     *
+     * EnsureCanAccessAdvances makes the same check before it reaches the ladder,
+     * so the web queue was already closed. This shuts the door the phone uses.
+     *
+     * The two callers that SCOPE rather than admit — scopeQueue() here and
+     * HrmAdminController::queueScope() — both treat a false as "you are not an
+     * overseer" and fall through to the reporting-hierarchy lookup, which for an
+     * account with no employee record resolves to nothing rather than to
+     * everything. Narrowing, never widening.
+     */
     public function holdsAnyTierRole(User $actor): bool
     {
+        if (! $actor->isStaffAccount()) {
+            return false;
+        }
+
         foreach (self::TIER_ROLES as $roles) {
             if (in_array((string) $actor->internal_role, $roles, true)) {
                 return true;

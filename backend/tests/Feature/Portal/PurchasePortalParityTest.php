@@ -35,6 +35,7 @@ class PurchasePortalParityTest extends TestCase
             'tenant_id' => self::TENANT, 'company_name' => 'Bolt Supplies',
             'purchase_vendor_code' => 'PV-'.uniqid(), 'status' => PurchaseVendorStatus::ACTIVE, 'portal_status' => 'active',
         ]);
+        $this->markOnboarded($this->vendor);
     }
 
     public function test_customers_lists_purchase_vendor_clients(): void
@@ -120,6 +121,7 @@ class PurchasePortalParityTest extends TestCase
     public function test_isolation_between_purchase_vendors(): void
     {
         $other = PurchaseVendor::create(['tenant_id' => self::TENANT, 'company_name' => 'Other', 'purchase_vendor_code' => 'PV-'.uniqid(), 'status' => PurchaseVendorStatus::ACTIVE, 'portal_status' => 'active']);
+        $this->markOnboarded($other);
         $ship = VendorShipment::create(['tenant_id' => self::TENANT, 'purchase_vendor_id' => $other->id, 'status' => 'Pre-Alert']);
 
         Sanctum::actingAs($this->vendor);

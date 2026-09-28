@@ -10,7 +10,18 @@
     "lint": "eslint src",
     "lint:crash": "eslint src --rule '{\"no-undef\":\"error\"}'",
     "check:media": "node scripts/media-compress.check.mjs",
-    "check:selects": "node scripts/searchable-selects.check.mjs"
+    "check:selects": "node scripts/searchable-selects.check.mjs",
+    "check:login-roles": "node scripts/login-roles.check.mjs",
+    "check:sire": "node scripts/sire-context.check.mjs",
+    "check:vendor-lock": "node scripts/vendor-lock.check.mjs",
+    "check:tasks": "node scripts/task-assignment.check.mjs",
+    "check:crash": "node scripts/undefined-identifiers.check.mjs",
+    "check:meetings": "node scripts/meeting-links.check.mjs",
+    "check:jsx": "node scripts/jsx-leaked-text.check.mjs",
+    "check:employee-dates": "node scripts/employee-dates.check.mjs",
+    "check:staff-identity": "node scripts/staff-identity.check.mjs",
+    "check:onboarding": "node scripts/onboarding-steps.check.mjs",
+    "check:crash:all": "node scripts/undefined-identifiers.check.mjs --all"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",

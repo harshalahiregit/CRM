@@ -68,11 +68,14 @@ class PurchaseMedicalModuleTest extends TestCase
 
     private function vendor(string $name = 'Bolt Supplies'): PurchaseVendor
     {
-        return PurchaseVendor::create([
+        $vendor = PurchaseVendor::create([
             'tenant_id' => self::TENANT, 'company_name' => $name,
             'purchase_vendor_code' => 'PV-'.uniqid(), 'status' => PurchaseVendorStatus::ACTIVE,
             'portal_status' => 'active', 'email' => Str::random(6).'@t.local',
         ]);
+        $this->markOnboarded($vendor);
+
+        return $vendor->fresh();
     }
 
     private function worker(PurchaseVendor $vendor, string $code = 'PW-0001'): PurchaseWorker

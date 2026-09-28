@@ -1,26 +1,45 @@
-import { useState, useRef } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useState, useRef, useMemo } from 'react'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { useDiscardGuard } from '@/lib/confirmClose'
-import { X, UserCheck, AlertCircle, Check, FolderKanban } from 'lucide-react'
+import { X, UserCheck, AlertCircle, Check, FolderKanban, Paperclip, Tag as TagIcon } from 'lucide-react'
 import { helpdeskApi } from '@/services/helpdeskApi'
 import Select from '@/components/ui/Select'
+import RichTextEditor from '@/components/ui/RichTextEditor'
+import CannedResponsePicker from './CannedResponsePicker'
+import InsertKbLinkPicker from './InsertKbLinkPicker'
 
 /**
- * The Helpdesk's ticket-create form. Lifted out of TicketGrid unchanged so a
- * second screen can raise a ticket without a second form — every field, the
- * department routing, the discard guard and the create call are the originals.
+ * The Helpdesk's ticket-create form.
  *
  * `draft` carries context from another module ("Raise ticket" on a lead), so the
  * form opens part-filled. customer_id is not an input — it rides along hidden so
- * the ticket stays linked to whoever it was raised for.
+ * the ticket stays linked to whoever it was raised for, unless the agent picks a
+ * Contact here, which sets it.
  *
  * `projects` turns on the Project field. A ticket has no vendor of its own: it
  * reaches one THROUGH its project (tickets.project_id → projects.vendor_id), so
  * the TPV vendor screen passes that vendor's own projects and the field becomes
  * required. The caller decides which projects are offered — this form never
  * fetches them, so it cannot widen the choice beyond what it was handed.
+ *
+ * ── What was missing ────────────────────────────────────────────────────────
+ * Service, Tags, Cc, attachments, canned replies, KB links and a real editor
+ * all existed in the backend and in components of their own, and none of them
+ * were on this form. The tables, the endpoints and the pickers were all there;
+ * an agent raising a ticket simply had no way to reach them, so tickets arrived
+ * untagged, unattributed to a service, with no file and with the description
+ * typed into a bare textarea.
  */
 const inp = { width: '100%', padding: '10px 13px', borderRadius: 10, border: '1px solid var(--border)', fontSize: 14, outline: 'none', color: 'var(--text-h)', background: 'var(--bg-input)' }
+const LBL = { display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 5 }
+
+/** Split a Cc box into addresses. Commas, semicolons or spaces — people type all three. */
+const parseCc = (raw) => String(raw || '')
+  .split(/[,;\s]+/)
+  .map(e => e.trim().toLowerCase())
+  .filter(Boolean)
+
+const isEmail = (e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)
 
 export default function NewTicketModal({ settings, onClose, onCreated, draft = null, projects = null, title = 'New Ticket' }) {
   const scoped = Array.isArray(projects)
@@ -28,131 +47,279 @@ export default function NewTicketModal({ settings, onClose, onCreated, draft = n
   const [form, setForm] = useState({
     subject: draft?.subject || '', description: draft?.description || '',
     priority: draft?.priority || 'medium', status: 'open',
-    department_id: '', assigned_to: '',
+    department_id: '', assigned_to: '', service_id: '',
     requester_name: draft?.requester_name || '', requester_email: draft?.requester_email || '',
     project_id: draft?.project_id || '',
+    customer_id: draft?.customer_id || '',
+    cc: '',
+    // Accepted by the API since the column existed; the form just never asked.
+    due_date: draft?.due_date || '',
   })
+  const [tagIds, setTagIds] = useState([])
+  const [files, setFiles] = useState([])
+
+  // Only fetched when the form is open, which is the only time it is mounted.
+  const { data: contacts = [] } = useQuery({ queryKey: ['helpdesk-contacts'], queryFn: helpdeskApi.contacts.list })
+  const { data: allTags = [] } = useQuery({ queryKey: ['helpdesk-tags'], queryFn: helpdeskApi.tags.list })
+  const { data: agents = [] } = useQuery({ queryKey: ['helpdesk-agents'], queryFn: helpdeskApi.agents })
+
   const create = useMutation({
     mutationFn: () => {
       const p = { ...form }
-      Object.keys(p).forEach(k => p[k] === '' && delete p[k])
-      if (draft?.customer_id) p.customer_id = Number(draft.customer_id)
+      // Cc is typed as free text and stored as a list.
+      p.cc = parseCc(form.cc).filter(isEmail)
+      if (!p.cc.length) delete p.cc
+      if (tagIds.length) p.tags = tagIds
+      if (files.length) p.attachments = files
+      Object.keys(p).forEach(k => (p[k] === '' || p[k] === null) && delete p[k])
       if (draft?.source) p.source = draft.source
       return helpdeskApi.tickets.create(p)
     },
     onSuccess: (t) => onCreated(t.id),
   })
+
   const snapRef = useRef(null)
   if (snapRef.current === null) snapRef.current = JSON.stringify(form)
   const { guard, dialog } = useDiscardGuard()
-  const requestClose = () => guard(onClose, JSON.stringify(form) !== snapRef.current)
+  const dirty = () => JSON.stringify(form) !== snapRef.current || tagIds.length > 0 || files.length > 0
+  const requestClose = () => guard(onClose, dirty())
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
-  const LBL = { display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 5 }
+
   // People the admin assigned to the chosen department (the ticket routes to them).
   const deptAgents = (settings?.departments || []).find(d => String(d.id) === String(form.department_id))?.managers || []
 
+  /* Choosing a contact fills the requester fields, so an agent raising a ticket
+     on somebody's behalf is not retyping an address they can get wrong. Both
+     fields stay editable — the contact on file is not always the right one. */
+  const pickContact = (id) => {
+    const c = contacts.find(x => String(x.id) === String(id))
+    setForm(f => ({
+      ...f,
+      customer_id: id,
+      requester_name: c?.name || f.requester_name,
+      requester_email: c?.email || f.requester_email,
+    }))
+  }
+
+  const toggleTag = (id) => setTagIds(t => (t.includes(id) ? t.filter(x => x !== id) : [...t, id]))
+
+  // Appended, so choosing a second snippet does not wipe the first.
+  const insertIntoBody = (html) => setForm(f => ({ ...f, description: (f.description || '') + html }))
+
+  const badCc = useMemo(() => parseCc(form.cc).filter(e => !isEmail(e)), [form.cc])
+
   // When the form is project-scoped the link is what files the ticket where it
   // belongs, so it is as mandatory as the subject.
-  const incomplete = !form.subject.trim() || (scoped && !form.project_id)
+  const incomplete = !form.subject.trim() || (scoped && !form.project_id) || badCc.length > 0
 
   return (
     <>
-    <div className="fixed inset-0 z-[70] flex items-start justify-center bg-black/50" style={{ paddingTop: '8vh' }}>
-      <div className="w-full max-w-[500px] rounded-2xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)', padding: 24, maxHeight: '85vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[70] flex items-start justify-center bg-black/50" style={{ paddingTop: '6vh' }}>
+      <div className="w-full max-w-[900px] rounded-2xl" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-card-3d)', padding: 24, maxHeight: '88vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-black text-base" style={{ color: 'var(--text-h)' }}>{title}</h2>
           <button onClick={requestClose} className="hover:opacity-70"><X size={18} style={{ color: 'var(--text-muted)' }} /></button>
         </div>
-        <div className="space-y-3.5">
-          <div><label style={LBL}>Subject *</label><input style={inp} value={form.subject} onChange={e => set('subject', e.target.value)} placeholder="What's the issue?" /></div>
 
-          {scoped && (
+        {/* Two columns: who and what on the left, how it is handled on the right. */}
+        <div className="grid gap-x-6 gap-y-3.5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+
+          {/* ── Left: the request ─────────────────────────────────────────── */}
+          <div className="space-y-3.5">
+            <div><label style={LBL}>Subject *</label><input style={inp} value={form.subject} onChange={e => set('subject', e.target.value)} placeholder="What's the issue?" /></div>
+
             <div>
-              <label style={LBL} className="flex items-center gap-1.5">
-                <FolderKanban size={12} style={{ color: 'var(--color-support-500)' }} /> Project *
-              </label>
-
-              {projects.length === 0 ? (
-                /* Say WHY rather than offering an empty dropdown. A ticket has no
-                   vendor column — it reaches this vendor through a project — so
-                   with no projects there is nothing to attach it to. */
-                <div className="flex items-start gap-2 p-3 rounded-xl text-sm"
-                  style={{ background: 'rgba(245,158,11,0.08)', color: 'var(--text-body)', border: '1px solid rgba(245,158,11,0.25)' }}>
-                  <AlertCircle size={14} style={{ color: 'var(--color-warning-500)', flexShrink: 0, marginTop: 2 }} />
-                  <span>
-                    This vendor has no projects yet. A ticket reaches a vendor through its
-                    project, so add one on the <strong>Projects</strong> tab first.
-                  </span>
-                </div>
-              ) : (
-                <>
-                  <Select value={form.project_id ?? ''} onChange={v => set('project_id', v)} ariaLabel="Project"
-                    placeholder="Choose a project…"
-                    options={projects.map(p => ({ value: p.id, label: p.name }))} />
-                  <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                    Only this vendor’s projects — that link is what files the ticket against it.
-                  </p>
-                </>
-              )}
+              <label style={LBL}>Contact</label>
+              <Select value={form.customer_id ?? ''} onChange={pickContact} placeholder="None selected" ariaLabel="Contact"
+                options={[{ value: '', label: 'None selected' }, ...contacts.map(c => ({ value: c.id, label: c.email ? `${c.name} · ${c.email}` : c.name }))]} />
             </div>
-          )}
 
-          <div><label style={LBL}>Description</label><textarea style={{ ...inp, minHeight: 80, resize: 'vertical' }} value={form.description} onChange={e => set('description', e.target.value)} placeholder="Describe in detail…" /></div>
-          <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div><label style={LBL}>Name</label><input style={inp} value={form.requester_name} onChange={e => set('requester_name', e.target.value)} placeholder="Requester" /></div>
+              <div><label style={LBL}>Email address</label><input style={inp} value={form.requester_email} onChange={e => set('requester_email', e.target.value)} placeholder="name@example.com" /></div>
+            </div>
+
             <div>
-              <label style={LBL}>Priority</label>
-              <Select value={form.priority} onChange={v => set('priority', v)} ariaLabel="Priority"
-                options={(settings?.priorities || [{ name: 'medium' }]).map(p => ({ value: p.name, label: p.name, dot: p.color }))} />
+              <label style={LBL}>Department</label>
+              <Select value={form.department_id ?? ''} onChange={v => setForm(f => ({ ...f, department_id: v, assigned_to: '' }))} placeholder="None selected" ariaLabel="Department"
+                options={[{ value: '', label: 'None selected' }, ...(settings?.departments || []).map(d => ({ value: d.id, label: d.name }))]} />
             </div>
-            <div>
-              <label style={LBL}>Status</label>
-              <Select value={form.status} onChange={v => set('status', v)} ariaLabel="Status"
-                options={(settings?.statuses || [{ name: 'open' }]).filter(s => s.name !== 'merged').map(s => ({ value: s.name, label: s.name, dot: s.color }))} />
-            </div>
-          </div>
-          <div>
-            <label style={LBL}>Department</label>
-            <Select value={form.department_id ?? ''} onChange={v => setForm(f => ({ ...f, department_id: v, assigned_to: '' }))} placeholder="— none —" ariaLabel="Department"
-              options={[{ value: '', label: '— none —' }, ...(settings?.departments || []).map(d => ({ value: d.id, label: d.name }))]} />
-          </div>
 
-          {/* People the admin assigned to this department — the ticket routes to all
-              of them; tap one to assign it directly. */}
-          {form.department_id && (
-            <div className="rounded-xl p-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
-              <p style={{ ...LBL, marginBottom: 8 }} className="flex items-center gap-1.5">
-                <UserCheck size={12} style={{ color: 'var(--color-support-500)' }} /> Handled by this department
+            <div>
+              <label style={LBL}>CC</label>
+              <input style={inp} value={form.cc} onChange={e => set('cc', e.target.value)} placeholder="manager@example.com, qa@example.com" />
+              <p className="text-xs mt-1.5" style={{ color: badCc.length ? 'var(--color-danger-500)' : 'var(--text-muted)' }}>
+                {badCc.length
+                  ? `Not an email address: ${badCc.join(', ')}`
+                  : 'Copied on every message on this ticket, not just the first.'}
               </p>
-              {deptAgents.length === 0 ? (
-                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>No one assigned yet — it’ll go to the ticket managers.</p>
+            </div>
+
+            {scoped && (
+              <div>
+                <label style={LBL} className="flex items-center gap-1.5">
+                  <FolderKanban size={12} style={{ color: 'var(--color-support-500)' }} /> Project *
+                </label>
+
+                {projects.length === 0 ? (
+                  /* Say WHY rather than offering an empty dropdown. A ticket has no
+                     vendor column — it reaches this vendor through a project — so
+                     with no projects there is nothing to attach it to. */
+                  <div className="flex items-start gap-2 p-3 rounded-xl text-sm"
+                    style={{ background: 'rgba(245,158,11,0.08)', color: 'var(--text-body)', border: '1px solid rgba(245,158,11,0.25)' }}>
+                    <AlertCircle size={14} style={{ color: 'var(--color-warning-500)', flexShrink: 0, marginTop: 2 }} />
+                    <span>
+                      This vendor has no projects yet. A ticket reaches a vendor through its
+                      project, so add one on the <strong>Projects</strong> tab first.
+                    </span>
+                  </div>
+                ) : (
+                  <>
+                    <Select value={form.project_id ?? ''} onChange={v => set('project_id', v)} ariaLabel="Project"
+                      placeholder="Choose a project…"
+                      options={projects.map(p => ({ value: p.id, label: p.name }))} />
+                    <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                      Only this vendor’s projects — that link is what files the ticket against it.
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ── Right: how it gets handled ────────────────────────────────── */}
+          <div className="space-y-3.5">
+            <div>
+              <label style={LBL} className="flex items-center gap-1.5"><TagIcon size={12} /> Tags</label>
+              {allTags.length === 0 ? (
+                <p className="text-xs py-2" style={{ color: 'var(--text-muted)' }}>
+                  No tags yet — add them under Support Settings.
+                </p>
               ) : (
                 <div className="flex flex-wrap gap-1.5">
-                  {deptAgents.map(a => {
-                    const on = String(form.assigned_to) === String(a.id)
+                  {allTags.map(t => {
+                    const on = tagIds.includes(t.id)
                     return (
-                      <button type="button" key={a.id} onClick={() => set('assigned_to', on ? '' : a.id)}
+                      <button type="button" key={t.id} onClick={() => toggleTag(t.id)}
                         className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg"
                         style={on
-                          ? { background: 'color-mix(in srgb, var(--color-support-500) 16%, transparent)', color: 'var(--color-support-500)', border: '1px solid var(--color-support-500)' }
-                          : { background: 'var(--bg-card)', color: 'var(--text-body)', border: '1px solid var(--border)' }}>
-                        {on && <Check size={12} />} {a.name}
+                          ? { background: `color-mix(in srgb, ${t.color || 'var(--color-support-500)'} 18%, transparent)`, color: t.color || 'var(--color-support-500)', border: `1px solid ${t.color || 'var(--color-support-500)'}` }
+                          : { background: 'var(--bg-input)', color: 'var(--text-body)', border: '1px solid var(--border)' }}>
+                        {on && <Check size={12} />} {t.name}
                       </button>
                     )
                   })}
                 </div>
               )}
             </div>
-          )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <div><label style={LBL}>Requester name</label><input style={inp} value={form.requester_name} onChange={e => set('requester_name', e.target.value)} /></div>
-            <div><label style={LBL}>Requester email</label><input style={inp} value={form.requester_email} onChange={e => set('requester_email', e.target.value)} /></div>
+            <div>
+              <label style={LBL}>Assign ticket</label>
+              <Select value={form.assigned_to ?? ''} onChange={v => set('assigned_to', v)} placeholder="Unassigned" ariaLabel="Assign ticket"
+                options={[{ value: '', label: 'Unassigned' }, ...agents.map(a => ({ value: a.id, label: a.name }))]} />
+              <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                Left unassigned, it goes to the ticket managers for triage.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label style={LBL}>Priority</label>
+                <Select value={form.priority} onChange={v => set('priority', v)} ariaLabel="Priority"
+                  options={(settings?.priorities || [{ name: 'medium' }]).map(p => ({ value: p.name, label: p.name, dot: p.color }))} />
+              </div>
+              <div>
+                <label style={LBL}>Status</label>
+                <Select value={form.status} onChange={v => set('status', v)} ariaLabel="Status"
+                  options={(settings?.statuses || [{ name: 'open' }]).filter(s => s.name !== 'merged').map(s => ({ value: s.name, label: s.name, dot: s.color }))} />
+              </div>
+            </div>
+
+            {/* Due by — the one field on the reference helpdesks that this form
+                did not ask for. The column and the API have accepted it all
+                along; only the form never offered it, so a ticket promised for
+                Friday had nowhere to say so and the SLA clock was the only
+                deadline anyone could see. */}
+            <div>
+              <label style={LBL}>Due by</label>
+              <input type="date" style={inp} value={form.due_date || ''}
+                onChange={e => set('due_date', e.target.value)} />
+              <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                Optional. Separate from the SLA target — this is what was promised to the requester.
+              </p>
+            </div>
+
+            <div>
+              <label style={LBL}>Service</label>
+              <Select value={form.service_id ?? ''} onChange={v => set('service_id', v)} placeholder="None selected" ariaLabel="Service"
+                options={[{ value: '', label: 'None selected' }, ...(settings?.services || []).map(s => ({ value: s.id, label: s.name }))]} />
+            </div>
+
+            {/* People the admin assigned to this department — the ticket routes to all
+                of them; tap one to assign it directly. */}
+            {form.department_id && (
+              <div className="rounded-xl p-3" style={{ background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+                <p style={{ ...LBL, marginBottom: 8 }} className="flex items-center gap-1.5">
+                  <UserCheck size={12} style={{ color: 'var(--color-support-500)' }} /> Handled by this department
+                </p>
+                {deptAgents.length === 0 ? (
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>No one assigned yet — it’ll go to the ticket managers.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {deptAgents.map(a => {
+                      const on = String(form.assigned_to) === String(a.id)
+                      return (
+                        <button type="button" key={a.id} onClick={() => set('assigned_to', on ? '' : a.id)}
+                          className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg"
+                          style={on
+                            ? { background: 'color-mix(in srgb, var(--color-support-500) 16%, transparent)', color: 'var(--color-support-500)', border: '1px solid var(--color-support-500)' }
+                            : { background: 'var(--bg-card)', color: 'var(--text-body)', border: '1px solid var(--border)' }}>
+                          {on && <Check size={12} />} {a.name}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-          {create.isError && <div className="flex items-center gap-2 p-3 rounded-xl text-sm" style={{ background: 'rgba(239,68,68,0.08)', color: 'var(--color-danger-500)', border: '1px solid rgba(239,68,68,0.2)' }}><AlertCircle size={14} />{create.error?.message}</div>}
-          <div className="flex items-center justify-end gap-2 pt-1">
-            <button onClick={requestClose} className="px-4 py-2 rounded-xl text-sm font-semibold hover:opacity-80" style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Cancel</button>
-            <button disabled={incomplete || create.isPending} onClick={() => create.mutate()} className="px-5 py-2 rounded-xl text-sm font-bold disabled:opacity-50" style={{ background: `linear-gradient(135deg,var(--color-support-400),var(--color-support-600))`, color: '#fff' }}>{create.isPending ? 'Creating…' : 'Create Ticket'}</button>
+        </div>
+
+        {/* ── Ticket body, full width ──────────────────────────────────────── */}
+        <div className="mt-5">
+          <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+            <label style={{ ...LBL, marginBottom: 0 }}>Ticket body</label>
+            <div className="flex items-center gap-2">
+              <CannedResponsePicker onInsert={insertIntoBody} />
+              <InsertKbLinkPicker onInsert={insertIntoBody} />
+            </div>
           </div>
+          <RichTextEditor value={form.description} onChange={v => set('description', v)}
+            placeholder="Describe the issue…" minHeight={180} />
+        </div>
+
+        {/* ── Attachments ──────────────────────────────────────────────────── */}
+        <div className="mt-4">
+          <label style={LBL} className="flex items-center gap-1.5"><Paperclip size={12} /> Attachments</label>
+          <input type="file" multiple onChange={e => setFiles([...(e.target.files || [])])}
+            className="text-sm" style={{ color: 'var(--text-body)' }} />
+          {files.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {files.map((f, i) => (
+                <span key={`${f.name}-${i}`} className="text-xs px-2 py-1 rounded-lg"
+                  style={{ background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-body)' }}>
+                  {f.name}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {create.isError && <div className="flex items-center gap-2 p-3 rounded-xl text-sm mt-4" style={{ background: 'rgba(239,68,68,0.08)', color: 'var(--color-danger-500)', border: '1px solid rgba(239,68,68,0.2)' }}><AlertCircle size={14} />{create.error?.message}</div>}
+
+        <div className="flex items-center justify-end gap-2 pt-4">
+          <button onClick={requestClose} className="px-4 py-2 rounded-xl text-sm font-semibold hover:opacity-80" style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}>Cancel</button>
+          <button disabled={incomplete || create.isPending} onClick={() => create.mutate()} className="px-5 py-2 rounded-xl text-sm font-bold disabled:opacity-50" style={{ background: 'linear-gradient(135deg,var(--color-support-400),var(--color-support-600))', color: '#fff' }}>{create.isPending ? 'Opening…' : 'Open Ticket'}</button>
         </div>
       </div>
     </div>

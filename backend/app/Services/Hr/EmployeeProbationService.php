@@ -25,25 +25,26 @@ class EmployeeProbationService
     {
     }
 
-    public function list(int $tenantId, array $f): array
+    public function list(int $tenantId, array $f, ?User $actor = null): array
     {
         return [
-            'data'  => $this->repo->list($tenantId, $f)->map(fn ($p) => $this->present($p))->all(),
-            'stats' => $this->repo->stats($tenantId),
+            'data'  => $this->repo->list($tenantId, $f, $actor)->map(fn ($p) => $this->present($p))->all(),
+            // Counted over the same population as the rows above it.
+            'stats' => $this->repo->stats($tenantId, $actor),
         ];
     }
 
     public function show(int $id, int $tenantId, ?User $actor = null): array
     {
-        $probation = $this->find($id, $tenantId);
+        $probation = $this->find($id, $tenantId, $actor);
         $probation->recordAudit('Probation Viewed', $actor);
 
         return $this->present($probation, true);
     }
 
-    public function forEmployee(int $employeeId, int $tenantId): array
+    public function forEmployee(int $employeeId, int $tenantId, ?User $actor = null): array
     {
-        return $this->repo->forEmployee($employeeId, $tenantId)->map(fn ($p) => $this->present($p, true))->all();
+        return $this->repo->forEmployee($employeeId, $tenantId, $actor)->map(fn ($p) => $this->present($p, true))->all();
     }
 
     /* ── Assign ───────────────────────────────────────────── */
@@ -94,12 +95,12 @@ class EmployeeProbationService
         $probation->recordAudit('Probation Assigned', $actor, $data['remarks'] ?? null, ['employee' => $employee->name, 'policy' => $policy->name]);
         $this->log('Probation assigned', $tenantId, $probation->id);
 
-        return $this->present($this->find($probation->id, $tenantId), true);
+        return $this->present($this->find($probation->id, $tenantId, $actor), true);
     }
 
     public function update(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $probation = $this->find($id, $tenantId);
+        $probation = $this->find($id, $tenantId, $actor);
         $this->assertOpen($probation);
 
         $attrs = ['updated_by' => $actor?->id];
@@ -125,12 +126,12 @@ class EmployeeProbationService
         $probation->update($attrs);
         $probation->recordAudit('Probation Updated', $actor);
 
-        return $this->present($this->find($id, $tenantId), true);
+        return $this->present($this->find($id, $tenantId, $actor), true);
     }
 
     public function activate(int $id, int $tenantId, ?User $actor = null): array
     {
-        $probation = $this->find($id, $tenantId);
+        $probation = $this->find($id, $tenantId, $actor);
         if ($probation->current_status !== HrEmployeeProbation::ASSIGNED) {
             throw new BusinessException('Only an assigned probation can be activated.');
         }
@@ -138,12 +139,12 @@ class EmployeeProbationService
         $probation->recordAudit('Probation Activated', $actor);
         $this->log('Probation activated', $tenantId, $probation->id);
 
-        return $this->present($this->find($id, $tenantId), true);
+        return $this->present($this->find($id, $tenantId, $actor), true);
     }
 
     public function cancel(int $id, array $data, int $tenantId, ?User $actor = null): array
     {
-        $probation = $this->find($id, $tenantId);
+        $probation = $this->find($id, $tenantId, $actor);
         if (in_array($probation->current_status, HrEmployeeProbation::TERMINAL, true)) {
             throw new BusinessException("A {$probation->current_status} probation cannot be cancelled.");
         }
@@ -155,7 +156,7 @@ class EmployeeProbationService
         $probation->recordAudit('Probation Cancelled', $actor, $data['remarks'] ?? null);
         $this->log('Probation cancelled', $tenantId, $probation->id);
 
-        return $this->present($this->find($id, $tenantId), true);
+        return $this->present($this->find($id, $tenantId, $actor), true);
     }
 
     /* ── Helpers ──────────────────────────────────────────── */
@@ -222,9 +223,9 @@ class EmployeeProbationService
         return $out;
     }
 
-    private function find(int $id, int $tenantId): HrEmployeeProbation
+    private function find(int $id, int $tenantId, ?User $actor = null): HrEmployeeProbation
     {
-        $probation = $this->repo->find($id, $tenantId);
+        $probation = $this->repo->find($id, $tenantId, $actor);
         if (! $probation) {
             throw new BusinessException('Probation record not found', 404);
         }

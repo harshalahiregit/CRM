@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { useNavigate, useSearchParams, useParams } from 'react-router-dom'
+import { useNavigate, useSearchParams, useParams, useLocation } from 'react-router-dom'
 import {
   ArrowLeft, CalendarDays, Clock, MapPin, Users, Plus, Trash2,
   AlertTriangle, ChevronRight, Laptop, Building2, CheckCircle2, Send, Download,
@@ -9,7 +9,8 @@ import { useAuth } from '@/context/AuthContext'
 // Resolves per call to the meeting engine of the module in the URL — the
 // shared engine under /app/tpv, Purchase's under /app/purchase. Aliased to
 // the old name so the call sites below read unchanged.
-import { meetingEngineApi as kickoffApi, meetingBase } from '@/services/meetingEngineApi'
+import { meetingEngineApi as kickoffApi, meetingPaths } from '@/services/meetingEngineApi'
+import ParticipantGrid from '@/components/meetings/ParticipantGrid'
 import { meetingApi } from '@/services/meetingApi'
 // The VENDOR api for the module in the URL. The picker, the ?vendor= prefill
 // and the contacts list were all pinned to tpvApi, so on /app/purchase this
@@ -29,17 +30,24 @@ import RichTextEditor from '@/components/ui/RichTextEditor'
 import MultiSearchSelect from '@/components/ui/MultiSearchSelect'
 
 // ── Platform options for online meetings ─────────────────────────────────────
-// Jitsi first, and it replaces the old "Generic Link (stub)" option — which
-// produced https://meet.example.com/…, a URL that opens nothing. Jitsi is what
-// that option was pretending to be: a real, unique room needing no credentials.
-// Google Meet, Zoom and Teams schedule through their APIs when the tenant has
-// them configured, and otherwise hand back that platform's own start-now link.
+// The three services a call is actually held on. Each schedules through its
+// own API when the tenant has it configured, and otherwise hands back that
+// platform's own start-now link — meet.google.com/new, zoom.us/start — so the
+// Join button opens a real meeting either way.
+//
+// Jitsi used to head this list because it was the one option that needed no
+// account and could run inside the CRM. Both of those have gone: the call is
+// on the real service now. Meetings saved with the old value still open — the
+// server accepts it and moves them onto the default. See
+// OnlineMeetingService::ACCEPTED.
 const PLATFORM_OPTIONS = [
-  ['jitsi',       'Jitsi Meet (no setup needed)'],
   ['google_meet', 'Google Meet'],
   ['zoom',        'Zoom'],
   ['teams',       'Microsoft Teams'],
 ]
+// Kept in step with OnlineMeetingService::DEFAULT_PLATFORM.
+const DEFAULT_PLATFORM = 'google_meet'
+const PLATFORM_KEYS = PLATFORM_OPTIONS.map(([k]) => k)
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const toLocalDate = (iso) => {
@@ -102,22 +110,47 @@ const EMPTY_MOM = () => ({ id: Date.now() + Math.random(), description: '', resp
 // the invitation and the MOM distribution actually reach the person. user_id
 // links the row to a Sangoe identity so in-app notifications and action
 // auto-assignment work; vendor_contact_id does the same on the vendor side.
-const EMPTY_PARTICIPANT = () => ({ id: Date.now() + Math.random(), name: '', email: '', role: '', organisation: '', phone: '', designation: '', side: '', user_id: '', vendor_contact_id: '' })
+const EMPTY_PARTICIPANT = () => ({ id: Date.now() + Math.random(), name: '', email: '', role: '', organisation: '', phone: '', designation: '', side: '', user_id: '', vendor_contact_id: '', party: '', party_ref: '' })
 // §7's chain is Agenda -> Discussion -> Decision -> Action; discussion and
 // decision belong to the agenda item, not to one meeting-level minutes blob.
-// Meeting.docx §5's participant roles — internal first, then external.
-const PARTICIPANT_ROLES = [
-  'Project Manager', 'HSE Manager', 'Site Manager', 'Procurement', 'HR',
-  'Security', 'Finance', 'Client representative', 'Management',
-  'Vendor representative', 'Contractor', 'Subcontractor', 'Consultant',
-  'Chairperson', 'Coordinator', 'Note-taker',
-]
+// Meeting.docx §5's participant roles used to be a dropdown on every
+// participant card. The attendance sheet shows the designation from the
+// person's own record instead, which is the same answer without asking: a site
+// engineer picked from a vendor's workforce does not need somebody to also
+// choose "Vendor representative" from a list. `role` is still on the row and
+// still saved — the attendance and MOM screens set it — it is just no longer
+// something you fill in before the meeting has happened.
 
 const EMPTY_AGENDA = () => ({ id: Date.now() + Math.random(), item: '', owner: '', duration_minutes: '', priority: '', discussion: '', decision: '', previous_discussion_ref: '', supporting_documents: [] })
 const EMPTY_DECISION = () => ({ id: Date.now() + Math.random(), decision: '', decided_by: '', impact: '', effective_date: '', status: 'Active', agenda_key: '' })
 const EMPTY_ISSUE = () => ({ id: Date.now() + Math.random(), title: '', category: '', severity: '', owner: '', due_date: '', status: 'Open', issue_ref: '', converted_to: '', carried_from_id: null, carried_from_label: '' })
 
 // ── Section header matching KickoffMeetingDetail style ───────────────────────
+/**
+ * A name field that suggests real people but still takes a typed one.
+ *
+ * Organizer, Chairperson and Coordinator were plain text boxes, so the same
+ * person was entered three different ways and none of them linked back to a
+ * record — while the form already knew every client, vendor and TPV contact for
+ * the participant grid.
+ *
+ * A <datalist> rather than a dropdown, deliberately: a closed list would refuse
+ * the visiting consultant who is chairing, and "add manually" was half of what
+ * was asked for.
+ */
+function PersonInput({ value, onChange, people = [], listId, placeholder }) {
+  return (
+    <>
+      <TextInput value={value} onChange={onChange} placeholder={placeholder} list={listId} />
+      <datalist id={listId}>
+        {people.map((p, i) => (
+          <option key={`${p.name}-${i}`} value={p.name}>{p.hint || ''}</option>
+        ))}
+      </datalist>
+    </>
+  )
+}
+
 function SectionTitle({ icon: Icon, children }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
@@ -147,6 +180,10 @@ function ErrBanner({ msg }) {
  */
 export default function KickoffMeetingCreate() {
   const navigate = useNavigate()
+  // Set by a vendor page (TPV/Purchase onboarding). Handed on to the meeting
+  // this form creates, so that page can offer the way back.
+  const locationState = useLocation().state
+  const cameFrom = locationState?.from ? locationState : null
   const { user } = useAuth()
   const vendorApi = useVendorModule().api
   // The start instant as STORED, so editing an old meeting (adding its
@@ -242,15 +279,17 @@ export default function KickoffMeetingCreate() {
     work_package:     '',
     project_id:       '',       // soft link into the Projects module (§16)
     is_completed:     false,
-    meeting_platform: 'jitsi',  // used when mode = 'online'
+    meeting_platform: DEFAULT_PLATFORM,  // used when mode = 'online'
   })
   const [projects, setProjects] = useState([])   // { id, name, project_code, client_name, ... }
   // Meeting.docx §2 wants a real Customer on the meeting, and §5 wants
   // participants linked to Sangoe identities. Both are read through the owning
   // module's contract, so this page never touches their tables.
-  const [customers, setCustomers] = useState([])
-  const [staff, setStaff] = useState([])
-  const [participants, setParticipants] = useState([])  // [{ id, name, role, organisation }]
+  const [participants, setParticipants] = useState([])  // [{ id, name, designation, party, … }]
+  // The four columns of the attendance sheet — Organiser, Client, Vendor,
+  // Third-Party Vendor — each with the companies it can pick from. See
+  // MeetingPartyDirectory; the people inside a company are fetched per pick.
+  const [parties, setParties] = useState([])
   const [momItems,     setMomItems]     = useState([])  // [{ id, description, responsible, remarks, target_date }]
   const [agendaItems,  setAgendaItems]  = useState([])  // [{ id, item, owner, duration_minutes, priority }]
   const [decisions,    setDecisions]    = useState([])  // Decision register
@@ -338,7 +377,11 @@ export default function KickoffMeetingCreate() {
           work_package:     m.work_package || '',
           project_id:       m.project_id || '',
           is_completed:     m.status === 'Completed',
-          meeting_platform: (!m.meeting_platform || m.meeting_platform === 'stub') ? 'jitsi' : m.meeting_platform,
+          // A meeting saved before this change holds 'jitsi' or 'stub', and
+          // neither is in the dropdown any more — left as-is the select would
+          // show blank and silently re-save nothing. Anything unrecognised
+          // falls to the default, which is what the server would pick too.
+          meeting_platform: PLATFORM_KEYS.includes(m.meeting_platform) ? m.meeting_platform : DEFAULT_PLATFORM,
         })
 
         setParticipants((m.attendees || []).map(a => ({
@@ -348,6 +391,10 @@ export default function KickoffMeetingCreate() {
           // silently unlink every participant the moment the meeting is re-saved,
           // and the roster would go back to being unreachable typed names.
           email: a.email || '', user_id: a.user_id || '', vendor_contact_id: a.vendor_contact_id || '',
+          // Which column of the attendance sheet this person sits in, and where
+          // they were picked from. Without these a saved meeting reopens with
+          // everybody piled into "not yet placed".
+          party: a.party || '', party_ref: a.party_ref || '',
         })))
 
         setMomItems((m.mom_items || []).map(i => ({
@@ -429,10 +476,13 @@ export default function KickoffMeetingCreate() {
     }).catch(() => {})
     // Projects for the §16 picker — a soft link, so failure just leaves it empty.
     kickoffApi.projects().then(d => { if (Array.isArray(d)) setProjects(d) }).catch(() => {})
-    // Customers and staff for the two new pickers. Soft loads: a failure leaves
-    // the picker empty rather than blocking the whole form.
-    kickoffApi.customers().then(d => { if (Array.isArray(d)) setCustomers(d) }).catch(() => {})
-    kickoffApi.staff().then(d => { if (Array.isArray(d)) setStaff(d) }).catch(() => {})
+    // The attendance-sheet columns. `kickoffApi` here IS the engine proxy (see
+    // the import), so this resolves to Purchase's own endpoint under
+    // /app/purchase. Also a soft load — if it fails the grid says it is still
+    // loading rather than the form refusing to open.
+    kickoffApi.parties()
+      .then(d => { if (Array.isArray(d?.parties)) setParties(d.parties) })
+      .catch(() => {})
   }, [])
 
   // ── Fetch tenant default platform preference on mount ────────────────────
@@ -501,45 +551,78 @@ export default function KickoffMeetingCreate() {
   }
 
   // ── participants helpers ─────────────────────────────────────────────────
-  const addParticipant = () => setParticipants(p => [...p, EMPTY_PARTICIPANT()])
   const removeParticipant = (id) => setParticipants(p => p.filter(x => x.id !== id))
-  const setParticipant = (id, k, v) =>
-    setParticipants(p => p.map(x => x.id === id ? { ...x, [k]: v } : x))
 
-  // quick-add from vendor contact dropdown
-  const addFromContact = (contactId) => {
-    const c = contacts.find(x => String(x.id) === String(contactId))
-    if (!c) return
-    if (participants.some(p => p.name === c.full_name)) return  // already added
+  /**
+   * Add somebody from one column of the attendance sheet.
+   *
+   * The person arrives whole — name, designation, e-mail, organisation — from
+   * the record they are registered in, so nothing here is typed and nothing has
+   * to be typed again. `party_ref` is what they were picked from
+   * ('tpv_worker:12'), and it doubles as the duplicate check: the same worker
+   * cannot appear twice, and the picker greys them out.
+   *
+   * The e-mail comes along and is stored, but the grid never shows it. It is
+   * what the invitation needs, not what identifies somebody on a sheet.
+   */
+  const addFromParty = (person, party) => {
+    if (!person || !party) return
+    if (person.ref && participants.some(p => p.party_ref === person.ref)) return
     setParticipants(p => [...p, {
       ...EMPTY_PARTICIPANT(),
-      name:         c.full_name ?? '',
-      // The contact id and e-mail were being dropped here, which is why every
-      // attendee ended up unlinked and unreachable. The server re-resolves the
-      // id and copies the master's canonical name/e-mail over whatever is typed.
-      vendor_contact_id: c.id,
-      email:        c.email ?? '',
-      designation:  c.designation ?? '',
-      organisation: c.company_name ?? '',
-      phone:        c.phone ?? c.mobile ?? '',
-      side:         'external',   // vendor contacts are the external side
+      name:         person.name ?? '',
+      user_id:      person.user_id ?? null,
+      email:        person.email ?? '',
+      designation:  person.designation ?? '',
+      organisation: person.organisation ?? '',
+      side:         party.side ?? 'external',
+      party:        party.key,
+      party_ref:    person.ref ?? '',
     }])
   }
 
-  /** Add a colleague from the staff directory — a real Sangoe identity (§5). */
-  const addFromStaff = (userId) => {
-    const u = staff.find(x => String(x.id) === String(userId))
-    if (!u) return
-    if (participants.some(p => String(p.user_id) === String(u.id))) return
-    setParticipants(p => [...p, {
-      ...EMPTY_PARTICIPANT(),
-      name:        u.name ?? '',
-      user_id:     u.id,
-      email:       u.email ?? '',
-      designation: u.designation ?? '',
-      side:        'internal',
-    }])
-  }
+  /** Fetch one company's registered people for the column that picked it. */
+  const loadPartyPeople = useCallback(
+    (party, entityId) => kickoffApi.partyPeople(party, entityId).then(d => d?.people ?? []),
+    [],
+  )
+
+  /*
+   * Everybody who could chair, organise or coordinate a meeting.
+   *
+   * Organizer, Chairperson and Coordinator were three free-text boxes, so the
+   * same person was typed three different ways and none of them linked back to
+   * a record — while this form already knows every party and their people for
+   * the participant grid. These are suggestions, not a closed list: plenty of
+   * meetings are chaired by somebody who is not in the system yet, so the field
+   * stays typable and a typed name is still accepted.
+   */
+  const [roleCandidates, setRoleCandidates] = useState([])
+  useEffect(() => {
+    if (!parties.length) return
+    let cancelled = false
+
+    Promise.all(
+      parties.flatMap(pty =>
+        (pty.entities || []).map(ent =>
+          loadPartyPeople(pty.key, ent.id)
+            .then(people => people.map(pr => ({
+              name: pr.name,
+              hint: [pr.designation, ent.name].filter(Boolean).join(' · '),
+            })))
+            .catch(() => []),
+        ),
+      ),
+    ).then(lists => {
+      if (cancelled) return
+      const seen = new Map()
+      lists.flat().forEach(c => { if (c.name && !seen.has(c.name)) seen.set(c.name, c) })
+      setRoleCandidates([...seen.values()])
+    })
+
+    return () => { cancelled = true }
+  }, [parties, loadPartyPeople])
+
 
   // ── MOM helpers ─────────────────────────────────────────────────────────
   /** Same generate-then-fetch pattern the listing uses, so behaviour matches. */
@@ -785,19 +868,34 @@ export default function KickoffMeetingCreate() {
     if (form.mode !== 'online' && !form.location) { setErr('City / Location is required.'); return }
     // The invitation is mandatory to every participant, so each must be reachable —
     // an e-mail, or a linked Sangoe user / vendor contact (who is notified in-app).
+    //
+    // A person PICKED from the attendance sheet is exempt. They were chosen from
+    // a real record, and some of those records legitimately carry no address: a
+    // site worker on a vendor's workforce register has a name, a designation and
+    // a mobile, and no company e-mail. Blocking the meeting on that would mean
+    // the sheet could not record the people who were actually on site — and
+    // there is nothing to type here to fix it, because the grid does not offer
+    // an e-mail field. The gap belongs to their own record, not to this meeting.
     {
-      const unreachable = participants.find(p => p.name?.trim() && !p.email?.trim() && !p.user_id && !p.vendor_contact_id)
+      const unreachable = participants.find(p =>
+        p.name?.trim() && !p.email?.trim() && !p.user_id && !p.vendor_contact_id && !p.party_ref)
       if (unreachable) { setErr(`Add an email for "${unreachable.name}" — the invitation is sent to every participant.`); return }
     }
     setSaving(true); setErr(null)
     try {
       const scheduled_at = combineDateTime(form.meeting_date, form.meeting_time)
       const payload = {
-        subject_type:     'vendor',
-        subject_id:       form.subject_id,
+        // Only claim a subject when one was actually picked. subject_type and
+        // subject_id are a required_with PAIR server-side, so sending 'vendor'
+        // beside an empty id is a guaranteed 422 -- which is what stopped an
+        // internal meeting being scheduled at all, even though the column is
+        // nullable and the service handles a null subject the whole way down.
+        // The AI-agenda call three hundred lines up already had this right.
+        subject_type:     form.subject_id ? 'vendor' : undefined,
+        subject_id:       form.subject_id || undefined,
         // Full set. The backend keeps the first on kickoffable_* and
         // writes the rest to kickoff_meeting_subjects.
-        subject_ids:      vendorIds,
+        subject_ids:      vendorIds.length ? vendorIds : undefined,
         meeting_type:     form.meeting_type || 'kickoff',
         title:            form.title || undefined,
         scheduled_at,
@@ -825,8 +923,12 @@ export default function KickoffMeetingCreate() {
         // Extended fields — backend uses what it knows, ignores the rest
         attendees: participants
           .filter(p => p.name.trim())
-          .map(({ name, email, role, organisation, phone, designation, side, user_id, vendor_contact_id }) => ({
+          .map(({ name, email, role, organisation, phone, designation, side, user_id, vendor_contact_id, party, party_ref }) => ({
             name, role, organisation,
+            // Which of the four attendance-sheet columns, and the opaque origin
+            // of the pick — so reopening the meeting rebuilds the same grid.
+            party: party || undefined,
+            party_ref: party_ref || undefined,
             // Without these two the roster is a list of typed names: no invitation
             // reaches anyone, the minutes go nowhere, and an action assigned to a
             // participant can never resolve to a login (Meeting.docx §5).
@@ -913,7 +1015,7 @@ export default function KickoffMeetingCreate() {
         }
       }
 
-      navigate(newId ? `${meetingBase()}/kickoff/${newId}` : `${meetingBase()}/kickoff`)
+      navigate(newId ? meetingPaths().detail(newId) : meetingPaths().list, cameFrom ? { state: cameFrom } : undefined)
     } catch (e) {
       setErr(e?.response?.data?.message || 'Could not save the meeting.')
       setSaving(false)
@@ -929,14 +1031,14 @@ export default function KickoffMeetingCreate() {
       {/* ── Page Header ──────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 22, flexWrap: 'wrap', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-          <button onClick={() => navigate(`${meetingBase()}/kickoff`)}
+          <button onClick={() => navigate(cameFrom ? cameFrom.from : meetingPaths().list)}
             style={{ width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-muted)', marginTop: 3, flexShrink: 0 }}>
             <ArrowLeft size={16} />
           </button>
           <div>
             {/* Breadcrumb */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>
-              <span style={{ cursor: 'pointer', color: '#a78bfa' }} onClick={() => navigate(`${meetingBase()}/kickoff`)}>Kickoff Meetings</span>
+              <span style={{ cursor: 'pointer', color: '#a78bfa' }} onClick={() => navigate(meetingPaths().list)}>Kickoff Meetings</span>
               <ChevronRight size={12} />
               <span>{isEdit ? 'Edit' : 'Create New'}{loading ? ' · loading…' : ''}</span>
             </div>
@@ -985,7 +1087,7 @@ export default function KickoffMeetingCreate() {
             <div style={{ marginLeft: 'auto', display: 'inline-flex', gap: 8 }}>
               {/* Distribution is gated by approval now — the full submit → approve →
                   distribute workflow lives on the meeting detail page. */}
-              <button onClick={() => navigate(`${meetingBase()}/kickoff/${editId}`)}
+              <button onClick={() => navigate(meetingPaths().detail(editId))}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9,
                   fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: 'none', color: '#fff',
                   background: 'linear-gradient(145deg,#f59e0b,#d97706)' }}>
@@ -1044,7 +1146,54 @@ export default function KickoffMeetingCreate() {
         {/* ── LEFT COLUMN ────────────────────────────────────────────── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-          {/* Section 1 — Vendor & Participants */}
+          {/* Schedule first: you agree WHEN a meeting is before you work out
+              who has to be at it, and the participant list is the long part of
+              this form. Asking for it first made every new meeting start with
+              the hardest question. */}
+          {/* Section 1 — Schedule & Location */}
+          <div className="pr-glass" style={{ padding: 20 }}>
+            <SectionTitle icon={CalendarDays}>Schedule &amp; Location</SectionTitle>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+              <Field label="Meeting Date *">
+                {/* No past dates for a NEW meeting (min = today). When EDITING we
+                    drop the floor so an already-stored past date can still be
+                    re-selected — the backend blocks only a genuine move to the
+                    past. This was the edit-time bug. */}
+                <TextInput type="date" min={isEdit ? undefined : new Date().toLocaleDateString('en-CA')} value={form.meeting_date} onChange={set('meeting_date')} />
+              </Field>
+              <Field label="Start Time *">
+                {/* `min` is advisory only — see startInPast. The message below is
+                    the part the user actually sees. */}
+                <TextInput type="time" min={form.meeting_date === new Date().toLocaleDateString('en-CA') ? new Date().toTimeString().slice(0, 5) : undefined} value={form.meeting_time} onChange={set('meeting_time')} />
+                {startInPast && (
+                  <span style={{ fontSize: 11, color: '#f87171', fontWeight: 700 }}>
+                    That time has already passed — pick a later one.
+                  </span>
+                )}
+              </Field>
+              <Field label="End Time *">
+                {/* No `min`: an end EARLIER than the start is legitimate and means
+                    the meeting runs past midnight. The hint below says so, so it
+                    cannot be mistaken for a typo. */}
+                <TextInput type="time" value={form.meeting_end_time} onChange={set('meeting_end_time')} />
+                {form.meeting_time && form.meeting_end_time && form.meeting_end_time < form.meeting_time && (
+                  <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>Ends next day</span>
+                )}
+              </Field>
+              <Field label="Duration">
+                {/* Auto-computed from start→end — no longer a manual field. */}
+                <div style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 13.5, fontWeight: 700 }}>
+                  {durationLabel}
+                </div>
+              </Field>
+              <Field label="Planned Date (optional)">
+                <TextInput type="date" value={form.planned_date} onChange={set('planned_date')} />
+              </Field>
+            </div>
+          </div>
+
+          {/* Section 2 — Vendor & Participants */}
           <div className="pr-glass" style={{ padding: 20 }}>
             <SectionTitle icon={Users}>Vendor &amp; Participants</SectionTitle>
 
@@ -1089,40 +1238,58 @@ export default function KickoffMeetingCreate() {
                   <SelectInput value={form.confidentiality} onChange={set('confidentiality')} pairs
                     options={[['', '—'], ...confLevels.map(c => [c, c])]} />
                 </Field>
+                {/* Pick from the people this system already holds — staff,
+                    client, vendor and TPV contacts — or type somebody who is not
+                    in it yet. A datalist does both; a plain select would refuse
+                    the visiting consultant who chairs the meeting. */}
                 <Field label="Meeting Organizer">
-                  <TextInput value={form.organizer} onChange={set('organizer')} placeholder="Name (defaults to you)" />
+                  <PersonInput value={form.organizer} onChange={set('organizer')}
+                    people={roleCandidates} listId="mtg-organizer" placeholder="Name (defaults to you)" />
                 </Field>
                 <Field label="Chairperson">
-                  <TextInput value={form.chairperson} onChange={set('chairperson')} placeholder="Name" />
+                  <PersonInput value={form.chairperson} onChange={set('chairperson')}
+                    people={roleCandidates} listId="mtg-chair" placeholder="Name" />
                 </Field>
                 <Field label="Meeting Coordinator">
-                  <TextInput value={form.coordinator} onChange={set('coordinator')} placeholder="Name" />
+                  <PersonInput value={form.coordinator} onChange={set('coordinator')}
+                    people={roleCandidates} listId="mtg-coordinator" placeholder="Name" />
                 </Field>
                 <Field label="Department">
                   <TextInput value={form.department} onChange={set('department')} placeholder="e.g. HSE / Projects" />
                 </Field>
-                {/* The customer this meeting is for. Picking one links the meeting
-                    to the Customer module and puts that customer on the §13
-                    distribution list; the free-text field below still takes a
-                    name for anyone not in the master. */}
-                <Field label="Customer">
-                  <SelectInput
-                    value={form.client_id}
-                    onChange={e => {
-                      const id = e.target.value
-                      const c = customers.find(x => String(x.id) === String(id))
-                      setForm(f => ({ ...f, client_id: id, client_name: c ? (c.company || c.name || f.client_name) : f.client_name }))
-                    }}
-                    pairs
-                    options={[['', customers.length ? '— none —' : 'No customers found'],
-                      ...customers.map(c => [String(c.id), c.company || c.name || `Customer #${c.id}`])]} />
-                </Field>
-                <Field label="Client name (free text)">
-                  <TextInput value={form.client_name} onChange={set('client_name')} placeholder="Client name" />
-                </Field>
+                {/* BOTH customer boxes are gone, not just the duplicate.
+                    There was a Customer picker AND a free-text "Client name" box
+                    beside it — two boxes for one idea, where picking a customer
+                    already filled the other one in. A customer's people are
+                    reachable through the participant grid and the role pickers
+                    above, so neither box had a job left on this form.
+
+                    The customer LINK is not gone, because it is not decoration:
+                    it puts that customer on the §13 distribution list. It is
+                    derived from the project below instead, which already knows
+                    its customer — one fact, asked for once, in the place that
+                    cannot disagree with itself. A meeting opened on an existing
+                    record keeps whatever link it already had (client_id is
+                    hydrated and submitted unchanged), so editing a meeting
+                    never silently unlinks it. */}
                 {projects.length > 0 && (
                   <Field label="Project (optional)">
-                    <SelectInput value={form.project_id} onChange={set('project_id')} pairs
+                    <SelectInput
+                      value={form.project_id}
+                      onChange={e => {
+                        const id = e.target.value
+                        const p = projects.find(x => String(x.id) === String(id))
+
+                        setForm(f => ({
+                          ...f,
+                          project_id: id,
+                          // Only follow the project when it names a customer.
+                          // Clearing the project must not clear a link the
+                          // meeting was created with somewhere else.
+                          client_id: p?.customer_id ? String(p.customer_id) : f.client_id,
+                        }))
+                      }}
+                      pairs
                       options={[['', '— none —'], ...projects.map(p => [
                         String(p.id),
                         `${p.name}${p.project_code ? ` (${p.project_code})` : ''}`,
@@ -1136,154 +1303,29 @@ export default function KickoffMeetingCreate() {
                 </div>
               </div>
 
-              {/* Participants */}
+              {/* Participants — the four-column attendance sheet.
+                  What was here was a vertical stack of participant cards, each
+                  with seven typed fields. Every external attendee was retyped
+                  from a record the system already held, so a vendor's site
+                  engineer arrived as a fresh string with no designation and no
+                  link back to the person. The grid asks which company, then
+                  which of their people, and takes both from the record. */}
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 10, flexWrap: 'wrap' }}>
                   <label style={labelStyle}>Participants</label>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    {/* Quick-add from the staff directory — this is what links a
-                        participant to a Sangoe identity (Meeting.docx §5), and
-                        it fills the e-mail the invitation needs. */}
-                    {staff.length > 0 && (
-                      <select
-                        onChange={e => { addFromStaff(e.target.value); e.target.value = '' }}
-                        style={{ ...inputStyle, width: 'auto', fontSize: 12, padding: '5px 10px' }}>
-                        <option value="">+ Add staff</option>
-                        {staff.map(u => (
-                          <option key={u.id} value={u.id}>{u.name}{u.designation ? ` (${u.designation})` : ''}</option>
-                        ))}
-                      </select>
-                    )}
-                    {/* Quick-add from vendor contacts */}
-                    {contacts.length > 0 && (
-                      <select
-                        onChange={e => { addFromContact(e.target.value); e.target.value = '' }}
-                        style={{ ...inputStyle, width: 'auto', fontSize: 12, padding: '5px 10px' }}>
-                        <option value="">+ Add from contacts</option>
-                        {contacts.map(c => (
-                          <option key={c.id} value={c.id}>{c.full_name} ({c.designation || 'Contact'})</option>
-                        ))}
-                      </select>
-                    )}
-                    <button onClick={addParticipant} style={addBtn}>
-                      <Plus size={13} /> Add Person
-                    </button>
-                  </div>
-                </div>
-
-                {participants.length === 0 ? (
-                  <div style={{ padding: '16px', borderRadius: 10, background: 'var(--bg-input)', border: '1px dashed var(--border)', textAlign: 'center' }}>
-                    <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: 0 }}>
-                      No participants added yet. Click <strong>Add Person</strong> or pick from vendor contacts above.
-                    </p>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {participants.map((p, i) => (
-                      <div key={p.id} style={{ padding: '12px', borderRadius: 12, background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                          <span style={{ fontSize: 11, fontWeight: 800, color: '#a78bfa' }}>
-                            Participant {i + 1}
-                            {(p.user_id || p.vendor_contact_id) && (
-                              <span title="Linked to a Sangoe identity — invitations, minutes and action assignment all reach this person"
-                                style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: '#10b981' }}>● linked</span>
-                            )}
-                            {!p.email && !p.user_id && (
-                              <span title="No e-mail: this person will not receive the invitation or the minutes"
-                                style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: '#f59e0b' }}>no e-mail</span>
-                            )}
-                          </span>
-                          <button onClick={() => removeParticipant(p.id)} title="Remove participant"
-                            style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.06)', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                          <Field label="Name">
-                            <TextInput value={p.name} onChange={e => setParticipant(p.id, 'name', e.target.value)} placeholder="Full name" />
-                          </Field>
-                          <Field label="Organisation">
-                            <TextInput value={p.organisation} onChange={e => setParticipant(p.id, 'organisation', e.target.value)} placeholder="Company name" />
-                          </Field>
-                          <Field label="Side">
-                            <SelectInput value={p.side} onChange={e => setParticipant(p.id, 'side', e.target.value)} pairs
-                              options={[['', '—'], ['internal', 'Internal'], ['external', 'External']]} />
-                          </Field>
-                          <Field label="Role in meeting">
-                            {/* Meeting.docx §5's internal/external role lists. Free
-                                text is still allowed via "Other" so an unusual role
-                                is not blocked by the catalogue. */}
-                            <SelectInput value={PARTICIPANT_ROLES.includes(p.role) ? p.role : (p.role ? '__other' : '')}
-                              onChange={e => setParticipant(p.id, 'role', e.target.value === '__other' ? (p.role || ' ') : e.target.value)}
-                              pairs
-                              options={[['', '— select —'],
-                                ...PARTICIPANT_ROLES.map(r => [r, r]),
-                                ['__other', 'Other (type below)']]} />
-                            {!PARTICIPANT_ROLES.includes(p.role) && p.role !== '' && (
-                              <div style={{ marginTop: 6 }}>
-                                <TextInput value={p.role} onChange={e => setParticipant(p.id, 'role', e.target.value)} placeholder="Role in meeting" />
-                              </div>
-                            )}
-                          </Field>
-                          <Field label="Email">
-                            <TextInput type="email" value={p.email} onChange={e => setParticipant(p.id, 'email', e.target.value)}
-                              placeholder="name@company.com" />
-                          </Field>
-                          <Field label="Designation">
-                            <TextInput value={p.designation} onChange={e => setParticipant(p.id, 'designation', e.target.value)} placeholder="e.g. Site Engineer" />
-                          </Field>
-                          <Field label="Phone">
-                            <TextInput value={p.phone} onChange={e => setParticipant(p.id, 'phone', e.target.value)} placeholder="Mobile" />
-                          </Field>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Section 2 — Schedule & Location */}
-          <div className="pr-glass" style={{ padding: 20 }}>
-            <SectionTitle icon={CalendarDays}>Schedule &amp; Location</SectionTitle>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
-              <Field label="Meeting Date *">
-                {/* No past dates for a NEW meeting (min = today). When EDITING we
-                    drop the floor so an already-stored past date can still be
-                    re-selected — the backend blocks only a genuine move to the
-                    past. This was the edit-time bug. */}
-                <TextInput type="date" min={isEdit ? undefined : new Date().toLocaleDateString('en-CA')} value={form.meeting_date} onChange={set('meeting_date')} />
-              </Field>
-              <Field label="Start Time *">
-                {/* `min` is advisory only — see startInPast. The message below is
-                    the part the user actually sees. */}
-                <TextInput type="time" min={form.meeting_date === new Date().toLocaleDateString('en-CA') ? new Date().toTimeString().slice(0, 5) : undefined} value={form.meeting_time} onChange={set('meeting_time')} />
-                {startInPast && (
-                  <span style={{ fontSize: 11, color: '#f87171', fontWeight: 700 }}>
-                    That time has already passed — pick a later one.
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    Pick people from each party — name and designation come from their record.
                   </span>
-                )}
-              </Field>
-              <Field label="End Time *">
-                {/* No `min`: an end EARLIER than the start is legitimate and means
-                    the meeting runs past midnight. The hint below says so, so it
-                    cannot be mistaken for a typo. */}
-                <TextInput type="time" value={form.meeting_end_time} onChange={set('meeting_end_time')} />
-                {form.meeting_time && form.meeting_end_time && form.meeting_end_time < form.meeting_time && (
-                  <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>Ends next day</span>
-                )}
-              </Field>
-              <Field label="Duration">
-                {/* Auto-computed from start→end — no longer a manual field. */}
-                <div style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 13.5, fontWeight: 700 }}>
-                  {durationLabel}
                 </div>
-              </Field>
-              <Field label="Planned Date (optional)">
-                <TextInput type="date" value={form.planned_date} onChange={set('planned_date')} />
-              </Field>
+
+                <ParticipantGrid
+                  parties={parties}
+                  chosen={participants}
+                  onAdd={addFromParty}
+                  onRemove={removeParticipant}
+                  loadPeople={loadPartyPeople}
+                />
+              </div>
             </div>
           </div>
 
@@ -1642,26 +1684,17 @@ export default function KickoffMeetingCreate() {
             )}
 
             {carry && (
-              (carry.actions.length === 0 && carry.issues.length === 0) ? (
+              (carry.issues.length === 0) ? (
                 <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: 0 }}>
-                  No open actions or issues from previous meetings for this vendor.
+                  No open issues from previous meetings for this vendor.
                 </p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  {carry.actions.length > 0 && (
-                    <div>
-                      <div style={carryHeadStyle}>Open actions ({carry.actions.length})</div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {carry.actions.map(a => (
-                          <CarryItem key={`a${a.id}`}
-                            refCode={a.action_ref} title={stripHtml(a.description) || '(no description)'}
-                            overdue={a.is_overdue} added={addedActionOrigins.has(a.id)}
-                            onAdd={() => carryAction(a)}
-                            meta={[a.status_label, a.priority, a.target_date && `due ${a.target_date}`, a.origin && `from ${originLabel(a.origin)}`]} />
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                  {/* Open ACTIONS are deliberately not offered here. Carrying one
+                      forward wrote it into this meeting's minutes, and minutes are
+                      no longer authored on the scheduling form — the item would be
+                      added to something invisible. Open actions are carried forward
+                      on the meeting itself, once it is under way. */}
                   {carry.issues.length > 0 && (
                     <div>
                       <div style={carryHeadStyle}>Open issues ({carry.issues.length})</div>
@@ -1682,138 +1715,22 @@ export default function KickoffMeetingCreate() {
           </div>
           )}
 
-          {/* Section 4 — Minutes of Meeting (MOM) */}
-          <div className="pr-glass" style={{ padding: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <SectionTitle icon={Clock}>Minutes of Meeting (MOM)</SectionTitle>
-              <button onClick={addMom} style={addBtn}>
-                <Plus size={13} /> Add Item
-              </button>
-            </div>
-
-            {momItems.length === 0 ? (
-              <div style={{ padding: '20px', borderRadius: 12, background: 'var(--bg-input)', border: '1px dashed var(--border)', textAlign: 'center' }}>
-                <Clock size={22} style={{ color: 'var(--text-muted)', opacity: 0.4, marginBottom: 6 }} />
-                <p style={{ color: 'var(--text-muted)', fontSize: 12.5, margin: 0 }}>
-                  No MOM items yet. Click <strong>Add Item</strong> to capture action points.
-                </p>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                {momItems.map((item, i) => (
-                  <div key={item.id} style={{ padding: '16px', borderRadius: 14, background: 'var(--bg-input)', border: '1px solid var(--border)', position: 'relative' }}>
-                    {/* Item header */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 11, fontWeight: 800, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Action {i + 1}</span>
-                        {item.action_ref && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--text-muted)' }}>{item.action_ref}</span>}
-                        {item.action_ref && (() => { const c = actStatusCfg(item.status); return (
-                          <span style={{ fontSize: 10, fontWeight: 800, padding: '1px 7px', borderRadius: 6, background: c.bg, color: c.color }}>{c.label}</span>
-                        )})()}
-                        {item.carried_from_label && (
-                          <span title="Carried forward from a previous meeting" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, color: '#0ea5e9' }}>
-                            <RotateCcw size={10} /> {item.carried_from_label}
-                          </span>
-                        )}
-                      </span>
-                      <button onClick={() => removeMom(item.id)}
-                        title="Remove item"
-                        style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.06)', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Trash2 size={12} />
-                      </button>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
-                      {/* Description — full width, rich text */}
-                      <div style={{ gridColumn: '1/-1' }}>
-                        <label style={{ ...labelStyle, display: 'block', marginBottom: 6 }}>Description *</label>
-                        <RichTextEditor
-                          value={item.description}
-                          onChange={v => setMom(item.id, 'description', v)}
-                          placeholder="Describe the action point, decision, or discussion item…"
-                          minHeight={180}
-                        />
-                      </div>
-
-                      {/* Responsible Person — searchable multi-select */}
-                      <Field label="Responsible Person">
-                        <ResponsiblePicker
-                          value={item.responsible}
-                          onChange={v => setMom(item.id, 'responsible', v)}
-                          contacts={contacts}
-                        />
-                      </Field>
-
-                      {/* Target Date */}
-                      <Field label="Target Date">
-                        <TextInput
-                          type="date"
-                          value={item.target_date}
-                          onChange={e => setMom(item.id, 'target_date', e.target.value)}
-                        />
-                      </Field>
-
-                      {/* Priority */}
-                      <Field label="Priority">
-                        <SelectInput value={item.priority} onChange={e => setMom(item.id, 'priority', e.target.value)} pairs
-                          options={[['', '—'], ...priorities.map(p => [p, p])]} />
-                      </Field>
-
-                      {/* Responsible organisation */}
-                      <Field label="Responsible Org">
-                        <TextInput value={item.responsible_org} onChange={e => setMom(item.id, 'responsible_org', e.target.value)} placeholder="e.g. Vendor / PMC" />
-                      </Field>
-
-                      {/* Agenda item this action came from (Meeting.docx §7). The
-                          list is built from the agenda rows above — show a clear
-                          hint instead of a bare "— none —" when none exist yet. */}
-                      <Field label="Agenda item">
-                        {(() => {
-                          const opts = agendaItems.filter(a => a.item.trim())
-                          return (
-                            <SelectInput value={item.agenda_key} onChange={e => setMom(item.id, 'agenda_key', e.target.value)} pairs
-                              options={opts.length
-                                ? [['', '— none —'], ...opts.map(a => [String(a.id), truncate(a.item, 40)])]
-                                : [['', 'Add agenda items above first']]} />
-                          )
-                        })()}
-                      </Field>
-
-                      {/* Depends on another action (Meeting.docx §8) — the other
-                          action rows on this meeting; hint when there are none. */}
-                      <Field label="Depends on">
-                        {(() => {
-                          const others = momItems.filter(x => x.id !== item.id && stripHtml(x.description).trim())
-                          return (
-                            <SelectInput value={item.depends_key} onChange={e => setMom(item.id, 'depends_key', e.target.value)} pairs
-                              options={others.length
-                                ? [['', '— none —'], ...others.map(x => [String(x.id), (x.action_ref ? x.action_ref + ' · ' : '') + truncate(stripHtml(x.description), 34)])]
-                                : [['', 'Add another action to link one']]} />
-                          )
-                        })()}
-                      </Field>
-
-                      {/* Remarks — full width, rich text */}
-                      <div style={{ gridColumn: '1/-1' }}>
-                        <label style={{ ...labelStyle, display: 'block', marginBottom: 6 }}>Remarks / Notes</label>
-                        <RichTextEditor
-                          value={item.remarks}
-                          onChange={v => setMom(item.id, 'remarks', v)}
-                          placeholder="Any additional notes or context…"
-                          minHeight={140}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-
-                {/* Add another item button at the bottom */}
-                <button onClick={addMom} style={{ ...addBtn, justifyContent: 'center', width: '100%' }}>
-                  <Plus size={13} /> Add Another Item
-                </button>
-              </div>
-            )}
-          </div>
+          {/*
+            * Section 4 — Minutes of Meeting — used to live here.
+            *
+            * Minutes record what a meeting DECIDED, so authoring them on the
+            * form that schedules it means writing the record of a conversation
+            * that has not happened. The same rule now holds on the server:
+            * MomGate refuses to generate or upload minutes until the meeting is
+            * marked Completed.
+            *
+            * Minutes are captured on the meeting itself, after it takes place.
+            *
+            * NOTE THE BRACES. Without them this is not a comment: a bare block
+            * comment between JSX tags is CHILD TEXT, and React rendered the
+            * whole thing onto the form for anybody scheduling a meeting to
+            * read. It compiled, it shipped, and nothing failed.
+            */}
 
           {/* Section 5 — Decision register */}
           <div className="pr-glass" style={{ padding: 20 }}>
@@ -1987,7 +1904,7 @@ export default function KickoffMeetingCreate() {
                   Saved as a draft — nobody is notified until you <strong style={{ color: 'var(--text-h)' }}>Publish</strong> it from the meeting page.
                 </div>
               )}
-              <button onClick={() => navigate(`${meetingBase()}/kickoff`)} disabled={saving}
+              <button onClick={() => navigate(meetingPaths().list)} disabled={saving}
                 style={{
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                   padding: '10px 20px', borderRadius: 11, cursor: 'pointer', fontSize: 13, fontWeight: 600,

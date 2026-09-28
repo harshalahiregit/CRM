@@ -3,7 +3,7 @@ import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-do
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Eye, EyeOff, ChevronDown, Shield, Zap, Globe, Lock, CheckCircle, User, Star } from 'lucide-react'
+import { Eye, EyeOff, ChevronDown, Shield, Zap, Lock, CheckCircle, User, Star } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { purchaseVendorAuthApi } from '@/services/purchaseVendorAuthApi'
 import { clientPortalApi } from '@/lib/clientPortalApi'
@@ -19,17 +19,61 @@ import sangoeFull from '@/assets/sangoe-full.png'
 const ROLES = [
   { value: 'admin',               label: 'Admin',                icon: '🛡️' },
   { value: 'staff',               label: 'Staff / Employee',     icon: '👔' },
-  // Examining doctors sign in here too — they are ordinary Users with their own
-  // portal, not a separate identity like a Purchase Vendor.
-  { value: 'doctor',              label: 'Doctor',               icon: '🩺' },
   { value: 'purchase_vendor',     label: 'Purchase Vendor',      icon: '📦', purchaseVendor: true },
   { value: 'third_party_vendor',  label: 'Third-Party Vendor',   icon: '🤝' },
+  /*
+   * There is deliberately no "Vendor" option.
+   *
+   * It was listed briefly, on the reasoning that `vendor` and
+   * `third_party_vendor` were two spellings of one thing because both routed to
+   * /vendor-portal. That was read off the ROUTING and the routing was the broken
+   * half: the accounts holding `vendor` attach to purchase_vendors, not to
+   * `vendors`, so the option sent purchase suppliers to the TPV portal.
+   *
+   * A purchase vendor is not a User at all — it signs in below as Purchase
+   * Vendor, against its own table and its own password. The leftover `vendor`
+   * Users were second accounts for suppliers who already had that login, and
+   * they have been retired.
+   */
   { value: 'client',              label: 'Client / Customer',    icon: '👤', clientPortal: true },
-  { value: 'company',             label: 'Company',              icon: '🏢' },
+  /*
+   * Doctor and Company are deliberately ABSENT from this selector, and their
+   * accounts still sign in here.
+   *
+   * Neither is an HR role, and offering them made the login screen ask a
+   * question most people could not answer. Both are, however, real Users with
+   * real portals — `doctor` for routes/medical.php, `company` for the external
+   * hiring portal (routes/company_portal.php, CompanyRole, hr_hiring_requests).
+   * Removing them from the BACKEND would lock the only door into two working
+   * subsystems, so nothing server-side changed: LoginRequest still accepts both.
+   *
+   * They reach their portal by leaving this selector on "Access role (optional)".
+   * That works because the role is optional and users.email is globally unique,
+   * so an address already resolves to exactly one account — the selector only
+   * ever narrowed a search that could not return two rows. See LoginRequest.
+   *
+   * A doctor may also sign in under Staff / Employee: an examining doctor is an
+   * employee who happens to practise medicine, not an outside identity like a
+   * Purchase Vendor with its own table and password, and
+   * AuthService::findUserForLogin admits them under `staff` for that reason.
+   * role=doctor is still accepted by the API, so old deep links and saved
+   * bookmarks keep working. (This paragraph merges the note master added while
+   * this branch was open; master removed Doctor only, this branch removed
+   * Company as well, so both entries stay absent.)
+   *
+   * FOLLOW-UP, not done here: the owner's position is that a doctor should be
+   * Staff or a vendor, and a company may belong under Client. That is an
+   * identity-model migration across two subsystems, not a dropdown edit.
+   */
 ]
 
 const schema = z.object({
-  role:     z.string().min(1, 'Please select a role'),
+  // Optional, so signing in here takes exactly what the app takes: an email and
+  // a password. Choosing the wrong entry used to fail a login whose credentials
+  // were correct, and the app has no such selector — so the same person could
+  // sign in on their phone and not on the website. The picker stays, because it
+  // decides which home screen you land on; it just no longer gates the form.
+  role:     z.string().optional(),
   email:    z.string().email('Enter a valid email'),
   password: z.string().min(1, 'Password is required'),
   remember: z.boolean().optional(),
@@ -38,7 +82,10 @@ const schema = z.object({
 // Post-login home when the user came to /login directly (no email deep-link).
 const roleHome = (role) =>
   role === 'company' ? '/company-portal/dashboard'
-  : role === 'third_party_vendor' ? '/vendor-portal/dashboard'
+  // Both vendor spellings reach the same portal, which admits both. Without the
+  // second one a `vendor` was sent to /app, which blocks that role and bounces
+  // it back here — an infinite redirect rather than a wrong page.
+  : (role === 'third_party_vendor' || role === 'vendor') ? '/vendor-portal/dashboard'
   // The two identities that carry their own token rather than a User session.
   : role === 'purchase_vendor' ? '/purchase-portal/dashboard'
   : role === 'client' ? '/portal/dashboard'
@@ -97,10 +144,22 @@ export default function LoginPage() {
   }, [searchParams]) // eslint-disable-line react-hooks/exhaustive-deps
   const selectedRoleObj = ROLES.find(r => r.value === watchedRole)
   const isPurchaseVendor = Boolean(selectedRoleObj?.purchaseVendor)
-  // Password reset belongs to whichever identity store holds the account: the
-  // shared pages reset a User, which is the wrong record for a portal login.
-  const forgotPath = isPurchaseVendor ? '/purchase-portal/forgot-password'
-    : selectedRoleObj?.clientPortal ? '/portal/forgot-password'
+
+  /**
+   * ONE reset page, for every identity.
+   *
+   * There were three, chosen by the dropdown — and the dropdown is optional, so
+   * anybody who clicked "Forgot password" without touching it landed on the one
+   * that only resets staff accounts. A supplier or a customer contact was then
+   * told "if that email is registered, a reset link has been sent" and received
+   * nothing, with no way to discover they had used the wrong door.
+   *
+   * The role still travels, as a hint: given one, the server searches only that
+   * store; given none, it searches all three and sends a link per account it
+   * finds. Nobody has to know which table they live in.
+   */
+  const forgotPath = watchedRole
+    ? `/auth/forgot-password?role=${encodeURIComponent(watchedRole)}`
     : '/auth/forgot-password'
 
   const onSubmit = async (values) => {
@@ -261,7 +320,7 @@ export default function LoginPage() {
                   {selectedRoleObj ? selectedRoleObj.icon : <User size={13} style={{ color: '#8b85a8' }} />}
                 </span>
                 <span className="flex-1 text-sm" style={{ color: selectedRoleObj ? '#edeaf8' : '#8b85a8' }}>
-                  {selectedRoleObj ? selectedRoleObj.label : 'Choose your access role...'}
+                  {selectedRoleObj ? selectedRoleObj.label : 'Access role (optional)'}
                 </span>
                 <ChevronDown size={15} className={`transition-transform duration-200 ${roleOpen ? 'rotate-180' : ''}`} style={{ color: '#8b85a8' }} />
               </button>
@@ -348,8 +407,12 @@ export default function LoginPage() {
           {/* A customer contact never self-registers — access begins with a
               staff member inviting a real contact of a real customer — so the
               link is simply not offered for that identity. */}
+          {/* One registration form for every identity. The Purchase portal had a
+              second one of its own, collecting four fields where the main form
+              collects fifteen, so which door a vendor came through decided how
+              much of their company we ever knew. */}
           {!selectedRoleObj?.clientPortal && (
-            <Link to={isPurchaseVendor ? '/purchase-portal/register' : '/auth/register'}
+            <Link to="/auth/register"
               className="flex items-center gap-1.5 text-xs font-semibold transition-colors" style={{ color: '#a78bfa' }}
               onMouseEnter={e=>e.currentTarget.style.color='#c4b5fd'} onMouseLeave={e=>e.currentTarget.style.color='#a78bfa'}>
               <Star size={12} /> Register here →
@@ -357,13 +420,21 @@ export default function LoginPage() {
           )}
         </div>
 
-        {/* Last login bar */}
-        <div className="mt-5 flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs" style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.15)', color: '#8b85a8' }}>
-          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: '#a78bfa' }} />
-          <span>Last login:</span>
-          <span className="font-medium flex items-center gap-1" style={{ color: '#edeaf8' }}>📍 Pune, Maharashtra</span>
-          <span className="flex items-center gap-1 ml-auto"><Globe size={11} /> Chrome</span>
-        </div>
+        {/* The "Last login: 📍 Pune, Maharashtra · Chrome" bar that used to sit
+            here has been removed rather than wired up.
+
+            Both values were string literals. Every visitor to this page, in any
+            city, on any browser, was told their last login was from Pune on
+            Chrome — and it is the one place in the product where a wrong
+            location actually matters, because "was that me?" is the question a
+            last-login line exists to answer. A fabricated answer to that
+            question is worse than no line at all.
+
+            It also cannot be made true here: nobody has identified themselves
+            yet on a login screen, so the server does not know whose last login
+            to report and should not be guessing from an unauthenticated
+            request. The real thing now lives on the dashboard, after sign-in,
+            built from the session record — see DashboardController::lastSignIn. */}
 
         {/* Brand footer */}
         <div className="mt-4 text-center space-y-2">

@@ -33,6 +33,18 @@ class StoreTicketRequest extends FormRequest
             // replies when the ticket is raised on someone's behalf.
             'requester_name'  => 'nullable|string|max:255',
             'requester_email' => 'nullable|email|max:255',
+            // Standing copy list for the whole ticket, not one message. Every
+            // outbound mail on this ticket copies these. `ticket_replies.cc` is
+            // still the place for a one-off copy on a single reply.
+            'cc'              => 'nullable|array|max:20',
+            'cc.*'            => 'email|max:255',
+            // Tags are attached after the ticket exists, so the ids are checked
+            // here and the linking happens in the service.
+            // Files raised WITH the ticket. Same limits as reply attachments.
+            'attachments'     => 'nullable|array|max:10',
+            'attachments.*'   => 'file|max:10240',
+            'tags'            => 'nullable|array|max:20',
+            'tags.*'          => ['integer', TenantRules::ticketTag($tenantId)],
             // Link back to the project this ticket was raised from ("Raise Ticket"
             // on a project/task). Tenant ownership is re-checked in the service.
             'project_id'      => 'nullable|integer|min:1',

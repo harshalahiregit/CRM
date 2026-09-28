@@ -1,0 +1,33 @@
+{
+  "name": "acme",
+  "description": "The conventional shape: Sanctum, tenant_id, a role column, React + Vite.",
+  "discovered": {
+    "framework.version": "11.9.2",
+    "php.version": "8.3.6",
+    "database.driver": "mysql",
+    "database.engine": "mysql",
+    "auth.guards": ["web", "sanctum"],
+    "auth.packages": ["laravel/sanctum"],
+    "user.model": "App\\Models\\User",
+    "user.table": "users",
+    "user.columns": ["id", "name", "email", "role", "tenant_id", "created_at"],
+    "tenant.columns_present": ["tenant_id"],
+    "tenant.model": "App\\Models\\Tenant",
+    "roles.source": "users.role",
+    "roles.available": ["admin", "staff", "developer", "qa", "client"],
+    "permissions.provider": null,
+    "frontend.packages": ["react", "vite", "axios", "tailwindcss", "@tanstack/react-query"],
+    "tables": ["users", "tenants", "audit_logs", "notes", "attachments", "kb_articles", "notifications", "settings"]
+  },
+  "expected": {
+    "tenant.strategy": "user_attribute",
+    "tenant.attribute": "tenant_id",
+    "host.auth_middleware": ["auth:sanctum"],
+    "login_types.admin": ["admin"],
+    "login_types.internal_user": ["staff", "developer", "qa"],
+    "login_types.customer": ["client"],
+    "login_types.vendor": [],
+    "frontend.type": "react",
+    "compatibility.blocked": false
+  }
+}

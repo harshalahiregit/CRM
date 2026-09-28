@@ -26,7 +26,7 @@ class SalaryReportController extends Controller
 
         return response()->json([
             'reports' => $this->service->reports(),
-            'filters' => $this->service->filterOptions($this->tenant($request)),
+            'filters' => $this->service->filterOptions($this->tenant($request), $request->user()),
         ]);
     }
 
@@ -34,7 +34,7 @@ class SalaryReportController extends Controller
     {
         $this->gate($request);
 
-        return response()->json($this->service->summary($this->tenant($request), $this->filters($request)));
+        return response()->json($this->service->summary($this->tenant($request), $this->filters($request), $request->user()));
     }
 
     /** A single report's data: {title, columns, rows}. */
@@ -42,7 +42,7 @@ class SalaryReportController extends Controller
     {
         $this->gate($request);
 
-        return response()->json($this->service->build($report, $this->tenant($request), $this->filters($request)));
+        return response()->json($this->service->build($report, $this->tenant($request), $this->filters($request), $request->user()));
     }
 
     /** CSV (Excel) or PDF export of a report. */
@@ -50,7 +50,7 @@ class SalaryReportController extends Controller
     {
         $this->gate($request);
         $format = $request->query('format', 'csv');
-        $data = $this->service->exportRows($report, $this->tenant($request), $this->filters($request));
+        $data = $this->service->exportRows($report, $this->tenant($request), $this->filters($request), $request->user());
         $base = 'salary_'.str_replace(' ', '_', strtolower($data['title']));
 
         if ($format === 'pdf') {

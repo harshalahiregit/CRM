@@ -84,6 +84,19 @@ export const clientPortalApi = {
   proposals: () => get('/portal/client/proposals'),
   contracts: () => get('/portal/client/contracts'),
   projects: () => get('/portal/client/projects'),
+
+  // STOS-CLP §28 step 7. No client id — the contact's own client comes off the
+  // token, like every other call in this file.
+  shipments: () => get('/portal/client/transport/shipments'),
+  // One shipment and its journey. The id is a trip id the LIST handed us; the
+  // endpoint re-checks it belongs to this customer regardless, and answers 404
+  // — not 403 — when it does not, so guessing ids tells a caller nothing.
+  // The id is encoded rather than concatenated raw: a URL segment of "44/../45"
+  // is normalised by the browser BEFORE it leaves, so an unencoded id could
+  // quietly address a different endpoint. Encoded, it stays one segment, the
+  // route's whereNumber() refuses it, and the caller gets the same 404 as any
+  // other shipment that is not theirs.
+  shipment: (id) => get('/portal/client/transport/shipments/' + encodeURIComponent(id)),
   tickets: () => get('/portal/client/tickets'),
   // Raising goes through Helpdesk's intake contract server-side, never a direct
   // insert — so numbering, SLA, routing and the acknowledgement email all apply.

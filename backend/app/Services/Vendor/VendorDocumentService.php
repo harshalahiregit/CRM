@@ -83,6 +83,36 @@ class VendorDocumentService
             ],
             // Onboarding may be finalised only when every required doc is approved.
             'complete'    => $approved === count($required),
+        ] + self::conversionContext($vendor->converted_to_permanent_at, $required, $docs->keys()->all());
+    }
+
+    /**
+     * Why a vendor who was complete yesterday is at 18% today.
+     *
+     * Promotion from temporary to permanent rewrites `vendor_type`, and the
+     * required set is derived from it: three documents become eleven. The
+     * vendor submitted, passed and was activated against the temporary set, so
+     * nothing is wrong with their file — the bar moved. Without saying so, the
+     * screen reads as a vendor who was let through without paperwork.
+     *
+     * Returned by both engines' checklists so the panel can say it once.
+     *
+     * @param  string[]  $required
+     * @param  string[]  $held      types this vendor has uploaded, whatever the status
+     * @return array{converted_at?:string,newly_required?:string[]}
+     */
+    public static function conversionContext($convertedAt, array $required, array $held): array
+    {
+        if (! $convertedAt) {
+            return [];
+        }
+
+        // Asked for only because they are now permanent, and not yet supplied.
+        $newly = array_values(array_diff($required, VendorDocument::TEMPORARY_SET, $held));
+
+        return [
+            'converted_at'   => $convertedAt->toIso8601String(),
+            'newly_required' => $newly,
         ];
     }
 

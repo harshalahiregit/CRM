@@ -1,0 +1,292 @@
+<?php
+
+namespace Tests\Feature\Transport;
+
+use App\Models\Tenant;
+use App\Models\Transport\TransportOrder;
+use App\Models\Transport\TransportTrip;
+use App\Models\User;
+use App\Support\Transport\TripStatus;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
+use Laravel\Sanctum\Sanctum;
+use Tests\TestCase;
+
+/**
+ * The shapes the trip-detail panels destructure.
+ *
+ * AdvancesPanel, CostsPanel and TripDocumentsPanel each read specific keys out
+ * of their endpoint and render money and verdicts from them. Rename a key on the
+ * server and nothing fails — the panel quietly shows "—" where a figure used to
+ * be, or an empty table on a trip that has rows. That is the failure this file
+ * exists to make loud.
+ *
+ * Each test asserts the CONTRACT, not the values: the keys the panel reaches
+ * for, and that server-computed totals arrive as strings rather than floats.
+ * The strings matter — these are bcmath sums of a DECIMAL column, and a float
+ * crossing the wire is the drift Step 13's FIN-06 blocks a release for.
+ */
+class TripPanelContractsTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private const TENANT = 1;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        (new Tenant())->forceFill([
+            'id' => self::TENANT, 'name' => 'Alpha', 'slug' => 'alpha',
+            'subdomain' => 'alpha', 'status' => 'active',
+        ])->save();
+
+        Sanctum::actingAs(User::create([
+            'tenant_id' => self::TENANT, 'name' => 'Admin', 'role' => 'admin',
+            'email' => 'admin-'.Str::random(6).'@test.local',
+            'password' => bcrypt('x'), 'status' => 'active',
+        ]));
+    }
+
+    private function trip(?string $status = null): TransportTrip
+    {
+        $order = TransportOrder::create([
+            'tenant_id' => self::TENANT, 'order_number' => 'TO-'.Str::random(8), 'customer_id' => 1,
+            'pickup_location' => ['address' => 'JNPT'], 'delivery_location' => ['address' => 'Bhiwandi'],
+            'required_at' => now()->addDays(2), 'service_type' => 'Container Haulage',
+        ]);
+
+        $trip = TransportTrip::create([
+            'tenant_id' => self::TENANT, 'order_id' => $order->id,
+            'trip_number' => 'TRP-'.Str::random(8), 'customer_id' => 1,
+        ]);
+        $trip->forceFill([
+            'status' => $status ?? TripStatus::APPROVED, 'approved_freight' => '100000.00',
+        ])->save();
+
+        return $trip->fresh();
+    }
+
+    /** AdvancesPanel reads exposure.limit / .committed / .remaining / .currency. */
+    public function test_the_advances_endpoint_returns_the_exposure_shape_the_panel_reads(): void
+    {
+        $trip = $this->trip();
+
+        $res = $this->getJson("/api/transport/trips/{$trip->id}/advances")->assertOk();
+
+        $res->assertJsonStructure(['data' => [
+            'advances',
+            'exposure' => ['limit', 'committed', 'remaining', 'currency'],
+        ]]);
+
+        $exposure = $res->json('data.exposure');
+
+        foreach (['limit', 'committed', 'remaining'] as $key) {
+            $this->assertIsString($exposure[$key], "exposure.$key must be a string, not a float");
+            $this->assertMatchesRegularExpression('/^-?\d+\.\d{2}$/', $exposure[$key]);
+        }
+    }
+
+    /** CostsPanel reads total, breakdown and known_types. */
+    public function test_the_costs_endpoint_returns_the_shape_the_panel_reads(): void
+    {
+        $trip = $this->trip();
+
+        $this->postJson("/api/transport/trips/{$trip->id}/costs", [
+            'cost_type' => 'fuel', 'amount' => '500.00',
+        ])->assertStatus(201);
+
+        $res = $this->getJson("/api/transport/trips/{$trip->id}/costs")->assertOk();
+
+        $res->assertJsonStructure(['data' => ['costs', 'total', 'breakdown', 'currency', 'known_types']]);
+
+        $this->assertIsString($res->json('data.total'), 'total must be a string, not a float');
+        $this->assertSame('500.00', $res->json('data.total'));
+        $this->assertSame('500.00', $res->json('data.breakdown.fuel'));
+        $this->assertNotEmpty($res->json('data.known_types'), 'the picker needs its suggestions');
+
+        // The row keys the table renders.
+        $row = $res->json('data.costs.0');
+        foreach (['id', 'cost_type', 'cost_type_label', 'amount', 'source'] as $key) {
+            $this->assertArrayHasKey($key, $row, "costs[].$key is rendered by CostsPanel");
+        }
+    }
+
+    /** TripDocumentsPanel leads with billing.billable and billing.reason. */
+    public function test_the_documents_endpoint_returns_the_billing_verdict_the_panel_leads_with(): void
+    {
+        $trip = $this->trip();
+
+        $res = $this->getJson("/api/transport/trips/{$trip->id}/documents")->assertOk();
+
+        $res->assertJsonStructure(['data' => [
+            'documents',
+            'billing' => ['billable', 'reason', 'has_verified_pod', 'waived'],
+        ]]);
+
+        // A trip with no POD must say so rather than defaulting to billable —
+        // the panel renders this boolean straight into a green tick.
+        $this->assertFalse($res->json('data.billing.billable'));
+        $this->assertIsString($res->json('data.billing.reason'));
+        $this->assertNotSame('', $res->json('data.billing.reason'),
+            'the panel shows this sentence; an empty one leaves a blank banner');
+    }
+
+    /**
+     * The route D-106 was missing, over HTTP.
+     *
+     * A service-level test would not have caught the original gap: the method
+     * existed and worked, and was simply unreachable. So this asserts the HTTP
+     * surface specifically — that a request can reach STT-010 at all.
+     */
+    public function test_the_invoiced_route_exists_and_is_gated(): void
+    {
+        $trip = $this->trip();
+
+        // 404 here would mean no route. 422 means the route exists, the
+        // permission passed, and the service refused for a business reason
+        // (no prepared bill yet) — which is the shape we want.
+        $this->postJson("/api/transport/trips/{$trip->id}/bill/invoiced", ['invoice_id' => 4242])
+            ->assertStatus(422);
+
+        $this->postJson("/api/transport/trips/{$trip->id}/bill/invoiced", [])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['invoice_id']);
+    }
+
+    public function test_the_whole_chain_is_reachable_over_http(): void
+    {
+        // The test that would have caught D-106 on the 17th: no direct model
+        // calls, only requests, all the way to collection_pending.
+        $trip = $this->trip(\App\Support\Transport\TripStatus::DELIVERED);
+
+        $this->postJson("/api/transport/trips/{$trip->id}/pod", [
+            'file' => \Illuminate\Http\UploadedFile::fake()->create('pod.pdf', 20, 'application/pdf'),
+            'document_type' => 'pod',
+        ])->assertStatus(201);
+
+        $docId = $this->getJson("/api/transport/trips/{$trip->id}/documents")->json('data.documents.0.id');
+        $this->postJson("/api/transport/trips/{$trip->id}/pod/{$docId}/verify")->assertOk();
+        $this->postJson("/api/transport/trips/{$trip->id}/bill")->assertStatus(201);
+        $this->postJson("/api/transport/trips/{$trip->id}/bill/invoiced", ['invoice_id' => 7])->assertOk();
+        $this->postJson("/api/transport/trips/{$trip->id}/collection/open", [])->assertStatus(201);
+
+        $this->assertSame(
+            \App\Support\Transport\TripStatus::COLLECTION_PENDING,
+            $trip->fresh()->status,
+            'routes alone must be able to reach collection_pending'
+        );
+    }
+
+    /**
+     * P3's five lines actually reach the shared timeline — CTD §31.
+     *
+     * Asserted against the TABLE, not against the fact that record() was
+     * called. D-106's whole lesson was that wiring which exists in code and
+     * nowhere else is not wiring; the only proof that counts is the row.
+     */
+    public function test_p3_contributes_its_five_lines_to_the_shared_timeline(): void
+    {
+        $trip = $this->trip(\App\Support\Transport\TripStatus::DELIVERED);
+
+        // The LR travels with the load, long before anyone signs for it.
+        $this->postJson("/api/transport/trips/{$trip->id}/pod", [
+            // createWithContent, not create(): two fake files of the same size
+            // hold identical bytes, so the second would hash the same and be
+            // absorbed as a retry by the duplicate rule. The rule is right; the
+            // fixture was wrong.
+            'file' => \Illuminate\Http\UploadedFile::fake()->createWithContent('lr.pdf', '%PDF lorry receipt'),
+            'document_type' => 'lr',
+        ])->assertStatus(201);
+
+        $this->postJson("/api/transport/trips/{$trip->id}/pod", [
+            'file' => \Illuminate\Http\UploadedFile::fake()->createWithContent('pod.pdf', '%PDF signed proof'),
+            'document_type' => 'pod',
+        ])->assertStatus(201);
+
+        $docs  = $this->getJson("/api/transport/trips/{$trip->id}/documents")->json('data.documents');
+        $podId = collect($docs)->firstWhere('document_type', 'pod')['id'];
+
+        $this->postJson("/api/transport/trips/{$trip->id}/pod/{$podId}/verify")->assertOk();
+        $this->postJson("/api/transport/trips/{$trip->id}/bill")->assertStatus(201);
+        $this->postJson("/api/transport/trips/{$trip->id}/bill/invoiced", ['invoice_id' => 88])->assertOk();
+
+        $types = \Illuminate\Support\Facades\DB::table('trip_events')
+            ->where('trip_id', $trip->id)->pluck('event_type')->all();
+
+        foreach (['documents.handed_over', 'pod.uploaded', 'pod.verified', 'billing.ready', 'invoice.posted'] as $t) {
+            $this->assertContains($t, $types, "CTD §31 expects {$t} on the Passport timeline");
+        }
+    }
+
+    public function test_the_invoice_line_carries_the_id_step_12_needs_to_show(): void
+    {
+        // MS-001 §14 step 12 is "Show invoice linkage". A timeline row that
+        // said an invoice was posted without saying WHICH would not show it.
+        $trip = $this->trip(\App\Support\Transport\TripStatus::DELIVERED);
+
+        $this->postJson("/api/transport/trips/{$trip->id}/pod", [
+            'file' => \Illuminate\Http\UploadedFile::fake()->create('pod.pdf', 10, 'application/pdf'),
+            'document_type' => 'pod',
+        ])->assertStatus(201);
+        $docId = $this->getJson("/api/transport/trips/{$trip->id}/documents")->json('data.documents.0.id');
+        $this->postJson("/api/transport/trips/{$trip->id}/pod/{$docId}/verify")->assertOk();
+        $this->postJson("/api/transport/trips/{$trip->id}/bill")->assertStatus(201);
+        $this->postJson("/api/transport/trips/{$trip->id}/bill/invoiced", ['invoice_id' => 4242])->assertOk();
+
+        $row = \Illuminate\Support\Facades\DB::table('trip_events')
+            ->where('trip_id', $trip->id)->where('event_type', 'invoice.posted')->first();
+
+        $this->assertNotNull($row);
+        $this->assertStringContainsString('4242', (string) $row->detail);
+    }
+
+    /**
+     * BillingPanel can actually press the invoice route.
+     *
+     * The route shipped on 19 Sep with no caller in transportApi.js, so a trip
+     * stopped at Billable and closure was unreachable from the screen even
+     * though every endpoint behind it worked. D-106 one layer up: a route with
+     * no button is the same gap as a method with no route.
+     *
+     * Asserted here as the capability key the button gates on, because that is
+     * the part a backend test can hold. The caller itself is guarded by the
+     * frontend build.
+     */
+    public function test_the_invoice_button_has_a_permission_to_gate_on(): void
+    {
+        $grants = $this->getJson('/api/transport/permissions')->assertOk()->json('data.grants');
+
+        $this->assertArrayHasKey('transport.billing.invoiced', $grants,
+            'BillingPanel gates its Record-invoice button on this key');
+
+        // And it must stay NARROWER than prepare — Operations may mark a trip
+        // ready to invoice and may not declare that it was invoiced.
+        $matrix = \App\Support\Transport\TransportPermission::MATRIX;
+        $this->assertArrayNotHasKey(
+            \App\Support\Transport\TransportPermission::ROLE_OPERATIONS,
+            $matrix[\App\Support\Transport\TransportPermission::BILLING_INVOICED],
+            'recording an invoice is a finance act, not an operations one'
+        );
+    }
+
+    /**
+     * Every permission key the panels gate their buttons on must be answerable.
+     *
+     * The panels read `grants['transport.cost.record']` and friends. A key that
+     * the capability endpoint never emits silently hides the button forever,
+     * which looks exactly like "the feature was never built".
+     */
+    public function test_the_capability_endpoint_answers_for_every_key_the_panels_use(): void
+    {
+        $grants = $this->getJson('/api/transport/permissions')->assertOk()->json('data.grants');
+
+        foreach ([
+            'transport.advance.request', 'transport.advance.approve',
+            'transport.cost.record', 'transport.cost.retract',
+            'transport.pod.submit', 'transport.pod.verify',
+        ] as $key) {
+            $this->assertArrayHasKey($key, $grants, "$key gates a button in the trip panels");
+        }
+    }
+}

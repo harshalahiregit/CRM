@@ -6,7 +6,7 @@ import {
   Download, Columns3, Rows3, AlignJustify, ArrowUp, ArrowDown, ChevronsUpDown,
   Trash2, UserCheck, Check, Sparkles, RotateCcw, Link2,
   FolderKanban, ListChecks, Boxes,
-  Users, Landmark, ShoppingCart, HardHat, ShieldCheck, TrendingUp, Contact,
+  Users, Landmark, ShoppingCart, HardHat, ShieldCheck, TrendingUp, Contact, Globe,
 } from 'lucide-react'
 
 // Where a ticket was raised from → a small origin badge in the Subject cell, so
@@ -308,11 +308,23 @@ export default function TicketGrid() {
           <h1 className="font-black" style={{ fontSize: 'clamp(1.3rem,2.2vw,1.7rem)', color: 'var(--text-h)', letterSpacing: '-0.02em' }}>Tickets</h1>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{rows.length} of {tickets.length} tickets</p>
         </div>
-        <button onClick={() => setShowNew(true)}
-          className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl transition-opacity hover:opacity-90"
-          style={{ background: `linear-gradient(135deg,var(--color-support-400),var(--color-support-600))`, color: '#fff' }}>
-          <Plus size={15} /> New Ticket
-        </button>
+        <div className="flex items-center gap-2">
+          {/* The public form and the embed snippet, from where people look for
+              them. Both already existed on the Widget screen, but "how does a
+              customer raise a ticket without an account?" is asked while
+              standing on this list, and there was no sign from here that the
+              answer existed at all. */}
+          <button onClick={() => navigate('/app/helpdesk/widget')}
+            className="flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-lg transition-colors hover:bg-[var(--bg-input)]"
+            style={{ border: '1px solid var(--border)', color: 'var(--text-body)' }}>
+            <Globe size={14} /> Public link &amp; embed
+          </button>
+          <button onClick={() => setShowNew(true)}
+            className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl transition-opacity hover:opacity-90"
+            style={{ background: `linear-gradient(135deg,var(--color-support-400),var(--color-support-600))`, color: '#fff' }}>
+            <Plus size={15} /> New Ticket
+          </button>
+        </div>
       </div>
 
       {/* Views (saved) */}

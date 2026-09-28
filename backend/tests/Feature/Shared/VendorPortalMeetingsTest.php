@@ -121,17 +121,39 @@ class VendorPortalMeetingsTest extends TestCase
         $this->assertNull($row['meeting_link'], 'a link to a finished meeting looks like it should still work');
     }
 
-    public function test_a_meeting_in_progress_still_hands_out_its_link(): void
+    /**
+     * A running meeting is still joinable — the link used to be withheld the
+     * moment it started, which is exactly when it is needed, and that must not
+     * come back.
+     *
+     * The link was briefly EARNED rather than given — withheld until the vendor
+     * marked attendance. That toll has gone: MeetingLinkAnnouncer e-mails the
+     * real room to every participant the moment the organiser pastes it, so
+     * withholding the same URL here made the portal the slow route to a link
+     * already in their inbox. Marking attendance is still offered, and is now
+     * asked for on its own terms. See MeetingAttendanceGate.
+     */
+    public function test_a_meeting_in_progress_is_joinable_and_carries_its_room(): void
     {
-        // The link used to be withheld the moment the meeting started, which is
-        // exactly when it is needed.
-        $this->meeting('Running', -10);
+        $meeting = $this->meeting('Running', -10);
 
-        $row = $this->getJson('/api/portal/meetings')->assertOk()->json('data.0');
+        $res = $this->getJson('/api/portal/meetings')->assertOk();
+        $row = $res->json('data.0');
 
         $this->assertSame('live', $row['timing_state']);
         $this->assertTrue($row['is_live']);
-        $this->assertNotNull($row['meeting_link']);
+        $this->assertTrue($row['has_meeting_link'], 'the portal still knows this is an online meeting');
+        $this->assertSame('https://meet.example.test/room', $row['meeting_link'],
+            'a real room is handed over — it was e-mailed to them anyway');
+        $this->assertFalse($row['attendance_marked'], 'and it cost them nothing to get it');
+
+        // Marking attendance still records what it always recorded.
+        $this->postJson("/api/portal/meetings/{$meeting->id}/attendance")->assertOk()
+            ->assertJsonPath('attendance_marked', true);
+
+        $this->assertNotNull(
+            $this->getJson('/api/portal/meetings')->assertOk()->json('data.0.meeting_link')
+        );
     }
 
     public function test_drafts_stay_invisible_to_the_vendor(): void

@@ -6,12 +6,14 @@ use App\Exceptions\BusinessException;
 use App\Models\Inventory\Movement;
 use App\Models\Inventory\Product;
 use App\Models\Inventory\Warehouse;
+use App\Models\Purchase\PurchasePpeRequirement;
 use App\Models\Purchase\PurchaseWorker;
 use App\Models\Purchase\PurchaseWorkerPpeIssue;
 use App\Models\User;
 use App\Services\Inventory\ConfigService;
 use App\Services\Inventory\StockService;
 use App\Services\Tpv\PpeInventoryService;
+use App\Support\Shared\PpeReplacement;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -42,23 +44,29 @@ class PurchasePpeService
      */
     private const RETURN_CONDITIONS = [
         'returned' => 'return',
-        'damaged'  => null,
-        'lost'     => null,
+        'damaged' => null,
+        'lost' => null,
     ];
 
     public function __construct(
         private StockService $stock,
         private ConfigService $config,
         private PpeInventoryService $catalogueSource,
-    ) {
-    }
+        private PurchaseVendorPpeItemService $vendorItems,
+    ) {}
 
     /* ── Reads ──────────────────────────────────────────────────────── */
 
-    /** The PPE shelf — tenant-wide, because there is one central store. */
+    /**
+     * The PPE shelf — tenant-wide, because there is one central store.
+     *
+     * The shelf is shared; the "Issued" column is not. It counts PURCHASE
+     * hand-outs — borrowing the catalogue unqualified counted TPV's table, so
+     * every Purchase issue read as zero.
+     */
     public function catalogue(int $tenantId): Collection
     {
-        return $this->catalogueSource->catalogue($tenantId);
+        return $this->catalogueSource->catalogue($tenantId, PurchaseWorkerPpeIssue::class);
     }
 
     /**
@@ -70,7 +78,7 @@ class PurchasePpeService
      */
     public function summaryForVendor(int $vendorId, int $tenantId): array
     {
-        $rows  = $this->catalogue($tenantId);
+        $rows = $this->catalogue($tenantId);
         $today = now()->toDateString();
 
         $mine = fn () => PurchaseWorkerPpeIssue::query()
@@ -79,13 +87,13 @@ class PurchasePpeService
                 PurchaseWorker::where('purchase_vendor_id', $vendorId)->select('id'));
 
         return [
-            'total_items'        => $rows->count(),
-            'total_available'    => (float) $rows->sum('available'),
-            'low_stock_items'    => $rows->where('status', 'low_stock')->count(),
+            'total_items' => $rows->count(),
+            'total_available' => (float) $rows->sum('available'),
+            'low_stock_items' => $rows->where('status', 'low_stock')->count(),
             'out_of_stock_items' => $rows->where('status', 'out_of_stock')->count(),
-            'total_issued'       => (float) $mine()->where('status', 'issued')->sum(DB::raw('qty - returned_qty')),
-            'issued_today'       => (float) $mine()->whereDate('issued_date', $today)->sum('qty'),
-            'returned_today'     => (float) $mine()->whereDate('returned_at', $today)->sum('returned_qty'),
+            'total_issued' => (float) $mine()->where('status', 'issued')->sum(DB::raw('qty - returned_qty')),
+            'issued_today' => (float) $mine()->whereDate('issued_date', $today)->sum('qty'),
+            'returned_today' => (float) $mine()->whereDate('returned_at', $today)->sum('returned_qty'),
         ];
     }
 
@@ -95,9 +103,14 @@ class PurchasePpeService
         return PurchaseWorkerPpeIssue::query()
             ->where('tenant_id', $worker->tenant_id)
             ->where('purchase_worker_id', $worker->id)
-            ->with('product:id,name,sku')
+            ->with(['product:id,name,sku', 'vendorItem:id,name,category,size'])
             ->latest('issued_date')
-            ->get();
+            ->get()
+            // Where the kit came from — the central store or the vendor's own
+            // PPE list. Both are the worker's PPE; only the stock differs.
+            ->each(fn (PurchaseWorkerPpeIssue $i) => $i->setAttribute(
+                'source', $i->vendor_ppe_item_id ? 'vendor' : 'inventory'
+            ));
     }
 
     /** Items the worker currently holds — issued and not fully handed back. */
@@ -112,30 +125,168 @@ class PurchasePpeService
     }
 
     /**
-     * Whether the worker is equipped enough to be badged.
+     * The rules that apply to this worker.
      *
-     * Purchase has no per-role PPE requirement matrix (TpvPpeRequirement is a TPV
-     * table and its scopes read TPV worker fields), so the rule here is the
-     * simpler one the Purchase data supports: holding at least one item counts as
-     * PPE issued. Stated explicitly rather than silently reusing a TPV matrix that
-     * would never match a Purchase worker.
+     * One row per product: two rules naming the same item (say an "all workers"
+     * helmet and a "Fitter" helmet) are one requirement, not two, so the
+     * checklist never asks for the same thing twice.
+     */
+    public function requiredFor(PurchaseWorker $worker): Collection
+    {
+        return PurchasePpeRequirement::query()
+            ->where('tenant_id', $worker->tenant_id)
+            ->where('is_active', true)
+            ->with('product:id,name,sku,status')
+            ->get()
+            ->filter(fn (PurchasePpeRequirement $r) => $r->product && $r->matches($worker))
+            ->unique('product_id')
+            ->values();
+    }
+
+    /** Product ids this worker currently holds (issued, not fully handed back). */
+    private function heldProductIds(PurchaseWorker $worker): Collection
+    {
+        return $this->heldIssues($worker)->keys();
+    }
+
+    /**
+     * What the worker is currently holding, newest issue per product.
+     *
+     * Mirrors PpeInventoryService::heldIssues — two of the three questions a
+     * rule can ask are about the ISSUE rather than the product: when it was
+     * handed over (has it passed its replacement interval) and whether anyone
+     * checked it (does the rule demand verification).
+     *
+     * @return Collection<int, PurchaseWorkerPpeIssue>
+     */
+    private function heldIssues(PurchaseWorker $worker): Collection
+    {
+        return $this->heldBy($worker)
+            ->filter(fn (PurchaseWorkerPpeIssue $i) => $i->inventory_item_id)
+            ->sortBy([['issued_date', 'asc'], ['id', 'asc']])
+            // Latest wins: a replacement handed over today is the one that
+            // counts, not the worn item it replaced.
+            ->keyBy('inventory_item_id');
+    }
+
+    /**
+     * Does this issue satisfy this rule, right now?
+     *
+     * Identical to the TPV engine's, through the same shared rule — a worker's
+     * gear cannot be expired on one side of the site and current on the other.
+     */
+    private function issueSatisfies(?PurchaseWorkerPpeIssue $issue, PurchasePpeRequirement $rule): bool
+    {
+        if (! $issue) {
+            return false;
+        }
+
+        if (PpeReplacement::isExpired($issue->issued_date, $rule->replacement_frequency_days)) {
+            return false;
+        }
+
+        return ! $rule->verification_required || $issue->verified_at !== null;
+    }
+
+    /**
+     * The mandatory items this worker is short of, as Inventory products.
+     *
+     * Only MANDATORY rules appear: optional and conditional PPE is advisory and
+     * must never block a badge or a gate crossing.
+     */
+    public function missingMandatoryFor(PurchaseWorker $worker): Collection
+    {
+        $held = $this->heldIssues($worker);
+
+        return $this->requiredFor($worker)
+            ->filter(fn (PurchasePpeRequirement $r) => $r->isMandatory())
+            // Expired gear and unverified gear count as missing — that is the
+            // whole point of a replacement interval and of a verification flag.
+            ->reject(fn (PurchasePpeRequirement $r) => $this->issueSatisfies($held->get($r->product_id), $r))
+            ->map(fn (PurchasePpeRequirement $r) => $r->product)
+            ->values();
+    }
+
+    /**
+     * Whether the worker is equipped enough to be badged, and the full picture.
+     *
+     * Purchase used to have no requirement matrix at all, so the rule was the
+     * weakest the data supported: holding ANY one item counted as equipped. A
+     * worker with one pair of gloves passed a check that on TPV demanded a
+     * helmet and boots BY NAME — and since both the badge and the site gate read
+     * this, that was a safety difference between the engines, not a cosmetic one.
+     *
+     * With rules configured, compliance means holding every mandatory item.
+     * With NONE configured the old behaviour stands (any item counts), so a
+     * tenant that has not filled the matrix in is not suddenly locked out of
+     * issuing badges — the gate tightens as the matrix is filled, never before.
      */
     public function complianceFor(PurchaseWorker $worker): array
     {
         $held = $this->heldBy($worker);
+        $byProduct = $this->heldIssues($worker);
+        $required = $this->requiredFor($worker);
+
+        $items = $required->map(function (PurchasePpeRequirement $r) use ($byProduct) {
+            $issue = $byProduct->get($r->product_id);
+
+            // A badge refused for expired gear and one refused for gear never
+            // handed over are not the same problem, and must not read the same.
+            $expired    = $issue && PpeReplacement::isExpired($issue->issued_date, $r->replacement_frequency_days);
+            $unverified = $issue && $r->verification_required && $issue->verified_at === null;
+
+            return [
+                'product_id' => $r->product_id,
+                'name' => $r->product->name,
+                'sku' => $r->product->sku,
+                'ppe_class' => $r->ppe_class ?? 'mandatory',
+                'condition' => $r->condition,
+                'qty' => $r->qty,
+                'mandatory' => $r->isMandatory(),
+                'replacement_frequency_days' => $r->replacement_frequency_days,
+                'verification_required'      => (bool) $r->verification_required,
+                'issued_date'    => optional($issue?->issued_date)->toDateString(),
+                'replace_due_on' => optional(
+                    PpeReplacement::dueOn($issue?->issued_date, $r->replacement_frequency_days)
+                )->toDateString(),
+                'days_remaining' => $issue
+                    ? PpeReplacement::daysRemaining($issue->issued_date, $r->replacement_frequency_days)
+                    : null,
+                'expired'     => $expired,
+                'unverified'  => $unverified,
+                'verified_at' => optional($issue?->verified_at)->toIso8601String(),
+                // The single yes/no the badge reads: held, in date, and verified
+                // where the rule asks for it.
+                'held' => (bool) $issue && ! $expired && ! $unverified,
+                'reason' => match (true) {
+                    ! $issue    => 'Not issued',
+                    $expired    => 'Past replacement date',
+                    $unverified => 'Awaiting verification',
+                    default     => null,
+                },
+            ];
+        })->values();
+
+        $missing = $items->where('mandatory', true)->where('held', false)->values();
 
         return [
             'designation' => $worker->designation,
-            'items'       => $held->map(fn (PurchaseWorkerPpeIssue $i) => [
-                'issue_id'   => $i->id,
+            // Whether a matrix has been configured at all. The screens need this
+            // to tell "fully equipped" apart from "nothing is required yet".
+            'configured' => $required->isNotEmpty(),
+            'required' => $items->all(),
+            'missing' => $missing->all(),
+            // What the worker actually holds, matrix or no matrix.
+            'items' => $held->map(fn (PurchaseWorkerPpeIssue $i) => [
+                'issue_id' => $i->id,
                 'product_id' => $i->inventory_item_id,
-                'name'       => $i->item,
-                'qty'        => (float) $i->qty - (float) $i->returned_qty,
-                'size'       => $i->size,
-                'issued_on'  => optional($i->issued_date)->toDateString(),
+                'name' => $i->item,
+                'qty' => (float) $i->qty - (float) $i->returned_qty,
+                'size' => $i->size,
+                'issued_on' => optional($i->issued_date)->toDateString(),
             ])->values()->all(),
             'held_count' => $held->count(),
-            'compliant'  => $held->isNotEmpty(),
+            'compliant' => $required->isEmpty() ? $held->isNotEmpty() : $missing->isEmpty(),
         ];
     }
 
@@ -151,10 +302,18 @@ class PurchasePpeService
     public function issue(PurchaseWorker $worker, array $data, ?User $actor = null): PurchaseWorkerPpeIssue
     {
         $tenantId = (int) $worker->tenant_id;
-        $qty      = round((float) ($data['qty'] ?? 0), 3);
+        $qty = round((float) ($data['qty'] ?? 0), 3);
 
         if ($qty <= 0) {
             throw new BusinessException('Quantity must be greater than zero.', 422);
+        }
+
+        if (! empty($data['vendor_ppe_item_id'])) {
+            if (! empty($data['inventory_item_id'])) {
+                throw new BusinessException('Issue either an Inventory item or one of your own PPE items, not both.', 422);
+            }
+
+            return $this->issueVendorItem($worker, $data, $qty, $actor);
         }
 
         $product = Product::forTenant($tenantId)->find($data['inventory_item_id'] ?? null)
@@ -176,33 +335,68 @@ class PurchasePpeService
 
         return DB::transaction(function () use ($worker, $product, $qty, $data, $actor, $tenantId, $warehouseId) {
             $issue = PurchaseWorkerPpeIssue::create([
-                'tenant_id'          => $tenantId,
+                'tenant_id' => $tenantId,
                 'purchase_worker_id' => $worker->id,
-                'inventory_item_id'  => $product->id,
-                'item'               => $product->name,
-                'qty'                => $qty,
-                'size'               => $data['size'] ?? null,
-                'issued_date'        => $data['issued_date'] ?? now()->toDateString(),
-                'issued_by'          => $actor?->id,
-                'notes'              => $data['notes'] ?? null,
-                'status'             => 'issued',
-                'returned_qty'       => 0,
+                'inventory_item_id' => $product->id,
+                'item' => $product->name,
+                'qty' => $qty,
+                'size' => $data['size'] ?? null,
+                'issued_date' => $data['issued_date'] ?? now()->toDateString(),
+                'issued_by' => $actor?->id,
+                'notes' => $data['notes'] ?? null,
+                'status' => 'issued',
+                'returned_qty' => 0,
             ]);
 
             $this->stock->record([
-                'product_id'     => $product->id,
-                'type'           => 'issue',
-                'quantity'       => $qty,
-                'warehouse_id'   => $warehouseId,
-                'reason'         => 'PPE issued to purchase worker',
-                'notes'          => trim(sprintf('%s (worker #%d)', $worker->full_name ?? 'Worker', $worker->id)),
+                'product_id' => $product->id,
+                'type' => 'issue',
+                'quantity' => $qty,
+                'warehouse_id' => $warehouseId,
+                'reason' => 'PPE issued to purchase worker',
+                'notes' => trim(sprintf('%s (worker #%d)', $worker->full_name ?? 'Worker', $worker->id)),
                 'reference_type' => 'purchase_ppe_issue',
-                'reference_id'   => $issue->id,
+                'reference_id' => $issue->id,
             ], $tenantId, $actor?->id);
 
             $this->syncWorkerPpeState($worker);
 
             return $issue->fresh(['product']);
+        });
+    }
+
+    /**
+     * Issue from the vendor's OWN PPE list — the vendor's stock, not the company's.
+     *
+     * No Inventory movement: this stock never entered the ledger. The item must
+     * belong to the worker's own vendor, so one vendor's kit can never be handed
+     * to another vendor's worker, whoever is issuing.
+     */
+    private function issueVendorItem(PurchaseWorker $worker, array $data, float $qty, ?User $actor): PurchaseWorkerPpeIssue
+    {
+        $tenantId = (int) $worker->tenant_id;
+
+        return DB::transaction(function () use ($worker, $data, $qty, $actor, $tenantId) {
+            $item = $this->vendorItems->draw((int) $worker->purchase_vendor_id, $tenantId, (int) $data['vendor_ppe_item_id'], $qty);
+
+            $issue = PurchaseWorkerPpeIssue::create([
+                'tenant_id' => $tenantId,
+                'purchase_worker_id' => $worker->id,
+                'inventory_item_id' => null,
+                'vendor_ppe_item_id' => $item->id,
+                'item' => $item->name,
+                'qty' => $qty,
+                'size' => $data['size'] ?? $item->size,
+                'issued_date' => $data['issued_date'] ?? now()->toDateString(),
+                'issued_by' => $actor?->id,
+                'notes' => $data['notes'] ?? null,
+                'status' => 'issued',
+                'returned_qty' => 0,
+            ]);
+
+            $this->syncWorkerPpeState($worker);
+
+            return $issue->fresh(['product', 'vendorItem']);
         });
     }
 
@@ -222,7 +416,7 @@ class PurchasePpeService
         }
 
         $outstanding = round((float) $issue->qty - (float) $issue->returned_qty, 3);
-        $qty         = round((float) ($data['qty'] ?? $outstanding), 3);
+        $qty = round((float) ($data['qty'] ?? $outstanding), 3);
 
         if ($qty <= 0) {
             throw new BusinessException('Quantity must be greater than zero.', 422);
@@ -237,33 +431,39 @@ class PurchasePpeService
         // Only a genuine return needs a site — resolving one for a write-off would
         // fail a tenant with no warehouse, for a call that touches no stock.
         $movementType = self::RETURN_CONDITIONS[$condition];
-        $warehouseId  = $movementType
+        // Kit from the vendor's own list goes back on the vendor's shelf, not
+        // into a warehouse — so it needs no site at all.
+        $warehouseId = $movementType && $issue->inventory_item_id
             ? $this->resolveWarehouseId((int) $issue->tenant_id, $this->issuedFromWarehouseId($issue))
             : null;
 
         return DB::transaction(function () use ($issue, $qty, $condition, $data, $actor, $movementType, $warehouseId) {
             if ($movementType && $issue->inventory_item_id) {
                 $this->stock->record([
-                    'product_id'     => $issue->inventory_item_id,
-                    'type'           => $movementType,
-                    'quantity'       => $qty,
-                    'warehouse_id'   => $warehouseId,
-                    'reason'         => 'PPE '.$condition,
-                    'notes'          => $data['notes'] ?? null,
+                    'product_id' => $issue->inventory_item_id,
+                    'type' => $movementType,
+                    'quantity' => $qty,
+                    'warehouse_id' => $warehouseId,
+                    'reason' => 'PPE '.$condition,
+                    'notes' => $data['notes'] ?? null,
                     'reference_type' => 'purchase_ppe_issue',
-                    'reference_id'   => $issue->id,
+                    'reference_id' => $issue->id,
                 ], (int) $issue->tenant_id, $actor?->id);
+            }
+
+            if ($movementType && $issue->vendor_ppe_item_id) {
+                $this->vendorItems->restock((int) $issue->vendor_ppe_item_id, $qty);
             }
 
             $returned = round((float) $issue->returned_qty + $qty, 3);
 
             $issue->update([
                 'returned_qty' => $returned,
-                'returned_at'  => now(),
-                'returned_by'  => $actor?->id,
+                'returned_at' => now(),
+                'returned_by' => $actor?->id,
                 'return_notes' => $data['notes'] ?? $issue->return_notes,
                 // Fully accounted for → the issue closes under its outcome.
-                'status'       => $returned >= (float) $issue->qty ? $condition : 'issued',
+                'status' => $returned >= (float) $issue->qty ? $condition : 'issued',
             ]);
 
             if ($issue->worker) {

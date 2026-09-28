@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\Settings\EmailTemplateController;
 use App\Http\Controllers\Api\Settings\FormatSettingController;
 use App\Http\Controllers\Api\Settings\GeneralSettingController;
 use App\Http\Controllers\Api\Settings\MailSettingController;
+use App\Http\Controllers\Api\Settings\WhatsAppSettingController;
 use App\Http\Controllers\Api\Settings\SettingsGroupController;
 use Illuminate\Support\Facades\Route;
 
@@ -33,19 +34,24 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('settings')->group(fun
     // Generic settings groups — Upload / Security / Notification preferences.
     // One controller + one registry; add a group by registering it + the constraint.
     Route::get('/group/{group}', [SettingsGroupController::class, 'show'])
-        ->where('group', 'localization|currency|numbering|upload|security|notifications');
+        ->where('group', 'localization|currency|numbering|upload|security|notifications|compliance_providers');
     Route::put('/group/{group}', [SettingsGroupController::class, 'update'])
-        ->where('group', 'localization|currency|numbering|upload|security|notifications');
+        ->where('group', 'localization|currency|numbering|upload|security|notifications|compliance_providers');
 
-    // Roles & Departments — created from the UI instead of by a developer.
-    // These are staff JOB roles (users.internal_role), not account types:
-    // an account type is a whole portal and stays in code. See the
-    // access_roles migration for why the two are kept apart.
-    Route::get('/roles',                   [AccessCatalogController::class, 'roles']);
-    Route::post('/roles',                  [AccessCatalogController::class, 'storeRole']);
-    Route::put('/roles/{role}',            [AccessCatalogController::class, 'updateRole'])->whereNumber('role');
-    Route::delete('/roles/{role}',         [AccessCatalogController::class, 'destroyRole'])->whereNumber('role');
+    // RETIRED: /settings/roles was a second staff-role manager, writing to
+    // access_roles — a table with no rows and no reader. staff_roles is the
+    // authoritative vocabulary now, maintained at /admin/roles, and it carries
+    // permissions and scope as well as the name. The two names this path
+    // uniquely defined, `hr` and `manager`, live in StaffRoleTemplate as
+    // vocabulary-only roles so routes/sangoetrack.php keeps working unchanged.
+    //
+    // The access_roles TABLE is deliberately left in place — this environment
+    // cannot see production, and removing the way to create rows is what stops
+    // a second source of authority, not dropping the data.
 
+    // Departments here are a SEPARATE duplication of the same shape
+    // (access_departments, 0 rows, versus hr_departments, read by 21 files) and
+    // are deliberately untouched — that is its own cleanup, not this one.
     Route::get('/departments',                   [AccessCatalogController::class, 'departments']);
     Route::post('/departments',                  [AccessCatalogController::class, 'storeDepartment']);
     Route::put('/departments/{department}',      [AccessCatalogController::class, 'updateDepartment'])->whereNumber('department');
@@ -74,6 +80,12 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('settings')->group(fun
     Route::get('/mail',       [MailSettingController::class, 'show']);
     Route::put('/mail',       [MailSettingController::class, 'update']);
     Route::post('/mail/test', [MailSettingController::class, 'testSend']);
+
+    // WhatsApp sender — same shape as /mail: read, save, prove it works.
+    Route::get('/whatsapp',         [WhatsAppSettingController::class, 'show']);
+    Route::put('/whatsapp',         [WhatsAppSettingController::class, 'update']);
+    Route::post('/whatsapp/verify', [WhatsAppSettingController::class, 'verify']);
+    Route::post('/whatsapp/test',   [WhatsAppSettingController::class, 'testSend']);
 
     // Company & Finance (registered state + GSTIN for tax auto-split)
     Route::get('/company', [CompanySettingController::class, 'show']);

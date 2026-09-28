@@ -47,6 +47,10 @@ class MeetingInviteService
         $subject = 'Meeting invitation — '.$meeting->title;
         $ics = $this->buildIcs($meeting);
         $counts = ['sent' => 0, 'skipped' => 0, 'failed' => 0, 'in_app' => 0, 'recipients' => 0];
+        // Named, not just counted. Somebody put these people on the roster and
+        // the send reported success without reaching them — a number in a log
+        // is not going to tell the organiser WHO was never told.
+        $unreachable = [];
 
         // A fresh invitation supersedes the previous one; the old rows are the
         // history of an earlier time/roster and would double-count the tracker.
@@ -61,9 +65,9 @@ class MeetingInviteService
                 $result = $this->notifications->emailHtml(
                     $r['email'],
                     $subject,
-                    $this->renderInvite($meeting, $r['name']),
+                    $this->renderInvite($meeting, $r['name'], $this->meetingUrlFor($r['party'], $meeting)),
                     ['category' => 'System', 'kickoff_meeting_id' => $meeting->id],
-                    $this->inviteText($meeting, $r['name']),
+                    $this->inviteText($meeting, $r['name'], $this->meetingUrlFor($r['party'], $meeting)),
                     $meeting->tenant_id,
                     // The calendar invite — §1's "Send Invitation" is not an
                     // e-mail somebody has to retype into their diary.
@@ -78,6 +82,13 @@ class MeetingInviteService
 
             $counts[$status === MeetingDistribution::SENT ? 'sent'
                 : ($status === MeetingDistribution::FAILED ? 'failed' : 'skipped')]++;
+
+            // Reached by neither channel: no address to mail, and no login to
+            // raise a bell against. They are on the roster and they do not know
+            // about the meeting.
+            if ($status !== MeetingDistribution::SENT && ! $r['user_id']) {
+                $unreachable[] = $r['name'] ?: ($r['email'] ?: 'an unnamed participant');
+            }
 
             MeetingDistribution::create([
                 'tenant_id' => $meeting->tenant_id,
@@ -100,13 +111,17 @@ class MeetingInviteService
                 $meeting, (int) $r['user_id'],
                 'Meeting invitation: '.$meeting->title,
                 $this->whenLine($meeting),
+                $r['party'],
             )) {
                 $counts['in_app']++;
             }
         }
 
+        $counts['unreachable'] = array_values(array_unique($unreachable));
+
         $meeting->recordAudit('invitations_sent', $actor,
-            "Invitations sent: {$counts['sent']} e-mailed, {$counts['in_app']} in-app, {$counts['skipped']} without an address");
+            "Invitations sent: {$counts['sent']} e-mailed, {$counts['in_app']} in-app, {$counts['skipped']} without an address"
+            .($counts['unreachable'] ? ' — not told: '.implode(', ', $counts['unreachable']) : ''));
         Log::channel('tpv')->info('Meeting invitations sent', ['meeting_id' => $meeting->id] + $counts);
 
         return $counts;
@@ -159,7 +174,11 @@ class MeetingInviteService
     }
 
     /** In-app notification for a Sangoe user. Never throws. */
-    public function notifyInApp(KickoffMeeting $meeting, int $userId, string $title, string $message): bool
+    /**
+     * @param  string|null  $party  where this recipient reads the meeting — a
+     *                              vendor opens the portal, everyone else the console
+     */
+    public function notifyInApp(KickoffMeeting $meeting, int $userId, string $title, string $message, ?string $party = null): bool
     {
         try {
             Notification::create([
@@ -168,7 +187,13 @@ class MeetingInviteService
                 'type' => 'meeting',
                 'title' => $title,
                 'message' => $message,
-                'link' => '/app/tpv/kickoff/'.$meeting->id,
+                // This was always the staff console, so a vendor following their
+                // own notification arrived at a page they have no access to —
+                // the same bug the invitation e-mail had, still here because the
+                // bell was fixed separately from the mail.
+                'link' => $party === MeetingDistribution::PARTY_VENDOR
+                    ? '/vendor-portal/governance'
+                    : '/app/tpv/kickoff/'.$meeting->id,
             ]);
 
             return true;
@@ -192,24 +217,66 @@ class MeetingInviteService
      */
     public function recipients(KickoffMeeting $meeting): array
     {
-        $meeting->loadMissing('attendees');
+        $meeting->loadMissing('attendees', 'kickoffable', 'creator');
         $out = [];
         $seen = [];
 
-        foreach ($meeting->attendees as $a) {
-            $key = strtolower((string) ($a->email ?: 'row#'.$a->id));
-            if (isset($seen[$key])) {
-                continue;
+        $add = function (?string $name, ?string $email, string $party, ?int $attendeeId, ?int $userId) use (&$out, &$seen) {
+            $key = strtolower((string) ($email ?: 'row#'.$attendeeId));
+            if ($key === '' || isset($seen[$key])) {
+                return;
             }
             $seen[$key] = true;
-
             $out[] = [
-                'name' => $a->name,
-                'email' => $a->email,
-                'party' => $this->partyFor($a),
-                'attendee_id' => $a->id,
-                'user_id' => $a->user_id,
+                'name' => $name,
+                'email' => $email,
+                'party' => $party,
+                'attendee_id' => $attendeeId,
+                'user_id' => $userId,
             ];
+        };
+
+        foreach ($meeting->attendees as $a) {
+            $add($a->name, $a->email, $this->partyFor($a), $a->id, $a->user_id);
+        }
+
+        /*
+         * The vendor the meeting is ABOUT, and the person who called it.
+         *
+         * This list used to be the typed roster and nothing else, which meant a
+         * meeting scheduled for a vendor without anybody hand-adding a
+         * participant row invited nobody at all — the send reported success
+         * having e-mailed no one, and the vendor first heard about the meeting
+         * when it did not happen. The two people who are certainly involved are
+         * the vendor and the organiser, and neither had to be on the roster.
+         *
+         * Added after the roster, and skipped when the same address is already
+         * there, so anybody explicitly listed keeps their own name and party.
+         */
+        $subject = $meeting->kickoffable;
+        if ($subject && (! empty($subject->email) || ! empty($subject->user_id))) {
+            $add(
+                $subject->company_name ?? $subject->name ?? 'Vendor',
+                $subject->email,
+                MeetingDistribution::PARTY_VENDOR,
+                null,
+                // The vendor's own portal login. This was hard-coded null, so
+                // the one recipient the meeting is ABOUT was the only one who
+                // never got a bell notification — they had an e-mail and nothing
+                // in the CRM, which is the opposite of the intent. Both vendor
+                // tables carry the login as user_id.
+                $subject->user_id ?? null,
+            );
+        }
+
+        if ($meeting->creator && $meeting->creator->email) {
+            $add(
+                $meeting->creator->name,
+                $meeting->creator->email,
+                MeetingDistribution::PARTY_INTERNAL,
+                null,
+                $meeting->creator->id,
+            );
         }
 
         return $out;
@@ -268,7 +335,21 @@ class MeetingInviteService
         return $where ? $when.' — '.$where : $when;
     }
 
-    private function renderInvite(KickoffMeeting $meeting, ?string $name): string
+    /**
+     * Where this recipient opens the meeting.
+     *
+     * Every invitation used to point at /app/tpv/kickoff/{id}, which is the
+     * staff console — a vendor following it arrived at a login screen they have
+     * no account for. The party is already known per recipient, so it is used.
+     */
+    private function meetingUrlFor(string $party, KickoffMeeting $meeting): string
+    {
+        return $party === MeetingDistribution::PARTY_VENDOR
+            ? FrontendUrl::to('/vendor-portal/governance')
+            : FrontendUrl::to('/app/tpv/kickoff/'.$meeting->id);
+    }
+
+    private function renderInvite(KickoffMeeting $meeting, ?string $name, string $url): string
     {
         return view('emails.shared.meeting_invite', [
             'meeting' => $meeting,
@@ -276,13 +357,13 @@ class MeetingInviteService
             'whenLine' => $this->whenLine($meeting),
             'agendaItems' => $meeting->agendaItems,
             'subjectName' => KickoffSubject::nameOf($meeting->kickoffable),
-            'url' => FrontendUrl::to('/app/tpv/kickoff/'.$meeting->id),
+            'url' => $url,
             'companyName' => config('app.name', 'Our Company'),
             'logoUrl' => config('mail.logo_url'),
         ])->render();
     }
 
-    private function inviteText(KickoffMeeting $meeting, ?string $name): string
+    private function inviteText(KickoffMeeting $meeting, ?string $name, string $url): string
     {
         $lines = ['Dear '.($name ?: 'Sir/Madam').',', ''];
         $lines[] = 'You are invited to the following meeting.';
@@ -303,14 +384,23 @@ class MeetingInviteService
             $lines[] = ($i + 1).'. '.$item->item;
         }
 
-        // The HTML part has a Join button; the text part had nothing, so a
-        // plain-text client showed an invitation with no way to join.
+        /*
+         * The join link is deliberately NOT here.
+         *
+         * It used to be — in this text part, in the HTML button, and in the
+         * calendar attachment — which made the CRM something people walked past
+         * on their way to the call. Nobody read the agenda and nobody was
+         * recorded as attending, which is why the register kept coming out
+         * empty. The invitation now points at the meeting in the CRM, where the
+         * agenda is, and the link is released on marking attendance there.
+         *
+         * The passcode goes with it: on its own it is useless, and alongside a
+         * link it would be half a bypass.
+         */
         if ($meeting->meeting_link) {
             $lines[] = '';
-            $lines[] = 'Join link: '.$meeting->meeting_link;
-            if ($meeting->meeting_passcode) {
-                $lines[] = 'Passcode: '.$meeting->meeting_passcode;
-            }
+            $lines[] = 'This meeting is online. Open it in the CRM and mark your attendance to get the joining link:';
+            $lines[] = $url;
         }
 
         $lines[] = '';
@@ -328,6 +418,10 @@ class MeetingInviteService
      */
     private function buildIcs(KickoffMeeting $meeting): string
     {
+        // One calendar file goes to every recipient, so unlike the e-mail body
+        // it cannot be addressed per party. It points at the staff console; the
+        // vendor's own portal link is in the body they receive.
+        $crmUrl = FrontendUrl::to('/app/tpv/kickoff/'.$meeting->id);
         $start = $meeting->scheduled_at ?: now()->addDay();
         $end = $meeting->end_at
             ?: (clone $start)->addMinutes($meeting->duration_minutes ?: 60);
@@ -339,6 +433,8 @@ class MeetingInviteService
             $meeting->meeting_type_label,
             $meeting->agenda ? 'Agenda: '.$meeting->agenda : null,
             $meeting->chairperson ? 'Chairperson: '.$meeting->chairperson : null,
+            // Somewhere to go from the diary entry — the CRM, not the call.
+            $meeting->meeting_link ? 'Mark your attendance in the CRM for the joining link: '.$crmUrl : null,
         ])));
 
         $lines = [
@@ -354,7 +450,11 @@ class MeetingInviteService
             'DTEND:'.$stamp($end),
             'SUMMARY:'.$esc($meeting->title),
             'DESCRIPTION:'.$esc($description),
-            'LOCATION:'.$esc($meeting->meeting_link ?: $meeting->location),
+            // The join link never goes in the calendar entry. A LOCATION
+            // holding a Meet URL is one click away in every diary that ever
+            // synced this event — permanently outside the gate, and outside
+            // anything we could later revoke.
+            'LOCATION:'.$esc($meeting->location ?: ($meeting->meeting_link ? $crmUrl : '')),
             'STATUS:CONFIRMED',
             'END:VEVENT',
             'END:VCALENDAR',

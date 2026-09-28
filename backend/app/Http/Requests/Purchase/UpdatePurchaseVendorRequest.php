@@ -21,10 +21,30 @@ class UpdatePurchaseVendorRequest extends FormRequest
             // Format-validated optional fields (§8)
             'phone'               => ['nullable', 'string', 'max:30', 'regex:/^[0-9+\-()\s]{6,30}$/'],
             'website'             => ['nullable', 'string', 'max:200', 'regex:~^(https?://)?([\w-]+\.)+[\w-]{2,}(/\S*)?$~i'],
+            // The person we deal with, and the company details self-registration
+            // collects. Free text for manpower and MSME — suppliers answer
+            // "50-100" and "Yes" as readily as a number or a code.
+            'contact_person'      => 'nullable|string|max:150',
+            'contact_designation' => 'nullable|string|max:120',
+            'company_phone'       => ['nullable', 'string', 'max:30', 'regex:/^[0-9+\-()\s]{6,30}$/'],
+            'manpower'            => 'nullable|string|max:60',
+            'msme'                => 'nullable|string|max:120',
             'gst_number'          => ['nullable', 'string', 'max:20', 'regex:/^[0-9A-Za-z]{1,20}$/'],
-            // Required when present per §8 (Company, Vendor Category, Currency)
-            'category'            => 'sometimes|required|string|max:120',
-            'currency'            => 'sometimes|required|in:INR,USD,EUR',
+            /*
+             * `sometimes|required` means "if the key is present it must have a
+             * value" — and the edit form posts the whole record, so a vendor
+             * whose category was already null sent category:null and was
+             * refused. The thirteen-field form does not ask for a category, so
+             * there was no field on screen to fix it in: the save simply failed
+             * with "The category field is required" pointing at nothing.
+             *
+             * Vendors with a null category already existed before any of this —
+             * they arrive through self-registration and conversion — so the rule
+             * was rejecting records the table already held. Both fields stay
+             * editable on the vendor's Profile tab. See the Store request.
+             */
+            'category'            => 'nullable|string|max:120',
+            'currency'            => 'nullable|in:INR,USD,EUR',
             'language'            => 'nullable|in:System Default,English',
             // Profile / financial (Purchase-owned)
             'balance'             => 'nullable|numeric',

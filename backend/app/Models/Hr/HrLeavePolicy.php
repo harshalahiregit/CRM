@@ -6,7 +6,8 @@ use App\Models\Traits\Auditable;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Leave Policy (Leave Phase 1). Optionally scoped to a Grade / Designation from
+ * Leave Policy (Leave Phase 1). Optionally scoped to a Grade / Designation /
+ * Department from
  * Organization Setup (reused, not duplicated). Maps to leave types via policyTypes.
  */
 class HrLeavePolicy extends Model
@@ -16,7 +17,7 @@ class HrLeavePolicy extends Model
     protected $table = 'hr_leave_policies';
 
     protected $fillable = [
-        'tenant_id', 'name', 'applies_to', 'grade_id', 'designation_id',
+        'tenant_id', 'name', 'applies_to', 'grade_id', 'designation_id', 'department_id',
         'probation_allowed', 'notice_period_allowed', 'weekends_count', 'holidays_count',
         'half_day_allowed', 'negative_balance_allowed', 'description', 'is_active',
         'created_by', 'updated_by',
@@ -45,5 +46,10 @@ class HrLeavePolicy extends Model
     public function designation()
     {
         return $this->belongsTo(HrDesignation::class, 'designation_id');
+    }
+
+    public function department()
+    {
+        return $this->belongsTo(HrDepartment::class, 'department_id');
     }
 }

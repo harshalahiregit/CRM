@@ -113,15 +113,28 @@ export const purchaseKickoffApi = {
   update:    (id, payload) => k.update(id, toPurchaseMeeting(payload)),
   delete:    k.remove,
   transition: k.transition,
-  // Shared: markAttendance. Purchase: attendance.
+  // Shared: markAttendance. Purchase: attendance. This is the organiser ticking
+  // other people's rows after the fact.
   markAttendance: k.attendance,
+  // Marking MYSELF present, which is what releases the joining link — a
+  // different action, a different verb, and deliberately a different name from
+  // the one above. See MeetingAttendanceGate.
+  markOwnAttendance: (id, where) => k.markOwnAttendance(id, where),
+  // The organiser's verdict on who actually attended: the three slabs, kept
+  // beside each person's own mark rather than over it. See
+  // MeetingAttendanceReview.
+  attendanceRegister: (id) => k.attendanceRegister(id),
+  reviewAttendance: (id, rows) => k.reviewAttendance(id, rows),
   roomNotes: k.roomNotes,
+  roomPresence: k.roomPresence,
   remind:    k.remind,
 
   // Purchase meetings mint their link on their own route — same method names as
   // the shared engine so the meeting pages need no branch.
   generateLink: (id, platform = null) => k.generateLink(id, platform),
   getLink:      (id) => k.getLink(id),
+  setLink:      (id, link) => k.setLink(id, link),
+  announceLink: (id) => k.announceLink(id),
   publish:   k.publish,
   history:   k.history,
   // The shared page's carryForward is the read-only PREVIEW — GET with subject
@@ -185,6 +198,12 @@ export const purchaseKickoffApi = {
 
   /* ── Registers + pickers ──────────────────────────────────── */
   registers:    k.registers,
+  // Purchase's own category picker -- same shape, its own vendor set. Missing
+  // this is the "api.<name> is not a function" the parity guard exists to catch.
+  participants: k.participants,
+  // The four-column attendance sheet, same shape both sides.
+  parties:      k.parties,
+  partyPeople:  (party, entityId) => k.partyPeople(party, entityId),
   staff:        k.staff,
   vendors:      k.vendors,
   vendorStatus: (vendorId, excludeMeetingId) => k.vendorStatus(vendorId, excludeMeetingId),

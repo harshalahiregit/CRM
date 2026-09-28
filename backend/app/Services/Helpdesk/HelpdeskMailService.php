@@ -11,8 +11,8 @@ use App\Models\Helpdesk\TicketReply;
 use App\Models\User;
 use App\Services\Helpdesk\Contracts\CustomerServiceContract;
 use App\Services\Helpdesk\Mocks\MockCustomerService;
+use App\Services\Mail\TenantMailer;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 
 /**
  * Sends the customer-facing helpdesk emails (acknowledge on create, deliver
@@ -28,9 +28,12 @@ class HelpdeskMailService
 {
     private CustomerServiceContract $customers;
 
-    public function __construct(?CustomerServiceContract $customers = null)
+    private TenantMailer $mailer;
+
+    public function __construct(?CustomerServiceContract $customers = null, ?TenantMailer $mailer = null)
     {
         $this->customers = $customers ?? new MockCustomerService();
+        $this->mailer = $mailer ?? app(TenantMailer::class);
     }
 
     /** The requester's own address wins; fall back to the linked customer record. */
@@ -57,8 +60,9 @@ class HelpdeskMailService
             return; // internal ticket with no external requester — nothing to ack
         }
 
-        $this->safely(fn () => Mail::to($to['email'])->send(new TicketReceivedMail($ticket, $to['name'])),
-            "acknowledgement for ticket #{$ticket->id}");
+        $this->safely(fn () => $this->mailer->send(
+            $ticket->tenant_id, $to['email'], new TicketReceivedMail($ticket, $to['name']), $this->standingCc($ticket, $to),
+        ), "acknowledgement for ticket #{$ticket->id}");
     }
 
     public function sendStaffReply(Ticket $ticket, TicketReply $reply, string $agentName): void
@@ -72,7 +76,12 @@ class HelpdeskMailService
         // reply; drop blanks and the primary recipient (no point Cc'ing them the
         // mail they're already the To of). Without this the Cc field was captured
         // and saved but never actually copied anyone — "Cc not working".
-        $cc = collect($reply->cc ?? [])
+        // Two lists, merged: whoever was Cc'd when the TICKET was raised gets
+        // every message on it, and whoever the agent adds on THIS reply gets
+        // this one. Re-typing the manager on every message was the reason the
+        // standing list exists.
+        $cc = collect($ticket->cc ?? [])
+            ->merge($reply->cc ?? [])
             ->filter(fn ($e) => is_string($e) && filter_var(trim($e), FILTER_VALIDATE_EMAIL))
             ->map(fn ($e) => strtolower(trim($e)))
             ->reject(fn ($e) => $e === strtolower(trim($to['email'])))
@@ -81,11 +90,12 @@ class HelpdeskMailService
             ->all();
 
         $this->safely(function () use ($to, $cc, $ticket, $reply, $agentName) {
-            $mailer = Mail::to($to['email']);
-            if (! empty($cc)) {
-                $mailer->cc($cc);
-            }
-            $mailer->send(new TicketReplyMail($ticket, $reply, $to['name'], $agentName));
+            $this->mailer->send(
+                $ticket->tenant_id,
+                $to['email'],
+                new TicketReplyMail($ticket, $reply, $to['name'], $agentName),
+                $cc,
+            );
         }, "reply email for ticket #{$ticket->id}");
     }
 
@@ -96,8 +106,9 @@ class HelpdeskMailService
             return;
         }
 
-        $this->safely(fn () => Mail::to($to['email'])->send(new TicketStatusUpdateMail($ticket, $to['name'], $oldStatus, $newStatus)),
-            "status-update email for ticket #{$ticket->id}");
+        $this->safely(fn () => $this->mailer->send(
+            $ticket->tenant_id, $to['email'], new TicketStatusUpdateMail($ticket, $to['name'], $oldStatus, $newStatus), $this->standingCc($ticket, $to),
+        ), "status-update email for ticket #{$ticket->id}");
     }
 
     public function sendAssignment(Ticket $ticket, ?int $userId): void
@@ -111,8 +122,30 @@ class HelpdeskMailService
             return;
         }
 
-        $this->safely(fn () => Mail::to($user->email)->send(new TicketAssignedMail($ticket, $user->name ?: 'there')),
+        $this->safely(fn () => $this->mailer->send($ticket->tenant_id, $user->email, new TicketAssignedMail($ticket, $user->name ?: 'there')),
             "assignment email for ticket #{$ticket->id}");
+    }
+
+    /**
+     * The ticket's standing Cc list, ready to hand to the mailer.
+     *
+     * Set once when the ticket is raised and applied to every outbound message
+     * on it, so the manager who should follow the whole conversation is not
+     * re-typed on each reply — and is not silently dropped the one time
+     * somebody forgets.
+     *
+     * @param  array{email:string,name:string}  $to
+     * @return string[]
+     */
+    private function standingCc(Ticket $ticket, array $to): array
+    {
+        return collect($ticket->cc ?? [])
+            ->filter(fn ($e) => is_string($e) && filter_var(trim($e), FILTER_VALIDATE_EMAIL))
+            ->map(fn ($e) => strtolower(trim($e)))
+            ->reject(fn ($e) => $e === strtolower(trim($to['email'])))
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function safely(callable $send, string $what): void

@@ -2,6 +2,7 @@
 
 namespace App\Services\Purchase;
 
+use App\Support\Medical\MedicalEvidence;
 use App\Exceptions\BusinessException;
 use App\Models\Purchase\PurchaseMedicalBulkBatch;
 use App\Models\Purchase\PurchaseMedicalMessage;
@@ -395,6 +396,8 @@ class PurchaseMedicalWorkflowService
                 'required' => false, 'cleared' => true, 'bypassed' => true,
                 'status' => 'not_applicable',
                 'message' => 'Medical is not applicable for this project.',
+                'owner' => \App\Support\Shared\MedicalClearanceMessage::OWNER_NONE,
+                'action' => null,
                 'medical_id' => null,
             ];
         }
@@ -406,22 +409,22 @@ class PurchaseMedicalWorkflowService
             : $worker->latestMedical()->first();
         $pending = (string) ($config['pending_message'] ?? 'Medical Report is Pending');
 
-        [$status, $message] = match (true) {
-            ! $medical                                        => ['missing',  $pending.' — no examination has been recorded.'],
-            $medical->qc_status === MedicalQcStatus::REJECTED => ['rejected', 'Medical was rejected by the quality team. A re-examination is required.'],
-            $medical->qc_status === MedicalQcStatus::HOLD     => ['hold',     $pending.' — the quality team has queried the certificate.'],
-            $medical->qc_status === MedicalQcStatus::PENDING  => ['pending',  $pending.' — awaiting quality check.'],
-            ! $medical->isPassing()                           => ['unfit',    'The medical outcome is not Fit.'],
-            $medical->isExpired()                             => ['expired',  'The medical certificate has expired.'],
-            default                                           => ['approved', 'Medical clearance is complete.'],
-        };
+        // What is wrong, WHOSE MOVE it is, and what to do about it. The old
+        // wording named the state and stopped there — "awaiting quality check"
+        // reads as "you still owe us something", so vendors went looking for a
+        // missing document that was already submitted.
+        $clearance = \App\Support\Shared\MedicalClearanceMessage::for($medical, $pending);
 
         return [
             'required'   => true,
-            'cleared'    => $status === 'approved',
+            'cleared'    => $clearance['status'] === 'approved',
             'bypassed'   => false,
-            'status'     => $status,
-            'message'    => $message,
+            'status'     => $clearance['status'],
+            'message'    => $clearance['message'],
+            // Who has to act, and the concrete next step. `action` is null when
+            // there is nothing for the vendor to do — which is itself the answer.
+            'owner'      => $clearance['owner'],
+            'action'     => $clearance['action'],
             'medical_id' => $medical?->id,
         ];
     }
@@ -699,19 +702,9 @@ class PurchaseMedicalWorkflowService
 
     private function storeDataUrl(?string $dataUrl, string $prefix): ?string
     {
-        if (! $dataUrl || ! str_contains($dataUrl, 'base64,')) {
-            return null;
-        }
-
-        $binary = base64_decode(explode('base64,', $dataUrl)[1], true);
-        if ($binary === false) {
-            return null;
-        }
-
-        $path = $prefix.uniqid().'.png';
-        Storage::disk('public')->put($path, $binary);
-
-        return $path;
+        // Private disk, random name — see MedicalEvidence for why the old
+        // public-disk + uniqid() arrangement was not the protection it looked.
+        return MedicalEvidence::put($dataUrl, $prefix);
     }
 
     /**
