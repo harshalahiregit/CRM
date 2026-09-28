@@ -6,9 +6,10 @@ import LoginScreen from './src/screens/LoginScreen'
 import RegisterScreen from './src/screens/RegisterScreen'
 import TripsScreen from './src/screens/TripsScreen'
 import TripDetailScreen from './src/screens/TripDetailScreen'
+import ProfileScreen from './src/screens/ProfileScreen'
 
 export default function App() {
-  const [screen, setScreen] = useState('loading') // loading | login | trips | detail
+  const [screen, setScreen] = useState('loading') // loading | login | register | trips | detail | profile
   const [user, setUser] = useState(null)
   const [trip, setTrip] = useState(null)
 
@@ -45,12 +46,17 @@ export default function App() {
         <TripsScreen
           user={user}
           onOpen={(t) => { setTrip(t); setScreen('detail') }}
+          onProfile={() => setScreen('profile')}
           onSignOut={() => { setUser(null); setScreen('login') }}
         />
       )}
 
       {screen === 'detail' && trip && (
         <TripDetailScreen trip={trip} onBack={() => setScreen('trips')} />
+      )}
+
+      {screen === 'profile' && (
+        <ProfileScreen user={user} onBack={() => setScreen('trips')} />
       )}
     </View>
   )

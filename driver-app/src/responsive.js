@@ -1,30 +1,34 @@
-// One place that makes every screen fit the phone it is on.
+// One hook that makes every screen fit the phone it is on — the responsive
+// engine behind the design system.
 //
-// - topInset  : keeps content out from under the status bar / notch. The old
-//               screens hard-coded 56px, which overlapped the clock on some
-//               phones and left a gap on others.
-// - f(n)      : scales a font/size to the screen width, gently clamped so a
-//               small phone shrinks a little and a big one grows a little,
-//               never to extremes.
-// - gutter    : the side padding, tighter on narrow phones, roomier on wide.
-// - maxContent: caps how wide a form/card gets on a tablet, and we centre it.
+// - topInset/bottomInset : keep content clear of the status bar and the gesture
+//   bar / home indicator.
+// - f(n)  : scale a size to the screen width, gently clamped.
+// - sp    : the spacing scale, already scaled for the device.
+// - gutter, maxContent : side padding and a max content width (centred on wide
+//   screens) so a form or list never stretches ugly on a tablet.
 import { useWindowDimensions, StatusBar, Platform } from 'react-native'
+import { space } from './theme'
 
 export function useLayout() {
   const { width, height } = useWindowDimensions()
 
-  // Reserve the status-bar height. Android reports it; iOS we approximate from
-  // whether the device is a notched (tall) one.
   const topInset = Platform.OS === 'android'
     ? (StatusBar.currentHeight || 24)
-    : (height >= 812 ? 44 : 20)
+    : (height >= 812 ? 47 : 20)
+  // Android draws over the gesture bar; leave room so buttons aren't under it.
+  const bottomInset = Platform.OS === 'ios' ? (height >= 812 ? 34 : 12) : 12
 
-  const scale = Math.min(Math.max(width / 380, 0.9), 1.25)
+  const scale = Math.min(Math.max(width / 380, 0.9), 1.3)
   const f = (n) => Math.round(n * scale)
 
-  const gutter = width < 350 ? 16 : width >= 600 ? 32 : 22
-  const maxContent = 560
-  const isTablet = width >= 600
+  // Spacing, scaled once here so screens can write sp.lg etc.
+  const sp = Object.fromEntries(Object.entries(space).map(([k, v]) => [k, f(v)]))
 
-  return { width, height, topInset, f, gutter, maxContent, isTablet }
+  const isSmall = width < 350
+  const isTablet = width >= 700
+  const gutter = isSmall ? 16 : isTablet ? 40 : 20
+  const maxContent = 600
+
+  return { width, height, topInset, bottomInset, f, sp, gutter, maxContent, isSmall, isTablet }
 }

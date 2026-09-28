@@ -1,28 +1,27 @@
 import { useState, useEffect } from 'react'
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform } from 'react-native'
-import { theme } from '../theme'
+import { View, Text, Pressable } from 'react-native'
+import { theme, radius } from '../theme'
 import { api } from '../api'
 import { setToken, setUser, getBaseUrl, setBaseUrl } from '../storage'
 import { DEFAULT_SERVER } from '../config'
 import { useLayout } from '../responsive'
+import { Screen, Field, Button } from '../ui'
 
 export default function LoginScreen({ onLoggedIn, onRegister }) {
-  const { topInset, f, gutter, maxContent } = useLayout()
+  const { f } = useLayout()
   const [server, setServer] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showServer, setShowServer] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
-  // Pre-fill the live server; remember a custom one if the driver set it.
   useEffect(() => { getBaseUrl().then((u) => setServer(u || DEFAULT_SERVER)) }, [])
 
   const submit = async () => {
     setErr('')
-    const base = server.trim().replace(/\/+$/, '')
-    if (!base) return setErr('Enter the server address (ask the office).')
+    const base = (server || DEFAULT_SERVER).trim().replace(/\/+$/, '')
     if (!email.trim() || !password) return setErr('Enter your email and password.')
-
     setBusy(true)
     try {
       await setBaseUrl(base)
@@ -31,61 +30,51 @@ export default function LoginScreen({ onLoggedIn, onRegister }) {
       if (result.user) await setUser(result.user)
       onLoggedIn(result.user)
     } catch (e) {
-      setErr(e?.message || 'Could not sign in.')
+      setErr(e?.message || 'Could not sign in. Check your details and try again.')
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: theme.bg, paddingTop: topInset }}>
-      <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: gutter, paddingVertical: f(28) }} keyboardShouldPersistTaps="handled">
-        <View style={{ width: '100%', maxWidth: maxContent, alignSelf: 'center' }}>
-          <Text style={{ color: theme.text, fontSize: f(28), fontWeight: '900', marginBottom: 4 }}>Sangoé Driver</Text>
-          <Text style={{ color: theme.textMuted, fontSize: f(15), marginBottom: f(32) }}>Sign in to see your trip.</Text>
-
-          <Label f={f}>Server address</Label>
-          <Input f={f} value={server} onChangeText={setServer} placeholder="http://192.168.1.5:8000"
-            autoCapitalize="none" keyboardType="url" />
-          <Hint f={f}>The address the office gives you — the machine STOS runs on.</Hint>
-
-          <Label f={f} style={{ marginTop: f(18) }}>Email</Label>
-          <Input f={f} value={email} onChangeText={setEmail} placeholder="you@company.com"
-            autoCapitalize="none" keyboardType="email-address" />
-
-          <Label f={f} style={{ marginTop: f(18) }}>Password</Label>
-          <Input f={f} value={password} onChangeText={setPassword} placeholder="••••••••" secureTextEntry />
-
-          {err ? <Text style={{ color: theme.danger, fontSize: f(14), marginTop: 16 }}>{err}</Text> : null}
-
-          <TouchableOpacity onPress={submit} disabled={busy} activeOpacity={0.85}
-            style={{ backgroundColor: theme.accent, borderRadius: 14, paddingVertical: f(16), alignItems: 'center', marginTop: f(28), opacity: busy ? 0.6 : 1 }}>
-            {busy ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontSize: f(16), fontWeight: '800' }}>Sign in</Text>}
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={onRegister} style={{ alignItems: 'center', marginTop: f(20) }}>
-            <Text style={{ color: theme.textMuted, fontSize: f(14.5) }}>
-              New driver?  <Text style={{ color: theme.accent, fontWeight: '700' }}>Register</Text>
-            </Text>
-          </TouchableOpacity>
+    <Screen center>
+      {/* Brand */}
+      <View style={{ alignItems: 'center', marginBottom: f(28) }}>
+        <View style={{ width: f(64), height: f(64), borderRadius: radius.xl, backgroundColor: theme.primaryTint, alignItems: 'center', justifyContent: 'center', marginBottom: f(16) }}>
+          <Text style={{ fontSize: f(32) }}>🚚</Text>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
-  )
-}
+        <Text style={{ color: theme.text, fontSize: f(28), fontWeight: '900' }}>Sangoé Driver</Text>
+        <Text style={{ color: theme.textMuted, fontSize: f(14.5), marginTop: f(5) }}>Sign in to see your trip.</Text>
+      </View>
 
-function Label({ children, style, f }) {
-  return <Text style={[{ color: theme.text, fontSize: f(14), fontWeight: '700', marginBottom: 8 }, style]}>{children}</Text>
-}
-function Hint({ children, f }) {
-  return <Text style={{ color: theme.textMuted, fontSize: f(12.5), marginTop: 6 }}>{children}</Text>
-}
-function Input({ f, ...props }) {
-  return (
-    <TextInput
-      placeholderTextColor={theme.textMuted}
-      {...props}
-      style={{ backgroundColor: theme.input, borderColor: theme.border, borderWidth: 1, borderRadius: 12,
-        paddingHorizontal: 14, paddingVertical: f(14), color: theme.text, fontSize: f(16) }} />
+      <Field label="Email" value={email} onChangeText={setEmail} placeholder="you@company.com"
+        autoCapitalize="none" keyboardType="email-address" />
+      <View style={{ height: f(14) }} />
+      <Field label="Password" value={password} onChangeText={setPassword} placeholder="••••••••" secureTextEntry />
+
+      {err ? <Text style={{ color: theme.danger, fontSize: f(14), marginTop: f(14), lineHeight: f(19) }}>{err}</Text> : null}
+
+      <View style={{ height: f(24) }} />
+      <Button title="Sign in" onPress={submit} loading={busy} />
+
+      <Pressable onPress={onRegister} hitSlop={10} style={({ pressed }) => ({ alignItems: 'center', marginTop: f(22), opacity: pressed ? 0.6 : 1 })}>
+        <Text style={{ color: theme.textMuted, fontSize: f(14.5) }}>
+          New driver?  <Text style={{ color: theme.primary, fontWeight: '800' }}>Register</Text>
+        </Text>
+      </Pressable>
+
+      {/* Server address is an advanced setting; hidden by default so the screen
+          is clean, but reachable for testing against another server. */}
+      <Pressable onPress={() => setShowServer((v) => !v)} hitSlop={8} style={{ alignItems: 'center', marginTop: f(28) }}>
+        <Text style={{ color: theme.textFaint, fontSize: f(12.5) }}>{showServer ? 'Hide server settings' : 'Server settings'}</Text>
+      </Pressable>
+      {showServer ? (
+        <View style={{ marginTop: f(12) }}>
+          <Field label="Server address" value={server} onChangeText={setServer}
+            placeholder={DEFAULT_SERVER} autoCapitalize="none" keyboardType="url"
+            hint="Leave as-is unless the office told you otherwise." />
+        </View>
+      ) : null}
+    </Screen>
   )
 }

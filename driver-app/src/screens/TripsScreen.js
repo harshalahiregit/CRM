@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
-import { View, Text, TouchableOpacity, FlatList, RefreshControl, ActivityIndicator } from 'react-native'
-import { theme } from '../theme'
+import { View, Text, Pressable, FlatList, RefreshControl } from 'react-native'
+import { theme, radius } from '../theme'
 import { api } from '../api'
 import { signOut } from '../storage'
 import { statusLabel, statusColor } from '../status'
 import { useLayout } from '../responsive'
+import { AppBar, Card, Loading, EmptyState, Button } from '../ui'
 
-export default function TripsScreen({ user, onOpen, onSignOut }) {
-  const { topInset, f, gutter, maxContent } = useLayout()
+export default function TripsScreen({ user, onOpen, onProfile, onSignOut }) {
+  const { f, gutter, maxContent, topInset, bottomInset } = useLayout()
   const [trips, setTrips] = useState([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -17,47 +18,52 @@ export default function TripsScreen({ user, onOpen, onSignOut }) {
     setErr('')
     try {
       const result = await api.trips({ open: 1, per_page: 50 })
-      // The list may arrive as a paginator ({ data: [...] }) or a bare array.
       const rows = Array.isArray(result) ? result : (result?.data ?? [])
       setTrips(rows)
     } catch (e) {
       setErr(e?.message || 'Could not load your trips.')
     } finally {
-      setLoading(false)
-      setRefreshing(false)
+      setLoading(false); setRefreshing(false)
     }
   }, [])
 
   useEffect(() => { load() }, [load])
-
   const onRefresh = () => { setRefreshing(true); load() }
+
+  const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg, paddingTop: topInset }}>
-      <View style={{ paddingTop: f(14), paddingHorizontal: gutter, paddingBottom: 14, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-        <View style={{ flex: 1, paddingRight: 12 }}>
-          <Text style={{ color: theme.text, fontSize: f(24), fontWeight: '900' }}>My trips</Text>
-          {user?.name ? <Text style={{ color: theme.textMuted, fontSize: f(14), marginTop: 2 }} numberOfLines={1}>{user.name}</Text> : null}
-        </View>
-        <TouchableOpacity onPress={async () => { await signOut(); onSignOut() }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Text style={{ color: theme.textMuted, fontSize: f(14), fontWeight: '700' }}>Sign out</Text>
-        </TouchableOpacity>
-      </View>
+      <AppBar
+        title="My trips"
+        subtitle={user?.name ? `${greeting}, ${user.name.split(' ')[0]}` : greeting}
+        right={<View style={{ flexDirection: 'row', alignItems: 'center', gap: f(14) }}>
+          <Pressable onPress={onProfile} hitSlop={12} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
+            <View style={{ width: f(34), height: f(34), borderRadius: f(17), backgroundColor: theme.primaryTint, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: theme.primary, fontSize: f(14), fontWeight: '900' }}>{(user?.name || '?').trim().charAt(0).toUpperCase()}</Text>
+            </View>
+          </Pressable>
+          <Pressable onPress={async () => { await signOut(); onSignOut() }} hitSlop={12}
+            style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
+            <Text style={{ color: theme.textMuted, fontSize: f(13.5), fontWeight: '700' }}>Sign out</Text>
+          </Pressable>
+        </View>}
+      />
 
       {loading ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator color={theme.accent} /></View>
+        <Loading label="Loading your trips…" />
       ) : err ? (
-        <Centered><Text style={{ color: theme.danger, fontSize: f(15), textAlign: 'center' }}>{err}</Text>
-          <TouchableOpacity onPress={load} style={{ marginTop: 14 }}><Text style={{ color: theme.accent, fontWeight: '700', fontSize: f(15) }}>Try again</Text></TouchableOpacity>
-        </Centered>
+        <EmptyState icon="⚠️" title="Couldn't load your trips" subtitle={err}
+          action={<Button title="Try again" variant="secondary" onPress={load} />} />
       ) : trips.length === 0 ? (
-        <Centered><Text style={{ color: theme.textMuted, fontSize: f(15) }}>No trips right now.</Text></Centered>
+        <EmptyState icon="🛣️" title="No active trips" subtitle="When the office assigns you a trip, it shows up here. Pull down to refresh." />
       ) : (
         <FlatList
           data={trips}
           keyExtractor={(t) => String(t.id)}
-          contentContainerStyle={{ paddingHorizontal: gutter, paddingTop: 4, paddingBottom: 40, width: '100%', maxWidth: maxContent, alignSelf: 'center' }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.accent} />}
+          contentContainerStyle={{ paddingHorizontal: gutter, paddingTop: f(4), paddingBottom: f(28) + bottomInset, width: '100%', maxWidth: maxContent, alignSelf: 'center' }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} colors={[theme.primary]} />}
+          ItemSeparatorComponent={() => <View style={{ height: f(12) }} />}
           renderItem={({ item }) => <TripCard trip={item} onPress={() => onOpen(item)} f={f} />}
         />
       )}
@@ -67,28 +73,33 @@ export default function TripsScreen({ user, onOpen, onSignOut }) {
 
 function TripCard({ trip, onPress, f }) {
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.8}
-      style={{ backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1, borderRadius: 16, padding: 16, marginBottom: 12 }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ color: theme.text, fontSize: f(17), fontWeight: '800', flex: 1, paddingRight: 10 }} numberOfLines={1}>{trip.trip_number || `Trip #${trip.id}`}</Text>
+    <Card onPress={onPress}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: f(10) }}>
+        <Text style={{ color: theme.text, fontSize: f(18), fontWeight: '800', flex: 1 }} numberOfLines={1}>{trip.trip_number || `Trip #${trip.id}`}</Text>
         <StatusPill status={trip.status} f={f} />
       </View>
-      {trip.route ? <Text style={{ color: theme.textMuted, fontSize: f(14), marginTop: 6 }}>{trip.route}</Text> : null}
-      {trip.dispatch_destination ? <Text style={{ color: theme.textMuted, fontSize: f(13), marginTop: 3 }}>To: {trip.dispatch_destination}</Text> : null}
-    </TouchableOpacity>
+      {trip.route ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: f(8), marginTop: f(10) }}>
+          <Text style={{ fontSize: f(13) }}>📍</Text>
+          <Text style={{ color: theme.textMuted, fontSize: f(14), flex: 1 }} numberOfLines={1}>{trip.route}</Text>
+        </View>
+      ) : null}
+      {trip.dispatch_destination ? (
+        <Text style={{ color: theme.textFaint, fontSize: f(13), marginTop: f(4) }} numberOfLines={1}>To: {trip.dispatch_destination}</Text>
+      ) : null}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: f(12) }}>
+        <Text style={{ color: theme.primary, fontSize: f(13.5), fontWeight: '800' }}>Open  ›</Text>
+      </View>
+    </Card>
   )
 }
 
-export function StatusPill({ status, f }) {
+export function StatusPill({ status, f: ff }) {
   const c = statusColor(status)
-  const size = f ? f(12.5) : 12.5
+  const size = ff ? ff(12) : 12
   return (
-    <View style={{ backgroundColor: c + '22', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 }}>
+    <View style={{ backgroundColor: c + '22', borderRadius: radius.pill, paddingHorizontal: 11, paddingVertical: 5 }}>
       <Text style={{ color: c, fontSize: size, fontWeight: '800' }}>{statusLabel(status)}</Text>
     </View>
   )
-}
-
-function Centered({ children }) {
-  return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>{children}</View>
 }
