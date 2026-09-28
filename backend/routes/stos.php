@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\Transport\AppUpdateController;
 use App\Http\Controllers\Api\V1\Transport\DeviceTokenController;
 use App\Http\Controllers\Api\V1\Transport\GensetController;
 use App\Http\Controllers\Api\V1\Transport\DriverController;
@@ -53,6 +54,13 @@ Route::prefix('v1/telemetry')->middleware('stos.device')->group(function () {
 // A driver has no login yet, so this is open. It files a PENDING request; an
 // admin approves it below before any account exists.
 Route::post('driver/register', [DriverRegistrationController::class, 'register']);
+
+// ── Driver-app over-the-air updates (public) ────────────────────────────
+// The Sangoé Driver app checks these before anyone signs in, so they cannot
+// sit behind auth. Our own Expo Updates server — the app pulls new JavaScript
+// from here, so a code change reaches phones without re-installing the APK.
+Route::get('app-updates/manifest', [AppUpdateController::class, 'manifest'])->name('app-updates.manifest');
+Route::get('app-updates/asset', [AppUpdateController::class, 'asset'])->name('app-updates.asset');
 
 Route::middleware(['auth:sanctum', 'role:admin,staff'])->prefix('v1/fleet')->group(function () {
 

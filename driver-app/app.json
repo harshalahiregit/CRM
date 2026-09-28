@@ -38,8 +38,12 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
+    "runtimeVersion": "1.0.0",
     "updates": {
-      "enabled": false
+      "enabled": true,
+      "url": "https://crm.nexforeconsulting.com/api/app-updates/manifest",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
     }
   }
 }
